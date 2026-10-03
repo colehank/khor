@@ -99,6 +99,16 @@ fn reading_request(kind: &str) -> Option<Request> {
 /// differ, with the far version, and the readings that changed.
 type VersionsAnswer = (Vec<(String, String)>, Vec<(String, serde_bytes::ByteBuf)>);
 
+/// A [`Response::Versions`], or `None` for a khor that predates the
+/// question (it refuses the frame whole).
+fn versions_answer(answer: Response) -> Result<Option<VersionsAnswer>, String> {
+    match answer {
+        Response::Versions { docs, readings } => Ok(Some((docs, readings))),
+        Response::Refused { .. } => Ok(None),
+        other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+    }
+}
+
 /// A reading last got from a machine: its frame's digest, and the answer
 /// itself, written into the cache again on a round that says it has not
 /// changed — so its age is the last round's, as before.
@@ -6525,14 +6535,24 @@ impl Node {
     }
 
     async fn sync_device(&self, ep: &iroh::Endpoint, d: &DeviceInfo) -> Result<String, String> {
+        let unreached = |e| match e {
+            DialFailure::TimedOut => msg::dial_timed_out().to_string(),
+            DialFailure::Refused(why) => msg::cant_reach_plain(why),
+        };
+        // **The round's opening question rides a redial's handshake**
+        // (`Node::ask_early`): it is a reading, so after a wake or a
+        // dropped wire the round's first answer comes a round trip sooner.
+        let (kinds, opening) = self.opening(d)?;
+        let early = match self.ask_early(ep, d, &opening).await {
+            Early::Answered(resp) => Some(resp),
+            Early::Failed(e) => return Err(unreached(e)),
+            Early::NotTaken => None,
+        };
         let line = self
             .line_to(ep, d, wires::Proto::Main)
             .await
-            .map_err(|e| match e {
-                DialFailure::TimedOut => msg::dial_timed_out().to_string(),
-                DialFailure::Refused(why) => msg::cant_reach_plain(why),
-            })?;
-        let moved = match self.sync_what_changed(&line, d).await? {
+            .map_err(unreached)?;
+        let moved = match self.sync_what_changed(&line, d, &kinds, &opening, early).await? {
             Some(moved) => moved,
             None => self.sync_everything(&line, d).await?,
         };
@@ -6561,7 +6581,53 @@ impl Node {
     ///
     /// `None` when that machine's khor predates the question: the round
     /// is then [`Node::sync_everything`], as before.
-    async fn sync_what_changed(&self, line: &Line, d: &DeviceInfo) -> Result<Option<usize>, String> {
+    async fn sync_what_changed(
+        &self,
+        line: &Line,
+        d: &DeviceInfo,
+        kinds: &[String],
+        opening: &Request,
+        early: Option<Response>,
+    ) -> Result<Option<usize>, String> {
+        let answer = match early {
+            Some(answer) => answer,
+            None => self.exchange_on(line, opening).await.map_err(Miss::words)?,
+        };
+        let Some((differ, changed)) = versions_answer(answer)? else {
+            return Ok(None);
+        };
+        self.take_readings(line, d, kinds, changed).await;
+
+        let mut moved = 0usize;
+        for (name, theirs) in differ {
+            let synced = with_doc!(self, name.as_str(), |loaded| self
+                .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
+                .await);
+            match synced {
+                Ok(n) => moved += n,
+                Err(why) if doc_must_sync(&name) => return Err(why),
+                Err(_) => {}
+            }
+        }
+        // **Readings that the documents just moved can change are asked
+        // again.** Over there a row's word is derived from documents this
+        // round carries — a watermark this machine just pushed is what
+        // turns 完成 into 空闲 — and the readings above were taken before
+        // it arrived. Only after a round that moved something: a quiet
+        // round stays the one exchange.
+        if moved > 0 {
+            let again = self.versions_request(d, kinds, Vec::new());
+            let answer = self.exchange_on(line, &again).await.map_err(Miss::words)?;
+            if let Some((_, changed)) = versions_answer(answer)? {
+                self.take_readings(line, d, kinds, changed).await;
+            }
+        }
+        Ok(Some(moved))
+    }
+
+    /// A round's opening [`Request::Versions`] for `d`: every document's
+    /// digest and every reading held, and the readings' kinds.
+    fn opening(&self, d: &DeviceInfo) -> Result<(Vec<String>, Request), String> {
         let mut names: Vec<String> = ROUND_DOCS.iter().map(|n| (*n).to_owned()).collect();
         names.extend(self.known_channels()?.into_iter().map(|ch| format!("chat/{ch}")));
         let mut docs = Vec::with_capacity(names.len());
@@ -6582,75 +6648,36 @@ impl Node {
                     .map(|s| format!("sat/{}", s.id)),
             );
         }
-        let Some((differ, changed)) = self.ask_versions(line, d, &kinds, docs).await? else {
-            return Ok(None);
-        };
-        self.take_readings(line, d, &kinds, changed).await;
-
-        let mut moved = 0usize;
-        for (name, theirs) in differ {
-            let synced = with_doc!(self, name.as_str(), |loaded| self
-                .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
-                .await);
-            match synced {
-                Ok(n) => moved += n,
-                Err(why) if doc_must_sync(&name) => return Err(why),
-                Err(_) => {}
-            }
-        }
-        // **Readings that the documents just moved can change are asked
-        // again.** Over there a row's word is derived from documents this
-        // round carries — a watermark this machine just pushed is what
-        // turns 完成 into 空闲 — and the readings above were taken before
-        // it arrived. Only after a round that moved something: a quiet
-        // round stays the one exchange.
-        if moved > 0
-            && let Some((_, changed)) = self.ask_versions(line, d, &kinds, Vec::new()).await?
-        {
-            self.take_readings(line, d, &kinds, changed).await;
-        }
-        Ok(Some(moved))
+        let opening = self.versions_request(d, &kinds, docs);
+        Ok((kinds, opening))
     }
 
-    /// One [`Request::Versions`]: these documents' digests and the
-    /// digests of the readings held of `d`. `None` when its khor predates
-    /// the question.
-    async fn ask_versions(
+    /// A [`Request::Versions`]: these documents' digests and the digests
+    /// of the readings held of `d`.
+    fn versions_request(
         &self,
-        line: &Line,
         d: &DeviceInfo,
         kinds: &[String],
         docs: Vec<(String, serde_bytes::ByteBuf)>,
-    ) -> Result<Option<VersionsAnswer>, String> {
-        let readings = {
-            let all = self.readings_held.lock().unwrap_or_else(|p| p.into_inner());
-            kinds
-                .iter()
-                .map(|k| {
-                    let held = all.get(&(d.id.clone(), k.clone()));
-                    let digest = held.map(|h| h.digest.clone()).unwrap_or_default();
-                    // The day is asked as the minutes since the copy held.
-                    let asked = match held.map(|h| &h.answer) {
-                        Some(Response::Days { day }) => match crate::day::Day::end_of_wire(day) {
-                            Some(end) => format!("days@{end}"),
-                            None => k.clone(),
-                        },
-                        _ => k.clone(),
-                    };
-                    (asked, serde_bytes::ByteBuf::from(digest))
-                })
-                .collect()
-        };
-        match self
-            .exchange_on(line, &Request::Versions { docs, readings })
-            .await
-            .map_err(Miss::words)?
-        {
-            Response::Versions { docs, readings } => Ok(Some((docs, readings))),
-            // A khor that predates the question refuses the frame whole.
-            Response::Refused { .. } => Ok(None),
-            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
-        }
+    ) -> Request {
+        let all = self.readings_held.lock().unwrap_or_else(|p| p.into_inner());
+        let readings = kinds
+            .iter()
+            .map(|k| {
+                let held = all.get(&(d.id.clone(), k.clone()));
+                let digest = held.map(|h| h.digest.clone()).unwrap_or_default();
+                // The day is asked as the minutes since the copy held.
+                let asked = match held.map(|h| &h.answer) {
+                    Some(Response::Days { day }) => match crate::day::Day::end_of_wire(day) {
+                        Some(end) => format!("days@{end}"),
+                        None => k.clone(),
+                    },
+                    _ => k.clone(),
+                };
+                (asked, serde_bytes::ByteBuf::from(digest))
+            })
+            .collect();
+        Request::Versions { docs, readings }
     }
 
     /// The readings a [`Request::Versions`] answer carried, into the

@@ -2,8 +2,9 @@
 //! other only through a relay behind a road adding `REDIAL_RTT_MS`
 //! (default 200) of round trip. Beta's resident lets its wires to alpha
 //! go (`Node::let_go_of`), and the first answer afterwards is timed —
-//! for a read (a listing) and for a write (a new directory), `REDIAL_N`
-//! (default 5) times each. The road's own round trip is printed beside
+//! for a read (a listing), for a write (a new directory) and for a sync
+//! round (`sync_now`, whose first exchange is `Request::Versions`),
+//! `REDIAL_N` (default 5) times each. The road's own round trip is printed beside
 //! them, measured on a held wire, so the redial's cost reads in round
 //! trips.
 
@@ -45,7 +46,14 @@ async fn the_first_answer_after_a_redial() {
         p.beta.ls_of("alpha", &dir).await.expect("a listing on a held wire");
         held.push(began.elapsed());
     }
-    let (mut read, mut write) = (Vec::new(), Vec::new());
+    let (mut read, mut write, mut sync) = (Vec::new(), Vec::new(), Vec::new());
+    // A quiet sync on the held wire, for reference.
+    let mut sync_held = Vec::new();
+    for _ in 0..n {
+        let began = Instant::now();
+        p.beta.sync_now().await.expect("a sync on a held wire");
+        sync_held.push(began.elapsed());
+    }
     for i in 0..n {
         p.beta.let_go_of("alpha").await.expect("the resident lets go");
         let began = Instant::now();
@@ -61,6 +69,16 @@ async fn the_first_answer_after_a_redial() {
             .expect("a directory after a redial");
         write.push(began.elapsed());
         tokio::time::sleep(Duration::from_secs(1)).await;
+
+        p.beta.let_go_of("alpha").await.expect("the resident lets go");
+        let began = Instant::now();
+        let outcomes = p.beta.sync_now().await.expect("a sync after a redial");
+        assert!(
+            outcomes.iter().all(|(_, r)| r.is_ok()),
+            "the round after a redial reached alpha: {outcomes:?}"
+        );
+        sync.push(began.elapsed());
+        tokio::time::sleep(Duration::from_secs(1)).await;
     }
     eprintln!(
         "[redial] added RTT {} ms: a listing on a held wire {:?}; after a redial, a listing {:?} (each {:?}), a new directory {:?} (each {:?})",
@@ -70,5 +88,12 @@ async fn the_first_answer_after_a_redial() {
         read,
         median(write.clone()),
         write,
+    );
+    eprintln!(
+        "[redial] added RTT {} ms: a quiet sync on a held wire {:?}; after a redial {:?} (each {:?})",
+        rtt.as_millis(),
+        median(sync_held),
+        median(sync.clone()),
+        sync,
     );
 }
