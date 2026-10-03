@@ -19,6 +19,7 @@ const replies = {
   "window size report": `${E}[8;24;80t`,
   "cell size in pixels (the image addon)": `${E}[6;17;8t`,
   "graphics attributes (the image addon)": `${E}[?2;0;1280;720S`,
+  "kitty keyboard flags": `${E}[?1u`,
   "DA1 with sixel (the image addon)": `${E}[?62;4;9;22c`,
   "the owner's run, as one write": `${E}]11;rgb:0000/0000/0000${E}\\${E}[?1;2c${E}P1$r2 q${E}\\${E}[?12;2$y`,
 };
@@ -41,6 +42,9 @@ const keys = {
   "SGR mouse": `${E}[<0;10;5M`,
   "bracketed paste": `${E}[200~text${E}[201~`,
   "a reply with a key after it": `${E}[?1;2ca`,
+  "kitty Shift+Enter": `${E}[13;2u`,
+  "kitty Ctrl+I": `${E}[105;5u`,
+  "kitty Esc": `${E}[27u`,
 };
 
 let bad = 0;
