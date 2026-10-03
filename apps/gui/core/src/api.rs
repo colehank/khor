@@ -751,6 +751,11 @@ pub fn answer(
             &arg("machine")?,
             &opt_str("title")?.unwrap_or_default(),
             &opt_str("cwd")?.unwrap_or_default(),
+            // The face's terminal size, when it sends one: both or none.
+            match (args.get("cols").and_then(|v| v.as_u64()), args.get("rows").and_then(|v| v.as_u64())) {
+                (Some(c), Some(r)) => Some((c.min(u16::MAX as u64) as u16, r.min(u16::MAX as u64) as u16)),
+                _ => None,
+            },
         ))?),
         // The path names a file on the machine answering this call —
         // meaningful from the app and the loopback bridge, where that
