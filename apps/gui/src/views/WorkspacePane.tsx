@@ -33,7 +33,7 @@ import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconBack, IconBranch, IconCheck, IconFiles, IconPencil, IconPlus, IconSearch, IconSessions } from "@/components/icons";
-import { GlassCircle, GlassItem } from "@/components/Glass";
+import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
@@ -1274,42 +1274,49 @@ export function WorkspacePane({
         )}
       </div>
     ) : null;
+  const sessionsItem = (
+    <GlassItem
+      aria-label={gui.ws_sessions_toggle}
+      aria-pressed={sessions}
+      data-ws-sessions-switch
+      on={sessions}
+      onClick={() => showSessions(!sessions)}
+      className={cn(narrow && "!w-head-item-h")}
+    >
+      <IconSessions />
+    </GlassItem>
+  );
   const switches = (
     <div data-ws-switches className="flex flex-none items-center gap-in">
       {/* **The tree's own switch, on the wide head** (P4, 2026-10-03, the
           owner's ruling). Pressing the open workspace's row again folds the
           tree (ruling 2026-09-16), and since the row's chevron went (F2)
           nothing on the page said the tree was put away or how to bring it
-          back. A circle like 会话栏's beside it, on while the tree shows;
-          narrow has no column to fold (the tree is a screen there). */}
-      {!narrow && (
+          back. **It and 会话栏 share one capsule** (UX-4): both switch what
+          this page shows, which is what a capsule holds — the machine
+          page's 会话/文件/浏览 — and VS Code, which opens a page of its
+          own, stays the circle beside them (the 2026-10-02 ruling on the
+          workspace's tool row). ⚠️ 墓碑: two circles side by side, from when
+          会话栏 was the only switch (W-V9). Narrow has no column to fold
+          (the tree is a screen there), so 会话栏 is alone and a circle. */}
+      {narrow ? (
         <div data-size="head" className="group/cap glass grid size-head-ctl flex-none place-items-center rounded-full">
+          {sessionsItem}
+        </div>
+      ) : (
+        <GlassCapsule size="head" data-ws-switch-pair>
           <GlassItem
             aria-label={gui.workspace_tree}
             aria-pressed={tree}
             data-ws-tree-switch
             on={tree}
             onClick={() => treePane.toggle()}
-            className="!w-head-item-h"
           >
             <IconFiles />
           </GlassItem>
-        </div>
+          {sessionsItem}
+        </GlassCapsule>
       )}
-      {/* One toggle is a glass circle, not a one-item capsule (W-V9),
-          the same circle as VS Code's beside it. */}
-      <div data-size="head" className="group/cap glass grid size-head-ctl flex-none place-items-center rounded-full">
-        <GlassItem
-          aria-label={gui.ws_sessions_toggle}
-          aria-pressed={sessions}
-          data-ws-sessions-switch
-          on={sessions}
-          onClick={() => showSessions(!sessions)}
-          className="!w-head-item-h"
-        >
-          <IconSessions />
-        </GlassItem>
-      </div>
       {/* **Only where there is an editor to open.** A machine without
           one, and a machine that could not be asked, both answer empty
           and both get no circle — offering a button that fails is worse

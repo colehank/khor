@@ -46,6 +46,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { MoreFact, MoreSection } from "@/views/more/MorePage";
+import { Waiting } from "@/components/RegionState";
 
 /** A relay to keep as it is stored — its key, if any, stays put. */
 const kept = (url: string): RelayWant => ({ url, token: null });
@@ -53,6 +54,8 @@ const kept = (url: string): RelayWant => ({ url, token: null });
 /** Mounting is reading: the page is drawn only while it is on screen. */
 export function NetSettings() {
   const [choices, setChoices] = useState<RelayChoices | null>(null);
+  /** When the first asking began (`Waiting`, below). */
+  const [since] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
   // The add window: its box, the node's refusal of what was in it, and
   // whether it was opened by the only-mine switch — then saving adds
@@ -106,6 +109,9 @@ export function NetSettings() {
           {error}
         </div>
       )}
+      {/* Loading until the first answer (UX-4): the heading stood over
+          nothing, and the next group's 离开网络 read as a relay. */}
+      {!choices && !error && <Waiting since={since} />}
       {choices && (
         <>
           {/* 使用中: a fact, one address a line — nothing here can be
