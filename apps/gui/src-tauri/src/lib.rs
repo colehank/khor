@@ -3239,6 +3239,43 @@ fn watch_the_path() {
     }
 }
 
+/// **The phone's language, where the Rust half can read it** (UX-4).
+/// `khor_catalog::lang::from_env` asks `LC_ALL` / `LC_MESSAGES` / `LANG`,
+/// and on a Mac `defaults`; an iOS app has neither, so its node answered
+/// 「读不到」 — English — while its face, which asks the web view, spoke
+/// Chinese: the config rows on 外观 read 「Interface language · Match
+/// system」 between Chinese ones, and every refusal and 诊断 row crossed
+/// back in English. The system's first preferred language goes into
+/// `LANG` before anything reads it, unless something already set one.
+#[cfg(target_os = "ios")]
+fn system_language_into_env() {
+    use objc2::rc::Retained;
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+    let set = ["LC_ALL", "LC_MESSAGES", "LANG"]
+        .iter()
+        .any(|n| std::env::var(n).is_ok_and(|v| !v.trim().is_empty()));
+    if set {
+        return;
+    }
+    // SAFETY: `+[NSLocale preferredLanguages]` answers an array of
+    // strings, `-firstObject` an element of it or nil.
+    let first: Option<Retained<NSString>> = unsafe {
+        let langs: Option<Retained<AnyObject>> = msg_send![class!(NSLocale), preferredLanguages];
+        match langs {
+            Some(l) => msg_send![&*l, firstObject],
+            None => None,
+        }
+    };
+    if let Some(tag) = first {
+        // `zh-Hans-CN` reads as `zh_Hans_CN`: the catalog asks only
+        // whether the locale is Chinese (`is_zh`).
+        // SAFETY: at the top of `run`, before any thread is started.
+        unsafe { std::env::set_var("LANG", tag.to_string().replace('-', "_")) };
+    }
+}
+
 /// The app. On a phone the system starts it through this same function:
 /// `mobile_entry_point` exports the `start_app` symbol the Xcode project
 /// in `gen/apple` calls — without it the iOS library links and nothing
@@ -3264,6 +3301,8 @@ pub fn run() {
     // The face resolves its own (`src/lang.ts`, from the same key); this
     // is the Rust half — every sentence that crosses back as text, a
     // refusal or a 诊断 row, is written in it.
+    #[cfg(target_os = "ios")]
+    system_language_into_env();
     khor_node::config::apply_lang(&Node::root_from_env());
     // If this process was re-exec'd as a session host, be one — the app
     // spawns hosts through its own binary (`host.rs main_if_host`).
