@@ -36,3 +36,10 @@ serde_json.workspace = true
 # three reboots = 40 minutes of "unreachable" that was really the
 # bridge). Version-locked to the workspace iroh.
 iroh-relay = { version = "1.2.0", features = ["server"] }
+# The congestion and priority measurement (`tests/congestion.rs`) drives
+# the QUIC under iroh directly, through a road it simulates: noq at the
+# version iroh pins, and rcgen for the throwaway certificate. Both are
+# already in the tree (iroh, iroh-relay); no new package.
+# License: MIT OR Apache-2.0 (both; checked before use).
+noq = { version = "1.3.0", default-features = false, features = ["rustls", "ring", "runtime-tokio"] }
+rcgen = "0.14"
