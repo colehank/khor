@@ -1232,6 +1232,10 @@ no-host = "This session has no host (it's ephemeral, or the host hasn't started 
 host-file-garbled = "Host record is garbled: {0}"
 no-frame = "Can't read a frame: {0}"
 frame-too-big = "Frame too large: {0}"
+# A machine asked to watch the folders a tree has open, that cannot
+# (no watcher there). Not shown to a person: the face falls back to
+# asking the tree, which is what this says.
+watch-unavailable = "This machine cannot watch folders; its tree is asked instead"
 half-a-frame = "Frame read stopped halfway: {0}"
 cant-find-self = "Can't find its own executable: {0}"
 host-wont-start = "Host won't start: {0}"

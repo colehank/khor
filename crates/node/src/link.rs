@@ -95,6 +95,35 @@ fn reading_request(kind: &str) -> Option<Request> {
     })
 }
 
+/// **What a pull's part file holds bytes of** (round NET-4): the
+/// machine and path it is pulled from, and the (size, mtime) every slice
+/// was checked against. Beside the part file, so a pull of the same file
+/// into the same place carries on from it (`Node::pull_path_with`).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PullNote {
+    machine: String,
+    sat: Option<String>,
+    path: String,
+    total: u64,
+    at_ms: u64,
+}
+
+impl PullNote {
+    fn path_of(part: &std::path::Path) -> std::path::PathBuf {
+        let mut name = part.file_name().unwrap_or_default().to_os_string();
+        name.push(".json");
+        part.with_file_name(name)
+    }
+
+    fn read(path: &std::path::Path) -> Option<PullNote> {
+        serde_json::from_slice(&fs::read(path).ok()?).ok()
+    }
+
+    fn write(&self, path: &std::path::Path) -> Result<(), String> {
+        fs::write(path, serde_json::to_vec(self).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    }
+}
+
 /// What a [`Response::Versions`] carries: the documents whose versions
 /// differ, with the far version, and the readings that changed.
 type VersionsAnswer = (Vec<(String, String)>, Vec<(String, serde_bytes::ByteBuf)>);
@@ -1419,6 +1448,26 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::WatchOn {
+                machine,
+                dirs,
+                since,
+                wait_ms,
+            } => match self
+                .watch_with(ep, &machine, &dirs, since, Duration::from_millis(wait_ms).min(ipc::WATCH_WAIT))
+                .await
+            {
+                Ok(changes) => ipc::Reply::DirsChanged { changes },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::StatOn { machine, path } => match self.stat_with(ep, &machine, &path).await {
+                Ok((total, at_ms, digest)) => ipc::Reply::Stat {
+                    total,
+                    at_ms,
+                    digest,
+                },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::ReadHead { machine, path } => {
                 match self.read_head_with(ep, &machine, &path).await {
                     Ok((total, at_ms, bytes)) => ipc::Reply::Head {
@@ -2119,6 +2168,33 @@ impl Node {
                 let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else {
                     return;
                 };
+                // **A watch keeps its stream** (`crate::watch`): answered
+                // as it goes, not once — through the same gate as every
+                // other request.
+                if let Ok(Request::Watch { dirs }) = proto::decode::<Request>(&bytes) {
+                    if early && *done.borrow() != Some(true) {
+                        while done.borrow().is_none() {
+                            if done.changed().await.is_err() {
+                                return;
+                            }
+                        }
+                        if *done.borrow() != Some(true) {
+                            return;
+                        }
+                    }
+                    match node.admit(&remote) {
+                        Ok(()) => crate::watch::serve(dirs, send).await,
+                        Err(why) => {
+                            if let Ok(frame) = proto::encode(&Response::Refused { why }) {
+                                let mut out = (frame.len() as u32).to_be_bytes().to_vec();
+                                out.extend_from_slice(&frame);
+                                let _ = send.write_all(&out).await;
+                                let _ = send.finish();
+                            }
+                        }
+                    }
+                    return;
+                }
                 let resp = match proto::decode::<Request>(&bytes) {
                     Ok(req) => {
                         if early && !req.rides_early() {
@@ -2458,6 +2534,31 @@ impl Node {
                 .await
                 .map_err(|e| e.to_string())?;
                 Ok(Response::Load { load })
+            }
+            // A watch is a stream, answered in `handle` before this; one
+            // that arrives here came by a road that answers once.
+            Request::Watch { .. } => Err(msg::watch_unavailable().into()),
+            Request::Stat { path } => {
+                // One `stat` and at most one slice off the disk, off the
+                // reactor for the `Ls` arm's reason.
+                let (total, at_ms, digest) =
+                    tokio::task::spawn_blocking(move || crate::files::stat(&path))
+                        .await
+                        .map_err(|e| e.to_string())??;
+                Ok(Response::Stat {
+                    total,
+                    at_ms,
+                    digest,
+                })
+            }
+            Request::LoadSince { top, by, desc, day } => {
+                let root = self.root().to_path_buf();
+                let (top, day, cpu_day) = tokio::task::spawn_blocking(move || {
+                    crate::Node::load_since(&root, top as usize, by, desc, day)
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+                Ok(Response::LoadSince { top, day, cpu_day })
             }
             Request::Vitals => {
                 // The background sampler's last round, at most one beat
@@ -3604,6 +3705,35 @@ impl Node {
                 .await
                 .map_err(|e| e.to_string());
         }
+        // **The day only when it moved** (round NET-4): asked with the
+        // stamp of the day held from the last answer; an unchanged day
+        // is filled in from that. A refusal — an older khor that does
+        // not know the question, or a column it cannot rank by — falls
+        // through to the plain ask below, whose answer says which.
+        let held = {
+            let days = self.days_held.lock().unwrap_or_else(|p| p.into_inner());
+            days.get(&home.hex()).cloned()
+        };
+        let since = Request::LoadSince {
+            top,
+            by,
+            desc,
+            day: held.as_ref().map(|(stamp, _)| *stamp).unwrap_or(0),
+        };
+        if let Ok(Response::LoadSince { top, day, cpu_day }) = self.ask(ep, &channel, &since).await {
+            let cpu_day = match (cpu_day, held) {
+                (Some(fresh), _) => Some(fresh),
+                (None, Some((stamp, kept))) if stamp == day => Some(kept),
+                _ => None,
+            };
+            if let Some(cpu_day) = cpu_day {
+                self.days_held
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .insert(home.hex(), (day, cpu_day.clone()));
+                return Ok(khor_core::Load { top, cpu_day });
+            }
+        }
         let req = Request::Load { top, by, desc };
         // **Asked twice, because this one is a reading.** The first ask
         // may land on a pipe whose far end went away without closing
@@ -4474,6 +4604,159 @@ impl Node {
     /// A satellite's file does not come through this road — the sponsor
     /// serves those off a staging copy with `SatFetchPath`, which is
     /// the account already in docs/handoff/001.md.
+    /// **Which of these directories on `machine` changed since `since`**
+    /// (round NET-4, `crate::watch`), held up to `wait` (at most
+    /// `ipc::WATCH_WAIT`) for one to. Only a resident watches: with none, and for this machine
+    /// itself or a satellite (a tree here is asked off this disk; a
+    /// satellite has no watcher of khor's), the answer is `unavailable`,
+    /// and the face asks the tree as before.
+    pub async fn dirs_changed(
+        &self,
+        machine: &str,
+        dirs: &[String],
+        since: u64,
+        wait: Duration,
+    ) -> Result<crate::watch::DirChanges, String> {
+        let unavailable = || crate::watch::DirChanges {
+            seq: since,
+            dirs: dirs.to_vec(),
+            unavailable: true,
+        };
+        if machine.is_empty() || machine == self.name() {
+            return Ok(unavailable());
+        }
+        match self
+            .via_serve(ipc::Op::WatchOn {
+                machine: machine.to_owned(),
+                dirs: dirs.to_vec(),
+                since,
+                wait_ms: wait.as_millis() as u64,
+            })
+            .await
+        {
+            Some(reply) => match reply? {
+                ipc::Reply::DirsChanged { changes } => Ok(changes),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            },
+            None => Ok(unavailable()),
+        }
+    }
+
+    async fn watch_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        dirs: &[String],
+        since: u64,
+        wait: Duration,
+    ) -> Result<crate::watch::DirChanges, String> {
+        let (channel, home) = self.resolve(machine)?;
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        if home == self.device() || target.sponsor.is_some() {
+            return Ok(crate::watch::DirChanges {
+                seq: since,
+                dirs: dirs.to_vec(),
+                unavailable: true,
+            });
+        }
+        let line = self
+            .line_to(ep, &target, wires::Proto::Main)
+            .await
+            .map_err(|e| unreached_words(&target.name, e))?;
+        let watches = self.watches.clone();
+        let id = target.id.clone();
+        Ok(self
+            .watches
+            .wait(&target.id, dirs, since, wait, |n, fresh| {
+                tokio::spawn(crate::watch::run(watches, id, n, line.conn.clone(), fresh))
+            })
+            .await)
+    }
+
+    /// What a file on any machine is now, without its bytes
+    /// (`crate::files::stat`): `(size, mtime, digest)`, the digest empty
+    /// for a file bigger than one slice.
+    pub async fn stat_of(&self, machine: &str, path: &str) -> Result<(u64, u64, String), String> {
+        if machine.is_empty() || machine == self.name() {
+            return crate::files::stat(path);
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::StatOn {
+                machine: machine.to_owned(),
+                path: path.to_owned(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Stat {
+                    total,
+                    at_ms,
+                    digest,
+                } => Ok((total, at_ms, digest)),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.stat_with(&ep, machine, path).await;
+        ep.close().await;
+        out
+    }
+
+    async fn stat_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+    ) -> Result<(u64, u64, String), String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return crate::files::stat(path);
+        }
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        // A satellite's file is read off its sponsor's staged copy; there
+        // is no cheaper question to ask over ssh, so the first slice is
+        // the answer, and the digest is taken here.
+        if target.sponsor.is_some() {
+            let (total, at_ms, bytes) = self.read_at_with(ep, machine, path, 0).await?;
+            let digest = if bytes.len() as u64 == total {
+                crate::files::digest(&bytes)
+            } else {
+                String::new()
+            };
+            return Ok((total, at_ms, digest));
+        }
+        match self
+            .ask(
+                ep,
+                &channel,
+                &Request::Stat {
+                    path: path.to_owned(),
+                },
+            )
+            .await?
+        {
+            Response::Stat {
+                total,
+                at_ms,
+                digest,
+            } => Ok((total, at_ms, digest)),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
     pub async fn read_head(
         &self,
         machine: &str,
@@ -5608,63 +5891,137 @@ impl Node {
         self.line_to(ep, &dial_to, wires::Proto::Main)
             .await
             .map_err(|e| unreached_words(&dial_to.name, e))?;
-        let mut out = std::fs::File::create(&fell.part).map_err(|e| e.to_string())?;
-        // The change contract: the first slice's (total, mtime) must
-        // hold for every slice after it — two readings that differ are
-        // two files, and no digest guards this path (proto::PathSlice).
-        let mut contract: Option<(u64, u64)> = None;
-        let mut offset = 0u64;
-        let outcome = loop {
-            let req = match &sat {
-                Some(s) => Request::SatFetchPath {
-                    sat: s.clone(),
-                    path: path.to_owned(),
-                    offset,
-                },
-                None => Request::FetchPath {
-                    path: path.to_owned(),
-                    offset,
-                },
+        // **A pull resumes from what it already has** (round NET-4), the
+        // way an offer does from its `.partial`: the bytes so far stay in
+        // the part file, and beside it what they are bytes *of* — which
+        // machine, which path, and the (size, mtime) every slice was
+        // checked against. A pull of the same file into the same place
+        // carries on from there if the far file still answers to that
+        // reading, and starts over if it does not.
+        let note_path = PullNote::path_of(&fell.part);
+        let held = PullNote::read(&note_path)
+            .filter(|n| n.machine == dial_to.id && n.sat == sat && n.path == path)
+            .and_then(|n| {
+                let had = std::fs::metadata(&fell.part).ok()?.len();
+                (had <= n.total).then_some((n, had))
+            });
+        let (mut out, mut contract, mut offset) = match held {
+            Some((note, had)) => (
+                std::fs::OpenOptions::new()
+                    .append(true)
+                    .open(&fell.part)
+                    .map_err(|e| e.to_string())?,
+                Some((note.total, note.at_ms)),
+                had,
+            ),
+            None => (
+                std::fs::File::create(&fell.part).map_err(|e| e.to_string())?,
+                None,
+                0,
+            ),
+        };
+        let resumed_from = offset;
+        let ask = |at: u64| match &sat {
+            Some(s) => Request::SatFetchPath {
+                sat: s.clone(),
+                path: path.to_owned(),
+                offset: at,
+            },
+            None => Request::FetchPath {
+                path: path.to_owned(),
+                offset: at,
+            },
+        };
+        // Why a pull stopped: the far machine not reached (the part file
+        // stays, to be carried on from), or something the part cannot be
+        // carried on from (it goes).
+        enum Stop {
+            Unreached(String),
+            Spoiled(String),
+        }
+        let outcome: Result<u64, Stop> = 'pull: loop {
+            // The first slice alone until the file's (size, mtime) is
+            // known; then up to `PULL_AHEAD` asked at once, written in
+            // order (the offers' shape, `pull_one`).
+            let total = contract.map(|(t, _)| t);
+            let offsets: Vec<u64> = match total {
+                None => vec![offset],
+                Some(t) => (0..PULL_AHEAD)
+                    .map(|k| offset + k * proto::SLICE)
+                    .take_while(|o| *o < t)
+                    .collect(),
             };
-            let resp = self.ask_on(ep, &dial_to, &req).await;
-            match resp {
-                Ok(Response::PathSlice {
-                    total,
-                    at_ms,
-                    bytes,
-                }) => {
-                    match contract {
-                        None => contract = Some((total, at_ms)),
-                        Some(c) if c != (total, at_ms) => {
-                            break Err(msg::file_changed_mid_pull().into());
-                        }
-                        Some(_) => {}
-                    }
-                    if bytes.is_empty() && total > 0 {
-                        break Err(msg::empty_slice().into());
-                    }
-                    if let Err(e) = out.write_all(&bytes) {
-                        break Err(e.to_string());
-                    }
-                    offset += bytes.len() as u64;
-                    if offset >= total {
-                        break Ok(offset);
-                    }
+            if offsets.is_empty() {
+                break Ok(offset);
+            }
+            let reqs: Vec<Request> = offsets.iter().map(|&at| ask(at)).collect();
+            let asks = reqs.iter().map(|r| self.ask_on(ep, &dial_to, r)).collect();
+            for (at, resp) in offsets.iter().zip(join_all(asks).await) {
+                if *at != offset {
+                    break;
                 }
-                Ok(Response::Refused { why }) => break Err(why),
-                Ok(other) => break Err(msg::peer_non_answer(format_args!("{other:?}"))),
-                Err(e) => break Err(e),
+                match resp {
+                    Ok(Response::PathSlice {
+                        total,
+                        at_ms,
+                        bytes,
+                    }) => {
+                        match contract {
+                            None => {
+                                contract = Some((total, at_ms));
+                                let _ = PullNote {
+                                    machine: dial_to.id.clone(),
+                                    sat: sat.clone(),
+                                    path: path.to_owned(),
+                                    total,
+                                    at_ms,
+                                }
+                                .write(&note_path);
+                            }
+                            // The file changed since the bytes held were
+                            // read: they are another file's. A resumed
+                            // pull starts over; one under way says so.
+                            Some(c) if c != (total, at_ms) => {
+                                if offset == resumed_from && resumed_from > 0 {
+                                    let _ = out.set_len(0);
+                                    offset = 0;
+                                    contract = None;
+                                    continue 'pull;
+                                }
+                                break 'pull Err(Stop::Spoiled(msg::file_changed_mid_pull().into()));
+                            }
+                            Some(_) => {}
+                        }
+                        if bytes.is_empty() && total > 0 {
+                            break 'pull Err(Stop::Spoiled(msg::empty_slice().into()));
+                        }
+                        if let Err(e) = out.write_all(&bytes) {
+                            break 'pull Err(Stop::Spoiled(e.to_string()));
+                        }
+                        offset += bytes.len() as u64;
+                        if offset >= total {
+                            break 'pull Ok(offset);
+                        }
+                    }
+                    Ok(Response::Refused { why }) => break 'pull Err(Stop::Spoiled(why)),
+                    Ok(other) => {
+                        break 'pull Err(Stop::Spoiled(msg::peer_non_answer(format_args!("{other:?}"))));
+                    }
+                    Err(e) => break 'pull Err(Stop::Unreached(e)),
+                }
             }
         };
+        drop(out);
         match outcome {
-            Ok(moved) => {
-                drop(out);
+            Ok(total) => {
                 std::fs::rename(&fell.part, &fell.dest).map_err(|e| e.to_string())?;
-                Ok((moved, fell.dest))
+                let _ = std::fs::remove_file(&note_path);
+                Ok((total - resumed_from.min(total), fell.dest))
             }
-            Err(why) => {
-                drop(out);
+            Err(Stop::Unreached(why)) => Err(why),
+            Err(Stop::Spoiled(why)) => {
                 let _ = std::fs::remove_file(&fell.part);
+                let _ = std::fs::remove_file(&note_path);
                 Err(why)
             }
         }

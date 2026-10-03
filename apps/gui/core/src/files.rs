@@ -290,6 +290,61 @@ pub struct FileText {
 /// decodes without complaint — and files full of them are exactly what
 /// most binaries are. The sniff above is the second half of the answer,
 /// and without it the first half passes an executable to a code view.
+/// What an open file is now, without its bytes (`Node::stat_of`): what
+/// a face asks on coming back to the window, re-reading the file only
+/// when this differs from the [`FileText`] it holds (round NET-4).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct FileStat {
+    #[ts(type = "number")]
+    pub total: u64,
+    #[ts(type = "number")]
+    pub at_ms: u64,
+    /// [`FileText::digest`]'s, for a file that fits one slice; empty
+    /// for one that does not.
+    pub digest: String,
+}
+
+pub async fn stat_text(root: &Path, machine: &str, path: &str) -> Result<FileStat, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let (total, at_ms, digest) = n.stat_of(machine, path).await?;
+    Ok(FileStat {
+        total,
+        at_ms,
+        digest,
+    })
+}
+
+/// Which of a tree's open levels changed on that machine since `seq`
+/// (`Node::dirs_changed`, round NET-4): the far machine watches them and
+/// the resident holds the answer. `unavailable` when it cannot be
+/// watched (this machine, a satellite, an older khor, no resident) —
+/// the tree then asks its levels, as before.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct DirWatch {
+    #[ts(type = "number")]
+    pub seq: u64,
+    pub dirs: Vec<String>,
+    pub unavailable: bool,
+}
+
+pub async fn dirs_wait(
+    root: &Path,
+    machine: &str,
+    dirs: Vec<String>,
+    since: u64,
+    wait_ms: u64,
+) -> Result<DirWatch, String> {
+    let n = Node::open(root.to_path_buf())?;
+    let c = n
+        .dirs_changed(machine, &dirs, since, std::time::Duration::from_millis(wait_ms))
+        .await?;
+    Ok(DirWatch {
+        seq: c.seq,
+        dirs: c.dirs,
+        unavailable: c.unavailable,
+    })
+}
+
 pub async fn read_text(root: &Path, machine: &str, path: &str) -> Result<FileText, String> {
     let n = Node::open(root.to_path_buf())?;
     let (total, at_ms, bytes) = n.read_head(machine, path).await?;

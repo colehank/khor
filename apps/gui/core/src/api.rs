@@ -168,6 +168,24 @@ pub fn answer(
         ))?),
         // One slice of a file, for reading. `pull` is the other verb
         // and it spends a disk; this one spends a screen.
+        // The bridge answers one request at a time, and this one is held
+        // open: it says a tree cannot be watched here, so the web face
+        // asks its levels as before.
+        "dirs_wait" => to_json(&crate::files::DirWatch {
+            seq: num("since")?,
+            dirs: match args.get("dirs") {
+                Some(serde_json::Value::Array(a)) => {
+                    a.iter().filter_map(|d| d.as_str().map(str::to_owned)).collect()
+                }
+                _ => Vec::new(),
+            },
+            unavailable: true,
+        }),
+        "stat_text" => to_json(&rt.block_on(crate::files::stat_text(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+        ))?),
         "read_text" => to_json(&rt.block_on(crate::files::read_text(
             root,
             &arg("machine")?,

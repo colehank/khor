@@ -155,6 +155,28 @@ impl CpuHistory {
         let _ = std::fs::write(&self.file, text);
     }
 
+    /// **What the day drawn at `now_ms` depends on**, as one number
+    /// (round NET-4): the window's position (it moves a bucket every
+    /// five minutes) and every bucket's sums and count (a reading lands
+    /// once a minute). Two calls with the same stamp draw the same day
+    /// but for its right edge, so an asker holding that day need not be
+    /// sent it again (`Request::LoadSince`).
+    pub fn stamp(&self, now_ms: u64) -> u64 {
+        let mut h = blake3::Hasher::new();
+        h.update(&(now_ms / BUCKET_MS).to_le_bytes());
+        for (k, b) in &self.buckets {
+            h.update(&k.to_le_bytes());
+            h.update(&b.cpu.to_le_bytes());
+            h.update(&b.n.to_le_bytes());
+            for v in [b.mem, b.gpu, b.disk, b.vram] {
+                h.update(&v.unwrap_or(f64::NAN).to_le_bytes());
+            }
+        }
+        let bytes = h.finalize();
+        // Never 0: an asker with nothing sends 0.
+        u64::from_le_bytes(bytes.as_bytes()[..8].try_into().unwrap()).max(1)
+    }
+
     /// The last day as a face draws it, `now` at the right edge.
     pub fn day(&self, now_ms: u64) -> CpuDay {
         let newest = now_ms / BUCKET_MS;
@@ -245,6 +267,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
         super::tests::Scratch(p)
+    }
+
+    /// **The stamp moves exactly when the day would draw differently**
+    /// (round NET-4): not between two asks with nothing recorded, but
+    /// when a reading lands, and when the window moves a bucket.
+    #[test]
+    fn the_stamp_moves_with_a_reading_and_with_the_window_only() {
+        let d = dir("stamp");
+        let t0 = 1_700_000_000_000u64 / BUCKET_MS * BUCKET_MS + 1_000;
+        let reading = Reading {
+            cpu_pct: 10.0,
+            mem_pct: 40.0,
+            gpu_pct: None,
+            disk_pct: Some(50.0),
+            vram_pct: None,
+        };
+        let mut h = CpuHistory::open(&d);
+        h.record(t0, reading);
+        let s0 = h.stamp(t0 + 10_000);
+        assert_eq!(s0, CpuHistory::open(&d).stamp(t0 + 50_000), "nothing recorded, the same stamp");
+        h.record(t0 + 60_000, reading);
+        let s1 = h.stamp(t0 + 61_000);
+        assert_ne!(s0, s1, "a reading landed");
+        assert_ne!(s1, h.stamp(t0 + BUCKET_MS), "the window moved a bucket");
+        assert_ne!(s0, 0, "never the asker's 「none」");
     }
 
     /// **A gap in one series does not take the next one with it.**

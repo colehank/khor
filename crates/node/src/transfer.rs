@@ -43,14 +43,23 @@ pub fn offer_path(root: &Path, digest: &str) -> Result<PathBuf, String> {
     Ok(offers_dir(root).join(digest))
 }
 
+/// **Written whole or not at all**: to a temporary name, then renamed
+/// over the record. Slices are served several at once (`link::PULL_AHEAD`),
+/// each reading this record, and a plain write let one read it half
+/// written — an empty file that would not parse, refusing a slice of a
+/// healthy pull (seen once in five runs of `pull_road.rs`).
 pub fn save_offer(root: &Path, digest: &str, offer: &Offer) -> Result<(), String> {
     let dir = offers_dir(root);
     fs::create_dir_all(&dir).map_err(msg::cant_make_transfers_dir)?;
-    fs::write(
-        offer_path(root, digest)?,
-        serde_json::to_vec(offer).map_err(|e| e.to_string())?,
-    )
-    .map_err(msg::cant_record_offer)
+    let path = offer_path(root, digest)?;
+    // A name of its own per write: two pulls of one offer may record at
+    // once, and a shared temporary name would let one rename the other's
+    // half-written file into place.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = path.with_extension(format!("{}-{n}.tmp", std::process::id()));
+    fs::write(&tmp, serde_json::to_vec(offer).map_err(|e| e.to_string())?).map_err(msg::cant_record_offer)?;
+    fs::rename(&tmp, &path).map_err(msg::cant_record_offer)
 }
 
 pub fn load_offer(root: &Path, digest: &str) -> Result<Option<Offer>, String> {
