@@ -58,7 +58,7 @@
 //! content, and a load answered during a turn would interleave the two
 //! indistinguishably (the protocol does not tag replayed updates).
 
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -130,6 +130,95 @@ pub enum GuiOp {
     /// Set one of the agent's options to a listed value or a switch
     /// position. Tail-appended, and answered the same two ways.
     SetOption { id: String, value: Choice },
+    /// **One slice of an op too big for one frame** (a turn carrying
+    /// photos): the op's own frame bytes, in order. The host keeps them
+    /// per connection and runs the op at [`GuiOp::Parts`]. Ops sent
+    /// between slices (a stop, an answer) run as they arrive — that is
+    /// why a big op is sliced and not sent as one frame, which would hold
+    /// the connection, and over a slow road the face, for its whole
+    /// length (2026-10-04: two phone photos, 8.5 MB, held the face for
+    /// minutes and were refused by the frame cap at the end). Tail-
+    /// appended; written by [`write_op`].
+    Part(serde_bytes::ByteBuf),
+    /// The slices sent so far are one op: run it. Tail-appended.
+    Parts,
+}
+
+/// How big one [`GuiOp::Part`] is: well under the host's frame cap, and
+/// small enough that an op sent between two slices waits for at most
+/// one of them.
+pub const PART: usize = 256 * 1024;
+
+/// The most an op sent in slices may come to. A turn's attachments are
+/// pictures and text files a person picked; past this the face says
+/// so before sending, and the host drops what it was sent.
+pub const MAX_PARTS: usize = 64 * 1024 * 1024;
+
+/// Writes one op to a host connection — **in slices when it is too big
+/// for one frame** ([`GuiOp::Part`]), taking `conn` for each slice
+/// alone, so other ops on the same connection go between them.
+/// `progress` hears (bytes written, bytes in all) after each slice.
+pub fn write_op(
+    conn: &Mutex<TcpStream>,
+    op: &GuiOp,
+    mut progress: impl FnMut(usize, usize),
+) -> Result<(), String> {
+    let bytes = crate::proto::encode(op)?;
+    if bytes.len() <= PART {
+        write_frame(&mut *conn.lock().unwrap_or_else(|p| p.into_inner()), op)?;
+        progress(bytes.len(), bytes.len());
+        return Ok(());
+    }
+    if bytes.len() > MAX_PARTS {
+        return Err(msg::frame_too_big(bytes.len()));
+    }
+    let mut sent = 0;
+    for slice in bytes.chunks(PART) {
+        write_frame(
+            &mut *conn.lock().unwrap_or_else(|p| p.into_inner()),
+            &GuiOp::Part(serde_bytes::ByteBuf::from(slice)),
+        )?;
+        sent += slice.len();
+        progress(sent, bytes.len());
+    }
+    write_frame(&mut *conn.lock().unwrap_or_else(|p| p.into_inner()), &GuiOp::Parts)
+}
+
+/// One connection's ops as they are read, slices put back together
+/// ([`GuiOp::Part`]): what the reader thread hands the conversation
+/// loop. `None` for a slice, and for a reassembly that did not decode or
+/// ran past [`MAX_PARTS`] — dropped whole at its `Parts`, never half-run.
+#[derive(Default)]
+struct Reassembly {
+    held: Vec<u8>,
+    over: bool,
+}
+
+impl Reassembly {
+    fn take(&mut self, op: GuiOp) -> Option<GuiOp> {
+        match op {
+            GuiOp::Part(slice) => {
+                if self.over || self.held.len() + slice.len() > MAX_PARTS {
+                    self.over = true;
+                    self.held = Vec::new();
+                } else {
+                    self.held.extend_from_slice(&slice);
+                }
+                None
+            }
+            GuiOp::Parts => {
+                let whole = std::mem::take(&mut self.held);
+                if std::mem::take(&mut self.over) {
+                    return None;
+                }
+                match crate::proto::decode::<GuiOp>(&whole) {
+                    Ok(GuiOp::Part(_) | GuiOp::Parts) | Err(_) => None,
+                    Ok(op) => Some(op),
+                }
+            }
+            op => Some(op),
+        }
+    }
 }
 
 /// What an option is set to: a listed value's id, or a switch's
@@ -657,7 +746,11 @@ pub fn gui_host_main(
                 let _ = joined_tx.send(who);
                 let ops_tx = ops_tx.clone();
                 std::thread::spawn(move || {
+                    let mut parts = Reassembly::default();
                     while let Ok(op) = read_frame::<GuiOp>(&mut readable) {
+                        let Some(op) = parts.take(op) else {
+                            continue;
+                        };
                         if ops_tx.send((who, op)).is_err() {
                             break;
                         }
@@ -921,6 +1014,8 @@ pub fn gui_host_main(
                         });
                     }
                     Some((_, GuiOp::Close)) => break None,
+                    // Put back together by the reader (`Reassembly`).
+                    Some((_, GuiOp::Part(_) | GuiOp::Parts)) => {}
                     Some((who, GuiOp::Replay)) => {
                         // **The capability decides what a face is
                         // told, never whether the agent is asked.** An
@@ -1046,4 +1141,65 @@ async fn replay_to(
     }
     fanout.send_to(who, &GuiNote::HistoryEnd);
     if fell { Err(fall) } else { Ok(()) }
+}
+
+#[cfg(test)]
+mod parts_tests {
+    use super::*;
+
+    /// **A big op crosses in slices and comes out whole, with a stop
+    /// between the slices running as it arrives** — and a reassembly
+    /// that runs past the cap is dropped whole, not run half.
+    #[test]
+    fn a_sliced_turn_comes_back_whole_and_a_stop_goes_between() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let conn = Mutex::new(TcpStream::connect(listener.local_addr().unwrap()).unwrap());
+        let (mut far, _) = listener.accept().unwrap();
+        let picture = "x".repeat(3 * PART + 17);
+        let op = GuiOp::SayWith {
+            text: "look".into(),
+            images: vec![("image/png".into(), picture.clone())],
+            files: vec![],
+        };
+        let reader = std::thread::spawn(move || {
+            let mut parts = Reassembly::default();
+            let mut seen = Vec::new();
+            while let Ok(op) = read_frame::<GuiOp>(&mut far) {
+                if let Some(op) = parts.take(op) {
+                    let done = matches!(op, GuiOp::SayWith { .. });
+                    seen.push(op);
+                    if done {
+                        break;
+                    }
+                }
+            }
+            seen
+        });
+        let mut slices = 0;
+        write_op(&conn, &op, |sent, all| {
+            slices += 1;
+            assert!(sent <= all);
+            if slices == 2 {
+                write_frame(&mut *conn.lock().unwrap(), &GuiOp::Stop).unwrap();
+            }
+        })
+        .unwrap();
+        let seen = reader.join().unwrap();
+        assert!(slices >= 4, "{slices} slices");
+        assert!(matches!(seen[0], GuiOp::Stop), "the stop ran before the turn was whole");
+        match &seen[1] {
+            GuiOp::SayWith { text, images, .. } => {
+                assert_eq!(text, "look");
+                assert_eq!(images[0].1, picture);
+            }
+            _ => panic!("the turn came out whole"),
+        }
+
+        let mut parts = Reassembly::default();
+        for _ in 0..=(MAX_PARTS / PART) {
+            assert!(parts.take(GuiOp::Part(serde_bytes::ByteBuf::from(vec![0u8; PART]))).is_none());
+        }
+        assert!(parts.take(GuiOp::Parts).is_none(), "past the cap, dropped whole");
+        assert!(matches!(parts.take(GuiOp::Stop), Some(GuiOp::Stop)), "and the next op runs");
+    }
 }

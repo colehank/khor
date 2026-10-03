@@ -273,6 +273,11 @@ pub enum Op {
     /// per machine its road, age, round trip and last failure.
     /// Tail-appended.
     Connections,
+    /// Retire the resident's wires to one machine, so the next ask dials
+    /// afresh; answered with the counters after. A diagnostic, and what
+    /// `crates/cli/tests/redial.rs` measures a redial with (round NET-3).
+    /// Tail-appended.
+    LetGo { machine: String },
 }
 
 /// **In-process at the serve**: the answer is in the serve's own memory
@@ -330,6 +335,7 @@ impl Op {
             Op::Roads => ("Roads", DEADLINE_LOCAL),
             Op::Wires => ("Wires", DEADLINE_LOCAL),
             Op::Connections => ("Connections", DEADLINE_LOCAL),
+            Op::LetGo { .. } => ("LetGo", DEADLINE_LOCAL),
             Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),

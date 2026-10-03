@@ -372,6 +372,11 @@ pub struct Node {
     /// second asker to wait on instead of starting another
     /// (`link::Node::sync_peers`).
     pub(crate) rounds: Arc<Mutex<std::collections::HashMap<String, link::RoundWatch>>>,
+    /// The readings this node last got from each machine, by (device id,
+    /// kind), with the digest it hands back next round so an unchanged
+    /// reading does not cross again (round NET-3, `Request::Versions`).
+    /// Memory only: after a restart the first round asks for everything.
+    pub(crate) readings_held: Arc<Mutex<std::collections::HashMap<(String, String), link::HeldReading>>>,
     /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
     /// their session id. Each is a task holding a local proxy port and a
     /// lease to the exit; the serve reaps one once its session row is
@@ -1026,6 +1031,7 @@ impl Node {
             subscribers: Arc::new(Mutex::new(Vec::new())),
             store_gate: tokio::sync::RwLock::new(()),
             rounds: Arc::default(),
+            readings_held: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
