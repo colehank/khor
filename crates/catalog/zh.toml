@@ -2334,6 +2334,7 @@ syncing = "正在同步"
 synced-now = "已同步"
 row-unreachable = "无法获取 · {0}"
 day-unreachable = "无法获取"
+reading-unreachable = "无法获取 · 上次 {0}"
 # ── 额度 ──────────────────────────────────────────────────────────
 # The rail's sixth landing: registered API accounts as rings. 「额度」
 # not 「用量」— `khor usage` (花了多少) already owns that word.

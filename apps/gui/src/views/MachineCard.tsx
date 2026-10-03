@@ -388,7 +388,14 @@ function Body({
  * top of the board went to the facts read least, pushing the dials down.
  * Before that (09-27 → 09-30) it was `Head`, one line of `callout` facts.
  */
+/** This machine cannot be reached now (`hop` 「quiet」): what the page
+    shows of it is its last reading, said so (P5, P6). */
+function isFar(row: DeviceRow): boolean {
+  return !row.me && row.hop === "quiet";
+}
+
 function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
+  const far = isFar(row);
   const v = row.vitals?.vitals ?? null;
   const age = row.vitals?.age_ms ?? 0;
   // **This machine's open faces** — the one fact on the strip only the
@@ -450,7 +457,13 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
     facts.push([
       "reading",
       gui.card_reading,
-      !row.me && age > 0 ? (
+      far ? (
+        // 「无法获取 · 上次 HH:MM」 (P5): what the row says, with the clock
+        // of the last reading rather than an age that keeps growing.
+        <span data-vitals-age data-far className="tabular-nums">
+          {gui.reading_unreachable(clock(Date.now() - age))}
+        </span>
+      ) : !row.me && age > 0 ? (
         <span data-vitals-age className="tabular-nums">
           {gui.card_age(ago(Date.now() - age))}
         </span>
@@ -952,6 +965,7 @@ function Readings({
       parts to show — see `Drawers`. */
   top: Load["top"];
 }) {
+  const far = isFar(row);
   // **Nothing is open on arrival, and the slot below the dials shows
   // the day.** It used to open the leftmost dial, because the slot had
   // nothing else to hold and an empty box under four dials is a space
@@ -1144,7 +1158,12 @@ function Readings({
         ref={vitalsBox}
         data-vitals
         data-vitals-cols={cols}
-        className="grid gap-group"
+        // **An unreachable machine's dials are its last reading, greyed**
+        // (P5, 2026-10-03): a data state, the way the list greys the
+        // row of a machine it cannot reach (`SideList` `dim`), so the
+        // numbers do not read as live. The facts say since when.
+        data-far={far || undefined}
+        className={cn("grid gap-group", far && "opacity-55")}
         //   **Content-sized columns pushed to the two edges**, so the
         //   row's spare width lands *between* the dials and the outer
         //   two sit flush. `gap-group` stays as the floor the spare
