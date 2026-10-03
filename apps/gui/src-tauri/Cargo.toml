@@ -157,3 +157,10 @@ block2 = "0.6"
 default = ["custom-protocol", "devtools"]
 custom-protocol = ["tauri/custom-protocol"]
 devtools = ["tauri/devtools"]
+
+[dev-dependencies]
+# Tauri's own mock runtime (the `test` feature of the crate already
+# above, MIT OR Apache-2.0 — no new crate): a command driven through it
+# is decoded exactly as the app decodes what the face sends (round NET-6,
+# the set_relays argument names).
+tauri = { version = "2", features = ["test"] }
