@@ -113,7 +113,7 @@ export function TermHistory({
           </button>
         ))}
       </div>
-      <div className="flex flex-none items-center gap-in border-t border-border p-2 pb-safe-bottom">
+      <div className="flex flex-none items-center gap-in border-t border-border p-2">
         <input
           data-term-history-field
           autoFocus={!window.matchMedia("(pointer: coarse)").matches}
