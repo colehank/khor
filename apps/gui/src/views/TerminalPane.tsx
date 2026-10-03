@@ -12,7 +12,7 @@
 // beside iTerm2 (「这是你渲染的终端…这是iterm渲染的」) and 「我们是
 // 全功能的终端」. Re-implementing a terminal is the wrong place to
 // spend scars: xterm.js is the renderer VS Code ships, and it does all
-// of it — grid metrics, wide chars (unicode11), IME composition, every
+// of it — grid metrics, wide chars (unicode), IME composition, every
 // key/modifier encoding, mouse protocols, alt-screen wheel, selection.
 //
 // So the split is now:
@@ -57,7 +57,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -793,7 +793,7 @@ export function TerminalPane({
     if (!box || !mount) return;
     const font = fontOf(box);
     const term = new Terminal({
-      // unicode11 is a proposed API; without this flag the addon throws.
+      // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
       // **OSC 8 links go where every other link goes** (T-24, the
       // terminal audit: they went to xterm's default `confirm()` and
@@ -838,9 +838,14 @@ export function TerminalPane({
     term.loadAddon(fit);
     // Real east-asian widths — the measured `wideFit` scale hack this
     // replaces existed because the DOM painter had to guess what a
-    // renderer that owns its glyph atlas simply knows.
-    term.loadAddon(new Unicode11Addon());
-    term.unicode.activeVersion = "11";
+    // renderer that owns its glyph atlas simply knows. **Unicode 15 with
+    // grapheme clusters** (T-22, the terminal audit: unicode11 drew ❤️
+    // one cell wide, 🇨🇳 as two boxes, 👍🏽 four cells and 👨‍👩‍👧 six),
+    // so an emoji sequence is one character of two cells, as in kitty,
+    // WezTerm and Ghostty. The addon's README says only to load it; its
+    // `activate` registers "15" and "15-graphemes" and selects the
+    // latter (0.4.0), so no `activeVersion` is set here.
+    term.loadAddon(new UnicodeGraphemesAddon());
     term.open(mount);
     // **OSC 52: a program may write the clipboard, never read it** (T-8,
     // the terminal audit: neither direction was handled). The field's
@@ -903,7 +908,7 @@ export function TerminalPane({
     };
     term.element?.addEventListener("webglcontextlost", lost, true);
     // The search paints its matches as decorations, which is the one
-    // proposed API this file leans on besides unicode11.
+    // proposed API this file leans on besides the unicode addon.
     const search = new SearchAddon();
     term.loadAddon(search);
     searchRef.current = search;
