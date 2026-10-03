@@ -2256,6 +2256,16 @@ mcp-closed = "session 已关闭"
 mcp-told = "留言已送达"
 
 [gui]
+# 等远端机器回应时的三档（round NET-FIX）：不到 1 秒只有骨架；1 秒起骨架下多一个
+# 转圈；8 秒起说清在等哪台、等了多久，并给「停止等待」「重试」。
+waiting-on = "仍在等待 {0} 回应 · {1}"
+waiting = "仍在等待回应 · {0}"
+waiting-cancel = "停止等待"
+waiting-stopped = "已停止等待 {0}"
+waiting-stopped-here = "已停止等待"
+# 终端连到别的机器的管子断了、正在重新接上：屏上是断开前最后的样子，不是实时的。
+term-rejoining = "正在重新连接 {0}"
+term-rejoining-here = "正在重新连接"
 link-last-heard = "{0} · 上次 {1}前"
 # Windows 上窗口自己的三颗按钮,画在标签条右端(docs/SHELL.md 第十三轮;macOS 用系统的,Linux 用原生装饰)。
 window-minimize = "最小化"

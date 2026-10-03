@@ -1330,6 +1330,13 @@ mcp-closed = "Session closed"
 mcp-told = "Message delivered"
 
 [gui]
+waiting-on = "Still waiting for {0} · {1}"
+waiting = "Still waiting · {0}"
+waiting-cancel = "Stop Waiting"
+waiting-stopped = "Stopped waiting for {0}"
+waiting-stopped-here = "Stopped waiting"
+term-rejoining = "Reconnecting to {0}"
+term-rejoining-here = "Reconnecting"
 link-last-heard = "{0} · last heard {1} ago"
 window-minimize = "Minimize"
 window-maximize = "Maximize / restore"

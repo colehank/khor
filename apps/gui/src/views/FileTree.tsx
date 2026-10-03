@@ -22,7 +22,7 @@
 // class of memory as a column width, not a decision about the mesh.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
-import { EmptyState } from "@/components/RegionState";
+import { EmptyState, RegionState, Waiting } from "@/components/RegionState";
 import { fetchLs, makeDir, makeFile, renamePath, type DirListing } from "@/api";
 import { EditableName } from "@/components/EditableName";
 import { RemoveDialog } from "@/components/RemoveDialog";
@@ -173,6 +173,22 @@ export function FileTree({
       piece of state for that would itself cause the render that starts
       the second one. */
   const asked = useRef(new Set<string>());
+  /** When the root was asked for, while it is out — what the wait says
+      (`Waiting`, round NET-FIX) — and a counter 重试 turns, so the asking
+      effect runs again for a path taken off `asked`. */
+  const [rootAskedAt, setRootAskedAt] = useState<number | null>(null);
+  const [tries, setTries] = useState(0);
+  /** Asks for `path` again from the start: the refusal or the wait
+      forgotten, the dial made anew. */
+  const again = (path: string) => {
+    asked.current.delete(path);
+    setFailed((was) => {
+      const next = new Map(was);
+      next.delete(path);
+      return next;
+    });
+    setTries((n) => n + 1);
+  };
   const { took, take, takes } = useTake(machine);
   /** 单击文件: whether one click keeps the tab, or takes the preview
       seat the next click replaces (`khor config`). Double click pins
@@ -206,13 +222,29 @@ export function FileTree({
     for (const path of want) {
       if (asked.current.has(path)) continue;
       asked.current.add(path);
+      if (path === root) setRootAskedAt(Date.now());
       fetchLs(machine, path)
-        .then((l) => setListings((was) => new Map(was).set(path, l)))
+        .then((l) => {
+          setListings((was) => new Map(was).set(path, l));
+          // An answer that lands after 停止等待 is still the answer.
+          setFailed((was) => {
+            if (!was.has(path)) return was;
+            const next = new Map(was);
+            next.delete(path);
+            return next;
+          });
+        })
         .catch((e: unknown) =>
           setFailed((was) => new Map(was).set(path, String(e instanceof Error ? e.message : e))),
-        );
+        )
+        .finally(() => {
+          if (path === root) setRootAskedAt(null);
+        });
     }
-  }, [machine, want]);
+    // `root` is a constant here (the tree is remounted per workspace);
+    // `tries` is 重试 asking for a path taken off `asked`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machine, want, tries]);
 
   /**
    * **A directory remembered open and deleted since leaves quietly**
@@ -449,11 +481,25 @@ export function FileTree({
         {rootError !== undefined ? (
           // **The one thing this must never be is blank** — the node's
           // own sentence, at the size of something meant to be read
-          // (`FilesPane` says the rest). A project khor cannot list is
-          // not a project with no files in it.
-          <div data-cannot-reach className="p-4 text-body">
-            {rootError}
+          // (`FilesPane` says the rest), and 重试 under it. A project khor
+          // cannot list is not a project with no files in it.
+          <div data-cannot-reach className="h-full">
+            <RegionState state="error" message={rootError} onRetry={() => again(root)} />
           </div>
+        ) : !listings.has(root) && rootAskedAt !== null ? (
+          // **Waiting is said too** (round NET-FIX, audit/net.md F9):
+          // the shape of a tree at once, a spinner past a second, and
+          // past eight which machine and how long, with a way out.
+          <Waiting
+            since={rootAskedAt}
+            machine={here ? null : machine}
+            onCancel={() =>
+              setFailed((was) =>
+                new Map(was).set(root, here ? gui.waiting_stopped_here : gui.waiting_stopped(machine)),
+              )
+            }
+            onRetry={() => again(root)}
+          />
         ) : (
           <>
             {listings.has(root) && rows.length === 0 && (
