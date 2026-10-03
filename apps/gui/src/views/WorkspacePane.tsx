@@ -39,7 +39,6 @@ import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
 import { PageAction, PageSubtitle, PageTitleAside } from "@/components/Region";
 import { type RowAction } from "@/components/RowMenu";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1324,9 +1323,12 @@ export function WorkspacePane({
   const treeNew = (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label={gui.new_item} data-tree-new className="min-h-touch min-w-touch flex-none">
+        {/* A glass circle beside the glass field, the list heads' own
+            grammar (筛选/＋ and the search circle) — it was a bare ghost
+            glyph, the one head control on the page without the material. */}
+        <GlassCircle aria-label={gui.new_item} data-tree-new>
           <IconPlus />
-        </Button>
+        </GlassCircle>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
