@@ -1433,7 +1433,9 @@ export default function App() {
   stepTab.current = (by) => {
     if (openTabs.length < 2) return;
     const at = openTabs.indexOf(selected ?? "");
-    const next = openTabs[(at + by + openTabs.length) % openTabs.length];
+    // Stops at the ends, as the deck pill's own swipe does (Safari's tab
+    // bar): a swipe past the last tab is not a jump back to the first.
+    const next = at < 0 ? undefined : openTabs[at + by];
     if (next === undefined) return;
     sessionTabs.focus(next);
     setSwitchingTabs(false);
