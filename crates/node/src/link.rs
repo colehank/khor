@@ -838,6 +838,12 @@ impl Node {
         // that closed answers `None` at once and forever, so a resumable
         // serve stops asking it until it has a new one.
         let mut hearing = true;
+        // **Gone to the background** (`suspending`) until `resume`: no
+        // pump and no visits. iOS gives an app some seconds before it
+        // freezes it, and a pump left running in them redialled every
+        // machine the suspension had just let go (round NET-5: 2 dials
+        // and 42 KB in 20 s), on wires the freeze then left half-open.
+        let resting = node.resting.clone();
         // A resume in flight, and everyone waiting on it; the bind's
         // result comes back to this loop on `bound`.
         type Waiting = (
@@ -867,8 +873,10 @@ impl Node {
                     // sees what a machine that is not there looks like —
                     // which is the state somebody asked for.
                     if paused.load(std::sync::atomic::Ordering::Relaxed) { continue }
+                    if resting.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     let n = node.clone();
                     let e = ep.clone();
+                    let resting = resting.clone();
                     tokio::spawn(async move {
                         let Ok(accepting) = incoming.accept() else { return };
                         // **Early data is taken** (round NET-3): a machine
@@ -899,8 +907,11 @@ impl Node {
                                     .filter(|conn| conn.close_reason().is_none())
                             }
                         };
-                        let once_done = |n: std::sync::Arc<Node>, e: std::sync::Arc<iroh::Endpoint>, conn: &iroh::endpoint::Connection| {
+                        let once_done = move |n: std::sync::Arc<Node>, e: std::sync::Arc<iroh::Endpoint>, conn: &iroh::endpoint::Connection| {
                             n.wires.serving(conn);
+                            if resting.load(std::sync::atomic::Ordering::Relaxed) {
+                                return;
+                            }
                             // **A machine that dials in is back**: one this
                             // node holds no wire to — a phone returning to
                             // the front, a laptop waking — is visited now,
@@ -980,10 +991,14 @@ impl Node {
                         let _ = done.send(());
                     }
                     Wake::Suspend { done } => {
+                        resting.store(true, std::sync::atomic::Ordering::Relaxed);
                         node.wires.clear(wires::Retired::Suspended);
                         node.wires.let_go_served(wires::Retired::Suspended);
                         let _ = done.send(());
                     }
+                    // A network change while backgrounded is the resume's
+                    // to deal with: it gives new ears and a round.
+                    Wake::Network if resting.load(std::sync::atomic::Ordering::Relaxed) => {}
                     Wake::Network => {
                         node.wires.network_changed();
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
@@ -1006,6 +1021,7 @@ impl Node {
                         });
                     }
                     Wake::Resume { ears, synced } => {
+                        resting.store(false, std::sync::atomic::Ordering::Relaxed);
                         // **Off this loop**: binding waits on the network,
                         // and the arms above — the app's own status
                         // questions among them — must not wait behind it.
@@ -6799,6 +6815,11 @@ impl Node {
         ep: &iroh::Endpoint,
         force: bool,
     ) -> Vec<(String, Result<String, String>)> {
+        // Backgrounded: a round already under way when the app went
+        // stops here rather than redialling what the suspension let go.
+        if self.resting.load(std::sync::atomic::Ordering::Relaxed) {
+            return Vec::new();
+        }
         let list: Vec<DeviceInfo> = self
             .devices_loaded()
             .map(|l| l.doc.all())
@@ -6829,6 +6850,9 @@ impl Node {
         d: &DeviceInfo,
         force: bool,
     ) -> Result<String, String> {
+        if self.resting.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(msg::round_cancelled().into());
+        }
         // A device that never reported a road (one-shot pairings) cannot
         // be dialed, only dial us — probing it burns a full DIAL_TIMEOUT
         // for nothing.
