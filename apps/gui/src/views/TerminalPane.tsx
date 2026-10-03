@@ -382,6 +382,12 @@ export function TerminalPane({ id }: { id: string }) {
       fontSize: font.size,
       lineHeight: font.line,
       theme: themeOf(box),
+      // **The cursor is the focus** (2026-10-03): a solid block while
+      // the terminal has the keys, a hollow one when it does not. The
+      // pane draws no ring of its own (`app.css`); xterm's defaults,
+      // said here because they are now the only sign.
+      cursorStyle: "block",
+      cursorInactiveStyle: "outline",
       // **⌥-drag is xterm's own selection even when the program asked
       // for the mouse** — iTerm2's gesture. khor turns tmux's mouse on
       // for the tmux sessions it attaches (2026-10-01, so the wheel
