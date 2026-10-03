@@ -31,7 +31,7 @@ import {
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconBranch, IconPlus, IconSearch, IconSessions } from "@/components/icons";
+import { IconBack, IconBranch, IconFiles, IconPlus, IconSearch, IconSessions } from "@/components/icons";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { DeeperHeads, NarrowHead } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
@@ -1200,6 +1200,26 @@ export function WorkspacePane({
   // states. ⚠️ 墓碑: two ghost toolbar buttons, VS Code first.
   const switches = (
     <div data-ws-switches className="flex flex-none items-center gap-in">
+      {/* **The tree's own switch, on the wide head** (P4, 2026-10-03, the
+          owner's ruling). Pressing the open workspace's row again folds the
+          tree (ruling 2026-09-16), and since the row's chevron went (F2)
+          nothing on the page said the tree was put away or how to bring it
+          back. A circle like 会话栏's beside it, on while the tree shows;
+          narrow has no column to fold (the tree is a screen there). */}
+      {!narrow && (
+        <div data-size="head" className="group/cap glass grid size-head-ctl flex-none place-items-center rounded-full">
+          <GlassItem
+            aria-label={gui.workspace_tree}
+            aria-pressed={tree}
+            data-ws-tree-switch
+            on={tree}
+            onClick={() => treePane.toggle()}
+            className="!w-head-item-h"
+          >
+            <IconFiles />
+          </GlassItem>
+        </div>
+      )}
       {/* One toggle is a glass circle, not a one-item capsule (W-V9),
           the same circle as VS Code's beside it. */}
       <div data-size="head" className="group/cap glass grid size-head-ctl flex-none place-items-center rounded-full">
