@@ -54,7 +54,7 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { openLink, pageStep, recentVisit, type DeviceRow } from "@/api";
+import { onPageWord, openLink, pageStep, recentVisit, type DeviceRow } from "@/api";
 import { PageField } from "@/browse/PageField";
 import { Tabs } from "@/browse/Tabs";
 import type { TabFace } from "@/browse/TabStrip";
@@ -361,6 +361,14 @@ export function BrowseLanding({
     />
   );
 
+  /** Whether the page can step back and forward, as the iOS page says
+      (`page:steps`); `null` where nothing says, and both are then drawn
+      lit as they always were. */
+  const [steps, setSteps] = useState<{ back: boolean; forward: boolean } | null>(null);
+  useEffect(() => {
+    setSteps(null);
+    return onPageWord("page:steps", tabs.current.id, (t) => setSteps({ back: t[0] === "1", forward: t[1] === "1" }));
+  }, [tabs.current.id]);
   /** The deck's address editor (round UX-3): open while asked for. */
   const [editing, setEditing] = useState(false);
   useEffect(() => setEditing(false), [tabs.current.id]);
@@ -543,13 +551,25 @@ export function BrowseLanding({
           {tabs.ready && somewhere && (
             <>
               <BarSeat at="pill">
+                {/* **← grey when there is nowhere back, → only when there is
+                    somewhere ahead** (round UX-3: the one agreed exception to
+                    「不灰显」, so the pair never jumps sideways when the first
+                    step back is taken). */}
                 <span data-deck-history className="flex items-center">
-                  <GlassItem aria-label={gui.page_back} data-page-step="back" onClick={() => void pageStep(tabs.current.id, "back").catch(() => {})}>
+                  <GlassItem
+                    aria-label={gui.page_back}
+                    aria-disabled={steps?.back === false || undefined}
+                    data-page-step="back"
+                    className="aria-disabled:pointer-events-none aria-disabled:text-tertiary"
+                    onClick={() => void pageStep(tabs.current.id, "back").catch(() => {})}
+                  >
                     <IconArrow to="left" />
                   </GlassItem>
-                  <GlassItem aria-label={gui.page_forward} data-page-step="forward" onClick={() => void pageStep(tabs.current.id, "forward").catch(() => {})}>
-                    <IconArrow to="right" />
-                  </GlassItem>
+                  {steps?.forward !== false && (
+                    <GlassItem aria-label={gui.page_forward} data-page-step="forward" onClick={() => void pageStep(tabs.current.id, "forward").catch(() => {})}>
+                      <IconArrow to="right" />
+                    </GlassItem>
+                  )}
                 </span>
               </BarSeat>
               <BarSeat at="lead">

@@ -55,6 +55,10 @@ struct Page {
     told_url: String,
     told_title: String,
     loading: bool,
+    /// Whether the page could step back and forward when the face was
+    /// last told (`page:steps`, round UX-3: the deck greys ← and draws →
+    /// only where there is somewhere to go).
+    told_steps: Option<(bool, bool)>,
 }
 
 thread_local! {
@@ -228,6 +232,7 @@ pub fn open(
                     told_url: url.to_owned(),
                     told_title: String::new(),
                     loading: true,
+                    told_steps: None,
                 },
             );
         });
@@ -311,6 +316,15 @@ fn tell(app: &tauri::AppHandle) {
                 if title != page.told_title {
                     page.told_title = title.clone();
                     words.push(("page:title", PageWord { tab: tab.clone(), text: title }));
+                }
+                // Whether there is a page behind and ahead, as two digits
+                // (`10`: back only) — what the deck's ← → can do.
+                let back: bool = msg_send![&*page.view, canGoBack];
+                let forward: bool = msg_send![&*page.view, canGoForward];
+                if page.told_steps != Some((back, forward)) {
+                    page.told_steps = Some((back, forward));
+                    let text = format!("{}{}", u8::from(back), u8::from(forward));
+                    words.push(("page:steps", PageWord { tab: tab.clone(), text }));
                 }
                 // Where it is, once a load has ended — as the desktop
                 // reports on arrival, never on departure.
