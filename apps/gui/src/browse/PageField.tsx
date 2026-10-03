@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
+import { imeKey } from "@/lib/ime";
 
 /** The machines a page can go out through: this one, and the ones this
     one can reach now (not quiet, not paused). */
@@ -231,7 +232,7 @@ export function PageField({
               }}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return;
+                if (imeKey(e)) return;
                 if (e.key === "Enter" && draft.trim()) {
                   e.preventDefault();
                   editing.current = false;
