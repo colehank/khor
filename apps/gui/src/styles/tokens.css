@@ -2272,6 +2272,7 @@
   --spacing-slider-knob: var(--slider-knob);
   --spacing-slider-half: var(--slider-half);
   --spacing-key-cap-w: var(--key-cap-w);
+  --spacing-key-pad-w: var(--key-pad-w);
   --spacing-tab-lip: var(--tab-lip);
   --spacing-tab-gap: var(--tab-gap);
   /* The narrow session page's foot (2026-10-02): `h-key-row` on the
@@ -2720,6 +2721,9 @@
      and the accessory keys under it: a key cap and its floor width. */
   --key-cap: 36px;
   --key-cap-w: 40px;
+  /* The cursor pad, pinned second from the row's right end: wider than
+     a cap so it reads as a pad (the owner, 2026-10-03). */
+  --key-pad-w: 56px;
   /* 外观's sliders: iOS's 28 knob on a 4 track. */
   --slider-knob: 28px;
   --slider-half: calc(var(--slider-knob) / 2);

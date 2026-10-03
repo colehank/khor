@@ -64,8 +64,8 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
 import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream } from "@/api";
-import { GlassItem } from "@/components/Glass";
-import { IconChevronDown, IconChevronUp, IconClose } from "@/components/icons";
+import { GlassCircle, GlassItem } from "@/components/Glass";
+import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -76,7 +76,9 @@ import { BarSeat } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { tapRaisesKeyboard } from "@/lib/term-tap";
-import { KeyboardSwitch, TermKeys, ctrlOf } from "@/views/TermKeys";
+import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
+import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
+import { typed, type Mods } from "@/lib/term-keys";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -245,61 +247,149 @@ function keepShiftedCommits(term: Terminal): () => void {
   };
 }
 
+/**
+ * **What an iOS keyboard commits outside a composition reaches the pty**
+ * (2026-10-03, the owner with 拼音: 「。」 and 「，」 vanished, space did
+ * nothing; English letters and pinyin words arrived).
+ *
+ * Traced in the simulator with the 简体拼音 keyboard: every key of an
+ * input method's keyboard comes as `keydown` with keyCode 229, and a
+ * character it commits without composing — space, 「。」, 「，」 — lands
+ * as `insertText` **in a later task**:
+ *
+ *     keydown " " (229) · …next task… · beforeinput/input insertText " " · keyup
+ *
+ * xterm 6 drops it on both of its roads. Its 229 road diffs the textarea
+ * one `setTimeout(0)` after the keydown, finds nothing yet, and sends
+ * nothing; its `input` road takes an `insertText` only when no keydown is
+ * outstanding, and the keyup comes after. A pinyin word is fine: it
+ * arrives through `compositionend`, which xterm reads. A desktop input
+ * method lands the text before the diff runs, so this never showed off a
+ * phone.
+ *
+ * So this takes exactly that case: a 229 keydown outside a composition
+ * whose diff found the field unchanged (this timer is queued after
+ * xterm's own, so it runs after it), followed by an `insertText` before
+ * the keyup. Every other commit xterm already sends, and sending it here
+ * too would double it. Answers the undo.
+ */
+function keepLateCommits(term: Terminal): () => void {
+  const field = term.textarea;
+  if (!field) return () => {};
+  let missed = false;
+  let lifted = false;
+  let timer = 0;
+  const down = (e: KeyboardEvent) => {
+    missed = false;
+    lifted = false;
+    window.clearTimeout(timer);
+    if (e.keyCode !== 229 || e.isComposing) return;
+    const before = field.value;
+    timer = window.setTimeout(() => {
+      missed = field.value === before;
+    }, 0);
+  };
+  const up = () => {
+    lifted = true;
+  };
+  const input = (e: Event) => {
+    const ev = e as InputEvent;
+    if (!missed || lifted || ev.inputType !== "insertText" || !ev.data || ev.isComposing) return;
+    missed = false;
+    term.input(ev.data, true);
+  };
+  field.addEventListener("keydown", down, true);
+  field.addEventListener("keyup", up, true);
+  field.addEventListener("input", input, true);
+  return () => {
+    window.clearTimeout(timer);
+    field.removeEventListener("keydown", down, true);
+    field.removeEventListener("keyup", up, true);
+    field.removeEventListener("input", input, true);
+  };
+}
+
+/**
+ * **What is being composed stays on the screen** (2026-10-03). xterm draws
+ * the pinyin being typed at the cursor (`.composition-view`, one line, no
+ * wrap); near the right edge it ran past it, under the pane's clip, and
+ * the letters being chosen from could not be read. It is moved left just
+ * enough to end at the screen's edge — never past its left.
+ */
+function keepCompositionInView(term: Terminal): () => void {
+  const view = term.element?.querySelector<HTMLElement>(".composition-view");
+  const screen = term.element?.querySelector<HTMLElement>(".xterm-screen");
+  if (!view || !screen) return () => {};
+  const clamp = () => {
+    if (!view.classList.contains("active")) return;
+    const room = screen.clientWidth - view.offsetWidth;
+    const left = Number.parseFloat(view.style.left) || 0;
+    if (left > room) view.style.left = `${Math.max(0, room)}px`;
+  };
+  const watch = new MutationObserver(clamp);
+  watch.observe(view, { attributes: true, attributeFilter: ["style", "class"], childList: true, characterData: true, subtree: true });
+  return () => watch.disconnect();
+}
+
 /** A report xterm writes for the mouse (SGR `ESC [ <`, X10 `ESC [ M`) —
     not a key, so a latched Ctrl lets it through and keeps waiting. */
 const MOUSE_REPORT = /^\x1b\[(<|M)/;
 
-/** How long after a finger lands a focus still counts as that tap's —
-    WebKit synthesizes the mousedown xterm focuses on when the finger
-    lifts. */
-const TAP_MS = 1500;
+/** Travel past which a touch is a drag, not a tap. */
+const TAP_SLOP = 10;
 
 /**
- * **A tap raises the keyboard only if the person asked for that**
- * (2026-10-03, 外观 → 终端 「点击终端时弹出键盘」, `lib/term-tap`).
+ * **The terminal holds the focus; a tap raises the keyboard only if the
+ * person asked for that** (2026-10-03: 外观 → 终端 「点击终端时弹出键盘」,
+ * `lib/term-tap`; the focus model, `lib/soft-keyboard`).
  *
- * xterm focuses its textarea from its own mousedown handler, and WebKit
- * also focuses the textarea natively when a tap lands on it (it sits at
- * the cursor, invisible). Both are refused while the setting is off and
- * the textarea does not already have the focus: the first by this one
- * field's `focus` (a finger landed in the pane moments ago), the second
- * by cancelling the tap's end on the field itself. **Already focused is
- * left alone** — xterm's mousedown keeps the focus where it is, so a tap
- * with the keyboard up keeps it up. A pointer that is not a finger, and a
- * focus from anywhere else (the bar's keyboard switch, a key typed on a
- * Mac), go through as before.
+ * The field is focused whenever the page is open (`holdFocus`), with no
+ * keyboard under a finger. A tap — a touch that ends where it began — with
+ * the setting on raises the keyboard from inside the touch's end, which is
+ * a gesture iOS will show a keyboard for. With it off a tap neither raises
+ * nor drops anything: xterm's own mousedown focuses a field that is
+ * already focused. **If the focus leaves for nowhere** — the system put
+ * the keyboard away, or a tap blurred the field — it comes back without a
+ * keyboard, so a hardware keyboard keeps typing; a focus that went to
+ * another field (the find bar, a sheet) is left there.
  */
 function tapsAskFirst(term: Terminal, box: HTMLElement): () => void {
   const field = term.textarea;
   if (!field) return () => {};
-  let tapping = false;
-  let timer = 0;
-  const refuses = () => tapping && document.activeElement !== field && !tapRaisesKeyboard();
-  const landed = (e: PointerEvent) => {
-    if (e.pointerType !== "touch") return;
-    tapping = true;
-    window.clearTimeout(timer);
-    timer = window.setTimeout(() => (tapping = false), TAP_MS);
+  let startX = 0;
+  let startY = 0;
+  let still = false;
+  const began = (e: TouchEvent) => {
+    still = e.touches.length === 1;
+    startX = e.touches[0]?.clientX ?? 0;
+    startY = e.touches[0]?.clientY ?? 0;
   };
-  const elsewhere = (e: PointerEvent) => {
-    if (!(e.target instanceof Node) || !box.contains(e.target)) tapping = false;
+  const moved = (e: TouchEvent) => {
+    const t = e.touches[0];
+    if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > TAP_SLOP) still = false;
   };
-  const lifted = (e: TouchEvent) => {
-    if (e.target === field && refuses()) e.preventDefault();
+  const lifted = () => {
+    if (still && tapRaisesKeyboard() && !keyboardUp(field)) raiseKeyboard(field);
+    still = false;
   };
-  const own = field.focus.bind(field);
-  field.focus = (options?: FocusOptions) => {
-    if (!refuses()) own(options);
+  const left = (e: FocusEvent) => {
+    // A mouse's page keeps its own focus rules (`useKeysTo`).
+    if (e.relatedTarget || !window.matchMedia("(pointer: coarse)").matches) return;
+    window.setTimeout(() => {
+      const at = document.activeElement;
+      if (!field.isConnected || (at && at !== document.body)) return;
+      lowerKeyboard(field);
+    }, 0);
   };
-  box.addEventListener("pointerdown", landed, true);
-  document.addEventListener("pointerdown", elsewhere, true);
-  box.addEventListener("touchend", lifted, { capture: true, passive: false });
+  box.addEventListener("touchstart", began, { passive: true });
+  box.addEventListener("touchmove", moved, { passive: true });
+  box.addEventListener("touchend", lifted);
+  field.addEventListener("focusout", left);
   return () => {
-    window.clearTimeout(timer);
-    box.removeEventListener("pointerdown", landed, true);
-    document.removeEventListener("pointerdown", elsewhere, true);
-    box.removeEventListener("touchend", lifted, true);
-    delete (field as { focus?: unknown }).focus;
+    box.removeEventListener("touchstart", began);
+    box.removeEventListener("touchmove", moved);
+    box.removeEventListener("touchend", lifted);
+    field.removeEventListener("focusout", left);
   };
 }
 
@@ -451,11 +541,31 @@ function fingerScrolls(term: Terminal, box: HTMLElement): () => void {
   };
 }
 
+/** The open terminals' re-joins, by session (`reopenTerminal`). */
+const reopeners = new Map<string, () => Promise<void>>();
+
+/**
+ * **Join an open terminal again from scratch** — the reload circle's act
+ * (2026-10-03), for anything else that knows a terminal is stuck (the
+ * network lane's reconnect strip). Answers false when no pane has that
+ * session open; otherwise resolves once the join has answered, joined or
+ * not (a failed join says why in the pane).
+ */
+export async function reopenTerminal(id: string): Promise<boolean> {
+  const reopen = reopeners.get(id);
+  if (!reopen) return false;
+  await reopen();
+  return true;
+}
+
 export function TerminalPane({ id }: { id: string }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [gone, setGone] = useState(false);
+  // The reload circle's join in flight (`reopen`): its glyph turns.
+  const [joining, setJoining] = useState(false);
+  const reopenRef = useRef<(() => Promise<void>) | null>(null);
   // Why the terminal never opened, in khor's own words. **Not the same
   // fact as `gone`**: `gone` means the host this pane was watching
   // ended, and 这个终端结束了 is true of it; a failed open means there
@@ -501,16 +611,16 @@ export function TerminalPane({ id }: { id: string }) {
   // The bell's flash, and the timer that ends it.
   const [rang, setRang] = useState(false);
   const bellTimer = useRef(0);
-  // **Ctrl, latched from the key row** (`TermKeys`, 2026-10-02): it waits
-  // for the next key from either the row or the soft keyboard. A ref as
-  // well as state because the `onData` handler below reads it, and that
-  // handler is wired once per terminal.
+  // **Ctrl and Alt, latched from the key row** (`TermKeys`, 2026-10-02;
+  // Alt 2026-10-03): each waits for the next key from the row, its sheet
+  // or the soft keyboard. A ref as well as state because the `onData`
+  // handler below reads them, and that handler is wired once per terminal.
   const coarse = useCoarse();
-  const [ctrl, setCtrlShown] = useState(false);
-  const ctrlRef = useRef(false);
-  const latch = (on: boolean) => {
-    ctrlRef.current = on;
-    setCtrlShown(on);
+  const [mods, setModsShown] = useState<Mods>({ ctrl: false, alt: false });
+  const modsRef = useRef<Mods>({ ctrl: false, alt: false });
+  const latch = (m: Mods) => {
+    modsRef.current = m;
+    setModsShown(m);
   };
 
   useLayoutEffect(() => {
@@ -598,10 +708,19 @@ export function TerminalPane({ id }: { id: string }) {
       if (s) navigator.clipboard?.writeText(s).catch(() => {});
     });
     const shifted = keepShiftedCommits(term);
+    const late = keepLateCommits(term);
+    const composing = keepCompositionInView(term);
     const asks = tapsAskFirst(term, box);
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
+    // **The page opened, or this tab was chosen: the terminal has the
+    // keys** (2026-10-03, `lib/soft-keyboard`). Now, inside the press that
+    // opened it, so a keyboard that was up on this page stays up; under a
+    // finger without raising one otherwise.
+    const finger = window.matchMedia("(pointer: coarse)").matches;
+    if (term.textarea) holdFocus(term.textarea, finger);
+    const shown = terminalShown();
     // For the gates: the buffer is the screen, and reading it beats
     // scraping renderer DOM that webgl does not produce. Smoke reads
     // `document.querySelector('[data-terminal]').__xterm`.
@@ -611,10 +730,14 @@ export function TerminalPane({ id }: { id: string }) {
     let seq = 0;
     let timer = 0;
     let busy = false;
+    // Which join the screen belongs to (`reopen`): a beat that was in
+    // flight across a re-join writes nothing.
+    let generation = 0;
     const tick = async () => {
+      const mine = generation;
       try {
         const b = await termStream(id, seq);
-        if (stopped) return;
+        if (stopped || mine !== generation) return;
         // The feed trimmed past our place (a long time hidden): start
         // the screen over from what the node still holds, rather than
         // writing a stream whose head is missing.
@@ -649,28 +772,66 @@ export function TerminalPane({ id }: { id: string }) {
       void loop();
     };
 
-    setOpening(true);
-    termOpen(id, term.cols, term.rows)
-      .then(() => termAttach(id))
-      .then((a) => {
-        if (stopped) return;
-        setOpening(false);
-        // Everything the feed holds — it began with the host's ring
-        // dump, so the screen arrives *with its history*, the same
-        // replay the host gives any attacher.
-        if (a.bytes) term.write(b64bytes(a.bytes));
-        seq = a.seq;
-        // Wired only now: a resize racing the open would size a pty
-        // the open is about to size again.
-        term.onResize(({ cols, rows }) => {
-          termResize(id, cols, rows).catch(() => {});
+    let resizing: { dispose(): void } | null = null;
+    /** Opens the session and takes its screen. **Again** is `reopen`
+        (2026-10-03, the owner: 「term 得有个刷新键…因为有时候会卡住」):
+        this face leaves first, the screen is dropped, and the session is
+        joined from scratch — the screen and the history the host keeps
+        come back as any new attacher gets them. A join that fails says
+        why in the pane, as a first join does, and can be pressed again. */
+    const join = (again: boolean): Promise<void> => {
+      const mine = ++generation;
+      window.clearTimeout(timer);
+      if (again) setJoining(true);
+      const opened = again
+        ? termLeave(id)
+            .catch(() => {})
+            .then(() => termOpen(id, term.cols, term.rows))
+        : termOpen(id, term.cols, term.rows);
+      return opened
+        .then(() => termAttach(id))
+        .then((a) => {
+          if (stopped || mine !== generation) return;
+          setOpening(false);
+          setJoining(false);
+          setWhy(null);
+          setGone(false);
+          if (again) term.reset();
+          // Everything the feed holds — it began with the host's ring
+          // dump, so the screen arrives *with its history*, the same
+          // replay the host gives any attacher.
+          if (a.bytes) term.write(b64bytes(a.bytes));
+          seq = a.seq;
+          // Wired only now: a resize racing the open would size a pty
+          // the open is about to size again.
+          resizing ??= term.onResize(({ cols, rows }) => {
+            termResize(id, cols, rows).catch(() => {});
+          });
+          if (again) {
+            fit.fit();
+            termResize(id, term.cols, term.rows).catch(() => {});
+            term.scrollToBottom();
+            // A reload keeps the terminal the focus, and the keyboard as
+            // it was.
+            if (term.textarea) holdFocus(term.textarea, finger);
+          }
+          void loop();
+        })
+        .catch((e: unknown) => {
+          if (stopped || mine !== generation) return;
+          setOpening(false);
+          setJoining(false);
+          setWhy(String((e as { message?: string })?.message ?? e));
         });
-        void loop();
-      })
-      .catch((e: unknown) => {
-        setOpening(false);
-        setWhy(String((e as { message?: string })?.message ?? e));
-      });
+    };
+    const reopenHere = () => join(true);
+    reopenRef.current = reopenHere;
+    // For the gates, as `__xterm` is.
+    (box as HTMLDivElement & { __reopen?: () => Promise<void> }).__reopen = reopenHere;
+    reopeners.set(id, reopenHere);
+
+    setOpening(true);
+    void join(false);
 
     // Keys travel whole: xterm encodes every key, modifier, mouse
     // report and (bracketed, when the program asked) paste into the
@@ -678,15 +839,16 @@ export function TerminalPane({ id }: { id: string }) {
     // as ever. The immediate re-poll is what makes echo feel wired
     // rather than polled.
     //
-    // A latched Ctrl (`TermKeys`) takes the next key xterm hands out — a
+    // The latches (`TermKeys`) take the next key xterm hands out — a
     // character typed on the soft keyboard becomes its control form (C →
-    // 0x03) — and lets go; a mouse report passes and leaves it waiting.
+    // 0x03) and, for Alt, gets an ESC before it — and let go; a mouse
+    // report passes and leaves them waiting.
     const data = term.onData((d) => {
       let out = d;
-      if (ctrlRef.current && !MOUSE_REPORT.test(d)) {
-        out = ctrlOf(d) ?? d;
-        ctrlRef.current = false;
-        setCtrlShown(false);
+      const m = modsRef.current;
+      if ((m.ctrl || m.alt) && !MOUSE_REPORT.test(d)) {
+        out = d.length === 1 ? typed(d, m) : d;
+        latch({ ctrl: false, alt: false });
       }
       termKey(id, out)
         .then(() => pollNow.current())
@@ -760,8 +922,14 @@ export function TerminalPane({ id }: { id: string }) {
       rung.dispose();
       selected.dispose();
       shifted();
+      late();
+      composing();
       asks();
+      shown();
       window.clearTimeout(bellTimer.current);
+      resizing?.dispose();
+      reopenRef.current = null;
+      if (reopeners.get(id) === reopenHere) reopeners.delete(id);
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
@@ -1030,13 +1198,29 @@ export function TerminalPane({ id }: { id: string }) {
         they go to the session bar (row 2, and row 1's right end); where
         there is no bar — the wide face on an iPad — the row stands here,
         under the screen, and the switch is not drawn. */}
+    {/* **Reload, right of ‹** (2026-10-03, the owner: 「term 得有个刷新键，
+        可以在返回键右侧，点击后刷新这个终端，因为有时候会卡住」): joins the
+        session again from scratch (`reopen`). On the wide face it stands
+        at the end of the tab strip, among the page's verbs. While it
+        joins the glyph turns and nothing else changes; it stays pressable. */}
+    <BarSeat at="lead">
+      <GlassCircle
+        data-term-reload
+        data-joining={joining || undefined}
+        aria-label={gui.term_reload}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => void reopenRef.current?.()}
+      >
+        <IconReload className={cn(joining && "animate-spin motion-reduce:animate-none")} />
+      </GlassCircle>
+    </BarSeat>
     {coarse && (
       <>
         <BarSeat at="trail">
           <KeyboardSwitch field={keysRef} />
         </BarSeat>
         <BarSeat at="under">
-          <TermKeys term={termRef} ctrl={ctrl} onCtrl={latch} />
+          <TermKeys term={termRef} mods={mods} onMods={latch} />
         </BarSeat>
       </>
     )}

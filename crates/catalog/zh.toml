@@ -3363,6 +3363,18 @@ key-paste = "粘贴"
 # The cursor key at the row's end (2026-10-03): one key, dragged like a
 # trackpad, in place of the four arrows.
 key-cursor = "光标"
+# The row's 「…」 (2026-10-03): every key, in four groups, and the row's
+# editor. Alt is a latch like Ctrl; its cap is the key's printed name.
+key-alt = "Alt"
+key-more = "更多按键"
+keys-group-move = "移动"
+keys-group-mod = "修饰"
+keys-group-symbol = "符号"
+keys-group-function = "功能键"
+keys-edit-row = "编辑这一行"
+term-key-row = "终端键行"
+# The terminal's reload circle beside ‹: join the session again.
+term-reload = "刷新"
 # The browsing landing's three page controls. **They are not the rail's
 # 「返回」**: that one leaves a screen, these move one page's history —
 # same word in English, two different acts, so they get their own.
@@ -4377,6 +4389,7 @@ paste = "粘贴"
 select-all = "全选"
 view = "显示"
 find = "搜索"
+reload-term = "刷新终端"
 fullscreen = "进入全屏幕"
 # ⌃⌘S (显示 › 隐藏边栏, the audit fix plan F6.7): the word says what
 # pressing it does, so it follows the list — hidden, it offers to show.

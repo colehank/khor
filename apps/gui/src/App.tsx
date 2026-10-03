@@ -116,7 +116,7 @@ import { WINDOW_DRAG } from "@/components/shell";
 import { useKeptScroll } from "@/hooks/use-kept-scroll";
 import { useEdgeSwipe } from "@/hooks/use-edge-swipe";
 import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
-import { SessionScreen } from "@/components/SessionBar";
+import { SessionScreen, VerbSeat } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
@@ -1385,6 +1385,8 @@ export default function App() {
   // box by its screen, and a replaced node must re-aim the measurement
   // (`useStripWidth` says what the band looked like when it did not).
   const [detailBox, setDetailBox] = useState<HTMLDivElement | null>(null);
+  /** Where the open session puts its verbs on the wide face (`VerbSeat`). */
+  const [verbSeat, setVerbSeat] = useState<HTMLElement | null>(null);
   const days = useDayStrips(useStripWidth(detailBox, sessions));
   /** One session's day as the pane holds it (`DayStrip` `Day`): `null`
       until the first answer, then its runs. */
@@ -2682,6 +2684,7 @@ export default function App() {
                   grow to its whole file and never scroll. */}
               <div ref={setDetailBox} className="flex min-h-0 min-w-0 flex-1 flex-col">
                 {sessions && openTabs.length > 0 ? (
+                  <VerbSeat.Provider value={verbSeat}>
                   <Tabs
                     glass
                     faces={tabFaces}
@@ -2695,9 +2698,13 @@ export default function App() {
                     // 过期 / 离线 on B's R0: after the strip, which then
                     // compresses its tabs into what is left.
                     caption={stale ? gui.backend_unreachable : undefined}
+                    // The open session's verbs at the strip's end (the
+                    // terminal's reload, `BarSeat` `lead`).
+                    tail={<span ref={setVerbSeat} data-session-verbs className="flex flex-none items-center gap-in empty:hidden" />}
                   >
                     {detail}
                   </Tabs>
+                  </VerbSeat.Provider>
                 ) : (
                   // **Every other page is 详情 (A)** — pick one, see it:
                   // R0 is `PageHead`, the picked thing's name or, with
