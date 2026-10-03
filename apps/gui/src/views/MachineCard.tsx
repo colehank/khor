@@ -4095,6 +4095,7 @@ function Dial({
               fraction={unknown ? null : fraction}
               strain={strain}
               pips={pips}
+              joinPips
               unknown={unknown}
               size={size}
               stroke={stroke}

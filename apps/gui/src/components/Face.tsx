@@ -53,6 +53,11 @@ export function snapType(px: number): number {
     bottom — a gauge, not a pie. 0° is three o'clock. */
 export const ARC0 = -195;
 export const SPAN = 210;
+/** How close along the rim two parts' marks may stand before they are
+    drawn as one (P8). Measured, not guessed: at 10.5° (88% and 93%) two
+    ticks and the span between them still read as one bracket glyph
+    beside the arc's end; from about 15° (7 points) they read as two. */
+const MERGE_DEG = 15;
 
 const D2R = Math.PI / 180;
 const pol = (cx: number, cy: number, r: number, deg: number): [number, number] => [
@@ -468,12 +473,18 @@ export function Face({
   fraction,
   strain,
   pips,
+  joinPips = false,
   unknown,
   ratio = BOX_RATIO,
   crop = false,
   fluid = false,
   children,
 }: {
+  /** Join marks closer than `MERGE_DEG` into one (P8) — a machine's
+      parts, which are many and often alike. **Not the 额度 windows**:
+      there the rim carries exactly one mark per window, overlapping or
+      not (the owner's counting rule, `QuotaLanding`). */
+  joinPips?: boolean;
   size: number;
   stroke: number;
   /** `null` draws the track alone: a full sweep would read as 100% and
@@ -589,6 +600,28 @@ export function Face({
   const boxH = crop ? croppedHeight(S, stroke) : S;
   const marks = (pips ?? []).filter((p): p is Pip & { v: number } => p.v !== null);
   const vals = marks.map((p) => p.v);
+  // **Parts within a few degrees are one mark** (P8, 2026-10-03, the
+  // owner's ruling): three volumes at 83, 87 and 95% drew three ticks and
+  // the span between them in nine degrees of rim, a knot that read as a
+  // glitch. Neighbours closer than `MERGE_DEG` along the rim join; the
+  // joined mark stands at their middle, wears strain if any of them
+  // does, and names them all in its title. The span is drawn only
+  // between marks that stayed apart.
+  const joined = (() => {
+    const out: { v: number; words: string[]; vs: number[]; strain: boolean }[] = [];
+    for (const p of [...marks].sort((a, b) => a.v - b.v)) {
+      const last = out[out.length - 1];
+      if (joinPips && last && ((p.v - last.vs[last.vs.length - 1]) / 100) * SPAN < MERGE_DEG) {
+        last.vs.push(p.v);
+        last.words.push(`${p.word} ${Math.round(p.v)}%`);
+        last.strain ||= !!p.strain;
+        last.v = (last.vs[0] + last.vs[last.vs.length - 1]) / 2;
+      } else {
+        out.push({ v: p.v, vs: [p.v], words: [`${p.word} ${Math.round(p.v)}%`], strain: !!p.strain });
+      }
+    }
+    return out;
+  })();
   const color = gaugeColor(strain);
   const svg = (
     <svg
@@ -631,7 +664,7 @@ export function Face({
       })}
       {/* How far the parts are spread, as a length. Only with two or
           more to span between. */}
-      {vals.length > 1 && (
+      {joined.length > 1 && (
         <path
           data-dial-span
           d={arc(
@@ -647,15 +680,16 @@ export function Face({
           strokeWidth={1}
         />
       )}
-      {marks.map((p, i) => {
+      {joined.map((p, i) => {
         const a = ang(p.v / 100);
         const [x1, y1] = pol(cx, cy, R + stroke / 2 + 2 * k, a);
         const [x2, y2] = pol(cx, cy, R + stroke / 2 + 9 * k, a);
         return (
           <line
             key={i}
-            data-dial-pip={p.word}
+            data-dial-pip={p.words.join(" · ")}
             data-dial-pip-at={Math.round(p.v)}
+            data-dial-pips={p.vs.length > 1 ? p.vs.length : undefined}
             x1={x1}
             y1={y1}
             x2={x2}
@@ -670,7 +704,7 @@ export function Face({
             strokeWidth={1.7 * Math.max(0.7, k)}
             strokeLinecap="round"
           >
-            <title>{`${p.word} ${Math.round(p.v)}%`}</title>
+            <title>{p.words.join("\n")}</title>
           </line>
         );
       })}
