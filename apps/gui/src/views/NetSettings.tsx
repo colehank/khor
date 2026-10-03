@@ -37,8 +37,9 @@
 // connecting the two.
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchRelays, setRelays, type RelayChoices, type RelayWant } from "@/api";
+import { fetchRelays, setPreferredRelay, setRelays, type RelayChoices, type RelayWant } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
+import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -116,6 +117,32 @@ export function NetSettings() {
               ))}
             </span>
           </MoreFact>
+
+          {/* 首选中继 (round NET-2): which of the relays in use this
+              machine homes on whenever it is reachable — 自动 is iroh's
+              own choice, the nearest. The system's menu, like every
+              choice of one among a few. Drawn only with more than one
+              relay in use: with one there is nothing to prefer. */}
+          {choices.in_use.length > 1 && (
+            <PopupRow
+              name="relays-preferred"
+              label={gui.relays_preferred}
+              hint={gui.relays_preferred_note}
+              value={choices.preferred ?? ""}
+              choices={[
+                { value: "", label: gui.relays_preferred_auto },
+                ...choices.in_use.map((url) => ({ value: url, label: url })),
+              ]}
+              onPick={(v) => {
+                setError(null);
+                setPreferredRelay(v || null)
+                  .then(fetchRelays)
+                  .then(setChoices)
+                  .catch((e: unknown) => setError(String(e instanceof Error ? e.message : e)));
+              }}
+              mark={{ "data-relays-preferred": choices.preferred ?? "" }}
+            />
+          )}
 
           {/* 自己的中继: the row that adds one (its act asks for the
               address, so it opens a window and wears the ellipsis —

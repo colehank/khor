@@ -295,6 +295,46 @@ pub struct WireCounts {
     pub by_peer: Vec<(String, u64, u64)>,
 }
 
+/// **This machine's connections, as a page shows them** (round NET-2,
+/// 更多 → 网络 → 连接): where it is homed, how far each relay is, and
+/// per machine the road, the round trip, the last time it was heard and
+/// the last thing that went wrong — the doctor's account, in rows a
+/// person can screenshot from a phone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConnectionsView {
+    /// The relay this machine is homed on — where others find it.
+    pub home_relay: Option<String>,
+    pub home_connected: bool,
+    /// The home relay's last connection error, when it has one.
+    pub home_error: Option<String>,
+    /// The relay the person asked to home on (首选中继), if any.
+    pub preferred_relay: Option<String>,
+    pub relays: Vec<RelayReading>,
+    pub peers: Vec<PeerConnection>,
+}
+
+/// One relay and a measured round trip to it (`None`: no answer).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayReading {
+    pub url: String,
+    pub rtt_ms: Option<u64>,
+}
+
+/// One machine's connection, with what went wrong last.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerConnection {
+    pub id: String,
+    pub hop: Hop,
+    pub heard_ms: Option<u64>,
+    /// The held wire's smoothed round trip, when one is held.
+    pub rtt_ms: Option<u64>,
+    /// The last failure, in khor's own words, and how long ago.
+    pub last_failure: Option<String>,
+    pub failure_ago_ms: Option<u64>,
+    pub failed: u64,
+    pub unanswered: u64,
+}
+
 /// **How this machine's recent dials to another one went** (docs/
 /// CONNECT.md 度量与验收: 首包时间、直连占比).
 ///

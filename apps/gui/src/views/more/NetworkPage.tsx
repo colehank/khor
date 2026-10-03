@@ -52,6 +52,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { cli, gui, msg } from "@/gen/catalog";
 import { hopWord } from "@/words";
+import { ConnectionsSection } from "@/views/ConnectionsSection";
 import { NetSettings } from "@/views/NetSettings";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
 
@@ -221,6 +222,11 @@ export function NetworkPage({
           />
         )}
       </MoreSection>
+
+      {/* 连接 — how this machine is connected, machine by machine
+          (round NET-2): the doctor's account as rows. Not on a machine
+          in no network: there is nothing to be connected to. */}
+      {!alone && <ConnectionsSection />}
 
       {/* 中继 — what 高级 held until 2026-09-28, open now: see
           `NetSettings` for why it is read on arrival. */}

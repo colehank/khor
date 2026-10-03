@@ -812,6 +812,8 @@ pub(crate) struct RelayPlan {
     /// Use `mine` (and `KHOR_RELAY`) **instead of** the Khor tier,
     /// rather than alongside it.
     pub(crate) only_mine: bool,
+    /// The relay to home on when reachable (首选中继), by url.
+    pub(crate) preferred: Option<String>,
 }
 
 /// Reads the relay file, or gives an empty plan.
@@ -879,7 +881,17 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
             .get("only_mine")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
-    RelayPlan { mine, only_mine }
+    let preferred = doc
+        .get("preferred")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|u| u.parse::<iroh::RelayUrl>().is_ok())
+        .map(str::to_owned);
+    RelayPlan {
+        mine,
+        only_mine,
+        preferred,
+    }
 }
 
 /// Every relay a node on this home should bind with, keys included.
@@ -1255,7 +1267,12 @@ impl Node {
                 None => serde_json::json!({ "url": r.url }),
             })
             .collect();
-        let doc = serde_json::json!({ "relays": rows, "only_mine": only_mine });
+        // The preference survives an edit of the list while its relay is
+        // still on it (`Node::set_preferred_relay`).
+        let preferred = chosen_relays(&self.root).preferred.filter(|p| {
+            kept.iter().any(|k| k.url == *p) || khor_net::endpoint::configured_relays().iter().any(|k| k.url == *p)
+        });
+        let doc = serde_json::json!({ "relays": rows, "only_mine": only_mine, "preferred": preferred });
         // 0600, beside the identity key: the keys in it are shared
         // secrets, and the file is the only place they are kept.
         link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())?;
@@ -1264,6 +1281,30 @@ impl Node {
             .into_iter()
             .map(|r| r.url)
             .collect())
+    }
+
+    /// **首选中继**: the relay this machine homes on whenever it is
+    /// reachable, or `None` for iroh's own choice (the nearest). Must be
+    /// one of the relays this machine binds with. Takes effect on the next
+    /// bind — the resident's next fresh ears, or its restart.
+    pub fn set_preferred_relay(&self, url: Option<&str>) -> Result<(), String> {
+        let url = url.map(str::trim).filter(|u| !u.is_empty());
+        if let Some(u) = url
+            && !self.relays().iter().any(|r| r == u)
+        {
+            return Err(msg::preferred_not_a_relay(u));
+        }
+        let mut doc: serde_json::Value = fs::read_to_string(relay_prefs_path(&self.root))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        doc["preferred"] = url.map_or(serde_json::Value::Null, |u| serde_json::json!(u));
+        link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())
+    }
+
+    /// The relay this machine prefers to home on (首选中继), if any.
+    pub fn preferred_relay(&self) -> Option<String> {
+        chosen_relays(&self.root).preferred
     }
 
     /// Changes the axes it is handed and leaves the rest where they are

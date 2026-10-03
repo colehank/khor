@@ -95,3 +95,10 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSValue", "NSError", "NSUUID"] }
 objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "UIDevice"] }
 dispatch2 = "0.3"
+
+[dev-dependencies]
+# The tests' own relay (`tests/util`'s `hermetic`): iroh-relay's server
+# in plain HTTP on loopback, the one `khor relay --dev` embeds — already
+# in the tree under the CLI, so no new package. Every scratch home binds
+# with it and nothing else, so a test touches no real relay.
+iroh-relay = { version = "1.2.0", features = ["server"] }

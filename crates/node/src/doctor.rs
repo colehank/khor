@@ -948,6 +948,31 @@ pub fn store_bytes(root: &Path) -> u64 {
 /// proxy's detour, not the relay. Its clock is a little short of the
 /// row's, so a silent relay is named as silent rather than timing the
 /// whole row out.
+/// **One round trip to a relay**, not its handshakes: one GET to warm the
+/// connection (DNS, TCP, TLS), then a second on the same connection,
+/// timed. `relay_rtt` below times the first, which is what a person
+/// waits for on a cold start but reads as a round trip it is not — the
+/// owner's Hong Kong relay read 2040 ms that way while its round trip
+/// through his proxy was a fraction of it. Same proxy rule as iroh's own
+/// relay connection (environment only). `None` when it did not answer
+/// within three seconds.
+pub(crate) async fn relay_round_trip(url: &str) -> Option<u64> {
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3));
+    let from_env = ["HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"]
+        .into_iter()
+        .find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()));
+    if let Some(proxy) = from_env.and_then(|v| reqwest::Proxy::all(v).ok()) {
+        builder = builder.proxy(proxy);
+    }
+    let client = builder.build().ok()?;
+    client.get(url).send().await.ok()?.bytes().await.ok()?;
+    let started = Instant::now();
+    client.get(url).send().await.ok()?.bytes().await.ok()?;
+    u64::try_from(started.elapsed().as_millis()).ok()
+}
+
 async fn relay_rtt(url: &str) -> Option<u128> {
     let mut builder = reqwest::Client::builder()
         .no_proxy()

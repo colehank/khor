@@ -261,6 +261,9 @@ fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup) {
     });
 }
 
+/// The environment switch that binds with relays only ([`builder`]).
+pub const RELAY_ONLY_ENV: &str = "KHOR_RELAY_ONLY";
+
 /// Binds this machine's endpoint. One live endpoint per key — a second
 /// bind with the same key knocks the first off the relay, and both stop
 /// working (learned in production).
@@ -300,7 +303,30 @@ pub async fn bind_with(
     relays: &[Relay],
     n0: bool,
 ) -> Result<iroh::Endpoint> {
-    Ok(builder(secret, relays, n0)?.bind().await?)
+    bind_preferring(secret, relays, n0, None).await
+}
+
+/// [`bind_with`], **homing on `preferred` whenever it is reachable** —
+/// the person's 首选中继 (设置 → 网络). iroh otherwise homes on the relay
+/// with the lowest recent latency, and switches only when another is a
+/// third faster (`net_report.rs`); the preference is a vendored patch
+/// (`vendor/iroh/KHOR.md`, patch 3) because iroh 1.2 has no knob for it.
+/// Unreachable, it is ignored and iroh chooses as before: a preference is
+/// never a reason to have no home.
+pub async fn bind_preferring(
+    secret: iroh::SecretKey,
+    relays: &[Relay],
+    n0: bool,
+    preferred: Option<&str>,
+) -> Result<iroh::Endpoint> {
+    let mut b = builder(secret, relays, n0)?;
+    if let Some(url) = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok()) {
+        // `NetReportConfig` is non-exhaustive: built, then set.
+        let mut config = iroh::endpoint::NetReportConfig::default();
+        config.preferred_relay = Some(url);
+        b = b.net_report_config(config);
+    }
+    Ok(b.bind().await?)
 }
 
 /// Everything [`bind`] configures, short of binding — split out so the
@@ -375,6 +401,14 @@ fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::
     let map = full_relay_map(relays, n0);
     if !map.is_empty() {
         builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(map));
+    }
+    // **`KHOR_RELAY_ONLY`: no direct road at all**, every byte through a
+    // relay — the network a phone on carrier NAT often has, made on
+    // purpose. A diagnostic and the tests' way to put a slow relay
+    // between two nodes on one machine (`crates/cli/tests/slow_relay.rs`),
+    // where loopback would otherwise always go direct. Never set by khor.
+    if std::env::var_os(RELAY_ONLY_ENV).is_some() {
+        builder = builder.clear_ip_transports();
     }
     Ok(builder)
 }

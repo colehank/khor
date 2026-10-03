@@ -217,6 +217,9 @@ struct Chat {
     conn: Mutex<TcpStream>,
     frames: Mutex<Frames>,
     gone: AtomicBool,
+    /// Woken whenever a frame lands, the attachment is made again or
+    /// ends: what a held [`chat_wait`] waits on.
+    arrived: tokio::sync::Notify,
     /// How many opens hold this attachment. React mounts an effect,
     /// cleans it up, and mounts again — two holders of one id, in an
     /// order the wire does not preserve; without the count, whichever
@@ -335,6 +338,7 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         conn: Mutex::new(conn),
         frames: Mutex::new(Frames::default()),
         gone: AtomicBool::new(false),
+        arrived: tokio::sync::Notify::new(),
         holds: AtomicUsize::new(1),
         left: AtomicBool::new(false),
     });
@@ -346,6 +350,7 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
             while let Ok(note) = read_frame::<GuiNote>(&mut reading) {
                 let over = matches!(note, GuiNote::Gone);
                 reader.frames.lock().unwrap().push(frame_of(note));
+                reader.arrived.notify_waiters();
                 if over {
                     said_goodbye = true;
                     break;
@@ -370,10 +375,12 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
             // seeing `lost` goes down the new attachment.
             *reader.conn.lock().unwrap() = conn;
             reader.frames.lock().unwrap().restart();
+            reader.arrived.notify_waiters();
             reading = again;
         }
         // A goodbye and a torn connection land the same way (ChatBatch).
         reader.gone.store(true, Ordering::Relaxed);
+        reader.arrived.notify_waiters();
     });
     registry.insert(id.to_owned(), chat);
     Ok(true)
@@ -438,6 +445,31 @@ pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
         gone: chat.gone.load(Ordering::Relaxed),
         lost,
     })
+}
+
+/// [`chat_poll`], **held open until a frame lands** (or the attachment
+/// is made again, or ends), and at the latest after `longest` with
+/// nothing new — the terminal's [`crate::term::term_wait`], for a
+/// conversation (round NET-2, piece 6).
+///
+/// ⚠️ 墓碑: the face asked `chat_poll` every 50 ms through a turn and
+/// every 500 ms between, so a frame that had already crossed the network
+/// waited on average half a beat more. The app's face holds one of these
+/// open at a time instead; the bridge answers one request at a time, so
+/// the browser face keeps the beat.
+pub async fn chat_wait(id: &str, since: u64, longest: std::time::Duration) -> Result<ChatBatch, String> {
+    let chat = chat_of(id)?;
+    let woke = chat.arrived.notified();
+    tokio::pin!(woke);
+    woke.as_mut().enable();
+    let next = {
+        let frames = chat.frames.lock().unwrap();
+        frames.dropped + frames.held.len() as u64
+    };
+    if next == since && !chat.gone.load(Ordering::Relaxed) {
+        let _ = tokio::time::timeout(longest, woke).await;
+    }
+    chat_poll(id, since)
 }
 
 /// One user turn.
@@ -851,5 +883,54 @@ mod old_host_tests {
         ));
         assert!(matches!(over_the_wire(&OldNote::Refused { why: "no-turn".into() }), ChatFrame::Refused { .. }));
         assert!(matches!(over_the_wire(&OldNote::Gone), ChatFrame::Gone));
+    }
+}
+
+#[cfg(test)]
+mod wait_tests {
+    use super::*;
+
+    /// **A held wait answers when the frame lands, not on a beat.**
+    #[tokio::test]
+    async fn a_wait_answers_when_a_frame_arrives() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let conn = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let chat = Arc::new(Chat {
+            conn: Mutex::new(conn),
+            frames: Mutex::new(Frames::default()),
+            gone: AtomicBool::new(false),
+            arrived: tokio::sync::Notify::new(),
+            holds: AtomicUsize::new(1),
+            left: AtomicBool::new(false),
+        });
+        let id = format!("chat-wait-{}", std::process::id());
+        chats().lock().unwrap().insert(id.clone(), chat.clone());
+
+        let mut lags = Vec::new();
+        for n in 0..20u64 {
+            let feeder = chat.clone();
+            let arrives = std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                let at = std::time::Instant::now();
+                feeder.frames.lock().unwrap().push(ChatFrame::Turning);
+                feeder.arrived.notify_waiters();
+                at
+            });
+            let batch = chat_wait(&id, n, std::time::Duration::from_secs(2)).await.unwrap();
+            let answered = std::time::Instant::now();
+            let at = arrives.join().unwrap();
+            assert_eq!((batch.frames.len(), batch.next), (1, n + 1));
+            lags.push(answered.duration_since(at));
+        }
+        lags.sort();
+        let median = lags[lags.len() / 2];
+        eprintln!("[chat-wait] arrival -> answer median {median:?}, worst {:?} (the beat it replaces: 0-50 ms in a turn, 0-500 between)", lags[lags.len() - 1]);
+        assert!(median < std::time::Duration::from_millis(5), "{lags:?}");
+
+        // Nothing new: it waits, then answers with nothing.
+        let began = std::time::Instant::now();
+        let batch = chat_wait(&id, 20, std::time::Duration::from_millis(200)).await.unwrap();
+        assert!(batch.frames.is_empty() && began.elapsed() >= std::time::Duration::from_millis(190));
+        chats().lock().unwrap().remove(&id);
     }
 }

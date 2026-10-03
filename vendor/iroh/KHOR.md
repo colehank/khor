@@ -12,7 +12,18 @@
 
 ## 补丁
 
-两处，各一个文件。
+三处，各一个文件。
+
+### 3. `src/net_report.rs`：首选中继（2026-10-03，NET-2 轮，负责人批）
+
+`NetReportConfig` 多一个 `preferred_relay: Option<RelayUrl>`；`Client` 存下它；
+`add_report_history_and_set_preferred_relay` 最后加一段：这一轮报告量到了它（`relay_latency`
+里有它，即答上了），就把 `preferred_relay` 定成它——家中继于是住在它上面。量不到时照 iroh 原来
+的选法（最近 5 分钟延迟最低、新的要快过旧的三分之一才换）。iroh 1.2 没有选家中继的旋钮，只有
+这个函数决定家，所以只能补在这里；改动 15 行。khor 这边经 `endpoint::bind_preferring` 传进来，
+值来自 `.khor/relays.json` 的 `preferred`（设置 → 网络 → 中继 → 首选中继）。
+测试：`crates/cli/tests/slow_relay.rs` 的 `a_preferred_relay_is_home_while_it_answers`（两台本机
+回环中继，偏好远的那台就住远的，远的那台没了就回到近的）。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 2. `src/util.rs`：探测的 HTTP 客户端不读系统代理（2026-10-01，负责人定）
 

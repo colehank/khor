@@ -208,6 +208,8 @@ pub async fn serve_stream(
 /// `tcp` always feeds `send`, whether `tcp` is the target (exit side) or
 /// the browser (proxy side) — the roles are symmetric.
 async fn splice(mut send: SendStream, mut recv: RecvStream, tcp: tokio::net::TcpStream) {
+    // A terminal's keystroke is one small write: never held for an ack.
+    let _ = tcp.set_nodelay(true);
     let (mut tr, mut tw) = tcp.into_split();
     let up = async {
         let _ = tokio::io::copy(&mut recv, &mut tw).await;

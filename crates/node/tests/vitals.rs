@@ -7,6 +7,8 @@
 //! are the assertion: sampling blocks, and a sample taken on the reactor
 //! stalls the very connection its answer travels on.
 
+mod util;
+
 use std::path::Path;
 use std::time::Duration;
 
@@ -39,6 +41,7 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-vitals-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
+    util::hermetic(&p);
     Scratch(p)
 }
 

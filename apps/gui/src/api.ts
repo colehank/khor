@@ -11,6 +11,7 @@ import { gui, msg } from "./gen/catalog";
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
 import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
+import type { Connections } from "./gen/bindings/Connections";
 import type { TabRow } from "./gen/bindings/TabRow";
 import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
@@ -94,6 +95,7 @@ export type {
   RelayChoices,
   RelayWant,
   RoadShare,
+  Connections,
   HooksState,
   Ticket,
   LeaveOutcome,
@@ -873,6 +875,11 @@ export const setRelays = (relays: RelayWant[], onlyMine: boolean) =>
 /** 直连占比: of the resident's recent dials that settled, how many went
     direct. `unread` says why there is no reading when there is none. */
 export const fetchRoadShare = () => call<RoadShare>("road_share");
+/** The 网络 page's 连接 group: home relay, relay round trips, and per
+    machine its road, round trip, age and last failure (round NET-2). */
+export const fetchConnections = () => call<Connections>("connections");
+/** 首选中继, or `null` for the nearest. */
+export const setPreferredRelay = (url: string | null) => call<null>("set_preferred_relay", { url });
 /** Whether claude on **this** machine is set up to tell khor what it is
     doing. No machine argument on any of these three: the settings file
     is rooted at this node's own vendor home, so there is nothing to
@@ -1127,6 +1134,10 @@ export const chatSetOption = (id: string, option: string, value: string | boolea
   call<null>("chat_set_option", { id, option, value });
 export const chatPoll = (id: string, since: number) =>
   call<ChatBatch>("chat_poll", { id, since });
+/** `chatPoll`, held open until a frame lands past `since` (or `ms`
+    passes) — `termWait`'s twin, and the app's only for its reason. */
+export const chatWait = (id: string, since: number, ms: number) =>
+  call<ChatBatch>("chat_wait", { id, since, ms });
 /** One user turn. `images` are `[mime, base64]` pairs and are only ever
     non-empty when the agent said it takes them (`ChatFrame::Agent`'s
     `images`) — the host puts them on a different op (`GuiOp::SayWith`),
@@ -1593,6 +1604,12 @@ export const termOpen = (id: string, cols: number, rows: number) =>
 export const termAttach = (id: string) => call<TermStart>("term_attach", { id });
 export const termStream = (id: string, since: number) =>
   call<TermChunk>("term_stream", { id, since });
+/** `termStream`, held open until the feed grows past `since` (or `ms`
+    passes): output arrives the moment it is there instead of on the next
+    beat. The app's only — the bridge and the web face answer one request
+    at a time, so there it is the stream's answer as it stands. */
+export const termWait = (id: string, since: number, ms: number) =>
+  call<TermChunk>("term_wait", { id, since, ms });
 /** Keystrokes as the bytes a terminal sends — xterm encodes every key,
     modifier, mouse report and paste; the backend stays a pipe. */
 export const termKey = (id: string, keys: string) => call<null>("term_key", { id, keys });

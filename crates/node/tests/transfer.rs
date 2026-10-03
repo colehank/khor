@@ -3,6 +3,8 @@
 //! partial resumes instead of restarting, and the digest is the last
 //! word — with controls, every await under a timeout.
 
+mod util;
+
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -39,6 +41,7 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-xfer-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
+    util::hermetic(&p);
     Scratch(p)
 }
 

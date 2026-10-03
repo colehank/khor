@@ -192,6 +192,9 @@ pub struct RelayChoices {
     /// `KHOR_RELAY`) — which is the only way the screen can show that
     /// the switch did something.
     pub only_mine: bool,
+    /// 首选中继: the relay this machine homes on when reachable, or
+    /// `None` for the nearest (`Node::preferred_relay`).
+    pub preferred: Option<String>,
 }
 
 /// 直连占比 on the 网络 page (docs/CONNECT.md 度量与验收): of the dials
@@ -211,6 +214,116 @@ pub struct RoadShare {
     /// resident answered — `settled` may still be 0 then, meaning it
     /// has not dialled anybody since it started.
     pub unread: Option<String>,
+}
+
+/// **This machine's connections**, for the 网络 page's 连接 group (round
+/// NET-2): `khor_core::ConnectionsView` with names on the machines.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct Connections {
+    pub home_relay: Option<String>,
+    pub home_connected: bool,
+    pub home_error: Option<String>,
+    /// 首选中继, or `None` for the nearest.
+    pub preferred_relay: Option<String>,
+    pub relays: Vec<RelayRow>,
+    pub peers: Vec<PeerRow>,
+    /// Why there is nothing to show: `"no-serve"` or `"unanswered"`.
+    pub unread: Option<String>,
+}
+
+/// One relay and its measured round trip.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct RelayRow {
+    pub url: String,
+    #[ts(type = "number | null")]
+    pub rtt_ms: Option<u64>,
+}
+
+/// One machine's connection, named.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct PeerRow {
+    pub id: String,
+    pub shown: String,
+    /// `khor_core::Hop`'s key.
+    pub hop: String,
+    #[ts(type = "number | null")]
+    pub heard_ms: Option<u64>,
+    #[ts(type = "number | null")]
+    pub rtt_ms: Option<u64>,
+    pub last_failure: Option<String>,
+    #[ts(type = "number | null")]
+    pub failure_ago_ms: Option<u64>,
+    #[ts(type = "number")]
+    pub failed: u64,
+    #[ts(type = "number")]
+    pub unanswered: u64,
+}
+
+/// The connections, read off the resident (`Node::connections`).
+pub async fn connections(root: &Path) -> Result<Connections, String> {
+    let at = root.to_path_buf();
+    let n = tokio::task::spawn_blocking(move || open(&at))
+        .await
+        .map_err(|e| e.to_string())??;
+    let names: std::collections::HashMap<String, String> = n
+        .devices()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|d| (d.id.clone(), d.shown().to_owned()))
+        .collect();
+    Ok(match n.connections().await {
+        Ok(v) => Connections {
+            home_relay: v.home_relay,
+            home_connected: v.home_connected,
+            home_error: v.home_error,
+            preferred_relay: v.preferred_relay,
+            relays: v
+                .relays
+                .into_iter()
+                .map(|r| RelayRow {
+                    url: r.url,
+                    rtt_ms: r.rtt_ms,
+                })
+                .collect(),
+            peers: v
+                .peers
+                .into_iter()
+                .map(|p| PeerRow {
+                    shown: names.get(&p.id).cloned().unwrap_or_else(|| p.id.chars().take(8).collect()),
+                    id: p.id,
+                    hop: p.hop.key().to_owned(),
+                    heard_ms: p.heard_ms,
+                    rtt_ms: p.rtt_ms,
+                    last_failure: p.last_failure,
+                    failure_ago_ms: p.failure_ago_ms,
+                    failed: p.failed,
+                    unanswered: p.unanswered,
+                })
+                .collect(),
+            unread: None,
+        },
+        Err(why) => Connections {
+            home_relay: None,
+            home_connected: false,
+            home_error: None,
+            preferred_relay: n.preferred_relay(),
+            relays: Vec::new(),
+            peers: Vec::new(),
+            unread: Some(
+                match why {
+                    khor_node::link::RoadsUnread::NoServe => "no-serve",
+                    khor_node::link::RoadsUnread::Unanswered => "unanswered",
+                }
+                .to_owned(),
+            ),
+        },
+    })
+}
+
+/// 首选中继: the relay to home on when reachable, or `None` for the
+/// nearest. Takes effect on the resident's next bind.
+pub fn set_preferred_relay(root: &Path, url: Option<String>) -> Result<(), String> {
+    open(root)?.set_preferred_relay(url.as_deref())
 }
 
 /// One relay a write wants kept or added.
@@ -1174,6 +1287,7 @@ pub fn relays(root: &Path) -> Result<RelayChoices, String> {
         keyed: node.relays_keyed(),
         in_use: node.relays().to_vec(),
         only_mine: node.relays_only_mine(),
+        preferred: node.preferred_relay(),
     })
 }
 
@@ -1233,6 +1347,7 @@ pub fn set_relays(
         // the combination, and a screen painting what it sent would show
         // a switch that is on while the file says off.
         only_mine: node.relays_only_mine(),
+        preferred: node.preferred_relay(),
     })
 }
 

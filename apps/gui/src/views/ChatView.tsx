@@ -62,7 +62,9 @@ import {
   chatSetMode,
   chatSetOption,
   chatStop,
+  chatWait,
   followHistory,
+  inApp,
   type ChatFrame,
 } from "@/api";
 import { IconBack } from "@/components/icons";
@@ -104,6 +106,11 @@ import { imeKey } from "@/lib/ime";
  */
 const LIVE_MS = 50;
 const IDLE_MS = 500;
+/** How long one pushed wait is held open with nothing new (`chatWait`):
+    in the app, a visible conversation holds one wait at a time instead
+    of either beat above, and a frame shows the moment it lands (round
+    NET-2, piece 6). */
+const WAIT_MS = 1000;
 /**
  * How often a *discovered* conversation's transcript is re-read.
  *
@@ -1069,7 +1076,8 @@ export function ChatView({
       // calling in on top of it would fork the loop in two.
       if (asking) return;
       asking = true;
-      chatPoll(id, cursor)
+      const pushed = inApp && pace.current !== HIDDEN_MS;
+      (pushed ? chatWait(id, cursor, WAIT_MS) : chatPoll(id, cursor))
         .then((batch) => {
           if (stopped) return;
           cursor = batch.next;
@@ -1160,7 +1168,8 @@ export function ChatView({
         })
         .finally(() => {
           asking = false;
-          if (!stopped) timer = window.setTimeout(tick, pace.current);
+          // A held wait has already waited: the next is asked at once.
+          if (!stopped) timer = window.setTimeout(tick, pushed ? 0 : pace.current);
         });
     };
     pollNow.current = tick;

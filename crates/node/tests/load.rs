@@ -5,6 +5,8 @@
 //! process table and a file) stayed off the reactor they travel on
 //! (`tests/vitals.rs` has the scar).
 
+mod util;
+
 use std::path::Path;
 use std::time::Duration;
 
@@ -51,6 +53,7 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-load-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
+    util::hermetic(&p);
     Scratch(p)
 }
 
@@ -172,7 +175,8 @@ async fn a_machine_answers_what_it_is_busy_with_over_the_wire() {
 /// **What makes this a control rather than a ritual:** the two asks
 /// answered before the change too, so "both answered" proves nothing.
 /// What separates the two versions is the count of pipes held after
-/// them — one, not two, and the same name both times. `WireWatch` is
+/// them — one, not two, and the same name both times — and the dial
+/// count, which no ask after the first may move. `WireWatch` is
 /// there for exactly this reading and says so.
 ///
 /// The path is the app's: every face routes through the resident serve
@@ -203,11 +207,18 @@ async fn a_second_ask_rides_the_pipe_the_first_one_opened() {
     wait_for_endpoint_file(&rb).await;
     khor_node::reactor::forget();
 
+    // The serve's own first round may already hold the wire to alpha
+    // (round NET-FIX: the pump's sync keeps what it dials), so the
+    // control is the dial count, not an empty map: whatever the first
+    // ask finds or dials is the pipe the next two ride, with no dial of
+    // their own.
+    let held = wires.names().await;
     assert!(
-        wires.names().await.is_empty(),
-        "nothing is held before anything is asked"
+        held.is_empty() || held == ["alpha"],
+        "before any ask only the pump's own wire may be held: {held:?}"
     );
 
+    let mut dialed_after_first = None;
     for round in 1..=3 {
         timeout(
             Duration::from_secs(60),
@@ -220,6 +231,12 @@ async fn a_second_ask_rides_the_pipe_the_first_one_opened() {
             wires.names().await,
             vec!["alpha".to_owned()],
             "after ask {round} the serve holds one pipe, to the machine it asked"
+        );
+        let dialed = wires.counts().dialed;
+        let first = *dialed_after_first.get_or_insert(dialed);
+        assert_eq!(
+            dialed, first,
+            "ask {round} dialled again instead of riding the held pipe"
         );
         assert_eq!(
             wires.is_open("alpha").await,

@@ -13,6 +13,15 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-node-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
+    // **No real relay** (round NET-2, as `tests/util`'s `hermetic`): the
+    // one relay a scratch home knows is a closed loopback port, so a test
+    // that binds touches neither the Khor tier nor n0.
+    fs::create_dir_all(p.join(".khor")).unwrap();
+    fs::write(
+        p.join(".khor").join("relays.json"),
+        r#"{"relays":[{"url":"http://127.0.0.1:9"}],"only_mine":true}"#,
+    )
+    .unwrap();
     Scratch(p)
 }
 

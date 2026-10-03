@@ -191,6 +191,16 @@ mkdir -p "$R/.khor"
 if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
     exit 0
 fi
+# **The app is this machine's resident when it runs** (its endpoint file
+# says `"app":true`): a second one on the same key knocks both off the
+# relay. `khor serve` refuses too; this saves starting it to hear so.
+EP="$R/.khor/endpoint.json"
+if [ -f "$EP" ] && grep -q '"app":true' "$EP"; then
+    APP_PID=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$EP")
+    if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
+        exit 0
+    fi
+fi
 # setsid where it exists (Linux); launchd/nohup orphaning does the same
 # job on macOS, which has no setsid.
 if command -v setsid >/dev/null 2>&1; then
@@ -309,6 +319,15 @@ if [ -f "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; then
 fi
 "$UP"
 sleep 2
+EP="$ROOT/.khor/endpoint.json"
+if [ -f "$EP" ] && grep -q '"app":true' "$EP"; then
+    APP_PID=$(sed -n 's/.*"pid":\([0-9]*\).*/\1/p' "$EP")
+    if [ -n "$APP_PID" ] && kill -0 "$APP_PID" 2>/dev/null; then
+        echo "khor: the khor app is this machine's resident (pid $APP_PID); no serve started beside it"
+        echo "khor: done."
+        exit 0
+    fi
+fi
 if kill -0 "$(cat "$PIDF")" 2>/dev/null; then
     echo "khor: serve is up (pid $(cat "$PIDF"), store $ROOT)"
     echo "khor: reboots handled by $GUARDIAN"

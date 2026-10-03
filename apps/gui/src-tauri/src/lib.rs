@@ -410,6 +410,19 @@ async fn road_share() -> Result<khor_gui_core::RoadShare, String> {
     khor_gui_core::road_share(&Node::root_from_env()).await
 }
 
+/// The 网络 page's 连接 group (`khor_gui_core::connections`).
+#[tauri::command]
+async fn connections() -> Result<khor_gui_core::Connections, String> {
+    khor_gui_core::connections(&Node::root_from_env()).await
+}
+
+/// 首选中继 (`khor_gui_core::set_preferred_relay`). Off the main thread:
+/// it writes a file.
+#[tauri::command]
+async fn set_preferred_relay(url: Option<String>) -> Result<(), String> {
+    off_main(move || khor_gui_core::set_preferred_relay(&Node::root_from_env(), url)).await
+}
+
 #[tauri::command]
 fn tell(machine: String, text: String) -> Result<(), String> {
     khor_gui_core::tell(&Node::root_from_env(), &machine, &text)
@@ -487,6 +500,13 @@ async fn chat_open(id: String) -> Result<bool, String> {
 #[tauri::command]
 fn chat_poll(id: String, since: u64) -> Result<khor_gui_core::chat::ChatBatch, String> {
     khor_gui_core::chat::chat_poll(&id, since)
+}
+
+/// The conversation, pushed: held open until a frame lands
+/// (`chat::chat_wait`). Async, for `term_wait`'s reason.
+#[tauri::command]
+async fn chat_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::chat::ChatBatch, String> {
+    khor_gui_core::chat::chat_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
 }
 
 #[tauri::command]
@@ -714,6 +734,13 @@ fn term_attach(id: String) -> Result<khor_gui_core::term::TermStart, String> {
 #[tauri::command]
 fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk, String> {
     khor_gui_core::term::term_stream(&id, since)
+}
+
+/// The stream, pushed: held open until the feed grows (`term::term_wait`).
+/// Async, so the wait is on tokio's threads and never on the main one.
+#[tauri::command]
+async fn term_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::term::TermChunk, String> {
+    khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
 }
 
 #[tauri::command]
@@ -3051,7 +3078,7 @@ fn watch_for_wake() {
 #[cfg(target_os = "ios")]
 fn watch_the_path() {
     use std::ffi::c_void;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::Ordering;
     #[link(name = "Network", kind = "framework")]
     unsafe extern "C" {
         fn nw_path_monitor_create() -> *mut c_void;
@@ -3061,15 +3088,34 @@ fn watch_the_path() {
         );
         fn nw_path_monitor_set_queue(monitor: *mut c_void, queue: *mut c_void);
         fn nw_path_monitor_start(monitor: *mut c_void);
+        fn nw_path_get_status(path: *mut c_void) -> i32;
+        fn nw_path_uses_interface_type(path: *mut c_void, kind: i32) -> bool;
     }
     unsafe extern "C" {
         fn dispatch_get_global_queue(identifier: isize, flags: usize) -> *mut c_void;
     }
-    // The monitor reports the current path once as it starts; that is
-    // not a change.
-    let first = AtomicBool::new(true);
-    let changed = block2::RcBlock::new(move |_path: *mut c_void| {
-        if first.swap(false, Ordering::Relaxed) {
+    // **Only a change of road is a change** (round NET-2): the monitor
+    // also reports a path whose cost or constraint flags moved, or one
+    // re-evaluated on the same interface, and each `network_changed` puts
+    // every wire on trial. The path's status and which of Wi-Fi /
+    // cellular / wired it uses are what decide whether the old wires can
+    // still be alive; the first report, at start, is the baseline.
+    // `nw_interface_type_t`: wifi 1, cellular 2, wired 3.
+    let last = std::sync::atomic::AtomicU32::new(u32::MAX);
+    let changed = block2::RcBlock::new(move |path: *mut c_void| {
+        // SAFETY: `path` is the monitor's for the length of this call.
+        let now = unsafe {
+            let status = nw_path_get_status(path).clamp(0, 255) as u32;
+            let mut kinds = 0u32;
+            for (bit, kind) in [(1u32, 1i32), (2, 2), (4, 3)] {
+                if nw_path_uses_interface_type(path, kind) {
+                    kinds |= bit;
+                }
+            }
+            status << 8 | kinds
+        };
+        let was = last.swap(now, Ordering::Relaxed);
+        if was == u32::MAX || was == now {
             return;
         }
         khor_node::link::network_changed(&Node::root_from_env());
@@ -3171,6 +3217,7 @@ pub fn run() {
         rt.block_on(async {
             match Node::open(Node::root_from_env()) {
                 Ok(n) => {
+                    take_the_home(&n).await;
                     let served = n.serve_resumable().await;
                     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                     match served {
@@ -3432,6 +3479,8 @@ pub fn run() {
             relays,
             set_relays,
             road_share,
+            connections,
+            set_preferred_relay,
             tell,
             pin_session,
             pin_device,
@@ -3444,6 +3493,7 @@ pub fn run() {
             uninstall_hooks,
             chat_open,
             chat_poll,
+            chat_wait,
             chat_say,
             chat_answer,
             chat_stop,
@@ -3461,6 +3511,7 @@ pub fn run() {
             term_open,
             term_attach,
             term_stream,
+            term_wait,
             term_key,
             term_drop,
             term_resize,
@@ -3547,6 +3598,31 @@ pub fn run() {
                 eprintln!("[{stamp}] khor app: exiting");
             }
         });
+}
+
+/// **One resident per home, and on a machine with the app it is the
+/// app's** (round NET-2): a kept `khor serve` already holding this home
+/// — started by a login guardian before the app opened — is asked to
+/// leave (TERM to its keeper, which takes its serve with it), and the
+/// log says so. Two endpoints on one key knock each other off the relay,
+/// which every other machine reads as this one coming and going.
+async fn take_the_home(n: &Node) {
+    let Some(keeper) = n.kept_resident() else {
+        return;
+    };
+    let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+    eprintln!("[{stamp}] khor app: a kept serve (pid {keeper}) holds this home; asking it to leave");
+    // SAFETY: a signal to the pid this home's own serve.pid names.
+    unsafe {
+        libc::kill(keeper as libc::pid_t, libc::SIGTERM);
+    }
+    for _ in 0..50 {
+        if n.kept_resident().is_none() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    eprintln!("[{stamp}] khor app: the kept serve (pid {keeper}) did not leave within 5 s");
 }
 
 /// Writes one line naming a terminating signal and who sent it, then

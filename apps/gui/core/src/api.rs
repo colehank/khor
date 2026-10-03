@@ -402,6 +402,12 @@ pub fn answer(
         }
         "relays" => to_json(&crate::relays(root)?),
         "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
+        "connections" => to_json(&rt.block_on(crate::connections(root))?),
+        "set_preferred_relay" => {
+            let url = args.get("url").and_then(|v| v.as_str()).map(str::to_owned);
+            crate::set_preferred_relay(root, url)?;
+            Ok("null".to_owned())
+        }
         "set_relays" => {
             // Read by position and refused by name, the same as `paths`
             // above and for a sharper version of the same reason: a
@@ -446,6 +452,9 @@ pub fn answer(
                 .unwrap_or(0),
         )?),
         "chat_poll" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
+        // The bridge answers one request at a time: a held wait would
+        // hold every other call behind it, so it is the poll here.
+        "chat_wait" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
         "chat_say" => {
             // `images` absent is the ordinary turn. Read as an array of
             // `[mime, base64]` pairs rather than an object so the two
@@ -595,6 +604,9 @@ pub fn answer(
         }
         "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),
         "term_stream" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
+        // The bridge answers one request at a time, so it never holds one
+        // open: here a wait is the stream's answer as it stands.
+        "term_wait" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
         "term_key" => {
             crate::term::term_key(&arg("id")?, arg("keys")?.into_bytes())?;
             Ok("null".to_owned())

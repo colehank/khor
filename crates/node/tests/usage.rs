@@ -10,6 +10,8 @@
 //! transcripts under its own root. Alpha is given one number and beta
 //! another, and the assertion is that beta reports **alpha's**.
 
+mod util;
+
 use std::path::Path;
 use std::time::Duration;
 
@@ -42,6 +44,7 @@ fn root(tag: &str) -> Scratch {
     let p = std::env::temp_dir().join(format!("khor-usage-net-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
+    util::hermetic(&p);
     Scratch(p)
 }
 
