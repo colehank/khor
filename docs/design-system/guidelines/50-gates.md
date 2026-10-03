@@ -81,7 +81,7 @@
 - **动了字号/字重/圆角/间距/热区,或它们的 token** → 加 `npm run type`(静态)
   和 `npm run face`(渲染)。**两条都要**:一条证明没人写字面量,另一条证明
   规则真落到了屏上,少任何一条另一条都只是一半;
-- **动了颜色或 `tokens.css` 的调色板** → 加 `npm run palette`;动的是四层底(`card` / `background` / `side` / `popover`)时再加 `npm run rail`(竖栏的字形量在左块的底上)、`npm run read`(对话的墨量在纸上)和 `npm run face` 的 4I(真浮层比板、比框各高 4)——2026-09-30「板是纸,底是框」那一轮四条都读到了新值;
+- **动了颜色或 `tokens.css` 的调色板** → 加 `npm run palette`;动的是底(`canvas` / `side` / `card` 一张底)、`popover`、`hairline`、`glass` 时再加 `npm run rail`(图标条的字形量在玻璃上)、`npm run read`(对话的墨量在底上)和 `npm run face` 的 4I(真浮层比板高 4、板四周与板同色)——2026-10-02「一张底加灰线」;
 - **往源码里写过任何非文本的字符**(分隔符、哨兵、终端序列)→ 加 `npm run bytes`。
   它守的不是「程序里能不能有这个字符」——`lib/model-band` 里那个分隔符运行时
   就是它,写成转义,完全正确。**它守的是这份源码还搜不搜得动**:
