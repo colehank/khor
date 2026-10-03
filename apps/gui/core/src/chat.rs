@@ -409,6 +409,18 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
 fn attach(root: &Path, id: &str) -> Result<(TcpStream, Option<String>), String> {
     let n = Node::open(root.to_path_buf())?;
     let sid = SessionId(id.to_owned());
+    // **An ended conversation says so, in its own words** (UX-4, decided):
+    // its host is gone (`State::Failed` is a process that is over), and
+    // reaching for it answered a terminal's sentence from the far machine
+    // (「没有可连接的终端：tui/…」) or a command line's from this one.
+    // Read off the row both machines already share, so no wire changes.
+    if n
+        .sessions()?
+        .iter()
+        .any(|v| v.session.id == sid && v.session.state.state == khor_core::State::Failed)
+    {
+        return Err(khor_catalog::msg::chat_ended().into());
+    }
     // **The fork is on the row, not on a flag** (`Node::far_machine`),
     // the terminal's own rule one door over: a conversation born on
     // another machine (the wizard's 在哪台) is reached through the pipe

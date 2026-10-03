@@ -2216,6 +2216,7 @@ no-checkout = "这个路径不在 git 仓库里"
 git-predates = "那台机器上的 khor 版本较旧，无法读取 git"
 git-refused = "那台机器拒绝了这次 git 请求：{0}"
 git-history-satellite = "这台机器经由 ssh 接入，khor 读不到它的 git 历史"
+chat-ended = "这段对话已结束"
 # An older khor asked to save a file. **Only the wordless refusal gets
 # this** (the `load-*` pair's measured lesson): a refusal that carries
 # words is that machine's own answer about that path, and blaming its
