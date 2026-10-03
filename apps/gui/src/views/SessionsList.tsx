@@ -6,7 +6,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { sessionKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
-import { DoingLine } from "@/components/DoingLine";
+import { DoingLine, hereActs } from "@/components/DoingLine";
 import { EditableName } from "@/components/EditableName";
 import { IconDevices } from "@/components/icons";
 import { gui } from "@/gen/catalog";
@@ -252,6 +252,8 @@ export function SessionsList({
       },
     },
     ...turnInto(r),
+    // Where the shell stands (roadmap 2.5).
+    ...(r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : []),
     {
       // The id is paste material, not reading material. The menu
       // closing is the success face; a clipboard refusal rejects, so

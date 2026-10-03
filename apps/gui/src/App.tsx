@@ -1,7 +1,8 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
+import { hereActs, shortDir, termName } from "@/components/DoingLine";
 import { FinishedWatch, type Finished } from "@/lib/finished";
-import { NEW_SESSION_EVENT } from "@/lib/composer-handoff";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT } from "@/lib/composer-handoff";
 import {
   fetchDevices,
   fetchHooks,
@@ -1498,9 +1499,15 @@ export default function App() {
         return r
           ? {
               id,
-              label: r.title,
+              // An unnamed shell's tab follows what runs in it (roadmap
+              // 2.5, `termName`); a name somebody gave stays.
+              label: termName(r),
               face: r.face,
-              path: r.place ?? "",
+              path: r.doing?.cwd ?? r.place ?? "",
+              // Where the shell stands, under the name (roadmap 2.5).
+              sub: r.doing?.cwd ? shortDir(r.doing.cwd) : undefined,
+              // Where the shell stands, and its two acts (roadmap 2.5).
+              menu: r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : undefined,
               session: { word: r.word, kind: r.kind, category: r.category },
               // A session tab's name is the row's title, which is a
               // name somebody gave it — so double-click renames it
@@ -1557,6 +1564,23 @@ export default function App() {
     setOpenWs({ device: r.device, machine: r.machine || r.device, path: r.path });
     setScreen("detail");
   };
+  // A terminal's 「open enclosing folder」 (roadmap 2.5): that machine's
+  // files at that path.
+  const openDirRef = useRef<(machine: string, path: string) => void>(() => {});
+  openDirRef.current = (machine, path) => {
+    const d = devices.find((x) => x.name === machine);
+    if (!d) return;
+    setLanding("workspaces");
+    openWorkspace({ device: d.id, machine, path } as WorkspaceRow);
+  };
+  useEffect(() => {
+    const asked = (e: Event) => {
+      const { machine, path } = (e as CustomEvent<{ machine: string; path: string }>).detail;
+      openDirRef.current(machine, path);
+    };
+    window.addEventListener(OPEN_DIR_EVENT, asked);
+    return () => window.removeEventListener(OPEN_DIR_EVENT, asked);
+  }, []);
 
   const list = (
     <ListPane

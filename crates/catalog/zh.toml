@@ -2367,6 +2367,10 @@ finished-notify-off = "不通知"
 finished-notify-after = "超过 {0}"
 finished-on = "{0} 在 {1} 完成 · 退出 {2} · {3}"
 finished-on-plain = "{0} 在 {1} 完成 · {2}"
+# A terminal's directory, on its tab's and its row's menus (roadmap
+# 2.5): the files there, on that machine; a new session there.
+open-dir = "打开所在文件夹"
+new-session-here = "在这里新开会话"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"

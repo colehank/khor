@@ -26,3 +26,10 @@ export const NEW_SESSION_EVENT = "khor:new-session";
 export function askNewSession(machine: string, dir: string) {
   window.dispatchEvent(new CustomEvent(NEW_SESSION_EVENT, { detail: { machine, dir } }));
 }
+
+/** Asks the app to show a directory's files on a machine (roadmap 2.5,
+    a terminal's 「open enclosing folder」; `App`'s listener). */
+export const OPEN_DIR_EVENT = "khor:open-dir";
+export function askOpenDir(machine: string, path: string) {
+  window.dispatchEvent(new CustomEvent(OPEN_DIR_EVENT, { detail: { machine, path } }));
+}
