@@ -212,7 +212,7 @@ function useFileVerbs({
         {/* 字号, for what reads (text, rendered or not); a picture or a
             PDF has no type to size. Two keys on one row, kept open. */}
         {(textKind || previewKind) && kind !== "image" && kind !== "svg" && kind !== "pdf" && (
-          <div data-file-size className="flex items-center gap-in px-2 py-1 text-body">
+          <div data-file-size className="flex min-h-menu-item items-center gap-in px-row text-body">
             <span className="flex-1">{gui.type_size}</span>
             <Button
               size="sm"
