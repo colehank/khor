@@ -586,7 +586,23 @@ pub async fn term_wait(id: &str, since: u64, longest: std::time::Duration) -> Re
 pub fn term_key(id: &str, bytes: Vec<u8>) -> Result<(), String> {
     let term = term_of(id)?;
     let mut conn = plock(&term.conn);
-    write_frame(&mut *conn, &ClientOp::Input(bytes))
+    write_input(&mut *conn, &bytes)
+}
+
+/// The most input bytes one frame to the host carries (T-16, the terminal
+/// audit). The host takes at most 1 MiB a frame (`host::MAX_OP`) and skips
+/// a bigger one whole, so a paste of 1.2 MB once arrived as nothing.
+const INPUT_FRAME: usize = 64 * 1024;
+
+/// Input in frames of at most [`INPUT_FRAME`], in order, under the one
+/// connection lock the caller holds — so no other keystroke lands between
+/// two pieces of a paste. A cut may fall inside a UTF-8 character: the pty
+/// reads one byte stream, and the pieces join again there.
+fn write_input(conn: &mut (impl std::io::Write + ?Sized), bytes: &[u8]) -> Result<(), String> {
+    for piece in bytes.chunks(INPUT_FRAME) {
+        write_frame(conn, &ClientOp::Input(piece.to_vec()))?;
+    }
+    Ok(())
 }
 
 /// A paste, wrapped the way the program in there asked for it to be.
@@ -627,7 +643,7 @@ fn term_paste(id: &str, text: &str) -> Result<(), String> {
         bytes.extend_from_slice(b"\x1b[201~");
     }
     let mut conn = plock(&term.conn);
-    write_frame(&mut *conn, &ClientOp::Input(bytes))
+    write_input(&mut *conn, &bytes)
 }
 
 /// One path, written so a POSIX shell reads back exactly that path.
@@ -781,6 +797,31 @@ pub fn term_leave(id: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T-16's second half: a paste of 3 MiB goes as frames the host
+    /// takes (at most 64 KiB each, under its 1 MiB `MAX_OP`), in order,
+    /// and together they are the paste.
+    #[test]
+    fn a_big_input_goes_as_frames_the_host_takes() {
+        let paste: Vec<u8> = (0..3 * 1024 * 1024 + 7).map(|i| (i % 251) as u8).collect();
+        let mut wire = Vec::new();
+        write_input(&mut wire, &paste).unwrap();
+        let mut read = std::io::Cursor::new(wire);
+        let mut back = Vec::new();
+        let mut frames = 0;
+        while (read.position() as usize) < read.get_ref().len() {
+            match khor_node::host::read_frame::<ClientOp>(&mut read).unwrap() {
+                ClientOp::Input(piece) => {
+                    assert!(piece.len() <= INPUT_FRAME, "a frame of {} bytes", piece.len());
+                    back.extend_from_slice(&piece);
+                }
+                ClientOp::Resize { .. } => panic!("only input was written"),
+            }
+            frames += 1;
+        }
+        assert_eq!(frames, 49);
+        assert!(back == paste, "the frames join back into the paste");
+    }
 
     /// The mechanism the live crash cascaded through: a thread panicking
     /// while holding a lock poisons it, and an `unwrap` on the next lock
