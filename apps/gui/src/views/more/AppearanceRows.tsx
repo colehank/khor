@@ -23,6 +23,7 @@ import { setTermCursor, useTermCursor, type CursorShape } from "@/lib/term-curso
 import { HISTORY_CHOICES, lineKb, setTermHistory, useTermHistory } from "@/lib/term-history";
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
+import { setTermBell, useTermBell } from "@/lib/term-bell";
 import { lasted } from "@/words";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
@@ -82,6 +83,7 @@ export function TerminalSection() {
   const cursor = useTermCursor();
   const history = useTermHistory();
   const finishedAfter = useFinishedAfter();
+  const bell = useTermBell();
   const [editingKeys, setEditingKeys] = useState(false);
   const [here] = useState(() => fontsHere());
   const [refused, setRefused] = useState<string | null>(null);
@@ -244,6 +246,13 @@ export function TerminalSection() {
           label: n === 0 ? gui.finished_notify_off : gui.finished_notify_after(lasted(n * 1000)),
         }))}
         onPick={(n) => setFinishedAfter(Number(n))}
+      />
+      <SwitchRow
+        name="term-bell"
+        label={gui.term_bell}
+        hint={gui.term_bell_note}
+        on={bell}
+        onToggle={() => setTermBell(!bell)}
       />
       {coarse && (
         <PopupRow

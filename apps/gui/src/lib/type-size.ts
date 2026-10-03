@@ -47,6 +47,11 @@ function clamp(n: number, lo: number, hi: number, otherwise: number): number {
   return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : otherwise;
 }
 
+/** The sizes as stored now (a pinch reads the terminal's from here). */
+export function typeSize(): TypeSize {
+  return stored();
+}
+
 /** The system's text size as a scale, where the platform says one. */
 export function systemScale(): number {
   if (typeof CSS === "undefined" || !CSS.supports("font", "-apple-system-body")) return 1;

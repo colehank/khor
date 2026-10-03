@@ -17,6 +17,9 @@ const replies = {
   CPR: `${E}[12;40R`,
   XTVERSION: `${E}P>|xterm.js(6.0.0)${E}\\`,
   "window size report": `${E}[8;24;80t`,
+  "cell size in pixels (the image addon)": `${E}[6;17;8t`,
+  "graphics attributes (the image addon)": `${E}[?2;0;1280;720S`,
+  "DA1 with sixel (the image addon)": `${E}[?62;4;9;22c`,
   "the owner's run, as one write": `${E}]11;rgb:0000/0000/0000${E}\\${E}[?1;2c${E}P1$r2 q${E}\\${E}[?12;2$y`,
 };
 const keys = {

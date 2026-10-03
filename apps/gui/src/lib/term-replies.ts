@@ -43,6 +43,9 @@ const REPLY = new RegExp(
       `${ESC}\\[\\??[0-9]+;[0-9]+(?:;[0-9]+)?R`,
       // Window and text-area reports (CSI … t), where a program may ask.
       `${ESC}\\[[0-9;]+t`,
+      // The image addon's graphics attributes (XTSMGRAPHICS, CSI ? … S):
+      // its palette and canvas size, which `imgcat` and libsixel ask.
+      `${ESC}\\[\\?[0-9;]+S`,
       // OSC replies: ESC ] … BEL or ST (colours, clipboard reads).
       `${ESC}\\][^\\x07\\x1b]*(?:\\x07|${ESC}\\\\)`,
       // DCS replies: ESC P … ST (DECRQSS, XTVERSION, DA3, XTGETTCAP).

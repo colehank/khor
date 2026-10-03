@@ -2535,6 +2535,22 @@ pub struct Doing {
     /// A full-screen program holds the screen (the alternate buffer or
     /// the mouse taken).
     pub full_screen: bool,
+    /// What a program said of its progress (`OSC 9 ; 4`, ConEmu's and
+    /// Windows Terminal's): 0–100, or 255 for "busy, no figure". `None`
+    /// when nothing is in progress (roadmap 4.1).
+    #[serde(default)]
+    pub progress: Option<u8>,
+    /// The progress said something went wrong (`OSC 9 ; 4 ; 2`).
+    #[serde(default)]
+    pub progress_failed: bool,
+    /// The last notification a program asked for (`OSC 9 ; text`,
+    /// iTerm2's; `OSC 777 ; notify ; title ; body`, urxvt's and
+    /// Ghostty's), and when — the face says it like a finished command.
+    #[serde(default)]
+    pub notice: Option<String>,
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub notice_ms: u64,
 }
 
 #[cfg(test)]

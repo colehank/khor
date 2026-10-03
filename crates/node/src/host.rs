@@ -33,6 +33,7 @@ use khor_catalog::msg;
 use khor_core::{SessionId, State};
 
 use crate::modes::Modes;
+use crate::pictures::Pictures;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::{Deserialize, Serialize};
 
@@ -573,30 +574,46 @@ pub const HANDSHAKE: Duration = Duration::from_secs(15);
 
 // ── the host process ────────────────────────────────────────
 
-/// The replay: the last [`RING`] bytes, and the modes the bytes before
-/// them had set (`crate::modes` — a tmux client's `ESC [ ? 1049 h` is
-/// its first line and never repeated, 2026-10-01).
+/// The replay: the last [`RING`] bytes of text, the modes the bytes
+/// before them had set (`crate::modes` — a tmux client's `ESC [ ? 1049 h`
+/// is its first line and never repeated, 2026-10-01), and the pictures
+/// drawn among them, kept apart on their own budget (`crate::pictures`).
 #[derive(Default)]
 struct Ring {
     bytes: VecDeque<u8>,
     head: Modes,
+    /// How many text bytes were ever trimmed: the stream position of
+    /// `bytes[0]`.
+    gone: u64,
+    pictures: Pictures,
 }
 
 impl Ring {
     fn push(&mut self, bytes: &[u8]) {
-        self.bytes.extend(bytes);
+        let mut text = Vec::with_capacity(bytes.len());
+        self.pictures.sort(bytes, self.gone + self.bytes.len() as u64, &mut text);
+        self.bytes.extend(text);
         let over = self.bytes.len().saturating_sub(RING);
         if over > 0 {
             let gone: Vec<u8> = self.bytes.drain(..over).collect();
             self.head.feed(&gone);
+            self.gone += over as u64;
         }
+        // Other long strings (a clipboard copy, a protocol the face does
+        // not draw) stay in the text: a trim inside one runs on to its end.
+        while self.head.mid_sequence() {
+            let Some(b) = self.bytes.pop_front() else { break };
+            self.head.feed(&[b]);
+            self.gone += 1;
+        }
+        self.pictures.trim(self.gone);
     }
 
     /// What an attacher is handed first: the trimmed head's modes, then
-    /// the bytes still held.
+    /// the bytes still held, pictures in place.
     fn replay(&self) -> Vec<u8> {
         let mut out = self.head.preamble();
-        out.extend(self.bytes.iter());
+        self.pictures.splice(&self.bytes, self.gone, &mut out);
         out
     }
 }
@@ -1309,6 +1326,33 @@ mod tests {
         match read_client_frame::<ClientOp>(&mut r).unwrap() {
             Some(ClientOp::Input(b)) => assert_eq!(b, b"after"),
             _ => panic!("the frame after the oversize one was lost"),
+        }
+    }
+
+    /// **Pictures do not push the text out of the ring** (roadmap 3.3).
+    /// Before, three 400 KiB `imgcat` plots between a command's output
+    /// lines trimmed most of that output, and a trim inside a plot
+    /// replayed the rest of its base64 as text. Now the text is all
+    /// there, the replay starts on text, and the newest plots are in
+    /// place.
+    #[test]
+    fn pictures_do_not_push_the_text_out_of_the_ring() {
+        let plot = |n: u8| {
+            [b"\x1b]1337;File=inline=1:".as_slice(), &vec![b'A' + n; 400 << 10], b"\x07"].concat()
+        };
+        let mut ring = Ring::default();
+        let mut text = Vec::new();
+        for n in 0..3u8 {
+            let line = format!("line {n} of the output\r\n").repeat(1000);
+            ring.push(line.as_bytes());
+            text.extend_from_slice(line.as_bytes());
+            ring.push(&plot(n));
+        }
+        assert_eq!(ring.bytes.iter().copied().collect::<Vec<_>>(), text);
+        let replay = ring.replay();
+        assert!(replay.starts_with(b"line 0"), "the replay opens on text, not base64");
+        for n in 0..3u8 {
+            assert!(replay.windows(16).any(|w| w == [b'A' + n; 16]), "plot {n} is in the replay");
         }
     }
 

@@ -285,6 +285,12 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "opens the editor in a second native window; a browser face opens a named tab with \
          `window.open` and never asks khor for a window",
     ),
+    // ── a bell, felt (roadmap 4.2) ─────
+    (
+        "bell_haptic",
+        "taps the phone's haptic engine; a browser has no haptics to reach, and the pane \
+         flashes its edge there as everywhere",
+    ),
     // ── a line into the app's log (item 18 A) ─────
     (
         "face_note",

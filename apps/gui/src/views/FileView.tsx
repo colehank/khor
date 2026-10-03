@@ -26,12 +26,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   fetchPreview,
   type Preview,
+  fetchFileStat,
   fetchFileText,
   fetchGitDiff,
   mergeFileText,
   pullFile,
   said,
   saveFileText,
+  type FileStat,
   type FileText,
   type GitDiff,
   type GitHunk,
@@ -57,6 +59,34 @@ import { sizeWord } from "@/views/FilesPane";
     the pane blank for a round trip on every file. What keeps the two
     honest is `check-face`, which drives one file of each kind and would
     go red the day this list and the node's disagree. */
+/**
+ * **Files read lately, by machine and path** (round NET-4): a file
+ * opened again is asked what it is now (`fetchFileStat`, one small
+ * answer) and shown from here when nothing changed, instead of crossing
+ * whole again. A handful, oldest dropped first — a cache of what a
+ * person has just been reading, not of the disk.
+ */
+const HELD_MAX = 24;
+const held = new Map<string, FileText>();
+const heldKey = (machine: string, path: string) => `${machine}\u0000${path}`;
+function remember(machine: string, path: string, f: FileText) {
+  const k = heldKey(machine, path);
+  held.delete(k);
+  held.set(k, f);
+  while (held.size > HELD_MAX) {
+    const oldest = held.keys().next().value;
+    if (oldest === undefined) break;
+    held.delete(oldest);
+  }
+}
+/** Whether a file answering `now` is still the one held as `f`: by its
+    bytes when the view holds them whole (a digest), by size and mtime
+    when it does not. */
+const unchanged = (f: FileText, now: FileStat) =>
+  f.digest !== "" ? now.digest === f.digest : now.total === f.total && now.at_ms === f.at_ms;
+/** Bytes a text takes on disk, for a file whose text was just saved. */
+const bytesOf = (text: string) => new TextEncoder().encode(text).length;
+
 /** An unsaved working copy: the text, and the digest the next save is
     pinned to. **One piece of state, not two** — a save replaces both at
     once, and holding them apart is how a second save gets pinned to a
@@ -380,16 +410,30 @@ export function FileView({
     setSaved(null);
     setError(null);
     setTook(null);
-    fetchFileText(machine, path)
-      .then((f) => {
-        if (!live) return;
-        setFile(f);
-        // **Only when nobody is holding one.** A draft means somebody
-        // typed here and walked away; overwriting it with what is on
-        // disk is the loss this whole arrangement exists to stop.
-        if (draft === undefined) setEdit({ text: f.text, was: f.digest });
-      })
-      .catch((e: unknown) => live && setError(said(e)));
+    const take = (f: FileText) => {
+      if (!live) return;
+      remember(machine, path, f);
+      setFile(f);
+      // **Only when nobody is holding one.** A draft means somebody
+      // typed here and walked away; overwriting it with what is on
+      // disk is the loss this whole arrangement exists to stop.
+      if (draft === undefined) setEdit({ text: f.text, was: f.digest });
+    };
+    const read = () =>
+      fetchFileText(machine, path)
+        .then(take)
+        .catch((e: unknown) => live && setError(said(e)));
+    // Read lately: asked what it is now, and shown from memory when
+    // nothing changed; read again when something did or the asking
+    // failed (an older khor over there answers the read as before).
+    const had = held.get(heldKey(machine, path));
+    if (had) {
+      fetchFileStat(machine, path)
+        .then((now) => (unchanged(had, now) ? take(had) : read()))
+        .catch(() => read());
+    } else {
+      void read();
+    }
     // Cancelled by ignoring the answer, not by aborting the dial: the
     // slice is already crossing and dropping it on the floor costs the
     // far machine nothing it has not already spent.
@@ -785,9 +829,15 @@ export function FileView({
    * says its own piece in its own words. */
   const again = () => {
     if (kindOf(path) !== "text" || file === null || dirty) return;
-    fetchFileText(machine, path)
+    // **Asked what it is, not for what it says** (round NET-4): one
+    // small answer, and the file only when that answer moved. A failure
+    // to ask reads it as before.
+    fetchFileStat(machine, path)
+      .then((now) => (unchanged(file, now) ? null : fetchFileText(machine, path)))
+      .catch(() => fetchFileText(machine, path))
       .then((f) => {
-        if (f.digest === file.digest) return;
+        if (f === null || f.digest === file.digest) return;
+        remember(machine, path, f);
         setFile(f);
         setEdit({ text: f.text, was: f.digest });
         // The gutter is about HEAD and the file just moved underneath
@@ -809,7 +859,12 @@ export function FileView({
         // keystrokes, and the digest that came back is the digest of
         // `sent` — so the text baseline moves to `sent` and whatever
         // they typed on top of it is still unsaved.
-        setFile((f) => (f === null ? f : { ...f, text: sent, digest: w.digest, at_ms: w.at_ms }));
+        setFile((f) => {
+          if (f === null) return f;
+          const now = { ...f, text: sent, digest: w.digest, at_ms: w.at_ms, total: bytesOf(sent) };
+          remember(machine, path, now);
+          return now;
+        });
         setEdit((e) => (e === null ? e : { ...e, was: w.digest }));
         setClashes(null);
         setSaved(true);
