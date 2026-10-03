@@ -795,6 +795,21 @@ export function TerminalPane({
     const term = new Terminal({
       // unicode11 is a proposed API; without this flag the addon throws.
       allowProposedApi: true,
+      // **OSC 8 links go where every other link goes** (T-24, the
+      // terminal audit: they went to xterm's default `confirm()` and
+      // `window.open`, around `open_link`'s whitelist; OscLinkProvider.ts
+      // 114). The same gesture as a plain URL (⌘-click, iTerm2's), and
+      // the same road (`follow`).
+      linkHandler: {
+        activate: (ev, uri) => {
+          if (ev.metaKey || ev.ctrlKey) follow(uri);
+        },
+      },
+      // **The size reports programs ask for** (T-1: CSI 14 t, 16 t, 18 t
+      // went unanswered because `windowOptions` defaults to none;
+      // yazi asks 16 t for its cell size). Reports only — nothing here
+      // lets a program move, resize or retitle the window.
+      windowOptions: { getWinSizePixels: true, getCellSizePixels: true, getWinSizeChars: true },
       scrollback: SCROLLBACK,
       fontFamily: font.family,
       fontSize: font.size,
@@ -827,6 +842,24 @@ export function TerminalPane({
     term.loadAddon(new Unicode11Addon());
     term.unicode.activeVersion = "11";
     term.open(mount);
+    // **OSC 52: a program may write the clipboard, never read it** (T-8,
+    // the terminal audit: neither direction was handled). The field's
+    // defaults: kitty, Alacritty, WezTerm and Windows Terminal allow the
+    // write and refuse (or ask about) the read. The read form (`?`) is
+    // answered with nothing, so a program waiting for it times out as it
+    // would on any terminal that refuses.
+    const osc52 = term.parser.registerOscHandler(52, (data) => {
+      const semi = data.indexOf(";");
+      const payload = semi >= 0 ? data.slice(semi + 1) : "";
+      if (payload === "?" || payload === "") return true;
+      try {
+        const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
+        void navigator.clipboard?.writeText(new TextDecoder().decode(bytes)).catch(() => {});
+      } catch {
+        /* not base64: nothing to write */
+      }
+      return true;
+    });
     // The fastest renderer the webview has; a machine without WebGL
     // silently keeps xterm's DOM renderer. Nothing to install either
     // way — this is a build-time library, not a user dependency.
@@ -1225,6 +1258,7 @@ export function TerminalPane({
       reopenRef.current = null;
       if (reopeners.get(id) === reopenHere) reopeners.delete(id);
       window.cancelAnimationFrame(firstFrame);
+      osc52.dispose();
       stoppedWebgl = true;
       document.removeEventListener("visibilitychange", shownAgain);
       term.element?.removeEventListener("webglcontextlost", lost, true);
