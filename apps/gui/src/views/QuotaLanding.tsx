@@ -59,9 +59,9 @@ import {
   DIAL_CARD_RATIO,
   DIAL_CARD_SIZE,
   DIAL_CARD_STROKE,
-  DIAL_ROW_RATIO,
-  DIAL_ROW_SIZE,
-  DIAL_ROW_STROKE,
+  DIAL_FLUID_RATIO,
+  DIAL_FLUID_SIZE,
+  DIAL_FLUID_STROKE,
   Face,
   type Pip,
 } from "@/components/Face";
@@ -672,20 +672,6 @@ function arcOf(r: Row): number | null {
 /** The middle of a row's dial. A registered row says what its reading
     says (`centre`); a probed subscription has no reading object, so its
     share is spelled here — the same rounding, on the same number. */
-/** A reading inside the row's dial, its unit a step smaller than its
-    digits (F4.4: 「85%」 stood 1px from the arc's ends) — the number is
-    the reading, the sign only says what kind. */
-function reading(text: string) {
-  const m = /^(.*?)(%)$/.exec(text);
-  if (!m) return text;
-  return (
-    <>
-      {m[1]}
-      <span className="text-[0.72em]">{m[2]}</span>
-    </>
-  );
-}
-
 function centreOf(r: Row): string {
   if (r.account) return centre(r.account);
   return r.fill == null ? "" : `${Math.round(r.fill * 100)}%`;
@@ -1267,19 +1253,26 @@ export function QuotaLanding({
       // Not a machine's face, so `art`, and no mark on it.
       face: {
         art: (
-          // The dial fills the list's face slot, pips and all (W-V11:
-          // `DIAL_ROW_SIZE`); its first ink is on the list's line.
-          <span data-dial-row className="flex">
+          // **The dial is the size of every list's face** (2026-10-03,
+          // the owner: as large as the session page's avatars): the slot
+          // every list wears (`--list-face`, 40 under a finger, 32 with a
+          // mouse), the whole drawing — pips and all — across its width,
+          // the reading at caption size (`Face` `fluid`) and without its
+          // percent sign: three digits at 12 are what the 40 bowl holds, and the
+          // detail page says the unit. Tombstone: drawn
+          // at a fixed 32 wide, a cropped arc 22 tall beside 17px titles.
+          <span data-dial-row className="grid size-list-face flex-none place-items-center">
             <Face
-              size={DIAL_ROW_SIZE}
-              stroke={DIAL_ROW_STROKE}
-              ratio={DIAL_ROW_RATIO}
+              size={DIAL_FLUID_SIZE}
+              stroke={DIAL_FLUID_STROKE}
+              ratio={DIAL_FLUID_RATIO}
+              fluid
               crop
               fraction={arcOf(r)}
               strain={r.account?.strain ?? null}
               pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
             >
-              {reading(centreOf(r))}
+              {centreOf(r).replace(/%$/, "")}
             </Face>
           </span>
         ),

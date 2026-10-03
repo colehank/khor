@@ -358,6 +358,15 @@ export const DIAL_ROW_SIZE = Math.min(
 export const DIAL_ROW_RATIO = hugRatio(DIAL_ROW_SIZE, DIAL_ROW_STROKE);
 
 /**
+ * **The row's dial, drawn fluid** (`Face` `fluid`): at the reference size
+ * and scaled by the slot, so the stroke is the row's proportion of it —
+ * `DIAL_ROW_STROKE` at `DIAL_ROW_SIZE`, carried up to `REF_SIZE`.
+ */
+export const DIAL_FLUID_STROKE = (DIAL_ROW_STROKE * REF_SIZE) / DIAL_ROW_SIZE;
+export const DIAL_FLUID_RATIO = hugRatio(REF_SIZE, DIAL_FLUID_STROKE);
+export const DIAL_FLUID_SIZE = REF_SIZE;
+
+/**
  * The dial on a card that has **only this dial** — the 額度 page's.
  *
  * # The rule these three numbers come from
@@ -462,6 +471,7 @@ export function Face({
   unknown,
   ratio = BOX_RATIO,
   crop = false,
+  fluid = false,
   children,
 }: {
   size: number;
@@ -536,6 +546,16 @@ export function Face({
    * consequence of this one.
    */
   crop?: boolean;
+  /**
+   * **Drawn to its container's width, the reading in HTML at caption
+   * size** (2026-10-03, the owner on the phone: the quota page's dials
+   * should be as large as the session page's avatars). A list row's dial
+   * fills the list's face slot —
+   * 40 under a finger, 32 with a mouse — however wide that slot is,
+   * and its number stays the caption the scale names instead of
+   * shrinking with the drawing.
+   */
+  fluid?: boolean;
   /** The number in the middle. */
   children?: React.ReactNode;
 }) {
@@ -570,14 +590,14 @@ export function Face({
   const marks = (pips ?? []).filter((p): p is Pip & { v: number } => p.v !== null);
   const vals = marks.map((p) => p.v);
   const color = gaugeColor(strain);
-  return (
+  const svg = (
     <svg
       data-dial-face
       viewBox={`0 ${boxY} ${W} ${boxH}`}
-      width={W}
-      height={boxH}
+      width={fluid ? "100%" : W}
+      height={fluid ? undefined : boxH}
       role="presentation"
-      className="text-foreground"
+      className={fluid ? "block text-foreground" : "text-foreground"}
     >
       {/* The track, always. */}
       <path
@@ -659,17 +679,33 @@ export function Face({
           10.96) and 800 was a fourth weight. Snapped to the nearest step,
           and set a little higher in the bowl so a small dial's number
           clears its arc's ends (N26). */}
-      <text
-        x={cx}
-        y={cy + 5 * k}
-        fontSize={snapType(19 * k)}
-        fontWeight={600}
-        textAnchor="middle"
-        fill="currentColor"
-        className="tabular-nums"
+      {!fluid && (
+        <text
+          x={cx}
+          y={cy + 5 * k}
+          fontSize={snapType(19 * k)}
+          fontWeight={600}
+          textAnchor="middle"
+          fill="currentColor"
+          className="tabular-nums"
+        >
+          {children}
+        </text>
+      )}
+    </svg>
+  );
+  if (!fluid) return svg;
+  return (
+    <span data-dial-fluid className="relative block w-full">
+      {svg}
+      {/* On the arc's centre, where the drawn number's middle was. */}
+      <span
+        data-dial-reading
+        className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 text-caption leading-none font-title tabular-nums text-foreground"
+        style={{ top: `${((cy - boxY) / boxH) * 100}%` }}
       >
         {children}
-      </text>
-    </svg>
+      </span>
+    </span>
   );
 }
