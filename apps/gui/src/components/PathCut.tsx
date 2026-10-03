@@ -40,8 +40,7 @@ export function PathCut({
     const fit = () => {
       const room = box.clientWidth;
       if (room <= 0) return;
-      const cs = getComputedStyle(box);
-      const wide = measurer(`${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`);
+      const wide = measurer(fontOf(box));
       // A pixel spare: the canvas and the line can round a kern apart.
       setShown(cutHead(text, (s) => wide(s) <= room - 1));
     };
@@ -63,6 +62,12 @@ export function PathCut({
       <span className="sr-only">{text}</span>
     </span>
   );
+}
+
+/** The font a box's text is set in, for `measurer`. */
+export function fontOf(box: Element): string {
+  const cs = getComputedStyle(box);
+  return `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
 }
 
 /** The longest tail of `text`, behind 「…」, that `fits`: the whole text
@@ -88,7 +93,7 @@ export function cutHead(text: string, fits: (s: string) => boolean): string {
 
 let ruler: CanvasRenderingContext2D | null = null;
 /** One canvas for every cut on screen; `font` is set per measure. */
-function measurer(font: string): (s: string) => number {
+export function measurer(font: string): (s: string) => number {
   ruler ??= document.createElement("canvas").getContext("2d");
   return (s) => {
     if (ruler === null) return 0;

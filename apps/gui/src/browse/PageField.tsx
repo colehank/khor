@@ -132,7 +132,10 @@ export function PageField({
   const [typing, setTyping] = useState(false);
   const host = (() => {
     try {
-      const u = new URL(at);
+      // An address typed without a scheme is a web address: `new URL`
+      // reads 「localhost:1458/x」 as the scheme `localhost:` and drops it,
+      // and the field said 「1458/x」.
+      const u = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(at) ? at : `http://${at}`);
       return u.host + (u.pathname === "/" ? "" : u.pathname);
     } catch {
       return at;
@@ -219,6 +222,12 @@ export function PageField({
                 editing.current = false;
                 setTyping(false);
                 setDraft(at);
+                // At rest the address reads from its host (the line above);
+                // the field kept the scroll the typing left it at, so a long
+                // address showed its tail, its start cut with no ellipsis.
+                requestAnimationFrame(() => {
+                  if (input.current) input.current.scrollLeft = 0;
+                });
               }}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {

@@ -43,6 +43,7 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNod
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { EditableName, useSinglePress } from "@/components/EditableName";
 import { MachineAvatar } from "@/components/Avatar";
+import { fontOf, measurer } from "@/components/PathCut";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
 import { FaceMark, type KindMark } from "@/components/FaceMark";
@@ -186,14 +187,54 @@ function PreviewMark() {
  */
 function MidName({ text }: { text: string }) {
   const KEEP = 5;
+  const [sizer, setSizer] = useState<HTMLSpanElement | null>(null);
+  const [shown, setShown] = useState(text);
+  // **Cut by measure** (2026-10-03): the head used to be a CSS `truncate`
+  // span beside the tail, and `text-overflow` drops whole glyphs and
+  // keeps their box, so up to a glyph of blank stood between 「…」 and
+  // the tail (「loc… .html」). The full name in an invisible layer sets
+  // the label's width (the tab's own cap still applies); the visible
+  // layer is the head cut to what fits, 「…」, then the last few
+  // characters, all one run.
+  useLayoutEffect(() => {
+    if (sizer === null || text.length <= KEEP * 2) {
+      setShown(text);
+      return;
+    }
+    const fit = () => {
+      const room = sizer.clientWidth;
+      if (room <= 0) return;
+      const wide = measurer(fontOf(sizer));
+      if (wide(text) <= room - 1) {
+        setShown(text);
+        return;
+      }
+      const chars = [...text];
+      const tail = chars.slice(-KEEP).join("");
+      let lo = 0;
+      let hi = chars.length - KEEP;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (wide(`${chars.slice(0, mid).join("")}…${tail}`) <= room - 1) lo = mid;
+        else hi = mid - 1;
+      }
+      setShown(`${chars.slice(0, lo).join("")}…${tail}`);
+    };
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(sizer);
+    return () => watch.disconnect();
+  }, [sizer, text]);
   if (text.length <= KEEP * 2) return <span className="min-w-0 truncate">{text}</span>;
-  // **One gapless run** (W-V1): the label's own gap is for the preview
-  // mark, and between the two halves of a name it read as a typo
-  // (「www.baid u.com」).
   return (
-    <span data-mid-name className="flex min-w-0">
-      <span className="min-w-0 truncate">{text.slice(0, -KEEP)}</span>
-      <span className="flex-none">{text.slice(-KEEP)}</span>
+    <span data-mid-name className="relative flex min-w-0">
+      <span ref={setSizer} aria-hidden className="invisible min-w-0 overflow-hidden whitespace-nowrap">
+        {text}
+      </span>
+      <span aria-hidden className="absolute inset-0 overflow-hidden whitespace-nowrap">
+        {shown}
+      </span>
+      <span className="sr-only">{text}</span>
     </span>
   );
 }
