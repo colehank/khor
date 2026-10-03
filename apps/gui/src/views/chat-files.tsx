@@ -10,8 +10,8 @@
 // machine lands in. A file already on that machine (「这台机器上的文件」) is
 // not copied at all. Either way the agent is told the **path**, one line
 // `@<path>` per file after the person's words (`lib/paths`): what Claude
-// Code and Codex read. A picture also rides inline when the agent said it
-// takes pictures, as it did before this round.
+// Code and Codex read. A small picture also rides inline when the agent
+// said it takes pictures, as pictures did before this round (`INLINE_MAX`).
 //
 // # Composing
 //
@@ -58,9 +58,14 @@ export type Pending = {
   error: string | null;
 };
 
-/** How large a picture still rides inline beside its path (the frame's
-    ceiling, `ChatView`'s old `SHOT_MAX`): base64 inside one frame. */
-const INLINE_MAX = 5 * 1024 * 1024;
+/** How large a picture still rides inline beside its path: base64
+    inside the one frame the line travels in.
+    **1 MiB, not the 5 the old picture-only road allowed** (`ChatView`'s
+    `SHOT_MAX`): the agent has the path now, so inline is a convenience,
+    and two phone photos at 5 each made one 8.5 MB frame that held the
+    dev bridge's only request loop for minutes on its way to a far host
+    (round CHAT, simulator). */
+const INLINE_MAX = 1024 * 1024;
 /** How large a picture still gets a thumbnail on its chip. */
 const THUMB_MAX = 1024 * 1024;
 
@@ -230,8 +235,15 @@ export function MachineFilePick({
   const take = () => {
     const v = value.trim();
     if (!v || v.endsWith("/")) return;
-    onPick(v);
     onOpenChange(false);
+    // **Whole, never `~`-led**: the agent is told this path, and so is
+    // the card's listing; only the machine knows its home, and its
+    // listing of `""` says it (`fetchLs`).
+    if (!v.startsWith("~")) return onPick(v);
+    void fetchLs(machine, "").then(
+      (home) => onPick(`${home.path.replace(/\/+$/, "")}${v.slice(1)}`),
+      () => onPick(v),
+    );
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -341,17 +353,22 @@ export function FilePreview({
         // The phone's sheet (grabber, pulled down to put away); a window
         // over the scrim elsewhere, closed by a press outside or Esc.
         form={narrow}
-        // Important, all four: the dialog's own `p-pane`, `gap-row` and
-        // `w-dialog` are tokens tailwind-merge cannot tell are a padding,
-        // a gap and a width, so it keeps both and theirs wins.
+        // Important: the dialog's own `p-pane`, `gap-row` and `w-dialog`
+        // are tokens tailwind-merge cannot tell are a padding, a gap and a
+        // width, so it keeps both and theirs wins. The phone's sheet keeps
+        // its own width and its top (the grabber) and bottom (the home
+        // indicator); only its sides go, the head and the file have theirs.
         className={cn(
-          "flex flex-col overflow-hidden !gap-0 !p-0",
-          narrow ? "h-[calc(100dvh-var(--safe-top)-3rem)] !w-[calc(100%-1rem)]" : "h-[80vh] !w-[min(56rem,calc(100%-2rem))]",
+          "flex flex-col overflow-hidden !gap-0",
+          narrow ? "h-[calc(100dvh-var(--safe-top)-3rem)] !px-0" : "h-[80vh] !w-[min(56rem,calc(100%-2rem))] !p-0",
         )}
       >
         {path !== null && (
           <>
-            <div data-file-preview-head className="flex flex-none flex-col gap-in px-pane pt-pane pb-row">
+            <div
+              data-file-preview-head
+              className={cn("flex flex-none flex-col gap-in px-pane pb-row", !narrow && "pt-pane")}
+            >
               <div className="flex min-w-0 items-center gap-row">
                 <DialogTitle className="min-w-0 flex-1 truncate">{shownName(path)}</DialogTitle>
                 <Button size="sm" data-file-preview-close onClick={onClose}>
@@ -420,10 +437,11 @@ type Facts = { size: number | null; thumb: string | null };
 
 /** Asked once a page per file (and per `stamp`, for a file the agent
     rewrote): a conversation repaints often and its files do not move. A
-    question that failed is forgotten, so the next paint asks again. */
-const asked = new Map<string, Promise<Facts>>();
+    question that could not be asked answers `null` and is forgotten, so
+    the card asks again (`useFacts`). */
+const asked = new Map<string, Promise<Facts | null>>();
 
-function factsOf(machine: string, path: string, stamp: string): Promise<Facts> {
+function factsOf(machine: string, path: string, stamp: string): Promise<Facts | null> {
   const key = `${machine}\n${path}\n${stamp}`;
   const had = asked.get(key);
   if (had) return had;
@@ -438,22 +456,36 @@ function factsOf(machine: string, path: string, stamp: string): Promise<Facts> {
       const thumb = look && look.data !== "" && !look.cut ? `data:${look.media};base64,${look.data}` : null;
       return { size: row.size, thumb };
     },
-    (): Facts => {
+    () => {
       asked.delete(key);
-      return { size: null, thumb: null };
+      return null;
     },
   );
   asked.set(key, p);
   return p;
 }
 
+const RETRY_MS = 5000;
+const RETRIES = 6;
+
 function useFacts(machine: string, path: string, stamp: string): Facts {
   const [facts, setFacts] = useState<Facts>({ size: null, thumb: null });
   useEffect(() => {
     let live = true;
-    void factsOf(machine, path, stamp).then((f) => live && setFacts(f));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // A machine that could not be reached is asked again a little later,
+    // a few times: a card left without its size for the life of the page
+    // because of one dropped answer is the failure this avoids.
+    const ask = (left: number) =>
+      void factsOf(machine, path, stamp).then((f) => {
+        if (!live) return;
+        if (f !== null) setFacts(f);
+        else if (left > 0) timer = setTimeout(() => ask(left - 1), RETRY_MS);
+      });
+    ask(RETRIES);
     return () => {
       live = false;
+      clearTimeout(timer);
     };
   }, [machine, path, stamp]);
   return facts;

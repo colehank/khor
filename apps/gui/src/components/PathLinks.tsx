@@ -120,8 +120,14 @@ export function PathLink({ written }: { written: string }) {
     return <>{written}</>;
   }
   return (
-    <button
-      type="button"
+    // **Inline text, not a `<button>`** (round CHAT, seen on a phone): a
+    // button is an atomic box, so a path longer than what was left of the
+    // line jumped whole to lines of its own, centred, and left the word
+    // before it stranded. A link in a sentence wraps with the sentence,
+    // anywhere in the path if it must; Enter presses it like a button.
+    <span
+      role="link"
+      tabIndex={0}
       data-link={found.abs}
       data-link-line={found.line ?? undefined}
       title={found.abs}
@@ -131,7 +137,7 @@ export function PathLink({ written }: { written: string }) {
       // rule exists to avoid. **And it wears the pointing hand**, which
       // only a link in prose does (`Markdown`'s `Link` is the other): a
       // control is the arrow (design-system 30-behavior 选字与手).
-      className={cn("cursor-pointer underline underline-offset-2")}
+      className={cn("cursor-pointer underline underline-offset-2 [overflow-wrap:anywhere]")}
       // **`⌘`+press always goes to the host's own opener** (ruling 35:
       // 「`⌘`+点 或 网址→在宿主机器上打开」; 2026-09-18 ruling 54
       // repeats it in so many words). `ctrlKey` beside it for the same
@@ -141,8 +147,14 @@ export function PathLink({ written }: { written: string }) {
       onClick={(e) =>
         e.metaKey || e.ctrlKey ? home.launch(found.abs) : home.open(found.abs, found.line)
       }
+      onKeyDown={(e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        if (e.metaKey || e.ctrlKey) home.launch(found.abs);
+        else home.open(found.abs, found.line);
+      }}
     >
       {written}
-    </button>
+    </span>
   );
 }
