@@ -299,10 +299,43 @@ fn what_lands_on_disk_is_readable_only_by_me() {
 /// That is the argument for one owner, and it is why this test has one.
 #[test]
 fn a_read_that_races_a_compaction_still_sees_every_line() {
+    // **Until a read straddled it** (round NET-6): whether one does is
+    // timing, and under a full parallel test run 3 of 16 tries had the
+    // readers manage only six or seven reads in the window and none
+    // across it. Each try is the whole scene again on a fresh pile.
+    let mut met = None;
+    for attempt in 0..8 {
+        let (left, short, reads, relists) = race_one_compaction(attempt);
+        assert_eq!(
+            left, 1,
+            "the compaction should have left one snapshot, found {left}"
+        );
+        assert_eq!(
+            short, 0,
+            "{short} of {reads} reads came back missing a line the document has \
+             (re-listings this run: {relists})"
+        );
+        if relists > 0 {
+            met = Some(attempt);
+            break;
+        }
+    }
+    // **The arm that says this run raced anything at all.** A pass with
+    // no re-listing is a pass where the timing never overlapped, and
+    // that proves nothing about the code being tested.
+    assert!(
+        met.is_some(),
+        "in eight tries no read found a vanished block, so this run never met the case it is about"
+    );
+}
+
+/// One try of [`a_read_that_races_a_compaction_still_sees_every_line`]:
+/// snapshots left, short reads, reads, re-listings.
+fn race_one_compaction(attempt: u32) -> (usize, u64, u64, u64) {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-    let dir = tmpdir("race-compact");
+    let dir = tmpdir(&format!("race-compact-{attempt}"));
     // ⚠️ **The pile has to be big enough that a read is slow.** At 60
     // blocks this test passed with the re-listing taken out: a read
     // finishes in well under a millisecond, so it never sat across the
@@ -368,22 +401,7 @@ fn a_read_that_races_a_compaction_still_sees_every_line() {
         .count();
     let _ = fs::remove_dir_all(&dir);
 
-    assert_eq!(
-        left, 1,
-        "the compaction should have left one snapshot, found {left}"
-    );
-    assert_eq!(
-        short, 0,
-        "{short} of {reads} reads came back missing a line the document has \
-         (re-listings this run: {relists})"
-    );
-    // **The arm that says this run raced anything at all.** A pass with
-    // no re-listing is a pass where the timing never overlapped, and
-    // that proves nothing about the code being tested.
-    assert!(
-        relists > 0,
-        "none of the {reads} reads found a vanished block, so this run never met the case it is about"
-    );
+    (left, short, reads, relists)
 }
 
 /// **A read that learns nothing must not write anything.**
@@ -563,5 +581,57 @@ fn two_loads_open_at_once_in_one_process_both_keep_their_writes() {
     desk.doc.merge(&joiner.changes_since(&desk.doc.version()).unwrap()).unwrap();
     joiner.merge(&desk.doc.changes_since(&joiner.version()).unwrap()).unwrap();
     assert_eq!(desk.doc.all().len(), joiner.all().len(), "the copies agree after a round");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// **Compaction deletes only what it read** (round NET-6). It loads the
+/// pile, writes a snapshot of what it loaded, then deletes — and the
+/// delete took whatever the directory listed by then, so a block another
+/// writer flushed in between (the `Pair` arm, an app backend, a CLI verb:
+/// none of them waits for the resident's store gate) was deleted unread,
+/// its lines in nobody's snapshot. The ledger keeps the name, so no sync
+/// pulls it back either.
+#[test]
+fn a_block_written_while_compacting_is_not_deleted_unread() {
+    use crate::store::{AnyDoc, load};
+    let dir = tmpdir("compactrace");
+    let mut seed = open_channel(&dir, 0xD0).unwrap();
+    seed.doc.tell(&me("a"), "before").unwrap();
+    seed.store.flush(&seed.doc).unwrap();
+    // The compactor has read the pile …
+    let compactor = load::<AnyDoc>(&dir, 0xD1).unwrap();
+    // … another writer flushes …
+    let mut late = open_channel(&dir, 0xD2).unwrap();
+    late.doc.tell(&me("a"), "during").unwrap();
+    late.store.flush(&late.doc).unwrap();
+    // … and the compactor rewrites.
+    let mut store = compactor.store;
+    store.compact(&compactor.doc).unwrap();
+    let back = open_channel(&dir, 0xD3).unwrap();
+    let text = render(&back.doc);
+    assert!(text.contains("before") && text.contains("during"), "both lines survive:\n{text}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// **A second compaction keeps the first one's snapshot's contents.** A
+/// snapshot is named from the writer's next block number, and once
+/// compaction has deleted that writer's blocks the number can come round
+/// again: the new snapshot landed on the old one's name and the delete
+/// that followed took it.
+#[test]
+fn compacting_twice_keeps_every_word() {
+    use crate::store::{AnyDoc, load};
+    let dir = tmpdir("compact2");
+    for round in 0..2 {
+        let mut w = open_channel(&dir, 0xE0).unwrap();
+        w.doc.tell(&me("a"), &format!("line {round}")).unwrap();
+        w.store.flush(&w.doc).unwrap();
+        let c = load::<AnyDoc>(&dir, 0xE1).unwrap();
+        let mut store = c.store;
+        store.compact(&c.doc).unwrap();
+    }
+    let back = open_channel(&dir, 0xE2).unwrap();
+    let text = render(&back.doc);
+    assert!(text.contains("line 0") && text.contains("line 1"), "both lines survive:\n{text}");
     let _ = fs::remove_dir_all(&dir);
 }

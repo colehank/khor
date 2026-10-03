@@ -55,6 +55,11 @@ pub struct BlockStore {
     /// Blocks ever merged. Compaction deletes files, never ledger lines —
     /// see the `plan` module head.
     ledger: Ledger,
+    /// The block files whose contents this copy of the document holds:
+    /// what it read, wrote and took in. Compaction deletes these and
+    /// nothing else (round NET-6) — a block another writer added after
+    /// this copy was read is not in its snapshot.
+    held: std::collections::BTreeSet<String>,
 }
 
 /// What `load` returns.
@@ -232,6 +237,7 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), Stri
     // Whether anything was learned that the ledger on disk does not
     // already say. See the write at the end.
     let mut grew = false;
+    let mut held = std::collections::BTreeSet::new();
 
     for p in blocks(dir)? {
         match fs::read(&p) {
@@ -239,7 +245,8 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), Stri
                 if doc.merge(&bytes).is_err() {
                     broken.push(p);
                 } else if let Some(n) = file_name(&p) {
-                    grew |= ledger.insert(n);
+                    grew |= ledger.insert(&n);
+                    held.insert(n);
                 }
             }
             // Only a missing file is a compaction; anything else is a
@@ -254,6 +261,7 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), Stri
         dir: dir.to_path_buf(),
         on_disk,
         ledger,
+        held,
     };
     // Only write the ledger if the directory exists (an empty document
     // should leave nothing on disk) **and if this read learned a block
@@ -299,6 +307,7 @@ impl BlockStore {
         make_dir(&self.dir)?;
         write_atomic(&self.dir.join(name), bytes)?;
         self.ledger.insert(name);
+        self.held.insert(name.to_owned());
         self.save_ledger()?;
         self.on_disk = doc.version();
         Ok(())
@@ -339,7 +348,8 @@ impl BlockStore {
         // Own blocks enter the ledger too: the far side may push one right
         // back, and an unledgered copy would be re-pulled on every sync.
         if let Some(n) = file_name(&path) {
-            self.ledger.insert(n);
+            self.ledger.insert(&n);
+            self.held.insert(n);
         }
         self.save_ledger()?;
         self.on_disk = doc.version();
@@ -351,23 +361,28 @@ impl BlockStore {
     /// in memory would collide, and the collision silently overwrites a
     /// block.
     fn next_seq(&self, peer: u64) -> Result<u32, String> {
-        let prefix = format!("u-{peer:016x}-");
-        let mut max = None::<u32>;
-        if let Ok(rd) = fs::read_dir(&self.dir) {
-            for e in rd.flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                let Some(rest) = name.strip_prefix(&prefix) else {
-                    continue;
-                };
-                let Some(num) = rest.strip_suffix(&format!(".{EXT}")) else {
-                    continue;
-                };
-                if let Ok(n) = u32::from_str_radix(num, 16) {
-                    max = Some(max.map_or(n, |m: u32| m.max(n)));
-                }
-            }
-        }
-        Ok(max.map_or(0, |m| m + 1))
+        Ok(self.next_number(&format!("u-{peer:016x}-")))
+    }
+
+    /// The next number after every name starting `prefix` **on disk or in
+    /// the ledger** (round NET-6). Disk alone let a number come round once
+    /// compaction had deleted the blocks that used it: a new block took a
+    /// name the far side's ledger already marks merged, and a snapshot took
+    /// the name of the one before it — and the delete that follows a
+    /// compaction then took the new snapshot too
+    /// (`store::tests::compacting_twice_keeps_every_word`). The ledger keeps
+    /// every name, so a number counted against it is never reused.
+    fn next_number(&self, prefix: &str) -> u32 {
+        let number = |name: &str| {
+            u32::from_str_radix(name.strip_prefix(prefix)?.strip_suffix(&format!(".{EXT}"))?, 16).ok()
+        };
+        let on_disk = fs::read_dir(&self.dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| number(&e.file_name().to_string_lossy()));
+        let ledgered = self.ledger.names().iter().filter_map(|n| number(n)).collect::<Vec<_>>();
+        on_disk.chain(ledgered).max().map_or(0, |m| m + 1)
     }
 
     /// Compaction: write current state as one snapshot block, then delete
@@ -375,19 +390,32 @@ impl BlockStore {
     /// crash in between must cost a few spare KB, not the whole document.
     /// The ledger keeps every line, or the next sync would pull the
     /// compacted blocks right back, every time.
+    ///
+    /// **Only the increments it covers**: the ones this copy holds. A
+    /// block another writer flushed since this copy was read is on the
+    /// listing and not in the snapshot, and deleting it lost its writes
+    /// for good (`store::tests::a_block_written_while_compacting_is_not_deleted_unread`).
     pub fn compact<D: Doc>(&mut self, doc: &D) -> Result<PathBuf, String> {
         make_dir(&self.dir)?;
-        let old = blocks(&self.dir)?;
+        let old: Vec<PathBuf> = blocks(&self.dir)?
+            .into_iter()
+            .filter(|p| file_name(p).is_some_and(|n| self.held.contains(&n)))
+            .collect();
         let snap = doc.snapshot()?;
-        let path = self
-            .dir
-            .join(format!("snap-{:08x}.{EXT}", self.next_seq(doc.peer_id())?));
+        // The writer in the name as well as the number, as increments
+        // have it: two writers' snapshots never share a name.
+        let prefix = format!("snap-{:016x}-", doc.peer_id());
+        let path = self.dir.join(format!("{prefix}{:08x}.{EXT}", self.next_number(&prefix)));
         write_atomic(&path, &snap)?;
-        for p in old {
+        for p in old.into_iter().filter(|p| *p != path) {
+            if let Some(n) = file_name(&p) {
+                self.held.remove(&n);
+            }
             let _ = fs::remove_file(p);
         }
         if let Some(n) = file_name(&path) {
-            self.ledger.insert(n);
+            self.ledger.insert(&n);
+            self.held.insert(n);
         }
         self.save_ledger()?;
         self.on_disk = doc.version();
