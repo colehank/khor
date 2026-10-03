@@ -337,6 +337,22 @@ export function SideList({
       picked row, or the first, takes Tab; the arrows walk the rest
       (`walkList`). ⌥⌘S puts the focus there (`lib/shortcuts`). */
   const visible = (showOld ? [...fresh, ...aged] : fresh).filter((r) => !shutOf(r.group));
+  /** **A row's React key: its id, made unique where two rows share one**
+      (2026-10-03). Two machines with the same name share one
+      conversation (`chat/<name>`, the node's persisted session id), and
+      the node lists it once per machine — two rows with one id, which
+      React folds together. The id stays what the row is (what it opens,
+      selects, pins); only the key gains the occurrence. The sharing itself
+      is the node's to settle and waits on the owner. */
+  const keyOf = new Map<SideRow, string>();
+  {
+    const seen = new Map<string, number>();
+    for (const r of [...fresh, ...aged]) {
+      const n = seen.get(r.id) ?? 0;
+      seen.set(r.id, n + 1);
+      keyOf.set(r, n === 0 ? r.id : `${r.id}#${n}`);
+    }
+  }
   const stop = (visible.find((r) => r.selected) ?? visible[0])?.id;
   const one = (r: SideRow, prev: SideRow | undefined, size: number) => {
     const open = !shutOf(r.group);
@@ -402,7 +418,7 @@ export function SideList({
       </button>
     );
     return (
-      <Fragment key={r.id}>
+      <Fragment key={keyOf.get(r) ?? r.id}>
         {/* One rule where the pinned group ends and the rest begins
             (docs/SHELL.md 第七轮 第 1 条), noticed between neighbours like
             the heading below — so it is drawn only while both groups
