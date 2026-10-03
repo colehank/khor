@@ -68,6 +68,8 @@ import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, 
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { peekOf, type Peek } from "@/lib/term-peek";
+import { predictEcho, type Predict } from "@/lib/term-predict";
+import { termPredict } from "@/lib/term-predict-setting";
 import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
@@ -936,7 +938,12 @@ const CLOSES = /\x1b\[\?(25h|2026l)/g;
  * the same way (kitty's `input_delay`/`repaint_delay`, a few ms) and treat
  * mode 2026 as the program's own frame marks.
  */
-function framesWhole(term: Terminal): { paint: (bytes: Uint8Array) => void; flush: () => void; drop: () => void } {
+function framesWhole(
+  term: Terminal,
+  /** What the bytes become on their way in, and what runs once xterm has
+      parsed them (`lib/term-predict`). */
+  shape: (bytes: Uint8Array) => { bytes: Uint8Array; parsed?: () => void },
+): { paint: (bytes: Uint8Array) => void; flush: () => void; drop: () => void } {
   let held: Uint8Array[] = [];
   let since = 0;
   let timer = 0;
@@ -956,11 +963,15 @@ function framesWhole(term: Terminal): { paint: (bytes: Uint8Array) => void; flus
     }
     held = [];
     since = 0;
-    term.write(all);
+    const shaped = shape(all);
+    term.write(shaped.bytes, shaped.parsed);
   };
   const paint = (bytes: Uint8Array) => {
     // The gates' before-and-after switch: written as it arrives.
-    if ((window as unknown as { __framesOff?: boolean }).__framesOff) return term.write(bytes);
+    if ((window as unknown as { __framesOff?: boolean }).__framesOff) {
+      const shaped = shape(bytes);
+      return term.write(shaped.bytes, shaped.parsed);
+    }
     held.push(bytes);
     const now = performance.now();
     if (!since) since = now;
@@ -1778,8 +1789,18 @@ export function TerminalPane({
       }
     });
     let joined = false;
+    // **Typing drawn before a slow echo** (roadmap 5.2): every byte of
+    // output passes it on the way in.
+    let composingNow = false;
+    const predict: Predict = predictEcho(term, () => termPredict() && !composingNow);
+    (box as HTMLDivElement & { __predict?: Predict }).__predict = predict;
+    const composeOn = () => (composingNow = true);
+    const composeOff = () => (composingNow = false);
+    term.textarea?.addEventListener("compositionstart", composeOn);
+    term.textarea?.addEventListener("compositionend", composeOff);
+    const predictResized = term.onResize(() => predict.clear());
     // Output painted a whole frame at a time (item 18 B).
-    const frames = framesWhole(term);
+    const frames = framesWhole(term, predict.output);
     let seq = 0;
     let timer = 0;
     let busy = false;
@@ -1800,8 +1821,10 @@ export function TerminalPane({
     let replaying = 0;
     const replay = (bytes: Uint8Array) => {
       replaying += 1;
-      term.write(bytes, () => {
+      const shaped = predict.output(bytes);
+      term.write(shaped.bytes, () => {
         replaying -= 1;
+        shaped.parsed?.();
         // The history just landed: the scroller's range is the buffer's
         // now, not whenever xterm next scrolls (item 18 A).
         syncScroller.current();
@@ -1839,6 +1862,7 @@ export function TerminalPane({
         if (b.reset) {
           frames.drop();
           term.reset();
+          predict.clear();
         }
         if (b.bytes) {
           if (b.reset || gap > CATCH_UP_MS) {
@@ -1913,6 +1937,7 @@ export function TerminalPane({
           if (again) {
             frames.drop();
             term.reset();
+            predict.clear();
           }
           // Everything the feed holds — it began with the host's ring
           // dump, so the screen arrives *with its history*, the same
@@ -2059,6 +2084,9 @@ export function TerminalPane({
         latch({ ctrl: false, alt: false });
       }
       send(out);
+      // An answer is not typing; a key is, and a history replay's keys
+      // are not anybody's (`lib/term-predict`).
+      if (!reply && replaying === 0) predict.typed(out);
     });
     // **Command blocks** (roadmap 2.3): drawn from the marks; a block's
     // actions on a right-click or a long press on its prompt; ⌘↑ ⌘↓, the
@@ -2215,6 +2243,9 @@ export function TerminalPane({
       gestures();
       linked.dispose();
       box.removeEventListener("mousedown", pictureClick, true);
+      predictResized.dispose();
+      term.textarea?.removeEventListener("compositionstart", composeOn);
+      term.textarea?.removeEventListener("compositionend", composeOff);
       marks.dispose();
       shown();
       window.clearTimeout(bellTimer.current);

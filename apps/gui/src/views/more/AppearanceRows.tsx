@@ -24,6 +24,7 @@ import { HISTORY_CHOICES, lineKb, setTermHistory, useTermHistory } from "@/lib/t
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
 import { setTermBell, useTermBell } from "@/lib/term-bell";
+import { setTermPredict, useTermPredict } from "@/lib/term-predict-setting";
 import { lasted } from "@/words";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
@@ -84,6 +85,7 @@ export function TerminalSection() {
   const history = useTermHistory();
   const finishedAfter = useFinishedAfter();
   const bell = useTermBell();
+  const predicts = useTermPredict();
   const [editingKeys, setEditingKeys] = useState(false);
   const [here] = useState(() => fontsHere());
   const [refused, setRefused] = useState<string | null>(null);
@@ -253,6 +255,13 @@ export function TerminalSection() {
         hint={gui.term_bell_note}
         on={bell}
         onToggle={() => setTermBell(!bell)}
+      />
+      <SwitchRow
+        name="term-predict"
+        label={gui.term_predict}
+        hint={gui.term_predict_note}
+        on={predicts}
+        onToggle={() => setTermPredict(!predicts)}
       />
       {coarse && (
         <PopupRow

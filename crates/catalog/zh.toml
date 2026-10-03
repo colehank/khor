@@ -2387,6 +2387,8 @@ term-picture = "图片"
 # (roadmap 4.2).
 term-bell = "响铃"
 term-bell-note = "终端响铃时，Mac 上闪一下边框，手机上轻震一下"
+term-predict = "慢网预测回显"
+term-predict-note = "远端回显慢时，按下的字先带下划线显示，等远端确认"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"
