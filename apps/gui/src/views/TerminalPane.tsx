@@ -77,7 +77,7 @@ import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermHistory, termHistory } from "@/lib/term-history";
-import { tapRaisesKeyboard } from "@/lib/term-tap";
+import { tapRaisesKeyboard, useTapRaisesKeyboard } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
 import { typed, type Mods } from "@/lib/term-keys";
@@ -1033,6 +1033,9 @@ export function TerminalPane({
   // or the soft keyboard. A ref as well as state because the `onData`
   // handler below reads them, and that handler is wired once per terminal.
   const coarse = useCoarse();
+  /** Whether a tap on the terminal raises the keyboard (`lib/term-tap`):
+      no keyboard circle then (round UX-3 3a). */
+  const tapWakes = useTapRaisesKeyboard();
   const [mods, setModsShown] = useState<Mods>({ ctrl: false, alt: false });
   const modsRef = useRef<Mods>({ ctrl: false, alt: false });
   const latch = (m: Mods) => {
@@ -1887,9 +1890,15 @@ export function TerminalPane({
     )}
     {coarse && active && (
       <>
-        <BarSeat at="trail">
-          <KeyboardSwitch field={keysRef} />
-        </BarSeat>
+        {/* **The keyboard circle only in 点击按钮** (round UX-3 3a): where a
+            tap on the terminal raises the keyboard, a button for it is a
+            second door; a drag down over the content lowers it in every
+            mode (`SessionScreen`). The setting is `lib/term-tap`'s. */}
+        {!tapWakes && (
+          <BarSeat at="trail">
+            <KeyboardSwitch field={keysRef} />
+          </BarSeat>
+        )}
         <BarSeat at="under">
           <TermKeys term={termRef} mods={mods} onMods={latch} />
         </BarSeat>
