@@ -79,6 +79,7 @@ import { tapRaisesKeyboard } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
 import { typed, type Mods } from "@/lib/term-keys";
+import { isFocusReport, isReply } from "@/lib/term-replies";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -93,6 +94,9 @@ const ANSI16 = [
     keystroke asks again immediately (`pollNow`), so echo latency is
     the round trip, not this number. */
 const LIVE_MS = 50;
+/** A beat this long after the last one is a catch-up: what it carries
+    was asked while nobody was looking, and is replayed (`replay`). */
+const CATCH_UP_MS = 2_000;
 
 /** The scrollback xterm keeps, matched to the parser's own
     (`khor_gui_core::term::SCROLLBACK`) so the two authorities never
@@ -750,16 +754,42 @@ export function TerminalPane({
     // Which join the screen belongs to (`reopen`): a beat that was in
     // flight across a re-join writes nothing.
     let generation = 0;
+    // **Replayed questions answer into nothing** (2026-10-03, the owner's
+    // phone: 「11;rgb:…1;2c1$r2 q…」 typed at a prompt). History written into
+    // xterm — the attach's ring dump, a reset beat, the catch-up after a
+    // long gap — holds the queries programs asked back then, and xterm
+    // answers them again. While such bytes are being parsed (until
+    // `write`'s callback, which xterm calls once the parser has consumed
+    // them), `onData` drops what has the shape of an answer
+    // (`lib/term-replies`); keys still go. The xterm.js maintainers' own
+    // advice is to replay before wiring the pty (discussions #4869); the
+    // pane is wired first so that early keys are not lost, and this is
+    // the same thing done at the one place where answers leave.
+    let replaying = 0;
+    const replay = (bytes: Uint8Array) => {
+      replaying += 1;
+      term.write(bytes, () => {
+        replaying -= 1;
+      });
+    };
+    /** When the last beat came back: a beat after a long gap (the pane
+        was hidden, the app was suspended) is a catch-up, not live. */
+    let lastBeat = performance.now();
     const tick = async () => {
       const mine = generation;
       try {
         const b = await termStream(id, seq);
         if (stopped || mine !== generation) return;
+        const gap = performance.now() - lastBeat;
+        lastBeat = performance.now();
         // The feed trimmed past our place (a long time hidden): start
         // the screen over from what the node still holds, rather than
         // writing a stream whose head is missing.
         if (b.reset) term.reset();
-        if (b.bytes) term.write(b64bytes(b.bytes));
+        if (b.bytes) {
+          if (b.reset || gap > CATCH_UP_MS) replay(b64bytes(b.bytes));
+          else term.write(b64bytes(b.bytes));
+        }
         seq = b.seq;
         if (b.gone) setGone(true);
         setRejoining(b.rejoining && !b.gone);
@@ -826,8 +856,10 @@ export function TerminalPane({
           if (again) term.reset();
           // Everything the feed holds — it began with the host's ring
           // dump, so the screen arrives *with its history*, the same
-          // replay the host gives any attacher.
-          if (a.bytes) term.write(b64bytes(a.bytes));
+          // replay the host gives any attacher. Its old questions get no
+          // answers (`replay`).
+          if (a.bytes) replay(b64bytes(a.bytes));
+          lastBeat = performance.now();
           seq = a.seq;
           // Wired only now: a resize racing the open would size a pty
           // the open is about to size again.
@@ -872,9 +904,13 @@ export function TerminalPane({
     // 0x03) and, for Alt, gets an ESC before it — and let go; a mouse
     // report passes and leaves them waiting.
     const data = term.onData((d) => {
+      const reply = isReply(d);
+      if (replaying > 0 && (reply || isFocusReport(d))) return;
       let out = d;
       const m = modsRef.current;
-      if ((m.ctrl || m.alt) && !MOUSE_REPORT.test(d)) {
+      // An answer to a live question is not a key: it neither takes a
+      // latch nor waits for one.
+      if ((m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
         out = d.length === 1 ? typed(d, m) : d;
         latch({ ctrl: false, alt: false });
       }
