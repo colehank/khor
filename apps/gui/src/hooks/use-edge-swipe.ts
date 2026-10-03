@@ -13,6 +13,7 @@
 // `[data-swipe-host]`), never by React state: a finger is sixty moves a
 // second, and the screen under it must not re-render for any of them.
 import { useEffect, useRef } from "react";
+import { flushSync } from "react-dom";
 
 /** How far in from the screen's edge a back swipe may start. */
 const EDGE = 20;
@@ -104,7 +105,22 @@ export function useEdgeSwipe(host: HTMLElement | null, back: (() => void) | null
           // The page under is already where it will be: the screen that
           // arrives must not play its own entrance over it.
           document.documentElement.setAttribute("data-swiped", "");
-          run.current?.();
+          // **Committed before the page lets go of the finger's offset**
+          // (2026-10-03, the owner on the phone: every swipe back showed
+          // the page it left once more after arriving). React renders a
+          // state change from a timer later, on its own beat; `clear()`
+          // below drops `--swipe` at once — so for a frame or more the
+          // page that was swiped away stood back at 0 over the list it
+          // had uncovered. Flushed, the destination is in the DOM first,
+          // and the page that was left is never painted again.
+          const back = run.current;
+          if (back) flushSync(back);
+          // …and the screen that arrived never plays its entrance: the
+          // root's `data-swiped` comes off two frames later, and an
+          // animation switched back on starts from its first frame — the
+          // list slid in 16px after it had already arrived. Marked on the
+          // element itself, which the next navigation replaces.
+          for (const el of host.querySelectorAll(":scope > [data-screen]")) el.setAttribute("data-arrived", "");
           requestAnimationFrame(() =>
             requestAnimationFrame(() => document.documentElement.removeAttribute("data-swiped")),
           );

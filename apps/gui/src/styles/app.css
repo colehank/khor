@@ -712,7 +712,8 @@ aside[data-side] {
 :root[data-settling][data-swipe-kind="file"] [data-files-page] {
   transition: transform var(--dur-240) var(--ease-out);
 }
-:root[data-swiped] [data-screen] {
+:root[data-swiped] [data-screen],
+[data-swipe-host] > [data-screen][data-arrived] {
   animation: none;
 }
 /* **A list stays under the page it opens, fading** (V19): the arriving
