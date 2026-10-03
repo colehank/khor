@@ -105,6 +105,11 @@ pub struct SessionRow {
     /// message, transcript utterance or terminal line — the kind judged
     /// it, this only paints it.
     pub last: Option<String>,
+    /// What the session's shell is doing (`khor_core::Session::doing`,
+    /// roadmap 2.1): the command running or last run, its status, the
+    /// directory and title. The row's second line and the tab's name are
+    /// made from it; the face only words it.
+    pub doing: Option<khor_core::Doing>,
     /// The network exit this session borrows (device hex), when it does
     /// (docs/NET.md 借网 via 记号). No producer yet — lands with `--via`.
     pub via: Option<String>,
@@ -808,6 +813,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 hosted,
                 via_face: v.session.via.as_ref().and_then(|d| faces.get(d).cloned()),
                 last: v.session.last,
+                doing: v.session.doing,
                 via: v.session.via,
                 id: v.session.id.0,
                 kind: v.session.kind.0,

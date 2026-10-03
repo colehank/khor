@@ -2508,14 +2508,16 @@ pub struct Session {
 /// **What a terminal session is doing** (roadmap 1.2 and 2.1): the command
 /// that runs or last ran, where, how it ended — the row's second line and
 /// the tab's name are made from it, never from the prompt's own glyphs.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Doing {
     /// The command line as typed, one line (a multi-line one is joined).
     pub command: Option<String>,
     /// It is running now (its end has not been marked).
     pub running: bool,
     /// When it started and ended, ms since the epoch; 0 when unknown.
+    #[ts(type = "number")]
     pub started_ms: u64,
+    #[ts(type = "number | null")]
     pub ended_ms: Option<u64>,
     /// How it ended, when the shell said.
     pub exit: Option<i32>,

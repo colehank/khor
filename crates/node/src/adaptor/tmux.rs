@@ -563,6 +563,8 @@ struct Gathering {
     /// has given one.
     word: Option<State>,
     cwd: String,
+    /// The first pane running something other than its shell.
+    running: Option<String>,
 }
 
 impl Gathering {
@@ -580,6 +582,7 @@ impl Gathering {
             // so a `cd` inside the checkout lands in the same workspace
             // (`khor_node::place`).
             cwd: first.current_path.clone(),
+            running: None,
         }
     }
 
@@ -589,7 +592,11 @@ impl Gathering {
         // 忙碌 wins: a session with one pane at a prompt and one running
         // a build is a session with something running in it. Reducing
         // the other way would let the idle pane hide the work.
-        match word_of(pane, procs) {
+        let word = word_of(pane, procs);
+        if word == Some(State::Busy) && self.running.is_none() && !pane.current_command.is_empty() {
+            self.running = Some(pane.current_command.clone());
+        }
+        match word {
             Some(State::Busy) => self.word = Some(State::Busy),
             Some(w) if self.word.is_none() => self.word = Some(w),
             _ => {}
@@ -621,6 +628,7 @@ impl Gathering {
                     cwd: (!self.cwd.is_empty()).then_some(self.cwd),
                 },
             },
+            running: self.running.clone(),
             holds: procs.held_by(&self.pane_pids),
         }
     }
