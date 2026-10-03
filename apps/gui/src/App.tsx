@@ -655,7 +655,16 @@ export default function App() {
   // not move (`UNWATCHED_MS`).
   useEffect(() => {
     let live = true;
+    // **One question at a time.** The beat is 2 s and the node may take
+    // up to its 5 s deadline, so asking on every beat stacked three
+    // questions whose answers landed in any order — the road word on a
+    // row flipped between two readings that were both seconds old
+    // (audit/net.md F4). A beat that finds a question still out skips;
+    // the answer that comes is the newest there is.
+    let asking = false;
     const tick = () => {
+      if (asking) return;
+      asking = true;
       fetchDevices()
         .then((rows) => {
           if (!live) return;
@@ -663,8 +672,12 @@ export default function App() {
           setDevicesRead(true);
         })
         // Silent on purpose: 「后端连不上」 belongs to the rows above,
-        // which asks more often and would already be saying it.
-        .catch(() => {});
+        // which asks more often and would already be saying it. The rows
+        // already on screen stay — the last reading, not a blank.
+        .catch(() => {})
+        .finally(() => {
+          asking = false;
+        });
     };
     tick();
     const t = setInterval(

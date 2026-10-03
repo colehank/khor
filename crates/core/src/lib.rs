@@ -164,129 +164,63 @@ impl State {
 /// **falling back to a relay is silent**. Without a readout, "do we
 /// still need a relay on this network" is unanswerable.
 ///
-/// # Every variant is a fact, including the two that say nothing
+/// # Read off the wire this machine holds, not off iroh's address book
 ///
-/// The tempting shape is three words — direct, relay, and everything
-/// else. That shape is the ledger's own trap: a reading khor cannot
-/// take does not become *no value*, it becomes **whichever neighbour it
-/// is folded into**, and a machine quietly reported as relayed is
-/// exactly the wrong answer to the question this was built for. So:
+/// The resident keeps one long-lived connection to every machine it
+/// talks to (`khor_node`'s wires), and the word is **the path that
+/// connection has selected**, settled over two samples a second apart so
+/// a path being re-chosen does not flicker the row. No wire, or a wire
+/// that went silent and was retired, is [`Hop::Idle`] — not connected.
 ///
-/// - [`Hop::Idle`] is *khor knows, and the answer is nothing is
-///   flowing* — a peer with no path in use.
+/// ⚠️ 墓碑 (2026-10-03, round NET): this used to read iroh's
+/// `remote_info`, counting every address it still marked open. That map
+/// is not cleared when a connection closes, so a machine frozen for 40 s
+/// read 直连 in all 225 samples taken, and a fifth variant, `Unknown`
+/// (说不出), stood for five unrelated things: no entry in the map, the
+/// status call failing, a late answer, a missing row, and a phone's new
+/// endpoint. None of those was "the road is unknown"; each now says what
+/// it is — not connected, or the last reading kept.
+///
+/// # Every variant is a fact
+///
+/// - [`Hop::Idle`] is *khor holds no live wire to that machine*.
 /// - [`Hop::NoServe`] is *nobody on this machine is holding the
 ///   endpoint*, so there was no one to ask. Fixable, and the fix is a
-///   command.
-/// - [`Hop::Unknown`] is *somebody was asked and could not say* — the
-///   remote is not in its map, the road in use is a transport this
-///   version has no word for, or the endpoint did not answer within the
-///   serve's budget (`khor_node::link`'s `HOPS_BUDGET`; the serve's log
-///   names the machine when that is why).
+///   command — which is why it is not folded into not connected.
 ///
-/// Folding any of the three together would be the same mistake one size
-/// down. "nothing is flowing", "khor is not running here" and "I have
-/// no idea" are three answers, and only the middle one tells a person
-/// what to type.
-///
-/// # It lags, and by minutes
-///
-/// This is iroh's own view of which paths it holds open, and it does not
-/// drop one the moment the other end goes away. Measured 2026-08-21 by
-/// stopping a paired resident and reading the other side every 30s: it
-/// still said 直连 **two minutes later**, and turned to 没在连 about a
-/// minute after that.
-///
-/// So a road word is not a liveness signal and must never be read as
-/// one. The row it sits on already carries liveness on its own axis —
-/// how old that machine's last reading is (docs/SESSION.md keeps the
-/// two apart, and this is the same split one level up). Mixing them
-/// here, so that an unreachable machine's road went blank, would put
-/// two facts in one word and lose both.
+/// Liveness rides beside the word, not inside it ([`Link::heard_ms`]):
+/// how long since that machine was last heard on the wire.
 ///
 /// Crosses the wire as its `key()` string, like [`State`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(into = "String", try_from = "String")]
 pub enum Hop {
-    /// Straight there — the address in use is an IP.
+    /// Straight there — the selected path is an IP.
     Direct,
     /// Through a relay server.
     Relay,
-    /// Nothing is flowing to that machine at the moment.
+    /// No live wire to that machine.
     Idle,
-    /// No resident on this machine, so nothing here holds an endpoint to
-    /// read the answer off. Kept apart from [`Hop::Unknown`] because it
-    /// is the one silent answer with a remedy in it.
+    /// No resident on this machine, so nothing here holds a wire to read
+    /// the answer off.
     NoServe,
-    /// Khor cannot tell.
-    Unknown,
 }
 
 impl Hop {
-    pub const ALL: [Hop; 5] = [
-        Hop::Direct,
-        Hop::Relay,
-        Hop::Idle,
-        Hop::NoServe,
-        Hop::Unknown,
-    ];
+    pub const ALL: [Hop; 4] = [Hop::Direct, Hop::Relay, Hop::Idle, Hop::NoServe];
 
     /// Wire and catalog key.
     pub const fn key(self) -> &'static str {
         match self {
             Hop::Direct => "direct",
             Hop::Relay => "relay",
-            // **Not `idle` and not `unknown`**, though those are the
-            // plain words: `[state]` already owns an `idle` and
-            // `[category]` an `unknown`, and a face that looked a hop up
-            // in the wrong catalog table would then find a real word and
-            // paint it. Keys that exist in only one table make that
+            // **Not `idle`**, though that is the plain word: `[state]`
+            // already owns an `idle`, and a face that looked a hop up in
+            // the wrong catalog table would then find a real word and
+            // paint it. A key that exists in only one table makes that
             // mistake echo the key instead, which is visible.
             Hop::Idle => "quiet",
             Hop::NoServe => "no-serve",
-            Hop::Unknown => "unsure",
-        }
-    }
-
-    /// What a live endpoint's report of one remote's addresses means.
-    ///
-    /// **Only the addresses marked as in use are read.** The available
-    /// list also holds candidates that are merely known — an address
-    /// khor could try — and counting one of those as the answer would
-    /// report "direct" for a machine whose every byte is going through
-    /// a relay. The same judgment `probe.rs` already carries: what
-    /// decides is the path that was selected, not the mere existence of
-    /// a direct one.
-    ///
-    /// Takes booleans rather than iroh's types so the rule lives beside
-    /// the words and can be tested without a network — the crate that
-    /// talks to iroh reports which kinds of road are in use and names
-    /// nothing (`khor_net::endpoint::roads_in_use`).
-    ///
-    /// `other_in_use` is a road iroh is using that this version has no
-    /// word for. It is the whole reason [`Hop::Unknown`] and
-    /// [`Hop::Idle`] are two variants: without it, "a transport khor
-    /// cannot name" and "nothing is flowing" arrive here identical.
-    pub const fn of(direct_in_use: bool, relay_in_use: bool, other_in_use: bool) -> Hop {
-        match (direct_in_use, relay_in_use) {
-            // **Both open is reported as direct, and that is a decision.**
-            // Measured 2026-08-21, two residents, read from both sides
-            // every 20s for a minute: whenever a direct road is open the
-            // relay road is open *too*, stably — iroh keeps it as
-            // insurance rather than tearing it down. So a separate word
-            // for "both" would appear on every healthy row and mean
-            // nothing (a badge that is never zero is no badge), and it
-            // would read as "the relay is still needed" when the relay
-            // is doing no work.
-            //
-            // The question this readout exists for is whether
-            // holepunching worked, and 直连 already answers it. If a
-            // network ever shows a *direct-only* state with no relay
-            // held, this arm is where to look — the fact would not
-            // change, only whether it is worth a word.
-            (true, true) | (true, false) => Hop::Direct,
-            (false, true) => Hop::Relay,
-            (false, false) if other_in_use => Hop::Unknown,
-            (false, false) => Hop::Idle,
         }
     }
 }
@@ -306,6 +240,54 @@ impl TryFrom<String> for Hop {
             .find(|h| h.key() == s)
             .ok_or_else(|| format!("not a hop: {s}"))
     }
+}
+
+/// **One machine's connection, as the resident holds it**: the road its
+/// wire is on, and how long ago that machine was last heard.
+///
+/// `heard_ms` is liveness, kept on its own axis so the road word never
+/// has to carry it: a wire answers keepalives every few seconds, so a
+/// healthy machine reads a few seconds at most, and the number grows
+/// from the last thing heard once it stops — after the wire is retired
+/// too, which is what lets a row say 「12 秒前」 about a machine that
+/// went quiet. `None` when it has never been heard since the resident
+/// started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Link {
+    pub hop: Hop,
+    pub heard_ms: Option<u64>,
+}
+
+/// **How the resident's wires have fared since it started** — the
+/// counters `khor doctor` prints so a word on somebody's screen can be
+/// traced to what produced it (round NET-FIX).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WireCounts {
+    /// Wires opened, and dials that did not produce one.
+    pub dialed: u64,
+    pub dial_failed: u64,
+    /// Wires retired, by why: nothing heard for the silence limit; a
+    /// request sent and nothing heard back within the ack limit; closed
+    /// by the far side or by QUIC; the network changed and the wire
+    /// stayed quiet after it; the endpoint itself was replaced.
+    pub retired_silent: u64,
+    pub retired_unanswered: u64,
+    pub retired_closed: u64,
+    pub retired_network: u64,
+    pub retired_new_ears: u64,
+    /// Requests whose wire was alive but whose answer ran past budget.
+    pub answers_late: u64,
+    /// Readings asked again on a fresh wire after the first one died.
+    pub reads_retried: u64,
+    /// Road readings handed out, by word.
+    pub read_direct: u64,
+    pub read_relay: u64,
+    pub read_idle: u64,
+    /// Network changes and wakes this resident noticed.
+    pub network_changes: u64,
+    /// Status questions the resident was asked and did not answer in
+    /// time (any op past its deadline).
+    pub ops_late: u64,
 }
 
 /// **How this machine's recent dials to another one went** (docs/
@@ -339,51 +321,6 @@ pub struct RoadTally {
 mod hop_tests {
     use super::Hop;
 
-    /// **A candidate is not a road in use.** The whole readout is worth
-    /// nothing if "khor knows a direct address for that machine" can
-    /// come out as 直连 while every byte goes through the relay — which
-    /// is the failure the question ("do we still need a relay here?")
-    /// would be asked to diagnose.
-    #[test]
-    fn only_a_road_in_use_decides() {
-        assert_eq!(Hop::of(true, false, true), Hop::Direct);
-        assert_eq!(Hop::of(false, true, true), Hop::Relay);
-        // Both roads open is the healthy steady state, not a third
-        // answer — see `of`.
-        assert_eq!(Hop::of(true, true, true), Hop::Direct);
-    }
-
-    /// **The three silent answers stay apart.** Folded together, "the
-    /// two of you are not talking", "khor is not running on this
-    /// machine" and "I could not read it" wear one word — and only the
-    /// middle one tells a person what to type.
-    ///
-    /// `NoServe` is not produced here on purpose: `of` is handed what a
-    /// live endpoint saw, and the case where there was no endpoint to
-    /// ask never reaches it (`khor_node::Node::hops` decides that one).
-    /// Asserted anyway, because the thing worth protecting is that the
-    /// three are three — wherever each is decided.
-    #[test]
-    fn the_three_silences_stay_apart() {
-        assert_eq!(
-            Hop::of(false, false, false),
-            Hop::Idle,
-            "nothing in use at all"
-        );
-        assert_eq!(
-            Hop::of(false, false, true),
-            Hop::Unknown,
-            "a road khor has no word for"
-        );
-        let silent = [Hop::Idle, Hop::NoServe, Hop::Unknown];
-        for (i, a) in silent.iter().enumerate() {
-            for b in &silent[i + 1..] {
-                assert_ne!(a, b);
-                assert_ne!(a.key(), b.key(), "{} and {} share a key", a.key(), b.key());
-            }
-        }
-    }
-
     /// Keys are what travel; a duplicate would make two readings one.
     #[test]
     fn every_hop_has_its_own_key_and_survives_a_round_trip() {
@@ -393,6 +330,10 @@ mod hop_tests {
             assert_eq!(Hop::try_from(h.key().to_owned()), Ok(h));
         }
         assert!(Hop::try_from("teleport".to_owned()).is_err());
+        assert!(
+            Hop::try_from("unsure".to_owned()).is_err(),
+            "the retired 说不出 does not come back through the wire"
+        );
     }
 }
 

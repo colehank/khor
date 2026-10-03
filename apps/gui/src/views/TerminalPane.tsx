@@ -66,7 +66,7 @@ import "@xterm/xterm/css/xterm.css";
 import { inApp, openLink, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
-import { RegionState } from "@/components/RegionState";
+import { RegionState, Waiting } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
@@ -558,7 +558,15 @@ export async function reopenTerminal(id: string): Promise<boolean> {
   return true;
 }
 
-export function TerminalPane({ id }: { id: string }) {
+export function TerminalPane({
+  id,
+  machine,
+}: {
+  id: string;
+  /** The far machine this terminal lives on, by the name people read —
+      `null` for one hosted here. What a wait and a reconnect name. */
+  machine?: string | null;
+}) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -581,6 +589,15 @@ export function TerminalPane({ id }: { id: string }) {
   // its skeleton, never a blank board (guidelines/20-states); the
   // sentence replaces it if the open fails.
   const [opening, setOpening] = useState(true);
+  // **When the open began, and which try this is** (round NET-FIX): a
+  // wait past a second gets a spinner, past eight the machine's name,
+  // the time and 停止等待 / 重试 (`Waiting`). A retry is a new try — the
+  // effect below runs again from scratch.
+  const [openedAt, setOpenedAt] = useState<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  // The far pipe ended and is being asked for again (`TermChunk::
+  // rejoining`): the screen is the last one that arrived, and it says so.
+  const [rejoining, setRejoining] = useState(false);
   // Why the last drop produced no paste, in khor's own words. Kept on
   // screen until a drop works (docs/UX.md 失败就地说).
   const [dropWhy, setDropWhy] = useState<string | null>(null);
@@ -745,6 +762,7 @@ export function TerminalPane({ id }: { id: string }) {
         if (b.bytes) term.write(b64bytes(b.bytes));
         seq = b.seq;
         if (b.gone) setGone(true);
+        setRejoining(b.rejoining && !b.gone);
       } catch {
         /* the next beat asks again */
       }
@@ -783,6 +801,12 @@ export function TerminalPane({ id }: { id: string }) {
       const mine = ++generation;
       window.clearTimeout(timer);
       if (again) setJoining(true);
+      else {
+        // The waiting clock (`Waiting`): a first join shows its wait with
+        // 停止等待 / 重试; a re-join shows the circle's spinner instead.
+        setWhy(null);
+        setOpenedAt(Date.now());
+      }
       const opened = again
         ? termLeave(id)
             .catch(() => {})
@@ -793,7 +817,10 @@ export function TerminalPane({ id }: { id: string }) {
         .then((a) => {
           if (stopped || mine !== generation) return;
           setOpening(false);
+          setOpenedAt(null);
           setJoining(false);
+          // An open that lands after 停止等待 is still an open: the
+          // terminal is there, so the pane shows it.
           setWhy(null);
           setGone(false);
           if (again) term.reset();
@@ -820,6 +847,7 @@ export function TerminalPane({ id }: { id: string }) {
         .catch((e: unknown) => {
           if (stopped || mine !== generation) return;
           setOpening(false);
+          setOpenedAt(null);
           setJoining(false);
           setWhy(String((e as { message?: string })?.message ?? e));
         });
@@ -936,7 +964,7 @@ export function TerminalPane({ id }: { id: string }) {
       keysRef.current = null;
       termLeave(id).catch(() => {});
     };
-  }, [id]);
+  }, [id, attempt]);
 
   // Twenty polls a second is what a terminal costs to look at; nobody
   // looking is nobody paying. A shorter pace takes effect at once (a
@@ -1130,7 +1158,13 @@ export function TerminalPane({ id }: { id: string }) {
     >
       {/* xterm's mount. Everything inside is the renderer's own — the
           gates read the buffer through `__xterm`, not this subtree. */}
-      <div data-term-screen ref={mountRef} className="h-full w-full" />
+      <div
+        data-term-screen
+        ref={mountRef}
+        // Held back while the pipe is being asked for again: the last
+        // screen that arrived, not a live one.
+        className={cn("h-full w-full transition-opacity", rejoining && "opacity-50")}
+      />
       {/* The way back down, and the only sign that anything arrived
           while the reader was up in history. Two sentences on one
           control: "something came in" and "you are simply not at the
@@ -1153,20 +1187,42 @@ export function TerminalPane({ id }: { id: string }) {
           {freshBelow ? gui.new_below : gui.to_bottom}
         </button>
       )}
-      {opening && !why && (
-        <div data-term-opening className="absolute inset-0 z-10 bg-card">
-          <RegionState state="loading-never" />
+      {/* **Reconnecting, said over the screen it holds** (round
+          NET-FIX): the far pipe ended and is being asked for again, so
+          the screen under this is the last one that arrived — held back
+          in ink, and this pill on top in the pane's floating language
+          (the way-back-down control's), so it never sits on the
+          program's own text the way a bare caption would. */}
+      {rejoining && !gone && !why && (
+        <div
+          data-term-rejoining
+          role="status"
+          className="absolute top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-xxs rounded-lg border bg-popover px-3 py-1 font-sans text-caption text-muted-foreground shadow-(--shadow-float)"
+        >
+          <IconReload className="size-3.5 flex-none animate-spin motion-reduce:animate-none" />
+          {machine ? gui.term_rejoining(machine) : gui.term_rejoining_here}
+        </div>
+      )}
+      {opening && !why && openedAt !== null && (
+        <div data-term-opening className="absolute inset-0 z-10 bg-card font-sans">
+          <Waiting
+            since={openedAt}
+            machine={machine}
+            onCancel={() => {
+              setOpening(false);
+              setOpenedAt(null);
+              setWhy(machine ? gui.waiting_stopped(machine) : gui.waiting_stopped_here);
+            }}
+            onRetry={() => setAttempt((n) => n + 1)}
+          />
         </div>
       )}
       {why ? (
         // Centred, not a corner label: there is no screen behind it to
         // annotate, and this sentence is the whole of what the pane has
-        // to say.
-        <div
-          data-term-why
-          className="absolute inset-0 grid place-items-center px-6 text-center text-callout text-muted-foreground"
-        >
-          {why}
+        // to say — with 重试, which opens it again from the start.
+        <div data-term-why className="absolute inset-0 z-10 bg-card font-sans">
+          <RegionState state="error" message={why} onRetry={() => setAttempt((n) => n + 1)} />
         </div>
       ) : (
         <div
@@ -1183,6 +1239,7 @@ export function TerminalPane({ id }: { id: string }) {
               {gui.term_over}
             </div>
           )}
+
           {/* Held to the pane's own width so a sentence wraps here
               instead of pushing the screen sideways. */}
           {dropWhy && (

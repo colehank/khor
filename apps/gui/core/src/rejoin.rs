@@ -18,10 +18,12 @@
 //! its head (`TermChunk::reset` — reset and replay), the conversation's
 //! frames do the same (`ChatBatch::lost` — clear and ask for history).
 //!
-//! **Only where it is switched on** ([`set_on`]): the app switches it on
-//! on a phone, the one place a resident is resumed rather than restarted
-//! (`Node::serve_resumable`). A desktop's far terminal that loses its
-//! pipe still ends as it always has.
+//! **On everywhere, since round NET-FIX** ([`set_on`] can still turn it
+//! off): it used to be the phone's alone, while a desktop's far terminal
+//! that lost its pipe ended — and with wires that are now retired when
+//! they go silent (`khor_node`'s wires), a desktop loses pipes for the
+//! same reasons a phone does: a sleep, a network change, a far machine
+//! restarted. The face says 正在重新连接 meanwhile (`TermChunk::rejoining`).
 //!
 //! **It stops on an answer, not on a clock.** `Rejoin::Gone` — the far
 //! machine answered and the session is not there — ends the attachment,
@@ -38,14 +40,14 @@ use std::time::Duration;
 use khor_node::link::Rejoin;
 use khor_node::{Node, SessionId};
 
-static ON: AtomicBool = AtomicBool::new(false);
+static ON: AtomicBool = AtomicBool::new(true);
 
 /// The first wait after a rejoin that did not reach.
 const FIRST: Duration = Duration::from_secs(1);
 /// The longest wait between two tries; a [`kick`] cuts any wait short.
 pub const LONGEST: Duration = Duration::from_secs(30);
 
-/// Switches rejoining on for this process (the phone's app does, once).
+/// Switches rejoining on or off for this process (on unless told).
 pub fn set_on(on: bool) {
     ON.store(on, Ordering::Relaxed);
 }

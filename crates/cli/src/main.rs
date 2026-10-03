@@ -2050,7 +2050,9 @@ fn devices(_rest: &[String]) -> Result<(), String> {
     // hand-off to the resident, and asking per device would make the
     // readings arrive at different instants — a table where two rows
     // describe two moments.
-    let hops = rt()?.block_on(n.hops());
+    // A resident that does not answer keeps its last reading
+    // (`Node::links`); with none at all the road column stays empty.
+    let links = rt()?.block_on(n.links()).unwrap_or_default();
     let all = n.devices()?;
     // id → name, for the satellite lines: their road column names the
     // sponsor they speak through, and a person reads names.
@@ -2076,17 +2078,13 @@ fn devices(_rest: &[String]) -> Result<(), String> {
             ""
         };
         let pin = if d.pinned { cli::pinned_mark() } else { "" };
-        let hop = hops
-            .iter()
-            .find(|(id, _)| *id == d.id)
-            .map(|(_, h)| *h)
-            .unwrap_or(khor_node::Hop::Unknown);
+        let link = links.iter().find(|(id, _)| *id == d.id).map(|(_, l)| *l);
         // A satellite has no road of its own — its sponsor speaks for
         // it (附属机器批), so the road column says who through instead
         // of a reading nothing could take.
         let road = match d.sponsor.as_deref() {
             Some(sp) => cli::via_sponsor(names.get(sp).copied().unwrap_or(sp)),
-            None => hop_word(hop, me).to_owned(),
+            None => link.map(|l| link_words(l, me)).unwrap_or_default(),
         };
         println!(
             "{}\t{}…{here}{held}{pin}\t{}\t{}",
@@ -2981,11 +2979,18 @@ mod top_table {
 /// rather than given a sixth word: a word here would be one more thing
 /// to read on every row, forever, to learn something already obvious
 /// from the 「(本机)」 beside it.
-fn hop_word(hop: khor_node::Hop, is_me: bool) -> &'static str {
+/// The road word, and — for a machine not connected that was heard
+/// before — how long ago that was. A connected machine is heard every
+/// few seconds by keepalive alone, so its age would only ever say "now".
+fn link_words(link: khor_node::Link, is_me: bool) -> String {
     if is_me {
-        return "";
+        return String::new();
     }
-    khor_catalog::hop::word(hop.key())
+    let road = khor_catalog::hop::word(link.hop.key());
+    match (link.hop, link.heard_ms) {
+        (khor_node::Hop::Idle, Some(ms)) => cli::link_last_heard(road, lasting(ms / 1000)),
+        _ => road.to_owned(),
+    }
 }
 
 /// One machine's readings on one line — the CLI half of the machine card,

@@ -46,7 +46,7 @@ import "@/day/day.css";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { useHereHosts } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
-import { ago, hopWord, lasting, systemWord, count } from "@/words";
+import { ago, lasting, linkWord, systemWord, count } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -434,7 +434,7 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
   ) : row.sponsor ? (
     <span data-via-sponsor={row.sponsor}>{cli.via_sponsor(row.sponsor)}</span>
   ) : row.hop ? (
-    <span data-hop={row.hop}>{hopWord(row.hop)}</span>
+    <span data-hop={row.hop}>{linkWord(row.hop, row.heard_ms)}</span>
   ) : null;
   if (road) facts.push(["connection", gui.card_connection, road]);
   if (v && v.uptime_s > 0) {

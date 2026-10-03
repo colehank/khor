@@ -282,6 +282,14 @@ pub struct DeviceRow {
     /// face had to remember to hide, the first face that forgot would
     /// print 说不出 on the row for the computer it is running on.
     pub hop: Option<String>,
+    /// How long since that machine was last heard on this one's wire to
+    /// it, in ms (`khor_core::Link::heard_ms`) — liveness, on its own
+    /// axis beside `hop`. A connected machine is heard every few seconds
+    /// by keepalive alone, so this only says something once it stops;
+    /// faces show it beside 未连接 as 「上次 N 分钟前」. `None` when it
+    /// was never heard since the resident started, and for this machine.
+    #[ts(type = "number | null")]
+    pub heard_ms: Option<u64>,
     /// The machine this satellite speaks through, by name (附属机器批)
     /// — `None` for every ordinary machine. Where `hop` answers "which
     /// road", this answers "whose road": a satellite has none of its
@@ -972,9 +980,12 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
     let n = tokio::task::spawn_blocking(move || open(&at))
         .await
         .map_err(|e| e.to_string())??;
-    let hops = n.hops().await;
+    // A resident that did not answer in time keeps its last reading
+    // (`Node::links`); only with no reading at all is the road left
+    // unsaid on every row — never a word for "the question failed".
+    let links = n.links().await.unwrap_or_default();
     let root = root.to_path_buf();
-    tokio::task::spawn_blocking(move || rows_of_devices(&root, &n, hops))
+    tokio::task::spawn_blocking(move || rows_of_devices(&root, &n, links))
         .await
         .map_err(|e| e.to_string())?
 }
@@ -982,7 +993,7 @@ pub async fn list_devices(root: &Path) -> Result<Vec<DeviceRow>, String> {
 fn rows_of_devices(
     root: &Path,
     n: &Node,
-    hops: Vec<(String, khor_node::Hop)>,
+    links: Vec<(String, khor_node::Link)>,
 ) -> Result<Vec<DeviceRow>, String> {
     let me = n.device_str().to_owned();
     let all = n.devices()?;
@@ -1016,14 +1027,14 @@ fn rows_of_devices(
             } else {
                 khor_node::pause::peer_on(root, &d.id)
             },
-            hop: (d.id != me).then(|| {
-                hops.iter()
-                    .find(|(id, _)| *id == d.id)
-                    .map(|(_, h)| *h)
-                    .unwrap_or(khor_node::Hop::Unknown)
-                    .key()
-                    .to_owned()
-            }),
+            hop: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .map(|(_, l)| l.hop.key().to_owned()),
+            heard_ms: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .and_then(|(_, l)| l.heard_ms),
             face: n.face_of(&d),
             pinned: d.pinned,
             // The background sampler's last round for this machine,

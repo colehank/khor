@@ -867,6 +867,92 @@ pub struct DirEntry {
     pub at_ms: u64,
 }
 
+impl Request {
+    /// **Whether asking twice is the same as asking once** — what lets a
+    /// request whose wire died under it be asked again on a fresh one
+    /// without the person seeing the death (`link::Node::ask_on`).
+    ///
+    /// A reading changes nothing over there; a sync exchange is a CRDT
+    /// merge, which takes the same bytes twice as once; a reach answers
+    /// the port and cookie of a session that is already there. Anything
+    /// that starts, ends, writes or moves something is not, even when
+    /// the first attempt probably never arrived — "probably" is not
+    /// good enough for a second shell or a second rename.
+    pub fn is_reading(&self) -> bool {
+        matches!(
+            self,
+            Request::Sync { .. }
+                | Request::Fetch { .. }
+                | Request::Sessions
+                | Request::Usage
+                | Request::Vitals
+                | Request::Ls { .. }
+                | Request::FetchPath { .. }
+                | Request::Reach { .. }
+                | Request::SatVitals { .. }
+                | Request::SatLs { .. }
+                | Request::Watched
+                | Request::SatFetchPath { .. }
+                | Request::SatTouched { .. }
+                | Request::SatGitStatus { .. }
+                | Request::SatGitDiff { .. }
+                | Request::Days
+                | Request::Places
+                | Request::Quotas
+                | Request::Load { .. }
+                | Request::Touched { .. }
+                | Request::GitStatus { .. }
+                | Request::GitDiff { .. }
+                | Request::CodeHere
+                | Request::Search { .. }
+                | Request::SatSearch { .. }
+                | Request::Checkout { .. }
+                | Request::SatCheckout { .. }
+        )
+    }
+
+    /// **How long the answer may take once the far machine has it** —
+    /// a backstop, not the liveness check. A wire that has gone dead is
+    /// caught in seconds whatever this says (`crate::wires::ACK_WITHIN`,
+    /// `SILENT_AFTER`); this bounds a far machine that is alive and
+    /// still working, so the number is the work's, per kind:
+    ///
+    /// - the default fifteen covers every answer read off memory or one
+    ///   directory, with the dial (≤ 10 s) inside the asker's thirty;
+    /// - anything over ssh (a satellite's) waits on a second network;
+    /// - starting a session forks and waits for its host;
+    /// - VS Code's web face may be downloaded on first use (ipc's
+    ///   `DEADLINE_SLOW` has the measurement), and an accepted transfer
+    ///   pulls whole files (`DEADLINE_TRANSFER`).
+    pub fn budget(&self) -> std::time::Duration {
+        use std::time::Duration;
+        match self {
+            Request::Act { action, .. } if action == "accept" => Duration::from_secs(3600),
+            Request::CodeServe { .. } => Duration::from_secs(280),
+            Request::Sync { .. }
+            | Request::Fetch { .. }
+            | Request::FetchPath { .. }
+            | Request::SatFetchPath { .. }
+            | Request::Pair { .. } => Duration::from_secs(30),
+            Request::SatVitals { .. }
+            | Request::SatLs { .. }
+            | Request::SatRemove { .. }
+            | Request::SatMkdir { .. }
+            | Request::SatTouch { .. }
+            | Request::SatRename { .. }
+            | Request::SatLaunch { .. }
+            | Request::SatTouched { .. }
+            | Request::SatGitStatus { .. }
+            | Request::SatGitDiff { .. }
+            | Request::SatWrite { .. }
+            | Request::SatSearch { .. }
+            | Request::SatCheckout { .. } => Duration::from_secs(30),
+            Request::Open { .. } | Request::OpenAgent { .. } => Duration::from_secs(25),
+            _ => Duration::from_secs(15),
+        }
+    }
+}
+
 pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
     rmp_serde::to_vec(t).map_err(khor_catalog::msg::cant_encode_frame)
 }

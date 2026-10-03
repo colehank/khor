@@ -67,6 +67,7 @@ import {
 } from "@/api";
 import { IconBack } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
+import { Waiting } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { gui } from "@/gen/catalog";
@@ -882,9 +883,13 @@ export function ChatView({
   id,
   still = false,
   category = null,
+  machine = null,
 }: {
   id: string;
   still?: boolean;
+  /** The far machine this conversation lives on — `null` for one held
+      here. What a long wait names. */
+  machine?: string | null;
   /** The row's vendor (`SessionRow::category`): which mark and which
       name the composer's who seat wears. */
   category?: string | null;
@@ -893,6 +898,14 @@ export function ChatView({
   /** The agent's own commands, as of the last frame that carried a set. */
   const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
   const [gone, setGone] = useState(false);
+  // **Why it never opened, in the node's own words, and a way to try
+  // again** (round NET-FIX, audit/net.md F9): a machine that cannot be
+  // reached used to read 「没有找到这段对话的记录」, as though the
+  // conversation did not exist. And while it is being opened, the wait
+  // is said (`Waiting`) rather than an empty page.
+  const [openWhy, setOpenWhy] = useState<string | null>(null);
+  const [openedAt, setOpenedAt] = useState<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [inTurn, setInTurn] = useState(false);
   /** When the running turn started. Cleared with the turn, so a
       finished conversation counts nothing — and see `waiting` below for
@@ -1153,16 +1166,24 @@ export function ChatView({
     // An unreachable host is an over conversation, not an error of this
     // pane's own: the host holds the agent, so no host means no one to
     // talk to (`gui_host` — the host file's pids are one process).
+    setGone(false);
+    setOpenWhy(null);
+    setOpenedAt(Date.now());
     chatOpen(id)
       .then((fresh) => {
+        if (stopped) return;
+        setOpenedAt(null);
         // Only a fresh attachment asks for history: the host answers
         // every replay it is asked for, and a second mount of a living
         // chat (dev double-mount) already holds the replayed frames.
         if (fresh) chatReplay(id).catch(() => {});
         tick();
       })
-      .catch(() => {
-        if (!stopped) setGone(true);
+      .catch((e: unknown) => {
+        if (stopped) return;
+        setOpenedAt(null);
+        setOpenWhy(String((e as { message?: string })?.message ?? e));
+        setGone(true);
       });
     return () => {
       stopped = true;
@@ -1170,7 +1191,7 @@ export function ChatView({
       pollNow.current = () => {};
       chatLeave(id).catch(() => {});
     };
-  }, [id, still]);
+  }, [id, still, attempt]);
 
   // The paces, and one rule covering all of them: **a shorter pace has
   // to take effect at once, a longer one never does.** Waiting out a
@@ -1590,6 +1611,18 @@ export function ChatView({
             ))}
           </div>
         )}
+        {openedAt !== null && items.length === 0 && (
+          <Waiting
+            since={openedAt}
+            machine={machine}
+            onCancel={() => {
+              setOpenedAt(null);
+              setOpenWhy(machine ? gui.waiting_stopped(machine) : gui.waiting_stopped_here);
+              setGone(true);
+            }}
+            onRetry={() => setAttempt((n) => n + 1)}
+          />
+        )}
         {facts && items.length === 0 && (facts.needsLogin || !facts.replays) && (
           <div data-chat-facts className="pb-1 text-caption text-muted-foreground">
             {facts.needsLogin ? gui.chat_needs_login : gui.chat_no_replay}
@@ -1855,8 +1888,13 @@ export function ChatView({
         <div className="flex-none px-row pt-xxs pb-in">
           <div className="flex items-center gap-2 px-2 py-1.5 text-callout">
             <span data-chat-readonly className="min-w-0 flex-1 text-muted-foreground">
-              {gone ? gui.chat_no_record : gui.chat_readonly}
+              {gone ? (openWhy ?? gui.chat_no_record) : gui.chat_readonly}
             </span>
+            {gone && openWhy && (
+              <Button data-chat-retry size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                {gui.region_retry}
+              </Button>
+            )}
           </div>
         </div>
       ) : (
@@ -1903,7 +1941,21 @@ export function ChatView({
             and the cost is gone from the composer (the owner: 「右边不写
             美元」). */}
         {gone ? (
-          <div className="px-2 py-1.5 text-callout text-muted-foreground">{gui.chat_over}</div>
+          // Never opened is not the same as over: the node's sentence
+          // (a machine that cannot be reached, say) and 重试 — only a
+          // conversation that really ended reads 对话已结束.
+          openWhy ? (
+            <div className="flex items-center gap-2 px-2 py-1.5 text-callout">
+              <span data-chat-unopened className="min-w-0 flex-1 text-muted-foreground">
+                {openWhy}
+              </span>
+              <Button data-chat-retry size="sm" onClick={() => setAttempt((n) => n + 1)}>
+                {gui.region_retry}
+              </Button>
+            </div>
+          ) : (
+            <div className="px-2 py-1.5 text-callout text-muted-foreground">{gui.chat_over}</div>
+          )
         ) : (
           // While a turn runs the send is refused and the way out sits
           // next to it: a turn that never ends used to leave 关闭 the

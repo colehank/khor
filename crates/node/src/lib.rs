@@ -54,12 +54,14 @@ pub mod tunnel;
 pub mod usage;
 pub mod vitals;
 pub mod workspace;
+pub(crate) mod wires;
 
 pub use khor_core::avatar::{
     Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    CpuDay, Fill, Hop, Load, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
+    CpuDay, Fill, Hop, Link, Load, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
+    WireCounts,
     UsageDay, Vitals, kind,
 };
 pub use khor_sync::chat::{FileRef, Message, MsgBody};
@@ -356,10 +358,17 @@ pub struct Node {
     /// process gets the same one (`usage::meters_for`).
     usage: Arc<usage::Meters>,
     subscribers: Arc<Mutex<Vec<mpsc::Sender<NodeEvent>>>>,
-    /// Serializes sync pumps within one process: two concurrent pumps
-    /// share block stores and could collide on sequence numbers. The
-    /// ticker skips when busy; an explicit sync waits its turn.
-    pub(crate) sync_gate: tokio::sync::Mutex<()>,
+    /// Rounds with other machines share the stores, compaction rewrites
+    /// them: every round holds this for reading, many at once (one per
+    /// machine, `link::Node::sync_peers`), and compaction takes it for
+    /// writing only when no round is running. Block files are named by
+    /// author and sequence (`khor_sync::store`), so rounds in parallel
+    /// never write the same file.
+    pub(crate) store_gate: tokio::sync::RwLock<()>,
+    /// The sync round running with each machine, by device id, for a
+    /// second asker to wait on instead of starting another
+    /// (`link::Node::sync_peers`).
+    pub(crate) rounds: Arc<Mutex<std::collections::HashMap<String, link::RoundWatch>>>,
     /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
     /// their session id. Each is a task holding a local proxy port and a
     /// lease to the exit; the serve reaps one once its session row is
@@ -401,32 +410,20 @@ pub struct Node {
     /// (`code::serve`), not by remembering a number here. One map with
     /// two meanings would have to carry both stories.
     pub(crate) codes: PipeMap<String>,
-    /// The live connections this node holds to other machines, by the
-    /// name it reaches them under (`Node::dial_named` fills it).
-    ///
-    /// **A QUIC connection is a pipe with many streams in it, and every
-    /// ask here is one stream.** Before this existed, each ask dialled
-    /// its own connection and dropped it on the way out — and a dial is
-    /// not cheap: it races a direct road against a relay road, both of
-    /// which are full handshakes, and the far machine sees a new
-    /// connection each time. An open machine card asks every five
-    /// seconds. That is a card costing a far machine (and whatever
-    /// relay stands between) 12 handshakes a minute to answer a
-    /// question it already answered.
-    ///
-    /// **Held by name, checked by liveness.** A connection that has
-    /// closed — idle timeout over there, a serve restarted, a road that
-    /// went away — reports a `close_reason`, and the holder dials again
-    /// rather than handing back a pipe with no water in it. iroh's own
-    /// net_report keeps its probe connections exactly this way, and the
-    /// check is the same one.
-    ///
-    /// **This is the resident serve's win, not the CLI's.** A one-shot
-    /// verb opens a node, asks once and exits, so its map is filled and
-    /// dropped in one breath; every face in the app routes through the
-    /// serve (`via_serve`), and that is the process this saves.
-    pub(crate) wires:
-        Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
+    /// The wires this node holds to other machines — one long-lived
+    /// connection per machine and protocol (`crate::wires` has the
+    /// lifecycle and why). Shared so a `WireWatch` taken before `serve`
+    /// consumes the node still sees what the serve does with them.
+    pub(crate) wires: Arc<wires::Wires>,
+    /// The resident's own handle on itself, set by `serve`: what lets a
+    /// task the node spawns (a borrow that re-fetches its wire, a far
+    /// stream answered concurrently) outlive the call that started it.
+    /// Empty on a node that is not serving.
+    pub(crate) me: std::sync::OnceLock<std::sync::Weak<Node>>,
+    /// The endpoint the resident answers on now; replaced with fresh
+    /// ears. What a long-lived task reads instead of an endpoint it
+    /// captured, which may since have been closed.
+    pub(crate) ears: Mutex<Option<Arc<iroh::Endpoint>>>,
     /// Whether opening this node made the network's root key — the one
     /// moment a person must be told to write its words down
     /// (`trust::Node::bootstrap_trust`).
@@ -444,49 +441,51 @@ pub struct Node {
     hosts: bool,
 }
 
-/// A read-only look at the connections a node is holding
-/// (`Node::wires`).
+/// A read-only look at the wires a node is holding (`Node::wires`).
 ///
-/// **It exists because reuse is otherwise unobservable.** What this
-/// batch changed is that a second ask rides the first ask's pipe, and
-/// from outside the process both versions look the same: two asks, two
-/// answers. A test that could only assert "both asks answered" would
-/// have passed just as loudly before the change — a control whose two
-/// arms were built to agree. This is the arm that can tell them apart.
+/// **It exists because reuse is otherwise unobservable.** A second ask
+/// riding the first ask's wire looks, from outside the process, exactly
+/// like two asks on two wires: two asks, two answers. A test that could
+/// only assert "both asks answered" would pass either way. This is the
+/// arm that can tell them apart.
 ///
-/// It hands out names and a count, never the connections: nothing
-/// outside the node may send on a pipe the node is holding for its own
-/// asks.
+/// It hands out names and counts, never the connections: nothing
+/// outside the node may send on a wire the node is holding.
 #[derive(Clone)]
-pub struct WireWatch(
-    Arc<tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>>,
-);
+pub struct WireWatch(Arc<wires::Wires>, Vec<(String, String)>);
 
 impl WireWatch {
-    pub(crate) fn of(
-        wires: &Arc<
-            tokio::sync::Mutex<std::collections::HashMap<String, iroh::endpoint::Connection>>,
-        >,
-    ) -> Self {
-        Self(wires.clone())
+    pub(crate) fn of(wires: &Arc<wires::Wires>, names: Vec<(String, String)>) -> Self {
+        Self(wires.clone(), names)
     }
 
-    /// The machines this node has an open connection to, sorted — a
-    /// name appears once however many asks have ridden it.
+    /// The machines this node holds a live wire to, by name, sorted.
     pub async fn names(&self) -> Vec<String> {
-        let held = self.0.lock().await;
-        let mut names: Vec<String> = held.keys().cloned().collect();
+        let mut names: Vec<String> = self
+            .0
+            .held()
+            .into_iter()
+            .map(|id| {
+                self.1
+                    .iter()
+                    .find(|(i, _)| *i == id)
+                    .map(|(_, n)| n.clone())
+                    .unwrap_or(id)
+            })
+            .collect();
         names.sort();
         names
     }
 
-    /// Whether the connection held for that machine is still up. A
-    /// closed one is still in the map until the next ask replaces it,
-    /// and telling the two apart is what proves the liveness check has
-    /// something to catch.
+    /// Whether the wire held for that machine is up.
     pub async fn is_open(&self, channel: &str) -> Option<bool> {
-        let held = self.0.lock().await;
-        held.get(channel).map(|c| c.close_reason().is_none())
+        let id = self.1.iter().find(|(_, n)| n == channel).map(|(i, _)| i.clone())?;
+        Some(self.0.held().contains(&id))
+    }
+
+    /// The wire counters (`khor_core::WireCounts`).
+    pub fn counts(&self) -> khor_core::WireCounts {
+        self.0.counts.snapshot()
     }
 }
 
@@ -1007,11 +1006,14 @@ impl Node {
             live,
             usage,
             subscribers: Arc::new(Mutex::new(Vec::new())),
-            sync_gate: tokio::sync::Mutex::new(()),
+            store_gate: tokio::sync::RwLock::new(()),
+            rounds: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
-            wires: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            wires: Arc::default(),
+            me: std::sync::OnceLock::new(),
+            ears: Mutex::new(None),
             root_born: false,
             roads: Arc::default(),
             hosts,

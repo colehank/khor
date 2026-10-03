@@ -107,6 +107,10 @@ pub struct TermChunk {
     /// again): `bytes` is the whole feed — reset the emulator and
     /// replay, never splice.
     pub reset: bool,
+    /// The pipe to a far machine's host ended and is being asked for
+    /// again (`crate::rejoin`): what is on screen is the last thing that
+    /// arrived, not a live screen. The face says so until bytes flow.
+    pub rejoining: bool,
 }
 
 struct Term {
@@ -121,6 +125,8 @@ struct Term {
     /// (`crate::acs`).
     acs: Mutex<crate::acs::Acs>,
     gone: AtomicBool,
+    /// Between a far pipe ending and the next one carrying bytes.
+    rejoining: AtomicBool,
     /// Open count, for React's double-mount, exactly as chat explains.
     holds: AtomicUsize,
     /// Nobody holds it any more: a pipe that ends now is not asked for
@@ -225,6 +231,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
         parser: Mutex::new(vt100::Parser::new(rows, cols, 0)),
         acs: Mutex::new(crate::acs::Acs::default()),
         gone: AtomicBool::new(false),
+        rejoining: AtomicBool::new(false),
         holds: AtomicUsize::new(1),
         left: AtomicBool::new(false),
         feed: Mutex::new(Feed::default()),
@@ -250,6 +257,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
                     let Some(machine) = far.as_deref().filter(|_| crate::rejoin::is_on()) else {
                         break;
                     };
+                    reader.rejoining.store(true, Ordering::Relaxed);
                     let (rows, cols) = plock(&reader.parser).screen().size();
                     let Some(conn) = crate::rejoin::again(&root, machine, &sid, &reader.left, |addr, cookie| {
                         khor_node::host::connect_at(addr, cookie, cols, rows)
@@ -265,6 +273,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
                     if fresh {
                         start_over(&reader);
                         fresh = false;
+                        reader.rejoining.store(false, Ordering::Relaxed);
                     }
                     if let Some((cols, rows)) = paint(
                         &reader.acs,
@@ -505,6 +514,7 @@ pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
         seq,
         gone: term.gone.load(Ordering::Relaxed),
         reset,
+        rejoining: term.rejoining.load(Ordering::Relaxed),
     })
 }
 
@@ -911,6 +921,7 @@ mod tests {
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
+            rejoining: AtomicBool::new(false),
             holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),

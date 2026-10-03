@@ -74,12 +74,11 @@ pub enum Op {
         machine: String,
         session: String,
     },
-    /// Which road this machine is using to reach each known device
-    /// (`khor_core::Hop`). **Only the resident can answer**: the reading
-    /// belongs to the live endpoint's own view of its remotes, and a
-    /// one-shot verb that bound its own endpoint would have talked to
-    /// nobody and report "nothing flowing" for the whole fleet.
-    /// Tail-appended.
+    /// Each known device's link as the resident holds it — the road its
+    /// wire is on and how long since it was heard (`khor_core::Link`).
+    /// **Only the resident can answer**: the wires are its, and a
+    /// one-shot verb that bound its own endpoint would hold none and
+    /// report the whole fleet as not connected. Tail-appended.
     Hops,
     /// Tail-appended: [`crate::proto::Request::OpenAgent`] through the
     /// resident — an agent session, by name, on that machine. Resolved
@@ -265,6 +264,10 @@ pub enum Op {
         machine: String,
         session: String,
     },
+    /// How the resident's wires have fared since it started
+    /// (`khor_core::WireCounts`) — `khor doctor`'s account of where a
+    /// word on a screen came from. Tail-appended.
+    Wires,
 }
 
 /// **In-process at the serve**: the answer is in the serve's own memory
@@ -320,6 +323,7 @@ impl Op {
         match self {
             Op::Hops => ("Hops", DEADLINE_LOCAL),
             Op::Roads => ("Roads", DEADLINE_LOCAL),
+            Op::Wires => ("Wires", DEADLINE_LOCAL),
             Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
@@ -410,15 +414,14 @@ pub enum Reply {
         addr: String,
         cookie: String,
     },
-    /// Tail-appended with [`Op::Hops`]: one reading per device id.
+    /// Tail-appended with [`Op::Hops`]: one link per device id.
     ///
     /// A list rather than a map because it crosses msgpack, and every
     /// device present in the table is present here — a machine missing
-    /// from this list would be read as *absent*, and the caller has no
-    /// way to tell that from *no reading*, which is precisely the
-    /// distinction `Hop` exists to keep (`Hop::Unknown`).
+    /// from this list would be read as *absent*, and the caller could
+    /// not tell that from *not connected*.
     Hops {
-        by_device: Vec<(String, khor_core::Hop)>,
+        by_device: Vec<(String, khor_core::Link)>,
     },
     /// Tail-appended with [`Op::PlacesOn`]: `(path, shown, sessions,
     /// last_ms)` per place, as that machine answered.
@@ -520,6 +523,10 @@ pub enum Reply {
     /// refusal from the far side is still [`Reply::Refused`].
     Unreached {
         why: String,
+    },
+    /// Tail-appended with [`Op::Wires`].
+    Wires {
+        counts: khor_core::WireCounts,
     },
 }
 

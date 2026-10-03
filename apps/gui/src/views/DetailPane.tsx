@@ -464,13 +464,13 @@ export function DetailPane({
         // resumes it in a terminal (`claude -r`): one session, two
         // hosts, and the one they are typing into wins. The row menu's
         // 转为 GUI 显示 is the other way round, on purpose.
-        <TerminalPane key={row.id} id={row.id} />
+        <TerminalPane key={row.id} id={row.id} machine={row.source ? row.home : null} />
       ) : row && row.kind === "gui" ? (
         // A conversation khor holds, and the only thing it has: there
         // is no terminal under it to show. Keyed so switching sessions
         // remounts the chat — its cursor, frames and attachment all
         // belong to one conversation.
-        <ChatView key={row.id} id={row.id} category={row.category} />
+        <ChatView key={row.id} id={row.id} category={row.category} machine={row.source ? row.home : null} />
       ) : row && row.attachable ? (
         // A session with a terminal to be had: hosted here already, or a
         // discovered tmux session the bridge stands a host up for on
@@ -478,7 +478,7 @@ export function DetailPane({
         // not the kind — a `khor run` shares the kind but has no host
         // and no bridge. Remote hosted sessions are on the ledger (their
         // host is elsewhere), and fall through to the facts below.
-        <TerminalPane key={row.id} id={row.id} />
+        <TerminalPane key={row.id} id={row.id} machine={row.source ? row.home : null} />
       ) : row && row.category === "claude" ? (
         // A discovered claude session: its recorded past, read from
         // the vendor's own transcript. Claude only, this batch — the

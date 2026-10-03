@@ -155,7 +155,7 @@ iOS 在 app 离开屏幕几秒后挂起它，节点手里的东西都聋了：�
 
 1. **Rust 那半的语言**：手机上节点的拒绝和设置页里节点给的字是英文的（`machine-cannot-host` 在模拟器里读出来是 「Mac-mini is a phone — …」，设置页「Confirm dangerous actions」），因为 `config::apply_lang` 只在 macOS 读系统语言；iPhone 上要读 `NSLocale`。这是第二步里最显眼的一处没做。
 2. **拉到手机**：落到 `Documents/`，`Info.plist` 开 `UIFileSharingEnabled` / `LSSupportsOpeningDocumentsInPlace`，「文件」app 里看得见；然后把「拉过来」放回来。
-3. ~~**前后台**~~：做了，见「第三步之二」。还没做的：桌面笔记本合盖接同一个 `resume`；终端在重连时脸上不说「正在重连」（那个文件在触屏车道手里，这一步没动它）。
+3. ~~**前后台**~~：做了，见「第三步之二」。桌面合盖醒来、手机换网（`link::network_changed`：Mac 的 `NSWorkspaceDidWakeNotification`、手机的 `nw_path_monitor`、常驻自己的墙钟跑过单调钟）和终端重连时的「正在重新连接」，2026-10-03 NET-FIX 轮做了，见 NET.md「长连接」。
 4. 设备名：手机的频道名是主机名（模拟器里是这台 Mac 的名字），真机上该用 `UIDevice.name` 或让人起名。
 5. 钥匙进钥匙串（`ThisDeviceOnly`），备份排除之外再加一层。
 6. 存储被拒时的界面：主人戳不是这台的（模拟器里把指纹改掉量过），节点起不来，界面停在骨架上不说话；该说 `store-belongs-to` 那一句。
