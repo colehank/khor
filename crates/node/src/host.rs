@@ -235,6 +235,29 @@ pub fn write_frame<T: Serialize>(s: &mut (impl Write + ?Sized), t: &T) -> Result
         .map_err(msg::handoff_failed)
 }
 
+/// A client's frame, or `None` for one over `MAX_OP` that was read past
+/// and dropped: **an oversize frame costs that frame, not the client**
+/// (T-16, the terminal audit: a 1.2 MB paste errored `read_frame`, the
+/// per-client input loop exited, and every key after it was lost until a
+/// reload, while output kept flowing). The length prefix says exactly how
+/// much to skip, so the stream stays in step.
+fn read_client_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> Result<Option<T>, String> {
+    let mut len = [0u8; 4];
+    s.read_exact(&mut len).map_err(msg::no_frame)?;
+    let len = u32::from_be_bytes(len) as usize;
+    if len > MAX_OP {
+        eprintln!("{}", msg::frame_too_big(len));
+        let skipped = std::io::copy(&mut s.take(len as u64), &mut std::io::sink()).map_err(msg::half_a_frame)?;
+        if skipped as usize != len {
+            return Err(msg::half_a_frame(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)));
+        }
+        return Ok(None);
+    }
+    let mut bytes = vec![0u8; len];
+    s.read_exact(&mut bytes).map_err(msg::half_a_frame)?;
+    proto::decode(&bytes).map(Some)
+}
+
 pub fn read_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> Result<T, String> {
     let mut len = [0u8; 4];
     s.read_exact(&mut len).map_err(msg::no_frame)?;
@@ -1005,7 +1028,8 @@ fn host_serving(
                     let writer = writer.clone();
                     std::thread::spawn(move || {
                         let mut readable = readable;
-                        while let Ok(op) = read_frame::<ClientOp>(&mut readable) {
+                        while let Ok(op) = read_client_frame::<ClientOp>(&mut readable) {
+                            let Some(op) = op else { continue };
                             match op {
                                 ClientOp::Input(bytes) => {
                                     let mut w = writer.lock().unwrap();
@@ -1060,6 +1084,21 @@ fn host_serving(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// T-16: a frame over `MAX_OP` is skipped and the next one still
+    /// arrives — the client's input loop does not end on it.
+    #[test]
+    fn an_oversize_frame_costs_that_frame_not_the_client() {
+        let mut wire = Vec::new();
+        write_frame(&mut wire, &ClientOp::Input(vec![b'x'; MAX_OP + 1])).unwrap();
+        write_frame(&mut wire, &ClientOp::Input(b"after".to_vec())).unwrap();
+        let mut r = std::io::Cursor::new(wire);
+        assert!(read_client_frame::<ClientOp>(&mut r).unwrap().is_none());
+        match read_client_frame::<ClientOp>(&mut r).unwrap() {
+            Some(ClientOp::Input(b)) => assert_eq!(b, b"after"),
+            _ => panic!("the frame after the oversize one was lost"),
+        }
+    }
 
     /// A path is fine; the basename is what is compared.
     #[test]
