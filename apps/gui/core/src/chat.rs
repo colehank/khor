@@ -975,3 +975,105 @@ mod wait_tests {
         chats().lock().unwrap().remove(&id);
     }
 }
+
+// ── files for an agent conversation (round CHAT) ────────────────────
+//
+// **One rule for where a file goes**: the machine the conversation runs
+// on keeps what it is handed in its own chat channel's folder,
+// `<khor home>/.khor/chat/<that machine's channel>/files/<first 8 of
+// the blake3>-<name>` — the very folder `khor send` + `khor accept`
+// already land in (`khor_node::transfer::payload_path`), so a file
+// handed to an agent and a file sent to that machine are found in one
+// place, and the same bytes sent twice are one file. The agent is told
+// the path (that is what Claude Code and Codex read), never the bytes.
+//
+// A conversation running here keeps the file here; one running on
+// another machine has it delivered there first (`send` + `accept`, the
+// terminal drop's road, `term::deliver_blocking`).
+
+/// Files that are already on this machine (a picker's or a drop's
+/// paths), put where the conversation's machine keeps them. Answers each
+/// one's path **on that machine**, in order.
+pub fn chat_put_paths(root: &Path, id: &str, paths: &[String]) -> Result<Vec<String>, String> {
+    let n = Node::open(root.to_path_buf())?;
+    if let Some(machine) = n.far_machine(&SessionId(id.to_owned()))? {
+        return crate::term::deliver_blocking(root, &machine, paths);
+    }
+    let dir = khor_node::transfer::files_dir(root, n.name())
+        .ok_or_else(|| khor_catalog::msg::bad_channel_name(format_args!("{:?}", n.name())))?;
+    std::fs::create_dir_all(&dir).map_err(khor_catalog::msg::cant_make_files_dir)?;
+    let mut out = Vec::with_capacity(paths.len());
+    for p in paths {
+        let src = Path::new(p);
+        let (digest, _) = khor_node::transfer::digest_file(src)?;
+        let name = src
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file");
+        let dest = dir.join(khor_node::transfer::landed_name(&digest, name));
+        // The same bytes are the same file: kept, not copied again.
+        if !dest.exists() {
+            std::fs::copy(src, &dest).map_err(|e| khor_catalog::msg::cant_read(src.display(), e))?;
+        }
+        out.push(dest.display().to_string());
+    }
+    Ok(out)
+}
+
+/// Bytes from a face (a phone's photo, a browser's pick), named `name`:
+/// staged on this machine (`save_upload`, with its cap), then put where
+/// the conversation's machine keeps files (`chat_put_paths`). Answers the
+/// path on that machine. The staging copy goes once the file is placed:
+/// unlike a `send` offer, nothing reads it afterwards.
+pub fn chat_put(
+    root: &Path,
+    id: &str,
+    name: &str,
+    body: &mut dyn std::io::Read,
+) -> Result<String, String> {
+    let staged = crate::save_upload(root, name, body)?;
+    // Placed under its own name, not the staging one's stamp.
+    let named = staged.with_file_name(khor_node::transfer::safe_name(name));
+    let named = if named.exists() { staged.clone() } else {
+        std::fs::rename(&staged, &named).map_err(|e| e.to_string())?;
+        named
+    };
+    // Placed here by a copy, or there by a delivery that has finished
+    // fetching when it returns (`deliver_blocking` accepts before it
+    // answers): either way the staged bytes are read by nobody now.
+    let out = chat_put_paths(root, id, &[named.display().to_string()]);
+    let _ = std::fs::remove_file(&named);
+    out?.into_iter().next().ok_or_else(|| "nothing placed".to_owned())
+}
+
+#[cfg(test)]
+mod put_tests {
+    use super::*;
+
+    /// **The one folder rule** (round CHAT): a file this machine already
+    /// has, put for a conversation that runs here, lands in this
+    /// machine's own `files` folder under the leaf an accepted `send`
+    /// would get, and the same bytes put twice are one file.
+    #[test]
+    fn a_local_file_lands_in_this_machines_files_folder_once() {
+        let root = std::env::temp_dir().join(format!("khor-chat-put-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let src = root.join("notes.md");
+        std::fs::write(&src, "# notes\n").unwrap();
+        let given = [src.display().to_string()];
+
+        let first = chat_put_paths(&root, "gui/nowhere", &given).expect("placed");
+        let again = chat_put_paths(&root, "gui/nowhere", &given).expect("placed again");
+
+        let name = Node::open(root.clone()).unwrap().name().to_owned();
+        let (digest, _) = khor_node::transfer::digest_file(&src).unwrap();
+        let want = khor_node::transfer::files_dir(&root, &name)
+            .unwrap()
+            .join(khor_node::transfer::landed_name(&digest, "notes.md"));
+        assert_eq!(first, vec![want.display().to_string()]);
+        assert_eq!(again, first);
+        assert_eq!(std::fs::read_to_string(&want).unwrap(), "# notes\n");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

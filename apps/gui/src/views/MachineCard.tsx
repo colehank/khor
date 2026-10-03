@@ -46,7 +46,7 @@ import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
-import { useHereHosts } from "@/lib/here";
+import { pagesHere } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
 import { ago, lasting, linkWord, systemWord, count } from "@/words";
 
@@ -664,7 +664,6 @@ export function MachineVerbs({
   webOn: boolean;
   onWeb: () => void;
 }) {
-  const here = useHereHosts();
   const narrow = useNarrow();
   type Verb = {
     key: string;
@@ -682,10 +681,11 @@ export function MachineVerbs({
       ? [{ key: "new-session-on", word: gui.open_term_on_ask, Icon: IconPlus, rides: true, run: () => onNewSession(row) }]
       : []),
     { key: "browse-files", word: gui.browse_files, Icon: IconFiles, on: filesOn, run: onFiles },
-    // 浏览, where this face can open a page at all (`useHereHosts`): in
-    // place since round 14, so it is a switch at every width — the narrow
-    // head folds it into 「…」 when it does not fit.
-    ...(here ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, on: webOn, run: onWeb }] : []),
+    // 浏览, where this face can open a page at all (`pagesHere`; it used
+    // to ask whether this machine hosts, which a phone never does though
+    // it browses): in place since round 14, so it is a switch at every
+    // width — the narrow head folds it into 「…」 when it does not fit.
+    ...(pagesHere ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, on: webOn, run: onWeb }] : []),
   ];
   const coded = !!code?.offered;
   // **A switch and its companion share one chosen pill** (the owner,

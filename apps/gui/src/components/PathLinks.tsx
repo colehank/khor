@@ -33,17 +33,12 @@
 // ruling (`Markdown`'s `Link`).
 import { useEffect } from "react";
 
+import { pathsIn } from "@/lib/paths";
 import { useLinkHome, underRoot } from "@/views/linkHome";
 import { cn } from "@/lib/utils";
 
-/** What a path looks like in prose. One or more segments with at least
-    one `/`, optionally `./`-led, optionally `:12`-tailed.
-
-    **Deliberately conservative about what a segment may hold**: letters,
-    digits and the four punctuation marks that appear in real file names.
-    A wider class starts eating the sentence around the path — a comma, a
-    closing bracket, the full stop at the end of the line. */
-const PATH = /(?:\.\/)?(?:[\w.@+-]+\/)+[\w.@+-]+(?::\d+)?/g;
+// What a path looks like in prose is `lib/paths`' `pathsIn`, the one
+// detector the conversation's files and these links share.
 
 type Mdast = {
   type: string;
@@ -86,12 +81,10 @@ export function remarkPaths() {
       }
       const text = kid.value;
       let at = 0;
-      let hit: RegExpExecArray | null;
-      PATH.lastIndex = 0;
-      while ((hit = PATH.exec(text)) !== null) {
+      for (const hit of pathsIn(text)) {
         if (hit.index > at) out.push({ type: "text", value: text.slice(at, hit.index) });
-        out.push(pathNode(hit[0]));
-        at = hit.index + hit[0].length;
+        out.push(pathNode(hit.written));
+        at = hit.index + hit.written.length;
       }
       if (at === 0) {
         out.push(kid);
@@ -113,18 +106,28 @@ export function remarkPaths() {
  * these as the prose it already was. */
 export function PathLink({ written }: { written: string }) {
   const home = useLinkHome();
-  const found = home === null ? null : underRoot(home.root, written);
+  const inRoot = home === null ? null : underRoot(home.root, written);
+  // The conversation's files folder, for a path written whole.
+  const more = home?.more && inRoot === null && written.startsWith("/") ? home.more : null;
+  const found = inRoot ?? (more ? underRoot(more.root, written) : null);
   const abs = found?.abs ?? null;
-  const see = home?.see;
+  const see = more ? more.see : home?.see;
+  const known = more ? more.known : home?.known;
   useEffect(() => {
     if (abs !== null) see?.(abs);
   }, [abs, see]);
-  if (home === null || found === null || home.known(found.abs) !== true) {
+  if (home === null || found === null || known?.(found.abs) !== true) {
     return <>{written}</>;
   }
   return (
-    <button
-      type="button"
+    // **Inline text, not a `<button>`** (round CHAT, seen on a phone): a
+    // button is an atomic box, so a path longer than what was left of the
+    // line jumped whole to lines of its own, centred, and left the word
+    // before it stranded. A link in a sentence wraps with the sentence,
+    // anywhere in the path if it must; Enter presses it like a button.
+    <span
+      role="link"
+      tabIndex={0}
       data-link={found.abs}
       data-link-line={found.line ?? undefined}
       title={found.abs}
@@ -134,7 +137,7 @@ export function PathLink({ written }: { written: string }) {
       // rule exists to avoid. **And it wears the pointing hand**, which
       // only a link in prose does (`Markdown`'s `Link` is the other): a
       // control is the arrow (design-system 30-behavior 选字与手).
-      className={cn("cursor-pointer underline underline-offset-2")}
+      className={cn("cursor-pointer underline underline-offset-2 [overflow-wrap:anywhere]")}
       // **`⌘`+press always goes to the host's own opener** (ruling 35:
       // 「`⌘`+点 或 网址→在宿主机器上打开」; 2026-09-18 ruling 54
       // repeats it in so many words). `ctrlKey` beside it for the same
@@ -144,8 +147,14 @@ export function PathLink({ written }: { written: string }) {
       onClick={(e) =>
         e.metaKey || e.ctrlKey ? home.launch(found.abs) : home.open(found.abs, found.line)
       }
+      onKeyDown={(e) => {
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        if (e.metaKey || e.ctrlKey) home.launch(found.abs);
+        else home.open(found.abs, found.line);
+      }}
     >
       {written}
-    </button>
+    </span>
   );
 }

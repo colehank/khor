@@ -33,3 +33,15 @@ export function useHereHosts(): boolean {
 export function hereHosts(devices: DeviceRow[]): boolean {
   return devices.find((d) => d.me)?.hosts ?? true;
 }
+
+/** **Whether a page can open in this face** (round UX-3), which is not
+    whether this machine hosts: a phone hosts nothing and still browses,
+    since the iOS page is a WKWebView of the app's own (`phone_page.rs`).
+    It needs `proxyConfigurations` to browse through a machine, which is
+    iOS 17 — older iOS refuses every borrow, so nothing offers one there.
+    The Mac app and the web face answer yes; the web face says why a page
+    needs the app when one is opened (`openPage`). */
+export const pagesHere: boolean = (() => {
+  const ios = /\b(?:iPhone|iPad|iPod)\b.*? OS (\d+)_/.exec(navigator.userAgent);
+  return ios === null || Number(ios[1]) >= 17;
+})();

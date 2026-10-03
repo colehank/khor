@@ -455,6 +455,15 @@ pub fn answer(
         // The bridge answers one request at a time: a held wait would
         // hold every other call behind it, so it is the poll here.
         "chat_wait" => to_json(&crate::chat::chat_poll(&arg("id")?, num("since")?)?),
+        // Files already on this machine (a drop's or a picker's paths),
+        // put where the conversation's machine keeps files (round CHAT).
+        "chat_put_paths" => {
+            let paths: Vec<String> = match args.get("paths") {
+                Some(serde_json::Value::Array(a)) => a.iter().filter_map(|p| p.as_str().map(str::to_owned)).collect(),
+                _ => return Err("missing list arg: paths".to_owned()),
+            };
+            to_json(&crate::chat::chat_put_paths(root, &arg("id")?, &paths)?)
+        }
         "chat_say" => {
             // `images` absent is the ordinary turn. Read as an array of
             // `[mime, base64]` pairs rather than an object so the two
@@ -543,6 +552,9 @@ pub fn answer(
         "pull" => {
             to_json(&rt.block_on(crate::files::pull(root, &arg("machine")?, &arg("path")?))?)
         }
+        "pull_temp" => {
+            to_json(&rt.block_on(crate::files::pull_temp(root, &arg("machine")?, &arg("path")?))?)
+        }
         // Taking a path off a disk. `machine` empty is this one, which
         // is also the only one with a recycle bin behind it.
         "remove" => {
@@ -604,6 +616,12 @@ pub fn answer(
         // Whether this machine has a bin at all — asked rather than
         // guessed from the browser (`files::trash_here`).
         "trash_here" => to_json(&crate::files::trash_here()),
+        // Finder with the file selected, this machine only (round CHAT).
+        "reveal_here" => to_json(&crate::files::reveal_here()),
+        "reveal" => {
+            crate::files::reveal(&arg("path")?)?;
+            to_json(&())
+        }
         // Whether this browser draws PDFs itself — asked for
         // `trash_here`'s reason, never read off `navigator`.
         "pdf_here" => to_json(&crate::files::pdf_here()),

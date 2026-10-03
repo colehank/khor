@@ -62,6 +62,18 @@ export type LinkHome = {
       **The same road an address takes** (`Markdown`'s `Link`), which is
       why it is one word here rather than two behaviours. */
   launch: (abs: string) => void;
+  /** **The file opens beside the prose**, in the middle column of the
+      pane that holds both (`WorkspacePane`). A conversation elsewhere
+      shows a pressed file in its own preview first (round CHAT,
+      `chat-files`' `FilePreview`), whose 「在文件视图中打开」 is this
+      context's `open`; beside a tree, the tree's own view already is
+      that preview. */
+  beside?: boolean;
+  /** **A second directory whose files are painted too** (round CHAT):
+      the folder a conversation's files are put in on its machine
+      (`chat-files`), which is outside the project and would otherwise
+      be refused by the ceiling. Absolute paths only; its own answers. */
+  more?: { root: string; known: (abs: string) => boolean | null; see: (abs: string) => void };
 };
 
 const Home = createContext<LinkHome | null>(null);
@@ -72,6 +84,20 @@ export const LinkHomeProvider = Home.Provider;
     where there is none. */
 export function useLinkHome(): LinkHome | null {
   return useContext(Home);
+}
+
+/** **Where 「在文件视图中打开」 goes** (round CHAT): the workspace that
+    holds the file, opened at it; a file no workspace holds opens in its
+    machine's files, on the machine page (`MachineFiles`). Provided by
+    the shell, which owns both landings; `null` where nothing does. */
+export type ShowFile = (machine: string, abs: string) => void;
+
+const Show = createContext<ShowFile | null>(null);
+
+export const ShowFileProvider = Show.Provider;
+
+export function useShowFile(): ShowFile | null {
+  return useContext(Show);
 }
 
 /** Resolves what an agent wrote against a project root.

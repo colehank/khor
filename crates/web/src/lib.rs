@@ -322,6 +322,22 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             // query (a JSON envelope around a gigabyte would mean
             // base64ing it through memory). Streamed to disk with the
             // cap enforced mid-stream (`khor_gui_core::send_upload`).
+            // A file for an agent conversation (round CHAT): the same
+            // raw body, put on the machine the conversation runs on.
+            if cmd == "chat_put" {
+                let Some((id, name)) = khor_gui_core::chat_put_args(query) else {
+                    return Reply::refused(400, msg::upload_needs_machine_and_name().to_owned());
+                };
+                return match khor_gui_core::chat::chat_put(root, &id, &name, req.as_reader()) {
+                    Ok(path) => Reply {
+                        code: 200,
+                        kind: "application/json",
+                        body: serde_json::to_vec(&path).unwrap_or_default(),
+                        remember: None,
+                    },
+                    Err(sentence) => Reply::refused(400, sentence),
+                };
+            }
             if cmd == "upload" {
                 let (machine, name) = match khor_gui_core::upload_args(query) {
                     Some(pair) => pair,

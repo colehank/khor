@@ -99,12 +99,23 @@ fn main() {
         // is not UTF-8 and must never pass through a String. Same
         // shared body as the web face's `/api/upload`, so the two
         // faces cannot come to enforce different rules.
-        if cmd == "upload" {
-            let outcome = khor_gui_core::upload_args(&query)
-                .ok_or_else(|| "upload needs machine and name query args".to_owned())
-                .and_then(|(machine, name)| {
-                    khor_gui_core::send_upload(&root, &machine, &name, req.as_reader())
-                });
+        if cmd == "upload" || cmd == "chat_put" {
+            // `chat_put`: the bytes of a file for an agent conversation,
+            // put on the machine it runs on (round CHAT); `upload`: a
+            // `khor send` to a machine. One body route for both.
+            let outcome = if cmd == "chat_put" {
+                khor_gui_core::chat_put_args(&query)
+                    .ok_or_else(|| "chat_put needs id and name query args".to_owned())
+                    .and_then(|(id, name)| {
+                        khor_gui_core::chat::chat_put(&root, &id, &name, req.as_reader())
+                    })
+            } else {
+                khor_gui_core::upload_args(&query)
+                    .ok_or_else(|| "upload needs machine and name query args".to_owned())
+                    .and_then(|(machine, name)| {
+                        khor_gui_core::send_upload(&root, &machine, &name, req.as_reader())
+                    })
+            };
             let (code, payload) = match outcome {
                 Ok(id) => (200, serde_json::to_string(&id).unwrap_or_default()),
                 Err(e) => (

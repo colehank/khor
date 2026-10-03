@@ -3888,12 +3888,14 @@ paste-a-ticket = "在此粘贴配对票"
 # 相机权限被拒时说一句话、给一颗「打开设置」，不留一颗按了没反应的按钮；打不开相机（模拟器就没有）
 # 也说一句。`camera-usage` 是 iOS 第一次问相机权限时系统弹窗里那句：`gen/apple` 的 Info.plist
 # （NSCameraUsageDescription）抄的就是它，`npm run mobile` 比对两处一字不差。
+# 相机有两个用处之后（round CHAT：对话的「添加文件…」在手机上可以拍照），这句两样都说：
+# 第一次问权限的也可能是拍照，那时只说扫码就是说错了自己要相机做什么。
 scan-a-ticket = "扫码"
 scan-aim = "对准另一台机器「邀请机器」里的二维码"
 scan-camera-denied = "khor 没有使用相机的权限。在「设置」里允许后再扫，或者粘贴配对票"
 scan-open-settings = "打开设置"
 scan-no-camera = "无法打开相机。粘贴配对票也能加入"
-camera-usage = "扫描另一台机器上的配对二维码，加入它的网络"
+camera-usage = "扫描另一台机器上的配对二维码加入它的网络，或拍照发到对话里"
 # iOS 第一次往局域网地址发包时系统弹窗里那句（NSLocalNetworkUsageDescription）。
 # 没有这个键，系统不问、直接丢掉发往 192.168.x.x 的 UDP——同一个 Wi-Fi 下的手机和 Mac
 # 永远只走中继（2026-10-03 负责人真机报）。`gen/apple` 的 Info.plist 和 Mac 的 Info.plist
@@ -3908,6 +3910,25 @@ chat-input = "输入消息…"
 # item its menu always has when the agent takes files.
 chat-add = "添加到对话"
 chat-attach = "添加文件…"
+chat-attach-machine = "{0} 上的文件…"
+chat-attach-machine-title = "{0} 上的文件"
+chat-put-failed = "没能放到机器上"
+
+# 对话里一个文件的预览(round CHAT)。「在文件视图中打开」去的是放着它的
+# 工作区,不在任何工作区里就是那台机器页上的文件;「在访达中显示」只在 Mac
+# 上画,别的平台同一个按钮会说错自己做了什么(`store-open` 的理由);「分享」
+# 是手机系统自己的分享面板。复制路径借 `tab-copy-path`。
+chat-file-open = "在文件视图中打开"
+chat-file-reveal = "在访达中显示"
+chat-file-share = "分享"
+# 智能体写了或改了一个文件,卡片上说的那个动作。
+chat-file-wrote = "已写入"
+# 文件页（round UX-3）底部「分享」在 Mac 上的两项之一（另一项借 `chat-file-reveal`），
+# 和「…」里的两项与字号的两颗键。远处的文件先取到本机的临时目录再交出去。
+file-open-other = "用其他应用打开"
+file-in-code = "在 VS Code 中打开"
+file-size-down = "缩小"
+file-size-up = "放大"
 # The conversation has ended — the host's goodbye and a torn wire wear
 # one face on purpose (`khor_gui_core::chat::ChatBatch::gone`). Said in
 # the input's place: the control that can no longer do its job is the

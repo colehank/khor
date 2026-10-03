@@ -355,9 +355,19 @@ export type AddOption =
  * setting as it was drawn above the box: a switch, or a submenu of its
  * values. Nothing to attach and no settings: ＋ is not drawn.
  */
-export function AddSeat({ onAttach, options }: { onAttach?: () => void; options: AddOption[] }) {
+export function AddSeat({
+  onAttach,
+  onAttachMachine,
+  options,
+}: {
+  onAttach?: () => void;
+  /** A file already on the conversation's machine, by path (round CHAT):
+      the item's label names the machine. */
+  onAttachMachine?: { label: string; pick: () => void };
+  options: AddOption[];
+}) {
   if (!onAttach && options.length === 0) return null;
-  if (options.length === 0)
+  if (options.length === 0 && !onAttachMachine)
     return (
       <Tip label={gui.chat_add}>
         <PlusSeat data-chat-add onClick={onAttach} />
@@ -384,7 +394,12 @@ export function AddSeat({ onAttach, options }: { onAttach?: () => void; options:
             {gui.chat_attach}
           </DropdownMenuItem>
         )}
-        {onAttach && <DropdownMenuSeparator />}
+        {onAttachMachine && (
+          <DropdownMenuItem data-chat-attach-machine onSelect={onAttachMachine.pick}>
+            {onAttachMachine.label}
+          </DropdownMenuItem>
+        )}
+        {(onAttach || onAttachMachine) && options.length > 0 && <DropdownMenuSeparator />}
         {options.map((o) =>
           o.kind === "switch" ? (
             <DropdownMenuItem

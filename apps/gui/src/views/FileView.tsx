@@ -42,6 +42,7 @@ import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { languageOf, paintFileLines } from "@/lib/highlight";
 import { useHereHosts } from "@/lib/here";
+import { usePinch } from "@/hooks/use-pinch";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
 
@@ -309,6 +310,8 @@ export function FileView({
       the offset is arithmetic on the line height, which this view knows
       exactly. */
   const box = useRef<HTMLDivElement>(null);
+  /** A picture zooms under two fingers (`usePinch`). */
+  const pinch = usePinch();
   /** Bumped to ask the diff again. **A counter rather than a boolean**:
       two saves in a row have to be two questions, and a flag that was
       already true would answer the second one with the first one's
@@ -915,8 +918,9 @@ export function FileView({
       // sanitiser. An image element renders the same drawing and runs
       // nothing — the browser's own rule, not khor's.
       return (
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
           <img
+            ref={pinch}
             data-look={look.kind}
             src={`data:${look.media};base64,${look.data}`}
             alt=""
@@ -1190,7 +1194,7 @@ export function FileView({
       {face === "preview" && renders !== null ? (
         <div data-file-preview={renders} className="min-h-0 flex-1 overflow-auto">
           {renders === "md" ? (
-            <Markdown text={body} className="prose-khor px-6 py-4" />
+            <Markdown text={body} className="prose-khor px-6 py-4" lines />
           ) : (
             <Table text={body} sep={path.toLowerCase().endsWith(".tsv") ? "\t" : ","} />
           )}
@@ -2008,7 +2012,9 @@ export function beginEditing(box: HTMLElement | null): void {
   const ed = box?.querySelector<HTMLTextAreaElement>("textarea[data-edit]");
   const scroller = box?.querySelector<HTMLElement>("[data-file-scroll]");
   if (!ed || !scroller) return;
-  const top = scroller.getBoundingClientRect().top;
+  // Past the scroller's own padding: the file page keeps its first line
+  // clear of the name over it (round UX-3).
+  const top = scroller.getBoundingClientRect().top + parseFloat(getComputedStyle(scroller).paddingTop || "0");
   const first = [...scroller.querySelectorAll<HTMLElement>("[data-line]")].find(
     (l) => l.getBoundingClientRect().bottom > top,
   );

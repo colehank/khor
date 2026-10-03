@@ -572,7 +572,42 @@ export const fetchSessions = (by: string) => call<SessionRow[]>("sessions", { by
     (docs/UX.md 状态呈现). */
 export const fetchDayStrips = (cells: number) =>
   call<Record<string, DayRun[]>>("day_strips", { cells });
-export const fetchDevices = () => call<DeviceRow[]>("devices");
+/** Every machine, **with a road this face can stand behind** (2026-10-04,
+    the owner on a phone: 「进入页面显示无法获取，应该是加载中才对」).
+
+    The node's 「not connected」 (`hop` `quiet`) is *no live wire right
+    now* — true, too, of a machine nobody has tried yet. Entering a page
+    in the first moments after the node came up, every machine it had
+    not dialled yet read 未连接, and every row on one dimmed with 无法获取,
+    a result before any answer. So one rule, here, for every face that
+    reads machines (the shell's poll, the new-session picker, the
+    directory picker):
+
+    - **unknown**: `quiet`, never heard since the resident started
+      (`heard_ms` null), and this face has been reading machines for less
+      than a dial's budget (`DIAL_TIMEOUT` in `khor_node::link`, 10 s).
+      The road is `null`, the shape every surface already draws as 「not
+      named yet」: no 未连接, no 无法获取, no dimming; what is asked of the
+      machine itself wears its skeleton or `Waiting` meanwhile;
+    - **unreachable**: `quiet` after that, or `quiet` with a time it was
+      last heard — it was there and is gone: said at once (P6);
+    - **reachable**: a road.
+
+    The clock is this page's first answer, not the node's start, which no
+    face is told: a face opened long after its node waits the budget once
+    before saying a machine is away. */
+export const fetchDevices = () =>
+  call<DeviceRow[]>("devices").then((rows) => {
+    const now = Date.now();
+    devicesFirstRead ??= now;
+    if (now - devicesFirstRead >= DIAL_BUDGET_MS) return rows;
+    return rows.map((d) => (d.hop === "quiet" && d.heard_ms == null ? { ...d, hop: null } : d));
+  });
+/** When this page first read the machines (`fetchDevices`). */
+let devicesFirstRead: number | null = null;
+/** How long a dial may take before the node gives up on a machine
+    (`khor_node::link::DIAL_TIMEOUT`). */
+const DIAL_BUDGET_MS = 10_000;
 /** What a machine is busy with — its `top` hungriest processes now and
     the CPU day its serve recorded (`Node::load_on`; `machine` is a
     name, empty for this one). **Asked only while its card is open**,
@@ -1154,6 +1189,32 @@ export const chatSay = (
     ...(images.length ? { images } : {}),
     ...(files.length ? { files } : {}),
   });
+/** A file for an agent conversation (round CHAT), put on the machine the
+    conversation runs on, in that machine's chat files folder
+    (`khor_gui_core::chat::chat_put`). Answers its path **there** — what
+    the agent is told. The bytes ride raw: the bridge's and the web
+    face's body route, the app's raw invoke body. */
+export const chatPut = async (id: string, file: File): Promise<string> => {
+  if (inApp && !bridge) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<string>("chat_put", new Uint8Array(await file.arrayBuffer()), {
+      headers: { "x-khor-chat": encodeURIComponent(id), "x-khor-name": encodeURIComponent(file.name) },
+    });
+  }
+  const q = `id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}`;
+  const url = bridge ? `http://127.0.0.1:${bridge}/chat_put?${q}` : `/api/chat_put?${q}`;
+  const r = await reach(url, {
+    method: "POST",
+    headers: bridge || webKey === null ? {} : { authorization: `Bearer ${webKey}` },
+    body: file,
+  });
+  if (!r.ok) throw new Error(unwrap(await r.text()));
+  return answer<string>(r);
+};
+/** Files this machine already has (a drop's paths, the app only), put
+    where the conversation's machine keeps them. Answers their paths
+    there, in order. */
+export const chatPutPaths = (id: string, paths: string[]) => call<string[]>("chat_put_paths", { id, paths });
 export const chatAnswer = (id: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, ask, option });
 export const chatReplay = (id: string) => call<null>("chat_replay", { id });
@@ -1181,6 +1242,10 @@ export const fetchLs = (machine: string, path: string) =>
     landed — the place was chosen silently, so it must be said. */
 export const pullFile = (machine: string, path: string) =>
   call<string>("pull", { machine, path });
+/** The same file in a temporary folder on this machine, for handing to
+    its other apps (`khor_gui_core::files::pull_temp`); a path already
+    here comes back as it is. */
+export const pullTemp = (machine: string, path: string) => call<string>("pull_temp", { machine, path });
 /** Takes a path off whichever machine holds it (`khor_node::Link::
     remove_path`). `machine` empty is this one.
 
@@ -1239,6 +1304,20 @@ export const searchIn = (machine: string, dir: string, query: string) =>
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */
 export const fetchTrashHere = () => call<boolean>("trash_here");
+/** Whether Finder can show a file of this machine with it selected
+    (`khor_gui_core::files::reveal_here`) — **and whether that Finder is
+    in front of the person**: the app, or the dev bridge beside it. A
+    web face may be a phone looking at a desktop's node, and a window
+    opened on that desktop is one nobody is looking at. The face must be
+    a Mac's too (an iPad says `MacIntel` and has touch points): a phone
+    on the dev bridge is a phone. */
+export const fetchRevealHere = async (): Promise<boolean> =>
+  (inApp || bridge !== null) &&
+  navigator.platform.startsWith("Mac") &&
+  navigator.maxTouchPoints === 0 &&
+  (await call<boolean>("reveal_here"));
+/** Finder, with that file of this machine selected. */
+export const reveal = (path: string) => call<null>("reveal", { path });
 /** Every pinned directory, machine names already looked up. */
 /**
  * Where this person has been, of one kind ("dir" | "page"), most recent
@@ -1334,7 +1413,7 @@ export const pageStep = (tab: string, way: "back" | "forward" | "reload") =>
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:went" | "page:title" | "page:load" | "page:popup",
+  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps",
   tab: string,
   said: (text: string) => void,
 ): () => void {

@@ -84,10 +84,24 @@ pub fn digest_file(path: &Path) -> Result<(String, u64), String> {
 
 // ── payload locations inside a channel dir ──────────────────
 
+/// Where a machine keeps the files it is handed, under its khor `home`:
+/// its own channel's `files` folder (the round CHAT rule, the same one
+/// `payload_path` lands an accepted `send` in). `None` for a channel name
+/// that is not a valid directory name.
+pub fn files_dir(home: &Path, channel: &str) -> Option<PathBuf> {
+    khor_sync::chat::channel_dir(home, channel).map(|d| d.join("files"))
+}
+
 pub fn payload_path(channel_dir: &Path, f: &FileRef) -> PathBuf {
-    channel_dir
-        .join("files")
-        .join(format!("{}-{}", digest8(f), safe_name(&f.name)))
+    channel_dir.join("files").join(landed_name(&f.digest, &f.name))
+}
+
+/// A landed file's leaf: the first 8 of its digest, then its name made
+/// safe. **One spelling for both roads into `files_dir`** — an accepted
+/// `send` and a file a conversation put there (`khor_gui_core::chat`) —
+/// so the same bytes under the same name are the same file either way.
+pub fn landed_name(digest: &str, name: &str) -> String {
+    format!("{}-{}", digest.chars().take(8).collect::<String>(), safe_name(name))
 }
 
 pub fn partial_path(channel_dir: &Path, f: &FileRef) -> PathBuf {
@@ -110,7 +124,7 @@ fn digest8(f: &FileRef) -> String {
 /// idea as channel names, one implementation would be nicer but the
 /// alphabet differs (spaces and CJK are fine in a leaf name; separators
 /// and dot-prefixes are not).
-fn safe_name(name: &str) -> String {
+pub fn safe_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
         .filter(|c| !matches!(c, '/' | '\\' | '\0'))

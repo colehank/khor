@@ -56,6 +56,8 @@ type Offer = {
   /** The same parent as the machine spells it — for `~`, the real home. */
   real: string;
   names: string[];
+  /** Which of `names` are directories (a file completes without `/`). */
+  dirs: Set<string>;
 };
 
 export function PathField({
@@ -64,6 +66,7 @@ export function PathField({
   onValueChange,
   onSubmit,
   keepHome = true,
+  files = false,
   ...rest
 }: Omit<ComponentProps<"input">, "value" | "onChange" | "onKeyDown"> & {
   /** Where the directory is; `""` is this machine, the API's spelling. */
@@ -77,6 +80,9 @@ export function PathField({
       absolute paths only, so its box swaps in the home the listing
       answered with rather than handing it a `~` to refuse. */
   keepHome?: boolean;
+  /** Offer files too, not only directories — the conversation's 「a file
+      on this machine」 (round CHAT). A file completes without a `/`. */
+  files?: boolean;
 }) {
   const cache = useRef(new Map<string, Promise<DirListing | null>>());
   const [offer, setOffer] = useState<Offer | null>(null);
@@ -132,7 +138,7 @@ export function PathField({
       const names = got.entries
         .filter(
           (e) =>
-            e.dir &&
+            (e.dir || files) &&
             e.name !== leaf &&
             e.name.toLowerCase().startsWith(low) &&
             // Dot-named directories only when a dot was typed — a
@@ -142,13 +148,13 @@ export function PathField({
         )
         .slice(0, SHOWN)
         .map((e) => e.name);
-      setOffer({ parent, real: got.path, names });
+      setOffer({ parent, real: got.path, names, dirs: new Set(got.entries.filter((e) => e.dir).map((e) => e.name)) });
     }, SETTLE_MS);
     return () => {
       live = false;
       clearTimeout(timer);
     };
-  }, [value, machine]);
+  }, [value, machine, files]);
 
   const names = offer?.names ?? [];
   const open = focused && !shut && names.length > 0;
@@ -159,7 +165,7 @@ export function PathField({
       !keepHome && offer.parent.startsWith("~/")
         ? `${offer.real.replace(/\/+$/, "")}/`
         : offer.parent;
-    onValueChange(`${base}${name}/`);
+    onValueChange(offer.dirs.has(name) ? `${base}${name}/` : `${base}${name}`);
   };
 
   return (

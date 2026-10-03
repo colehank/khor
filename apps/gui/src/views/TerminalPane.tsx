@@ -83,7 +83,7 @@ import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { termBell } from "@/lib/term-bell";
 import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
-import { termWake } from "@/lib/term-tap";
+import { termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
 import { typed, type Mods } from "@/lib/term-keys";
@@ -1383,6 +1383,9 @@ export function TerminalPane({
   // or the soft keyboard. A ref as well as state because the `onData`
   // handler below reads them, and that handler is wired once per terminal.
   const coarse = useCoarse();
+  /** The keyboard's wake mode (`lib/term-tap`, the terminal lane's 2.2):
+      the deck's keyboard circle is drawn in 点击按钮 alone (round UX-3 3a). */
+  const wake = useTermWake();
   const [mods, setModsShown] = useState<Mods>({ ctrl: false, alt: false });
   const modsRef = useRef<Mods>({ ctrl: false, alt: false });
   const latch = (m: Mods) => {
@@ -2571,9 +2574,16 @@ export function TerminalPane({
     )}
     {coarse && active && (
       <>
-        <BarSeat at="trail">
-          <KeyboardSwitch field={keysRef} />
-        </BarSeat>
+        {/* **The keyboard circle only in 点击按钮** (round UX-3 3a): in 自动
+            and 点击屏幕 a tap on the terminal raises the keyboard, and a
+            button for it is a second door; a swipe down lowers it in every
+            mode (this pane's own, `terminalKeyboard`). The mode is
+            `lib/term-tap`'s (`useTermWake`). */}
+        {wake === "button" && (
+          <BarSeat at="trail">
+            <KeyboardSwitch field={keysRef} />
+          </BarSeat>
+        )}
         <BarSeat at="under">
           <TermKeys term={termRef} mods={mods} onMods={latch} />
         </BarSeat>

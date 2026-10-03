@@ -172,7 +172,7 @@ export type TabFace = {
     strip's tab is 28 tall and takes the assembly at a tab's size
     (`SessionFace` `tab`, halo and corner inside the tab's box); the
     switcher's rows are list rows and keep a row's. */
-function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "tab" | "row" }) {
+export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "tab" | "row" }) {
   if (f.glyph) return <span className="flex-none">{f.glyph}</span>;
   if (f.session) return <SessionFace face={f.face} {...f.session} size={seat} />;
   // A browsing page: the machine it goes through, wearing its kind's

@@ -65,16 +65,25 @@
 // no bar** (the wide face, a workspace's session column) a view's `under`
 // renders in place, exactly where it always stood, and its `trail` is
 // not drawn: the wide face has no row that belongs to the open session.
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { TabStrip, type TabFace } from "@/browse/TabStrip";
-import { IconBack } from "@/components/icons";
+import { TabAvatar, type TabFace } from "@/browse/TabStrip";
+import { IconBack, IconClose, IconPlus } from "@/components/icons";
+import { PathCut } from "@/components/PathCut";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { terminalKeyboard } from "@/lib/soft-keyboard";
+import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
 
-type Seats = { lead: HTMLElement | null; trail: HTMLElement | null; under: HTMLElement | null };
+type Seats = {
+  lead: HTMLElement | null;
+  trail: HTMLElement | null;
+  under: HTMLElement | null;
+  pill: HTMLElement | null;
+};
 
 const SeatsContext = createContext<Seats | null>(null);
 
@@ -84,13 +93,16 @@ const SeatsContext = createContext<Seats | null>(null);
 export const VerbSeat = createContext<HTMLElement | null>(null);
 
 /**
- * Something the open session puts in the bar: `under` is row 2 (the keys,
- * the input box), `trail` is row 1's right end (the keyboard switch),
- * `lead` is row 1 right after ‹ (the terminal's reload). Without a bar
- * around it, `under` stands where it was written, `lead` goes to the wide
- * face's verbs (`VerbSeat`) where there is one, and `trail` is not drawn.
+ * Something the open tab puts in the deck (round UX-3): `lead` is the
+ * pill's right end (the terminal's reconnect, the page's reload), `pill`
+ * its left end (the page's ← →), `trail` a circle between the pill and
+ * the tabs circle (the terminal's keyboard, in 点击按钮 mode only), and
+ * `under` the row below the deck (the keys, the input box, the address
+ * while it is edited). Without a deck around it, `under` stands where it
+ * was written, `lead` goes to the wide face's verbs (`VerbSeat`) where
+ * there is one, and `trail` and `pill` are not drawn.
  */
-export function BarSeat({ at, children }: { at: "lead" | "trail" | "under"; children: ReactNode }) {
+export function BarSeat({ at, children }: { at: "lead" | "trail" | "under" | "pill"; children: ReactNode }) {
   const seats = useContext(SeatsContext);
   const verbs = useContext(VerbSeat);
   if (!seats) {
@@ -112,9 +124,10 @@ export function SessionScreen({
   active,
   onFocus,
   onClose,
-  onSwitch,
-  switching,
+  onNew,
+  newLabel,
   onBack,
+  onTitle,
   caption,
   children,
 }: {
@@ -122,20 +135,57 @@ export function SessionScreen({
   active: string;
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
-  /** The count's press, once the strip has stopped showing every tab —
-      the narrow shell's switcher, the wide strip's rule (`TabStrip`). */
-  onSwitch: () => void;
-  switching: boolean;
+  /** ＋ at the end of the tabs sheet: a new tab of this page's kind (a
+      page, a session). The one place a new tab is opened from here. */
+  onNew?: () => void;
+  /** ＋'s word where the new thing is not a page (「新会话」). */
+  newLabel?: string;
   /** Back to the list. */
   onBack: () => void;
-  /** 过期 / 离线, after the strip — R0's caption on the wide face. */
+  /** The title pressed: the browser's address editor. Nothing on a
+      session, whose title is only its name here. */
+  onTitle?: () => void;
+  /** 过期 / 离线, in the pill after the title — R0's caption on the wide
+      face. */
   caption?: ReactNode;
   children: ReactNode;
+  /** Kept for the callers that still pass them; the tabs circle opens
+      the sheet itself (round UX-3). */
+  onSwitch?: () => void;
+  switching?: boolean;
 }) {
   const [lead, setLead] = useState<HTMLElement | null>(null);
   const [trail, setTrail] = useState<HTMLElement | null>(null);
   const [under, setUnder] = useState<HTMLElement | null>(null);
-  const seats = useMemo(() => ({ lead, trail, under }), [lead, trail, under]);
+  const [pill, setPill] = useState<HTMLElement | null>(null);
+  const [sheet, setSheet] = useState(false);
+  const seats = useMemo(() => ({ lead, trail, under, pill }), [lead, trail, under, pill]);
+  const at = faces.findIndex((f) => f.id === active);
+  const face = at < 0 ? null : faces[at];
+  /** **A sideways swipe on the pill is the next or previous tab**
+      (Safari's address bar). Across the pill only, so the content keeps
+      its own gestures; a swipe shorter than a third of a circle is a
+      press. */
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  const step = (by: number) => {
+    const next = faces[at + by];
+    if (next) onFocus(next.id);
+  };
+  /** **A drag down over the content while the keyboard is up lowers it**
+      (round UX-3 3a, every mode; the Messages and Mail manner). The page
+      cannot hand the keyboard to the finger, so it is lowered once the
+      drag is plainly downward and the system finishes the motion. */
+  const drag = useRef<number | null>(null);
+  const lower = () => {
+    const el = document.activeElement;
+    if (!(el instanceof HTMLElement) || !document.documentElement.hasAttribute("data-keyboard")) return;
+    // The terminal's field keeps its focus for its keys and is lowered by
+    // its own road (`terminalKeyboard`, the terminal lane's 2.2, which
+    // also lowers on its own swipe; both are the same act); any other
+    // field is let go.
+    if (el.hasAttribute("inputmode")) terminalKeyboard.lower();
+    else el.blur();
+  };
   return (
     <div data-session-screen className="flex h-full min-h-0 flex-col bg-card">
       {/* The top of the glass is the platform's: a phone's status bar
@@ -144,53 +194,202 @@ export function SessionScreen({
           `data-traffic`) — which is a handle on the window like L0 was. */}
       <div data-session-top {...WINDOW_DRAG} className="h-safe-top flex-none" />
       <SeatsContext.Provider value={seats}>
-        <div data-session-content className="flex min-h-0 flex-1 flex-col">
+        <div
+          data-session-content
+          className="flex min-h-0 flex-1 flex-col"
+          onTouchStart={(e) => {
+            drag.current = e.touches.length === 1 ? e.touches[0].clientY : null;
+          }}
+          onTouchMove={(e) => {
+            if (drag.current === null || e.touches.length !== 1) return;
+            if (e.touches[0].clientY - drag.current > DRAG_LOWERS) {
+              drag.current = null;
+              lower();
+            }
+          }}
+        >
           {children}
         </div>
       </SeatsContext.Provider>
-      {/* No rule over the bar: the change of ground is the edge, and a
-          line would cut the open tab off from the session it is joined
-          to — the strip's own rule at the top (`TabStrip`). */}
+      {/* **The deck** (round UX-3, the owner's ruling 2026-10-04): one
+          row of glass at the foot — ‹ back to the list, the pill with the
+          tab's own things, and the tabs circle. Nothing at the top; the
+          content has the screen. Hidden while the keyboard is up, when
+          the row under it (the keys, the box, the address) rides the
+          keyboard alone (`app.css`). */}
       <div data-session-bar className="flex flex-none flex-col pb-safe-bottom">
-        {/* Row 1 is R0 moved to the foot: a handle on the window where
-            it is blank, like R0 (`shell.ts`). */}
-        <div data-session-bar-tabs data-session-tabs aria-label={gui.session_tabs} {...WINDOW_DRAG} className="flex h-pane-head flex-none">
-          <TabStrip
-            glass
-            at="bottom"
-            faces={faces}
-            active={active}
-            onFocus={onFocus}
-            onClose={onClose}
-            onSwitch={onSwitch}
-            switching={switching}
-            // The way out, pinned before the scroller (`TabStrip` `head`)
-            // so it never scrolls away with the tabs. The narrow face's
-            // only exit, so it is at the finger's floor.
-            // Right after it, the open session's own verbs (the
-            // terminal's reload): two circles side by side, not a capsule.
-            head={
-              <>
-                <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
-                  <IconBack />
-                </GlassCircle>
-                <span ref={setLead} data-session-bar-lead className="flex flex-none items-center gap-in empty:hidden" />
-              </>
-            }
-            tail={
-              <>
-                {caption && (
-                  <span data-region-caption className="flex-none truncate px-xxs text-caption text-tertiary tabular-nums">
-                    {caption}
-                  </span>
-                )}
-                <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center empty:hidden" />
-              </>
-            }
-          />
+        <div data-session-deck {...WINDOW_DRAG} className="flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
+          <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
+            <IconBack />
+          </GlassCircle>
+          <div
+            data-deck-pill
+            aria-label={gui.session_tabs}
+            className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1"
+            onPointerDown={(e) => {
+              swipe.current = { x: e.clientX, y: e.clientY };
+            }}
+            onPointerUp={(e) => {
+              const from = swipe.current;
+              swipe.current = null;
+              if (!from) return;
+              const dx = e.clientX - from.x;
+              if (Math.abs(dx) > SWIPE_STEPS && Math.abs(dx) > 2 * Math.abs(e.clientY - from.y)) step(dx < 0 ? 1 : -1);
+            }}
+          >
+            <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
+            {face && (
+              <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
+                <TabAvatar f={face} bare="size-tab-face" seat="tab" />
+              </span>
+            )}
+            {onTitle ? (
+              <button type="button" data-deck-title onClick={onTitle} className="min-w-0 flex-1 truncate text-left text-body">
+                {face?.label ?? ""}
+              </button>
+            ) : (
+              <span data-deck-title className="min-w-0 flex-1 truncate text-body">
+                {face?.label ?? ""}
+              </span>
+            )}
+            {caption && (
+              <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
+                {caption}
+              </span>
+            )}
+            <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
+          </div>
+          <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center empty:hidden" />
+          <GlassCircle
+            data-deck-tabs
+            data-tab-count
+            aria-label={gui.switch_tabs(faces.length)}
+            aria-expanded={sheet}
+            onClick={() => setSheet(true)}
+          >
+            <TabsGlyph n={faces.length} />
+          </GlassCircle>
         </div>
         <div ref={setUnder} data-session-bar-under className="flex flex-none flex-col empty:hidden" />
       </div>
+      <TabSheet
+        open={sheet}
+        onOpenChange={setSheet}
+        faces={faces}
+        active={active}
+        onFocus={(id) => {
+          setSheet(false);
+          onFocus(id);
+        }}
+        onClose={onClose}
+        newLabel={newLabel}
+        onNew={
+          onNew &&
+          (() => {
+            setSheet(false);
+            onNew();
+          })
+        }
+      />
     </div>
+  );
+}
+
+/** How far down a drag goes before the keyboard is lowered. */
+const DRAG_LOWERS = 24;
+/** How far sideways a swipe on the pill goes before it changes tab. */
+const SWIPE_STEPS = 40;
+
+/** **Two squares and the count** (round UX-3): the tabs circle's figure —
+    a page behind a page, and how many there are on the front one. */
+function TabsGlyph({ n }: { n: number }) {
+  return (
+    <span data-tabs-glyph className="relative block size-6">
+      <span aria-hidden="true" className="absolute top-0.5 right-0.5 size-4 rounded-[4px] border-[1.4px] border-current opacity-50" />
+      <span className="absolute bottom-0.5 left-0.5 grid size-4 place-items-center rounded-[4px] border-[1.4px] border-current bg-[var(--glass)] text-[10px] leading-none font-title tabular-nums">
+        {n}
+      </span>
+    </span>
+  );
+}
+
+/** **The tabs, as a sheet from the bottom** (round UX-3): each open tab
+    with its face, its name, where it is, and × — the switcher's rows —
+    and ＋ at the end, the one place a new tab is opened from the deck. */
+function TabSheet({
+  open,
+  onOpenChange,
+  faces,
+  active,
+  onFocus,
+  onClose,
+  onNew,
+  newLabel,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  faces: TabFace[];
+  active: string;
+  onFocus: (id: string) => void;
+  onClose: (id: string) => void;
+  onNew?: () => void;
+  /** What ＋ opens, where it is not a page (a session). */
+  newLabel?: string;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent form data-tab-sheet className="max-h-[70dvh] !gap-0 overflow-y-auto">
+        <DialogTitle className="sr-only">{gui.session_tabs}</DialogTitle>
+        <div className="flex min-w-0 flex-col">
+          {faces.map((f) => (
+            <div
+              key={f.id}
+              data-tab-sheet-row={f.id}
+              data-on={f.id === active || undefined}
+              className={cn("flex min-h-list-row min-w-0 items-center gap-row rounded-md px-in", f.id === active && "bg-fill-strong")}
+            >
+              <button
+                type="button"
+                data-tab-sheet-open={f.id}
+                onClick={() => onFocus(f.id)}
+                className="flex min-w-0 flex-1 items-center gap-row text-left"
+              >
+                <TabAvatar f={f} bare="size-list-face" seat="row" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-body text-foreground">{f.label}</span>
+                  {(f.machine || f.path) && (
+                    // A path keeps its tail, cut at the start like every
+                    // path in a line too short for it (`PathCut`).
+                    <PathCut text={f.machine ?? f.path} className="block min-w-0 text-callout text-muted-foreground" />
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
+                data-tab-sheet-close={f.id}
+                aria-label={gui.close}
+                onClick={() => onClose(f.id)}
+                className="grid min-h-touch min-w-touch flex-none place-items-center text-muted-foreground"
+              >
+                <IconClose />
+              </button>
+            </div>
+          ))}
+          {onNew && (
+            <button
+              type="button"
+              data-tab-sheet-new
+              onClick={onNew}
+              className="flex min-h-list-row items-center gap-row rounded-md px-in text-left text-body text-foreground"
+            >
+              <span className="grid size-list-face flex-none place-items-center">
+                <IconPlus />
+              </span>
+              {newLabel ?? gui.new_tab}
+            </button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

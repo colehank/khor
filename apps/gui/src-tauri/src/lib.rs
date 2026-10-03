@@ -645,6 +645,13 @@ async fn pull(machine: String, path: String) -> Result<String, String> {
     khor_gui_core::files::pull(&Node::root_from_env(), &machine, &path).await
 }
 
+/// The same file in a temporary folder here, for this machine's other
+/// apps (`files::pull_temp`); a path already here answers itself.
+#[tauri::command]
+async fn pull_temp(machine: String, path: String) -> Result<String, String> {
+    khor_gui_core::files::pull_temp(&Node::root_from_env(), &machine, &path).await
+}
+
 /// Takes a path off a machine's disk. This machine's goes to the
 /// recycle bin; every other machine's is deleted (`files::remove`).
 #[tauri::command]
@@ -729,6 +736,18 @@ async fn search(
 #[tauri::command]
 fn trash_here() -> bool {
     khor_gui_core::files::trash_here()
+}
+
+/// Whether this machine shows a file in Finder (`files::reveal_here`).
+#[tauri::command]
+fn reveal_here() -> bool {
+    khor_gui_core::files::reveal_here()
+}
+
+/// Finder, with that file of this machine selected (`files::reveal`).
+#[tauri::command]
+fn reveal(path: String) -> Result<(), String> {
+    khor_gui_core::files::reveal(&path)
 }
 
 /// Whether this browser draws PDFs itself (`files::pdf_here`).
@@ -2451,6 +2470,44 @@ fn machine_log(id: String) -> Result<khor_gui_core::MachineLog, String> {
     khor_gui_core::machine_log(&Node::root_from_env(), &id)
 }
 
+/// A file for an agent conversation, as bytes (round CHAT): the raw
+/// request body, the conversation and the name in two headers — a photo
+/// is not something to base64 through a JSON envelope. Put on the
+/// machine the conversation runs on; answers the path there.
+#[tauri::command]
+async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("chat_put takes the file's bytes as its body".to_owned());
+    };
+    let header = |k: &str| {
+        request
+            .headers()
+            .get(k)
+            .and_then(|v| v.to_str().ok())
+            .map(|v| khor_gui_core::percent_decoded(v).unwrap_or_else(|| v.to_owned()))
+    };
+    let (Some(id), Some(name)) = (header("x-khor-chat"), header("x-khor-name")) else {
+        return Err("chat_put needs the x-khor-chat and x-khor-name headers".to_owned());
+    };
+    let bytes = bytes.clone();
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::chat::chat_put(&Node::root_from_env(), &id, &name, &mut bytes.as_slice())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Files this machine already has (a drop, a picker's paths), put where
+/// the agent conversation's machine keeps files (round CHAT).
+#[tauri::command]
+async fn chat_put_paths(id: String, paths: Vec<String>) -> Result<Vec<String>, String> {
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::chat::chat_put_paths(&Node::root_from_env(), &id, &paths)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The waiting file message's 收下 — `khor accept`, same core call.
 #[tauri::command]
 async fn accept_transfer(msg: String) -> Result<Vec<String>, String> {
@@ -3524,6 +3581,8 @@ pub fn run() {
             search,
             open_code_window,
             trash_here,
+            reveal_here,
+            reveal,
             pdf_here,
             read_text,
             git_status,
@@ -3581,6 +3640,7 @@ pub fn run() {
             history_follow,
             ls,
             pull,
+            pull_temp,
             term_open,
             term_attach,
             term_stream,
@@ -3613,6 +3673,8 @@ pub fn run() {
             accept_transfer,
             send_path,
             pick_and_send,
+            chat_put,
+            chat_put_paths,
             agents,
             agents_known,
             agents_known_taken,

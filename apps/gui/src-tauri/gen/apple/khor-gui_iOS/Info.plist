@@ -50,7 +50,7 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>扫描另一台机器上的配对二维码，加入它的网络</string>
+	<string>扫描另一台机器上的配对二维码加入它的网络，或拍照发到对话里</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>让 khor 直接连到同一个网络里的你的其他机器，不必绕道中继</string>
 </dict>

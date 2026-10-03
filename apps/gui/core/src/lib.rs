@@ -2039,6 +2039,31 @@ pub fn save_upload(
 /// Both required: an upload with no machine has nowhere to go, one
 /// with no name would invent one. Here rather than in each server so
 /// the web face and the dev bridge parse one contract.
+/// A file for an agent conversation's query (`/chat_put?id=…&name=…`,
+/// round CHAT): the conversation and the file's name, the body being the
+/// bytes. `None` where either is missing.
+/// `percent_decode`, for the app's headers (`chat_put`).
+pub fn percent_decoded(v: &str) -> Option<String> {
+    percent_decode(v)
+}
+
+pub fn chat_put_args(query: &str) -> Option<(String, String)> {
+    let mut id = None;
+    let mut name = None;
+    for pair in query.split('&') {
+        let (k, v) = pair.split_once('=')?;
+        match k {
+            "id" => id = Some(percent_decode(v)?),
+            "name" => name = Some(percent_decode(v)?),
+            _ => {}
+        }
+    }
+    match (id, name) {
+        (Some(i), Some(n)) if !i.is_empty() && !n.is_empty() => Some((i, n)),
+        _ => None,
+    }
+}
+
 pub fn upload_args(query: &str) -> Option<(String, String)> {
     let mut machine = None;
     let mut name = None;
