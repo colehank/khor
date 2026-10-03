@@ -36,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cli, gui, msg } from "@/gen/catalog";
+import { fontOf, measurer } from "@/components/PathCut";
 import { tickSet } from "@/lib/ruler";
 import { useKept } from "@/lib/kept";
 import { useTravel } from "@/lib/travel";
@@ -122,7 +123,7 @@ export function MachineCard({
           {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
           <span data-head-name className="flex min-w-0 flex-1 flex-col">
             <span className="min-w-0 truncate text-title-md font-title">{row?.shown ?? ""}</span>
-            {row && <HeadModel row={row} />}
+            {row && <HeadModel row={row} yields />}
           </span>
           {actions}
         </header>
@@ -197,13 +198,33 @@ export function MachineCard({
 /** The head's second line: **the model alone**, and nothing when the
     machine did not report one (the owner, 2026-10-01: 「第二行型号就行
     了」). The khor version and the reading's age are the facts band's. */
-function HeadModel({ row }: { row: DeviceRow }) {
+function HeadModel({ row, yields = false }: { row: DeviceRow; yields?: boolean }) {
   const model = row.vitals?.vitals.model?.name;
+  const [box, setBox] = useState<HTMLSpanElement | null>(null);
+  const [gone, setGone] = useState(false);
+  // **On the narrow head the model yields first** (P2, 2026-10-03, the
+  // owner's ruling): where the line cannot be said whole it is not said
+  // at all, rather than cut to 「Mac mini (2…」, and the name keeps the
+  // row's room; the name then truncates to its floor, and only then do
+  // the verbs fold (`MachineVerbs`). Measured against the name's column
+  // (the parent), so a line that fits again comes back.
+  useLayoutEffect(() => {
+    if (!yields || !box || !model) return;
+    const column = box.parentElement;
+    if (!column) return;
+    const fit = () => setGone(measurer(fontOf(box))(model) > column.clientWidth + 0.5);
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(column);
+    return () => watch.disconnect();
+  }, [yields, box, model]);
   if (!model) return null;
   return (
     <span
+      ref={setBox}
       data-machine-head-sub
-      className="min-w-0 truncate text-callout text-muted-foreground"
+      data-yielded={gone || undefined}
+      className={cn("min-w-0 truncate text-callout text-muted-foreground", gone && "invisible h-0")}
     >
       {model}
     </span>
