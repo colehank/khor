@@ -83,14 +83,22 @@ async fn a_keystroke_comes_back_in_a_round_trip_and_output_streams() {
             .collect();
         let began = Instant::now();
         khor_node::host::write_frame(&mut s, &khor_node::host::ClientOp::Input(line)).unwrap();
-        let mut got = 0usize;
-        while got < 7000 {
+        // Read until a second of quiet: how much of a burst comes back is
+        // the tty's business (its input queue sheds what `cat` has not
+        // read yet), when the last of it arrives is ours.
+        s.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        let (mut got, mut burst) = (0usize, Duration::ZERO);
+        loop {
             match s.read(&mut buf) {
-                Ok(k) => got += k,
-                Err(e) => panic!("the burst stopped at {got} bytes: {e}"),
+                Ok(k) if k > 0 => {
+                    got += k;
+                    burst = began.elapsed();
+                }
+                _ if got > 0 => break,
+                Ok(_) => panic!("the host closed before the burst"),
+                Err(e) => panic!("nothing of the burst came back: {e}"),
             }
         }
-        let burst = began.elapsed();
         let _ = s.write_all(&[]);
         (echoes, got, burst)
     })
