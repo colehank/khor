@@ -65,7 +65,7 @@ import "@xterm/xterm/css/xterm.css";
 
 import { faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
-import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
+import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -78,7 +78,8 @@ import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
-import { askNewSession, askOpenPath, askOpenUrl, handOff } from "@/lib/composer-handoff";
+import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
+import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import { termWake } from "@/lib/term-tap";
@@ -969,6 +970,88 @@ function framesWhole(term: Terminal): { paint: (bytes: Uint8Array) => void; flus
   return { paint, flush, drop };
 }
 
+/** A two-finger tap: both fingers down this briefly, barely moving. */
+const TWO_TAP_MS = 300;
+/** A sideways swipe that steps tabs: this far, mostly sideways, this
+    briefly, and not from the screen's left edge, which is the page's own
+    edge swipe back (iOS reserves it the same way). */
+const SWIPE_PT = 80;
+const SWIPE_MS = 400;
+const EDGE_PT = 24;
+
+/**
+ * **The phone's gestures on a terminal** (roadmap 4.4), the set Blink Shell
+ * and Termius use: a two-finger tap is Esc; a pinch sizes the terminal's
+ * text, landing on the setting's own steps (`lib/type-size`, every 2 pt
+ * from 10 to 22) when the fingers lift; a quick sideways swipe goes to the
+ * next or previous session tab.
+ */
+function phoneGestures(term: Terminal, box: HTMLElement): () => void {
+  let fingers = 0;
+  let downAt = 0;
+  let d0 = 0;
+  let scale = 1;
+  let travel = 0;
+  let x0 = 0;
+  let y0 = 0;
+  let x1 = 0;
+  let y1 = 0;
+  const gap = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const start = (e: TouchEvent) => {
+    if (e.touches.length === 1) {
+      fingers = 1;
+      downAt = performance.now();
+      x0 = x1 = e.touches[0].clientX;
+      y0 = y1 = e.touches[0].clientY;
+      travel = 0;
+    } else if (e.touches.length === 2) {
+      fingers = 2;
+      d0 = gap(e.touches);
+      scale = 1;
+    }
+  };
+  const move = (e: TouchEvent) => {
+    if (e.touches.length === 2 && fingers === 2) {
+      scale = gap(e.touches) / d0;
+      travel = Math.max(travel, Math.abs(gap(e.touches) - d0));
+    } else if (e.touches.length === 1 && fingers === 1) {
+      x1 = e.touches[0].clientX;
+      y1 = e.touches[0].clientY;
+    }
+  };
+  const end = (e: TouchEvent) => {
+    if (e.touches.length > 0) return;
+    const took = performance.now() - downAt;
+    if (fingers === 2) {
+      if (travel > 12) {
+        const t = typeSize();
+        const want = Math.round((t.term * scale) / 2) * 2;
+        const term_ = Math.max(TERM_MIN, Math.min(TERM_MAX, want));
+        if (term_ !== t.term) setTypeSize({ ...t, term: term_ });
+      } else if (took < TWO_TAP_MS) {
+        term.input("\x1b", true);
+      }
+    } else if (fingers === 1) {
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      if (Math.abs(dx) > SWIPE_PT && Math.abs(dx) > 2 * Math.abs(dy) && took < SWIPE_MS && x0 > EDGE_PT) {
+        askStepTab(dx < 0 ? 1 : -1);
+      }
+    }
+    fingers = 0;
+  };
+  box.addEventListener("touchstart", start, { passive: true });
+  box.addEventListener("touchmove", move, { passive: true });
+  box.addEventListener("touchend", end, { passive: true });
+  box.addEventListener("touchcancel", end, { passive: true });
+  return () => {
+    box.removeEventListener("touchstart", start);
+    box.removeEventListener("touchmove", move);
+    box.removeEventListener("touchend", end);
+    box.removeEventListener("touchcancel", end);
+  };
+}
+
 /** Whether a box has a size a terminal can be measured in. */
 const hasSize = (el: HTMLElement) => el.clientWidth > 0 && el.clientHeight > 0;
 
@@ -1569,6 +1652,7 @@ export function TerminalPane({
       });
     };
     const asks = tapsAskFirst(term, box, marks, tapped);
+    const gestures = phoneGestures(term, box);
     fit.fit();
     termRef.current = term;
     keysRef.current = term.textarea ?? null;
@@ -2050,6 +2134,7 @@ export function TerminalPane({
         field?.removeEventListener(k, composed as EventListener);
       }
       asks();
+      gestures();
       linked.dispose();
       marks.dispose();
       shown();
@@ -2383,7 +2468,14 @@ export function TerminalPane({
           // it was a pill with a shadow of its own (2026-09-28).
           className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-lg border bg-popover px-3 py-1 text-caption shadow-(--shadow-float)"
         >
-          {freshBelow ? gui.new_below : gui.to_bottom}
+          {freshBelow ? (
+            <span className="flex items-center gap-xxs">
+              <IconArrow to="down" className="size-3.5" />
+              {gui.term_new_output}
+            </span>
+          ) : (
+            gui.to_bottom
+          )}
         </button>
       )}
       {/* **Reconnecting, said over the screen it holds** (round

@@ -49,3 +49,10 @@ export const OPEN_URL_EVENT = "khor:open-url";
 export function askOpenUrl(machine: string, url: string) {
   window.dispatchEvent(new CustomEvent(OPEN_URL_EVENT, { detail: { machine, url } }));
 }
+
+/** Asks the app to show the next (`1`) or previous (`-1`) session tab
+    (roadmap 4.4, a sideways swipe on a terminal). `App`'s listener. */
+export const STEP_TAB_EVENT = "khor:step-tab";
+export function askStepTab(by: 1 | -1) {
+  window.dispatchEvent(new CustomEvent(STEP_TAB_EVENT, { detail: { by } }));
+}

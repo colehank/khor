@@ -2,7 +2,7 @@ import { startTransition, useCallback, useEffect, useMemo, useRef, useState, typ
 
 import { hereActs, ProgressLine, shortDir, termName } from "@/components/DoingLine";
 import { FinishedWatch, type Finished } from "@/lib/finished";
-import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT } from "@/lib/composer-handoff";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
   fetchDevices,
   fetchHooks,
@@ -1404,6 +1404,23 @@ export default function App() {
   // map and the rules are there; what is here is what only the shell can
   // do — walk the rail, open a 「…」 page, and lend the session tabs to
   // ⌘W and ⌃⇥ while they are the strip on screen.
+  // A sideways swipe on a terminal (roadmap 4.4): the next or previous
+  // session tab, the same step ⌃⇥ takes.
+  const stepTab = useRef<(by: number) => void>(() => {});
+  stepTab.current = (by) => {
+    if (openTabs.length < 2) return;
+    const at = openTabs.indexOf(selected ?? "");
+    const next = openTabs[(at + by + openTabs.length) % openTabs.length];
+    if (next === undefined) return;
+    sessionTabs.focus(next);
+    setSwitchingTabs(false);
+    setScreen("detail");
+  };
+  useEffect(() => {
+    const asked = (e: Event) => stepTab.current((e as CustomEvent<{ by: number }>).detail.by);
+    window.addEventListener(STEP_TAB_EVENT, asked);
+    return () => window.removeEventListener(STEP_TAB_EVENT, asked);
+  }, []);
   useTabHost(
     landing === "sessions" && morePage === null && openTabs.length > 0
       ? {

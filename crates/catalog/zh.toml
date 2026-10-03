@@ -2378,6 +2378,9 @@ paste-ask = "粘贴 {0} 行？"
 clip-read-ask = "终端里的程序想读取剪贴板"
 clip-read-allow = "允许读取"
 clip-read-deny = "不允许"
+# The terminal's way back down when output arrived while scrolled up
+# (roadmap 4.4); a conversation keeps new-below.
+term-new-output = "新输出"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"
