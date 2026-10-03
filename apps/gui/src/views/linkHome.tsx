@@ -69,6 +69,11 @@ export type LinkHome = {
       context's `open`; beside a tree, the tree's own view already is
       that preview. */
   beside?: boolean;
+  /** **A second directory whose files are painted too** (round CHAT):
+      the folder a conversation's files are put in on its machine
+      (`chat-files`), which is outside the project and would otherwise
+      be refused by the ceiling. Absolute paths only; its own answers. */
+  more?: { root: string; known: (abs: string) => boolean | null; see: (abs: string) => void };
 };
 
 const Home = createContext<LinkHome | null>(null);

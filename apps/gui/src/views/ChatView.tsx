@@ -53,6 +53,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  launchOn,
   chatAnswer,
   chatLeave,
   chatOpen,
@@ -78,9 +79,9 @@ import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
-import { FilePreview, MachineFilePick, PendingChips, usePendingFiles } from "@/views/chat-files";
-import { LinkHomeProvider, useLinkHome, type LinkHome } from "@/views/linkHome";
-import { withAttachments } from "@/lib/paths";
+import { FileCard, FilePreview, MachineFilePick, PendingChips, usePendingFiles } from "@/views/chat-files";
+import { LinkHomeProvider, useKnownFiles, useLinkHome, type LinkHome } from "@/views/linkHome";
+import { filesFolderIn, splitAttachments, withAttachments } from "@/lib/paths";
 import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
 import { KeyboardSwitch } from "@/views/TermKeys";
 import { cn } from "@/lib/utils";
@@ -1292,10 +1293,43 @@ export function ChatView({
   // its 「在文件视图中打开」 is where the press used to go. Beside a tree
   // the press keeps going straight to the middle column (`beside`).
   const outer = useLinkHome();
-  const chatHome = useMemo<LinkHome | null>(
-    () => (outer === null || outer.beside ? outer : { ...outer, open: (abs) => setPreview(abs) }),
-    [outer],
-  );
+  // **The conversation's files folder is painted too** (round CHAT item
+  // 2): what the agent says about a file it was handed names it there,
+  // outside any project. Found from the paths already said.
+  const folder = useMemo(() => {
+    for (const i of [...paint.past, ...paint.live]) {
+      const f = "text" in i ? filesFolderIn(i.text) : null;
+      if (f) return f;
+    }
+    return null;
+  }, [paint]);
+  const inFolder = useKnownFiles(home ?? "", folder ?? "");
+  const chatHome = useMemo<LinkHome | null>(() => {
+    // No project around this conversation: only its folder is painted.
+    const base: LinkHome | null =
+      outer ??
+      (home === null
+        ? null
+        : {
+            machine: home,
+            root: "",
+            known: () => false,
+            see: () => {},
+            open: () => {},
+            launch: (abs) => void launchOn(home, abs).catch(() => {}),
+          });
+    if (base === null) return null;
+    return {
+      ...base,
+      // Beside a tree a project file opens there; anything else, and
+      // everything outside a workspace, opens the preview.
+      open: (abs, line) =>
+        base.beside && base.root !== "" && abs.startsWith(`${base.root}/`) ? base.open(abs, line) : setPreview(abs),
+      more: folder === null ? undefined : { root: folder, known: inFolder.known, see: inFolder.see },
+    };
+  }, [outer, home, folder, inFolder.known, inFolder.see]);
+  /** A file card pressed: the same road as a path in the prose. */
+  const openFile = (abs: string) => (chatHome ? chatHome.open(abs, null) : setPreview(abs));
   const dropBox = useRef<HTMLDivElement>(null);
   const [dropping, setDropping] = useState(false);
   // **In the app a drop is tauri's**, which hands over the real paths
@@ -1640,14 +1674,33 @@ export function ChatView({
         )}
         {items.map((item, i) =>
           item.who === "user" ? (
-            <div key={i} className="flex justify-end">
-              <div
-                data-said
-                className="max-w-[85%] rounded-lg bg-muted px-3 py-1.5 text-read-ink"
-              >
-                <Markdown text={item.text} />
-              </div>
-            </div>
+            // **The files a line carried are cards under it** (round CHAT
+            // item 2), not the `@<path>` lines the agent was told them
+            // in (`lib/paths`).
+            (() => {
+              const { words, paths } = splitAttachments(item.text);
+              return (
+                <div key={i} className="flex flex-col items-end gap-in">
+                  {words && (
+                    <div
+                      data-said
+                      className="max-w-[85%] rounded-lg bg-muted px-3 py-1.5 text-read-ink"
+                    >
+                      <Markdown text={words} />
+                    </div>
+                  )}
+                  {paths.map((p, j) => (
+                    <FileCard
+                      key={`${j} ${p}`}
+                      machine={home ?? ""}
+                      shown={home ?? ""}
+                      path={p}
+                      onOpen={() => openFile(p)}
+                    />
+                  ))}
+                </div>
+              );
+            })()
           ) : item.who === "agent" ? (
             <Markdown key={i} text={item.text} className="text-read-ink" />
           ) : item.who === "thought" ? (

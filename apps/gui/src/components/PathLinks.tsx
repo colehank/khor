@@ -106,13 +106,17 @@ export function remarkPaths() {
  * these as the prose it already was. */
 export function PathLink({ written }: { written: string }) {
   const home = useLinkHome();
-  const found = home === null ? null : underRoot(home.root, written);
+  const inRoot = home === null ? null : underRoot(home.root, written);
+  // The conversation's files folder, for a path written whole.
+  const more = home?.more && inRoot === null && written.startsWith("/") ? home.more : null;
+  const found = inRoot ?? (more ? underRoot(more.root, written) : null);
   const abs = found?.abs ?? null;
-  const see = home?.see;
+  const see = more ? more.see : home?.see;
+  const known = more ? more.known : home?.known;
   useEffect(() => {
     if (abs !== null) see?.(abs);
   }, [abs, see]);
-  if (home === null || found === null || home.known(found.abs) !== true) {
+  if (home === null || found === null || known?.(found.abs) !== true) {
     return <>{written}</>;
   }
   return (

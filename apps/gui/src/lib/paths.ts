@@ -69,3 +69,13 @@ export function shownName(path: string): string {
   const b = baseName(path);
   return /^[0-9a-f]{8}-./.test(b) && path.includes("/.khor/chat/") ? b.slice(9) : b;
 }
+
+/** The folder a machine keeps a conversation's files in, as some path in
+    this text spells it (`<khor home>/.khor/chat/<machine>/files`,
+    `khor_node::transfer::files_dir`), or `null` where none does. Read
+    off the paths themselves, because only the machine knows its own
+    khor home. */
+export function filesFolderIn(text: string): string | null {
+  const hit = /(\/[^\s@]*?\/\.khor\/chat\/[^/\s]+\/files)\/[^/\s]/.exec(text);
+  return hit ? hit[1] : null;
+}

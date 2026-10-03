@@ -28,7 +28,7 @@
 // on (Finder on the Mac, the system's share sheet on a phone).
 import { useEffect, useRef, useState } from "react";
 
-import { chatPut, chatPutPaths, fetchFileText, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
+import { chatPut, chatPutPaths, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { PathCut } from "@/components/PathCut";
 import { PathField } from "@/components/PathField";
@@ -411,5 +411,104 @@ export function FilePreview({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** What a card says about a file besides its name: its size, and a
+    picture's thumbnail. */
+type Facts = { size: number | null; thumb: string | null };
+
+/** Asked once a page per file (and per `stamp`, for a file the agent
+    rewrote): a conversation repaints often and its files do not move. A
+    question that failed is forgotten, so the next paint asks again. */
+const asked = new Map<string, Promise<Facts>>();
+
+function factsOf(machine: string, path: string, stamp: string): Promise<Facts> {
+  const key = `${machine}\n${path}\n${stamp}`;
+  const had = asked.get(key);
+  if (had) return had;
+  const dir = path.slice(0, path.lastIndexOf("/")) || "/";
+  const name = baseName(path);
+  const p = fetchLs(machine, dir).then(
+    async (l): Promise<Facts> => {
+      const row = l.entries.find((e) => e.name === name && !e.dir);
+      if (!row) return { size: null, thumb: null };
+      if (kindOf(path) !== "image" || row.size > THUMB_MAX) return { size: row.size, thumb: null };
+      const look = await fetchPreview(machine, path).catch(() => null);
+      const thumb = look && look.data !== "" && !look.cut ? `data:${look.media};base64,${look.data}` : null;
+      return { size: row.size, thumb };
+    },
+    (): Facts => {
+      asked.delete(key);
+      return { size: null, thumb: null };
+    },
+  );
+  asked.set(key, p);
+  return p;
+}
+
+function useFacts(machine: string, path: string, stamp: string): Facts {
+  const [facts, setFacts] = useState<Facts>({ size: null, thumb: null });
+  useEffect(() => {
+    let live = true;
+    void factsOf(machine, path, stamp).then((f) => live && setFacts(f));
+    return () => {
+      live = false;
+    };
+  }, [machine, path, stamp]);
+  return facts;
+}
+
+/** **A file in the conversation, as a card** (round CHAT item 2): the
+    picture's thumbnail or the kind's icon, the name as it was given, its
+    size, and where it is — `machine · path`, cut at the start like every
+    path in a line too short for it (`PathCut`). Pressed, it opens. */
+export function FileCard({
+  machine,
+  shown,
+  path,
+  note = null,
+  stamp = "",
+  onOpen,
+}: {
+  /** The API's spelling of the machine the file is on. */
+  machine: string;
+  /** That machine's name as a person reads it; empty draws none. */
+  shown: string;
+  /** Absolute on that machine. */
+  path: string;
+  /** What happened to it, before the size (「已写入」). */
+  note?: string | null;
+  /** Changes when the file did, so its facts are asked again. */
+  stamp?: string;
+  onOpen: () => void;
+}) {
+  const { size, thumb } = useFacts(machine, path, stamp);
+  const name = shownName(path);
+  const first = [note, size === null ? null : sizeWord(size)].filter(Boolean).join(" · ");
+  return (
+    <button
+      type="button"
+      data-chat-file={path}
+      onClick={onOpen}
+      title={path}
+      className="flex w-80 max-w-full min-w-0 items-center gap-row rounded-lg bg-fill p-2 text-left"
+    >
+      {thumb ? (
+        <img src={thumb} alt="" className="size-10 flex-none rounded-md object-cover" />
+      ) : (
+        <FileKindIcon name={name} className="size-10 flex-none" />
+      )}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span data-chat-file-name className="truncate text-body text-foreground">
+          {name}
+        </span>
+        {first && <span className="text-caption text-muted-foreground tabular-nums">{first}</span>}
+        <span className="flex min-w-0 text-caption text-muted-foreground">
+          {shown && <span className="flex-none">{shown}&nbsp;·&nbsp;</span>}
+          <PathCut text={path} className="min-w-0 flex-1" />
+        </span>
+      </span>
+    </button>
   );
 }
