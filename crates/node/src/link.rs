@@ -1844,6 +1844,20 @@ impl Node {
         d: &DeviceInfo,
         proto: wires::Proto,
     ) -> Result<Line, DialFailure> {
+        self.line_to_by(ep, d, proto, None).await
+    }
+
+    /// [`Node::line_to`], a dial it has to make finished `by` then — what
+    /// a caller with a deadline of its own passes, so the dial's time out
+    /// is said in the dial's words before the caller's deadline says
+    /// something vaguer (`Node::ask_on`).
+    pub(crate) async fn line_to_by(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        proto: wires::Proto,
+        by: Option<std::time::Instant>,
+    ) -> Result<Line, DialFailure> {
         if crate::pause::peer_on(self.root(), &d.id) {
             self.wires.retire_peer(&d.id, wires::Retired::Paused);
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
@@ -1862,7 +1876,7 @@ impl Node {
         if let Some(conn) = self.wires.live(&d.id, proto) {
             return Ok(line(conn));
         }
-        match self.dial(ep, &d.id, &d.addrs, proto.alpn()).await {
+        match self.dial(ep, &d.id, &d.addrs, proto.alpn(), by).await {
             Ok(conn) => {
                 self.wires.adopt(&d.id, proto, conn.clone());
                 Ok(line(conn))
@@ -1939,6 +1953,13 @@ impl Node {
         d: &DeviceInfo,
         req: &Request,
     ) -> Result<Response, String> {
+        // **Answer inside the face's own wait** (round NET-5): a face asks
+        // through the resident, which gives up after `ipc::DEADLINE_FAR`
+        // and says only that it stopped waiting. A dead wire's ack wait
+        // plus the redial behind a slow road could run past that (29.5 s
+        // at 600 ms / 5 % loss), so the redial is cut to what is left,
+        // and the face reads 「无法连接」 rather than 「未在 30 秒内完成」.
+        let by = std::time::Instant::now() + ipc::DEADLINE_FAR - Duration::from_secs(2);
         match self.ask_early(ep, d, req).await {
             Early::Answered(resp) => return Ok(resp),
             Early::Failed(e) => return Err(unreached_words(&d.name, e)),
@@ -1955,7 +1976,7 @@ impl Node {
                     .reads_retried
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 let line = self
-                    .line_to(ep, d, wires::Proto::Main)
+                    .line_to_by(ep, d, wires::Proto::Main, Some(by))
                     .await
                     .map_err(|e| unreached_words(&d.name, e))?;
                 self.exchange_on(&line, req).await.map_err(Miss::words)
@@ -8192,13 +8213,18 @@ impl Node {
         id: &str,
         direct: &[String],
         alpn: &[u8],
+        by: Option<std::time::Instant>,
     ) -> Result<iroh::endpoint::Connection, DialFailure> {
         // A machine last seen behind a slow road is given that road's time
         // to answer a handshake (`wires::Patience`); one never measured, or
-        // a fast one, the budget dials always had.
-        let within = DIAL_TIMEOUT
+        // a fast one, the budget dials always had — and never past the
+        // caller's own deadline, when it has one.
+        let mut within = DIAL_TIMEOUT
             .max(self.wires.last_rtt(id).saturating_mul(12))
             .min(Duration::from_secs(60));
+        if let Some(by) = by {
+            within = within.min(by.saturating_duration_since(std::time::Instant::now()));
+        }
         self.dial_with(ep, id, direct, self.relays(), alpn, within).await
     }
 }
