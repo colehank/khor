@@ -601,6 +601,12 @@ doctor-disk-unknown = "cannot say how much is left on this volume"
 doctor-launcher-ok = "uses {0}"
 doctor-launcher-missing = "{0} is not on PATH"
 doctor-launcher-none = "this machine has no opener"
+# What this app's terminals noted about themselves (item 33): the newest
+# entry into a terminal, as its face recorded it. The record itself is a
+# diagnostic line for whoever reads the checklist with us, not prose.
+doctor-name-terminal = "Terminal"
+doctor-terminal-last = "last terminal opened: {0}"
+doctor-terminal-none = "no terminal opened yet"
 
 # ── what `khor lock` prints (docs/MORE.md 安全) ───────────────────────
 # One line, three fields: whether the faces lock, whether there is a key,

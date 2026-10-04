@@ -1674,6 +1674,15 @@ pub struct DoctorRow {
     pub fix: Option<String>,
 }
 
+/// **A line a terminal noted about itself** (items 18 A and 33): on
+/// stderr, the device console, and in the notes `khor doctor`'s
+/// `terminal` row reads (`khor_node::doctor::note_face`). A store that
+/// cannot be written loses the note, never the terminal.
+pub fn face_note(root: &Path, line: &str) {
+    eprintln!("face: {}", line.chars().take(400).collect::<String>());
+    let _ = khor_node::doctor::note_face(root, line);
+}
+
 /// The whole checklist. Each check under its own timeout, concurrently —
 /// see `khor_node::doctor`.
 pub async fn doctor(root: &Path) -> Result<Vec<DoctorRow>, String> {

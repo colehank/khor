@@ -565,6 +565,12 @@ doctor-disk-unknown = "无法获知这块磁盘的剩余空间"
 doctor-launcher-ok = "使用 {0}"
 doctor-launcher-missing = "{0} 不在 PATH 中"
 doctor-launcher-none = "这台机器没有开启器"
+# What this app's terminals noted about themselves (item 33): the newest
+# entry into a terminal, as its face recorded it. The record itself is a
+# diagnostic line for whoever reads the checklist with us, not prose.
+doctor-name-terminal = "终端"
+doctor-terminal-last = "最近打开的终端：{0}"
+doctor-terminal-none = "还没有打开过终端"
 unread = "未读 {0}"
 unreachable-for = "{0}未联系上"
 # The quiet note (词的保鲜期批): a live word nobody can vouch for has

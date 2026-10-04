@@ -104,6 +104,7 @@ A program asks its terminal things in its output (DA1/DA2, DSR, OSC 10/11/12/4 c
 
 - **Native scroll proxy.** A transparent element scrolls natively (`scrollsNatively`). Its height is the buffer's lines × row height, and its position drives xterm's viewport. The alternate screen and mouse-tracking programs keep wheel reports.
 - **First fit.** It waits for a settled box (`settled`, capped at 300 ms). The pane's first second is traced (`__termTrace`, and `face_note` to the app log).
+- **What a device saw** (item 33). On attach the pane notes the modes the replay left (buffer, mouse tracking), the grid and xterm's measured cell; the first touch after it notes which scroller took it (native, the tmux history view, or the wheel to the program, with how many wheels became mouse reports) or what a tap or press did (`lib/term-first-touch.ts`). `face_note` keeps these lines, with the first-second summary, in `.khor/face-notes.log` (64 KiB at most); `khor doctor`'s 终端 row, and the 自检 page on a phone, say the newest entry.
 - **A new shell starts at this device's terminal size.** `open_on` takes `cols`/`rows`; the face sends them from `lib/term-size-hint.ts`. The first prompt is written for the width it will be shown at, so zsh's `%` mark (PROMPT_SP) does not wrap into its own line.
 - **Scrollback** is a setting. The host's ring holds about 13 000–26 000 lines at 42–80 bytes a line.
 

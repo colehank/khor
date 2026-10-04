@@ -114,7 +114,7 @@ pub struct Check {
 /// what the keys are.
 pub const KEYS: &[&str] = &[
     "version", "identity", "store", "serve", "web", "relays", "peers", "roster", "roads", "hooks",
-    "agents", "vscode", "disk", "launcher",
+    "agents", "vscode", "disk", "launcher", "terminal",
 ];
 
 /// The three groups the healthy checks are folded under (docs/MORE.md
@@ -148,6 +148,9 @@ pub fn group(key: &str) -> &'static str {
         // here rather than under 工具 because a full store is this
         // machine's problem before it is anybody's tool.
         "version" | "identity" | "store" | "disk" => "machine",
+        // What this machine's terminals noted about themselves (item 33):
+        // a record of this app, not of the network or a tool beside it.
+        "terminal" => "machine",
         // 网络: the ones about reaching, or being reached by, another
         // machine.
         "serve" | "web" | "relays" | "peers" | "roster" | "roads" => "network",
@@ -195,6 +198,7 @@ pub fn name(key: &str) -> &str {
         "vscode" => cli::doctor_name_vscode(),
         "disk" => cli::doctor_name_disk(),
         "launcher" => cli::doctor_name_launcher(),
+        "terminal" => cli::doctor_name_terminal(),
         other => other,
     }
 }
@@ -248,6 +252,7 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         vscode,
         disk,
         launcher,
+        terminal,
     ) = tokio::join!(
         timed_if(run("version"), "version", check_version()),
         timed_if(run("identity"), "identity", check_identity(root.clone())),
@@ -263,10 +268,11 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed_if(run("vscode"), "vscode", check_vscode()),
         timed_if(run("disk"), "disk", check_disk(root.clone())),
         timed_if(run("launcher"), "launcher", check_launcher()),
+        timed_if(run("terminal"), "terminal", check_terminal(root.clone())),
     );
     [
         version, identity, store, serve, web, relays, peers, roster, roads, hooks, agents, vscode,
-        disk, launcher,
+        disk, launcher, terminal,
     ]
     .into_iter()
     .flatten()
@@ -313,6 +319,50 @@ async fn timed(key: &str, work: impl Future<Output = (Health, String, Option<Str
 }
 
 // ── the checks ──────────────────────────────────────────────────────
+
+/// Where the app's terminals note what they saw (item 33).
+pub fn face_notes_path(root: &Path) -> PathBuf {
+    root.join(".khor").join("face-notes.log")
+}
+
+/// The notes file's bound: past it, the older half goes.
+const FACE_NOTES_CAP: usize = 64 * 1024;
+
+/// **A line from a terminal, kept where `khor doctor` reads it** (item
+/// 33). The owner's phone failed in a way no simulator showed (a drag did
+/// nothing until the keyboard came up), and its stderr is a console
+/// nobody has open. So the app's terminal notes what it set on attach
+/// and what its first touch did, a few lines per terminal entered, never
+/// per write; the newest are the `terminal` row's sentence.
+pub fn note_face(root: &Path, line: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let path = face_notes_path(root);
+    let stamp = jiff::Zoned::now().strftime("%m-%d %H:%M:%S").to_string();
+    let line: String = line.chars().filter(|c| *c != '\n').take(400).collect();
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
+    writeln!(f, "{stamp} {line}")?;
+    if f.metadata()?.len() as usize > FACE_NOTES_CAP {
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let keep = text.len() - FACE_NOTES_CAP / 2;
+        let from = text[keep..].find('\n').map_or(text.len(), |i| keep + i + 1);
+        std::fs::write(&path, &text[from..])?;
+    }
+    Ok(())
+}
+
+/// The newest entry into a terminal, as the face noted it: its attach,
+/// and its first touch when it came after.
+async fn check_terminal(root: PathBuf) -> (Health, String, Option<String>) {
+    let text = std::fs::read_to_string(face_notes_path(&root)).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    let Some(at) = lines.iter().rposition(|l| l.contains(" attach ")) else {
+        return (Health::Ok, cli::doctor_terminal_none().to_owned(), None);
+    };
+    let said: Vec<&str> = std::iter::once(lines[at])
+        .chain(lines[at + 1..].iter().find(|l| l.contains(" first touch ")).copied())
+        .collect();
+    (Health::Ok, cli::doctor_terminal_last(said.join(" · ")), None)
+}
 
 /// Which khor this is, and whether the `khor` a terminal would run is
 /// the same build.
@@ -1044,5 +1094,43 @@ fn bytes(n: u64) -> String {
         format!("{n}{}", UNITS[0])
     } else {
         format!("{v:.1}{}", UNITS[u])
+    }
+}
+
+#[cfg(test)]
+mod face_note_tests {
+    use super::*;
+
+    /// The terminal row says the newest entry and its first touch, and
+    /// the notes stay under their bound however many entries there were.
+    #[test]
+    fn the_terminal_row_reads_the_newest_entry_and_the_notes_stay_bounded() {
+        let root = std::env::temp_dir().join(format!("khor-face-notes-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".khor")).unwrap();
+        let row = || {
+            tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap()
+                .block_on(check_terminal(root.clone()))
+        };
+        assert_eq!(row().1, cli::doctor_terminal_none());
+        note_face(&root, "term a: attach 10B; alternate; mouse drag").unwrap();
+        note_face(&root, "term a: first touch drag after 900 ms: wheel to the program, 6 wheels, 0 reports").unwrap();
+        note_face(&root, "term b: attach 20B; normal; mouse none").unwrap();
+        let (state, said, fix) = row();
+        assert_eq!((state, fix), (Health::Ok, None));
+        assert!(said.contains("term b: attach") && !said.contains("term a"), "{said}");
+        note_face(&root, "term b: first touch tap after 300 ms: keyboard up").unwrap();
+        assert!(row().1.contains("term b: first touch tap"), "{}", row().1);
+
+        for i in 0..2000 {
+            note_face(&root, &format!("term c: attach {i}; {}", "x".repeat(80))).unwrap();
+        }
+        let text = std::fs::read_to_string(face_notes_path(&root)).unwrap();
+        assert!(text.len() <= FACE_NOTES_CAP, "{}", text.len());
+        assert!(text.lines().last().unwrap().contains("attach 1999;"));
+        assert!(text.lines().next().unwrap().contains("term c: attach"), "cut at a line's start");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
