@@ -94,8 +94,9 @@ export const VerbSeat = createContext<HTMLElement | null>(null);
 /**
  * Something the open tab puts in the deck (round UX-3): `lead` is the
  * pill's right end (the terminal's reconnect, the page's reload), `pill`
- * its left end (the page's ← →), `trail` a circle between the pill and
- * the tabs circle (the terminal's keyboard, in 点击按钮 mode only), and
+ * its left end (the page's ← →), `trail` the circles between the pill and
+ * the tabs circle (the terminal's key row, and its keyboard in 点击按钮
+ * mode only), and
  * `under` the row below the deck (the keys, the input box, the address
  * while it is edited). Without a deck around it, `under` stands where it
  * was written, `lead` goes to the wide face's verbs (`VerbSeat`) where
@@ -205,8 +206,9 @@ export function SessionScreen({
           row of glass at the foot — ‹ back to the list, the pill with the
           tab's own things, and the tabs circle. Nothing at the top; the
           content has the screen. Hidden while the keyboard is up, when
-          the row under it (the keys, the box, the address) rides the
-          keyboard alone (`app.css`). */}
+          the row under it (the box, the address) rides the keyboard
+          alone (`app.css`) — but a terminal's stays, over its key row
+          (UX-12, `views/TerminalPane`'s `KeyRowSeats`). */}
       <div data-session-bar className="flex flex-none flex-col pb-safe-bottom">
         {folded && (
           <button
@@ -265,7 +267,7 @@ export function SessionScreen({
             )}
             <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
           </div>
-          <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center empty:hidden" />
+          <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center gap-in empty:hidden" />
           <GlassCircle
             data-deck-tabs
             data-tab-count

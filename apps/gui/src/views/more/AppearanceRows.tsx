@@ -26,6 +26,7 @@ import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
 import { setTermBell, useTermBell } from "@/lib/term-bell";
 import { setTermJoyHaptic, useTermJoyHaptic } from "@/lib/term-joy-haptic";
+import { setTermKeysHw, useTermKeysHw } from "@/lib/term-keys-hw";
 import { setTermBlockLines, useTermBlockLines } from "@/lib/term-block-lines";
 import { setTermPredict, useTermPredict } from "@/lib/term-predict-setting";
 import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
@@ -94,6 +95,7 @@ export function TerminalSection() {
   const finishedAfter = useFinishedAfter();
   const bell = useTermBell();
   const joyFelt = useTermJoyHaptic();
+  const keysHw = useTermKeysHw();
   const blockLines = useTermBlockLines();
   const predicts = useTermPredict();
   const optionMeta = useTermOptionMeta();
@@ -313,6 +315,18 @@ export function TerminalSection() {
               () => setCopied("failed"),
             )
           }
+        />
+      )}
+      {/* Where the key row starts with a hardware keyboard (UX-12 ruling
+          3, `lib/term-keys-hw`); the deck's circle toggles it either way.
+          A finger's device only. */}
+      {coarse && (
+        <SwitchRow
+          name="term-keys-hw"
+          label={gui.term_keys_hw}
+          hint={gui.term_keys_hw_note}
+          on={keysHw}
+          onToggle={() => setTermKeysHw(!keysHw)}
         />
       )}
       {/* The joystick is the phone key row's (item 23). */}

@@ -2424,6 +2424,10 @@ term-predict-note = "远端回显慢时，按下的字先带下划线显示，�
 # stripe, off by default; the block menu and the jumps work either way.
 term-block-lines = "命令分隔线"
 term-block-lines-note = "在每条命令之间画一条细线，左侧用色条标出退出状态"
+# Appearance → Terminal (UX-12): where the key row starts with a hardware
+# keyboard, a phone's only; the name is the owner's.
+term-keys-hw = "外接键盘时显示辅助键"
+term-keys-hw-note = "用外接键盘打字时，辅助键默认展开。底部的辅助键按钮随时可以展开或收起"
 # Appearance → Terminal (item 23): the cursor joystick felt, a phone's only.
 term-joy-haptic = "摇杆震动"
 term-joy-haptic-note = "用光标摇杆时，每发出一个方向键轻震一下，换方向时稍重一下"
@@ -3497,6 +3501,10 @@ back = "返回"
 # called; there is no 「收起」 here.
 keyboard-show = "显示键盘"
 keyboard-hide = "隐藏键盘"
+# The deck's circle for the terminal's key row (UX-12, 2026-10-04): the
+# row is 「辅助键」, the owner's word for it, with the same two verbs.
+key-row-show = "显示辅助键"
+key-row-hide = "隐藏辅助键"
 # The row of keys a soft keyboard lacks, read aloud as one group. The
 # caps say the keys' own names — the ones printed on a keyboard, so
 # they stay in Latin on both languages — and each cap's spoken name is

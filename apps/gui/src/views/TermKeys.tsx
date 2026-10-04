@@ -37,7 +37,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 
-import { IconChevronDown, IconChevronUp, IconGrip, IconKeyboard, IconMore } from "@/components/icons";
+import { IconChevronDown, IconChevronUp, IconGrip, IconKeyboard, IconKeyRow, IconMore } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -401,6 +401,29 @@ export function KeyboardSwitch({ field }: { field: RefObject<HTMLElement | null>
       className={cn(up && "text-[var(--rail-on-ink)]")}
     >
       <IconKeyboard />
+    </GlassCircle>
+  );
+}
+
+/**
+ * **The key row's circle on the deck** (UX-12, 2026-10-04): opens and
+ * closes the row under the deck (`lib/key-row-open`), with the keyboard
+ * up or down. It moves no focus, so a keyboard that is up stays up; open,
+ * it wears the app's 「on」 grey, as the keyboard's switch does. That one
+ * (点击按钮 alone) raises the system keyboard; this one is khor's row.
+ */
+export function KeyRowSwitch({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <GlassCircle
+      data-key-row-switch
+      data-on={open}
+      aria-expanded={open}
+      aria-label={open ? gui.key_row_hide : gui.key_row_show}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onToggle}
+      className={cn(open && "text-[var(--rail-on-ink)]")}
+    >
+      <IconKeyRow />
     </GlassCircle>
   );
 }
