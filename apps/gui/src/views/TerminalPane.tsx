@@ -95,6 +95,7 @@ import { termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
 import { iipSizes } from "@/lib/term-iip";
+import { promptMarks } from "@/lib/term-prompt-sp";
 import { kittyFlags, kittyKey, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
 import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
@@ -925,6 +926,13 @@ function jumpToPrompt(term: Terminal, marks: Marks, dir: -1 | 1) {
   term.scrollToLine(to);
 }
 
+/** The composition strip's gap above the pane's foot (Tailwind's 2). */
+const STRIP_GAP = 8;
+
+/** A face that has been quiet this long says its size again with its
+    next key (ms). */
+const SIZE_AGAIN_MS = 2000;
+
 /** The most entries the pane's first-entry trace keeps. */
 const TRACE_MAX = 300;
 
@@ -1417,6 +1425,8 @@ export function TerminalPane({
   // strip of its own at the screen's foot, not at the cursor, which a
   // redrawing program moves under it.
   const [composingText, setComposingText] = useState<string | null>(null);
+  /** How far the composition strip stands above the pane's foot. */
+  const [composeLift, setComposeLift] = useState(0);
   // A picture the program drew, opened whole (roadmap 3.3).
   const [peek, setPeek] = useState<string | null>(null);
   // A block's output read as data, opened (roadmap 3.4).
@@ -1744,6 +1754,16 @@ export function TerminalPane({
     const composed = (e: CompositionEvent) => {
       if (!window.matchMedia("(pointer: coarse)").matches) return;
       setComposingText(e.type === "compositionend" ? null : e.data || null);
+      // On the alternate screen a program keeps its own last row — tmux's
+      // status line, an editor's — and the strip stands one row above it.
+      // Measured to the top of that row: the strip is taller than a row,
+      // and the grid need not end at the pane's foot.
+      const screen = term.element?.querySelector(".xterm-screen")?.getBoundingClientRect();
+      const pane = boxRef.current?.getBoundingClientRect();
+      if (term.buffer.active.type === "alternate" && screen && pane) {
+        const lastRowTop = screen.top + ((term.rows - 1) * screen.height) / term.rows;
+        setComposeLift(Math.max(0, Math.ceil(pane.bottom - STRIP_GAP - lastRowTop)));
+      } else setComposeLift(0);
     };
     for (const k of ["compositionstart", "compositionupdate", "compositionend"]) {
       field?.addEventListener(k, composed as EventListener);
@@ -1846,8 +1866,12 @@ export function TerminalPane({
     // xterm's image addon sees it (`lib/term-iip`); a fresh rewriter for
     // each screen, so a sequence held half-way never outlives a reset.
     let iip = iipSizes();
+    // zsh's prompt marks are made for this terminal's width, so a history
+    // written at another width does not leave them standing
+    // (`lib/term-prompt-sp`).
+    const marksSp = promptMarks(() => term.cols);
     // Output painted a whole frame at a time (item 18 B).
-    const frames = framesWhole(term, (bytes) => predict.output(iip(bytes)));
+    const frames = framesWhole(term, (bytes) => predict.output(iip(marksSp(bytes))));
     let seq = 0;
     let timer = 0;
     let busy = false;
@@ -1868,7 +1892,7 @@ export function TerminalPane({
     let replaying = 0;
     const replay = (bytes: Uint8Array) => {
       replaying += 1;
-      const shaped = predict.output(iip(bytes));
+      const shaped = predict.output(iip(marksSp(bytes)));
       term.write(shaped.bytes, () => {
         replaying -= 1;
         shaped.parsed?.();
@@ -2122,9 +2146,27 @@ export function TerminalPane({
       guarded(text);
     };
     term.textarea?.addEventListener("paste", pasted, true);
+    // **The size follows the face in use** (the audit's spec rule 8,
+    // tmux's `window-size latest`): two faces on one session share one
+    // pty, and the one a person types into, after a quiet spell, says its
+    // size again — so the phone and the Mac each see a whole screen while
+    // they are the one being used. Only input counts: an answer from a
+    // face nobody is looking at must not take the size (tmux asks for the
+    // size at every resize, and both faces answer). An unchanged size
+    // costs nothing; the kernel signals the program only on a change.
+    let sizedAt = performance.now();
+    const ownSize = () => {
+      if (performance.now() - sizedAt < SIZE_AGAIN_MS) {
+        sizedAt = performance.now();
+        return;
+      }
+      sizedAt = performance.now();
+      termResize(id, term.cols, term.rows).catch(() => {});
+    };
     const data = term.onData((d) => {
       const reply = isReply(d);
       if (replaying > 0 && (reply || isFocusReport(d))) return;
+      if (!reply && !isFocusReport(d)) ownSize();
       let out = d;
       const m = modsRef.current;
       // An answer to a live question is not a key: it neither takes a
@@ -2583,7 +2625,7 @@ export function TerminalPane({
           data-term-composing
           aria-hidden
           className="glass pointer-events-none absolute inset-x-2 bottom-2 z-10 truncate rounded-md px-3 py-1 text-[length:var(--text-term)]"
-          style={{ fontFamily: "var(--font-term)" }}
+          style={{ fontFamily: "var(--font-term)", marginBottom: composeLift }}
         >
           {composingText}
         </div>

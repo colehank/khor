@@ -54,6 +54,31 @@ pub enum Kind {
     /// The kitty keyboard protocol's flags, `CSI ? u` (roadmap 5.1; the
     /// faces keep them, `lib/term-kitty`).
     KittyFlags,
+    /// A window report (xterm's `CSI Ps t`, the audit's spec rule 4), by
+    /// the number its answer leads with: 14 → 4 (the text area in
+    /// pixels), 16 → 6 (a cell), 18 → 8 (the text area in cells), 19 → 9,
+    /// 13 → 3. tmux asks 14/16/18 of its outer terminal at every attach
+    /// and resize; with two faces both answered, and tmux typed the
+    /// second answer into the pane (the tmux walk, 2026-10-04).
+    Window(u8),
+}
+
+/// The answer a window-report question gets, by its first parameter.
+fn window_answer(question: u16) -> Option<u8> {
+    match question {
+        13 => Some(3),
+        14 => Some(4),
+        16 => Some(6),
+        18 => Some(8),
+        19 => Some(9),
+        _ => None,
+    }
+}
+
+/// A CSI's first numeric parameter.
+fn first_param(params: &[u8]) -> Option<u16> {
+    let end = params.iter().position(|&c| c == b';').unwrap_or(params.len());
+    std::str::from_utf8(&params[..end]).ok()?.parse().ok()
 }
 
 /// One escape sequence at the start of `b`, and how long it is; `None`
@@ -114,6 +139,7 @@ fn question(s: &Seq<'_>) -> Option<Kind> {
             (b'n', b"") if *params == b"5" => Some(Kind::Dsr5),
             (b'p', b"$") => Some(Kind::Decrqm),
             (b'u', b"") if *params == b"?" => Some(Kind::KittyFlags),
+            (b't', b"") => window_answer(first_param(params)?).map(Kind::Window),
             _ => None,
         },
         Seq::String { kind: b']', body } => {
@@ -142,6 +168,12 @@ fn answer(s: &Seq<'_>) -> Option<Kind> {
             (b'u', b"") if params.len() > 1 && params[0] == b'?' && params[1..].iter().all(u8::is_ascii_digit) => {
                 Some(Kind::KittyFlags)
             }
+            // `CSI 4 ; h ; w t` and its kin: three parameters, the first the
+            // report's own number. A key never ends in `t`.
+            (b't', b"") if params.iter().filter(|&&c| c == b';').count() == 2 => match first_param(params)? {
+                n @ (3 | 4 | 6 | 8 | 9) => Some(Kind::Window(n as u8)),
+                _ => None,
+            },
             _ => None,
         },
         Seq::String { kind: b']', body } => {
@@ -253,7 +285,7 @@ impl Ledger {
                 // The flags are the faces'; a program that hears only
                 // its DA1 sentinel concludes there is no protocol, which
                 // is true of a terminal nobody is looking at.
-                Kind::Decrqss | Kind::Decrqm | Kind::KittyFlags => None,
+                Kind::Decrqss | Kind::Decrqm | Kind::KittyFlags | Kind::Window(_) => None,
             };
             match answer {
                 Some(a) => out.extend_from_slice(&a),
@@ -292,6 +324,24 @@ mod tests {
     /// face's flags reach the program, the second face's copy does not,
     /// and the protocol's keys - `CSI 13;2u`, `CSI 27u` - are never
     /// weighed as answers.
+    /// **tmux's window reports, answered once** (the tmux walk): tmux asks
+    /// `CSI 14 t`, `16 t`, `18 t` at an attach; two faces answered each,
+    /// and tmux typed the copies into the pane as `;46;115t…`. Now the
+    /// first face's answers pass and the second's are dropped; a report
+    /// nobody asked for is dropped too; a window manipulation (`CSI 8 ; r
+    /// ; c t` sent *by* a program) is output, never weighed.
+    #[test]
+    fn window_reports_are_answered_once() {
+        let t = Instant::now();
+        let mut l = Ledger::default();
+        l.saw_output(b"\x1b[14t\x1b[16t\x1b[18t", t);
+        let first = b"\x1b[4;736;920t\x1b[6;16;8t\x1b[8;46;115t";
+        assert_eq!(l.take_input(first, t), first);
+        assert_eq!(l.take_input(b"\x1b[4;752;384t\x1b[6;16;8t\x1b[8;47;48t", t), b"", "the second face's");
+        assert_eq!(l.take_input(b"\x1b[8;24;80t", t), b"", "nothing pending");
+        assert_eq!(l.take_input(b"abc\x1b[A", t), b"abc\x1b[A", "keys pass");
+    }
+
     #[test]
     fn kitty_flags_are_answered_once_and_its_keys_pass() {
         let mut l = Ledger::default();

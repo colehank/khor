@@ -32,6 +32,16 @@
 //     modifier keys themselves, and the functional keys in the table's
 //     `CSI 1 ; mods X` / `CSI n ; mods ~` forms;
 //  16 associated text — with 8, the text a key types as a third field.
+//
+// **And xterm's modifyOtherKeys** (`CSI > 4 ; Pv m`, xterm's ctlseqs),
+// which tmux asks of its outer terminal when the person's tmux.conf turns
+// `extended-keys` on (the tmux walk, 2026-10-04: tmux 3.7 sent
+// `CSI > 4 ; 2 m`): with it, Shift+Enter crosses tmux as `CSI 27 ; 2 ; 13 ~`
+// instead of a bare CR, and tmux hands it on to Claude Code. Level 2 sends
+// every key with Ctrl or Alt that way; level 1 only those that have no
+// control character of their own; both send Enter, Tab and Backspace with
+// any modifier. The kitty flags, when a program set any, come first.
+import { ctrlOf } from "@/lib/term-keys";
 import type { Terminal } from "@xterm/xterm";
 
 const DISAMBIGUATE = 1;
@@ -109,7 +119,7 @@ function usKey(code: string): string | null {
   return US[code] ?? null;
 }
 
-type State = { normal: number[]; alternate: number[] };
+type State = { normal: number[]; alternate: number[]; otherKeys: number };
 const states = new WeakMap<Terminal, State>();
 
 /** The flags in force on the screen the program is on (0: none). */
@@ -123,7 +133,7 @@ export function kittyFlags(term: Terminal): number {
 /** Starts keeping the stacks for `term`; `answer` sends a reply to the
     program. Returns what stops it, and what forgets the stacks. */
 export function kittyProtocol(term: Terminal, answer: (bytes: string) => void): { dispose: () => void; reset: () => void } {
-  const state: State = { normal: [], alternate: [] };
+  const state: State = { normal: [], alternate: [], otherKeys: 0 };
   states.set(term, state);
   const stack = () => state[term.buffer.active.type];
   const num = (p: (number | number[])[], i: number, d: number) => {
@@ -155,10 +165,20 @@ export function kittyProtocol(term: Terminal, answer: (bytes: string) => void): 
       answer(`\x1b[?${kittyFlags(term)}u`);
       return true;
     }),
+    // modifyOtherKeys: `CSI > 4 ; Pv m` sets it, `CSI > 4 m` resets it.
+    // Other `CSI > … m` (xterm's modifyCursorKeys and kin) are xterm's.
+    term.parser.registerCsiHandler({ prefix: ">", final: "m" }, (p) => {
+      const which = Array.isArray(p[0]) ? p[0][0] : p[0];
+      if (which !== 4) return false;
+      const v = p.length > 1 ? (Array.isArray(p[1]) ? p[1][0] : p[1]) : 0;
+      state.otherKeys = v === 1 || v === 2 ? v : 0;
+      return true;
+    }),
     // RIS forgets both; xterm goes on to reset everything else.
     term.parser.registerEscHandler({ final: "c" }, () => {
       state.normal = [];
       state.alternate = [];
+      state.otherKeys = 0;
       return false;
     }),
     // Leaving the alternate screen leaves its flags behind.
@@ -174,6 +194,7 @@ export function kittyProtocol(term: Terminal, answer: (bytes: string) => void): 
     reset: () => {
       state.normal = [];
       state.alternate = [];
+      state.otherKeys = 0;
     },
   };
 }
@@ -200,9 +221,7 @@ function csi(keys: string, mods: number, event: number, text: string, final: str
  */
 export function kittyKey(term: Terminal, ev: KeyboardEvent, release: boolean): string | null {
   const flags = kittyFlags(term);
-  // Event types and alternate keys describe keys reported as escape
-  // codes; without disambiguation or every key, no key is.
-  if (!(flags & (DISAMBIGUATE | ALL_KEYS))) return null;
+  if (!(flags & (DISAMBIGUATE | ALL_KEYS))) return otherKey(term, ev, release);
   // An IME's keys are the composition's, and what it commits is text.
   if (ev.isComposing || ev.keyCode === 229) return null;
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -248,6 +267,33 @@ export function kittyKey(term: Terminal, ev: KeyboardEvent, release: boolean): s
   }
   const text = all && flags & TEXT && !release && !ev.ctrlKey && others === 0 ? String(ev.key.codePointAt(0)) : "";
   return csi(keys, mods, event, text, "u");
+}
+
+/** The modifyOtherKeys level in force (0: off). */
+export function otherKeysLevel(term: Terminal): number {
+  return states.get(term)?.otherKeys ?? 0;
+}
+
+/** A key under xterm's modifyOtherKeys: `CSI 27 ; mods ; code ~`, or
+    `null` for xterm's own spelling. */
+function otherKey(term: Terminal, ev: KeyboardEvent, release: boolean): string | null {
+  const level = otherKeysLevel(term);
+  if (!level || release || ev.isComposing || ev.keyCode === 229 || ev.metaKey) return null;
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+  const altIsMod = !mac || !!term.options.macOptionIsMeta;
+  const mods = modsOf(ev, altIsMod);
+  if (mods === 1) return null;
+  const triple: Record<string, number> = { Enter: 13, Tab: 9, Backspace: 127 };
+  if (ev.key in triple) return `\x1b[27;${mods};${triple[ev.key]}~`;
+  if ([...ev.key].length !== 1) return null;
+  const ctrl = ev.ctrlKey;
+  const alt = ev.altKey && altIsMod;
+  if (!ctrl && !alt) return null;
+  const base = usKey(ev.code) ?? ev.key.toLowerCase();
+  // Level 1 leaves the combinations every terminal agrees on (⌃A, ⌥x
+  // without Shift) as they were.
+  if (level === 1 && !ev.shiftKey && (!ctrl || ctrlOf(base) !== null)) return null;
+  return `\x1b[27;${mods};${(ev.shiftKey ? ev.key : base).codePointAt(0)}~`;
 }
 
 /** A character the key row types under its latches (`lib/term-keys`), as
