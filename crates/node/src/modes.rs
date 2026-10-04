@@ -95,6 +95,9 @@ pub struct Modes {
     /// sets): a program that asked once — Claude Code at its start — and
     /// then drew for hours still expects them after a trimmed head.
     kitty: [Vec<u16>; 2],
+    /// xterm's modifyOtherKeys level (`CSI > 4 ; v m`), which tmux asks
+    /// of its outer terminal once, at attach, when `extended-keys` is on.
+    other_keys: u16,
 }
 
 /// The kitty protocol's stack bound, as the face keeps it
@@ -142,6 +145,7 @@ impl Modes {
                         self.set.clear();
                         self.keypad = false;
                         self.kitty = Default::default();
+                        self.other_keys = 0;
                     }
                     0x1b => self.parse = Parse::Esc,
                     _ => {}
@@ -213,6 +217,10 @@ impl Modes {
                     }
                     if b == b'u' && lead != 0 && !foreign {
                         self.kitty_op(lead);
+                    }
+                    if b == b'm' && lead == b'>' && !foreign && self.params.first() == Some(&4) {
+                        let v = self.params.get(1).copied().unwrap_or(0);
+                        self.other_keys = if v <= 2 { v } else { 0 };
                     }
                 }
                 // Intermediates, other parameter bytes (`>`, `!`, `:`…):
@@ -320,6 +328,9 @@ impl Modes {
             }
         }
         push(&mut out, &self.kitty[1]);
+        if self.other_keys > 0 {
+            out.extend_from_slice(format!("\x1b[>4;{}m", self.other_keys).as_bytes());
+        }
         if self.keypad {
             out.extend_from_slice(b"\x1b=");
         }
@@ -336,6 +347,18 @@ mod tests {
     /// screen, the main screen's before the switch and the alternate's
     /// after, popped and set as the spec says, and forgotten when the
     /// program leaves the alternate screen or resets the terminal.
+    /// tmux asks for modifyOtherKeys once, at attach, when the person's
+    /// tmux.conf turns `extended-keys` on (the tmux walk); a replay whose
+    /// head was trimmed past it asks again, and `CSI > 4 m` or RIS end it.
+    #[test]
+    fn modify_other_keys_is_kept() {
+        assert_eq!(after(b"\x1b[?1049h\x1b[>4;2m"), b"\x1b[?1049h\x1b[>4;2m");
+        assert!(after(b"\x1b[>4;2m\x1b[>4m").is_empty());
+        assert!(after(b"\x1b[>4;1m\x1bc").is_empty());
+        // modifyCursorKeys (CSI > 2 ; v m) is not this.
+        assert!(after(b"\x1b[>2;1m").is_empty());
+    }
+
     #[test]
     fn kitty_keyboard_flags_are_kept_per_screen() {
         // Claude Code's shape: one push on the main screen.
