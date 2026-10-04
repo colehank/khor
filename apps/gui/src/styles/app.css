@@ -436,6 +436,21 @@ aside[data-side] {
   height: var(--pane-head);
 }
 
+/* **The file page in a Mac window dragged narrow** (UX-6): its name pill
+   stood a gap below the window's top edge, beside the three buttons and
+   off their centreline, and the text began under it. In the window's
+   corner the first row is the platform's (as `[data-session-top]` above):
+   the pill sits on that row's centre, and the text starts below it. */
+:root[data-traffic] [data-file-name-pill] {
+  top: 0;
+  height: var(--pane-head);
+  align-items: center;
+}
+:root[data-traffic] [data-file-page] :is([data-file-scroll], [data-file-preview], [data-diff-tab]) {
+  padding-top: calc(var(--pane-head) + var(--gap-in));
+  scroll-padding-top: calc(var(--pane-head) + var(--gap-in));
+}
+
 /* Two selectors because the two properties inherit differently:
    `scrollbar-color` inherits, so the root reaches every pane;
    `scrollbar-width` does not, so it has to be said everywhere. */
