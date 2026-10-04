@@ -74,8 +74,9 @@ import { rememberTermSize } from "@/lib/term-size-hint";
 import { TermHistory } from "@/views/TermHistory";
 import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
-import { RegionState, Waiting } from "@/components/RegionState";
+import { RegionState, useWaited, WAIT_SAY_MS, Waiting } from "@/components/RegionState";
 import { gui, menu } from "@/gen/catalog";
+import { ago } from "@/words";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
@@ -2978,22 +2979,8 @@ export function TerminalPane({
           )}
         </button>
       )}
-      {/* **Reconnecting, said over the screen it holds** (round
-          NET-FIX): the far pipe ended and is being asked for again, so
-          the screen under this is the last one that arrived — held back
-          in ink, and this pill on top in the pane's floating language
-          (the way-back-down control's), so it never sits on the
-          program's own text the way a bare caption would. */}
-      {rejoining && !gone && !why && (
-        <div
-          data-term-rejoining
-          role="status"
-          className="absolute top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-xxs rounded-lg border bg-popover px-3 py-1 font-sans text-caption text-muted-foreground shadow-(--shadow-float)"
-        >
-          <IconReload className="size-3.5 flex-none animate-spin motion-reduce:animate-none" />
-          {machine ? gui.term_rejoining(machine) : gui.term_rejoining_here}
-        </div>
-      )}
+      {/* Reconnecting, said over the screen it holds (`RejoinPill`). */}
+      {rejoining && !gone && !why && <RejoinPill machine={machine} />}
       {opening && !why && openedAt !== null && (
         <div data-term-opening className="absolute inset-0 z-10 bg-card font-sans">
           <Waiting
@@ -3082,5 +3069,40 @@ export function TerminalPane({
       </>
     )}
     </>
+  );
+}
+
+/**
+ * **Reconnecting, said over the screen it holds** (round NET-FIX): the
+ * far pipe ended and is being asked for again, so the screen under this
+ * is the last one that arrived — held back in ink, and this pill on top
+ * in the pane's floating language (the way-back-down control's), so it
+ * never sits on the program's own text the way a bare caption would.
+ *
+ * **From [`WAIT_SAY_MS`] it says for how long, and what brings it back**
+ * (UX-8, the first run's 「the Mac's khor is not running」): the pill
+ * alone spun with no end, and the one move that helps is on the other
+ * machine — the pipe comes back by itself once that machine is up.
+ */
+function RejoinPill({ machine }: { machine?: string | null }) {
+  const [since] = useState(() => Date.now());
+  const say = useWaited(since) >= WAIT_SAY_MS;
+  return (
+    <div
+      data-term-rejoining
+      role="status"
+      className="absolute top-2 left-1/2 z-10 flex max-w-[calc(100%-2*var(--spacing)*2)] -translate-x-1/2 flex-col items-center rounded-lg border bg-popover px-3 py-1 font-sans text-caption text-muted-foreground shadow-(--shadow-float)"
+    >
+      <span className="flex items-center gap-xxs tabular-nums">
+        <IconReload className="size-3.5 flex-none animate-spin motion-reduce:animate-none" />
+        {machine ? gui.term_rejoining(machine) : gui.term_rejoining_here}
+        {say && <span data-term-rejoining-for>· {ago(since)}</span>}
+      </span>
+      {say && (
+        <span data-term-rejoining-how className="text-center">
+          {machine ? gui.term_rejoining_how(machine) : gui.term_rejoining_how_here}
+        </span>
+      )}
+    </div>
   );
 }

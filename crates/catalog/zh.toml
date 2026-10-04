@@ -1318,8 +1318,8 @@ trust-bad-signature = "签名对不上：这份记录不是根钥匙签的，或
 trust-other-root = "这份记录属于另一把根钥匙"
 trust-bad-cert-inside = "名单里有一张证书验不过"
 not-a-machine-id-short = "这不是一个机器 ID"
-not-a-ticket-base64 = "这不是有效的配对票（无法解码 base64）"
-not-a-ticket-content = "这不是有效的配对票（内容不匹配）"
+not-a-ticket-base64 = "这不是有效的配对票（无法解码 base64）。在出票的那台机器上「邀请机器」，重新复制整张票"
+not-a-ticket-content = "这不是有效的配对票（内容不匹配）。在出票的那台机器上「邀请机器」，重新复制整张票"
 
 # ── document store and wire (sync) ──
 cant-read = "无法读取 {0}：{1}"
@@ -1380,14 +1380,14 @@ endpoint-file-garbled = "无法解析 endpoint.json：{0}"
 # ── the wire between machines (node) ──
 request-unreadable = "读不完请求：{0}"
 cant-write-reply = "写不出应答：{0}"
-bad-invite = "配对票无效或已被使用"
+bad-invite = "配对票不对或已经用过。在出票的那台机器上重新邀请一次（「邀请机器」或 khor invite），再用新的票"
 # A separate word from the one above, because the two have different
 # fixes: a wrong or spent code means look at what you pasted, an expired
 # one means ask for another. One word for both would send people hunting
 # for a mistake they did not make. {0} is the window in minutes, taken
 # from the constant that enforces it, so the sentence cannot drift from
 # the rule.
-invite-expired = "这张配对票已过期（出票后 {0} 分钟内有效），在那台机器上重新生成一张：khor invite"
+invite-expired = "这张配对票已过期（出票后 {0} 分钟内有效）。在出票的那台机器上重新邀请一次：「邀请机器」或 khor invite"
 cant-burn-invite = "无法作废配对票：{0}"
 not-paired = "这台机器不在机器列表中，需要先配对"
 # 名单是信任的唯一出处（docs/CONNECT.md 身份）。「不在名单上」和「没配对」是两件事：
@@ -1429,7 +1429,7 @@ cant-make-invites-dir = "无法创建邀请目录：{0}"
 cant-save-invite = "无法保存配对票：{0}"
 cant-reach-named = "无法连接 {0}：{1}"
 cant-reach-plain = "无法连接：{0}"
-machine-silent = "{0} 没有响应"
+machine-silent = "{0} 没有响应。确认它开着 khor、连着网，然后再试一次"
 answer-late = "{0} 在 {1} 秒内没有答完"
 wire-unanswered = "请求无回应，连接已收回"
 wire-went-silent = "连接静默，已收回"
@@ -1437,7 +1437,11 @@ wire-network-changed = "网络变了，旧连接已收回"
 peer-backing-off = "上次没连上，{0} 秒后再试"
 peer-left-its-relay = "它的中继说它已离开，等它回来时会自己连上"
 dial-timed-out = "连接超时"
-inviter-unreachable-timeout = "无法连接出票的机器（超时）"
+inviter-unreachable-timeout = "出票的机器没有应答。确认那台开着 khor、连着网，然后再试一次"
+# A pairing dial that timed out while this machine reached none of its
+# relays (UX-8): no network and an unreachable relay both land here. Split
+# from the sentence above because the thing to check is on this side.
+no-relay-reached = "这台机器连不上任何中继：可能没有网络，或中继不可达。检查网络（或「网络」页里的中继），然后再试一次"
 inviter-unreachable = "无法连接出票的机器：{0}"
 
 # ── transfers (node) ──
@@ -2294,6 +2298,10 @@ waiting-stopped-here = "已停止等待"
 # 终端连到别的机器的管子断了、正在重新接上：屏上是断开前最后的样子，不是实时的。
 term-rejoining = "正在重新连接 {0}"
 term-rejoining-here = "正在重新连接"
+# Under the reconnect pill once it has waited eight seconds (UX-8): the
+# one move that helps is on the other machine.
+term-rejoining-how = "{0} 开着 khor、连上网后会自动接上"
+term-rejoining-how-here = "那台机器开着 khor、连上网后会自动接上"
 link-last-heard = "{0} · 上次 {1}前"
 # Windows 上窗口自己的三颗按钮,画在标签条右端(docs/SHELL.md 第十三轮;macOS 用系统的,Linux 用原生装饰)。
 window-minimize = "最小化"
@@ -3912,6 +3920,15 @@ ticket = "配对票"
 ticket-qr = "配对票的二维码"
 copy-ticket = "复制配对票"
 paste-a-ticket = "在此粘贴配对票"
+# Between pressing 加入 and an answer (UX-8): a dial can wait ten seconds,
+# and a busy button alone said nothing for all of them.
+join-dialing = "正在连接出票的机器…"
+# Under the list while the table holds only this machine (UX-8, the first
+# run), above the two buttons that start a pairing.
+alone-how = "这里只有这台机器。要加入另一台：在其中一台上「邀请机器」，把配对票带到另一台「加入网络」"
+# The invite dialog once a machine joined with its ticket (UX-8): the
+# ticket is spent, so the dialog says who used it instead of offering it.
+ticket-used-by = "{0} 已用这张配对票加入"
 # 加入网络的扫码（docs/IOS.md 第三步）：有相机扫码的那一头（手机的构建）在配对票的框旁边多一颗
 # 「扫码」。码里装的就是那串票本身（`khor_gui_core::qr`），扫到后填进同一个框、走同一个「加入」——
 # 一个加入，两种填法。扫的时候整屏是相机，上面一句说对准什么，下面一颗「取消」（`delete-keep`）。

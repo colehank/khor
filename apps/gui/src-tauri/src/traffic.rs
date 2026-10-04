@@ -36,6 +36,17 @@
 //! answer. **It is still tao's mechanism**: tao re-applies this number
 //! on every draw, which is what keeps the buttons in place; khor only
 //! makes the number the right one.
+//!
+//! # Why it is kept on disk
+//!
+//! Measuring builds and closes a window, and on the launch path that was
+//! about 30 ms before khor's own window could be built (UX-8's marks; up
+//! to 170 in UX-7's). The answer depends only on the system and the
+//! build, so it is kept in the store (`lights`), keyed by both, and
+//! measured again only when either changes. After the window is built,
+//! `check` reads the real window's buttons — no window of its own — and
+//! rewrites what is kept if it ever disagrees, so a wrong copy lives one
+//! launch at most.
 
 /// **How tall the left block's first row is** (52 at every pointer since
 /// the redesign, 2026-10-02; macOS's compact 38 before it), duplicated
@@ -66,7 +77,7 @@ use objc2::{class, msg_send};
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
 /// What one window's three buttons are, as the system draws them.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Lights {
     /// One button's height — the SDK's, never khor's.
     pub button: f64,
@@ -91,6 +102,116 @@ static MEASURED: std::sync::OnceLock<Lights> = std::sync::OnceLock::new();
 /// Keeps a measurement for `place`.
 pub fn remember(m: Lights) {
     let _ = MEASURED.set(m);
+}
+
+/// What `remember` kept — the numbers the main window was built with.
+#[cfg(target_os = "macos")]
+pub fn remembered() -> Option<Lights> {
+    MEASURED.get().copied()
+}
+
+/// The file the measurement is kept in between launches: beside the
+/// store's other small files, so a second store (`KHOR_HOME`) keeps its
+/// own and nothing here reaches outside it.
+#[cfg(target_os = "macos")]
+fn kept_path() -> std::path::PathBuf {
+    khor_node::Node::root_from_env().join(".khor").join("traffic.json")
+}
+
+/// One kept measurement and what it is true of.
+#[cfg(target_os = "macos")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Kept {
+    system: String,
+    lights: Lights,
+}
+
+/// What a kept measurement must match: the system's version, which the
+/// buttons' size and inset come from, and this build's, which fixes the
+/// SDK it was linked against.
+#[cfg(target_os = "macos")]
+fn system() -> String {
+    let os = objc2_foundation::NSProcessInfo::processInfo().operatingSystemVersionString();
+    format!("{os} / khor {}", env!("CARGO_PKG_VERSION"))
+}
+
+/// The buttons' measurement for building the main window: **the kept one
+/// when it is for this system and build**, measured (and kept) otherwise.
+/// Main thread only, the way `measure` is.
+#[cfg(target_os = "macos")]
+pub fn lights() -> Option<Lights> {
+    let system = system();
+    if let Some(kept) = std::fs::read(kept_path()).ok().and_then(|b| kept_for(&b, &system)) {
+        return Some(kept);
+    }
+    let lights = measure()?;
+    keep(system, lights);
+    Some(lights)
+}
+
+/// What a kept file says, if it was written for `system`. Anything else
+/// — another system or build, a file cut short, a format from some other
+/// day — is no answer, and the buttons are measured again.
+#[cfg(target_os = "macos")]
+fn kept_for(bytes: &[u8], system: &str) -> Option<Lights> {
+    serde_json::from_slice::<Kept>(bytes)
+        .ok()
+        .filter(|k| k.system == system)
+        .map(|k| k.lights)
+}
+
+/// Writes a measurement down. Best effort: a store that cannot take it
+/// costs the next launch one more measurement, nothing else.
+#[cfg(target_os = "macos")]
+fn keep(system: String, lights: Lights) {
+    let path = kept_path();
+    if let (Some(dir), Ok(bytes)) = (path.parent(), serde_json::to_vec(&Kept { system, lights })) {
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::write(path, bytes);
+    }
+}
+
+/// **Checks the kept numbers against the real window**, once it exists:
+/// reads its own three buttons (no window is built for this), and when
+/// they disagree with what the window was built from, keeps the real
+/// ones for the next launch — this one's buttons stay where tao put
+/// them, since tao re-applies the builder's number on every draw. The
+/// button's offset inside its container is AppKit's own and
+/// tao's inset moves only the container and the buttons' `x`, so the
+/// built window answers the same question `measure` asks. Main thread
+/// only.
+#[cfg(target_os = "macos")]
+pub fn check(win: *mut std::ffi::c_void) {
+    let Some(used) = MEASURED.get().copied() else {
+        return;
+    };
+    let Some(real) = (unsafe { read(win as *mut AnyObject) }) else {
+        return;
+    };
+    if real == used {
+        return;
+    }
+    keep(system(), real);
+}
+
+/// The three numbers off a window's own buttons.
+#[cfg(target_os = "macos")]
+unsafe fn read(win: *mut AnyObject) -> Option<Lights> {
+    unsafe {
+        let close: *mut AnyObject = msg_send![win, standardWindowButton: 0usize];
+        let zoom: *mut AnyObject = msg_send![win, standardWindowButton: 2usize];
+        if close.is_null() || zoom.is_null() {
+            return None;
+        }
+        let c: NSRect = msg_send![close, frame];
+        let z: NSRect = msg_send![zoom, frame];
+        let out = Lights {
+            button: c.size.height,
+            inside: c.origin.y,
+            span: z.origin.x + z.size.width - c.origin.x,
+        };
+        (out.button > 0.0 && out.span > 0.0).then_some(out)
+    }
 }
 
 /// Puts the three buttons where the builder put them: left edge at `X`,
@@ -170,21 +291,9 @@ pub fn measure() -> Option<Lights> {
             return None;
         }
         let _: () = msg_send![win, setReleasedWhenClosed: objc2::runtime::Bool::NO];
-        let close: *mut AnyObject = msg_send![win, standardWindowButton: 0usize];
-        let zoom: *mut AnyObject = msg_send![win, standardWindowButton: 2usize];
-        if close.is_null() || zoom.is_null() {
-            let _: () = msg_send![win, close];
-            return None;
-        }
-        let c: NSRect = msg_send![close, frame];
-        let z: NSRect = msg_send![zoom, frame];
-        let out = Lights {
-            button: c.size.height,
-            inside: c.origin.y,
-            span: z.origin.x + z.size.width - c.origin.x,
-        };
+        let out = read(win);
         let _: () = msg_send![win, close];
-        (out.button > 0.0 && out.span > 0.0).then_some(out)
+        out
     }
 }
 
@@ -234,5 +343,29 @@ mod tests {
         // — where the landing strip starts, before x 78.
         assert_eq!(room(X, GAP, &older), 68.0);
         assert_eq!(room(X, GAP, &now), 76.0);
+    }
+
+    /// **A kept measurement is used only on the system and build it was
+    /// taken on** — a macOS update or a new khor measures again — and a
+    /// file that does not read is no answer rather than a wrong one.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_kept_measurement_holds_for_its_own_system_only() {
+        let lights = Lights {
+            button: 14.0,
+            inside: 9.0,
+            span: 60.0,
+        };
+        let here = "Version 26.0 / khor 0.1.14";
+        let bytes = serde_json::to_vec(&Kept {
+            system: here.into(),
+            lights,
+        })
+        .unwrap();
+        assert_eq!(kept_for(&bytes, here), Some(lights));
+        assert_eq!(kept_for(&bytes, "Version 26.1 / khor 0.1.14"), None);
+        assert_eq!(kept_for(&bytes, "Version 26.0 / khor 0.1.15"), None);
+        assert_eq!(kept_for(&bytes[..bytes.len() / 2], here), None);
+        assert_eq!(kept_for(b"", here), None);
     }
 }

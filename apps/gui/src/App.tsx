@@ -114,10 +114,10 @@ import { MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { MachineFiles } from "@/views/MachineFiles";
 import { FullScreenProvider } from "@/lib/full-screen";
 import { MachineWeb } from "@/views/MachineWeb";
-import { RegionState } from "@/components/RegionState";
+import { RegionState, Waiting } from "@/components/RegionState";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
-import { InviteDialog, JoinDialog } from "@/views/PairDialogs";
+import { AloneNote, InviteDialog, JoinDialog } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region, RegionLead } from "@/components/Region";
@@ -1095,6 +1095,13 @@ export default function App() {
   // two rules about what may appear here.
   const status = useStatusBar(rows);
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
+  // **A session the wizard just opened, not listed yet** (UX-8, the first
+  // run): its row arrives with the next sync, and a machine that went away
+  // in between left the pane showing the network's overview under a tab
+  // named by a bare id — a state with no word. Only sessions opened here
+  // in this run: a tab restored from an earlier one is not waited for.
+  const justOpened = useRef(new Map<string, number>());
+  const waitingFor = selected !== null && !selectedRow ? (justOpened.current.get(selected) ?? null) : null;
 
   // 会话落地页上的路径也可点 (2026-09-18 ruling 54). Ruling 35 did this
   // inside a workspace only, because that is where the two things it
@@ -1835,6 +1842,9 @@ export default function App() {
             pinFailed={pinFailed}
           />
         )}
+        {devicesRead && devices.length === 1 && (sessions || landing === "devices") && !queries[landing] && (
+          <AloneNote onInvite={() => setDialog("invite")} onJoin={() => setDialog("join")} />
+        )}
       </>
     </ListPane>
   );
@@ -1960,15 +1970,25 @@ export default function App() {
       // third thing until 2026-08-29 (the spending tally, for the 今天
       // line) and asks for nothing of its own now.
       empty={
-        <MeshNow
-          rows={rows}
-          devices={devices}
-          onPick={onSelect}
-          onDevice={(d) => {
-            setLanding("devices");
-            onSelectDevice(d);
-          }}
-        />
+        waitingFor !== null ? (
+          <Waiting
+            since={waitingFor}
+            rows={false}
+            onRetry={() => {
+              refresh().catch(() => {});
+            }}
+          />
+        ) : (
+          <MeshNow
+            rows={rows}
+            devices={devices}
+            onPick={onSelect}
+            onDevice={(d) => {
+              setLanding("devices");
+              onSelectDevice(d);
+            }}
+          />
+        )
       }
     />
     </ShowFileProvider>
@@ -2171,6 +2191,7 @@ export default function App() {
           }
           setMorePage(null);
           setLanding("sessions");
+          justOpened.current.set(id, Date.now());
           sessionTabs.open(id);
           setScreen("detail");
         }}
@@ -2189,10 +2210,19 @@ export default function App() {
           setWsAdded((n) => n + 1);
         }}
       />
-      <InviteDialog open={dialog === "invite"} onOpenChange={(o) => setDialog(o ? "invite" : null)} />
+      <InviteDialog open={dialog === "invite"} onOpenChange={(o) => setDialog(o ? "invite" : null)} machines={devices} />
       {/* The machine page's VS Code: its consent and its refusal. */}
       {machineCode.dialog}
-      <JoinDialog open={dialog === "join"} onOpenChange={(o) => setDialog(o ? "join" : null)} />
+      <JoinDialog
+        open={dialog === "join"}
+        onOpenChange={(o) => setDialog(o ? "join" : null)}
+        onJoined={() => {
+          fetchDevices()
+            .then(setDevices)
+            .catch(() => {});
+          refresh().catch(() => {});
+        }}
+      />
       {/* (The root's words were asked for here, once, on the machine that
           made the root — 0e4fcaa. Since 2026-10-01 they wait on 「…」 →
           安全 until somebody presses 「显示…」: `SecurityPage`.) */}

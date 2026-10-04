@@ -1496,7 +1496,10 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         // the same `--background`, so there is no material, and the window
         // is opaque and painted that ground from its first frame (the
         // builder's `background_color` above).
-        if let Some(lights) = traffic::measure() {
+        // Kept from an earlier launch when it can be (`traffic::lights`):
+        // measuring builds a window of its own, and this is the launch
+        // path.
+        if let Some(lights) = traffic::lights() {
             traffic::remember(lights);
             win = win.traffic_light_position(tauri::LogicalPosition::new(
                 traffic::X,
@@ -1532,7 +1535,33 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             win = win.data_directory(std::path::PathBuf::from(&explicit).join("webview"));
         }
     }
-    win.build()?;
+    // **The overlay window waits for this page's first load** (UX-8). It
+    // loads the same page, so building it beside this one put a second
+    // WebKit page process and a second copy of the bundle on the CPU
+    // while this window's first frame was being made: measured on the
+    // Mac in release, launch → first list row went from 565 to 536 ms
+    // (medians of twenty and ten cold launches). It is still built during
+    // start-up — `hang_menu_window` says why that matters — just after
+    // the page somebody is looking at has loaded.
+    let win = win.on_page_load(|view, payload| {
+        static HUNG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if payload.event() == tauri::webview::PageLoadEvent::Finished
+            && !HUNG.swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            use tauri::Manager;
+            let app = view.app_handle().clone();
+            let _ = view
+                .app_handle()
+                .run_on_main_thread(move || hang_menu_window(&app));
+        }
+    });
+    let _built = win.build()?;
+    // The kept numbers against the window they built (`traffic::check`):
+    // its own buttons, read, no window of its own.
+    #[cfg(target_os = "macos")]
+    if let Ok(ns) = _built.ns_window() {
+        traffic::check(ns);
+    }
     Ok(())
 }
 
@@ -1546,7 +1575,10 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 fn traffic_room() -> f64 {
     #[cfg(target_os = "macos")]
     {
-        traffic::measure()
+        // What the window was built with (`build_the_window`), not a
+        // second measurement: this answers on the main thread while the
+        // first frame is being made.
+        traffic::remembered()
             .map(|m| traffic::room(traffic::X, traffic::GAP, &m))
             .unwrap_or(0.0)
     }
@@ -1830,6 +1862,9 @@ fn menu_up() -> &'static std::sync::atomic::AtomicBool {
 ///
 /// It also buys the thing lazy building cost: the first press of the
 /// address bar no longer waits for a page load.
+///
+/// **Once the face's own page has loaded** (UX-8, `build_the_window`):
+/// still start-up, still loud, but not competing with the first frame.
 #[cfg(desktop)]
 fn hang_menu_window(app: &tauri::AppHandle) {
     // **Not a child window, and that was measured rather than chosen.**
@@ -3522,11 +3557,8 @@ pub fn run() {
                 app.manage(menu::Held::default());
                 menu::install(app.handle())?;
             }
-            // The window khor's own overlays are drawn in, hung off the
-            // face and hidden until something has a list to show
-            // (`hang_menu_window`).
-            #[cfg(desktop)]
-            hang_menu_window(app.handle());
+            // The window khor's own overlays are drawn in is hung once the
+            // face's first load is done (`build_the_window`).
             #[cfg(desktop)]
             repaint_the_ground(app.handle());
             // **A phone's one window, plain.** The config declares no
