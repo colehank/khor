@@ -102,6 +102,52 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  /** **A file opens to read; its editor is one press away** (the owner,
+      2026-10-04: a file page and a workspace file open in preview, and
+      「编辑」 turns the editor on — `data-file-edit`). The walk asked for
+      `[data-edit]` as if it were always there; this presses 编辑 first
+      where the editor is not up yet. */
+  /** A press on whatever on screen matches, the walk's `press` without
+      its scope (the helpers below are used by every section). */
+  const tap = async (sel) => {
+    const l = page.locator(sel).filter({ visible: true });
+    if ((await l.count()) === 0) return false;
+    try {
+      await l.first().click({ timeout: 8_000 });
+    } catch {
+      return false;
+    }
+    await wait(500);
+    return true;
+  };
+  const narrowNow = () => page.evaluate(() => document.documentElement.hasAttribute("data-narrow"));
+  /** **The 「…」 pages' list, at either width** (UX-11): the wide strip's
+      「更多」 circle, or on the narrow face the bottom bar's 更多 → 设置 —
+      stepping back first from a pushed page, which has no bar. The walk
+      pressed `[data-rail-more]` at every width since the redesign, so
+      every narrow 「…」 stop read 「never drew」. */
+  const toMore = async () => {
+    if (!(await narrowNow())) return tap("[data-rail-more]");
+    for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
+      if (!(await tap("[data-file-back], [data-back], [data-ws-back], [data-more-back]"))) break;
+    }
+    return (await tap("[data-nav-more]")) && tap("[data-nav-settings]");
+  };
+  /** **A list's search box, opened** (the redesign: a circle until
+      pressed; UX-11: on the narrow face the circle is beside the bottom
+      bar and the field opens there). */
+  const SEARCH_BOX = "[data-side-head] [data-pane-search], [data-bottom-search] [data-pane-search]";
+  const openSearch = async () => {
+    if ((await page.locator(SEARCH_BOX).count()) > 0) return true;
+    return (await tap("[data-side-head] [data-search-open]")) || tap("[data-nav-search]");
+  };
+  const toEdit = async () => {
+    if ((await page.locator("[data-edit]").count()) > 0) return;
+    const go = page.locator('[data-file-edit="edit"]');
+    if ((await go.count()) === 0) return;
+    await go.first().click();
+    await wait(300);
+  };
   const thrown = [];
   // **Printed where it happened, not only counted at the end.** A throw
   // inside a view unmounts everything under it, so what a person reading
@@ -2455,7 +2501,16 @@ try {
   const rail = (key) => `[data-rail-item][data-landing="${key}"]`;
   const pressNth = async (sel, n) => {
     if ((await page.locator(sel).count()) <= n) return false;
-    await page.locator(sel).nth(n).click();
+    // **A press that cannot land is a false, not a thrown walk**: one
+    // control the layout moved (hidden behind a screen, covered by a
+    // menu) used to time out and take every section after it down with
+    // it; now its own stop says probe dead and the walk goes on.
+    try {
+      await page.locator(sel).nth(n).click({ timeout: 8_000 });
+    } catch (e) {
+      console.log(`press: ${sel} could not be pressed (${String(e).split("\n")[0]})`);
+      return false;
+    }
     await wait(500);
     return true;
   };
@@ -2496,7 +2551,7 @@ try {
    * the day it moves again, which it has now done twice.
    */
   const toMesh = async () =>
-    (await press("[data-rail-more]")) && press('[data-more-open="network"]');
+    (await toMore()) && press('[data-more-open="network"]');
   // Reach a landing as a *switch*, never a re-click. Pressing the open
   // landing's own glyph now collapses its list (App.tsx 再点收起,
   // 2026-09-02), and this walk re-opens the same landing across
@@ -2521,9 +2576,39 @@ try {
     // `components/SessionBar`): its 「‹」 is the way back to the list,
     // where the bar is — so a walk standing in a session steps out first.
     if ((await page.locator("[data-session-bar] [data-back]").count()) > 0) await press("[data-session-bar] [data-back]");
+    // **Narrow: the bottom bar, not the wide strip** (UX-11): the first
+    // four landings are its seats (`data-nav-item`), the rest are in
+    // 更多's menu (`data-more-landing`). The walk asked the wide strip's
+    // `data-rail-item` at every width since the redesign, so every narrow
+    // stop read 「never drew」.
+    if (await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"))) {
+      // A pushed page has no bar (UX-11 ruling 2: a machine, a settings
+      // page, anything reached from a list): step back to the list it
+      // came from — its 「‹」 — until the bar is there.
+      for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
+        const back = page.locator("[data-file-back], [data-back], [data-ws-back], [data-more-back]").filter({ visible: true });
+        if ((await back.count()) === 0) break;
+        await back.first().click();
+        await wait(500);
+      }
+      const seat = `[data-nav-item][data-landing="${tab}"]`;
+      if ((await page.locator(seat).count()) > 0) return press(seat);
+      return (await press("[data-nav-more]")) && press(`[data-more-landing="${tab}"]`);
+    }
+    // A window a stop left up (a 删除 confirmation, a form) covers the
+    // strip: put it away first, the way a person would — Escape.
+    // A menu left open does it too: Radix takes pointer events off the
+    // body while one is up.
+    const covered = async () =>
+      (await page.locator('[role="dialog"], [role="alertdialog"], [role="menu"]').filter({ visible: true }).count()) > 0 ||
+      (await page.evaluate(() => getComputedStyle(document.body).pointerEvents === "none"));
+    for (let i = 0; i < 3 && (await covered()); i++) {
+      await page.keyboard.press("Escape");
+      await wait(300);
+    }
     const on = await page.locator(rail(tab)).getAttribute("data-on").catch(() => null);
-    if (on === "true") await press(rail(tab === "sessions" ? "devices" : "sessions"));
-    return press(rail(tab));
+    if (on === "true") await tap(rail(tab === "sessions" ? "devices" : "sessions"));
+    return tap(rail(tab));
   };
   /** Open a workspace from the list **and leave its tree out.**
    *
@@ -2702,9 +2787,8 @@ try {
       // rule).
       name: "browser",
       anchor: '[data-browse-landing="page"]',
-      go: async () =>
-        (await press(rail("browser"))) ||
-        ((await press("[data-rail-more]")) && press('[data-more-landing="browser"]')),
+      // `open`: the wide strip's seat, or narrow 更多's menu (UX-11).
+      go: () => open("browser"),
     },
     {
       // 额度: one region, no list-beside-detail, and the anchor is a
@@ -2762,7 +2846,8 @@ try {
       // the machine row's 编辑… window, the next stop.
       name: "identity",
       anchor: '[data-more-page="identity"] [data-more-fact="id"]',
-      go: () => press("[data-rail-mark]"),
+      // In 「…」's list, at either width (UX-11).
+      go: async () => (await toMore()) && press('[data-more-open="identity"]'),
       after: async () => {
         await press("[data-more-close]");
       },
@@ -2794,7 +2879,7 @@ try {
       name: "security",
       anchor: '[data-security-switch="lock"]',
       go: async () =>
-        (await press("[data-rail-more]")) && press('[data-more-open="security"]'),
+        (await toMore()) && press('[data-more-open="security"]'),
       after: async () => {
         await press("[data-more-close]");
       },
@@ -2807,7 +2892,7 @@ try {
       // a fold and a page that drew *only* the fold would still satisfy
       // the frame.
       anchor: "[data-doctor-list] [data-doctor-card]",
-      go: async () => (await press("[data-rail-more]")) && press('[data-more-open="doctor"]'),
+      go: async () => (await toMore()) && press('[data-more-open="doctor"]'),
       after: async () => {
         await press("[data-more-close]");
       },
@@ -2845,7 +2930,7 @@ try {
       // mark) pressed straight through to a dialog; there is no dialog
       // any more.
       go: async () =>
-        (await press("[data-rail-more]")) && press('[data-more-open="appearance"]'),
+        (await toMore()) && press('[data-more-open="appearance"]'),
       // Closed by its own button rather than Escape: a page is not a
       // dialog and does not answer that key, and leaving it open would
       // hand the next stop a full-region surface over its landing.
@@ -5174,6 +5259,7 @@ try {
       }
 
       // iv) the dot: typing puts it there, a save takes it off.
+      await toEdit();
       const box = await page.$("[data-edit]");
       if (box === null) {
         fail("probe void: the open file grew no editor, so nothing here can be typed into");
@@ -5211,7 +5297,9 @@ try {
       }
 
       // v) closing over a draft asks, and 别关 changes nothing.
-      await page.locator("[data-edit]").click();
+      await toEdit();
+      await toEdit();
+    await page.locator("[data-edit]").click();
       await page.keyboard.type("Y");
       await wait(250);
       const front = (await strip()).find((t) => t.on === "true");
@@ -6368,6 +6456,7 @@ try {
       );
     }
     // ii/iii) the switch, and what it renders.
+    await toEdit();
     await page.locator("[data-edit]").click();
     await page.keyboard.type("\n## typed\n");
     const typed = await page.locator("[data-edit]").inputValue();
@@ -6434,6 +6523,7 @@ try {
     });
     // The caret is in the box (the text above was typed into it), and
     // ⌘S is where 存 lives since ruling 30.
+    await toEdit();
     await page.locator("[data-edit]").click();
     await page.keyboard.press("Control+s");
     const saved = await until(5_000, async () => wrote.length > 0);
@@ -7258,7 +7348,9 @@ try {
       }
       // …and a draft is never overwritten: that clash belongs to the
       // save, which has three ways out of it.
-      await page.locator("[data-edit]").click();
+      await toEdit();
+      await toEdit();
+    await page.locator("[data-edit]").click();
       await page.keyboard.type("Z");
       await wait(250);
       const typed = await shown();
@@ -9355,6 +9447,7 @@ try {
       window.dispatchEvent(e);
       return e.defaultPrevented;
     });
+    await toEdit();
     await page.locator("[data-edit]").click();
     await page.keyboard.type("x");
     await wait(600);
@@ -9625,7 +9718,8 @@ try {
       // ii/iii/iv) the box.
       // The list's box stands in the block's first row (第十三轮), not
       // at the top of the column.
-      const bar = "[data-side-head] [data-pane-search]";
+      const bar = SEARCH_BOX;
+      await openSearch();
       const names = () =>
         page.$$eval("[data-ws-row] [data-ws-name]", (els) => els.map((e) => e.textContent?.trim()));
       await page.locator(bar).fill("elder");
@@ -10793,7 +10887,7 @@ try {
     await page.evaluate((k) => window.localStorage.setItem(k, JSON.stringify(["/home/peer/work/a.rs", "/home/peer/work/b.rs", "/home/peer/work/c.rs"])), wsKey);
     await page.reload({ waitUntil: "load" });
     await wait(900);
-    const toSettings = (await press("[data-rail-more]")) && (await press('[data-more-open="settings"]'));
+    const toSettings = (await toMore()) && (await press('[data-more-open="settings"]'));
     const limitOpen = page.locator('[data-setting-select="tabs-limit"]');
     if (!toSettings || (await limitOpen.count()) === 0) {
       fail("probe dead: no 标签页上限 row with a menu on the settings page (src/views/more/ConfigRows.tsx)");
@@ -11004,7 +11098,8 @@ try {
       const unique = said
         .map((x) => x.title)
         .find((t) => t.length > 2 && said.filter((x) => x.all.includes(t)).length === 1);
-      const box = page.locator("[data-side-head] [data-pane-bar] input").first();
+      await openSearch();
+      const box = page.locator("[data-side-head] [data-pane-bar] input, [data-bottom-search] input").first();
       if (!unique || (await box.count()) === 0) {
         fail(`probe dead: the ${c.landing} sidebar has no unique title or no search box to type it into`);
       } else {
@@ -11039,8 +11134,9 @@ try {
       if ((await row.count()) === 0) return false;
       await row.click({ button: "right" });
       await until(3_000, async () => (await page.locator("[data-row-menu] [data-menu-item]").count()) > 1);
-      await page.locator('[data-row-menu] [data-menu-item][data-destructive="true"]').click();
-      return true;
+      // No menu (a narrow face's long press is not a right click): the
+      // column says so as probe dead rather than the walk timing out.
+      return tap('[data-row-menu] [data-menu-item][data-destructive="true"]');
     };
     const says = {};
     for (const c of COLS) {
@@ -11454,7 +11550,7 @@ try {
     await wait(900);
     // The settings reach the window when the settings page reads them
     // (4T's road to the same limit), so pass through it once.
-    const readSettings = (await press("[data-rail-more]")) && (await press('[data-more-open="settings"]'));
+    const readSettings = (await toMore()) && (await press('[data-more-open="settings"]'));
     await until(3_000, async () =>
       (await page.locator('[data-config-row="tabs-limit"]').getAttribute("data-value").catch(() => null)) === "4",
     );
@@ -12195,7 +12291,7 @@ try {
       );
       await wait(400);
       await open("sessions");
-      if (!(await press("[data-rail-more]"))) {
+      if (!(await toMore())) {
         fail(`probe dead: ${posture} has no 「…」 in the rail to press`);
         continue;
       }
@@ -12252,7 +12348,7 @@ try {
       // carries, and that the landing under it is still the one that was
       // open when it was.
       for (const key of ["network", "settings", "security", "doctor"]) {
-        if (!(await press("[data-rail-more]")) || !(await press(`[data-more-open="${key}"]`))) {
+        if (!(await toMore()) || !(await press(`[data-more-open="${key}"]`))) {
           fail(`probe dead: ${posture} · 「…」 → ${key} did not open`);
           continue;
         }
@@ -12362,7 +12458,7 @@ try {
       // and that the map is not drawn twice. Where each row sits is the
       // acceptance walk's (30-behavior.md).
       const relaysBefore = relaysAsked.length;
-      if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="network"]'))) {
+      if (!(await toMore()) || !(await press('[data-more-open="network"]'))) {
         fail(`probe dead: ${posture} · 「…」 → 网络 did not open`);
         continue;
       }
@@ -12726,7 +12822,7 @@ try {
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
     const before = doctorAsked.length;
-    if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="doctor"]'))) {
+    if (!(await toMore()) || !(await press('[data-more-open="doctor"]'))) {
       fail("probe dead: 「…」 → 诊断 did not open");
     } else {
       await until(5_000, async () => (await page.locator("[data-doctor-card]").count()) > 0);
@@ -12987,7 +13083,7 @@ try {
       // 现在锁上 nor ⌘L does anything until it is on (`khor_node::lock`
       // refuses a lock with no key, and a ⌘L that silently did nothing
       // would be worse than one that is absent).
-      if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="security"]'))) {
+      if (!(await toMore()) || !(await press('[data-more-open="security"]'))) {
         fail("probe dead: 「…」 → 安全 did not open");
       } else {
         await press('[data-security-switch="lock"]');
@@ -13068,7 +13164,7 @@ try {
         console.log(`lock · tried: ${JSON.stringify(unlockTried)}`);
         // Put the fixture back: every stop after this one runs on an
         // unlocked face.
-        await press("[data-rail-more]");
+        await toMore();
         await press('[data-more-open="security"]');
         await press('[data-security-switch="lock"]');
         await wait(300);
@@ -13134,7 +13230,7 @@ try {
       );
     }
 
-    if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="settings"]'))) {
+    if (!(await toMore()) || !(await press('[data-more-open="settings"]'))) {
       fail("probe dead: 「…」 → 设置 did not open");
     } else {
       const drew = await page.evaluate(() => {
@@ -13395,7 +13491,7 @@ try {
 
       // Put the fixture back, so every stop after this one meets the
       // wizard it has always met.
-      await press("[data-rail-more]");
+      await toMore();
       await press('[data-more-open="settings"]');
       await choose("session-form", "chat");
       await until(5_000, async () =>
@@ -13407,7 +13503,7 @@ try {
     // …and the other page's section, where docs/MORE.md puts it. Two
     // keys, not the three that document lists: 删文件's 「不再提醒」 stays
     // a per-face habit in `localStorage` (裁决 2026-09-20).
-    if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="security"]'))) {
+    if (!(await toMore()) || !(await press('[data-more-open="security"]'))) {
       fail("probe dead: 「…」 → 安全 did not open");
     } else {
       const confirm = await page.evaluate(() => {
@@ -13480,7 +13576,7 @@ try {
     };
     const seen = [];
     for (const [key, ready] of Object.entries(READY)) {
-      if (!(await press("[data-rail-more]")) || !(await press(`[data-more-open="${key}"]`))) {
+      if (!(await toMore()) || !(await press(`[data-more-open="${key}"]`))) {
         fail(`probe dead: 4I could not open 「…」 → ${key}`);
         continue;
       }
@@ -13587,7 +13683,7 @@ try {
     // road a machine with **no** PIN has to the lock stays open: the
     // switch asks for the PIN first (`khor_node::lock` refuses a lock
     // with no key, so disabling the PIN row alone would be a dead end).
-    if (!(await press("[data-rail-more]")) || !(await press('[data-more-open="security"]'))) {
+    if (!(await toMore()) || !(await press('[data-more-open="security"]'))) {
       fail("probe dead: 4I could not open 「…」 → 安全");
     } else {
       const deps = () =>
@@ -13964,7 +14060,7 @@ try {
           (await until(5_000, async () => (await page.locator('[data-quota-row="acc-sub-here"]').count()) > 0)) &&
           press('[data-quota-row="acc-sub-here"]'),
       ],
-      ["「…」 → 安全", async () => (await press("[data-rail-more]")) && press('[data-more-open="security"]')],
+      ["「…」 → 安全", async () => (await toMore()) && press('[data-more-open="security"]')],
     ];
     for (const [where, go] of DETAIL_STOPS) {
       if (!(await go())) {
@@ -22543,7 +22639,7 @@ try {
     // 「…」 is a page rather than a landing: the rail's own button opens
     // the menu and a row on it opens the page (`App.tsx` morePages —
     // network, settings, security, doctor).
-    if ((await press("[data-rail-more]")) && (await press('[data-more-open="settings"]'))) {
+    if ((await toMore()) && (await press('[data-more-open="settings"]'))) {
       await wait(400);
       await headless("the 「…」 page");
     } else {
@@ -22874,7 +22970,7 @@ try {
       ["browser", async () => open("browser")],
       ["workspaces · none open", async () => open("workspaces")],
       ["workspaces · one open", async () => (await open("workspaces")) && openWs()],
-      ["「…」", async () => (await press("[data-rail-more]")) && press('[data-more-open="settings"]')],
+      ["「…」", async () => (await toMore()) && press('[data-more-open="settings"]')],
     ];
     for (const [where, go] of STOPS) {
       if (!(await go())) {
@@ -22902,7 +22998,7 @@ try {
       ["quota", "detail", async () => open("quota")],
       ["browser", "doc", async () => open("browser")],
       ["workspaces", "detail", async () => open("workspaces")],
-      ["「…」", "detail", async () => (await press("[data-rail-more]")) && press('[data-more-open="settings"]')],
+      ["「…」", "detail", async () => (await toMore()) && press('[data-more-open="settings"]')],
     ];
     for (const [where, kind, go] of KINDS) {
       if (!(await go())) {
@@ -22981,7 +23077,7 @@ try {
 
       // (a) the four row kinds, on every section of More.
       for (const key of ["settings", "appearance", "network", "security", "identity", "doctor"]) {
-        if (!(await press("[data-rail-more]")) || !(await press(`[data-more-open="${key}"]`))) {
+        if (!(await toMore()) || !(await press(`[data-more-open="${key}"]`))) {
           fail(`probe dead: round 17 (a) could not open More -> ${key}`);
           await page.keyboard.press("Escape");
           await wait(200);
@@ -23029,7 +23125,7 @@ try {
         ["quota", async () => open("quota")],
         ["workspaces", async () => open("workspaces")],
         ["browser", async () => open("browser")],
-        ["more", async () => (await press("[data-rail-more]")) && press('[data-more-open="settings"]')],
+        ["more", async () => (await toMore()) && press('[data-more-open="settings"]')],
       ];
       for (const [where, go] of reads) {
         if (!(await go())) {
@@ -25252,7 +25348,7 @@ try {
         await wait(900);
         return open("devices");
       }],
-      ["「…」 → 网络", async () => (await press("[data-rail-more]")) && press('[data-more-open="network"]')],
+      ["「…」 → 网络", async () => (await toMore()) && press('[data-more-open="network"]')],
     ];
     let offered = 0;
     for (const [where, go] of maps) {
@@ -25422,7 +25518,7 @@ try {
       ["the 额度 landing", async () => open("quota"), []],
       [
         "「…」 → 网络",
-        async () => (await press("[data-rail-more]")) && press('[data-more-open="network"]'),
+        async () => (await toMore()) && press('[data-more-open="network"]'),
         ["data-more-close"],
       ],
     ];
@@ -26069,7 +26165,7 @@ try {
     await until(5_000, async () => (await page.locator("[data-main] [data-page-avatar-mark]").count()) === 1);
     const provider = await page.locator('[data-quota-row="acc-fill"]').getAttribute("data-provider");
     judgeHead("额度 · acc-fill", await readHead(), { kind: provider, face: false });
-    await press("[data-rail-more]");
+    await toMore();
     await press('[data-more-open="settings"]');
     await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").count()) > 0);
     judgeHead("「…」 → 通用", await readHead(), null);
@@ -26416,7 +26512,7 @@ try {
     await page.route("**/root_words_seen", (r) => r.fulfill({ contentType: "application/json", body: "null" }));
     const rowSel = '[data-setting-row-name="root-words"]';
     const toSecurity = async () =>
-      (await press("[data-rail-more]")) && (await press('[data-more-open="security"]')) &&
+      (await toMore()) && (await press('[data-more-open="security"]')) &&
       until(3_000, async () => (await page.locator('[data-more-page="security"]').count()) > 0);
     // The web face first: no row, whoever holds the root.
     if (!(await toSecurity())) fail("probe dead: fix c · 「…」 → 安全 did not open on the web face");
@@ -26914,7 +27010,7 @@ try {
     };
     /** b: the row on 外观, and choosing on it the way a person does. */
     const chooseOnPage = async (value) => {
-      if (!((await press("[data-rail-more]")) && (await press('[data-more-open="appearance"]')))) {
+      if (!((await toMore()) && (await press('[data-more-open="appearance"]')))) {
         fail("probe dead: mark · More › 外观 did not open");
         return false;
       }
@@ -27052,7 +27148,7 @@ try {
       if ((await count("[data-ws-tree]")) === 0) await press("[data-ws-row]");
       return true;
     };
-    const morePage = async (key) => (await press("[data-rail-more]")) && press(`[data-more-open="${key}"]`);
+    const morePage = async (key) => (await toMore()) && press(`[data-more-open="${key}"]`);
     const closeMore = () => press("[data-more-close]");
     const reload = async () => {
       await page.evaluate(() => window.localStorage.clear());
