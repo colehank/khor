@@ -75,7 +75,7 @@ import { TermHistory } from "@/views/TermHistory";
 import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
-import { gui } from "@/gen/catalog";
+import { gui, menu } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
@@ -84,6 +84,7 @@ import { BarSeat } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
+import { onTermOptionMeta, termOptionMeta } from "@/lib/term-option-meta";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
@@ -184,9 +185,61 @@ function macEditing(ev: KeyboardEvent): string | null {
   return null;
 }
 
+/** How long a character an input method typed waits for an Option key
+    behind it, with Option as Meta on (ms). The key came within the same
+    turn of the event loop in the scratch app. */
+const META_ECHO_MS = 30;
+
+/** The keys Option as Meta reads by their place, unshifted and shifted. */
+const META_KEYS: Record<string, [string, string]> = {
+  Backquote: ["`", "~"], Minus: ["-", "_"], Equal: ["=", "+"], BracketLeft: ["[", "{"], BracketRight: ["]", "}"],
+  Backslash: ["\\", "|"], Semicolon: [";", ":"], Quote: ["'", '"'], Comma: [",", "<"], Period: [".", ">"], Slash: ["/", "?"],
+  Digit1: ["1", "!"], Digit2: ["2", "@"], Digit3: ["3", "#"], Digit4: ["4", "$"], Digit5: ["5", "%"],
+  Digit6: ["6", "^"], Digit7: ["7", "&"], Digit8: ["8", "*"], Digit9: ["9", "("], Digit0: ["0", ")"],
+};
+
+/**
+ * **Option as Meta, read off the key's place** (item 22): ESC and the key
+ * ⌥ was pressed with, when the setting is on. xterm's own
+ * `macOptionIsMeta` reads the key's character, and under an input method
+ * (the owner's desktop types pinyin) WebKit hands the page ⌥B as "∫" with
+ * keyCode 229, so xterm sent ∫ (measured in the scratch app). iTerm2 and
+ * Terminal.app decide from the key, not from what the input source made
+ * of it. `null` when the setting is off or this is no such key.
+ */
+function optionMeta(ev: KeyboardEvent, on: boolean): string | null {
+  if (!IS_MAC || !on || ev.type !== "keydown" || !ev.altKey || ev.metaKey || ev.ctrlKey) return null;
+  const letter = /^Key([A-Z])$/.exec(ev.code)?.[1];
+  if (letter) return `\x1b${ev.shiftKey ? letter : letter.toLowerCase()}`;
+  const k = META_KEYS[ev.code];
+  return k ? `\x1b${k[ev.shiftKey ? 1 : 0]}` : null;
+}
+
 /** ⌘K, which clears a Mac terminal (iTerm2, Terminal: Clear Buffer). */
 function asksToClear(ev: KeyboardEvent): boolean {
   return IS_MAC && ev.type === "keydown" && ev.metaKey && !ev.ctrlKey && !ev.altKey && ev.key.toLowerCase() === "k";
+}
+
+/**
+ * **What a copy takes: the text, no colours, no trailing blanks** (item
+ * 22). iTerm2 trims trailing whitespace on copy by default (Advanced ›
+ * "Trim whitespace when copying to pasteboard"); a program that pads its
+ * lines with spaces (a table, a prompt's right side) otherwise leaves
+ * them on every line pasted. The clipboard gets plain text only.
+ */
+function copyable(text: string): string {
+  return text
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+$/, ""))
+    .join("\n");
+}
+
+/** ⌘G and ⇧⌘G, the next and previous match of the last find (Terminal's
+    and iTerm2's Find Next / Find Previous): `1`, `-1`, else `0`. */
+function asksToFindAgain(ev: KeyboardEvent): 1 | -1 | 0 {
+  if (ev.type !== "keydown" || ev.key.toLowerCase() !== "g" || ev.altKey) return 0;
+  if (!(IS_MAC ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey)) return 0;
+  return ev.shiftKey ? -1 : 1;
 }
 
 function asksToFind(ev: KeyboardEvent): boolean {
@@ -1430,6 +1483,9 @@ export function TerminalPane({
   const searchRef = useRef<SearchAddon | null>(null);
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState("");
+  // The last word looked for, for ⌘G after the bar was put away.
+  const lastQuery = useRef("");
+  const findAgain = useRef<(dir: 1 | -1) => void>(() => {});
   const [hits, setHits] = useState<{ at: number; of: number } | null>(null);
   // The bell's flash, and the timer that ends it.
   const [rang, setRang] = useState(false);
@@ -1540,6 +1596,9 @@ export function TerminalPane({
       // to select into the clipboard at all. The cost: ⌥-drag is no
       // longer xterm's column selection.
       macOptionClickForcesSelection: true,
+      // ⌥ as Meta, the person's (`lib/term-option-meta`); off, as in
+      // Terminal.app and iTerm2.
+      macOptionIsMeta: termOptionMeta(),
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
@@ -1700,6 +1759,9 @@ export function TerminalPane({
     // ⌘F is caught before xterm sees it, so it neither reaches the pty
     // nor falls through to the page's own find. Everything else passes.
     term.attachCustomKeyEventHandler((ev) => {
+      // A character held for an Option key behind it goes out before any
+      // other key, so nothing overtakes it (`metaEcho`).
+      if (ev.type === "keydown" && !ev.altKey) flushHeld();
       // An open picture or table is closed by Esc; the program never
       // sees it.
       if (peekRef.current && ev.key === "Escape") {
@@ -1714,6 +1776,12 @@ export function TerminalPane({
         setFinding(true);
         return false;
       }
+      const again = asksToFindAgain(ev);
+      if (again !== 0) {
+        ev.preventDefault();
+        findAgain.current(again);
+        return false;
+      }
       const editing = macEditing(ev);
       if (editing) {
         ev.preventDefault();
@@ -1722,9 +1790,7 @@ export function TerminalPane({
       }
       if (asksToClear(ev)) {
         ev.preventDefault();
-        // The scrollback and the screen, the prompt line kept: what
-        // iTerm2's Clear Buffer leaves. The program is not told.
-        term.clear();
+        clearBuffer();
         return false;
       }
       // **The kitty keyboard protocol** (roadmap 5.1, `lib/term-kitty`):
@@ -1736,6 +1802,18 @@ export function TerminalPane({
           term.input(k, true);
           return false;
         }
+      }
+      const meta = optionMeta(ev, !!term.options.macOptionIsMeta);
+      if (meta) {
+        ev.preventDefault();
+        // Under an input method ⌥'s character came first ("∫", then
+        // the key): the one held back is dropped (`metaEcho`).
+        if (held) {
+          window.clearTimeout(held.timer);
+          held = null;
+        }
+        term.input(meta, true);
+        return false;
       }
       return true;
     });
@@ -1756,9 +1834,47 @@ export function TerminalPane({
     // secure context on a LAN address) and then ⌘C still works — this
     // is the shortcut, not the only way.
     const selected = term.onSelectionChange(() => {
-      const s = term.getSelection();
+      const s = copyable(term.getSelection());
       if (s) navigator.clipboard?.writeText(s).catch(() => {});
     });
+    // **The character an input method commits for an Option key**, with
+    // Option as Meta on. Under pinyin WebKit inserts "∫" *before* it
+    // dispatches ⌥B's keydown (keyCode 229; measured in the scratch app),
+    // so a lone typed character is held for a moment: if ⌥'s key follows,
+    // `optionMeta` has sent ESC b and the character is dropped; if not, it
+    // is typed as it would have been. Off, nothing is held.
+    let held: { text: string; timer: number } | null = null;
+    function flushHeld() {
+      if (!held) return;
+      const { text, timer } = held;
+      held = null;
+      window.clearTimeout(timer);
+      term.input(text, true);
+    }
+    const metaEcho = (e: Event) => {
+      if (!term.options.macOptionIsMeta) return;
+      const it = e as InputEvent;
+      const text = it.data ?? "";
+      if (it.inputType !== "insertText" || it.isComposing || [...text].length !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (held?.text === text && e.type === "input") return;
+      flushHeld();
+      const timer = window.setTimeout(flushHeld, META_ECHO_MS);
+      held = { text, timer };
+    };
+    box.addEventListener("beforeinput", metaEcho, true);
+    box.addEventListener("input", metaEcho, true);
+    // ⌘C (the Edit menu's copy reaches xterm's field as a `copy` event)
+    // copies the same trimmed text, never xterm's own untrimmed one.
+    const copied = (e: ClipboardEvent) => {
+      const s = copyable(term.getSelection());
+      if (!s || !e.clipboardData) return;
+      e.clipboardData.setData("text/plain", s);
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    term.textarea?.addEventListener("copy", copied, true);
     const shifted = keepShiftedCommits(term);
     const late = keepLateCommits(term);
     const composing = keepCompositionInView(term);
@@ -1783,6 +1899,23 @@ export function TerminalPane({
     // The shell's marks on xterm's buffer (roadmap 2.2, 2.3), from the
     // first byte replayed on.
     const marks = trackMarks(term);
+    // **⌘K: the scrollback and the screen, the prompt line kept** — what
+    // iTerm2's Clear Buffer and Terminal's Clear to Start leave. **At a
+    // prompt the shell is told too** (⌃L, its clear-screen), as WezTerm's
+    // ClearScrollback documentation advises: the shell redraws its prompt
+    // at the top and its idea of the screen is the screen again. A running
+    // program is not sent a form feed it did not ask for. In the Mac app
+    // the menu bar's ⌘K reaches this through `lib/shortcuts`, before the
+    // page ever sees the key.
+    const clearBuffer = () => {
+      const at = marks.current();
+      const atPrompt = term.buffer.active.type === "normal" && !marks.running() && !!at?.input && !at.output;
+      term.clear();
+      if (atPrompt) term.input("\x0c", true);
+    };
+    const hooks = box as HTMLDivElement & { __clear?: () => void; __find?: () => void };
+    hooks.__clear = clearBuffer;
+    hooks.__find = () => setFinding(true);
     // For the gates, as `__xterm` is.
     (box as HTMLDivElement & { __marks?: Marks }).__marks = marks;
     // **Paths and URLs open khor's own views** (roadmap 3.1, 3.2): under
@@ -2246,9 +2379,38 @@ export function TerminalPane({
       setBlockMenu({ x: x - r.left, y: y - r.top, acts });
       return true;
     };
+    // **A secondary click is one menu, everywhere on the pane**
+    // (Terminal.app's and iTerm2's: a context menu with Copy and Paste):
+    // Copy when something is selected, Paste, then the block's own acts when
+    // the click is on a block. Never WebKit's text-field menu, which came
+    // up off a block (Look Up, Spelling…) and none of whose items mean
+    // anything in a terminal.
     const rightClick = (e: MouseEvent) => {
+      e.preventDefault();
+      // A program that holds the mouse has the click too (tmux's own
+      // menu, an editor's): iTerm2 reports it and shows nothing.
+      if (term.modes.mouseTrackingMode !== "none") return;
       const at = cellAt(term, e.clientX, e.clientY);
-      if (at && showBlock(at.row, e.clientX, e.clientY, false)) e.preventDefault();
+      const b = at ? blockAt(marks, at.row) : null;
+      const selection = copyable(term.getSelection());
+      const acts: { name: string; label: string; run: () => void }[] = [];
+      if (selection) {
+        acts.push({ name: "copy", label: menu.copy, run: () => void navigator.clipboard?.writeText(selection).catch(() => {}) });
+      }
+      acts.push({
+        name: "paste",
+        label: menu.paste,
+        run: () =>
+          void navigator.clipboard
+            ?.readText()
+            .then((text) => {
+              if (text) term.paste(text);
+            })
+            .catch(() => {}),
+      });
+      if (b) acts.push(...actsFor(b));
+      const r = box.getBoundingClientRect();
+      setBlockMenu({ x: e.clientX - r.left, y: e.clientY - r.top, acts });
     };
     box.addEventListener("contextmenu", rightClick);
     // **Through tmux** (item 21) tmux holds the screen and the history:
@@ -2313,6 +2475,20 @@ export function TerminalPane({
       term.options.fontSize = px;
       fit.fit();
     });
+    const metaed = onTermOptionMeta((on) => {
+      term.options.macOptionIsMeta = on;
+    });
+    // **⌥-drag selects a rectangle where the program does not hold the
+    // mouse** (Terminal.app's ⌥-drag; iTerm2's ⌘⌥-drag), and is the way
+    // past the program where it does (a tmux khor attached with its mouse
+    // on, `macOptionClickForcesSelection` above). xterm reads the flag at
+    // the press, so it is set just before xterm hears the press.
+    const pressed = (e: MouseEvent) => {
+      if (!e.altKey) return;
+      const held = term.modes.mouseTrackingMode !== "none";
+      if (term.options.macOptionClickForcesSelection !== held) term.options.macOptionClickForcesSelection = held;
+    };
+    box.addEventListener("mousedown", pressed, true);
     // **A new font is measured and fitted in place** (F7.6): open
     // terminals take it without reopening.
     // Scrollback lines (item 17): a new depth reaches the open terminal at once;
@@ -2336,6 +2512,8 @@ export function TerminalPane({
 
     return () => {
       sized();
+      metaed();
+      box.removeEventListener("mousedown", pressed, true);
       deepened();
       fonted();
       stopped = true;
@@ -2346,6 +2524,9 @@ export function TerminalPane({
       observer.disconnect();
       data.dispose();
       term.textarea?.removeEventListener("paste", pasted, true);
+      term.textarea?.removeEventListener("copy", copied, true);
+      box.removeEventListener("beforeinput", metaEcho, true);
+      box.removeEventListener("input", metaEcho, true);
       dragged();
       native.stop();
       selects();
@@ -2453,7 +2634,9 @@ export function TerminalPane({
         const un = await getCurrentWebview().onDragDropEvent((e) => {
           if (e.payload.type !== "drop") return;
           const box = boxRef.current?.getBoundingClientRect();
-          const at = e.payload.position;
+          // The event's position is in physical pixels (tauri's
+          // `PhysicalPosition`); the box is in CSS pixels.
+          const at = e.payload.position && { x: e.payload.position.x / devicePixelRatio, y: e.payload.position.y / devicePixelRatio };
           if (!box || !at) return;
           const inside =
             at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom;
@@ -2501,7 +2684,19 @@ export function TerminalPane({
     if (dir > 0) s.findNext(query, { decorations: found() });
     else s.findPrevious(query, { decorations: found() });
   };
+  findAgain.current = (dir) => {
+    const q = query || lastQuery.current;
+    const s = searchRef.current;
+    if (!q || !s) return;
+    if (!finding) {
+      setFinding(true);
+      setQuery(q);
+    }
+    if (dir > 0) s.findNext(q, { decorations: found() });
+    else s.findPrevious(q, { decorations: found() });
+  };
   const stopFinding = () => {
+    if (query) lastQuery.current = query;
     searchRef.current?.clearDecorations();
     setFinding(false);
     setQuery("");
@@ -2539,6 +2734,12 @@ export function TerminalPane({
               } else if (e.key === "Enter") {
                 e.preventDefault();
                 step(e.shiftKey ? -1 : 1);
+              } else {
+                const again = asksToFindAgain(e.nativeEvent);
+                if (again !== 0) {
+                  e.preventDefault();
+                  step(again);
+                }
               }
             }}
             className="min-w-0 w-48 bg-transparent text-callout outline-none placeholder:text-tertiary"

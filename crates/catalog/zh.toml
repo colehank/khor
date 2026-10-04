@@ -2405,6 +2405,10 @@ term-predict-note = "远端回显慢时，按下的字先带下划线显示，�
 # Appearance → Terminal (item 21): the one ~/.zshrc line that makes shells
 # the person starts in tmux themselves mark their commands, with a copy
 # button. Panes opened from khor's own tmux client already do.
+# Appearance → Terminal (item 22): Terminal.app's own words for the same
+# switch (描述文件 › 键盘), off by default there and here.
+term-option-meta = "将 Option 键用作 Meta 键"
+term-option-meta-note = "关闭时 Option 键输入特殊字符，如 ⌥2 输入 ™；打开后 ⌥B、⌥F 这类组合发给 shell。⌥← ⌥→ ⌥⌫ 两种情况下都按词移动和删除。"
 term-tmux-marks = "在 tmux 里启用命令标记"
 term-tmux-marks-note = "把这一行加进 ~/.zshrc，tmux 里的 shell 就会标出命令：会话行、历史命令和跳到上一条命令都能用。在 khor 里新开的窗格不用加。"
 term-tmux-marks-copy = "复制这一行"
@@ -4128,6 +4132,9 @@ close-warn-live = "关闭后，正在运行的进程会停止"
 #     的那个终端(分组会话随之销毁,`grouped_attach_argv`),tmux 会话和里面的程序照常。
 # 导入的那一行仍说 `close-warn-imported`(只从列表拿掉,两种宿主都不动)。
 close-warn-terminal = "这个终端会关闭，里面正在运行的程序也会停止"
+# The same, while the shell's ledger says a command is running (item 22,
+# Terminal.app's "Closing this window will terminate: make"): it names it.
+close-warn-running = "这个终端会关闭，正在运行的 {0} 也会停止"
 close-warn-tmux = "khor 里的这个终端会关闭；tmux 会话和里面的程序照常运行"
 # ACP 对话那一行(gui 形态,docs/SHELL.md 第八轮):删掉的是 khor 里这一行和它起的 agent 进程,
 # 对话本身还在那个 agent 那里,在「导入」里还能再找回来。
@@ -4567,6 +4574,11 @@ reload-term = "刷新终端"
 prev-command = "跳到上一条命令"
 next-command = "跳到下一条命令"
 command-history = "历史命令…"
+# ⌘+ ⌘− ⌘0 (item 22): Terminal.app's 显示 › 放大 / 缩小 / 默认字体大小, for
+# the terminal's type alone.
+term-bigger = "终端文字放大"
+term-smaller = "终端文字缩小"
+term-actual = "终端文字默认大小"
 fullscreen = "进入全屏幕"
 # ⌃⌘S (显示 › 隐藏边栏, the audit fix plan F6.7): the word says what
 # pressing it does, so it follows the list — hidden, it offers to show.
