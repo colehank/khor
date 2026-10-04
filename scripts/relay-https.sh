@@ -204,7 +204,13 @@ if command -v openssl >/dev/null 2>&1; then
 	said "  $(openssl x509 -in "$CERT" -noout -enddate)"
 	# OpenSSL says "does match" / "does NOT match"; an openssl without
 	# -checkhost says neither, and the relay's own check above stands.
-	host="$(openssl x509 -in "$CERT" -noout -checkhost "$DOMAIN" 2>/dev/null || true)"
+	# An IP-address certificate (the way around 备案, audit/net-7.md) names
+	# its address as an IP SAN, which -checkhost does not look at.
+	case "$DOMAIN" in
+	*[!0-9.]*) check=-checkhost ;;
+	*) check=-checkip ;;
+	esac
+	host="$(openssl x509 -in "$CERT" -noout "$check" "$DOMAIN" 2>/dev/null || true)"
 	case "$host" in
 	*"does NOT match"*)
 		said "证书不是给 ${DOMAIN} 的："
@@ -251,7 +257,9 @@ said "  阿里云控制台的防火墙要另外放行 TCP ${PORT}（这个脚本
 said "5. 本机试连"
 ok=0
 for _ in $(seq 1 20); do
-	if curl -fsS --max-time 3 --resolve "${DOMAIN}:${PORT}:127.0.0.1" "https://${DOMAIN}:${PORT}/ping" >/dev/null 2>&1; then
+	# --connect-to, not --resolve: it works for an IP as well as a name,
+	# and the certificate is still checked against ${DOMAIN}.
+	if curl -fsS --max-time 3 --connect-to "${DOMAIN}:${PORT}:127.0.0.1:${PORT}" "https://${DOMAIN}:${PORT}/ping" >/dev/null 2>&1; then
 		ok=1
 		break
 	fi

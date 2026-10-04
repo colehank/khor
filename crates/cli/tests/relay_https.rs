@@ -372,7 +372,18 @@ fn curl_ping(ca: &Path, domain: &str, port: u16) -> bool {
 
 #[test]
 fn the_setup_script_installs_renews_in_place_and_runs_twice_without_change() {
-    let s = scratch("script");
+    script_round("bj.relay.test");
+}
+
+/// The IP-address certificate (audit/net-7.md, the way around 备案): the
+/// same script with an address for a name.
+#[test]
+fn the_setup_script_takes_an_ip_address_certificate() {
+    script_round("127.0.0.1");
+}
+
+fn script_round(domain: &str) {
+    let s = scratch(&format!("script-{domain}"));
     let root = s.0.join("root");
     let (bin, src) = (root.join("bin"), s.0.join("acme"));
     for d in [&bin, &src] {
@@ -390,7 +401,6 @@ fn the_setup_script_installs_renews_in_place_and_runs_twice_without_change() {
     std::fs::create_dir_all(khor.parent().unwrap()).unwrap();
     std::fs::copy(env!("CARGO_BIN_EXE_khor"), &khor).unwrap();
 
-    let domain = "bj.relay.test";
     let (cert, key) = self_signed(&s.0, "issued", &[domain]);
     std::fs::copy(&cert, src.join("fullchain.pem")).unwrap();
     std::fs::copy(&key, src.join("key.pem")).unwrap();
