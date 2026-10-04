@@ -868,9 +868,18 @@ function commandOf(term: Terminal, b: Block): string {
  * markers, so they ride the scrollback; VS Code draws its command
  * decorations the same way (a gutter mark per command, coloured by exit).
  */
-function drawBlocks(term: Terminal, marks: Marks): () => void {
+function drawBlocks(term: Terminal, marks: Marks): { dispose: () => void; size: () => number } {
   const drawn = new Map<Block, IDisposable[]>();
   const draw = () => {
+    // A block whose lines left the scrollback took its markers, and with
+    // them its decorations; its entry goes too, or one stays per command
+    // for the pane's life (the load pass, 2026-10-04).
+    for (const [b, ds] of drawn) {
+      if (b.prompt.isDisposed) {
+        ds.forEach((d) => d.dispose());
+        drawn.delete(b);
+      }
+    }
     for (const b of marks.blocks()) {
       const has = drawn.get(b) ?? [];
       if (has.length === 0) {
@@ -892,10 +901,13 @@ function drawBlocks(term: Terminal, marks: Marks): () => void {
   };
   const changed = marks.onChange(draw);
   draw();
-  return () => {
-    changed.dispose();
-    drawn.forEach((ds) => ds.forEach((d) => d.dispose()));
-    drawn.clear();
+  return {
+    dispose: () => {
+      changed.dispose();
+      drawn.forEach((ds) => ds.forEach((d) => d.dispose()));
+      drawn.clear();
+    },
+    size: () => drawn.size,
   };
 }
 
@@ -911,6 +923,9 @@ function jumpToPrompt(term: Terminal, marks: Marks, dir: -1 | 1) {
   }
   term.scrollToLine(to);
 }
+
+/** The most entries the pane's first-entry trace keeps. */
+const TRACE_MAX = 300;
 
 /** Output quiet this long ends a frame (ms). */
 const FRAME_QUIET_MS = 8;
@@ -1784,6 +1799,10 @@ export function TerminalPane({
     const traced: { t: number; what: string; cols: number; rows: number; range: number; top: number; lines: number }[] = [];
     (box as HTMLDivElement & { __termTrace?: typeof traced }).__termTrace = traced;
     const trace = (what: string) => {
+      // The first second and a half is what it is for; later events (a
+      // re-join, a replay) are kept up to a bound, never for the pane's
+      // whole life.
+      if (traced.length >= TRACE_MAX) return;
       const sc = scrollerRef.current;
       traced.push({
         t: Math.round(performance.now() - born),
@@ -2117,6 +2136,7 @@ export function TerminalPane({
     // actions on a right-click or a long press on its prompt; ⌘↑ ⌘↓, the
     // menu's jumps and the key sheet's two chevrons move between prompts.
     const unblock = drawBlocks(term, marks);
+    (box as HTMLDivElement & { __drawn?: () => number }).__drawn = unblock.size;
     const actsFor = (b: Block) => {
       const command = commandOf(term, b);
       const acts: { name: string; label: string; run: () => void }[] = [];
@@ -2256,7 +2276,7 @@ export function TerminalPane({
       dragged();
       native.stop();
       selects();
-      unblock();
+      unblock.dispose();
       box.removeEventListener("contextmenu", rightClick);
       scrolled.dispose();
       wrote.dispose();
