@@ -63,6 +63,11 @@ export function trackMarks(term: Terminal): Marks {
   const here = () => term.registerMarker(0);
 
   const mark = (kind: string, params: string[]) => {
+    // A full-screen program's screen is not a shell's scrollback: marks
+    // that reach the alternate screen came through a multiplexer (tmux's
+    // passthrough) and name places on its redraw, not on lines the face
+    // keeps — VS Code's command detection stops there too.
+    if (term.buffer.active.type === "alternate") return;
     seen = true;
     const b = last();
     switch (kind) {
@@ -185,7 +190,7 @@ export function inInput(term: Terminal, marks: Marks, line: number, col: number)
   const buf = term.buffer.active;
   const cursorLine = buf.baseY + buf.cursorY;
   const b = marks.current();
-  if (marks.marked() && b?.input && !b.output) {
+  if (buf.type === "normal" && marks.marked() && b?.input && !b.output) {
     // Everything after the input's start is input while the prompt is
     // up: a long or multi-line command runs on below the cursor too.
     const at = b.input.marker.line;
