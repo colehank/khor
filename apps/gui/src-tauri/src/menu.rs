@@ -46,7 +46,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// The acts the page runs, by the ids their items carry. The same names
 /// as `Act` in `src/lib/shortcuts.ts`.
-const ACTS: [&str; 17] = [
+const ACTS: [&str; 20] = [
     "landing-1",
     "landing-2",
     "landing-3",
@@ -55,7 +55,9 @@ const ACTS: [&str; 17] = [
     "settings",
     "lock",
     "find",
+    "find-list",
     "new",
+    "new-tab",
     "import",
     "close-tab",
     "next-tab",
@@ -66,6 +68,9 @@ const ACTS: [&str; 17] = [
     "reload-term",
     "prev-command",
     "next-command",
+    // ⚠️ It was listed in the View menu and missing here, so choosing it
+    // from the menu did nothing; only its key worked (UX-7).
+    "command-history",
 ];
 
 /// The five landings by the keys the page's strip orders them by
@@ -185,6 +190,9 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     )?;
 
     let new = item("new", m::new(), Some("CmdOrCtrl+N"))?;
+    // ⌘T (UX-7): the landing's 「+」 where it makes a tab — a session, a
+    // page. The page answers only there (`lib/shortcuts`).
+    let new_tab = item("new-tab", m::new_tab(), Some("CmdOrCtrl+T"))?;
     let import = item("import", m::import(), None)?;
     let close_tab = item("close-tab", m::close_tab(), Some("CmdOrCtrl+W"))?;
     // **Not the predefined 「Close Window」**: that one is welded to ⌘W,
@@ -196,7 +204,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         app,
         m::file(),
         true,
-        &[&new, &import, &sep()?, &close_tab, &close_window],
+        &[&new, &new_tab, &import, &sep()?, &close_tab, &close_window],
     )?;
 
     // **The Edit menu is load-bearing, not a courtesy.** WKWebView has no
@@ -215,6 +223,10 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::copy(app, Some(m::copy()))?,
             &PredefinedMenuItem::paste(app, Some(m::paste()))?,
             &PredefinedMenuItem::select_all(app, Some(m::select_all()))?,
+            &sep()?,
+            // ⌘F (UX-7): Mail's and Notes' 查找 — this column's search, or
+            // the terminal's own in a terminal (`TerminalPane`).
+            &item("find-list", m::find_list(), Some("CmdOrCtrl+F"))?,
         ],
     )?;
 
