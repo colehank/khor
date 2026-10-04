@@ -222,7 +222,7 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
 | 中继 | 地址 | 模式 | 给谁 |
 |---|---|---|---|
 | 北京 | `http://101.200.80.77:3340` | 明文 HTTP + 密钥 | 出不了境的机器 |
-| 北京（TLS） | `https://bj.relay.khor.cloud:3341` | TLS（acme.sh 按 DNS 签）+ 另一把密钥 | 同上；答得上时替掉上一行 |
+| 北京（TLS） | `https://pk.relay.khor.cloud:3341` | TLS（acme.sh 按 DNS 签）+ 另一把密钥 | 同上；答得上时替掉上一行 |
 | 香港 | `https://relay.khor.cloud` | TLS（Let's Encrypt 自动签）+ 密钥 | 能出境的、海外的 |
 
 - **为什么是两台**：先只买了香港，装好后从实验室量：turing、hinton 连不上它（80、443 都
@@ -244,7 +244,7 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
   mandala 的 aliyun，跑 `iroh-relay --dev`、谁都放行，`KHOR_RELAY_TOKEN` 是空。那台到期
   不续；mandala 已作废（负责人 2026-10-01）。
 - **北京换 TLS（NET-7，2026-10-04，客户端和脚本已备好，等负责人签证书）**：同一台机器上再起
-  一个中继进程 `khor-relay-https.service`，`bj.relay.khor.cloud:3341`，证书由负责人用 acme.sh
+  一个中继进程 `khor-relay-https.service`，`pk.relay.khor.cloud:3341`，证书由负责人用 acme.sh
   按 DNS 签（不用备案的 80/443），`scripts/relay-https.sh` 装好证书、续期钩子和服务。
   原来的 `khor-relay.service`（明文 3340）**不停**，直到所有机器都换上这一轮的 khor。
   客户端两台都留在中继表里、各带各的密钥（中继有状态，住在明文那台的机器只在那台找得到）；

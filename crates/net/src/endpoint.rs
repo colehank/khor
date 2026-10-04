@@ -75,7 +75,7 @@ pub const KHOR_RELAYS: &[(&str, Option<&str>)] = &[
 /// **Its own key**, not the plain relay's: that one has crossed the wire
 /// in the clear since 2026-10-01, so it opens nothing new once the plain
 /// relay is retired.
-pub const BEIJING_TLS: &str = "https://bj.relay.khor.cloud:3341";
+pub const BEIJING_TLS: &str = "https://pk.relay.khor.cloud:3341";
 
 /// **Which relay replaces which** (vendor/iroh patch 5): a machine whose
 /// home would be the first homes on the second whenever its latest

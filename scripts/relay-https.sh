@@ -3,7 +3,7 @@
 #
 # Run as root on the relay box, AFTER acme.sh has issued the certificate:
 #
-#   acme.sh --issue --dns dns_ali -d bj.relay.khor.cloud      # or dns_cf
+#   acme.sh --issue --dns dns_ali -d pk.relay.khor.cloud      # or dns_cf
 #   bash relay-https.sh                                       # this script
 #
 # What it does, each step said as it goes, and each one a no-op when it is
@@ -31,7 +31,7 @@
 #
 # Overrides (the defaults are the Beijing relay's; the KHOR_RH_* ones exist
 # so the script can be run against a scratch directory by its test):
-#   KHOR_RH_DOMAIN   bj.relay.khor.cloud
+#   KHOR_RH_DOMAIN   pk.relay.khor.cloud
 #   KHOR_RH_PORT     3341
 #   KHOR_RH_ACME     acme.sh (or ~/.acme.sh/acme.sh)
 #   KHOR_RH_ROOT     ""        every path below is put under this prefix
@@ -42,7 +42,7 @@
 #   KHOR_RH_CAPTIVE  127.0.0.1:3342
 set -euo pipefail
 
-DOMAIN="${KHOR_RH_DOMAIN:-bj.relay.khor.cloud}"
+DOMAIN="${KHOR_RH_DOMAIN:-pk.relay.khor.cloud}"
 PORT="${KHOR_RH_PORT:-3341}"
 ROOT="${KHOR_RH_ROOT:-}"
 RELAY_USER="${KHOR_RH_USER:-khor-relay}"
