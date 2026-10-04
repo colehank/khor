@@ -684,6 +684,45 @@ aside[data-side] {
   }
 }
 
+/* **A sheet's buttons in its header** (UX-10; ux-9 I6). HIG Sheets on
+   iOS: 「the Cancel button belongs on the leading edge of the top
+   toolbar」, the one act on the trailing edge in the prominent style,
+   the title between them. On the narrow face a form's title and its
+   footer share the sheet's first row — the footer's own order already
+   puts 取消 first and the act last, so spreading it puts each at its
+   edge — and the row stays at the top while the form scrolls under it,
+   above the soft keyboard with the sheet. A wide window keeps the
+   dialog's footer where a Mac puts it. */
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"],
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
+  grid-row: 1;
+  grid-column: 1;
+  position: sticky;
+  top: 0;
+  align-self: center;
+  margin: 0;
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
+  justify-content: space-between;
+  background: var(--popover);
+  z-index: 1;
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] {
+  z-index: 2;
+  /* The title lies over the row the buttons stand in; it takes no
+     press, and it keeps clear of them. */
+  pointer-events: none;
+  text-align: center;
+  padding-inline: calc(2 * var(--touch));
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] [data-slot="dialog-title"] {
+  font-size: var(--text-headline);
+  line-height: var(--text-headline--line-height);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* **A back swipe** (`hooks/use-edge-swipe`, F7.3; V01): the page —
    its first row and its screen — follows the finger (`--swipe`) over
    the page it came from, which is drawn whole under it
