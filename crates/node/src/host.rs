@@ -67,6 +67,44 @@ pub struct Welcome {
 pub enum ClientOp {
     Input(#[serde(with = "serde_bytes")] Vec<u8>),
     Resize { cols: u16, rows: u16 },
+    /// **The client's protocol version** ([`HOST_VERSION`]), sent once,
+    /// first, and only to a host whose `Welcome` advertised version 2 or
+    /// later: the two then speak the lower of the two. Tail-appended, like
+    /// every op after it — a host older than the handshake does not know
+    /// these words and would drop the client's input on the first one, so
+    /// none is ever sent to it.
+    Version(u32),
+}
+
+/// **The host protocol's version** (audit/term-attach.md). 1 is every
+/// host and client before the handshake: `Hello`, `Welcome`, raw bytes,
+/// `Input` and `Resize`. 2 adds [`ClientOp::Version`].
+///
+/// **How it is agreed without changing a frame's shape.** msgpack here
+/// is positional, and a struct read from a longer array fails
+/// (`LengthMismatch`, measured on rmp-serde 1.3): a `Hello` or `Welcome`
+/// with one more field would lock out every host or client already
+/// installed. So a host of version 2 or later says so in the `why` of a
+/// successful `Welcome` — a field an older client only reads when the
+/// answer is no — and a client that sees it answers with
+/// [`ClientOp::Version`] before anything else. Neither side sends a word
+/// the other has not said it knows.
+pub const HOST_VERSION: u32 = 2;
+
+/// The `why` of a successful `Welcome` from a versioned host: this, then
+/// the version.
+const GREETING: &str = "khor-host/";
+
+/// The version a `Welcome` advertises: 1 for a host older than the
+/// handshake, which leaves `why` empty when it welcomes.
+fn advertised(w: &Welcome) -> u32 {
+    w.why.strip_prefix(GREETING).and_then(|v| v.parse().ok()).unwrap_or(1)
+}
+
+/// A connection with the version both ends agreed to speak.
+pub struct Attached {
+    pub stream: TcpStream,
+    pub version: u32,
 }
 
 /// Above any sane keystroke burst, far below anything hostile-sized.
@@ -118,8 +156,13 @@ pub fn read_view_file(dir: &Path) -> Result<HostFile, String> {
 
 /// [`connect`], to the viewer's address rather than the host's.
 pub fn connect_view(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
+    connect_view_versioned(dir, cols, rows).map(|a| a.stream)
+}
+
+/// [`connect_view`], keeping the agreed version.
+pub fn connect_view_versioned(dir: &Path, cols: u16, rows: u16) -> Result<Attached, String> {
     let hf = read_view_file(dir)?;
-    connect_at(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
+    connect_versioned(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
 }
 
 /// Where a host that died on the way up leaves the reason, for the
@@ -523,8 +566,13 @@ fn spawn_host_with(
 /// Connects and completes the handshake; on return the stream carries
 /// the replay and then live PTY bytes. Client ops go back framed.
 pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
+    connect_host_versioned(dir, cols, rows).map(|a| a.stream)
+}
+
+/// [`connect`], keeping the agreed version.
+pub fn connect_host_versioned(dir: &Path, cols: u16, rows: u16) -> Result<Attached, String> {
     let hf = read_host_file(dir)?;
-    connect_at(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
+    connect_versioned(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
 }
 
 /// The same handshake against an address the caller already has.
@@ -544,6 +592,12 @@ pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
 /// stream goes back to blocking without a timeout once welcomed: from
 /// then on a quiet terminal is a terminal nobody is typing in.
 pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpStream, String> {
+    connect_versioned(addr, cookie, cols, rows).map(|a| a.stream)
+}
+
+/// [`connect_at`], agreeing a version ([`HOST_VERSION`]): with a host
+/// that advertises one, the client's own is sent before anything else.
+pub fn connect_versioned(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<Attached, String> {
     let mut s = TcpStream::connect(addr).map_err(|_| msg::host_gone().to_string())?;
     // A keystroke is one small frame: never held back for an ack.
     let _ = s.set_nodelay(true);
@@ -561,9 +615,13 @@ pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpS
     if !w.ok {
         return Err(w.why);
     }
+    let version = advertised(&w).min(HOST_VERSION);
+    if version >= 2 {
+        write_frame(&mut s, &ClientOp::Version(HOST_VERSION))?;
+    }
     let _ = s.set_read_timeout(None);
     let _ = s.set_write_timeout(None);
-    Ok(s)
+    Ok(Attached { stream: s, version })
 }
 
 /// How long [`connect_at`] waits for a host to welcome it: a far pipe's
@@ -1263,7 +1321,7 @@ fn host_serving(
                     &mut conn,
                     &Welcome {
                         ok: true,
-                        why: String::new(),
+                        why: format!("{GREETING}{HOST_VERSION}"),
                     },
                 )
                 .is_err()
@@ -1316,6 +1374,8 @@ fn host_serving(
                                         pixel_height: 0,
                                     });
                                 }
+                                // Agreed; nothing past version 1 is asked yet.
+                                ClientOp::Version(_) => {}
                             }
                         }
                     });
@@ -1544,7 +1604,43 @@ mod last_line_tests {
 
 #[cfg(test)]
 mod handshake_tests {
-    use super::connect_at;
+    use super::{ClientOp, Hello, Welcome, connect_at, connect_versioned, read_frame, write_frame};
+
+    /// **A versioned client against a host from before the handshake**:
+    /// the host welcomes with an empty `why`, so the client speaks version
+    /// 1 and its first frame is the person's input, never a `Version` the
+    /// old host would choke on. The old host is played here by its own
+    /// words: `Hello` in, `Welcome { ok, "" }` out, then only the two ops
+    /// it knew.
+    #[test]
+    fn a_versioned_client_speaks_version_one_to_a_host_from_before() {
+        #[derive(serde::Deserialize, Debug)]
+        enum OldOp {
+            Input(#[serde(with = "serde_bytes")] Vec<u8>),
+            #[allow(dead_code)]
+            Resize { cols: u16, rows: u16 },
+        }
+        let old = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = old.local_addr().unwrap().to_string();
+        let host = std::thread::spawn(move || {
+            let (mut c, _) = old.accept().unwrap();
+            let hello: Hello = read_frame(&mut c).unwrap();
+            write_frame(&mut c, &Welcome { ok: true, why: String::new() }).unwrap();
+            let first: OldOp = read_frame(&mut c).expect("the old host can read what came first");
+            (hello.cols, first)
+        });
+        let a = connect_versioned(&addr, "cookie", 80, 24).unwrap();
+        assert_eq!(a.version, 1);
+        let mut s = a.stream;
+        write_frame(&mut s, &ClientOp::Input(b"hi".to_vec())).unwrap();
+        let (cols, first) = host.join().unwrap();
+        assert_eq!(cols, 80);
+        match first {
+            OldOp::Input(b) => assert_eq!(b, b"hi"),
+            other => panic!("{other:?}"),
+        }
+    }
+
     use std::net::TcpListener;
     use std::time::{Duration, Instant};
 

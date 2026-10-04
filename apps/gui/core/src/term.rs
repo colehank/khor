@@ -34,11 +34,11 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::TcpStream;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use base64::Engine;
-use khor_node::host::{ClientOp, connect, write_frame};
+use khor_node::host::{ClientOp, write_frame};
 use khor_node::modes::Modes;
 use khor_node::{Node, SessionId};
 use serde::Serialize;
@@ -152,6 +152,10 @@ struct Term {
     /// held. Written only inside [`push_feed`], under the `feed` lock,
     /// so a reader holding that lock sees the pair consistent.
     fed: AtomicU64,
+    /// The host protocol version this attachment agreed
+    /// (`khor_node::host::HOST_VERSION`): 1 for a host from before the
+    /// handshake, which is sent nothing it does not know.
+    version: AtomicU32,
 }
 
 /// A lock that outlives a panic on the other side. A reader thread that
@@ -219,7 +223,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
     // A leave that came while this open was reaching takes its hold
     // (`crate::landing`): nobody is there to read what it attached.
     let left = plock(landing()).land(id);
-    let (conn, far) = attached?;
+    let (conn, far, version) = attached?;
     if left {
         let _ = conn.shutdown(std::net::Shutdown::Both);
         return Ok(());
@@ -248,7 +252,9 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
         left: AtomicBool::new(false),
         feed: Mutex::new(Feed::default()),
         fed: AtomicU64::new(0),
+        version: AtomicU32::new(1),
     });
+    term.version.store(version, Ordering::Relaxed);
     let reader = term.clone();
     let root = root.to_path_buf();
     std::thread::spawn(move || {
@@ -273,7 +279,12 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
                     reader.arrived.notify_waiters();
                     let (rows, cols) = plock(&reader.parser).screen().size();
                     let Some(conn) = crate::rejoin::again(&root, machine, &sid, &reader.left, |addr, cookie| {
-                        khor_node::host::connect_at(addr, cookie, cols, rows)
+                        // A far host may have been replaced meanwhile:
+                        // the version is agreed again.
+                        khor_node::host::connect_versioned(addr, cookie, cols, rows).map(|a| {
+                            reader.version.store(a.version, Ordering::Relaxed);
+                            a.stream
+                        })
                     }) else {
                         break;
                     };
@@ -317,7 +328,7 @@ fn attach(
     id: &str,
     cols: u16,
     rows: u16,
-) -> Result<(std::net::TcpStream, Option<String>), String> {
+) -> Result<(std::net::TcpStream, Option<String>, u32), String> {
     let n = Node::open(root.to_path_buf())?;
     let sid = SessionId(id.to_owned());
     // **The fork is on the row, not on a flag** (`Node::far_machine`):
@@ -333,7 +344,7 @@ fn attach(
         // network under it (`host::connect_at`).
         Some(machine) => {
             let (addr, cookie) = reach_blocking(root, machine, &sid)?;
-            khor_node::host::connect_at(&addr, &cookie, cols, rows)?
+            khor_node::host::connect_versioned(&addr, &cookie, cols, rows)?
         }
         None => {
             // A row this machine does not host yet may still have a
@@ -360,12 +371,12 @@ fn attach(
                 .session_dir(&sid)
                 .ok_or_else(|| khor_catalog::msg::no_such_session(id))?;
             match seat {
-                khor_node::live::Seat::View => khor_node::host::connect_view(&dir, cols, rows)?,
-                khor_node::live::Seat::Host => connect(&dir, cols, rows)?,
+                khor_node::live::Seat::View => khor_node::host::connect_view_versioned(&dir, cols, rows)?,
+                khor_node::live::Seat::Host => khor_node::host::connect_host_versioned(&dir, cols, rows)?,
             }
         }
     };
-    Ok((conn, far))
+    Ok((conn.stream, far, conn.version))
 }
 
 /// An open terminal under `id` takes one more hold and answers yes; a
@@ -922,7 +933,7 @@ mod tests {
                     assert!(piece.len() <= INPUT_FRAME, "a frame of {} bytes", piece.len());
                     back.extend_from_slice(&piece);
                 }
-                ClientOp::Resize { .. } => panic!("only input was written"),
+                _ => panic!("only input was written"),
             }
             frames += 1;
         }
@@ -1180,6 +1191,7 @@ mod tests {
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
+            version: AtomicU32::new(1),
         });
         push_feed(&term.feed, &term.fed, b"\x1b[31mhi");
         let id = format!("tui/feed-doors-{}", std::process::id());
@@ -1221,6 +1233,7 @@ mod tests {
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
+            version: AtomicU32::new(1),
         });
         let id = format!("tui/feed-wait-{}", std::process::id());
         plock(terms()).insert(id.clone(), term.clone());
@@ -1364,6 +1377,7 @@ mod burst_tests {
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
+            version: AtomicU32::new(1),
         });
         let id = format!("tui/burst-{}", std::process::id());
         plock(terms()).insert(id.clone(), term.clone());
