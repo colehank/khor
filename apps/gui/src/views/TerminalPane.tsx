@@ -86,6 +86,7 @@ import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermOptionMeta, termOptionMeta } from "@/lib/term-option-meta";
 import { keepWebgl } from "@/lib/term-atlas";
+import { onTermBlockLines, termBlockLines } from "@/lib/term-block-lines";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
@@ -2310,8 +2311,18 @@ export function TerminalPane({
     // **Command blocks** (roadmap 2.3): drawn from the marks; a block's
     // actions on a right-click or a long press on its prompt; ⌘↑ ⌘↓, the
     // menu's jumps and the key sheet's two chevrons move between prompts.
-    const unblock = drawBlocks(term, marks);
-    (box as HTMLDivElement & { __drawn?: () => number }).__drawn = unblock.size;
+    // **Drawn only with the command separators setting on** (item 27, off
+    // by default): the marks are kept either way, so the acts and the
+    // jumps below do not depend on it.
+    let unblock: ReturnType<typeof drawBlocks> | null = termBlockLines() ? drawBlocks(term, marks) : null;
+    const relined = onTermBlockLines((on) => {
+      if (on && !unblock) unblock = drawBlocks(term, marks);
+      if (!on && unblock) {
+        unblock.dispose();
+        unblock = null;
+      }
+    });
+    (box as HTMLDivElement & { __drawn?: () => number }).__drawn = () => unblock?.size() ?? 0;
     const actsFor = (b: Block) => {
       const command = commandOf(term, b);
       const acts: { name: string; label: string; run: () => void }[] = [];
@@ -2508,7 +2519,8 @@ export function TerminalPane({
       dragged();
       native.stop();
       selects();
-      unblock.dispose();
+      relined();
+      unblock?.dispose();
       box.removeEventListener("contextmenu", rightClick);
       scrolled.dispose();
       wrote.dispose();

@@ -26,6 +26,7 @@ import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
 import { setTermBell, useTermBell } from "@/lib/term-bell";
 import { setTermJoyHaptic, useTermJoyHaptic } from "@/lib/term-joy-haptic";
+import { setTermBlockLines, useTermBlockLines } from "@/lib/term-block-lines";
 import { setTermPredict, useTermPredict } from "@/lib/term-predict-setting";
 import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { lasted } from "@/words";
@@ -93,6 +94,7 @@ export function TerminalSection() {
   const finishedAfter = useFinishedAfter();
   const bell = useTermBell();
   const joyFelt = useTermJoyHaptic();
+  const blockLines = useTermBlockLines();
   const predicts = useTermPredict();
   const optionMeta = useTermOptionMeta();
   const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
@@ -265,6 +267,13 @@ export function TerminalSection() {
         hint={gui.term_bell_note}
         on={bell}
         onToggle={() => setTermBell(!bell)}
+      />
+      <SwitchRow
+        name="term-block-lines"
+        label={gui.term_block_lines}
+        hint={gui.term_block_lines_note}
+        on={blockLines}
+        onToggle={() => setTermBlockLines(!blockLines)}
       />
       <SwitchRow
         name="term-predict"
