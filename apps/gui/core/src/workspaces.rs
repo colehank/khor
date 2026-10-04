@@ -42,20 +42,50 @@ pub struct WorkspaceRow {
     /// The path's last component.
     pub name: String,
     pub pinned: bool,
+    /// **The row's facts** (round NET-8, UX-15), as the machine holding
+    /// the files keeps them (`khor_core::WorkspaceFact`): its own
+    /// resident's for this machine, the last round's for another. All
+    /// absent when that machine has not said yet — an older khor never
+    /// does — and the row leaves those slots empty.
+    ///
+    /// The branch; `None` for a plain folder (and a detached HEAD).
+    pub branch: Option<String>,
+    /// Files that differ from HEAD, untracked included; `None` for a
+    /// plain folder.
+    pub changed: Option<u32>,
+    /// `changed` stopped at the status walk's cap: say 「N+」.
+    pub changed_capped: bool,
+    /// When the tree last changed, ms since the epoch.
+    #[ts(type = "number | null")]
+    pub changed_ms: Option<i64>,
 }
 
 /// Every workspace, pinned first then by path — this machine's copy of
 /// the table, no network (`khor_node::Node::workspaces`).
 pub fn workspaces(root: &Path) -> Result<Vec<WorkspaceRow>, String> {
     let n = Node::open(root.to_path_buf())?;
+    // One facts file per machine, read once for all its rows.
+    let mut facts: std::collections::HashMap<String, Vec<khor_core::WorkspaceFact>> = Default::default();
     Ok(n.workspaces()?
         .into_iter()
-        .map(|w| WorkspaceRow {
-            device: w.device,
-            machine: w.machine,
-            path: w.path,
-            name: w.name,
-            pinned: w.pinned,
+        .map(|w| {
+            let known = facts
+                .entry(w.device.clone())
+                .or_insert_with(|| n.workspace_facts_of(&w.device))
+                .iter()
+                .find(|f| f.path == w.path)
+                .cloned();
+            WorkspaceRow {
+                branch: known.as_ref().and_then(|f| f.branch.clone()),
+                changed: known.as_ref().and_then(|f| f.changed),
+                changed_capped: known.as_ref().is_some_and(|f| f.changed_capped),
+                changed_ms: known.as_ref().map(|f| f.changed_ms).filter(|&t| t > 0),
+                device: w.device,
+                machine: w.machine,
+                path: w.path,
+                name: w.name,
+                pinned: w.pinned,
+            }
         })
         .collect())
 }
