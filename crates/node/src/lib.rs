@@ -38,6 +38,7 @@ pub mod lock;
 pub mod mcp;
 pub mod merge;
 pub mod modes;
+pub(crate) mod once;
 pub mod pause;
 pub mod pictures;
 pub mod place;

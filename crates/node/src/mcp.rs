@@ -303,6 +303,7 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
                 &s("cwd"),
                 &["sh".into(), "-c".into(), command],
                 (80, 24),
+                None,
             ))?;
             Ok(id.0)
         }

@@ -105,6 +105,24 @@ import { connectionWord } from "@/words";
     a line left in the machine's window, an agent session, a bare shell. */
 type Kind = "tell" | "agent" | "shell";
 
+/** **One create token per set of answers** (round NET-7, `khor_node`'s
+    `once`, from ux's first-run walk): a machine that quit before its
+    answer came back had started the session all the same, and 创建
+    pressed again made a second. The token is made before the first ask
+    and kept, by the answers, until one is answered; the far machine
+    answers a token it has seen with the session it made. Module-level, so
+    closing the dialog and opening it again with the same answers still
+    finds it. */
+const createTokens = new Map<string, string>();
+const createToken = (key: string): string => {
+  let token = createTokens.get(key);
+  if (!token) {
+    token = crypto.randomUUID();
+    createTokens.set(key, token);
+  }
+  return token;
+};
+
 export function NewSessionDialog({
   open,
   onOpenChange,
@@ -346,8 +364,16 @@ export function NewSessionDialog({
     if (opening) return;
     setOpening(true);
     setError(null);
-    (kind === "shell" ? openTermOn(target, title, settledPath(dir)) : openSession(settledPath(dir), title, form, agent, chosen))
+    // The same answers ask with the same token until one is answered —
+    // pressed again after 「没有响应」, or after closing and reopening.
+    const key = JSON.stringify([kind, target, title, settledPath(dir), form, agent]);
+    const token = createToken(key);
+    (kind === "shell"
+      ? openTermOn(target, title, settledPath(dir), token)
+      : openSession(settledPath(dir), title, form, agent, chosen, token)
+    )
       .then((id) => {
+        createTokens.delete(key);
         startedAgent.current = kind === "agent";
         onOpenChange(false);
         onOpened(id);

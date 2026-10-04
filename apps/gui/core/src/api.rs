@@ -764,6 +764,7 @@ pub fn answer(
             &arg("form")?,
             &opt_str("agent")?.unwrap_or_default(),
             &opt_str("machine")?.unwrap_or_default(),
+            opt_str("token")?.as_deref(),
         ))?),
         "open_on" => to_json(&rt.block_on(crate::open_term_on(
             root,
@@ -775,6 +776,7 @@ pub fn answer(
                 (Some(c), Some(r)) => Some((c.min(u16::MAX as u64) as u16, r.min(u16::MAX as u64) as u16)),
                 _ => None,
             },
+            opt_str("token")?.as_deref(),
         ))?),
         // The path names a file on the machine answering this call —
         // meaningful from the app and the loopback bridge, where that

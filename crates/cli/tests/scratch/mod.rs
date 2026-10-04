@@ -381,12 +381,64 @@ pub async fn slow_road(
             let (ir, iw) = inbound.into_split();
             let (or, ow) = outbound.into_split();
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            tokio::spawn(hold(ir, ow, impair, seed, &ROAD_TO_RELAY));
+            tokio::spawn(hold(ir, ow, impair, seed, &ROAD_TO_RELAY, None));
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            tokio::spawn(hold(or, iw, impair, seed, &ROAD_FROM_RELAY));
+            tokio::spawn(hold(or, iw, impair, seed, &ROAD_FROM_RELAY, None));
         }
     });
     (at, task)
+}
+
+/// A [`slow_road`] that can be **cut**: every connection through it
+/// closed at once and new ones refused until [`Cut::heal`] — an answer
+/// in flight is lost, not late (round NET-7, the create made once).
+#[allow(dead_code)]
+#[derive(Clone, Default)]
+pub struct Cut(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+#[allow(dead_code)]
+impl Cut {
+    pub fn cut(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    pub fn heal(&self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+    fn is_cut(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+/// [`slow_road`], with a [`Cut`] that closes it.
+#[allow(dead_code)]
+pub async fn cuttable_road(
+    to: std::net::SocketAddr,
+    impair: Impair,
+) -> (std::net::SocketAddr, Cut, tokio::task::JoinHandle<()>) {
+    let cut = Cut::default();
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let at = listener.local_addr().unwrap();
+    let held = cut.clone();
+    let task = tokio::spawn(async move {
+        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+        while let Ok((inbound, _)) = listener.accept().await {
+            if held.is_cut() {
+                continue;
+            }
+            let Ok(outbound) = tokio::net::TcpStream::connect(to).await else {
+                continue;
+            };
+            let _ = inbound.set_nodelay(true);
+            let _ = outbound.set_nodelay(true);
+            let (ir, iw) = inbound.into_split();
+            let (or, ow) = outbound.into_split();
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            tokio::spawn(hold(ir, ow, impair, seed, &ROAD_TO_RELAY, Some(held.clone())));
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            tokio::spawn(hold(or, iw, impair, seed, &ROAD_FROM_RELAY, Some(held.clone())));
+        }
+    });
+    (at, cut, task)
 }
 
 /// Bytes every [`slow_road`] in this process has carried towards its
@@ -404,12 +456,18 @@ async fn hold(
     impair: Impair,
     mut seed: u64,
     counter: &'static std::sync::atomic::AtomicU64,
+    cut: Option<Cut>,
 ) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(tokio::time::Instant, Vec<u8>)>();
+    let stop = cut.clone();
     let writer = tokio::spawn(async move {
         while let Some((at, bytes)) = rx.recv().await {
             tokio::time::sleep_until(at).await;
+            // Cut: what was still on the road never arrives.
+            if stop.as_ref().is_some_and(Cut::is_cut) {
+                return;
+            }
             if to.write_all(&bytes).await.is_err() {
                 return;
             }
@@ -423,6 +481,9 @@ async fn hold(
             Ok(0) | Err(_) => break,
             Ok(n) => n,
         };
+        if cut.as_ref().is_some_and(Cut::is_cut) {
+            break;
+        }
         counter.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
         seed ^= seed << 13;
         seed ^= seed >> 7;

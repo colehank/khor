@@ -47,6 +47,7 @@ async fn a_keystroke_comes_back_in_a_round_trip_and_output_streams() {
             "",
             &["/bin/cat".to_owned()],
             (80, 24),
+            None,
         )
         .await
         .expect("cat opens on alpha");

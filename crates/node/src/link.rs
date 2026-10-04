@@ -1457,9 +1457,10 @@ impl Node {
                 cmd,
                 cols,
                 rows,
+                token,
             } => {
                 match self
-                    .open_on_with(ep, &machine, &kind, &title, &cwd, &cmd, (cols, rows))
+                    .open_on_with(ep, &machine, &kind, &title, &cwd, &cmd, (cols, rows), token.as_deref())
                     .await
                 {
                     Ok(id) => ipc::Reply::OpenedOn { session: id.0 },
@@ -1511,9 +1512,10 @@ impl Node {
                 title,
                 form,
                 agent,
+                token,
             } => {
                 match self
-                    .open_agent_on_with(ep, &machine, &dir, &title, &form, &agent)
+                    .open_agent_on_with(ep, &machine, &dir, &title, &form, &agent, token.as_deref())
                     .await
                 {
                     Ok(id) => ipc::Reply::OpenedOn { session: id.0 },
@@ -1704,6 +1706,93 @@ impl Node {
         }
     }
 
+    /// A session started **here** for another machine's
+    /// [`Request::Open`] (or `OpenOnce`, which names the id): registered,
+    /// its host spawned, and put on the list for every machine.
+    async fn open_here(
+        &self,
+        id: Option<crate::SessionId>,
+        kind: String,
+        title: String,
+        cwd: String,
+        cmd: Vec<String>,
+        (cols, rows): (u16, u16),
+    ) -> Result<crate::SessionId, String> {
+        // A phone hosts nothing (docs/IOS.md); an asker that read its row
+        // already refused, this is for one that did not.
+        self.refuse_unless_hosting()?;
+        // Defaults are resolved **here**, on the machine that will run
+        // it: the asker's home and the asker's `$SHELL` are answers to a
+        // question about the wrong computer. **`~` too** (2026-09-06, the
+        // wizard's shell kind sends the directory a person typed): it
+        // names this machine's home, which only this machine knows —
+        // `start_session` keeps the same rule for agents.
+        let home = std::env::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"));
+        let cwd = match cwd.trim() {
+            "" | "~" => home,
+            d if d.starts_with("~/") => home.join(&d[2..]),
+            d => std::path::PathBuf::from(d),
+        };
+        let cmd = if cmd.is_empty() {
+            vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())]
+        } else {
+            cmd
+        };
+        // Off the reactor for the reason every registry write is (the
+        // `Ls` arm's note): these homes can be on a network mount, and
+        // this one forks a process too.
+        let live = self.live.clone();
+        let category = Self::category_of_started(&kind);
+        let id = tokio::task::spawn_blocking(move || {
+            let id = match id {
+                Some(id) => id,
+                None => crate::SessionId(format!("{kind}/{}", crate::link::fresh_leaf()?)),
+            };
+            live.register(&id, &kind, &title, None, category)?;
+            live.learn_place(&id, &cwd)?;
+            let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+            crate::host::spawn_host_at(&cwd, &dir, &id, &cmd, (cols, rows))?;
+            Ok::<_, String>(id)
+        })
+        .await
+        .map_err(|e| e.to_string())??;
+        // Opened here for another machine, and on the list for all of
+        // them (`khor_sync::roster`).
+        self.roster_new(&id)?;
+        Ok(id)
+    }
+
+    /// Asks `channel` to open a session, **at most once when `once`
+    /// carries a token** (`crate::once`): then the ask is
+    /// [`Request::OpenOnce`]-shaped, and because a second ask cannot
+    /// make a second session it counts as a reading
+    /// (`Request::is_reading`) — a wire that died under it is asked again
+    /// on a fresh one inside the same wait, the case it exists for. A
+    /// khor that predates the new words refuses them by name; that one is
+    /// asked the old way.
+    async fn ask_open(
+        &self,
+        ep: &iroh::Endpoint,
+        channel: &str,
+        plain: Request,
+        once: Option<(&str, Request)>,
+    ) -> Result<crate::SessionId, String> {
+        let answer = match once {
+            Some((variant, req)) => {
+                match self.ask(ep, channel, &req).await? {
+                    Response::Refused { why } if why.contains(variant) => self.ask(ep, channel, &plain).await?,
+                    other => other,
+                }
+            }
+            None => self.ask(ep, channel, &plain).await?,
+        };
+        match answer {
+            Response::Opened { session } => Ok(crate::SessionId(session)),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
     /// Opens a session on another machine (docs/KHOR.md 发起). The row
     /// is **that machine's**: it forks the process, it writes the
     /// registry entry, and the id that comes back is the id every face
@@ -1723,6 +1812,7 @@ impl Node {
         cwd: &str,
         cmd: &[String],
         size: (u16, u16),
+        once: Option<&str>,
     ) -> Result<crate::SessionId, String> {
         let (channel, home) = self.resolve(machine)?;
         // A satellite's terminal is a host on its **sponsor** running
@@ -1783,6 +1873,7 @@ impl Node {
                 "",
                 &ssh_cmd,
                 size,
+                once,
             ))
             .await;
         }
@@ -1807,11 +1898,21 @@ impl Node {
             cols: size.0,
             rows: size.1,
         };
-        match self.ask(ep, &channel, &req).await? {
-            Response::Opened { session } => Ok(crate::SessionId(session)),
-            Response::Refused { why } => Err(why),
-            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
-        }
+        let once = once.map(|token| {
+            (
+                "OpenOnce",
+                Request::OpenOnce {
+                    token: token.to_owned(),
+                    kind: kind.to_owned(),
+                    title: title.to_owned(),
+                    cwd: cwd.to_owned(),
+                    cmd: cmd.to_vec(),
+                    cols: size.0,
+                    rows: size.1,
+                },
+            )
+        });
+        self.ask_open(ep, &channel, req, once).await
     }
 
     /// A local address that pipes to another machine's session host, and
@@ -2858,49 +2959,68 @@ impl Node {
                 cols,
                 rows,
             } => {
-                // A phone hosts nothing (docs/IOS.md); an asker that
-                // read its row already refused, this is for one that
-                // did not.
-                self.refuse_unless_hosting()?;
-                // Defaults are resolved **here**, on the machine that
-                // will run it: the asker's home and the asker's `$SHELL`
-                // are answers to a question about the wrong computer.
-                // **`~` too** (2026-09-06, the wizard's shell kind sends
-                // the directory a person typed): it names this
-                // machine's home, which only this machine knows —
-                // `start_session` keeps the same rule for agents.
-                let home = std::env::home_dir().unwrap_or_else(|| std::path::PathBuf::from("/"));
-                let cwd = match cwd.trim() {
-                    "" | "~" => home,
-                    d if d.starts_with("~/") => home.join(&d[2..]),
-                    d => std::path::PathBuf::from(d),
+                let id = self.open_here(None, kind, title, cwd, cmd, (cols, rows)).await?;
+                Ok(Response::Opened { session: id.0 })
+            }
+            Request::OpenOnce {
+                token,
+                kind,
+                title,
+                cwd,
+                cmd,
+                cols,
+                rows,
+            } => {
+                // **Made at most once per token** (`crate::once`). The id
+                // is chosen and written down *before* the session is
+                // registered, so whatever moment this machine stopped at,
+                // a retry finds the id — and makes the session under it
+                // if it was never made.
+                if !crate::once::valid(&token) {
+                    return Err(msg::create_token_bad().into());
+                }
+                let _held = crate::once::lock(&token).await;
+                let root = self.root().to_path_buf();
+                let id = match crate::once::made(&root, &token) {
+                    Some(id) => crate::SessionId(id),
+                    None => {
+                        let id = crate::SessionId(format!("{kind}/{}", crate::link::fresh_leaf()?));
+                        crate::once::note(&root, &token, &id.0)?;
+                        id
+                    }
                 };
-                let cmd = if cmd.is_empty() {
-                    vec![std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into())]
-                } else {
-                    cmd
-                };
-                // Off the reactor for the reason every registry write
-                // is (the `Ls` arm's note): these homes can be on a
-                // network mount, and this one forks a process too.
-                let live = self.live.clone();
-                let category = Self::category_of_started(&kind);
+                if self.live.dir_of(&id).is_some_and(|d| d.join("meta.json").exists()) {
+                    return Ok(Response::Opened { session: id.0 });
+                }
+                let id = self.open_here(Some(id), kind, title, cwd, cmd, (cols, rows)).await?;
+                Ok(Response::Opened { session: id.0 })
+            }
+            Request::OpenAgentOnce {
+                token,
+                dir,
+                title,
+                form,
+                agent,
+            } => {
+                // As `OpenOnce`, but the id is the agent's to give
+                // (`adaptor::id_for` its own session), so it is written
+                // down the moment it is known: a machine stopped between
+                // the agent's start and that line makes a second one on
+                // the retry. Seconds wide, against the whole create.
+                if !crate::once::valid(&token) {
+                    return Err(msg::create_token_bad().into());
+                }
+                let _held = crate::once::lock(&token).await;
+                let root = self.root().to_path_buf();
+                if let Some(id) = crate::once::made(&root, &token) {
+                    return Ok(Response::Opened { session: id });
+                }
                 let id = tokio::task::spawn_blocking(move || {
-                    let leaf = crate::link::fresh_leaf()?;
-                    let id = crate::SessionId(format!("{kind}/{leaf}"));
-                    live.register(&id, &kind, &title, None, category)?;
-                    live.learn_place(&id, &cwd)?;
-                    let dir = live
-                        .dir_of(&id)
-                        .ok_or_else(|| msg::not_a_session_id(&id.0))?;
-                    crate::host::spawn_host_at(&cwd, &dir, &id, &cmd, (cols, rows))?;
-                    Ok::<_, String>(id)
+                    crate::Node::open(root)?.start_session(&dir, &title, &form, &agent)
                 })
                 .await
                 .map_err(|e| e.to_string())??;
-                // Opened here for another machine, and on the list for
-                // all of them (`khor_sync::roster`).
-                self.roster_new(&id)?;
+                crate::once::note(self.root(), &token, &id.0)?;
                 Ok(Response::Opened { session: id.0 })
             }
             Request::Reach { session } => {
@@ -3674,6 +3794,9 @@ impl Node {
     /// this key, on a bound-and-closed endpoint otherwise — the process
     /// that opens it is not the one that runs it, so nothing here needs
     /// to outlive the call.
+    // The create's answers plus its token (`crate::once`); the same
+    // reason as `open_on_with` for not bundling them.
+    #[allow(clippy::too_many_arguments)]
     pub async fn open_on(
         &self,
         machine: &str,
@@ -3682,6 +3805,7 @@ impl Node {
         cwd: &str,
         cmd: &[String],
         size: (u16, u16),
+        once: Option<&str>,
     ) -> Result<crate::SessionId, String> {
         self.refuse_unless_it_hosts(machine)?;
         let op = ipc::Op::OpenOn {
@@ -3692,6 +3816,7 @@ impl Node {
             cmd: cmd.to_vec(),
             cols: size.0,
             rows: size.1,
+            token: once.map(str::to_owned),
         };
         if let Some(reply) = self.via_serve(op).await {
             return match reply? {
@@ -3704,7 +3829,7 @@ impl Node {
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self
-            .open_on_with(&ep, machine, kind, title, cwd, cmd, size)
+            .open_on_with(&ep, machine, kind, title, cwd, cmd, size, once)
             .await;
         ep.close().await;
         outcome
@@ -3720,6 +3845,7 @@ impl Node {
         title: &str,
         form: &str,
         agent: &str,
+        once: Option<&str>,
     ) -> Result<crate::SessionId, String> {
         self.refuse_unless_it_hosts(machine)?;
         let op = ipc::Op::OpenAgentOn {
@@ -3728,6 +3854,7 @@ impl Node {
             title: title.to_owned(),
             form: form.to_owned(),
             agent: agent.to_owned(),
+            token: once.map(str::to_owned),
         };
         if let Some(reply) = self.via_serve(op).await {
             return match reply? {
@@ -3740,12 +3867,15 @@ impl Node {
             .await
             .map_err(|e| e.to_string())?;
         let outcome = self
-            .open_agent_on_with(&ep, machine, dir, title, form, agent)
+            .open_agent_on_with(&ep, machine, dir, title, form, agent, once)
             .await;
         ep.close().await;
         outcome
     }
 
+    // The create's answers plus its token (`crate::once`); the same
+    // reason as `open_on_with` for not bundling them.
+    #[allow(clippy::too_many_arguments)]
     async fn open_agent_on_with(
         &self,
         ep: &iroh::Endpoint,
@@ -3754,6 +3884,7 @@ impl Node {
         title: &str,
         form: &str,
         agent: &str,
+        once: Option<&str>,
     ) -> Result<crate::SessionId, String> {
         let (channel, home) = self.resolve(machine)?;
         // A satellite has no khor of its own to host a conversation:
@@ -3788,11 +3919,19 @@ impl Node {
             form: form.to_owned(),
             agent: agent.to_owned(),
         };
-        match self.ask(ep, &channel, &req).await? {
-            Response::Opened { session } => Ok(crate::SessionId(session)),
-            Response::Refused { why } => Err(why),
-            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
-        }
+        let once = once.map(|token| {
+            (
+                "OpenAgentOnce",
+                Request::OpenAgentOnce {
+                    token: token.to_owned(),
+                    dir: dir.to_owned(),
+                    title: title.to_owned(),
+                    form: form.to_owned(),
+                    agent: agent.to_owned(),
+                },
+            )
+        });
+        self.ask_open(ep, &channel, req, once).await
     }
 
     /// 常去的地方 on any machine (`(path, shown, sessions, last_ms)`,

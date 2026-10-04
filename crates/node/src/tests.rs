@@ -3743,14 +3743,14 @@ async fn a_computer_refuses_a_session_on_a_phone_off_its_row_without_dialling() 
     store.flush(&loaded.doc).unwrap();
     let no = Err(msg::machine_cannot_host("phone"));
     assert_eq!(
-        n.open_on("phone", "shell", "t", "", &[], (80, 24))
+        n.open_on("phone", "shell", "t", "", &[], (80, 24), None)
             .await
             .map(|_| ()),
         no.clone(),
         "a shell on the phone is refused"
     );
     assert_eq!(
-        n.open_agent_on("phone", "", "t", "chat", "claude")
+        n.open_agent_on("phone", "", "t", "chat", "claude", None)
             .await
             .map(|_| ()),
         no,
