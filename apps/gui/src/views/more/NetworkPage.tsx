@@ -39,18 +39,13 @@ import { useEffect, useState } from "react";
 import {
   fetchAbout,
   fetchRoadShare,
-  leaveNetwork,
   setPaused,
   type About,
   type DeviceRow,
   type RoadShare,
 } from "@/api";
-import { ActionRow } from "@/components/settings/ActionRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { cli, gui, msg } from "@/gen/catalog";
+import { gui } from "@/gen/catalog";
 import { hopWord } from "@/words";
 import { ConnectionsSection } from "@/views/ConnectionsSection";
 import { NetSettings } from "@/views/NetSettings";
@@ -93,15 +88,7 @@ export function NetworkPage({
   useEffect(() => {
     void fetchRoadShare().then(setShare, () => setShare(null));
   }, []);
-  const [leaving, setLeaving] = useState(false);
-  const [typedName, setTypedName] = useState("");
-  // What khor said the last time 离开网络 was pressed. Both endings, in
-  // the order the CLI prints them — the act, who heard, who did not —
-  // because they are the node's sentences and a page that rewrote them
-  // would be a second account of one act (`msg::left`).
-  const [said, setSaid] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
 
   const me = devices.find((d) => d.me) ?? null;
   const others = devices.filter((d) => !d.me);
@@ -142,11 +129,6 @@ export function NetworkPage({
           {error}
         </p>
       )}
-      {said?.map((line) => (
-        <p key={line} data-net-left className="text-callout text-muted-foreground">
-          {line}
-        </p>
-      ))}
 
       <MoreSection name="status" label={gui.axis_state}>
         {/* 本机: its name and whether it is talking — one fact row, the
@@ -232,98 +214,8 @@ export function NetworkPage({
           `NetSettings` for why it is read on arrival. */}
       <NetSettings />
 
-      {/* 离开网络: an action row with an ellipsis, the confirmation in a
-          window (components/SettingsGroup 「危险的动作」) — the shape
-          安全's 重置身份 has. Not on a machine in no network:
-          `Node::leave` refuses by name there. */}
-      {!alone && me && (
-        <MoreSection name="leave">
-          <ActionRow
-            name="leave"
-            label={gui.identity_leave_do}
-            hint={gui.net_leave_note}
-            actionLabel={gui.net_leave_ask}
-            danger
-            onPress={() => {
-              setError(null);
-              setRefused(null);
-              setSaid(null);
-              setTypedName("");
-              setLeaving(true);
-            }}
-            mark={{ "data-net-leave": "" }}
-          />
-        </MoreSection>
-      )}
-
-      <Dialog open={leaving} onOpenChange={setLeaving}>
-        <DialogContent data-net-leave-dialog>
-          <DialogHeader>
-            <DialogTitle>{gui.identity_leave_do}</DialogTitle>
-          </DialogHeader>
-          {/* The whole cost, and it is not red like the reset's: leaving
-              is undone by a ticket, and painting the two the same colour
-              would say they are the same size. */}
-          <p data-net-leave-warn className="text-callout text-muted-foreground">
-            {gui.identity_leave_warn}
-          </p>
-          <Input
-            data-net-leave-name
-            autoComplete="off"
-            aria-label={gui.identity_leave_type_name}
-            placeholder={gui.identity_leave_type_name}
-            value={typedName}
-            onChange={(e) => setTypedName(e.target.value)}
-            className="min-h-touch w-full"
-          />
-          {refused && (
-            <p data-net-leave-refused className="text-callout text-destructive">
-              {refused}
-            </p>
-          )}
-          <DialogFooter>
-            <Button onClick={() => setLeaving(false)}>{gui.delete_keep}</Button>
-            <Button
-              variant="destructive"
-              data-net-leave-do
-              // Always pressable (`components/Why`): until the name is
-              // typed, the press says so and puts the caret in the box;
-              // the answer that counts is still the node's.
-              onClick={() => {
-                if (typedName.trim() !== (me?.shown ?? "")) {
-                  setRefused(gui.identity_leave_type_name);
-                  document.querySelector<HTMLElement>("[data-net-leave-name]")?.focus();
-                  return;
-                }
-                setRefused(null);
-                setSaid(null);
-                leaveNetwork(typedName).then(
-                  (left) => {
-                    setTypedName("");
-                    setLeaving(false);
-                    setSaid([
-                      msg.left,
-                      ...(left.told.length ? [msg.left_told(left.told.join(cli.name_separator))] : []),
-                      // The two endings stay two sentences all the way
-                      // to the screen: a machine in `untold` goes on
-                      // painting this one offline until somebody over
-                      // there runs `khor forget`, which is a different
-                      // thing left to do.
-                      ...(left.untold.length
-                        ? [msg.left_untold(left.untold.join(cli.name_separator), me?.shown ?? "")]
-                        : []),
-                    ]);
-                    onChanged();
-                  },
-                  (e: unknown) => setRefused(String(e instanceof Error ? e.message : e)),
-                );
-              }}
-            >
-              {gui.identity_leave_do}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* 离开网络 left for 我的 khor (UX-16), with the identity's other
+          acts (`MyKhorPage`). */}
     </MoreFrame>
   );
 }

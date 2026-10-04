@@ -1,14 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { DeviceRow } from "@/api";
 // Aliased: `Seat` the name belongs to the component below (one machine
 // in its place); the binding is the place itself.
 import type { Seat as SeatPoint } from "@/gen/bindings/Seat";
 import { MachineAvatar } from "@/components/Avatar";
+import { IconChevronDown, IconChevronRight, IconNetwork } from "@/components/icons";
 import { PageSubtitle } from "@/components/Region";
-import { cli, gui, state } from "@/gen/catalog";
+import { cli, gui, hop, state } from "@/gen/catalog";
+import { lastSeenMs, roadOf, topology, unreachable, type RelayNode, type Road, type Segment } from "@/lib/topology";
 import { cn } from "@/lib/utils";
-import { ageIfOld, hopWord } from "@/words";
+import { ageIfOld, connectionWord, hopWord, span } from "@/words";
 
 /**
  * The network as an ego graph: this machine in the middle, everyone
@@ -87,6 +89,18 @@ import { ageIfOld, hopWord } from "@/words";
  * the layout library grows the seat, this file only paints one more
  * segment. Not pre-built, just not walled off.
  *
+ * # Latency on every link, and a relay as a node (UX-16, 2026-10-05)
+ *
+ * 我的 khor's topology map is this picture (one implementation; the
+ * machines landing's overview with nothing picked is the other place it
+ * stands). Each link wears its latency — the live wire's round trip
+ * (`rtt_ms`) — with the way beside it on a direct link; a link that goes
+ * by a relay khor can name (`DeviceRow.relay`) is drawn *through* that
+ * relay's own node, so two machines on one relay fan out from one point.
+ * A relay khor cannot name (an older resident) keeps the old dashed
+ * line straight to the machine with 中继 on it. A machine with no road
+ * is grey and says when it was last seen. The graph is `lib/topology`'s.
+ *
  * # The whole picture scales with the window
  *
  * Mandala's map draws everything into one proportional coordinate
@@ -131,8 +145,12 @@ export function MandalaMap({
   onOpen,
   selected,
   waiting,
+  subtitle = true,
 }: {
   rows: DeviceRow[];
+  /** Whether the map says its count in R0's second line — the machines
+      overview does; 我的 khor, whose R0 is its own, does not. */
+  subtitle?: boolean;
   /**
    * Where a face goes when it is pressed, when there is anywhere.
    *
@@ -159,8 +177,8 @@ export function MandalaMap({
   // always coincide (its docs/MAP.md), and so does this: `me` picks the
   // machine, `seat` says where it goes, and neither is read off the
   // other.
-  const me = rows.find((r) => r.me) ?? null;
-  const others = rows.filter((r) => !r.me);
+  const topo = topology(rows, gui.conn_relay_ms, hopWord);
+  const { me, others, relays, segments } = topo;
   // **Where each edge is drawn, worked out from what is on the square**
   // (2026-09-28 UI 审计): every edge used to run centre to centre under
   // everything — through the discs at both ends and through every name
@@ -187,7 +205,7 @@ export function MandalaMap({
   // old object, so this settles in one pass.
   useLayoutEffect(() => {
     const el = square.current;
-    const next = el && me ? layRoads(el, me, others) : null;
+    const next = el && me ? layRoads(el, rows, relays, segments) : null;
     setRoads((was) => (sameRoads(was, next) ? was : next));
   });
   // **R0's second line on the machines overview** (2026-09-30, the A
@@ -198,7 +216,7 @@ export function MandalaMap({
   const connected = others.filter((r) => r.hop === "direct" || r.hop === "relay").length;
   return (
     <>
-    {rows.length > 0 && (
+    {subtitle && rows.length > 0 && (
       <PageSubtitle>
         <span
           data-machines-head-sub
@@ -269,16 +287,16 @@ export function MandalaMap({
             through it on either theme. Hidden until placed; it is
             measured before it is placed. */}
         {me &&
-          others.map((row) => {
-            if (!row.hop) return null;
-            const at = roads?.edges.find((e) => e.id === row.id)?.word ?? null;
+          segments.map((seg) => {
+            if (!seg.word) return null;
+            const at = roads?.edges.find((e) => e.id === seg.id)?.word ?? null;
             return (
               <span
-                key={row.id}
-                data-edge-word={row.id}
-                data-hop={row.hop}
+                key={seg.id}
+                data-edge-word={seg.id}
+                data-road={seg.road}
                 className={cn(
-                  "absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-caption text-muted-foreground",
+                  "absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-caption text-muted-foreground tabular-nums",
                   !at && "invisible",
                 )}
                 style={{
@@ -288,10 +306,13 @@ export function MandalaMap({
                   lineHeight: TEXT_RATIO,
                 }}
               >
-                {hopWord(row.hop)}
+                {seg.word}
               </span>
             );
           })}
+        {relays.map((r) => (
+          <RelaySeat key={r.id} relay={r} />
+        ))}
         <Seat
           row={me}
           big
@@ -306,11 +327,147 @@ export function MandalaMap({
             onOpen={onOpen}
             selected={selected}
             waiting={waiting?.[row.id] ?? 0}
+            away={unreachable(row, rows)}
           />
         ))}
       </div>
     </section>
     </>
+  );
+}
+
+/**
+ * **The same map, one column** (UX-16: the narrow face). The picture
+ * needs a square a phone cannot spare beside anything else, so the graph
+ * (`lib/topology`, the picture's own) is read top to bottom: this
+ * machine, then each machine it reaches straight, then each relay with
+ * the machines that go by it indented under it, then the satellites,
+ * then the machines with no road (grey, last seen). A row opens that
+ * machine's page; the chevron at its end opens the link's facts under it
+ * — the way, the relay, the latency, when it was last heard — the
+ * picture's edge word, spelt out.
+ */
+export function TopologyColumn({ rows, onOpen }: { rows: DeviceRow[]; onOpen?: (row: DeviceRow) => void }) {
+  const { me, others, relays } = topology(rows, gui.conn_relay_ms, hopWord);
+  const [open, setOpen] = useState<string | null>(null);
+  const direct = others.filter((r) => !r.sponsor && !unreachable(r, rows) && !(r.hop === "relay" && r.relay));
+  const satellites = others.filter((r) => r.sponsor && !unreachable(r, rows));
+  const away = others.filter((r) => unreachable(r, rows));
+  const machine = (row: DeviceRow, indent = false) => (
+    <MachineLine
+      key={row.id}
+      row={row}
+      rows={rows}
+      indent={indent}
+      open={open === row.id}
+      onToggle={() => setOpen((was) => (was === row.id ? null : row.id))}
+      onOpen={onOpen}
+    />
+  );
+  return (
+    // A fragment: each row is a row of the settings card it stands in,
+    // with the card's padding and hairline (`app.css` `[data-settings-card]`).
+    <>
+      {me && (
+        <div data-topology-row={me.id} data-more-row className="flex min-w-0 items-center gap-row">
+          <MachineAvatar face={me.face} className="size-list-face flex-none" />
+          <span className="min-w-0 flex-1 truncate text-headline">{me.shown}</span>
+          <span data-setting-trail className="flex-none text-muted-foreground">
+            {connectionWord(me)}
+          </span>
+        </div>
+      )}
+      {direct.map((r) => machine(r))}
+      {relays.map((relay) => (
+        <Fragment key={relay.id}>
+          <div data-topology-relay={relay.name} data-more-row className="flex min-w-0 items-center gap-row">
+            <span className="grid size-list-face flex-none place-items-center rounded-full border bg-fill text-muted-foreground [&>svg]:size-1/2">
+              <IconNetwork />
+            </span>
+            <span className="min-w-0 flex-1 truncate">{relay.name}</span>
+            <span data-setting-trail className="flex-none text-muted-foreground">
+              {hop.relay}
+            </span>
+          </div>
+          {relay.rows.map((r) => machine(r, true))}
+        </Fragment>
+      ))}
+      {satellites.map((r) => machine(r, true))}
+      {away.map((r) => machine(r))}
+    </>
+  );
+}
+
+/** One machine in the column: the row opens it, the chevron opens its
+    link's facts. */
+function MachineLine({
+  row,
+  rows,
+  indent,
+  open,
+  onToggle,
+  onOpen,
+}: {
+  row: DeviceRow;
+  rows: readonly DeviceRow[];
+  indent: boolean;
+  open: boolean;
+  onToggle: () => void;
+  onOpen?: (row: DeviceRow) => void;
+}) {
+  const away = unreachable(row, rows);
+  const seen = lastSeenMs(row);
+  const latency = row.rtt_ms !== null ? gui.conn_relay_ms(row.rtt_ms) : null;
+  // The edge's word, as the picture writes it on the line.
+  const summary = away
+    ? seen === null
+      ? gui.day_unreachable
+      : gui.map_last_seen(span(seen))
+    : [row.hop === "relay" && row.relay ? null : connectionWord(row), latency].filter(Boolean).join(" · ");
+  const facts: [string, string][] = [];
+  const way = connectionWord(row);
+  if (way) facts.push([gui.axis_connection, way]);
+  if (row.relay && roadOf(row) === "relay") facts.push([gui.net_relays, row.relay]);
+  if (latency) facts.push([gui.map_latency, latency]);
+  if (seen !== null) facts.push([gui.map_heard, gui.card_age(span(seen))]);
+  return (
+    <div data-topology-row={row.id} data-seat-away={away || undefined} className="flex min-w-0 flex-col">
+      <div className={cn("flex min-w-0 items-center gap-row", indent && "ps-list-face")}>
+        <button
+          type="button"
+          data-topology-open={row.id}
+          disabled={!onOpen}
+          onClick={() => onOpen?.(row)}
+          className={cn("flex min-h-touch min-w-0 flex-1 items-center gap-row text-start", away && "opacity-60")}
+        >
+          <MachineAvatar face={row.face} className="size-list-face flex-none" />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate">{row.shown}</span>
+            {summary && <span className="truncate text-callout text-muted-foreground tabular-nums">{summary}</span>}
+          </span>
+        </button>
+        <button
+          type="button"
+          data-topology-facts={row.id}
+          aria-expanded={open}
+          aria-label={`${row.shown} ${gui.map_facts}`}
+          onClick={onToggle}
+          className="-me-in grid min-h-touch min-w-touch flex-none place-items-center rounded-full text-tertiary"
+        >
+          {open ? <IconChevronDown className="size-affordance" /> : <IconChevronRight className="size-affordance" />}
+        </button>
+      </div>
+      {open && (
+        <div data-topology-fact-list className={cn("flex min-w-0 flex-col pb-in", indent ? "ps-list-face" : "")}>
+          {facts.map(([k, v]) => (
+            <div key={k} className="flex min-w-0 items-baseline gap-row ps-list-face text-callout">
+              <span className="flex-1 text-muted-foreground">{k}</span>
+              <span data-selectable className="min-w-0 text-right tabular-nums [overflow-wrap:anywhere]">{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -352,6 +509,9 @@ const RELAY_DASH = "6 5";
    node radii mandala states in its viewBox units. */
 const FACE_ME = "clamp(var(--avatar-lg), 14cqmin, calc(var(--avatar-xl) * 1.5))";
 const FACE_OTHER = "clamp(var(--avatar), 10cqmin, var(--avatar-xl))";
+/* A relay's disc is smaller than a machine's face: it is a way, not a
+   member. */
+const FACE_RELAY = "clamp(var(--kind-mark), 6cqmin, var(--avatar))";
 /* Captions may outgrow their old fixed width on a big canvas — that is
    the readings line coming back onto one line — and shrink to roughly
    the face's own width on a phone, where truncation takes over. */
@@ -422,9 +582,13 @@ function Seat({
   onOpen,
   selected,
   waiting = 0,
+  away = false,
 }: {
   row: DeviceRow | null;
   big?: boolean;
+  /** No road to it right now (`lib/topology` `unreachable`): grey, and
+      its caption says when it was last seen. */
+  away?: boolean;
   onOpen?: (row: DeviceRow) => void;
   selected?: string | null;
   /** This machine's waiting count — drawn only above zero. */
@@ -490,7 +654,19 @@ function Seat({
             the third state. **This machine says neither**: it answers by
             looking, so there is no age to report and nothing to be
             unsure about. */}
+        {/* No road now (UX-16): when it was last seen, in place of the
+            reading's age — the one fact about it worth a line. */}
+        {away && (
+          <span
+            data-seat-away
+            className="max-w-full truncate text-caption text-muted-foreground"
+            style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
+          >
+            {lastSeenMs(row) === null ? gui.day_unreachable : gui.map_last_seen(span(lastSeenMs(row) ?? 0))}
+          </span>
+        )}
         {!row.me &&
+          !away &&
           (reached ? (
             aged !== null && (
               <span
@@ -521,14 +697,16 @@ function Seat({
     // already has, so nothing replays on a poll — only a genuinely new
     // seat animates.
     "motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95",
-    // Dimmed for the one categorical case, never on a timer.
-    !row.me && !reached && "opacity-60",
+    // Dimmed for the categorical cases, never on a timer: never
+    // reached, or no road to it now (UX-16: unreachable machines grey).
+    !row.me && (!reached || away) && "opacity-60",
   );
   return onOpen ? (
     <button
       type="button"
       data-seat={row.id}
       data-seat-me={row.me}
+      data-seat-away={away || undefined}
       data-blocked={waiting}
       data-on={selected === row.id}
       onClick={() => onOpen(row)}
@@ -569,6 +747,42 @@ function Seat({
   );
 }
 
+/**
+ * A relay some links go by (UX-16): a smaller disc with the network's
+ * glyph, its name and the word 中继 under it. Not a button — a relay has
+ * no page; what it carries is on the links fanning out of it.
+ */
+function RelaySeat({ relay }: { relay: RelayNode }) {
+  return (
+    <div
+      data-seat={relay.id}
+      data-relay-node={relay.name}
+      className="absolute -translate-x-1/2 -translate-y-1/2 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95"
+      style={{ left: `${relay.left}%`, top: `${relay.top}%` }}
+    >
+      <span
+        data-seat-face
+        className="grid place-items-center rounded-full border bg-fill text-muted-foreground [&>svg]:size-1/2"
+        style={{ width: FACE_RELAY, height: FACE_RELAY }}
+      >
+        <IconNetwork />
+      </span>
+      <span
+        data-seat-caption
+        className="absolute left-1/2 top-full flex -translate-x-1/2 flex-col items-center pt-1 text-center"
+        style={{ width: CAPTION_W }}
+      >
+        <span data-relay-name className="max-w-full truncate text-caption" style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}>
+          {relay.name}
+        </span>
+        <span className="max-w-full truncate text-caption text-muted-foreground" style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}>
+          {hop.relay}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 /* A seat has carried a machine's readings twice and lost them twice,
    and the two removals are not the same removal — that is worth one
    note, because the second one reads like a retreat from the first.
@@ -604,7 +818,6 @@ function Seat({
    word is one with square corners. The keep-out round a box is convex,
    so a line enters it at most once — one interval to cut. */
 
-type Road = "direct" | "relay" | "none";
 /** One drawn stretch of an edge, in the square's pixels. */
 type Part = { x1: number; y1: number; x2: number; y2: number };
 type Roads = {
@@ -615,9 +828,6 @@ type Roads = {
 /** A rounded box: centre, half extents, corner radius. */
 type Keep = { cx: number; cy: number; hw: number; hh: number; r: number };
 type Span = [number, number];
-
-const roadOf = (row: DeviceRow): Road =>
-  row.hop === "direct" ? "direct" : row.hop === "relay" ? "relay" : "none";
 
 /** Signed distance from a point to a rounded box — negative inside. */
 function signed(x: number, y: number, k: Keep): number {
@@ -667,22 +877,26 @@ function without(spans: Span[], gone: Span | null): Span[] {
   });
 }
 
-function layRoads(square: HTMLElement, me: DeviceRow, others: DeviceRow[]): Roads | null {
+function layRoads(square: HTMLElement, rows: readonly DeviceRow[], relays: readonly RelayNode[], segments: readonly Segment[]): Roads | null {
   const side = square.clientWidth;
   if (side <= 0) return null;
   const root = getComputedStyle(document.documentElement);
   const air = Number.parseFloat(root.getPropertyValue("--gap-xxs")) || 0;
   const at = (s: SeatPoint) => ({ x: (s.left / 100) * side, y: (s.top / 100) * side });
-  const all = [me, ...others];
+  // Every node's centre, machines and relays alike, by id.
+  const points = new Map<string, { x: number; y: number }>();
+  for (const r of rows) points.set(r.id, at(r.seat));
+  for (const r of relays) points.set(r.id, at(r));
   const keeps: Keep[] = [];
   for (const el of square.querySelectorAll<HTMLElement>("[data-seat]")) {
-    const row = all.find((r) => r.id === el.dataset.seat);
+    const id = el.dataset.seat ?? "";
+    const c = points.get(id);
     const face = el.querySelector<HTMLElement>("[data-seat-face]");
-    if (!row || !face) continue;
-    const c = at(row.seat);
+    if (!c || !face) continue;
+    const row = rows.find((r) => r.id === id);
     const fw = face.offsetWidth;
     const fh = face.offsetHeight;
-    keeps.push({ cx: c.x, cy: c.y, hw: fw / 2, hh: fh / 2, r: (row.face?.radius_ratio ?? 0.5) * Math.min(fw, fh) });
+    keeps.push({ cx: c.x, cy: c.y, hw: fw / 2, hh: fh / 2, r: (row?.face?.radius_ratio ?? 0.5) * Math.min(fw, fh) });
     // The caption hangs from the seat box's bottom edge, centred on it
     // (`left-1/2 top-full -translate-x-1/2`); its words are its children.
     const cap = el.querySelector<HTMLElement>("[data-seat-caption]");
@@ -700,18 +914,19 @@ function layRoads(square: HTMLElement, me: DeviceRow, others: DeviceRow[]): Road
       });
     }
   }
-  const from = at(me.seat);
   // First pass: the discs and the captions.
-  const lines = others.map((row) => {
-    const to = at(row.seat);
+  const lines = segments.flatMap((seg) => {
+    const from = points.get(seg.from);
+    const to = points.get(seg.to);
+    if (!from || !to) return [];
     let spans: Span[] = [[0, 1]];
     for (const k of keeps) spans = without(spans, cut(from, to, k, air));
-    return { row, to, spans };
+    return [{ seg, from, to, spans }];
   });
   // The words, each in the longest stretch its own line has left.
   const words: Keep[] = [];
-  const placed = lines.map(({ row, to, spans }) => {
-    const el = square.querySelector<HTMLElement>(`[data-edge-word="${row.id}"]`);
+  const placed = lines.map(({ seg, from, to, spans }) => {
+    const el = square.querySelector<HTMLElement>(`[data-edge-word="${CSS.escape(seg.id)}"]`);
     if (!el || spans.length === 0) return null;
     const [s0, s1] = spans.reduce((best, s) => (s[1] - s[0] > best[1] - best[0] ? s : best));
     const t = (s0 + s1) / 2;
@@ -722,7 +937,7 @@ function layRoads(square: HTMLElement, me: DeviceRow, others: DeviceRow[]): Road
   });
   // Second pass: every line breaks round every word, its own and the
   // others'. A stretch shorter than the air is not a line, it is a dot.
-  const edges = lines.map(({ row, to, spans }, i) => {
+  const edges = lines.map(({ seg, from, to, spans }, i) => {
     let left = spans;
     for (const k of words) left = without(left, cut(from, to, k, air));
     const len = Math.hypot(to.x - from.x, to.y - from.y);
@@ -734,7 +949,7 @@ function layRoads(square: HTMLElement, me: DeviceRow, others: DeviceRow[]): Road
         x2: from.x + (to.x - from.x) * s1,
         y2: from.y + (to.y - from.y) * s1,
       }));
-    return { id: row.id, road: roadOf(row), parts, word: placed[i] };
+    return { id: seg.id, road: seg.road, parts, word: placed[i] };
   });
   return { side, edges };
 }

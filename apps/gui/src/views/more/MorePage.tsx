@@ -36,7 +36,7 @@ import { config, gui } from "@/gen/catalog";
  * Section order in L2 (spec 第十七轮 §1): 通用(settings), 外观(appearance),
  * 网络(network), 安全(security), 身份(identity), 诊断(doctor).
  */
-export type MorePage = "settings" | "appearance" | "network" | "security" | "identity" | "doctor";
+export type MorePage = "settings" | "appearance" | "network" | "security" | "me" | "doctor";
 
 /** The ordered list of all 更多 sections, for the L2 section list.
     The order is the spec order; items are {key, label}. */
@@ -45,7 +45,7 @@ export const morePageOrder: readonly MorePage[] = [
   "appearance",
   "network",
   "security",
-  "identity",
+  "me",
   "doctor",
 ];
 
@@ -53,7 +53,7 @@ export const morePageOrder: readonly MorePage[] = [
     than one 更多's menu opens by itself (我的 khor, 诊断; UX-16). On the
     narrow face the second kind is pushed over the landing it was opened
     from, so its way back is that landing, not 设置's list. */
-export const inSettings = (page: MorePage): boolean => page !== "identity" && page !== "doctor";
+export const inSettings = (page: MorePage): boolean => page !== "me" && page !== "doctor";
 
 /** The section names, in one place, so the list item and the page head
     cannot come to call the same section two things.
@@ -68,7 +68,7 @@ export const moreName = (page: MorePage): string =>
     appearance: config.appearance,
     network: gui.network,
     security: gui.security,
-    identity: gui.identity,
+    me: gui.my_khor,
     doctor: gui.doctor,
   })[page];
 

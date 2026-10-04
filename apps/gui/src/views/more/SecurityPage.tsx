@@ -20,15 +20,11 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
-  fetchWaiting,
   fetchWebKey,
-  inApp,
-  resetIdentity,
   rotateWebKey,
   setLock,
   setLockPin,
   setLockTimeout,
-  type DeviceRow,
   type LockFacts,
 } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -43,7 +39,6 @@ import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { count } from "@/words";
 import { MoreFrame, MoreSection } from "@/views/more/MorePage";
-import { RootWordsDialog } from "@/views/PairDialogs";
 
 export function SecurityPage({
   onClose,
@@ -51,8 +46,6 @@ export function SecurityPage({
   onLockChanged,
   onLockNow,
   onSettingChanged,
-  devices,
-  onReset,
 }: {
   onClose: () => void;
   /** What the shell already asked for — **not fetched again here**. Two
@@ -66,32 +59,18 @@ export function SecurityPage({
   /** A 二次确认 switch changed: the shell re-reads, and the rows that
       read those keys are drawn from that answer. */
   onSettingChanged: () => void;
-  /** Only this machine is read off it: 重置身份 wants this machine's
-      own name typed back. The list of the others left this page on
-      2026-09-20 (see the tombstone below). */
-  devices: DeviceRow[];
-  /** This machine's identity was reset — every surface repaints, and
-      the lock is re-read with it. */
-  onReset: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pin, setPin] = useState("");
   const [key, setKey] = useState<string | null>(null);
   const [showKey, setShowKey] = useState(false);
   const [rotated, setRotated] = useState(false);
-  const [typedName, setTypedName] = useState("");
   const [pinning, setPinning] = useState(false);
   // The PIN window was opened by the lock switch rather than the PIN
   // row: saving sets the PIN **and then turns the lock on**, which is
   // what the person pressed the switch for.
   const [arming, setArming] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  /** This machine holds the network's root — the 恢复词 row is its
-      alone. Asked of the node (`Waiting.holds`); unknown reads as no. */
-  const [holdsRoot, setHoldsRoot] = useState(false);
-  const [showingWords, setShowingWords] = useState(false);
 
-  const me = devices.find((d) => d.me) ?? null;
   /** **A phone serves no web face** (docs/IOS.md 第二步: the app does not
       start one there), so it has no key to show or to change — the row
       is not drawn, and the key is not asked for. */
@@ -104,17 +83,6 @@ export function SecurityPage({
     );
   }, [servesWeb]);
 
-  useEffect(() => {
-    if (!inApp) return;
-    let live = true;
-    fetchWaiting().then(
-      (w) => live && setHoldsRoot(w.holds),
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
 
   // Two-argument `then` everywhere below, and the re-read is never in
   // the chain: a read that threw after a change that took would report
@@ -360,60 +328,8 @@ export function SecurityPage({
       </MoreSection>
       )}
 
-      {/* **恢复词, on demand** (2026-10-01, the owner: 「根钥匙是不是只在
-          共享的时候出现更友好」). The machine that made the root no longer
-          opens on 「抄下恢复词」; the words are here, one row, and only a
-          press on 「显示…」 puts them on the screen (`RootWordsDialog`).
-          **Where the root is held, and in the app alone**: any other
-          machine has no words to show, and the web face is never given
-          them (`khor_gui_core` command_tables). No group name, the reset
-          row's reason. */}
-      {inApp && holdsRoot && (
-        <MoreSection name="root-words">
-          <ActionRow
-            name="root-words"
-            label={gui.root_words_title}
-            actionLabel={gui.root_words_show_ask}
-            onPress={() => setShowingWords(true)}
-            mark={{ "data-root-words-open": "" }}
-          />
-        </MoreSection>
-      )}
-      <RootWordsDialog open={showingWords} onClose={() => setShowingWords(false)} />
-
-      {/* 配对的机器 left this page on 2026-09-20 (docs/MORE.md 第二轮:
-          已配对机器从头像卡和安全页拿掉). It was a list here *and* a
-          list on the identity card; the machines landing is the one
-          place a machine lives now — 删除… with it, in its row's menu
-          (the map's card held it until 2026-09-28). What is left on 安全
-          is what this page is for: the keys and the acts that cost
-          something. */}
-
-      {/* **A dangerous act is an action row with an ellipsis, and the
-          real confirmation is in a window** (components/SettingsGroup:
-          「危险的动作（清除、重置）用 action 行 + 一个带省略号的按钮」).
-          ⚠️ 墓碑 (2026-09-27): the name box and the red button stood in
-          the card, a form in a row's place. */}
-      {/* No group name: the row's own title says it, and a heading
-          over a one-row card saying the same words is the same fact
-          twice. */}
-      {me && (
-      // Under a head of its own (F4.1; W04): it floated after the web key.
-      <MoreSection name="reset" label={gui.identity_section}>
-        <ActionRow
-          name="reset"
-          label={gui.reset_section}
-          hint={gui.reset_warn}
-          actionLabel={gui.reset_ask}
-          onPress={() => {
-            setError(null);
-            setTypedName("");
-            setResetting(true);
-          }}
-          mark={{ "data-reset-open": "" }}
-        />
-      </MoreSection>
-      )}
+      {/* 恢复词 and 重置身份 left for 我的 khor (UX-16): they are acts on
+          the identity, beside 离开网络 (`MyKhorPage`). */}
 
       {lock !== null && (
         <Dialog
@@ -488,61 +404,6 @@ export function SecurityPage({
         </Dialog>
       )}
 
-      <Dialog open={resetting} onOpenChange={setResetting}>
-        <DialogContent data-reset-dialog>
-          <DialogHeader>
-            <DialogTitle>{gui.reset_title(me?.shown ?? "")}</DialogTitle>
-          </DialogHeader>
-          {/* Red, because this is the one thing on this page that cannot
-              be undone. The machine's own name is the confirmation and
-              **the node is what checks it** — a rule here as well would
-              be two rules about one irreversible act. */}
-          <p data-reset-warn className="text-callout text-destructive">
-            {gui.reset_warn}
-          </p>
-          <Input
-            data-reset-name
-            autoComplete="off"
-            aria-label={gui.reset_type_name}
-            placeholder={gui.reset_type_name}
-            value={typedName}
-            onChange={(e) => setTypedName(e.target.value)}
-            className="min-h-touch w-full"
-          />
-          {error && (
-            <p data-reset-refused className="text-callout text-destructive">
-              {error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button onClick={() => setResetting(false)}>{gui.delete_keep}</Button>
-            <Button
-              variant="destructive"
-              data-reset-do
-              // Always pressable (`components/Why`): until the name is
-              // typed, the press says so; the answer that counts is the
-              // node's (`lock::reset_identity` refuses by name).
-              onClick={() => {
-                if (typedName.trim() !== (me?.shown ?? "")) {
-                  setError(gui.reset_type_name);
-                  document.querySelector<HTMLElement>("[data-reset-name]")?.focus();
-                  return;
-                }
-                setError(null);
-                resetIdentity(typedName).then(
-                  () => {
-                    setResetting(false);
-                    onReset();
-                  },
-                  (e: unknown) => setError(String(e instanceof Error ? e.message : e)),
-                );
-              }}
-            >
-              {gui.reset_do}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </MoreFrame>
   );
 }

@@ -114,7 +114,7 @@ import { rememberPlace, storedPlace } from "@/lib/place";
 import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { NetworkPage } from "@/views/more/NetworkPage";
-import { IdentityPage } from "@/views/more/IdentityPage";
+import { MyKhorPage } from "@/views/more/MyKhorPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { SettingsPage } from "@/views/more/SettingsPage";
 import { MachineCard, MachineVerbs } from "@/views/MachineCard";
@@ -266,7 +266,7 @@ const NO_QUERIES: Record<Landing, string> = {
 
 /** The glyph beside each 「…」 page in its list (`identity` wears this
     machine's face instead, drawn where the list is). */
-const MORE_GLYPH: Record<Exclude<MorePage, "identity">, (p: { className?: string }) => ReactNode> = {
+const MORE_GLYPH: Record<Exclude<MorePage, "me">, (p: { className?: string }) => ReactNode> = {
   settings: IconGear,
   appearance: IconAppearance,
   network: IconNetwork,
@@ -1492,7 +1492,7 @@ export default function App() {
       }}
       me={me ? { face: me.face } : null}
       onMe={() => {
-        setMorePage("identity");
+        setMorePage("me");
         setScreen("detail");
         setSwitchingTabs(false);
       }}
@@ -2465,16 +2465,29 @@ export default function App() {
         onLockChanged={lock.reread}
         onLockNow={lock.now}
         onSettingChanged={settings.reread}
+      />
+    ) : morePage === "doctor" ? (
+      <DoctorPage onClose={leaveMorePage} />
+    ) : (
+      <MyKhorPage
         devices={devices}
+        rows={rows}
+        onClose={leaveMorePage}
+        onOpenMachine={(row) => {
+          // Off 更多 and onto the machine's own page, the road a node on
+          // the machines overview takes.
+          setMorePage(null);
+          setLanding("devices");
+          onSelectDevice(row);
+        }}
+        onChanged={() => {
+          refresh().catch(() => {});
+        }}
         onReset={() => {
           refresh().catch(() => {});
           lock.reread();
         }}
       />
-    ) : morePage === "doctor" ? (
-      <DoctorPage onClose={leaveMorePage} />
-    ) : (
-      <IdentityPage devices={devices} onClose={leaveMorePage} />
     );
 
   /**
@@ -2516,40 +2529,40 @@ export default function App() {
       {!narrow && (
         <button
           type="button"
-          data-more-open="identity"
+          data-more-open="me"
           data-more-me
-          data-on={morePage === "identity"}
+          data-on={morePage === "me"}
           // **One Tab stop for the list** (F3.8): the open section's row,
           // or this first one; ↑ ↓ walk the rest.
-          tabIndex={morePage === null || morePage === "identity" ? 0 : -1}
+          tabIndex={morePage === null || morePage === "me" ? 0 : -1}
           onClick={() => {
-            setMorePage("identity");
+            setMorePage("me");
             setScreen("detail");
           }}
           className={cn(
             "mx-in mb-xxs flex min-h-row-2 items-center gap-row rounded-md px-3 text-start text-headline focus-visible:-outline-offset-2",
-            morePage === "identity" ? "bg-fill-strong" : "hover:bg-fill",
+            morePage === "me" ? "bg-fill-strong" : "hover:bg-fill",
           )}
         >
           <span className="flex w-list-face flex-none items-center justify-center">
             <MachineAvatar face={me?.face ?? null} className="size-avatar flex-none" />
           </span>
           <span className="flex min-w-0 flex-col">
-            <span className="truncate">{me?.shown ?? moreName("identity")}</span>
-            <span className="truncate text-callout text-muted-foreground">{moreName("identity")}</span>
+            <span className="truncate">{me?.shown ?? moreName("me")}</span>
+            <span className="truncate text-callout text-muted-foreground">{moreName("me")}</span>
           </span>
         </button>
       )}
       {/* Narrow, 设置's own pages only: 我的 khor and 诊断 are 更多's
           items (UX-16). The wide list is the settings window's sidebar
           too, and keeps 诊断 under the pages. */}
-      {morePageOrder.filter((p) => (narrow ? inSettings(p) : p !== "identity")).map((p) => (
+      {morePageOrder.filter((p) => (narrow ? inSettings(p) : p !== "me")).map((p) => (
         <button
           key={p}
           type="button"
           data-more-open={p}
           data-on={morePage === p}
-          tabIndex={morePage === p && p !== "identity" ? 0 : -1}
+          tabIndex={morePage === p && p !== "me" ? 0 : -1}
           onClick={() => {
             setMorePage(p);
             setScreen("detail");
@@ -2576,7 +2589,7 @@ export default function App() {
               same face the rail's foot wears for it. `--nav-glyph` wide,
               the size every menu row gives its glyph. */}
           <span data-more-glyph={p} className="flex w-list-face flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
-            {p === "identity" ? (
+            {p === "me" ? (
               // **At the glyph box's full size, like a row's avatar**
               // (UX-4, decided): the drawn marks fill 88–92 % of their box
               // and the face at 16 filled 76 %, the one small icon in the

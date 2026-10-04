@@ -2338,6 +2338,14 @@ nav-settings = "设置"
 # 更多's first item (UX-16, the owner 2026-10-05): this machine's face,
 # the network's map and the identity; it replaces 这台机器.
 my-khor = "我的 khor"
+# The topology map (UX-16, 我的 khor and the machines overview): a
+# link's latency is conn-relay-ms; this is when a machine with no road
+# was last seen.
+map-last-seen = "无法获取 · 上次 {0}前"
+map-latency = "延迟"
+map-heard = "上次联系"
+# The chevron that opens a link's facts in the narrow column (aria).
+map-facts = "连接详情"
 search-open = "搜索"
 search-close = "结束搜索"
 # The browser's address field (the redesign, 2026-10-02): a new page

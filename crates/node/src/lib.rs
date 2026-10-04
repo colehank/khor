@@ -2661,7 +2661,7 @@ impl Node {
             ("settings", khor_catalog::gui::settings()),
             ("security", khor_catalog::gui::security()),
             ("doctor", khor_catalog::gui::doctor()),
-            ("identity", khor_catalog::gui::identity()),
+            ("me", khor_catalog::gui::my_khor()),
         ] {
             out.push(Hit {
                 kind: "page".to_owned(),
