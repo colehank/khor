@@ -28,14 +28,15 @@ set -g _khor_loaded 1
 
 function _khor_osc
     if set -q TMUX
-        printf '\ePtmux;\e\e]%s\a\e\\' $argv[1]
+        printf '\ePtmux;\e\e]633;P;KhorPane=%s\a\e\e]%s\a\e\\' "$TMUX_PANE" $argv[1]
     else
         printf '\e]%s\a' $argv[1]
     end
 end
 
 set -g _khor_native 0
-if test (string split -- . $version)[1] -ge 4 2>/dev/null
+# Inside tmux fish's own marks reach tmux, never khor: khor wraps its own.
+if not set -q TMUX; and test (string split -- . $version)[1] -ge 4 2>/dev/null
     set -g _khor_native 1
 end
 

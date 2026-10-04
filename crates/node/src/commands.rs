@@ -20,6 +20,24 @@
 //! - tmux's passthrough (`ESC P tmux; … ESC \`, inner `ESC` doubled) is
 //!   opened, for a shell that wrapped its marks with no tmux in between.
 //!
+//! # Through a tmux client
+//!
+//! A host whose PTY runs khor's tmux client ([`Ledger::tmux`]) reads the
+//! marks of every pane tmux shows, interleaved: tmux forwards a pane's
+//! passthrough only while the pane is visible (`allow-passthrough on`,
+//! tmux(1)), and every pane of a split window is. tmux takes the wrap off
+//! and writes what was inside in one piece, so each mark from khor's
+//! scripts arrives as `OSC 633 ; P ; KhorPane=%n` (the pane's
+//! `$TMUX_PANE`) followed at once by the mark itself, which is read in
+//! that pane's context; each pane keeps its own prompt, running command
+//! and directory. Which pane
+//! is in front comes from the title: khor's grouped session sets
+//! `set-titles-string` to `#{pane_id} #{pane_title}`
+//! (`Tmux::grouped_attach_argv`), and tmux rewrites the title whenever
+//! the active pane or window changes. The row reads the pane in front.
+//! Text typed at a prompt is never read here: the bytes between marks
+//! are tmux's redraw of the whole screen.
+//!
 //! Marks can arrive twice (two integrations, or a first prompt marked by
 //! both the deferred install and its hook): a second `A` with nothing in
 //! between, or a `C` while one is running, changes nothing.
@@ -66,6 +84,9 @@ pub struct Command {
     /// stream the ring keeps the tail of).
     pub at: u64,
     pub end_at: Option<u64>,
+    /// The tmux pane it ran in (`%3`), through a tmux client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<String>,
 }
 
 /// `commands.json`: what the node and the faces read.
@@ -107,6 +128,18 @@ enum Phase {
     Running,
 }
 
+/// The most panes a tmux client's ledger keeps a context for.
+const PANES_MAX: usize = 64;
+
+/// One pane's place in its marks, while another pane's is being read.
+#[derive(Debug, Default)]
+struct Parked {
+    phase: Phase,
+    named: Option<String>,
+    running: Option<Command>,
+    cwd: Option<String>,
+}
+
 /// See the module head.
 #[derive(Debug, Default)]
 pub struct Ledger {
@@ -133,9 +166,27 @@ pub struct Ledger {
     changed: bool,
     /// Commands finished since [`Ledger::take_finished`].
     finished: Vec<Command>,
+    /// Read off a tmux client (see the module head).
+    tmux: bool,
+    /// The pane whose context is in the fields above.
+    pane: Option<String>,
+    /// The pane tmux has in front, from its title.
+    front: Option<String>,
+    /// The other panes' contexts, oldest first.
+    parked: Vec<(String, Parked)>,
+    /// A `KhorPane` named a pane for the string that follows it alone.
+    lent: bool,
 }
 
 impl Ledger {
+    /// A ledger for a host whose PTY runs khor's tmux client.
+    pub fn tmux() -> Ledger {
+        Ledger {
+            tmux: true,
+            ..Ledger::default()
+        }
+    }
+
     /// Eats the session's output in stream order; sequences may be split
     /// anywhere across calls. `now_ms` stamps what starts or ends here.
     pub fn feed(&mut self, bytes: &[u8], now_ms: u64) {
@@ -155,7 +206,7 @@ impl Ledger {
             Scan::Ground => {
                 if b == 0x1b {
                     self.scan = Scan::Esc;
-                } else if self.phase == Phase::Input {
+                } else if self.phase == Phase::Input && !self.tmux {
                     self.typed_byte(b);
                 }
             }
@@ -253,9 +304,64 @@ impl Ledger {
         self.buf.clear();
     }
 
+    /// Back to the pane in front once a lent pane's mark is read.
+    fn give_back(&mut self) {
+        if std::mem::take(&mut self.lent)
+            && let Some(front) = self.front.clone()
+        {
+            self.switch(&front);
+        }
+    }
+
+    /// Puts `pane`'s context in the fields, parking the one there.
+    fn switch(&mut self, pane: &str) {
+        if self.pane.as_deref() == Some(pane) {
+            return;
+        }
+        if let Some(was) = self.pane.take() {
+            let parked = Parked {
+                phase: std::mem::take(&mut self.phase),
+                named: self.named.take(),
+                running: self.running.take(),
+                cwd: self.cwd.take(),
+            };
+            if self.parked.len() >= PANES_MAX {
+                self.parked.remove(0);
+            }
+            self.parked.push((was, parked));
+        }
+        let back = self
+            .parked
+            .iter()
+            .position(|(p, _)| p == pane)
+            .map(|i| self.parked.remove(i).1)
+            .unwrap_or_default();
+        self.phase = back.phase;
+        self.named = back.named;
+        self.running = back.running;
+        self.cwd = back.cwd;
+        self.typed.clear();
+        self.pane = Some(pane.to_owned());
+        self.changed = true;
+    }
+
     fn osc(&mut self, now: u64) {
         let text = String::from_utf8_lossy(&self.buf).into_owned();
         let (code, rest) = text.split_once(';').unwrap_or((text.as_str(), ""));
+        if self.tmux
+            && code == "633"
+            && let Some(pane) = rest.strip_prefix("P;KhorPane=").filter(|p| !p.is_empty())
+        {
+            self.give_back();
+            self.switch(pane);
+            self.lent = true;
+            return;
+        }
+        self.osc_read(code, rest, now);
+        self.give_back();
+    }
+
+    fn osc_read(&mut self, code: &str, rest: &str, now: u64) {
         match code {
             "133" => {
                 self.marked = true;
@@ -332,7 +438,17 @@ impl Ledger {
                 }
             }
             "0" | "2" => {
-                let t = rest.trim();
+                let mut t = rest.trim();
+                // khor's grouped session titles its client `%n title`.
+                if self.tmux
+                    && let Some((pane, title)) = front_pane(t)
+                {
+                    if self.front.as_deref() != Some(pane) {
+                        self.front = Some(pane.to_owned());
+                        self.switch(pane);
+                    }
+                    t = title;
+                }
                 let t = (!t.is_empty()).then(|| t.to_owned());
                 if t != self.title {
                     self.title = t;
@@ -359,7 +475,13 @@ impl Ledger {
             }
             "C" => {
                 if self.running.is_some() {
-                    return;
+                    // Through tmux, a pane out of sight loses its marks
+                    // (`allow-passthrough on`): a new command in it says
+                    // the last one ended, when, unknown how.
+                    if !self.tmux {
+                        return;
+                    }
+                    self.end(None, now);
                 }
                 let mut text = self.named.take();
                 for p in params {
@@ -383,6 +505,7 @@ impl Ledger {
                     exit: None,
                     at: self.offset,
                     end_at: None,
+                    pane: self.pane.clone(),
                 });
                 self.phase = Phase::Running;
                 self.changed = true;
@@ -401,12 +524,14 @@ impl Ledger {
             return;
         }
         match &mut self.running {
-            // fish 4 says C first, then this.
-            Some(c) => {
+            // fish 4 says C first, then this; khor's scripts never do
+            // inside tmux, where a command still running is one whose
+            // end was lost out of sight.
+            Some(c) if !self.tmux => {
                 c.text = Some(line);
                 self.changed = true;
             }
-            None => self.named = Some(line),
+            _ => self.named = Some(line),
         }
     }
 
@@ -447,7 +572,10 @@ impl Ledger {
 
     /// The row's reading: the running command, else the last one.
     pub fn doing(&self) -> Doing {
-        let c = self.running.as_ref().or(self.recent.back());
+        let c = self
+            .running
+            .as_ref()
+            .or_else(|| self.recent.iter().rev().find(|c| c.pane == self.pane));
         Doing {
             command: c.and_then(|c| c.text.as_ref()).map(|t| one_line(t)),
             running: self.running.is_some(),
@@ -456,7 +584,8 @@ impl Ledger {
             exit: c.and_then(|c| c.exit),
             cwd: self.cwd.clone(),
             title: self.title.clone(),
-            full_screen: self.modes.program_holds_screen(),
+            // tmux itself holds a client's screen, whatever the pane runs.
+            full_screen: !self.tmux && self.modes.program_holds_screen(),
             progress: self.progress,
             progress_failed: self.progress_failed,
             notice: self.notice.as_ref().map(|(t, _)| t.clone()),
@@ -480,6 +609,14 @@ impl Ledger {
     pub fn take_finished(&mut self) -> Vec<Command> {
         std::mem::take(&mut self.finished)
     }
+}
+
+/// A tmux client's title as khor's grouped session sets it: the pane in
+/// front (`%3`), then the pane's own title.
+fn front_pane(title: &str) -> Option<(&str, &str)> {
+    let (pane, rest) = title.split_once(' ').unwrap_or((title, ""));
+    let digits = pane.strip_prefix('%')?;
+    (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())).then_some((pane, rest.trim()))
 }
 
 /// `commands.json` beside a session.
@@ -734,6 +871,7 @@ mod tests {
             exit: Some(exit),
             at: 0,
             end_at: None,
+            pane: None,
         };
         append_history(&file, "shell/a", &[c(1, "cargo test -p khor-node", "/w/khor", 0), c(2, "git status", "/w/khor", 0)]);
         append_history(&file, "shell/b", &[c(3, "cargo build", "/w/khor-net", 101), c(4, "Cargo Test -p khor-node", "/w/khor/crates", 1)]);
@@ -793,6 +931,73 @@ mod tests {
             \x1bPtmux;\x1b\x1b]133;D;0\x07\x1b\\";
         let l = fed(s);
         assert_eq!(texts(&l), vec![(Some("echo hi".into()), Some(0))]);
+    }
+
+    /// **Through a tmux client** (item 21): two visible panes' marks
+    /// interleave, each pane keeps its own command and directory, the row
+    /// reads the pane the title puts in front, and a switch of front pane
+    /// shows that pane's own last command, not the other's.
+    #[test]
+    fn a_tmux_client_reads_each_pane_and_shows_the_one_in_front() {
+        // As tmux writes a mark it unwrapped: the pane, then the mark.
+        fn wrap(pane: &str, osc: &str) -> String {
+            format!("\x1b]633;P;KhorPane={pane}\x07\x1b]{osc}\x07")
+        }
+        let mut s = String::from("\x1b]2;%1 left\x07");
+        for (pane, osc) in [
+            ("%1", "7;file://h/a"),
+            ("%1", "133;A"),
+            ("%2", "7;file://h/b"),
+            ("%2", "133;A"),
+            ("%1", "633;E;make"),
+            ("%1", "133;C"),
+            ("%2", "633;E;sleep 9"),
+            ("%2", "133;C"),
+            ("%1", "133;D;2"),
+            ("%1", "133;A"),
+        ] {
+            s.push_str(&wrap(pane, osc));
+            // tmux's redraw between marks is never typed text.
+            s.push_str("\x1b[3;1Hxyz");
+        }
+        let mut l = Ledger::tmux();
+        for (i, chunk) in s.as_bytes().chunks(7).enumerate() {
+            l.feed(chunk, 1000 + i as u64);
+        }
+        let d = l.doing();
+        assert_eq!(d.title.as_deref(), Some("left"));
+        assert_eq!((d.command.as_deref(), d.running, d.exit), (Some("make"), false, Some(2)));
+        assert_eq!(d.cwd.as_deref(), Some("/a"));
+        // A mark from the pane beside it is that pane's, and the row
+        // stays on the one in front.
+        l.feed(wrap("%2", "7;file://h/b2").as_bytes(), 4000);
+        assert_eq!(l.doing().cwd.as_deref(), Some("/a"));
+        let done = l.take_finished();
+        assert_eq!(done.len(), 1);
+        assert_eq!(done[0].pane.as_deref(), Some("%1"));
+        // The person moves to the right pane: its command is still running.
+        l.feed(b"\x1b]2;%2 right\x07", 5000);
+        let d = l.doing();
+        assert_eq!((d.command.as_deref(), d.running), (Some("sleep 9"), true));
+        assert_eq!(d.cwd.as_deref(), Some("/b2"));
+        // Still wrapped, as a tmux nested in this one passes it on.
+        l.feed(b"\x1bPtmux;\x1b\x1b]633;P;KhorPane=%1\x07\x1b\x1b]633;E;ls\x07\x1b\\\
+            \x1bPtmux;\x1b\x1b]633;P;KhorPane=%1\x07\x1b\x1b]133;C\x07\x1b\\", 5500);
+        assert_eq!(l.doing().command.as_deref(), Some("sleep 9"));
+        l.feed(wrap("%2", "133;D;0").as_bytes(), 6000);
+        let d = l.doing();
+        assert_eq!((d.command.as_deref(), d.running, d.exit), (Some("sleep 9"), false, Some(0)));
+        // Out of sight, a pane's end and next prompt are dropped: its next
+        // command closes the last one, end unknown, and is its own.
+        l.feed(format!("{}{}", wrap("%2", "633;E;sleep 1"), wrap("%2", "133;C")).as_bytes(), 6500);
+        l.feed(format!("{}{}", wrap("%2", "633;E;date"), wrap("%2", "133;C")).as_bytes(), 6600);
+        let d = l.doing();
+        assert_eq!((d.command.as_deref(), d.running), (Some("date"), true));
+        let lost = l.take_finished();
+        assert_eq!(lost.last().map(|c| (c.text.as_deref(), c.exit)), Some((Some("sleep 1"), None)));
+        // A pane that never marked shows nothing of the others'.
+        l.feed(b"\x1b]2;%7 vim\x07", 7000);
+        assert_eq!(l.doing().command, None);
     }
 
     #[test]

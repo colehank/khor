@@ -601,7 +601,7 @@ export function DetailPane({
             aria-hidden={on ? undefined : true}
           >
             <Suspense fallback={null}>
-              <TerminalPane id={t.id} machine={t.machine} active={on} />
+              <TerminalPane id={t.id} machine={t.machine} active={on} doing={on ? row?.doing : undefined} />
             </Suspense>
           </div>
         );

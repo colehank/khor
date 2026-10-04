@@ -1617,6 +1617,17 @@ impl Node {
                 Ok(hits) => ipc::Reply::History { hits },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::ActOn {
+                machine,
+                session,
+                action,
+            } => match self.act_on_with(ep, &machine, &session, &action).await {
+                Ok(()) => ipc::Reply::Accepted {
+                    moved: 0,
+                    landed: Vec::new(),
+                },
+                Err(why) => ipc::Reply::Refused { why },
+            },
         }
     }
 
@@ -2718,6 +2729,20 @@ impl Node {
                         // Nothing moved and nothing landed: closing
                         // has no files, and an empty list is the frame's
                         // own word for "nobody said a path".
+                        Ok(Response::Acted {
+                            moved: 0,
+                            landed: Vec::new(),
+                        })
+                    }
+                    // A tmux row's prompts, in the pane its client has in
+                    // front (item 21): tmux runs on this machine.
+                    "prompt-up" | "prompt-down" => {
+                        let id = crate::SessionId(session);
+                        let up = action == "prompt-up";
+                        let live = self.live.clone();
+                        tokio::task::spawn_blocking(move || live.jump_prompt(&id, up))
+                            .await
+                            .map_err(|e| e.to_string())??;
                         Ok(Response::Acted {
                             moved: 0,
                             landed: Vec::new(),
@@ -5755,6 +5780,51 @@ impl Node {
         let req = Request::Act {
             session: session.0.clone(),
             action: "close".into(),
+        };
+        match self.ask(ep, &channel, &req).await? {
+            Response::Acted { .. } => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// **Moves between the shell prompts of a tmux row** (item 21,
+    /// `LiveKind::jump_prompt`), on the machine the row lives on: `Act`
+    /// "prompt-up" or "prompt-down" there, as closing is.
+    pub async fn jump_prompt_anywhere(&self, id: &crate::SessionId, up: bool) -> Result<(), String> {
+        if let Some(machine) = self.far_machine(id)? {
+            let action = if up { "prompt-up" } else { "prompt-down" };
+            let op = ipc::Op::ActOn {
+                machine: machine.clone(),
+                session: id.0.clone(),
+                action: action.into(),
+            };
+            if let Some(reply) = self.via_serve(op).await {
+                return match reply? {
+                    ipc::Reply::Accepted { .. } => Ok(()),
+                    ipc::Reply::Refused { why } => Err(why),
+                    other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+                };
+            }
+            let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+                .await
+                .map_err(|e| e.to_string())?;
+            let outcome = self.act_on_with(&ep, &machine, &id.0, action).await;
+            ep.close().await;
+            return outcome;
+        }
+        let live = self.live.clone();
+        let id = id.clone();
+        tokio::task::spawn_blocking(move || live.jump_prompt(&id, up))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+
+    async fn act_on_with(&self, ep: &iroh::Endpoint, machine: &str, session: &str, action: &str) -> Result<(), String> {
+        let (channel, _) = self.resolve(machine)?;
+        let req = Request::Act {
+            session: session.to_owned(),
+            action: action.to_owned(),
         };
         match self.ask(ep, &channel, &req).await? {
             Response::Acted { .. } => Ok(()),

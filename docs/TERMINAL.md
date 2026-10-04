@@ -65,6 +65,15 @@ A program asks its terminal things in its output (DA1/DA2, DSR, OSC 10/11/12/4 c
 
 **Kitty keyboard protocol** (`lib/term-kitty.ts`, one module so it can be dropped when xterm 6.1 ships). A flag stack is kept per screen, pushed, popped, set and queried as the spec says. Keys are encoded by the five enhancement flags. The phone key row (Esc, Tab, ⇧Tab, symbols, Ctrl/Alt latches) asks the same module. The host's `Modes` keeps the same stacks for a trimmed replay.
 
+**Through tmux** (item 21). A tmux row's terminal is khor's own grouped tmux client, and tmux owns that screen, so the face's marks stop at the alternate screen. What still works, and how:
+- **The ledger reads every visible pane.** Inside tmux, khor's scripts wrap each mark in tmux's passthrough, led by `OSC 633 ; P ; KhorPane=%n`. tmux forwards a pane's passthrough while the pane is visible (`allow-passthrough on`, which each script sets on its own pane), so the ledger keeps a context per pane (`commands::Ledger::tmux`). khor's grouped session sets `set-titles-string` to `#{pane_id} #{pane_title}`; the title names the pane in front, and the row reads that pane. History lines carry `pane`.
+- **Lost out of sight.** A pane in a window not on screen sends nothing. A command that ends there keeps its start and text; its end time is the moment the pane's next command starts, and its exit status is unknown. A command that both starts and ends out of sight is not recorded.
+- **Prompt jumps are tmux's.** The scripts also give tmux the unwrapped `133;A` (inside the prompt) and `133;C`, which tmux 3.4 and later keep for copy mode's `previous-prompt` / `next-prompt`. ⌘↑/⌘↓ and the key sheet's chevrons on a tmux row ask the row's machine (`Act` "prompt-up" / "prompt-down") to run those on khor's grouped session, found by its `@khor_row` option. ⌘↓ past the last prompt leaves copy mode.
+- **Command history** on a tmux row takes 这个目录 and "at a prompt" from the row's reading of the front pane.
+- **Which shells mark.** A pane opened from khor's client starts its shell through khor's `default-command` (set on khor's grouped session only, and only when the person has no `default-command` of their own; zsh and fish). For every other shell in tmux, one line in `~/.zshrc`, shown with a copy button in 设置 → 终端:
+  `[[ -n $TMUX && -r ~/.khor/shell/khor.zsh ]] && source ~/.khor/shell/khor.zsh`
+- **Not here:** blocks drawn over a tmux pane. They need tmux's control mode (`-CC`, iTerm2's way): one xterm per pane, each with its own scrollback. Sized in `audit/term-tmux-marks.md`.
+
 **Prediction** (`lib/term-predict.ts`). This is mosh's model, as VS Code's TypeAheadAddon carries it onto xterm.js.
 - A printable key at the end of the line is drawn underlined at once.
 - Guesses are taken back before output is written, then confirmed against the screen after it.

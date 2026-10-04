@@ -670,6 +670,8 @@ pub fn answer(
             &arg("dir")?,
             flag("failed")?,
         ))?),
+        // A tmux row's prompts, moved between by tmux (item 21).
+        "term_prompt" => to_json(&rt.block_on(crate::term::prompt(root, &arg("id")?, flag("up")?))?),
         // The bridge answers one request at a time, so it never holds one
         // open: here a wait is the stream's answer as it stands.
         "term_wait" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),

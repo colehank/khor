@@ -977,9 +977,18 @@ fn host_serving(
     // **The command ledger** (roadmap 1.2, `crate::commands`): fed the
     // same bytes as the ring, written beside the session when something a
     // reader sees changed, and every finished command added to the
-    // machine's history. A tmux client's PTY is not read for it: its
-    // marks belong to whichever pane tmux shows.
-    let commands = (!mux_client).then(|| Arc::new(Mutex::new(crate::commands::Ledger::default())));
+    // machine's history. A tmux client's PTY carries the marks of every
+    // pane tmux shows, each naming its pane, and the title names the one
+    // in front (`commands::Ledger::tmux`, item 21). Never a viewer's:
+    // its row is the agent's, and the shells beside it in the window are
+    // not.
+    let commands = (viewer.is_none() || !mux_client).then(|| {
+        Arc::new(Mutex::new(if mux_client {
+            crate::commands::Ledger::tmux()
+        } else {
+            crate::commands::Ledger::default()
+        }))
+    });
     let history = khor.join("history.jsonl");
 
     // A screen to match patterns against, for an agent TUI khor can

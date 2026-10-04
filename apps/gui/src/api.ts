@@ -1336,6 +1336,9 @@ export const searchIn = (machine: string, dir: string, query: string) =>
     of the machine that ran them; newest first. */
 export const fetchCommandHistory = (machine: string, text: string, dir: string, failed: boolean) =>
   call<HistoryRow[]>("term_history", { machine, text, dir, failed });
+/** The prompt before (`up`) or after the one in view in a tmux row's
+    front pane (item 21): tmux holds that screen, so tmux moves. */
+export const termPrompt = (id: string, up: boolean) => call<null>("term_prompt", { id, up });
 /** Whether the machine khor's backend runs on has a recycle bin. Asked
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */

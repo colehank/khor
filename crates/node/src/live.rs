@@ -707,7 +707,19 @@ impl LiveKind {
             let dir = self
                 .dir_of(id)
                 .ok_or_else(|| msg::not_a_session_id(&id.0))?;
-            crate::host::spawn_host(&dir, id, &tmux.grouped_attach_argv(&target, None), (80, 24))?;
+            // Panes opened from khor's client start their shell marking
+            // its commands (`Tmux::shell_shim`); the scripts are written
+            // first, as a host starting a shell writes them.
+            let scripts = crate::integration::dir(&self.root.join(".khor"));
+            let shim = crate::integration::write_scripts(&scripts)
+                .ok()
+                .and_then(|()| tmux.shell_shim(&scripts));
+            crate::host::spawn_host(
+                &dir,
+                id,
+                &tmux.grouped_attach_argv(&id.0, &target, None, shim.as_deref()),
+                (80, 24),
+            )?;
             return Ok(Seat::Host);
         }
         // **A row whose agent has left the tmux session it sat in** —
@@ -745,7 +757,7 @@ impl LiveKind {
             crate::host::spawn_viewer_host(
                 &dir,
                 id,
-                &tmux.grouped_attach_argv(&target, None),
+                &tmux.grouped_attach_argv(&id.0, &target, None, None),
                 (80, 24),
                 minted,
             )?;
@@ -818,11 +830,23 @@ impl LiveKind {
         crate::host::spawn_viewer_host(
             &dir,
             id,
-            &tmux.grouped_attach_argv(&target, window.as_deref()),
+            &tmux.grouped_attach_argv(&id.0, &target, window.as_deref(), None),
             (80, 24),
             fresh,
         )?;
         Ok(Seat::View)
+    }
+
+    /// **Moves to the shell prompt before or after the one in view** in
+    /// the pane a tmux row's client has in front (item 21,
+    /// `Tmux::jump_prompt`): there tmux holds the screen and its history,
+    /// so the face asks tmux.
+    pub fn jump_prompt(&self, id: &SessionId, up: bool) -> Result<(), String> {
+        let tmux = self
+            .discovery
+            .tmux()
+            .ok_or_else(|| msg::no_terminal_here(&id.0))?;
+        tmux.jump_prompt(&id.0, up)
     }
 
     /// **The address a face attaches to for this row, on the machine

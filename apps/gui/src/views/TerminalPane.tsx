@@ -64,7 +64,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termResize, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termPrompt, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { peekOf, type Peek } from "@/lib/term-peek";
@@ -91,6 +91,7 @@ import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { termBell } from "@/lib/term-bell";
 import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
+import type { Doing } from "@/gen/bindings/Doing";
 import { termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
@@ -913,6 +914,10 @@ function drawBlocks(term: Terminal, marks: Marks): { dispose: () => void; size: 
   };
 }
 
+/** A tmux row's id (`adaptor::tmux::is_tmux_leaf`): the session's
+    creation time and its number. */
+const TMUX_ROW = /^shell\/\d+-\d+$/;
+
 /** Scrolls to the previous (`-1`) or next (`1`) prompt from the screen's
     top; past the last one, to the bottom. */
 function jumpToPrompt(term: Terminal, marks: Marks, dir: -1 | 1) {
@@ -1346,8 +1351,13 @@ export function TerminalPane({
   id,
   machine,
   active = true,
+  doing,
 }: {
   id: string;
+  /** The row's ledger reading, for the tab on screen: through tmux it
+      is the pane in front's (item 21), which the face's own marks cannot
+      see. */
+  doing?: Doing | null;
   /** Whether this is the tab on screen. A kept tab that is not
       (`DetailPane`, T-11) stays attached at the hidden pace and draws
       nothing in the bar. */
@@ -1358,6 +1368,8 @@ export function TerminalPane({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
+  const doingRef = useRef(doing);
+  doingRef.current = doing;
   // The native scroller around the terminal, and the room after it that
   // gives it the history's height (`scrollsNatively`).
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -2239,9 +2251,21 @@ export function TerminalPane({
       if (at && showBlock(at.row, e.clientX, e.clientY, false)) e.preventDefault();
     };
     box.addEventListener("contextmenu", rightClick);
-    (box as HTMLDivElement & { __jump?: (dir: -1 | 1) => void }).__jump = (dir) => jumpToPrompt(term, marks, dir);
+    // **Through tmux** (item 21) tmux holds the screen and the history:
+    // its own copy mode moves between the front pane's prompts, and the
+    // row's ledger, read off every pane, says where that pane is.
+    const viaTmux = () => TMUX_ROW.test(id) && term.buffer.active.type === "alternate";
+    (box as HTMLDivElement & { __jump?: (dir: -1 | 1) => void }).__jump = (dir) => {
+      if (viaTmux()) void termPrompt(id, dir < 0).catch(() => {});
+      else jumpToPrompt(term, marks, dir);
+    };
     // The menu's ⌘⇧; and the key sheet's 历史命令 (roadmap 2.6).
     (box as HTMLDivElement & { __history?: () => void }).__history = () => {
+      const d = doingRef.current;
+      if (viaTmux()) {
+        setHistory({ cwd: d?.cwd ?? undefined, atPrompt: !!d?.cwd && !d.running });
+        return;
+      }
       const at = marks.current();
       setHistory({ cwd: marks.cwd(), atPrompt: !marks.running() && !!at?.input && !at.output });
     };

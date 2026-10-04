@@ -41,9 +41,18 @@ The scripts are in `crates/node/shell/`. The host writes them under `<khor home>
 
 ## tmux
 
-Inside tmux (`$TMUX` set), every mark is wrapped in tmux's passthrough (`ESC P tmux; … ESC \`, with the inner ESC doubled). tmux forwards it only when the window's `allow-passthrough` option is on. khor's grouped attach turns that one window option on (`Tmux::grouped_attach_argv`) and writes nothing else on the person's window.
+Inside tmux (`$TMUX` set), every mark is wrapped in tmux's passthrough (`ESC P tmux; … ESC \`, with the inner ESC doubled), led by `OSC 633 ; P ; KhorPane=$TMUX_PANE` in the same wrap so the ledger can tell the panes of a split window apart. tmux forwards a wrap only while the pane is visible and its `allow-passthrough` is on. The zsh script turns that on for its own pane at the first prompt (`tmux set-option -p -q allow-passthrough on`), and khor's grouped attach turns it on for the window it attaches to (`Tmux::grouped_attach_argv`). Passthrough lets a program in that pane write to the outer terminal past tmux; that is tmux's reason for leaving it off by default.
 
-Marks only come from a pane whose shell loads an integration. For other tmux rows, the row reads tmux's own `pane_current_command` and `pane_current_path` instead.
+The prompt and command marks also go to tmux itself, unwrapped: `133;A` inside the prompt (a mark printed before the prompt lands on a line the prompt's drawing clears, and tmux keeps marks per line) and `133;C` before the command. tmux 3.4 and later use them for copy mode's `previous-prompt` and `next-prompt`; khor's ⌘↑/⌘↓ on a tmux row run those. Inside tmux, fish 4's own marks reach tmux and never khor, so the fish script writes its own wrapped ones there.
+
+Which shells load the scripts:
+- **A pane opened from khor's client.** khor's grouped session gets a `default-command` that starts the person's `default-shell` the way khor starts its own shells (`Tmux::shell_shim`). It is a session option, so panes the person opens from their own client are untouched. It is not set when they have a `default-command` of their own, or for bash (its init file would cost the login shell).
+- **Every other shell in tmux**, with one line in `~/.zshrc` (设置 → 终端 shows it with a copy button):
+  `[[ -n $TMUX && -r ~/.khor/shell/khor.zsh ]] && source ~/.khor/shell/khor.zsh`
+  The guard keeps it to tmux and to machines where khor has written its scripts. The line is not safe for bash: `khor.bash` reads `~/.bashrc` first, so sourcing it from there would loop.
+- A shell already running is never touched: there is no way into it but typing.
+
+A tmux row khor is not attached to reads tmux's own `pane_current_command` and `pane_current_path`. An attached one whose front pane marks nothing shows no command.
 
 ## The ledger
 

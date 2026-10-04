@@ -2402,6 +2402,12 @@ term-bell = "响铃"
 term-bell-note = "终端响铃时，Mac 上闪一下边框，手机上轻震一下"
 term-predict = "预测输入"
 term-predict-note = "远端回显慢时，按下的字先带下划线显示，等远端确认"
+# Appearance → Terminal (item 21): the one ~/.zshrc line that makes shells
+# the person starts in tmux themselves mark their commands, with a copy
+# button. Panes opened from khor's own tmux client already do.
+term-tmux-marks = "在 tmux 里启用命令标记"
+term-tmux-marks-note = "把这一行加进 ~/.zshrc，tmux 里的 shell 就会标出命令：会话行、历史命令和跳到上一条命令都能用。在 khor 里新开的窗格不用加。"
+term-tmux-marks-copy = "复制这一行"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
 term-cursor = "光标样式"

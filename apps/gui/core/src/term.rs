@@ -597,6 +597,14 @@ pub async fn history(root: &Path, machine: &str, text: &str, dir: &str, failed: 
         .collect())
 }
 
+/// **The prompt before or after the one in view, for a tmux row** (item
+/// 21): tmux holds that screen and its history, so tmux moves there
+/// (`khor_node::Node::jump_prompt_anywhere`), on the row's own machine.
+pub async fn prompt(root: &Path, id: &str, up: bool) -> Result<(), String> {
+    let n = Node::open(root.to_path_buf())?;
+    n.jump_prompt_anywhere(&SessionId(id.to_owned()), up).await
+}
+
 /// The bytes since `since` — see [`TermChunk`] for the two flags.
 pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
     let term = term_of(id)?;

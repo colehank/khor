@@ -25,7 +25,7 @@ _khor_armed=0
 
 _khor_osc() {
   if [ -n "$TMUX" ]; then
-    builtin printf '\ePtmux;\e\e]%s\a\e\\' "$1"
+    builtin printf '\ePtmux;\e\e]633;P;KhorPane=%s\a\e\e]%s\a\e\\' "$TMUX_PANE" "$1"
   else
     builtin printf '\e]%s\a' "$1"
   fi
@@ -68,6 +68,13 @@ _khor_prompt_end() {
     *"133;B"*) ;;
     *) PS1="$PS1\[$(_khor_osc '133;B')\]" ;;
   esac
+  # tmux's own prompt mark, in the prompt itself (see khor.zsh).
+  if [ -n "$TMUX" ]; then
+    case "$PS1" in
+      *"]133;A"*) ;;
+      *) PS1="\[$(builtin printf '\e]133;A\a')\]$PS1" ;;
+    esac
+  fi
   _khor_armed=1
   return $s
 }
@@ -92,6 +99,7 @@ _khor_preexec() {
   _khor_escape "$c"
   _khor_osc "633;E;$_khor_e"
   _khor_osc "133;C"
+  [ -n "$TMUX" ] && builtin printf '\e]133;C\a'
   _khor_ran=1
 }
 

@@ -10,7 +10,17 @@
 #                      control characters)
 #   OSC 7 ; file://host/path   the working directory
 # Inside tmux each mark is wrapped in tmux's passthrough (ESC P tmux; …),
-# which tmux forwards when the window's `allow-passthrough` is on.
+# which tmux forwards while the pane is visible and its `allow-passthrough`
+# is on (turned on for this pane at the first prompt). Each wrap opens with
+#   OSC 633 ; P ; KhorPane=%n  the pane, $TMUX_PANE
+# so khor tells apart the panes of a split window. The prompt and command
+# marks also go to tmux itself, unwrapped: tmux 3.4 and later read them for
+# copy mode's previous-prompt and next-prompt (tmux(1)); older ones drop
+# them.
+#
+# Inside tmux, one line in ~/.zshrc loads this in every shell, not only
+# those khor starts (Settings → Terminal shows it):
+#   [[ -n $TMUX && -r ~/.khor/shell/khor.zsh ]] && source ~/.khor/shell/khor.zsh
 #
 # The hooks go in at the first prompt, after the person's .zshrc has run,
 # so they come last and a theme that rebuilds PS1 cannot drop the input
@@ -26,7 +36,7 @@ typeset -gi _khor_ran=0
 
 _khor_osc() {
   if [[ -n "$TMUX" ]]; then
-    builtin printf '\ePtmux;\e\e]%s\a\e\\' "$1"
+    builtin printf '\ePtmux;\e\e]633;P;KhorPane=%s\a\e\e]%s\a\e\\' "$TMUX_PANE" "$1"
   else
     builtin printf '\e]%s\a' "$1"
   fi
@@ -62,12 +72,17 @@ _khor_precmd() {
   _khor_osc "133;A"
   # The input starts where the prompt ends; themes rebuild PS1 each time.
   [[ $PS1 == *"133;B"* ]] || PS1="$PS1%{$(_khor_osc '133;B')%}"
+  # tmux's own prompt mark goes in the prompt itself: one printed here
+  # lands on a line the prompt's drawing then clears, and tmux keeps the
+  # mark on the line (Kitty's zsh integration marks inside PS1 too).
+  [[ -n "$TMUX" && $PS1 != *"]133;A"* ]] && PS1="%{$(builtin printf '\e]133;A\a')%}$PS1"
 }
 
 _khor_preexec() {
   _khor_escape "$1"
   _khor_osc "633;E;$REPLY"
   _khor_osc "133;C"
+  [[ -n "$TMUX" ]] && builtin printf '\e]133;C\a'
   _khor_ran=1
 }
 
@@ -86,6 +101,10 @@ _khor_install() {
   builtin autoload -Uz add-zsh-hook
   add-zsh-hook precmd _khor_precmd
   add-zsh-hook preexec _khor_preexec
+  # Marks pass through only with the pane's `allow-passthrough` on (tmux
+  # 3.3; `-p` is 3.0): this pane's, nobody else's.
+  [[ -n "$TMUX" && -n "$TMUX_PANE" ]] \
+    && command tmux set-option -p -q -t "$TMUX_PANE" allow-passthrough on 2>/dev/null
   # This first prompt is already being drawn: mark it now.
   _khor_precmd
 }

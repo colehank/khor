@@ -303,6 +303,14 @@ pub enum Op {
         machine: String,
         ask: crate::git::GitAsk,
     },
+    /// An `Act` on a session on another machine other than closing it
+    /// (`Act` "prompt-up" / "prompt-down", item 21); answered with
+    /// [`Reply::Accepted`]. Tail-appended.
+    ActOn {
+        machine: String,
+        session: String,
+        action: String,
+    },
 }
 
 /// How long a [`Op::WatchOn`] is held when nothing changes: under
@@ -393,6 +401,7 @@ impl Op {
             Op::SearchOn { .. } => ("SearchOn", DEADLINE_SLOW),
             Op::HistoryOn { .. } => ("HistoryOn", DEADLINE_FAR),
             Op::GitOn { .. } => ("GitOn", DEADLINE_FAR),
+            Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
