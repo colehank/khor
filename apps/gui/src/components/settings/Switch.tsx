@@ -12,6 +12,7 @@
 //
 // The switch carries no words: its title sits beside it (a settings row,
 // a chat option's name), and `label` is what a screen reader hears.
+import { feel } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 
 export function Switch({
@@ -39,7 +40,10 @@ export function Switch({
       aria-label={label}
       data-on={on}
       disabled={disabled}
-      onClick={onToggle}
+      onClick={() => {
+        feel("selection");
+        onToggle();
+      }}
       {...mark}
       className={cn(
         "flex min-h-touch min-w-touch flex-none items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring",

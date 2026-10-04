@@ -122,7 +122,7 @@ tauri-plugin-barcode-scanner = "~2.4"
 [target.'cfg(target_os = "ios")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSDictionary", "NSGeometry", "objc2-core-foundation"] }
-objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "block2", "UIApplication", "UIResponder", "UIFeedbackGenerator", "UIImpactFeedbackGenerator"] }
+objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "block2", "UIApplication", "UIResponder", "UIFeedbackGenerator", "UIImpactFeedbackGenerator", "UISelectionFeedbackGenerator", "UINotificationFeedbackGenerator"] }
 # The handler `nw_path_monitor` calls on a path change (`watch_the_path`)
 # is a block. **Already in the tree** under objc2-ui-kit's `block2`.
 block2 = "0.6"

@@ -291,6 +291,12 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "taps the phone's haptic engine; a browser has no haptics to reach, and the pane \
          flashes its edge there as everywhere",
     ),
+    // ── haptics with a meaning (UX-10) ─────
+    (
+        "haptic",
+        "plays the phone's selection, success or warning pattern; a browser has no haptic \
+         engine to reach",
+    ),
     // ── a line into the app's log (item 18 A) ─────
     (
         "face_note",

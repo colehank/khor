@@ -1739,6 +1739,11 @@ export const termKey = (id: string, keys: string) => call<null>("term_key", { id
 export const faceNote = (line: string) => call<null>("face_note", { line });
 /** A bell felt: a light haptic tap on a phone (roadmap 4.2). */
 export const bellHaptic = () => call<null>("bell_haptic");
+/** **A haptic with a meaning** (UX-10; ux-9 B5): the system's own
+    patterns, played on a phone — `selection` when a picked value moves,
+    `success` when a task completes, `warning` when the act was refused.
+    The app's only; nothing for a browser to reach (`lib/haptics`). */
+export const haptic = (kind: "selection" | "success" | "warning") => call<null>("haptic", { kind });
 /** A finished command, said by the system (roadmap 2.4, `lib/finished`). */
 export const notifyFinished = (title: string, body: string) => call<null>("notify_finished", { title, body });
 /** Files dropped on a terminal. The paths go over as they are and the

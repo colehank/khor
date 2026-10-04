@@ -30,6 +30,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { gui } from "@/gen/catalog";
 import { useCoarse } from "@/hooks/use-coarse";
 import { useNarrow } from "@/hooks/use-narrow";
+import { feel } from "@/lib/haptics";
 import { useSettingsReread } from "@/settings";
 
 export type Pending = {
@@ -73,6 +74,7 @@ export function DeleteDialog({ pending, onDone }: { pending: Pending | null; onD
           onDone();
         },
         (e: unknown) => {
+          feel("warning");
           setGoing(false);
           setRefused(String(e instanceof Error ? e.message : e));
         },

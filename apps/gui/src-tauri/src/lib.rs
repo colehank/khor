@@ -904,6 +904,43 @@ fn bell_haptic(app: tauri::AppHandle) {
     let _ = app;
 }
 
+/// **A haptic with a meaning** (UX-10; ux-9 B5, `lib/haptics`): the
+/// system's own generators, each for what Apple documents it for —
+/// `selection` (UISelectionFeedbackGenerator) when a picked value moves,
+/// `success` / `warning` (UINotificationFeedbackGenerator) when a task
+/// completes or is refused. On UIKit's thread; a word this build does
+/// not know plays nothing. A Mac has no engine for it.
+#[tauri::command]
+fn haptic(app: tauri::AppHandle, kind: String) {
+    #[cfg(target_os = "ios")]
+    {
+        // `init` is deprecated since iOS 17.5 in favour of a generator
+        // tied to a view (`feedbackGeneratorForView:`), which only adds
+        // where a pointer is for the iPad's trackpad; the plain form
+        // still plays, as the bell's does.
+        #[allow(deprecated)]
+        let _ = app.run_on_main_thread(move || {
+            use objc2::{MainThreadMarker, MainThreadOnly as _};
+            use objc2_ui_kit::{UINotificationFeedbackGenerator, UINotificationFeedbackType, UISelectionFeedbackGenerator};
+            let Some(mtm) = MainThreadMarker::new() else { return };
+            match kind.as_str() {
+                "selection" => UISelectionFeedbackGenerator::init(UISelectionFeedbackGenerator::alloc(mtm)).selectionChanged(),
+                "success" | "warning" => {
+                    let g = UINotificationFeedbackGenerator::init(UINotificationFeedbackGenerator::alloc(mtm));
+                    g.notificationOccurred(if kind == "success" {
+                        UINotificationFeedbackType::Success
+                    } else {
+                        UINotificationFeedbackType::Warning
+                    });
+                }
+                _ => {}
+            }
+        });
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, kind);
+}
+
 #[tauri::command]
 fn term_key(id: String, keys: String) -> Result<(), String> {
     khor_gui_core::term::term_key(&id, keys.into_bytes())
@@ -3878,6 +3915,7 @@ pub fn run() {
             term_prompt,
             term_wait,
             bell_haptic,
+            haptic,
             face_note,
             notify_finished,
             term_key,

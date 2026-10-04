@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cli, gui } from "@/gen/catalog";
+import { feel } from "@/lib/haptics";
 import { YIELD_MS } from "@/lib/tempo";
 
 /**
@@ -86,6 +87,12 @@ export function InviteDialog({
   // the table when this ticket was minted is the one that joined with it,
   // and the dialog says so instead of going on offering a spent ticket.
   const joined = before && before.size > 0 && ticket ? machines.find((m) => !before.has(m.id)) : undefined;
+  // The pairing completed on this side too: the same success it played
+  // on the side that joined.
+  const joinedId = joined?.id;
+  useEffect(() => {
+    if (joinedId) feel("success");
+  }, [joinedId]);
   useEffect(() => {
     if (!copied) return;
     const t = window.setTimeout(() => setCopied(null), YIELD_MS);
@@ -255,10 +262,14 @@ export function JoinDialog({
       // own face, which is the report — read now rather than on the next
       // poll, which left 「这里只有这台机器」 under the new row for a beat.
       .then(() => {
+        feel("success");
         onOpenChange(false);
         onJoined?.();
       })
-      .catch((e) => setError(String(e instanceof Error ? e.message : e)))
+      .catch((e) => {
+        feel("warning");
+        setError(String(e instanceof Error ? e.message : e));
+      })
       .finally(() => setJoining(false));
   };
   const join = () => joinWith(ticket);
