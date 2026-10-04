@@ -181,16 +181,42 @@ export function trackMarks(term: Terminal): Marks {
   };
 }
 
+/** Where the cursor sits on the screen (column, row within the screen). */
+export type Cursor = { x: number; y: number };
+
+/** Rows searched above and below the cursor for its input box's borders. */
+const BOX_SCAN = 12;
+
+/** A row that is a box's edge: mostly box-drawing characters (U+2500–257F). */
+function border(text: string): boolean {
+  const t = [...text.trim()];
+  if (t.length < 3) return false;
+  const drawn = t.filter((c) => c >= "\u2500" && c <= "\u257f").length;
+  return drawn / t.length >= 0.8;
+}
+
+const rowText = (term: Terminal, line: number) => term.buffer.active.getLine(line)?.translateToString(true) ?? "";
+
 /**
  * **Whether a tap on a cell asks for the keyboard** (roadmap 2.2, `auto`;
- * item 28): while a marked shell's prompt is up, from where its input
- * starts on, the blank below included — a tap up in the history is a
- * reader's. Anywhere at all when the shell marks nothing or a program
- * runs: without marks khor cannot tell input from output, and the row
- * under the cursor alone (the old rule) was a target the owner kept
- * missing — a fresh shell's prompt at the top, Claude Code's input box.
+ * item 28): a tap on the input area raises, a tap elsewhere does not.
+ * The input area, by what khor can know:
+ *
+ * - a marked shell at its prompt: from where its input starts on, the
+ *   blank below included — a tap up in the history is a reader's;
+ * - a shell at its prompt with no marks (the cursor on the last row with
+ *   anything on it): the cursor's row and the blank below — a fresh
+ *   shell's prompt sits at the top with the whole screen blank under it;
+ *   a status line on the screen's last row (tmux's) does not count;
+ * - a program (Claude Code, an editor): the cursor's row, widened to the
+ *   box around it when the rows above and below it are box-drawing edges
+ *   — Claude Code's input box grows to several lines.
+ *
+ * `cursor` is where the last whole frame left the cursor
+ * (`settledCursor`), not where a redraw in progress has it: Claude Code
+ * moves it up through its output while it paints.
  */
-export function inInput(term: Terminal, marks: Marks, line: number, col: number): boolean {
+export function inInput(term: Terminal, marks: Marks, line: number, col: number, cursor: Cursor): boolean {
   const buf = term.buffer.active;
   const b = marks.current();
   if (buf.type === "normal" && marks.marked() && b?.input && !b.output) {
@@ -199,5 +225,28 @@ export function inInput(term: Terminal, marks: Marks, line: number, col: number)
     const at = b.input.marker.line;
     return line > at || (line === at && col >= b.input.col);
   }
-  return true;
+  const top = buf.baseY;
+  const end = top + term.rows;
+  const at = top + Math.min(cursor.y, term.rows - 1);
+  if (line === at) return true;
+  if (line > at) {
+    let blank = true;
+    for (let i = at + 1; i < end && blank; i++) {
+      if (i === end - 1 && buf.type === "alternate") break;
+      if (rowText(term, i).trim() !== "") blank = false;
+    }
+    if (blank) return true;
+  }
+  let over = -1;
+  for (let i = at - 1; i >= Math.max(top, at - BOX_SCAN); i--) {
+    if (border(rowText(term, i))) {
+      over = i;
+      break;
+    }
+  }
+  if (over < 0) return false;
+  for (let i = at + 1; i <= Math.min(end - 1, at + BOX_SCAN); i++) {
+    if (border(rowText(term, i))) return line >= over && line <= i;
+  }
+  return false;
 }

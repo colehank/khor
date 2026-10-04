@@ -88,7 +88,7 @@ import { onTermOptionMeta, termOptionMeta } from "@/lib/term-option-meta";
 import { keepWebgl } from "@/lib/term-atlas";
 import { onTermBlockLines, termBlockLines } from "@/lib/term-block-lines";
 import { onTermHistory, termHistory } from "@/lib/term-history";
-import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
+import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/term-marks";
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
 import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { termBell } from "@/lib/term-bell";
@@ -479,6 +479,46 @@ const DISMISS_SPEED = 0.3;
 /** Travel past which a touch is a drag, not a tap. */
 const TAP_SLOP = 10;
 
+/** Output quiet this long, the cursor is where the program left it. */
+const CURSOR_QUIET_MS = 50;
+
+/**
+ * **The cursor of the last whole frame** (item 28; the owner: a tap in
+ * Claude Code's input box 「点半天也弹不出来」). A TUI moves the cursor
+ * up through its output while it redraws and parks it back in its input
+ * box at the end; a tap that lands mid-paint, judged against the cursor
+ * then, missed the box. The place is taken when a frame closes
+ * (`framesWhole`: DEC 2026 ended, the cursor shown again) or after
+ * `CURSOR_QUIET_MS` of quiet with no redraw open — a paint that stalls
+ * keeps the frame before it — and kept as a screen row, which a
+ * program's frame does not move as the history grows.
+ */
+function settledCursor(
+  term: Terminal,
+  /** A redraw is open (`framesWhole`). */
+  painting: () => boolean,
+): { at: () => Cursor; whole: () => void; stop: () => void } {
+  const read = (): Cursor => ({ x: term.buffer.active.cursorX, y: term.buffer.active.cursorY });
+  let at = read();
+  let timer = 0;
+  const parsed = term.onWriteParsed(() => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      if (!painting()) at = read();
+    }, CURSOR_QUIET_MS);
+  });
+  return {
+    at: () => at,
+    whole: () => {
+      at = read();
+    },
+    stop: () => {
+      window.clearTimeout(timer);
+      parsed.dispose();
+    },
+  };
+}
+
 /**
  * **The terminal holds the focus; a tap raises the keyboard only where
  * the person asked for that** (2026-10-03; roadmap 2.2, `lib/term-tap`'s
@@ -487,9 +527,10 @@ const TAP_SLOP = 10;
  * The field is focused whenever the page is open (`holdFocus`), with no
  * keyboard under a finger. A tap — a touch that ends where it began — is
  * judged at its end, which is a gesture iOS will show a keyboard for:
- * `screen` raises it anywhere; `auto` raises it on the line being typed
- * (`inInput`, from the shell's marks) and puts it away anywhere else;
- * `button` leaves it to the bar's switch. xterm's own mousedown focuses a
+ * `screen` raises it anywhere; `auto` raises it on the input area
+ * (`inInput`, judged against the cursor of the last whole frame) and
+ * nowhere else; `button` leaves it to the bar's switch. A tap never
+ * lowers it (item 28; `swipeLowers` does). xterm's own mousedown focuses a
  * field that is already focused, and a program that took the mouse still
  * gets the click as before. **If the focus leaves for nowhere** — the system put
  * the keyboard away, or a tap blurred the field — it comes back without a
@@ -503,6 +544,8 @@ function tapsAskFirst(
   /** A tap on a cell, first: a picture or a link there opens (roadmap
       3.2, 3.3); true when it took the tap, and the keyboard is left be. */
   tapped: (row: number, col: number) => boolean,
+  /** The cursor where the last whole frame left it (`settledCursor`). */
+  cursor: () => Cursor,
 ): () => void {
   const field = term.textarea;
   if (!field) return () => {};
@@ -533,7 +576,7 @@ function tapsAskFirst(
       }
       // **A tap raises, never lowers** (item 28): the keyboard goes away
       // by the swipe (`swipeLowers`) or the system's own key.
-      const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col));
+      const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col, cursor()));
       if (here && !keyboardUp(field)) raiseKeyboard(field);
     }
     still = false;
@@ -1067,7 +1110,9 @@ function framesWhole(
   /** What the bytes become on their way in, and what runs once xterm has
       parsed them (`lib/term-predict`). */
   shape: (bytes: Uint8Array) => { bytes: Uint8Array; parsed?: () => void },
-): { paint: (bytes: Uint8Array) => void; flush: () => void; drop: () => void } {
+  /** Runs once xterm has parsed a frame that closed (`settledCursor`). */
+  whole?: () => void,
+): { paint: (bytes: Uint8Array) => void; flush: () => void; drop: () => void; painting: () => boolean } {
   let held: Uint8Array[] = [];
   let since = 0;
   let timer = 0;
@@ -1088,7 +1133,11 @@ function framesWhole(
     held = [];
     since = 0;
     const shaped = shape(all);
-    term.write(shaped.bytes, shaped.parsed);
+    const closed = !open;
+    term.write(shaped.bytes, () => {
+      shaped.parsed?.();
+      if (closed) whole?.();
+    });
   };
   const paint = (bytes: Uint8Array) => {
     // The gates' before-and-after switch: written as it arrives.
@@ -1119,7 +1168,7 @@ function framesWhole(
     since = 0;
     open = false;
   };
-  return { paint, flush, drop };
+  return { paint, flush, drop, painting: () => open };
 }
 
 /** A two-finger tap: both fingers down this briefly, barely moving. */
@@ -1785,7 +1834,8 @@ export function TerminalPane({
       });
       return false;
     };
-    const asks = tapsAskFirst(term, box, marks, tapped);
+    const parked = settledCursor(term, () => frames.painting());
+    const asks = tapsAskFirst(term, box, marks, tapped, parked.at);
     const gestures = phoneGestures(term, box);
     fit.fit();
     termRef.current = term;
@@ -1863,7 +1913,7 @@ export function TerminalPane({
     // (`lib/term-prompt-sp`).
     const marksSp = promptMarks(() => term.cols);
     // Output painted a whole frame at a time (item 18 B).
-    const frames = framesWhole(term, (bytes) => predict.output(iip(marksSp(bytes))));
+    const frames = framesWhole(term, (bytes) => predict.output(iip(marksSp(bytes))), parked.whole);
     let seq = 0;
     let timer = 0;
     let busy = false;
@@ -2333,11 +2383,11 @@ export function TerminalPane({
         window.clearTimeout(still);
         // Fitted once the viewport itself has held still, however its
         // steps were spaced.
-        const settled = () => {
-          if (viewportMoving(KEYBOARD_STILL_MS)) still = window.setTimeout(settled, KEYBOARD_STILL_MS);
+        const fitWhenStill = () => {
+          if (viewportMoving(KEYBOARD_STILL_MS)) still = window.setTimeout(fitWhenStill, KEYBOARD_STILL_MS);
           else fit.fit();
         };
-        still = window.setTimeout(settled, KEYBOARD_STILL_MS);
+        still = window.setTimeout(fitWhenStill, KEYBOARD_STILL_MS);
         return;
       }
       if (raf) return;
@@ -2423,6 +2473,7 @@ export function TerminalPane({
         field?.removeEventListener(k, composed as EventListener);
       }
       asks();
+      parked.stop();
       gestures();
       linked.dispose();
       box.removeEventListener("mousedown", pictureClick, true);
