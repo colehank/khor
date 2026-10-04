@@ -84,14 +84,22 @@ fn reading_digest(frame: &[u8]) -> Vec<u8> {
 /// nothing: [`reading_request`] has no request for it.
 const ROWS_BY_CHANGE: &str = "sessions+";
 
-/// What changed between the rows last sent and these: every id in order
-/// and the rows that differ. `None` when an id repeats (no rebuild could
-/// tell them apart).
+/// What changed between the rows last sent and these: the ids in order
+/// **when the order changed** — empty when it is the one the asker holds
+/// — and the rows that differ. `None` when an id repeats (no rebuild could
+/// tell them apart), or when every row went (an empty order would read
+/// as "the same").
+///
+/// ⚠️ **The order is not sent when it has not changed** (the term lane's
+/// measurement, audit/term-idle-cost.md): every id on a desk of 109 rows
+/// is 2.6 KB, and a busy session's change carried them on every round —
+/// 33 KB a minute for one row's few hundred bytes.
 fn rows_since(was: &[khor_core::Session], now: &[khor_core::Session]) -> Option<(Vec<String>, Vec<khor_core::Session>)> {
     let mut seen = std::collections::HashSet::new();
-    if !now.iter().all(|r| seen.insert(r.id.0.as_str())) {
+    if !now.iter().all(|r| seen.insert(r.id.0.as_str())) || (now.is_empty() && !was.is_empty()) {
         return None;
     }
+    let same_order = was.len() == now.len() && was.iter().zip(now).all(|(a, b)| a.id == b.id);
     let was: std::collections::HashMap<&str, Vec<u8>> = was
         .iter()
         .filter_map(|r| Some((r.id.0.as_str(), proto::encode(r).ok()?)))
@@ -101,16 +109,28 @@ fn rows_since(was: &[khor_core::Session], now: &[khor_core::Session]) -> Option<
         .filter(|r| was.get(r.id.0.as_str()).is_none_or(|b| proto::encode(*r).ok().as_ref() != Some(b)))
         .cloned()
         .collect();
-    Some((now.iter().map(|r| r.id.0.clone()).collect(), changed))
+    let order = if same_order {
+        Vec::new()
+    } else {
+        now.iter().map(|r| r.id.0.clone()).collect()
+    };
+    Some((order, changed))
 }
 
-/// The rows rebuilt from the copy held and a [`rows_since`] change;
-/// `None` when an id is in neither.
+/// The rows rebuilt from the copy held and a [`rows_since`] change — in
+/// the held order when `order` is empty; `None` when an id is in neither.
 fn rows_rebuilt(
     held: &[khor_core::Session],
     order: &[String],
     changed: Vec<khor_core::Session>,
 ) -> Option<Vec<khor_core::Session>> {
+    let held_order: Vec<String>;
+    let order = if order.is_empty() {
+        held_order = held.iter().map(|r| r.id.0.clone()).collect();
+        &held_order
+    } else {
+        order
+    };
     let mut by_id: std::collections::HashMap<String, khor_core::Session> =
         held.iter().map(|r| (r.id.0.clone(), r.clone())).collect();
     for r in changed {
@@ -8947,6 +8967,7 @@ mod rows_by_change {
         now[5] = row("shell/5", "make test --shard 2");
         let (order, changed) = rows_since(&was, &now).unwrap();
         assert_eq!(changed.len(), 1, "only the busy row");
+        assert!(order.is_empty(), "and no order: it is the one held");
         let whole = proto::encode(&Response::SessionRows { rows: now.clone() }).unwrap();
         let since = proto::encode(&Response::SessionRowsSince {
             order: order.clone(),
@@ -8955,6 +8976,21 @@ mod rows_by_change {
         })
         .unwrap();
         assert!(since.len() * 2 < whole.len(), "the change {} B against the whole {} B", since.len(), whole.len());
+
+        // On a desk of 109 rows (the term lane's), the change is still one
+        // row's size: the ids are not on it.
+        let many: Vec<Session> = (0..109).map(|k| row(&format!("shell/{k:016x}"), "sleep 3600")).collect();
+        let mut busy = many.clone();
+        busy[108] = row("shell/000000000000006c", "make test --shard 3");
+        let (many_order, many_changed) = rows_since(&many, &busy).unwrap();
+        let many_since = proto::encode(&Response::SessionRowsSince {
+            order: many_order.clone(),
+            rows: many_changed.clone(),
+            full: serde_bytes::ByteBuf::from(vec![0; 16]),
+        })
+        .unwrap();
+        assert!(many_since.len() < 600, "one busy row among 109 is {} B on the wire", many_since.len());
+        assert_eq!(rows_rebuilt(&many, &many_order, many_changed).unwrap(), busy);
         let rebuilt = rows_rebuilt(&was, &order, changed).unwrap();
         let again = proto::encode(&Response::SessionRows { rows: rebuilt }).unwrap();
         assert_eq!(reading_digest(&again), reading_digest(&whole));
@@ -8969,6 +9005,7 @@ mod rows_by_change {
         assert_eq!(changed.iter().map(|r| r.id.0.as_str()).collect::<Vec<_>>(), ["d"]);
         assert_eq!(rows_rebuilt(&was, &order, changed).unwrap(), now);
         assert!(rows_since(&was, &[row("a", "x"), row("a", "y")]).is_none());
+        assert!(rows_since(&was, &[]).is_none(), "every row gone is sent whole");
         assert!(rows_rebuilt(&was, &["e".to_owned()], vec![]).is_none(), "an id in neither");
     }
 }

@@ -958,8 +958,9 @@ pub enum Response {
     },
     /// The answer to [`Request::Git`], variant for variant.
     Git { answer: crate::git::GitAnswer },
-    /// **The sessions reading as what changed** (round NET-6): every row's
-    /// id in order, the rows that differ from what this machine last sent
+    /// **The sessions reading as what changed** (round NET-6): the rows'
+    /// ids in order **only when the order changed** (empty: the order the
+    /// asker holds), the rows that differ from what this machine last sent
     /// the asker, and the digest of the whole [`Response::SessionRows`]
     /// frame to check the rebuild against. Sent in a [`Request::Versions`]
     /// answer only to an asker that named the `sessions+` reading, and

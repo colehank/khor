@@ -3,6 +3,7 @@
 //! relay-only through a road adding `DIAG_RTT_MS` (default 200).
 //!
 //! - **S, a busy session nobody watches:** five idle sessions on the desk
+//!   (`DIAG_IDLE_SESSIONS` to change it)
 //!   and one whose shell marks a command about once a second (the shell
 //!   integration's own `OSC 133` / `633` marks, so the command ledger
 //!   and the row's `doing` move as they do under a real shell). The
@@ -94,7 +95,11 @@ async fn what_a_busy_session_and_an_absent_phone_cost_with_nobody_looking() {
         .expect("pairing must not hang")
         .unwrap();
 
-    let idle: Vec<String> = (0..5).map(|k| open_on(&rd.0, &format!("idle {k}"), &["/bin/sleep", "3600"])).collect();
+    // `DIAG_IDLE_SESSIONS` idle rows beside the busy one (default 5): the
+    // term lane's desk had 109, and what a change carries can grow with them.
+    let idle: Vec<String> = (0..env_u64("DIAG_IDLE_SESSIONS", 5))
+        .map(|k| open_on(&rd.0, &format!("idle {k}"), &["/bin/sleep", "3600"]))
+        .collect();
     let busy = open_on(&rd.0, "busy", &["/bin/sh", "-c", BUSY]);
     phone.face_is_here(true).await.unwrap();
     // Settle: the rows across, the ledger running.
