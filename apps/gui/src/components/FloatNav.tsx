@@ -112,7 +112,7 @@ export function FloatNav({
       // The padding keeps the hairline the glass had before its edge
       // became a ring (round 7), so the capsule is still 314 wide.
       className={cn(
-        "glass flex h-nav-h max-w-[calc(100%-2*var(--nav-gap))] items-stretch rounded-full p-[calc(var(--gap-xxs)+var(--hair))] select-none",
+        "glass flex h-nav-h min-w-0 items-stretch rounded-full p-[calc(var(--gap-xxs)+var(--hair))] select-none",
         className,
       )}
     >

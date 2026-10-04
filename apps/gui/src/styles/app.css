@@ -424,6 +424,19 @@ aside[data-side] {
    starts at the row inset the title row ends with: the strip fits, its
    right edge on the title row's, 「更多」 over the search circle — folded
    or not. */
+/* **The bottom row while a search is open** (UX-11, `lib/bottom-search`):
+   the landing's field and 取消 take the row; the bar and the circle step
+   aside until it closes. Suggestions open upward, over the list. */
+[data-nav-row]:has([data-bottom-search-seat] > *) > :not([data-bottom-search-seat]) {
+  display: none;
+}
+[data-bottom-search] [data-omni-menu] {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: var(--gap-in);
+}
+
 @media (pointer: coarse) {
   :root:not([data-traffic]) :is([data-wide-top], [data-folded-lead]) {
     padding-inline-start: var(--spacing-row);
@@ -761,10 +774,10 @@ aside[data-side] {
 }
 /* The page under comes in from a third of the way out; its bottom bar
    stays put, as a tab bar does. */
-:root[data-swiping]:not([data-swipe-kind="file"]) [data-screen-under] > :not([data-float-nav]) {
+:root[data-swiping]:not([data-swipe-kind="file"]) [data-screen-under] > :not([data-float-nav], [data-nav-row]) {
   transform: translateX(calc((var(--swipe) - 100vw) * 0.3));
 }
-:root[data-settling]:not([data-swipe-kind="file"]) [data-screen-under] > :not([data-float-nav]) {
+:root[data-settling]:not([data-swipe-kind="file"]) [data-screen-under] > :not([data-float-nav], [data-nav-row]) {
   transition: transform var(--dur-240) var(--ease-out);
 }
 :root[data-swiping]:not([data-swipe-kind="file"]) :is([data-side-l0], [data-swipe-host]) {
