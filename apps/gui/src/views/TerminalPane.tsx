@@ -94,6 +94,7 @@ import { programOf } from "@/components/DoingLine";
 import { termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
+import { iipSizes } from "@/lib/term-iip";
 import { kittyFlags, kittyKey, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
 import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
@@ -1841,8 +1842,12 @@ export function TerminalPane({
       predict.clear();
       rememberTermSize(cols, rows);
     });
+    // An iTerm2 picture whose header has no `size` is given one before
+    // xterm's image addon sees it (`lib/term-iip`); a fresh rewriter for
+    // each screen, so a sequence held half-way never outlives a reset.
+    let iip = iipSizes();
     // Output painted a whole frame at a time (item 18 B).
-    const frames = framesWhole(term, predict.output);
+    const frames = framesWhole(term, (bytes) => predict.output(iip(bytes)));
     let seq = 0;
     let timer = 0;
     let busy = false;
@@ -1863,7 +1868,7 @@ export function TerminalPane({
     let replaying = 0;
     const replay = (bytes: Uint8Array) => {
       replaying += 1;
-      const shaped = predict.output(bytes);
+      const shaped = predict.output(iip(bytes));
       term.write(shaped.bytes, () => {
         replaying -= 1;
         shaped.parsed?.();
@@ -1906,6 +1911,7 @@ export function TerminalPane({
           term.reset();
           predict.clear();
           kitty.reset();
+          iip = iipSizes();
         }
         if (b.bytes) {
           if (b.reset || gap > CATCH_UP_MS) {
@@ -1982,6 +1988,7 @@ export function TerminalPane({
             term.reset();
             predict.clear();
             kitty.reset();
+            iip = iipSizes();
           }
           // Everything the feed holds — it began with the host's ring
           // dump, so the screen arrives *with its history*, the same
