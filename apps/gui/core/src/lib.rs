@@ -428,6 +428,11 @@ pub struct DeviceRow {
     /// word is 本机.
     #[ts(type = "number | null")]
     pub rtt_ms: Option<u32>,
+    /// **Which relay, when `hop` is 中继** (round NET-8 addendum, UX-16's
+    /// map): its host, and port when not the scheme's own
+    /// (`relay.khor.cloud`, `101.200.80.77:3340`). `None` on a direct
+    /// wire, without a live one, and for this machine.
+    pub relay: Option<String>,
     /// The machine this satellite speaks through, by name (附属机器批)
     /// — `None` for every ordinary machine. Where `hop` answers "which
     /// road", this answers "whose road": a satellite has none of its
@@ -1178,6 +1183,10 @@ fn rows_of_devices(
                 .then(|| links.iter().find(|(id, _)| *id == d.id))
                 .flatten()
                 .and_then(|(_, l)| l.rtt_ms),
+            relay: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .and_then(|(_, l)| l.relay.clone()),
             face: n.face_of(&d),
             pinned: d.pinned,
             // The background sampler's last round for this machine,

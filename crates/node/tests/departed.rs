@@ -76,6 +76,17 @@ async fn a_machine_its_relay_saw_leave_is_said_gone_at_once() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     assert_eq!(hop(&b, &alpha_id).await, Some(Hop::Relay), "through the relay");
+    // **And which relay** (round NET-8 addendum, UX-16's map): the
+    // tests' own, by host and port.
+    let named = b
+        .links()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|(id, _)| *id == alpha_id)
+        .and_then(|(_, l)| l.relay);
+    let want = util::loop_relay().trim_start_matches("http://").trim_end_matches('/').to_owned();
+    assert_eq!(named, Some(want), "the link names the relay it goes through");
 
     // Alpha's ears close: the relay sees it leave and says so.
     assert!(link::deafen(&ra.0).await, "alpha's resident deafens");
