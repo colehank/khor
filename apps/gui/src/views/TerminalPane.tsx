@@ -95,6 +95,7 @@ import { termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
 import { iipSizes } from "@/lib/term-iip";
+import { promptMarks } from "@/lib/term-prompt-sp";
 import { kittyFlags, kittyKey, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
 import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
@@ -1865,8 +1866,12 @@ export function TerminalPane({
     // xterm's image addon sees it (`lib/term-iip`); a fresh rewriter for
     // each screen, so a sequence held half-way never outlives a reset.
     let iip = iipSizes();
+    // zsh's prompt marks are made for this terminal's width, so a history
+    // written at another width does not leave them standing
+    // (`lib/term-prompt-sp`).
+    const marksSp = promptMarks(() => term.cols);
     // Output painted a whole frame at a time (item 18 B).
-    const frames = framesWhole(term, (bytes) => predict.output(iip(bytes)));
+    const frames = framesWhole(term, (bytes) => predict.output(iip(marksSp(bytes))));
     let seq = 0;
     let timer = 0;
     let busy = false;
@@ -1887,7 +1892,7 @@ export function TerminalPane({
     let replaying = 0;
     const replay = (bytes: Uint8Array) => {
       replaying += 1;
-      const shaped = predict.output(iip(bytes));
+      const shaped = predict.output(iip(marksSp(bytes)));
       term.write(shaped.bytes, () => {
         replaying -= 1;
         shaped.parsed?.();
