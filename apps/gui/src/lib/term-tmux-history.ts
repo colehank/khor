@@ -19,6 +19,9 @@ import { scrollsNatively } from "@/lib/term-scroller";
 
 /** Output quiet this long, tmux has pushed what it will into the history. */
 const QUIET_MS = 300;
+/** A read waits for quiet at most this long: a program that never goes
+    quiet (Claude Code's spinner) would otherwise put it off for good. */
+const QUIET_MAX_MS = 1000;
 /** The history xterm keeps what one read sends (`Tmux::history`'s cap). */
 const HISTORY_LINES = 10_000;
 
@@ -62,8 +65,18 @@ export function historyBytes(h: PaneHistory, rows: number): string {
  * - it is read when the pane comes on screen, when another pane comes to
  *   the front, when a finger lands on a history that is behind, and —
  *   only while the person is up in it — after output has been quiet
- *   `QUIET_MS`. Never on every write: a pane streaming at the bottom
- *   costs one flag.
+ *   `QUIET_MS` (`QUIET_MAX_MS` at most). Never on every write: a pane
+ *   streaming at the bottom costs one flag.
+ *
+ * **The copy is tmux's history, row for row** (item 33). tmux moves rows
+ * between the history and the screen when the pane is resized; the read
+ * after a resize says which (`Tmux::history` places the copy by count).
+ * So the history xterm must not move any itself: its screen is cleared
+ * before it is resized, and xterm neither pushes rows into its scrollback
+ * nor pulls them back. The first read waits for the attach (`joined`),
+ * which sizes the pane for this face: read before it, at another face's
+ * size, the pane's newest rows went back onto the screen at once, and
+ * the copy had to be redone whole.
  */
 export function holdsTmuxHistory(o: {
   live: Terminal;
@@ -86,6 +99,8 @@ export function holdsTmuxHistory(o: {
   /** Back to the bottom (the way-back-down pill). */
   toBottom: () => void;
   shown: (on: boolean) => void;
+  /** The attach has sized the pane for this face: reads may begin. */
+  joined: () => void;
   stop: () => void;
 } {
   const { live, seat } = o;
@@ -97,11 +112,15 @@ export function holdsTmuxHistory(o: {
   let stopped = false;
   let reading = false;
   let again = false;
+  /** The attach has sized the pane (`joined`). */
+  let attached = false;
   /** Output since the last read: the history may be behind. */
   let behind = false;
   /** The last read failed (an older khor there, out of reach). */
   let failed = false;
   let quiet = 0;
+  /** When the read now waiting for quiet was first asked for. */
+  let waitingSince = 0;
   /** Whether the person is up in the history. */
   const up = () => {
     const b = history?.buffer.active;
@@ -147,6 +166,7 @@ export function holdsTmuxHistory(o: {
   /** Off the screen: the history and its lines go. */
   const drop = () => {
     window.clearTimeout(quiet);
+    waitingSince = 0;
     give(false);
     native?.stop();
     native = null;
@@ -174,8 +194,14 @@ export function holdsTmuxHistory(o: {
     }
     // Opaque over the live screen, in the live theme's ground.
     seat.style.background = live.options.theme?.background ?? "";
+    // A refill under a person up in the history keeps them as far from
+    // the bottom as they were: it is mostly the same lines again.
+    const b = history.buffer.active;
+    const fromBottom = h.refill && up() ? b.baseY - b.viewportY : 0;
     if (h.refill) history.reset();
-    history.write(historyBytes(h, history.rows), () => {
+    const t = history;
+    t.write(historyBytes(h, t.rows), () => {
+      if (fromBottom > 0) t.scrollToLine(Math.max(0, t.buffer.active.baseY - fromBottom));
       native?.sync();
       show();
     });
@@ -183,7 +209,12 @@ export function holdsTmuxHistory(o: {
   /** Resolves false when the history could not be read. */
   const read = (): Promise<boolean> => {
     window.clearTimeout(quiet);
+    waitingSince = 0;
     if (stopped || !visible) return Promise.resolve(true);
+    if (!attached) {
+      behind = true;
+      return Promise.resolve(true);
+    }
     if (reading) {
       again = true;
       return Promise.resolve(true);
@@ -214,7 +245,9 @@ export function holdsTmuxHistory(o: {
   };
   const quietThen = () => {
     window.clearTimeout(quiet);
-    quiet = window.setTimeout(() => void read(), QUIET_MS);
+    const now = performance.now();
+    waitingSince ||= now;
+    quiet = window.setTimeout(() => void read(), Math.min(QUIET_MS, Math.max(0, waitingSince + QUIET_MAX_MS - now)));
   };
   const wrote = live.onWriteParsed(() => {
     behind = true;
@@ -224,9 +257,17 @@ export function holdsTmuxHistory(o: {
   // pane's id (`Tmux::grouped_attach_argv`), and the next read is that
   // pane's, whole.
   const titled = live.onTitleChange(quietThen);
-  const resized = live.onResize(({ cols, rows }) => {
-    history?.resize(cols, rows);
+  // The copy moves no rows itself (above): its screen goes first, so the
+  // resize neither pushes rows into its scrollback nor pulls them back,
+  // and the read after it brings tmux's own move.
+  const resized = live.onResize(() => {
     behind = true;
+    const t = history;
+    t?.write("\x1b[H\x1b[J", () => {
+      if (history !== t) return;
+      t.resize(live.cols, live.rows);
+      if (up()) quietThen();
+    });
   });
   // A finger landing: a history that is behind is brought up to date
   // before the drag reaches it (the scroller holds its place meanwhile,
@@ -246,6 +287,10 @@ export function holdsTmuxHistory(o: {
       visible = to;
       if (to) void read();
       else drop();
+    },
+    joined: () => {
+      attached = true;
+      if (visible) quietThen();
     },
     stop: () => {
       stopped = true;
