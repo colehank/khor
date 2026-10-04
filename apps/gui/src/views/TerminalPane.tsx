@@ -2416,6 +2416,21 @@ export function TerminalPane({
       if (!behind) setFreshBelow(false);
     };
     const scrolled = term.onScroll(sync);
+    // **The row's height, for the deck's fold** (item 32, the handoff in
+    // audit/term-tmux-history.md): UX-13 sizes the band it gives the
+    // terminal to whole rows of it. Published where the pane's root is,
+    // whenever a frame drawn says it changed (a font, a size).
+    const root = box.closest<HTMLElement>("[data-kept-terminal]") ?? box;
+    let rowPx = "";
+    const rowed = term.onRender(() => {
+      const el = term.element?.querySelector(".xterm-screen");
+      const h = el ? el.getBoundingClientRect().height / term.rows : 0;
+      const px = h > 0 ? `${Math.round(h * 100) / 100}px` : "";
+      if (px && px !== rowPx) {
+        rowPx = px;
+        root.style.setProperty("--term-row", px);
+      }
+    });
     const wrote = term.onWriteParsed(() => {
       const b = term.buffer.active;
       if (b.viewportY < b.baseY || historyUp) setFreshBelow(true);
@@ -2524,6 +2539,7 @@ export function TerminalPane({
       unblock?.dispose();
       box.removeEventListener("contextmenu", rightClick);
       scrolled.dispose();
+      rowed.dispose();
       wrote.dispose();
       found.dispose();
       rung.dispose();
