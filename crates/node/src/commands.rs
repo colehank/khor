@@ -94,6 +94,11 @@ pub struct Command {
 pub struct Saved {
     pub doing: Doing,
     pub recent: Vec<Command>,
+    /// Through a tmux client, the pane `doing` is the reading of (`%3`):
+    /// the node falls back to tmux's own reading of it while it has sent
+    /// no marks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pane: Option<String>,
 }
 
 /// One line of the machine's `history.jsonl`.
@@ -597,6 +602,7 @@ impl Ledger {
         Saved {
             doing: self.doing(),
             recent: self.recent.iter().cloned().collect(),
+            pane: self.front.clone().or_else(|| self.pane.clone()),
         }
     }
 
@@ -642,6 +648,13 @@ pub fn read_doing(dir: &Path) -> Option<Doing> {
     serde_json::from_slice::<Saved>(&bytes)
         .ok()
         .map(|s| s.doing)
+}
+
+/// Which tmux pane a session's ledger is reading (`Saved::pane`), for a
+/// tmux client's row.
+pub fn read_pane(dir: &Path) -> Option<String> {
+    let bytes = std::fs::read(saved_path(dir)).ok()?;
+    serde_json::from_slice::<Saved>(&bytes).ok()?.pane
 }
 
 /// Appends finished commands to the machine's history, cutting the file

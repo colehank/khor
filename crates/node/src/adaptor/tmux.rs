@@ -176,7 +176,7 @@ const CALL_DEADLINE: Duration = Duration::from_millis(1000);
 const SEP: char = '\x1f';
 const FORMAT: &str = "#{session_id}\x1f#{session_created}\x1f#{session_activity}\
 \x1f#{pane_pid}\x1f#{?pane_start_command,1,0}\x1f#{pane_current_command}\
-\x1f#{pane_current_path}\x1f#{session_name}";
+\x1f#{pane_current_path}\x1f#{pane_id}\x1f#{session_name}";
 
 /// What one look at a multiplexer found.
 #[derive(Debug, Default, Clone)]
@@ -636,12 +636,14 @@ struct Pane {
     current_command: String,
     /// Where this pane is standing right now (`pane_current_path`).
     current_path: String,
+    /// tmux's own name for it (`%3`), the one khor's marks carry.
+    pane_id: String,
 }
 
 impl Pane {
     fn parse(line: &str) -> Option<Pane> {
         let f: Vec<&str> = line.split(SEP).collect();
-        let [id, created, activity, pid, started, current, path, name] = f[..] else {
+        let [id, created, activity, pid, started, current, path, pane_id, name] = f[..] else {
             return None;
         };
         Some(Pane {
@@ -653,6 +655,7 @@ impl Pane {
             pid: pid.parse().ok()?,
             started_with_command: started == "1",
             current_command: current.to_owned(),
+            pane_id: pane_id.to_owned(),
         })
     }
 }
@@ -670,6 +673,8 @@ struct Gathering {
     cwd: String,
     /// The first pane running something other than its shell.
     running: Option<String>,
+    /// Each pane's own reading.
+    panes: Vec<super::PaneReading>,
 }
 
 impl Gathering {
@@ -688,6 +693,7 @@ impl Gathering {
             // (`khor_node::place`).
             cwd: first.current_path.clone(),
             running: None,
+            panes: Vec::new(),
         }
     }
 
@@ -701,6 +707,11 @@ impl Gathering {
         if word == Some(State::Busy) && self.running.is_none() && !pane.current_command.is_empty() {
             self.running = Some(pane.current_command.clone());
         }
+        self.panes.push(super::PaneReading {
+            id: pane.pane_id.clone(),
+            running: (word == Some(State::Busy) && !pane.current_command.is_empty()).then(|| pane.current_command.clone()),
+            cwd: (!pane.current_path.is_empty()).then(|| pane.current_path.clone()),
+        });
         match word {
             Some(State::Busy) => self.word = Some(State::Busy),
             Some(w) if self.word.is_none() => self.word = Some(w),
@@ -734,6 +745,7 @@ impl Gathering {
                 },
             },
             running: self.running.clone(),
+            panes: self.panes,
             holds: procs.held_by(&self.pane_pids),
         }
     }
@@ -1293,6 +1305,7 @@ mod tests {
             started_with_command: started,
             current_command: current.into(),
             current_path: "/somewhere".into(),
+            pane_id: "%1".into(),
         };
         let procs = Procs::of([
             // Both spellings of the same shell. `zsh` is what sysinfo
@@ -1360,9 +1373,9 @@ mod tests {
             Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp").is_none(),
             "a field short"
         );
-        assert!(Pane::parse("$1\x1f100\x1f100\x1fnotapid\x1f0\x1fzsh\x1f/tmp\x1falpha").is_none());
+        assert!(Pane::parse("$1\x1f100\x1f100\x1fnotapid\x1f0\x1fzsh\x1f/tmp\x1f%1\x1falpha").is_none());
         assert_eq!(
-            Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1fhas|pipes|in|it")
+            Pane::parse("$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1f%1\x1fhas|pipes|in|it")
                 .unwrap()
                 .session_name,
             "has|pipes|in|it"
@@ -1382,9 +1395,9 @@ mod tests {
     fn output_this_version_cannot_read_is_counted_and_stops_nothing() {
         let fake = fake_tmux(
             "fmt",
-            "$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1freadable\n\
+            "$1\x1f100\x1f100\x1f10\x1f0\x1fzsh\x1f/tmp\x1f%1\x1freadable\n\
              $2|from-a-later-tmux\n\
-             $3\x1f200\x1f200\x1f11\x1f0\x1fzsh\x1f/tmp\x1falso-readable\n",
+             $3\x1f200\x1f200\x1f11\x1f0\x1fzsh\x1f/tmp\x1f%1\x1falso-readable\n",
         );
         let procs = Procs::of([
             (10, proc_named("-zsh", Some(1))),
@@ -1415,7 +1428,7 @@ mod tests {
     fn a_session_with_nothing_running_in_it_is_counted_not_guessed_at() {
         let fake = fake_tmux(
             "gone",
-            "$1\x1f100\x1f100\x1f424242\x1f0\x1fzsh\x1f/tmp\x1fghost\n",
+            "$1\x1f100\x1f100\x1f424242\x1f0\x1fzsh\x1f/tmp\x1f%1\x1fghost\n",
         );
         let listing = Tmux::at_binary(&fake).sweep(&Procs::default());
         assert_eq!(listing.rows.len(), 0);

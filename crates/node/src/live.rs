@@ -1285,6 +1285,7 @@ impl LiveKind {
                     own: Some(i),
                     tmux: None,
                     running: None,
+                    panes: Vec::new(),
                 });
             }
         }
@@ -1317,6 +1318,7 @@ impl LiveKind {
                 own,
                 tmux: Some(held.found),
                 running: held.running,
+                panes: held.panes,
             });
         }
         // **An agent nobody registered, gone from a host that is still
@@ -1494,6 +1496,9 @@ impl LiveKind {
                             Form::Terminal {
                                 word: found.sighting.word,
                                 at_ms: found.sighting.at_ms,
+                                running: host.running.clone(),
+                                cwd: found.sighting.cwd.clone(),
+                                panes: host.panes.clone(),
                             },
                         )),
                         // khor's own terminal with nothing inside is
@@ -1675,8 +1680,38 @@ impl LiveKind {
         // (docs/SESSION.md 形态随进程变).
         for (k, form) in forms {
             match form {
-                Form::Terminal { word, at_ms } => {
+                Form::Terminal {
+                    word,
+                    at_ms,
+                    running,
+                    cwd,
+                    panes,
+                } => {
+                    // **Marks when the front pane sent any, else tmux's
+                    // reading — never an empty row** (item 21's follow-up).
+                    // Until the person's shells load the integration, the
+                    // ledger has nothing for the pane in front; then the
+                    // row says what tmux says that pane runs and where it
+                    // stands, as an unattached tmux row does. A pane that
+                    // marked has a directory (`OSC 7` at every prompt).
+                    let pane = self.dir_of(&out[k].id).and_then(|d| crate::commands::read_pane(&d));
                     let r = &mut out[k];
+                    let marked = r.doing.as_ref().is_some_and(|d| d.running || d.command.is_some() || d.cwd.is_some());
+                    if !marked {
+                        let front = pane.and_then(|p| panes.into_iter().find(|x| x.id == p));
+                        let (running, cwd) = match front {
+                            Some(f) => (f.running, f.cwd),
+                            None => (running, cwd),
+                        };
+                        let title = r.doing.as_ref().and_then(|d| d.title.clone());
+                        r.doing = Some(khor_core::Doing {
+                            running: running.is_some(),
+                            command: running,
+                            cwd,
+                            title,
+                            ..Default::default()
+                        });
+                    }
                     r.kind = Kind(khor_core::kind::SHELL.to_owned());
                     r.category = Some(khor_core::category::SHELL.to_owned());
                     r.state = StateStamp {
@@ -1894,6 +1929,8 @@ struct Host {
     tmux: Option<crate::adaptor::Found>,
     /// What tmux says a pane runs, when it is not the shell.
     running: Option<String>,
+    /// tmux's reading of each pane.
+    panes: Vec<crate::adaptor::PaneReading>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1907,7 +1944,14 @@ enum Holder {
 /// The form a holder takes on.
 enum Form {
     /// A plain terminal: nothing recognisable is running in the host.
-    Terminal { word: State, at_ms: i64 },
+    /// With tmux's own reading, for a row whose shell sent no marks.
+    Terminal {
+        word: State,
+        at_ms: i64,
+        running: Option<String>,
+        cwd: Option<String>,
+        panes: Vec<crate::adaptor::PaneReading>,
+    },
     /// The agent at row `from` — kind, category, word, preview.
     Agent { from: usize, mux: bool },
 }
@@ -2514,7 +2558,7 @@ mod tests {
         // tmux holds 3001's pane and nothing else.
         let holding = crate::adaptor::tmux::fake_tmux(
             "mux-held",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1f%1\x1fwith-claude\n",
         );
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -3129,7 +3173,7 @@ mod tests {
         ]);
         let holding = crate::adaptor::tmux::fake_tmux(
             "holding",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1f%2\x1fwith-claude\n",
         );
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -3152,7 +3196,7 @@ mod tests {
         // The control: the same session, holding nothing anyone listed.
         let empty = crate::adaptor::tmux::fake_tmux(
             "empty-pane",
-            "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fzsh\x1f/tmp\x1fjust-a-shell\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fzsh\x1f/tmp\x1f%3\x1fjust-a-shell\n",
         );
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -3217,7 +3261,7 @@ mod tests {
         ]);
         let holding = crate::adaptor::tmux::fake_tmux(
             "bridge-fold",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fwith-claude\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1f%4\x1fwith-claude\n",
         );
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&vendors)
@@ -3272,8 +3316,8 @@ mod tests {
         // once by a grouped twin created later.
         let fake = crate::adaptor::tmux::fake_tmux(
             "twin",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fbase\n\
-             $9\x1f1786245400\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1fbase-1\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1f%5\x1fbase\n\
+             $9\x1f1786245400\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1f%6\x1fbase-1\n",
         );
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::empty()
@@ -3385,7 +3429,7 @@ mod tests {
         ]);
         let fake = crate::adaptor::tmux::fake_tmux(
             "registry",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1frunning-khor\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/tmp\x1f%7\x1frunning-khor\n",
         );
         let k = LiveKind::new(k_root, DeviceId([9; 32])).discovering(Arc::new(
             Discovery::empty()
@@ -3482,6 +3526,60 @@ mod tests {
     /// list as the same row — same id — in the terminal's form; the
     /// tmux session does not come back as a second row; nothing is
     /// 已结束. Only once the tmux session itself is gone does the row end.
+    /// **A tmux row khor is attached to, whose pane in front sent no
+    /// marks, reads tmux for that pane** (item 21's follow-up): never an
+    /// empty row while the person's shells have no integration. A pane
+    /// that marked keeps its own reading.
+    #[test]
+    fn an_attached_tmux_row_reads_tmux_for_a_front_pane_with_no_marks() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let root = tmp("front-pane");
+        let tmux = crate::adaptor::tmux::fake_tmux(
+            "front-pane",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%1\x1fwork\n\
+             $7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fsleep\x1f/w/two\x1f%2\x1fwork\n",
+        );
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&fixture_vendors())
+                .with_procs(Procs::of([proc_under(3001, "zsh", 1), proc_under(3002, "zsh", 1)]))
+                .with_tmux(Tmux::at_binary(&tmux)),
+        ));
+        let row = sid(T_ID);
+        k.register(&row, "shell", "work", None, None).unwrap();
+        let dir = k.dir_of(&row).unwrap();
+        let ledger = |doing: khor_core::Doing, pane: &str| {
+            crate::commands::write_saved(
+                &dir,
+                &crate::commands::Saved {
+                    doing,
+                    recent: Vec::new(),
+                    pane: Some(pane.into()),
+                },
+            )
+        };
+        let doing = || {
+            let rows = k.rows_listed(|_| 0, |s| s == T_ID);
+            let r = rows.iter().find(|r| r.id == row).expect("the tmux row");
+            r.doing.clone().unwrap_or_default()
+        };
+        ledger(khor_core::Doing::default(), "%2");
+        let d = doing();
+        assert_eq!((d.command.as_deref(), d.running, d.cwd.as_deref()), (Some("sleep"), true, Some("/w/two")));
+        ledger(khor_core::Doing::default(), "%1");
+        let d = doing();
+        assert_eq!((d.command.as_deref(), d.running, d.cwd.as_deref()), (None, false, Some("/w/one")));
+        let marked = khor_core::Doing {
+            command: Some("make".into()),
+            exit: Some(0),
+            cwd: Some("/w/m".into()),
+            ..Default::default()
+        };
+        ledger(marked, "%2");
+        let d = doing();
+        assert_eq!((d.command.as_deref(), d.cwd.as_deref()), (Some("make"), Some("/w/m")));
+    }
+
     #[test]
     fn an_agent_leaving_its_tmux_session_turns_its_row_into_that_terminal() {
         use crate::adaptor::{Discovery, Procs, tmux::Tmux};
@@ -3489,7 +3587,7 @@ mod tests {
         let root = tmp("seat-leave");
         let tmux = crate::adaptor::tmux::fake_tmux(
             "seat-leave",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1fwork\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%8\x1fwork\n",
         );
         let at = |procs: Procs, tmux: &str| {
             LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
@@ -3614,7 +3712,7 @@ mod tests {
         write_status();
         let tmux = crate::adaptor::tmux::fake_tmux(
             "seat-unregistered",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1fwork\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%9\x1fwork\n",
         );
         let at = |procs: Procs, tmux: &str| {
             LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
@@ -3703,7 +3801,7 @@ mod tests {
         let root = tmp("seat-two");
         let tmux = crate::adaptor::tmux::fake_tmux(
             "seat-two",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1fwork\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%10\x1fwork\n",
         );
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
             Discovery::at(&fixture_vendors())
@@ -3749,7 +3847,7 @@ mod tests {
         let root = tmp("seat-arrive");
         let tmux = crate::adaptor::tmux::fake_tmux(
             "seat-arrive",
-            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1fwork\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%11\x1fwork\n",
         );
         let at = |procs: Procs| {
             LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
