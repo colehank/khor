@@ -107,6 +107,41 @@ fn place_of(cwd: Option<&str>) -> Option<String> {
     Some(cwd.to_owned())
 }
 
+/// **Where a hosted shell stands, as a row's line** (item 26): the
+/// ledger's `OSC 7` directory, else the title a program set, else the
+/// shell's working directory as the OS reports it; a directory under home
+/// written with `~`. `None` when none of the three is known.
+fn shell_stands(doing: Option<&khor_core::Doing>, shell_pid: u32) -> Option<String> {
+    if let Some(cwd) = doing.and_then(|d| d.cwd.as_deref()) {
+        return Some(tilde(cwd));
+    }
+    if let Some(title) = doing.and_then(|d| d.title.as_deref()).filter(|t| !t.trim().is_empty()) {
+        return Some(title.to_owned());
+    }
+    cwd_of(shell_pid).map(|p| tilde(&p.to_string_lossy()))
+}
+
+/// A path under the home directory, written from `~`.
+fn tilde(path: &str) -> String {
+    match std::env::home_dir().map(|h| h.to_string_lossy().into_owned()) {
+        Some(h) if !h.is_empty() && (path == h || path.starts_with(&format!("{h}/"))) => format!("~{}", &path[h.len()..]),
+        _ => path.to_owned(),
+    }
+}
+
+/// A process's working directory, as the OS reports it.
+fn cwd_of(pid: u32) -> Option<PathBuf> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut sys = System::new();
+    let pid = Pid::from_u32(pid);
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_cwd(UpdateKind::Always),
+    );
+    sys.process(pid)?.cwd().map(Path::to_path_buf)
+}
+
 /// Which address a terminal should connect to after
 /// [`LiveKind::attach_multiplexed`] — the session's own host, or a
 /// viewer bridged onto a tmux seat (`crate::host::view_file_path` has
@@ -1830,6 +1865,23 @@ impl LiveKind {
                 .filter(|hf| crate::link::pid_running(hf.host_pid));
             let lens = crate::host::read_view_file(&e.path())
                 .is_ok_and(|vf| crate::link::pid_running(vf.host_pid));
+            let doing = crate::commands::read_doing(&e.path());
+            // **A hosted shell's row never shows its prompt** (item 26;
+            // roadmap 2.1's rule, broken for shells whose host predates
+            // the shim and so has no ledger: the owner's row read a
+            // powerlevel10k prompt line, glyphs and all). With no command
+            // from the ledger the row reads where the shell stands —
+            // `OSC 7`'s directory, else the title, else the shell's own
+            // working directory as the OS reports it — and never the
+            // screen's last line.
+            let last = match &host {
+                Some(hf) if meta.kind == khor_core::kind::SHELL
+                    && doing.as_ref().is_none_or(|d| d.command.is_none()) =>
+                {
+                    shell_stands(doing.as_ref(), hf.child_pid)
+                }
+                _ => crate::host::read_last(&e.path()),
+            };
             out.push(RegistryRow {
                 word_outranks_disk: state.word_outranks_disk(),
                 vendor_leaf: meta.vendor_leaf.clone(),
@@ -1856,7 +1908,7 @@ impl LiveKind {
                     // here and may still earn a preview from a
                     // transcript (`rows`'s post-pass — which also
                     // outranks this line for agent rows).
-                    last: crate::host::read_last(&e.path()),
+                    last,
                     via: None,
                     // A host here is a terminal to be had here — a
                     // *running* host (`Node::is_hosted` has why the
@@ -1869,7 +1921,7 @@ impl LiveKind {
                     mux: false,
                     // The host's command ledger (`crate::commands`),
                     // when its shell marks commands.
-                    doing: crate::commands::read_doing(&e.path()),
+                    doing,
                 },
                 pid: meta.pid,
             });
@@ -3526,6 +3578,41 @@ mod tests {
     /// list as the same row — same id — in the terminal's form; the
     /// tmux session does not come back as a second row; nothing is
     /// 已结束. Only once the tmux session itself is gone does the row end.
+    /// **A hosted shell's row never shows its prompt** (item 26; the
+    /// owner's row read a powerlevel10k prompt line under a host from
+    /// before the shim). With no command from the ledger the row reads the
+    /// shell's own working directory, then the ledger's `OSC 7` directory
+    /// once there is one; a command still wins.
+    #[test]
+    fn a_hosted_shell_without_marks_reads_where_it_stands_not_its_prompt() {
+        let root = tmp("row-glyphs");
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]));
+        let id = sid("shell/rowglyphs");
+        k.register(&id, "shell", "shell", None, None).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        let host = FakeHost::up();
+        // The child is a real process whose cwd the OS reports: the host
+        // stand-in itself, started in this test's own directory.
+        host.serve(&dir, host.pid());
+        fs::write(dir.join("last.txt"), "╭─ ◖ /Library ◗ ✔ 20:58").unwrap();
+        let row = || k.rows(|_| 0).into_iter().find(|r| r.id == id).expect("the row");
+        let here = std::env::current_dir().unwrap().to_string_lossy().into_owned();
+        let last = row().last.expect("a line");
+        assert!(!last.contains('◖'), "the prompt's glyphs: {last:?}");
+        assert_eq!(last, tilde(&here));
+        let saved = |doing: khor_core::Doing| {
+            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, recent: Vec::new(), pane: None })
+        };
+        saved(khor_core::Doing { cwd: Some("/w/proj".into()), ..Default::default() });
+        assert_eq!(row().last.as_deref(), Some("/w/proj"));
+        saved(khor_core::Doing { title: Some("vim notes.md".into()), ..Default::default() });
+        assert_eq!(row().last.as_deref(), Some("vim notes.md"));
+        saved(khor_core::Doing { command: Some("make".into()), exit: Some(0), cwd: Some("/w/proj".into()), ..Default::default() });
+        let r = row();
+        assert_eq!(r.doing.and_then(|d| d.command).as_deref(), Some("make"));
+        drop(host);
+    }
+
     /// **A tmux row khor is attached to, whose pane in front sent no
     /// marks, reads tmux for that pane** (item 21's follow-up): never an
     /// empty row while the person's shells have no integration. A pane
