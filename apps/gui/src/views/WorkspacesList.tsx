@@ -19,7 +19,7 @@
 // reason: a beat is a dial plus a walk of somebody else's disk for an
 // answer that is almost always the one already on screen, and coming
 // back to the window is the moment staleness starts to mislead.
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import {
   fetchCheckout,
@@ -606,7 +606,7 @@ export function WorkspacesList({
       // not be asked, a detached HEAD all arrive here as nothing — over
       // when it was last touched, caption, tabular.
       trailing: (
-        <span className="flex max-w-[45%] min-w-0 flex-none flex-col items-end gap-xxs text-caption tabular-nums text-muted-foreground">
+        <YieldingCorner>
           <span data-ws-git className="max-w-full truncate">
             {git && git.branch !== ""
               ? changed > 0
@@ -614,8 +614,8 @@ export function WorkspacesList({
                 : git.branch
               : ""}
           </span>
-          <span data-ws-touched>{at > 0 ? ago(at) : ""}</span>
-        </span>
+          <span data-ws-touched className="whitespace-nowrap">{at > 0 ? ago(at) : ""}</span>
+        </YieldingCorner>
       ),
       // **The three things the row says out loud**: its name, its
       // machine, its path (2026-09-17 ruling 50).
@@ -673,5 +673,50 @@ export function WorkspacesList({
         none={noneMatch}
       />
     </div>
+  );
+}
+
+/**
+ * **The branch gives way before the name** (「优先折叠 branch 名,保留工作区名」;
+ * the corner moved to the row's end in F2.1 and kept the rule). The meta
+ * column at the right end is as wide as the branch wants, but never more
+ * than what the row has left once the name is whole — and never less than
+ * the time under it, which is not cut (an 「ago」 missing its tail is a
+ * different amount of time). Measured, because what the name needs is its
+ * own text's width, which no flex rule can hand a sibling.
+ */
+function YieldingCorner({ children }: { children: ReactNode }) {
+  const box = useRef<HTMLSpanElement | null>(null);
+  const fit = useCallback(() => {
+    const el = box.current;
+    const text = el?.closest<HTMLElement>("[data-side-text]");
+    const name = text?.querySelector<HTMLElement>("[data-ws-name]");
+    if (!el || !text || !name) return;
+    const cs = getComputedStyle(text);
+    const room =
+      text.clientWidth -
+      Number.parseFloat(cs.paddingLeft) -
+      Number.parseFloat(cs.paddingRight) -
+      Number.parseFloat(cs.columnGap || "0") -
+      name.scrollWidth;
+    const time = el.querySelector<HTMLElement>("[data-ws-touched]")?.scrollWidth ?? 0;
+    el.style.maxWidth = `${Math.max(time, room)}px`;
+  }, []);
+  // Every render: a rename or a new branch changes what the two need.
+  useLayoutEffect(fit);
+  useLayoutEffect(() => {
+    const text = box.current?.closest<HTMLElement>("[data-side-text]");
+    if (!text) return;
+    const watch = new ResizeObserver(fit);
+    watch.observe(text);
+    return () => watch.disconnect();
+  }, [fit]);
+  return (
+    <span
+      ref={box}
+      className="flex min-w-0 flex-none flex-col items-end gap-xxs text-caption tabular-nums text-muted-foreground"
+    >
+      {children}
+    </span>
   );
 }
