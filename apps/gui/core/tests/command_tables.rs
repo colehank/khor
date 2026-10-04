@@ -301,6 +301,12 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "name_settings",
         "titles that native window after its pane; a browser face has no window to title",
     ),
+    // ── the cursor joystick, felt (item 23) ─────
+    (
+        "joy_haptic",
+        "ticks the phone's haptic engine as the cursor stick sends arrows; a browser has no \
+         haptic engine to reach",
+    ),
     // ── haptics with a meaning (UX-10) ─────
     (
         "haptic",
