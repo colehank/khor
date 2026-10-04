@@ -158,6 +158,7 @@ const QUICK = new Set([
   // An attachment already open: memory, and a write to its socket.
   "chat_poll", "chat_answer", "chat_stop", "chat_set_mode", "chat_set_option",
   "chat_replay", "chat_leave", "term_attach", "term_stream", "term_key", "term_resize", "term_leave",
+  "term_forget",
   // Answers the build knows, or plain memory.
   "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
   "reveal_here",
