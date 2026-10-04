@@ -30,26 +30,37 @@
     // the text out on both layers and reports the first screen row at
     // which the editor's height stops matching the painted line tops —
     // the row from which the caret sits on a neighbour's letter.
-    window.__measure = (size, leading, text) => {
+    // The tokens arrive as tokens.css writes them — a size and a leading
+    // over `--ui-scale` — with the scales to try, comma-separated: the
+    // pair is laid out once per scale, because 界面字号 multiplies the
+    // leading and a fraction at any step is two leadings here.
+    window.__measure = (size, leading, text, scales) => {
       const root = document.documentElement.style;
+      root.setProperty("--pixel", "1px");
       root.setProperty("--text-mono", size);
       root.setProperty("--text-mono--line-height", leading);
       const sheet = document.getElementById("sheet");
       const edit = document.getElementById("edit");
       const lines = text.split("\n");
-      sheet.replaceChildren(...lines.map((l) => { const d = document.createElement("div"); d.dataset.line = "1"; d.style.minHeight = leading; d.textContent = l; return d; }));
-      edit.value = text;
-      const tops = [...sheet.children].map((d) => d.getBoundingClientRect());
-      const base = tops[0].top;
-      const m = edit.cloneNode(); m.id = ""; m.className = "edit"; m.style.height = "1px"; m.style.visibility = "hidden"; edit.parentElement.appendChild(m);
-      let first = null;
-      for (let k = 1; k <= lines.length; k++) {
-        m.value = lines.slice(0, k).join("\n");
-        const editH = m.scrollHeight; const sheetH = tops[k - 1].bottom - base;
-        if (Math.abs(editH - sheetH) > 0.5) { first = { row: k, editH, sheetH }; break; }
+      const out = [];
+      for (const k of String(scales).split(",")) {
+        root.setProperty("--ui-scale", k);
+        const lh = getComputedStyle(sheet).lineHeight;
+        sheet.replaceChildren(...lines.map((l) => { const d = document.createElement("div"); d.dataset.line = "1"; d.style.minHeight = "var(--text-mono--line-height)"; d.textContent = l; return d; }));
+        edit.value = text;
+        const tops = [...sheet.children].map((d) => d.getBoundingClientRect());
+        const base = tops[0].top;
+        const m = edit.cloneNode(); m.id = ""; m.className = "edit"; m.style.height = "1px"; m.style.visibility = "hidden"; edit.parentElement.appendChild(m);
+        let first = null;
+        for (let j = 1; j <= lines.length; j++) {
+          m.value = lines.slice(0, j).join("\n");
+          const editH = m.scrollHeight; const sheetH = tops[j - 1].bottom - base;
+          if (Math.abs(editH - sheetH) > 0.5) { first = { row: j, editH, sheetH }; break; }
+        }
+        m.remove();
+        out.push({ scale: k, leading: lh, rows: lines.length, sheetH: sheet.scrollHeight, editH: edit.scrollHeight, first });
       }
-      m.remove();
-      return JSON.stringify({ leading: getComputedStyle(edit).lineHeight, sheetLeading: getComputedStyle(sheet).lineHeight, rows: lines.length, sheetH: sheet.scrollHeight, editH: edit.scrollHeight, first });
+      return JSON.stringify(out);
     };
   </script>
 </body>

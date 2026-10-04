@@ -132,7 +132,8 @@ function norm(v) {
 const px = (v) => {
   if (v === null || v === undefined) return null;
   const t = String(v).trim();
-  const scaled = t.match(/^calc\(\s*(-?[\d.]+)px\s*\*\s*var\(--ui-scale\)\s*\)$/);
+  // A leading rounded to whole pixels (`--lh-mono`) reads the same.
+  const scaled = t.replace(/^round\(\s*(calc\(.*\))\s*,\s*1px\s*\)$/, "$1").match(/^calc\(\s*(-?[\d.]+)px\s*\*\s*var\(--ui-scale\)\s*\)$/);
   if (scaled) return parseFloat(scaled[1]);
   return /px$/.test(t) ? parseFloat(t) : null;
 };

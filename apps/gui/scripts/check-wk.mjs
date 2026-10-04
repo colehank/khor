@@ -105,8 +105,16 @@ const token = (name) => {
   }
   return m[1].trim();
 };
-const codeSize = token("--text-mono");
-const codeLeading = token("--text-mono--line-height");
+// **As tokens.css makes them, over the scale** (UX-9): `--text-mono` is
+// `var(--fs-mono)`, which this page does not have, so the arm passes the
+// expressions that `--fs-mono` and `--lh-mono` are and sets `--ui-scale`
+// itself — before UX-9 it was handed the bare `var(…)` and measured a
+// page with no leading of khor's at all. The scales are every one the
+// face can wear: 1, the Mac's system 13 over 17 (until UX-9 every Mac's),
+// and iOS's seven text sizes over 17 (`lib/type-size` UI_STEPS).
+const codeSize = token("--fs-mono");
+const codeLeading = token("--lh-mono");
+const codeScales = [1, 13 / 17, ...[14, 15, 16, 19, 21, 23].map((n) => n / 17)].join(",");
 
 // ── the two blocks that nail the shell down (docs/SHELL.md 第 1 条) ──
 //
@@ -146,7 +154,7 @@ const shellCss = [
 let raw;
 try {
   const ran = await new Promise((done) => {
-    const child = spawn("swift", [join(PROBE, "probe.swift"), SHIM, String(port), codeSize, codeLeading, shellCss], {
+    const child = spawn("swift", [join(PROBE, "probe.swift"), SHIM, String(port), codeSize, codeLeading, shellCss, codeScales], {
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
@@ -322,20 +330,22 @@ if (said.pdf?.loadFailed) {
 // other, and the caret walks off its letter one row in thirty. Chrome
 // does not, which is why `check-face` never saw it (2026-09-18).
 {
-  const sh = said.sheet ?? {};
-  if (sh.loadFailed) {
-    fail(`the sheet page did not load: ${sh.loadFailed}`);
-  } else if (sh.first) {
-    fail(
-      `on this WebKit the editor's rows stop matching the painted sheet at row ${sh.first.row} ` +
-        `(editor ${sh.first.editH}px, sheet ${sh.first.sheetH}px, leading ${codeLeading}) — ` +
-        "the caret sits on a neighbour's letter from there; a leading that is not a whole " +
-        "number of pixels is two leadings here (tokens.css --text-mono--line-height)",
-    );
-  } else if (sh.sheetH !== sh.editH) {
-    fail(`sheet ${sh.sheetH}px against editor ${sh.editH}px over ${sh.rows} rows — the two layers do not agree`);
-  } else {
-    console.log(`wk: sheet       ${sh.rows} rows at ${sh.leading}: editor and sheet both ${sh.sheetH}px`);
+  const sheets = Array.isArray(said.sheet) ? said.sheet : [said.sheet ?? {}];
+  for (const sh of sheets) {
+    if (sh.loadFailed) {
+      fail(`the sheet page did not load: ${sh.loadFailed}`);
+    } else if (sh.first) {
+      fail(
+        `on this WebKit at 界面字号 ×${Number(sh.scale).toFixed(3)} the editor's rows stop matching the painted ` +
+          `sheet at row ${sh.first.row} (editor ${sh.first.editH}px, sheet ${sh.first.sheetH}px, leading ${sh.leading}) — ` +
+          "the caret sits on a neighbour's letter from there; a leading that is not a whole " +
+          "number of pixels is two leadings here (tokens.css --lh-mono)",
+      );
+    } else if (sh.sheetH !== sh.editH) {
+      fail(`×${sh.scale}: sheet ${sh.sheetH}px against editor ${sh.editH}px over ${sh.rows} rows — the two layers do not agree`);
+    } else {
+      console.log(`wk: sheet ×${Number(sh.scale).toFixed(3)}  ${sh.rows} rows at ${sh.leading}: editor and sheet both ${sh.sheetH}px`);
+    }
   }
 }
 
