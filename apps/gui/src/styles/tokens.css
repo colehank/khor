@@ -117,6 +117,13 @@
   --background: #f4f4ef;
   --foreground: rgba(26, 26, 20, 0.94);
   --card: var(--background);
+  /* **A settings group's card** (UX-11, the owner's ruling on ux-9's
+     I10): settings pages are inset-grouped, iOS 26's grouped lists and
+     the Mac's grouped form — rounded groups on the ground — and nothing
+     else is; every other page keeps one ground and hairlines. White on
+     the cream, as iOS's secondary grouped background is on its grouped
+     ground. */
+  --grouped: #ffffff;
   /* **The left block's own ground** (docs/SHELL.md 第十三轮 第 1 条:
      「竖栏和列表一种底色, 体现出侧边栏和侧边栏内容是一体的」): the rail
      and every list column sit on it, under a first row of the same
@@ -1890,6 +1897,9 @@
   --background: #000000;
   --foreground: rgba(238, 238, 231, 0.96);
   --card: var(--background);
+  /* A settings group on black: iOS's secondary grouped background,
+     warmed to the palette (UX-11). */
+  --grouped: #1c1c1a;
   /* Between the paper and the frame, as on the light theme: 4.40 L* over
      the paper, 5.44 under the frame. The rail's glyph measures 8.30 on
      it (floor 5.5), its body 4.71 (floor 3.0). */

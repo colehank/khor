@@ -1,12 +1,13 @@
 /**
  * **The floating navigation, narrow only** (the redesign, 2026-10-02:
- * Apple's Preview on a phone). One glass capsule: the first three
- * landings in the user's order (`lib/nav-order`), then 更多 — floating,
+ * Apple's Preview on a phone). One glass capsule: the first four
+ * landings in the user's order (`lib/nav-order`, four since UX-11), then
+ * 更多 — floating,
  * centred, over the foot of the screen. The wide face
  * has the landings' strip in its top row instead (`LandingStrip`).
  *
  * **更多 opens a menu in place**, anchored above it: the landings past
- * the third, 设置, and — under a rule — this machine. Choosing one goes
+ * the fourth, 设置, and — under a rule — this machine. Choosing one goes
  * there; 更多 is lit while any of them is the page on screen, because
  * the bar must always answer 我在哪一页.
  *
@@ -32,8 +33,10 @@ import { cn } from "@/lib/utils";
 
 export type NavSeat = { key: string; name: string; glyph: ReactNode; badge?: number };
 
+// A seat is `--nav-item` wide and gives way when five do not fit the
+// screen (UX-11): the bar never runs past the screen's gaps.
 const SEAT =
-  "relative flex h-full w-nav-item flex-none flex-col items-center justify-center gap-px rounded-full text-foreground " +
+  "relative flex h-full w-nav-item min-w-0 shrink flex-col items-center justify-center gap-px rounded-full text-foreground " +
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring " +
   "[&_svg]:size-nav-glyph data-[on=true]:glass-sel data-[on=true]:text-[var(--rail-on-ink)]";
 
@@ -79,9 +82,9 @@ export function FloatNav({
   onMe,
   className,
 }: {
-  /** The three on the bar. */
+  /** The four on the bar. */
   seats: NavSeat[];
-  /** The landings past the third, at the head of 更多's menu. */
+  /** The landings past the fourth, at the head of 更多's menu. */
   more: NavSeat[];
   /** The open landing's key, or null while a 「…」 page is up. */
   active: string | null;
@@ -98,17 +101,20 @@ export function FloatNav({
   const bar = useRef<HTMLElement>(null);
   useTravel("bar", () => bar.current, active ?? (moreOn ? "more" : null));
   return (
-    // **Four seats in one capsule** (the owner, round 14: on the narrow
+    // **Five seats in one capsule** (the owner, round 14: on the narrow
     // bar 更多 is not a button of its own — ⚠️ 墓碑, round 8 split it into
-    // a circle beside the capsule; the wide strip keeps that). The three
-    // landings, then 更多 with its word under the glyph, 314 wide.
+    // a circle beside the capsule; the wide strip keeps that). The four
+    // landings (UX-11), then 更多 with its word under the glyph.
     <nav
       ref={bar}
       data-float-nav
       aria-label={gui.nav}
       // The padding keeps the hairline the glass had before its edge
       // became a ring (round 7), so the capsule is still 314 wide.
-      className={cn("glass flex h-nav-h items-stretch rounded-full p-[calc(var(--gap-xxs)+var(--hair))] select-none", className)}
+      className={cn(
+        "glass flex h-nav-h min-w-0 items-stretch rounded-full p-[calc(var(--gap-xxs)+var(--hair))] select-none",
+        className,
+      )}
     >
       {seats.map((s) => (
         <Seat key={s.key} seat={s} on={active === s.key} onClick={() => onGo(s.key)} />
