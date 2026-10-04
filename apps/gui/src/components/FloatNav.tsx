@@ -6,10 +6,11 @@
  * centred, over the foot of the screen. The wide face
  * has the landings' strip in its top row instead (`LandingStrip`).
  *
- * **更多 opens a menu in place**, anchored above it: the landings past
- * the fourth, 设置, and — under a rule — this machine. Choosing one goes
- * there; 更多 is lit while any of them is the page on screen, because
- * the bar must always answer 我在哪一页.
+ * **更多 opens a menu in place**, anchored above it, and it holds four
+ * things and nothing else (UX-16, the owner 2026-10-05): 我的 khor, the
+ * landing past the fourth (浏览器 by default), 设置 and 诊断. Choosing
+ * one goes there; 更多 is lit while any of them is the page on screen,
+ * because the bar must always answer 我在哪一页.
  *
  * The open seat is the ground showing through the glass (`glass-sel`)
  * with the brand's deep ink, its glyph's solid piece filled (`rail-on-ink`,
@@ -18,14 +19,8 @@
 import { useRef, type ReactNode } from "react";
 
 import { MachineAvatar } from "@/components/Avatar";
-import { IconGear, IconMore } from "@/components/icons";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { IconGear, IconMore, IconPulse } from "@/components/icons";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { useTravel } from "@/lib/travel";
 import { gui } from "@/gen/catalog";
@@ -78,6 +73,7 @@ export function FloatNav({
   moreOn,
   onGo,
   onSettings,
+  onDoctor,
   me,
   onMe,
   className,
@@ -92,8 +88,9 @@ export function FloatNav({
   moreOn: boolean;
   onGo: (key: string) => void;
   onSettings: () => void;
-  /** This machine, at the foot of the menu: its face and name. */
-  me: { face: Avatar | null; name: string } | null;
+  onDoctor: () => void;
+  /** This machine's face, the glyph of 我的 khor at the head of the menu. */
+  me: { face: Avatar | null } | null;
   onMe: () => void;
   className?: string;
 }) {
@@ -146,6 +143,12 @@ export function FloatNav({
           onCloseAutoFocus={(e) => e.preventDefault()}
           className="min-w-nav-menu"
         >
+          {/* 我的 khor first: this machine's face in the glyphs' box, so
+              its word starts where the others' do. */}
+          <DropdownMenuItem data-nav-me className={MENU_ITEM} onSelect={onMe}>
+            <MachineAvatar face={me?.face ?? null} className="size-nav-glyph" />
+            {gui.my_khor}
+          </DropdownMenuItem>
           {more.map((s) => (
             <DropdownMenuItem
               key={s.key}
@@ -161,19 +164,10 @@ export function FloatNav({
             <IconGear />
             {gui.nav_settings}
           </DropdownMenuItem>
-          {me && (
-            <>
-              <DropdownMenuSeparator className="mx-row my-1.5" />
-              <DropdownMenuItem data-nav-me className={cn(MENU_ITEM, "py-1.5")} onSelect={onMe}>
-                {/* In the glyphs' box, so its name starts where theirs do. */}
-                <MachineAvatar face={me.face} className="size-nav-glyph" />
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate">{me.name}</span>
-                  <span className="text-callout text-muted-foreground">{gui.identity}</span>
-                </span>
-              </DropdownMenuItem>
-            </>
-          )}
+          <DropdownMenuItem data-nav-doctor className={MENU_ITEM} onSelect={onDoctor}>
+            <IconPulse />
+            {gui.doctor}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </nav>

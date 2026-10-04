@@ -109,7 +109,7 @@ import { WorkspacePane } from "@/views/WorkspacePane";
 import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspacesNow } from "@/views/WorkspacesNow";
 import { LockScreen } from "@/views/LockScreen";
-import { moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
+import { inSettings, moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
 import { rememberPlace, storedPlace } from "@/lib/place";
 import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
@@ -1485,7 +1485,12 @@ export default function App() {
         // beside the sections in the list column.
         setScreen(narrow ? "list" : "detail");
       }}
-      me={me ? { face: me.face, name: me.shown } : null}
+      onDoctor={() => {
+        setMorePage("doctor");
+        setScreen("detail");
+        setSwitchingTabs(false);
+      }}
+      me={me ? { face: me.face } : null}
       onMe={() => {
         setMorePage("identity");
         setScreen("detail");
@@ -2364,7 +2369,17 @@ export default function App() {
     </SessionScreen>
   );
 
-  const leaveMorePage = () => (narrow ? setScreen("list") : setMorePage(null));
+  /** Out of a 「…」 page. Narrow, a settings page goes one screen back to
+      设置's list; 我的 khor and 诊断 are 更多's own items (UX-16), pushed
+      over the landing they were opened from, so they go back to it. */
+  const leaveMorePage = () => {
+    if (narrow && morePage !== null && inSettings(morePage)) {
+      setScreen("list");
+      return;
+    }
+    setMorePage(null);
+    if (narrow) setScreen(seatScreen.current[landing] ?? "list");
+  };
   /** Where a swipe from the left edge goes (F7.3, narrow): the same
       place each screen's ‹ goes, or nowhere on a screen with no back. */
   const swipeBack: (() => void) | null = !narrow
@@ -2525,7 +2540,10 @@ export default function App() {
           </span>
         </button>
       )}
-      {morePageOrder.filter((p) => narrow || p !== "identity").map((p) => (
+      {/* Narrow, 设置's own pages only: 我的 khor and 诊断 are 更多's
+          items (UX-16). The wide list is the settings window's sidebar
+          too, and keeps 诊断 under the pages. */}
+      {morePageOrder.filter((p) => (narrow ? inSettings(p) : p !== "identity")).map((p) => (
         <button
           key={p}
           type="button"
@@ -2762,7 +2780,8 @@ export default function App() {
    *
    * - A landing's page uncovers the landing's list (额度's and the
    *   browser's are their own landings drawn on their list screen).
-   * - A 「…」 page uncovers 更多's list.
+   * - A settings page uncovers 设置's list; 我的 khor and 诊断 uncover
+   *   the landing they were opened over (UX-16).
    * - The tab switcher uncovers its page's own chrome — the session bar,
    *   without its terminal: a live terminal is never drawn twice.
    * - A file uncovers nothing here: its listing is the machine page's
@@ -2785,7 +2804,7 @@ export default function App() {
               {null}
             </SessionScreen>
           )
-        : morePage
+        : morePage !== null && inSettings(morePage)
           ? moreList
           : quotas
             ? (

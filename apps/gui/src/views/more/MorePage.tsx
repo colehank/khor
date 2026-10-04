@@ -49,6 +49,12 @@ export const morePageOrder: readonly MorePage[] = [
   "doctor",
 ];
 
+/** Whether a page is one of 设置's — reached through its list — rather
+    than one 更多's menu opens by itself (我的 khor, 诊断; UX-16). On the
+    narrow face the second kind is pushed over the landing it was opened
+    from, so its way back is that landing, not 设置's list. */
+export const inSettings = (page: MorePage): boolean => page !== "identity" && page !== "doctor";
+
 /** The section names, in one place, so the list item and the page head
     cannot come to call the same section two things.
 

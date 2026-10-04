@@ -2335,6 +2335,9 @@ rail-more = "更多"
 # button and the way out of the box it opens.
 nav = "导航"
 nav-settings = "设置"
+# 更多's first item (UX-16, the owner 2026-10-05): this machine's face,
+# the network's map and the identity; it replaces 这台机器.
+my-khor = "我的 khor"
 search-open = "搜索"
 search-close = "结束搜索"
 # The browser's address field (the redesign, 2026-10-02): a new page
