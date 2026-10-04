@@ -88,7 +88,7 @@ import { onTermOptionMeta, termOptionMeta } from "@/lib/term-option-meta";
 import { keepWebgl } from "@/lib/term-atlas";
 import { onTermBlockLines, termBlockLines } from "@/lib/term-block-lines";
 import { onTermHistory, termHistory } from "@/lib/term-history";
-import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
+import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/term-marks";
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
 import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { termBell } from "@/lib/term-bell";
@@ -104,6 +104,8 @@ import { promptMarks } from "@/lib/term-prompt-sp";
 import { kittyFlags, kittyKey, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
 import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
+import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
+import { viewportMoving } from "@/lib/viewport";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -470,13 +472,53 @@ function cellAt(term: Terminal, x: number, y: number): { col: number; row: numbe
   return { col, row: term.buffer.active.viewportY + inView };
 }
 
-/** A downward swipe this long (pt) and this fast (pt/ms) puts the
-    keyboard away. */
-const DISMISS_PT = 60;
-const DISMISS_SPEED = 0.5;
+/** A downward swipe this long (pt) and this fast (pt/ms), judged at the
+    lift, puts the keyboard away (item 28). */
+const DISMISS_PT = 48;
+const DISMISS_SPEED = 0.3;
 
 /** Travel past which a touch is a drag, not a tap. */
 const TAP_SLOP = 10;
+
+/** Output quiet this long, the cursor is where the program left it. */
+const CURSOR_QUIET_MS = 50;
+
+/**
+ * **The cursor of the last whole frame** (item 28; the owner: a tap in
+ * Claude Code's input box 「点半天也弹不出来」). A TUI moves the cursor
+ * up through its output while it redraws and parks it back in its input
+ * box at the end; a tap that lands mid-paint, judged against the cursor
+ * then, missed the box. The place is taken when a frame closes
+ * (`framesWhole`: DEC 2026 ended, the cursor shown again) or after
+ * `CURSOR_QUIET_MS` of quiet with no redraw open — a paint that stalls
+ * keeps the frame before it — and kept as a screen row, which a
+ * program's frame does not move as the history grows.
+ */
+function settledCursor(
+  term: Terminal,
+  /** A redraw is open (`framesWhole`). */
+  painting: () => boolean,
+): { at: () => Cursor; whole: () => void; stop: () => void } {
+  const read = (): Cursor => ({ x: term.buffer.active.cursorX, y: term.buffer.active.cursorY });
+  let at = read();
+  let timer = 0;
+  const parsed = term.onWriteParsed(() => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      if (!painting()) at = read();
+    }, CURSOR_QUIET_MS);
+  });
+  return {
+    at: () => at,
+    whole: () => {
+      at = read();
+    },
+    stop: () => {
+      window.clearTimeout(timer);
+      parsed.dispose();
+    },
+  };
+}
 
 /**
  * **The terminal holds the focus; a tap raises the keyboard only where
@@ -486,9 +528,10 @@ const TAP_SLOP = 10;
  * The field is focused whenever the page is open (`holdFocus`), with no
  * keyboard under a finger. A tap — a touch that ends where it began — is
  * judged at its end, which is a gesture iOS will show a keyboard for:
- * `screen` raises it anywhere; `auto` raises it on the line being typed
- * (`inInput`, from the shell's marks) and puts it away anywhere else;
- * `button` leaves it to the bar's switch. xterm's own mousedown focuses a
+ * `screen` raises it anywhere; `auto` raises it on the input area
+ * (`inInput`, judged against the cursor of the last whole frame) and
+ * nowhere else; `button` leaves it to the bar's switch. A tap never
+ * lowers it (item 28; `swipeLowers` does). xterm's own mousedown focuses a
  * field that is already focused, and a program that took the mouse still
  * gets the click as before. **If the focus leaves for nowhere** — the system put
  * the keyboard away, or a tap blurred the field — it comes back without a
@@ -502,6 +545,8 @@ function tapsAskFirst(
   /** A tap on a cell, first: a picture or a link there opens (roadmap
       3.2, 3.3); true when it took the tap, and the keyboard is left be. */
   tapped: (row: number, col: number) => boolean,
+  /** The cursor where the last whole frame left it (`settledCursor`). */
+  cursor: () => Cursor,
 ): () => void {
   const field = term.textarea;
   if (!field) return () => {};
@@ -514,30 +559,13 @@ function tapsAskFirst(
     downAt = performance.now();
     startX = e.touches[0]?.clientX ?? 0;
     startY = e.touches[0]?.clientY ?? 0;
-    lastX = startX;
-    lastY = startY;
   };
-  let lastX = 0;
-  let lastY = 0;
   const moved = (e: TouchEvent) => {
     const t = e.touches[0];
     if (!t) return;
-    lastX = t.clientX;
-    lastY = t.clientY;
     if (Math.hypot(t.clientX - startX, t.clientY - startY) > TAP_SLOP) still = false;
   };
   const lifted = () => {
-    // **A downward swipe puts the keyboard away**, in every mode (the
-    // owner's ruling with the ux lane's deck): iOS's own gesture for it in
-    // a scrolling view (`keyboardDismissMode`). A swipe, not a slow drag
-    // through history: far enough, fast enough, more down than sideways.
-    const dy = lastY - startY;
-    const took = performance.now() - downAt;
-    if (!still && dy > DISMISS_PT && dy / took > DISMISS_SPEED && dy > Math.abs(lastX - startX) && keyboardUp(field)) {
-      lowerKeyboard(field);
-      still = false;
-      return;
-    }
     // A long press is a selection (`pressSelects`), not a tap.
     if (performance.now() - downAt >= LONG_PRESS_MS) still = false;
     if (still) {
@@ -547,9 +575,10 @@ function tapsAskFirst(
         still = false;
         return;
       }
-      const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col));
+      // **A tap raises, never lowers** (item 28): the keyboard goes away
+      // by the swipe (`swipeLowers`) or the system's own key.
+      const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col, cursor()));
       if (here && !keyboardUp(field)) raiseKeyboard(field);
-      else if (!here && wake === "auto" && keyboardUp(field)) lowerKeyboard(field);
     }
     still = false;
   };
@@ -571,6 +600,60 @@ function tapsAskFirst(
     box.removeEventListener("touchmove", moved);
     box.removeEventListener("touchend", lifted);
     field.removeEventListener("focusout", left);
+  };
+}
+
+/**
+ * **The one rule that lowers the keyboard: a swipe down over the
+ * terminal** (item 28). iOS's own gesture for it in a scrolling view is
+ * `keyboardDismissMode = .interactive`, which a web view cannot ask for, so
+ * it is judged here at the lift: at least `DISMISS_PT` down, more down than
+ * sideways, at least `DISMISS_SPEED`. Native listeners on the terminal's
+ * own scroller, so a touch on the key row or the deck (a portal into the
+ * bar, `BarSeat`) never reaches it — React's synthetic events bubbled the
+ * joystick's drags up through that portal into the session page's old
+ * 24-pt rule, and the keyboard dropped under the thumb. A drag the
+ * program takes as its wheel (`fingerWheels`) counts as well: under tmux's
+ * mouse the swipe lowers too.
+ */
+function swipeLowers(scroller: HTMLElement, field: HTMLElement | null): () => void {
+  if (!field) return () => {};
+  let x0 = 0;
+  let y0 = 0;
+  let x = 0;
+  let y = 0;
+  let at = 0;
+  let one = false;
+  const start = (e: TouchEvent) => {
+    one = e.touches.length === 1 && !(e.target as Element | null)?.closest?.("[data-session-bar]");
+    x0 = x = e.touches[0]?.clientX ?? 0;
+    y0 = y = e.touches[0]?.clientY ?? 0;
+    // The touch's own time, not when this ran: a page busy drawing a
+    // program's frames hears the moves late, and the swipe was not slow.
+    at = e.timeStamp;
+  };
+  const move = (e: TouchEvent) => {
+    if (e.touches.length !== 1) one = false;
+    const t = e.touches[0];
+    if (!t) return;
+    x = t.clientX;
+    y = t.clientY;
+  };
+  const end = (e: TouchEvent) => {
+    if (!one) return;
+    one = false;
+    const dy = y - y0;
+    const took = Math.max(1, e.timeStamp - at);
+    if (dy >= DISMISS_PT && dy > Math.abs(x - x0) && dy / took >= DISMISS_SPEED && keyboardUp(field)) lowerKeyboard(field);
+  };
+  scroller.addEventListener("touchstart", start, { passive: true });
+  scroller.addEventListener("touchmove", move, { passive: true });
+  scroller.addEventListener("touchend", end, { passive: true });
+  scroller.addEventListener("touchcancel", () => (one = false), { passive: true });
+  return () => {
+    scroller.removeEventListener("touchstart", start);
+    scroller.removeEventListener("touchmove", move);
+    scroller.removeEventListener("touchend", end);
   };
 }
 
@@ -674,16 +757,9 @@ function pressSelects(
   };
 }
 
-/**
- * Whether the program, not the history, gets the scroll: it took the
- * mouse (khor turns tmux's on for its own grouped session,
- * `Tmux::grouped_attach_argv`), or it is on the alternate screen, which
- * keeps no history. A wheel then goes to xterm, which encodes it as a
- * report or as arrow keys; the native scroller below is inert.
- */
-function programScrolls(term: Terminal): boolean {
-  return term.modes.mouseTrackingMode !== "none" || term.buffer.active.type === "alternate";
-}
+
+/** Touches a drag sent on to the program as its wheel (`fingerWheels`). */
+export const wheeled = new WeakSet<Event>();
 
 /**
  * **A finger's drag is the wheel when the program scrolls** (2026-10-02,
@@ -725,8 +801,12 @@ function fingerWheels(term: Terminal, box: HTMLElement): () => void {
     }
     const dy = t.clientY - lastY;
     lastY = t.clientY;
+    // Not stopped (item 28): the page's own gestures above the pane (the
+    // edge swipe, a sheet) still hear the touch, and so does the swipe
+    // that lowers the keyboard. Only the native scroll it would start is
+    // prevented, and the touch is marked as the program's wheel.
     e.preventDefault();
-    e.stopPropagation();
+    wheeled.add(e);
     if (dy === 0) return;
     // Natural scrolling: a finger moving up brings later lines, which
     // is a wheel turned down.
@@ -1031,7 +1111,9 @@ function framesWhole(
   /** What the bytes become on their way in, and what runs once xterm has
       parsed them (`lib/term-predict`). */
   shape: (bytes: Uint8Array) => { bytes: Uint8Array; parsed?: () => void },
-): { paint: (bytes: Uint8Array) => void; flush: () => void; drop: () => void } {
+  /** Runs once xterm has parsed a frame that closed (`settledCursor`). */
+  whole?: () => void,
+): { paint: (bytes: Uint8Array) => void; flush: () => void; drop: () => void; painting: () => boolean } {
   let held: Uint8Array[] = [];
   let since = 0;
   let timer = 0;
@@ -1052,7 +1134,11 @@ function framesWhole(
     held = [];
     since = 0;
     const shaped = shape(all);
-    term.write(shaped.bytes, shaped.parsed);
+    const closed = !open;
+    term.write(shaped.bytes, () => {
+      shaped.parsed?.();
+      if (closed) whole?.();
+    });
   };
   const paint = (bytes: Uint8Array) => {
     // The gates' before-and-after switch: written as it arrives.
@@ -1083,7 +1169,7 @@ function framesWhole(
     since = 0;
     open = false;
   };
-  return { paint, flush, drop };
+  return { paint, flush, drop, painting: () => open };
 }
 
 /** A two-finger tap: both fingers down this briefly, barely moving. */
@@ -1208,183 +1294,11 @@ async function settled(box: HTMLElement, signal: AbortSignal): Promise<void> {
 /** The longest the first fit waits for an entrance to finish (ms). */
 const SETTLE_CAP_MS = 300;
 
-/** Quiet this long after the last scroll event, a scroll has stopped. */
-const SETTLE_MS = 140;
-
-/**
- * **The history scrolls the way a page does** (2026-10-03, item 15 B; the
- * owner: 「滚动很卡顿，范围也很小，没有那种浏览网页的拖动感」).
- *
- * xterm 6 replaced its native scroller with VS Code's drawn one
- * (`SmoothScrollableElement`), which answers the wheel by itself and a
- * finger not at all, so the finger scroll this pane had was synthetic:
- * a line per row of travel and an imitated fling. Here the scrolling is
- * the engine's again, the way xterm 5's `.xterm-viewport` and hterm's
- * `ScrollPort` (Blink Shell's renderer) do it: `scroller` scrolls
- * natively (momentum, the edge's bounce, the trackpad's own curve), and
- * `room`, after the terminal in it, is sized to the history above the
- * screen — so its range is the buffer's. The terminal itself is
- * `position: sticky` at the scroller's top, so every touch and click
- * still lands on xterm (selection, taps, links), and a drag or a wheel
- * that xterm does not take scrolls the scroller around it.
- *
- * - **scroller → xterm**: the line under the scroller's top is
- *   `scrollTop / row`; xterm is moved there (`scrollToLine`), and the
- *   screen is shifted by the part of a row left over, so the content
- *   follows the finger by the pixel, not by the line. A scroll that
- *   stops between two rows is carried to the nearer one.
- * - **xterm → scroller**: output, a key that scrolls, a resize — any
- *   change of xterm's line — sets `scrollTop` once; the scroll event
- *   that answers it is recognised and ignored, so the two never chase.
- * - **The wheel**: a wheel the scroller takes never reaches xterm's own
- *   scroller (stopped on the way down), so a Mac's wheel and trackpad are
- *   the system's too. When the program scrolls (`programScrolls`) the
- *   scroller has no range and the wheel goes on to xterm, as before.
- *
- * VS Code's terminal keeps xterm's drawn scroller (it has no touch
- * case); Hyper keeps xterm's too. Termius and Blink draw natively.
- */
-function scrollsNatively(
-  term: Terminal,
-  scroller: HTMLElement,
-  room: HTMLElement,
-  screen: HTMLElement,
-): { sync: () => void; stop: () => void } {
-  let row = 0;
-  let kicked = false;
-  // The `scrollTop` this code set last, until its scroll event comes back.
-  let echo: number | null = null;
-  let touching = 0;
-  let settle = 0;
-  let frame = 0;
-  const measure = () => {
-    const el = term.element?.querySelector(".xterm-screen");
-    const h = el ? el.getBoundingClientRect().height / term.rows : 0;
-    if (h > 0) row = h;
-    return row;
-  };
-  const shift = (px: number) => {
-    const v = px === 0 ? "" : `translateY(${px}px)`;
-    if (screen.style.transform !== v) screen.style.transform = v;
-  };
-  /** xterm's own line → the scroller's range and place. */
-  const sync = () => {
-    frame = 0;
-    if (!measure()) return;
-    const b = term.buffer.active;
-    const inert = programScrolls(term);
-    const height = `${(inert ? 0 : b.baseY) * row}px`;
-    if (room.style.height !== height) {
-      const first = !kicked && !inert && b.baseY > 0;
-      room.style.height = height;
-      // **WebKit on iOS, the first time there is anything to scroll**
-      // (item 18 A, hypothesis 3): a scroller that had nothing to scroll
-      // when its layer was made can keep that answer until something
-      // relays it out — the keyboard's resize was that something. Drop
-      // and restore its overflow once, so the range is read now.
-      if (first) {
-        kicked = true;
-        scroller.style.overflowY = "hidden";
-        void scroller.offsetHeight;
-        scroller.style.overflowY = "";
-      }
-    }
-    const line = inert ? 0 : b.viewportY;
-    if (Math.round(scroller.scrollTop / row) !== line || inert) {
-      const top = line * row;
-      if (Math.abs(scroller.scrollTop - top) >= 0.5) {
-        echo = top;
-        scroller.scrollTop = top;
-      }
-      shift(0);
-    }
-  };
-  const syncSoon = () => {
-    if (!frame) frame = window.requestAnimationFrame(sync);
-  };
-  /** The scroller's place → xterm's line. */
-  const scrolled = () => {
-    const top = scroller.scrollTop;
-    if (echo !== null && Math.abs(top - echo) < 1) {
-      echo = null;
-      return;
-    }
-    echo = null;
-    if (programScrolls(term) || !row) return;
-    const b = term.buffer.active;
-    const line = Math.max(0, Math.min(b.baseY, Math.round(top / row)));
-    if (line !== b.viewportY) {
-      term.scrollToLine(line);
-      // xterm's own scroller can hold a stale range — it does not
-      // re-measure when its renderer's size changes without the buffer's
-      // (xterm.js #6117, #6172) — and then refuses the line; bring it up
-      // to date and ask again.
-      if (term.buffer.active.viewportY !== line) {
-        (term as unknown as { _core?: { _viewport?: { _sync?: () => void } } })._core?._viewport?._sync?.();
-        term.scrollToLine(line);
-      }
-    }
-    // Between two rows: the screen follows by the pixel. Not past either
-    // end, where the engine's own bounce moves everything already.
-    const max = b.baseY * row;
-    shift(top < 0 || top > max ? 0 : Math.max(-row, Math.min(row, line * row - top)));
-    window.clearTimeout(settle);
-    settle = window.setTimeout(rest, SETTLE_MS);
-  };
-  /** A scroll that stopped between two rows goes to the nearer one. */
-  const rest = () => {
-    if (touching > 0) return;
-    const top = scroller.scrollTop;
-    const to = Math.round(top / row) * row;
-    if (Math.abs(top - to) < 0.5) return shift(0);
-    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    scroller.scrollTo({ top: to, behavior: still ? "auto" : "smooth" });
-  };
-  const down = () => {
-    touching += 1;
-    window.clearTimeout(settle);
-  };
-  const up = (e: TouchEvent) => {
-    touching = e.touches.length;
-    window.clearTimeout(settle);
-    settle = window.setTimeout(rest, SETTLE_MS);
-  };
-  // Capture, on the way down: a wheel the scroller will take must not
-  // reach xterm's scroller, which would take it first and cancel it.
-  const wheel = (e: WheelEvent) => {
-    if (!programScrolls(term)) e.stopPropagation();
-  };
-  scroller.addEventListener("scroll", scrolled, { passive: true });
-  scroller.addEventListener("wheel", wheel, { capture: true, passive: true });
-  scroller.addEventListener("touchstart", down, { passive: true });
-  scroller.addEventListener("touchend", up, { passive: true });
-  scroller.addEventListener("touchcancel", up, { passive: true });
-  const moved = term.onScroll(syncSoon);
-  const wrote = term.onWriteParsed(syncSoon);
-  const sized = term.onResize(syncSoon);
-  const swapped = term.buffer.onBufferChange(syncSoon);
-  const rendered = term.onRender(() => {
-    // The first frame drawn knows the row's height.
-    if (!row) syncSoon();
-  });
-  return {
-    sync,
-    stop: () => {
-      window.cancelAnimationFrame(frame);
-      window.clearTimeout(settle);
-      scroller.removeEventListener("scroll", scrolled);
-      scroller.removeEventListener("wheel", wheel, true);
-      scroller.removeEventListener("touchstart", down);
-      scroller.removeEventListener("touchend", up);
-      scroller.removeEventListener("touchcancel", up);
-      moved.dispose();
-      wrote.dispose();
-      sized.dispose();
-      swapped.dispose();
-      rendered.dispose();
-    },
-  };
-}
+/** A box resized this soon after the visual viewport moved is the
+    keyboard animating (ms). */
+const KEYBOARD_MOVING_MS = 400;
+/** …and is refitted once it has held still this long (ms). */
+const KEYBOARD_STILL_MS = 50;
 
 /** The open terminals' re-joins, by session (`reopenTerminal`). */
 const reopeners = new Map<string, () => Promise<void>>();
@@ -1921,7 +1835,8 @@ export function TerminalPane({
       });
       return false;
     };
-    const asks = tapsAskFirst(term, box, marks, tapped);
+    const parked = settledCursor(term, () => frames.painting());
+    const asks = tapsAskFirst(term, box, marks, tapped, parked.at);
     const gestures = phoneGestures(term, box);
     fit.fit();
     termRef.current = term;
@@ -1999,7 +1914,7 @@ export function TerminalPane({
     // (`lib/term-prompt-sp`).
     const marksSp = promptMarks(() => term.cols);
     // Output painted a whole frame at a time (item 18 B).
-    const frames = framesWhole(term, (bytes) => predict.output(iip(marksSp(bytes))));
+    const frames = framesWhole(term, (bytes) => predict.output(iip(marksSp(bytes))), parked.whole);
     let seq = 0;
     let timer = 0;
     let busy = false;
@@ -2426,6 +2341,7 @@ export function TerminalPane({
     };
     const selects = pressSelects(term, box, (row, x, y) => showBlock(row, x, y, true));
     const dragged = fingerWheels(term, box);
+    const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount);
     syncScroller.current = () => {
       native.sync();
@@ -2452,8 +2368,29 @@ export function TerminalPane({
     // ResizeObserver tens of times a second, and a resize is an IPC
     // round plus a PTY resize plus a reflow — per callback that is the
     // drag stutter itself. rAF folds a burst into at most one.
+    //
+    // **One refit per keyboard** (item 29): while the visual viewport is
+    // moving (the keyboard rising or falling, `lib/viewport`), the box
+    // shrinks a step per frame, and a fit per step resized the far pty
+    // several times for one keyboard. Then the grid is refitted once, after
+    // the box has held still for `KEYBOARD_STILL_MS`; the page's own
+    // height (`--app-h`) still follows every step, so the deck rides.
     let raf = 0;
+    let still = 0;
     const observer = new ResizeObserver(() => {
+      if (viewportMoving(KEYBOARD_MOVING_MS)) {
+        window.cancelAnimationFrame(raf);
+        raf = 0;
+        window.clearTimeout(still);
+        // Fitted once the viewport itself has held still, however its
+        // steps were spaced.
+        const fitWhenStill = () => {
+          if (viewportMoving(KEYBOARD_STILL_MS)) still = window.setTimeout(fitWhenStill, KEYBOARD_STILL_MS);
+          else fit.fit();
+        };
+        still = window.setTimeout(fitWhenStill, KEYBOARD_STILL_MS);
+        return;
+      }
       if (raf) return;
       raf = window.requestAnimationFrame(() => {
         raf = 0;
@@ -2512,12 +2449,14 @@ export function TerminalPane({
       pollNow.current = () => {};
       if (raf) window.cancelAnimationFrame(raf);
       observer.disconnect();
+      window.clearTimeout(still);
       data.dispose();
       term.textarea?.removeEventListener("paste", pasted, true);
       term.textarea?.removeEventListener("copy", copied, true);
       box.removeEventListener("beforeinput", metaEcho, true);
       box.removeEventListener("input", metaEcho, true);
       dragged();
+      swiped();
       native.stop();
       selects();
       relined();
@@ -2535,6 +2474,7 @@ export function TerminalPane({
         field?.removeEventListener(k, composed as EventListener);
       }
       asks();
+      parked.stop();
       gestures();
       linked.dispose();
       box.removeEventListener("mousedown", pictureClick, true);

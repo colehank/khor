@@ -25,6 +25,41 @@
     viewports is not a keyboard. */
 const SLACK = 1;
 
+/** How long the visual viewport must hold still before the keyboard
+    counts as up or down: past its animation (item 28). */
+const SETTLED_MS = 120;
+
+/** The keyboard as the screen last settled on it (item 28): up when the
+    visual viewport is shorter than the layout one and has held still. */
+let shown = false;
+let settle = 0;
+/** When the visual viewport last moved (ms, `performance.now`): a resize
+    of the terminal's box inside this window is the keyboard animating
+    (item 29). */
+let steppedAt = -Infinity;
+
+/** Whether the soft keyboard is up, as the screen says — not as a field
+    asked (item 28: iOS lowers the keyboard on its own, and a state kept
+    from the request said "up" after it had gone). */
+export function keyboardShown(): boolean {
+  return forced ?? shown;
+}
+
+// The gates' seam, in the dev server only: a desktop browser has no soft
+// keyboard to bring up, so a walk under touch says one is up by hand.
+let forced: boolean | null = null;
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __khorKeyboard?: (on: boolean | null) => void }).__khorKeyboard = (on) => {
+    forced = on;
+    window.dispatchEvent(new Event("khor:soft-keyboard"));
+  };
+}
+
+/** Whether the visual viewport moved within the last `ms`. */
+export function viewportMoving(ms: number): boolean {
+  return performance.now() - steppedAt < ms;
+}
+
 /** A zero-size `fixed` box on the layout viewport's bottom edge. */
 let probe: HTMLElement | null = null;
 
@@ -60,6 +95,7 @@ export function followVisualViewport(): () => void {
   if (!vv) return () => {};
   const root = document.documentElement;
   const apply = () => {
+    steppedAt = performance.now();
     // The pan WebKit made to show the field, taken back first: the field
     // is in view without it once the shell is as tall as what is left,
     // and a panned shell is a page that scrolled.
@@ -76,6 +112,15 @@ export function followVisualViewport(): () => void {
       root.style.removeProperty("--app-h");
       root.style.removeProperty("--kb");
     }
+    // The keyboard's state, read once it has stopped moving, and said to
+    // whoever follows it (`lib/soft-keyboard`'s `onKeyboardChange`).
+    window.clearTimeout(settle);
+    settle = window.setTimeout(() => {
+      const now = root.hasAttribute("data-keyboard");
+      if (now === shown) return;
+      shown = now;
+      window.dispatchEvent(new Event("khor:soft-keyboard"));
+    }, SETTLED_MS);
   };
   apply();
   vv.addEventListener("resize", apply);
