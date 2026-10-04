@@ -3824,7 +3824,7 @@ fn a_phones_checklist_is_the_computers_minus_what_is_not_there() {
         .collect();
     assert_eq!(
         phone,
-        ["identity", "store", "serve", "relays", "peers", "roster", "roads", "disk"],
+        ["identity", "store", "serve", "relays", "peers", "roster", "roads", "disk", "terminal"],
         "a phone keeps what is about itself and the network"
     );
 }
