@@ -300,6 +300,10 @@ pub struct WireCounts {
     pub sent_bytes: u64,
     #[serde(default)]
     pub received_bytes: u64,
+    /// Rounds the pump ran (round NET-6: 5 s apart with a face on screen,
+    /// 30 s without). Tail field.
+    #[serde(default)]
+    pub rounds: u64,
 }
 
 /// **This machine's connections, as a page shows them** (round NET-2,

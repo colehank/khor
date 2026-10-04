@@ -412,3 +412,96 @@ fn now_ms() -> i64 {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
 }
+
+/// **A pairing's row is on the inviter's disk before the joiner hears
+/// "paired"** (round NET-6; the term lane found a desk whose table lacked
+/// a phone the phone's own table had). The `Pair` arm writes the joiner's
+/// row and flushes it before it answers, so neither a first round that
+/// fails nor a desk that stops before one can leave the row only in the
+/// joiner's copy — this stops the desk with no round at all and reads its
+/// table back from disk.
+///
+/// Two machines pair **at once**, because that is what lost the row: two
+/// `Pair` arms in one resident each opened the table under the process's
+/// one loro peer, minted ops with the same names, and the second block
+/// to merge was dropped on every read (`khor_sync::store`'s `Lease`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn rows_from_two_pairings_at_once_are_both_on_the_inviters_disk() {
+    let ra = root("both-a");
+    let rb = root("both-b");
+    let rc = root("both-c");
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let (tb, tc) = (a.invite().unwrap(), a.invite().unwrap());
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    let c = Node::open_as(rc.to_path_buf(), "gamma").unwrap();
+    let (pb, pc) = tokio::join!(
+        timeout(Duration::from_secs(60), b.pair(&tb)),
+        timeout(Duration::from_secs(60), c.pair(&tc)),
+    );
+    pb.expect("beta's pairing must not hang").unwrap();
+    pc.expect("gamma's pairing must not hang").unwrap();
+
+    // The desk stops before any round.
+    serve.abort();
+    let _ = serve.await;
+    let back = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let names: Vec<String> = back.devices().unwrap().into_iter().map(|d| d.name).collect();
+    assert_eq!(names, vec!["alpha", "beta", "gamma"], "alpha's table on disk holds both joiners");
+}
+
+/// **A machine paired through another is answered by a third at once,
+/// not at its next quiet beat** (round NET-6). With no face on screen a
+/// resident rounds every `link::QUIET_PACE`, and until a round brings the
+/// newcomer's row a third machine refuses it as unpaired — the diagnosis
+/// probe's phone waited 20 s for its first listing on the far machine.
+/// The inviter now rounds as soon as it has paired, and a machine a
+/// stranger knocks on rounds too, at most once a `link::SYNC_EVERY`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_newly_paired_machine_is_answered_by_a_third_well_inside_the_quiet_pace() {
+    let (ra, rb, rc) = (root("third-a"), root("third-b"), root("third-c"));
+    let mut serves = Vec::new();
+    for (r, name) in [(&ra, "alpha"), (&rb, "beta"), (&rc, "gamma")] {
+        let n = Node::open_as(r.to_path_buf(), name).unwrap();
+        serves.push(tokio::spawn(async move { n.serve().await }));
+    }
+    for r in [&ra, &rb, &rc] {
+        wait_for_endpoint_file(r).await;
+    }
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let c = Node::open_as(rc.to_path_buf(), "gamma").unwrap();
+    timeout(Duration::from_secs(60), c.pair(&a.invite().unwrap()))
+        .await
+        .expect("gamma's pairing must not hang")
+        .unwrap();
+    // Gamma's own pairing round is behind it: what follows is its quiet pace.
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    timeout(Duration::from_secs(60), b.pair(&a.invite().unwrap()))
+        .await
+        .expect("beta's pairing must not hang")
+        .unwrap();
+    let dir = rc.join("tree");
+    std::fs::create_dir_all(&dir).unwrap();
+    let dir = dir.display().to_string();
+    let began = std::time::Instant::now();
+    let mut last = None;
+    while began.elapsed() < Duration::from_secs(12) {
+        match timeout(Duration::from_secs(5), b.ls_of("gamma", &dir)).await {
+            Ok(Ok(_)) => break,
+            other => last = Some(format!("{other:?}")),
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    let took = began.elapsed();
+    for s in serves {
+        s.abort();
+    }
+    assert!(
+        took < Duration::from_secs(10),
+        "beta's first listing on gamma took {took:?} (last: {last:?})"
+    );
+}

@@ -500,6 +500,8 @@ export function BrowseLanding({
     <PaneBar
       seat="side"
       title={gui.browser_tab}
+      // ⌘T: a new page is a new tab (`lib/shortcuts`).
+      newIsTab
       searchLabel={kind.words.search}
       query={query}
       onQuery={setQuery}

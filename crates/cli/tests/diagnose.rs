@@ -10,6 +10,9 @@
 //! - **A, quiet:** a minute of nothing — bytes each resident's wires carry,
 //!   and every second the phone's word for the Mac and the far machine
 //!   (the road is relay-only, so anything but 中继 is a lie).
+//! - **A′, a face on the phone:** the same minute with the phone's face
+//!   on screen — the pump's 5 s beat against A's 30 s one (round NET-6);
+//!   **A″** is A again once the face has gone.
 //! - **B, the phone backgrounded and back:** suspended 20 s, resumed —
 //!   how long until its ears answer, its round is done, a listing on the
 //!   far machine answers; its words meanwhile.
@@ -152,6 +155,7 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
         mac.wire_counts().await.unwrap(),
         far.wire_counts().await.unwrap(),
     );
+    let quiet_rounds = (p1.rounds - p0.rounds, m1.rounds - m0.rounds, f1.rounds - f0.rounds);
     let per_min = |a: &khor_core::WireCounts, b: &khor_core::WireCounts| {
         ((b.sent_bytes - a.sent_bytes + b.received_bytes - a.received_bytes) as f64 * 60.0 / quiet as f64) as u64
     };
@@ -173,6 +177,62 @@ async fn a_phone_a_mac_and_a_far_machine_over_a_slow_lossy_relay() {
         f1.dialed - f0.dialed,
         lies.len(),
         lies.iter().take(8).collect::<Vec<_>>()
+    );
+
+    // A′: the same quiet minute with the phone's face on screen, beating
+    // as the app does (round NET-6: the pump's pace follows the face).
+    let (p0, m0, f0) = (
+        phone.wire_counts().await.unwrap(),
+        mac.wire_counts().await.unwrap(),
+        far.wire_counts().await.unwrap(),
+    );
+    for s in 0..quiet {
+        if s % 10 == 0 {
+            phone.face_is_here(true).await.unwrap();
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    phone.face_is_here(false).await.unwrap();
+    let (p1, m1, f1) = (
+        phone.wire_counts().await.unwrap(),
+        mac.wire_counts().await.unwrap(),
+        far.wire_counts().await.unwrap(),
+    );
+    eprintln!(
+        "[diag] A′ a face on the phone {quiet}s: bytes/min phone {} mac {} far {}; rounds phone {} mac {} far {} \
+         (no face: {} {} {})",
+        per_min(&p0, &p1),
+        per_min(&m0, &m1),
+        per_min(&f0, &f1),
+        p1.rounds - p0.rounds,
+        m1.rounds - m0.rounds,
+        f1.rounds - f0.rounds,
+        quiet_rounds.0,
+        quiet_rounds.1,
+        quiet_rounds.2,
+    );
+
+    // A″: the face gone again — the same minute as A, now that nothing
+    // from the first listing is still settling.
+    let (p0, m0, f0) = (
+        phone.wire_counts().await.unwrap(),
+        mac.wire_counts().await.unwrap(),
+        far.wire_counts().await.unwrap(),
+    );
+    tokio::time::sleep(Duration::from_secs(quiet)).await;
+    let (p1, m1, f1) = (
+        phone.wire_counts().await.unwrap(),
+        mac.wire_counts().await.unwrap(),
+        far.wire_counts().await.unwrap(),
+    );
+    eprintln!(
+        "[diag] A″ no face {quiet}s: bytes/min phone {} mac {} far {}; rounds phone {} mac {} far {}",
+        per_min(&p0, &p1),
+        per_min(&m0, &m1),
+        per_min(&f0, &f1),
+        p1.rounds - p0.rounds,
+        m1.rounds - m0.rounds,
+        f1.rounds - f0.rounds,
     );
 
     // B: the phone backgrounded 20 s, then back.

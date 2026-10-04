@@ -4,6 +4,7 @@ import { hereActs, ProgressLine, shortDir, termName } from "@/components/DoingLi
 import { FinishedWatch, type Finished } from "@/lib/finished";
 import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
+  faceHere,
   fetchDevices,
   fetchHooks,
   fetchSessions,
@@ -198,6 +199,10 @@ const HOOKS_MS = 60_000;
 /** How long a pull waits for its sync round before it reads the rows
     anyway (`refresh`). */
 const SYNC_WAIT_MS = 6_000;
+/** How often a face on screen says so again: a third of the resident's
+    patience (`ipc::FACE_BEAT` × 3), so one lost beat never drops the
+    pump to its quiet pace. */
+const FACE_BEAT_MS = 10_000;
 
 /** Each landing's stored ticks, one entry per pane (`lib/session-filter`)
     — sessions, machines, workspaces and 额度 each tick their own axes.
@@ -681,6 +686,21 @@ export default function App() {
   // the rows and the machines ask again at once, the way `hidden` makes
   // them (`use-woken`).
   const woken = useWoken();
+
+  // **Telling the resident a face is on screen** (round NET-6): its pump
+  // syncs every 5 s while one is and every 30 s while none is, and a face
+  // arriving gets a round at once — so a person coming back never reads
+  // rows half a minute old. Said on arrival, again every FACE_BEAT_MS
+  // while on screen, and once more on the way out.
+  useEffect(() => {
+    if (hidden) {
+      faceHere(false).catch(() => {});
+      return;
+    }
+    faceHere(true).catch(() => {});
+    const t = window.setInterval(() => faceHere(true).catch(() => {}), FACE_BEAT_MS);
+    return () => window.clearInterval(t);
+  }, [hidden]);
 
   /* ⚠️ **Tombstone: these were one effect until 2026-09-11** — one
      `Promise.all` of three calls on the 2 s beat, under a comment that
@@ -1737,6 +1757,8 @@ export default function App() {
         // an empty "+" is worse than no "+": it is a menu that teaches
         // people not to open menus.
         actions={sessions ? sessionActions : landing === "devices" ? deviceActions : undefined}
+        // ⌘T: a new session is a new tab here (`lib/shortcuts`).
+        newIsTab={sessions}
         // The workspace pane's one creation road: the cross-machine
         // directory picker (工作区批②). It was drawn and unpressable
         // for one batch, which is what the empty state used to point
@@ -2252,6 +2274,28 @@ export default function App() {
             : () => setScreen("list");
   const [swipeHost, setSwipeHost] = useState<HTMLDivElement | null>(null);
   useEdgeSwipe(swipeHost, swipeBack);
+  // **Esc is the same way back** (UX-7, keyboard only): a narrow screen's
+  // ‹, for someone without a pointer. Only where nothing nearer wants the
+  // key — a field or the terminal keeps Esc (a shell needs it), and an
+  // open sheet or menu closes first (its own Escape runs before this, in
+  // the bubble phase, and it is still in the document when this asks).
+  const backKey = useRef(swipeBack);
+  backKey.current = swipeBack;
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const go = backKey.current;
+      if (!go) return;
+      const at = document.activeElement;
+      if (at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || (at instanceof HTMLElement && at.isContentEditable)) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
+      e.preventDefault();
+      go();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   // Which kind of swipe this screen has: a file moves alone, over its
   // listing (`app.css` `data-swipe-kind`).
   const swipesFile = landing === "devices" && fileBack !== null;
