@@ -2612,6 +2612,7 @@ async fn open_session(
     form: String,
     agent: Option<String>,
     machine: Option<String>,
+    token: Option<String>,
 ) -> Result<String, String> {
     khor_gui_core::open_session(
         &Node::root_from_env(),
@@ -2620,6 +2621,7 @@ async fn open_session(
         &form,
         agent.as_deref().unwrap_or(""),
         machine.as_deref().unwrap_or(""),
+        token.as_deref(),
     )
     .await
 }
@@ -2633,6 +2635,7 @@ async fn open_on(
     cwd: Option<String>,
     cols: Option<u16>,
     rows: Option<u16>,
+    token: Option<String>,
 ) -> Result<String, String> {
     khor_gui_core::open_term_on(
         &Node::root_from_env(),
@@ -2640,6 +2643,7 @@ async fn open_on(
         title.as_deref().unwrap_or(""),
         cwd.as_deref().unwrap_or(""),
         cols.zip(rows),
+        token.as_deref(),
     )
     .await
 }

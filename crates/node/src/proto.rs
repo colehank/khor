@@ -625,6 +625,31 @@ pub enum Request {
     /// questions**, so an older khor refuses it once, which the asker
     /// says as `msg::git_predates()`.
     Git { ask: crate::git::GitAsk },
+    /// [`Request::Open`], **made at most once per `token`** (round NET-7,
+    /// `crate::once`): asked again with the same token — a retry after an
+    /// answer that never arrived — it answers the session the first ask
+    /// made instead of starting another. New words rather than a field on
+    /// `Open`, so an older khor refuses this one by name and the asker
+    /// falls back to `Open` (this module's head: an older peer refuses a
+    /// longer frame whole).
+    OpenOnce {
+        token: String,
+        kind: String,
+        title: String,
+        cwd: String,
+        cmd: Vec<String>,
+        cols: u16,
+        rows: u16,
+    },
+    /// [`Request::OpenAgent`], made at most once per `token`, as
+    /// [`Request::OpenOnce`].
+    OpenAgentOnce {
+        token: String,
+        dir: String,
+        title: String,
+        form: String,
+        agent: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -933,8 +958,9 @@ pub enum Response {
     },
     /// The answer to [`Request::Git`], variant for variant.
     Git { answer: crate::git::GitAnswer },
-    /// **The sessions reading as what changed** (round NET-6): every row's
-    /// id in order, the rows that differ from what this machine last sent
+    /// **The sessions reading as what changed** (round NET-6): the rows'
+    /// ids in order **only when the order changed** (empty: the order the
+    /// asker holds), the rows that differ from what this machine last sent
     /// the asker, and the digest of the whole [`Response::SessionRows`]
     /// frame to check the rebuild against. Sent in a [`Request::Versions`]
     /// answer only to an asker that named the `sessions+` reading, and
@@ -1039,6 +1065,11 @@ impl Request {
                 | Request::Stat { .. }
                 | Request::History { .. }
                 | Request::Git { .. }
+                // **A create with a token** (round NET-7, `crate::once`):
+                // asked twice, the far machine answers the second with the
+                // session the first made — the same as asking once.
+                | Request::OpenOnce { .. }
+                | Request::OpenAgentOnce { .. }
         )
     }
 
@@ -1119,7 +1150,10 @@ impl Request {
             | Request::SatWrite { .. }
             | Request::SatSearch { .. }
             | Request::SatCheckout { .. } => Duration::from_secs(30),
-            Request::Open { .. } | Request::OpenAgent { .. } => Duration::from_secs(25),
+            Request::Open { .. }
+            | Request::OpenAgent { .. }
+            | Request::OpenOnce { .. }
+            | Request::OpenAgentOnce { .. } => Duration::from_secs(25),
             _ => Duration::from_secs(15),
         }
     }
@@ -1136,6 +1170,25 @@ pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **An older khor refuses a word it does not know by its name**
+    /// (round NET-7): the asker of `OpenOnce` falls back to `Open` when
+    /// the refusal names `OpenOnce` (`link::Node::ask_open`). What an
+    /// older khor answers is `Refused { why }` with its decode error; this
+    /// pins that the error names the variant, with a word this khor does
+    /// not know standing in for the one an older khor does not.
+    #[test]
+    fn a_word_this_end_does_not_know_is_refused_by_its_name() {
+        #[derive(serde::Serialize)]
+        enum Newer {
+            OpenTwiceOrMore { token: String },
+        }
+        let frame = encode(&Newer::OpenTwiceOrMore { token: "t".into() }).unwrap();
+        let why = decode::<Request>(&frame).expect_err("an unknown word is refused");
+        assert!(why.contains("OpenTwiceOrMore"), "the refusal names it: {why}");
+        // And the two new words are not inside each other's names.
+        assert!(!"OpenAgentOnce".contains("OpenOnce"));
+    }
 
     #[test]
     fn a_frame_round_trips_and_names_its_op() {

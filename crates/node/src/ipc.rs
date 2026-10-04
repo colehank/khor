@@ -60,6 +60,12 @@ pub enum Op {
         cmd: Vec<String>,
         cols: u16,
         rows: u16,
+        /// The create's token (`crate::once`), when the asker chose one.
+        /// A tail default: a resident older than the field refuses the
+        /// frame, which the face says as a refusal and a restarted
+        /// resident (a binary swap restarts it) answers.
+        #[serde(default)]
+        token: Option<String>,
     },
     /// Where another machine's session listens, and a tunnel to it —
     /// the serve is the only process holding the endpoint, so the pipe
@@ -89,6 +95,9 @@ pub enum Op {
         title: String,
         form: String,
         agent: String,
+        /// As `OpenOn`'s.
+        #[serde(default)]
+        token: Option<String>,
     },
     /// Tail-appended: [`crate::proto::Request::Places`] through the
     /// resident — 常去的地方 on that machine.

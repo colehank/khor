@@ -1845,6 +1845,11 @@ pub fn agents(root: &Path) -> Result<Vec<AgentRow>, String> {
 /// four answers and lets that machine resolve them against its own
 /// registrations and paths. Answers the new row's id, which every face
 /// will call it by wherever it was born.
+///
+/// `token` is the face's create token (`khor_node`'s `once`, round
+/// NET-7): the same token asked again — a retry after an answer that
+/// never came — answers the session the first ask made. Only another
+/// machine's create needs it; here there is no road to lose an answer on.
 pub async fn open_session(
     root: &Path,
     dir: &str,
@@ -1852,12 +1857,13 @@ pub async fn open_session(
     form: &str,
     agent: &str,
     machine: &str,
+    token: Option<&str>,
 ) -> Result<String, String> {
     let n = open(root)?;
     if machine.is_empty() || machine == n.name() {
         return n.start_session(dir, title, form, agent).map(|id| id.0);
     }
-    n.open_agent_on(machine, dir, title, form, agent)
+    n.open_agent_on(machine, dir, title, form, agent, token)
         .await
         .map(|id| id.0)
 }
@@ -2183,6 +2189,7 @@ pub async fn open_term_on(
     title: &str,
     cwd: &str,
     size: Option<(u16, u16)>,
+    token: Option<&str>,
 ) -> Result<String, String> {
     let size = size
         .map(|(c, r)| (c.clamp(20, 500), r.clamp(5, 200)))
@@ -2231,6 +2238,7 @@ pub async fn open_term_on(
             cwd.trim(),
             &[],
             size,
+            token,
         )
         .await?;
     Ok(id.0)
@@ -2466,7 +2474,7 @@ mod wizard_agent_tests {
             .unwrap();
 
         let why =
-            wait(open_session(&r, "~", "", "chat", "zedd", "")).expect_err("no such registration");
+            wait(open_session(&r, "~", "", "chat", "zedd", "", None)).expect_err("no such registration");
         assert_eq!(
             why,
             n.agent_or_refuse("zedd").unwrap_err(),
@@ -2494,9 +2502,9 @@ mod wizard_agent_tests {
             .unwrap();
 
         let term =
-            wait(open_session(&r, "~", "", "term", "zed", "")).expect_err("no terminal form");
+            wait(open_session(&r, "~", "", "term", "zed", "", None)).expect_err("no terminal form");
         let sched =
-            wait(open_session(&r, "~", "", "agent", "zed", "")).expect_err("no scheduler form");
+            wait(open_session(&r, "~", "", "agent", "zed", "", None)).expect_err("no scheduler form");
         assert_eq!(term, khor_catalog::msg::wizard_registered_no_terminal());
         assert_eq!(sched, khor_catalog::msg::wizard_registered_no_scheduler());
         assert_ne!(term, sched, "starting it and arming it are different walls");
@@ -2518,7 +2526,7 @@ mod wizard_agent_tests {
         // chat-only and claude is not, which is the pre-批⑥ shape and
         // must survive the open position.
         assert_eq!(
-            wait(open_session(&r, "~", "", "term", "codex", ""))
+            wait(open_session(&r, "~", "", "term", "codex", "", None))
                 .expect_err("codex has no terminal form"),
             khor_catalog::msg::wizard_codex_chat_only()
         );
@@ -2531,6 +2539,7 @@ mod wizard_agent_tests {
             "term",
             "claude",
             "",
+            None,
         ))
         .expect_err("that directory does not exist");
         assert_eq!(

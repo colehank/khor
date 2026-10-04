@@ -3724,7 +3724,7 @@ fn open(rest: &[String]) -> Result<(), String> {
             let name = agent
                 .as_deref()
                 .unwrap_or(khor_node::adaptor::claude::VENDOR);
-            let id = rt()?.block_on(n.open_agent_on(&machine, "", &title, "chat", name))?;
+            let id = rt()?.block_on(n.open_agent_on(&machine, "", &title, "chat", name, None))?;
             println!("{}", id.0);
             return Ok(());
         }
@@ -3777,7 +3777,7 @@ fn open(rest: &[String]) -> Result<(), String> {
         } else {
             Vec::new()
         };
-        let id = rt()?.block_on(n.open_on(&machine, kind, &title, "", &far, size))?;
+        let id = rt()?.block_on(n.open_on(&machine, kind, &title, "", &far, size, None))?;
         println!("{}", id.0);
         return Ok(());
     }

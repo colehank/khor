@@ -171,6 +171,7 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
             "far-one",
             "chat",
             "claude",
+            None,
         ),
     )
     .await
@@ -219,6 +220,7 @@ async fn a_conversation_is_born_on_the_machine_the_wizard_named_and_spoken_to_fr
             "x",
             "chat",
             "nobody-here",
+            None,
         ),
     )
     .await

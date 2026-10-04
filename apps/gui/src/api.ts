@@ -861,23 +861,28 @@ export const importSessions = (ids: string[]) => call<string[]>("import_sessions
     name, so this layer neither narrows nor validates it. `machine` is
     where the session is born (在哪台): empty or this machine's name is
     here, any other paired name carries the four answers over there
-    (`Node::open_agent_on`). Answers the new row's id. */
+    (`Node::open_agent_on`). Answers the new row's id.
+    `token` makes it at most once (round NET-7, `khor_node`'s `once`):
+    asked again with the same token — after an answer that never came —
+    the far machine answers the session the first ask made. */
 export const openSession = (
   dir: string,
   title: string,
   form: "chat" | "term",
   agent: string,
   machine = "",
-) => call<string>("open_session", { dir, title, form, agent, machine });
+  token?: string,
+) => call<string>("open_session", { dir, title, form, agent, machine, token });
 /** The wizard's shell kind — `open --on` with that machine's own shell,
     through the same core call both skins answer with (docs/KHOR.md
     equivalence). `machine` empty is this one; `title` empty is named
     after the shell; `cwd` empty is the home, and `~` is expanded on
     the machine it names. Answers the new row's id. */
-export const openTermOn = (machine: string, title = "", cwd = "") =>
+export const openTermOn = (machine: string, title = "", cwd = "", token?: string) =>
   // At this device's terminal size, so the first prompt is written for
-  // the width it will be shown at (`lib/term-size-hint`).
-  call<string>("open_on", { machine, title, cwd, ...termSizeHint() });
+  // the width it will be shown at (`lib/term-size-hint`). `token` as
+  // `openSession`'s.
+  call<string>("open_on", { machine, title, cwd, ...termSizeHint(), token });
 /** 接管 (批C): end the session's terminal side; the conversation continues here. */
 export const takeover = (id: string) => call<null>("takeover", { id });
 // `on` is explicit rather than a toggle: the caller already knows the
