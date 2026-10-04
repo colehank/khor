@@ -1335,13 +1335,7 @@ impl Node {
                 // A face arriving gets the round it would otherwise wait up
                 // to QUIET_PACE for.
                 if visible && !was {
-                    let (n, e) = (self.me(), ep.clone());
-                    if let Some(n) = n {
-                        tokio::spawn(async move {
-                            n.wires.counts.pump_rounds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            let _ = n.sync_peers(&e, false).await;
-                        });
-                    }
+                    self.nudge(ep);
                 }
                 ipc::Reply::Noted
             }
@@ -2336,8 +2330,15 @@ impl Node {
         // request a stranger may make — the token is its admission. It
         // used to be a table check repeated at the head of every arm;
         // an arm added without it would have been a door with no lock.
-        if !matches!(req, Request::Pair { .. }) {
-            self.admit(remote)?;
+        if !matches!(req, Request::Pair { .. })
+            && let Err(e) = self.admit(remote)
+        {
+            // **A stranger knocking is a reason to round now** (round
+            // NET-6): most often it is a machine paired a moment ago
+            // through another, whose row this one has not been sent yet
+            // — and with no face here the next round is QUIET_PACE away.
+            self.nudge(ep);
+            return Err(e);
         }
         match req {
             Request::Pair {
@@ -2387,6 +2388,10 @@ impl Node {
                 )?;
                 let mut store = loaded.store;
                 store.flush(&loaded.doc)?;
+                // Everybody else learns of the new machine now, not at
+                // the next quiet beat (the stranger's knock above is the
+                // other half).
+                self.nudge(ep);
                 Ok(Response::Paired {
                     name: self.name().to_owned(),
                     devices: B64.encode(loaded.doc.snapshot()?),
@@ -6878,6 +6883,30 @@ impl Node {
             preferred_relay: self.preferred_relay(),
             relays,
             peers,
+        }
+    }
+
+    /// **A round now, out of turn, at most once a [`SYNC_EVERY`]** (round
+    /// NET-6): for a face arriving, a machine just paired, and a stranger
+    /// knocking — the three moments the quiet pace would otherwise make
+    /// somebody wait up to [`QUIET_PACE`] for what a round brings. The
+    /// limit keeps a stranger who knocks on every beat from buying more
+    /// than the pace a face gets.
+    pub(crate) fn nudge(&self, ep: &iroh::Endpoint) {
+        use std::sync::atomic::Ordering::Relaxed;
+        let now = crate::now_ms();
+        let last = self.nudged.load(Relaxed);
+        if now.saturating_sub(last) < SYNC_EVERY.as_millis() as u64
+            || self.nudged.compare_exchange(last, now, Relaxed, Relaxed).is_err()
+        {
+            return;
+        }
+        if let Some(n) = self.me() {
+            let e = ep.clone();
+            tokio::spawn(async move {
+                n.wires.counts.pump_rounds.fetch_add(1, Relaxed);
+                let _ = n.sync_peers(&e, false).await;
+            });
         }
     }
 
