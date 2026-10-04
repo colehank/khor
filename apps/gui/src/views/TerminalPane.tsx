@@ -681,11 +681,16 @@ const PRESS_SLOP = 8;
  * is long, a drag scrolls as ever.
  */
 function pressSelects(
-  term: Terminal,
+  live: Terminal,
   box: HTMLElement,
   /** A long press the caller takes instead (a block's prompt, 2.3). */
   claims: (row: number, x: number, y: number) => boolean,
+  /** The terminal on screen instead of the live one: a tmux pane's
+      history while the person is up in it (item 31). */
+  over: () => Terminal | null,
 ): () => void {
+  // The terminal this press selects in, chosen when it becomes a press.
+  let term = live;
   let timer = 0;
   let x0 = 0;
   let y0 = 0;
@@ -719,9 +724,11 @@ function pressSelects(
     x0 = e.touches[0].clientX;
     y0 = e.touches[0].clientY;
     timer = window.setTimeout(() => {
+      const history = over();
+      term = history ?? live;
       const at = cellAt(term, x0, y0);
       if (!at) return;
-      if (claims(at.row, x0, y0)) return;
+      if (!history && claims(at.row, x0, y0)) return;
       selecting = true;
       selectWord(at);
     }, LONG_PRESS_MS);
@@ -1350,7 +1357,7 @@ export function TerminalPane({
   const historyRef = useRef<HTMLDivElement>(null);
   // A tmux row's history on a phone (item 31): held only while the pane
   // is on screen, and why it is not there when it cannot be read.
-  const tmuxHistoryRef = useRef<{ shown: (on: boolean) => void } | null>(null);
+  const tmuxHistoryRef = useRef<ReturnType<typeof holdsTmuxHistory> | null>(null);
   const shownRef = useRef(false);
   const [historyOut, setHistoryOut] = useState(false);
   const doingRef = useRef(doing);
@@ -2354,12 +2361,19 @@ export function TerminalPane({
       const at = marks.current();
       setHistory({ cwd: marks.cwd(), atPrompt: !marks.running() && !!at?.input && !at.output });
     };
-    const selects = pressSelects(term, box, (row, x, y) => showBlock(row, x, y, true));
+    const selects = pressSelects(
+      term,
+      box,
+      (row, x, y) => showBlock(row, x, y, true),
+      () => tmuxHistory?.over() ?? null,
+    );
     // **A tmux row on a phone scrolls the front pane's history here**
     // (item 31, `lib/term-tmux-history`), not tmux's copy mode by the
     // wheel; a mouse's page keeps the wheel going to tmux.
     let tmuxHistory: ReturnType<typeof holdsTmuxHistory> | null = null;
     let outShown = 0;
+    /** The person is up in a tmux pane's history (item 31). */
+    let historyUp = false;
     const historyHas = () => tmuxHistory?.active() ?? false;
     const dragged = fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
@@ -2372,6 +2386,10 @@ export function TerminalPane({
         room: roomRef.current!,
         read: (since) => termPaneHistory(id, since),
         changed: () => native.sync(),
+        moved: (to) => {
+          historyUp = to;
+          sync();
+        },
         outOfReach: () => {
           setHistoryOut(true);
           window.clearTimeout(outShown);
@@ -2389,16 +2407,18 @@ export function TerminalPane({
     // in history" in xterm's own coordinates — on the alternate screen
     // (a full-screen program) baseY stays 0 and neither of these can
     // fire, which is right: that screen has no history to be up in.
+    // Up in a tmux pane's history (item 31) is up too: the pill takes
+    // the person back down there, and says when output arrived meanwhile.
     const sync = () => {
       const b = term.buffer.active;
-      const behind = b.viewportY < b.baseY;
+      const behind = b.viewportY < b.baseY || historyUp;
       setBack(behind);
       if (!behind) setFreshBelow(false);
     };
     const scrolled = term.onScroll(sync);
     const wrote = term.onWriteParsed(() => {
       const b = term.buffer.active;
-      if (b.viewportY < b.baseY) setFreshBelow(true);
+      if (b.viewportY < b.baseY || historyUp) setFreshBelow(true);
       else sync();
     });
 
@@ -2936,7 +2956,9 @@ export function TerminalPane({
           data-term-bottom
           data-fresh={freshBelow}
           onClick={() => {
-            termRef.current?.scrollToBottom();
+            const history = tmuxHistoryRef.current;
+            if (history?.over()) history.toBottom();
+            else termRef.current?.scrollToBottom();
             termRef.current?.focus();
           }}
           // The same floating language as the find bar above it —

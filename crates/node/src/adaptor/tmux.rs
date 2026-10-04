@@ -452,7 +452,7 @@ impl Tmux {
         let split = "\x1fkhor-screen\x1f";
         let start = format!("-{window}");
         let out = self.ask_long(&[
-            "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size}", ";",
+            "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size} #{pane_top} #{pane_left} #{status} #{status-position}", ";",
             "capture-pane", "-p", "-e", "-J", "-S", &start, "-E", "-1", "-t", session, ";",
             "display-message", "-p", split, ";",
             "capture-pane", "-p", "-e", "-t", session,
@@ -462,12 +462,23 @@ impl Tmux {
         let pane = words.next()?.to_owned();
         let alternate = words.next()? == "1";
         let size: usize = words.next()?.trim().parse().ok()?;
+        // Where the pane sits on khor's client: its place in the window,
+        // under the status line when that is at the top (`status` is
+        // `off`, `on` or a number of lines).
+        let pane_top: u16 = words.next()?.parse().ok()?;
+        let left: u16 = words.next()?.parse().ok()?;
+        let status = match words.next()? {
+            "off" => 0,
+            "on" => 1,
+            n => n.parse().unwrap_or(1),
+        };
+        let top = pane_top + if words.next()?.trim() == "top" { status } else { 0 };
         let (history, screen) = rest.split_once(&format!("{split}\n"))?;
         // With no history, `-E -1` names a line that is not there and tmux
         // answers with the screen's first: nothing of it is history.
         let history: Vec<String> = if size == 0 { Vec::new() } else { history.lines().map(str::to_owned).collect() };
         let screen = screen.lines().map(str::to_owned).collect();
-        Some(HistoryRead { pane, alternate, size, history, screen })
+        Some(HistoryRead { pane, alternate, size, top, left, history, screen })
     }
 
     /// [`Tmux::ask`] for an answer bigger than a pipe's buffer: a
@@ -1010,12 +1021,21 @@ pub struct PaneHistory {
     /// The pane's screen, top to bottom, with its escapes.
     pub screen: Vec<String>,
     pub anchor: HistoryAnchor,
+    /// Rows above the pane on khor's client: its place in the window,
+    /// and tmux's status line when that is at the top. Tail-appended.
+    #[serde(default)]
+    pub top: u16,
+    /// Columns left of the pane (a split). Tail-appended.
+    #[serde(default)]
+    pub left: u16,
 }
 
 struct HistoryRead {
     pane: String,
     alternate: bool,
     size: usize,
+    top: u16,
+    left: u16,
     history: Vec<String>,
     screen: Vec<String>,
 }
@@ -1041,7 +1061,17 @@ impl HistoryRead {
         let refill = found.is_none() || first > start;
         let lead = escapes(&self.history[..first]);
         let lines = self.history[first..].to_vec();
-        PaneHistory { pane: self.pane, alternate: self.alternate, refill, lead, lines, screen: self.screen, anchor }
+        PaneHistory {
+            pane: self.pane,
+            alternate: self.alternate,
+            refill,
+            lead,
+            lines,
+            screen: self.screen,
+            anchor,
+            top: self.top,
+            left: self.left,
+        }
     }
 }
 
@@ -1534,6 +1564,28 @@ mod tests {
         assert!(other.refill && other.alternate, "{other:?}");
     }
 
+    /// Where the pane sits on khor's client comes with every read: under
+    /// a status line at the top, and right of a split.
+    #[test]
+    fn a_read_says_where_the_pane_sits() {
+        if !have_tmux() {
+            return;
+        }
+        let s = Server::start("histplace");
+        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "80", "-y", "20", "/bin/sh"]);
+        s.until_present("one");
+        s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
+        let t = s.at();
+        let bottom = t.history("shell/9-9", None).unwrap();
+        assert_eq!((bottom.top, bottom.left), (0, 0), "status at the bottom: the pane starts at the top");
+        s.tmux(&["set-option", "-t", "one", "status-position", "top"]);
+        let top = t.history("shell/9-9", None).unwrap();
+        assert_eq!((top.top, top.left), (1, 0), "under a status line at the top");
+        s.tmux(&["split-window", "-h", "-t", "one", "/bin/sh"]);
+        let right = t.history("shell/9-9", None).unwrap();
+        assert!(right.left > 30 && right.top == 1, "{} {}", right.left, right.top);
+    }
+
     /// A history bigger than a pipe's buffer comes back, capped, and the
     /// colours where the face's copy ends lead what follows.
     #[test]
@@ -1572,6 +1624,8 @@ mod tests {
             pane: "%1".into(),
             alternate: false,
             size: 1000,
+            top: 0,
+            left: 0,
             history: (0..1000).map(|_| line.clone()).collect(),
             screen: vec!["$ ".into()],
         };
@@ -1591,6 +1645,8 @@ mod tests {
                 pane: self.pane.clone(),
                 alternate: self.alternate,
                 size: self.size,
+                top: self.top,
+                left: self.left,
                 history: self.history.clone(),
                 screen: self.screen.clone(),
             }

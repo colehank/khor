@@ -2447,6 +2447,8 @@ mod tests {
             lines: vec!["301".into()],
             screen: vec!["$ ".into()],
             anchor,
+            top: 1,
+            left: 0,
         };
         let bytes = encode(&Response::PaneHistory { history: history.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {

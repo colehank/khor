@@ -24,21 +24,25 @@ const HISTORY_LINES = 10_000;
 
 /**
  * The bytes that put a read into the history xterm: the new history lines
- * above, the pane's screen as the screen. Written from the screen's top
- * left after clearing it (not into the scrollback), so the history lines
- * plus a full screen push exactly the history lines up into the
- * scrollback, however many rows each one wraps to. The rows below a
- * pane shorter than the screen (tmux's status line) stay blank.
+ * above, the pane's screen as the screen, at the rows and columns it holds
+ * on khor's client (under tmux's status line when that is at the top,
+ * right of a split), so the seam at the bottom does not move. Written from
+ * the screen's top left after clearing it (not into the scrollback), so
+ * the history lines plus a full screen push exactly the history lines up
+ * into the scrollback, however many rows each one wraps to.
  */
 export function historyBytes(h: PaneHistory, rows: number): string {
-  const pad = Math.max(0, rows - h.screen.length);
+  const indent = h.left > 0 ? `\x1b[${h.left}C` : "";
+  const above = Math.min(h.top, rows);
+  const below = Math.max(0, rows - above - h.screen.length);
   return (
     "\x1b[?25l\x1b[0m\x1b[H\x1b[J" +
     h.lead +
-    h.lines.map((l) => `${l}\r\n`).join("") +
+    h.lines.map((l) => `${indent}${l}\r\n`).join("") +
     "\x1b[0m" +
-    h.screen.join("\r\n") +
-    "\r\n".repeat(pad) +
+    "\r\n".repeat(above) +
+    h.screen.map((l) => indent + l).join("\r\n") +
+    "\r\n".repeat(below) +
     "\x1b[0m"
   );
 }
@@ -72,7 +76,18 @@ export function holdsTmuxHistory(o: {
   changed: () => void;
   /** A finger landed and the history cannot be read: say so. */
   outOfReach: () => void;
-}): { active: () => boolean; shown: (on: boolean) => void; stop: () => void } {
+  /** The person went up into the history, or came back to the bottom. */
+  moved: (up: boolean) => void;
+}): {
+  active: () => boolean;
+  /** The history xterm while the person is up in it: what a long press
+      selects in. */
+  over: () => Terminal | null;
+  /** Back to the bottom (the way-back-down pill). */
+  toBottom: () => void;
+  shown: (on: boolean) => void;
+  stop: () => void;
+} {
   const { live, seat } = o;
   let history: Terminal | null = null;
   let native: { sync: () => void; stop: () => void } | null = null;
@@ -92,8 +107,14 @@ export function holdsTmuxHistory(o: {
     const b = history?.buffer.active;
     return on && !!b && b.viewportY < b.baseY;
   };
+  let wasUp = false;
   const show = () => {
-    seat.style.visibility = up() ? "visible" : "hidden";
+    const now = up();
+    seat.style.visibility = now ? "visible" : "hidden";
+    if (now !== wasUp) {
+      wasUp = now;
+      o.moved(now);
+    }
   };
   const give = (to: boolean) => {
     if (on === to) return;
@@ -218,6 +239,8 @@ export function holdsTmuxHistory(o: {
   o.scroller.addEventListener("touchstart", landed, { passive: true, capture: true });
   return {
     active: () => on,
+    over: () => (up() ? history : null),
+    toBottom: () => history?.scrollToBottom(),
     shown: (to) => {
       if (to === visible) return;
       visible = to;

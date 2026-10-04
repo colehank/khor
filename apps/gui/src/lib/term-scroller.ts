@@ -207,8 +207,8 @@ export function scrollsNatively(
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     scroller.scrollTo({ top: to, behavior: still ? "auto" : "smooth" });
   };
-  const down = () => {
-    touching += 1;
+  const down = (e: TouchEvent) => {
+    touching = e.touches.length;
     window.clearTimeout(settle);
   };
   const up = (e: TouchEvent) => {
@@ -226,8 +226,11 @@ export function scrollsNatively(
   scroller.addEventListener("scroll", scrolled, { passive: true });
   scroller.addEventListener("wheel", wheel, { capture: true, passive: true });
   scroller.addEventListener("touchstart", down, { passive: true });
-  scroller.addEventListener("touchend", up, { passive: true });
-  scroller.addEventListener("touchcancel", up, { passive: true });
+  // The lift is heard on the window, first: a long press that became a
+  // selection (`pressSelects`) stops its touchend on the way down, and a
+  // finger the scroller never heard leave held the mapping frozen.
+  window.addEventListener("touchend", up, { capture: true, passive: true });
+  window.addEventListener("touchcancel", up, { capture: true, passive: true });
   const moved = term.onScroll(syncSoon);
   const wrote = term.onWriteParsed(syncSoon);
   const sized = term.onResize(syncSoon);
@@ -244,8 +247,8 @@ export function scrollsNatively(
       scroller.removeEventListener("scroll", scrolled);
       scroller.removeEventListener("wheel", wheel, true);
       scroller.removeEventListener("touchstart", down);
-      scroller.removeEventListener("touchend", up);
-      scroller.removeEventListener("touchcancel", up);
+      window.removeEventListener("touchend", up, true);
+      window.removeEventListener("touchcancel", up, true);
       moved.dispose();
       wrote.dispose();
       sized.dispose();

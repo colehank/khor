@@ -625,6 +625,10 @@ pub struct PaneHistory {
     pub lines: Vec<String>,
     pub screen: Vec<String>,
     pub anchor: PaneAnchor,
+    /// Rows above the pane on khor's client (a status line at the top, a
+    /// split), and columns left of it.
+    pub top: u16,
+    pub left: u16,
 }
 
 /// **A tmux row's front pane history from an anchor on** (item 31,
@@ -646,6 +650,8 @@ pub async fn pane_history(root: &Path, id: &str, since: Option<PaneAnchor>) -> R
             size: h.anchor.size.min(u32::MAX as usize) as u32,
             tail: h.anchor.tail,
         },
+        top: h.top,
+        left: h.left,
     })
 }
 
