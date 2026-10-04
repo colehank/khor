@@ -19,8 +19,6 @@ import { scrollsNatively } from "@/lib/term-scroller";
 
 /** Output quiet this long, tmux has pushed what it will into the history. */
 const QUIET_MS = 300;
-/** While output streams, the history is read at least this often. */
-const STREAMING_MS = 1000;
 /** The history xterm keeps what one read sends (`Tmux::history`'s cap). */
 const HISTORY_LINES = 10_000;
 
@@ -48,7 +46,20 @@ export function historyBytes(h: PaneHistory, rows: number): string {
 /**
  * Holds a tmux row's history on a phone. `active` says whether it is in
  * charge of the scroller (the live xterm's own binding and its drag as
- * the wheel step aside while it is); `stop` puts everything back.
+ * the wheel step aside while it is); `shown` follows the pane on and off
+ * the screen; `stop` puts everything back.
+ *
+ * **What it costs, and when** (the lead's bounds, item 31):
+ * - the history xterm exists only while the pane is on screen — off it,
+ *   it is disposed with its 10 000 lines, and read whole again on return;
+ * - it draws with xterm's DOM renderer (no second WebGL context) in the
+ *   live xterm's font, size and theme (`lib/term-font` is the one source;
+ *   the live xterm carries it);
+ * - it is read when the pane comes on screen, when another pane comes to
+ *   the front, when a finger lands on a history that is behind, and —
+ *   only while the person is up in it — after output has been quiet
+ *   `QUIET_MS`. Never on every write: a pane streaming at the bottom
+ *   costs one flag.
  */
 export function holdsTmuxHistory(o: {
   live: Terminal;
@@ -59,28 +70,41 @@ export function holdsTmuxHistory(o: {
   read: (since: PaneAnchor | null) => Promise<PaneHistory>;
   /** The history took the scroller, or gave it back. */
   changed: () => void;
-}): { active: () => boolean; stop: () => void } {
+  /** A finger landed and the history cannot be read: say so. */
+  outOfReach: () => void;
+}): { active: () => boolean; shown: (on: boolean) => void; stop: () => void } {
   const { live, seat } = o;
   let history: Terminal | null = null;
   let native: { sync: () => void; stop: () => void } | null = null;
   let anchor: PaneAnchor | null = null;
   let on = false;
+  let visible = false;
   let stopped = false;
   let reading = false;
   let again = false;
+  /** Output since the last read: the history may be behind. */
+  let behind = false;
+  /** The last read failed (an older khor there, out of reach). */
+  let failed = false;
   let quiet = 0;
-  let streaming = 0;
-  /** Whether the person is up in the history: then it is on screen. */
-  const show = () => {
+  /** Whether the person is up in the history. */
+  const up = () => {
     const b = history?.buffer.active;
-    const up = on && !!b && b.viewportY < b.baseY;
-    seat.style.visibility = up ? "visible" : "hidden";
+    return on && !!b && b.viewportY < b.baseY;
+  };
+  const show = () => {
+    seat.style.visibility = up() ? "visible" : "hidden";
+  };
+  const give = (to: boolean) => {
+    if (on === to) return;
+    on = to;
+    o.changed();
   };
   const make = () => {
     const t = new Terminal({
       cols: live.cols,
       rows: live.rows,
-      scrollback: HISTORY_LINES + live.rows,
+      scrollback: HISTORY_LINES,
       fontFamily: live.options.fontFamily,
       fontSize: live.options.fontSize,
       fontWeight: live.options.fontWeight,
@@ -92,8 +116,6 @@ export function holdsTmuxHistory(o: {
       disableStdin: true,
       cursorBlink: false,
     });
-    // Opaque over the live screen, in the live theme's ground.
-    seat.style.background = live.options.theme?.background ?? "";
     t.open(seat);
     // For the gates, as the live one is.
     (seat as HTMLElement & { __xterm?: Terminal }).__xterm = t;
@@ -101,10 +123,21 @@ export function holdsTmuxHistory(o: {
     native = scrollsNatively(t, o.scroller, o.room, seat, { yields: () => !on });
     return t;
   };
+  /** Off the screen: the history and its lines go. */
+  const drop = () => {
+    window.clearTimeout(quiet);
+    give(false);
+    native?.stop();
+    native = null;
+    history?.dispose();
+    history = null;
+    delete (seat as HTMLElement & { __xterm?: Terminal }).__xterm;
+    anchor = null;
+    seat.style.visibility = "hidden";
+  };
   const apply = (h: PaneHistory) => {
-    const was = on;
-    on = !h.alternate;
-    if (on !== was) o.changed();
+    failed = false;
+    give(!h.alternate);
     if (!on) {
       // Nothing of this read was written: the anchor stays where the
       // copy ends, and the read after the program leaves catches up.
@@ -113,10 +146,12 @@ export function holdsTmuxHistory(o: {
     }
     anchor = h.anchor;
     history ??= make();
-    // The live xterm's look, as it is now (a theme or a size changed).
+    // The live xterm's look, as it is now (a theme, a font or a size
+    // changed since).
     for (const k of ["theme", "fontFamily", "fontSize", "lineHeight", "letterSpacing"] as const) {
       if (history.options[k] !== live.options[k]) (history.options as Record<string, unknown>)[k] = live.options[k];
     }
+    // Opaque over the live screen, in the live theme's ground.
     seat.style.background = live.options.theme?.background ?? "";
     if (h.refill) history.reset();
     history.write(historyBytes(h, history.rows), () => {
@@ -124,68 +159,78 @@ export function holdsTmuxHistory(o: {
       show();
     });
   };
-  const read = () => {
+  /** Resolves false when the history could not be read. */
+  const read = (): Promise<boolean> => {
     window.clearTimeout(quiet);
-    window.clearTimeout(streaming);
-    streaming = 0;
-    if (stopped) return;
+    if (stopped || !visible) return Promise.resolve(true);
     if (reading) {
       again = true;
-      return;
+      return Promise.resolve(true);
     }
     reading = true;
-    o.read(anchor)
+    behind = false;
+    return o
+      .read(anchor)
       .then((h) => {
-        if (!stopped) apply(h);
+        if (!stopped && visible) apply(h);
+        return true;
       })
-      // Not here (a row on another machine, older than this): the drag
-      // stays tmux's wheel, as before.
+      // An older khor there, or out of reach: the drag stays tmux's
+      // wheel, as before, and a finger is told why.
       .catch(() => {
-        if (on) {
-          on = false;
-          o.changed();
-        }
+        failed = true;
+        give(false);
         show();
+        return false;
       })
       .finally(() => {
         reading = false;
         if (again) {
           again = false;
-          read();
+          void read();
         }
       });
   };
-  const soon = () => {
+  const quietThen = () => {
     window.clearTimeout(quiet);
-    quiet = window.setTimeout(read, QUIET_MS);
-    if (!streaming) streaming = window.setTimeout(read, STREAMING_MS);
+    quiet = window.setTimeout(() => void read(), QUIET_MS);
   };
-  const wrote = live.onWriteParsed(soon);
+  const wrote = live.onWriteParsed(() => {
+    behind = true;
+    if (up()) quietThen();
+  });
   // Another pane or window in front: tmux retitles khor's client with the
   // pane's id (`Tmux::grouped_attach_argv`), and the next read is that
   // pane's, whole.
-  const titled = live.onTitleChange(() => soon());
+  const titled = live.onTitleChange(quietThen);
   const resized = live.onResize(({ cols, rows }) => {
     history?.resize(cols, rows);
-    soon();
+    behind = true;
   });
-  read();
+  // A finger landing: a history that is behind is brought up to date
+  // before the drag reaches it (the scroller holds its place meanwhile,
+  // `lib/term-scroller`'s gesture rule).
+  const landed = () => {
+    const already = failed;
+    if (already) o.outOfReach();
+    if (already || behind) void read().then((ok) => ok || already || o.outOfReach());
+  };
+  o.scroller.addEventListener("touchstart", landed, { passive: true, capture: true });
   return {
     active: () => on,
+    shown: (to) => {
+      if (to === visible) return;
+      visible = to;
+      if (to) void read();
+      else drop();
+    },
     stop: () => {
       stopped = true;
-      if (on) {
-        on = false;
-        o.changed();
-      }
-      window.clearTimeout(quiet);
-      window.clearTimeout(streaming);
+      drop();
       wrote.dispose();
       titled.dispose();
       resized.dispose();
-      native?.stop();
-      history?.dispose();
-      seat.style.visibility = "hidden";
+      o.scroller.removeEventListener("touchstart", landed, true);
     },
   };
 }

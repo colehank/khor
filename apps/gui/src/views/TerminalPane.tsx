@@ -478,6 +478,9 @@ function cellAt(term: Terminal, x: number, y: number): { col: number; row: numbe
 const DISMISS_PT = 48;
 const DISMISS_SPEED = 0.3;
 
+/** How long the corner says a tmux history cannot be read (item 31). */
+const HISTORY_OUT_MS = 4000;
+
 /** Travel past which a touch is a drag, not a tap. */
 const TAP_SLOP = 10;
 
@@ -1345,6 +1348,11 @@ export function TerminalPane({
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  // A tmux row's history on a phone (item 31): held only while the pane
+  // is on screen, and why it is not there when it cannot be read.
+  const tmuxHistoryRef = useRef<{ shown: (on: boolean) => void } | null>(null);
+  const shownRef = useRef(false);
+  const [historyOut, setHistoryOut] = useState(false);
   const doingRef = useRef(doing);
   doingRef.current = doing;
   // The native scroller around the terminal, and the room after it that
@@ -2351,6 +2359,7 @@ export function TerminalPane({
     // (item 31, `lib/term-tmux-history`), not tmux's copy mode by the
     // wheel; a mouse's page keeps the wheel going to tmux.
     let tmuxHistory: ReturnType<typeof holdsTmuxHistory> | null = null;
+    let outShown = 0;
     const historyHas = () => tmuxHistory?.active() ?? false;
     const dragged = fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
@@ -2363,8 +2372,15 @@ export function TerminalPane({
         room: roomRef.current!,
         read: (since) => termPaneHistory(id, since),
         changed: () => native.sync(),
+        outOfReach: () => {
+          setHistoryOut(true);
+          window.clearTimeout(outShown);
+          outShown = window.setTimeout(() => setHistoryOut(false), HISTORY_OUT_MS);
+        },
       });
+      tmuxHistory.shown(shownRef.current);
     }
+    tmuxHistoryRef.current = tmuxHistory;
     syncScroller.current = () => {
       native.sync();
       trace("replayed");
@@ -2480,6 +2496,8 @@ export function TerminalPane({
       dragged();
       swiped();
       tmuxHistory?.stop();
+      tmuxHistoryRef.current = null;
+      window.clearTimeout(outShown);
       native.stop();
       selects();
       relined();
@@ -2531,6 +2549,8 @@ export function TerminalPane({
   // to), a longer one waits out the beat already in flight.
   useEffect(() => {
     const next = hidden || !active ? HIDDEN_MS : LIVE_MS;
+    shownRef.current = !hidden && active;
+    tmuxHistoryRef.current?.shown(shownRef.current);
     const shorter = next < pace.current;
     pace.current = next;
     if (shorter) pollNow.current();
@@ -2974,6 +2994,11 @@ export function TerminalPane({
 
           {/* Held to the pane's own width so a sentence wraps here
               instead of pushing the screen sideways. */}
+          {historyOut && (
+            <div data-term-history-out className="max-w-72 text-right text-muted-foreground">
+              {gui.term_tmux_history_out}
+            </div>
+          )}
           {dropWhy && (
             <div data-term-drop-why className="max-w-72 text-right text-destructive">
               {dropWhy}

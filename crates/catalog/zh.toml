@@ -4321,6 +4321,10 @@ open-in-browser = "在系统浏览器中打开"
 # The terminal ended — the host's child exited or the connection tore.
 # Both are one fact to a face (docs/handoff 终端画屏).
 term-over = "终端已结束"
+# A tmux row on a phone whose history could not be read (an older khor
+# on that machine, or it is out of reach): the drag goes to tmux's own
+# scrolling, as before (item 31).
+term-tmux-history-out = "这台机器的 tmux 历史暂时读不到，滑动改由 tmux 翻页"
 # The two forms a session can be held in. Nouns, not verbs — and now
 # only the new-session dialog says them, where they are a choice about
 # a session that does not exist yet.

@@ -2100,6 +2100,7 @@ web-opened-here = "Opened"
 open-in-browser = "Open in system browser"
 # ⚠️ Tombstone: pick-exit, retired 2026-09-22 with the fresh tab's button (docs/SHELL.md 第七轮).
 term-over = "This terminal ended"
+term-tmux-history-out = "Can't read this machine's tmux history right now; dragging scrolls in tmux instead"
 view-terminal = "Terminal"
 view-chat = "Chat"
 to-a-chat = "Switch to chat"
