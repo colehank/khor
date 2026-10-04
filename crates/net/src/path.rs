@@ -51,6 +51,26 @@ pub fn classify(conn: &iroh::endpoint::Connection) -> PathKind {
     kind_of(&path_facts(conn))
 }
 
+/// **The relay the connection is going through, by name** (round NET-8,
+/// for UX-16's map): the selected path's relay, as its host — and port,
+/// when it is not the scheme's own (`relay.khor.cloud`,
+/// `101.200.80.77:3340`). `None` when the selected path is direct, or
+/// none is selected yet.
+pub fn relay_name(conn: &iroh::endpoint::Connection) -> Option<String> {
+    let paths = conn.paths();
+    let p = paths.iter().find(|p| p.is_selected() && p.is_relay())?;
+    match p.remote_addr() {
+        iroh::TransportAddr::Relay(url) => {
+            let host = url.host_str()?;
+            Some(match url.port() {
+                Some(port) => format!("{host}:{port}"),
+                None => host.to_owned(),
+            })
+        }
+        _ => None,
+    }
+}
+
 /// Every path right now, the selected one first.
 pub fn path_facts(conn: &iroh::endpoint::Connection) -> Vec<PathFact> {
     let mut facts: Vec<PathFact> = conn

@@ -280,7 +280,7 @@ pub struct WorkspaceFact {
 /// too, which is what lets a row say 「12 秒前」 about a machine that
 /// went quiet. `None` when it has never been heard since the resident
 /// started.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Link {
     pub hop: Hop,
     pub heard_ms: Option<u64>,
@@ -292,6 +292,12 @@ pub struct Link {
     /// `None` without a live wire: no wire, no number.
     #[serde(default)]
     pub rtt_ms: Option<u32>,
+    /// **Which relay, when the way is a relay** (round NET-8 addendum,
+    /// UX-16's map): the relay's host, and port when it is not the
+    /// scheme's own (`khor_net::path::relay_name`). `None` on a direct
+    /// wire and without a live one.
+    #[serde(default)]
+    pub relay: Option<String>,
 }
 
 /// **How the resident's wires have fared since it started** — the

@@ -2078,7 +2078,7 @@ fn devices(_rest: &[String]) -> Result<(), String> {
             ""
         };
         let pin = if d.pinned { cli::pinned_mark() } else { "" };
-        let link = links.iter().find(|(id, _)| *id == d.id).map(|(_, l)| *l);
+        let link = links.iter().find(|(id, _)| *id == d.id).map(|(_, l)| l.clone());
         // A satellite has no road of its own — its sponsor speaks for
         // it (附属机器批), so the road column says who through instead
         // of a reading nothing could take.

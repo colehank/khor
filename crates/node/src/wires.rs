@@ -389,13 +389,15 @@ fn settle(slot: &mut Slot, kind: PathKind) {
 }
 
 /// What [`Wires::link`] knows about one machine.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Reading {
     /// The settled road of a live wire; `None` when none is live.
     pub(crate) road: Option<PathKind>,
     pub(crate) heard: Option<Duration>,
     /// The live wire's smoothed round trip ([`rtt_of`]).
     pub(crate) rtt: Option<Duration>,
+    /// The relay the live wire goes through, by name; `None` when direct.
+    pub(crate) relay: Option<String>,
 }
 
 impl Wires {
@@ -842,6 +844,7 @@ impl Wires {
         let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let mut road = None;
         let mut rtt = None;
+        let mut relay = None;
         let mut heard: Option<Instant> = None;
         for proto in [Proto::Main, Proto::Tunnel] {
             let Some(slot) = slots.get(&(id.to_owned(), proto)) else {
@@ -852,6 +855,7 @@ impl Wires {
             {
                 road = slot.word;
                 rtt = Some(rtt_of(conn)).filter(|r| !r.is_zero());
+                relay = khor_net::path::relay_name(conn);
             }
             if let Some(h) = slot.heard {
                 heard = Some(heard.map_or(h, |was| was.max(h)));
@@ -861,6 +865,7 @@ impl Wires {
             road,
             heard: heard.map(|h| now.saturating_duration_since(h)),
             rtt,
+            relay,
         }
     }
 
