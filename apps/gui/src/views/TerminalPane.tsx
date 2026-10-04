@@ -101,13 +101,14 @@ import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
 import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
 import { promptMarks } from "@/lib/term-prompt-sp";
-import { kittyFlags, kittyKey, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
+import { kittyFlags, kittyKey, kittyNamed, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
 import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { notesFirstTouch } from "@/lib/term-first-touch";
-import { viewportMoving } from "@/lib/viewport";
+import { keyboardShown, viewportMoving } from "@/lib/viewport";
+import { softDeletes } from "@/lib/term-soft-delete";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -1685,9 +1686,30 @@ export function TerminalPane({
       }
     };
     box.addEventListener("mousedown", pictureClick, true);
+    // **iOS's delete key keeps repeating** (item 35, `lib/term-soft-delete`):
+    // under the soft keyboard its keydown is the browser's, the field keeps
+    // text for it to delete, and each edit becomes the key.
+    const coarse = window.matchMedia("(pointer: coarse)").matches;
+    const softDelete = term.textarea
+      ? softDeletes(term.textarea, {
+          soft: () => coarse && keyboardShown(),
+          send: (kind) =>
+            term.input(
+              kind === "word"
+                ? "\x17"
+                : kind === "line"
+                  ? "\x15"
+                  : kind === "forward"
+                    ? "\x1b[3~"
+                    : (kittyNamed(term, "Backspace", false, false) ?? "\x7f"),
+              true,
+            ),
+        })
+      : null;
     // ⌘F is caught before xterm sees it, so it neither reaches the pty
     // nor falls through to the page's own find. Everything else passes.
     term.attachCustomKeyEventHandler((ev) => {
+      if (softDelete?.key(ev) === false) return false;
       // A character held for an Option key behind it goes out before any
       // other key, so nothing overtakes it (`metaEcho`).
       if (ev.type === "keydown" && !ev.altKey) flushHeld();
@@ -2568,6 +2590,7 @@ export function TerminalPane({
       data.dispose();
       term.textarea?.removeEventListener("paste", pasted, true);
       term.textarea?.removeEventListener("copy", copied, true);
+      softDelete?.stop();
       box.removeEventListener("beforeinput", metaEcho, true);
       box.removeEventListener("input", metaEcho, true);
       dragged();
