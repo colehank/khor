@@ -1737,6 +1737,8 @@ export default function App() {
         // an empty "+" is worse than no "+": it is a menu that teaches
         // people not to open menus.
         actions={sessions ? sessionActions : landing === "devices" ? deviceActions : undefined}
+        // ⌘T: a new session is a new tab here (`lib/shortcuts`).
+        newIsTab={sessions}
         // The workspace pane's one creation road: the cross-machine
         // directory picker (工作区批②). It was drawn and unpressable
         // for one batch, which is what the empty state used to point
@@ -2252,6 +2254,28 @@ export default function App() {
             : () => setScreen("list");
   const [swipeHost, setSwipeHost] = useState<HTMLDivElement | null>(null);
   useEdgeSwipe(swipeHost, swipeBack);
+  // **Esc is the same way back** (UX-7, keyboard only): a narrow screen's
+  // ‹, for someone without a pointer. Only where nothing nearer wants the
+  // key — a field or the terminal keeps Esc (a shell needs it), and an
+  // open sheet or menu closes first (its own Escape runs before this, in
+  // the bubble phase, and it is still in the document when this asks).
+  const backKey = useRef(swipeBack);
+  backKey.current = swipeBack;
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.isComposing) return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const go = backKey.current;
+      if (!go) return;
+      const at = document.activeElement;
+      if (at instanceof HTMLInputElement || at instanceof HTMLTextAreaElement || (at instanceof HTMLElement && at.isContentEditable)) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')) return;
+      e.preventDefault();
+      go();
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, []);
   // Which kind of swipe this screen has: a file moves alone, over its
   // listing (`app.css` `data-swipe-kind`).
   const swipesFile = landing === "devices" && fileBack !== null;

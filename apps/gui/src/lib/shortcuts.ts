@@ -88,7 +88,9 @@ export type Act =
   | "settings"
   | "lock"
   | "find"
+  | "find-list"
   | "new"
+  | "new-tab"
   | "import"
   | "close-tab"
   | "next-tab"
@@ -117,6 +119,15 @@ export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
   { act: "lock", chords: [{ key: "l", mod: true }], web: true },
   { act: "find", chords: [{ key: "k", mod: true }], web: true },
   { act: "new", chords: [{ key: "n", mod: true }], web: false },
+  // **⌘T, a new tab where the landing's 「+」 makes one** (UX-7, Safari's
+  // and Terminal's key): a session on 会话, a page on 浏览器. Elsewhere the
+  // 「+」 makes something that is not a tab, and ⌘T does nothing.
+  { act: "new-tab", chords: [{ key: "t", mod: true }], web: false },
+  // **⌘F, this column's search** (UX-7; Mail's and Notes' key for the
+  // list's own search field): the search circle opened and the caret in
+  // its box. A terminal keeps ⌘F for its own search (`TerminalPane`).
+  // Not on the web face, where ⌘F is the browser's.
+  { act: "find-list", chords: [{ key: "f", mod: true }], web: false },
   { act: "close-tab", chords: [{ key: "w", mod: true }], web: false },
   {
     act: "next-tab",
@@ -210,8 +221,9 @@ export type TabHost = {
   close: () => void;
   step: (by: 1 | -1) => void;
 };
-/** The landing's 「+」, by its own name. */
-export type NewAct = { label: string; run: () => void };
+/** The landing's 「+」, by its own name; `tab` when what it makes is a
+    tab (⌘T runs it too). */
+export type NewAct = { label: string; run: () => void; tab?: boolean };
 
 type Lent = { tabs: (() => TabHost | null) | null; new: (() => NewAct | null) | null };
 type Entry = { id: number; get: () => unknown };
@@ -262,7 +274,7 @@ export const useTabHost = (host: TabHost | null) =>
   useLend("tabs", host, host === null ? "" : `${host.count}:${host.front}`);
 /** The landing's 「+」 lends itself to ⌘N (`PaneBar`, seated in the first
     row — the one 「+」 a landing has). */
-export const useNewAct = (act: NewAct | null) => useLend("new", act, act?.label ?? "");
+export const useNewAct = (act: NewAct | null) => useLend("new", act, act ? `${act.label}:${!!act.tab}` : "");
 
 const subscribe = (h: () => void) => {
   hearers.add(h);
@@ -341,6 +353,19 @@ export function useShortcuts(acts: ShellActs) {
           if (!now.new) return false;
           now.new.run();
           return true;
+        case "new-tab":
+          if (!now.new?.tab) return false;
+          now.new.run();
+          return true;
+        case "find-list": {
+          if (document.activeElement?.classList.contains("xterm-helper-textarea")) return false;
+          const open = [...document.querySelectorAll<HTMLElement>("[data-pane-bar] [data-search-open]")].find((e) => e.offsetParent);
+          const box = [...document.querySelectorAll<HTMLInputElement>("[data-pane-bar] input")].find((e) => e.offsetParent);
+          if (open) open.click();
+          else if (box) box.focus();
+          else return false;
+          return true;
+        }
         case "close-tab":
           if (acts.closePage) acts.closePage();
           else if (now.tabs?.front) now.tabs.close();

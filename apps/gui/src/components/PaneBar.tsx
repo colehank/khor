@@ -74,6 +74,7 @@ export function PaneBar({
   filterLabel,
   arrange,
   create,
+  newIsTab = false,
   seat,
   band: bandProp,
   title,
@@ -159,6 +160,8 @@ export function PaneBar({
    * verification anchors that name this pane's "+" rather than any "+".
    */
   create?: { label: string; mark?: string; disabled?: boolean; onSelect?: () => void };
+  /** What this 「+」 makes is a tab (a session, a page): ⌘T runs it too. */
+  newIsTab?: boolean;
 }) {
   // **⌘N is this 「+」** (`lib/shortcuts`, 2026-09-28) — the landing's one
   // 「+」 is the one seated in the first row, so only that bar lends it,
@@ -166,7 +169,7 @@ export function PaneBar({
   const primary = actions?.[0] ?? (create?.onSelect && !create.disabled ? create : null);
   const newKey = keyLabel("new");
   useNewAct(
-    seat === "side" && primary?.onSelect ? { label: primary.label, run: primary.onSelect } : null,
+    seat === "side" && primary?.onSelect ? { label: primary.label, run: primary.onSelect, tab: newIsTab } : null,
   );
   // **Seated, the bar is the list page's head** (the redesign,
   // 2026-10-02: Apple's Preview on a phone, Notes in a window): the
