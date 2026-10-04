@@ -412,6 +412,24 @@ aside[data-side] {
   min-width: var(--wide-column-min);
 }
 
+/* **No window buttons, no room for them** (the owner, 2026-10-04, an
+   iPhone in landscape: the first row's capsule and 「更多」 stood ~30
+   right of the title row's 筛选 / ＋ and search, 「更多」 past the column's
+   hairline). The first row keeps `--wide-lead-start` (80) at its start for
+   the Mac's three buttons — a browser keeps it so the two faces match —
+   and right-aligns the strip; under a finger the strip is 44 tall, the
+   80 plus the strip plus its end inset came to 370 in a 340 column, and
+   the overflow pushed the strip right. A touch face has no window
+   buttons (`data-traffic` is the Mac app's stamp), so its first row
+   starts at the row inset the title row ends with: the strip fits, its
+   right edge on the title row's, 「更多」 over the search circle — folded
+   or not. */
+@media (pointer: coarse) {
+  :root:not([data-traffic]) :is([data-wide-top], [data-folded-lead]) {
+    padding-inline-start: var(--spacing-row);
+  }
+}
+
 /* ⚠️ 墓碑 (the redesign, 2026-10-02): the narrow face took the board's
    margin and corner off here. The board has neither at any width now
    (`Region`, one ground). */
