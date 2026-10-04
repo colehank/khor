@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
 import { shortDir } from "@/components/DoingLine";
 import { type SessionRow } from "@/api";
@@ -18,7 +18,14 @@ import { cn } from "@/lib/utils";
 import { ChatView } from "@/views/ChatView";
 import { DAY_ROW_ID, DayStrip, daySwitch, dayHasRecord, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
-import { TerminalPane } from "@/views/TerminalPane";
+
+/** **The terminal arrives when a terminal does** (UX-6, the phone's first
+    frame): xterm, its renderer and addons were a quarter of the bundle the
+    app parses before it draws its first list. Split off, fetched when a
+    terminal is first shown — and fetched anyway a moment after the pane
+    mounts, so the first terminal opened does not wait for it. */
+const loadTerminal = () => import("@/views/TerminalPane");
+const TerminalPane = lazy(() => loadTerminal().then((m) => ({ default: m.TerminalPane })));
 
 /**
  * **One session, one face.** A session is held in exactly one form —
@@ -239,6 +246,11 @@ export function DetailPane({
   openIds?: string[];
 }) {
   const shown = useDayShown();
+  // Warm the terminal's chunk once the pane has drawn (`loadTerminal`).
+  useEffect(() => {
+    const t = window.setTimeout(() => void loadTerminal(), 1500);
+    return () => window.clearTimeout(t);
+  }, []);
   // **A terminal tab keeps its terminal while it is open** (T-11, the
   // terminal audit: each tab switch left, re-attached and replayed —
   // 68–217 ms to paint, the scroll place lost, old answers replayed —
@@ -588,7 +600,9 @@ export function DetailPane({
             className={on ? "contents" : "pointer-events-none invisible absolute inset-0 flex flex-col"}
             aria-hidden={on ? undefined : true}
           >
-            <TerminalPane id={t.id} machine={t.machine} active={on} />
+            <Suspense fallback={null}>
+              <TerminalPane id={t.id} machine={t.machine} active={on} />
+            </Suspense>
           </div>
         );
       })}

@@ -1987,7 +1987,7 @@ frame-too-big = "帧超限：{0}"
 # A machine asked to watch the folders a tree has open, that cannot
 # (no watcher there). Not shown to a person: the face falls back to
 # asking the tree, which is what this says.
-watch-unavailable = "这台机器监视不了目录，目录树照旧问着看"
+watch-unavailable = "这台机器无法监视目录变化，目录树改为按需刷新"
 half-a-frame = "帧不完整：{0}"
 cant-find-self = "找不到 khor 自身的可执行文件：{0}"
 host-wont-start = "宿主无法启动：{0}"
@@ -2371,12 +2371,12 @@ key-group-commands = "命令"
 # the machine, {2} its exit status, {3} how long it ran.
 finished-notify = "命令完成时通知"
 finished-notify-off = "不通知"
-finished-notify-after = "超过 {0}"
+finished-notify-after = "超过 {0} 的命令"
 finished-on = "{0} 在 {1} 完成 · 退出 {2} · {3}"
 finished-on-plain = "{0} 在 {1} 完成 · {2}"
 # A terminal's directory, on its tab's and its row's menus (roadmap
 # 2.5): the files there, on that machine; a new session there.
-open-dir = "打开所在文件夹"
+open-dir = "打开所在目录"
 new-session-here = "在这里新开会话"
 # A paste of more than one line asks first, showing how many and the
 # first (roadmap 4.3); a program asking to read the clipboard (OSC 52)
@@ -2400,7 +2400,7 @@ term-picture = "图片"
 # (roadmap 4.2).
 term-bell = "响铃"
 term-bell-note = "终端响铃时，Mac 上闪一下边框，手机上轻震一下"
-term-predict = "慢网预测回显"
+term-predict = "预测输入"
 term-predict-note = "远端回显慢时，按下的字先带下划线显示，等远端确认"
 # Appearance → Terminal (item 16): the cursor's shape and whether it blinks. A
 # program's own cursor request still wins while it runs.
@@ -2425,10 +2425,10 @@ row-unreachable = "无法获取 · {0}"
 # (roadmap 2.1): {0} the command, {1} how long it has run; then the
 # last command, {1} its exit status, {2} how long it took; the third
 # when the shell did not say how it ended.
-row-running = "正在跑 {0} · {1}"
+row-running = "正在运行 {0} · {1}"
 row-ran = "{0} · 退出 {1} · {2}"
 row-ran-plain = "{0} · {1}"
-row-running-bare = "正在跑 {0}"
+row-running-bare = "正在运行 {0}"
 day-unreachable = "无法获取"
 reading-unreachable = "无法获取 · 上次 {0}"
 machine-cant-reach = "无法连接 {0}"
@@ -3931,7 +3931,7 @@ chat-add = "添加到对话"
 chat-attach = "添加文件…"
 chat-attach-machine = "{0} 上的文件…"
 chat-attach-machine-title = "{0} 上的文件"
-chat-put-failed = "没能放到机器上"
+chat-put-failed = "没能把文件传到那台机器上"
 
 # 对话里一个文件的预览(round CHAT)。「在文件视图中打开」去的是放着它的
 # 工作区,不在任何工作区里就是那台机器页上的文件;「在访达中显示」只在 Mac
