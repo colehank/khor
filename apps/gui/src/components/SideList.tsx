@@ -530,7 +530,12 @@ export function SideList({
                         }}
                         className="min-w-(--row-action-w) flex-none px-in text-callout"
                       >
-                        {a.label}
+                        {/* Without the menu's ellipsis (UX-10; ux-9 I9): on a
+                            swipe button 「删除…」 promised a form, and what
+                            follows is the action sheet, not more input
+                            (HIG Menus: the ellipsis is for an item that
+                            needs more input before it runs). */}
+                        {a.label.replace(/…$/, "")}
                       </button>
                     ))}
                   </div>

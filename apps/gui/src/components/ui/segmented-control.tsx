@@ -19,6 +19,7 @@
 // the control as its own button, never as one more segment.
 import { useRef, type KeyboardEvent, type ReactNode } from "react";
 
+import { feel } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 
 /** Past this many choices a row draws a popup instead (the README's
@@ -66,7 +67,10 @@ export function SegmentedControl<K extends string>({
       next = live[(((k === -1 ? 0 : k) + by) % live.length + live.length) % live.length];
     }
     buttons.current[next]?.focus();
-    if (next !== at) onChange(options[next].key);
+    if (next !== at) {
+      feel("selection");
+      onChange(options[next].key);
+    }
   };
 
   const onKey = (i: number) => (e: KeyboardEvent<HTMLButtonElement>) => {
@@ -119,7 +123,11 @@ export function SegmentedControl<K extends string>({
             title={o.title}
             data-segment={o.key}
             data-on={on}
-            onClick={() => !on && onChange(o.key)}
+            onClick={() => {
+              if (on) return;
+              feel("selection");
+              onChange(o.key);
+            }}
             onKeyDown={onKey(i)}
             {...o.mark}
             className={cn(

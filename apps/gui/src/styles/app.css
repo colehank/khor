@@ -684,6 +684,45 @@ aside[data-side] {
   }
 }
 
+/* **A sheet's buttons in its header** (UX-10; ux-9 I6). HIG Sheets on
+   iOS: 「the Cancel button belongs on the leading edge of the top
+   toolbar」, the one act on the trailing edge in the prominent style,
+   the title between them. On the narrow face a form's title and its
+   footer share the sheet's first row — the footer's own order already
+   puts 取消 first and the act last, so spreading it puts each at its
+   edge — and the row stays at the top while the form scrolls under it,
+   above the soft keyboard with the sheet. A wide window keeps the
+   dialog's footer where a Mac puts it. */
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"],
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
+  grid-row: 1;
+  grid-column: 1;
+  position: sticky;
+  top: 0;
+  align-self: center;
+  margin: 0;
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
+  justify-content: space-between;
+  background: var(--popover);
+  z-index: 1;
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] {
+  z-index: 2;
+  /* The title lies over the row the buttons stand in; it takes no
+     press, and it keeps clear of them. */
+  pointer-events: none;
+  text-align: center;
+  padding-inline: calc(2 * var(--touch));
+}
+:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] [data-slot="dialog-title"] {
+  font-size: var(--text-headline);
+  line-height: var(--text-headline--line-height);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* **A back swipe** (`hooks/use-edge-swipe`, F7.3; V01): the page —
    its first row and its screen — follows the finger (`--swipe`) over
    the page it came from, which is drawn whole under it
@@ -1862,14 +1901,16 @@ aside[data-side] {
    audit fix plan F1.5; N02, SYS-16). The drawing keeps its size; what
    grows is the hit box, a transparent `::after` at least 44 each way
    centred on the control. Capsule items, the strip, the verbs and their
-   「…」, VS Code, the capsule's seats, a tab's ×, every shadcn button. A
+   「…」, VS Code, the capsule's seats, a tab's ×, every shadcn button,
+   and a glass circle drawn smaller than its 44 (the terminal deck's
+   reload at 38, UX-9 I12; a list head's circle is 44 already). A
    control that is already placed (`absolute`, `fixed`, `sticky`) is its
    own containing block; a static one is made one. */
 @media (pointer: coarse) {
-  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
+  :is([data-glass-item], [data-glass-circle], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
     position: relative;
   }
-  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font])::after {
+  :is([data-glass-item], [data-glass-circle], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font])::after {
     content: "";
     position: absolute;
     left: 50%;

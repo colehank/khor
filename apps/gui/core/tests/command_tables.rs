@@ -291,6 +291,28 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "taps the phone's haptic engine; a browser has no haptics to reach, and the pane \
          flashes its edge there as everywhere",
     ),
+    // ── the settings window (UX-10) ─────
+    (
+        "open_settings",
+        "opens settings in a native window of their own; a browser face shows the same pages in \
+         its one page",
+    ),
+    (
+        "name_settings",
+        "titles that native window after its pane; a browser face has no window to title",
+    ),
+    // ── the cursor joystick, felt (item 23) ─────
+    (
+        "joy_haptic",
+        "ticks the phone's haptic engine as the cursor stick sends arrows; a browser has no \
+         haptic engine to reach",
+    ),
+    // ── haptics with a meaning (UX-10) ─────
+    (
+        "haptic",
+        "plays the phone's selection, success or warning pattern; a browser has no haptic \
+         engine to reach",
+    ),
     // ── a line into the app's log (item 18 A) ─────
     (
         "face_note",

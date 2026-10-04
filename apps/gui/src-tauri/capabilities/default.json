@@ -1,9 +1,10 @@
 {
   "identifier": "default",
-  "description": "khor's own faces may hear the events the app sends them: the window (main) and the small window its overlays are drawn in (menu). A page opened in a browsing tab is a second webview in the same window and is NOT listed here: it is somebody else's site, and it must not be able to listen to khor's traffic. `core:window:allow-destroy` is the quit guard's other half (工作区第五轮 第 39 条): tauri prevents the close as soon as khor's page listens for `tauri://close-requested`, so the page has to be able to close the window itself once nobody objects — and `destroy` rather than `close` because `close` would ask the same guard again. `core:window:allow-start-dragging` and `allow-internal-toggle-maximize` are the other half of `data-tauri-drag-region` (工作区第八轮 第 59 条): tauri's own drag script invokes them from the page, and a capability that does not list them refuses the drag in silence — which is what the first install of that round did.",
+  "description": "khor's own faces may hear the events the app sends them: the window (main), the small window its overlays are drawn in (menu) and the settings window (settings, UX-10). A page opened in a browsing tab is a second webview in the same window and is NOT listed here: it is somebody else's site, and it must not be able to listen to khor's traffic. `core:window:allow-destroy` is the quit guard's other half (工作区第五轮 第 39 条): tauri prevents the close as soon as khor's page listens for `tauri://close-requested`, so the page has to be able to close the window itself once nobody objects — and `destroy` rather than `close` because `close` would ask the same guard again. `core:window:allow-start-dragging` and `allow-internal-toggle-maximize` are the other half of `data-tauri-drag-region` (工作区第八轮 第 59 条): tauri's own drag script invokes them from the page, and a capability that does not list them refuses the drag in silence — which is what the first install of that round did.",
   "webviews": [
     "main",
-    "menu"
+    "menu",
+    "settings"
   ],
   "permissions": [
     "core:event:allow-listen",
