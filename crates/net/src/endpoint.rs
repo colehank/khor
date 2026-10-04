@@ -25,7 +25,7 @@ pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
 ///   cannot reach Hong Kong at all (a campus network that carries
 ///   domestic traffic only). An address and a port, no domain: a domain
 ///   on a mainland machine's 443 needs an ICP filing.
-/// - **Hong Kong**, `relay.khor.cloud`, TLS with a Let's Encrypt
+/// - **Hong Kong**, `hk.relay.khor.cloud`, TLS with a Let's Encrypt
 ///   certificate. For everything that can cross the border, and for
 ///   machines abroad.
 ///
@@ -61,7 +61,7 @@ pub const KHOR_RELAYS: &[(&str, Option<&str>)] = &[
         Some("19ccb31e891ffa3ab66f95f5b743c7d4b419afe635b97e5e"),
     ),
     (
-        "https://relay.khor.cloud",
+        "https://hk.relay.khor.cloud",
         Some("a086ea41af0a8bfe73ac98a914a18542bea845123e8b9eaf"),
     ),
 ];

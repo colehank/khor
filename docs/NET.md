@@ -193,12 +193,12 @@ endpoint id 的连接次数和在线秒数，加整台中继发出 / 收到的�
 **为什么这样比 Khor 档好**：家中继决定别人从哪儿找到你。手机在蜂窝网上、Mac 在家里时，两边只能
 经家中继牵线；一台离两边都近、只为自己的设备服务的中继，往返最短，也不和别人分 1 MB/s 的限速。
 
-**`relay.khor.cloud` 是什么、为什么量出 2040 ms**（2026-10-03 从开发 Mac 上量）：它是香港那台
+**`hk.relay.khor.cloud` 是什么、为什么量出 2040 ms**（2026-10-03 从开发 Mac 上量）：它是香港那台
 （`47.242.108.241`，阿里云香港），本身是好的。从这台 Mac 上 `curl` 它：TCP 握手 3.7 ms——到香港
 不可能这么快，是本机代理的 TUN 接管在本地就把连接接下了——TLS 握手 2.4 s，是代理把流量绕到它自己
 的上游再回来。所以 2040 ms 是代理的绕路，加上 doctor 的「中继」行量的是**首个请求**（DNS + TCP +
 TLS + 请求），不是往返（网络页的「连接」组改量热连接上的第二个请求，`doctor::relay_round_trip`）。
-它对海外设备有用，**不建议从默认档里拿掉**；该做的是在代理规则里把 `relay.khor.cloud` 和
+它对海外设备有用，**不建议从默认档里拿掉**；该做的是在代理规则里把 `hk.relay.khor.cloud` 和
 `47.242.108.241` 设成直连（上面「还没做的」已记）。
 
 ### 代理
@@ -223,7 +223,7 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
 |---|---|---|---|
 | 北京 | `http://101.200.80.77:3340` | 明文 HTTP + 密钥 | 出不了境的机器 |
 | 北京（TLS） | `https://pk.relay.khor.cloud:3341` | TLS（acme.sh 按 DNS 签）+ 另一把密钥 | 同上；答得上时替掉上一行 |
-| 香港 | `https://relay.khor.cloud` | TLS（Let's Encrypt 自动签）+ 密钥 | 能出境的、海外的 |
+| 香港 | `https://hk.relay.khor.cloud` | TLS（Let's Encrypt 自动签）+ 密钥 | 能出境的、海外的 |
 
 - **为什么是两台**：先只买了香港，装好后从实验室量：turing、hinton 连不上它（80、443 都
   超时），GitHub 也不通，百度、阿里云官网、北京的旧中继 4 ms——那个网只放国内流量。
@@ -237,7 +237,7 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
   turing --no-install` 构建的同一个文件）、系统用户 `khor-relay`、`/etc/khor-relay.env`
   （0600，只有密钥一行）、`khor-relay.service`（`--rate 1048576` 每台设备 1 MB/s，
   `--state /var/lib/khor-relay/state`，开机自启、崩了 3 秒后重启）。香港那台多
-  `--acme relay.khor.cloud` 和绑 80/443 的 capability，证书缓存在 state 的 `acme/` 下。
+  `--acme hk.relay.khor.cloud` 和绑 80/443 的 capability，证书缓存在 state 的 `acme/` 下。
 - **`khor doctor` 的「中继」行**同时量每一台、各用各的钟，走 khor 自己连中继的那条路
   （只认环境变量的代理，不读系统代理）。
 - ⚠️ 墓碑：10-01 之前这里是一笔没还的账——Khor 档只有 `39.97.7.248:3340` 一台，借的是
@@ -254,7 +254,7 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
   负责人要做的和顺序在 `audit/net-7.md`。
 - **还没做的**：北京那台的 TLS 等负责人那一步（见上）；
   双家（海外设备同时挂北京）；负责人的 Mac 在代理的全局接管模式下，连香港那台被代理
-  绕路（握手约 2 秒），要在代理规则里把 `relay.khor.cloud` 设成直连。
+  绕路（握手约 2 秒），要在代理规则里把 `hk.relay.khor.cloud` 设成直连。
 
 ## 可达性
 
