@@ -32,6 +32,7 @@
     "native": "node scripts/check-native.mjs",
     "atlas": "node scripts/check-atlas.mjs",
     "scroller": "node scripts/check-scroller.mjs",
+    "softdel": "node scripts/check-soft-delete.mjs",
     "mobile": "node scripts/check-mobile.mjs",
     "tauri": "tauri"
   },

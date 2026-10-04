@@ -1,0 +1,376 @@
+{
+  "about": "iOS 26.5 simulator (iPhone 17 Pro), Mobile Safari, a textarea with autocorrect, autocapitalize and spellcheck off, as xterm's is. Events on the field in order. 'recorded' sequences are the simulator's own (2026-10-05, item 35); 'composed' ones follow the field reports for what a held key sends (vercel-labs/wterm#32, finedesignz/remo-code#459), because the simulator gives no key repeat to a held mouse press. Also recorded: a field refilled during the delete's keydown gets its deleteContentBackward edit at once, so the gate's empty-field case (keydown, keyup, no edit) is the fallback only.",
+  "sequences": [
+    {
+      "name": "pinyin keyboard, field with text: two presses of delete",
+      "source": "recorded",
+      "events": [
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "input",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "input",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        }
+      ],
+      "sends": ""
+    },
+    {
+      "name": "English keyboard, empty field: one press of delete (no edit to make)",
+      "source": "recorded",
+      "events": [
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        }
+      ],
+      "sends": ""
+    },
+    {
+      "name": "English keyboard: n, delete, delete",
+      "source": "recorded",
+      "events": [
+        {
+          "type": "keydown",
+          "key": "n",
+          "code": 78
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "insertText",
+          "data": "n"
+        },
+        {
+          "type": "input",
+          "inputType": "insertText",
+          "data": "n"
+        },
+        {
+          "type": "keyup",
+          "key": "n",
+          "code": 78
+        },
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "input",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "input",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        }
+      ],
+      "sends": "n"
+    },
+    {
+      "name": "pinyin: n, i, delete inside the composition, i, commit 你, delete",
+      "source": "recorded",
+      "events": [
+        {
+          "type": "keydown",
+          "key": "n",
+          "code": 229
+        },
+        {
+          "type": "compositionstart",
+          "data": ""
+        },
+        {
+          "type": "compositionupdate",
+          "data": "n"
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "insertCompositionText",
+          "data": "n",
+          "composing": true
+        },
+        {
+          "type": "input",
+          "inputType": "insertCompositionText",
+          "data": "n",
+          "composing": true
+        },
+        {
+          "type": "keyup",
+          "key": "n",
+          "code": 78,
+          "composing": true
+        },
+        {
+          "type": "keydown",
+          "key": "i",
+          "code": 229,
+          "composing": true
+        },
+        {
+          "type": "compositionupdate",
+          "data": "ni"
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "insertCompositionText",
+          "data": "ni",
+          "composing": true
+        },
+        {
+          "type": "input",
+          "inputType": "insertCompositionText",
+          "data": "ni",
+          "composing": true
+        },
+        {
+          "type": "keyup",
+          "key": "i",
+          "code": 73,
+          "composing": true
+        },
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 229,
+          "composing": true
+        },
+        {
+          "type": "compositionupdate",
+          "data": "n"
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "insertCompositionText",
+          "data": "n",
+          "composing": true
+        },
+        {
+          "type": "input",
+          "inputType": "insertCompositionText",
+          "data": "n",
+          "composing": true
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8,
+          "composing": true
+        },
+        {
+          "type": "keydown",
+          "key": "i",
+          "code": 229,
+          "composing": true
+        },
+        {
+          "type": "compositionupdate",
+          "data": "ni"
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "insertCompositionText",
+          "data": "ni",
+          "composing": true
+        },
+        {
+          "type": "input",
+          "inputType": "insertCompositionText",
+          "data": "ni",
+          "composing": true
+        },
+        {
+          "type": "keyup",
+          "key": "i",
+          "code": 73,
+          "composing": true
+        },
+        {
+          "type": "compositionupdate",
+          "data": "你"
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "insertCompositionText",
+          "data": "你",
+          "composing": true
+        },
+        {
+          "type": "input",
+          "inputType": "insertCompositionText",
+          "data": "你",
+          "composing": true
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "deleteCompositionText",
+          "composing": true
+        },
+        {
+          "type": "input",
+          "inputType": "deleteCompositionText",
+          "composing": true
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "insertFromComposition",
+          "data": "你",
+          "composing": true
+        },
+        {
+          "type": "input",
+          "inputType": "insertFromComposition",
+          "data": "你",
+          "composing": true
+        },
+        {
+          "type": "compositionend",
+          "data": "你"
+        },
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "beforeinput",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "input",
+          "inputType": "deleteContentBackward"
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        }
+      ],
+      "sends": "你"
+    },
+    {
+      "name": "held delete, 40 repeats as edits after one keydown",
+      "source": "composed",
+      "events": [
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "repeat",
+          "inputType": "deleteContentBackward",
+          "times": 40
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        }
+      ],
+      "sends": "×40"
+    },
+    {
+      "name": "held delete, 40 repeats each with its own keydown",
+      "source": "composed",
+      "events": [
+        {
+          "type": "repeat-keyed",
+          "inputType": "deleteContentBackward",
+          "times": 40
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        }
+      ],
+      "sends": "×40"
+    },
+    {
+      "name": "held delete speeding up to words: 10 characters, then 5 words",
+      "source": "composed",
+      "events": [
+        {
+          "type": "keydown",
+          "key": "Backspace",
+          "code": 8
+        },
+        {
+          "type": "repeat",
+          "inputType": "deleteContentBackward",
+          "times": 10
+        },
+        {
+          "type": "repeat",
+          "inputType": "deleteWordBackward",
+          "times": 5
+        },
+        {
+          "type": "keyup",
+          "key": "Backspace",
+          "code": 8
+        }
+      ],
+      "sends": "×10\u0017×5"
+    }
+  ]
+}
