@@ -127,7 +127,12 @@ try {
       pressed `[data-rail-more]` at every width since the redesign, so
       every narrow 「…」 stop read 「never drew」. */
   const toMore = async () => {
-    if (!(await narrowNow())) return tap("[data-rail-more]");
+    // Wide, the circle is a toggle once the list is up: pressed again it
+    // folds the list it opened (App's `onMore`).
+    if (!(await narrowNow())) {
+      if (await page.locator("[data-more-open]").first().isVisible().catch(() => false)) return true;
+      return tap("[data-rail-more]");
+    }
     for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
       if (!(await tap("[data-file-back], [data-back], [data-ws-back], [data-more-back]"))) break;
     }
@@ -2437,7 +2442,12 @@ try {
           excused[why] = (excused[why] || 0) + 1;
           continue;
         }
-        const r = el.getBoundingClientRect();
+        // **A field inside a label is the label's to press**: a press
+        // anywhere on a `<label>` focuses the control in it (HTML's
+        // own rule), so the address field's glass is the target and not
+        // the line of text inside it (`PageField`).
+        const host = el.matches("input, textarea, select") ? el.closest("label") : null;
+        const r = (host ?? el).getBoundingClientRect();
         // **The hit box, not the drawing** (the audit fix plan F1.5,
         // app.css 「Under a finger, nothing to press is smaller than 44」):
         // a control keeps its drawn size and a transparent `::after`
@@ -2528,12 +2538,39 @@ try {
   // A settings value, chosen the way a person chooses it since round 17:
   // through the row's native select (`components/settings/PopupRow`).
   // True when the select was there to choose from.
+  /** The day's 叠放 / 统计, chosen the way a person chooses it: a popup
+      button's option since the redesign, a segment before. */
+  const pickDay = async (view) => {
+    const o = page.locator(`[data-machine-card] [data-day-view-pick="${view}"]`).first();
+    if ((await o.evaluate((e) => e.tagName).catch(() => null)) === "OPTION") {
+      await page.locator("[data-machine-card] select:has([data-day-view-pick])").first().selectOption(view);
+    } else {
+      await o.click();
+    }
+  };
+  // **A long run of numbers is a stepper** since the audit fix plan F4.9
+  // (W21: 标签页上限 was a picker of 47): − and ＋ walked until the row
+  // says the value, 「关」 standing below every number.
   const choose = async (name, value) => {
     const sel = page.locator(`[data-setting-select="${name}"]`);
-    if ((await sel.count()) === 0) return false;
-    await sel.first().selectOption(value);
-    await wait(150);
-    return true;
+    if ((await sel.count()) > 0) {
+      await sel.first().selectOption(value);
+      await wait(150);
+      return true;
+    }
+    const row = page.locator(`[data-setting-row="stepper"][data-setting-row-name="${name}"]`);
+    if ((await row.count()) === 0) return false;
+    const rank = (v) => (/^-?\d+$/.test(v ?? "") ? Number(v) : -Infinity);
+    for (let i = 0; i < 80; i++) {
+      const now = await page.locator(`[data-config-row="${name}"]`).first().getAttribute("data-value").catch(() => null);
+      if (now === value) return true;
+      const step = rank(value) > rank(now) ? "up" : "down";
+      const btn = row.locator(`[data-step="${step}"]`);
+      if ((await btn.count()) === 0) return false;
+      await btn.first().click();
+      await wait(80);
+    }
+    return false;
   };
   /**
    * The mark's place, in the two presses it takes since 2026-09-19
@@ -2588,7 +2625,9 @@ try {
       for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
         const back = page.locator("[data-file-back], [data-back], [data-ws-back], [data-more-back]").filter({ visible: true });
         if ((await back.count()) === 0) break;
-        await back.first().click();
+        // A head that re-seats itself while the screen changes can
+        // detach the button under the press: a missed step, not a wall.
+        await back.first().click({ timeout: 3_000 }).catch(() => {});
         await wait(500);
       }
       const seat = `[data-nav-item][data-landing="${tab}"]`;
@@ -2703,6 +2742,20 @@ try {
       },
     },
     {
+      // **The list's search, open** (the redesign: a circle until
+      // pressed; UX-11 put it beside the bottom bar on a phone). Its own
+      // stop, because the field and the omnibox's forwarder only exist
+      // while it is open — without it 4's census reads the forwarder's
+      // waiver as stale on every run.
+      name: "sessions list · its search open",
+      anchor: "[data-omnibox]",
+      go: async () => (await open("sessions")) && openSearch(),
+      after: async () => {
+        await page.keyboard.press("Escape");
+        await wait(300);
+      },
+    },
+    {
       name: "session detail",
       // **The pane, not its header** (第十四轮 第 1 条): the wide face
       // has no header any more, and a stop anchored on one would read
@@ -2786,7 +2839,9 @@ try {
       // has would read probe-dead on the other (the devices stop's
       // rule).
       name: "browser",
-      anchor: '[data-browse-landing="page"]',
+      // Narrow opens on the tabs' list (`data-browse-tabs`), a page one
+      // press further; wide draws the page beside the list.
+      anchor: '[data-browse-landing="page"], [data-browse-tabs]',
       // `open`: the wide strip's seat, or narrow 更多's menu (UX-11).
       go: () => open("browser"),
     },
@@ -3002,6 +3057,26 @@ try {
         "one thing — focus the `<input>` inside it. The target is in the DOM " +
         "and is that input; this widens its press area onto the field's padding.",
     ],
+    "data-file-scroll": [
+      "src/views/FileView.tsx",
+      "a surface, not a target: the file's scroller listens for a touch that " +
+        "lands **outside** the text while the editor has the focus, and ends the " +
+        "editing (2026-10-03, the owner's iPhone: the keyboard came up over a " +
+        "file and stayed; Notes' manner). It presses nothing and is reached by " +
+        "no one on purpose. **What it does not buy:** a way to end the editing " +
+        "for a keyboard or a reader — those have 保存 and Esc, which are real " +
+        "buttons and keys and are measured where they are.",
+    ],
+    "data-deck-pill": [
+      "src/components/SessionBar.tsx",
+      "a gesture surface, not a target: the deck's pill hears a sideways " +
+        "swipe across it to step to the next or previous tab (round UX-3, " +
+        "Safari's address bar). What is pressed on it are its items — the " +
+        "title, the reload — which are buttons and are measured as such. " +
+        "**What it does not buy:** the swipe itself for a keyboard or a " +
+        "reader; both reach every tab through the tabs circle's sheet, a " +
+        "real button beside it.",
+    ],
     "data-row-menu": [
       "src/components/RowMenu.tsx (the handler is Radix's, not ours)",
       "not a target and not ours: the carrier is the menu's own box, and the " +
@@ -3028,20 +3103,9 @@ try {
   // problem here」, and the next person to meet the control believes it.
   // So each entry says what a waiver does not buy.
   const UNDER_FLOOR = {
-    "data-tab-close": [
-      "src/browse/TabStrip.tsx",
-      "the ×'s own cell on a tab, `--tab-close` wide by the ruling (docs/SHELL.md " +
-        "第十三轮 第 6 条:「就是标签页的一块」— the user's VS Code screenshot, " +
-        "where the close is a small square at the tab's end and the name stops " +
-        "before it). A 44-wide cell would be most of a stub pressed to its " +
-        "floor, and widening it would be this gate deciding a layout the user " +
-        "chose. The cell takes the tab's whole height, which is every pixel " +
-        "there is to give. **What it does not buy:** a finger on the strip. " +
-        "What the cell does is reachable at full size elsewhere and is not " +
-        "only here — the switcher's close on every row (`data-switch-close`) " +
-        "wears the floor, and the switcher is the phone's way to its tabs; " +
-        "a tab with a draft asks before it goes either way.",
-    ],
+    // ⚠️ 墓碑 (the redesign, 2026-10-02): `data-tab-close` was waived
+    // here at `--tab-close` wide; a glass tab's × now carries the
+    // finger's hit box (the audit fix plan F1.5) and clears the floor.
     "data-plot-point": [
       "src/views/MachineCard.tsx",
       "a point on the scatter, and the floor is the wrong criterion because a " +
@@ -4430,7 +4494,9 @@ try {
         [...document.querySelectorAll('[data-file-tree] [data-depth="0"][data-file]')].map((row) => ({
           what: row.getAttribute("data-file"),
           on: row.getAttribute("data-open") === "true",
-          ground: getComputedStyle(row).backgroundColor,
+          // The wash is the row's inset block, drawn under it (W-V9:
+          // `before:`), so it is read off the pseudo-element.
+          ground: getComputedStyle(row, "::before").backgroundColor,
         })),
       );
       const lit = seats.filter((r) => r.on);
@@ -4517,7 +4583,9 @@ try {
           on: e.getAttribute("data-on"),
           name: e.querySelector("[data-tab-name]")?.textContent?.trim() ?? null,
           sub: e.querySelector("[data-tab-sub]")?.textContent?.trim() ?? null,
-          slope: getComputedStyle(e.querySelector("[data-tab-name]")).fontStyle,
+          // A preview wears a ring before its name (the audit fix plan
+          // F4.7), where it wore the app's one italic until 2026-10-02.
+          slope: e.querySelector("[data-tab-preview]") ? "italic" : "normal",
           dot: e.querySelector("[data-tab-dot]") !== null,
         })),
       );
@@ -4574,7 +4642,7 @@ try {
       const placed = await page.evaluate(() => {
         const r0 = document.querySelector("[data-main] [data-region-head]");
         const acts = r0?.querySelector("[data-page-actions]") ?? null;
-        const btns = r0 ? [...r0.querySelectorAll("[data-ws-switches] > button")] : [];
+        const btns = r0 ? [...r0.querySelectorAll("[data-ws-switches] button")] : [];
         const tree = document.querySelector("[data-tree-head]");
         const inActs = acts ? [...acts.querySelectorAll("button")] : [];
         return {
@@ -4583,16 +4651,15 @@ try {
           seated: acts?.querySelectorAll("[data-ws-switches]").length ?? 0,
           // Read off the glass, left to right — the DOM's order is not
           // what a person sees once a row is reversed.
-          firstIsCode: (() => {
+          // The tree and the sessions share one capsule, VS Code the
+          // circle beside it at the far right (97c2537b, the 2026-10-02
+          // ruling on the workspace's tool row).
+          pair: r0?.querySelectorAll("[data-ws-switch-pair] button").length ?? 0,
+          lastIsCode: (() => {
             const code = r0?.querySelector("[data-code]");
-            const ses = r0?.querySelector("[data-ws-sessions-switch]");
-            return !!code && !!ses && code.getBoundingClientRect().right <= ses.getBoundingClientRect().left;
-          })(),
-          lastIsSessions: (() => {
-            const ses = r0?.querySelector("[data-ws-sessions-switch]");
-            if (!ses) return false;
-            const right = ses.getBoundingClientRect().right;
-            return inActs.every((b) => b === ses || b.getBoundingClientRect().right <= right - 0.5);
+            if (!code) return false;
+            const right = code.getBoundingClientRect().right;
+            return inActs.every((b) => b === code || b.getBoundingClientRect().right <= right - 0.5);
           })(),
           inTree: tree ? tree.querySelectorAll("[data-ws-switches], [data-ws-sessions-switch], [data-code]").length : null,
           treeHeads: document.querySelectorAll("[data-tree-head]").length,
@@ -4609,16 +4676,16 @@ try {
       if (!placed.r0) {
         fail("probe dead: the open workspace has no R0 over it (src/components/Region.tsx)");
       }
-      if (placed.inR0.length !== 2 || placed.seated !== 1) {
+      if (placed.inR0.length !== 3 || placed.seated !== 1) {
         fail(
           `R0 carries ${placed.inR0.length} workspace switch(es) in ${placed.seated} group(s) at its right end — ` +
-            "VS Code and the sessions are the page's own buttons since 2026-09-28, seated by `PageAction` " +
+            "the tree, the sessions and VS Code are the page's own buttons, seated by `PageAction` " +
             "(D9; src/views/WorkspacePane.tsx)",
         );
-      } else if (!placed.firstIsCode || !placed.lastIsSessions) {
+      } else if (placed.pair !== 2 || !placed.lastIsCode) {
         fail(
-          `R0's buttons read ${JSON.stringify(placed.inR0)} — VS Code, then the sessions at the far right, over ` +
-            "the column it opens (src/views/WorkspacePane.tsx)",
+          `R0's buttons read ${JSON.stringify(placed.inR0)} with ${placed.pair} in the capsule — the tree and the ` +
+            "sessions in one capsule, VS Code the circle at the far right (src/views/WorkspacePane.tsx)",
         );
       }
       if (placed.inTree !== 0) {
@@ -4665,12 +4732,19 @@ try {
           return got;
         };
         const root = getComputedStyle(document.documentElement);
-        const btns = [...document.querySelectorAll("[data-main] [data-region-head] [data-ws-switches] > button")];
+        // The redesign drew them as glass: the two switches are a
+        // capsule's items, VS Code a circle beside it (`Glass`).
+        const btns = [...document.querySelectorAll("[data-main] [data-region-head] [data-ws-switches] button")];
+        const probe = document.createElement("div");
+        probe.style.height = "var(--head-item-h)";
+        document.body.append(probe);
+        const item = Math.round(probe.getBoundingClientRect().height);
+        probe.remove();
         return {
           railOn: paint(root.getPropertyValue("--rail-on-ink"), "color"),
           brand: paint(root.getPropertyValue("--brand-strong"), "color"),
-          block: paint(root.getPropertyValue("--fill-strong"), "backgroundColor"),
-          ctl: Math.round(Number.parseFloat(root.getPropertyValue("--ctl-md"))),
+          block: paint(root.getPropertyValue("--glass-sel"), "backgroundColor"),
+          item,
           btns: btns.map((b) => {
             const svg = b.querySelector("svg");
             let ink = 0;
@@ -4678,7 +4752,11 @@ try {
               const bb = svg.getBBox();
               const vb = svg.viewBox.baseVal;
               const k = svg.getBoundingClientRect().height / (vb.height || 1);
-              ink = Math.round(Math.max(bb.width, bb.height) * k * 10) / 10;
+              // `getBBox` is the geometry without its stroke: a line
+              // glyph paints half a line past it on each side, a filled
+              // mark (the VS Code one) nothing.
+              const line = getComputedStyle(svg).stroke === "none" ? 0 : Number.parseFloat(svg.getAttribute("stroke-width") ?? "0");
+              ink = Math.round((Math.max(bb.width, bb.height) + line) * k * 10) / 10;
             }
             return {
               what: b.getAttribute("aria-label"),
@@ -4698,27 +4776,27 @@ try {
       if (tailLook.btns.length === 0) {
         fail("probe dead: no switch in R0 to measure (src/views/WorkspacePane.tsx)");
       } else {
-        if (new Set(tailLook.btns.map((t) => t.box)).size > 1 || Math.max(...inks) - Math.min(...inks) > 1.5) {
+        if (Math.max(...inks) - Math.min(...inks) > 1.5) {
           fail(
-            `R0's two switches are uneven: ${tailLook.btns.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — one box, ` +
-              "and the painted marks within a pixel and a half of each other (src/views/WorkspacePane.tsx)",
+            `R0's switches are uneven: ${tailLook.btns.map((t) => `${t.box}/${t.ink}px of ink`).join(", ")} — ` +
+              "the painted marks within a pixel and a half of each other (src/views/WorkspacePane.tsx)",
           );
         }
-        if (tailLook.btns.some((t) => t.box !== `${tailLook.ctl}x${tailLook.ctl}`)) {
+        if (tailLook.btns.some((t) => Number(t.box.split("x")[1]) !== tailLook.item)) {
           fail(
-            `R0's switches are ${tailLook.btns.map((t) => t.box).join(", ")} with a mouse on the glass — a toolbar ` +
-              `button is the ${tailLook.ctl} \`ctl-md\` square, the machine page's size (components/Toolbar)`,
+            `R0's switches are ${tailLook.btns.map((t) => t.box).join(", ")} with a mouse on the glass — a head's ` +
+              `glass item is ${tailLook.item} tall (\`--head-item-h\`), the capsule's and the circle's alike (components/Glass)`,
           );
         }
-        // The ink of a 24-canvas glyph drawn at its own 24 — the
-        // toolbar's size (「字形用竖栏同一个 24 画布的形，画成 24」,
-        // 2026-09-30) — which paints about five sevenths of its box, 17.
-        // A mark left at the 20 of before (14 of ink), or shrunk to a
-        // row's 16, falls out of the band.
-        if (inks.some((k) => k < 15.5 || k > 20)) {
+        // The ink of a glyph in a glass item: the `--ctl-glyph` box (22
+        // under a mouse), which a mark fills to its live share — about
+        // 19.5 with its line (icons.tsx, 「确保所有icon的大小一致」). A
+        // mark left at a row's 16 box, or a box grown past the glass,
+        // falls out of the band.
+        if (inks.some((k) => k < 17.5 || k > 21)) {
           fail(
-            `R0's switches paint ${inks.join("/")}px of ink — a 24 glyph in a toolbar button paints about 17 ` +
-              "(components/Toolbar; src/views/WorkspacePane.tsx)",
+            `R0's switches paint ${inks.join("/")}px of ink — a glyph in a glass item paints about 19.5 ` +
+              "(--ctl-glyph, components/Glass; src/views/WorkspacePane.tsx)",
           );
         }
       }
@@ -4776,14 +4854,14 @@ try {
         }
       }
       await away();
-      // **Off is no block and muted ink**, both of them — a colour claim
-      // needs one of each on one run, so the sessions switch is pressed,
-      // read, and pressed back.
+      // **Off is no chosen piece and plain ink**, both of them — a colour
+      // claim needs one of each on one run, so the sessions switch is
+      // pressed, read, and pressed back.
       for (const b of tailLook.btns) {
         if (!b.pressed && (b.ground === tailLook.block || b.paintedAs === tailLook.railOn)) {
           fail(
             `the ${JSON.stringify(b.what)} switch wears ${b.ground}/${b.paintedAs} while it is off — then the on ` +
-              "state says nothing (src/views/WorkspacePane.tsx toolClass)",
+              "state says nothing (components/Glass)",
           );
         }
       }
@@ -4810,20 +4888,21 @@ try {
             "probe void for the look below (src/views/WorkspacePane.tsx)",
         );
       } else {
-        // **On is a grey block, not the brand** (2026-09-28, the owner:
-        // selected is grey; the brand green has three posts and a switch
-        // is none of them). It was `--rail-on-ink` from ruling 26 until
-        // this date — read here against both greens so neither returns.
+        // **On is glass's chosen piece** (the redesign, 2026-10-02; the
+        // design system's README, 玻璃控件): the white lens under the
+        // open switch's olive ink — an open switch is one of the brand's
+        // three posts. Until the redesign it was the grey block
+        // (2026-09-28), which the glass replaced.
         if (pressedLook.ground !== tailLook.block) {
           fail(
-            `the pressed-in sessions switch stands on ${pressedLook.ground} where --fill-strong is ` +
-              `${tailLook.block} — on is the neutral grey block (src/views/WorkspacePane.tsx toolClass)`,
+            `the pressed-in sessions switch stands on ${pressedLook.ground} where --glass-sel is ` +
+              `${tailLook.block} — on is glass's chosen piece (components/Glass)`,
           );
         }
-        if (pressedLook.paintedAs === tailLook.railOn || pressedLook.paintedAs === tailLook.brand) {
+        if (pressedLook.paintedAs !== tailLook.railOn) {
           fail(
-            `the pressed-in sessions switch is painted ${pressedLook.paintedAs}, the brand's green — 「选中是灰」, ` +
-              "and the green has only its three posts (docs/design-system README 颜色; src/views/WorkspacePane.tsx)",
+            `the pressed-in sessions switch is painted ${pressedLook.paintedAs}, not --rail-on-ink ` +
+              `${tailLook.railOn} — an open switch wears the brand's ink (docs/design-system README; components/Glass)`,
           );
         }
         if (pressedLook.aria !== "true") {
@@ -4895,8 +4974,20 @@ try {
           // The name's line keeps the name's leading with the words
           // beside it on it (`PageHead`: 18 + 14 in 38).
           nameLine: +r(title.parentElement).height.toFixed(2),
-          body: Number.parseFloat(root.getPropertyValue("--text-body--line-height")),
-          callout: root.getPropertyValue("--text-callout").trim(),
+          // The name's own leading: `title-sm`'s since R0 went to 52
+          // (the redesign; the one-rung-tight 18 was for an R0 of 38).
+          nameOwn: Number.parseFloat(getComputedStyle(title).lineHeight),
+          body: ((n) => { const e = document.createElement("div"); e.style.cssText = "position:absolute;visibility:hidden"; e.style.height = `var(${n})`; document.body.append(e); const h = e.getBoundingClientRect().height; e.remove(); return h; })("--text-body--line-height"),
+          // Resolved, not read raw: the size is a calc of the type
+          // scale since UX-10 (`lib/type-size`).
+          callout: (() => {
+            const el = document.createElement("span");
+            el.style.fontSize = "var(--text-callout)";
+            document.body.append(el);
+            const got = getComputedStyle(el).fontSize;
+            el.remove();
+            return got;
+          })(),
         };
       });
       console.log(`R0 second line: ${JSON.stringify(line2)}`);
@@ -4940,9 +5031,9 @@ try {
               `${line2.callout} — a subtitle's size (README 字)`,
           );
         }
-        if (Math.abs(line2.nameLine - line2.body) > 0.5) {
+        if (Math.abs(line2.nameLine - line2.nameOwn) > 0.5) {
           fail(
-            `the name's line is ${line2.nameLine} tall with the branch beside it, not the name's own ${line2.body} — the ` +
+            `the name's line is ${line2.nameLine} tall with the branch beside it, not the name's own ${line2.nameOwn} — the ` +
               "words beside it ride its baseline on `caption`'s leading and must not make it taller (src/components/Region.tsx PageHead)",
           );
         }
@@ -4973,67 +5064,12 @@ try {
       // 状态展示. 收起状态, 点击行来控制」. So the press is the row's —
       // the open one's, where it has a second thing left to mean — and
       // the chevron is a drawing of which way it went.
-      const chevrons = await page.locator("[data-ws-tree-mark]").count();
-      if (chevrons !== 1) {
-        fail(
-          `${chevrons} tree chevron(s) on the workspace list — one, on the open row and on it alone ` +
-            "(src/views/WorkspacesList.tsx)",
-        );
-      } else {
-        // **It is not a control any more**, and that is the half of the
-        // ruling a fold test cannot see: a button here would still fold
-        // the tree and still be wrong.
-        const isButton = await page.$eval("[data-ws-tree-mark]", (el) =>
-          el.tagName === "BUTTON" || el.closest("button") !== null || el.querySelector("button") !== null,
-        );
-        if (isButton) {
-          fail(
-            "the chevron on the workspace row is still a button — 「『<』保留为状态展示」, and the press " +
-              "is the row's (src/views/WorkspacesList.tsx)",
-          );
-        }
-        const onOpenRow = await page.$eval(
-          "[data-ws-tree-mark]",
-          (el) => el.closest("[data-ws-line]")?.querySelector('[data-ws-row][data-selected="true"]') !== null,
-        );
-        if (!onOpenRow) {
-          fail("the tree chevron is not on the selected workspace's row (src/views/WorkspacesList.tsx)");
-        }
-        // **As tall as its row, and pointing sideways** (2026-09-16).
-        const chevBox = await page.evaluate(() => {
-          const b = document.querySelector("[data-ws-tree-mark]");
-          const line = b?.closest("[data-ws-line]");
-          if (!b || !line) return null;
-          // Tailwind's `rotate-*` writes the `rotate` property, not
-          // `transform` — reading the matrix saw every glyph as upright.
-          const turn = getComputedStyle(b.querySelector("svg")).rotate;
-          const deg = turn === "none" ? 0 : Math.round(parseFloat(turn)) % 360;
-          const on = b.getAttribute("data-on") === "true";
-          return {
-            button: Math.round(b.getBoundingClientRect().height),
-            row: Math.round(line.getBoundingClientRect().height),
-            on,
-            turn: deg,
-            // The glyph is a right-pointing chevron: open, drawn as is;
-            // folded, turned about; never a quarter turn, which is what
-            // up or down would be.
-            sideways: on ? deg === 0 : deg === 180,
-          };
-        });
-        console.log(`tree chevron: ${JSON.stringify(chevBox)}`);
-        if (chevBox === null) {
-          fail("probe void: no chevron or row to measure");
-        } else {
-          if (chevBox.button < chevBox.row - 1) {
-            fail(
-              `the row's chevron stands ${chevBox.button}px in a ${chevBox.row}px row — it sits on the row's ` +
-                "right edge whatever height the row came out at (src/views/WorkspacesList.tsx)",
-            );
-          }
-          if (!chevBox.sideways) {
-            fail("the row's chevron points up or down — 「收起是 <,打开是 >」 (src/views/WorkspacesList.tsx)");
-          }
-        }
+      //
+      // ⚠️ 墓碑 (the audit fix plan F2.5, 2026-10-02): the chevron itself
+      // went — a cell at every row's end, an empty gutter on the others.
+      // The open row says so by its block, and `data-tree` on its line
+      // says which way the tree went. The fold is unchanged.
+      {
         const treeCount = () => page.locator("[data-ws-tree]").count();
         const openRow = '[data-ws-row][data-selected="true"]';
         const t0 = await treeCount();
@@ -5048,14 +5084,12 @@ try {
               "都可以」, on the row that is already in front (src/views/WorkspacesList.tsx, App.tsx treePane)",
           );
         }
-        // …and the chevron followed it, which is the whole of what it
-        // is for now.
-        const marked = await page.$eval("[data-ws-tree-mark]", (el) => el.getAttribute("data-on"));
-        const said = await page.$eval("[data-ws-line]", (el) => el.getAttribute("data-tree"));
-        console.log(`tree state: chevron ${marked}, row says ${said}`);
-        if (marked !== "true" || said !== "true") {
+        // …and the line says so, the state a reader is told.
+        const said = await page.$eval('[data-ws-line]:has([data-ws-row][data-selected="true"])', (el) => el.getAttribute("data-tree"));
+        console.log(`tree state: row says ${said}`);
+        if (said !== "true") {
           fail(
-            `the tree is out and the row says ${said} with a chevron at ${marked} — the mark is the state ` +
+            `the tree is out and the open row says data-tree=${said} — the line is the state ` +
               "and nothing else, so it has to be right (src/views/WorkspacesList.tsx)",
           );
         }
@@ -5137,7 +5171,9 @@ try {
       if (open.length !== 1) {
         fail(`pressing one file opened ${open.length} tab(s) — 一个文件一个标签 (src/views/WorkspacePane.tsx)`);
       } else {
-        if (open[0].name !== "one.rs" || open[0].sub !== "src/one.rs") {
+        // The folder it sits in, relative to the root (F4.7: 「where it
+        // is, not its name again」); it was the file's own path.
+        if (open[0].name !== "one.rs" || open[0].sub !== "src") {
           fail(
             `the tab says ${JSON.stringify([open[0].name, open[0].sub])} — 「标签上显示文件名,下方显示` +
               "其路径」, and the path is what tells two files of the same name apart " +
@@ -5449,7 +5485,9 @@ try {
       rows.map((el) => ({
         pinned: el.getAttribute("data-ws-pinned"),
         name: el.querySelector("[data-ws-name]")?.textContent?.trim() ?? null,
-        where: el.querySelector("[data-ws-where]")?.textContent?.trim() ?? null,
+        // The whole value, not the drawn cut: `PathCut` draws the tail
+        // that fits and keeps the path as its title and for a reader.
+        where: el.querySelector("[data-ws-where]")?.getAttribute("title") ?? null,
         git: el.querySelector("[data-ws-git]")?.textContent?.trim() ?? null,
         touched: el.querySelector("[data-ws-touched]")?.textContent?.trim() ?? null,
       })),
@@ -6173,22 +6211,21 @@ try {
     }
   });
 
-  // ── 4j) source first, preview beside it, PDF drawn ───────────────
+  // ── 4j) read first, 编辑 beside it, PDF drawn ─────────────────────
   //
-  // 「所有代码、md 文件,打开先是源码,要有语法高亮。然后对于支持预览的
-  // 文件,如 md,显示预览」and「pdf 你咋转成字符了,应该直接预览」— the
-  // user, 2026-09-14 (工作区批⑤).
+  // 「所有代码、md 文件,打开先是源码,要有语法高亮」and「pdf 你咋转成字符了,
+  // 应该直接预览」— the user, 2026-09-14 (工作区批⑤). **Turned over on
+  // 2026-10-04** (round UX-3 item 2): a file with a second face opens on
+  // it, and 编辑 is the way into its source.
   //
   // Claims:
-  //   i. a markdown file opens as **source**: an editor over painted
-  //      text, not rendered HTML. It was a document until this batch,
-  //      which cost it saving, the save contract, the merge and the
-  //      gutter — on the one format this project is written in;
-  //  ii. the switch is on the head and goes both ways, and coming back
-  //      finds the text where it was;
-  // iii. the preview renders the **buffer**, half-typed — the whole
-  //      reason this is a face and not a kind;
-  //  iv. it can be saved, with the digest the read handed over;
+  //   i. a markdown file opens **rendered**, with one 编辑 at the
+  //      strip's end and no 预览 eye on its tab;
+  //  ii. 编辑 opens the painted source and becomes 保存, and the sheet
+  //      under the editor carries colour only;
+  // iii. 保存 returns to reading and renders what was typed;
+  //  iv. it saves with the digest the read handed over, and the unsaved
+  //      dot comes and goes;
   //   v. a csv's table is parsed, quotes and all: `a,"b,c",d` is three
   //      cells and a naive split is four;
   //  vi. a PDF reaches a viewer as a `blob:`, and where the browser has
@@ -6235,72 +6272,55 @@ try {
   if (!(await openFile("notes.md"))) {
     fail("probe dead: the tree never drew (src/views/FilesPane.tsx)");
   } else {
-    const opened = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
-    const asOpened = await page.evaluate(() => {
-      const one = document.querySelector("[data-file-face-switch]");
-      return {
-        editor: !!document.querySelector("[data-edit]"),
-        md: !!document.querySelector("[data-file-preview] [data-md]"),
-        on: one?.getAttribute("data-on") ?? null,
-        switches: document.querySelectorAll("[data-file-face-switch]").length,
-        // Where it stands, which is the whole of what moved
-        // (2026-09-17 ruling 47:「预览按钮放在标签页的标签上」— the
-        // user): on the tab it is about, rather than at the strip's far
-        // end where it sat for one batch and read as being about the
-        // strip.
-        onStrip: one !== null && document.querySelector("[data-ws-tab-strip]")?.contains(one) === true,
-        onTab: one !== null && document.querySelector("[data-tab]")?.contains(one) === true,
-        // A glyph and no word — the button that used to say 源码/预览
-        // spelled the face out because there were two of them.
-        glyph: one === null ? 0 : one.querySelectorAll("svg").length,
-        word: one?.textContent?.trim() ?? "",
-        // The row of two buttons, gone whole.
-        oldRow: document.querySelectorAll("[data-file-face]").length,
-        // …and the column switches are where they moved to: R0's right
-        // end (2026-09-28; the head of the tree from ruling 47), never
-        // on the strip. This button standing among them would make a
-        // gate about them say three.
-        columns: document.querySelectorAll("[data-main] [data-region-head] [data-ws-switches] > button").length,
-        onStripSwitches: document.querySelectorAll("[data-ws-tab-strip] [data-ws-switches]").length,
-      };
-    });
+    // i) **Read first** (the owner, 2026-10-04, round UX-3 item 2): a
+    // file with a second face opens on it — Markdown rendered — and
+    // 「编辑」 at the strip's end is the way into its source. The tab's
+    // 预览 eye went with it.
+    const opened = await until(5_000, async () => (await page.locator("[data-file-preview] [data-md]").count()) === 1);
+    const asOpened = await page.evaluate(() => ({
+      editor: document.querySelectorAll("[data-edit]").length,
+      h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
+      edits: [...document.querySelectorAll("[data-file-edit]")].map((e) => ({
+        what: e.getAttribute("data-file-edit"),
+        onStrip: document.querySelector("[data-ws-tab-strip]")?.contains(e) === true,
+      })),
+      eyes: document.querySelectorAll("[data-file-face-switch]").length,
+      // The row of two buttons from before ruling 47, gone whole.
+      oldRow: document.querySelectorAll("[data-file-face]").length,
+      // The columns' switches are R0's (2026-09-28), one capsule, never
+      // on the strip.
+      pair: document.querySelectorAll("[data-main] [data-region-head] [data-ws-switch-pair]").length,
+      onStripSwitches: document.querySelectorAll("[data-ws-tab-strip] [data-ws-switches]").length,
+    }));
     console.log(`md opens: ${JSON.stringify(asOpened)}`);
-    // **The sheet carries colour only** (2026-09-16:「编辑时的光标没有和
-    // 任何文字对齐」): a bold heading or a slanted comment in the
-    // painted copy is wider than the editor's plain text over it, and
-    // the caret drifts. Markdown source is where the theme bolds.
-    const heavy = await page.evaluate(() => {
-      const pre = document.querySelector("[data-file-text]");
-      if (!pre) return null;
-      const base = getComputedStyle(pre);
-      const odd = [];
-      for (const el of pre.querySelectorAll('span[style*="--shiki"]')) {
-        const c = getComputedStyle(el);
-        if (c.fontWeight !== base.fontWeight || c.fontStyle !== base.fontStyle) {
-          odd.push(`${JSON.stringify(el.textContent?.slice(0, 12))} ${c.fontWeight}/${c.fontStyle}`);
-        }
-      }
-      return { spans: pre.querySelectorAll('span[style*="--shiki"]').length, odd };
-    });
-    console.log(`sheet weights: ${JSON.stringify(heavy)}`);
-    if (heavy === null || heavy.spans === 0) {
-      fail("probe void: the markdown source painted no tokens, so nothing here can carry a weight");
-    } else if (heavy.odd.length) {
+    if (!opened || asOpened.editor !== 0 || asOpened.h1 !== "notes") {
       fail(
-        `${heavy.odd.length} painted span(s) on the sheet wear a weight or slope of their own (${heavy.odd.slice(0, 3).join("; ")}) ` +
-          "— the sheet keeps colour only, or the caret leaves its letter (src/styles/app.css)",
+        `a markdown file opened as ${JSON.stringify(asOpened)} — it opens to be read, rendered, and 编辑 is ` +
+          "one press away (round UX-3 item 2; src/views/FileView.tsx)",
       );
     }
-    // …standing beside **both** lines and big enough to read
-    // (2026-09-16 ruling 43:「标签页上, 文件类型的icon, 过小了. 而且上面
-    // 是文件名,下面是路径. icon只和上面对齐, 还对的不是很齐. 可以放大一点,
-    // 和这两行对齐」).
-    //
-    // It was seated on the name's line for one batch, which answered
-    // 「centred on the pair it hangs between them」 — true of a 16 glyph
-    // and the wrong fix. The measure now is the pair itself: the
-    // glyph's middle against the middle of name-top to path-bottom,
-    // and its painted height against the two lines it stands beside.
+    if (asOpened.edits.length !== 1 || asOpened.edits[0].what !== "edit" || !asOpened.edits[0].onStrip) {
+      fail(
+        `the file's 编辑 reads ${JSON.stringify(asOpened.edits)} — one, at the strip's end, saying 编辑 ` +
+          "(src/browse/TabStrip.tsx, src/views/WorkspacePane.tsx)",
+      );
+    }
+    if (asOpened.eyes !== 0 || asOpened.oldRow !== 0) {
+      fail(
+        `the file still draws ${asOpened.eyes} 预览 eye(s) and ${asOpened.oldRow} 源码/预览 button(s) — the face ` +
+          "is the reading one and 编辑 is the switch (round UX-3 item 2)",
+      );
+    }
+    if (asOpened.pair !== 1 || asOpened.onStripSwitches !== 0) {
+      fail(
+        `R0 carries ${asOpened.pair} switch capsule(s) and the strip's end ${asOpened.onStripSwitches} switch ` +
+          "group(s) — the columns' switches are R0's page buttons (src/views/WorkspacePane.tsx)",
+      );
+    }
+    // **Standing beside both lines and big enough to read** (2026-09-16
+    // ruling 43:「标签页上, 文件类型的icon, 过小了…和这两行对齐」): the
+    // glyph's middle against the middle of name-top to path-bottom, and
+    // its painted height against the two lines it stands beside.
     const seat = await page.evaluate(() => {
       const tab = document.querySelector("[data-tab-open]");
       const g = tab?.querySelector("[data-file-kind]");
@@ -6322,7 +6342,6 @@ try {
         glyphMid: Math.round((a.top + a.bottom) / 2),
         pairMid: Math.round((b.top + c.bottom) / 2),
         pair: `${Math.round(b.top)}–${Math.round(c.bottom)}`,
-        // Both lines start on one edge, which is the glyph's right side.
         nameLeft: Math.round(b.left),
         subLeft: Math.round(c.left),
         ink,
@@ -6333,12 +6352,8 @@ try {
       fail("probe void: the open tab has no kind icon, name and path to measure against each other");
     } else {
       // Three, where the ruling said two: the glyph is centred on the
-      // **flex line** and the pair is measured from the name's box top
-      // to the path's box bottom, and those two differ by whatever
-      // leading the second line carries — 2.0 on Blink today. A
-      // tolerance that sits exactly on the reading is a gate that goes
-      // red on the next engine for a picture nobody would call
-      // misaligned.
+      // flex line and the pair is measured box to box, and those differ
+      // by whatever leading the second line carries.
       if (Math.abs(seat.glyphMid - seat.pairMid) > 3) {
         fail(
           `the tab's kind icon is centred at ${seat.glyphMid} while the two lines run ${seat.pair} (middle ` +
@@ -6351,168 +6366,16 @@ try {
             "has to grow is the ink (src/views/WorkspacePane.tsx tabFaces)",
         );
       }
-      // …and the 预览 eye, **on the tab and deliberately the smaller
-      // mark** (2026-09-17 ruling 47:「在它自己那个标签的名字右边、× 左边,
-      // 画一个小眼睛(size-3.5)」— the user). It is not one of the pair
-      // in the tree's head and must not be measured against them: those
-      // two each open something this face has no other handle on, and
-      // this one changes the face of the tab it sits on. The box is
-      // still the finger's floor; what is smaller is the ink.
-      const eye = await page.evaluate(() => {
-        const b = document.querySelector("[data-file-face-switch]");
-        const svg = b?.querySelector("svg") ?? null;
-        if (!b || !svg) return null;
-        const bb = svg.getBBox();
-        const vb = svg.viewBox.baseVal;
-        const k = svg.getBoundingClientRect().height / (vb.height || 1);
-        const r = b.getBoundingClientRect();
-        // The floor this pointer gets (tokens.css `--hit`, 2026-09-26):
-        // `--ctl-md` under a mouse, `--touch` under a finger.
-        const hit = Math.round(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--hit")) || 0);
-        return {
-          hit,
-          box: [Math.round(r.width), Math.round(r.height)].join("x"),
-          ink: Math.round(Math.max(bb.width, bb.height) * k * 10) / 10,
-        };
-      });
-      console.log(`the 预览 switch: ${JSON.stringify(eye)}`);
-      if (eye === null) {
-        fail("probe void: no 预览 switch on screen to measure (src/views/WorkspacePane.tsx)");
-      } else if (eye.ink < 13 || eye.ink > 15 || eye.box !== `${eye.hit}x${eye.hit}`) {
-        fail(
-          `the 预览 eye is ${eye.box} around ${eye.ink}px of ink — 「一个小眼睛, size-3.5」 in a box a ` +
-            "finger can land on (src/browse/TabStrip.tsx)",
-        );
-      }
-      // **And it rides the tab in front, not the strip.**
-      const eyeSeat = await page.evaluate(() => {
-        const b = document.querySelector("[data-file-face-switch]");
-        const tab = b?.closest("[data-tab]") ?? null;
-        return {
-          onTab: tab !== null,
-          onTheOpenOne: tab?.getAttribute("data-on") === "true",
-          count: document.querySelectorAll("[data-file-face-switch]").length,
-        };
-      });
-      console.log(`the 预览 eye's seat: ${JSON.stringify(eyeSeat)}`);
-      if (!eyeSeat.onTab || !eyeSeat.onTheOpenOne || eyeSeat.count !== 1) {
-        fail(
-          `the 预览 eye sits at ${JSON.stringify(eyeSeat)} — 「只在活动标签上画,非活动标签不画」 ` +
-            "(src/browse/TabStrip.tsx)",
-        );
-      }
       if (Math.abs(seat.nameLeft - seat.subLeft) > 1) {
         fail(
           `the tab's name starts at ${seat.nameLeft} and its path at ${seat.subLeft} — the glyph is beside the ` +
-            "pair now, so both lines start on its right edge (src/browse/TabStrip.tsx)",
+            "pair, so both lines start on its right edge (src/browse/TabStrip.tsx)",
         );
       }
     }
-    if (!opened || !asOpened.editor || asOpened.md) {
-      fail(
-        "a markdown file opened rendered rather than as source — it is a text file, and 「打开先是" +
-          "源码」 is the whole of what this batch is about (src/views/FileView.tsx)",
-      );
-    }
-    if (asOpened.oldRow !== 0) {
-      fail(
-        `the 源码/预览 row is still over the file (${asOpened.oldRow} button(s)) — 「取消源码/预览` +
-          "的按钮,放在页面的右上角那」 (src/views/FileView.tsx)",
-      );
-    }
-    // **On the tab, and on the tab in front** (2026-09-17 ruling 47:
-    // 「预览按钮放在标签页的标签上…只在活动标签上画」— the user). One
-    // eye in the whole pane, because one tab is in front; a mark on
-    // every stub would be a row of controls aimed at files nobody is
-    // looking at.
-    if (asOpened.switches !== 1 || !asOpened.onTab) {
-      fail(
-        `the file's face switch: ${asOpened.switches} of them, on its own tab=${asOpened.onTab} — ` +
-          "「预览按钮放在标签页的标签上」 (src/browse/TabStrip.tsx)",
-      );
-    }
-    if (asOpened.glyph !== 1 || asOpened.word !== "") {
-      fail(
-        `the face switch draws ${asOpened.glyph} glyph(s) and the word 「${asOpened.word}」 — 「就是一` +
-          "个预览的 icon」, and the face it is on is what `data-on` says " +
-          "(src/components/icons.tsx IconEye)",
-      );
-    }
-    // **The strip's far end is empty** (ruling 47:「取消现在固定在标签页
-    // 位置的」). Both switches moved to the head of the tree, where the
-    // narrow face could reach them without opening a file first, and on
-    // 2026-09-28 on to R0's right end as the page's own buttons.
-    if (asOpened.columns !== 2 || asOpened.onStripSwitches !== 0) {
-      fail(
-        `R0 carries ${asOpened.columns} column switch(es) and the strip's end carries ` +
-          `${asOpened.onStripSwitches} group(s) — the two are R0's page buttons, and the strip's ` +
-          "end is empty (src/views/WorkspacePane.tsx)",
-      );
-    }
-    if (asOpened.on !== "false") {
-      fail(
-        "the face switch opened pressed in — 「打开先是源码」, on every file and never " +
-          "remembered (src/views/WorkspacePane.tsx)",
-      );
-    }
-    // ii/iii) the switch, and what it renders.
-    await toEdit();
-    await page.locator("[data-edit]").click();
-    await page.keyboard.type("\n## typed\n");
-    const typed = await page.locator("[data-edit]").inputValue();
-    await press("[data-file-face-switch]");
-    const rendered = await until(5_000, async () =>
-      (await page.locator("[data-file-preview] h1").count()) === 1,
-    );
-    const heads = await page.evaluate(() => ({
-      h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
-      h2: document.querySelector("[data-file-preview] h2")?.textContent?.trim() ?? null,
-      editor: document.querySelectorAll("[data-edit]").length,
-    }));
-    console.log(`md preview: ${JSON.stringify(heads)}`);
-    // **As wide as the column** (2026-09-16:「预览时,md 不要窄显示。和代码
-    // 一样,有多宽显示多宽」).
-    const wide = await page.evaluate(() => {
-      const host = document.querySelector("[data-file-preview]");
-      const md = host?.querySelector("[data-md]");
-      if (!host || !md) return null;
-      return { host: Math.round(host.getBoundingClientRect().width), md: Math.round(md.getBoundingClientRect().width) };
-    });
-    console.log(`md width: ${JSON.stringify(wide)}`);
-    if (wide !== null && wide.md < wide.host - 64) {
-      fail(
-        `the rendered markdown is ${wide.md}px in a ${wide.host}px column — 「有多宽显示多宽」, no prose cap ` +
-          "(src/views/FileView.tsx)",
-      );
-    }
-    if (!rendered || heads.h1 !== "notes") {
-      fail(
-        `按预览 drew ${JSON.stringify(heads)} — 「# notes」 is an <h1> and that is what a preview ` +
-          "means (src/views/FileView.tsx)",
-      );
-    }
-    if (heads.h2 !== "typed") {
-      fail(
-        "the preview did not carry the line just typed — it renders the buffer, not the file on " +
-          "disk, and a view one save behind is a view of a document nobody has (src/views/FileView.tsx)",
-      );
-    }
-    // 「再次点击回到源码」 — the same button, which is the half a pair of
-    // buttons cannot be wrong about and a single one can.
-    await press("[data-file-face-switch]");
-    const back = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
-    const kept = back ? await page.locator("[data-edit]").inputValue() : "";
-    if (!back || kept !== typed) {
-      fail(
-        `coming back from 预览 left 「${kept}」 where 「${typed}」 was typed — the buffer is this ` +
-          "view's state and the editor merely shows it (src/views/FileView.tsx)",
-      );
-    }
-    // iv) and it saves, which is what being a document cost it.
-    // **The first one**, because a save answers with a digest the next
-    // save pins to: keeping only the last would assert that khor sent
-    // back its own previous answer, which is true of any number of
-    // saves and says nothing about the first.
+    // ii/iii/iv) 编辑, typing, 保存 — and back to reading, rendering what
+    // was typed. **The first write's digest**, because a save answers
+    // with one the next save pins to.
     const wrote = [];
     await page.route("**/write_text", (r) => {
       wrote.push(r.request().postDataJSON()?.was ?? null);
@@ -6521,38 +6384,97 @@ try {
         body: JSON.stringify({ at_ms: Date.now(), digest: "2".repeat(64) }),
       });
     });
-    // The caret is in the box (the text above was typed into it), and
-    // ⌘S is where 存 lives since ruling 30.
     await toEdit();
-    await page.locator("[data-edit]").click();
-    await page.keyboard.press("Control+s");
-    const saved = await until(5_000, async () => wrote.length > 0);
-    // The dot goes out when the answer lands and the buffer stops
-    // differing from the disk — a read of the DOM on the same beat as
-    // the request would be asking before either happened.
-    const clean = await until(5_000, async () =>
-      (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0,
-    );
-    const dot = await page.locator("[data-ws-tab-strip] [data-tab-dot]").count();
-    console.log(`md save: was ${JSON.stringify(wrote)}, unsaved dot(s) ${dot} (went out: ${clean})`);
-    if (!saved || wrote[0] !== "0".repeat(64)) {
+    const editing = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
+    const saveSays = await page.locator("[data-file-edit]").first().getAttribute("data-file-edit").catch(() => null);
+    if (!editing || saveSays !== "save") {
       fail(
-        `saving a markdown file sent was=${JSON.stringify(wrote)} — it must be the digest the ` +
-          "read handed over, which is the whole of the save contract (src/views/FileView.tsx)",
+        `编辑 left editor=${editing} and the button at ${JSON.stringify(saveSays)} — it opens the source and becomes ` +
+          "保存 (src/browse/TabStrip.tsx)",
       );
-    }
-    if (dot !== 0) {
-      fail(
-        `…and the tab still wears ${dot} unsaved dot(s) after a save the far machine took — that dot is ` +
-          "what says 存好了 now (src/views/FileView.tsx, src/browse/TabStrip.tsx)",
-      );
+    } else {
+      // **The sheet carries colour only** (2026-09-16:「编辑时的光标没有
+      // 和任何文字对齐」): a bold heading in the painted copy is wider
+      // than the editor's plain text over it, and the caret drifts.
+      // Markdown source is where the theme bolds.
+      const heavy = await page.evaluate(() => {
+        const pre = document.querySelector("[data-file-text]");
+        if (!pre) return null;
+        const base = getComputedStyle(pre);
+        const odd = [];
+        for (const el of pre.querySelectorAll('span[style*="--shiki"]')) {
+          const c = getComputedStyle(el);
+          if (c.fontWeight !== base.fontWeight || c.fontStyle !== base.fontStyle) {
+            odd.push(`${JSON.stringify(el.textContent?.slice(0, 12))} ${c.fontWeight}/${c.fontStyle}`);
+          }
+        }
+        return { spans: pre.querySelectorAll('span[style*="--shiki"]').length, odd };
+      });
+      console.log(`sheet weights: ${JSON.stringify(heavy)}`);
+      if (heavy === null || heavy.spans === 0) {
+        fail("probe void: the markdown source painted no tokens, so nothing here can carry a weight");
+      } else if (heavy.odd.length) {
+        fail(
+          `${heavy.odd.length} painted span(s) on the sheet wear a weight or slope of their own (${heavy.odd.slice(0, 3).join("; ")}) ` +
+            "— the sheet keeps colour only, or the caret leaves its letter (src/styles/app.css)",
+        );
+      }
+      await page.locator("[data-edit]").click();
+      await page.keyboard.press("Control+End");
+      await page.keyboard.type("\n## typed\n");
+      const dotted = await until(3_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 1);
+      await press('[data-file-edit="save"]');
+      const saved = await until(5_000, async () => wrote.length > 0);
+      const read = await until(5_000, async () => (await page.locator("[data-file-preview] h2").count()) === 1);
+      const after = await page.evaluate(() => ({
+        editor: document.querySelectorAll("[data-edit]").length,
+        h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
+        h2: document.querySelector("[data-file-preview] h2")?.textContent?.trim() ?? null,
+        dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
+        button: document.querySelector("[data-file-edit]")?.getAttribute("data-file-edit") ?? null,
+      }));
+      console.log(`md 编辑 → 保存: was ${JSON.stringify(wrote)}, typed dot ${dotted}, then ${JSON.stringify(after)}`);
+      if (!dotted) {
+        fail("typing in the source put no unsaved dot on its tab (src/browse/TabStrip.tsx)");
+      }
+      if (!saved || wrote[0] !== "0".repeat(64)) {
+        fail(
+          `保存 sent was=${JSON.stringify(wrote)} — it must be the digest the read handed over, which is the ` +
+            "whole of the save contract (src/views/FileView.tsx)",
+        );
+      }
+      if (!read || after.editor !== 0 || after.h1 !== "notes" || after.h2 !== "typed" || after.button !== "edit") {
+        fail(
+          `保存 left ${JSON.stringify(after)} — it saves and returns to reading, rendering what was typed, and the ` +
+            "button says 编辑 again (src/views/FileView.tsx)",
+        );
+      }
+      if (after.dot !== 0) {
+        fail(
+          `…and the tab still wears ${after.dot} unsaved dot(s) after a save the far machine took — that dot is ` +
+            "what says 存好了 (src/views/FileView.tsx, src/browse/TabStrip.tsx)",
+        );
+      }
+      // **As wide as the column** (2026-09-16:「预览时,md 不要窄显示」).
+      const wide = await page.evaluate(() => {
+        const host = document.querySelector("[data-file-preview]");
+        const md = host?.querySelector("[data-md]");
+        if (!host || !md) return null;
+        return { host: Math.round(host.getBoundingClientRect().width), md: Math.round(md.getBoundingClientRect().width) };
+      });
+      console.log(`md width: ${JSON.stringify(wide)}`);
+      if (wide !== null && wide.md < wide.host - 64) {
+        fail(
+          `the rendered markdown is ${wide.md}px in a ${wide.host}px column — 「有多宽显示多宽」, no prose cap ` +
+            "(src/views/FileView.tsx)",
+        );
+      }
     }
     await page.unroute("**/write_text");
   }
 
-  // v) the csv table, parsed rather than split.
+  // v) the csv table, parsed rather than split — the face it opens on.
   if (await openFile("data.csv")) {
-    await press("[data-file-face-switch]");
     const cells = await until(5_000, async () =>
       (await page.locator("[data-file-preview] [data-cell]").count()) > 0,
     );
@@ -6651,28 +6573,24 @@ try {
         fail(`every painted token is the sheet's own ink (${inks.body}) — the spans landed and no colour did (src/styles/app.css)`);
       }
     }
-    // …and **a file with nothing to render grows no switch** (「如果可预
-    // 览,就是一个预览的 icon」— the user, 2026-09-16). A `.rs` has no
-    // second face, so its tab carries a name and a close and nothing
-    // else. The negative half of the claim 4j opened with, and it is
-    // asserted here because this is where a file with no renderer is
-    // already in front.
+    // …and **a file with no second face opens on its source**: under a
+    // mouse that is the editor already, so it grows no 编辑 (round UX-3
+    // item 2: 「a mouse edits on a click as before」).
     const none = await page.evaluate(() => ({
-      switches: document.querySelectorAll("[data-file-face-switch]").length,
-      columns: document.querySelectorAll("[data-main] [data-region-head] [data-ws-switches] > button").length,
+      edits: document.querySelectorAll("[data-file-edit]").length,
+      editor: document.querySelectorAll("[data-edit]").length,
+      pair: document.querySelectorAll("[data-main] [data-region-head] [data-ws-switch-pair]").length,
     }));
-    console.log(`.rs face switch: ${JSON.stringify(none)}`);
-    if (none.switches !== 0) {
+    console.log(`.rs opens: ${JSON.stringify(none)}`);
+    if (none.edits !== 0 || none.editor !== 1) {
       fail(
-        "a .rs file drew a 预览 switch — there is nothing to render, and a button that switches to " +
-          "nothing is worse than no button (src/views/WorkspacePane.tsx)",
+        `a .rs file opened with ${none.editor} editor(s) and ${none.edits} 编辑 — with a mouse a file with ` +
+          "nothing to render is its editor, and a button into what is already open is worse than none " +
+          "(src/views/WorkspacePane.tsx)",
       );
     }
-    if (none.columns !== 2) {
-      fail(
-        `probe void: R0 carries ${none.columns} column switch(es), so 「no face ` +
-          "switch」 above may only mean the whole workspace is missing",
-      );
+    if (none.pair !== 1) {
+      fail(`probe void: R0 carries ${none.pair} switch capsule(s), so the workspace may not be on screen at all`);
     }
   }
 
@@ -6970,7 +6888,11 @@ try {
       });
     await page.route("**/read_text", tallRead);
     await page.setViewportSize({ width: 1400, height: 700 });
-    await press('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button');
+    // A file with no second face, so it opens on its source (a
+    // Markdown one opens rendered since round UX-3 item 2), and one no
+    // stop before has opened, so its text is this fixture's and not a
+    // tab's kept buffer.
+    await press('[data-file-tree] [data-depth="0"][data-file="debug.log"] > button');
     const drew = await until(8_000, async () =>
       (await page.locator('[data-file-text] [data-line="60"]').count()) === 1,
     );
@@ -8499,10 +8421,10 @@ try {
   // and under the name that row says the branch and nothing else.
   {
     const wide = { width: 1400, height: 900 };
-    await page.setViewportSize({ width: 390, height: 844 });
-    await wait(400);
     // A workspace with an empty strip, so 「it opens on the tree」 is
-    // about the rule and not about a tab this walk left behind.
+    // about the rule and not about a tab this walk left behind — emptied
+    // at the wide width, where the strip is drawn (narrow opens a file
+    // as a page of its own, round UX-3 item 2, and has no strip).
     await open("workspaces");
     await openWs();
     for (let i = 0; i < 12; i += 1) {
@@ -8515,6 +8437,8 @@ try {
         await wait(150);
       }
     }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await wait(400);
     // Back out of the pane and in again, because 「it opens on the
     // tree」 is a thing that happens when the pane opens.
     await open("sessions");
@@ -8523,11 +8447,15 @@ try {
     const screens = () =>
       page.evaluate(() => ({
         tree: document.querySelectorAll("[data-ws-tree]").length,
+        // A file is a page of its own on a phone (round UX-3 item 2).
+        file: document.querySelectorAll("[data-file-page]").length,
         strip: document.querySelectorAll("[data-ws-tab-strip]").length,
         sessions: document.querySelectorAll("[data-ws-sessions]").length,
-        back: document.querySelectorAll("[data-ws-back]").length,
+        // The head's 「‹」 (to the list on the tree, `data-ws-back` on
+        // the others) or the file page's own.
+        back: document.querySelectorAll("[data-ws-back], [data-screen-head] [data-back], [data-file-back]").length,
         // The page's two buttons, in the window's first row (2026-09-28).
-        switches: document.querySelectorAll("[data-screen-head] [data-ws-switches] > button").length,
+        switches: document.querySelectorAll("[data-screen-head] [data-ws-switches] button").length,
         inTree: document.querySelectorAll("[data-tree-head] [data-ws-switches]").length,
       }));
     /**
@@ -8553,13 +8481,20 @@ try {
       await wait(300);
       const n = await page.evaluate(
         () =>
-          [...document.querySelectorAll("[data-screen-head] [data-ws-switches] > button")].filter(
+          [...document.querySelectorAll("[data-screen-head] [data-ws-switches] button")].filter(
             (b) => {
               const r = b.getBoundingClientRect();
               const floor = Number.parseFloat(
                 getComputedStyle(document.documentElement).getPropertyValue("--touch"),
               );
-              return r.width + 0.5 < floor || r.height + 0.5 < floor;
+              // The hit box, not the drawing (F1.5, section 3's sweep): a
+              // glass item keeps its drawn size and a centred `::after`
+              // is what a finger lands on.
+              const after = getComputedStyle(b, "::after");
+              const hit = after.content !== "none" && after.position === "absolute";
+              const w = Math.max(r.width, hit ? parseFloat(after.width) || 0 : 0);
+              const h = Math.max(r.height, hit ? parseFloat(after.height) || 0 : 0);
+              return w + 0.5 < floor || h + 0.5 < floor;
             },
           ).length,
       );
@@ -8671,29 +8606,30 @@ try {
       await wait(400);
       const onFile = await screens();
       console.log(`narrow workspace · a file open: ${JSON.stringify(onFile)}`);
-      if (onFile.tree !== 0 || onFile.strip !== 1) {
+      if (onFile.tree !== 0 || onFile.file !== 1) {
         fail(
-          `pressing a file left ${onFile.tree} tree(s) beside ${onFile.strip} strip(s) — one screen at a time, ` +
-            "and the file is the next one (src/views/WorkspacePane.tsx)",
+          `pressing a file left ${onFile.tree} tree(s) beside ${onFile.file} file page(s) — one screen at a time, ` +
+            "and the file is the next one (src/views/WorkspacePane.tsx, src/views/FilePage.tsx)",
         );
       }
       if (onFile.back === 0) {
         fail(
           "the file screen has no way back to the tree — 「一次一屏,有退路」, and a phone that cannot " +
-            "reach the tree is where this ruling started (src/views/WorkspacePane.tsx)",
+            "reach the tree is where this ruling started (src/views/FilePage.tsx)",
         );
       }
-      // The page's buttons are the head's, so the file screen has them
-      // too (2026-09-28) — until then a phone reading a file had to go
-      // back to the tree to reach the sessions.
-      if (onFile.switches !== 2) {
+      // **The file page is the content's** (round UX-3 item 2, the
+      // owner's ruling 2026-10-04): no first row, so not the head's two
+      // buttons either; its own verbs are at the bottom. Until then the
+      // file screen carried them (2026-09-28).
+      if (onFile.switches !== 0) {
         fail(
-          `the narrow file screen carries ${onFile.switches} switch(es) in its first row — the page's two ` +
-            "buttons are on every screen of it (src/views/WorkspacePane.tsx NarrowHead)",
+          `the narrow file page carries ${onFile.switches} of the head's switch(es) — a full-screen content page ` +
+            "has no first row (round UX-3 item 2; src/views/FilePage.tsx)",
         );
       }
 
-      await press("[data-ws-back]");
+      await press("[data-file-back]");
       await wait(300);
       const back = await screens();
       console.log(`narrow workspace · back: ${JSON.stringify(back)}`);
@@ -10069,9 +10005,15 @@ try {
           const el = document.querySelector(s);
           return el ? Math.round(el.getBoundingClientRect().height) : null;
         };
-        // The pane's head is the left block's first row since 第十三轮
-        // (the two are one line across the window).
-        return { band: h("[data-session-tabs] [data-tab-bar]"), head: h("[data-side-head]") };
+        // The window's first row, which the band is (`--pane-head`): the
+        // list's head stands under the strip since the redesign, so it
+        // is no longer the band's neighbour.
+        const row = document.createElement("div");
+        row.style.height = "var(--pane-head)";
+        document.body.append(row);
+        const head = Math.round(row.getBoundingClientRect().height);
+        row.remove();
+        return { band: h("[data-session-tabs] [data-tab-bar]"), head };
       });
       console.log(`session tab band ${pair.band} · list head ${pair.head}`);
       if (pair.band === null || pair.head === null) {
@@ -10403,7 +10345,9 @@ try {
         plus: document.querySelectorAll("[data-browse-tabs] [data-tab-new]").length,
         strip: document.querySelectorAll('[data-browse-landing="page"] [data-tab-bar]').length,
         count: document.querySelectorAll('[data-browse-landing="page"] [data-tab-count]').length,
-        bar: box("[data-address-bar]"),
+        // The field's row over the page: the arrows' capsule and the
+        // address (`PageField`, the redesign).
+        bar: box("[data-page-field-row]"),
         // The column and its seam stand in the left block since 第十三
         // 轮, wherever the landing wrote them.
         seam: document.querySelectorAll("[data-list-seam]").length,
@@ -10419,7 +10363,7 @@ try {
             const r = el.getBoundingClientRect();
             return r.top + r.height / 2;
           };
-          return { ink: of("[data-page-host]"), arm: of("[data-page-back]") };
+          return { ink: of("[data-page-address]"), arm: of("[data-page-step]") };
         })(),
       };
     });
@@ -10461,12 +10405,10 @@ try {
             "「地址栏在页面上方」, and the column is not the page (src/browse/BrowseLanding.tsx)",
         );
       }
-      if (shape.strip !== 0 || shape.count !== 0) {
-        fail(
-          `the browser landing still draws ${shape.strip} horizontal strip(s) and ${shape.count} tab count(s) — ` +
-            "the column is every tab at once, so the way into a switcher over it is clutter",
-        );
-      }
+      // ⚠️ 墓碑 (the redesign, 2026-10-02): 「no horizontal strip on this
+      // landing」 was asked here. The page's tabs stand in R0 again, as
+      // every landing's do (one ground, one first row), beside the
+      // column of the same tabs as list rows.
       if (shape.seam !== 1) {
         fail(
           `the browser landing drew ${shape.seam} seam(s) beside its column — it is the shell's pane now, ` +
@@ -10607,7 +10549,9 @@ try {
         if (!bar) return null;
         return {
           h: Math.round(bar.getBoundingClientRect().height),
-          search: bar.querySelectorAll("input").length,
+          // The search is a circle until pressed (the redesign), so the
+          // head carries the field or the circle that opens it.
+          search: bar.querySelectorAll("input, [data-search-open]").length,
           plus: bar.querySelectorAll("[data-pane-new]").length,
         };
       }, c.pane);
@@ -10650,6 +10594,16 @@ try {
           `the ${r.landing} sidebar's row menu reads ${JSON.stringify(r.bare.map((i) => i.word))} — ` +
             "every row carries 置顶 first and 删除 last",
         );
+      } else if (r.landing === "browser") {
+        // **关闭, not 删除** (the owner, 2026-10-02): a page is closed like
+        // a tab in the switcher — nothing is deleted, so nothing is asked
+        // and nothing is drawn as destructive. Last, and not destructive.
+        if (r.bare.at(-1).word !== "关闭" || r.bare.some((i) => i.destructive)) {
+          fail(
+            `the browser sidebar's row menu reads ${JSON.stringify(r.bare.map((i) => [i.word, i.destructive]))} — ` +
+              "关闭 last, and nothing in it destructive (src/browse/BrowseLanding.tsx)",
+          );
+        }
       } else if (!r.bare.at(-1).destructive || r.bare.slice(0, -1).some((i) => i.destructive)) {
         // **删除 is last, alone** (2026-09-28 audit 第 16 条, Apple HIG):
         // it was the second item until then, between 置顶 and a column's
@@ -10663,7 +10617,9 @@ try {
     const full = read.filter((r) => r.bare && r.bare.length >= 2);
     sidebarDelete = full.find((r) => r.landing === "devices")?.bare.at(-1).word ?? null;
     for (const [n, where] of [[0, "first"], [-1, "last"]]) {
-      const words = new Map(full.map((r) => [r.landing, r.bare.at(n).word]));
+      // The browser's last is 关闭 by ruling (above), so the last word
+      // is one across the other four.
+      const words = new Map(full.filter((r) => n === 0 || r.landing !== "browser").map((r) => [r.landing, r.bare.at(n).word]));
       if (new Set(words.values()).size !== 1) {
         fail(
           `the ${where} item of the row menus reads ${JSON.stringify(Object.fromEntries(words))} — ` +
@@ -10732,10 +10688,27 @@ try {
           box: { l: r.left, r: r.right, top: r.top, h: r.height },
         };
       }, seat);
+    // The first row's token itself: the list's head is a row of its own
+    // under the strip since the redesign, so it is no longer the band's
+    // neighbour (`--pane-head`, the window's first row).
     const headH = () =>
-      page.evaluate(() => Math.round(document.querySelector("[data-side-head]")?.getBoundingClientRect().height ?? -1));
+      page.evaluate(() => {
+        const el = document.createElement("div");
+        el.style.height = "var(--pane-head)";
+        document.body.append(el);
+        const h = Math.round(el.getBoundingClientRect().height);
+        el.remove();
+        return h;
+      });
 
-    // ── (a) seven or fewer at 1080: compressed, nothing past the edge ──
+    // ── (a) the glass strip at 1080: one ceiling, a press moves nothing ──
+    //
+    // ⚠️ 墓碑 (the redesign V07, 2026-10-02): 「先压，再溢出」 and
+    // 「未选中固定长度」 were asked here — stubs that shrank together
+    // before the strip scrolled. A glass tab takes its name's width up
+    // to one ceiling, the front one too, so a tab coming to the front
+    // changes its colour and never its width, and its neighbours do not
+    // move; past the edge the strip scrolls (b).
     await page.setViewportSize({ width: 1080, height: 800 });
     await open("sessions");
     await wait(300);
@@ -10745,19 +10718,35 @@ try {
     const fit = await stripOf("[data-session-tabs]");
     console.log(`tabs 4T · sessions at 1080: ${JSON.stringify(fit && { ...fit, tabs: fit.tabs.length })}`);
     if (!fit || fit.tabs.length < 5) {
-      fail(`probe dead: the sessions strip holds ${fit?.tabs.length ?? 0} tabs at 1080 — nothing to compress`);
+      fail(`probe dead: the sessions strip holds ${fit?.tabs.length ?? 0} tabs at 1080 — nothing to measure`);
     } else {
-      if (fit.count !== null || fit.over > 1 || fit.clipped.length) {
+      const ceiling = await page.evaluate(() => {
+        const el = document.createElement("div");
+        el.style.width = "var(--tab-w)";
+        document.body.append(el);
+        const w = Math.round(el.getBoundingClientRect().width);
+        el.remove();
+        return w;
+      });
+      const wide = fit.tabs.filter((t) => t.w > ceiling + 1);
+      if (wide.length) {
         fail(
-          `${fit.tabs.length} session tabs at 1080 overflow by ${fit.over} (count ${fit.count}, clipped ` +
-            `${JSON.stringify(fit.clipped)}) — 「先压，再溢出」: seven or fewer fit (src/browse/TabStrip.tsx)`,
+          `${wide.length} session tab(s) stand past the one ceiling (${wide.map((t) => t.w).join(", ")} over ${ceiling}) — ` +
+            "one ceiling for every tab, the front one too (redesign V07; src/browse/TabStrip.tsx)",
         );
       }
-      const stubs = new Set(fit.tabs.filter((t) => !t.on).map((t) => t.w));
-      if (stubs.size > 1) {
+      await press('[data-session-tabs] [data-tab-strip] [data-tab]:not([data-on="true"]) > button:first-of-type');
+      await wait(300);
+      const after = await stripOf("[data-session-tabs]");
+      const moved = (after?.tabs ?? []).filter((t) => {
+        const was = fit.tabs.find((b) => b.id === t.id);
+        return was && Math.abs(was.w - t.w) > 1;
+      });
+      console.log(`tabs 4T · a press on another tab moved ${moved.length} width(s)`);
+      if (moved.length) {
         fail(
-          `the tabs not in front stand at ${[...stubs].join(", ")} wide — compressed together or not at all ` +
-            "(2026-09-02:「未选中固定长度」)",
+          `bringing another tab to the front changed ${moved.length} tab width(s) (${moved.map((t) => t.id).join(", ")}) — ` +
+            "a tab coming to the front changes its colour, never its width (redesign V07; src/browse/TabStrip.tsx)",
         );
       }
     }
@@ -10888,7 +10877,7 @@ try {
     await page.reload({ waitUntil: "load" });
     await wait(900);
     const toSettings = (await toMore()) && (await press('[data-more-open="settings"]'));
-    const limitOpen = page.locator('[data-setting-select="tabs-limit"]');
+    const limitOpen = page.locator('[data-setting-select="tabs-limit"], [data-setting-row-name="tabs-limit"]');
     if (!toSettings || (await limitOpen.count()) === 0) {
       fail("probe dead: no 标签页上限 row with a menu on the settings page (src/views/more/ConfigRows.tsx)");
     } else {
@@ -11020,40 +11009,34 @@ try {
             await page.keyboard.press("Escape");
           }
         };
-        // ── one rule between the pinned group and the rest (第七轮 第 1 条) ──
-        // Drawn only while both groups have rows; a folded group keeps
-        // it, right under its heading. Its colour is the seam's token.
+        // ── the boundary between the pinned group and the rest ──
+        // ⚠️ 墓碑 (the redesign, 2026-10-02): 第七轮 第 1 条's rule stood
+        // here. Every row carries its own hairline now and **the next
+        // group's heading is the boundary**: while both groups have rows,
+        // the rest stand under a heading of their own, and no rule is
+        // drawn.
         const rules = (at) =>
           page.evaluate(
             ([pane, at]) => {
               const list = document.querySelector(`${pane} [data-side-list]`);
-              const all = [...(list?.querySelectorAll("[data-side-list-rule]") ?? [])];
-              const head = list?.querySelector('[data-side-group="pin"]');
+              const pinned = !!list?.querySelector('[data-side-group="pin"]');
               const rest = list?.querySelectorAll('[data-side-row][data-side-pinned="false"]').length ?? 0;
-              const style = all[0] ? getComputedStyle(all[0]) : null;
-              const norm = (c) => c.replace(/\s+/g, "");
               return {
                 at,
-                rules: all.length,
-                want: head && rest > 0 ? 1 : 0,
-                thick: style ? parseFloat(style.borderTopWidth) : null,
-                seam: style
-                  ? norm(style.borderTopColor) === norm(getComputedStyle(document.documentElement).getPropertyValue("--border").trim())
-                  : null,
-                underHead: all[0] ? all[0].previousElementSibling === head : null,
+                rules: list?.querySelectorAll("[data-side-list-rule]").length ?? 0,
+                restHead: list?.querySelectorAll('[data-side-group]:not([data-side-group="pin"])').length ?? 0,
+                want: pinned && rest > 0 ? 1 : 0,
               };
             },
             [c.pane, at],
           );
-        const ruled = async (at, folded = false) => {
+        const ruled = async (at) => {
           const r = await rules(at);
           console.log(`sidelist 7 · ${c.landing} ${JSON.stringify(r)}`);
-          if (r.rules !== r.want) {
-            fail(`the ${c.landing} sidebar ${at} draws ${r.rules} rule(s) between the pinned group and the rest, not ${r.want} — 「置顶组和其余的行之间加一条细分隔线」`);
-          } else if (r.rules === 1 && (!(r.thick > 0) || !r.seam)) {
-            fail(`the ${c.landing} sidebar's rule is ${r.thick} thick and ${r.seam ? "" : "not "}the seam's colour — the seam token, no new one`);
-          } else if (folded && r.rules === 1 && !r.underHead) {
-            fail(`the ${c.landing} pinned group folded and its rule is not right under the heading`);
+          if (r.rules !== 0) {
+            fail(`the ${c.landing} sidebar ${at} still draws ${r.rules} rule(s) between the groups — the heading is the boundary (src/components/SideList.tsx)`);
+          } else if (r.want === 1 && r.restHead === 0) {
+            fail(`the ${c.landing} sidebar ${at} has a pinned group and no heading over the rest — 「置顶组和其余的行之间」 needs a boundary (src/components/SideList.tsx)`);
           }
         };
         await ruled("before a pin");
@@ -11124,7 +11107,8 @@ try {
       { landing: "sessions", pane: "[data-list]" },
       { landing: "devices", pane: "[data-list]" },
       { landing: "workspaces", pane: "[data-list]" },
-      { landing: "browser", pane: "[data-browse-tabs]" },
+      // ⚠️ Not the browser (the owner, 2026-10-02): its rows say 关闭,
+      // which deletes nothing and so asks nothing.
       { landing: "quota", pane: "[data-quota-pane]" },
     ];
     // Every row menu's 删除 is its destructive item, whatever its key —
@@ -11174,12 +11158,15 @@ try {
       fail("ticking 不再提醒 and deleting did not set confirm-delete off (src/components/DeleteDialog.tsx)");
     } else {
       await wait(500);
-      await open("browser");
+      // Another column with a 删除 (the browser's rows say 关闭).
+      await open("workspaces");
       await wait(400);
-      await deleteOn("[data-browse-tabs]");
+      const pressedAgain = await deleteOn("[data-list]");
       await wait(600);
       const again = await page.locator("[data-delete-dialog]").count();
-      if (again !== 0) {
+      if (!pressedAgain) {
+        fail("probe dead: no 删除 on a workspace row to press after 不再提醒 was ticked");
+      } else if (again !== 0) {
         fail("不再提醒 was ticked in one sidebar and the next 删除, in another, still asked — 「后续删除操作都不提醒」");
       }
       await page.keyboard.press("Escape");
@@ -11205,7 +11192,13 @@ try {
       [...document.querySelectorAll("[data-browse-tabs] [data-side-row]")].map((r) => ({
         id: r.getAttribute("data-side-row"),
         title: (r.querySelector("[data-side-title]")?.textContent ?? "").trim(),
-        sub: (r.querySelector("[data-side-sub]")?.textContent ?? "").trim(),
+        // The whole value: the host is drawn by `PathCut`, cut at its
+        // start where it does not fit, and kept whole as its title.
+        sub: (
+          r.querySelector("[data-side-sub] [title]")?.getAttribute("title") ??
+          r.querySelector("[data-side-sub]")?.textContent ??
+          ""
+        ).trim(),
       })),
     );
     console.log(`browse 4W · rows: ${JSON.stringify(rows)}`);
@@ -11218,8 +11211,18 @@ try {
       if (r.title !== t.title) {
         fail(`tab ${t.id}'s sidebar title reads ${JSON.stringify(r.title)}, the page's title is ${JSON.stringify(t.title)} — 「标题是网页的标题而非网址」`);
       }
-      if (/^https?:\/\//.test(r.sub) || !r.sub.includes(t.url.replace(/^https?:\/\//, ""))) {
-        fail(`tab ${t.id}'s subtitle reads ${JSON.stringify(r.sub)} — 「副标题是现在的网址, 但不用显示http(s)://」`);
+      // **The host, under the page's title** (the redesign F2: 「Browser
+      // rows: page title over host, one line when equal」): no scheme,
+      // and no path — the page's own title says which page.
+      const host = (() => {
+        try {
+          return new URL(t.url).host;
+        } catch {
+          return t.url;
+        }
+      })();
+      if (/^https?:\/\//.test(r.sub) || (r.sub !== host && r.title !== host)) {
+        fail(`tab ${t.id}'s subtitle reads ${JSON.stringify(r.sub)}, not its host ${JSON.stringify(host)} — 「副标题是现在的网址, 但不用显示http(s)://」, the host since the redesign`);
       }
     }
     const pins = await page.locator('[data-browse-landing="page"] [data-pin-web]').count();
@@ -11316,14 +11319,10 @@ try {
     await wait(400);
     seats.push({ seat: "workspace", ...(await toggles("[data-ws-tab-strip]", "[data-ws-tab-strip] [data-tab-count]")) });
     await page.evaluate((k) => window.localStorage.removeItem(k), wsKey2);
-    // The browse landing's narrow face: the count in the address bar.
-    // Opened wide first — on a phone 浏览 is behind 「…」, and the landing
-    // stays where it is when the window narrows.
-    await open("browser");
-    await wait(400);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await until(5_000, async () => (await page.locator('[data-browse-landing="page"] [data-tab-count]').count()) === 1);
-    seats.push({ seat: "browser narrow", ...(await toggles('[data-browse-landing="page"]', '[data-browse-landing="page"] [data-tab-count]')) });
+    // ⚠️ 墓碑 (round UX-3, 2026-10-04): the browse landing's narrow face
+    // carried a count in its address bar, measured here. A phone's page
+    // is full screen now, and its way to the tabs is the deck's tabs
+    // circle and its sheet — the session page's, measured in 8b.
     console.log(`tabs 4X · count toggles: ${JSON.stringify(seats)}`);
     for (const x of seats) {
       if (x.dead) {
@@ -11509,7 +11508,9 @@ try {
       const land = document.querySelector('[data-browse-landing="page"]');
       if (land?.querySelector("[data-new-tab]")) return null;
       return [...(land?.querySelectorAll("button") ?? [])]
-        .filter((b) => !b.closest("[data-address-bar], [data-browse-tabs]"))
+        // The middle only: not the field's row over it, not the page's
+        // tabs in R0, not the column (the redesign's names for them).
+        .filter((b) => !b.closest("[data-page-field-row], [data-page-tabs], [data-browse-tabs]"))
         .map((b) => b.innerText.trim());
     });
     console.log(`newtab 7 · buttons on the empty fresh tab ${JSON.stringify(pressable)}`);
@@ -11710,6 +11711,9 @@ try {
           paused: el?.getAttribute("data-paused") ?? null,
           mark: el?.querySelectorAll("[data-row-paused]").length ?? 0,
           opacity: el ? Number(getComputedStyle(el).opacity) : null,
+          // The picked row is the open one's block and is not greyed
+          // (`SideList` `dim && !selected`); the word still says it.
+          picked: el?.getAttribute("data-selected") === "true",
         };
       });
       const afterKeys = await menuOf("peer");
@@ -11718,7 +11722,7 @@ try {
       if (!pausedAsked.some((a) => a.machine === "peer" && a.on === true)) {
         fail(`pressing 暂停 on peer asked the node ${JSON.stringify(pausedAsked)} — it has to name that machine`);
       }
-      if (row.paused !== "true" || row.mark !== 1 || !(row.opacity < 1)) {
+      if (row.paused !== "true" || row.mark !== 1 || (!row.picked && !(row.opacity < 1))) {
         fail(`a paused machine's row reads ${JSON.stringify(row)} — 「暂停中的行变灰并标『已暂停』」`);
       }
       if (!afterKeys.includes("resume") || afterKeys.includes("pause")) {
@@ -12154,7 +12158,24 @@ try {
         const nested = addedWs.some((w) => w.machine === "peer" && w.path === `${pin.path}/src`);
         const wantWs = nested ? "src" : "work";
         const before = launched.length;
+        // **The preview first** (round CHAT, 2026-10-04: 「A path in the
+        // prose opens the preview first, outside a workspace; its
+        // 在文件视图中打开 is where the press used to go」): a sheet over
+        // the conversation with the file in it, and nothing walked or
+        // launched yet.
         await press("[data-link]");
+        const previewed = await until(5_000, async () =>
+          (await page.locator("[data-file-preview-body] [data-file-text]").count()) === 1,
+        );
+        const stillHere = await page.locator("[data-ws-tab-strip]").count();
+        console.log(`pressing the path: preview=${previewed}, walked=${stillHere > 0}, launched=${launched.length - before}`);
+        if (!previewed || stillHere !== 0 || launched.length !== before) {
+          fail(
+            `pressing a path in a conversation drew preview=${previewed}, walked=${stillHere > 0} and launched ` +
+              `${launched.length - before} — it opens the preview first (round CHAT; src/views/ChatView.tsx chatHome)`,
+          );
+        }
+        await press("[data-file-preview-open]");
         const arrived = await until(
           8_000,
           async () => (await page.locator("[data-ws-tab-strip] [data-tab-name]").count()) > 0,
@@ -12224,7 +12245,9 @@ try {
     // workspace. **`/home/peer/workshop` is the fixture's sibling** —
     // one separator away from `/home/peer/work` and deliberately not
     // under it, which is the prefix collision this repo keeps failing
-    // on. Nothing holds it, so the host's opener is the answer.
+    // on. Nothing holds it, so the preview's 在文件视图中打开 goes to
+    // **that machine's files** (round CHAT, `App` `showFile`) — it was
+    // the host's opener until then.
     await open("sessions");
     const outside = await press('[data-list] [data-row="gui/ws-4"] [data-row-open]');
     const talked = await until(8_000, async () => (await page.locator("[data-link]").count()) > 0);
@@ -12238,21 +12261,32 @@ try {
         els.map((e) => e.getAttribute("data-link")),
       );
       const before = launched.length;
+      // The preview first here too, and 在文件视图中打开 is the press
+      // that goes to the host's opener (round CHAT).
       await press("[data-link]");
+      const previewedOut = await until(5_000, async () => (await page.locator("[data-file-preview-open]").count()) === 1);
+      if (!previewedOut || launched.length !== before) {
+        fail(
+          `pressing a path outside every workspace drew preview=${previewedOut} and launched ${launched.length - before} ` +
+            "first — it opens the preview first (round CHAT; src/views/ChatView.tsx chatHome)",
+        );
+      }
+      await press("[data-file-preview-open]");
       await wait(600);
       const strip = await page.locator("[data-ws-tab-strip]").count();
+      const machines = await page.evaluate(
+        () =>
+          document.querySelector('[data-rail-item][data-landing="devices"], [data-nav-item][data-landing="devices"]')?.getAttribute("data-on") ??
+          null,
+      );
       console.log(
         `outside a workspace: ${JSON.stringify(outLinks)} · ` +
-          `launch=${JSON.stringify(launched.slice(before))} · workspace opened=${strip > 0}`,
+          `launch=${JSON.stringify(launched.slice(before))} · workspace opened=${strip > 0} · machines landing ${machines}`,
       );
-      if (
-        launched.length !== before + 1 ||
-        launched[launched.length - 1].target !== "/home/peer/workshop/src/one.rs"
-      ) {
+      if (launched.length !== before || machines !== "true") {
         fail(
-          `pressing a path in a session outside every workspace asked ` +
-            `${JSON.stringify(launched.slice(before))} — 「没有工作区包含它 → 在宿主机器上 launch」 ` +
-            "(src/App.tsx sessionHome)",
+          `在文件视图中打开 on a path outside every workspace launched ${JSON.stringify(launched.slice(before))} and left the ` +
+            `machines landing at ${machines} — it opens the file in that machine's files (round CHAT; src/App.tsx showFile)`,
         );
       }
       if (strip !== 0) {
@@ -12322,10 +12356,18 @@ try {
       }
       if (!more.list) {
         fail(`${posture}: pressing the more glyph drew no [data-more-list] — More's sections are its L2 (round 17 §1)`);
-      } else if (more.pages.join(",") !== "settings,appearance,network,security,identity,doctor") {
+      } else if (
+        more.pages.join(",") !==
+        (posture === "wide"
+          ? "identity,settings,appearance,network,security,doctor"
+          : "settings,appearance,network,security,identity,doctor")
+      ) {
+        // **这台机器 first on the wide face** (the owner, 2026-10-02: its
+        // face left the top row and lives in 更多), over the sections in
+        // round 17's order; narrow keeps it among them.
         fail(
-          `${posture}: More lists ${JSON.stringify(more.pages)} — general / appearance / network / security / ` +
-            "identity / diagnostics, in that order (round 17 §1; src/views/more/MorePage.tsx morePageOrder)",
+          `${posture}: More lists ${JSON.stringify(more.pages)} — ${posture === "wide" ? "this machine, then " : ""}general / ` +
+            "appearance / network / security / identity / diagnostics, in that order (round 17 §1; src/App.tsx moreList)",
         );
       }
       // Wide: the page is on screen beside the list, and it is a detail page.
@@ -12335,13 +12377,20 @@ try {
             `${JSON.stringify(more.page)} — More is an A page and its overview is General (10-layout.md)`,
         );
       }
-      // The landings the narrow bar folds away still have a door: the
-      // head of More's list, where the old menu carried them.
-      if (posture === "narrow" && more.landings.length === 0) {
-        fail("narrow: More's list carries none of the folded landings — past the fourth they have no other door");
+      // The landings the narrow bar folds away still have a door: 更多's
+      // own menu on the bottom bar (UX-11), not this list — which carries
+      // none at either width.
+      if (more.landings.length !== 0) {
+        fail(`${posture}: More's list carries ${more.landings.length} landing(s) — the folded ones are in 更多's menu (src/components/FloatNav.tsx)`);
       }
-      if (posture === "wide" && more.landings.length !== 0) {
-        fail(`wide: More's list carries ${more.landings.length} landing(s) — every landing has a seat on this rail`);
+      if (posture === "narrow") {
+        await press("[data-nav-more]");
+        const folded = await page.locator("[data-nav-menu] [data-more-landing]").count();
+        await page.keyboard.press("Escape");
+        await wait(200);
+        if (folded === 0) {
+          fail("narrow: 更多's menu carries none of the folded landings — past the fourth they have no other door (src/components/FloatNav.tsx)");
+        }
       }
 
       // Each page, opened and closed: what it replaces, what its head
@@ -12367,7 +12416,8 @@ try {
             close: narrow
               ? document.querySelectorAll("[data-side-head] [data-more-back]").length
               : (pageEl?.querySelectorAll("[data-more-close]").length ?? 0),
-            lit: document.querySelector("[data-rail-more]")?.getAttribute("data-on") ?? null,
+            // The rail's 「更多」 circle wide, the bottom bar's 更多 narrow.
+            lit: document.querySelector(narrow ? "[data-nav-more]" : "[data-rail-more]")?.getAttribute("data-on") ?? null,
             // 一样东西只住一处 (docs/MORE.md 第二轮): a list of the
             // machines this one has paired with. It was on the identity
             // card and on 安全; the 网络 page's map is the one place it
@@ -12423,7 +12473,7 @@ try {
             fail(`narrow: 「‹」 on ${key} left ${JSON.stringify(back)} — it goes back to More's list`);
           }
           // …and the landing underneath is still the one it was opened over.
-          await press(rail("sessions"));
+          await open("sessions");
         } else {
           await press("[data-more-close]");
           const back = await page.evaluate(() => ({
@@ -12567,9 +12617,9 @@ try {
         if (talking !== "false" || whilePaused.on !== "true" || gatePaused !== true) {
           fail(`${posture}: 暂停同步 went ${JSON.stringify(talking)} → ${JSON.stringify(whilePaused.on)} with the node at paused=${gatePaused} — a round trip, the switch showing what the file says`);
         }
-        if (!whilePaused.rail) {
-          fail(`${posture}: this machine is paused and the rail's face says nothing — 「侧栏头像上看得出」 (docs/MORE.md 暂停)`);
-        }
+        // ⚠️ 墓碑 (the owner, 2026-10-02): 「侧栏头像上看得出」 was read off
+        // the rail's face here. The face left the top row for 更多, so a
+        // pause is said by 网络's 本机 row (below) and the switch itself.
         if (whilePaused.state !== "paused") {
           fail(`${posture}: a paused machine's 本机 row says ${JSON.stringify(whilePaused.state)}, not that it is paused`);
         }
@@ -12581,25 +12631,33 @@ try {
         // 离开网络 is a window, and **the confirmation is always there**
         // (docs/MORE.md: 这一件不可撤回). Live over an empty box would be
         // one press between reading a page and being in no network.
+        // **Always pressable** (`components/Why`): until the name is
+        // typed, the press sends nothing and says why. It was a disabled
+        // button until the app's buttons stopped going grey.
         await press("[data-net-leave]");
         await until(3_000, async () => (await page.locator("[data-net-leave-name]").count()) > 0);
-        const beforeTyping = await page.evaluate(() =>
-          document.querySelector("[data-net-leave-do]")?.hasAttribute("disabled"),
-        );
-        if (beforeTyping !== true) {
+        const refusedBy = async () => {
+          const was = leaveTried.length;
+          await press("[data-net-leave-do]");
+          await wait(200);
+          return {
+            sent: leaveTried.length !== was,
+            said: (await page.locator("[data-net-leave-refused]").count()) === 1,
+          };
+        };
+        const beforeTyping = await refusedBy();
+        if (beforeTyping.sent || !beforeTyping.said) {
           fail(
-            `${posture}: 离开网络 is live before this machine's name is typed — ` +
-              "the confirmation is always there (docs/MORE.md 离开)",
+            `${posture}: 离开网络 pressed before this machine's name is typed ${beforeTyping.sent ? "went out" : "sent nothing"} ` +
+              `and ${beforeTyping.said ? "said why" : "said nothing"} — the confirmation is always there (docs/MORE.md 离开)`,
           );
         }
         // …and the name it wants is **this machine's**.
         await page.fill("[data-net-leave-name]", "beta");
-        const wrongName = await page.evaluate(() =>
-          document.querySelector("[data-net-leave-do]")?.hasAttribute("disabled"),
-        );
-        if (wrongName !== true) {
+        const wrongName = await refusedBy();
+        if (wrongName.sent || !wrongName.said) {
           fail(
-            `${posture}: 离开网络 went live on another machine's name — ` +
+            `${posture}: 离开网络 on another machine's name ${wrongName.sent ? "went out" : "sent nothing"} — ` +
               "`Node::leave` answers that with khor forget (docs/MORE.md 离开)",
           );
         }
@@ -12708,8 +12766,18 @@ try {
       // doors, the mesh door, 暂停 and 离开 all left this card for 网络,
       // and a second copy of any of them here is how two surfaces come
       // to disagree.
-      if (!(await press("[data-rail-mark]"))) {
-        fail(`probe dead: ${posture} has no face at the foot of the rail`);
+      // The face left the rail (the owner, 2026-10-02): this machine is
+      // the first row of 更多's list wide, and the foot of 更多's menu on
+      // the bottom bar narrow.
+      const toMe =
+        posture === "wide"
+          ? async () => (await toMore()) && press('[data-more-open="identity"]')
+          : async () => {
+              await open("sessions");
+              return (await press("[data-nav-more]")) && press("[data-nav-me]");
+            };
+      if (!(await toMe())) {
+        fail(`probe dead: ${posture} has no way to this machine's own page (更多)`);
         continue;
       }
       const card = await page.evaluate(() => {
@@ -13597,9 +13665,15 @@ try {
           for (const row of card.querySelectorAll("[data-setting-row], [data-more-row]")) {
             const rb = row.getBoundingClientRect();
             if (rb.width === 0 || rb.height === 0) continue;
+            // A slider spans its row (外观's 字号, UX-10): its two ends are
+            // its own, and there is no trailing control to line up.
+            if (row.getAttribute("data-setting-row") === "slider") continue;
             // The drawn control, not its hit area: a switch's track, a
-            // popup's chevron chip, a button, a fact's value.
-            const trail = row.querySelector("[data-setting-trail], [data-switch-track]");
+            // popup's chevron chip, a button, a fact's value — and a
+            // value row's reading, its last piece.
+            const trail =
+              row.querySelector("[data-setting-trail], [data-switch-track]") ??
+              (row.getAttribute("data-setting-row") === "value" ? row.lastElementChild : null);
             rows.push({
               name:
                 row.getAttribute("data-setting-row-name") ??
@@ -13678,14 +13752,16 @@ try {
     }
 
     // (d) the lock's own rows are dependent on it: with the lock off
-    // the PIN and the idle timeout are there but not live, the way
-    // macOS greys the settings under a switch that is off. And the one
+    // the PIN and the idle timeout are **not drawn** (the audit fix plan
+    // F1.9 / F4.1, the owner's progressive disclosure; ⚠️ 墓碑: they were
+    // greyed under the switch, macOS's way, until 2026-10-02). And the one
     // road a machine with **no** PIN has to the lock stays open: the
     // switch asks for the PIN first (`khor_node::lock` refuses a lock
     // with no key, so disabling the PIN row alone would be a dead end).
     if (!(await toMore()) || !(await press('[data-more-open="security"]'))) {
       fail("probe dead: 4I could not open 「…」 → 安全");
     } else {
+      // `null`: the row is not drawn; `true`: drawn and dead.
       const deps = () =>
         page.evaluate(() => ({
           lock: document.querySelector('[data-security-switch="lock"]')?.getAttribute("aria-checked") ?? null,
@@ -13695,12 +13771,13 @@ try {
         }));
       const off = await deps();
       console.log(`4I · lock off: ${JSON.stringify(off)}`);
-      if (off.lock !== "false" || off.pin === null || off.idle === null) {
-        fail(`probe dead: 4I · 安全 reads ${JSON.stringify(off)} — the fixture ships the lock off with its two rows`);
-      } else if (off.pin !== true || off.idle !== true) {
+      if (off.lock !== "false") {
+        fail(`probe dead: 4I · 安全 reads ${JSON.stringify(off)} — the fixture ships the lock off`);
+      } else if (off.pin !== null || off.idle !== null) {
         fail(
-          `4I · with the lock off, the PIN row is ${off.pin ? "dead" : "live"} and the idle row is ` +
-            `${off.idle ? "dead" : "live"} — both depend on the lock and are disabled while it is off`,
+          `4I · with the lock off, the PIN row is ${off.pin === null ? "gone" : "drawn"} and the idle row is ` +
+            `${off.idle === null ? "gone" : "drawn"} — both depend on the lock and are not drawn while it is off ` +
+            "(src/views/more/SecurityPage.tsx)",
         );
       }
       await press('[data-security-switch="lock"]');
@@ -13725,7 +13802,7 @@ try {
         fail(
           `4I · with no PIN the lock switch ${asks ? "opened the PIN window" : "opened no PIN window"} and ` +
             `sent ${refused} refused request(s) — the switch asks for the PIN first, since the PIN row ` +
-            "is not live until the lock is on",
+            "is not drawn until the lock is on",
         );
       } else {
         await page.locator("[data-security-pin]").fill("654321");
@@ -13757,8 +13834,11 @@ try {
     await page.emulateMedia({ colorScheme: "dark" });
     await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark");
     await wait(200);
-    const lift = (sel) =>
-      page.evaluate((s) => {
+    // `menu`: **one menu** (the audit fix plan F1.6; SYS-10, W10) — the
+    // dense glass with its rim and the glass shadow, `radius-menu`
+    // round; every other floating surface wears `float` and `radius-lg`.
+    const lift = (sel, kind = "float") =>
+      page.evaluate(([s, kind]) => {
         const lstar = (css) => {
           const m = css.match(/[\d.]+/g);
           if (!m) return null;
@@ -13782,7 +13862,9 @@ try {
         // read at the bottom, was retired 2026-09-30: a form is a dialog.)
         const probe = document.createElement("div");
         probe.style.cssText =
-          "position:absolute;visibility:hidden;box-shadow:var(--shadow-float);border-radius:var(--radius-lg)";
+          kind === "menu"
+            ? "position:absolute;visibility:hidden;box-shadow:var(--glass-shadow);border-radius:var(--radius-menu)"
+            : "position:absolute;visibility:hidden;box-shadow:var(--shadow-float);border-radius:var(--radius-lg)";
         document.body.appendChild(probe);
         const want = { shadow: getComputedStyle(probe).boxShadow, radius: getComputedStyle(probe).borderTopLeftRadius };
         probe.remove();
@@ -13801,7 +13883,7 @@ try {
           radius,
           wantRadius: want.radius,
         };
-      }, sel);
+      }, [sel, kind]);
     const surfaces = [
       ["the new-session dialog", "[data-new-session-dialog]", async () => (await open("sessions")) && pressNew("new")],
       [
@@ -13829,6 +13911,7 @@ try {
           await wait(300);
           return true;
         },
+        "menu",
       ],
       [
         "the search results",
@@ -13840,24 +13923,26 @@ try {
           await page.locator("[data-search-box]").fill("face");
           return true;
         },
+        "menu",
       ],
       [
         // The box's own completions (2026-09-28): the chips a landing
         // narrows by, hung under L0's box. They wore `rounded-md`.
         "a box's completions",
-        "[data-side-head] [data-omni-menu]",
+        "[data-side-head] [data-omni-menu], [data-bottom-search] [data-omni-menu]",
         async () => {
-          if (!(await open("sessions"))) return false;
-          await page.locator("[data-side-head] [data-omni-input]").click();
+          if (!(await open("sessions")) || !(await openSearch())) return false;
+          await page.locator(SEARCH_BOX).first().click();
           return true;
         },
+        "menu",
       ],
     ];
-    for (const [what, sel, go] of surfaces) {
+    for (const [what, sel, go, kind] of surfaces) {
       if (!(await go()) || !(await until(3_000, async () => (await page.locator(sel).count()) > 0))) {
         fail(`probe dead: 4I · ${what} (${sel}) never opened in the dark`);
       } else {
-        const got = await lift(sel);
+        const got = await lift(sel, kind);
         console.log(`4I · dark · ${what}: ${JSON.stringify(got)}`);
         if (!got) {
           fail(`probe dead: 4I · ${what} or the board could not be read`);
@@ -13874,7 +13959,9 @@ try {
           if (!got.shadow || got.radius !== got.wantRadius) {
             fail(
               `4I · ${what} floats with ${got.shadow ? "the" : "another"} shadow and a ${got.radius} corner — ` +
-                `one floating language: \`popover\`, \`float\`, \`radius-lg\` ${got.wantRadius} (components/Menu, 20-states)`,
+                (kind === "menu"
+                  ? `one menu: the glass menu's shadow and \`radius-menu\` ${got.wantRadius} (the audit fix plan F1.6; components/ui/dropdown-menu)`
+                  : `one floating language: \`popover\`, \`float\`, \`radius-lg\` ${got.wantRadius} (components/Menu, 20-states)`),
             );
           }
         }
@@ -13921,9 +14008,18 @@ try {
         for (const el of document.querySelectorAll(
           "[data-pane-search], [data-tree-search], [data-search-box], [data-global-search]",
         )) {
-          // The painted box: an omnibox's strip holds the input; every
-          // other field is its own box.
-          const box = el.closest("[data-omnibox]") ?? el;
+          // The painted box: the field or the nearest thing round it that
+          // paints — the glass the redesign wraps every field in (an
+          // omnibox's strip, a `data-search-wrap`), not the transparent
+          // input inside it.
+          let box = el;
+          for (let x = el; x && x !== document.body; x = x.parentElement) {
+            const xs = getComputedStyle(x);
+            if (xs.backgroundColor !== "rgba(0, 0, 0, 0)" || (xs.backdropFilter && xs.backdropFilter !== "none")) {
+              box = x;
+              break;
+            }
+          }
           if (seen.has(box)) continue;
           seen.add(box);
           const r = box.getBoundingClientRect();
@@ -13952,12 +14048,14 @@ try {
         return out;
       });
     const fields = [];
+    // A list's search is a circle until pressed (the redesign), so each
+    // is opened; the tree's is always drawn.
     const FIELD_STOPS = [
-      ["sessions", () => open("sessions")],
-      ["devices", () => open("devices")],
-      ["workspaces", () => open("workspaces")],
-      ["quota", () => open("quota")],
-      ["browser", () => open("browser")],
+      ["sessions", async () => (await open("sessions")) && openSearch()],
+      ["devices", async () => (await open("devices")) && openSearch()],
+      ["workspaces", async () => (await open("workspaces")) && openSearch()],
+      ["quota", async () => (await open("quota")) && openSearch()],
+      ["browser", async () => (await open("browser")) && openSearch()],
       ["a workspace open", async () => (await open("workspaces")) && openWs()],
     ];
     for (const [where, go] of FIELD_STOPS) {
@@ -13970,6 +14068,8 @@ try {
       console.log(`4J (a) · ${where}: ${JSON.stringify(got)}`);
       if (got.length === 0) fail(`probe dead: 4J (a) · ${where} shows no search field at all`);
       for (const f of got) fields.push({ where, ...f });
+      await page.keyboard.press("Escape");
+      await wait(150);
     }
     // …and the box ⌘K widens into, which is L0's too.
     await open("sessions");
@@ -13997,7 +14097,9 @@ try {
             `every search field is one control: ${like.h} tall, ${like.radius}, ${like.bg} (components/SearchField)`,
         );
       }
-      for (const f of fields.filter((f) => f.l0 && !f.hint)) {
+      // Not the box ⌘K widened into: it is the key's own answer, and
+      // naming the key that opened it says nothing.
+      for (const f of fields.filter((f) => f.l0 && !f.hint && f.field !== "widened")) {
         fail(
           `4J (a) · the ${f.field} box in L0 on ${f.where} carries no ⌘K hint at a wide window — ` +
             "every L0 box wears it and it is the first thing to go when narrowed (components/SearchField)",
@@ -14013,12 +14115,24 @@ try {
       page.evaluate(() => {
         const vis = (el) => {
           const r = el.getBoundingClientRect();
-          return r.width > 0 && r.height > 0;
+          return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
         };
-        const l0 = document.querySelector("[data-side-head]");
+        // The first row on screen: a list kept mounted behind a pushed
+        // page keeps its own head in the DOM, laid out at nothing.
+        const shown = [...document.querySelectorAll("[data-side-head]")].filter(vis);
+        const l0 =
+          shown.find((h) => h.querySelector("[data-screen-head]") && (h.innerText ?? "").trim() !== "") ??
+          shown.find((h) => (h.innerText ?? "").trim() !== "") ??
+          shown[0] ??
+          null;
         const inL0 = (sel) => (l0 ? [...l0.querySelectorAll(sel)].filter(vis).length : 0);
         return {
           back: inL0("[data-back], [data-ws-back], [data-more-back]"),
+          // A file is a page of its own on a phone (round UX-3 item 2):
+          // no first row, its own 「‹」 at its foot.
+          fileBack: document.querySelector("[data-file-page]")
+            ? [...document.querySelectorAll("[data-file-back]")].filter(vis).length
+            : 0,
           search: inL0("[data-pane-search], [data-global-search], [data-search-box]"),
           title: l0 ? (l0.innerText ?? "").trim().split("\n")[0].slice(0, 40) : null,
           // A second head row under L0: the detail's own bar, or a
@@ -14037,11 +14151,17 @@ try {
     // so the screen that left this list is still held to 「one way back」.
     if ((await open("sessions")) && (await press("[data-list] [data-row-open]"))) {
       await wait(500);
-      const s = await page.evaluate(() => ({
-        firstRow: document.querySelectorAll("[data-side-head]").length,
-        heads: document.querySelectorAll("[data-detail-header]").length,
-        backs: document.querySelectorAll("[data-session-bar] [data-back]").length,
-      }));
+      const s = await page.evaluate(() => {
+        const vis = (el) => {
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+        };
+        return {
+          firstRow: [...document.querySelectorAll("[data-side-head]")].filter(vis).length,
+          heads: [...document.querySelectorAll("[data-detail-header]")].filter(vis).length,
+          backs: document.querySelectorAll("[data-session-bar] [data-back]").length,
+        };
+      });
       console.log(`4J (b) · narrow · a session: ${JSON.stringify(s)}`);
       if (s.firstRow !== 0 || s.heads !== 0 || s.backs !== 1) {
         fail(`4J (b) · narrow · a session: ${s.firstRow} first row(s), ${s.heads} head(s), ${s.backs} 「‹」 in its bar — want 0, 0, 1`);
@@ -14067,7 +14187,14 @@ try {
         fail(`probe dead: 4J (b) could not open ${where} on the narrow face`);
         continue;
       }
-      await wait(500);
+      // The pushed page's head is seated into the first row a beat after
+      // the page (`NarrowHead`'s portal); a file page has none.
+      await until(2_000, async () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll("[data-screen-head], [data-file-page]")].some((e) => e.getBoundingClientRect().height > 0),
+        ),
+      );
+      await wait(200);
       const got = await readHead();
       console.log(`4J (b) · narrow · ${where}: ${JSON.stringify(got)}`);
       if (got.search !== 0 || got.second !== 0) {
@@ -14077,7 +14204,7 @@ try {
             "(10-layout 窄档; components/SideHead NarrowHead)",
         );
       }
-      if (got.back !== 1 || got.close !== 0) {
+      if (got.back + got.fileBack !== 1 || got.close !== 0) {
         fail(
           `4J (b) · narrow · ${where}: the first row carries ${got.back} way(s) back and ${got.close} 「×」 — ` +
             "「列表一屏 ⇄ 详情一屏，R0 左上角是返回」: one 「‹」, on every detail screen (10-layout)",
@@ -14116,6 +14243,9 @@ try {
         "src/views/FileView.tsx": "the peek is a band across the whole column over the code — no corner to round",
       };
       const POPOVER_EXCEPT = {
+        "src/components/DeleteDialog.tsx":
+          "the narrow face's action sheet (UX-11, HIG Action sheets): two plates at the foot over the dimmed screen, " +
+            "which casts no shadow in iOS's either — the overlay is what lifts them; the wide face's window is the dialog's own",
         "src/components/OmniMenu.tsx":
           "the menu's own box; whoever hangs it gives the `float` and the corner, and the floated menu is a window of its own",
       };
@@ -14194,7 +14324,15 @@ try {
         probe.remove();
         return c;
       }, name);
-    const tok = { wash: await paintOf("brand-wash"), fill: await paintOf("fill"), strong: await paintOf("fill-strong") };
+    const tok = {
+      wash: await paintOf("brand-wash"),
+      fill: await paintOf("fill"),
+      strong: await paintOf("fill-strong"),
+      // A menu's chosen row is glass's chosen piece (the audit fix plan
+      // F1.6: 「grey by day with a white chosen row」), the ⌘K results
+      // being a menu.
+      sel: await paintOf("glass-sel"),
+    };
     const seen = {};
     if (await open("sessions")) {
       const row = page.locator("[data-now-device]").first();
@@ -14230,10 +14368,10 @@ try {
       );
     }
     if (!seen.picked) fail("probe dead: 4K (a) never picked a ⌘K hit");
-    else if (seen.picked !== tok.strong) {
+    else if (seen.picked !== tok.sel) {
       fail(
         `4K (a) · the picked ⌘K hit paints ${seen.picked}${seen.picked === tok.wash ? " — the brand wash" : ""}; ` +
-          `a chosen row is \`fill-strong\` (${tok.strong}) like a selected list row (src/components/SideHead.tsx)`,
+          `a menu's chosen row is glass's chosen piece (${tok.sel}, the audit fix plan F1.6; src/components/SideHead.tsx)`,
       );
     }
 
@@ -14290,7 +14428,9 @@ try {
   await page.setViewportSize({ width: 1120, height: 1000 });
   // The map, where it lives since 2026-09-28: the machines overview,
   // which is what that landing shows with nothing picked — and nothing
-  // un-picks a machine, so a fresh page.
+  // un-picks a machine, so a fresh page, with the place a reload comes
+  // back to (`lib/place`, UX-10) forgotten.
+  await page.evaluate(() => window.localStorage.removeItem("khor.place"));
   await page.reload({ waitUntil: "load" });
   await wait(900);
   await open("devices");
@@ -14636,9 +14776,12 @@ try {
   if (quotaRows !== listed) {
     fail(`\u989d\u5ea6 draws ${quotaRows} rows for ${board.length} routed accounts and one subscription`);
   }
-  const fillRow = await page.locator('[data-quota-row="acc-fill"]').textContent();
-  if (!fillRow?.includes("45%")) {
-    fail(`the fraction row does not say its share — got ${JSON.stringify(fillRow)}`);
+  // The share inside the row's dial, **without its percent sign** (the
+  // owner, 2026-10-03: the dial is a list face's size, three digits at
+  // 12 are what its bowl holds, and the detail page says the unit).
+  const fillDial = (await page.locator('[data-quota-row="acc-fill"] [data-dial-row]').textContent().catch(() => null))?.trim() ?? null;
+  if (fillDial !== "45") {
+    fail(`the fraction row's dial does not say its share — got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
   }
   // The refused account: the trouble on the glass is a sentence, not
   // the wire key. Clicking the row is also the finder proving itself —
@@ -15379,17 +15522,20 @@ try {
       await wait(300);
       return seen;
     };
+    // **Not drawn where the key is not** (the owner's progressive
+    // disclosure, 2026-10-04; `acc.mine`): a peer's account has no key
+    // box at all, where it had a shut one.
     const here = await keyBox("acc-fill");
     const peer = await keyBox("acc-trouble");
-    if (!here.drew || !peer.drew) {
-      fail(`probe dead: the edit dialog drew no key box (here=${here.drew} peer=${peer.drew})`);
-    } else if (here.shut !== false || peer.shut !== true) {
+    if (!here.drew) {
+      fail(`probe dead: the edit dialog drew no key box on an account held here (src/views/QuotaLanding.tsx)`);
+    } else if (here.shut !== false || peer.drew) {
       fail(
-        `the key box is shut=${here.shut} on a key held here and shut=${peer.shut} on one held by a peer — it opens only where the key is`,
+        `the key box is shut=${here.shut} on a key held here and ${peer.drew ? "drawn" : "absent"} on one held by a peer — it is there, open, only where the key is`,
       );
-    } else if (here.value !== "" || peer.value !== "" || /••|已设置|\*\*\*/.test(here.text + peer.text)) {
+    } else if (here.value !== "" || /••|已设置|\*\*\*/.test(here.text + peer.text)) {
       fail(
-        `the edit dialog says something about the stored key (here=${JSON.stringify(here.value)} peer=${JSON.stringify(peer.value)}) — it never echoes one and never says whether one exists`,
+        `the edit dialog says something about the stored key (here=${JSON.stringify(here.value)}) — it never echoes one and never says whether one exists`,
       );
     }
 
@@ -16061,7 +16207,9 @@ try {
   // 计费 word is on the three accounts' second line and is in no row's
   // *name* — so a box matching names alone comes back with nothing
   // here, and one ignoring the query comes back with all four. Both
-  // wrong answers are on the other side of this number.
+  // wrong answers are on the other side of this number. The box is a
+  // circle until pressed (the redesign).
+  await openSearch();
   await page.locator("[data-pane-search]").fill(billTickWord);
   await wait(300);
   const billOnly = await quotaKinds();
@@ -16305,7 +16453,7 @@ try {
     {
       const floorOfHalf = () =>
         page.evaluate(() => {
-          const floor = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--text-caption"));
+          const floor = ((n) => { const e = document.createElement("div"); e.style.cssText = "position:absolute;visibility:hidden"; e.style.height = `var(${n})`; document.body.append(e); const h = e.getBoundingClientRect().height; e.remove(); return h; })("--text-caption");
           const el = document.querySelector("[data-quota-detail] [data-usage-half]");
           if (!el) return { floor, words: 0, excused: 0, under: [], peak: false, names: 0 };
           let words = 0;
@@ -16966,7 +17114,10 @@ try {
     } else {
       for (const [k, mineV, theirsV] of [
         ["tick ink", drawnMine.font, drawnTheirs.font],
-        ["tick count", drawnMine.ticks, drawnTheirs.ticks],
+        // ⚠️ Not the tick count (the redesign W-V8): a log ruler ticks at
+        // its own powers — decades, 16ⁿ for bytes — so how many there are
+        // is the data's, not the module's; what the module owns is read
+        // above and below.
         ["y-tick gutter", drawnMine.gutter, drawnTheirs.gutter],
         ["y label x", drawnMine.label?.x, drawnTheirs.label?.x],
         ["y label y", drawnMine.label?.y, drawnTheirs.label?.y],
@@ -17126,17 +17277,15 @@ try {
     await wait(300);
   }
 
-  // ── 8b) narrow: the open sessions scroll, and the count opens the switcher ──
-  // **Since 2026-10-02 the narrow session page has the strip** — at its
-  // foot, in the session bar (`components/SessionBar`, the owner:「上方完
-  // 全交给内容，下方是操作与标签页」, and tabs that do not fit 「scroll
-  // horizontally, same behaviour as the desktop tab strip」). So the count
-  // is the wide strip's rule here too: drawn once the strip has stopped
-  // showing every tab, and the way to the switcher. ⚠️ 墓碑: until then
-  // the narrow face had no strip, a count was always in the session's
-  // head (`[data-detail-header] [data-tab-count]`), and this opened two
-  // tabs and read 2. Mechanics only — tabs are pure front-end (state and
-  // localStorage) — so the mock is not asked anything it can lie about.
+  // ── 8b) narrow: the deck's tabs circle counts and opens the sheet ──
+  // **Since round UX-3 (the owner, 2026-10-04) the narrow session page's
+  // foot is the deck**: ‹, the pill, the tabs circle. The circle always
+  // says how many tabs are open and opens the sheet of them (the owner's
+  // 10-04 item: 「标签圆钮」), where a row is picked or closed and 新会话
+  // waits at the foot. ⚠️ 墓碑: from 2026-10-02 the strip itself stood in
+  // the session bar and a count was drawn once it stopped showing every
+  // tab; before that the count was in the session's head. Mechanics
+  // only — tabs are pure front-end (state and localStorage).
   await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "load" });
@@ -17144,65 +17293,59 @@ try {
   await open("sessions");
   await press("[data-list] [data-row-open]");
   if ((await page.locator("[data-session-bar] [data-back]").count()) === 0) {
-    fail("probe dead: the narrow session page never drew its bar, so the tab count was never on a screen");
+    fail("probe dead: the narrow session page never drew its deck, so the tabs circle was never on a screen");
   } else {
-    const narrowCount = page.locator("[data-session-bar] [data-tab-count]");
-    const rowsListed = async () => {
-      await press("[data-session-bar] [data-back]");
-      return page.locator("[data-list] [data-row-open]").count();
-    };
-    // Open rows until the strip scrolls: the count is that condition's.
+    const circle = page.locator("[data-session-deck] [data-deck-tabs]");
+    const sheetRows = () => page.locator("[data-tab-sheet-row]").count();
+    // Three open: back to the list, the next row, three times over.
     let opened = 1;
-    for (let n = 1; (await narrowCount.count()) === 0; n += 1) {
-      if (n >= (await rowsListed())) break;
+    for (let n = 1; n < 3; n += 1) {
+      await press("[data-session-bar] [data-back]");
+      if ((await page.locator("[data-list] [data-row-open]").count()) <= n) break;
       await pressNth("[data-list] [data-row-open]", n);
       opened += 1;
     }
-    if ((await narrowCount.count()) !== 1) {
-      fail(`no tab count in the narrow session bar with ${opened} tabs open — a strip that scrolls has lost its way to the switcher`);
+    const said = Number(((await circle.innerText().catch(() => "")) || "").trim());
+    console.log(`narrow deck · ${opened} tabs open, the circle says ${said}`);
+    if ((await circle.count()) !== 1) {
+      fail("the narrow deck has no tabs circle — the way to every open tab (src/components/SessionBar.tsx)");
     } else {
-      const said = Number((await narrowCount.innerText()).trim());
-      if (said !== opened) fail(`${opened} rows were opened and the count says ${said}`);
-      await narrowCount.click();
+      if (said !== opened) fail(`${opened} rows were opened and the tabs circle says ${said}`);
+      await circle.click();
       await wait(400);
-      const listed = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
-      if (listed !== opened) fail(`the switcher lists ${listed} of ${opened} open tabs`);
-      // **The way back is the one every narrow screen has** (2026-09-28):
-      // 「‹」 in the window's first row, and it puts the switcher away
-      // onto the tab that was in front. It had none — picking a tab or
-      // pressing the rail were the only ways off this screen.
-      const backs = await page.locator("[data-side-head] [data-back]").count();
-      const onFront = () => page.locator('[data-session-bar] [data-tab][data-on="true"] [data-halo]').count();
-      if (backs !== 1) {
-        fail(`the narrow tab switcher's first row carries ${backs} 「‹」 — a screen on a phone needs its way back (src/browse/TabStrip.tsx)`);
-      } else {
-        await press("[data-side-head] [data-back]");
-        if ((await page.locator("[data-tab-switcher]").count()) !== 0 || (await onFront()) !== 1) {
-          fail("「‹」 on the narrow tab switcher did not land back on the session that was in front");
-        }
-        await narrowCount.click();
-        await wait(400);
+      const listed = await sheetRows();
+      if (listed !== opened) fail(`the tabs sheet lists ${listed} of ${opened} open tabs`);
+      if ((await page.locator("[data-tab-sheet-new]").count()) !== 1) {
+        fail("the tabs sheet carries no 新会话 — the sheet is where a new tab starts on a phone (src/components/SessionBar.tsx TabSheet)");
       }
-      // Switching really switches: pick the tab that is not in front
-      // and a session page comes back.
-      const other = await page
-        .locator('[data-tab-switcher] [data-switch-tab][data-on="false"] [data-switch-open]')
-        .first()
-        .getAttribute("data-switch-open");
-      await press(`[data-switch-open="${other}"]`);
-      if ((await page.locator("[data-tab-switcher]").count()) !== 0) {
-        fail("picking a tab did not put the switcher away");
-      }
-      if ((await onFront()) !== 1 || (await page.locator(`[data-session-bar] [data-tab="${other}"][data-on="true"]`).count()) !== 1) {
-        fail("the switcher's pick did not land on that session's page");
-      }
-      // Closing from inside: the switcher stays up (it is the screen
-      // you are on — `TabStrip`'s own judgment) and the survivors stay.
-      await narrowCount.click();
+      // **Put away, it lands back where it was**: the tab in front.
+      const front = (await page.locator("[data-deck-title]").textContent())?.trim() ?? "";
+      await page.keyboard.press("Escape");
       await wait(400);
-      await press(`[data-switch-close="${other}"]`);
-      const left = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
-      if (left !== opened - 1) fail(`closing one of ${opened} tabs left ${left} rows in the switcher`);
+      if ((await sheetRows()) !== 0 || ((await page.locator("[data-deck-title]").textContent())?.trim() ?? "") !== front) {
+        fail("putting the tabs sheet away did not land back on the session that was in front");
+      }
+      // Switching really switches: pick a tab that is not in front.
+      await circle.click();
+      await wait(400);
+      const other = page.locator("[data-tab-sheet-row]:not([data-on]) [data-tab-sheet-open]").first();
+      const id = await other.getAttribute("data-tab-sheet-open");
+      const title = ((await other.innerText()).split("\n")[0] ?? "").trim();
+      await other.click();
+      await wait(400);
+      if ((await sheetRows()) !== 0) fail("picking a tab did not put the sheet away");
+      const now = ((await page.locator("[data-deck-title]").textContent()) ?? "").trim();
+      if (now !== title) {
+        fail(`the sheet's pick of ${id} landed on 「${now}」, not 「${title}」 — that session's page comes to the front`);
+      }
+      // Closing from inside: the sheet stays up and the survivors stay.
+      await circle.click();
+      await wait(400);
+      await press(`[data-tab-sheet-close="${id}"]`);
+      const left = await sheetRows();
+      if (left !== opened - 1) fail(`closing one of ${opened} tabs left ${left} rows in the sheet`);
+      await page.keyboard.press("Escape");
+      await wait(300);
     }
   }
 
@@ -17225,7 +17368,9 @@ try {
   } else {
     await press('[data-quota-row][data-quota-kind="sub"]');
     const onDetail = {
-      rows: await page.locator("[data-quota-row]").count(),
+      // On screen: the list stays mounted behind a pushed page (UX-11),
+      // laid out at nothing.
+      rows: await page.locator("[data-quota-row]").filter({ visible: true }).count(),
       detail: await page.locator("[data-quota-detail]").count(),
       back: await page.locator("[data-back]").count(),
       windows: await page.locator("[data-quota-detail] [data-quota-window]").count(),
@@ -17351,11 +17496,12 @@ try {
   // minted strain), elder does not (empty lists, aggregate only). An
   // implementation that ignores the lists reds the first half; one
   // that forgets the fallback — the un-upgraded reporter every mesh
-  // has — reds the second. Both cards are opened by row order, the
-  // walk's own convention.
+  // has — reds the second. Both cards are opened **by name**: the walk
+  // pins and reorders the machines' list before it gets here.
   await page.setViewportSize({ width: 1400, height: 900 });
   await open("devices");
-  await pressNth("[data-list] [data-row-open]", 1);
+  await page.locator('[data-list] [data-side-row][data-device="peer"] [data-side-open]').filter({ visible: true }).first().click();
+  await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").first().textContent().catch(() => null)) === "peer");
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) === 1);
   const surveyed = await page.evaluate(() => ({
     vols: [...document.querySelectorAll('[data-machine-card] [data-vitals-unit="vol"]')].length,
@@ -17370,7 +17516,8 @@ try {
   if (surveyed.disk !== 0) fail("the single-disk ring is still drawn beside the volumes it became");
   if (surveyed.strained !== 1) fail(`the minted volume strain did not land (${surveyed.strained} tight details)`);
   await open("devices");
-  await pressNth("[data-list] [data-row-open]", 2);
+  await page.locator('[data-list] [data-side-row][data-device="elder"] [data-side-open]').filter({ visible: true }).first().click();
+  await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").first().textContent().catch(() => null)) === "elder");
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) === 1);
   const elder = await page.evaluate(() => ({
     vols: document.querySelectorAll('[data-machine-card] [data-vitals-unit="vol"]').length,
@@ -17396,6 +17543,15 @@ try {
   await open("devices");
   await pressNth("[data-list] [data-row-open]", 1);
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-load-top]").count()) === 1);
+  // **Twenty, then 显示全部** (the audit fix plan F4.3): the fixture has
+  // more, so the table opens folded and the rest is one press away.
+  const folded = await page.locator("[data-machine-card] [data-top-row]").count();
+  if (load.top.length > 20) {
+    if (folded !== 20 || (await page.locator("[data-machine-card] [data-top-all]").count()) !== 1) {
+      fail(`the peer's top opens on ${folded} rows of ${load.top.length} with no 显示全部 — twenty, then the rest on a press (src/views/MachineCard.tsx TOP_SHOWN)`);
+    }
+    await press("[data-machine-card] [data-top-all]");
+  }
   const busy = await page.evaluate(() => ({
     rows: document.querySelectorAll("[data-machine-card] [data-top-row]").length,
     dayRows: [...document.querySelectorAll("[data-machine-card] [data-day-row]")].map((r) => {
@@ -17469,9 +17625,15 @@ try {
           (c) => c.textContent.trim().length > 0 && c.getBoundingClientRect().width >= 1,
         ).length,
     );
+  // Every row, not the first twenty (F4.3's 显示全部).
+  const showAll = async () => {
+    if (await page.locator("[data-machine-card] [data-top-all]").count()) await press("[data-machine-card] [data-top-all]");
+  };
+  await showAll();
   const wideArgs = await argsAt();
   await page.setViewportSize({ width: 390, height: 844 });
   await new Promise((r) => setTimeout(r, 400));
+  await showAll();
   const narrowArgs = await argsAt();
   await page.setViewportSize({ width: 1120, height: 1000 });
   await new Promise((r) => setTimeout(r, 400));
@@ -18601,6 +18763,8 @@ try {
   {
     await page.setViewportSize({ width: 1120, height: 1000 });
     await wait(300);
+    // Every row (F4.3's 显示全部), or the window has nothing to scroll.
+    if (await page.locator("[data-machine-card] [data-top-all]").count()) await press("[data-machine-card] [data-top-all]");
     const before = await page.evaluate(() => {
       const box = document.querySelector("[data-machine-card] [data-load-top-box]");
       const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
@@ -18615,7 +18779,10 @@ try {
     if (!before) {
       fail("probe dead: no process window or no column heads, so 「the heads stay」 measured nothing");
     } else if (before.scrollable < 40) {
-      fail(`probe dead: the process window scrolls ${before.scrollable}px, so scrolling it proves nothing about the heads`);
+      // ⚠️ 墓碑 (the audit fix plan F4.3): the table was a fixed-height
+      // window scrolling under sticky heads; it shows twenty rows and
+      // 显示全部 now, and the page scrolls. Nothing scrolls in the box.
+      console.log(`process window: the table is not a scrolling window since F4.3 (${before.scrollable}px)`);
     } else {
       const after = await page.evaluate(async () => {
         const box = document.querySelector("[data-machine-card] [data-load-top-box]");
@@ -18941,17 +19108,22 @@ try {
       //   tracks pinned at their floors, and a floor above a column's
       //   share is legitimate — there the equality does not hold and
       //   must not be asserted.
+      //   **⚠️ Tombstone, again (the audit fix plan F4.3; W15):** the even
+      //   division above stood 95px apart whatever was in the columns,
+      //   with 读写 running into the command. Every column is now as wide
+      //   as its widest reading, over its floor, and **命令 takes what is
+      //   left** — so the remainder is asserted to be 命令's, and the slack
+      //   check above still holds every quantity column to its ink.
       const per = Object.entries(spread.share);
       if (per.length < 4) {
-        fail(`probe dead: only ${per.length} tracks carried a share, so 「the width was divided」 measured nothing`);
+        fail(`probe dead: only ${per.length} tracks carried a share, so 「命令 takes what is left」 measured nothing`);
       } else {
-        const lo = Math.min(...per.map(([, v]) => v));
-        const hi = Math.max(...per.map(([, v]) => v));
-        if (hi - lo > 2) {
+        const cmd = spread.share.cmd;
+        const widest = per.filter(([k]) => k !== "cmd").reduce((m, [, v]) => Math.max(m, v), 0);
+        if (!(cmd >= widest)) {
           fail(
-            `at 1500 the width is not divided: per-share widths run ${lo.toFixed(1)}→${hi.toFixed(1)}px ` +
-              `(${per.map(([k, v]) => `${k}:${v.toFixed(1)}`).join(" ")}) — ` +
-              `one column is taking the leftover instead of every column taking its share`,
+            `at 1500 命令 is ${cmd?.toFixed(1)}px while another column is ${widest.toFixed(1)}px ` +
+              `(${per.map(([k, v]) => `${k}:${v.toFixed(1)}`).join(" ")}) — every column is its widest reading and 命令 takes the rest (F4.3)`,
           );
         }
       }
@@ -19211,8 +19383,10 @@ try {
         fail(`a row is marked unsaved before anything was typed: ${JSON.stringify(drawer.rows)}`);
       }
       if (!drawer.editor) fail("the disk drawer has no editor for the watched directories");
-      else if (drawer.saveDisabled !== true) {
-        fail("the save is live before anything was changed — a control that always offers to save is a control that cannot say whether anything changed");
+      else if (drawer.saveDisabled !== null) {
+        // **Not drawn until something changed** (the owner's progressive
+        // disclosure): it was a greyed button until 2026-10-04.
+        fail("the save is on screen before anything was changed — a control that always offers to save is a control that cannot say whether anything changed");
       } else {
         //   Add one: a fourth row, marked, and **still three units**.
         //   Then save: the whole list crosses, the row turns into a
@@ -19250,10 +19424,12 @@ try {
           }
           const rested = await until(6_000, async () => {
             const now = await rowsOf();
-            return now.saveDisabled === true && now.rows.join(",") === "/data/models:on,/nope:missing,/proc/1:unlisted,/scratch/run7:asked";
+            // At rest is **gone** since 2026-10-04: drawn only while there
+            // is something to save.
+            return (now.saveDisabled === true || now.saveDisabled === null) && now.rows.join(",") === "/data/models:on,/nope:missing,/proc/1:unlisted,/scratch/run7:asked";
           });
           const after = await rowsOf();
-          if (!rested) fail(`after a tidy save the rows read ${JSON.stringify(after.rows)} with the save ${after.saveDisabled ? "at rest" : "live"} — the new path was to become a saved, unanswered row and the save to rest`);
+          if (!rested) fail(`after a tidy save the rows read ${JSON.stringify(after.rows)} with the save ${after.saveDisabled === false ? "live" : "at rest"} — the new path was to become a saved, unanswered row and the save to rest`);
           if (after.units !== 3) fail(`a saved but unanswered path counts as a unit (${after.units}) — the terminal prints nothing for it yet`);
           if (after.error) fail(`a tidy save printed a refusal: ${after.error}`);
         }
@@ -19297,7 +19473,19 @@ try {
   //     measure — a panel that reset its cursor on the way out and back
   //     would come home saying nothing.)
   const readings = await page.evaluate(async () => {
-    const pick = (k) => document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+    const pick = (k) => {
+      // 叠放 / 统计 is a popup button (a native select) since the redesign:
+      // its options are chosen, not clicked.
+      const o = document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+      if (!o || o.tagName !== "OPTION") return o;
+      return {
+        click: () => {
+          const sel = o.closest("select");
+          sel.value = o.value;
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+      };
+    };
     const band = () => document.querySelector("[data-machine-card] [data-day-band]");
     const readout = () => document.querySelector("[data-machine-card] [data-day-at]")?.innerText.trim() ?? null;
     const words = [...document.querySelectorAll("[data-machine-card] [data-day-view-pick]")].map(
@@ -19391,7 +19579,19 @@ try {
   await wait(300);
   const beforeSwitching = thrown.length;
   const spoken = await page.evaluate(async () => {
-    const pick = (k) => document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+    const pick = (k) => {
+      // 叠放 / 统计 is a popup button (a native select) since the redesign:
+      // its options are chosen, not clicked.
+      const o = document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+      if (!o || o.tagName !== "OPTION") return o;
+      return {
+        click: () => {
+          const sel = o.closest("select");
+          sel.value = o.value;
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+      };
+    };
     const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     const out = {};
     for (const view of ["heat", "para"]) {
@@ -19494,8 +19694,20 @@ try {
       await page.setViewportSize({ width, height: 900 });
       await wait(400);
       return page.evaluate(async () => {
-        const floor = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--text-caption"));
-        const pick = (k) => document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+        const floor = ((n) => { const e = document.createElement("div"); e.style.cssText = "position:absolute;visibility:hidden"; e.style.height = `var(${n})`; document.body.append(e); const h = e.getBoundingClientRect().height; e.remove(); return h; })("--text-caption");
+        const pick = (k) => {
+      // 叠放 / 统计 is a popup button (a native select) since the redesign:
+      // its options are chosen, not clicked.
+      const o = document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
+      if (!o || o.tagName !== "OPTION") return o;
+      return {
+        click: () => {
+          const sel = o.closest("select");
+          sel.value = o.value;
+          sel.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+      };
+    };
         const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
         const out = { floor, views: {} };
         for (const view of ["heat", "para"]) {
@@ -19594,7 +19806,7 @@ try {
       disk: quartilesOf(diskBuckets),
       vram: quartilesOf(vramBuckets),
     };
-    await page.locator('[data-machine-card] [data-day-view-pick="para"]').click();
+    await pickDay("para");
     await wait(400);
     const marks = await page.evaluate(() => {
       const band = document.querySelector("[data-machine-card] [data-day-band]");
@@ -19722,7 +19934,7 @@ try {
       }
       console.log(`day quartiles: ${keys.map((k) => `${k} ${marks.marks[k]?.q1}/${marks.marks[k]?.med}/${marks.marks[k]?.q3}`).join(", ")}`);
     }
-    await page.locator('[data-machine-card] [data-day-view-pick="heat"]').click();
+    await pickDay("heat");
     await wait(300);
   }
 
@@ -20093,6 +20305,8 @@ try {
         if (!plot) return null;
         return {
           pair: plot.dataset.plotAxes,
+          // The ruler each axis is on (`log` ticks at its powers, W-V8).
+          scale: { x: plot.dataset.plotScaleX, y: plot.dataset.plotScaleY },
           xLo: Number(plot.dataset.plotXLo),
           x: [...plot.querySelectorAll("[data-plot-tick-x] text")].map((t) => t.textContent.trim()),
           y: [...plot.querySelectorAll("[data-plot-tick-y] text")].map((t) => t.textContent.trim()),
@@ -20105,8 +20319,15 @@ try {
       }
       const [xk, yk] = (got.pair ?? "x").split("x");
       for (const [axis, ls, key] of [["x", got.x, xk], ["y", got.y, yk]]) {
-        const dup = ls.filter((l, i) => ls.indexOf(l) !== i);
+        // A label that would overlap the one kept before it is dropped and
+        // its tick mark stays (`thin`): an empty word is that, not a
+        // label printed twice.
+        const words = ls.filter((l) => l !== "");
+        const dup = words.filter((l, i) => words.indexOf(l) !== i);
         if (dup.length) fail(`the ${page} page's ${axis} axis prints the same label twice: ${dup.map((d) => `「${d}」`).join(" ")} (all: ${ls.join(", ")})`);
+        // A log ruler ticks at its own powers (W-V8), so how many is the
+        // data's; the seven below is the even ruler's.
+        if (got.scale?.[axis] === "log") continue;
         //   **All seven, on an axis whose labels take decimals.** A
         //   tick quietly dropped is how a broken formatter would pass
         //   the line above — measured: with the fold applied to every
@@ -20130,7 +20351,10 @@ try {
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
     await page.locator('[data-machine-card] [data-top-head="io"] button').click();
-    const arrived = await until(8_000, async () => (await labels())?.xLo === 0);
+    // On a log ruler (W-V8) the axis never starts at 0, so the crowded
+    // page is the one ordering by 读写 drew, read once it settles.
+    const logX = (await labels())?.scale?.x === "log";
+    const arrived = logX ? (await wait(800), true) : await until(8_000, async () => (await labels())?.xLo === 0);
     if (!arrived) fail("probe dead: ordering by 读写 never drew the crowded page (x lo stayed above 0)");
     else {
       const got = await labels();
@@ -20138,7 +20362,8 @@ try {
       console.log(`plot ticks (crowded page): x ${got.x.join(" ")} · y ${got.y.join(" ")}`);
     }
     await page.locator('[data-machine-card] [data-top-head="cpu"] button').click();
-    await until(8_000, async () => (await labels())?.xLo > 0);
+    if (logX) await wait(800);
+    else await until(8_000, async () => (await labels())?.xLo > 0);
     await page.setViewportSize({ width: 380, height: 800 });
     await wait(300);
     //   Back where the sections below expect the figure: on screen.
@@ -20506,90 +20731,65 @@ try {
     //   Wide enough that the table is a grid with sticky heads — the
     //   stacked layout has no heads at all, and 「below the head」 there
     //   is a question about an element that is `display: none`.
-    await page.setViewportSize({ width: 1400, height: 1000 });
+    // Short enough that the table runs past the foot of the screen.
+    await page.setViewportSize({ width: 1400, height: 560 });
     await wait(400);
+    // Every row (F4.3's 显示全部), so the rows past the fold are there.
+    if (await page.locator("[data-machine-card] [data-top-all]").count()) await press("[data-machine-card] [data-top-all]");
+    // From the top of the page, so 「below the screen」 is a fact about the
+    // table and not about where an earlier stop left the scroll.
+    await page.evaluate(() => {
+      for (let el = document.querySelector("[data-machine-card]"); el; el = el.parentElement) el.scrollTop = 0;
+    });
+    await wait(200);
+    // ⚠️ 墓碑 (the audit fix plan F4.3): the table scrolled in a window
+    // of its own, and the row was looked for past that window's floor.
+    // The page scrolls now: the row is the first one off the bottom of
+    // the screen that also has a point, and the press must bring it in.
     const want = await page.evaluate(() => {
       const pts = new Set([...document.querySelectorAll("[data-machine-card] [data-plot-point]")].map((g) => g.dataset.plotPoint));
       const rows = [...document.querySelectorAll("[data-machine-card] [data-top-row]")];
-      const box = document.querySelector("[data-machine-card] [data-load-top-box]");
-      const floor = box.getBoundingClientRect().bottom;
-      //   ⚠️ **The first row that is out of sight below the window —
-      //   not the last row.** Scrolling to the last one runs the box to
-      //   its maximum, and a maximum is the same wherever you asked to
-      //   go: measured, the arm that removed the sticky head's height
-      //   from the scroll **stayed green** against the last row,
-      //   because the clamp put it in the right place anyway. A row
-      //   just past the fold needs an exact scroll, and an exact scroll
-      //   is the only kind that can be wrong by the height of a head.
-      const hit = rows.find(
-        (r) => pts.has(r.dataset.topRow) && r.firstElementChild.getBoundingClientRect().top > floor,
-      );
+      const hit = rows.find((r) => pts.has(r.dataset.topRow) && r.firstElementChild.getBoundingClientRect().top > window.innerHeight);
       return {
         pid: hit ? hit.dataset.topRow : null,
         rows: rows.length,
         hot: document.querySelectorAll("[data-machine-card] [data-top-row][data-hot]").length,
-        scrollTop: box ? Math.round(box.scrollTop) : null,
-        scrollable: box ? box.scrollHeight - box.clientHeight : null,
       };
     });
     if (!want.pid) {
-      fail("probe dead: no point shares a pid with a row, so 「a press goes to its row」 had nothing to press");
+      fail("probe dead: no point shares a pid with a row below the screen, so 「a press goes to its row」 had nothing to press");
     } else if (want.hot !== 0) {
       //   The aliveness half: if a row were already marked, 「it is
       //   marked after the press」 would pass without a press.
       fail(`${want.hot} rows were already highlighted before anything was pressed — the probe cannot tell`);
     } else {
       await page.locator(`[data-machine-card] [data-plot-point="${want.pid}"]`).click();
-      await wait(400);
+      await wait(600);
       const got = await page.evaluate(() => {
         const hot = [...document.querySelectorAll("[data-machine-card] [data-top-row][data-hot]")];
-        const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
-        const box = document.querySelector("[data-machine-card] [data-load-top-box]");
         const cell = hot[0]?.firstElementChild;
         const c = cell?.getBoundingClientRect();
-        const h = head?.getBoundingClientRect();
-        const b = box?.getBoundingClientRect();
         return {
           n: hot.length,
           pid: hot[0]?.dataset.topRow ?? null,
-          //   ⚠️ **Two edges, not one.** 「below the head」 alone is
-          //   satisfied by a row that never came into view at all —
-          //   measured: the first version of this reported a row
-          //   **767px** below the head and passed. Visible means below
-          //   the head *and* above the box's own bottom.
-          under: c && h ? +(c.top - h.bottom).toFixed(1) : null,
-          within: c && b ? +(b.bottom - c.bottom).toFixed(1) : null,
-          scrollTop: box ? Math.round(box.scrollTop) : null,
+          inView: c ? c.top >= -1 && c.bottom <= window.innerHeight + 1 : null,
           tint: cell ? getComputedStyle(cell).backgroundColor : null,
         };
       });
       if (got.n !== 1) fail(`pressing a point highlighted ${got.n} rows, not one`);
       else if (got.pid !== want.pid) fail(`pressing the point for pid ${want.pid} highlighted pid ${got.pid} instead`);
-      else if (!(got.under >= -1)) {
-        fail(
-          `the row a point asked for sits ${got.under}px above the sticky head's bottom — it scrolled *behind* the ` +
-            `heads, which is the way this lands on a table long enough to scroll`,
-        );
-      } else if (!(got.within >= -1)) {
-        fail(
-          `the row a point asked for is ${got.within}px past the bottom of the table's window — it was marked ` +
-            `but never brought into view, and 「below the head」 alone cannot tell those apart`,
-        );
-      } else if (want.scrollable > 0 && got.scrollTop === want.scrollTop) {
-        fail(
-          `the table did not scroll (${got.scrollTop} either side, ${want.scrollable}px of scroll available) — ` +
-            `the row was reachable only because it already happened to be on screen`,
-        );
+      else if (!got.inView) {
+        fail(`the row a point asked for was marked and left off the screen — the press brings it into view (src/views/MachineCard.tsx)`);
       } else if (!got.tint || /rgba?\(0, 0, 0, 0\)|transparent/.test(got.tint)) {
         fail(`the highlighted row's cells have no tint (${got.tint}) — the row is marked in the DOM and not on the glass`);
       } else {
-        console.log(
-          `plot press: pid ${got.pid} of ${want.rows} rows, scroll ${want.scrollTop}→${got.scrollTop} of ${want.scrollable}, ` +
-            `${got.under}px below the head and ${got.within}px above the window's floor, tint ${got.tint}`,
-        );
+        console.log(`plot press: pid ${got.pid} of ${want.rows} rows, brought into view, tint ${got.tint}`);
       }
     }
   }
+
+  await page.setViewportSize({ width: 1400, height: 1000 });
+  await wait(300);
 
   //     ── the process table: PID, and marks that were measured ─────
   //
@@ -20711,7 +20911,10 @@ try {
       const cell = page.locator('[data-machine-card] [data-c="cmd"][data-cut]').first();
       if (how === "hover") await cell.hover();
       else await cell.evaluate((n) => n.focus());
-      await wait(300);
+      // A tooltip waits 600 under a resting pointer since the redesign
+      // (`ui/tooltip`): read once it has come, or after it would have.
+      await until(1_500, async () => (await page.locator("[data-cmd-full]").count()) > 0);
+      await wait(100);
       const got = await page.locator("[data-cmd-full]").allTextContents();
       //   Put the pointer somewhere with nothing under it, so the next
       //   arm starts from closed.
@@ -21179,7 +21382,7 @@ try {
         });
       const floors = {};
       for (const view of ["heat", "para"]) {
-        await page.locator(`[data-machine-card] [data-day-view-pick="${view}"]`).click();
+        await pickDay(view);
         await wait(500);
         floors[view] = await floorOf();
       }
@@ -21223,7 +21426,7 @@ try {
     //   them (the readout's `margin-top`) is not in any element's
     //   height: 叠放 overflowed by exactly that 6px on the first try.
     for (const view of ["heat", "para"]) {
-      await page.locator(`[data-machine-card] [data-day-view-pick="${view}"]`).click();
+      await pickDay(view);
       await wait(400);
       const over = await page.evaluate(() => {
         const blk = document.querySelector("[data-machine-card] [data-load-day] .dayblk");
@@ -21235,7 +21438,7 @@ try {
         fail(`叠放/热力带 — ${view} is ${over.over}px taller than the slot it shares (${over.parts.join(" ")}) — its foot is clipped`);
       }
     }
-    await page.locator('[data-machine-card] [data-day-view-pick="heat"]').click();
+    await pickDay("heat");
     await wait(300);
   }
   //     ── the band is a heat band: the value is the ink ────────────
@@ -21589,8 +21792,11 @@ try {
     });
     await open("quota");
     await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
+    // The dial's seat since W-V11 (2026-10-03, the owner: as large as
+    // the session page's avatars): the list face's slot, the whole
+    // drawing — pips and all — across its width inside it.
     const dial = await page.evaluate(() => {
-      const e = document.querySelector("[data-quota-row] [data-dial-face]");
+      const e = document.querySelector("[data-quota-row] [data-dial-row]");
       return e ? +e.getBoundingClientRect().height.toFixed(1) : null;
     });
     return { mark, dial };
@@ -22051,8 +22257,13 @@ try {
     const card = await colourOf("--card");
     const ground = await colourOf("--background");
     console.log(`left block tokens: pane-head ${paneHead} · side ${side} · card ${card} · ground ${ground} · ctl-sm ${ctlSm} · tab-w-min ${tabMin}`);
-    if (side === "rgba(0, 0, 0, 0)" || side === card || side === ground) {
-      fail(`--side resolves to ${JSON.stringify(side)} (card ${card}, ground ${ground}) — the left block needs a ground of its own, in tokens.css, both themes`);
+    // **One ground** (the redesign, 2026-10-02; the design system's D16 →
+    // 一张底): the left block, the board and the window are one colour,
+    // and elements are parted by hairlines. ⚠️ 墓碑: 第十三轮 gave the
+    // left block a ground of its own (`--side`) and floated the board on
+    // the app's ground; both were asserted here.
+    if (side !== card || card !== ground) {
+      fail(`--side ${JSON.stringify(side)}, --card ${card} and --background ${ground} differ — one ground, in tokens.css, both themes (D16 → 一张底)`);
     }
     // The old row is gone from every face — asserted here at the wide
     // width and again on the narrow one below.
@@ -22063,8 +22274,7 @@ try {
     );
     if (oldRow !== 0) fail(`the window's own row is still drawn (${oldRow} elements wear a data-title-* anchor) — 第十三轮 撤掉了那一条`);
 
-    // ── (a) the block: one ground, a first row across both, a line
-    //        from under that row to the foot ──
+    // ── (a) the block: one ground, a first row across both ──
     const PANES = {
       sessions: "[data-list]",
       devices: "[data-list]",
@@ -22074,36 +22284,31 @@ try {
     };
     for (const [tab, pane] of Object.entries(PANES)) {
       if (!(await open(tab))) {
-        fail(`probe dead: the ${tab} landing is not on the rail`);
+        fail(`probe dead: the ${tab} landing is not on the landings' capsule`);
         continue;
       }
       await wait(300);
       const block = await page.evaluate((pane) => {
         const q = (s) => document.querySelector(s);
         const aside = q("[data-side]");
+        // The left block's first row is the landings' capsule's (the
+        // redesign); the list's own head stands under it.
+        const top = q("[data-wide-top]");
+        const strip = q("[data-landing-strip]");
         const head = q("[data-side-head]");
-        const rail = q("[data-rail]");
-        const seatOfList = q("[data-side-list-seat]");
         const list = q(pane);
-        const item = q("[data-rail-item]");
-        const search = q("[data-side-head] [data-omnibox]") ?? q("[data-side-head] [data-pane-search]");
+        const search = q("[data-side-head] [data-omnibox]") ?? q("[data-side-head] [data-pane-search]") ?? q("[data-side-head] [data-search-open]");
         const plus = q("[data-side-head] [data-pane-new]");
-        // **The right side's first row, where there is one** (第十四轮
-        // 第 3 条). 第十三轮 asked for it on every landing and got an
-        // empty band over 机器 / 额度 / 「…」; the row belongs to the
-        // tabs, so a landing with no tabs has no row and its board
-        // starts at the top.
         const region = q("[data-region-head]");
         const board = q("[data-board]");
         const main = q("[data-main]");
         const missing = [
           !aside && "[data-side]",
+          !top && "[data-wide-top]",
+          !strip && "[data-landing-strip]",
           !head && "[data-side-head]",
-          !rail && "[data-rail]",
-          !seatOfList && "[data-side-list-seat]",
           !list && pane,
-          !item && "[data-rail-item]",
-          !search && "[data-side-head] [data-pane-search]",
+          !search && "[data-side-head] [data-search-open]",
           !board && "[data-board]",
           !main && "[data-main]",
         ].filter(Boolean);
@@ -22111,33 +22316,16 @@ try {
         const r = (el) => el.getBoundingClientRect();
         const bg = (el) => getComputedStyle(el).backgroundColor;
         return {
-          bg: { aside: bg(aside), rail: bg(rail), list: bg(list) },
-          head: {
-            top: +r(head).top.toFixed(2),
-            h: +r(head).height.toFixed(2),
-            bottom: +r(head).bottom.toFixed(2),
-            // Marked on the shell's L0 container since 第十五轮, the row
-            // itself carries nothing.
-            drag: head.closest("[data-tauri-drag-region='deep']") !== null,
+          bg: { aside: bg(aside), list: bg(list), main: bg(main), board: bg(board) },
+          top: {
+            top: +r(top).top.toFixed(2),
+            h: +r(top).height.toFixed(2),
+            bottom: +r(top).bottom.toFixed(2),
+            drag: top.closest("[data-tauri-drag-region]") !== null,
           },
-          // The line between the rail and the list is the list seat's
-          // left edge — it stays when the list is put away.
-          rail: {
-            top: +r(seatOfList).top.toFixed(2),
-            bottom: +r(seatOfList).bottom.toFixed(2),
-            line: parseFloat(getComputedStyle(seatOfList).borderLeftWidth),
-            edge: +r(seatOfList).left.toFixed(2),
-            railRight: +r(rail).right.toFixed(2),
-          },
-          asideBottom: +r(aside).bottom.toFixed(2),
-          item: +r(item).left.toFixed(2),
-          search: +r(search).left.toFixed(2),
           plus: !!plus,
-          region: region
-            ? { h: +r(region).height.toFixed(2), bottom: +r(region).bottom.toFixed(2) }
-            : null,
-          // Where the board begins, and what is above it: a row's
-          // bottom, or the region's own top plus `--gap-in`.
+          region: region ? { h: +r(region).height.toFixed(2), bottom: +r(region).bottom.toFixed(2) } : null,
+          kind: q("[data-main] [data-region-kind]")?.getAttribute("data-region-kind") ?? null,
           boardTop: +r(board).top.toFixed(2),
           mainTop: +r(main).top.toFixed(2),
         };
@@ -22147,107 +22335,45 @@ try {
         continue;
       }
       console.log(`left block · ${tab}: ${JSON.stringify(block)}`);
-      if (block.bg.rail !== side || block.bg.list !== side || block.bg.aside !== side) {
+      if (new Set([block.bg.list, block.bg.board, ground]).size !== 1 || ![ground, "rgba(0, 0, 0, 0)"].includes(block.bg.aside)) {
+        fail(`on ${tab} the list paints ${block.bg.list}, the board ${block.bg.board} and the block ${block.bg.aside} — one ground, ${ground}`);
+      }
+      if (block.top.top !== 0 || block.top.h !== paneHead) {
+        fail(`on ${tab} the block's first row is ${block.top.h} tall from ${block.top.top}, token --pane-head is ${paneHead} — one row, at the top`);
+      }
+      if (!block.plus) fail(`on ${tab} the list's head has no [data-pane-new] — the search circle and ＋`);
+      if (!block.top.drag) fail(`on ${tab} the block's first row does not carry the window drag — its blank is 顶部空白`);
+      if (block.region && (block.region.h !== paneHead || block.region.bottom !== block.top.bottom)) {
         fail(
-          `on ${tab} the rail paints ${block.bg.rail} and the list ${block.bg.list} (block ${block.bg.aside}), --side is ${side} — ` +
-            "「展开的一级侧边栏也要和侧边栏一个颜色」, one token on both",
+          `on ${tab} the right side's first row is ${block.region.h} tall ending at ${block.region.bottom}, the left's ends at ${block.top.bottom} — ` +
+            "「和右边标签条同一个 token，左右一条线齐」",
         );
       }
-      if (block.head.top !== 0 || block.head.h !== paneHead) {
-        fail(`on ${tab} the block's first row is ${block.head.h} tall from ${block.head.top}, token --pane-head is ${paneHead} — one row, at the top`);
-      }
-      if (
-        block.rail.top !== block.head.bottom ||
-        block.rail.line < 1 ||
-        block.rail.bottom !== block.asideBottom ||
-        block.rail.edge !== block.rail.railRight
-      ) {
-        fail(
-          `on ${tab} the line beside the rail starts at ${block.rail.top} (row bottom ${block.head.bottom}), is ${block.rail.line} wide, ends at ` +
-            `${block.rail.bottom} (block ${block.asideBottom}) and stands at x=${block.rail.edge} (rail's right edge ${block.rail.railRight}) — ` +
-            "「还是要有线」: from under the first row to the foot, on the rail's edge, not through the row, not broken",
-        );
-      }
-      if (block.search !== block.item) {
-        fail(
-          `on ${tab} the search box starts at x=${block.search} and the rail's glyph box at x=${block.item} — on the web face the box ` +
-            "starts where the rail's line is (第十三轮 第 2 条)",
-        );
-      }
-      if (!block.plus) fail(`on ${tab} the first row has no [data-pane-new] — 「三颗按钮、搜索框、＋」`);
-      if (!block.head.drag) fail(`on ${tab} the block's first row does not carry the window drag — its blank is 顶部空白`);
-      if (block.region) {
-        // 第十三轮 第 5 条, unchanged where a row exists: the same token
-        // as the left block's row, so the two read as one line.
-        if (block.region.h !== paneHead || block.region.bottom !== block.head.bottom) {
-          fail(
-            `on ${tab} the right side's first row is ${block.region.h} tall ending at ${block.region.bottom}, the left's ends at ${block.head.bottom} — ` +
-              "「和右边标签条同一个 token，左右一条线齐」",
-          );
-        }
-        if (block.boardTop !== block.region.bottom) {
-          fail(
-            `on ${tab} the board starts at ${block.boardTop} and the row above it ends at ${block.region.bottom} — ` +
-              "under a strip the board is joined to the open tab, with nothing between them",
-          );
-        }
-      } else if (block.boardTop !== +(block.mainTop + gapIn).toFixed(2)) {
-        // 第十四轮 第 3 条:「板从顶上起、四周仍 --gap-in」.
-        fail(
-          `on ${tab} nothing heads the right side and the board starts at ${block.boardTop}, ${+(block.boardTop - block.mainTop).toFixed(2)} under it ` +
-            `(--gap-in is ${gapIn}) — 「没有标签的页没有空带」: no row, and the board's top edge is like its other three`,
-        );
+      // **One ground, and the board joined to R0**: a page whose content
+      // scrolls under the first row's glass starts at the region's top; a
+      // page with a row of its own under R0 (a tabs strip, a workspace's
+      // columns) starts under it. ⚠️ 墓碑: 第十四轮's board floated
+      // `--gap-in` off the region with the open tab joined to it.
+      const tops = [block.mainTop, ...(block.region ? [block.region.bottom] : [])];
+      if (!tops.includes(block.boardTop)) {
+        fail(`on ${tab} (${block.kind}) the board starts at ${block.boardTop}, not at ${tops.join(" or ")} — under R0's glass from the top, or under R0, nothing between`);
       }
     }
 
-    // ── (b) the right side: a board on the ground, and the open tab is
-    //        the board's colour, joined to it ──
+    // ── (b) ⚠️ 墓碑 (one ground): 「a board on the ground, `--gap-in` all
+    //        round, `--radius` corner, the open tab its colour and joined
+    //        to it」 was asserted here. The board is the window's own
+    //        ground edge to edge now, and the open tab is glass's chosen
+    //        piece in its capsule (measured where tabs are). ──
     await open("sessions");
     await press("[data-row]");
     await wait(400);
-    const board = await page.evaluate(() => {
-      const b = document.querySelector("[data-board]");
-      const main = document.querySelector("[data-main]");
-      const on = document.querySelector("[data-tab][data-on='true']");
-      if (!b || !main) return { missing: [!b && "[data-board]", !main && "[data-main]"].filter(Boolean) };
-      const bg = (el) => getComputedStyle(el).backgroundColor;
-      const r = (el) => el.getBoundingClientRect();
-      return {
-        board: bg(b),
-        main: bg(main),
-        tab: on ? bg(on) : null,
-        radius: parseFloat(getComputedStyle(b).borderTopLeftRadius),
-        gap: {
-          left: +(r(b).left - r(main).left).toFixed(2),
-          right: +(r(main).right - r(b).right).toFixed(2),
-          bottom: +(r(main).bottom - r(b).bottom).toFixed(2),
-        },
-        joint: on ? +(r(b).top - r(on).bottom).toFixed(2) : null,
-      };
-    });
-    console.log(`board: ${JSON.stringify(board)}`);
-    if (board.missing) {
-      fail(`the sessions landing draws no ${board.missing.join(" / ")} — 「正文是一块浮起的板」`);
-    } else {
-      if (board.board !== card || board.main !== ground) {
-        fail(`the board paints ${board.board} on ${board.main}; --card is ${card} and --background ${ground} — 「板 --card，外面 --background」`);
-      }
-      if (board.gap.left !== gapIn || board.gap.right !== gapIn || board.gap.bottom !== gapIn) {
-        fail(`the board sits ${JSON.stringify(board.gap)} from the region's edges, --gap-in is ${gapIn} — 「四周留 --gap-in」`);
-      }
-      if (board.radius !== radius) fail(`the board's corner is ${board.radius}, --radius is ${radius}`);
-      if (board.tab === null) {
-        fail("probe dead: pressing a row opened no [data-tab][data-on=true] over the board");
-      } else if (board.tab !== board.board || board.joint !== 0) {
-        fail(
-          `the open tab paints ${board.tab} and sits ${board.joint} above the board (${board.board}) — 「选中的标签和板一种颜色…接进板里」`,
-        );
-      }
-    }
 
     // ── (c) one box, two ranges: typing narrows this column; ⌘K or ⇥
     //        widens to everything, hits hung under the box ──
     const box = "[data-side-head] [data-pane-search]";
+    // A circle until pressed (the redesign).
+    await openSearch();
     if ((await page.locator(box).count()) !== 1) {
       fail(`probe dead: the sessions landing has no ${box} — nothing below measures the box's two ranges`);
     } else {
@@ -22399,9 +22525,9 @@ try {
         continue;
       }
       judge(`sessions @${width}`, reads);
-      if (width === 760 && !stubs.includes(tabMin)) {
-        fail(`at ${width} the stubs stand at ${JSON.stringify([...new Set(stubs)])}, never at the floor --tab-w-min ${tabMin} — the floor is where the name is still clear of the cell`);
-      }
+      // ⚠️ 墓碑 (the redesign V07): 「at 760 the stubs reach the floor
+      // `--tab-w-min`」 was asserted here; a glass tab keeps its width and
+      // the strip scrolls (4T).
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
@@ -22423,7 +22549,9 @@ try {
         // does — 第十五轮 (a) judges each point by tauri's own walk.
         const el = document.elementFromPoint(x, 6)?.closest("[data-tauri-drag-region]") ?? null;
         if (!el) continue;
-        seen.add(el.querySelector("[data-side-head]") || el.closest("[data-side-head]") ? "side" : el.closest("[data-region-head]") ? "region" : el.tagName.toLowerCase());
+        // The left block's first row is the landings' capsule's since the
+        // redesign (`data-wide-top`).
+        seen.add(el.matches("[data-wide-top]") || el.closest("[data-wide-top]") ? "side" : el.closest("[data-region-head]") ? "region" : el.tagName.toLowerCase());
       }
       return [...seen];
     });
@@ -22440,25 +22568,30 @@ try {
     // **Since 2026-10-02 a session page has no rail**: its bar's 「‹」 is
     // the way to the list (`components/SessionBar`).
     if (await page.locator("[data-session-bar] [data-back]").count()) await press("[data-session-bar] [data-back]");
-    await press(rail("sessions"));
+    await open("sessions");
     await wait(300);
     const phone = await page.evaluate(() => {
-      const head = document.querySelector("[data-side-head]");
+      const head = [...document.querySelectorAll("[data-side-head]")].find((h) => h.getBoundingClientRect().height > 0);
       if (!head) return null;
       const r = head.getBoundingClientRect();
       return {
         h: +r.height.toFixed(2),
         top: +r.top.toFixed(2),
-        search: !!head.querySelector("[data-pane-search]"),
+        search: !!head.querySelector("[data-pane-search], [data-search-open]"),
         plus: !!head.querySelector("[data-pane-new]"),
+        // UX-11: the narrow face's search is the circle beside the bottom bar.
+        below: !!document.querySelector("[data-nav-search]"),
         old: [...document.querySelectorAll("*")].filter((el) => [...el.attributes].some((a) => a.name.startsWith("data-title-"))).length,
       };
     });
     console.log(`narrow first row: ${JSON.stringify(phone)}`);
     if (!phone) {
       fail("narrow drew no [data-side-head] — the first row is every face's");
-    } else if (phone.h !== paneHead || phone.top !== 0 || !phone.search || !phone.plus || phone.old !== 0) {
-      fail(`narrow's first row reads ${JSON.stringify(phone)} — 「窄档：第一行照旧是搜索 + ＋」, at --pane-head ${paneHead}, and nothing of the old row`);
+    } else if (phone.h !== paneHead || phone.top !== 0 || phone.search || !phone.below || !phone.plus || phone.old !== 0) {
+      fail(
+        `narrow's first row reads ${JSON.stringify(phone)} — the list's title with ＋ at --pane-head ${paneHead}, the search beside the ` +
+          "bottom bar (UX-11), and nothing of the old row",
+      );
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
@@ -22611,7 +22744,9 @@ try {
         const head = document.querySelector("[data-region-head]");
         return {
           rows: document.querySelectorAll("[data-region-head]").length,
-          gap: head ? +(r(board).top - r(head).bottom).toFixed(2) : null,
+          // One ground: the board runs under R0's glass from the region's
+          // top (the redesign), so it starts where R0 does.
+          gap: head ? +(r(board).top - r(head).top).toFixed(2) : null,
           named: !!head?.querySelector("[data-page-title], [data-session-tabs], [data-tab-strip], input"),
         };
       });
@@ -22623,8 +22758,8 @@ try {
       void gapIn;
       if (read.rows !== 1 || read.gap !== 0 || !read.named) {
         fail(
-          `${where} draws ${read.rows} [data-region-head], its board ${read.gap} under it, named ${read.named} — ` +
-            "R0 on every page (D2, SHELL.md round 15 item 5): one row with the page's name in it, and the board joined under it (src/components/Region.tsx)",
+          `${where} draws ${read.rows} [data-region-head], its board starting ${read.gap} off R0's top, named ${read.named} — ` +
+            "R0 on every page (D2, SHELL.md round 15 item 5): one row with the page's name in it, over the board from the top (one ground; src/components/Region.tsx)",
         );
       }
     };
@@ -22676,7 +22811,7 @@ try {
     // Shrinking mid-session keeps the session up, and a session page has
     // no landings' bar: out through its 「‹」 first.
     if (await page.locator("[data-session-bar] [data-back]").count()) await press("[data-session-bar] [data-back]");
-    await press(rail("sessions"));
+    await open("sessions");
     await wait(300);
     if (!(await press("[data-list] [data-row-open]"))) {
       fail("probe dead: no session row on the narrow face — 第十四轮 (e) measured nothing");
@@ -22685,11 +22820,13 @@ try {
       const phone = await page.evaluate(() => {
         const bar = document.querySelector("[data-session-bar]");
         if (!bar) return null;
-        const tab = bar.querySelector('[data-tab][data-on="true"]');
+        // The deck's pill is the open tab since round UX-3: its face and
+        // its name.
+        const pill = bar.querySelector("[data-deck-pill]");
         return {
           back: !!bar.querySelector("[data-back]"),
-          face: !!tab?.querySelector("[data-halo]"),
-          name: !!tab?.querySelector("[data-editable-name], [data-title-input], [data-tab-name]"),
+          face: !!pill?.querySelector("[data-deck-face]"),
+          name: !!pill?.querySelector("[data-deck-title]")?.textContent?.trim(),
           facts: document.querySelectorAll("[data-detail-facts]").length,
           heads: document.querySelectorAll("[data-detail-header]").length,
         };
@@ -22875,15 +23012,15 @@ try {
           };
           const q = (s) => document.querySelector(s);
           const aside = q("[data-side]");
-          const sideHead = q("[data-side-head]");
-          const rail = q("[data-rail]");
+          // The left block's first row is the landings' capsule's since the
+          // redesign; ⚠️ 墓碑: the rail (L1) and its seam are gone.
+          const top = q("[data-wide-top]");
           const seat = q("[data-side-list-seat]");
           const main = q("[data-main]");
           const board = main ? [...main.querySelectorAll("[data-board]")].find((b) => b.getBoundingClientRect().width > 0) : null;
           const missing = [
             !aside && "[data-side]",
-            !sideHead && "[data-side-head]",
-            !rail && "[data-rail]",
+            !top && "[data-wide-top]",
             !seat && "[data-side-list-seat]",
             !main && "[data-main]",
             !board && "[data-board]",
@@ -22891,15 +23028,18 @@ try {
           if (missing.length) return { missing };
           const r = (el) => el.getBoundingClientRect();
           const m = r(main);
+          const b = r(board);
+          // One ground: the board runs under R0's glass; R1 is what of it
+          // lies below that first row.
+          const r1Top = Math.max(b.top, m.top + head);
           const areas = {
-            L0: r(sideHead),
-            L1: r(rail),
+            L0: r(top),
             L2: r(seat),
             // R0 is a place, not an element: the first --pane-head of the
             // right side. A page that draws nothing there has a board or a
             // blank in it, and that is exactly what this must catch.
             R0: { left: m.left, top: m.top, width: m.width, height: head },
-            R1: r(board),
+            R1: { left: b.left, top: r1Top, width: b.width, height: b.bottom - r1Top },
           };
           const say = (el) =>
             el
@@ -22923,7 +23063,7 @@ try {
                 const y = a.top + ((j + 0.5) * a.height) / 2;
                 const { verdict, el } = judge(x, y);
                 tally[verdict]++;
-                const must = name === "L0" || name === "L1" || name === "R0";
+                const must = name === "L0" || name === "R0";
                 if ((must && verdict === "none") || (!must && verdict === "drag")) {
                   bad.push(`(${Math.round(x)},${Math.round(y)}) ${verdict} on ${say(el)}`);
                 }
@@ -22946,11 +23086,11 @@ try {
       console.log(`round 15 · drag census · ${where}: ${line}`);
       for (const [name, a] of Object.entries(got.areas)) {
         if (!a.bad.length) continue;
-        const must = name === "L0" || name === "L1" || name === "R0";
+        const must = name === "L0" || name === "R0";
         fail(
           `on ${where} ${a.bad.length}/16 points in ${name} ${must ? "do not move the window" : "move the window"}: ${a.bad.slice(0, 4).join("; ")}` +
             (a.bad.length > 4 ? ` (+${a.bad.length - 4})` : "") +
-            ` — the blanks of L0, L1 and R0 move the window; nothing in L2 or R1 does (10-layout.md, tauri 2.11.5 drag.js)`,
+            ` — the blanks of L0 and R0 move the window; nothing in L2 or R1 does (10-layout.md, tauri 2.11.5 drag.js)`,
         );
       }
     };
@@ -22996,7 +23136,9 @@ try {
       ["sessions · a tab open", "tabs", async () => (await open("sessions")) && press("[data-list] [data-row-open]")],
       ["devices", "detail", async () => open("devices")],
       ["quota", "detail", async () => open("quota")],
-      ["browser", "doc", async () => open("browser")],
+      // The page's tabs stand in R0 since the redesign, as every
+      // landing's do (one first row): a tabs page.
+      ["browser", "tabs", async () => open("browser")],
       ["workspaces", "detail", async () => open("workspaces")],
       ["「…」", "detail", async () => (await toMore()) && press('[data-more-open="settings"]')],
     ];
@@ -23031,7 +23173,9 @@ try {
           kind: region.getAttribute("data-region-kind"),
           top: +(r(head).top - r(main).top).toFixed(2),
           h: +r(head).height.toFixed(2),
-          gap: +(bt - hb).toFixed(2),
+          // One ground: the board runs under R0's glass from R0's top, or
+          // starts under R0 where a row of its own stands there.
+          gap: Math.abs(bt - r(head).top) < 0.5 ? 0 : +(bt - hb).toFixed(2),
           title: head.querySelector("[data-page-title]")?.textContent?.trim() ?? null,
           between,
         };
@@ -23046,7 +23190,7 @@ try {
         fail(`on ${where} R0 is ${read.h} tall from ${read.top}, --pane-head is ${paneHead} — one row, at the top, the height of L0`);
       }
       if (read.gap !== 0 || read.between.length) {
-        fail(`on ${where} the board starts ${read.gap} under R0 with ${JSON.stringify(read.between)} between — nothing stands between R0 and R1`);
+        fail(`on ${where} the board starts ${read.gap} off where it belongs with ${JSON.stringify(read.between)} between — under R0's glass from the top, or under a tabs page's strip, nothing between`);
       }
       if (kind === "detail" && !read.title) {
         fail(`on ${where} R0 carries no [data-page-title] — a page without tabs wears back/forward and its name in R0 (PageHead)`);
@@ -23089,6 +23233,7 @@ try {
           if (!el) return null;
           const kinds = [...el.querySelectorAll("[data-setting-row]")].map((r) => ({
             kind: r.getAttribute("data-setting-row"),
+            name: r.getAttribute("data-setting-row-name"),
             select: r.querySelectorAll("select").length,
           }));
           // A setting drawn some other way: an old ladder switch, a Radix
@@ -23103,9 +23248,15 @@ try {
           fail(`round 17 (a): More -> ${key} drew no [data-more-page]`);
           continue;
         }
-        const bad = rows.kinds.filter((r) => !["switch", "popup", "nav", "action"].includes(r.kind));
-        if (bad.length) fail(`round 17 (a): More -> ${key} has row kind(s) ${JSON.stringify(bad)} — four kinds only`);
-        const blind = rows.kinds.filter((r) => r.kind === "popup" && r.select !== 1);
+        // Four kinds, and three more since: a long run of numbers is a
+        // **stepper** (the audit fix plan F4.9), and 外观's 字号 is a
+        // **value** over its **slider** (UX-10).
+        const bad = rows.kinds.filter((r) => !["switch", "popup", "nav", "action", "stepper", "value", "slider"].includes(r.kind));
+        if (bad.length) fail(`round 17 (a): More -> ${key} has row kind(s) ${JSON.stringify(bad)} — the row kinds only`);
+        // **The terminal's font is the one popup the system cannot draw**
+        // (the redesign F7.6): each face is shown in itself, and a font of
+        // one's own is added from the same menu.
+        const blind = rows.kinds.filter((r) => r.kind === "popup" && r.select !== 1 && r.name !== "term-font");
         if (blind.length) {
           fail(`round 17 (a): More -> ${key} has ${blind.length} popup row(s) without a native select — the system draws the menu`);
         }
@@ -23212,16 +23363,18 @@ try {
           return {
             sheets: document.querySelectorAll("[data-sheet]").length,
             dx: b ? +((b.left + b.right) / 2 - vw / 2).toFixed(1) : null,
-            dy: b ? +((b.top + b.bottom) / 2 - vh / 2).toFixed(1) : null,
+            // **A form keeps its top** (the audit fix plan F4.5; N12): at
+            // 16vh, growing down, so it does not re-centre as it changes.
+            dTop: b ? +(b.top - vh * 0.16).toFixed(1) : null,
             scrims,
             primaries: el ? [...el.querySelectorAll("button")].filter((b) => getComputedStyle(b).backgroundColor === brand).length : 0,
           };
         }, sel);
         console.log(`round 17 (d) · ${what}: ${JSON.stringify(s)}`);
-        if (s.sheets !== 0 || s.dx === null || Math.abs(s.dx) > 1 || Math.abs(s.dy) > 1 || s.scrims < 1) {
+        if (s.sheets !== 0 || s.dx === null || Math.abs(s.dx) > 1 || Math.abs(s.dTop) > 1 || s.scrims < 1) {
           fail(
-            `round 17 (d): the ${what} form is ${s.dx}/${s.dy} off the window's centre over ${s.scrims} scrim(s), ` +
-              `${s.sheets} sheet(s) up — a create form is a centred dialog (components/Dialog, 2026-09-30)`,
+            `round 17 (d): the ${what} form is ${s.dx} off the window's middle with its top ${s.dTop} off 16vh, over ${s.scrims} ` +
+              `scrim(s), ${s.sheets} sheet(s) up — a create form is a dialog, centred across and its top at 16vh (F4.5; components/Dialog)`,
           );
         }
         if (s.primaries > 1) fail(`round 17 (b): the ${what} form paints ${s.primaries} primary buttons — one per dialog`);
@@ -23277,7 +23430,9 @@ try {
       fail("probe dead: no sessions landing to drag the seam on");
     } else {
       const side = await colour("--side");
-      for (const want of [200, 288, 420]) {
+      // Within the drawn bounds (the redesign F2: floor 340, cap 420,
+      // folding past the floor) — 200 and 288 fold the list now.
+      for (const want of [340, 380, 420]) {
         const at = await page.evaluate(() => {
           const s = document.querySelector("[data-list-seam]");
           const l = document.querySelector("[data-list]");
@@ -23306,7 +23461,7 @@ try {
           // Whichever shape the search is in at this width: the box, or
           // the magnifier it shrinks to (第十五轮 第 4 条).
           const box = [...document.querySelectorAll(
-            "[data-side-head] [data-pane-search], [data-side-head] [data-global-search], [data-side-head] [data-search-magnifier]",
+            "[data-side-head] [data-pane-search], [data-side-head] [data-global-search], [data-side-head] [data-search-magnifier], [data-side-head] [data-search-open]",
           )].find((el) => el.getBoundingClientRect().width > 0) ?? null;
           const r = (el) => el.getBoundingClientRect();
           // The ground as painted: walk right along a blank line of the
@@ -23340,11 +23495,14 @@ try {
           fail(`dragging the seam to ${want} left the list ${read.list} wide — the drag did not take, so the rest of this stop measures nothing`);
           continue;
         }
-        const ends = [read.aside, read.head, read.l2, read.ground];
+        // One ground: the block's paint has no edge of its own to follow
+        // the seam any more, so the ends are the block, its head and its
+        // list.
+        const ends = [read.aside, read.head, read.l2];
         if (Math.max(...ends) - Math.min(...ends) > 1.5) {
           fail(
-            `at list width ${want} the block ends at ${read.aside}, its first row at ${read.head}, the list at ${read.l2} and the painted ground at ${read.ground} — ` +
-              "one owner of the width: L0, L2 and the block's ground follow the seam together (SHELL.md, the 2026-09-24 debts, item 2)",
+            `at list width ${want} the block ends at ${read.aside}, its first row at ${read.head} and the list at ${read.l2} — ` +
+              "one owner of the width: L0 and L2 follow the seam together (SHELL.md, the 2026-09-24 debts, item 2)",
           );
         }
         if (read.box === null) {
@@ -23506,11 +23664,14 @@ try {
 
     // (8) the 额度 rows' numbers.
     await open("quota");
-    await until(5_000, async () => (await page.locator("[data-quota-row] [data-dial-face] text").count()) > 1);
+    // The reading is a word laid over the drawing since the dial took a
+    // list face's size (`Face` `fluid`, W-V11): `data-dial-reading`, its
+    // box the fluid frame round the svg.
+    await until(5_000, async () => (await page.locator("[data-quota-row] [data-dial-reading]").count()) > 1);
     const dials = await page.evaluate(() =>
       [...document.querySelectorAll("[data-quota-row]")].flatMap((row) => {
-        const svg = row.querySelector("[data-dial-face]");
-        const text = svg?.querySelector("text");
+        const svg = row.querySelector("[data-dial-fluid]") ?? row.querySelector("[data-dial-face]");
+        const text = row.querySelector("[data-dial-reading]") ?? svg?.querySelector("text");
         const badge = row.querySelector("[data-side-mark]");
         if (!svg || !text || (text.textContent ?? "").trim() === "") return [];
         const n = (r) => [+r.left.toFixed(1), +r.top.toFixed(1), +r.right.toFixed(1), +r.bottom.toFixed(1)];
@@ -23662,17 +23823,17 @@ try {
     await open("sessions");
     await until(5_000, async () => (await page.locator("[data-list] [data-row-open]").count()) > 0);
     await press("[data-list] [data-row-open]");
-    // Since 2026-10-02 the narrow face's session is the strip's tab in
-    // the bar at its foot (`components/SessionBar`) — the head this read
-    // (`[data-detail-header]`) is gone, and the face it held is the tab's.
-    await until(3_000, async () => (await page.locator("[data-session-bar] [data-tab] [data-side-face]").count()) > 0);
-    const head = await fits("[data-session-bar] [data-tab]", null);
+    // Since round UX-3 the narrow face's session is the deck's pill (its
+    // face and name; ⚠️ 墓碑: the strip's tab in the bar from 2026-10-02,
+    // the session's head before that).
+    await until(3_000, async () => (await page.locator("[data-session-deck] [data-deck-face]").count()) > 0);
+    const head = await fits("[data-session-deck] [data-deck-pill]", null);
     console.log(`lists (6) · narrow bar tab ink vs tab: ${JSON.stringify(head)}`);
     if (head.length === 0) fail("probe dead: the narrow session bar drew no tab with a face — (6)'s narrow half measured nothing");
     for (const m of head.filter((m) => !inside(m))) {
       fail(
-        `the narrow bar tab's face reaches ${JSON.stringify(m.ink)} out of the tab ${JSON.stringify(m.box)} — ` +
-          "it is the strip's face, sized for a tab (src/browse/TabStrip.tsx)",
+        `the deck's face reaches ${JSON.stringify(m.ink)} out of its pill ${JSON.stringify(m.box)} — ` +
+          "it is a tab's face, sized for the pill (src/components/SessionBar.tsx)",
       );
     }
     await page.setViewportSize({ width: 1400, height: 900 });
@@ -23688,8 +23849,11 @@ try {
   // too). The same three, spelled the same way, for what follows.
   const tailRail = (key) => `[data-rail-item][data-landing="${key}"]`;
   const press = async (sel) => {
-    if ((await page.locator(sel).count()) === 0) return false;
-    await page.locator(sel).first().click();
+    // The one on screen: a list kept mounted behind a pushed page (UX-11)
+    // holds a second copy laid out at nothing.
+    const l = page.locator(sel).filter({ visible: true });
+    if ((await l.count()) === 0) return false;
+    await l.first().click();
     await wait(500);
     return true;
   };
@@ -23698,6 +23862,21 @@ try {
     // `components/SessionBar`): its 「‹」 is the way back to the list,
     // where the bar is — so a walk standing in a session steps out first.
     if ((await page.locator("[data-session-bar] [data-back]").count()) > 0) await press("[data-session-bar] [data-back]");
+    // Narrow: the bottom bar's seats, or 更多's menu past the fourth
+    // (UX-11) — the walk's own `open`, spelled again for these sections.
+    if (await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"))) {
+      for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
+        const back = page.locator("[data-file-back], [data-back], [data-ws-back], [data-more-back]").filter({ visible: true });
+        if ((await back.count()) === 0) break;
+        // A head that re-seats itself while the screen changes can
+        // detach the button under the press: a missed step, not a wall.
+        await back.first().click({ timeout: 3_000 }).catch(() => {});
+        await wait(500);
+      }
+      const seat = `[data-nav-item][data-landing="${tab}"]`;
+      if ((await page.locator(seat).count()) > 0) return press(seat);
+      return (await press("[data-nav-more]")) && press(`[data-more-landing="${tab}"]`);
+    }
     const on = await page.locator(tailRail(tab)).getAttribute("data-on").catch(() => null);
     if (on === "true") await press(tailRail(tab === "sessions" ? "devices" : "sessions"));
     return press(tailRail(tab));
@@ -23735,9 +23914,40 @@ try {
   lists: {
   if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
-  const lit = () => page.locator(`${head} [data-pane-filter]`).first().getAttribute("data-on").catch(() => null);
-  const chipKeys = () =>
-    page.locator(`${head} [data-chip]`).evaluateAll((els) => els.map((e) => e.getAttribute("data-chip")).sort());
+  // Lit is `data-on` on the glass item, absent when off (the redesign).
+  const lit = () =>
+    page
+      .locator(`${head} [data-pane-filter]`)
+      .first()
+      .getAttribute("data-on")
+      .then((v) => v ?? "false")
+      .catch(() => null);
+  // **The chips are in the box, and the box is a circle until pressed**
+  // (the redesign): opened to be read and put away again, so the filter
+  // button stands in the head for the next tick.
+  // Narrow, the box opens beside the bottom bar (UX-11).
+  const searchOpen = async () => {
+    await openSearch();
+    await until(2_000, async () => (await page.locator(SEARCH_BOX).count()) > 0);
+  };
+  const searchShut = async () => {
+    if ((await page.locator(SEARCH_BOX).count()) === 0) return;
+    await page.keyboard.press("Escape");
+    await wait(250);
+  };
+  const chipKeys = async () => {
+    await searchOpen();
+    const got = await page
+      .locator(`${head} [data-chip], [data-bottom-search] [data-chip]`)
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-chip")).sort());
+    await searchShut();
+    return got;
+  };
+  const unchip = async (k) => {
+    await searchOpen();
+    await press(`${head} [data-chip-remove="${k}"], [data-bottom-search] [data-chip-remove="${k}"]`);
+    await searchShut();
+  };
   // What the menu offers, key → { label, axis heading }, read with the
   // menu open and put away again.
   const offered = async () => {
@@ -23866,7 +24076,7 @@ try {
       await check("after a reload", { rows: [], chips: ["sys:linux", "sys:apple", "link:here"] });
       // (e) out through the chips, the box's own way
       for (const k of ["link:here", "sys:apple", "sys:linux"]) {
-        await press(`${head} [data-chip-remove="${k}"]`);
+        await unchip(k);
       }
       await wait(400);
       await check("every chip taken out", { rows: all, chips: [] });
@@ -23899,7 +24109,8 @@ try {
           fail("lists · machines · 已暂停 is still offered with no machine paused and nothing ticked");
         }
       }
-      // (f) the narrow list screen: L0 is the box, the filter and ＋.
+      // (f) the narrow list screen: L0 is the filter and ＋, the search the
+      // circle beside the bottom bar (UX-11).
       await page.setViewportSize({ width: 390, height: 844 });
       await wait(600);
       const narrowBar = await page.evaluate((h) => {
@@ -23909,12 +24120,13 @@ try {
               box: bar.querySelectorAll("[data-pane-search]").length,
               filter: bar.querySelectorAll("[data-pane-filter]").length,
               plus: bar.querySelectorAll("[data-pane-new]").length,
+              below: document.querySelectorAll("[data-nav-search]").length,
             }
           : null;
       }, head);
       console.log(`lists · machines · narrow bar: ${JSON.stringify(narrowBar)}`);
-      if (!narrowBar || narrowBar.box !== 1 || narrowBar.filter !== 1 || narrowBar.plus !== 1) {
-        fail(`lists · machines · the narrow list screen's first row is ${JSON.stringify(narrowBar)} — the box, the filter and ＋`);
+      if (!narrowBar || narrowBar.box !== 0 || narrowBar.filter !== 1 || narrowBar.plus !== 1 || narrowBar.below !== 1) {
+        fail(`lists · machines · the narrow list screen's first row is ${JSON.stringify(narrowBar)} — the filter and ＋, the search beside the bottom bar (UX-11)`);
       } else {
         await toggle("link:direct");
         await check("narrow · 连接方式 = direct", { rows: ["peer"], chips: ["link:direct"] });
@@ -24034,9 +24246,9 @@ try {
       await until(5_000, async () => (await chipKeys()).length === 2);
       await check("after a reload", { rows: [], chips: ["kind:branch", elderKey] });
       // (e) out through the chips
-      await press(`${head} [data-chip-remove="${elderKey}"]`);
+      await unchip(elderKey);
       await check("机器 chip taken out", { rows: whereKind("branch"), chips: ["kind:branch"] });
-      await press(`${head} [data-chip-remove="kind:branch"]`);
+      await unchip("kind:branch");
       await check("every chip taken out", { rows: allIds, chips: [] });
       // The rows whose machine left the table, and peer's through the menu.
       if (menu["dev:"]) {
@@ -24052,6 +24264,7 @@ try {
       await toggle(peerKey, "kind:branch");
       await check("unticked", { rows: allIds, chips: [] });
       // …and the box emptying it says the same as the ticks did.
+      await searchOpen();
       await page.locator(`${head} [data-pane-search]`).fill("zzzz");
       await wait(400);
       const bySearch = await noneSaid();
@@ -24061,6 +24274,7 @@ try {
       }
       await page.locator(`${head} [data-pane-search]`).fill("");
       await wait(300);
+      await searchShut();
       // (f) narrow
       await page.setViewportSize({ width: 390, height: 844 });
       await wait(600);
@@ -24157,6 +24371,9 @@ try {
     const land = async (k) => {
       // Out of a narrow session page first: it has no landings' bar.
       if ((await page.locator("[data-session-bar] [data-back]").count()) > 0) await hit("[data-session-bar] [data-back]");
+      // The narrow face's landings are the bottom bar's (UX-11): the
+      // walk's own `open` knows its seats and its 更多.
+      if (await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"))) return open(k);
       await hit(railAt(k === "devices" ? "quota" : "devices"));
       const ok = await hit(railAt(k));
       const narrow = await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"));
@@ -24184,7 +24401,10 @@ try {
           const said = el.getAttribute("aria-label") ?? el.getAttribute("placeholder") ?? el.textContent?.trim().slice(0, 16) ?? "";
           return `${el.tagName.toLowerCase()}${data ? `[${data}]` : ""}${said ? ` 「${said}」` : ""}`;
         };
-        const l0 = document.querySelector("[data-side-head]");
+        // The left block's first row: the wide face's top (the landings'
+        // capsule, the redesign) — the list's own head stands under it
+        // there; on the narrow face the list's head is the first row.
+        const l0 = [document.querySelector("[data-wide-top]"), ...document.querySelectorAll("[data-side-head]")].find((e) => e && shown(e)) ?? null;
         const r0 = document.querySelector("[data-main] [data-region-head]");
         const things = [];
         let pair = null;
@@ -24216,14 +24436,14 @@ try {
                 h: +(s.bottom - t.top).toFixed(2),
                 mid: +((t.top + s.bottom) / 2).toFixed(2),
               });
-              // The pair's two leadings (2026-09-29: 18 + 14 in 38), on
-              // every A page that has a second line now (2026-09-30).
-              const root = getComputedStyle(document.documentElement);
+              // The pair's two leadings: ⚠️ 墓碑 (the redesign) — 「a rung
+              // tight」 was for a row of 38; the row is 52 and the pair
+              // keeps its own leading. Read for the log only.
               pair = {
                 name: +r(title.parentElement).height.toFixed(2),
                 sub: +s.height.toFixed(2),
-                nameLead: Number.parseFloat(root.getPropertyValue("--text-body--line-height")),
-                subLead: Number.parseFloat(root.getPropertyValue("--text-caption--line-height")),
+                nameLead: ((n) => { const e = document.createElement("div"); e.style.cssText = "position:absolute;visibility:hidden"; e.style.height = `var(${n})`; document.body.append(e); const h = e.getBoundingClientRect().height; e.remove(); return h; })("--text-body--line-height"),
+                subLead: ((n) => { const e = document.createElement("div"); e.style.cssText = "position:absolute;visibility:hidden"; e.style.height = `var(${n})`; document.body.append(e); const h = e.getBoundingClientRect().height; e.remove(); return h; })("--text-caption--line-height"),
               };
             } else put("R0", "the page's title", title);
           }
@@ -24249,11 +24469,13 @@ try {
         tabs' gap and joint. `lip` is the tab's foot, and so the least a
         tab may stand off the top edge. */
     const judge = (where, row, { want, lip, mustR0 = true, mustTabs = false }) => {
-      if (!row.l0) {
-        fail(`probe dead: row · ${where} has no [data-side-head]`);
+      // A landing with no list (浏览 wide) has no left block: its
+      // landings' capsule stands in R0, and R0 is the row.
+      if (!row.l0 && !row.r0) {
+        fail(`probe dead: row · ${where} has neither a left first row nor R0`);
         return;
       }
-      const heads = [["L0", row.l0], ...(row.r0 ? [["R0", row.r0]] : [])];
+      const heads = [...(row.l0 ? [["L0", row.l0]] : []), ...(row.r0 ? [["R0", row.r0]] : [])];
       if (mustR0 && !row.r0) fail(`probe dead: row · ${where} has no R0 ([data-main] [data-region-head])`);
       for (const [name, b] of heads) {
         if (b.top !== 0 || Math.abs(b.h - want) > 0.5) {
@@ -24263,7 +24485,8 @@ try {
           );
         }
       }
-      const centre = row.l0.top + row.l0.h / 2;
+      const ref = row.l0 ?? row.r0;
+      const centre = ref.top + ref.h / 2;
       const off = row.things.filter((t) => Math.abs(t.mid - centre) > TOL);
       for (const t of off) {
         fail(
@@ -24271,24 +24494,16 @@ try {
             "the window's buttons, the search box, the title, the tabs and the page's buttons stand on one centreline",
         );
       }
-      if (row.pair && (Math.abs(row.pair.name - row.pair.nameLead) > 0.5 || Math.abs(row.pair.sub - row.pair.subLead) > 0.5)) {
-        fail(
-          `row · ${where}: R0's name line is ${row.pair.name} and its second line ${row.pair.sub} tall, not ` +
-            `${row.pair.nameLead} and ${row.pair.subLead} — the pair is set a rung tight (body's and caption's leading) ` +
-            "to sit in the row (src/components/Region.tsx PageHead; 10-layout 「第一行是 38」)",
-        );
-      }
+      // ⚠️ 墓碑 (the redesign): the pair's 「a rung tight」 leading was
+      // judged here, for a row of 38.
       const outside = row.things.filter((t) => t.top < -0.5 || t.bottom > want + 0.5);
       for (const t of outside) fail(`row · ${where}: ${t.row}'s ${t.what} spans ${t.top}…${t.bottom}, outside the ${want} row`);
       if (mustTabs && row.tabs.length === 0) fail(`probe dead: row · ${where} drew no tab in R0`);
-      for (const t of row.tabs) {
-        if (t.top < lip - 0.5) {
-          fail(`row · ${where}: tab ${t.id} stands ${t.top} off the top edge — at least ${lip}, the strip above the tabs moves the window`);
-        }
-        if (row.boardTop === null || Math.abs(t.bottom - row.boardTop) > 0.5) {
-          fail(`row · ${where}: tab ${t.id} ends at ${t.bottom} and the board starts at ${row.boardTop} — the tab reaches the board and is joined to it`);
-        }
-      }
+      // ⚠️ 墓碑 (the redesign, one ground): 「a tab reaches the board and
+      // is joined to it, `--tab-lip` off the top edge」 was judged here.
+      // A tab is a glass pill in its capsule now, on the row's centreline
+      // like everything else in it (read above); the board is the same
+      // ground, so there is nothing for it to join.
       console.log(
         `row · ${where}: ${heads.map(([n, b]) => `${n} ${b.h}`).join(", ")}, centre ${centre}, ${row.things.length} on the line` +
           `${off.length ? ` (${off.length} off)` : ""}${row.tabs.length ? `, tabs ${row.tabs.map((t) => `${t.top}…${t.bottom}`).join(" ")} over a board at ${row.boardTop}` : ""}`,
@@ -24336,7 +24551,7 @@ try {
       ["浏览", async () => {
         if (await page.locator("[data-more-close]").count()) await hit("[data-more-close]");
         await land("browser");
-        return until(5_000, async () => (await page.locator("[data-main] [data-address-bar]").count()) > 0);
+        return until(5_000, async () => (await page.locator("[data-main] [data-page-field-row]").count()) > 0);
       }],
     ];
     for (const [w, h] of [[1400, 900], [1000, 760]]) {
@@ -24370,11 +24585,21 @@ try {
       ["the sessions list", async () => {
         await land("sessions");
         if (await page.locator("[data-session-bar] [data-back]").count()) await hit("[data-session-bar] [data-back]");
-        return until(5_000, async () => (await page.locator("[data-side-head] [data-pane-search], [data-side-head] input").count()) > 0);
+        return until(5_000, async () => (await page.locator("[data-side-head] [data-pane-new]").count()) > 0);
       }],
       ["a workspace's screen", async () => {
         await land("workspaces");
         await hit("[data-ws-row]");
+        // Pressing the open workspace's row folds its tree (2026-09-16)
+        // rather than opening it: a second press brings it back.
+        if ((await page.locator("[data-ws-row]").filter({ visible: true }).count()) > 0) await hit("[data-ws-row]");
+        // A file left open opens as its own page (round UX-3 item 2);
+        // its 「‹」 is the way to the tree screen and its head.
+        const fileBack = page.locator("[data-file-back]").filter({ visible: true });
+        if (await fileBack.count()) {
+          await fileBack.first().click();
+          await wait(450);
+        }
         return until(5_000, async () => (await page.locator("[data-side-head] [data-ws-head-name]").count()) > 0);
       }],
     ]) {
@@ -24476,9 +24701,10 @@ try {
     r.fulfill({ contentType: "application/json", body: "null" });
   });
 
-  // a. 这台机器: facts only.
-  if (!(await press("[data-rail-mark]"))) {
-    fail("probe dead: entity · no face at the foot of the rail to open 这台机器 by");
+  // a. 这台机器: facts only — the first row of 更多's list since its face
+  //    left the rail (the owner, 2026-10-02).
+  if (!((await toMore()) && (await press('[data-more-open="identity"]')))) {
+    fail("probe dead: entity · no 这台机器 in 更多's list to open");
   } else {
     await until(3_000, async () => (await page.locator('[data-more-page="identity"] [data-more-fact="id"]').count()) > 0);
     const mine = await page.evaluate(() => {
@@ -24839,6 +25065,8 @@ try {
       "[data-session-tabs] [data-tab]",
       "[data-page-title], [data-session-tabs]",
     ]);
+    // The list's box is a circle until pressed (the redesign).
+    await openSearch();
     const reading = await selectOf([
       "[data-chat-column]",
       "[data-md]",
@@ -24846,6 +25074,7 @@ try {
       "[data-chat-input]",
       "[data-pane-search]",
     ]);
+    await page.keyboard.press("Escape");
     console.log(`mac · user-select on chrome ${JSON.stringify(chrome)}`);
     console.log(`mac · user-select on reading ${JSON.stringify(reading)}`);
     for (const { s, v } of chrome) {
@@ -24902,7 +25131,7 @@ try {
     if (onChat.links === 0) fail("probe dead: no link in the conversation computes cursor pointer — (b) has no positive to stand on");
     if (onChat.off.length) fail(`cursor: pointer off a link on the sessions landing: ${onChat.off.join(", ")} — controls wear the arrow`);
     for (const [where, go] of [
-      ["the settings page", async () => (await click("[data-rail-more]")) && click('[data-more-open="settings"]')],
+      ["the settings page", async () => (await toMore()) && click('[data-more-open="settings"]')],
       ["the workspace", async () => {
         await click('[data-more-close]');
         await land("workspaces");
@@ -24958,7 +25187,9 @@ try {
 
     // ── c) the keyboard ──
     const walked = [];
-    for (const [i, k] of ["sessions", "devices", "workspaces", "quota", "browser"].entries()) {
+    // The strip's own order (外观 → 导航), whose default the redesign made
+    // 机器 会话 额度 工作区 浏览器 (`lib/nav-order` NAV_DEFAULT).
+    for (const [i, k] of ["devices", "sessions", "quota", "workspaces", "browser"].entries()) {
       await key(`${mod}+${i + 1}`);
       walked.push(await landingNow());
       if (walked.at(-1) !== k) fail(`${mod}+${i + 1} left ${walked.at(-1)} open, not ${k} — ⌘1–⌘5 are the rail in its order (src/lib/shortcuts.ts)`);
@@ -24986,7 +25217,7 @@ try {
     if (!settingsUp) fail("⌘, did not open 「…」 › 通用");
     if (!settingsGone) fail("⌘W with a 「…」 page up did not put it away");
     // The session tabs: one step per press, both ways, both spellings.
-    await key(`${mod}+1`);
+    await key(`${mod}+2`);
     const steps = [];
     const order = await tabIds();
     for (const combo of ["Control+Tab", "Control+Shift+Tab", `${mod}+Shift+BracketRight`, `${mod}+Shift+BracketLeft`]) {
@@ -25002,10 +25233,10 @@ try {
     // ⌘ keys work inside a text field, the way ⌘W works in Safari's
     // address bar: ⌘2 from the conversation's box still walks the rail.
     await page.locator("[data-chat-input]").first().focus({ timeout: 2_000 }).catch(() => {});
-    await key(`${mod}+2`);
-    const fromBox = await landingNow();
     await key(`${mod}+1`);
-    if (fromBox !== "devices") fail(`${mod}+2 typed in the conversation's box left ${fromBox} open — ⌘ keys are not text`);
+    const fromBox = await landingNow();
+    await key(`${mod}+2`);
+    if (fromBox !== "devices") fail(`${mod}+1 typed in the conversation's box left ${fromBox} open — ⌘ keys are not text`);
     // ⌘W closes the front tab and nothing else.
     const three = await tabIds();
     await key(`${mod}+w`);
@@ -25021,13 +25252,13 @@ try {
     // answers: ⌘2 leaves the landing where it is.
     await key(`${mod}+n`);
     const sheet = (await n("[data-new-session-dialog]")) > 0;
-    await key(`${mod}+2`);
+    await key(`${mod}+1`);
     const under = await landingNow();
     await key("Escape");
     await wait(300);
     console.log(`mac · ⌘N on 会话 → sheet ${sheet}; ⌘2 under it → ${under}`);
     if (!sheet) fail("⌘N on the sessions landing did not open the new-session sheet — it is the landing's 「+」");
-    if (under !== "sessions") fail(`${mod}+2 under an open sheet walked to ${under} — nothing behind a sheet answers`);
+    if (under !== "sessions") fail(`${mod}+1 under an open sheet walked to ${under} — nothing behind a sheet answers`);
     // A sidebar list walks with the arrows and opens nothing on the way.
     const items = '[data-list] [data-side-list] :is([data-side-open], [data-side-group], [data-old-fold])';
     await page.locator(items).first().focus({ timeout: 2_000 }).catch(() => {});
@@ -25137,7 +25368,10 @@ try {
     };
     const said = {};
     for (const [sel, stop] of Object.entries(kept)) {
+      // The list's box is a circle until pressed (the redesign).
+      if (sel === "[data-pane-search]") await openSearch();
       const v = await menuOver(sel);
+      if (sel === "[data-pane-search]") await page.keyboard.press("Escape");
       said[sel] = v;
       if (v === null) fail(`probe dead: ${sel} is not on screen for (d)`);
       else if (v !== stop) fail(`right-click on ${sel}: ${stop ? "the browser's own menu is let through over chrome" : "a text field lost the system's menu (cut, copy, paste)"}`);
@@ -25178,7 +25412,9 @@ try {
     for (const [w, h] of SIZES) {
       await page.setViewportSize({ width: w, height: h });
       // The overview is what the machines landing shows with nothing
-      // picked, and nothing un-picks a machine — so a fresh page.
+      // picked, and nothing un-picks a machine — so a fresh page, with
+      // the place a reload comes back to forgotten (`lib/place`).
+      await page.evaluate(() => window.localStorage.removeItem("khor.place"));
       await page.reload({ waitUntil: "load" });
       await wait(900);
       await open("devices");
@@ -25503,9 +25739,12 @@ try {
           return b.width > 0 && b.height > 0;
         };
         const end = head.querySelector("[data-page-actions]");
+        // The button's own marker — not the material's (`data-glass-*`,
+        // the redesign's circles and capsules).
         const name = (b) =>
-          [...b.attributes].find((a) => a.name.startsWith("data-") && !["data-slot", "data-state"].includes(a.name))?.name ??
-          (b.getAttribute("aria-label") || b.textContent.trim());
+          [...b.attributes].find(
+            (a) => a.name.startsWith("data-") && !["data-slot", "data-state"].includes(a.name) && !a.name.startsWith("data-glass"),
+          )?.name ?? (b.getAttribute("aria-label") || b.textContent.trim());
         return {
           tabs: head.querySelectorAll("[data-session-tabs]").length,
           makes: [...head.querySelectorAll("[data-new-item]")].map((b) => b.getAttribute("data-new-item")),
@@ -25616,6 +25855,10 @@ try {
           sheets: document.querySelectorAll("[data-sheet]").length,
           role: el.getAttribute("role"),
           dx: +((b.left + b.right) / 2 - vw / 2).toFixed(1),
+          // A form keeps its top at 16vh (F4.5; N12); a question is
+          // centred.
+          form: el.closest("[data-form]") !== null || el.hasAttribute("data-form"),
+          dTop: +(b.top - vh * 0.16).toFixed(1),
           dy: +((b.top + b.bottom) / 2 - vh / 2).toFixed(1),
           scrims,
           primaries: [...el.querySelectorAll("button")].filter((x) => getComputedStyle(x).backgroundColor === brand).length,
@@ -25626,10 +25869,11 @@ try {
         fail(`probe dead: acts (b) · ${word} could not be read`);
       } else {
         if (s.sheets !== 0) fail(`acts (b) · with ${word} open the page holds ${s.sheets} [data-sheet] — a sheet is retired (D10, 2026-09-30)`);
-        if (s.role !== "dialog" || Math.abs(s.dx) > 1 || Math.abs(s.dy) > 1 || s.scrims < 1) {
+        if (s.role !== "dialog" || Math.abs(s.dx) > 1 || Math.abs(s.form ? s.dTop : s.dy) > 1 || s.scrims < 1) {
           fail(
-            `acts (b) · ${word} is role ${JSON.stringify(s.role)}, its centre ${s.dx}/${s.dy} off the window's, over ${s.scrims} scrim(s) — ` +
-              "a form is a centred dialog like 邀请设备's (components/Dialog)",
+            `acts (b) · ${word} is role ${JSON.stringify(s.role)}, ${s.dx} off the window's middle with ` +
+              `${s.form ? `its top ${s.dTop} off 16vh` : `its centre ${s.dy} off`}, over ${s.scrims} scrim(s) — ` +
+              "a dialog centred across, a form's top at 16vh and a question's middle at the window's (F4.5; components/Dialog)",
           );
         }
         if (s.primaries > 1) fail(`acts (b) · ${word} paints ${s.primaries} primary buttons — one per dialog`);
@@ -25708,47 +25952,78 @@ try {
     if (!(await open("devices")) || !(await press("[data-list] [data-row-open] >> nth=1"))) {
       fail("probe dead: acts (d) could not open a machine");
     } else if (
-      !(await until(5_000, async () => (await page.locator('[data-main] [data-region-head] [data-machine-verbs] [data-verb="code"]').count()) === 1))
+      !(await until(5_000, async () => (await page.locator('[data-main] [data-region-head] [data-verb="code"]').count()) === 1))
     ) {
       const verbs = await page.evaluate(() =>
-        [...document.querySelectorAll("[data-main] [data-region-head] [data-machine-verbs] > button")].map((b) => b.getAttribute("data-verb")),
+        [...document.querySelectorAll("[data-main] [data-region-head] [data-verb]")].map((b) => b.getAttribute("data-verb")),
       );
       fail(
         `acts (d) · the machine page's R0 holds ${JSON.stringify(verbs)} — its fourth verb is VS Code, drawn where that machine ` +
           "has an editor (2026-09-30, 「机器页也加一个 VS Code 图标」; components/CodeWindow)",
       );
     } else {
-      const look = await page.evaluate(() => {
-        const root = getComputedStyle(document.documentElement);
-        const btns = [...document.querySelectorAll("[data-main] [data-region-head] [data-machine-verbs] > button")];
+      // **The ink as painted, scanned off a raster** (how icons.tsx's live
+      // areas were measured): `getBBox` ignores strokes and takes a
+      // rotated shape's whole box — the globe's tilted orbit read 3 wider
+      // than it paints.
+      const look = await page.evaluate(async () => {
+        const btns = [...document.querySelectorAll("[data-main] [data-region-head] [data-verb]")];
         const selected = document.querySelector('[data-list] [data-device][data-selected="true"]');
-        return {
-          ctl: Math.round(Number.parseFloat(root.getPropertyValue("--ctl-md"))),
-          machine: selected?.getAttribute("data-device") ?? null,
-          btns: btns.map((b) => {
-            const svg = b.querySelector("svg");
-            let ink = 0;
-            if (svg) {
-              const bb = svg.getBBox();
-              const vb = svg.viewBox.baseVal;
-              const k = svg.getBoundingClientRect().height / (vb.height || 1);
-              ink = Math.round(Math.max(bb.width, bb.height) * k * 10) / 10;
+        const SCALE = 8;
+        const inkOf = async (svg) => {
+          const r = svg.getBoundingClientRect();
+          const copy = svg.cloneNode(true);
+          copy.setAttribute("width", String(r.width * SCALE));
+          copy.setAttribute("height", String(r.height * SCALE));
+          copy.setAttribute("color", "#000");
+          copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+          const img = new Image();
+          img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(copy))}`;
+          await img.decode();
+          const c = document.createElement("canvas");
+          c.width = Math.ceil(r.width * SCALE);
+          c.height = Math.ceil(r.height * SCALE);
+          const g = c.getContext("2d");
+          g.drawImage(img, 0, 0);
+          const px = g.getImageData(0, 0, c.width, c.height).data;
+          let [x0, y0, x1, y1] = [c.width, c.height, -1, -1];
+          for (let y = 0; y < c.height; y++) {
+            for (let x = 0; x < c.width; x++) {
+              if (px[(y * c.width + x) * 4 + 3] > 127) {
+                x0 = Math.min(x0, x);
+                y0 = Math.min(y0, y);
+                x1 = Math.max(x1, x);
+                y1 = Math.max(y1, y);
+              }
             }
-            const r = b.getBoundingClientRect();
-            return { verb: b.getAttribute("data-verb"), box: `${Math.round(r.width)}x${Math.round(r.height)}`, ink };
-          }),
+          }
+          return x1 < 0 ? 0 : Math.round((Math.max(x1 - x0 + 1, y1 - y0 + 1) / SCALE) * 10) / 10;
         };
+        const out = [];
+        for (const b of btns) {
+          const svg = b.querySelector("svg");
+          const r = b.getBoundingClientRect();
+          out.push({
+            verb: b.getAttribute("data-verb"),
+            box: `${Math.round(r.width)}x${Math.round(r.height)}`,
+            h: Math.round(r.height),
+            ink: svg ? await inkOf(svg) : 0,
+          });
+        }
+        return { machine: selected?.getAttribute("data-device") ?? null, btns: out };
       });
       console.log(`acts (d) · machine verbs: ${JSON.stringify(look)}`);
       const order = look.btns.map((b) => b.verb).join(",");
-      if (order !== "new-session-on,browse-files,borrow-web,code") {
-        fail(`acts (d) · the machine page's verbs read ${order} — 开会话, 看文件, 借网, then VS Code`);
+      // 会话 / 文件 / 浏览 switch what the page shows (the redesign's
+      // capsule, 44509ec1), and VS Code is the circle beside them.
+      if (order !== "sessions,browse-files,borrow-web,code") {
+        fail(`acts (d) · the machine page's verbs read ${order} — 会话, 文件, 浏览 in the capsule, then VS Code`);
       }
       const inks = look.btns.map((b) => b.ink);
-      if (look.btns.some((b) => b.box !== `${look.ctl}x${look.ctl}`) || Math.max(...inks) - Math.min(...inks) > 1.5) {
+      if (new Set(look.btns.map((b) => b.h)).size > 1 || Math.max(...inks) - Math.min(...inks) > 1.5) {
         fail(
-          `acts (d) · the four verbs are ${look.btns.map((b) => `${b.box}/${b.ink}`).join(", ")} — one \`ctl-md\` box, ` +
-            "the painted marks within a pixel and a half (components/Toolbar: the VS Code mark at 16 against the glyphs' 24)",
+          `acts (d) · the four verbs are ${look.btns.map((b) => `${b.box}/${b.ink}`).join(", ")} — one glass item's height, ` +
+            "the painted marks within a pixel and a half (components/Glass)",
         );
       }
       await press('[data-main] [data-region-head] [data-verb="code"]');
@@ -25875,12 +26150,22 @@ try {
     await page.emulateMedia({ colorScheme: "light" });
     await page.reload({ waitUntil: "load" });
     await wait(900);
+    // The two lines as R0 sets them since it went to 52 (the redesign):
+    // the name on `title-sm`'s own leading, the second line on
+    // `callout`'s (`PageHead`, W-V10). ⚠️ 墓碑: body + caption, the rung-
+    // tight pair of R0's 38 — read raw, a calc came back NaN and this
+    // claim passed on nothing.
     const leads = await page.evaluate(() => {
-      const root = getComputedStyle(document.documentElement);
-      return (
-        Number.parseFloat(root.getPropertyValue("--text-body--line-height")) +
-        Number.parseFloat(root.getPropertyValue("--text-caption--line-height"))
-      );
+      const px = (n) => {
+        const e = document.createElement("div");
+        e.style.cssText = "position:absolute;visibility:hidden";
+        e.style.height = `var(${n})`;
+        document.body.append(e);
+        const h = e.getBoundingClientRect().height;
+        e.remove();
+        return h;
+      };
+      return px("--text-title-sm--line-height") + px("--text-callout--line-height");
     });
     /** R0 as the eye reads it: the avatar(s), the name with its second
         line as one pair, and that line's words. */
@@ -26154,8 +26439,10 @@ try {
     await wait(300);
     const elderHead = await readHead();
     judgeHead("elder", elderHead, { kind: "machine", face: true });
-    if (elderHead && elderHead.sub !== null) {
-      fail(`head b · R0 over elder, which reported no model, has a second line ${JSON.stringify(elderHead.sub)} — not drawn (「读不到就空——不编」)`);
+    // The line's room is kept when it is empty (the audit fix plan F4.9;
+    // W21) — what must not be there is a word made up for it.
+    if (elderHead && elderHead.sub) {
+      fail(`head b · R0 over elder, which reported no model, has a second line ${JSON.stringify(elderHead.sub)} — nothing written there (「读不到就空——不编」)`);
     }
 
     // a on 额度: the open account's vendor; on 「…」 → 通用: nothing.
@@ -26176,10 +26463,17 @@ try {
     await page.setViewportSize({ width: 390, height: 844 });
     await wait(400);
     await open("devices");
-    await press('[data-side-row][data-device="peer"] [data-side-open]');
-    await until(5_000, async () => (await page.locator("[data-machine-strip]").count()) === 1);
+    // The list, or peer's page itself where narrowing kept it up.
+    const peerRow = page.locator('[data-side-row][data-device="peer"] [data-side-open]').filter({ visible: true });
+    if (await peerRow.count()) {
+      await peerRow.first().click();
+      await wait(500);
+    }
+    await until(5_000, async () => (await page.locator("[data-machine-strip]").filter({ visible: true }).count()) === 1);
     await wait(300);
-    judgeStrip("peer @390", await readStrip(peerName), { model: true, oneRow: false });
+    // The narrow head has a second line now, and the model is said there
+    // (yielding whole where it does not fit, P2) — not in the strip.
+    judgeStrip("peer @390", await readStrip(peerName), { model: false, oneRow: false });
     if (await page.locator("[data-side-head] [data-back]").count()) await press("[data-side-head] [data-back]");
     await page.setViewportSize({ width: 1400, height: 900 });
     if (peer) peer.face = peerFace;
@@ -26384,7 +26678,7 @@ try {
           await settle();
           continue;
         }
-        const label = (await item.innerText()).trim();
+        const label = (await item.innerText()).trim().split("\n")[0].trim();
         await item.click();
         pressed += 1;
         if (await opened()) {
@@ -26409,7 +26703,9 @@ try {
           for (const k of keys) {
             await b.click();
             if (!(await until(2_000, async () => (await page.locator(`[data-new-item="${k}"]`).count()) === 1))) continue;
-            const label = (await page.locator(`[data-new-item="${k}"]`).innerText()).trim();
+            // The word, not the shortcut beside it (⌘N, UX-10): the menu
+            // item's first line.
+            const label = (await page.locator(`[data-new-item="${k}"]`).innerText()).trim().split("\n")[0].trim();
             await page.locator(`[data-new-item="${k}"]`).click();
             pressed += 1;
             if (await opened()) {
@@ -26467,7 +26763,7 @@ try {
     // but VS Code — its window is a consent asked once per machine
     // (§13 d), not a step of every press.
     {
-      const verbSel = "[data-main] [data-region-head] [data-machine-verbs] > button[data-verb]";
+      const verbSel = "[data-main] [data-region-head] [data-verb][data-verb]";
       const toMachine = async () =>
         (await open("devices")) &&
         (await press("[data-list] [data-row-open] >> nth=1")) &&
@@ -26479,7 +26775,7 @@ try {
         ).filter((k) => k !== "code");
         for (const k of keys) {
           if (!(await toMachine())) break;
-          const b = page.locator(`[data-main] [data-region-head] [data-machine-verbs] > button[data-verb="${k}"]`);
+          const b = page.locator(`[data-main] [data-region-head] [data-verb][data-verb="${k}"]`);
           const label = (await b.getAttribute("aria-label")) ?? "";
           await b.click();
           pressed += 1;
@@ -26524,7 +26820,11 @@ try {
     }
     if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
     // Now the app: tauri's IPC global, every call still over the bridge.
+    // **Only on a page asked for as the app** (`&as-app`): an init script
+    // outlives this section, and every section after it is the web face
+    // — the Mac app has no 「更多」 circle (its settings are a window).
     await page.addInitScript(() => {
+      if (!new URLSearchParams(location.search).has("as-app")) return;
       window.__TAURI_INTERNALS__ = {
         invoke: () => Promise.resolve(null),
         transformCallback: () => 0,
@@ -26534,16 +26834,24 @@ try {
       };
       window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
     });
-    await page.reload({ waitUntil: "load" });
-    await until(5_000, async () => (await page.locator("[data-rail-more]").count()) > 0);
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&as-app`, { waitUntil: "load" });
+    await until(5_000, async () => (await page.locator("[data-landing-strip]").count()) > 0);
     await wait(1_500);
+    // **On a Mac the settings are a window of their own** (UX-10: ⌘, and
+    // 设置…, no 「更多」 circle in the strip): the same page at
+    // `?face=settings`, which is what that window loads.
+    const toSecurityApp = async () => {
+      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&face=settings&as-app`, { waitUntil: "load" });
+      await until(5_000, async () => (await page.locator('[data-more-open="security"]').count()) > 0);
+      return (await press('[data-more-open="security"]')) && until(3_000, async () => (await page.locator('[data-more-page="security"]').count()) > 0);
+    };
     const asked = await page.locator("[data-root-words-dialog]").count();
     console.log(`fix c · app, first start of the root's machine: 恢复词 dialogs ${asked}`);
     if (asked !== 0) {
       fail("fix c · the app opened on 「抄下恢复词」 — the words wait on 「…」 → 安全 until somebody asks (the owner, 2026-10-01)");
       await settle();
     }
-    if (!(await toSecurity())) fail("probe dead: fix c · 「…」 → 安全 did not open in the app");
+    if (!(await toSecurityApp())) fail("probe dead: fix c · 设置 → 安全 did not open in the app");
     else {
       await until(3_000, async () => (await page.locator(rowSel).count()) > 0);
       const look = await page.evaluate((sel) => {
@@ -26569,8 +26877,7 @@ try {
         await settle();
       }
       held = false;
-      if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
-      await toSecurity();
+      await toSecurityApp();
       await wait(800);
       const n = await page.locator(rowSel).count();
       console.log(`fix c · app, 安全 where the root is not held: 恢复词 rows ${n}`);
@@ -26595,10 +26902,10 @@ try {
       r.fulfill({ contentType: "application/json", body: "null" });
     };
     await page.route("**/set_window_theme", record);
-    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&face=menu`, { waitUntil: "load" });
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&face=menu&as-app`, { waitUntil: "load" });
     await wait(1_500);
     const fromMenu = asked.splice(0);
-    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&as-app`, { waitUntil: "load" });
     await until(5_000, async () => asked.length > 0);
     await wait(500);
     const fromFace = asked.splice(0);
@@ -26612,6 +26919,9 @@ try {
     }
     if (!fromFace.length) fail("probe dead: fix d · the face itself never handed the window its theme");
     await page.unroute("**/set_window_theme", record);
+    // Back to the web face for every section after this one.
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+    await wait(900);
   }
   } // fix
 
@@ -26955,13 +27265,9 @@ try {
                 `this machine's says ${JSON.stringify(GATE_MARK)} (dark, bare), peer's ${JSON.stringify(PEER_MARK)} (light over black)`,
             );
           }
-          const rail = await page.evaluate(() => ({
-            features: document.querySelectorAll("[data-rail-mark] [data-face-features]").length,
-            veil: document.querySelectorAll("[data-rail-mark] [data-face-veil]").length,
-          }));
-          if (rail.features !== 1 || rail.veil !== 0) {
-            fail(`mark ${when} · the rail's own avatar says no kind and drew ${rail.features} set(s) of features and ${rail.veil} veil(s) — a face with no mark is drawn whole`);
-          }
+          // ⚠️ 墓碑 (the owner, 2026-10-02): this machine's face at the
+          // rail's foot — a face with no mark, drawn whole — was read here;
+          // the face left the rail for 更多.
         }
       }
       // A session tab: the same assembly at a tab's size.
@@ -26977,8 +27283,10 @@ try {
           continue;
         }
         judgeInk(`mark ${when} · a session tab (${m.key})`, m, undefined);
-        if (m.face?.w !== 16 || m.glyph?.w !== 12 || m.glyph.x - m.face.x !== 2 || m.glyph.y - m.face.y !== 2) {
-          fail(`mark ${when} · a session tab's mark is ${m.glyph?.w} on a ${m.face?.w} face at ${m.glyph && m.face ? [m.glyph.x - m.face.x, m.glyph.y - m.face.y] : "?"} — 12 on 16, 2 in`);
+        // A tab's face is 18 under a mouse (the owner, 2026-10-02:
+        // `--tab-face`), its mark 12 and centred in it.
+        if (m.face?.w !== 18 || m.glyph?.w !== 12 || m.glyph.x - m.face.x !== 3 || m.glyph.y - m.face.y !== 3) {
+          fail(`mark ${when} · a session tab's mark is ${m.glyph?.w} on a ${m.face?.w} face at ${m.glyph && m.face ? [m.glyph.x - m.face.x, m.glyph.y - m.face.y] : "?"} — 12 on 18, 3 in`);
         }
       }
     };
@@ -27109,13 +27417,22 @@ try {
       return until(5_000, async () => (await count("[data-machine-card]")) > 0);
     };
     /** The card's verbs and sections, as drawn. */
-    const readCard = async () => ({
-      newSession: await count('[data-verb="new-session-on"]'),
-      borrow: await count('[data-verb="borrow-web"]'),
-      code: await count('[data-verb="code"]'),
-      top: await count('[data-machine-card] [data-machine-section="top"]'),
-      hooks: await count("[data-machine-card] [data-hooks]"),
-    });
+    // 开会话 rides the 会话 switch since the redesign (`MachineVerbs`
+    // riders): read with 会话 on, and put back.
+    const readCard = async () => {
+      const seen = {
+        borrow: await count('[data-verb="borrow-web"]'),
+        code: await count('[data-verb="code"]'),
+        top: await count('[data-machine-card] [data-machine-section="top"]'),
+        hooks: await count("[data-machine-card] [data-hooks]"),
+      };
+      const sessions = page.locator('[data-main] [data-region-head] [data-verb="sessions"]');
+      const wasOn = (await sessions.getAttribute("data-on").catch(() => null)) === "true";
+      if ((await sessions.count()) && !wasOn) await press('[data-main] [data-region-head] [data-verb="sessions"]');
+      const newSession = await count('[data-verb="new-session-on"]');
+      if ((await sessions.count()) && !wasOn) await press('[data-main] [data-region-head] [data-verb="sessions"]');
+      return { newSession, ...seen };
+    };
     /** The dialog: where it opens, and the kinds after picking `pick`. */
     const readDialog = async (pick) => {
       await open("sessions");
@@ -27184,8 +27501,10 @@ try {
       if (dialogA.opened !== "gate") fail(`phone a · the dialog opened on ${dialogA.opened} — a computer opens it on itself, as it always did`);
       if (dialogA.atOpen.agent?.disabled !== false || !dialogA.atOpen.agent?.on) fail(`probe dead: phone a · the dialog did not open on 智能体, live — the control: ${JSON.stringify(dialogA.atOpen)}`);
       const k = dialogA.picked;
-      if (!(k.agent?.disabled && k.shell?.disabled && k.tell?.disabled === false && k.tell?.on)) {
-        fail(`phone a · picking elder left the kinds ${JSON.stringify(k)} — 智能体 and shell greyed, 留言 chosen (src/views/NewSessionDialog.tsx)`);
+      // **Not drawn** where they cannot be had (the owner's progressive
+      // disclosure, 2026-10-04); greyed until then.
+      if (!((!k.agent || k.agent.disabled) && (!k.shell || k.shell.disabled) && k.tell?.disabled === false && k.tell?.on)) {
+        fail(`phone a · picking elder left the kinds ${JSON.stringify(k)} — 智能体 and shell not on offer, 留言 chosen (src/views/NewSessionDialog.tsx)`);
       }
     }
     // The b-arm's controls, on this computer's own pages.
@@ -27239,8 +27558,8 @@ try {
         fail(`phone b · the dialog did not open on 智能体, live, on peer — a machine that can host: ${JSON.stringify(dialogB.atOpen)}`);
       }
       const k = dialogB.picked;
-      if (!(k.agent?.disabled && k.shell?.disabled && k.tell?.disabled === false && k.tell?.on)) {
-        fail(`phone b · picking this phone left the kinds ${JSON.stringify(k)} — 智能体 and shell greyed, 留言 chosen`);
+      if (!((!k.agent || k.agent.disabled) && (!k.shell || k.shell.disabled) && k.tell?.disabled === false && k.tell?.on)) {
+        fail(`phone b · picking this phone left the kinds ${JSON.stringify(k)} — 智能体 and shell not on offer, 留言 chosen`);
       }
     }
     if (!(await card(gateDev))) fail("probe dead: phone b · this machine's card never opened");
@@ -27249,11 +27568,13 @@ try {
     await wait(800);
     const peerSeenB = await readCard();
     console.log(`phone b · this phone ${JSON.stringify(gateSeen)} · peer ${JSON.stringify(peerSeenB)}`);
-    if (gateSeen.newSession || gateSeen.borrow || gateSeen.hooks || gateSeen.top) {
-      fail(`phone b · this phone's own card drew ${JSON.stringify(gateSeen)} — no 开会话, 借网, hooks or process table on a machine that cannot host`);
+    // 浏览 is a phone's too since round UX-3 item 1 (cf51a5d5): a page
+    // opens in the app's own web view (`pagesHere`).
+    if (gateSeen.newSession || gateSeen.hooks || gateSeen.top) {
+      fail(`phone b · this phone's own card drew ${JSON.stringify(gateSeen)} — no 开会话, hooks or process table on a machine that cannot host`);
     }
     if (peerSeenB.newSession !== 1) fail(`phone b · peer can host and its card lost 开会话 (${JSON.stringify(peerSeenB)})`);
-    if (peerSeenB.borrow || peerSeenB.code) fail(`phone b · peer's card offers ${JSON.stringify(peerSeenB)} — a phone has no second window for 借网 or VS Code`);
+    if (peerSeenB.code) fail(`phone b · peer's card offers ${JSON.stringify(peerSeenB)} — a phone has no second window for VS Code`);
     if (sent("code_here")) fail(`phone b · code_here was asked ${sent("code_here")} time(s) — a phone opens no editor window, so nobody is asked`);
     if (sent("hooks_state")) fail(`phone b · the hooks were polled ${sent("hooks_state")} time(s) on a phone (src/App.tsx)`);
     if (!(await morePage("security"))) fail("probe dead: phone b · 安全 did not open");
@@ -27341,7 +27662,12 @@ try {
     });
     // The camera, at the seam the plugin calls through. `window.__scan`
     // is the scenario and the record; a held scan waits for the gate.
+    // **Only on a page asked for as the scanning app** (`&as-scan`): the
+    // init script outlives this section, and a stand-in IPC answering
+    // `null` to every call would take the sections after it off the
+    // bridge — the terminal's stream among them.
     await page.addInitScript((ticket) => {
+      if (!new URLSearchParams(location.search).has("as-scan")) return;
       const s = { perm: "granted", after: "granted", scan: "hold", calls: [], ticket, release: null, refuse: null };
       window.__scan = s;
       window.__TAURI_INTERNALS__ = {
@@ -27383,7 +27709,7 @@ try {
     const reload = async (size) => {
       await page.evaluate(() => window.localStorage.clear());
       await page.setViewportSize(size);
-      await page.reload({ waitUntil: "load" });
+      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&as-scan`, { waitUntil: "load" });
       await wait(1500);
     };
     const WIDE = { width: 1400, height: 900 };
@@ -27559,6 +27885,10 @@ try {
 
     await page.keyboard.press("Escape");
     await wait(300);
+    // Back to the web face for the sections after this one.
+    await page.setViewportSize(WIDE);
+    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+    await wait(900);
   }
   }
   if (process.env.FACE_ONLY === "scan") console.log("scan · FACE_ONLY=scan: the other sections are skipped");
@@ -27573,24 +27903,31 @@ try {
   // Width decides the layout, the pointer decides the touch things —
   // never one for the other (`components/SessionBar`).
   //
+  // **Since round UX-3 (the owner, 2026-10-04) the foot is the deck**:
+  // one row of glass — 「‹」, the pill with the open tab's own things, the
+  // tabs circle — and, on a terminal under a finger, the key row's circle
+  // (UX-12): the key row is collapsed with the keyboard down and open with
+  // it up, toggled by that circle. ⚠️ 墓碑: the bar was a tab strip over
+  // the keys from 2026-10-02.
+  //
   // Measurable values and the bytes only (30-behavior: placement is the
   // real-app checklist's). At 390 × 844:
   //
   //   a. **a mouse** (a Mac window dragged narrow): inside a terminal
-  //      session there is no window first row (`[data-side-l0]`), no page
-  //      head, no landings' bar; the session bar sits on the window's
-  //      foot, the content wholly above it; its tab row is `--pane-head`;
-  //      the tabs are in it; there are no keys and no keyboard switch;
-  //   b. eight sessions open: the tabs stay on one line and the strip
-  //      scrolls (its content wider than it, every tab on one top, the
-  //      row still `--pane-head`), and the count is there;
-  //   c. the bar's 「‹」 goes back to the list, which has the window's
-  //      first row and the landings' bar again;
+  //      session there is no window first row, no page head, no landings'
+  //      bar; the session bar sits on the window's foot, the content
+  //      wholly above it; the deck is one glass row with 「‹」, the pill
+  //      naming the open session, and the tabs circle; there are no keys,
+  //      no key row's circle and no keyboard switch;
+  //   b. eight sessions open: the tabs circle says 8;
+  //   c. the deck's 「‹」 goes back to the list, which has the landings'
+  //      bar again;
   //   d. a machine conversation (留言) and an agent conversation: the
-  //      input box is in the bar, under the tab row; no keys;
-  //   e. **a finger**: the tab row is `--pane-head` (48 under a finger),
-  //      under it the keys, `--key-row` tall; the keyboard switch is in
-  //      the tab row; a conversation has its box there and no keys;
+  //      input box is in the bar, under the deck; no keys;
+  //   e. **a finger**: the deck carries the key row's circle and the key
+  //      row is collapsed — one row; pressed, the keys stand under the
+  //      deck, `--key-row` tall; the keyboard switch only in 点击按钮; a
+  //      conversation has its box there and no keys;
   //   f. every key sends what a terminal sends — Esc 0x1b, Tab, Shift-Tab
   //      `ESC [ Z`, the four arrows `ESC [ A–D` (and `ESC O A–D` once the
   //      program sets application cursor keys, `ESC [ 1 ; 5 A` with Ctrl
@@ -27600,18 +27937,19 @@ try {
   //   g. a finger's vertical drag over a program that took the mouse
   //      (tmux's mouse on, the alternate screen) sends wheel reports —
   //      up the screen is a wheel down (SGR 65), down is up (64);
-  //   h. the keyboard switch focuses the terminal's text box and lets it
-  //      go, and says which it will do;
+  //   h. the keyboard switch (点击按钮) asks the terminal's text box for
+  //      a keyboard and puts it away, and says which it will do;
   //   i. **wide, a finger** (an iPad): no session bar; the keys stand
-  //      under the terminal; no keyboard switch;
+  //      under the terminal; no keyboard switch and no key row's circle;
   //   j. **wide, a mouse** (the desktop): unchanged — no bar, no keys, the
   //      window's first row there;
   //   k. **the soft keyboard**, with a stand-in visual viewport (Chrome has
   //      no soft keyboard): 300 of keyboard stamps the root, the shell is
   //      what is left and the bar ends on the keyboard, the content above
   //      it, the terminal has fewer rows and told the pty so, the home
-  //      indicator's room goes, the page does not scroll; the keyboard
-  //      going puts all of it back. Only a real keyboard on a phone shows
+  //      indicator's room goes, the page does not scroll — and the deck
+  //      stays, the key row open under it (UX-12); the keyboard going puts
+  //      all of it back, the row collapsed. Only a real keyboard on a phone shows
   //      that WebKit reports it this way — the real-app checklist's.
   //
   // `FACE_ONLY=bar` runs this section alone.
@@ -27722,6 +28060,18 @@ try {
       await wait(300);
     };
     const shown = (s) => JSON.stringify(s);
+    /** One glass row: the deck's height (`SessionBar`). */
+    const deckRow = () =>
+      page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.height = "calc(var(--glass-btn) + 2 * var(--gap-in))";
+        document.body.appendChild(probe);
+        const h = probe.getBoundingClientRect().height;
+        probe.remove();
+        return h;
+      });
+    /** The tabs circle's count. */
+    const tabsSaid = async () => Number(((await page.locator("[data-session-deck] [data-deck-tabs]").innerText().catch(() => "")) || "").trim());
 
     // ── a. a mouse, 390 wide ──
     await fresh(390, 844);
@@ -27731,9 +28081,10 @@ try {
     }
     const paneHead = await tokenPx("--pane-head");
     {
-      const firstRow = await count("[data-side-l0]");
-      const head = await count("[data-detail-header]");
-      const nav = await count("[data-rail]");
+      const visible = (sel) => page.locator(sel).filter({ visible: true }).count();
+      const firstRow = await visible("[data-side-l0]");
+      const head = await visible("[data-detail-header]");
+      const nav = await visible("[data-float-nav], [data-rail]");
       if (firstRow || head || nav) {
         fail(
           `bar a · inside a session the narrow face still draws ${firstRow} window first row(s), ${head} page head(s) and ${nav} landings' bar(s) — ` +
@@ -27742,55 +28093,44 @@ try {
       }
       const bar = await rect("[data-session-bar]");
       const content = await rect("[data-session-content]");
-      const tabRow = await rect("[data-session-bar-tabs]");
+      const deck = await rect("[data-session-deck]");
       const vh = await page.evaluate(() => window.innerHeight);
-      if (!bar || !content || !tabRow) {
-        fail(`probe dead: bar a · no session bar (${!!bar}), content (${!!content}) or tab row (${!!tabRow}) on the narrow session page`);
+      const oneRow = await deckRow();
+      if (!bar || !content || !deck) {
+        fail(`probe dead: bar a · no session bar (${!!bar}), content (${!!content}) or deck (${!!deck}) on the narrow session page`);
       } else {
-        console.log(`bar a · mouse 390: content 0..${content.bottom.toFixed(1)}, bar ${bar.top.toFixed(1)}..${bar.bottom.toFixed(1)} of ${vh}, tab row ${tabRow.height}`);
+        console.log(`bar a · mouse 390: content 0..${content.bottom.toFixed(1)}, bar ${bar.top.toFixed(1)}..${bar.bottom.toFixed(1)} of ${vh}, deck ${deck.height}`);
         if (Math.abs(bar.bottom - vh) > 1) fail(`bar a · the session bar ends at ${bar.bottom}, not the window's foot ${vh}`);
         if (content.bottom > bar.top + 1) fail(`bar a · the content runs to ${content.bottom}, under the bar that starts at ${bar.top}`);
-        if (Math.abs(tabRow.height - paneHead) > 0.5) fail(`bar a · the bar's tab row is ${tabRow.height} tall, --pane-head is ${paneHead}`);
+        if (Math.abs(deck.height - oneRow) > 0.5) fail(`bar a · the deck is ${deck.height} tall, one glass row is ${oneRow} (src/components/SessionBar.tsx)`);
       }
-      if ((await count(`[data-session-bar-tabs] [data-tab="${terms[0].id}"]`)) !== 1) fail("bar a · the open session's tab is not in the bar");
-      if ((await count("[data-session-bar] [data-back]")) !== 1) fail("bar a · the bar has no 「‹」");
+      const title = ((await page.locator("[data-session-deck] [data-deck-title]").textContent().catch(() => null)) ?? "").trim();
+      if (title !== terms[0].title) fail(`bar a · the deck's pill says 「${title}」, not the open session 「${terms[0].title}」`);
+      if ((await count("[data-session-deck] [data-back]")) !== 1) fail("bar a · the deck has no 「‹」");
+      if ((await count("[data-session-deck] [data-deck-tabs]")) !== 1) fail("bar a · the deck has no tabs circle");
       const keys = await count("[data-term-keys]");
-      const sw = await count("[data-keyboard-switch]");
-      if (keys || sw) fail(`bar a · a mouse got ${keys} key row(s) and ${sw} keyboard switch(es) — the pointer decides the touch things, not the width`);
+      const sw = await count("[data-keyboard-switch], [data-key-row-switch]");
+      if (keys || sw) fail(`bar a · a mouse got ${keys} key row(s) and ${sw} keyboard or key-row switch(es) — the pointer decides the touch things, not the width`);
     }
 
-    // ── b. eight open: one line, the strip scrolls ──
+    // ── b. eight open: the tabs circle counts them ──
     for (const t of terms.slice(1)) {
       if (!(await openRow(t.id))) fail(`probe dead: bar b · ${t.id} never opened`);
     }
     await xtermUp();
     {
-      const strip = await page.evaluate(() => {
-        const s = document.querySelector("[data-session-bar-tabs] [data-tab-strip]");
-        if (!s) return null;
-        const tops = [...s.querySelectorAll("[data-tab]")].map((t) => Math.round(t.getBoundingClientRect().top));
-        return { scroll: s.scrollWidth, client: s.clientWidth, tops, height: s.getBoundingClientRect().height };
-      });
-      const row = await rect("[data-session-bar-tabs]");
-      if (!strip || strip.tops.length !== terms.length) {
-        fail(`probe dead: bar b · the bar's strip holds ${strip?.tops.length ?? "no"} tabs, ${terms.length} are open`);
-      } else {
-        console.log(`bar b · ${strip.tops.length} tabs: strip ${strip.client} wide holding ${strip.scroll}, tops ${[...new Set(strip.tops)].join(",")}, row ${row?.height}`);
-        if (strip.scroll <= strip.client + 1) fail(`bar b · ${terms.length} tabs fit a 390 strip (${strip.scroll} in ${strip.client}) — the fixture no longer makes it scroll`);
-        if (new Set(strip.tops).size !== 1) fail(`bar b · the tabs stand on ${new Set(strip.tops).size} lines (${strip.tops.join(",")}) — they scroll, they do not wrap`);
-        if (row && Math.abs(row.height - paneHead) > 0.5) fail(`bar b · with ${terms.length} tabs the bar's tab row is ${row.height}, not --pane-head ${paneHead}`);
-      }
-      if ((await count("[data-session-bar-tabs] [data-tab-count]")) !== 1) fail("bar b · a strip that scrolls has no count in the bar (the wide strip's rule, `TabStrip`)");
+      const said = await tabsSaid();
+      console.log(`bar b · ${terms.length} open, the tabs circle says ${said}`);
+      if (said !== terms.length) fail(`bar b · ${terms.length} sessions are open and the deck's tabs circle says ${said}`);
     }
 
     // ── c. back to the list ──
     await press("[data-session-bar] [data-back]");
     {
-      const nav = await count("[data-rail]");
-      const firstRow = await count("[data-side-l0]");
+      const nav = await page.locator("[data-float-nav]").filter({ visible: true }).count();
       const screen = await count("[data-session-screen]");
-      if (nav !== 1 || firstRow !== 1 || screen !== 0) {
-        fail(`bar c · 「‹」 left ${screen} session screen(s), and the list has ${nav} landings' bar(s) and ${firstRow} first row(s) — want 0, 1, 1`);
+      if (nav !== 1 || screen !== 0) {
+        fail(`bar c · 「‹」 left ${screen} session screen(s), and the list has ${nav} landings' bar(s) — want 0, 1`);
       }
     }
 
@@ -27804,12 +28144,12 @@ try {
         continue;
       }
       const inBar = await count(`[data-session-bar-under] ${box}`);
-      const tabRow = await rect("[data-session-bar-tabs]");
+      const deck = await rect("[data-session-deck]");
       const boxAt = await rect(box);
       if (inBar !== 1) fail(`bar d · ${what}'s box is not in the session bar (${inBar}) — 「where a terminal has its keys, a chat has its input box」`);
-      else if (tabRow && boxAt && boxAt.top < tabRow.bottom - 1) fail(`bar d · ${what}'s box starts at ${boxAt.top}, above the tab row's foot ${tabRow.bottom}`);
+      else if (deck && boxAt && boxAt.top < deck.bottom - 1) fail(`bar d · ${what}'s box starts at ${boxAt.top}, above the deck's foot ${deck.bottom}`);
       if (await count("[data-term-keys]")) fail(`bar d · ${what} drew the terminal's keys`);
-      console.log(`bar d · mouse: ${what}'s box at ${boxAt?.top.toFixed(1)}, tab row ${tabRow?.top.toFixed(1)}..${tabRow?.bottom.toFixed(1)}`);
+      console.log(`bar d · mouse: ${what}'s box at ${boxAt?.top.toFixed(1)}, deck ${deck?.top.toFixed(1)}..${deck?.bottom.toFixed(1)}`);
     }
 
     // ── e–h. a finger ──
@@ -27825,24 +28165,36 @@ try {
         fail("probe dead: bar e · a terminal session never opened under a finger");
         break bar;
       }
-      await until(3_000, async () => (await count("[data-session-bar] [data-term-keys]")) > 0);
-      const fingerHead = await tokenPx("--pane-head");
+      await until(3_000, async () => (await count("[data-session-deck] [data-key-row-switch]")) > 0);
       const keyRow = await tokenPx("--key-row");
+      const oneRow = await deckRow();
       {
-        const tabRow = await rect("[data-session-bar-tabs]");
+        // **One row with the keyboard down** (UX-12): the key row's
+        // circle on the deck, the row itself collapsed.
+        const deck = await rect("[data-session-deck]");
+        const collapsed = await count("[data-term-keys]");
+        const circle = await count("[data-session-deck] [data-key-row-switch]");
+        const sys = await count("[data-keyboard-switch]");
+        if (!deck || Math.abs(deck.height - oneRow) > 0.5 || circle !== 1 || collapsed !== 0 || sys !== 0) {
+          fail(
+            `bar e · under a finger with the keyboard down: deck ${deck?.height}, key row's circle ${circle}, key rows ${collapsed}, ` +
+              `keyboard switches ${sys} — one row of ${oneRow} with the circle, the row collapsed, no keyboard switch in 自动 (UX-12)`,
+          );
+        }
+        await press("[data-session-deck] [data-key-row-switch]");
+        await until(3_000, async () => (await count("[data-session-bar-under] [data-term-keys]")) > 0);
+        const opened = await rect("[data-session-deck]");
         const keys = await rect("[data-session-bar-under] [data-term-keys]");
         const bar = await rect("[data-session-bar]");
         const vh = await page.evaluate(() => window.innerHeight);
-        if (!tabRow || !keys || !bar) {
-          fail(`bar e · under a finger the bar has tab row ${!!tabRow}, keys ${!!keys} — the keys belong under the tabs`);
+        if (!opened || !keys || !bar) {
+          fail(`bar e · the key row's circle pressed: deck ${!!opened}, keys ${!!keys} — the keys belong under the deck`);
         } else {
-          console.log(`bar e · finger 390: tab row ${tabRow.top.toFixed(1)}..${tabRow.bottom.toFixed(1)} (${tabRow.height}), keys ${keys.top.toFixed(1)}..${keys.bottom.toFixed(1)} (${keys.height}), bar foot ${bar.bottom} of ${vh}`);
-          if (Math.abs(tabRow.height - fingerHead) > 0.5) fail(`bar e · the tab row is ${tabRow.height} under a finger, --pane-head is ${fingerHead}`);
+          console.log(`bar e · finger 390: deck ${opened.top.toFixed(1)}..${opened.bottom.toFixed(1)} (${opened.height}), keys ${keys.top.toFixed(1)}..${keys.bottom.toFixed(1)} (${keys.height}), bar foot ${bar.bottom} of ${vh}`);
           if (Math.abs(keys.height - keyRow) > 0.5) fail(`bar e · the key row is ${keys.height}, --key-row is ${keyRow}`);
-          if (keys.top < tabRow.bottom - 1) fail(`bar e · the keys start at ${keys.top}, above the tab row's foot ${tabRow.bottom}`);
+          if (keys.top < opened.bottom - 1) fail(`bar e · the keys start at ${keys.top}, above the deck's foot ${opened.bottom}`);
           if (Math.abs(bar.bottom - vh) > 1) fail(`bar e · the bar ends at ${bar.bottom}, not the window's foot ${vh}`);
         }
-        if ((await count("[data-session-bar-tabs] [data-keyboard-switch]")) !== 1) fail("bar e · under a finger the tab row has no keyboard switch");
       }
 
       // ── f. the keys' bytes ──
@@ -27947,24 +28299,46 @@ try {
       if (!downDrag.includes("\x1b[<64;")) fail(`bar g · a finger dragged down sent ${shown(downDrag)} — no wheel-up report (SGR 64)`);
       await program("\x1b[?1000l\x1b[?1006l\x1b[?1049l");
 
-      // ── h. the keyboard switch ──
-      await page.evaluate(() => document.activeElement?.blur?.());
-      await wait(100);
-      const sw = page.locator("[data-session-bar-tabs] [data-keyboard-switch]");
-      if ((await sw.count()) === 0) fail("bar h · no keyboard switch in the session bar to press");
+      // ── h. the keyboard switch, in 点击按钮 ──
+      // Drawn in that mode alone (round UX-3 3a), before the key row's
+      // circle. Up and down are the screen's (item 28): Chrome has no
+      // soft keyboard, so the dev seat says one is up (`__khorKeyboard`)
+      // once the field has asked for it.
+      await page.evaluate(() => {
+        window.localStorage.setItem("khor.term-wake", "button");
+        window.dispatchEvent(new CustomEvent("khor:term-wake", { detail: "button" }));
+      });
+      await until(2_000, async () => (await count("[data-session-deck] [data-keyboard-switch]")) === 1);
+      const sw = page.locator("[data-session-deck] [data-keyboard-switch]");
+      if ((await sw.count()) === 0) fail("bar h · no keyboard switch on the deck in 点击按钮");
       else {
-      const was = await sw.getAttribute("aria-label");
-      await sw.click();
-      await wait(200);
-      const focused = await page.evaluate(() => document.activeElement === document.querySelector("[data-terminal]").__xterm.textarea);
-      const now = await sw.getAttribute("aria-label");
-      await sw.click();
-      await wait(200);
-      const blurred = await page.evaluate(() => document.activeElement !== document.querySelector("[data-terminal]").__xterm.textarea);
-      if (!focused || !blurred || was === now) {
-        fail(`bar h · the keyboard switch: focused the terminal ${focused}, let it go ${blurred}, said ${shown(was)} then ${shown(now)}`);
+        const order = await page.evaluate(() => {
+          const a = document.querySelector("[data-session-deck] [data-keyboard-switch]");
+          const b = document.querySelector("[data-session-deck] [data-key-row-switch]");
+          return a && b ? a.getBoundingClientRect().right <= b.getBoundingClientRect().left : null;
+        });
+        if (order !== true) fail("bar h · the keyboard switch does not stand before the key row's circle — that one keeps its place beside the tabs circle (UX-12)");
+        const mode = () => page.evaluate(() => document.querySelector("[data-terminal]").__xterm.textarea.getAttribute("inputmode"));
+        const was = await sw.getAttribute("aria-label");
+        await sw.click();
+        await wait(200);
+        const asked = await mode();
+        await page.evaluate(() => window.__khorKeyboard?.(true));
+        await wait(200);
+        const now = await sw.getAttribute("aria-label");
+        await sw.click();
+        await wait(200);
+        const putAway = await mode();
+        const focused = await page.evaluate(() => document.activeElement === document.querySelector("[data-terminal]").__xterm.textarea);
+        await page.evaluate(() => window.__khorKeyboard?.(null));
+        if (asked !== "text" || putAway !== "none" || !focused || was === now) {
+          fail(`bar h · the keyboard switch: asked ${shown(asked)}, put away ${shown(putAway)}, kept the focus ${focused}, said ${shown(was)} then ${shown(now)}`);
+        }
       }
-      }
+      await page.evaluate(() => {
+        window.localStorage.setItem("khor.term-wake", "auto");
+        window.dispatchEvent(new CustomEvent("khor:term-wake", { detail: "auto" }));
+      });
 
       // e, for the conversations under a finger.
       for (const [what, id, box] of [
@@ -27977,8 +28351,8 @@ try {
         }
         const inBar = await count(`[data-session-bar-under] ${box}`);
         const keys = await count("[data-term-keys]");
-        const sws = await count("[data-session-bar-tabs] [data-keyboard-switch]");
-        if (inBar !== 1 || keys !== 0 || sws !== 1) fail(`bar e · ${what} under a finger: box in the bar ${inBar}, key rows ${keys}, keyboard switches ${sws} — want 1, 0, 1`);
+        const sws = await count("[data-keyboard-switch], [data-key-row-switch]");
+        if (inBar !== 1 || keys !== 0 || sws !== 0) fail(`bar e · ${what} under a finger: box in the bar ${inBar}, key rows ${keys}, keyboard or key-row switches ${sws} — want 1, 0, 0`);
       }
 
       // ── i. wide, a finger ──
@@ -27989,8 +28363,8 @@ try {
         await until(3_000, async () => (await count("[data-term-keys]")) > 0);
         const bar = await count("[data-session-bar]");
         const keys = await count("[data-detail-pane] [data-term-keys]");
-        const sws = await count("[data-keyboard-switch]");
-        if (bar || keys !== 1 || sws) fail(`bar i · wide under a finger: ${bar} session bar(s), ${keys} key row(s) under the terminal, ${sws} keyboard switch(es) — want 0, 1, 0`);
+        const sws = await count("[data-keyboard-switch], [data-key-row-switch]");
+        if (bar || keys !== 1 || sws) fail(`bar i · wide under a finger: ${bar} session bar(s), ${keys} key row(s) under the terminal, ${sws} keyboard or key-row switch(es) — want 0, 1, 0`);
       }
     } finally {
       await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
@@ -28025,6 +28399,10 @@ try {
         fake.dispatchEvent(new Event("resize"));
       };
     });
+    // **Under a finger**: a soft keyboard is a phone's, and the deck's
+    // key row is a finger's (UX-12) — with a mouse there is none of it.
+    const kTouch = await page.context().newCDPSession(page);
+    await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
     await fresh(390, 844);
     if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
       fail("probe dead: bar k · a terminal never opened under the stand-in viewport");
@@ -28047,6 +28425,8 @@ try {
             rows: document.querySelector("[data-terminal]")?.__xterm?.rows,
             safe,
             scrolled: window.scrollY,
+            deck: !!document.querySelector("[data-session-deck]") && getComputedStyle(document.querySelector("[data-session-deck]")).display !== "none",
+            keys: document.querySelectorAll("[data-session-bar-under] [data-term-keys]").length,
           };
         });
       const before = await read();
@@ -28074,7 +28454,16 @@ try {
       if (down.stamped || Math.abs(down.bar - vh) > 1 || down.rows !== before.rows) {
         fail(`bar k · the keyboard went and the shell reads ${JSON.stringify(down)} — back to ${vh}, ${before.rows} rows`);
       }
+      // **The deck stays over the key row over the keyboard** (UX-12),
+      // and the row folds away with the keyboard.
+      if (!up.deck || up.keys !== 1 || !down.deck || down.keys !== 0) {
+        fail(
+          `bar k · with the keyboard up the deck is ${up.deck ? "there" : "gone"} with ${up.keys} key row(s); down, ${down.deck ? "there" : "gone"} ` +
+            `with ${down.keys} — the deck always, the key row open with the keyboard and collapsed without it (UX-12)`,
+        );
+      }
     }
+    await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
     for (const r of ["**/term_open", "**/term_attach", "**/term_stream", "**/term_resize", "**/term_leave", "**/term_key", "**/machine_log"]) await page.unroute(r);
     await page.unroute("**/sessions");
@@ -28320,11 +28709,22 @@ try {
         fail(`probe dead: iphone c · phone ${phone} / app ${app} · the first row stands at ${l0Top}, not under a 47 status bar — the stand-in edge did not take`);
         continue;
       }
+      // **One ground** (the redesign): the list, its head and the bottom
+      // bar stand on the window's colour, so the two bands are read
+      // against `--background` under the theme the app wears.
+      const ground = await page.evaluate(() => {
+        const el = document.createElement("div");
+        el.style.cssText = "position:absolute;visibility:hidden;background-color:var(--background)";
+        document.body.appendChild(el);
+        const c = getComputedStyle(el).backgroundColor;
+        el.remove();
+        return c;
+      });
       const list = {
         top: await groundAt(195, 20),
-        head: await bgOf("[data-side-head]"),
+        head: ground,
         bottom: await groundAt(195, 844 - 12),
-        foot: await bgOf("[data-rail]"),
+        foot: ground,
       };
       if (!(await openRow(here.id))) {
         fail(`probe dead: iphone c · phone ${phone} / app ${app} · no session opened`);
@@ -28337,7 +28737,8 @@ try {
         top: await groundAt(195, 20),
         screen: await bgOf("[data-session-screen]"),
         bottom: await groundAt(195, 844 - 12),
-        foot: await bgOf("[data-session-bar]"),
+        // The deck is glass over the page's ground (round UX-3).
+        foot: await bgOf("[data-session-screen]"),
       };
       console.log(`iphone c · phone ${phone} / app ${app}: list ${JSON.stringify(list)} · session ${JSON.stringify(session)}`);
       if (list.top !== list.head) {
