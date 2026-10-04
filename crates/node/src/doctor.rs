@@ -973,6 +973,24 @@ pub(crate) async fn relay_round_trip(url: &str) -> Option<u64> {
     u64::try_from(started.elapsed().as_millis()).ok()
 }
 
+/// **Whether this machine reaches any of `urls` at all** — what a
+/// pairing dial that timed out asks, so its sentence can say which side
+/// to check (UX-8): none answering is no network or no relay here; one
+/// answering puts the silence on the machine that issued the ticket.
+/// Asked of every relay at once, each within [`relay_rtt`]'s budget.
+pub(crate) async fn any_relay_answers(urls: Vec<String>) -> bool {
+    let asks: Vec<_> = urls
+        .into_iter()
+        .map(|url| tokio::spawn(async move { relay_rtt(&url).await.is_some() }))
+        .collect();
+    for ask in asks {
+        if ask.await.unwrap_or(false) {
+            return true;
+        }
+    }
+    false
+}
+
 async fn relay_rtt(url: &str) -> Option<u128> {
     let mut builder = reqwest::Client::builder()
         .no_proxy()
