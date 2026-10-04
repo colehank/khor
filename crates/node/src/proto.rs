@@ -933,6 +933,18 @@ pub enum Response {
     },
     /// The answer to [`Request::Git`], variant for variant.
     Git { answer: crate::git::GitAnswer },
+    /// **The sessions reading as what changed** (round NET-6): every row's
+    /// id in order, the rows that differ from what this machine last sent
+    /// the asker, and the digest of the whole [`Response::SessionRows`]
+    /// frame to check the rebuild against. Sent in a [`Request::Versions`]
+    /// answer only to an asker that named the `sessions+` reading, and
+    /// only when the copy it holds is the one last sent it — a busy
+    /// session's `doing` line used to send every row on every round.
+    SessionRowsSince {
+        order: Vec<String>,
+        rows: Vec<khor_core::Session>,
+        full: serde_bytes::ByteBuf,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file

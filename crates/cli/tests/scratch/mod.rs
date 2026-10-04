@@ -381,19 +381,29 @@ pub async fn slow_road(
             let (ir, iw) = inbound.into_split();
             let (or, ow) = outbound.into_split();
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            tokio::spawn(hold(ir, ow, impair, seed));
+            tokio::spawn(hold(ir, ow, impair, seed, &ROAD_TO_RELAY));
             seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
-            tokio::spawn(hold(or, iw, impair, seed));
+            tokio::spawn(hold(or, iw, impair, seed, &ROAD_FROM_RELAY));
         }
     });
     (at, task)
 }
+
+/// Bytes every [`slow_road`] in this process has carried towards its
+/// relay, and back from it — what a probe reads to see traffic a node's
+/// own wire count does not (the relay's own protocol, dials that never
+/// became a wire).
+#[allow(dead_code)]
+pub static ROAD_TO_RELAY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[allow(dead_code)]
+pub static ROAD_FROM_RELAY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 async fn hold(
     mut from: tokio::net::tcp::OwnedReadHalf,
     mut to: tokio::net::tcp::OwnedWriteHalf,
     impair: Impair,
     mut seed: u64,
+    counter: &'static std::sync::atomic::AtomicU64,
 ) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<(tokio::time::Instant, Vec<u8>)>();
@@ -413,6 +423,7 @@ async fn hold(
             Ok(0) | Err(_) => break,
             Ok(n) => n,
         };
+        counter.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
         seed ^= seed << 13;
         seed ^= seed >> 7;
         seed ^= seed << 17;

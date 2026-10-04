@@ -94,6 +94,16 @@ async fn a_machine_its_relay_saw_leave_is_said_gone_at_once() {
     let ask_took = asked.elapsed();
     assert!(ask_took < Duration::from_secs(6), "the ask took {ask_took:?}");
 
+    // **And the pump leaves it alone** (round NET-6): it will dial when
+    // it is back. Beta's face is on, so its pump beats every 5 s; before,
+    // each beat its backoff allowed was a failed dial, about 9 KB through
+    // the relay.
+    b.face_is_here(true).await.unwrap();
+    let failed = b.wire_counts().await.unwrap().dial_failed;
+    tokio::time::sleep(link::SYNC_EVERY * 3 + Duration::from_secs(1)).await;
+    let pump_failed = b.wire_counts().await.unwrap().dial_failed - failed;
+    assert_eq!(pump_failed, 0, "beta's pump dialled the machine its relay said left");
+
     // The control: alpha's ears back, and it answers again.
     link::resume(&ra.0).expect("resumable").synced().await.unwrap();
     let back = Instant::now();
@@ -102,7 +112,7 @@ async fn a_machine_its_relay_saw_leave_is_said_gone_at_once() {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     eprintln!(
-        "[departed] word left 中继 in {word_took:?}; a listing on the gone machine failed in {ask_took:?}; \
+        "[departed] word left 中继 in {word_took:?}; a listing on the gone machine failed in {ask_took:?}; pump dials while gone {pump_failed}; \
          back, a listing answered in {:?}",
         back.elapsed()
     );
