@@ -1714,7 +1714,9 @@ aside[data-side] {
    PIN field, a key) gets a row's padding so it stands on the same
    left edge. */
 [data-settings-card] {
-  background: var(--card);
+  /* Inset-grouped since UX-11 (`--grouped`): the one place a card is
+     drawn on the one ground. */
+  background: var(--grouped);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
