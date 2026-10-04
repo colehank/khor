@@ -185,6 +185,19 @@ pub struct Multiplexed {
     /// it is not the pane's shell (roadmap 2.1: a tmux row's activity when
     /// no shell integration marks reach khor).
     pub running: Option<String>,
+    /// Each pane's own reading, for a row whose front pane khor knows
+    /// (item 21: a tmux client's ledger names it) but which sent no marks.
+    pub panes: Vec<PaneReading>,
+}
+
+/// One tmux pane as tmux reads it: what it runs when that is not its
+/// shell, and where it stands.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PaneReading {
+    /// `%3`.
+    pub id: String,
+    pub running: Option<String>,
+    pub cwd: Option<String>,
 }
 
 /// What one sweep of every vendor found, each row already attributed.

@@ -90,7 +90,7 @@ async fn the_word_for_a_machine_reached_directly_holds_while_the_relay_is_lossy(
     let mut last = Instant::now();
     let mut beat = 0u32;
     while began.elapsed() < watch {
-        if beat % 100 == 0 {
+        if beat.is_multiple_of(100) {
             let _ = phone.face_is_here(true).await;
         }
         beat += 1;

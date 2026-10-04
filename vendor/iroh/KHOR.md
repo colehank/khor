@@ -12,7 +12,25 @@
 
 ## 补丁
 
-四处。
+五处。
+
+### 5. `src/net_report.rs`：中继的接班者（2026-10-04，NET-7 轮）
+
+`NetReportConfig` 多一个 `successors: Vec<(RelayUrl, RelayUrl)>`（旧，新）；`Client` 存下它；
+`add_report_history_and_set_preferred_relay` 在补丁 3 之后再加一段：家要是某个「旧」，而这一轮
+报告量到了它的「新」，家就换成「新」。为的是北京那台换 HTTPS：同一台机器上两个中继进程（明文
+3340、TLS 3341），延迟差不多，iroh 自己按延迟挑会随机落在其中一个；补丁让量得到 TLS 那台时
+一律住它，量不到时照旧住明文那台。放在补丁 3 后面，所以首选了旧地址的人也跟着换到新的。改动
+约 15 行。khor 这边 `endpoint::successors` 传进来（`KHOR_SUCCESSORS` 加 `KHOR_RELAY_SUCCESSOR`，
+两台都在中继表里才算）。
+
+**多久换过去**：iroh 只在「完整报告」里量中继——增量报告的探测计划是空的
+（`probes.rs` 的 `with_last_report`，带着上游自己的 `// TODO: is this good?`），于是下一轮看到
+上一轮一台都没量到，又从头量一遍。所以实际是每两轮周期报告（20–26 秒一轮）量一次：回环上量到
+TLS 那台启动后 44–50 秒住过去、它停了 40–46 秒住回明文那台；绑新端点（启动、手机回前台）时
+当场就量。测试：`crates/cli/tests/relay_https.rs` 的
+`the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops`。上游没有对应 PR，
+升级 iroh 时要重新打。
 
 ### 4. `src/socket/transports/relay/actor.rs`、`src/socket.rs`、`src/endpoint.rs`：中继说谁走了（2026-10-04，NET-5 轮）
 

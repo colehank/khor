@@ -25,6 +25,7 @@ import { HISTORY_CHOICES, lineKb, setTermHistory, useTermHistory } from "@/lib/t
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
 import { setTermBell, useTermBell } from "@/lib/term-bell";
+import { setTermJoyHaptic, useTermJoyHaptic } from "@/lib/term-joy-haptic";
 import { setTermPredict, useTermPredict } from "@/lib/term-predict-setting";
 import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { lasted } from "@/words";
@@ -91,6 +92,7 @@ export function TerminalSection() {
   const history = useTermHistory();
   const finishedAfter = useFinishedAfter();
   const bell = useTermBell();
+  const joyFelt = useTermJoyHaptic();
   const predicts = useTermPredict();
   const optionMeta = useTermOptionMeta();
   const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
@@ -302,6 +304,16 @@ export function TerminalSection() {
               () => setCopied("failed"),
             )
           }
+        />
+      )}
+      {/* The joystick is the phone key row's (item 23). */}
+      {coarse && (
+        <SwitchRow
+          name="term-joy-haptic"
+          label={gui.term_joy_haptic}
+          hint={gui.term_joy_haptic_note}
+          on={joyFelt}
+          onToggle={() => setTermJoyHaptic(!joyFelt)}
         />
       )}
       {coarse && (

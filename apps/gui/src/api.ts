@@ -1745,6 +1745,10 @@ export const termKey = (id: string, keys: string) => call<null>("term_key", { id
 export const faceNote = (line: string) => call<null>("face_note", { line });
 /** A bell felt: a light haptic tap on a phone (roadmap 4.2). */
 export const bellHaptic = () => call<null>("bell_haptic");
+/** The cursor joystick, felt (item 23, `joy_haptic`): `prepare` at
+    touch-down, a `tick` per arrow sent, a `turn` when the way changes,
+    `end` when the finger lifts. A phone's only; nothing elsewhere. */
+export const joyHaptic = (kind: "prepare" | "tick" | "turn" | "end") => call<null>("joy_haptic", { kind });
 /** **A haptic with a meaning** (UX-10; ux-9 B5): the system's own
     patterns, played on a phone — `selection` when a picked value moves,
     `success` when a task completes, `warning` when the act was refused.
