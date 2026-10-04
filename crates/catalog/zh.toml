@@ -2346,7 +2346,7 @@ page-none-how = "点击上方的 ＋，打开一个网页"
 page-machine = "选择机器"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
-nav-order-note = "前三项显示在底部"
+nav-order-note = "前四项显示在底部，其余在「更多」里"
 type-size = "字号"
 ui-size-system = "界面字号跟随系统"
 ui-size = "界面字号"

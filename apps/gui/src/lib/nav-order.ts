@@ -2,9 +2,15 @@
 // face's floating navigation seats the first `NAV_SHOWN` landings in this
 // order, then 更多, which holds the rest with 设置 and 这台机器. The wide
 // face's strip seats all of them, in this order, with 更多 a circle of
-// its own beside it. The owner
-// set the default — 机器、会话、额度 — and the user reorders it under
-// 外观 (`NavOrderRows`).
+// its own beside it. The owner set the default and the user reorders it
+// under 外观 (`NavOrderRows`); 更多 is always last.
+//
+// **Five seats since UX-11** (the owner on ux-9's I1, 2026-10-04:
+// 「底栏5项吧，是不是默认机器、会话、额度、工作区就行了」): four landings —
+// 机器, 会话, 额度, 工作区 by default — then 更多 (浏览器, 设置, 这台
+// 机器). HIG Tab bars: avoid overflow tabs, and keep 更多 rare; four
+// landings leave one in it. ⚠️ 墓碑: three landings and 更多, the
+// redesign's first bar (2026-10-02).
 //
 // Kept in this face's `localStorage`, like the list's arrangement
 // (`lib/session-filter`), not in `khor config`: it is a way this screen is
@@ -15,9 +21,9 @@ import { useEffect, useState } from "react";
 /** The five landings, by key. */
 export type NavKey = "sessions" | "devices" | "workspaces" | "browser" | "quota";
 
-/** How many landings sit in the narrow bar before 更多, its fourth seat;
+/** How many landings sit in the narrow bar before 更多, its fifth seat;
     the rest are under 更多. */
-export const NAV_SHOWN = 3;
+export const NAV_SHOWN = 4;
 
 export const NAV_DEFAULT: NavKey[] = ["devices", "sessions", "quota", "workspaces", "browser"];
 
