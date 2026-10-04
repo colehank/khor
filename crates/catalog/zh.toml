@@ -1232,6 +1232,10 @@ relay-flag-needs-value = "{0} 缺少一个值"
 relay-rate-bad = "--rate 要一个大于 0 的整数（字节每秒）：{0}"
 relay-addr-bad = "不是一个监听地址：{0}"
 relay-tls-bad = "读不了证书或私钥：{0}"
+relay-tls-reread = "[{0}] 已重新读取证书 {1}"
+relay-tls-reread-failed = "[{0}] 证书没换成，继续用原来的：{1}"
+relay-tls-check-needs-files = "--tls-check 要和 --tls-cert、--tls-key 一起用"
+relay-tls-ok = "证书和私钥可用：{0}、{1}"
 relay-wont-start = "中继无法启动：{0}"
 # `khor relay --stats`: totals only (CONNECT.md 计量只存总数) — per
 # endpoint how often and how long, the relay's bytes as one number.
