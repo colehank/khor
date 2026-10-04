@@ -7133,6 +7133,11 @@ impl Node {
         if !force && let Some(left) = self.wires.backing_off(&d.id) {
             return Err(msg::peer_backing_off(left.as_secs().max(1)));
         }
+        // Its relay said it left: it will dial when it is back
+        // (`wires::LEFT_ALONE_FOR`).
+        if !force && self.wires.left_alone(&d.id) {
+            return Err(msg::peer_left_its_relay().into());
+        }
         let asked = std::time::Instant::now();
         loop {
             let joined = {

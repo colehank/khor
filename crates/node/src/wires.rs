@@ -148,8 +148,17 @@ pub(crate) const TICK: Duration = Duration::from_secs(1);
 const SETTLE: u8 = 2;
 
 /// The pump's wait after a failed dial, doubling per failure.
+///
+/// **Up to five minutes** (round NET-6; it was one). A failed dial
+/// through a relay costs about 9 KB (the diagnosis probe `idle_cost.rs`:
+/// four of them in a minute were 35 KB towards the relay), so a machine
+/// that is off cost 9 KB a minute for as long as it stayed off. One that
+/// comes back dials this one on its own first round, a person's own
+/// request dials at once whatever the wait, and a change of this
+/// machine's network forgives every wait (`Wires::network_changed`) —
+/// so the longer wait is only ever the pump's.
 const BACKOFF_FIRST: Duration = Duration::from_secs(5);
-const BACKOFF_MAX: Duration = Duration::from_secs(60);
+const BACKOFF_MAX: Duration = Duration::from_secs(300);
 
 /// Which protocol a wire speaks: requests, or borrow pipes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -251,6 +260,16 @@ pub(crate) struct Wires {
 
 /// How long a relay's word that a machine left counts, unheard since.
 const GONE_FOR: Duration = Duration::from_secs(120);
+
+/// How long the pump leaves a machine its relay said left, unheard
+/// since (round NET-6): it is not dialled at all, because it will dial —
+/// a resident rounds with everyone the moment it starts or resumes, and
+/// that round is what clears the word. Before, a phone whose app was
+/// closed was dialled on every beat its backoff allowed, about 9 KB
+/// through the relay each time: the term lane measured 25–34 KB a minute
+/// from a desk with nobody attached. Ten minutes caps the trust in one
+/// word, for a machine whose own first round never arrived.
+const LEFT_ALONE_FOR: Duration = Duration::from_secs(600);
 
 /// The lock that makes one key's dials one at a time.
 type DialLock = Arc<tokio::sync::Mutex<()>>;
@@ -661,12 +680,23 @@ impl Wires {
         let mut gone = self.gone.lock().unwrap_or_else(|p| p.into_inner());
         match gone.get(id) {
             Some(at) if at.elapsed() < GONE_FOR => true,
-            Some(_) => {
+            Some(at) if at.elapsed() >= LEFT_ALONE_FOR => {
                 gone.remove(id);
                 false
             }
-            None => false,
+            _ => false,
         }
+    }
+
+    /// Whether the pump should leave this machine alone because its relay
+    /// said it left and nothing has been heard from it since
+    /// ([`LEFT_ALONE_FOR`]).
+    pub(crate) fn left_alone(&self, id: &str) -> bool {
+        self.gone
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(id)
+            .is_some_and(|at| at.elapsed() < LEFT_ALONE_FOR)
     }
 
     /// Heard from: whatever a relay said about it is old news.
@@ -691,6 +721,12 @@ impl Wires {
     /// any wire not heard within its [`Patience::after_change`] from now is
     /// presumed to have died with the old network ([`Self::tick`] judges).
     pub(crate) fn network_changed(&self) {
+        // Every wait the pump was keeping is forgiven: the dials that
+        // failed may have failed on the old network.
+        for slot in self.slots.lock().unwrap_or_else(|p| p.into_inner()).values_mut() {
+            slot.failures = 0;
+            slot.retry_at = None;
+        }
         *self.changed.lock().unwrap_or_else(|p| p.into_inner()) = Some(Instant::now());
         self.counts.network_changes.fetch_add(1, Relaxed);
     }
@@ -933,8 +969,8 @@ mod tests {
     }
 
     #[test]
-    fn backoff_doubles_from_five_seconds_to_a_minute() {
-        let secs: Vec<u64> = (1..=7).map(|n| backoff(n).as_secs()).collect();
-        assert_eq!(secs, vec![5, 10, 20, 40, 60, 60, 60]);
+    fn backoff_doubles_from_five_seconds_to_five_minutes() {
+        let secs: Vec<u64> = (1..=9).map(|n| backoff(n).as_secs()).collect();
+        assert_eq!(secs, vec![5, 10, 20, 40, 80, 160, 300, 300, 300]);
     }
 }
