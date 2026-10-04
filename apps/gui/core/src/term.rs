@@ -230,6 +230,10 @@ pub(crate) fn reach_blocking(
 /// in; an open that raced this one and got there first is the one kept.
 pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), String> {
     if hold_if_open(id) {
+        // **The face joining still says its size** (item 33): another face
+        // may have sized the pty since. Unchanged, the kernel signals
+        // nothing; a socket that just ended is the stream's to report.
+        let _ = term_resize(id, cols, rows);
         return Ok(());
     }
     let attached = attach(root, id, cols, rows);
@@ -1268,6 +1272,45 @@ mod tests {
         assert_eq!(B64.decode(chunk.bytes.as_bytes()).unwrap(), b"!");
         assert!(chunk.gone, "a torn socket reaches the face");
         assert!(!chunk.reset);
+
+        plock(terms()).remove(&id);
+    }
+
+    /// **A face that joins an attachment already open still says its
+    /// size** (item 33): another face may have sized the pty since, and
+    /// tmux then drew its client at that size under this face — the
+    /// status line in mid-screen, the lower rows out of tmux's reach —
+    /// until the first key or the keyboard resized it.
+    #[test]
+    fn an_open_that_joins_a_held_attachment_sends_its_size() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut host, _) = listener.accept().unwrap();
+        host.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+        let term = Arc::new(Term {
+            conn: Mutex::new(conn),
+            parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
+            acs: Mutex::new(crate::acs::Acs::default()),
+            gone: AtomicBool::new(false),
+            rejoining: AtomicBool::new(false),
+            arrived: tokio::sync::Notify::new(),
+            holds: AtomicUsize::new(1),
+            left: AtomicBool::new(false),
+            feed: Mutex::new(Feed::default()),
+            fed: AtomicU64::new(0),
+            version: AtomicU32::new(1),
+        });
+        let id = format!("shell/held-size-{}", std::process::id());
+        plock(terms()).insert(id.clone(), term.clone());
+
+        term_open(Path::new("/nonexistent"), &id, 46, 30).unwrap();
+        assert_eq!(term.holds.load(Ordering::Relaxed), 2, "held, not attached again");
+        match khor_node::host::read_frame::<ClientOp>(&mut host) {
+            Ok(ClientOp::Resize { cols, rows }) => assert_eq!((cols, rows), (46, 30)),
+            Ok(_) => panic!("something other than a resize reached the host"),
+            Err(e) => panic!("no resize reached the host: {e}"),
+        }
+        assert_eq!(plock(&term.parser).screen().size(), (30, 46), "the mode oracle follows");
 
         plock(terms()).remove(&id);
     }

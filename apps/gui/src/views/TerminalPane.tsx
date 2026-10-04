@@ -2096,6 +2096,9 @@ export function TerminalPane({
           lastBeat = performance.now();
           seq = a.seq;
           joined = true;
+          // The pane is this face's size now: a tmux row's history can be
+          // read (item 33).
+          tmuxHistoryRef.current?.joined();
           // Wired only now: a resize racing the open would size a pty
           // the open is about to size again.
           resizing ??= term.onResize(({ cols, rows }) => {

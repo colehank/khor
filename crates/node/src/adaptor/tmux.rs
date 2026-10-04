@@ -414,18 +414,29 @@ impl Tmux {
         let id = self.session_of_row(row)?;
         // A first read looks near the end for the anchor; one with no
         // anchor to look for takes everything at once.
-        let mut window = match since {
-            Some(a) if !a.tail.is_empty() => HISTORY_FIRST_WINDOW,
-            _ => HISTORY_CAP,
-        };
+        let mut anchor = since.filter(|a| !a.tail.is_empty());
+        let mut window = if anchor.is_some() { HISTORY_FIRST_WINDOW } else { HISTORY_CAP };
         loop {
-            let read = self.read_history(&id, window).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
-            // Everything there is, or as much as is sent.
-            let whole = window >= HISTORY_CAP || read.history.len() < window;
-            if let Some(a) = since.filter(|a| a.pane == read.pane && !a.tail.is_empty())
-                && let Some(end) = find_anchor(&read.history, read.size, a)
-            {
-                return Ok(read.answer(Some(end)));
+            let read = self
+                .read_history(&id, window, anchor.is_some())
+                .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
+            // Everything there is, or as much as is sent. The window is in
+            // rows, as `history_size` is; the lines come joined (`-J`), so a
+            // narrow pane's are fewer than the rows they fill (item 33:
+            // counting lines took 100 of them for the whole history).
+            let whole = window >= HISTORY_CAP || window >= read.size;
+            match anchor.map(|a| read.place(a)) {
+                Some(Place::At(end)) => return Ok(read.answer(Some(end))),
+                Some(Place::Gone) => {
+                    // The whole history in one more read, for the refill.
+                    anchor = None;
+                    if whole {
+                        return Ok(read.answer(None));
+                    }
+                    window = HISTORY_CAP;
+                    continue;
+                }
+                Some(Place::Further) | None => {}
             }
             if whole {
                 return Ok(read.answer(None));
@@ -444,19 +455,25 @@ impl Tmux {
             .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))
     }
 
-    /// The newest `window` history lines of `session`'s front pane, and
-    /// its screen, in one command list.
-    fn read_history(&self, session: &str, window: usize) -> Option<HistoryRead> {
+    /// The newest `window` history rows of `session`'s front pane, wrapped
+    /// lines joined, and its screen, in one command list; with `rows`, the
+    /// same history rows unjoined as well, which place an anchor
+    /// ([`HistoryRead::place`]).
+    fn read_history(&self, session: &str, window: usize, rows: bool) -> Option<HistoryRead> {
         // A line no capture can hold: tmux prints the unit separator as
         // itself only under `-u`, which `spawn` passes.
         let split = "\x1fkhor-screen\x1f";
+        let unjoined = "\x1fkhor-rows\x1f";
         let start = format!("-{window}");
-        let out = self.ask_long(&[
+        let mut args = vec![
             "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size} #{pane_top} #{pane_left} #{status} #{status-position}", ";",
             "capture-pane", "-p", "-e", "-J", "-S", &start, "-E", "-1", "-t", session, ";",
-            "display-message", "-p", split, ";",
-            "capture-pane", "-p", "-e", "-t", session,
-        ])?;
+        ];
+        if rows {
+            args.extend(["display-message", "-p", unjoined, ";", "capture-pane", "-p", "-S", &start, "-E", "-1", "-t", session, ";"]);
+        }
+        args.extend(["display-message", "-p", split, ";", "capture-pane", "-p", "-e", "-t", session]);
+        let out = self.ask_long(&args)?;
         let (head, rest) = out.split_once('\n')?;
         let mut words = head.split(' ');
         let pane = words.next()?.to_owned();
@@ -474,11 +491,16 @@ impl Tmux {
         };
         let top = pane_top + if words.next()?.trim() == "top" { status } else { 0 };
         let (history, screen) = rest.split_once(&format!("{split}\n"))?;
+        let (history, unjoined) = match rows {
+            true => history.split_once(&format!("{unjoined}\n"))?,
+            false => (history, ""),
+        };
         // With no history, `-E -1` names a line that is not there and tmux
         // answers with the screen's first: nothing of it is history.
-        let history: Vec<String> = if size == 0 { Vec::new() } else { history.lines().map(str::to_owned).collect() };
+        let lines = |text: &str| -> Vec<String> { if size == 0 { Vec::new() } else { text.lines().map(str::to_owned).collect() } };
+        let (history, rows) = (lines(history), lines(unjoined));
         let screen = screen.lines().map(str::to_owned).collect();
-        Some(HistoryRead { pane, alternate, size, top, left, history, screen })
+        Some(HistoryRead { pane, alternate, size, top, left, history, rows, screen })
     }
 
     /// [`Tmux::ask`] for an answer bigger than a pipe's buffer: a
@@ -974,14 +996,16 @@ pub(crate) fn fake_tmux(tag: &str, output: &str) -> crate::testdir::TempBin {
 /// to 10 000 lines of its own, and tmux's `history-limit` (2 000 unless
 /// set) bounds it before this does.
 pub const HISTORY_CAP: usize = 10_000;
-/// The newest lines read first, looking for the anchor; widened eight
+/// The newest rows read first, looking for the anchor; widened eight
 /// times over until it is found or the cap is reached.
 const HISTORY_FIRST_WINDOW: usize = 200;
 /// A capture of the cap took 34 ms (measured 2026-10-05); the deadline
 /// is for a wedged server, as [`CALL_DEADLINE`] is.
 const HISTORY_DEADLINE: Duration = Duration::from_secs(3);
-/// Lines an anchor carries.
-const ANCHOR_LINES: usize = 3;
+/// Lines an anchor carries: what proves the copy ends where the rows
+/// say. A program that repeats itself (Claude Code's frames scroll into
+/// the history again and again) needs more than a line or two for that.
+const ANCHOR_LINES: usize = 8;
 /// The most bytes of lines one answer carries: under the wire's frame
 /// (`proto::MAX_FRAME`, 512 KiB) with room for the envelope.
 const HISTORY_BYTES: usize = 384 * 1024;
@@ -994,8 +1018,11 @@ const LEAD_BYTES: usize = 4 * 1024;
 pub struct HistoryAnchor {
     /// The pane the history is of (`%3`).
     pub pane: String,
-    /// tmux's `history_size` then: below `history-limit` the history only
-    /// grows, so the anchor is exactly this many lines from its start.
+    /// tmux's `history_size` then, in rows: the history grows at its end,
+    /// so the copy ends this many rows from its start until tmux takes
+    /// rows away (the pane grew and pulled its newest rows back onto the
+    /// screen, `history-limit` dropped a tenth of the oldest, or
+    /// `clear-history`).
     pub size: usize,
     /// The plain text of the history's last lines, oldest first.
     pub tail: Vec<String>,
@@ -1036,11 +1063,62 @@ struct HistoryRead {
     size: usize,
     top: u16,
     left: u16,
+    /// The window's history, wrapped lines joined.
     history: Vec<String>,
+    /// The same window's rows, unjoined and plain; read only to place an
+    /// anchor.
+    rows: Vec<String>,
     screen: Vec<String>,
 }
 
+/// Where a read puts the face's copy ([`HistoryRead::place`]).
+#[derive(Debug, PartialEq, Eq)]
+enum Place {
+    /// The copy ends at this line of the read's history.
+    At(usize),
+    /// Past the read's window: look further back.
+    Further,
+    /// tmux took rows away since: only the whole history is right.
+    Gone,
+}
+
 impl HistoryRead {
+    /// **Where the face's copy ends** (item 33). By count, not by text: the
+    /// copy ended `a.size` rows into the history, so what followed it is
+    /// the newest `size - a.size` rows, which [`row_counts`] turns into
+    /// joined lines; the lines just before them must then read as the
+    /// anchor's. Searching for the text instead found the newest place a
+    /// repeated run of lines stood (Claude Code's frames, `yes`), and the
+    /// copy silently missed everything after the anchor. When tmux has
+    /// taken rows away (the history is shorter than the copy, or the lines
+    /// at the count do not match), the copy is redone whole.
+    fn place(&self, a: &HistoryAnchor) -> Place {
+        if a.pane != self.pane {
+            return Place::Gone;
+        }
+        let Some(new) = self.size.checked_sub(a.size) else { return Place::Gone };
+        let Some(counts) = row_counts(&self.history, &self.rows) else { return Place::Gone };
+        // The window holds the history's first row, so its first line is
+        // whole; otherwise that line may be a wrapped line's end.
+        let all = self.rows.len() >= self.size;
+        let short = if all { Place::Gone } else { Place::Further };
+        // Joined lines that make up the newest `new` rows.
+        let mut rows = 0;
+        let mut k = 0;
+        while rows < new {
+            let Some(i) = counts.len().checked_sub(k + 1) else { return short };
+            rows += counts[i];
+            k += 1;
+        }
+        if rows != new {
+            return Place::Gone;
+        }
+        let n = a.tail.len();
+        let Some(end) = self.history.len().checked_sub(k + 1).filter(|&e| e + 1 >= n && (all || e >= n)) else { return short };
+        let held = self.history[end + 1 - n..=end].iter().map(|l| plain(l));
+        if held.eq(a.tail.iter().cloned()) { Place::At(end) } else { Place::Gone }
+    }
+
     /// The answer, given where in `history` the anchor ended (`None`:
     /// everything, a refill).
     fn answer(self, found: Option<usize>) -> PaneHistory {
@@ -1075,23 +1153,32 @@ impl HistoryRead {
     }
 }
 
-/// Where the anchor's last line is in `history`, the newest lines of a
-/// history `size` lines long: where the anchor's own size puts it, when
-/// its lines are there (always, below `history-limit`, where the history
-/// only grows), else the last place its lines stand together.
-fn find_anchor(history: &[String], size: usize, anchor: &HistoryAnchor) -> Option<usize> {
-    let n = anchor.tail.len();
-    if n == 0 || history.len() < n {
-        return None;
+/// How many rows each of `lines` (a capture with wrapped lines joined)
+/// takes in `rows` (the same capture unjoined), told apart by their ink:
+/// a wrapped line's rows hold its characters and nothing else, so the
+/// non-blank characters add up. `None` when they do not.
+fn row_counts(lines: &[String], rows: &[String]) -> Option<Vec<usize>> {
+    let ink = |s: &str| plain(s).chars().filter(|c| !c.is_whitespace()).count();
+    let mut out = Vec::with_capacity(lines.len());
+    let mut r = 0;
+    for line in lines {
+        let want = ink(line);
+        let mut got = 0;
+        let mut n = 0;
+        loop {
+            got += ink(rows.get(r)?);
+            r += 1;
+            n += 1;
+            if got >= want {
+                break;
+            }
+        }
+        if got != want {
+            return None;
+        }
+        out.push(n);
     }
-    let text: Vec<String> = history.iter().map(|l| plain(l)).collect();
-    let at = |end: usize| end + 1 >= n && end < text.len() && text[end + 1 - n..=end] == anchor.tail[..];
-    let skipped = size.saturating_sub(history.len());
-    let expected = anchor.size.checked_sub(1 + skipped);
-    if let Some(end) = expected.filter(|&e| at(e)) {
-        return Some(end);
-    }
-    (0..text.len()).rev().find(|&end| at(end))
+    (r == rows.len()).then_some(out)
 }
 
 /// A captured line without its escapes: CSI sequences and OSC strings
@@ -1564,6 +1651,95 @@ mod tests {
         assert!(other.refill && other.alternate, "{other:?}");
     }
 
+    /// tmux's own history of `target`, wrapped lines joined, as plain text.
+    fn tmux_history(s: &Server, target: &str) -> Vec<String> {
+        s.tmux(&["capture-pane", "-p", "-J", "-S", "-", "-E", "-1", "-t", target])
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    fn plains(lines: &[String]) -> Vec<String> {
+        lines.iter().map(|l| plain(l)).collect()
+    }
+
+    /// The face's copy is tmux's history, line for line; says where not.
+    fn same(copy: &[String], tmux: &[String], what: &str) {
+        let at = copy.iter().zip(tmux).position(|(a, b)| a != b).unwrap_or(copy.len().min(tmux.len()));
+        assert!(
+            copy.len() == tmux.len() && at == copy.len(),
+            "{what}: the copy has {} lines, tmux {}; first difference at {at}: {:?} / {:?}",
+            copy.len(),
+            tmux.len(),
+            copy.get(at),
+            tmux.get(at),
+        );
+    }
+
+    /// **A narrow pane's wrapped lines** (item 33, the owner's phone at 44
+    /// columns): tmux counts its history in rows, a read sends lines with
+    /// their wraps joined. More rows than the first look-back window, and
+    /// lines that repeat (Claude Code's frames do), must still come out as
+    /// exactly what followed the copy: measured before the fix, the read
+    /// came back as a "refill" of the last 100 lines, and the face dropped
+    /// its 10 000.
+    #[test]
+    fn wrapped_and_repeated_lines_are_appended_exactly() {
+        if !have_tmux() {
+            return;
+        }
+        let s = Server::start("histwrap");
+        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "20", "-y", "10", "/bin/sh"]);
+        s.until_present("one");
+        s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
+        let x = "x".repeat(30);
+        s.tmux(&["send-keys", "-t", "one", &format!("clear; yes {x} | head -n 300; echo d1"), "Enter"]);
+        until_shown(&s, "one", "d1");
+        let t = s.at();
+        let first = t.history("shell/9-9", None).unwrap();
+        same(&plains(&first.lines), &tmux_history(&s, "one"), "whole");
+        // 150 more of the same line: 300 rows, past the first window.
+        s.tmux(&["send-keys", "-t", "one", &format!("yes {x} | head -n 150; echo d2"), "Enter"]);
+        until_shown(&s, "one", "d2");
+        let next = t.history("shell/9-9", Some(&first.anchor)).unwrap();
+        assert!(!next.refill, "{} lines, refill", next.lines.len());
+        let mut held = plains(&first.lines);
+        held.extend(plains(&next.lines));
+        same(&held, &tmux_history(&s, "one"), "appended");
+    }
+
+    /// **The pane grew** (the phone's keyboard went down, or another face
+    /// took the size back): tmux pulls the newest history rows back onto
+    /// the screen, so the copy's last lines are no longer history. The
+    /// answer is the whole history again, never a part of it.
+    #[test]
+    fn a_pane_that_grew_is_read_whole_again() {
+        if !have_tmux() {
+            return;
+        }
+        let s = Server::start("histgrow");
+        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "20", "-y", "10", "/bin/sh"]);
+        s.until_present("one");
+        s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
+        s.tmux(&["send-keys", "-t", "one", &format!("clear; yes {} | head -n 300; echo d1", "y".repeat(30)), "Enter"]);
+        until_shown(&s, "one", "d1");
+        let t = s.at();
+        let first = t.history("shell/9-9", None).unwrap();
+        s.tmux(&["resize-window", "-t", "one", "-y", "30"]);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while s.tmux(&["display-message", "-p", "-t", "one", "#{pane_height}"]).unwrap_or_default().trim() != "30" {
+            assert!(Instant::now() < deadline, "the window never grew");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let size = |h: &str| h.trim().parse::<usize>().unwrap();
+        let now = size(&s.tmux(&["display-message", "-p", "-t", "one", "#{history_size}"]).unwrap());
+        assert!(now < first.anchor.size, "tmux pulled rows back: {now} < {}", first.anchor.size);
+        let next = t.history("shell/9-9", Some(&first.anchor)).unwrap();
+        assert!(next.refill, "{} lines, not a refill", next.lines.len());
+        same(&plains(&next.lines), &tmux_history(&s, "one"), "refilled");
+    }
+
     /// Where the pane sits on khor's client comes with every read: under
     /// a status line at the top, and right of a split.
     #[test]
@@ -1627,6 +1803,7 @@ mod tests {
             top: 0,
             left: 0,
             history: (0..1000).map(|_| line.clone()).collect(),
+            rows: vec![],
             screen: vec!["$ ".into()],
         };
         let small = HistoryRead { history: read.history[..10].to_vec(), ..read.clone_for_test() };
@@ -1648,6 +1825,7 @@ mod tests {
                 top: self.top,
                 left: self.left,
                 history: self.history.clone(),
+                rows: self.rows.clone(),
                 screen: self.screen.clone(),
             }
         }
@@ -1658,14 +1836,43 @@ mod tests {
         assert_eq!(plain("\x1b[31mred\x1b[0m \x1b]8;;http://x\x1b\\link\x1b]8;;\x07"), "red link");
         let lines = ["\x1b[1mbold\x1b[0m".to_owned(), "\x1b[32mgreen".to_owned(), "still".to_owned()];
         assert_eq!(escapes(&lines), "\x1b[0m\x1b[32m");
-        let anchor = HistoryAnchor { pane: "%1".into(), size: 5, tail: vec!["b".into(), "c".into()] };
-        let h: Vec<String> = ["a", "b", "c", "b", "c"].iter().map(|s| s.to_string()).collect();
-        // Below the limit the size says where: the second pair is the
-        // anchor only if the history had five lines then.
-        assert_eq!(find_anchor(&h, 5, &anchor), Some(4));
-        let earlier = HistoryAnchor { size: 3, ..anchor.clone() };
-        assert_eq!(find_anchor(&h, 5, &earlier), Some(2));
-        assert_eq!(find_anchor(&h, 5, &HistoryAnchor { tail: vec!["z".into()], ..anchor }), None);
+    }
+
+    /// Joined lines and the rows they fill, told apart by ink; and the
+    /// copy placed by count among lines that repeat.
+    #[test]
+    fn rows_place_the_copy_among_repeated_lines() {
+        let v = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // "abcdef" wrapped at 4: two rows; a blank line is one.
+        assert_eq!(row_counts(&v(&["abcdef", "", "x"]), &v(&["abcd", "ef", "", "x"])), Some(vec![2, 1, 1]));
+        assert_eq!(row_counts(&v(&["abcdef"]), &v(&["abcd", "efg"])), None);
+        let read = |history: &[&str], rows: &[&str], size: usize| HistoryRead {
+            pane: "%1".into(),
+            alternate: false,
+            size,
+            top: 0,
+            left: 0,
+            history: v(history),
+            rows: v(rows),
+            screen: vec![],
+        };
+        let anchor = |size, tail: &[&str]| HistoryAnchor { pane: "%1".into(), size, tail: v(tail) };
+        // Five repeated lines, the copy held three: by text the newest pair
+        // matches; by count it is the third line.
+        let r = read(&["y", "y", "y", "y", "y"], &["y", "y", "y", "y", "y"], 5);
+        assert_eq!(r.place(&anchor(3, &["y", "y"])), Place::At(2));
+        assert_eq!(r.place(&anchor(5, &["y", "y"])), Place::At(4));
+        // Wrapped: the last line is two rows, so two new rows are one line.
+        let w = read(&["a", "b", "cc"], &["a", "b", "c", "c"], 4);
+        assert_eq!(w.place(&anchor(2, &["a", "b"])), Place::At(1));
+        // Rows taken away (the pane grew), the text not where the count
+        // says, another pane: the whole history.
+        assert_eq!(r.place(&anchor(6, &["y"])), Place::Gone);
+        assert_eq!(w.place(&anchor(2, &["a", "z"])), Place::Gone);
+        assert_eq!(r.place(&HistoryAnchor { pane: "%2".into(), ..anchor(3, &["y"]) }), Place::Gone);
+        // A window that does not reach back to the copy's end: further.
+        let part = read(&["y", "y"], &["y", "y"], 50);
+        assert_eq!(part.place(&anchor(10, &["y"])), Place::Further);
     }
 
     /// The flagship, on a real server of khor's own: a shell sitting at
