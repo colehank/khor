@@ -659,6 +659,13 @@ pub enum Request {
         session: String,
         since: Option<crate::adaptor::tmux::HistoryAnchor>,
     },
+    /// **The asked machine's workspace facts** (round NET-8,
+    /// `crate::wsfacts`): each of its workspaces' changed-file count,
+    /// branch and last change, as its resident keeps them. Asked as the
+    /// `workspace_facts` reading of a round, so it crosses only when it
+    /// changed; an older khor has no request for that reading and skips
+    /// it. Answered as [`Response::WorkspaceFacts`].
+    WorkspaceFacts,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -984,6 +991,8 @@ pub enum Response {
     PaneHistory {
         history: crate::adaptor::tmux::PaneHistory,
     },
+    /// [`Request::WorkspaceFacts`]'s answer, by path.
+    WorkspaceFacts { facts: Vec<khor_core::WorkspaceFact> },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1084,6 +1093,7 @@ impl Request {
                 // session the first made — the same as asking once.
                 | Request::OpenOnce { .. }
                 | Request::OpenAgentOnce { .. }
+                | Request::WorkspaceFacts
         )
     }
 
@@ -1102,6 +1112,7 @@ impl Request {
         matches!(
             self,
             Request::Sessions
+                | Request::WorkspaceFacts
                 | Request::Usage
                 | Request::Vitals
                 | Request::Ls { .. }

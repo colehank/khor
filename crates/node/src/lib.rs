@@ -60,6 +60,7 @@ pub mod usage;
 pub mod vitals;
 pub mod watch;
 pub mod workspace;
+pub(crate) mod wsfacts;
 pub(crate) mod wires;
 
 pub use khor_core::avatar::{
@@ -402,6 +403,9 @@ pub struct Node {
     /// The session rows last sent each asker, by its id, with the digest
     /// of that frame (`proto::Response::SessionRowsSince`).
     pub(crate) rows_sent: Arc<Mutex<std::collections::HashMap<String, RowsSent>>>,
+    /// This machine's workspace facts, kept by the resident
+    /// (`wsfacts::WsFacts`, round NET-8); `None` outside it.
+    pub(crate) wsfacts: Arc<Mutex<Option<Arc<wsfacts::WsFacts>>>>,
     /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
     /// their session id. Each is a task holding a local proxy port and a
     /// lease to the exit; the serve reaps one once its session row is
@@ -1063,6 +1067,7 @@ impl Node {
             face_seen: Arc::default(),
             nudged: Arc::default(),
             rows_sent: Arc::default(),
+            wsfacts: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),

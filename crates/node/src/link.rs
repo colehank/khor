@@ -149,6 +149,7 @@ fn reading_request(kind: &str) -> Option<Request> {
         _ if kind.starts_with("days@") => Request::Days,
         "quotas" => Request::Quotas,
         "usage" => Request::Usage,
+        "workspace_facts" => Request::WorkspaceFacts,
         _ => Request::SatVitals {
             sat: kind.strip_prefix("sat/")?.to_owned(),
         },
@@ -917,6 +918,12 @@ impl Node {
         let mut ticker = tokio::time::interval(SYNC_EVERY);
         // When the pump last ran a round, for the quiet pace.
         let mut last_round: Option<std::time::Instant> = None;
+        // This machine's workspace facts, kept from here on (round NET-8).
+        // A phone hosts no workspace.
+        if node.hosts() {
+            *node.wsfacts.lock().unwrap_or_else(|p| p.into_inner()) =
+                Some(crate::wsfacts::WsFacts::start(node.root(), node.device_str()));
+        }
         // One pump on the way back from a stop, not one per five seconds
         // away (the pause beat above has the reason).
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1240,6 +1247,9 @@ impl Node {
                         // through its own agent row (the fold in
                         // `LiveKind::rows` hides them; this stops them).
                         n.live.reap_folded_bridges();
+                        // The workspaces this machine keeps facts for:
+                        // the table's, as of this beat (round NET-8).
+                        n.reconcile_workspace_facts();
                         // **Tidy up before the visits start**, at the one
                         // moment of a beat when no round is likely to be
                         // running: compaction rewrites a document, so it
@@ -2599,6 +2609,15 @@ impl Node {
             Request::Versions { docs, readings } => {
                 self.answer_versions(remote, docs, readings, ep).await
             }
+            Request::WorkspaceFacts => Ok(Response::WorkspaceFacts {
+                facts: self
+                    .wsfacts
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .as_ref()
+                    .map(|k| k.facts())
+                    .unwrap_or_default(),
+            }),
             Request::Sessions => {
                 Ok(Response::SessionRows {
                     rows: self.reportable_rows()?,
@@ -7361,6 +7380,28 @@ impl Node {
         }
     }
 
+    /// The workspaces this machine keeps facts for, made the table's own
+    /// (`crate::wsfacts`, round NET-8): the resident's tidy beat.
+    pub(crate) fn reconcile_workspace_facts(&self) {
+        let Some(keeper) = self.wsfacts.lock().unwrap_or_else(|p| p.into_inner()).clone() else {
+            return;
+        };
+        let Ok(all) = self.workspaces() else { return };
+        let mine: Vec<String> = all
+            .into_iter()
+            .filter(|w| w.device == self.device_str())
+            .map(|w| w.path)
+            .collect();
+        keeper.reconcile(&mine);
+    }
+
+    /// One machine's workspace facts as this machine last knew them —
+    /// its own resident's for this machine, the last round's for another
+    /// (`crate::wsfacts`). Empty when there are none yet.
+    pub fn workspace_facts_of(&self, device: &str) -> Vec<khor_core::WorkspaceFact> {
+        crate::wsfacts::read(self.root(), device).map(|k| k.facts).unwrap_or_default()
+    }
+
     /// **Whether a face is on screen** (`ipc::Op::FaceHere`): one said so
     /// within three of its beats.
     pub(crate) fn face_here(&self) -> bool {
@@ -7673,6 +7714,22 @@ impl Node {
             .iter()
             .map(|k| (*k).to_owned())
             .collect();
+        // **Asked only of a machine that holds a workspace** (round
+        // NET-8): the table says which, on this disk. Named on every
+        // round regardless, the reading's name and digest cost a phone
+        // 0.5 KB a minute at idle for a machine with nothing to say.
+        if self
+            .workspaces_loaded()
+            .map(|l| {
+                l.doc
+                    .all()
+                    .into_iter()
+                    .any(|(k, _)| khor_sync::workspaces::split(&k).is_some_and(|(dev, _)| dev == d.id))
+            })
+            .unwrap_or(false)
+        {
+            kinds.push("workspace_facts".to_owned());
+        }
         if let Ok(devs) = self.devices() {
             kinds.extend(
                 devs.iter()
@@ -7844,6 +7901,9 @@ impl Node {
             }
             Response::Usage { usage } => {
                 let _ = self.cache_peer_usage(&d.id, usage);
+            }
+            Response::WorkspaceFacts { facts } => {
+                crate::wsfacts::write(self.root(), &d.id, facts);
             }
             Response::SatVitals { vitals, age_ms } => {
                 if let Some(sat) = kind.strip_prefix("sat/") {

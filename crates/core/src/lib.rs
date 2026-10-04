@@ -242,6 +242,34 @@ impl TryFrom<String> for Hop {
     }
 }
 
+/// **One workspace's facts, as the machine holding it keeps them**
+/// (round NET-8, UX-15's workspace row): how many files differ in the
+/// checkout, its branch, and when the tree last changed. Kept by that
+/// machine's resident and redone when its file watcher says something
+/// changed (`khor_node::wsfacts`); other machines learn it as one reading
+/// of a round, only when it changed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct WorkspaceFact {
+    /// Absolute, on that machine — the workspace table's path.
+    pub path: String,
+    /// The branch HEAD is on; `None` for a plain folder, a detached
+    /// HEAD, or a repository with no commit yet.
+    pub branch: Option<String>,
+    /// Files that differ from HEAD, untracked ones included and ignored
+    /// ones not (`git status --porcelain`'s rows); `None` for a plain
+    /// folder or a status that would not read.
+    pub changed: Option<u32>,
+    /// `changed` stopped at the status walk's cap rather than being whole.
+    pub changed_capped: bool,
+    /// When the tree last changed, ms since the epoch: the newest change
+    /// the watcher saw, or the newest mtime under it before the watcher
+    /// was up. Changes under `.git`, `target`, `node_modules` and the
+    /// like do not count (`khor_node::workspace::SKIP`). 0 for a tree
+    /// with nothing to date.
+    #[ts(type = "number")]
+    pub changed_ms: i64,
+}
+
 /// **One machine's connection, as the resident holds it**: the road its
 /// wire is on, and how long ago that machine was last heard.
 ///
