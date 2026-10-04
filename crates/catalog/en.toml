@@ -2171,6 +2171,8 @@ usage-scatter-off = "{0} models unreadable on both values — not plotted"
 # section of its own.
 [menu]
 about = "About khor"
+my-khor = "My khor"
+doctor = "Diagnostics"
 settings = "Settings…"
 lock = "Lock"
 services = "Services"

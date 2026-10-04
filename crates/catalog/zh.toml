@@ -4612,6 +4612,10 @@ usage-scatter-off = "{0} 个模型缺少这两项读数，未绘制"
 # 的名字(「新会话…」「新标签页」),菜单说的就是 ⌘N 真会做的事。
 [menu]
 about = "关于 khor"
+# UX-16 ruling (2026-10-05): on a Mac the settings window holds settings
+# only; 我的 khor and 诊断 open in the main window from here.
+my-khor = "我的 khor"
+doctor = "诊断"
 settings = "设置…"
 lock = "锁定"
 services = "服务"

@@ -46,13 +46,15 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// The acts the page runs, by the ids their items carry. The same names
 /// as `Act` in `src/lib/shortcuts.ts`.
-const ACTS: [&str; 23] = [
+const ACTS: [&str; 25] = [
     "landing-1",
     "landing-2",
     "landing-3",
     "landing-4",
     "landing-5",
     "settings",
+    "my-khor",
+    "doctor",
     "lock",
     "find",
     "find-list",
@@ -171,6 +173,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             ..Default::default()
         }),
     )?;
+    // 我的 khor and 诊断 (UX-16 ruling): 更多's own pages, which the Mac's
+    // wide window has no 更多 circle for and the settings window does not
+    // hold — so the app menu opens them in the main window.
+    let my_khor = item("my-khor", m::my_khor(), None)?;
+    let doctor = item("doctor", m::doctor(), None)?;
     let settings = item("settings", m::settings(), Some("CmdOrCtrl+,"))?;
     let lock = item("lock", m::lock(), Some("CmdOrCtrl+L"))?;
     let app_menu = Submenu::with_items(
@@ -179,6 +186,8 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         true,
         &[
             &about,
+            &my_khor,
+            &doctor,
             &sep()?,
             &settings,
             &lock,

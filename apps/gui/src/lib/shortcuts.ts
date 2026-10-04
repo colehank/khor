@@ -88,6 +88,8 @@ export type Act =
   | "landing-4"
   | "landing-5"
   | "settings"
+  | "my-khor"
+  | "doctor"
   | "lock"
   | "find"
   | "find-list"
@@ -320,6 +322,9 @@ export type ShellActs = {
   /** The rail's landing, 0–4, reached the way its glyph reaches it. */
   go: (i: number) => void;
   settings: () => void;
+  /** 我的 khor and 诊断 in the main window (the Mac's app menu; UX-16). */
+  me: () => void;
+  doctor: () => void;
   /** Puts the 「…」 page away, when one is up. */
   closePage: (() => void) | null;
   /** Locks, when a PIN makes that possible. */
@@ -360,6 +365,12 @@ export function useShortcuts(acts: ShellActs) {
       switch (act) {
         case "settings":
           acts.settings();
+          return true;
+        case "my-khor":
+          acts.me();
+          return true;
+        case "doctor":
+          acts.doctor();
           return true;
         case "lock":
           if (!acts.lock) return false;

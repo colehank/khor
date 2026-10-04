@@ -670,11 +670,11 @@ export default function App() {
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
   const [morePage, setMorePage] = useState<MorePage | null>(() =>
-    // **The settings window is the 「…」 pages and nothing else** (UX-10):
-    // it opens on the pane it was asked for, or 通用, and never on a
-    // landing.
+    // **The settings window is 设置's seven and nothing else** (UX-10;
+    // UX-16): it opens on the pane it was asked for, or 外观, and never on
+    // a landing, 我的 khor or 诊断.
     settingsFace
-      ? (morePageOrder as readonly string[]).includes(settingsPane ?? "")
+      ? morePageOrder.some((p) => p === settingsPane && inSettings(p))
         ? (settingsPane as MorePage)
         : "appearance"
       : (morePageOrder as readonly string[]).includes(place.more ?? "")
@@ -690,7 +690,7 @@ export default function App() {
   // and a later ⌘, from the menu brings it to the pane it names.
   useEffect(() => {
     if (!settingsFace) return;
-    if (morePage === null) setMorePage("appearance");
+    if (morePage === null || !inSettings(morePage)) setMorePage("appearance");
     else nameSettings(moreName(morePage)).catch(() => {});
   }, [morePage]);
   useEffect(() => {
@@ -699,7 +699,7 @@ export default function App() {
     let gone = false;
     void import("@tauri-apps/api/event").then(({ listen }) =>
       listen<string>("settings:pane", (e) => {
-        if ((morePageOrder as readonly string[]).includes(e.payload)) setMorePage(e.payload as MorePage);
+        if (morePageOrder.some((p) => p === e.payload && inSettings(p))) setMorePage(e.payload as MorePage);
       }).then((un) => (gone ? un() : (stop = un))),
     );
     return () => {
@@ -1599,6 +1599,16 @@ export default function App() {
         return;
       }
       setMorePage("appearance");
+      setScreen("detail");
+      setSwitchingTabs(false);
+    },
+    me: () => {
+      setMorePage("me");
+      setScreen("detail");
+      setSwitchingTabs(false);
+    },
+    doctor: () => {
+      setMorePage("doctor");
       setScreen("detail");
       setSwitchingTabs(false);
     },
@@ -2535,7 +2545,10 @@ export default function App() {
           face left the top row and lives in 更多): this machine's face and
           name, over the word for the page. Narrow keeps it in its place
           among the sections; its 更多 menu already leads to it. */}
-      {!narrow && (
+      {/* **The settings window holds settings and nothing else** (UX-16
+          ruling, 2026-10-05): no 我的 khor at its head, no 诊断 at its
+          foot — the app menu opens those two in the main window. */}
+      {!narrow && !settingsFace && (
         <button
           type="button"
           data-more-open="me"
@@ -2597,7 +2610,7 @@ export default function App() {
         // **Wide** (and the Mac settings window's sidebar): 我的 khor at
         // the head (above), 设置's seven, then — a step apart — 诊断.
         morePageOrder
-          .filter((p) => p !== "me")
+          .filter((p) => (settingsFace ? inSettings(p) : p !== "me"))
           .map((p) => (
             <button
               key={p}
