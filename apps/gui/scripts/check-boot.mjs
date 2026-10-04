@@ -265,25 +265,25 @@ if (painted.length !== 2) {
 // HIG Launching: the launch screen is 「nearly identical to the first
 // screen」. It was `systemBackgroundColor` — pure white in light, so a
 // cold start flashed white before the page's cream. It is the colour set
-// `LaunchGround` now, light and dark, and both must be `--background`.
+// `Ground` now, light and dark, and both must be `--background`.
 {
   const apple = join(here, "..", "src-tauri", "gen", "apple");
   const board = readFileSync(join(apple, "LaunchScreen.storyboard"), "utf8");
-  if (!/<color key="backgroundColor" name="LaunchGround"\/>/.test(board)) {
-    fail("LaunchScreen.storyboard's view does not wear the LaunchGround colour — a cold start flashes the system's background");
+  if (!/<color key="backgroundColor" name="Ground"\/>/.test(board)) {
+    fail("LaunchScreen.storyboard's view does not wear the Ground colour — a cold start flashes the system's background");
   }
   let set = null;
   try {
-    set = JSON.parse(readFileSync(join(apple, "Assets.xcassets", "LaunchGround.colorset", "Contents.json"), "utf8"));
+    set = JSON.parse(readFileSync(join(apple, "Assets.xcassets", "Ground.colorset", "Contents.json"), "utf8"));
   } catch {
-    fail("Assets.xcassets/LaunchGround.colorset is missing — the launch screen has no ground of its own");
+    fail("Assets.xcassets/Ground.colorset is missing — the launch screen has no ground of its own");
   }
   if (set) {
     const hex = (c) =>
       "#" + ["red", "green", "blue"].map((k) => Number(c.color.components[k]).toString(16).padStart(2, "0")).join("");
     const dark = set.colors.find((c) => c.appearances?.some((a) => a.value === "dark"));
     const light = set.colors.find((c) => !c.appearances);
-    if (!light || !dark) fail("LaunchGround needs a light and a dark colour");
+    if (!light || !dark) fail("Ground needs a light and a dark colour");
     else {
       if (hex(light).toLowerCase() !== want.background.light.toLowerCase()) {
         fail(`the launch screen's light ground is ${hex(light)}, --background is ${want.background.light}`);

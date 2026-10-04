@@ -3020,6 +3020,46 @@ fn wear_on_the_windows(theme: &str) {
 /// whose class is named `WKContentView…`, no `inputAccessoryView` on it,
 /// a subclass that cannot be made — each leaves the view as it was.
 /// Main thread only (`with_webview` runs there).
+/// **The phone's webview stands on the ground, not on white** (UX-10;
+/// ux-9 B7). HIG Launching: the launch screen is 「nearly identical to
+/// the first screen」 — and the launch screen wears the asset catalogue's
+/// `Ground` colour set now, but between it and the page's first paint the
+/// webview drew its own opaque white for half a second (measured: the
+/// simulator's frames went #f4f4ef, then #f9f9f7, #ffffff, then the page).
+/// The same colour set, light and dark, behind the webview, its scroll
+/// view and the window: a dynamic colour, so it follows the window's
+/// interface style, which follows khor's theme (`wear_on_the_windows`) —
+/// one place for the phone's native ground, held to `--background` by
+/// the boot gate. Main thread only (`with_webview` runs there).
+#[cfg(target_os = "ios")]
+fn wear_the_ground(webview: *mut std::ffi::c_void) {
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+    let name = NSString::from_str("Ground");
+    // SAFETY: UIKit on the main thread; the webview is the live one this
+    // closure was handed, and every selector here is documented UIKit.
+    unsafe {
+        let ground: *mut AnyObject = msg_send![class!(UIColor), colorNamed: &*name];
+        let wv = webview as *mut AnyObject;
+        if ground.is_null() || wv.is_null() {
+            return;
+        }
+        let _: () = msg_send![wv, setOpaque: Bool::NO];
+        let _: () = msg_send![wv, setBackgroundColor: ground];
+        let scroll: *mut AnyObject = msg_send![wv, scrollView];
+        if !scroll.is_null() {
+            let _: () = msg_send![scroll, setBackgroundColor: ground];
+        }
+        for holder in [msg_send![wv, superview], msg_send![wv, window]] {
+            let holder: *mut AnyObject = holder;
+            if !holder.is_null() {
+                let _: () = msg_send![holder, setBackgroundColor: ground];
+            }
+        }
+    }
+}
+
 #[cfg(target_os = "ios")]
 fn drop_the_form_bar(webview: *mut std::ffi::c_void) {
     use objc2::runtime::{AnyClass, AnyObject, ClassBuilder, Sel};
@@ -3588,7 +3628,10 @@ pub fn run() {
             let _phone = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default()).build()?;
             #[cfg(target_os = "ios")]
             {
-                let _ = _phone.with_webview(|wv| drop_the_form_bar(wv.inner()));
+                let _ = _phone.with_webview(|wv| {
+                    drop_the_form_bar(wv.inner());
+                    wear_the_ground(wv.inner());
+                });
             }
             Ok(())
         })
