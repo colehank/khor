@@ -377,13 +377,7 @@ impl Tmux {
     /// prompt, copy mode is left, which is the bottom. The session is
     /// the one whose `@khor_row` is `row` ([`Tmux::grouped_attach_argv`]).
     pub fn jump_prompt(&self, row: &str, up: bool) -> Result<(), String> {
-        let sessions = self
-            .ask(&["list-sessions", "-F", "#{session_id}\t#{@khor_row}"])
-            .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
-        let id = sessions
-            .lines()
-            .find_map(|l| l.split_once('\t').filter(|(_, r)| *r == row).map(|(id, _)| id.to_owned()))
-            .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
+        let id = self.session_of_row(row)?;
         let step = if up { "previous-prompt" } else { "next-prompt" };
         let at = |args: &[&str]| self.ask(args).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row));
         let place = ["display-message", "-p", "-t", &id, "#{pane_in_mode} #{scroll_position} #{copy_cursor_y}"];
@@ -394,6 +388,113 @@ impl Tmux {
             at(&["send-keys", "-X", "-t", &id, "cancel"])?;
         }
         Ok(())
+    }
+
+    /// **The front pane's history, for the phone's local scroll** (item
+    /// 31; `audit/term-tmux-history.md`). khor's tmux client draws on the
+    /// outer terminal's alternate screen, which keeps no history, and
+    /// without it tmux redraws rather than scrolls whenever the outer
+    /// terminal drains slowly — so the face's own scrollback never holds
+    /// the pane's lines. They come from tmux instead: `capture-pane -e -J`
+    /// (colours, wrapped lines joined), read from khor's grouped session
+    /// (the one whose `@khor_row` is `row`), whose active pane is the one
+    /// in front of khor's client.
+    ///
+    /// `since` is the [`HistoryAnchor`] the previous answer gave, or
+    /// `None` for everything. The answer's `lines` are what tmux added to
+    /// the history after it — or, when the anchor is gone (trimmed past
+    /// [`HISTORY_CAP`], `clear-history`, another pane in front), all of
+    /// it, with `refill` set. History only ever grows at its end, so the
+    /// face appends; the screen below it is sent whole every time.
+    ///
+    /// Each read is one tmux command list, so the history, the screen
+    /// and the numbers describing them are of one moment: tmux parses no
+    /// pane output between the commands of a list.
+    pub fn history(&self, row: &str, since: Option<&HistoryAnchor>) -> Result<PaneHistory, String> {
+        let id = self.session_of_row(row)?;
+        // A first read looks near the end for the anchor; one with no
+        // anchor to look for takes everything at once.
+        let mut window = match since {
+            Some(a) if !a.tail.is_empty() => HISTORY_FIRST_WINDOW,
+            _ => HISTORY_CAP,
+        };
+        loop {
+            let read = self.read_history(&id, window).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
+            // Everything there is, or as much as is sent.
+            let whole = window >= HISTORY_CAP || read.history.len() < window;
+            if let Some(a) = since.filter(|a| a.pane == read.pane && !a.tail.is_empty())
+                && let Some(end) = find_anchor(&read.history, read.size, a)
+            {
+                return Ok(read.answer(Some(end)));
+            }
+            if whole {
+                return Ok(read.answer(None));
+            }
+            window = (window * 8).min(HISTORY_CAP);
+        }
+    }
+
+    fn session_of_row(&self, row: &str) -> Result<String, String> {
+        let sessions = self
+            .ask(&["list-sessions", "-F", "#{session_id}\t#{@khor_row}"])
+            .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
+        sessions
+            .lines()
+            .find_map(|l| l.split_once('\t').filter(|(_, r)| *r == row).map(|(id, _)| id.to_owned()))
+            .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))
+    }
+
+    /// The newest `window` history lines of `session`'s front pane, and
+    /// its screen, in one command list.
+    fn read_history(&self, session: &str, window: usize) -> Option<HistoryRead> {
+        // A line no capture can hold: tmux prints the unit separator as
+        // itself only under `-u`, which `spawn` passes.
+        let split = "\x1fkhor-screen\x1f";
+        let start = format!("-{window}");
+        let out = self.ask_long(&[
+            "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size}", ";",
+            "capture-pane", "-p", "-e", "-J", "-S", &start, "-E", "-1", "-t", session, ";",
+            "display-message", "-p", split, ";",
+            "capture-pane", "-p", "-e", "-t", session,
+        ])?;
+        let (head, rest) = out.split_once('\n')?;
+        let mut words = head.split(' ');
+        let pane = words.next()?.to_owned();
+        let alternate = words.next()? == "1";
+        let size: usize = words.next()?.trim().parse().ok()?;
+        let (history, screen) = rest.split_once(&format!("{split}\n"))?;
+        // With no history, `-E -1` names a line that is not there and tmux
+        // answers with the screen's first: nothing of it is history.
+        let history: Vec<String> = if size == 0 { Vec::new() } else { history.lines().map(str::to_owned).collect() };
+        let screen = screen.lines().map(str::to_owned).collect();
+        Some(HistoryRead { pane, alternate, size, history, screen })
+    }
+
+    /// [`Tmux::ask`] for an answer bigger than a pipe's buffer: a
+    /// capture of [`HISTORY_CAP`] lines is ~400 KB, which tmux could not
+    /// write while nobody read, so the reading runs beside the waiting.
+    fn ask_long(&self, args: &[&str]) -> Option<String> {
+        let mut child = self.spawn(args)?;
+        let mut stdout = child.stdout.take()?;
+        let reader = std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            stdout.read_to_end(&mut bytes).ok().map(|_| bytes)
+        });
+        let deadline = Instant::now() + HISTORY_DEADLINE;
+        let ok = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status.success(),
+                Ok(None) if Instant::now() >= deadline => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break false;
+                }
+                Ok(None) => std::thread::sleep(Duration::from_millis(5)),
+                Err(_) => break false,
+            }
+        };
+        let bytes = reader.join().ok()??;
+        ok.then(|| String::from_utf8_lossy(&bytes).into_owned())
     }
 
     /// **The `default-command` for khor's grouped session** (item 21): the
@@ -858,6 +959,155 @@ pub(crate) fn fake_tmux(tag: &str, output: &str) -> crate::testdir::TempBin {
     crate::testdir::TempBin::new(dir, path)
 }
 
+/// The most history lines one read sends: the owner's phone keeps 5 000
+/// to 10 000 lines of its own, and tmux's `history-limit` (2 000 unless
+/// set) bounds it before this does.
+pub const HISTORY_CAP: usize = 10_000;
+/// The newest lines read first, looking for the anchor; widened eight
+/// times over until it is found or the cap is reached.
+const HISTORY_FIRST_WINDOW: usize = 200;
+/// A capture of the cap took 34 ms (measured 2026-10-05); the deadline
+/// is for a wedged server, as [`CALL_DEADLINE`] is.
+const HISTORY_DEADLINE: Duration = Duration::from_secs(3);
+/// Lines an anchor carries.
+const ANCHOR_LINES: usize = 3;
+
+/// Where the face's copy of a pane's history ends (item 31): handed back
+/// by [`Tmux::history`] and given to it again, opaque to the face.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HistoryAnchor {
+    /// The pane the history is of (`%3`).
+    pub pane: String,
+    /// tmux's `history_size` then: below `history-limit` the history only
+    /// grows, so the anchor is exactly this many lines from its start.
+    pub size: usize,
+    /// The plain text of the history's last lines, oldest first.
+    pub tail: Vec<String>,
+}
+
+/// One read of the front pane's history ([`Tmux::history`]).
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PaneHistory {
+    pub pane: String,
+    /// The pane is on its own alternate screen (vim, less, htop): its
+    /// history is not what it shows, and the program scrolls itself.
+    pub alternate: bool,
+    /// `lines` are the whole history, not what follows the anchor: the
+    /// face clears its copy first.
+    pub refill: bool,
+    /// The colours in force where the face's copy ends, so `lines` draw
+    /// as tmux would: `capture-pane -e` writes each line's escapes
+    /// against the line before it, not from scratch. Empty on a refill.
+    pub lead: String,
+    /// History lines, oldest first, with their escapes.
+    pub lines: Vec<String>,
+    /// The pane's screen, top to bottom, with its escapes.
+    pub screen: Vec<String>,
+    pub anchor: HistoryAnchor,
+}
+
+struct HistoryRead {
+    pane: String,
+    alternate: bool,
+    size: usize,
+    history: Vec<String>,
+    screen: Vec<String>,
+}
+
+impl HistoryRead {
+    /// The answer, given where in `history` the anchor ended (`None`:
+    /// everything, a refill).
+    fn answer(self, found: Option<usize>) -> PaneHistory {
+        let tail = self.history[self.history.len().saturating_sub(ANCHOR_LINES)..]
+            .iter()
+            .map(|l| plain(l))
+            .collect();
+        let anchor = HistoryAnchor { pane: self.pane.clone(), size: self.size, tail };
+        let (refill, lead, lines) = match found {
+            Some(end) => (false, escapes(&self.history[..=end]), self.history[end + 1..].to_vec()),
+            None => (true, String::new(), self.history),
+        };
+        PaneHistory { pane: self.pane, alternate: self.alternate, refill, lead, lines, screen: self.screen, anchor }
+    }
+}
+
+/// Where the anchor's last line is in `history`, the newest lines of a
+/// history `size` lines long: where the anchor's own size puts it, when
+/// its lines are there (always, below `history-limit`, where the history
+/// only grows), else the last place its lines stand together.
+fn find_anchor(history: &[String], size: usize, anchor: &HistoryAnchor) -> Option<usize> {
+    let n = anchor.tail.len();
+    if n == 0 || history.len() < n {
+        return None;
+    }
+    let text: Vec<String> = history.iter().map(|l| plain(l)).collect();
+    let at = |end: usize| end + 1 >= n && end < text.len() && text[end + 1 - n..=end] == anchor.tail[..];
+    let skipped = size.saturating_sub(history.len());
+    let expected = anchor.size.checked_sub(1 + skipped);
+    if let Some(end) = expected.filter(|&e| at(e)) {
+        return Some(end);
+    }
+    (0..text.len()).rev().find(|&end| at(end))
+}
+
+/// A captured line without its escapes: CSI sequences and OSC strings
+/// (tmux writes hyperlinks as OSC 8).
+fn plain(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for c in chars.by_ref() {
+                    if ('\x40'..='\x7e').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\x07' {
+                        break;
+                    }
+                    if c == '\x1b' {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Only the SGR escapes of `lines`, in order, from the last reset on:
+/// replayed from a reset, they leave the colours where the last of the
+/// lines left them.
+fn escapes(lines: &[String]) -> String {
+    let mut out = String::new();
+    for line in lines {
+        let mut rest = line.as_str();
+        while let Some(i) = rest.find("\x1b[") {
+            let tail = &rest[i + 2..];
+            let Some(j) = tail.find(|c: char| ('\x40'..='\x7e').contains(&c)) else { break };
+            if tail.as_bytes()[j] == b'm' {
+                let sgr = &rest[i..i + 2 + j + 1];
+                if sgr == "\x1b[0m" || sgr == "\x1b[m" || sgr.starts_with("\x1b[0;") {
+                    out.clear();
+                }
+                out.push_str(sgr);
+            }
+            rest = &tail[j + 1..];
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1185,6 +1435,123 @@ mod tests {
         assert_eq!(at(), "1 p2");
         t.jump_prompt("shell/9-9", false).unwrap();
         assert!(at().starts_with('0'), "{}", at());
+    }
+
+    /// Waits until the pane `target` shows `line` on its screen.
+    fn until_shown(s: &Server, target: &str, line: &str) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !s.tmux(&["capture-pane", "-p", "-t", target]).unwrap_or_default().lines().any(|l| l == line) {
+            assert!(Instant::now() < deadline, "{line} was never shown");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn numbers(lines: &[String]) -> Vec<u32> {
+        lines.iter().filter_map(|l| plain(l).trim().parse().ok()).collect()
+    }
+
+    /// **Item 31, the host's half**: the front pane's history from before
+    /// anyone asked, then only what followed — never a line twice, never
+    /// a line missed — and the whole again when the anchor is gone or
+    /// another pane is in front.
+    #[test]
+    fn history_is_read_whole_then_from_the_anchor_on() {
+        if !have_tmux() {
+            return;
+        }
+        let s = Server::start("hist");
+        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", "/bin/sh"]);
+        s.until_present("one");
+        s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
+        s.tmux(&["send-keys", "-t", "one", "clear; seq 1 300", "Enter"]);
+        until_shown(&s, "one", "300");
+        let t = s.at();
+        assert!(t.history("shell/0-0", None).is_err(), "no session is that row's");
+
+        let first = t.history("shell/9-9", None).unwrap();
+        assert!(first.refill && !first.alternate, "{first:?}");
+        assert!(first.pane.starts_with('%'), "{}", first.pane);
+        let mut seen = numbers(&first.lines);
+        seen.extend(numbers(&first.screen));
+        assert_eq!(seen, (1..=300).collect::<Vec<_>>(), "the history and the screen are the pane, once");
+
+        s.tmux(&["send-keys", "-t", "one", "seq 301 400", "Enter"]);
+        until_shown(&s, "one", "400");
+        let next = t.history("shell/9-9", Some(&first.anchor)).unwrap();
+        assert!(!next.refill, "{next:?}");
+        let mut held = numbers(&first.lines);
+        held.extend(numbers(&next.lines));
+        held.extend(numbers(&next.screen));
+        assert_eq!(held, (1..=400).collect::<Vec<_>>(), "appended exactly what followed");
+
+        // Nothing new: nothing sent.
+        let still = t.history("shell/9-9", Some(&next.anchor)).unwrap();
+        assert!(!still.refill && still.lines.is_empty(), "{still:?}");
+
+        // The anchor gone: everything again.
+        s.tmux(&["clear-history", "-t", "one"]);
+        s.tmux(&["send-keys", "-t", "one", "seq 401 450", "Enter"]);
+        until_shown(&s, "one", "450");
+        let cleared = t.history("shell/9-9", Some(&still.anchor)).unwrap();
+        assert!(cleared.refill, "{cleared:?}");
+
+        // Another window in front: its history, whole.
+        s.tmux(&["new-window", "-t", "one", "/bin/sh"]);
+        s.tmux(&["send-keys", "-t", "one", "printf '\\033[?1049h'", "Enter"]);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let other = loop {
+            let h = t.history("shell/9-9", Some(&cleared.anchor)).unwrap();
+            if h.alternate || Instant::now() > deadline {
+                break h;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        assert_ne!(other.pane, first.pane);
+        assert!(other.refill && other.alternate, "{other:?}");
+    }
+
+    /// A history bigger than a pipe's buffer comes back, capped, and the
+    /// colours where the face's copy ends lead what follows.
+    #[test]
+    fn a_long_coloured_history_is_capped_and_its_colours_carried() {
+        if !have_tmux() {
+            return;
+        }
+        let s = Server::start("histlong");
+        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", "/bin/sh"]);
+        s.until_present("one");
+        s.tmux(&["set-option", "-t", "one", "history-limit", "20000"]);
+        s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
+        s.tmux(&["send-keys", "-t", "one", "clear; seq 1 12000; printf '\\033[31m'; seq 12001 12050; printf '\\033[0m'", "Enter"]);
+        until_shown(&s, "one", "12050");
+        let t = s.at();
+        let first = t.history("shell/9-9", None).unwrap();
+        assert_eq!(first.lines.len(), HISTORY_CAP, "capped");
+        // The anchor ends inside the red run; what follows starts red.
+        s.tmux(&["send-keys", "-t", "one", "seq 12051 12100", "Enter"]);
+        until_shown(&s, "one", "12100");
+        let next = t.history("shell/9-9", Some(&first.anchor)).unwrap();
+        assert!(!next.refill, "{next:?}");
+        let n = numbers(&next.lines);
+        let held_last = *numbers(&first.lines).last().unwrap();
+        assert_eq!(n.first().copied(), Some(held_last + 1), "{n:?}");
+        assert!((12001..12050).contains(&held_last), "the anchor is inside the red run: {held_last}");
+        assert!(next.lead.ends_with("\x1b[31m"), "{:?}", next.lead);
+    }
+
+    #[test]
+    fn plain_text_and_the_colours_in_force() {
+        assert_eq!(plain("\x1b[31mred\x1b[0m \x1b]8;;http://x\x1b\\link\x1b]8;;\x07"), "red link");
+        let lines = ["\x1b[1mbold\x1b[0m".to_owned(), "\x1b[32mgreen".to_owned(), "still".to_owned()];
+        assert_eq!(escapes(&lines), "\x1b[0m\x1b[32m");
+        let anchor = HistoryAnchor { pane: "%1".into(), size: 5, tail: vec!["b".into(), "c".into()] };
+        let h: Vec<String> = ["a", "b", "c", "b", "c"].iter().map(|s| s.to_string()).collect();
+        // Below the limit the size says where: the second pair is the
+        // anchor only if the history had five lines then.
+        assert_eq!(find_anchor(&h, 5, &anchor), Some(4));
+        let earlier = HistoryAnchor { size: 3, ..anchor.clone() };
+        assert_eq!(find_anchor(&h, 5, &earlier), Some(2));
+        assert_eq!(find_anchor(&h, 5, &HistoryAnchor { tail: vec!["z".into()], ..anchor }), None);
     }
 
     /// The flagship, on a real server of khor's own: a shell sitting at
