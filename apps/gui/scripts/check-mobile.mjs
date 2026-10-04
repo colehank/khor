@@ -167,7 +167,7 @@ const QUICK = new Set([
   "window_minimize", "window_maximize_toggle", "window_close",
   // A line to the app's log; a notification handed to the OS; a haptic
   // handed to UIKit's thread (`bell_haptic` queues it and returns).
-  "face_note", "notify_finished", "bell_haptic",
+  "face_note", "notify_finished", "bell_haptic", "joy_haptic",
 ]);
 // The ones that waited on the main thread on 2026-10-02, named so the
 // red says which: each must be `async`.

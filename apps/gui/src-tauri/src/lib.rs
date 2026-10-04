@@ -904,6 +904,59 @@ fn bell_haptic(app: tauri::AppHandle) {
     let _ = app;
 }
 
+/// **The cursor joystick, felt** (item 23; the owner: 「遥感有振动吗」). Apple's
+/// HIG on haptics (developer.apple.com/design/human-interface-guidelines/
+/// playing-haptics): tie each one to the event it stands for, and use the
+/// system's feedback for its own meaning. So a selection tick
+/// (`UISelectionFeedbackGenerator`, a picker's detent) for each arrow the
+/// stick sends, a light impact when it changes direction or first leaves
+/// its dead zone, and the generators `prepare`d at touch-down
+/// (`UIFeedbackGenerator.prepare`: the engine wakes before the first
+/// tick, which would otherwise come late). `kind`: `prepare`, `tick`,
+/// `turn`, or `end` (the generators let go; nothing is felt on a lift).
+/// Kept on UIKit's thread, where the generators live between calls.
+#[tauri::command]
+fn joy_haptic(app: tauri::AppHandle, kind: String) {
+    #[cfg(target_os = "ios")]
+    {
+        let _ = app.run_on_main_thread(move || {
+            use objc2::rc::Retained;
+            use objc2::{MainThreadMarker, MainThreadOnly as _};
+            use objc2_ui_kit::{UIImpactFeedbackGenerator, UIImpactFeedbackStyle, UISelectionFeedbackGenerator};
+            thread_local! {
+                static HELD: std::cell::RefCell<Option<(Retained<UISelectionFeedbackGenerator>, Retained<UIImpactFeedbackGenerator>)>> =
+                    const { std::cell::RefCell::new(None) };
+            }
+            let Some(mtm) = MainThreadMarker::new() else {
+                return;
+            };
+            HELD.with(|held| {
+                let mut held = held.borrow_mut();
+                if kind == "end" {
+                    *held = None;
+                    return;
+                }
+                let (tick, turn) = held.get_or_insert_with(|| {
+                    (
+                        UISelectionFeedbackGenerator::new(mtm),
+                        UIImpactFeedbackGenerator::initWithStyle(UIImpactFeedbackGenerator::alloc(mtm), UIImpactFeedbackStyle::Light),
+                    )
+                });
+                match kind.as_str() {
+                    "tick" => tick.selectionChanged(),
+                    "turn" => turn.impactOccurred(),
+                    _ => {}
+                }
+                // Ready again for the next one.
+                tick.prepare();
+                turn.prepare();
+            });
+        });
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, kind);
+}
+
 #[tauri::command]
 fn term_key(id: String, keys: String) -> Result<(), String> {
     khor_gui_core::term::term_key(&id, keys.into_bytes())
@@ -3835,6 +3888,7 @@ pub fn run() {
             term_prompt,
             term_wait,
             bell_haptic,
+            joy_haptic,
             face_note,
             notify_finished,
             term_key,

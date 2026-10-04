@@ -1739,6 +1739,10 @@ export const termKey = (id: string, keys: string) => call<null>("term_key", { id
 export const faceNote = (line: string) => call<null>("face_note", { line });
 /** A bell felt: a light haptic tap on a phone (roadmap 4.2). */
 export const bellHaptic = () => call<null>("bell_haptic");
+/** The cursor joystick, felt (item 23, `joy_haptic`): `prepare` at
+    touch-down, a `tick` per arrow sent, a `turn` when the way changes,
+    `end` when the finger lifts. A phone's only; nothing elsewhere. */
+export const joyHaptic = (kind: "prepare" | "tick" | "turn" | "end") => call<null>("joy_haptic", { kind });
 /** A finished command, said by the system (roadmap 2.4, `lib/finished`). */
 export const notifyFinished = (title: string, body: string) => call<null>("notify_finished", { title, body });
 /** Files dropped on a terminal. The paths go over as they are and the
