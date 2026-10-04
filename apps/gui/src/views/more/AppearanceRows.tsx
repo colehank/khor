@@ -1,5 +1,5 @@
-// 外观's two sections of the redesign (2026-10-02): 字号 and 底部导航.
-// Both are this face's own settings, kept in its storage
+// 外观's two face-kept sections (字号, 底部导航), 终端's page and 会话's
+// 完成通知 (UX-16). All are this face's own settings, kept in its storage
 // (`lib/type-size`, `lib/nav-order`), not node config rows — the store
 // has no keys for them yet.
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
@@ -76,8 +76,11 @@ export function TypeSizeSection() {
 }
 
 /**
- * **终端** (F7.6): the terminal's font and its size, previewed in one
- * line drawn in the choice. The font row is the settings picker — the
+ * **终端**, 设置's second page (UX-16; F7.6). Two groups: the font and
+ * its size, previewed in one line drawn in the choice; then the rows in
+ * the owner's order — 唤醒, 键行 (and 外接键盘时显示辅助键 beside it),
+ * 光标, 闪烁, 历史行数, 预测输入, 响铃, 摇杆震动, 命令分隔线, tmux 标记,
+ * Option 当 Meta. A row that cannot act under this pointer is not drawn. The font row is the settings picker — the
  * name and the two chevrons — opening the one menu: 系统默认, the
  * monospace faces this device has (each name drawn in itself), the
  * fonts added here (a heading only once there is one, each with its
@@ -92,7 +95,6 @@ export function TerminalSection() {
   const wake = useTermWake();
   const cursor = useTermCursor();
   const history = useTermHistory();
-  const finishedAfter = useFinishedAfter();
   const bell = useTermBell();
   const joyFelt = useTermJoyHaptic();
   const keysHw = useTermKeysHw();
@@ -128,248 +130,260 @@ export function TerminalSection() {
     </DropdownMenuItem>
   );
   return (
-    <MoreSection name="terminal" label={gui.view_terminal}>
-      <div data-setting-row="popup" data-setting-row-name="term-font" className={ROW}>
-        <span className="min-w-0 flex-1 text-body">{gui.term_font}</span>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+    <>
+      <MoreSection name="term-font">
+        <div data-setting-row="popup" data-setting-row-name="term-font" className={ROW}>
+          <span className="min-w-0 flex-1 text-body">{gui.term_font}</span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                data-term-font
+                aria-label={`${gui.term_font}: ${name}`}
+                className="-mr-xxs flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in text-body hover:bg-fill"
+              >
+                <span className="min-w-0 truncate">{name}</span>
+                <span
+                  data-setting-trail
+                  className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground"
+                >
+                  <IconChevronUp centred className="-mb-(--chevron-pair) size-2.5" />
+                  <IconChevronDown centred className="size-2.5" />
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" data-term-font-menu className="max-h-[60vh] min-w-56 overflow-y-auto">
+              {item("", gui.term_font_system)}
+              {here.map((n) => item(n, n))}
+              {f.added.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>{gui.term_font_added}</DropdownMenuLabel>
+                  {f.added.map((a) =>
+                    item(
+                      a.family,
+                      a.family,
+                      <button
+                        type="button"
+                        data-term-font-remove={a.family}
+                        aria-label={`${gui.remove} ${a.family}`}
+                        title={gui.remove}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void removeFont(a.family);
+                        }}
+                        className="grid size-6 flex-none place-items-center rounded-full text-muted-foreground hover:bg-fill-strong"
+                      >
+                        <IconClose className="size-3.5" />
+                      </button>,
+                    ),
+                  )}
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem data-term-font-add onSelect={() => picker.current?.click()}>
+                {gui.term_font_add}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <input
+            ref={picker}
+            type="file"
+            hidden
+            accept=".ttf,.otf,.woff,.woff2"
+            onChange={(e) => {
+              pick(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        {refused && (
+          <div data-term-font-refused className="px-row text-callout text-destructive">
+            {refused}
+          </div>
+        )}
+        <div data-setting-row="value" data-setting-row-name="term-size" className={ROW}>
+          <span className="min-w-0 flex-1 text-body">{gui.term_size}</span>
+          <span className="text-body text-muted-foreground tabular-nums">{t.term}</span>
+        </div>
+        <div data-setting-row="slider" data-setting-row-name="term-size-slider" className={ROW}>
+          <Slider
+            label={gui.term_size}
+            min={TERM_MIN}
+            max={TERM_MAX}
+            value={t.term}
+            ticks={(TERM_MAX - TERM_MIN) / 2 + 1}
+            onChange={(term) => setTypeSize({ ...t, term })}
+            small={<span className="font-term text-caption">A</span>}
+            large={<span className="font-term text-title-md font-body">A</span>}
+          />
+        </div>
+        <div
+          data-term-size-sample
+          className="truncate px-row text-muted-foreground"
+          // The live variable, not the `font-term` utility: the theme
+          // inlines the token's value there, and the sample must wear the
+          // choice the root now carries (`lib/term-font`).
+          style={{ fontFamily: "var(--font-term)", fontSize: "var(--text-term)", lineHeight: "var(--text-term--line-height)" }}
+        >
+          {gui.term_size_sample}
+        </div>
+      </MoreSection>
+      <MoreSection name="terminal">
+        {coarse && (
+          <PopupRow
+            name="term-wake"
+            label={gui.term_wake}
+            hint={wake === "auto" ? gui.term_wake_note : undefined}
+            value={wake}
+            choices={WAKES.map((w) => ({
+              value: w,
+              label: { auto: gui.term_wake_auto, screen: gui.term_wake_screen, button: gui.term_wake_button }[w],
+            }))}
+            onPick={(w) => setTermWake(w as Wake)}
+          />
+        )}
+        {/* The key row above the keyboard, and its editor — the one the
+            row's 「…」 opens (`views/TermKeys`). A finger's only. */}
+        {coarse && (
+          <>
             <button
               type="button"
-              data-term-font
-              aria-label={`${gui.term_font}: ${name}`}
-              className="-mr-xxs flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in text-body hover:bg-fill"
+              data-setting-row="nav"
+              data-setting-row-name="term-key-row"
+              onClick={() => setEditingKeys(true)}
+              className={cn(ROW, "w-full text-left")}
             >
-              <span className="min-w-0 truncate">{name}</span>
-              <span
-                data-setting-trail
-                className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground"
-              >
-                <IconChevronUp centred className="-mb-(--chevron-pair) size-2.5" />
-                <IconChevronDown centred className="size-2.5" />
-              </span>
+              <span className="min-w-0 flex-1 text-body">{gui.term_key_row}</span>
+              <IconChevronRight className="size-affordance text-tertiary" />
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" data-term-font-menu className="max-h-[60vh] min-w-56 overflow-y-auto">
-            {item("", gui.term_font_system)}
-            {here.map((n) => item(n, n))}
-            {f.added.length > 0 && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>{gui.term_font_added}</DropdownMenuLabel>
-                {f.added.map((a) =>
-                  item(
-                    a.family,
-                    a.family,
-                    <button
-                      type="button"
-                      data-term-font-remove={a.family}
-                      aria-label={`${gui.remove} ${a.family}`}
-                      title={gui.remove}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        void removeFont(a.family);
-                      }}
-                      className="grid size-6 flex-none place-items-center rounded-full text-muted-foreground hover:bg-fill-strong"
-                    >
-                      <IconClose className="size-3.5" />
-                    </button>,
-                  ),
-                )}
-              </>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem data-term-font-add onSelect={() => picker.current?.click()}>
-              {gui.term_font_add}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <input
-          ref={picker}
-          type="file"
-          hidden
-          accept=".ttf,.otf,.woff,.woff2"
-          onChange={(e) => {
-            pick(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-      </div>
-      {refused && (
-        <div data-term-font-refused className="px-row text-callout text-destructive">
-          {refused}
-        </div>
-      )}
-      <div data-setting-row="value" data-setting-row-name="term-size" className={ROW}>
-        <span className="min-w-0 flex-1 text-body">{gui.term_size}</span>
-        <span className="text-body text-muted-foreground tabular-nums">{t.term}</span>
-      </div>
-      <div data-setting-row="slider" data-setting-row-name="term-size-slider" className={ROW}>
-        <Slider
-          label={gui.term_size}
-          min={TERM_MIN}
-          max={TERM_MAX}
-          value={t.term}
-          ticks={(TERM_MAX - TERM_MIN) / 2 + 1}
-          onChange={(term) => setTypeSize({ ...t, term })}
-          small={<span className="font-term text-caption">A</span>}
-          large={<span className="font-term text-title-md font-body">A</span>}
-        />
-      </div>
-      <div
-        data-term-size-sample
-        className="truncate px-row text-muted-foreground"
-        // The live variable, not the `font-term` utility: the theme
-        // inlines the token's value there, and the sample must wear the
-        // choice the root now carries (`lib/term-font`).
-        style={{ fontFamily: "var(--font-term)", fontSize: "var(--text-term)", lineHeight: "var(--text-term--line-height)" }}
-      >
-        {gui.term_size_sample}
-      </div>
-      <PopupRow
-        name="term-cursor"
-        label={gui.term_cursor}
-        value={cursor.shape}
-        choices={[
-          { value: "block", label: gui.term_cursor_block },
-          { value: "bar", label: gui.term_cursor_bar },
-          { value: "underline", label: gui.term_cursor_underline },
-        ]}
-        onPick={(shape) => setTermCursor({ ...cursor, shape: shape as CursorShape })}
-        preview={<CursorSample shape={cursor.shape} />}
-      />
-      <SwitchRow
-        name="term-cursor-blink"
-        label={gui.term_cursor_blink}
-        on={cursor.blink}
-        onToggle={() => setTermCursor({ ...cursor, blink: !cursor.blink })}
-      />
-      <PopupRow
-        name="term-history"
-        label={gui.term_history}
-        hint={gui.term_history_note(((history * lineKb()) / 1024).toFixed(1))}
-        value={String(history)}
-        choices={HISTORY_CHOICES.map((n) => ({ value: String(n), label: n.toLocaleString() }))}
-        onPick={(n) => setTermHistory(Number(n))}
-      />
-      <PopupRow
-        name="finished-notify"
-        label={gui.finished_notify}
-        value={String(finishedAfter)}
-        choices={FINISHED_CHOICES.map((n) => ({
-          value: String(n),
-          label: n === 0 ? gui.finished_notify_off : gui.finished_notify_after(lasted(n * 1000)),
-        }))}
-        onPick={(n) => setFinishedAfter(Number(n))}
-      />
-      <SwitchRow
-        name="term-bell"
-        label={gui.term_bell}
-        hint={gui.term_bell_note}
-        on={bell}
-        onToggle={() => setTermBell(!bell)}
-      />
-      <SwitchRow
-        name="term-block-lines"
-        label={gui.term_block_lines}
-        hint={gui.term_block_lines_note}
-        on={blockLines}
-        onToggle={() => setTermBlockLines(!blockLines)}
-      />
-      <SwitchRow
-        name="term-predict"
-        label={gui.term_predict}
-        hint={gui.term_predict_note}
-        on={predicts}
-        onToggle={() => setTermPredict(!predicts)}
-      />
-      {/* A Mac keyboard's: no Option key under a finger. */}
-      {!coarse && (
-        <SwitchRow
-          name="term-option-meta"
-          label={gui.term_option_meta}
-          hint={gui.term_option_meta_note}
-          on={optionMeta}
-          onToggle={() => setTermOptionMeta(!optionMeta)}
-        />
-      )}
-      {/* The line goes into a computer's ~/.zshrc: a phone has none to
-          edit, so the row is not drawn there (progressive disclosure). */}
-      {!coarse && (
-        <ActionRow
-          name="term-tmux-marks"
-          label={gui.term_tmux_marks}
-          hint={
-            <>
-              {gui.term_tmux_marks_note}
-              <code data-term-tmux-line className="mt-xxs block select-all break-words font-mono text-caption text-foreground">
-                {TMUX_ZSHRC}
-              </code>
-            </>
-          }
-          actionLabel={copied === "copied" ? gui.copied : copied === "failed" ? gui.copy_failed : gui.term_tmux_marks_copy}
-          onPress={() =>
-            void navigator.clipboard.writeText(TMUX_ZSHRC).then(
-              () => setCopied("copied"),
-              () => setCopied("failed"),
-            )
-          }
-        />
-      )}
-      {/* Where the key row starts with a hardware keyboard (UX-12 ruling
-          3, `lib/term-keys-hw`); the deck's circle toggles it either way.
-          A finger's device only. */}
-      {coarse && (
-        <SwitchRow
-          name="term-keys-hw"
-          label={gui.term_keys_hw}
-          hint={gui.term_keys_hw_note}
-          on={keysHw}
-          onToggle={() => setTermKeysHw(!keysHw)}
-        />
-      )}
-      {/* The joystick is the phone key row's (item 23). */}
-      {coarse && (
-        <SwitchRow
-          name="term-joy-haptic"
-          label={gui.term_joy_haptic}
-          hint={gui.term_joy_haptic_note}
-          on={joyFelt}
-          onToggle={() => setTermJoyHaptic(!joyFelt)}
-        />
-      )}
-      {coarse && (
+            <KeyRowEditor open={editingKeys} onOpenChange={setEditingKeys} />
+          </>
+        )}
+        {/* Where the key row starts with a hardware keyboard (UX-12 ruling
+            3, `lib/term-keys-hw`); the deck's circle toggles it either way.
+            A finger's device only. */}
+        {coarse && (
+          <SwitchRow
+            name="term-keys-hw"
+            label={gui.term_keys_hw}
+            hint={gui.term_keys_hw_note}
+            on={keysHw}
+            onToggle={() => setTermKeysHw(!keysHw)}
+          />
+        )}
         <PopupRow
-          name="term-wake"
-          label={gui.term_wake}
-          hint={wake === "auto" ? gui.term_wake_note : undefined}
-          value={wake}
-          choices={WAKES.map((w) => ({
-            value: w,
-            label: { auto: gui.term_wake_auto, screen: gui.term_wake_screen, button: gui.term_wake_button }[w],
-          }))}
-          onPick={(w) => setTermWake(w as Wake)}
+          name="term-cursor"
+          label={gui.term_cursor}
+          value={cursor.shape}
+          choices={[
+            { value: "block", label: gui.term_cursor_block },
+            { value: "bar", label: gui.term_cursor_bar },
+            { value: "underline", label: gui.term_cursor_underline },
+          ]}
+          onPick={(shape) => setTermCursor({ ...cursor, shape: shape as CursorShape })}
+          preview={<CursorSample shape={cursor.shape} />}
         />
-      )}
-      {/* The key row above the keyboard, and its editor — the one the
-          row's 「…」 opens (`views/TermKeys`). A finger's only. */}
-      {coarse && (
-        <>
-          <button
-            type="button"
-            data-setting-row="nav"
-            data-setting-row-name="term-key-row"
-            onClick={() => setEditingKeys(true)}
-            className={cn(ROW, "w-full text-left")}
-          >
-            <span className="min-w-0 flex-1 text-body">{gui.term_key_row}</span>
-            <IconChevronRight className="size-affordance text-tertiary" />
-          </button>
-          <KeyRowEditor open={editingKeys} onOpenChange={setEditingKeys} />
-        </>
-      )}
-    </MoreSection>
+        <SwitchRow
+          name="term-cursor-blink"
+          label={gui.term_cursor_blink}
+          on={cursor.blink}
+          onToggle={() => setTermCursor({ ...cursor, blink: !cursor.blink })}
+        />
+        <PopupRow
+          name="term-history"
+          label={gui.term_history}
+          hint={gui.term_history_note(((history * lineKb()) / 1024).toFixed(1))}
+          value={String(history)}
+          choices={HISTORY_CHOICES.map((n) => ({ value: String(n), label: n.toLocaleString() }))}
+          onPick={(n) => setTermHistory(Number(n))}
+        />
+        <SwitchRow
+          name="term-predict"
+          label={gui.term_predict}
+          hint={gui.term_predict_note}
+          on={predicts}
+          onToggle={() => setTermPredict(!predicts)}
+        />
+        <SwitchRow
+          name="term-bell"
+          label={gui.term_bell}
+          hint={gui.term_bell_note}
+          on={bell}
+          onToggle={() => setTermBell(!bell)}
+        />
+        {/* The joystick is the phone key row's (item 23). */}
+        {coarse && (
+          <SwitchRow
+            name="term-joy-haptic"
+            label={gui.term_joy_haptic}
+            hint={gui.term_joy_haptic_note}
+            on={joyFelt}
+            onToggle={() => setTermJoyHaptic(!joyFelt)}
+          />
+        )}
+        <SwitchRow
+          name="term-block-lines"
+          label={gui.term_block_lines}
+          hint={gui.term_block_lines_note}
+          on={blockLines}
+          onToggle={() => setTermBlockLines(!blockLines)}
+        />
+        {/* The line goes into a computer's ~/.zshrc: a phone has none to
+            edit, so the row is not drawn there (progressive disclosure). */}
+        {!coarse && (
+          <ActionRow
+            name="term-tmux-marks"
+            label={gui.term_tmux_marks}
+            hint={
+              <>
+                {gui.term_tmux_marks_note}
+                <code data-term-tmux-line className="mt-xxs block select-all break-words font-mono text-caption text-foreground">
+                  {TMUX_ZSHRC}
+                </code>
+              </>
+            }
+            actionLabel={copied === "copied" ? gui.copied : copied === "failed" ? gui.copy_failed : gui.term_tmux_marks_copy}
+            onPress={() =>
+              void navigator.clipboard.writeText(TMUX_ZSHRC).then(
+                () => setCopied("copied"),
+                () => setCopied("failed"),
+              )
+            }
+          />
+        )}
+        {/* A Mac keyboard's: no Option key under a finger. */}
+        {!coarse && (
+          <SwitchRow
+            name="term-option-meta"
+            label={gui.term_option_meta}
+            hint={gui.term_option_meta_note}
+            on={optionMeta}
+            onToggle={() => setTermOptionMeta(!optionMeta)}
+          />
+        )}
+      </MoreSection>
+    </>
+  );
+}
+
+/** 完成通知 — 会话's (UX-16): how long a session must have run before its
+    finishing is announced. This face's own setting (`lib/finished`). */
+export function FinishedNotifyRow() {
+  const finishedAfter = useFinishedAfter();
+  return (
+    <PopupRow
+      name="finished-notify"
+      label={gui.finished_notify}
+      value={String(finishedAfter)}
+      choices={FINISHED_CHOICES.map((n) => ({
+        value: String(n),
+        label: n === 0 ? gui.finished_notify_off : gui.finished_notify_after(lasted(n * 1000)),
+      }))}
+      onPick={(n) => setFinishedAfter(Number(n))}
+    />
   );
 }
 

@@ -115,9 +115,11 @@ square = "方形"
 appearance = "外观"
 language = "语言"
 session = "会话"
-# 对所有落地页都成立的那几项;第一个是标签页上限(docs/SHELL.md 第三轮)。
-general = "通用"
 workspace = "工作区"
+# 设置's pages (UX-16) that `khor config list` heads its groups with, and
+# 连接's name on the face; 外观, 会话, 工作区 are the sections' words.
+connection = "连接"
+security = "安全"
 # 这一节在**安全页**上,不在设置页(docs/MORE.md 把它写在安全那一条下面),
 # 理由是它旁边那几节都是「按下去要付出点什么」的事。
 confirm = "危险操作二次确认"

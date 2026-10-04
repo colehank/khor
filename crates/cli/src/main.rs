@@ -977,9 +977,18 @@ fn lock(rest: &[String]) -> Result<(), String> {
 /// a person to two different places (`config::set`).
 fn config(rest: &[String]) -> Result<(), String> {
     let root = Node::root_from_env();
+    // **Grouped the way 设置 is** (UX-16): each page's name on a line of
+    // its own, then its keys, `name<TAB>value`, one per line — the page
+    // a key is drawn on is where a person who read it here will look.
     let list = || {
-        for (k, v) in khor_node::config::list(&root) {
-            println!("{}\t{}", k.name, v);
+        for (i, (page, rows)) in khor_node::config::grouped(&root).into_iter().enumerate() {
+            if i > 0 {
+                println!();
+            }
+            println!("{}", khor_catalog::config::word(page));
+            for (k, v) in rows {
+                println!("{}\t{}", k.name, v);
+            }
         }
     };
     match rest {

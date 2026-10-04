@@ -1,4 +1,4 @@
-// 外观 (docs/SHELL.md 第十七轮 §1): the second section of 更多.
+// 外观, 设置's first page (UX-16: 主题, 语言, 字号, 标记画法, 底栏顺序).
 //
 // What the whole app is drawn in — 主题 and 界面语言. The rows are the
 // node's (`khor_node::config::SECTIONS` puts `appearance` and `language`
@@ -12,7 +12,7 @@ import type { DeviceRow } from "@/api";
 import { MachineFace } from "@/components/SessionFace";
 import { ConfigSections } from "@/views/more/ConfigRows";
 import { MoreFrame } from "@/views/more/MorePage";
-import { NavOrderSection, TerminalSection, TypeSizeSection } from "@/views/more/AppearanceRows";
+import { NavOrderSection, TypeSizeSection } from "@/views/more/AppearanceRows";
 
 export function AppearancePage({
   onClose,
@@ -34,7 +34,6 @@ export function AppearancePage({
         previews={me ? { "kind-mark": <MachineFace face={me.face} system={me.vitals?.vitals.system ?? null} /> } : undefined}
       />
       <TypeSizeSection />
-      <TerminalSection />
       <NavOrderSection />
     </MoreFrame>
   );

@@ -2859,6 +2859,13 @@ fn every_config_name_has_a_word_and_every_word_names_something() {
             "config.{name} must map to a word, not echo"
         );
     }
+    // 设置's pages (UX-16): every page that holds a key heads its group
+    // in `khor config list` with its word; a page's word is a name
+    // somebody can reach too.
+    for (page, _) in config::grouped(&scratch("config-pages")) {
+        assert_ne!(khor_catalog::config::word(page), page, "page {page} holds keys and has no word");
+    }
+    named.extend(config::PAGES.iter().copied());
     for key in khor_catalog::config::KEYS {
         // **A row's note** (`<key>-note`, 2026-10-02): the sentence under
         // a setting's name that says what it does. Optional per key, so it
@@ -2889,11 +2896,51 @@ fn the_kind_mark_starts_on_the_face_and_takes_two_ways() {
     let k = config::key("kind-mark").unwrap();
     assert_eq!(config::section(k.section).unwrap().page, "appearance");
     assert_eq!(config::set(&r, "kind-mark", "corner").unwrap(), "corner");
+    // ⚠️ the line above held through the UX-16 regrouping too: 外观 is
+    // one of 设置's seven pages.
     assert_eq!(config::get(&r, "kind-mark").unwrap(), "corner");
     assert!(config::set(&r, "kind-mark", "swap").is_err());
     // ⚠️ 墓碑 (the audit fix plan F6.4, SYS-19): the row had a note
     // saying where each way puts the mark; the 外观 page draws this
     // machine's face with the mark instead, so the note went.
+}
+
+/// **设置 in seven groups, and nothing a person set is lost** (UX-16,
+/// the owner 2026-10-05). Every key is on one of the seven pages and
+/// `khor config list` groups them in the pages' order; 标签页上限 moved
+/// from 通用 to 会话 with its key and its store, so a value set before
+/// the move reads back after it.
+#[test]
+fn settings_group_into_the_seven_pages_and_keep_their_values() {
+    let r = scratch("config-seven");
+    assert_eq!(
+        config::PAGES,
+        &["appearance", "terminal", "session", "workspace", "connection", "security", "about"]
+    );
+    for s in config::SECTIONS {
+        assert!(config::PAGES.contains(&s.page), "section {} is drawn on {}, not one of the seven", s.name, s.page);
+    }
+    // A store written before the regrouping: the same file, the same keys.
+    std::fs::create_dir_all(r.join(".khor")).unwrap();
+    std::fs::write(
+        config::path_for_tests(&r),
+        r#"{"tabs-limit":"7","session-form":"term","files-click":"pin","confirm-delete":"off","theme":"dark"}"#,
+    )
+    .unwrap();
+    let pages: Vec<&str> = config::grouped(&r).iter().map(|(p, _)| *p).collect();
+    assert_eq!(pages, ["appearance", "session", "workspace", "security"]);
+    let on = |page: &str| -> Vec<(&str, &str)> {
+        config::grouped(&r)
+            .into_iter()
+            .find(|(p, _)| *p == page)
+            .map(|(_, rows)| rows.into_iter().map(|(k, v)| (k.name, v)).collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(on("session"), [("tabs-limit", "7"), ("session-form", "term")]);
+    assert_eq!(on("workspace"), [("files-click", "pin")]);
+    assert_eq!(on("security"), [("confirm-takeover", "on"), ("confirm-delete", "off")]);
+    assert_eq!(on("appearance"), [("theme", "dark"), ("kind-mark", "face"), ("lang", "auto")]);
+    assert_eq!(config::tabs_limit(&r), Some(7));
 }
 
 // ── khor leave (docs/MORE.md 离开, 2026-09-20) ──────────────────────

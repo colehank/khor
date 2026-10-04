@@ -61,9 +61,10 @@ square = "Square"
 # same shape as the state words and the face options.
 appearance = "Appearance"
 language = "Language"
-general = "General"
 session = "Sessions"
 workspace = "Workspace"
+connection = "Connection"
+security = "Security"
 confirm = "Confirm dangerous actions"
 
 theme = "Theme"

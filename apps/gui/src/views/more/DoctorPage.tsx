@@ -23,12 +23,13 @@
 // at. Asked once when the page opens, and again when somebody presses.
 import { useCallback, useEffect, useState } from "react";
 
-import { doctorFix, fetchDoctor, type DoctorRow } from "@/api";
+import { doctorFix, fetchDoctor, type DeviceRow, type DoctorRow } from "@/api";
 import { Waiting } from "@/components/RegionState";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { cli } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { MoreFold, MoreFrame, MoreSection } from "@/views/more/MorePage";
+import { NetStatusSections } from "@/views/more/NetStatus";
 
 /**
  * The ink one state wears.
@@ -74,7 +75,15 @@ const stateWord = (): Record<string, string> => ({
  */
 const wants = (r: DoctorRow) => r.state !== "ok";
 
-export function DoctorPage({ onClose }: { onClose: () => void }) {
+export function DoctorPage({
+  devices,
+  onClose,
+}: {
+  /** The shell's own polled table, for the network's readings under the
+      checks (`NetStatusSections`, UX-16). */
+  devices: DeviceRow[];
+  onClose: () => void;
+}) {
   const [rows, setRows] = useState<DoctorRow[] | null>(null);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -252,6 +261,9 @@ export function DoctorPage({ onClose }: { onClose: () => void }) {
           ))}
         </MoreFold>
       )}
+      {/* The network's readings (UX-16): 网络's status rows and its
+          per-machine 连接 group, readings rather than settings. */}
+      <NetStatusSections devices={devices} />
     </MoreFrame>
   );
 }

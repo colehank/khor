@@ -2656,12 +2656,18 @@ impl Node {
                 note: (!t.url.is_empty()).then(|| t.url.clone()),
             });
         }
+        // 更多's own two and 设置's seven (UX-16), by the words the face
+        // names them with (`views/more/MorePage` `moreName`).
         for (key, label) in [
-            ("network", khor_catalog::gui::network()),
-            ("settings", khor_catalog::gui::settings()),
-            ("security", khor_catalog::gui::security()),
-            ("doctor", khor_catalog::gui::doctor()),
             ("me", khor_catalog::gui::my_khor()),
+            ("appearance", khor_catalog::config::appearance()),
+            ("terminal", khor_catalog::gui::view_terminal()),
+            ("session", khor_catalog::config::session()),
+            ("workspace", khor_catalog::config::workspace()),
+            ("connection", khor_catalog::config::connection()),
+            ("security", khor_catalog::gui::security()),
+            ("about", khor_catalog::gui::settings_about()),
+            ("doctor", khor_catalog::gui::doctor()),
         ] {
             out.push(Hit {
                 kind: "page".to_owned(),
