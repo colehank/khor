@@ -530,10 +530,11 @@ pub fn on_event(app: &AppHandle, id: &str) {
     let editor = app
         .webview_windows()
         .into_iter()
-        .find(|(label, w)| label.starts_with("code:") && w.is_focused().unwrap_or(false))
+        .find(|(label, w)| (label.starts_with("code:") || label == "settings") && w.is_focused().unwrap_or(false))
         .map(|(_, w)| w);
-    // An editor window in front (`open_code_window`) is a window of its
-    // own: its ⌘W and ⇧⌘W close it, and nothing of khor's page is asked.
+    // An editor window in front (`open_code_window`), or the settings
+    // window, is a window of its own: its ⌘W and ⇧⌘W close it, and
+    // nothing of khor's page is asked.
     if id == "close-window" || (id == "close-tab" && editor.is_some()) {
         if let Some(w) = editor {
             let _ = w.close();
@@ -543,6 +544,14 @@ pub fn on_event(app: &AppHandle, id: &str) {
         return;
     }
     if !ACTS.contains(&id) {
+        return;
+    }
+    // ⌘, opens the settings window from anywhere, the page not asked
+    // (UX-10): it is a window of khor's own, not a page of the main one.
+    if id == "settings" {
+        if let Err(e) = crate::show_settings(app, None) {
+            eprintln!("khor: the settings window did not open: {e}");
+        }
         return;
     }
     // Everything else is about the main window, which comes to the front

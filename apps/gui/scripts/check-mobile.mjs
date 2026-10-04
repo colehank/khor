@@ -164,7 +164,7 @@ const QUICK = new Set([
   // The system's: windows, menus, the theme, a link handed to the OS.
   "set_window_theme", "menu_state", "open_link", "reveal", "show_menu", "size_menu", "menu_pick",
   "hide_menu", "widen", "move_page", "hide_page", "show_page", "close_page", "page_step",
-  "window_minimize", "window_maximize_toggle", "window_close",
+  "window_minimize", "window_maximize_toggle", "window_close", "name_settings",
   // A line to the app's log; a notification handed to the OS; a haptic
   // handed to UIKit's thread (`bell_haptic` queues it and returns).
   "face_note", "notify_finished", "bell_haptic", "haptic",

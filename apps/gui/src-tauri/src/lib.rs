@@ -1501,6 +1501,43 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 // height, where the trio starts and the gap after it are `traffic`'s
 // three constants, held to `tokens.css` by `check-boot.mjs`.
 
+/// **A store named by `KHOR_HOME` gets a page store of its own**
+/// (2026-09-27). The webview's localStorage is keyed by the app, not by
+/// khor's store, so a second khor on another store — the native gate's,
+/// or anyone's second profile — read and wrote the owner's open tabs,
+/// list width and theme mirror (found when the gate's app came up
+/// showing the owner's session tabs). Unset, nothing changes: the
+/// default store keeps the page store it has always had. Every window
+/// of khor's own that shows the face wears it, so the main window and
+/// the settings window (UX-10) read one localStorage.
+#[cfg(desktop)]
+fn on_the_page_store<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
+    mut win: tauri::WebviewWindowBuilder<'a, R, M>,
+) -> tauri::WebviewWindowBuilder<'a, R, M> {
+    if let Some(explicit) = std::env::var_os("KHOR_HOME") {
+        // FNV-1a, spelled out: std's hasher may change between Rust
+        // releases, and a changed id is a profile whose page store is
+        // silently gone after a toolchain update.
+        let fnv = |seed: u64, bytes: &[u8]| {
+            bytes.iter().fold(seed, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
+        };
+        let bytes = explicit.as_encoded_bytes();
+        let mut id = [0u8; 16];
+        id[..8].copy_from_slice(&fnv(0xcbf2_9ce4_8422_2325, bytes).to_le_bytes());
+        id[8..].copy_from_slice(&fnv(0x6c62_272e_07bb_0142, bytes).to_le_bytes());
+        #[cfg(target_os = "macos")]
+        {
+            win = win.data_store_identifier(id);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = id;
+            win = win.data_directory(std::path::PathBuf::from(&explicit).join("webview"));
+        }
+    }
+    win
+}
+
 /// The window itself, **built here rather than in `tauri.conf.json`**.
 ///
 /// One thing needs it: macOS's three buttons are placed by a number that
@@ -1544,34 +1581,7 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             ));
         }
     }
-    // **A store named by `KHOR_HOME` gets a page store of its own**
-    // (2026-09-27). The webview's localStorage is keyed by the app, not
-    // by khor's store, so a second khor on another store — the native
-    // gate's, or anyone's second profile — read and wrote the owner's
-    // open tabs, list width and theme mirror (found when the gate's app
-    // came up showing the owner's session tabs). Unset, nothing changes:
-    // the default store keeps the page store it has always had.
-    if let Some(explicit) = std::env::var_os("KHOR_HOME") {
-        // FNV-1a, spelled out: std's hasher may change between Rust
-        // releases, and a changed id is a profile whose page store is
-        // silently gone after a toolchain update.
-        let fnv = |seed: u64, bytes: &[u8]| {
-            bytes.iter().fold(seed, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3))
-        };
-        let bytes = explicit.as_encoded_bytes();
-        let mut id = [0u8; 16];
-        id[..8].copy_from_slice(&fnv(0xcbf2_9ce4_8422_2325, bytes).to_le_bytes());
-        id[8..].copy_from_slice(&fnv(0x6c62_272e_07bb_0142, bytes).to_le_bytes());
-        #[cfg(target_os = "macos")]
-        {
-            win = win.data_store_identifier(id);
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            let _ = id;
-            win = win.data_directory(std::path::PathBuf::from(&explicit).join("webview"));
-        }
-    }
+    let win = on_the_page_store(win);
     // **The overlay window waits for this page's first load** (UX-8). It
     // loads the same page, so building it beside this one put a second
     // WebKit page process and a second copy of the bundle on the CPU
@@ -1903,6 +1913,76 @@ fn menu_wide() -> &'static std::sync::atomic::AtomicU32 {
 fn menu_up() -> &'static std::sync::atomic::AtomicBool {
     static UP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     &UP
+}
+
+/// The settings window's label (UX-10).
+#[cfg(desktop)]
+const SETTINGS: &str = "settings";
+
+/// **Settings in a window of their own** (UX-10; ux-9 M1). HIG Settings
+/// (macOS): a settings window opened by ⌘, from the app menu, its title
+/// the pane's name, minimise and zoom dimmed, and 「Avoid adding settings
+/// buttons to a window's toolbar」 — they had been the main window's
+/// list and content, reached through the 「…」 circle in its first row.
+/// The same page, told which half of itself to be (`?face=settings`,
+/// read once at boot like the overlay's `face=menu`), so the panes are
+/// the very pages they were; one window, brought forward when it exists,
+/// `pane` choosing which to show. The page store is the main window's
+/// (`on_the_page_store`), so the theme mirror and the type sizes agree.
+#[cfg(desktop)]
+pub(crate) fn show_settings(app: &tauri::AppHandle, pane: Option<String>) -> tauri::Result<()> {
+    use tauri::{Emitter, Manager};
+    if let Some(w) = app.get_webview_window(SETTINGS) {
+        if let Some(p) = pane {
+            let _ = w.emit_to(SETTINGS, "settings:pane", p);
+        }
+        let _ = w.show();
+        return w.set_focus();
+    }
+    let at = pane.map(|p| format!("&pane={p}")).unwrap_or_default();
+    let win = tauri::WebviewWindowBuilder::new(app, SETTINGS, tauri::WebviewUrl::App(format!("index.html?face=settings{at}").into()))
+        .title(khor_catalog::gui::nav_settings())
+        .inner_size(780.0, 560.0)
+        // Never the narrow face (`use-narrow`'s 760): a settings window
+        // has its panes beside their content, not a bottom bar.
+        .min_inner_size(760.0, 420.0)
+        .minimizable(false)
+        .maximizable(false)
+        .background_color(ground(chosen_dark(desktop_is_dark)));
+    on_the_page_store(win).build().map(|_| ())
+}
+
+/// ⌘, and 设置… — the page's road to `show_settings`.
+#[cfg(desktop)]
+#[tauri::command]
+async fn open_settings(app: tauri::AppHandle, pane: Option<String>) -> Result<(), String> {
+    show_settings(&app, pane).map_err(|e| e.to_string())
+}
+
+/// The settings window's title follows its pane (HIG Settings: the
+/// window's title is the current pane's name).
+#[cfg(desktop)]
+#[tauri::command]
+fn name_settings(app: tauri::AppHandle, title: String) {
+    use tauri::Manager;
+    if let Some(w) = app.get_webview_window(SETTINGS) {
+        let _ = w.set_title(&title);
+    }
+}
+
+/// A phone's settings are a page of the one window, so there is no
+/// window to open: refused by name, the `show_menu` kind of mobile half.
+#[cfg(not(desktop))]
+#[tauri::command]
+async fn open_settings(pane: Option<String>) -> Result<(), String> {
+    let _ = pane;
+    Err("no settings window on a phone".into())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+fn name_settings(title: String) {
+    let _ = title;
 }
 
 /// Builds the overlay window, once, while the app is starting.
@@ -2959,8 +3039,8 @@ fn set_window_theme(app: tauri::AppHandle, theme: String) {
                 let Ok(win) = w.ns_window() else { continue };
                 if label == "main" {
                     follow_the_app(win);
-                } else if label.starts_with("code:") {
-                    // An editor window is given NSApp's appearance
+                } else if label.starts_with("code:") || label == SETTINGS {
+                    // An editor window (and the settings window, UX-10) is given NSApp's appearance
                     // outright: one left to resolve it lazily came up
                     // with a light title bar over a dark page (2026-09-18).
                     wear_the_apps_appearance(win);
@@ -3701,7 +3781,7 @@ pub fn run() {
                         // closing khor with one open would leave the
                         // process alive behind somebody else's editor.
                         for (label, w) in window.app_handle().webview_windows() {
-                            if label.starts_with("code:") {
+                            if label.starts_with("code:") || label == SETTINGS {
                                 let _ = w.close();
                             }
                         }
@@ -3739,7 +3819,7 @@ pub fn run() {
                         };
                         repaint_the_ground(window.app_handle());
                         for (label, w) in window.app_handle().webview_windows() {
-                            if label.starts_with("code:") {
+                            if label.starts_with("code:") || label == SETTINGS {
                                 #[cfg(target_os = "macos")]
                                 if let Ok(win) = w.ns_window() {
                                     wear_appearance(win, wanted);
@@ -3916,6 +3996,8 @@ pub fn run() {
             term_wait,
             bell_haptic,
             haptic,
+            open_settings,
+            name_settings,
             face_note,
             notify_finished,
             term_key,

@@ -12,17 +12,22 @@ import {
   openTab,
   syncNow,
   fetchWorkspaces,
+  inApp,
   installHooks,
   launchOn,
   closeSession,
   forgetDevice,
   markSeen,
+  nameSettings,
   onFullscreen,
+  openSettings,
   onQuitRequested,
   pinDevice,
   quitNow,
   pinSession,
   setMachinePaused,
+  settingsFace,
+  settingsPane,
   systemUnlock,
   trafficLights,
   trafficRoom,
@@ -390,6 +395,8 @@ export default function App() {
   // the condition and nothing else.
   const [quitting, setQuitting] = useState<number | null>(null);
   useEffect(() => {
+    // The settings window holds no drafts and closes as any window does.
+    if (settingsFace) return;
     const stop = onQuitRequested(() => {
       const n = draftCount();
       if (n === 0) return false;
@@ -655,13 +662,43 @@ export default function App() {
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
   const [morePage, setMorePage] = useState<MorePage | null>(() =>
-    (morePageOrder as readonly string[]).includes(place.more ?? "") ? (place.more as MorePage) : null,
+    // **The settings window is the 「…」 pages and nothing else** (UX-10):
+    // it opens on the pane it was asked for, or 通用, and never on a
+    // landing.
+    settingsFace
+      ? (morePageOrder as readonly string[]).includes(settingsPane ?? "")
+        ? (settingsPane as MorePage)
+        : "settings"
+      : (morePageOrder as readonly string[]).includes(place.more ?? "")
+        ? (place.more as MorePage)
+        : null,
   );
-  // …and written back whenever it changes, for the next start.
-  useEffect(
-    () => rememberPlace({ landing, more: morePage, screen, device: selectedDevice, ws: openWs }),
-    [landing, morePage, screen, selectedDevice, openWs],
-  );
+  // …and written back whenever it changes, for the next start — by the
+  // main window only: the settings window's pane is not where the app was.
+  useEffect(() => {
+    if (!settingsFace) rememberPlace({ landing, more: morePage, screen, device: selectedDevice, ws: openWs });
+  }, [landing, morePage, screen, selectedDevice, openWs]);
+  // The settings window: never off its pages, its title the pane's name,
+  // and a later ⌘, from the menu brings it to the pane it names.
+  useEffect(() => {
+    if (!settingsFace) return;
+    if (morePage === null) setMorePage("settings");
+    else nameSettings(moreName(morePage)).catch(() => {});
+  }, [morePage]);
+  useEffect(() => {
+    if (!settingsFace || !inApp) return;
+    let stop: (() => void) | undefined;
+    let gone = false;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<string>("settings:pane", (e) => {
+        if ((morePageOrder as readonly string[]).includes(e.payload)) setMorePage(e.payload as MorePage);
+      }).then((un) => (gone ? un() : (stop = un))),
+    );
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, []);
   // **What the agents have cost is no longer asked for here at all.**
   // This used to hold a `usage` answer beside the quota — every day
   // there has ever been, eighteen seconds for the first pass on the
@@ -1395,8 +1432,11 @@ export default function App() {
         else goLanding(key as Landing);
       }}
       // 更多's pages, the same place narrow's 设置 opens: the sections
-      // in the list column, the first one beside them.
-      onMore={() => {
+      // in the list column, the first one beside them. **Not on a Mac**
+      // (UX-10; ux-9 M1): settings are a window of their own there,
+      // opened by ⌘, and 设置…, and HIG Settings asks for no settings
+      // button in a window's toolbar — so the circle is not drawn.
+      onMore={trafficLights && !settingsFace ? undefined : () => {
         // Open already: folds the list, like any open landing's glyph.
         if (morePage !== null) {
           listPane.toggle();
@@ -1432,6 +1472,11 @@ export default function App() {
       moreOn={morePage !== null || navOrder.slice(NAV_SHOWN).includes(landing)}
       onGo={(key) => goLanding(key as Landing)}
       onSettings={() => {
+        // A Mac window dragged narrow opens the settings window too.
+        if (trafficLights && !settingsFace) {
+          openSettings().catch(() => {});
+          return;
+        }
         setMorePage("settings");
         setSwitchingTabs(false);
         // Narrow: the sections' list, one screen; wide: the first page
@@ -1510,6 +1555,11 @@ export default function App() {
       listPane.expand();
     },
     settings: () => {
+      // ⌘, on a Mac: the settings window (UX-10; ux-9 M1).
+      if (trafficLights && !settingsFace) {
+        openSettings().catch(() => {});
+        return;
+      }
       setMorePage("settings");
       setScreen("detail");
       setSwitchingTabs(false);
@@ -2906,22 +2956,26 @@ export default function App() {
                 over the column's rows (`lib/scroll-edge`, round HEADS):
                 the list passes under both on one glass. */}
             <div ref={band} data-band data-wide-band className="flex flex-none flex-col">
-              <div
-                data-wide-top
-                {...WINDOW_DRAG}
-                // **Right-aligned with the title row under it** (the owner,
-                // 2026-10-02: 「这要右对齐」): the window buttons' room at the
-                // left, then the strip pushed to the right edge — 更多 over the
-                // search circle, the capsule's end over 筛选 / ＋'s — on the
-                // same inset (`pe-row`, the title row's) and the same gap.
-                className="flex h-pane-head flex-none items-center ps-wide-lead-start pe-row select-none"
-              >
-                <span className="flex-1" />
-                {/* Folded, the strip stands in the content's lead
-                    (`foldedLead`) and only there: a second copy in the
-                    hidden column was a second set of the same buttons. */}
-                {!folded && strip}
-              </div>
+              {/* The settings window has the system's title bar and no
+                  landings: no first row of khor's own (UX-10). */}
+              {!settingsFace && (
+                <div
+                  data-wide-top
+                  {...WINDOW_DRAG}
+                  // **Right-aligned with the title row under it** (the owner,
+                  // 2026-10-02: 「这要右对齐」): the window buttons' room at the
+                  // left, then the strip pushed to the right edge — 更多 over the
+                  // search circle, the capsule's end over 筛选 / ＋'s — on the
+                  // same inset (`pe-row`, the title row's) and the same gap.
+                  className="flex h-pane-head flex-none items-center ps-wide-lead-start pe-row select-none"
+                >
+                  <span className="flex-1" />
+                  {/* Folded, the strip stands in the content's lead
+                      (`foldedLead`) and only there: a second copy in the
+                      hidden column was a second set of the same buttons. */}
+                  {!folded && strip}
+                </div>
+              )}
               {sideHead}
             </div>
             <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1">
@@ -2949,9 +3003,13 @@ export default function App() {
               // A glass circle like every head's way out (the audit fix
               // plan F4.9; W21).
               actions={
-                <GlassCircle aria-label={gui.close} data-more-close onClick={() => setMorePage(null)}>
-                  <IconClose />
-                </GlassCircle>
+                // The settings window closes as a window does (⌘W, the
+                // red button); a ✕ of its own would be a second way out.
+                settingsFace ? undefined : (
+                  <GlassCircle aria-label={gui.close} data-more-close onClick={() => setMorePage(null)}>
+                    <IconClose />
+                  </GlassCircle>
+                )
               }
             >
               {morePageEl}

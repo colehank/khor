@@ -291,6 +291,16 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "taps the phone's haptic engine; a browser has no haptics to reach, and the pane \
          flashes its edge there as everywhere",
     ),
+    // ── the settings window (UX-10) ─────
+    (
+        "open_settings",
+        "opens settings in a native window of their own; a browser face shows the same pages in \
+         its one page",
+    ),
+    (
+        "name_settings",
+        "titles that native window after its pane; a browser face has no window to title",
+    ),
     // ── haptics with a meaning (UX-10) ─────
     (
         "haptic",

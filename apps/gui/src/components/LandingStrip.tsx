@@ -88,7 +88,9 @@ export function LandingStrip({
   /** Whether 更多's pages are the thing on screen. */
   moreOn: boolean;
   onGo: (key: string) => void;
-  onMore: () => void;
+  /** 更多's circle; absent, no circle (the Mac app, whose settings are a
+      window of their own — UX-10). */
+  onMore?: () => void;
 }) {
   // The chosen pill slides to the landing pressed (F7.2, `lib/travel`).
   const strip = useRef<HTMLElement>(null);
@@ -115,11 +117,13 @@ export function LandingStrip({
           </Seat>
         ))}
       </nav>
-      <div className="glass grid size-strip-h flex-none place-items-center rounded-full">
-        <Seat label={gui.rail_more} on={moreOn} mark={{ "data-rail-more": "" }} onClick={onMore} round>
-          <IconMore />
-        </Seat>
-      </div>
+      {onMore && (
+        <div className="glass grid size-strip-h flex-none place-items-center rounded-full">
+          <Seat label={gui.rail_more} on={moreOn} mark={{ "data-rail-more": "" }} onClick={onMore} round>
+            <IconMore />
+          </Seat>
+        </div>
+      )}
     </div>
   );
 }
