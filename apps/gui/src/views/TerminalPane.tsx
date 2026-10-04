@@ -925,6 +925,9 @@ function jumpToPrompt(term: Terminal, marks: Marks, dir: -1 | 1) {
   term.scrollToLine(to);
 }
 
+/** The composition strip's gap above the pane's foot (Tailwind's 2). */
+const STRIP_GAP = 8;
+
 /** A face that has been quiet this long says its size again with its
     next key (ms). */
 const SIZE_AGAIN_MS = 2000;
@@ -1421,6 +1424,8 @@ export function TerminalPane({
   // strip of its own at the screen's foot, not at the cursor, which a
   // redrawing program moves under it.
   const [composingText, setComposingText] = useState<string | null>(null);
+  /** How far the composition strip stands above the pane's foot. */
+  const [composeLift, setComposeLift] = useState(0);
   // A picture the program drew, opened whole (roadmap 3.3).
   const [peek, setPeek] = useState<string | null>(null);
   // A block's output read as data, opened (roadmap 3.4).
@@ -1748,6 +1753,16 @@ export function TerminalPane({
     const composed = (e: CompositionEvent) => {
       if (!window.matchMedia("(pointer: coarse)").matches) return;
       setComposingText(e.type === "compositionend" ? null : e.data || null);
+      // On the alternate screen a program keeps its own last row — tmux's
+      // status line, an editor's — and the strip stands one row above it.
+      // Measured to the top of that row: the strip is taller than a row,
+      // and the grid need not end at the pane's foot.
+      const screen = term.element?.querySelector(".xterm-screen")?.getBoundingClientRect();
+      const pane = boxRef.current?.getBoundingClientRect();
+      if (term.buffer.active.type === "alternate" && screen && pane) {
+        const lastRowTop = screen.top + ((term.rows - 1) * screen.height) / term.rows;
+        setComposeLift(Math.max(0, Math.ceil(pane.bottom - STRIP_GAP - lastRowTop)));
+      } else setComposeLift(0);
     };
     for (const k of ["compositionstart", "compositionupdate", "compositionend"]) {
       field?.addEventListener(k, composed as EventListener);
@@ -2605,7 +2620,7 @@ export function TerminalPane({
           data-term-composing
           aria-hidden
           className="glass pointer-events-none absolute inset-x-2 bottom-2 z-10 truncate rounded-md px-3 py-1 text-[length:var(--text-term)]"
-          style={{ fontFamily: "var(--font-term)" }}
+          style={{ fontFamily: "var(--font-term)", marginBottom: composeLift }}
         >
           {composingText}
         </div>
