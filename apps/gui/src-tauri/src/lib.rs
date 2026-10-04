@@ -1562,6 +1562,24 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Ok(ns) = _built.ns_window() {
         traffic::check(ns);
     }
+    // **The page holds the keys from launch** (UX-8, found by the native
+    // gate): the window's first responder was the window itself until
+    // somebody clicked into it, so a key only the page answers — ⇧⌘[ and
+    // ⇧⌘], Esc back, typing into a box ⌘F opened — did nothing on a
+    // freshly opened khor, while keys with a menu item went through the
+    // menu and looked fine. A Mac app's content takes the keyboard when
+    // its window opens; this makes the webview the first responder.
+    #[cfg(target_os = "macos")]
+    let _ = _built.with_webview(|wv| {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        let (view, window) = (wv.inner() as *mut AnyObject, wv.ns_window() as *mut AnyObject);
+        if !view.is_null() && !window.is_null() {
+            // SAFETY: both are the live webview and its window, handed to
+            // this closure on the main thread.
+            let _: bool = unsafe { msg_send![window, makeFirstResponder: view] };
+        }
+    });
     Ok(())
 }
 
