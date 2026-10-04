@@ -20,9 +20,10 @@
 // 3. **A font that arrives late** leaves rasters drawn with the stand-in.
 //
 // What this module does about them, without patching the package:
-// - the atlas's `clearTexture` also sets the flag a new page sets, so every
-//   renderer sharing it rebuilds its model on its next frame (#6055's
-//   effect);
+// - the atlas's `clearTexture` also has every other renderer sharing it
+//   rebuild its model, once, on its next frame (#6055's effect). Once, not
+//   for good: setting the flag a new page sets would have every sharer
+//   rebuild its whole model on every render from then on;
 // - when the atlas removes a page (a merge or an eviction), every
 //   renderer's page textures are marked stale, so all of them upload again;
 // - when the page's fonts finish loading, every atlas is cleared and then
@@ -34,7 +35,7 @@
 //   the DOM renderer and says so (`onFallback`).
 //
 // Internals reached (`_renderer`, `_charAtlas`, `_glyphRenderer`,
-// `_requestClearModel`) are 0.19.0's own names, read defensively: a newer
+// `_clearModel`) are 0.19.0's own names, read defensively: a newer
 // addon without them simply skips the guard.
 import type { Terminal } from "@xterm/xterm";
 import { WebglAddon } from "@xterm/addon-webgl";
@@ -43,9 +44,10 @@ import { WebglAddon } from "@xterm/addon-webgl";
     the DOM renderer (ms). */
 export const LOST_AGAIN_MS = 60_000;
 
-type Atlas = { clearTexture: () => void; _requestClearModel?: boolean };
+type Atlas = { clearTexture: () => void };
 type Renderer = {
   _charAtlas?: Atlas;
+  _clearModel?: (andGlyphs: boolean) => void;
   _glyphRenderer?: { value?: { setAtlas?: (a: Atlas) => void } };
 };
 type Held = { term: Terminal; addon: WebglAddon };
@@ -59,8 +61,8 @@ function rendererOf(addon: WebglAddon): Renderer | null {
   return ((addon as unknown as { _renderer?: Renderer })._renderer ?? null) as Renderer | null;
 }
 
-/** #6055's effect, put on the atlas class once: a clear asks every sharer
-    to rebuild its model. */
+/** #6055's effect, put on the atlas class once: after a clear, every
+    renderer drawing from that atlas drops its model and redraws, once. */
 function guardAtlas(addon: WebglAddon) {
   const atlas = rendererOf(addon)?._charAtlas;
   if (!atlas) return;
@@ -70,7 +72,12 @@ function guardAtlas(addon: WebglAddon) {
   const clear = proto.clearTexture;
   proto.clearTexture = function (this: Atlas) {
     clear.call(this);
-    if ("_requestClearModel" in this) this._requestClearModel = true;
+    for (const h of held) {
+      const r = rendererOf(h.addon);
+      if (r?._charAtlas !== this) continue;
+      r._clearModel?.(true);
+      h.term.refresh(0, h.term.rows - 1);
+    }
   };
 }
 
