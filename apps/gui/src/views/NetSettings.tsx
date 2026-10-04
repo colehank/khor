@@ -51,6 +51,12 @@ import { Waiting } from "@/components/RegionState";
 /** A relay to keep as it is stored — its key, if any, stays put. */
 const kept = (url: string): RelayWant => ({ url, token: null });
 
+/** **How a relay is reached, said in words** (round NET-7): HTTPS, or
+    HTTP in the clear — the Beijing relay is both for a while, the same
+    box over two schemes, and the address alone left the difference to
+    a reader who knows what the letters mean. */
+const scheme = (url: string) => (url.startsWith("https://") ? gui.relays_scheme_https : gui.relays_scheme_http);
+
 /** Mounting is reading: the page is drawn only while it is on screen. */
 export function NetSettings() {
   const [choices, setChoices] = useState<RelayChoices | null>(null);
@@ -119,7 +125,10 @@ export function NetSettings() {
           <MoreFact name="relays-in-use" label={gui.relays_in_use}>
             <span data-relays-in-use className="flex flex-col items-end font-mono">
               {choices.in_use.map((url) => (
-                <span key={url}>{url}</span>
+                <span key={url} data-relay-scheme={url.startsWith("https://") ? "https" : "http"}>
+                  {url}
+                  <span className="ml-2 font-sans text-muted-foreground">{scheme(url)}</span>
+                </span>
               ))}
             </span>
           </MoreFact>
@@ -137,7 +146,7 @@ export function NetSettings() {
               value={choices.preferred ?? ""}
               choices={[
                 { value: "", label: gui.relays_preferred_auto },
-                ...choices.in_use.map((url) => ({ value: url, label: url })),
+                ...choices.in_use.map((url) => ({ value: url, label: `${url}（${scheme(url)}）` })),
               ]}
               onPick={(v) => {
                 setError(null);

@@ -113,6 +113,10 @@ pub struct NetReportConfig {
     /// current report reached it at all, whatever its latency against the
     /// others. `None` keeps iroh's own choice (lowest recent latency).
     pub preferred_relay: Option<RelayUrl>,
+    /// khor patch 5 (vendor/iroh/KHOR.md): `(old, new)` pairs — a relay
+    /// and the one that replaces it. Whenever the home would be `old`
+    /// and the current report reached `new`, the home is `new`.
+    pub successors: Vec<(RelayUrl, RelayUrl)>,
 }
 
 impl NetReportConfig {
@@ -122,6 +126,7 @@ impl NetReportConfig {
             https_probes: false,
             captive_portal_check: false,
             preferred_relay: None,
+            successors: Vec::new(),
         }
     }
 }
@@ -132,6 +137,7 @@ impl Default for NetReportConfig {
             https_probes: true,
             captive_portal_check: true,
             preferred_relay: None,
+            successors: Vec::new(),
         }
     }
 }
@@ -155,6 +161,8 @@ pub(crate) struct Client {
     captive_portal_check: bool,
     /// khor patch 3: the relay to home on when reachable.
     preferred_relay: Option<RelayUrl>,
+    /// khor patch 5: relays and the ones that replace them.
+    successors: Vec<(RelayUrl, RelayUrl)>,
     /// A collection of previously generated reports.
     ///
     /// Sometimes it is useful to look at past reports to decide what to do.
@@ -297,6 +305,7 @@ impl Client {
             tls_config: opts.tls_config,
             captive_portal_check: opts.user_config.captive_portal_check,
             preferred_relay: opts.user_config.preferred_relay.clone(),
+            successors: opts.user_config.successors.clone(),
         }
     }
 
@@ -833,6 +842,17 @@ impl Client {
             && r.relay_latency.get(chosen).is_some()
         {
             r.preferred_relay = Some(chosen.clone());
+        }
+
+        // khor patch 5: a home that has a successor this report reached
+        // moves to the successor — the same box over TLS, say, measuring
+        // no faster than the plain one it replaces. After patch 3, so a
+        // person who chose the old one gets the new one too.
+        if let Some(home) = &r.preferred_relay
+            && let Some((_, new)) = self.successors.iter().find(|(old, _)| old == home)
+            && r.relay_latency.get(new).is_some()
+        {
+            r.preferred_relay = Some(new.clone());
         }
 
         self.reports.prev.insert(now, r.clone());

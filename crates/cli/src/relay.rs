@@ -80,6 +80,8 @@ struct Options {
     metrics: Option<SocketAddr>,
     state: PathBuf,
     stats: bool,
+    /// `--tls-check`: read the certificate and key, start nothing.
+    tls_check: bool,
 }
 
 fn parse(rest: &[String]) -> Result<Options, String> {
@@ -93,6 +95,7 @@ fn parse(rest: &[String]) -> Result<Options, String> {
         metrics: None,
         state: Node::root_from_env().join(".khor").join("relay"),
         stats: false,
+        tls_check: false,
     };
     let (mut cert, mut key, mut acme, mut contact, mut dev) = (None, None, None, None, false);
     let mut it = rest.iter();
@@ -130,6 +133,7 @@ fn parse(rest: &[String]) -> Result<Options, String> {
             "--http" => o.http = Some(addr(flag, it.next())?),
             "--state" => o.state = PathBuf::from(value()?),
             "--stats" => o.stats = true,
+            "--tls-check" => o.tls_check = true,
             other => return Err(cli::relay_flag_unknown(other)),
         }
     }
@@ -151,6 +155,19 @@ pub(crate) fn verb(rest: &[String]) -> Result<(), String> {
     let o = parse(rest)?;
     if o.stats {
         return print_stats(&o.state);
+    }
+    // **`--tls-check`**: the certificate and key read exactly as a relay
+    // started with them would read them, and nothing started. What
+    // scripts/relay-https.sh runs before it switches anything — and an
+    // older khor, which does not know the flag, refuses it by name, so
+    // the script also learns whether this binary renews in place.
+    if o.tls_check {
+        let Some(Mode::Tls { cert, key }) = o.mode.as_ref() else {
+            return Err(cli::relay_tls_check_needs_files().to_owned());
+        };
+        Renewable::read(cert, key)?;
+        println!("{}", cli::relay_tls_ok(cert.display(), key.display()));
+        return Ok(());
     }
     let Some(mode) = o.mode.as_ref() else {
         return Err(cli::relay_pick_mode().to_owned());
@@ -179,15 +196,17 @@ async fn run(o: &Options, mode: &Mode, table: Option<Arc<Table>>) -> Result<(), 
                 .unwrap_or_else(|| SocketAddr::from(([0u16; 8], DEV_PORT))),
             None,
         ),
-        Mode::Tls { cert, key } => (
-            o.http.unwrap_or_else(|| SocketAddr::from(([0u16; 8], 80))),
-            Some(TlsConfig::new(
-                o.bind.unwrap_or_else(|| SocketAddr::from(([0u16; 8], 443))),
-                CertConfig::Manual {
-                    server_config: manual_tls(cert, key)?,
-                },
-            )),
-        ),
+        Mode::Tls { cert, key } => {
+            let (server_config, renewable) = manual_tls(cert, key)?;
+            tokio::spawn(renewable.keep_fresh());
+            (
+                o.http.unwrap_or_else(|| SocketAddr::from(([0u16; 8], 80))),
+                Some(TlsConfig::new(
+                    o.bind.unwrap_or_else(|| SocketAddr::from(([0u16; 8], 443))),
+                    CertConfig::Manual { server_config },
+                )),
+            )
+        }
         Mode::Acme { domain, contact } => {
             let mut acme = AcmeConfig::letsencrypt(true)
                 .domains(vec![domain.clone()])
@@ -317,20 +336,125 @@ fn acme_tls(acme: AcmeConfig, bind: SocketAddr) -> Result<TlsConfig, String> {
     ))
 }
 
-fn manual_tls(cert: &Path, key: &Path) -> Result<rustls::ServerConfig, String> {
-    use rustls::pki_types::pem::PemObject;
-    use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-    let chain = CertificateDer::pem_file_iter(cert)
-        .and_then(|i| i.collect::<Result<Vec<_>, _>>())
-        .map_err(|e| cli::relay_tls_bad(format!("{}: {e}", cert.display())))?;
-    let secret = PrivateKeyDer::from_pem_file(key)
-        .map_err(|e| cli::relay_tls_bad(format!("{}: {e}", key.display())))?;
-    rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-        .with_safe_default_protocol_versions()
-        .map_err(|e| cli::relay_tls_bad(e))?
-        .with_no_client_auth()
-        .with_single_cert(chain, secret)
-        .map_err(|e| cli::relay_tls_bad(e))
+/// `--tls-cert`/`--tls-key`: a certificate the operator renews on disk,
+/// served through [`Renewable`] so a renewal takes without a restart.
+fn manual_tls(cert: &Path, key: &Path) -> Result<(rustls::ServerConfig, Arc<Renewable>), String> {
+    let renewable = Arc::new(Renewable::open(cert, key)?);
+    let config =
+        rustls::ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .map_err(|e| cli::relay_tls_bad(e))?
+            .with_no_client_auth()
+            .with_cert_resolver(renewable.clone());
+    Ok((config, renewable))
+}
+
+/// How often a [`Renewable`] reads its files again on its own, besides
+/// the `SIGHUP` a renewal hook sends. iroh-relay's own reloading mode
+/// reads once a day (`DEFAULT_CERT_RELOAD_INTERVAL`); a quarter of that
+/// here, so a renewal whose hook never ran is still served within hours,
+/// long before the old certificate's last 30 days run out (acme.sh
+/// renews at 60 of Let's Encrypt's 90).
+const TLS_REREAD_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+
+/// **A certificate that can be renewed under a running relay** (round
+/// NET-7, the Beijing relay's HTTPS). The certificate is one acme.sh
+/// obtains by DNS and renews every 60 days, so the relay must take a new
+/// one without dropping every client it holds; a restart would.
+/// iroh-relay's `CertConfig::Manual` takes any rustls `ServerConfig` and
+/// says it may carry "a certificate loader", and its own binary's
+/// `Reloading` mode does exactly this with a resolver re-reading the
+/// files on an interval (`server::reloading_resolver`). This one also
+/// re-reads on `SIGHUP`, which is what the renewal hook sends
+/// (`systemctl reload`, `ExecReload=` in the unit), so a renewal is
+/// served at once rather than at the next interval.
+///
+/// A read that fails — a half-written file, a key that does not match
+/// the certificate — keeps the certificate already served and says so;
+/// only the first read, at start, is fatal.
+#[derive(Debug)]
+struct Renewable {
+    cert: PathBuf,
+    key: PathBuf,
+    now: std::sync::RwLock<Arc<rustls::sign::CertifiedKey>>,
+}
+
+impl Renewable {
+    fn open(cert: &Path, key: &Path) -> Result<Renewable, String> {
+        Ok(Renewable {
+            cert: cert.to_path_buf(),
+            key: key.to_path_buf(),
+            now: std::sync::RwLock::new(Arc::new(Self::read(cert, key)?)),
+        })
+    }
+
+    /// The chain and key, read and checked the way a handshake will use
+    /// them: parsed, the key loaded by the provider that serves, and the
+    /// key the one the certificate names.
+    fn read(cert: &Path, key: &Path) -> Result<rustls::sign::CertifiedKey, String> {
+        use rustls::pki_types::pem::PemObject;
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        let chain = CertificateDer::pem_file_iter(cert)
+            .and_then(|i| i.collect::<Result<Vec<_>, _>>())
+            .map_err(|e| cli::relay_tls_bad(format!("{}: {e}", cert.display())))?;
+        if chain.is_empty() {
+            return Err(cli::relay_tls_bad(format!("{}: no certificate", cert.display())));
+        }
+        let secret = PrivateKeyDer::from_pem_file(key)
+            .map_err(|e| cli::relay_tls_bad(format!("{}: {e}", key.display())))?;
+        let signing = rustls::crypto::ring::default_provider()
+            .key_provider
+            .load_private_key(secret)
+            .map_err(|e| cli::relay_tls_bad(format!("{}: {e}", key.display())))?;
+        let certified = rustls::sign::CertifiedKey::new(chain, signing);
+        certified.keys_match().map_err(|e| cli::relay_tls_bad(e))?;
+        Ok(certified)
+    }
+
+    /// Reads the files again; the certificate served changes only when
+    /// the read succeeds.
+    fn reread(&self) -> Result<(), String> {
+        let fresh = Self::read(&self.cert, &self.key)?;
+        *self.now.write().unwrap_or_else(|p| p.into_inner()) = Arc::new(fresh);
+        Ok(())
+    }
+
+    /// `SIGHUP`, and every [`TLS_REREAD_EVERY`]: read again, and say what
+    /// happened — a renewal that did not take must be in the log.
+    async fn keep_fresh(self: Arc<Self>) {
+        #[cfg(unix)]
+        let mut hup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()).ok();
+        let mut every = tokio::time::interval(TLS_REREAD_EVERY);
+        every.tick().await;
+        loop {
+            #[cfg(unix)]
+            let asked = async {
+                match hup.as_mut() {
+                    Some(h) => {
+                        h.recv().await;
+                    }
+                    None => std::future::pending::<()>().await,
+                }
+            };
+            #[cfg(not(unix))]
+            let asked = std::future::pending::<()>();
+            tokio::select! {
+                _ = asked => {}
+                _ = every.tick() => {}
+            }
+            let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+            match self.reread() {
+                Ok(()) => println!("{}", cli::relay_tls_reread(&stamp, self.cert.display())),
+                Err(e) => eprintln!("{}", cli::relay_tls_reread_failed(&stamp, e)),
+            }
+        }
+    }
+}
+
+impl rustls::server::ResolvesServerCert for Renewable {
+    fn resolve(&self, _: rustls::server::ClientHello<'_>) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        Some(self.now.read().unwrap_or_else(|p| p.into_inner()).clone())
+    }
 }
 
 // ── who gets in ─────────────────────────────────────────────────────

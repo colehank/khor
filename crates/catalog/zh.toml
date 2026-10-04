@@ -524,6 +524,7 @@ doctor-web-nokey = "端口 {0} 正在监听，但密钥文件不存在"
 doctor-web-quiet = "端口 {0} 无人监听"
 doctor-relay-ms = "{0} {1}ms"
 doctor-relay-quiet = "{0} 无法连接"
+doctor-relay-not-yet = "{0} 还没启用，用的是 {1}"
 doctor-relays-none = "没有中继"
 # 对端的版本从读数上来(`khor_core::Vitals::version`),不另问一趟——
 # 所以一台没联系上的机器在这儿没有版本,而那是答案,不是缺口。
@@ -1232,6 +1233,10 @@ relay-flag-needs-value = "{0} 缺少一个值"
 relay-rate-bad = "--rate 要一个大于 0 的整数（字节每秒）：{0}"
 relay-addr-bad = "不是一个监听地址：{0}"
 relay-tls-bad = "读不了证书或私钥：{0}"
+relay-tls-reread = "[{0}] 已重新读取证书 {1}"
+relay-tls-reread-failed = "[{0}] 证书没换成，继续用原来的：{1}"
+relay-tls-check-needs-files = "--tls-check 要和 --tls-cert、--tls-key 一起用"
+relay-tls-ok = "证书和私钥可用：{0}、{1}"
 relay-wont-start = "中继无法启动：{0}"
 # `khor relay --stats`: totals only (CONNECT.md 计量只存总数) — per
 # endpoint how often and how long, the relay's bytes as one number.
@@ -3475,6 +3480,8 @@ relays-only-mine = "只使用自己的中继"
 relays-key = "中继密钥"
 relays-key-hint = "密钥（没有就留空）"
 relays-keyed = "带密钥"
+relays-scheme-https = "HTTPS"
+relays-scheme-http = "HTTP，明文"
 back = "返回"
 # The narrow session page's foot (2026-10-02, iOS 第三步 A). The switch
 # for the soft keyboard: the system's own two verbs, the one that says

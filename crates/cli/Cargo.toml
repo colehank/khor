@@ -72,3 +72,7 @@ agent-client-protocol = "2"
 # the node's own tests write it (`crates/node/tests/avatar.rs`).
 khor-net.workspace = true
 khor-sync.workspace = true
+# `tests/relay_https.rs` signs its own certificates (round NET-7): the
+# rcgen iroh-relay's server feature already pulls, same version and
+# features (MIT OR Apache-2.0), no new crate.
+rcgen = "0.14"
