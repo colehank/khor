@@ -650,6 +650,15 @@ pub enum Request {
         form: String,
         agent: String,
     },
+    /// The history of the pane a tmux row's client has in front, from
+    /// `since` on (item 31, `crate::adaptor::tmux::Tmux::history`): what a
+    /// phone scrolls locally. Answered as [`Response::PaneHistory`]. **A
+    /// new variant**: a khor that predates it refuses the frame, and the
+    /// asker's face keeps tmux's own scrolling.
+    PaneHistory {
+        session: String,
+        since: Option<crate::adaptor::tmux::HistoryAnchor>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -971,6 +980,10 @@ pub enum Response {
         rows: Vec<khor_core::Session>,
         full: serde_bytes::ByteBuf,
     },
+    /// The answer to [`Request::PaneHistory`].
+    PaneHistory {
+        history: crate::adaptor::tmux::PaneHistory,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1065,6 +1078,7 @@ impl Request {
                 | Request::Stat { .. }
                 | Request::History { .. }
                 | Request::Git { .. }
+                | Request::PaneHistory { .. }
                 // **A create with a token** (round NET-7, `crate::once`):
                 // asked twice, the far machine answers the second with the
                 // session the first made — the same as asking once.
@@ -2410,6 +2424,37 @@ mod tests {
     /// Roadmap 2.6's question and answer cross the wire whole, under
     /// their own name — an older khor sees a word it does not know and
     /// refuses, never a neighbour's shape.
+    /// Item 31's question and answer, the same way.
+    #[test]
+    fn a_pane_history_question_and_answer_round_trip() {
+        use crate::adaptor::tmux::{HistoryAnchor, PaneHistory};
+        let anchor = HistoryAnchor { pane: "%3".into(), size: 300, tail: vec!["298".into(), "299".into(), "300".into()] };
+        let since = Some(anchor.clone());
+        let bytes = encode(&Request::PaneHistory { session: "shell/1-0".into(), since: since.clone() }).unwrap();
+        assert!(bytes.windows(11).any(|w| w == b"PaneHistory"), "the name is on the wire");
+        match decode::<Request>(&bytes).unwrap() {
+            Request::PaneHistory { session, since: got } => {
+                assert_eq!(session, "shell/1-0");
+                assert_eq!(got, since);
+            }
+            other => panic!("decoded wrong: {other:?}"),
+        }
+        let history = PaneHistory {
+            pane: "%3".into(),
+            alternate: false,
+            refill: false,
+            lead: "\x1b[31m".into(),
+            lines: vec!["301".into()],
+            screen: vec!["$ ".into()],
+            anchor,
+        };
+        let bytes = encode(&Response::PaneHistory { history: history.clone() }).unwrap();
+        match decode::<Response>(&bytes).unwrap() {
+            Response::PaneHistory { history: got } => assert_eq!(got, history),
+            other => panic!("decoded wrong: {other:?}"),
+        }
+    }
+
     #[test]
     fn a_history_question_and_answer_round_trip() {
         let ask = crate::commands::HistoryAsk {

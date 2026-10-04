@@ -326,6 +326,13 @@ pub enum Op {
         session: String,
         action: String,
     },
+    /// A tmux row's front pane history on another machine (item 31);
+    /// answered with [`Reply::PaneHistory`]. Tail-appended.
+    PaneHistoryOn {
+        machine: String,
+        session: String,
+        since: Option<crate::adaptor::tmux::HistoryAnchor>,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -422,6 +429,7 @@ impl Op {
             Op::GitOn { .. } => ("GitOn", DEADLINE_FAR),
             Op::FaceHere { .. } => ("FaceHere", DEADLINE_LOCAL),
             Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
+            Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -623,6 +631,10 @@ pub enum Reply {
     Git { answer: crate::git::GitAnswer },
     /// Tail-appended with [`Op::FaceHere`]: noted.
     Noted,
+    /// Tail-appended with [`Op::PaneHistoryOn`].
+    PaneHistory {
+        history: crate::adaptor::tmux::PaneHistory,
+    },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

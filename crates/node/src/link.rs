@@ -1723,6 +1723,12 @@ impl Node {
                 },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::PaneHistoryOn { machine, session, since } => {
+                match self.pane_history_with(ep, &machine, &session, since).await {
+                    Ok(history) => ipc::Reply::PaneHistory { history },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
         }
     }
 
@@ -2681,6 +2687,15 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())??;
                 Ok(Response::Git { answer })
+            }
+            // A tmux row's front pane history (item 31): tmux runs here.
+            Request::PaneHistory { session, since } => {
+                let id = crate::SessionId(session);
+                let live = self.live.clone();
+                let history = tokio::task::spawn_blocking(move || live.tmux_history(&id, since.as_ref()))
+                    .await
+                    .map_err(|e| e.to_string())??;
+                Ok(Response::PaneHistory { history })
             }
             Request::History { ask } => {
                 // Off the reactor: up to `HISTORY_MAX` of lines read and
@@ -6063,23 +6078,77 @@ impl Node {
             .map_err(|e| e.to_string())?
     }
 
-    /// **A tmux row's front pane history** (item 31, `LiveKind::tmux_history`),
-    /// for the phone's local scroll. On this machine only for now: a row
-    /// on another machine answers as an action that machine does not know,
-    /// and the face keeps tmux's own scrolling.
+    /// **A tmux row's front pane history** (item 31,
+    /// `LiveKind::tmux_history`), on the machine the row lives on: what a
+    /// phone scrolls locally. A khor there that predates the question
+    /// refuses it, and the face keeps tmux's own scrolling.
     pub async fn pane_history_anywhere(
         &self,
         id: &crate::SessionId,
         since: Option<crate::adaptor::tmux::HistoryAnchor>,
     ) -> Result<crate::adaptor::tmux::PaneHistory, String> {
-        if self.far_machine(id)?.is_some() {
-            return Err(msg::unknown_action("pane-history"));
+        if let Some(machine) = self.far_machine(id)? {
+            return self.pane_history(&machine, &id.0, since).await;
         }
         let live = self.live.clone();
         let id = id.clone();
         tokio::task::spawn_blocking(move || live.tmux_history(&id, since.as_ref()))
             .await
             .map_err(|e| e.to_string())?
+    }
+
+    /// [`Node::pane_history_anywhere`] asked of a named machine (`""` is
+    /// this one), as [`Node::history`] is.
+    pub async fn pane_history(
+        &self,
+        machine: &str,
+        session: &str,
+        since: Option<crate::adaptor::tmux::HistoryAnchor>,
+    ) -> Result<crate::adaptor::tmux::PaneHistory, String> {
+        let op = ipc::Op::PaneHistoryOn {
+            machine: machine.to_owned(),
+            session: session.to_owned(),
+            since: since.clone(),
+        };
+        if let Some(reply) = self.via_serve(op).await {
+            return match reply? {
+                ipc::Reply::PaneHistory { history } => Ok(history),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.pane_history_with(&ep, machine, session, since).await;
+        ep.close().await;
+        out
+    }
+
+    async fn pane_history_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        session: &str,
+        since: Option<crate::adaptor::tmux::HistoryAnchor>,
+    ) -> Result<crate::adaptor::tmux::PaneHistory, String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            let live = self.live.clone();
+            let id = crate::SessionId(session.to_owned());
+            return tokio::task::spawn_blocking(move || live.tmux_history(&id, since.as_ref()))
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        let req = Request::PaneHistory {
+            session: session.to_owned(),
+            since,
+        };
+        match self.ask(ep, &channel, &req).await? {
+            Response::PaneHistory { history } => Ok(history),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     async fn act_on_with(&self, ep: &iroh::Endpoint, machine: &str, session: &str, action: &str) -> Result<(), String> {

@@ -971,6 +971,11 @@ const HISTORY_FIRST_WINDOW: usize = 200;
 const HISTORY_DEADLINE: Duration = Duration::from_secs(3);
 /// Lines an anchor carries.
 const ANCHOR_LINES: usize = 3;
+/// The most bytes of lines one answer carries: under the wire's frame
+/// (`proto::MAX_FRAME`, 512 KiB) with room for the envelope.
+const HISTORY_BYTES: usize = 384 * 1024;
+/// The most bytes of colours an answer leads with ([`escapes`]).
+const LEAD_BYTES: usize = 4 * 1024;
 
 /// Where the face's copy of a pane's history ends (item 31): handed back
 /// by [`Tmux::history`] and given to it again, opaque to the face.
@@ -992,8 +997,9 @@ pub struct PaneHistory {
     /// The pane is on its own alternate screen (vim, less, htop): its
     /// history is not what it shows, and the program scrolls itself.
     pub alternate: bool,
-    /// `lines` are the whole history, not what follows the anchor: the
-    /// face clears its copy first.
+    /// `lines` are the whole history (or as much of its end as one answer
+    /// carries), not what follows the anchor: the face clears its copy
+    /// first.
     pub refill: bool,
     /// The colours in force where the face's copy ends, so `lines` draw
     /// as tmux would: `capture-pane -e` writes each line's escapes
@@ -1023,10 +1029,18 @@ impl HistoryRead {
             .map(|l| plain(l))
             .collect();
         let anchor = HistoryAnchor { pane: self.pane.clone(), size: self.size, tail };
-        let (refill, lead, lines) = match found {
-            Some(end) => (false, escapes(&self.history[..=end]), self.history[end + 1..].to_vec()),
-            None => (true, String::new(), self.history),
-        };
+        let start = found.map_or(0, |end| end + 1);
+        // Under one frame (`proto::MAX_FRAME`): the oldest lines go, and
+        // with a gap left behind the face's copy, it starts again.
+        let mut first = start;
+        let mut bytes: usize = self.screen.iter().chain(&self.history[start..]).map(|l| l.len() + 1).sum();
+        while bytes > HISTORY_BYTES && first < self.history.len() {
+            bytes -= self.history[first].len() + 1;
+            first += 1;
+        }
+        let refill = found.is_none() || first > start;
+        let lead = escapes(&self.history[..first]);
+        let lines = self.history[first..].to_vec();
         PaneHistory { pane: self.pane, alternate: self.alternate, refill, lead, lines, screen: self.screen, anchor }
     }
 }
@@ -1085,11 +1099,14 @@ fn plain(line: &str) -> String {
     out
 }
 
-/// Only the SGR escapes of `lines`, in order, from the last reset on:
-/// replayed from a reset, they leave the colours where the last of the
-/// lines left them.
+/// Only the SGR escapes of `lines`, in order, from the last reset on and
+/// none twice running: replayed from a reset, they leave the colours where
+/// the last of the lines left them. Past [`LEAD_BYTES`] only the newest
+/// are kept — a run that long without a reset is a program that sets
+/// every attribute again as it goes.
 fn escapes(lines: &[String]) -> String {
     let mut out = String::new();
+    let mut last = "";
     for line in lines {
         let mut rest = line.as_str();
         while let Some(i) = rest.find("\x1b[") {
@@ -1100,10 +1117,17 @@ fn escapes(lines: &[String]) -> String {
                 if sgr == "\x1b[0m" || sgr == "\x1b[m" || sgr.starts_with("\x1b[0;") {
                     out.clear();
                 }
-                out.push_str(sgr);
+                if sgr != last {
+                    out.push_str(sgr);
+                    last = sgr;
+                }
             }
             rest = &tail[j + 1..];
         }
+    }
+    if out.len() > LEAD_BYTES {
+        let cut = out[out.len() - LEAD_BYTES..].find("\x1b[").map_or(out.len(), |k| out.len() - LEAD_BYTES + k);
+        out.drain(..cut);
     }
     out
 }
@@ -1537,6 +1561,40 @@ mod tests {
         assert_eq!(n.first().copied(), Some(held_last + 1), "{n:?}");
         assert!((12001..12050).contains(&held_last), "the anchor is inside the red run: {held_last}");
         assert!(next.lead.ends_with("\x1b[31m"), "{:?}", next.lead);
+    }
+
+    /// An answer bigger than a frame keeps its newest lines, in the
+    /// colours the dropped ones left, and says the copy starts again.
+    #[test]
+    fn an_answer_over_the_frame_cap_keeps_its_end_as_a_refill() {
+        let line = format!("\x1b[32m{}", "x".repeat(1000));
+        let read = HistoryRead {
+            pane: "%1".into(),
+            alternate: false,
+            size: 1000,
+            history: (0..1000).map(|_| line.clone()).collect(),
+            screen: vec!["$ ".into()],
+        };
+        let small = HistoryRead { history: read.history[..10].to_vec(), ..read.clone_for_test() };
+        let whole = small.answer(Some(4));
+        assert!(!whole.refill && whole.lines.len() == 5 && whole.lead == "\x1b[32m", "{whole:?}");
+        let capped = read.answer(Some(4));
+        assert!(capped.refill, "a gap behind the copy");
+        let bytes: usize = capped.lines.iter().map(|l| l.len() + 1).sum();
+        assert!(bytes <= HISTORY_BYTES && capped.lines.len() > 300, "{}", capped.lines.len());
+        assert_eq!(capped.lead, "\x1b[32m", "the colours the dropped lines left");
+    }
+
+    impl HistoryRead {
+        fn clone_for_test(&self) -> HistoryRead {
+            HistoryRead {
+                pane: self.pane.clone(),
+                alternate: self.alternate,
+                size: self.size,
+                history: self.history.clone(),
+                screen: self.screen.clone(),
+            }
+        }
     }
 
     #[test]
