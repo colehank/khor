@@ -8675,8 +8675,11 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     //    A listing of the file would be empty here, and a command that
     //    prints an empty page reads as broken rather than as nothing
     //    having been set.
+    //    Grouped like 设置 (UX-16): a page's name on its own line, a blank
+    //    line between groups; the rows are still `key<TAB>value`.
     const listed = line("config")
       .split("\n")
+      .filter((l) => l.includes("\t"))
       .map((l) => l.split("\t"));
     if (listed.length < 2 || listed.some((r) => r.length !== 2 || !r[0] || !r[1])) {
       throw new Error(`khor config on a fresh home printed ${JSON.stringify(listed)}`);

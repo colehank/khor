@@ -115,9 +115,11 @@ square = "方形"
 appearance = "外观"
 language = "语言"
 session = "会话"
-# 对所有落地页都成立的那几项;第一个是标签页上限(docs/SHELL.md 第三轮)。
-general = "通用"
 workspace = "工作区"
+# 设置's pages (UX-16) that `khor config list` heads its groups with, and
+# 连接's name on the face; 外观, 会话, 工作区 are the sections' words.
+connection = "连接"
+security = "安全"
 # 这一节在**安全页**上,不在设置页(docs/MORE.md 把它写在安全那一条下面),
 # 理由是它旁边那几节都是「按下去要付出点什么」的事。
 confirm = "危险操作二次确认"
@@ -2341,6 +2343,17 @@ rail-more = "更多"
 # button and the way out of the box it opens.
 nav = "导航"
 nav-settings = "设置"
+# 更多's first item (UX-16, the owner 2026-10-05): this machine's face,
+# the network's map and the identity; it replaces 这台机器.
+my-khor = "我的 khor"
+# The topology map (UX-16, 我的 khor and the machines overview): a
+# link's latency is conn-relay-ms; this is when a machine with no road
+# was last seen.
+map-last-seen = "无法获取 · 上次 {0}前"
+map-latency = "延迟"
+map-heard = "上次联系"
+# The chevron that opens a link's facts in the narrow column (aria).
+map-facts = "连接详情"
 search-open = "搜索"
 search-close = "结束搜索"
 # The browser's address field (the redesign, 2026-10-02): a new page

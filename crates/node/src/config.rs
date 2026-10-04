@@ -28,20 +28,29 @@ use std::path::{Path, PathBuf};
 
 use khor_catalog::msg;
 
-/// A heading on one of the 「…」 pages, and which page that is.
+/// A heading on one of 设置's pages, and which page that is.
 ///
 /// **Here rather than in the two faces**, both halves. The pages have to
 /// group these rows somehow and decide which of them draws which group;
 /// written in TS that would be two tables of one fact — ones that
-/// compile, run, and put 危险动作二次确认 on 设置 the day somebody adds a
+/// compile, run, and put 危险操作二次确认 on 外观 the day somebody adds a
 /// key.
 #[derive(Debug, Clone, Copy)]
 pub struct Section {
     pub name: &'static str,
-    /// The `data-more-page` this section is drawn under
-    /// (`views/more/MorePage`'s `MorePage`).
+    /// The `data-more-page` this section is drawn under — one of
+    /// [`PAGES`] (`views/more/MorePage`'s `MorePage`).
     pub page: &'static str,
 }
+
+/// **设置's seven pages, in the order the face lists them** (UX-16, the
+/// owner 2026-10-05): 外观 · 终端 · 会话 · 工作区 · 连接 · 安全 · 关于 —
+/// the phone's inset-grouped list and the Mac settings window's sidebar.
+/// Most of a page's rows are kept elsewhere (the face's own settings,
+/// the relay table, the lock); the keys here sit on four of them, and
+/// `khor config list` groups by page in this order, the way the face
+/// does ([`grouped`]).
+pub const PAGES: &[&str] = &["appearance", "terminal", "session", "workspace", "connection", "security", "about"];
 
 /// The sections, in the order the pages draw them. A list rather than an
 /// order field on each key: the order is a fact about the page, and a
@@ -50,42 +59,57 @@ pub struct Section {
 /// ⚠️ [`KEYS`] is kept in this order too, so a page can start a new
 /// heading wherever the section changes between neighbouring rows and
 /// never needs a list of its own.
+///
+/// ⚠️ 墓碑 (UX-16): `general` (通用) held 标签页上限 on the 通用 page;
+/// that page went into the seven, and the key into 会话 with the other
+/// things a session starts out as. Its key and store did not move.
 pub const SECTIONS: &[Section] = &[
-    // 外观. First, because it is the one setting on this page a person
-    // sees the effect of before they have finished reading the row.
+    // 外观: the one setting a person sees the effect of before they have
+    // finished reading the row.
     Section {
         name: "appearance",
         page: "appearance",
     },
-    // 语言, under 外观: the two are what this whole page is written in,
-    // and a person looking for either is looking at the top of it.
+    // 语言, under 外观: the two are what this whole app is written in.
     Section {
         name: "language",
         page: "appearance",
     },
-    // 通用: what holds for every landing at once — the tab strips are
-    // the first thing on it (docs/SHELL.md 第三轮 第 4 条).
-    Section {
-        name: "general",
-        page: "settings",
-    },
-    // 会话: what a new one starts out as; 工作区 under it.
+    // 会话: how many tabs, and what a new one starts out as.
     Section {
         name: "session",
-        page: "settings",
+        page: "session",
     },
     Section {
         name: "workspace",
-        page: "settings",
+        page: "workspace",
     },
-    // Drawn on 安全 rather than 设置, because that is where docs/MORE.md
-    // puts it and because the sections beside it there are the other
-    // things that cost something.
+    // On 安全, because the sections beside it there are the other things
+    // that cost something.
     Section {
         name: "confirm",
         page: "security",
     },
 ];
+
+/// Every key with its value, grouped by the page that draws it, pages in
+/// [`PAGES`] order and keys in [`KEYS`] order — what `khor config list`
+/// prints. A page with no keys here is not in the answer.
+pub fn grouped(root: &Path) -> Vec<(&'static str, Vec<(&'static Key, &'static str)>)> {
+    let all = list(root);
+    PAGES
+        .iter()
+        .map(|page| {
+            let rows: Vec<_> = all
+                .iter()
+                .filter(|(k, _)| section(k.section).is_some_and(|s| s.page == *page))
+                .copied()
+                .collect();
+            (*page, rows)
+        })
+        .filter(|(_, rows)| !rows.is_empty())
+        .collect()
+}
 
 /// The section a name belongs to, if khor has one.
 pub fn section(name: &str) -> Option<&'static Section> {
@@ -166,7 +190,7 @@ pub const KEYS: &[Key] = &[
         values: &["auto", "zh", "en"],
         default: "auto",
     },
-    // ── 通用 ──────────────────────────────────────────────────────
+    // ── 会话 ──────────────────────────────────────────────────────
     //
     // 标签页上限 (docs/SHELL.md 第三轮 第 4 条): past this many, opening
     // one more closes the one touched longest ago that is neither pinned
@@ -179,7 +203,7 @@ pub const KEYS: &[Key] = &[
     // `word()`'s echo is the answer (the gate in `tests.rs` knows).
     Key {
         name: "tabs-limit",
-        section: "general",
+        section: "session",
         values: &[
             "off", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17",
             "18", "19", "20", "21", "22", "23", "24", "25", "26", "27", "28", "29", "30", "31",
@@ -188,7 +212,6 @@ pub const KEYS: &[Key] = &[
         ],
         default: "off",
     },
-    // ── 会话 ──────────────────────────────────────────────────────
     //
     // Which of the two forms the new-session wizard starts on
     // (`NewSessionDialog`). `chat` is what it has always opened as.

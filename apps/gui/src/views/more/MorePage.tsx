@@ -27,27 +27,49 @@ import { cn } from "@/lib/utils";
 import { config, gui } from "@/gen/catalog";
 
 /**
- * Which section of 更多 is open. `null` is none — the landing underneath is
+ * Which page of 更多 is open. `null` is none — the landing underneath is
  * what shows.
  *
  * The keys are the values of `data-more-page`, so what a gate reaches
- * for and what the shell switches on are one string.
+ * for and what the shell switches on are one string; 设置's seven are
+ * also `khor_node::config::PAGES`, the page each settings row names.
  *
- * Section order in L2 (spec 第十七轮 §1): 通用(settings), 外观(appearance),
- * 网络(network), 安全(security), 身份(identity), 诊断(doctor).
+ * UX-16 (the owner, 2026-10-05): 更多 is 我的 khor · 浏览器 · 设置 · 诊断,
+ * and 设置 is seven groups — 外观 · 终端 · 会话 · 工作区 · 连接 · 安全 ·
+ * 关于. ⚠️ 墓碑: 通用 (`settings`), 网络 (`network`) and 这台机器
+ * (`identity`) were pages of their own until then.
  */
-export type MorePage = "settings" | "appearance" | "network" | "security" | "identity" | "doctor";
+export type MorePage =
+  | "me"
+  | "appearance"
+  | "terminal"
+  | "session"
+  | "workspace"
+  | "connection"
+  | "security"
+  | "about"
+  | "doctor";
 
-/** The ordered list of all 更多 sections, for the L2 section list.
-    The order is the spec order; items are {key, label}. */
+/** Every page, in the order the wide list (and the Mac settings
+    window's sidebar) shows them: 我的 khor at the head, like System
+    Settings' account, then 设置's seven, then 诊断. */
 export const morePageOrder: readonly MorePage[] = [
-  "settings",
+  "me",
   "appearance",
-  "network",
+  "terminal",
+  "session",
+  "workspace",
+  "connection",
   "security",
-  "identity",
+  "about",
   "doctor",
 ];
+
+/** Whether a page is one of 设置's — reached through its list — rather
+    than one 更多's menu opens by itself (我的 khor, 诊断; UX-16). On the
+    narrow face the second kind is pushed over the landing it was opened
+    from, so its way back is that landing, not 设置's list. */
+export const inSettings = (page: MorePage): boolean => page !== "me" && page !== "doctor";
 
 /** The section names, in one place, so the list item and the page head
     cannot come to call the same section two things.
@@ -58,11 +80,14 @@ export const morePageOrder: readonly MorePage[] = [
     pages, one file over, had already changed. */
 export const moreName = (page: MorePage): string =>
   ({
-    settings: gui.settings,
+    me: gui.my_khor,
     appearance: config.appearance,
-    network: gui.network,
+    terminal: gui.view_terminal,
+    session: config.session,
+    workspace: config.workspace,
+    connection: config.connection,
     security: gui.security,
-    identity: gui.identity,
+    about: gui.settings_about,
     doctor: gui.doctor,
   })[page];
 

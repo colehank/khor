@@ -53,6 +53,7 @@ import {
   IconSearch,
   IconSessions,
   IconShield,
+  IconTerminal,
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
@@ -109,14 +110,15 @@ import { WorkspacePane } from "@/views/WorkspacePane";
 import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspacesNow } from "@/views/WorkspacesNow";
 import { LockScreen } from "@/views/LockScreen";
-import { moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
+import { inSettings, moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
 import { rememberPlace, storedPlace } from "@/lib/place";
 import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
-import { NetworkPage } from "@/views/more/NetworkPage";
-import { IdentityPage } from "@/views/more/IdentityPage";
+import { ConnectionPage } from "@/views/more/ConnectionPage";
+import { SessionPage, TerminalPage, WorkspacePage } from "@/views/more/GroupPages";
+import { MyKhorPage } from "@/views/more/MyKhorPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
-import { SettingsPage } from "@/views/more/SettingsPage";
+import { AboutPage } from "@/views/more/AboutPage";
 import { MachineCard, MachineVerbs } from "@/views/MachineCard";
 import { MachineFiles } from "@/views/MachineFiles";
 import { FullScreenProvider } from "@/lib/full-screen";
@@ -264,13 +266,17 @@ const NO_QUERIES: Record<Landing, string> = {
   browser: "",
 };
 
-/** The glyph beside each 「…」 page in its list (`identity` wears this
-    machine's face instead, drawn where the list is). */
-const MORE_GLYPH: Record<Exclude<MorePage, "identity">, (p: { className?: string }) => ReactNode> = {
-  settings: IconGear,
+/** The glyph beside each 更多 page in its list (`me` wears this
+    machine's face instead, drawn where the list is). 关于 has no glyph of
+    its own in the set yet and wears the gear, 设置's. */
+const MORE_GLYPH: Record<Exclude<MorePage, "me">, (p: { className?: string }) => ReactNode> = {
   appearance: IconAppearance,
-  network: IconNetwork,
+  terminal: IconTerminal,
+  session: IconSessions,
+  workspace: IconFiles,
+  connection: IconNetwork,
   security: IconShield,
+  about: IconGear,
   doctor: IconPulse,
 };
 
@@ -670,7 +676,7 @@ export default function App() {
     settingsFace
       ? (morePageOrder as readonly string[]).includes(settingsPane ?? "")
         ? (settingsPane as MorePage)
-        : "settings"
+        : "appearance"
       : (morePageOrder as readonly string[]).includes(place.more ?? "")
         ? (place.more as MorePage)
         : null,
@@ -684,7 +690,7 @@ export default function App() {
   // and a later ⌘, from the menu brings it to the pane it names.
   useEffect(() => {
     if (!settingsFace) return;
-    if (morePage === null) setMorePage("settings");
+    if (morePage === null) setMorePage("appearance");
     else nameSettings(moreName(morePage)).catch(() => {});
   }, [morePage]);
   useEffect(() => {
@@ -1444,7 +1450,8 @@ export default function App() {
           listPane.toggle();
           return;
         }
-        setMorePage("settings");
+        // 我的 khor, the list's head, beside the list of the rest.
+        setMorePage("me");
         setSwitchingTabs(false);
         setScreen("detail");
         listPane.expand();
@@ -1479,15 +1486,20 @@ export default function App() {
           openSettings().catch(() => {});
           return;
         }
-        setMorePage("settings");
+        setMorePage("appearance");
         setSwitchingTabs(false);
-        // Narrow: the sections' list, one screen; wide: the first page
-        // beside the sections in the list column.
+        // Narrow: 设置's list of seven, one screen; wide: its first page
+        // beside the list in the list column.
         setScreen(narrow ? "list" : "detail");
       }}
-      me={me ? { face: me.face, name: me.shown } : null}
+      onDoctor={() => {
+        setMorePage("doctor");
+        setScreen("detail");
+        setSwitchingTabs(false);
+      }}
+      me={me ? { face: me.face } : null}
       onMe={() => {
-        setMorePage("identity");
+        setMorePage("me");
         setScreen("detail");
         setSwitchingTabs(false);
       }}
@@ -1586,7 +1598,7 @@ export default function App() {
         openSettings().catch(() => {});
         return;
       }
-      setMorePage("settings");
+      setMorePage("appearance");
       setScreen("detail");
       setSwitchingTabs(false);
     },
@@ -2364,7 +2376,17 @@ export default function App() {
     </SessionScreen>
   );
 
-  const leaveMorePage = () => (narrow ? setScreen("list") : setMorePage(null));
+  /** Out of a 「…」 page. Narrow, a settings page goes one screen back to
+      设置's list; 我的 khor and 诊断 are 更多's own items (UX-16), pushed
+      over the landing they were opened from, so they go back to it. */
+  const leaveMorePage = () => {
+    if (narrow && morePage !== null && inSettings(morePage)) {
+      setScreen("list");
+      return;
+    }
+    setMorePage(null);
+    if (narrow) setScreen(seatScreen.current[landing] ?? "list");
+  };
   /** Where a swipe from the left edge goes (F7.3, narrow): the same
       place each screen's ‹ goes, or nowhere on a screen with no back. */
   const swipeBack: (() => void) | null = !narrow
@@ -2423,26 +2445,24 @@ export default function App() {
   }, [narrow, shownKey, screen]);
 
   const morePageEl =
-    morePage === null ? null : morePage === "network" ? (
-      <NetworkPage
+    morePage === null ? null : morePage === "connection" ? (
+      <ConnectionPage
         devices={devices}
         onClose={leaveMorePage}
-        // ⚠️ 墓碑 (2026-09-30): 网络 carried 邀请设备… / 加入网络… at R0's
-        // right end, the machines landing's two acts a second time. The
-        // owner: 「机器页点 ＋ 就是邀请设备和加入网络，更多里的网络页就不要
-        // 有右上方两个邀请、加入了」 — they are ＋'s on 机器, and only there.
+        // The device table is the thing 暂停 changes, and every surface on
+        // this screen paints off it.
         onChanged={() => {
-          // The device table is the thing that changed, and every
-          // surface on this screen paints off it — the rail's foot, the
-          // machines landing and its map. One refresh, the same one a
-          // forget has always got.
           refresh().catch(() => {});
         }}
       />
-    ) : morePage === "settings" ? (
-      <SettingsPage onClose={leaveMorePage} onSettingChanged={settings.reread} />
     ) : morePage === "appearance" ? (
       <AppearancePage onClose={leaveMorePage} onSettingChanged={settings.reread} me={me} />
+    ) : morePage === "terminal" ? (
+      <TerminalPage onClose={leaveMorePage} />
+    ) : morePage === "session" ? (
+      <SessionPage onClose={leaveMorePage} onSettingChanged={settings.reread} />
+    ) : morePage === "workspace" ? (
+      <WorkspacePage onClose={leaveMorePage} onSettingChanged={settings.reread} />
     ) : morePage === "security" ? (
       <SecurityPage
         onClose={leaveMorePage}
@@ -2450,16 +2470,31 @@ export default function App() {
         onLockChanged={lock.reread}
         onLockNow={lock.now}
         onSettingChanged={settings.reread}
+      />
+    ) : morePage === "about" ? (
+      <AboutPage onClose={leaveMorePage} />
+    ) : morePage === "doctor" ? (
+      <DoctorPage devices={devices} onClose={leaveMorePage} />
+    ) : (
+      <MyKhorPage
         devices={devices}
+        rows={rows}
+        onClose={leaveMorePage}
+        onOpenMachine={(row) => {
+          // Off 更多 and onto the machine's own page, the road a node on
+          // the machines overview takes.
+          setMorePage(null);
+          setLanding("devices");
+          onSelectDevice(row);
+        }}
+        onChanged={() => {
+          refresh().catch(() => {});
+        }}
         onReset={() => {
           refresh().catch(() => {});
           lock.reread();
         }}
       />
-    ) : morePage === "doctor" ? (
-      <DoctorPage onClose={leaveMorePage} />
-    ) : (
-      <IdentityPage devices={devices} onClose={leaveMorePage} />
     );
 
   /**
@@ -2489,8 +2524,10 @@ export default function App() {
         </NarrowHead>
       ) : (
         <SideSeat>
+          {/* 更多's list on a wide face (我的 khor · 设置's seven · 诊断);
+              the settings window's own sidebar is 设置. */}
           <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
-            {gui.nav_settings}
+            {settingsFace ? gui.nav_settings : gui.rail_more}
           </h1>
         </SideSeat>
       )}
@@ -2501,88 +2538,108 @@ export default function App() {
       {!narrow && (
         <button
           type="button"
-          data-more-open="identity"
+          data-more-open="me"
           data-more-me
-          data-on={morePage === "identity"}
+          data-on={morePage === "me"}
           // **One Tab stop for the list** (F3.8): the open section's row,
           // or this first one; ↑ ↓ walk the rest.
-          tabIndex={morePage === null || morePage === "identity" ? 0 : -1}
+          tabIndex={morePage === null || morePage === "me" ? 0 : -1}
           onClick={() => {
-            setMorePage("identity");
+            setMorePage("me");
             setScreen("detail");
           }}
           className={cn(
             "mx-in mb-xxs flex min-h-row-2 items-center gap-row rounded-md px-3 text-start text-headline focus-visible:-outline-offset-2",
-            morePage === "identity" ? "bg-fill-strong" : "hover:bg-fill",
+            morePage === "me" ? "bg-fill-strong" : "hover:bg-fill",
           )}
         >
           <span className="flex w-list-face flex-none items-center justify-center">
             <MachineAvatar face={me?.face ?? null} className="size-avatar flex-none" />
           </span>
           <span className="flex min-w-0 flex-col">
-            <span className="truncate">{me?.shown ?? moreName("identity")}</span>
-            <span className="truncate text-callout text-muted-foreground">{moreName("identity")}</span>
+            <span className="truncate">{me?.shown ?? moreName("me")}</span>
+            <span className="truncate text-callout text-muted-foreground">{moreName("me")}</span>
           </span>
         </button>
       )}
-      {morePageOrder.filter((p) => narrow || p !== "identity").map((p) => (
-        <button
-          key={p}
-          type="button"
-          data-more-open={p}
-          data-on={morePage === p}
-          tabIndex={morePage === p && p !== "identity" ? 0 : -1}
-          onClick={() => {
-            setMorePage(p);
-            setScreen("detail");
-          }}
-          // **A list row like every other list's** (the audit fix plan
-          // F2.1): the glyph in the face's slot so the words start on the
-          // x the 这台机器 row's do, the title `headline` whether or not it
-          // is the picked one, and the hairline under the words.
-          className={cn(
-            // The ring inside the row, as every list row's (W-V6).
-            "flex min-h-touch items-stretch gap-row rounded-md text-start text-headline focus-visible:-outline-offset-2",
-            // Narrow, the hairline runs to the screen's edge as every
-            // list's does (V17): the row keeps its left inset only.
-            // Its hairline ends where a list's does (W-V10): the right
-            // padding is the words' span's, which the line runs under.
-            narrow ? "ms-in ps-3" : "mx-in ps-3",
-            // The selected row wears the block only while it is the one
-            // on screen — on the narrow list the page is a screen away.
-            morePage === p && !narrow ? "bg-fill-strong" : "hover:bg-fill",
-          )}
-        >
-          {/* The page's glyph (2026-09-27): the four drawn for these
-              doors, 外观's light-and-dark, and 这台机器's own face — the
-              same face the rail's foot wears for it. `--nav-glyph` wide,
-              the size every menu row gives its glyph. */}
-          <span data-more-glyph={p} className="flex w-list-face flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
-            {p === "identity" ? (
-              // **At the glyph box's full size, like a row's avatar**
-              // (UX-4, decided): the drawn marks fill 88–92 % of their box
-              // and the face at 16 filled 76 %, the one small icon in the
-              // column. ⚠️ 墓碑: 16, 「a full disc reads as big as a glyph」.
-              <MachineAvatar face={devices.find((d) => d.me)?.face ?? null} className="size-nav-glyph" />
-            ) : (
-              (() => {
-                const Glyph = MORE_GLYPH[p];
-                return <Glyph className="size-nav-glyph" />;
-              })()
-            )}
-          </span>
-          <span
-            className={cn(
-              "flex min-w-0 flex-1 items-center gap-row border-b py-1",
-              narrow ? "pe-page" : "pe-3",
-              morePage === p && !narrow && "border-transparent",
-            )}
-          >
-            <span className="min-w-0 flex-1 truncate">{moreName(p)}</span>
-            {narrow && <IconChevronRight className="size-affordance flex-none text-tertiary" />}
-          </span>
-        </button>
-      ))}
+      {/* **Narrow: 设置's seven, as iOS Settings' first screen** (UX-16):
+          one inset-grouped card on the ground, a row per page — its
+          glyph, its name, the chevron that says it opens a page — with
+          the card's hairlines between them. 我的 khor and 诊断 are 更多's
+          own items and are not here. */}
+      {narrow ? (
+        <div data-settings-card data-more-card className="mx-page mt-in mb-pane flex min-w-0 flex-col">
+          {morePageOrder.filter(inSettings).map((p) => (
+            <button
+              key={p}
+              type="button"
+              data-setting-row="nav"
+              data-more-open={p}
+              tabIndex={p === (morePage ?? "appearance") ? 0 : -1}
+              onClick={() => {
+                setMorePage(p);
+                setScreen("detail");
+              }}
+              className="flex min-h-touch items-center gap-row px-row text-start text-body focus-visible:-outline-offset-2"
+            >
+              <span data-more-glyph={p} className="flex flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
+                {(() => {
+                  const Glyph = MORE_GLYPH[p as Exclude<MorePage, "me">];
+                  return <Glyph className="size-nav-glyph" />;
+                })()}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{moreName(p)}</span>
+              <IconChevronRight className="size-affordance flex-none text-tertiary" />
+            </button>
+          ))}
+        </div>
+      ) : (
+        // **Wide** (and the Mac settings window's sidebar): 我的 khor at
+        // the head (above), 设置's seven, then — a step apart — 诊断.
+        morePageOrder
+          .filter((p) => p !== "me")
+          .map((p) => (
+            <button
+              key={p}
+              type="button"
+              data-more-open={p}
+              data-on={morePage === p}
+              tabIndex={morePage === p ? 0 : -1}
+              onClick={() => {
+                setMorePage(p);
+                setScreen("detail");
+              }}
+              // **A list row like every other list's** (the audit fix plan
+              // F2.1): the glyph in the face's slot so the words start on
+              // the x the 我的 khor row's do, the title `headline`, and the
+              // hairline under the words.
+              className={cn(
+                // The ring inside the row, as every list row's (W-V6).
+                "mx-in flex min-h-touch items-stretch gap-row rounded-md ps-3 text-start text-headline focus-visible:-outline-offset-2",
+                p === "doctor" && "mt-group",
+                morePage === p ? "bg-fill-strong" : "hover:bg-fill",
+              )}
+            >
+              <span data-more-glyph={p} className="flex w-list-face flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
+                {(() => {
+                  const Glyph = MORE_GLYPH[p as Exclude<MorePage, "me">];
+                  return <Glyph className="size-nav-glyph" />;
+                })()}
+              </span>
+              <span
+                className={cn(
+                  "flex min-w-0 flex-1 items-center gap-row py-1 pe-3",
+                  // Its hairline ends where a list's does (W-V10); none
+                  // under the last of the seven or under 诊断.
+                  p !== "about" && p !== "doctor" && "border-b",
+                  morePage === p && "border-transparent",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{moreName(p)}</span>
+              </span>
+            </button>
+          ))
+      )}
     </nav>
   );
 
@@ -2762,7 +2819,8 @@ export default function App() {
    *
    * - A landing's page uncovers the landing's list (额度's and the
    *   browser's are their own landings drawn on their list screen).
-   * - A 「…」 page uncovers 更多's list.
+   * - A settings page uncovers 设置's list; 我的 khor and 诊断 uncover
+   *   the landing they were opened over (UX-16).
    * - The tab switcher uncovers its page's own chrome — the session bar,
    *   without its terminal: a live terminal is never drawn twice.
    * - A file uncovers nothing here: its listing is the machine page's
@@ -2785,7 +2843,7 @@ export default function App() {
               {null}
             </SessionScreen>
           )
-        : morePage
+        : morePage !== null && inSettings(morePage)
           ? moreList
           : quotas
             ? (

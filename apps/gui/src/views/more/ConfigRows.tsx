@@ -1,9 +1,8 @@
 // The settings rows themselves (docs/MORE.md 设置), drawn wherever the
 // node's table says they belong.
 //
-// **Two pages draw these and neither owns them.** 设置 takes 会话 and
-// 工作区; 安全 takes 危险动作二次确认, because that is where docs/MORE.md
-// puts it. Which section a key lives in is the node's answer
+// **Four pages draw these and none owns them** (UX-16): 外观 takes 外观
+// and 语言, 会话 and 工作区 their own, 安全 takes 危险操作二次确认. Which section a key lives in is the node's answer
 // (`khor_node::config::Key::section`) and travels on the row — a
 // grouping written here would be a second table of the same fact, one
 // that compiles and runs and puts a key under the wrong heading the day
@@ -124,6 +123,7 @@ export function ConfigSections({
   page,
   onChanged,
   previews,
+  after,
 }: {
   /** Which 「…」 page is asking. Which sections that is, and in what
       order, is the node's answer — the rows arrive grouped and each one
@@ -136,6 +136,10 @@ export function ConfigSections({
       handed in by the page that has the thing to draw, so this file
       still matches no key. */
   previews?: Record<string, ReactNode>;
+  /** Rows a page keeps elsewhere that belong in one of these sections'
+      cards, after the node's rows, by section name — 会话's 完成通知,
+      a face setting, beside the node's 标签页上限 (UX-16). */
+  after?: Record<string, ReactNode>;
 }) {
   const rows = useSettings();
   const reread = useSettingsReread();
@@ -183,6 +187,7 @@ export function ConfigSections({
               .map((o) => (
                 <Row key={o.name} row={o} onPick={press} preview={previews?.[o.name]} />
               ))}
+            {after?.[r.section]}
           </MoreSection>
         ),
       )}

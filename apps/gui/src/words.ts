@@ -387,7 +387,7 @@ export function stretch(ms: number): string {
 }
 
 /** A duration in the coarsest unit that still says something. */
-function span(ms: number): string {
+export function span(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   if (s < 60) return count.seconds(s);
   const m = Math.floor(s / 60);
