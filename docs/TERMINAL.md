@@ -95,6 +95,7 @@ A program asks its terminal things in its output (DA1/DA2, DSR, OSC 10/11/12/4 c
   - a person-chosen row of caps;
   - the cursor joystick, second from the right (`views/CursorPad.tsx`);
   - … last: a sheet with every key, the prompt jumps and 历史命令, plus the row editor.
+  - A key a hardware keyboard repeats (⌫, Del, the moves, Tab and ⇧Tab, the characters) repeats while held, on the cursor stick's numbers (`lib/key-repeat`): 400 ms, then 6 a second, 12 after a second, a haptic tick each time under 「摇杆震动」. A tap still sends at the click, so a finger scrolling the row sends nothing. Esc, the latches, paste and the function keys never repeat; latches hold for the whole repeat, as the stick's do.
 - **Phone composition.** The text being composed shows in a fixed strip at the pane's foot, not at the cursor.
 - **Pastes.** A multi-line paste asks first. An `OSC 52` clipboard read is asked about once per terminal.
 - **Gestures.** A two-finger tap is Esc. A pinch sets the terminal's type size. A sideways swipe steps to the next tab, stopping at the ends, as the deck pill's swipe does. The left 24 pt stay the page's edge swipe.

@@ -6,70 +6,26 @@
 /** The dead zone round where the finger landed: outside it the stick
     points somewhere (pt). */
 export const PAD_DEAD = 12;
-/** Held this long in one direction, and the arrow repeats (ms). */
-export const PAD_HOLD_MS = 400;
 /** How far past the diagonal the finger must go to change axis: the other
     axis must outweigh the held one by this much (tan 55° ≈ 1.43, ten
     degrees of hysteresis either side of 45°). */
 export const PAD_SWITCH = 1.43;
-/** The repeat's first rate, arrows per second… */
-export const PAD_RATE = 6;
-/** …its rate once it has run `PAD_RAMP_MS`. */
-export const PAD_RATE_FAST = 12;
-/** How long the repeat runs at its first rate (ms). */
-export const PAD_RAMP_MS = 1000;
+// The repeat's delay and rates, and its watchdog, are every held key's
+// (`lib/key-repeat`, item 34).
 // ──────────────────────────────────────────────────────────────────────
-
-/** With no pointer event this long and no finger on the glass, a repeat
-    is over whatever else was or was not heard (ms). */
-const PAD_WATCHDOG_MS = 600;
 
 import { useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 
-import { inApp, joyHaptic } from "@/api";
 import { IconArrow, IconMove } from "@/components/icons";
 import { gui } from "@/gen/catalog";
+import { PAD_HOLD_MS, beatMs, felt, letGo } from "@/lib/key-repeat";
 import { cursorKey, type Mods } from "@/lib/term-keys";
-import { termJoyHaptic } from "@/lib/term-joy-haptic";
 import { cn } from "@/lib/utils";
 
 type Way = "left" | "right" | "up" | "down";
 const LETTER: Record<Way, "A" | "B" | "C" | "D"> = { up: "A", down: "B", right: "C", left: "D" };
 const NO_MODS: Mods = { ctrl: false, alt: false };
-
-/**
- * **The stick, felt** (item 23): a selection tick for each arrow a repeat
- * sends, a light impact when the stick takes a way — out of the dead zone,
- * or across to another side — which stands for that way's first arrow
- * too, so one arrow is one haptic. Prepared at touch-down, let go at the
- * lift with nothing felt. Apple's HIG on haptics: each tied to the event it
- * stands for, never on a timer of its own. Only in the app (the bridge is
- * UIKit's), only with the setting on (Appearance → Terminal).
- */
-function felt(kind: "prepare" | "tick" | "turn" | "end") {
-  if (!inApp || !termJoyHaptic()) return;
-  joyHaptic(kind).catch(() => {});
-}
-
-/** Fingers on the glass, counted from the document's own touch events,
-    and a mouse button held: the watchdog's word on whether anybody is
-    still holding the pad. */
-let touching = 0;
-let buttons = 0;
-if (typeof document !== "undefined") {
-  const count = (e: TouchEvent) => {
-    touching = e.touches.length;
-  };
-  document.addEventListener("touchstart", count, { capture: true, passive: true });
-  document.addEventListener("touchend", count, { capture: true, passive: true });
-  document.addEventListener("touchcancel", count, { capture: true, passive: true });
-  const held = (e: globalThis.PointerEvent) => {
-    if (e.pointerType === "mouse") buttons = e.buttons;
-  };
-  document.addEventListener("pointerdown", held, true);
-  document.addEventListener("pointerup", held, true);
-}
 
 /** One gesture on the pad, from the finger's landing. */
 type Gesture = {
@@ -122,7 +78,8 @@ export function wayAt(dx: number, dy: number, was: Way | null): Way | null {
  * - Pointing a new way — out of the dead zone, or across to another side
  *   without lifting — sends that arrow at once and starts its repeat over:
  *   `PAD_HOLD_MS`, then `PAD_RATE` a second, `PAD_RATE_FAST` after
- *   `PAD_RAMP_MS`. Moving within the same way sends nothing more.
+ *   `PAD_RAMP_MS` (`lib/key-repeat`). Moving within the same way sends
+ *   nothing more.
  * - Back inside the dead zone the repeat stops; lifting ends it all.
  *
  * Termius's space-bar cursor repeats the same way while held
@@ -135,6 +92,8 @@ export function wayAt(dx: number, dy: number, was: Way | null): Way | null {
  * going to the background, a second press replacing the first, the pad
  * leaving the screen — and a watchdog for anything none of those catches:
  * no pointer event for `PAD_WATCHDOG_MS` with no finger or button down.
+ * Haptics (item 23, `felt`): a light impact when the stick takes a way, a
+ * selection tick for each repeated arrow, nothing at the lift.
  *
  * Arrows go through `cursorKey`, so an editor's application mode and a
  * latched Ctrl or Alt (word jumps) hold; the latches let go at the first
@@ -190,14 +149,13 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
       second, and the watchdog is asked on every beat. */
   const beat = (s: Gesture, w: Way) => {
     if (g.current !== s || s.way !== w) return;
-    if (performance.now() - s.heard > PAD_WATCHDOG_MS && touching === 0 && buttons === 0) {
+    if (letGo(s.heard)) {
       end();
       return;
     }
     setRepeating(true);
     send(s, w, "tick");
-    const rate = performance.now() - s.repeatFrom < PAD_RAMP_MS ? PAD_RATE : PAD_RATE_FAST;
-    s.repeat = window.setTimeout(() => beat(s, w), 1000 / rate);
+    s.repeat = window.setTimeout(() => beat(s, w), beatMs(s.repeatFrom));
   };
   const down = (e: PointerEvent<HTMLButtonElement>) => {
     if (!term.current) return;

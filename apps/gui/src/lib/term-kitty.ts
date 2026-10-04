@@ -305,12 +305,14 @@ export function kittyTyped(term: Terminal, ch: string, ctrl: boolean, alt: boole
   return csi(String(ch.toLowerCase().codePointAt(0)), mods, 1, "", "u");
 }
 
-/** Esc, Tab and Shift+Tab from the key row, as the protocol spells them,
-    or `null` to keep the legacy form. */
-export function kittyNamed(term: Terminal, key: "Escape" | "Tab", shift: boolean, alt: boolean): string | null {
+/** Esc, Tab, Shift+Tab and Backspace from the key row, as the protocol
+    spells them, or `null` to keep the legacy form. */
+export function kittyNamed(term: Terminal, key: "Escape" | "Tab" | "Backspace", shift: boolean, alt: boolean, ctrl = false): string | null {
   const flags = kittyFlags(term);
   if (!(flags & (DISAMBIGUATE | ALL_KEYS))) return null;
-  const mods = 1 + (shift ? 1 : 0) + (alt ? 2 : 0);
-  if (key === "Tab" && mods === 1 && !(flags & ALL_KEYS)) return null;
-  return csi(key === "Escape" ? "27" : "9", mods, 1, "", "u");
+  const mods = 1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
+  // Tab and Backspace without a modifier keep their legacy bytes unless
+  // every key is to be reported (the spec's "disambiguate" leaves them).
+  if (key !== "Escape" && mods === 1 && !(flags & ALL_KEYS)) return null;
+  return csi(key === "Escape" ? "27" : key === "Tab" ? "9" : "127", mods, 1, "", "u");
 }

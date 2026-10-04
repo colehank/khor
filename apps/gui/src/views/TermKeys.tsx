@@ -44,6 +44,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { GROUPS, KEYS, KEY_BY_NAME, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
+import { useHeldKey } from "@/lib/key-repeat";
 import { cn } from "@/lib/utils";
 import { CursorKey } from "@/views/CursorPad";
 
@@ -88,10 +89,16 @@ function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void)
   t.input(bytes, true);
 }
 
-/** One cap: the row's and the sheet's. */
-function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: () => void; className?: string }) {
+/** One cap: the row's and the sheet's. A key a keyboard repeats repeats
+    while held (`lib/key-repeat`), under the latches it went out with. */
+function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: (under: Mods) => void; className?: string }) {
   const latch = k.name === "ctrl" || k.name === "alt";
   const held = heldOf(k, mods);
+  const under = useRef(mods);
+  const hold = useHeldKey((first) => {
+    if (first) under.current = mods;
+    onPress(under.current);
+  }, k.repeats === true);
   return (
     <button
       type="button"
@@ -101,8 +108,8 @@ function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: 
       aria-label={k.label}
       // The caret stays in the terminal (the file head).
       onMouseDown={(e) => e.preventDefault()}
-      onClick={onPress}
-      className={cn(CAP_BOX, className)}
+      {...hold}
+      className={cn(CAP_BOX, k.repeats && "select-none [-webkit-touch-callout:none]", className)}
     >
       <span className={capFace(held)}>{k.cap}</span>
     </button>
@@ -123,9 +130,10 @@ export function TermKeys({
 }) {
   const row = useKeyRow();
   const shown = row.filter((s) => s.on).flatMap((s) => KEY_BY_NAME.get(s.name) ?? []);
-  const press = (k: KeyDef) => {
+  const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
-    if (t) pressKey(k, t, mods, onMods);
+    // A repeat after the first key: the latches have let go already.
+    if (t) pressKey(k, t, under, under === mods ? onMods : () => {});
   };
   return (
     <div
@@ -139,7 +147,7 @@ export function TermKeys({
     >
       <div data-term-keys-scroll className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch overflow-x-auto pl-row">
         {shown.map((k) => (
-          <Cap key={k.name} k={k} mods={mods} onPress={() => press(k)} />
+          <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
         ))}
       </div>
       <CursorKey term={term} mods={mods} onMods={onMods} />
@@ -159,9 +167,9 @@ export function TermKeys({
 function KeySheet({ term, mods, onMods }: { term: RefObject<Terminal | null>; mods: Mods; onMods: (m: Mods) => void }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const press = (k: KeyDef) => {
+  const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
-    if (t) pressKey(k, t, mods, onMods);
+    if (t) pressKey(k, t, under, under === mods ? onMods : () => {});
   };
   return (
     <>
@@ -193,7 +201,7 @@ function KeySheet({ term, mods, onMods }: { term: RefObject<Terminal | null>; mo
               <h3 className="text-group text-muted-foreground">{label}</h3>
               <div className="flex flex-wrap gap-1.5">
                 {KEYS.filter((k) => k.group === group).map((k) => (
-                  <Cap key={k.name} k={k} mods={mods} onPress={() => press(k)} />
+                  <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
                 ))}
               </div>
             </section>

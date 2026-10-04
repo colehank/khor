@@ -86,6 +86,11 @@ export type KeyDef = {
   /** What the key sends under the latches; absent for a key with its own
       act (paste, the latches themselves). */
   send?: (term: Terminal, mods: Mods) => string;
+  /** Held, it repeats (item 34), as a hardware keyboard repeats it: the
+      characters, the editing and moving keys, Tab. Never Esc, the
+      latches, paste or the function keys: a one-shot sent twice is a
+      different act. */
+  repeats?: true;
 };
 
 const SYMBOLS = ["/", "-", "|", ":", "~", "`", "^", "&", "*", "$", "#", "@", "!", "%", "(", ")", "[", "]", "{", "}", "<", ">", "=", "+", "_", ";", "'", '"', "\\", "?"];
@@ -107,17 +112,27 @@ const F_KEYS: [string, (mods: Mods) => string][] = [
 
 /** Every key, in the sheet's order within each group. */
 export const KEYS: KeyDef[] = [
-  { name: "home", cap: "Home", group: "move", send: (t, m) => cursorKey(t, "H", m) },
-  { name: "end", cap: "End", group: "move", send: (t, m) => cursorKey(t, "F", m) },
-  { name: "pgup", cap: "PgUp", group: "move", send: (_, m) => tilde(5, m) },
-  { name: "pgdn", cap: "PgDn", group: "move", send: (_, m) => tilde(6, m) },
+  { name: "home", cap: "Home", group: "move", repeats: true, send: (t, m) => cursorKey(t, "H", m) },
+  { name: "end", cap: "End", group: "move", repeats: true, send: (t, m) => cursorKey(t, "F", m) },
+  { name: "pgup", cap: "PgUp", group: "move", repeats: true, send: (_, m) => tilde(5, m) },
+  { name: "pgdn", cap: "PgDn", group: "move", repeats: true, send: (_, m) => tilde(6, m) },
   { name: "ins", cap: "Ins", group: "move", send: (_, m) => tilde(2, m) },
-  { name: "del", cap: "Del", group: "move", send: (_, m) => tilde(3, m) },
+  { name: "del", cap: "Del", group: "move", repeats: true, send: (_, m) => tilde(3, m) },
+  // ⌫ as a keyboard sends it: DEL, ⌃⌫ as ^H, ⌥⌫ with ESC in front; under
+  // the kitty protocol, as the program asked.
+  {
+    name: "backspace",
+    cap: "⌫",
+    label: gui.key_backspace_name,
+    group: "move",
+    repeats: true,
+    send: (t, m) => kittyNamed(t, "Backspace", false, m.alt, m.ctrl) ?? (m.ctrl ? "\x08" : m.alt ? "\x1b\x7f" : "\x7f"),
+  },
   { name: "ctrl", cap: gui.key_ctrl, label: gui.key_ctrl_name, group: "mod" },
   { name: "alt", cap: gui.key_alt, group: "mod" },
   // Under the kitty keyboard protocol (roadmap 5.1) these four are spelled
   // as the program asked; otherwise as xterm spells them.
-  ...SYMBOLS.map((ch): KeyDef => ({ name: ch, cap: ch, group: "symbol", send: (t, m) => kittyTyped(t, ch, m.ctrl, m.alt) ?? typed(ch, m) })),
+  ...SYMBOLS.map((ch): KeyDef => ({ name: ch, cap: ch, group: "symbol", repeats: true, send: (t, m) => kittyTyped(t, ch, m.ctrl, m.alt) ?? typed(ch, m) })),
   {
     name: "esc",
     cap: gui.key_esc,
@@ -130,9 +145,10 @@ export const KEYS: KeyDef[] = [
     cap: gui.key_tab,
     label: gui.key_tab_name,
     group: "function",
+    repeats: true,
     send: (t, m) => kittyNamed(t, "Tab", false, m.alt) ?? (m.alt ? "\x1b\t" : "\t"),
   },
-  { name: "backtab", cap: gui.key_backtab, label: gui.key_backtab_name, group: "function", send: (t) => kittyNamed(t, "Tab", true, false) ?? "\x1b[Z" },
+  { name: "backtab", cap: gui.key_backtab, label: gui.key_backtab_name, group: "function", repeats: true, send: (t) => kittyNamed(t, "Tab", true, false) ?? "\x1b[Z" },
   ...F_KEYS.map(([cap, send]): KeyDef => ({ name: cap.toLowerCase(), cap, group: "function", send: (_, m) => send(m) })),
   { name: "paste", cap: gui.key_paste, group: null },
 ];
