@@ -850,6 +850,13 @@ async fn term_prompt(id: String, up: bool) -> Result<(), String> {
     khor_gui_core::term::prompt(&Node::root_from_env(), &id, up).await
 }
 
+/// ⌘K kept where the bytes are (`term::term_forget`): true when the host
+/// kept it too.
+#[tauri::command]
+fn term_forget(id: String, redraw: bool) -> Result<bool, String> {
+    khor_gui_core::term::term_forget(&id, redraw)
+}
+
 /// A tmux row's front pane history from an anchor on (item 31,
 /// `term::pane_history`).
 #[tauri::command]
@@ -4061,6 +4068,7 @@ pub fn run() {
             term_history,
             term_prompt,
             term_pane_history,
+            term_forget,
             term_wait,
             bell_haptic,
             joy_haptic,

@@ -74,11 +74,17 @@ pub enum ClientOp {
     /// these words and would drop the client's input on the first one, so
     /// none is ever sent to it.
     Version(u32),
+    /// **⌘K, kept by the host** (version 2): the ring forgets everything
+    /// before the line the cursor is on, so a face that attaches later —
+    /// a reload, a re-attach, another face — is not handed the history
+    /// the person cleared.
+    Forget,
 }
 
 /// **The host protocol's version** (audit/term-attach.md). 1 is every
 /// host and client before the handshake: `Hello`, `Welcome`, raw bytes,
-/// `Input` and `Resize`. 2 adds [`ClientOp::Version`].
+/// `Input` and `Resize`. 2 adds [`ClientOp::Version`] and
+/// [`ClientOp::Forget`].
 ///
 /// **How it is agreed without changing a frame's shape.** msgpack here
 /// is positional, and a struct read from a longer array fails
@@ -659,6 +665,23 @@ impl Ring {
         }
         // Other long strings (a clipboard copy, a protocol the face does
         // not draw) stay in the text: a trim inside one runs on to its end.
+        while self.head.mid_sequence() {
+            let Some(b) = self.bytes.pop_front() else { break };
+            self.head.feed(&[b]);
+            self.gone += 1;
+        }
+        self.pictures.trim(self.gone);
+    }
+
+    /// **⌘K** ([`ClientOp::Forget`]): everything before the line the
+    /// cursor is on goes, through the head's modes as a trim does, so the
+    /// next attacher is handed that line and what follows it — at a
+    /// prompt, the prompt, and the shell's own ⌃L redraw right after.
+    fn forget(&mut self) {
+        let keep = self.bytes.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+        let gone: Vec<u8> = self.bytes.drain(..keep).collect();
+        self.head.feed(&gone);
+        self.gone += keep as u64;
         while self.head.mid_sequence() {
             let Some(b) = self.bytes.pop_front() else { break };
             self.head.feed(&[b]);
@@ -1349,8 +1372,12 @@ fn host_serving(
                     let master = master.clone();
                     let writer = writer.clone();
                     let ledger = ledger.clone();
+                    let shared = shared.clone();
                     std::thread::spawn(move || {
                         let mut readable = readable;
+                        // What this client and this host speak: 1 until
+                        // the client says otherwise.
+                        let mut agreed = 1;
                         while let Ok(op) = read_client_frame::<ClientOp>(&mut readable) {
                             let Some(op) = op else { continue };
                             match op {
@@ -1374,8 +1401,9 @@ fn host_serving(
                                         pixel_height: 0,
                                     });
                                 }
-                                // Agreed; nothing past version 1 is asked yet.
-                                ClientOp::Version(_) => {}
+                                ClientOp::Version(v) => agreed = v.min(HOST_VERSION),
+                                ClientOp::Forget if agreed >= 2 => shared.ring.lock().unwrap().forget(),
+                                ClientOp::Forget => {}
                             }
                         }
                     });

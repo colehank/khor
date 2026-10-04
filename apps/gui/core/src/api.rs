@@ -683,6 +683,8 @@ pub fn answer(
             };
             to_json(&rt.block_on(crate::term::pane_history(root, &arg("id")?, since))?)
         }
+        // ⌘K kept by the feed and the host's ring (term-attach).
+        "term_forget" => to_json(&crate::term::term_forget(&arg("id")?, flag("redraw")?)?),
         // A tmux row's prompts, moved between by tmux (item 21).
         "term_prompt" => to_json(&rt.block_on(crate::term::prompt(root, &arg("id")?, flag("up")?))?),
         // The bridge answers one request at a time, so it never holds one

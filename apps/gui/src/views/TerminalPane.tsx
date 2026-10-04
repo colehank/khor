@@ -63,7 +63,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termPaneHistory, termPrompt, termResize, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { peekOf, type Peek } from "@/lib/term-peek";
@@ -1825,12 +1825,20 @@ export function TerminalPane({
     // at the top and its idea of the screen is the screen again. A running
     // program is not sent a form feed it did not ask for. In the Mac app
     // the menu bar's ⌘K reaches this through `lib/shortcuts`, before the
-    // page ever sees the key.
+    // page ever sees the key. **It survives a re-attach**
+    // (audit/term-attach.md): the attachment's feed forgets up to the
+    // cursor's line, and so does the host's ring where the host speaks
+    // version 2, so a reload or another face starts from the clear; the
+    // ⌃L goes on the same connection, after the forget.
     const clearBuffer = () => {
       const at = marks.current();
-      const atPrompt = term.buffer.active.type === "normal" && !marks.running() && !!at?.input && !at.output;
+      const normal = term.buffer.active.type === "normal";
+      const atPrompt = normal && !marks.running() && !!at?.input && !at.output;
       term.clear();
-      if (atPrompt) term.input("\x0c", true);
+      if (!normal) return;
+      void termForget(id, atPrompt).catch(() => {
+        if (atPrompt) term.input("\x0c", true);
+      });
     };
     const hooks = box as HTMLDivElement & { __clear?: () => void; __find?: () => void };
     hooks.__clear = clearBuffer;

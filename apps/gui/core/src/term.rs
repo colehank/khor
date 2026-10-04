@@ -78,6 +78,20 @@ struct Feed {
 }
 
 impl Feed {
+    /// **⌘K** ([`term_forget`]): the feed forgets everything before the
+    /// line the cursor is on, as the host's ring does
+    /// (`khor_node::host::ClientOp::Forget`), so a face that starts over
+    /// from this feed is not handed what was cleared either.
+    fn forget(&mut self) {
+        let keep = self.bytes.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+        let gone: Vec<u8> = self.bytes.drain(..keep).collect();
+        self.head.feed(&gone);
+        while self.head.mid_sequence() {
+            let Some(b) = self.bytes.pop_front() else { break };
+            self.head.feed(&[b]);
+        }
+    }
+
     /// Everything a face that starts over is handed: the trimmed head's
     /// modes, then every byte still held.
     fn replay(&self) -> Vec<u8> {
@@ -882,6 +896,30 @@ pub fn term_drop(root: &Path, id: &str, paths: &[String]) -> Result<(), String> 
     term_paste(id, &text)
 }
 
+/// **⌘K, kept where the bytes are** (audit/term-attach.md): this
+/// attachment's feed forgets everything before the cursor's line, and so
+/// does the host's ring when the host speaks version 2 — a reload or a
+/// re-attach then starts from the clear, as iTerm2's Clear Buffer does.
+/// `redraw` sends the shell its ⌃L after the forget, on the same
+/// connection so the host takes them in that order. Answers whether the
+/// host kept it (false: a host from before the handshake, where the
+/// clear is this face's alone, as it always was).
+pub fn term_forget(id: &str, redraw: bool) -> Result<bool, String> {
+    let term = term_of(id)?;
+    let kept = term.version.load(Ordering::Relaxed) >= 2;
+    {
+        let mut conn = plock(&term.conn);
+        if kept {
+            write_frame(&mut *conn, &ClientOp::Forget)?;
+        }
+        if redraw {
+            write_frame(&mut *conn, &ClientOp::Input(vec![0x0c]))?;
+        }
+    }
+    plock(&term.feed).forget();
+    Ok(kept)
+}
+
 /// A resize: the PTY is told (so programs repaint at the new size) and
 /// the local screen is set to match, so the bytes that repaint arrive
 /// into a screen already the right shape.
@@ -1131,6 +1169,25 @@ mod tests {
     /// starts over) after the first [`FEED_CAP`] of a tmux client: attach
     /// hands out the whole feed behind them, and a reset the screen,
     /// in the same modes.
+    /// **⌘K forgets up to the cursor's line** (audit/term-attach.md): a
+    /// face that starts over is handed the prompt and what follows, in
+    /// the modes the forgotten bytes had set; a face already past the
+    /// clear goes on where it was.
+    #[test]
+    fn a_forgotten_feed_starts_at_the_cursors_line_in_its_modes() {
+        let feed = Mutex::new(Feed::default());
+        let fed = AtomicU64::new(0);
+        push_feed(&feed, &fed, b"\x1b[?2004hsecret one\r\nsecret two\r\n$ ls");
+        let end = fed.load(Ordering::Relaxed);
+        plock(&feed).forget();
+        let (all, _) = take_all(&feed, &fed);
+        assert_eq!(all, b"\x1b[?2004h$ ls", "the modes, then the line the cursor is on");
+        push_feed(&feed, &fed, b"\r\nafter");
+        let parser = Mutex::new(vt100::Parser::new(3, 10, 0));
+        let (tail, _, reset) = take_since(&parser, &feed, &fed, end);
+        assert!(!reset && tail == b"\r\nafter", "{tail:?}");
+    }
+
     #[test]
     fn a_trimmed_feed_replays_into_the_modes_its_head_set() {
         let parser = Mutex::new(vt100::Parser::new(3, 10, 0));

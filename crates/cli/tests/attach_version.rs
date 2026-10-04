@@ -1,6 +1,8 @@
-//! The host protocol's version handshake, through the real binary
-//! (audit/term-attach.md). A client from before the handshake still
-//! attaches, types and reads. The other direction — a versioned
+//! The host protocol's version handshake and ⌘K kept by the host, through
+//! the real binary (audit/term-attach.md). A client from before the
+//! handshake still attaches, types and reads; a versioned client agrees
+//! version 2 and the host's ring forgets on `Forget`, so a later attacher
+//! is not handed what was cleared. The other direction — a versioned
 //! client against a host from before the handshake — is in
 //! `khor_node::host`'s handshake tests, against a host that answers the
 //! old way. Every wait has a deadline.
@@ -78,3 +80,31 @@ fn a_client_from_before_the_handshake_still_attaches_types_and_reads() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
+#[test]
+fn a_versioned_client_agrees_and_the_host_forgets_what_was_cleared() {
+    let home = std::env::temp_dir().join(format!("khor-attachv-new-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    let (sid, dir, _reap) = open_detached(&home);
+
+    let host::Attached { stream: mut s, version } = host::connect_host_versioned(&dir, 100, 30).unwrap();
+    assert_eq!(version, HOST_VERSION);
+    host::write_frame(&mut s, &ClientOp::Input(b"echo before-the-clear\n".to_vec())).unwrap();
+    read_until(&mut s, "before-the-clear\r\n", 10);
+
+    // Control: a late attacher is handed it while nothing was cleared.
+    let mut late = host::connect(&dir, 100, 30).unwrap();
+    read_until(&mut late, "before-the-clear", 5);
+    drop(late);
+
+    host::write_frame(&mut s, &ClientOp::Forget).unwrap();
+    host::write_frame(&mut s, &ClientOp::Input(b"echo after-the-clear\n".to_vec())).unwrap();
+    read_until(&mut s, "after-the-clear\r\n", 10);
+
+    let mut later = host::connect(&dir, 100, 30).unwrap();
+    let replay = read_until(&mut later, "after-the-clear\r\n", 5);
+    assert!(!replay.contains("before-the-clear"), "the cleared history came back: {replay:?}");
+
+    assert!(khor(&home).args(["close", &sid]).status().unwrap().success());
+    let _ = std::fs::remove_dir_all(&home);
+}
