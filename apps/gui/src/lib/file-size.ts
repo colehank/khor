@@ -51,7 +51,9 @@ export function fileSizeStyle(step: number): CSSProperties | undefined {
   if (k === 1) return undefined;
   return {
     "--text-mono": `calc(var(--fs-mono) * ${k})`,
-    "--text-mono--line-height": `calc(var(--lh-mono) * ${k})`,
+    // Rounded for `--lh-mono`'s reason (tokens.css): the editor's rows
+    // snap to whole pixels and the painted sheet's would not.
+    "--text-mono--line-height": `round(calc(var(--lh-mono) * ${k}), var(--pixel))`,
     "--text-read": `calc(var(--fs-read) * ${k})`,
     "--text-read--line-height": `calc(var(--lh-read) * ${k})`,
   } as CSSProperties;

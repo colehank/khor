@@ -505,6 +505,41 @@ const launch = async () => {
     English — and `menu::speak_at_launch` must put English first. Read
     only, by pid: nothing is pressed and the window is not brought to the
     front. */
+/** **The Mac face at its tokens' size on a fresh store** (UX-9): 界面字号
+    follows the system by default, and it divided the Mac's 13 by iOS's 17,
+    so every Mac came up at 76 % — row names at 9.9 px, the list's title at
+    16.8. Measured where it is drawn: the list's title (R0's heading, 会话
+    on a fresh store), whose text box accessibility reports. Not a row
+    name: a row is a button, and accessibility folds its text into the
+    button's title with no box of its own; the scale is one number for the
+    whole ramp, so the title answers for the rows.
+
+    **The box is the glyphs', not the line's**: WebKit reports a static
+    text's ascent-to-descent run — 26 pt for the 22 px title, 21 for the
+    16.8 px one it was. So the check is a band read off tokens.css: at its
+    tokens' size the title's box is at least `--fs-title-lg` and at most
+    `--lh-title-lg`; at 76 % it is below the font size. The scratch run is
+    at the system's default text size. */
+function typeAtLaunch(pid) {
+  const tokens = readFileSync(join(gui, "src", "styles", "tokens.css"), "utf8");
+  const px = (name) => Number(tokens.match(new RegExp(`--${name}: calc\\((\\d+)px \\* var\\(--ui-scale\\)\\)`))?.[1]);
+  const [fs, lh] = [px("fs-title-lg"), px("lh-title-lg")];
+  if (!Number.isFinite(fs) || !Number.isFinite(lh)) {
+    throw new Error("probe dead: tokens.css no longer spells --fs-title-lg / --lh-title-lg the way this gate reads them");
+  }
+  const title = said("gui.sessions-tab");
+  const frames = JSON.parse(run("axtext", String(pid), title));
+  if (!frames.length) {
+    fail(`type: no 「${title}」 title in the page — a fresh store opens on the sessions list`);
+    return;
+  }
+  const h = Math.max(...frames.map((f) => f[3]));
+  console.log(`type: the list title 「${title}」, text box ${h.toFixed(1)} pt (tokens: ${fs} px on a ${lh} px line)`);
+  if (h < fs || h > lh) {
+    fail(`type: the list title's text box is ${h.toFixed(1)} pt, outside ${fs}–${lh} — the Mac face is not at its tokens' size (lib/type-size.ts SYSTEM_BODY)`);
+  }
+}
+
 async function langPhase() {
   const was = child;
   was.kill("SIGTERM");
@@ -575,6 +610,7 @@ try {
   const only = process.env.NATIVE_ONLY ?? "";
   if (only !== "keys") {
     await step("dark", "at launch");
+    typeAtLaunch(child.pid);
     setTheme("light");
     await step("light", "after khor config + refocus");
     setTheme("dark");

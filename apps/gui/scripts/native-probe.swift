@@ -15,6 +15,9 @@
 //   menubar <pid>                → JSON: that process's menu bar, each item's name,
 //                                  enabled, command key and modifier mask
 //   pick <pid> <menu> <item>     → presses one menu item of that process
+//   axtext <pid> <text>          → JSON: the frame [x, y, w, h] of every
+//                                  static text in the page reading exactly
+//                                  that, in points
 //   resize <pid> <w> <h>         → sets that process's main window's size
 //                                  through accessibility (what the green
 //                                  button and tiling do); prints the AX result
@@ -212,6 +215,37 @@ case "axmenu":
     ($0[kCGWindowOwnerPID as String] as? Int32) == pid && (($0[kCGWindowLayer as String] as? Int) ?? 0) >= 101
   }
   print("1 \(up.count)")
+
+case "axtext":
+  // Where the page drew one piece of text, as accessibility reports it:
+  // WebKit gives a static text the box of its line, so its height is the
+  // line height the page set — the measure the type scale moves (UX-9).
+  let pid = Int32(args[2])!
+  let needle = args[3]
+  let app = AXUIElementCreateApplication(pid)
+  func attr(_ el: AXUIElement, _ name: String) -> AnyObject? {
+    var v: AnyObject?
+    return AXUIElementCopyAttributeValue(el, name as CFString, &v) == .success ? v : nil
+  }
+  func kids(_ el: AXUIElement) -> [AXUIElement] { (attr(el, kAXChildrenAttribute) as? [AXUIElement]) ?? [] }
+  var frames: [[Double]] = []
+  for _ in 0..<6 where frames.isEmpty {
+    var queue = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+    var seen = 0
+    while !queue.isEmpty && seen < 6000 {
+      let el = queue.removeFirst()
+      seen += 1
+      if (attr(el, kAXRoleAttribute) as? String) == "AXStaticText", (attr(el, kAXValueAttribute) as? String) == needle {
+        var p = CGPoint.zero, z = CGSize.zero
+        if let pv = attr(el, kAXPositionAttribute) { AXValueGetValue(pv as! AXValue, .cgPoint, &p) }
+        if let sv = attr(el, kAXSizeAttribute) { AXValueGetValue(sv as! AXValue, .cgSize, &z) }
+        frames.append([Double(p.x), Double(p.y), Double(z.width), Double(z.height)])
+      }
+      queue.append(contentsOf: kids(el))
+    }
+    if frames.isEmpty { spin(0.5) }
+  }
+  print(String(data: try! JSONSerialization.data(withJSONObject: frames), encoding: .utf8)!)
 
 case "menus":
   // A context menu is a window of the process that pops it, one level up

@@ -2604,7 +2604,18 @@
      only there. `Face`'s `TYPE_STEPS` mirrors the ramp, this included. */
   --fs-gauge: calc(34px * var(--ui-scale));
   --fs-mono: calc(13px * var(--ui-scale));
-  --lh-mono: calc(20px * var(--ui-scale));
+  /* **Whole pixels at every scale** (the owner's caret, 2026-10-04): the
+     editor is a <textarea> over a painted <pre>, and WebKit snaps a
+     textarea's rows to whole pixels but not a pre's — so a fractional
+     leading is two leadings and the caret walks off its row (the 22 and
+     20 above were chosen whole for that reason). 界面字号 multiplies it
+     by any scale (13/17 on every Mac until UX-9 made it 15.29), so the
+     product is rounded here, once, where it is made; `check-wk` lays the
+     pair out at every step of the scale. */
+  --lh-mono: round(calc(20px * var(--ui-scale)), 1px);
+  /* The step that rounding takes, for a leading made outside this file
+     (`lib/file-size`'s steps multiply `--lh-mono` again). */
+  --pixel: 1px;
 }
 @media (pointer: coarse) {
   :root {
@@ -2629,7 +2640,7 @@
     --fs-read: calc(16px * var(--ui-scale));
     --lh-read: calc(24px * var(--ui-scale));
     --fs-mono: calc(13px * var(--ui-scale));
-    --lh-mono: calc(20px * var(--ui-scale));
+    --lh-mono: round(calc(20px * var(--ui-scale)), 1px);
   }
 }
 

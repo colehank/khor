@@ -263,7 +263,7 @@ func pdfProbe() -> String {
 /// user, on the app, which draws on this engine). The token values are
 /// handed in by the gate, read out of tokens.css, so what is measured
 /// is khor's own leading.
-func sheetProbe(size: String, leading: String) -> String {
+func sheetProbe(size: String, leading: String, scales: String) -> String {
   let web = WKWebView(frame: CGRect(x: 0, y: 0, width: 400, height: 900))
   let w = Waiter()
   web.navigationDelegate = w
@@ -284,7 +284,7 @@ func sheetProbe(size: String, leading: String) -> String {
     }
   }
   let text = lines.joined(separator: "\n")
-  return ask(web, "return window.__measure(s, l, t);", async: true, args: ["s": size, "l": leading, "t": text])
+  return ask(web, "return window.__measure(s, l, t, k);", async: true, args: ["s": size, "l": leading, "t": text, "k": scales])
 }
 
 /// One colour slot of the face editor, on this WebKit.
@@ -378,7 +378,8 @@ func themeProbe() -> String {
 let codeSize = CommandLine.arguments.count > 3 ? CommandLine.arguments[3] : "14.4px"
 let codeLeading = CommandLine.arguments.count > 4 ? CommandLine.arguments[4] : "21.6px"
 let shellCss = CommandLine.arguments.count > 5 ? CommandLine.arguments[5] : ""
+let codeScales = CommandLine.arguments.count > 6 ? CommandLine.arguments[6] : "1"
 
 print(
-  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe()),\"sheet\":\(sheetProbe(size: codeSize, leading: codeLeading)),\"well\":\(wellProbe()),"
+  "{\"bare\":\(probe(false)),\"shimmed\":\(probe(true)),\"pdf\":\(pdfProbe()),\"sheet\":\(sheetProbe(size: codeSize, leading: codeLeading, scales: codeScales)),\"well\":\(wellProbe()),"
     + "\"shellBare\":\(shellProbe("")),\"shellNailed\":\(shellProbe(shellCss)),\"theme\":\(themeProbe())}")

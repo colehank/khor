@@ -1,12 +1,17 @@
 // **The two text sizes** (the redesign, 2026-10-02, 外观 → 字号).
 //
 // 界面字号 scales the whole type ramp through one number, `--ui-scale`
-// (`tokens.css`). By default it **follows the system**: iOS tells a page
-// the reader's text size through the `-apple-system-body` font keyword
-// (Dynamic Type), and the scale is that size over the default body's 17.
-// A platform that tells a page nothing (a desktop browser, the Mac app's
-// web view at its default) answers 1. Off, the slider's step is the scale
-// — iOS's seven text sizes, xS to xxxL, over the same 17.
+// (`tokens.css`). By default it **follows the system**: WebKit tells a
+// page the reader's text size through the `-apple-system-body` font
+// keyword, and the scale is that size over **the platform's own default
+// body** — 17 on iOS (Dynamic Type's Large), 13 on the Mac. A platform
+// that tells a page nothing (a desktop browser) answers 1. Off, the
+// slider's step is the scale — iOS's seven text sizes, xS to xxxL, over
+// 17.
+//
+// ⚠️ It divided by 17 everywhere until UX-9: the Mac's web view answers
+// 13, so the whole Mac face came up at 13/17 of its tokens — row names at
+// 9.9 px — on every store that had never touched the slider.
 //
 // 终端字号 is the terminal's own (`--text-term`), a slider of whole
 // points; open terminals take it at once (`TerminalPane` listens).
@@ -19,6 +24,14 @@ import { useEffect, useState } from "react";
 /** iOS's body sizes, xS…xxxL; the fourth (17) is the default. */
 export const UI_STEPS = [14, 15, 16, 17, 19, 21, 23] as const;
 const UI_BASE = 17;
+
+/** **The body size the system answers at its default, on this platform**
+    — read once from the platform, never inferred from the answer (a Mac
+    whose reader raised the text size answers more than 13, and that is
+    the size to follow). iOS 17; the Mac 13. An iPad that asks for the
+    desktop site says Macintosh too, and touch is what tells it apart. */
+const SYSTEM_BODY =
+  typeof navigator !== "undefined" && /Mac/.test(navigator.platform) && navigator.maxTouchPoints === 0 ? 13 : UI_BASE;
 export const TERM_MIN = 10;
 export const TERM_MAX = 22;
 export const TERM_DEFAULT = 14;
@@ -62,7 +75,7 @@ export function systemScale(): number {
   document.body.appendChild(probe);
   const px = Number.parseFloat(getComputedStyle(probe).fontSize);
   probe.remove();
-  return Number.isFinite(px) && px > 0 ? px / UI_BASE : 1;
+  return Number.isFinite(px) && px > 0 ? px / SYSTEM_BODY : 1;
 }
 
 /** Stamp the sizes on the root, where the ramp and the terminal read them. */
