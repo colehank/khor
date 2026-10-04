@@ -21,7 +21,7 @@ export const UI_STEPS = [14, 15, 16, 17, 19, 21, 23] as const;
 const UI_BASE = 17;
 export const TERM_MIN = 10;
 export const TERM_MAX = 22;
-const TERM_DEFAULT = 14;
+export const TERM_DEFAULT = 14;
 
 export type TypeSize = { followSystem: boolean; uiStep: number; term: number };
 

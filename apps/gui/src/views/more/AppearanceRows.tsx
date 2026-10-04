@@ -26,6 +26,7 @@ import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
 import { setTermBell, useTermBell } from "@/lib/term-bell";
 import { setTermPredict, useTermPredict } from "@/lib/term-predict-setting";
+import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { lasted } from "@/words";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
@@ -91,6 +92,7 @@ export function TerminalSection() {
   const finishedAfter = useFinishedAfter();
   const bell = useTermBell();
   const predicts = useTermPredict();
+  const optionMeta = useTermOptionMeta();
   const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
   const [editingKeys, setEditingKeys] = useState(false);
   const [here] = useState(() => fontsHere());
@@ -269,6 +271,16 @@ export function TerminalSection() {
         on={predicts}
         onToggle={() => setTermPredict(!predicts)}
       />
+      {/* A Mac keyboard's: no Option key under a finger. */}
+      {!coarse && (
+        <SwitchRow
+          name="term-option-meta"
+          label={gui.term_option_meta}
+          hint={gui.term_option_meta_note}
+          on={optionMeta}
+          onToggle={() => setTermOptionMeta(!optionMeta)}
+        />
+      )}
       {/* The line goes into a computer's ~/.zshrc: a phone has none to
           edit, so the row is not drawn there (progressive disclosure). */}
       {!coarse && (
