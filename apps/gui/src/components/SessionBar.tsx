@@ -72,7 +72,6 @@ import { TabAvatar, type TabFace } from "@/browse/TabStrip";
 import { IconBack, IconClose, IconPlus } from "@/components/icons";
 import { PathCut } from "@/components/PathCut";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { terminalKeyboard } from "@/lib/soft-keyboard";
 import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
@@ -184,21 +183,12 @@ export function SessionScreen({
     const next = faces[at + by];
     if (next) onFocus(next.id);
   };
-  /** **A drag down over the content while the keyboard is up lowers it**
-      (round UX-3 3a, every mode; the Messages and Mail manner). The page
-      cannot hand the keyboard to the finger, so it is lowered once the
-      drag is plainly downward and the system finishes the motion. */
-  const drag = useRef<number | null>(null);
-  const lower = () => {
-    const el = document.activeElement;
-    if (!(el instanceof HTMLElement) || !document.documentElement.hasAttribute("data-keyboard")) return;
-    // The terminal's field keeps its focus for its keys and is lowered by
-    // its own road (`terminalKeyboard`, the terminal lane's 2.2, which
-    // also lowers on its own swipe; both are the same act); any other
-    // field is let go.
-    if (el.hasAttribute("inputmode")) terminalKeyboard.lower();
-    else el.blur();
-  };
+  // ⚠️ Tombstone (item 28, the terminal lane): a 24-pt drag down anywhere over
+  // the content lowered the keyboard here. The key row is a portal into
+  // the bar, so React's synthetic touch events from the joystick bubbled
+  // up into it and the keyboard dropped under the thumb. The one lowering
+  // rule is now the terminal's swipe, on its own scroller
+  // (`TerminalPane`'s `swipeLowers`).
   return (
     <div data-session-screen className="flex h-full min-h-0 flex-col bg-card">
       {/* The top of the glass is the platform's: a phone's status bar
@@ -207,20 +197,7 @@ export function SessionScreen({
           `data-traffic`) — which is a handle on the window like L0 was. */}
       <div data-session-top {...WINDOW_DRAG} className="h-safe-top flex-none" />
       <SeatsContext.Provider value={seats}>
-        <div
-          data-session-content
-          className="flex min-h-0 flex-1 flex-col"
-          onTouchStart={(e) => {
-            drag.current = e.touches.length === 1 ? e.touches[0].clientY : null;
-          }}
-          onTouchMove={(e) => {
-            if (drag.current === null || e.touches.length !== 1) return;
-            if (e.touches[0].clientY - drag.current > DRAG_LOWERS) {
-              drag.current = null;
-              lower();
-            }
-          }}
-        >
+        <div data-session-content className="flex min-h-0 flex-1 flex-col">
           {children}
         </div>
       </SeatsContext.Provider>
@@ -324,8 +301,6 @@ export function SessionScreen({
   );
 }
 
-/** How far down a drag goes before the keyboard is lowered. */
-const DRAG_LOWERS = 24;
 /** How far sideways a swipe on the pill goes before it changes tab. */
 const SWIPE_STEPS = 40;
 

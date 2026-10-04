@@ -12,6 +12,7 @@
 // the focus. Under a mouse there is no soft keyboard and none of this
 // applies: the field is a plain focused field.
 import { termWake, type Wake } from "@/lib/term-tap";
+import { keyboardShown } from "@/lib/viewport";
 
 const CHANGED = "khor:soft-keyboard";
 
@@ -72,10 +73,14 @@ export function lowerKeyboard(field: HTMLElement) {
   refocus(field);
 }
 
-/** Whether the soft keyboard is up for this field: its own mode asks for
-    one and it has the focus. */
+/** **Whether the soft keyboard is up for this field: as the screen says**
+    (item 28). The field's `inputmode` is only the request; iOS lowers the
+    keyboard on its own (its key for it, a rotation, another app), and a
+    state read off the request then said "up" and the next press did
+    nothing. So: the field has the focus and the visual viewport, settled,
+    has a keyboard in it (`lib/viewport`'s `keyboardShown`). */
 export function keyboardUp(field: HTMLElement | null): boolean {
-  return field !== null && field.getAttribute("inputmode") === "text" && document.activeElement === field;
+  return field !== null && document.activeElement === field && keyboardShown();
 }
 
 /** Called when the field's keyboard state may have changed. */

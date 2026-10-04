@@ -469,10 +469,10 @@ function cellAt(term: Terminal, x: number, y: number): { col: number; row: numbe
   return { col, row: term.buffer.active.viewportY + inView };
 }
 
-/** A downward swipe this long (pt) and this fast (pt/ms) puts the
-    keyboard away. */
-const DISMISS_PT = 60;
-const DISMISS_SPEED = 0.5;
+/** A downward swipe this long (pt) and this fast (pt/ms), judged at the
+    lift, puts the keyboard away (item 28). */
+const DISMISS_PT = 48;
+const DISMISS_SPEED = 0.3;
 
 /** Travel past which a touch is a drag, not a tap. */
 const TAP_SLOP = 10;
@@ -513,30 +513,13 @@ function tapsAskFirst(
     downAt = performance.now();
     startX = e.touches[0]?.clientX ?? 0;
     startY = e.touches[0]?.clientY ?? 0;
-    lastX = startX;
-    lastY = startY;
   };
-  let lastX = 0;
-  let lastY = 0;
   const moved = (e: TouchEvent) => {
     const t = e.touches[0];
     if (!t) return;
-    lastX = t.clientX;
-    lastY = t.clientY;
     if (Math.hypot(t.clientX - startX, t.clientY - startY) > TAP_SLOP) still = false;
   };
   const lifted = () => {
-    // **A downward swipe puts the keyboard away**, in every mode (the
-    // owner's ruling with the ux lane's deck): iOS's own gesture for it in
-    // a scrolling view (`keyboardDismissMode`). A swipe, not a slow drag
-    // through history: far enough, fast enough, more down than sideways.
-    const dy = lastY - startY;
-    const took = performance.now() - downAt;
-    if (!still && dy > DISMISS_PT && dy / took > DISMISS_SPEED && dy > Math.abs(lastX - startX) && keyboardUp(field)) {
-      lowerKeyboard(field);
-      still = false;
-      return;
-    }
     // A long press is a selection (`pressSelects`), not a tap.
     if (performance.now() - downAt >= LONG_PRESS_MS) still = false;
     if (still) {
@@ -546,9 +529,10 @@ function tapsAskFirst(
         still = false;
         return;
       }
+      // **A tap raises, never lowers** (item 28): the keyboard goes away
+      // by the swipe (`swipeLowers`) or the system's own key.
       const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col));
       if (here && !keyboardUp(field)) raiseKeyboard(field);
-      else if (!here && wake === "auto" && keyboardUp(field)) lowerKeyboard(field);
     }
     still = false;
   };
@@ -570,6 +554,60 @@ function tapsAskFirst(
     box.removeEventListener("touchmove", moved);
     box.removeEventListener("touchend", lifted);
     field.removeEventListener("focusout", left);
+  };
+}
+
+/**
+ * **The one rule that lowers the keyboard: a swipe down over the
+ * terminal** (item 28). iOS's own gesture for it in a scrolling view is
+ * `keyboardDismissMode = .interactive`, which a web view cannot ask for, so
+ * it is judged here at the lift: at least `DISMISS_PT` down, more down than
+ * sideways, at least `DISMISS_SPEED`. Native listeners on the terminal's
+ * own scroller, so a touch on the key row or the deck (a portal into the
+ * bar, `BarSeat`) never reaches it — React's synthetic events bubbled the
+ * joystick's drags up through that portal into the session page's old
+ * 24-pt rule, and the keyboard dropped under the thumb. A drag the
+ * program takes as its wheel (`fingerWheels`) counts as well: under tmux's
+ * mouse the swipe lowers too.
+ */
+function swipeLowers(scroller: HTMLElement, field: HTMLElement | null): () => void {
+  if (!field) return () => {};
+  let x0 = 0;
+  let y0 = 0;
+  let x = 0;
+  let y = 0;
+  let at = 0;
+  let one = false;
+  const start = (e: TouchEvent) => {
+    one = e.touches.length === 1 && !(e.target as Element | null)?.closest?.("[data-session-bar]");
+    x0 = x = e.touches[0]?.clientX ?? 0;
+    y0 = y = e.touches[0]?.clientY ?? 0;
+    // The touch's own time, not when this ran: a page busy drawing a
+    // program's frames hears the moves late, and the swipe was not slow.
+    at = e.timeStamp;
+  };
+  const move = (e: TouchEvent) => {
+    if (e.touches.length !== 1) one = false;
+    const t = e.touches[0];
+    if (!t) return;
+    x = t.clientX;
+    y = t.clientY;
+  };
+  const end = (e: TouchEvent) => {
+    if (!one) return;
+    one = false;
+    const dy = y - y0;
+    const took = Math.max(1, e.timeStamp - at);
+    if (dy >= DISMISS_PT && dy > Math.abs(x - x0) && dy / took >= DISMISS_SPEED && keyboardUp(field)) lowerKeyboard(field);
+  };
+  scroller.addEventListener("touchstart", start, { passive: true });
+  scroller.addEventListener("touchmove", move, { passive: true });
+  scroller.addEventListener("touchend", end, { passive: true });
+  scroller.addEventListener("touchcancel", () => (one = false), { passive: true });
+  return () => {
+    scroller.removeEventListener("touchstart", start);
+    scroller.removeEventListener("touchmove", move);
+    scroller.removeEventListener("touchend", end);
   };
 }
 
@@ -684,6 +722,9 @@ function programScrolls(term: Terminal): boolean {
   return term.modes.mouseTrackingMode !== "none" || term.buffer.active.type === "alternate";
 }
 
+/** Touches a drag sent on to the program as its wheel (`fingerWheels`). */
+export const wheeled = new WeakSet<Event>();
+
 /**
  * **A finger's drag is the wheel when the program scrolls** (2026-10-02,
  * iOS 第三步 A). xterm 6 has no touch code of its own (xterm.js #5489,
@@ -724,8 +765,12 @@ function fingerWheels(term: Terminal, box: HTMLElement): () => void {
     }
     const dy = t.clientY - lastY;
     lastY = t.clientY;
+    // Not stopped (item 28): the page's own gestures above the pane (the
+    // edge swipe, a sheet) still hear the touch, and so does the swipe
+    // that lowers the keyboard. Only the native scroll it would start is
+    // prevented, and the touch is marked as the program's wheel.
     e.preventDefault();
-    e.stopPropagation();
+    wheeled.add(e);
     if (dy === 0) return;
     // Natural scrolling: a finger moving up brings later lines, which
     // is a wheel turned down.
@@ -2425,6 +2470,7 @@ export function TerminalPane({
     };
     const selects = pressSelects(term, box, (row, x, y) => showBlock(row, x, y, true));
     const dragged = fingerWheels(term, box);
+    const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount);
     syncScroller.current = () => {
       native.sync();
@@ -2517,6 +2563,7 @@ export function TerminalPane({
       box.removeEventListener("beforeinput", metaEcho, true);
       box.removeEventListener("input", metaEcho, true);
       dragged();
+      swiped();
       native.stop();
       selects();
       relined();

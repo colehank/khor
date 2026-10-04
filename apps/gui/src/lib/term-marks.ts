@@ -182,13 +182,16 @@ export function trackMarks(term: Terminal): Marks {
 }
 
 /**
- * **Whether a cell is on the line being typed** (roadmap 2.2, `auto`): from
- * where the shell's input starts on, while the prompt is up; the cursor's
- * row when a program runs or when the shell marks nothing.
+ * **Whether a tap on a cell asks for the keyboard** (roadmap 2.2, `auto`;
+ * item 28): while a marked shell's prompt is up, from where its input
+ * starts on, the blank below included — a tap up in the history is a
+ * reader's. Anywhere at all when the shell marks nothing or a program
+ * runs: without marks khor cannot tell input from output, and the row
+ * under the cursor alone (the old rule) was a target the owner kept
+ * missing — a fresh shell's prompt at the top, Claude Code's input box.
  */
 export function inInput(term: Terminal, marks: Marks, line: number, col: number): boolean {
   const buf = term.buffer.active;
-  const cursorLine = buf.baseY + buf.cursorY;
   const b = marks.current();
   if (buf.type === "normal" && marks.marked() && b?.input && !b.output) {
     // Everything after the input's start is input while the prompt is
@@ -196,5 +199,5 @@ export function inInput(term: Terminal, marks: Marks, line: number, col: number)
     const at = b.input.marker.line;
     return line > at || (line === at && col >= b.input.col);
   }
-  return line === cursorLine;
+  return true;
 }
