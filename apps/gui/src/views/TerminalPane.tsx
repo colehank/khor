@@ -925,6 +925,10 @@ function jumpToPrompt(term: Terminal, marks: Marks, dir: -1 | 1) {
   term.scrollToLine(to);
 }
 
+/** A face that has been quiet this long says its size again with its
+    next key (ms). */
+const SIZE_AGAIN_MS = 2000;
+
 /** The most entries the pane's first-entry trace keeps. */
 const TRACE_MAX = 300;
 
@@ -2122,9 +2126,27 @@ export function TerminalPane({
       guarded(text);
     };
     term.textarea?.addEventListener("paste", pasted, true);
+    // **The size follows the face in use** (the audit's spec rule 8,
+    // tmux's `window-size latest`): two faces on one session share one
+    // pty, and the one a person types into, after a quiet spell, says its
+    // size again — so the phone and the Mac each see a whole screen while
+    // they are the one being used. Only input counts: an answer from a
+    // face nobody is looking at must not take the size (tmux asks for the
+    // size at every resize, and both faces answer). An unchanged size
+    // costs nothing; the kernel signals the program only on a change.
+    let sizedAt = performance.now();
+    const ownSize = () => {
+      if (performance.now() - sizedAt < SIZE_AGAIN_MS) {
+        sizedAt = performance.now();
+        return;
+      }
+      sizedAt = performance.now();
+      termResize(id, term.cols, term.rows).catch(() => {});
+    };
     const data = term.onData((d) => {
       const reply = isReply(d);
       if (replaying > 0 && (reply || isFocusReport(d))) return;
+      if (!reply && !isFocusReport(d)) ownSize();
       let out = d;
       const m = modsRef.current;
       // An answer to a live question is not a key: it neither takes a
