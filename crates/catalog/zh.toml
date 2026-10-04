@@ -2406,6 +2406,9 @@ term-predict-note = "远端回显慢时，按下的字先带下划线显示，�
 # Appearance → Terminal (item 21): the one ~/.zshrc line that makes shells
 # the person starts in tmux themselves mark their commands, with a copy
 # button. Panes opened from khor's own tmux client already do.
+# Appearance → Terminal (item 23): the cursor joystick felt, a phone's only.
+term-joy-haptic = "摇杆震动"
+term-joy-haptic-note = "用光标摇杆时，每发出一个方向键轻震一下，换方向时稍重一下"
 # Appearance → Terminal (item 22): Terminal.app's own words for the same
 # switch (描述文件 › 键盘), off by default there and here.
 term-option-meta = "将 Option 键用作 Meta 键"

@@ -27,14 +27,30 @@ const PAD_WATCHDOG_MS = 600;
 import { useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
 
+import { inApp, joyHaptic } from "@/api";
 import { IconArrow, IconMove } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { cursorKey, type Mods } from "@/lib/term-keys";
+import { termJoyHaptic } from "@/lib/term-joy-haptic";
 import { cn } from "@/lib/utils";
 
 type Way = "left" | "right" | "up" | "down";
 const LETTER: Record<Way, "A" | "B" | "C" | "D"> = { up: "A", down: "B", right: "C", left: "D" };
 const NO_MODS: Mods = { ctrl: false, alt: false };
+
+/**
+ * **The stick, felt** (item 23): a selection tick for each arrow a repeat
+ * sends, a light impact when the stick takes a way — out of the dead zone,
+ * or across to another side — which stands for that way's first arrow
+ * too, so one arrow is one haptic. Prepared at touch-down, let go at the
+ * lift with nothing felt. Apple's HIG on haptics: each tied to the event it
+ * stands for, never on a timer of its own. Only in the app (the bridge is
+ * UIKit's), only with the setting on (Appearance → Terminal).
+ */
+function felt(kind: "prepare" | "tick" | "turn" | "end") {
+  if (!inApp || !termJoyHaptic()) return;
+  joyHaptic(kind).catch(() => {});
+}
 
 /** Fingers on the glass, counted from the document's own touch events,
     and a mouse button held: the watchdog's word on whether anybody is
@@ -135,7 +151,10 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
   };
   const endRef = useRef<() => void>(() => {});
   const end = () => {
-    if (g.current) stopRepeat(g.current);
+    if (g.current) {
+      stopRepeat(g.current);
+      felt("end");
+    }
     g.current = null;
     setWay(null);
     setRepeating(false);
@@ -156,9 +175,10 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
       endRef.current();
     };
   }, []);
-  const send = (s: Gesture, w: Way) => {
+  const send = (s: Gesture, w: Way, how: "tick" | "turn") => {
     const t = term.current;
     if (!t || g.current !== s) return;
+    felt(how);
     setWay(w);
     if (!s.freed && (s.mods.ctrl || s.mods.alt)) {
       s.freed = true;
@@ -175,7 +195,7 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
       return;
     }
     setRepeating(true);
-    send(s, w);
+    send(s, w, "tick");
     const rate = performance.now() - s.repeatFrom < PAD_RAMP_MS ? PAD_RATE : PAD_RATE_FAST;
     s.repeat = window.setTimeout(() => beat(s, w), 1000 / rate);
   };
@@ -184,6 +204,7 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
     // A press while a gesture is live replaces it — and stops its repeat.
     end();
     e.currentTarget.setPointerCapture(e.pointerId);
+    felt("prepare");
     g.current = {
       pointer: e.pointerId,
       x0: e.clientX,
@@ -210,7 +231,7 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
       setWay(null);
       return;
     }
-    send(s, now);
+    send(s, now, "turn");
     s.repeat = window.setTimeout(() => {
       s.repeatFrom = performance.now();
       beat(s, now);
