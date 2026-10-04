@@ -888,13 +888,12 @@ fn notify_finished(app: tauri::AppHandle, title: String, body: String) -> Result
     n.builder().title(title).body(body).show().map_err(|e| e.to_string())
 }
 
-/// **A line from the page into the app's log** (item 18 A): the app's
-/// stderr, which a phone's console keeps and a Mac's launch log collects.
-/// What a terminal saw in its first second on a device the simulator
-/// never reproduces.
+/// **A line from the page into the app's log** (item 18 A): what a
+/// terminal saw on a device the simulator never reproduces. Kept where
+/// `khor doctor` and the 自检 page read it (item 33), and on stderr.
 #[tauri::command]
 fn face_note(line: String) {
-    eprintln!("face: {}", line.chars().take(400).collect::<String>());
+    khor_gui_core::face_note(&Node::root_from_env(), &line);
 }
 
 /// **A terminal's bell, felt** (roadmap 4.2): a light tap of the phone's

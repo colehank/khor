@@ -316,8 +316,8 @@ const ONE_SIDED: &[(&str, &str)] = &[
     // ── a line into the app's log (item 18 A) ─────
     (
         "face_note",
-        "writes a line to the app's own stderr for the device console; a browser face has its \
-         own console and no app log",
+        "writes a line to the app's own stderr and the notes `khor doctor` reads (item 33), for \
+         a device nobody watches; a browser face has its own console and no app log",
     ),
     // ── a finished command, said by the system (roadmap 2.4) ─────
     (

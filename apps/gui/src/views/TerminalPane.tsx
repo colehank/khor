@@ -106,6 +106,7 @@ import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
+import { notesFirstTouch } from "@/lib/term-first-touch";
 import { viewportMoving } from "@/lib/viewport";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
@@ -1358,6 +1359,7 @@ export function TerminalPane({
   // A tmux row's history on a phone (item 31): held only while the pane
   // is on screen, and why it is not there when it cannot be read.
   const tmuxHistoryRef = useRef<ReturnType<typeof holdsTmuxHistory> | null>(null);
+  const firstTouchRef = useRef<ReturnType<typeof notesFirstTouch> | null>(null);
   const shownRef = useRef(false);
   const [historyOut, setHistoryOut] = useState(false);
   const doingRef = useRef(doing);
@@ -1963,7 +1965,7 @@ export function TerminalPane({
     // pane is wired first so that early keys are not lost, and this is
     // the same thing done at the one place where answers leave.
     let replaying = 0;
-    const replay = (bytes: Uint8Array) => {
+    const replay = (bytes: Uint8Array, done?: () => void) => {
       replaying += 1;
       const shaped = predict.output(iip(marksSp(bytes)));
       term.write(shaped.bytes, () => {
@@ -1972,6 +1974,7 @@ export function TerminalPane({
         // The history just landed: the scroller's range is the buffer's
         // now, not whenever xterm next scrolls (item 18 A).
         syncScroller.current();
+        done?.();
       });
     };
     /** When the last beat came back: a beat after a long gap (the pane
@@ -2092,7 +2095,12 @@ export function TerminalPane({
           // replay the host gives any attacher. Its old questions get no
           // answers (`replay`).
           trace(`attach ${a.bytes.length} to ${a.seq}`);
-          if (a.bytes) replay(b64bytes(a.bytes));
+          // What the replay left the face in, for the app's notes (item 33).
+          const noted = (n: number) => () => firstTouchRef.current?.attached(n);
+          if (a.bytes) {
+            const bytes = b64bytes(a.bytes);
+            replay(bytes, noted(bytes.length));
+          } else noted(0)();
           lastBeat = performance.now();
           seq = a.seq;
           joined = true;
@@ -2410,6 +2418,16 @@ export function TerminalPane({
       tmuxHistory.shown(shownRef.current);
     }
     tmuxHistoryRef.current = tmuxHistory;
+    const firstTouch = notesFirstTouch({
+      id,
+      term,
+      box,
+      scroller: scrollerRef.current!,
+      history: historyHas,
+      tmuxRow: tmuxHistory !== null,
+      note: (line) => void faceNote(line).catch(() => {}),
+    });
+    firstTouchRef.current = firstTouch;
     syncScroller.current = () => {
       native.sync();
       trace("replayed");
@@ -2543,6 +2561,8 @@ export function TerminalPane({
       swiped();
       tmuxHistory?.stop();
       tmuxHistoryRef.current = null;
+      firstTouch.stop();
+      firstTouchRef.current = null;
       window.clearTimeout(outShown);
       native.stop();
       selects();
