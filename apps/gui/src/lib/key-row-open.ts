@@ -15,12 +15,16 @@
 //
 // The soft keyboard is the root's `data-keyboard` (`lib/viewport`), the
 // same signal the safe-area inset follows, so the row and the keyboard
-// change on one frame. "Typing" is the terminal's field asking for a
-// keyboard (`lib/soft-keyboard`), whether or not one came.
+// change on one frame — or the screen's settled reading of it
+// (`keyboardShown`, item 28), which is also the gates' seam. "Typing" is
+// the terminal's field asking for a keyboard (its `inputmode`,
+// `lib/soft-keyboard`), whether or not one came: `keyboardUp` reads the
+// screen since item 28, and a hardware keyboard shows nothing there.
 import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
 
-import { keyboardUp, onKeyboardChange } from "@/lib/soft-keyboard";
+import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { useTermKeysHw } from "@/lib/term-keys-hw";
+import { keyboardShown } from "@/lib/viewport";
 
 const CHANGED = "khor:key-row-open";
 
@@ -44,19 +48,28 @@ function subscribe(run: () => void) {
   return () => window.removeEventListener(CHANGED, run);
 }
 
-const softUp = () => document.documentElement.hasAttribute("data-keyboard");
+const softUp = () => document.documentElement.hasAttribute("data-keyboard") || keyboardShown();
 
-/** The soft keyboard is up: the root's `data-keyboard`, as state. */
+/** The soft keyboard is up, as state. */
 function useSoftUp(): boolean {
   const [up, setUp] = useState(softUp);
   useEffect(() => {
-    const watch = new MutationObserver(() => setUp(softUp()));
+    const read = () => setUp(softUp());
+    const watch = new MutationObserver(read);
     watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-keyboard"] });
-    setUp(softUp());
-    return () => watch.disconnect();
+    read();
+    const off = onKeyboardChange(read);
+    return () => {
+      watch.disconnect();
+      off();
+    };
   }, []);
   return up;
 }
+
+/** The field asks for a keyboard: its mode, with the focus. */
+const requested = (field: HTMLElement | null) =>
+  field !== null && field.getAttribute("inputmode") === "text" && document.activeElement === field;
 
 /**
  * The key row for the terminal whose field is `field`: whether it is open
@@ -70,7 +83,7 @@ export function useKeyRowOpen(field: RefObject<HTMLElement | null>): { open: boo
   const mine = useSyncExternalStore(subscribe, () => chosen);
 
   useEffect(() => {
-    const read = () => setAsked(keyboardUp(field.current));
+    const read = () => setAsked(requested(field.current));
     read();
     return onKeyboardChange(read);
   }, [field]);
