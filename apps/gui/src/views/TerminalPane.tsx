@@ -1339,8 +1339,13 @@ export function TerminalPane({
   machine,
   active = true,
   doing,
+  mux = false,
 }: {
   id: string;
+  /** The row's process sits in a tmux pane (`SessionRow.mux`): Claude
+      Code in the person's own tmux, reached through khor's grouped
+      client like a tmux row (item 33). */
+  mux?: boolean;
   /** The row's ledger reading, for the tab on screen: through tmux it
       is the pane in front's (item 21), which the face's own marks cannot
       see. */
@@ -1360,6 +1365,9 @@ export function TerminalPane({
   // is on screen, and why it is not there when it cannot be read.
   const tmuxHistoryRef = useRef<ReturnType<typeof holdsTmuxHistory> | null>(null);
   const firstTouchRef = useRef<ReturnType<typeof notesFirstTouch> | null>(null);
+  // Read when the pane is set up; a row's seat does not change under it.
+  const muxRef = useRef(mux);
+  muxRef.current = mux;
   const shownRef = useRef(false);
   const [historyOut, setHistoryOut] = useState(false);
   const doingRef = useRef(doing);
@@ -2397,8 +2405,13 @@ export function TerminalPane({
     const dragged = fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas });
-    if (TMUX_ROW.test(id) && window.matchMedia("(pointer: coarse)").matches) {
+    // **A tmux row, or an agent inside a tmux pane** (item 33: the owner
+    // opens Claude Code's own row, not the session's): both are khor's
+    // grouped client, and the history is the pane in front's.
+    const tmuxRow = TMUX_ROW.test(id);
+    if ((tmuxRow || muxRef.current) && window.matchMedia("(pointer: coarse)").matches) {
       tmuxHistory = holdsTmuxHistory({
+        known: tmuxRow,
         live: term,
         seat: historyRef.current!,
         scroller: scrollerRef.current!,

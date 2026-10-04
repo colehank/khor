@@ -79,6 +79,12 @@ export function historyBytes(h: PaneHistory, rows: number): string {
  * the copy had to be redone whole.
  */
 export function holdsTmuxHistory(o: {
+  /** The row is a tmux session's. An agent's row that sits in a tmux pane
+      (`SessionRow.mux`) may be shown through khor's own host instead (a
+      conversation khor started, resumed in tmux too): until a read
+      succeeds there, a failed one only means there is no tmux history
+      here, and nothing is said. */
+  known: boolean;
   live: Terminal;
   /** Where the history xterm is drawn, over the live screen. */
   seat: HTMLElement;
@@ -118,6 +124,10 @@ export function holdsTmuxHistory(o: {
   let behind = false;
   /** The last read failed (an older khor there, out of reach). */
   let failed = false;
+  /** A read has succeeded: this terminal is tmux's. */
+  let proven = o.known;
+  /** Not a tmux terminal after all: no more reads. */
+  let absent = false;
   let quiet = 0;
   /** When the read now waiting for quiet was first asked for. */
   let waitingSince = 0;
@@ -210,7 +220,7 @@ export function holdsTmuxHistory(o: {
   const read = (): Promise<boolean> => {
     window.clearTimeout(quiet);
     waitingSince = 0;
-    if (stopped || !visible) return Promise.resolve(true);
+    if (stopped || !visible || absent) return Promise.resolve(true);
     if (!attached) {
       behind = true;
       return Promise.resolve(true);
@@ -224,15 +234,21 @@ export function holdsTmuxHistory(o: {
     return o
       .read(anchor)
       .then((h) => {
+        proven = true;
         if (!stopped && visible) apply(h);
         return true;
       })
       // An older khor there, or out of reach: the drag stays tmux's
-      // wheel, as before, and a finger is told why.
+      // wheel, as before, and a finger is told why. An agent's row never
+      // read yet is not shown through tmux at all: nothing to tell.
       .catch(() => {
-        failed = true;
         give(false);
         show();
+        if (!proven) {
+          absent = true;
+          return true;
+        }
+        failed = true;
         return false;
       })
       .finally(() => {

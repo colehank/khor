@@ -267,12 +267,12 @@ export function DetailPane({
   // screen when its host ends** (T-15): the row turning into 失败 no
   // longer swaps the pane for the row's facts — the terminal stays, with
   // its own 这个终端结束了.
-  const [kept, setKept] = useState<{ id: string; machine: string | null }[]>([]);
+  const [kept, setKept] = useState<{ id: string; machine: string | null; mux: boolean }[]>([]);
   const isTerminal = (r: SessionRow) => r.kind !== "chat" && (r.mux || (r.kind !== "gui" && r.attachable));
   useEffect(() => {
     if (!row || !isTerminal(row)) return;
     const machine = row.source ? row.home : null;
-    setKept((k) => (k.some((t) => t.id === row.id) ? k : [...k, { id: row.id, machine }]));
+    setKept((k) => (k.some((t) => t.id === row.id) ? k : [...k, { id: row.id, machine, mux: row.mux }]));
   }, [row]);
   useEffect(() => {
     if (!openIds) return;
@@ -591,7 +591,7 @@ export function DetailPane({
       {/* The shown one first in the document, so whatever finds "the
           terminal" by `[data-terminal]` finds the one on screen. */}
       {(row && isTerminal(row) && !keptHere.some((t) => t.id === row.id)
-        ? [...keptHere, { id: row.id, machine: row.source ? row.home : null }]
+        ? [...keptHere, { id: row.id, machine: row.source ? row.home : null, mux: row.mux }]
         : keptHere
       )
         .slice()
@@ -607,7 +607,7 @@ export function DetailPane({
             aria-hidden={on ? undefined : true}
           >
             <Suspense fallback={null}>
-              <TerminalPane id={t.id} machine={t.machine} active={on} doing={on ? row?.doing : undefined} />
+              <TerminalPane id={t.id} machine={t.machine} mux={t.mux} active={on} doing={on ? row?.doing : undefined} />
             </Suspense>
           </div>
         );
