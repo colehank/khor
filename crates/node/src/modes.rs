@@ -49,7 +49,8 @@ const TRACKED: &[(u16, bool)] = &[
     // DECAWM and DECTCEM — on by default.
     (7, true),
     (25, true),
-    // Mouse reporting, its encodings, focus reports.
+    // Mouse reporting (X10's 9 too), its encodings, focus reports.
+    (9, false),
     (1000, false),
     (1002, false),
     (1003, false),
