@@ -30,6 +30,7 @@
     "gates": "node scripts/check-gates.mjs",
     "boot": "node scripts/check-boot.mjs",
     "native": "node scripts/check-native.mjs",
+    "atlas": "node scripts/check-atlas.mjs",
     "mobile": "node scripts/check-mobile.mjs",
     "tauri": "tauri"
   },

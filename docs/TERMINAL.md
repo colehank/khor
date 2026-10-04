@@ -57,6 +57,8 @@ A program asks its terminal things in its output (DA1/DA2, DSR, OSC 10/11/12/4 c
 
 **Paths and URLs** (`lib/term-links.ts`). A path that exists on the session's machine becomes a link: an absolute path, `~/x`, a relative path resolved against the block's cwd, `file:12:3`, or a Python traceback line. URLs too. ⌘-click under a mouse, a tap under a finger. They open khor's own file view, the files page or a browsing tab that goes out through that machine.
 
+**The glyph atlas** (`lib/term-atlas.ts`, item 24). xterm's WebGL addon shares one atlas among every terminal with the same font settings, and 0.19.0 has defects there (xterm.js #6014; a clear on one terminal garbles the others). The face never clears it from one pane alone. When the page's fonts finish loading, every atlas is cleared first and every terminal redrawn after. A clear also asks every sharer to rebuild, which is upstream fix #6055's effect, put on the class at run time. A lost context drops the pane to the DOM renderer, and WebGL comes back on the next showing. A second loss within a minute keeps the pane on the DOM renderer and logs it. Gate: `npm run atlas`.
+
 **Pictures.** `@xterm/addon-image` draws sixel and iTerm2 inline images. The face's store is 64 MB on a Mac and 32 MB on a phone. A tap or ⌘-click opens a picture whole.
 
 **Progress and notices.** `OSC 9;4` progress becomes `Doing.progress`, a line on the row and the tab. `OSC 9` and `OSC 777` notifications follow the finished-command path (`lib/finished.ts`).

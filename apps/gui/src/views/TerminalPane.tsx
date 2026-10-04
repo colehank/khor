@@ -61,7 +61,6 @@ import { ImageAddon } from "@xterm/addon-image";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { WebglAddon } from "@xterm/addon-webgl";
 import "@xterm/xterm/css/xterm.css";
 
 import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termPrompt, termResize, termStream, termWait } from "@/api";
@@ -86,6 +85,7 @@ import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
 import { onTermOptionMeta, termOptionMeta } from "@/lib/term-option-meta";
+import { keepWebgl } from "@/lib/term-atlas";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Marks } from "@/lib/term-marks";
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
@@ -1682,37 +1682,17 @@ export function TerminalPane({
     // bug 261331); a Mac's GPU switch does too.
     const blink = blinksOnInput(term);
     const cursor = cursorFollows(term);
-    let webgl: WebglAddon | null = null;
-    const useWebgl = () => {
-      if (webgl || stoppedWebgl) return;
-      try {
-        const addon = new WebglAddon();
-        addon.onContextLoss(() => {
-          if (webgl === addon) webgl = null;
-          addon.dispose();
-        });
-        term.loadAddon(addon);
-        webgl = addon;
-        blink.quiet();
-      } catch {
-        /* DOM renderer stands */
-      }
-    };
-    let stoppedWebgl = false;
-    const shownAgain = () => {
-      if (document.visibilityState === "visible") useWebgl();
-    };
-    useWebgl();
-    document.addEventListener("visibilitychange", shownAgain);
-    // …and at once: the addon itself waits 3 s for a restore before it
-    // says so, three seconds of a blank terminal. The canvas's own event
-    // is heard here first (capture), and the DOM renderer paints now.
-    const lost = () => {
-      const gone = webgl;
-      webgl = null;
-      gone?.dispose();
-    };
-    term.element?.addEventListener("webglcontextlost", lost, true);
+    // **The atlas kept honest across panes, late fonts and lost contexts**
+    // (item 24, `lib/term-atlas`): the shared glyph atlas is never cleared
+    // by one pane alone, a lost context drops to the DOM renderer at once
+    // and WebGL comes back on the next showing, and a pane that loses it
+    // again soon after keeps the DOM renderer.
+    const unWebgl = keepWebgl(term, {
+      onLoaded: () => blink.quiet(),
+      onFallback: (why) => {
+        faceNote(`term ${id}: ${why}; this pane keeps the DOM renderer`).catch(() => {});
+      },
+    });
     // The search paints its matches as decorations, which is the one
     // proposed API this file leans on besides the unicode addon.
     const search = new SearchAddon();
@@ -2503,13 +2483,10 @@ export function TerminalPane({
       term.options.fontFamily = stack;
       fit.fit();
     });
-    // The symbols face may arrive after the first frame was drawn with a
-    // fallback for its glyphs: once the page's fonts are in, redraw.
-    void document.fonts?.ready.then(() => {
-      if (stopped) return;
-      (term as unknown as { clearTextureAtlas?: () => void }).clearTextureAtlas?.();
-      term.refresh(0, term.rows - 1);
-    });
+    // A face that arrives after the first frame (the symbols face, an
+    // uploaded terminal font) is drawn in by `lib/term-atlas`, for every
+    // pane at once. ⚠️ Not here per pane: this pane's clear of the shared
+    // atlas garbled every other open pane (item 24).
 
     return () => {
       sized();
@@ -2563,9 +2540,7 @@ export function TerminalPane({
       window.cancelAnimationFrame(firstFrame);
       osc52.dispose();
       cursor();
-      stoppedWebgl = true;
-      document.removeEventListener("visibilitychange", shownAgain);
-      term.element?.removeEventListener("webglcontextlost", lost, true);
+      unWebgl();
       term.dispose();
       termRef.current = null;
       searchRef.current = null;
