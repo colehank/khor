@@ -48,11 +48,17 @@ import { YIELD_MS } from "@/lib/tempo";
 export function InviteDialog({
   open,
   onOpenChange,
+  machines,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The machine table as the lists read it, so a join with this ticket
+      is said here (UX-8). */
+  machines: { id: string; shown: string }[];
 }) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
+  /** Who was in the table when this ticket was minted. */
+  const [before, setBefore] = useState<Set<string> | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** What the last copy did, said on the button for a beat (`CopyId`'s
       rule: a refused clipboard write must not look like one that took). */
@@ -65,6 +71,7 @@ export function InviteDialog({
     setTicket(null);
     setError(null);
     setCopied(null);
+    setBefore(new Set(machines.map((m) => m.id)));
     let live = true;
     invite()
       .then((t) => live && setTicket(t))
@@ -72,7 +79,13 @@ export function InviteDialog({
     return () => {
       live = false;
     };
+    // The table at the moment of minting, not as it moves: read once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  // **Somebody used it** (UX-8, the first run): a machine that was not in
+  // the table when this ticket was minted is the one that joined with it,
+  // and the dialog says so instead of going on offering a spent ticket.
+  const joined = before && before.size > 0 && ticket ? machines.find((m) => !before.has(m.id)) : undefined;
   useEffect(() => {
     if (!copied) return;
     const t = window.setTimeout(() => setCopied(null), YIELD_MS);
@@ -109,7 +122,10 @@ export function InviteDialog({
                 does not jump when it lands; a ticket too long for any QR
                 version answers no code and the token alone is the
                 invite. */}
-            {ticket?.qr ? (
+            {/* A spent ticket is not offered again: once somebody joined
+                with it, the code and the token go and the line under
+                them says who (UX-8). */}
+            {joined ? null : ticket?.qr ? (
               <svg
                 data-ticket-qr
                 role="img"
@@ -123,13 +139,15 @@ export function InviteDialog({
             ) : (
               !ticket && <div aria-hidden className="mx-auto size-60 flex-none" />
             )}
-            <Input
-              data-ticket
-              aria-label={gui.ticket}
-              readOnly
-              value={ticket?.token ?? ""}
-              onFocus={(e) => e.currentTarget.select()}
-            />
+            {!joined && (
+              <Input
+                data-ticket
+                aria-label={gui.ticket}
+                readOnly
+                value={ticket?.token ?? ""}
+                onFocus={(e) => e.currentTarget.select()}
+              />
+            )}
             {/* **How long it lasts, in the same words the terminal
                 uses** — one catalog key rendered twice, so the two faces
                 cannot come to say different things about one rule. The
@@ -140,10 +158,16 @@ export function InviteDialog({
                 one with nothing anywhere disagreeing.
                 Drawn only once there is a ticket, because until then
                 there is nothing for it to be true of. */}
-            {ticket && (
-              <div data-ticket-window className="text-callout text-muted-foreground">
-                {cli.invite_window(ticket.minutes)}
+            {joined ? (
+              <div data-ticket-used role="status" className="text-callout text-foreground">
+                {gui.ticket_used_by(joined.shown)}
               </div>
+            ) : (
+              ticket && (
+                <div data-ticket-window className="text-callout text-muted-foreground">
+                  {cli.invite_window(ticket.minutes)}
+                </div>
+              )
             )}
           </>
         )}
@@ -155,7 +179,7 @@ export function InviteDialog({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
             {gui.close}
           </Button>
-          {!error && (
+          {!error && !joined && (
             <Button
               variant="primary"
               data-copy-ticket
@@ -185,9 +209,12 @@ export function InviteDialog({
 export function JoinDialog({
   open,
   onOpenChange,
+  onJoined,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The join took: the lists read the table again now (UX-8). */
+  onJoined?: () => void;
 }) {
   const [ticket, setTicket] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -224,9 +251,13 @@ export function JoinDialog({
     setJoining(true);
     setError(null);
     pair(t)
-      // Nothing to announce: the new machine's row arrives on the next
-      // poll wearing its own face, which is the report.
-      .then(() => onOpenChange(false))
+      // Nothing to announce: the new machine's row arrives wearing its
+      // own face, which is the report — read now rather than on the next
+      // poll, which left 「这里只有这台机器」 under the new row for a beat.
+      .then(() => {
+        onOpenChange(false);
+        onJoined?.();
+      })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
       .finally(() => setJoining(false));
   };
@@ -295,6 +326,13 @@ export function JoinDialog({
               {gui.scan_no_camera}
             </div>
           )}
+          {/* **The wait, said** (UX-8): a dial can sit on its timeout, and a
+              busy button alone was ten seconds with no word. */}
+          {joining && (
+            <div data-join-dialing role="status" className="text-callout text-muted-foreground">
+              {gui.join_dialing}
+            </div>
+          )}
           {error && (
             <div data-dialog-error className="text-callout text-destructive">
               {error}
@@ -354,6 +392,34 @@ function ScanLayer() {
       </div>
     </div>,
     document.body,
+  );
+}
+
+/**
+ * **Only this machine is here** (UX-8, the first run): under the list,
+ * what to do next and the two ways to do it. A brand-new install landed
+ * on a list holding one row, its own, with the way to add another two
+ * presses away under 机器's ＋ and nothing saying so. Pairing has no
+ * direction, so both halves are offered; it goes the moment a second
+ * machine is in the table.
+ */
+export function AloneNote({ onInvite, onJoin }: { onInvite: () => void; onJoin: () => void }) {
+  return (
+    // On the rows' own left line: the list's inset plus the row's, or the
+    // narrow list's one inset (`SideList`).
+    <div data-alone className="px-in py-base [[data-narrow]_&]:px-0">
+      <div className="flex flex-col items-start gap-in px-row text-callout text-muted-foreground [[data-narrow]_&]:px-group">
+        <span>{gui.alone_how}</span>
+        <div className="flex flex-wrap gap-in">
+          <Button size="sm" data-alone-join className="pointer-coarse:min-h-touch" onClick={onJoin}>
+            {gui.join_with_a_ticket_ask}
+          </Button>
+          <Button size="sm" data-alone-invite className="pointer-coarse:min-h-touch" onClick={onInvite}>
+            {gui.make_a_ticket_ask}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

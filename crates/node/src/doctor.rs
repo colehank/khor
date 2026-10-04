@@ -483,15 +483,30 @@ async fn check_relays(urls: Vec<String>) -> (Health, String, Option<String>) {
             tokio::spawn(async move { relay_rtt(&url).await })
         })
         .collect();
+    let mut rtts = Vec::with_capacity(urls.len());
+    for rtt in asked {
+        rtts.push(rtt.await.ok().flatten());
+    }
+    let answered = |u: &str| urls.iter().zip(&rtts).any(|(v, r)| v == u && r.is_some());
+    let pairs = khor_net::endpoint::successor_pairs();
     let mut said: Vec<String> = Vec::new();
     let mut reached = 0usize;
-    for (url, rtt) in urls.iter().zip(asked) {
-        match rtt.await.ok().flatten() {
+    for (url, rtt) in urls.iter().zip(&rtts) {
+        match rtt {
             Some(ms) => {
                 reached += 1;
-                said.push(cli::doctor_relay_ms(url, ms));
+                said.push(cli::doctor_relay_ms(url, *ms));
             }
-            None => said.push(cli::doctor_relay_quiet(url)),
+            // **A successor not switched on yet is no fault** (round
+            // NET-7): its predecessor answers, and that is where this
+            // machine homes until it does.
+            None => match pairs.iter().find(|(old, new)| new == url && answered(old)) {
+                Some((old, _)) => {
+                    reached += 1;
+                    said.push(cli::doctor_relay_not_yet(url, old));
+                }
+                None => said.push(cli::doctor_relay_quiet(url)),
+            },
         }
     }
     let state = if reached == urls.len() {
@@ -971,6 +986,24 @@ pub(crate) async fn relay_round_trip(url: &str) -> Option<u64> {
     let started = Instant::now();
     client.get(url).send().await.ok()?.bytes().await.ok()?;
     u64::try_from(started.elapsed().as_millis()).ok()
+}
+
+/// **Whether this machine reaches any of `urls` at all** — what a
+/// pairing dial that timed out asks, so its sentence can say which side
+/// to check (UX-8): none answering is no network or no relay here; one
+/// answering puts the silence on the machine that issued the ticket.
+/// Asked of every relay at once, each within [`relay_rtt`]'s budget.
+pub(crate) async fn any_relay_answers(urls: Vec<String>) -> bool {
+    let asks: Vec<_> = urls
+        .into_iter()
+        .map(|url| tokio::spawn(async move { relay_rtt(&url).await.is_some() }))
+        .collect();
+    for ask in asks {
+        if ask.await.unwrap_or(false) {
+            return true;
+        }
+    }
+    false
 }
 
 async fn relay_rtt(url: &str) -> Option<u128> {

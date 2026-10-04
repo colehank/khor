@@ -57,10 +57,75 @@ pub const KHOR_RELAYS: &[(&str, Option<&str>)] = &[
         Some("bbe31ccf721dde188508517840c24673ef9d4a5865af18a3"),
     ),
     (
+        BEIJING_TLS,
+        Some("19ccb31e891ffa3ab66f95f5b743c7d4b419afe635b97e5e"),
+    ),
+    (
         "https://relay.khor.cloud",
         Some("a086ea41af0a8bfe73ac98a914a18542bea845123e8b9eaf"),
     ),
 ];
+
+/// **Beijing over TLS** (round NET-7, option B): the same box as
+/// `http://101.200.80.77:3340`, a second relay process on a high port
+/// with a certificate obtained by DNS (acme.sh, `scripts/relay-https.sh`)
+/// — a domain on a mainland box's 80 or 443 needs an ICP filing, a high
+/// port is the way around it that the filing rules leave.
+///
+/// **Its own key**, not the plain relay's: that one has crossed the wire
+/// in the clear since 2026-10-01, so it opens nothing new once the plain
+/// relay is retired.
+pub const BEIJING_TLS: &str = "https://bj.relay.khor.cloud:3341";
+
+/// **Which relay replaces which** (vendor/iroh patch 5): a machine whose
+/// home would be the first homes on the second whenever its latest
+/// report reached it. Both stay in the map with their keys, because a
+/// relay is stateful — a machine still homed on the old one (one that
+/// cannot reach the new, or an older khor that does not know it) is
+/// found only there, and reaching it there takes that relay's key.
+///
+/// So the day the TLS relay starts answering, every machine of this
+/// build that can reach it moves over on its next report, and one that
+/// cannot stays on the plain relay as before: nothing has to be switched
+/// on both ends at once.
+pub const KHOR_SUCCESSORS: &[(&str, &str)] = &[("http://101.200.80.77:3340", BEIJING_TLS)];
+
+/// `KHOR_RELAY_SUCCESSOR`: more `old|new` pairs for [`KHOR_SUCCESSORS`],
+/// comma-separated — the same move for relays somebody runs themselves,
+/// and the tests' way to make it on loopback.
+pub const RELAY_SUCCESSOR_ENV: &str = "KHOR_RELAY_SUCCESSOR";
+
+/// `KHOR_RELAY_CA`: a PEM file of certificates to trust for relays besides
+/// Mozilla's roots — a relay with a private CA, or a test's self-signed
+/// one.
+pub const RELAY_CA_ENV: &str = "KHOR_RELAY_CA";
+
+/// Every `(old, new)` pair, as written: [`KHOR_SUCCESSORS`], then
+/// [`RELAY_SUCCESSOR_ENV`]'s.
+pub fn successor_pairs() -> Vec<(String, String)> {
+    let from_env = std::env::var(RELAY_SUCCESSOR_ENV).unwrap_or_default();
+    KHOR_SUCCESSORS
+        .iter()
+        .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+        .chain(from_env.split(',').filter_map(|p| {
+            let (a, b) = p.trim().split_once('|')?;
+            Some((a.trim().to_owned(), b.trim().to_owned()))
+        }))
+        .collect()
+}
+
+/// The successor pairs a bind hands iroh: [`KHOR_SUCCESSORS`] and
+/// [`RELAY_SUCCESSOR_ENV`]'s, each kept only when both relays are in
+/// `relays` — a successor this machine holds no entry (and no key) for
+/// would be a home it could not stand on.
+pub fn successors(relays: &[Relay]) -> Vec<(iroh::RelayUrl, iroh::RelayUrl)> {
+    let held = |u: &str| relays.iter().any(|r| r.url.trim_end_matches('/') == u.trim_end_matches('/'));
+    successor_pairs()
+        .into_iter()
+        .filter(|(a, b)| held(a) && held(b))
+        .filter_map(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?)))
+        .collect()
+}
 
 /// One relay this machine binds with: where it is, and the key its
 /// operator asked for.
@@ -320,10 +385,13 @@ pub async fn bind_preferring(
     preferred: Option<&str>,
 ) -> Result<iroh::Endpoint> {
     let mut b = builder(secret, relays, n0)?;
-    if let Some(url) = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok()) {
+    let preferred = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok());
+    let successors = successors(relays);
+    if preferred.is_some() || !successors.is_empty() {
         // `NetReportConfig` is non-exhaustive: built, then set.
         let mut config = iroh::endpoint::NetReportConfig::default();
-        config.preferred_relay = Some(url);
+        config.preferred_relay = preferred;
+        config.successors = successors;
         b = b.net_report_config(config);
     }
     Ok(b.bind().await?)
@@ -357,7 +425,7 @@ fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::
         // tokio timers with it, #73). These roots only verify outward
         // TLS (https relays); iroh's own encryption never touched the
         // Keychain in the first place.
-        .ca_tls_config(iroh::tls::CaTlsConfig::embedded())
+        .ca_tls_config(ca_roots())
         // Explicit public nameservers instead of "read the system's":
         // on macOS the system route goes through SCDynamicStore, whose
         // ApplicationBundleID lookup hung 40 SECONDS per process for
@@ -412,6 +480,27 @@ fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::
         builder = builder.clear_ip_transports();
     }
     Ok(builder)
+}
+
+/// The roots a relay's certificate is checked against: Mozilla's,
+/// compiled in, plus whatever [`RELAY_CA_ENV`] names. A file that does
+/// not read adds nothing and says so on stderr: a relay that then fails
+/// its handshake is the visible half.
+fn ca_roots() -> iroh::tls::CaTlsConfig {
+    let roots = iroh::tls::CaTlsConfig::embedded();
+    let Some(path) = std::env::var_os(RELAY_CA_ENV) else {
+        return roots;
+    };
+    use rustls::pki_types::pem::PemObject;
+    match rustls::pki_types::CertificateDer::pem_file_iter(&path)
+        .and_then(|i| i.collect::<Result<Vec<_>, _>>())
+    {
+        Ok(extra) => roots.with_extra_roots(extra),
+        Err(e) => {
+            eprintln!("{}: {e}", std::path::Path::new(&path).display());
+            roots
+        }
+    }
 }
 
 /// **The QUIC transport khor binds with: iroh's own, with BBRv3 in place

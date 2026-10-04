@@ -128,6 +128,10 @@ iroh 的 `N0` 预设，关就是 `Minimal` 只留 mDNS）；大陆侧查不到�
   「带密钥」，不再显示密钥本身。
 - **`.khor/relays.json`**：每条是 `{"url": "https://…", "token": "…"}`，没有密钥就
   只写 `url`；旧的纯字符串写法照样读。文件 0600。
+- **`KHOR_RELAY_CA`**：一个 PEM 文件，里面的证书和 Mozilla 的根一起被信任——自己签的中继
+  证书、私有 CA，和测试里的自签证书（NET-7）。
+- **`KHOR_RELAY_SUCCESSOR`**：`旧|新`，逗号分隔多对：住旧那台时，量得到新那台就住新那台
+  （和 `KHOR_SUCCESSORS` 同一条规矩，给自己跑的中继和测试用）。两台都要在中继表里。
 - **`KHOR_RELAY`**：逗号分隔，每条是中继地址，密钥挂在 `token` 查询参数上：
   `KHOR_RELAY="https://relay.example.com?token=密钥,http://10.0.0.5:3340"`。
   这是 iroh-relay 自己认的写法；khor 把它从地址里摘出来当密钥用，地址本身不带它。
@@ -148,7 +152,8 @@ iroh 的 `N0` 预设，关就是 `Minimal` 只留 mDNS）；大陆侧查不到�
 | 参数 | 做什么 |
 |---|---|
 | `--dev` | 明文 HTTP，默认 `[::]:3340`（和现在 Khor 档那台一致）。转发的内容端到端加密、中继看不到；但 `--token` 的密钥在明文 HTTP 上也是明文 |
-| `--tls-cert 证书 --tls-key 私钥` | HTTPS，默认 443；另开一个明文口给强制门户探测，默认 80（`--http` 改） |
+| `--tls-cert 证书 --tls-key 私钥` | HTTPS，默认 443；另开一个明文口给强制门户探测，默认 80（`--http` 改）。证书续期不用重启：收到 `SIGHUP` 就重读这两个文件（另每 6 小时自己读一次），读坏了继续用旧的并在日志里说 |
+| `--tls-check`（和上面两个一起） | 照中继读的方式读一遍证书和私钥，不起中继：能用就说能用，不能用就说为什么 |
 | `--acme 域名 [--acme-contact 邮箱]` | 找 Let's Encrypt 要证书，缓存在 `--state` 下的 `acme/` |
 | `--token 密钥`（可多把） | 只放行带其中一把的客户端 |
 | `--only-mine` | 只放行这张网信任的设备：按中继握手已验过的 endpoint id，用和每个请求那道门（`Node::admit`）同一条规矩——在设备表里，且在最新名单上、没被撤销（有根以前的老网只看设备表）。待批的、撤销的都拒。每 5 秒至多重算一次，读不了就谁也不放。和 `--token` 二选一 |
@@ -217,6 +222,7 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
 | 中继 | 地址 | 模式 | 给谁 |
 |---|---|---|---|
 | 北京 | `http://101.200.80.77:3340` | 明文 HTTP + 密钥 | 出不了境的机器 |
+| 北京（TLS） | `https://bj.relay.khor.cloud:3341` | TLS（acme.sh 按 DNS 签）+ 另一把密钥 | 同上；答得上时替掉上一行 |
 | 香港 | `https://relay.khor.cloud` | TLS（Let's Encrypt 自动签）+ 密钥 | 能出境的、海外的 |
 
 - **为什么是两台**：先只买了香港，装好后从实验室量：turing、hinton 连不上它（80、443 都
@@ -237,7 +243,16 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
 - ⚠️ 墓碑：10-01 之前这里是一笔没还的账——Khor 档只有 `39.97.7.248:3340` 一台，借的是
   mandala 的 aliyun，跑 `iroh-relay --dev`、谁都放行，`KHOR_RELAY_TOKEN` 是空。那台到期
   不续；mandala 已作废（负责人 2026-10-01）。
-- **还没做的**：北京那台没有 TLS（要么备案后上 443，要么 DNS 验证签证书跑高位端口）；
+- **北京换 TLS（NET-7，2026-10-04，客户端和脚本已备好，等负责人签证书）**：同一台机器上再起
+  一个中继进程 `khor-relay-https.service`，`bj.relay.khor.cloud:3341`，证书由负责人用 acme.sh
+  按 DNS 签（不用备案的 80/443），`scripts/relay-https.sh` 装好证书、续期钩子和服务。
+  原来的 `khor-relay.service`（明文 3340）**不停**，直到所有机器都换上这一轮的 khor。
+  客户端两台都留在中继表里、各带各的密钥（中继有状态，住在明文那台的机器只在那台找得到）；
+  `endpoint::KHOR_SUCCESSORS` 说 TLS 那台接明文那台的班：量得到 TLS 那台时一律住它，量不到
+  时照旧住明文那台（`vendor/iroh` 补丁 5）。证书续期不重启：`khor relay --tls-cert` 收到
+  `SIGHUP`（`systemctl reload`）就重读文件，读坏了继续用旧的；另外每 6 小时自己重读一次。
+  负责人要做的和顺序在 `audit/net-7.md`。
+- **还没做的**：北京那台的 TLS 等负责人那一步（见上）；
   双家（海外设备同时挂北京）；负责人的 Mac 在代理的全局接管模式下，连香港那台被代理
   绕路（握手约 2 秒），要在代理规则里把 `relay.khor.cloud` 设成直连。
 

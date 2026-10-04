@@ -505,3 +505,52 @@ async fn a_newly_paired_machine_is_answered_by_a_third_well_inside_the_quiet_pac
         "beta's first listing on gamma took {took:?} (last: {last:?})"
     );
 }
+
+/// A ticket for a machine that is not there: a real id from a store that
+/// never serves, reachable only through `relays`.
+fn ghost_ticket(relays: Vec<String>) -> String {
+    let rg = root("ghost");
+    let ghost = Node::open_as(rg.to_path_buf(), "ghost").unwrap();
+    khor_net::endpoint::Ticket {
+        id: ghost.device_str().to_owned(),
+        name: "ghost".into(),
+        direct: vec![],
+        relays,
+        token: "00".repeat(16),
+    }
+    .encode()
+    .unwrap()
+}
+
+/// **A dial that times out says which side to check** (UX-8, the first
+/// run's failure cases). With the relay answering, the silence is the
+/// issuer's — its khor is not running, or it is offline — and the
+/// sentence says so; with no relay answering here, it is this machine's
+/// road out — no network, or the relay is down — and the sentence says
+/// that instead.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_pairing_dial_that_times_out_says_which_side_is_silent() {
+    let rj = root("j");
+    let j = Node::open_as(rj.to_path_buf(), "joiner").unwrap();
+    let err = timeout(Duration::from_secs(60), j.pair(&ghost_ticket(vec![util::loop_relay().to_owned()])))
+        .await
+        .expect("a silent issuer must not hang the join")
+        .unwrap_err();
+    assert_eq!(err, khor_catalog::msg::inviter_unreachable_timeout(), "relay up, issuer silent");
+
+    // A relay nobody listens on: this machine's own map and the ticket's
+    // both name it, so no relay answers anywhere.
+    let dead = "http://127.0.0.1:9".to_owned();
+    let rk = root("k");
+    std::fs::write(
+        rk.join(".khor").join("relays.json"),
+        format!(r#"{{"relays":[{{"url":"{dead}"}}],"only_mine":true}}"#),
+    )
+    .unwrap();
+    let k = Node::open_as(rk.to_path_buf(), "lonely").unwrap();
+    let err = timeout(Duration::from_secs(60), k.pair(&ghost_ticket(vec![dead])))
+        .await
+        .expect("no road out must not hang the join")
+        .unwrap_err();
+    assert_eq!(err, khor_catalog::msg::no_relay_reached(), "no relay answers here");
+}

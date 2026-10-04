@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+# PEM parsing for `KHOR_RELAY_CA` (endpoint::ca_roots): the rustls already
+# in the tree under iroh and khor-cli (Apache-2.0 OR ISC OR MIT), no new
+# crate.
+rustls = { version = "0.23", default-features = false, features = ["std"] }
 khor-catalog.workspace = true
 iroh.workspace = true
 iroh-mdns-address-lookup.workspace = true

@@ -6739,13 +6739,33 @@ impl Node {
         // it did not think to advertise.
         let mut relays = t.relays.clone();
         relays.extend(self.relays().iter().cloned());
-        let conn = self
+        // **Asked beside the dial, read only if it times out** (UX-8):
+        // whether any relay answers here is what tells 「no road out of
+        // this machine」 — no network, or no relay it can reach — from
+        // 「the machine that issued the ticket is not answering」, and the
+        // two are checked in different places. Beside, so the answer is in
+        // by the time the dial gives up rather than three seconds after.
+        let probe = tokio::spawn(crate::doctor::any_relay_answers(relays.clone()));
+        let dialled = self
             .dial_with(ep, &t.id, &t.direct, &relays, ALPN, DIAL_TIMEOUT)
-            .await
-            .map_err(|e| match e {
-                DialFailure::TimedOut => msg::inviter_unreachable_timeout().to_string(),
-                DialFailure::Refused(why) => msg::inviter_unreachable(why),
-            })?;
+            .await;
+        let conn = match dialled {
+            Ok(conn) => {
+                probe.abort();
+                conn
+            }
+            Err(DialFailure::TimedOut) => {
+                return Err(if probe.await.unwrap_or(true) {
+                    msg::inviter_unreachable_timeout().to_string()
+                } else {
+                    msg::no_relay_reached().to_string()
+                });
+            }
+            Err(DialFailure::Refused(why)) => {
+                probe.abort();
+                return Err(msg::inviter_unreachable(why));
+            }
+        };
         let resp = request(
             &conn,
             &t.name,
