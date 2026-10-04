@@ -1709,6 +1709,11 @@
    * holding the count. Their corner, their stroke (the weight of a
    * line glyph at 22, 0.72 of the box drawn at 1.4) and the count's
    * size, which has to fit two digits in the square. */
+  /* The squares' fill: the glass's tint over the ground, one opaque
+   * colour in either theme (the owner, 2026-10-04: the back page showed
+   * through the front). A gradient so it can be laid over `--background`
+   * as one `background`. */
+  --tabs-fill: linear-gradient(var(--glass), var(--glass));
   --badge-radius: 4px;
   --badge-stroke: 1.4px;
   --badge-text: 10px;

@@ -331,11 +331,30 @@ const SWIPE_STEPS = 40;
 
 /** **Two squares and the count** (round UX-3): the tabs circle's figure —
     a page behind a page, and how many there are on the front one. */
+/**
+ * **Two pages, the front one holding the count** — opaque (the owner,
+ * 2026-10-04, his shot `owner-tabs-icon.png`: the back square's stroke
+ * showed through the front one, which was filled with the glass's own
+ * translucent tint, and the number sat on a crossed line). Both squares
+ * are filled with the control's ground as it reads — the glass's tint
+ * laid over the page's ground (`--tabs-fill`, `tokens.css`) — so the front
+ * covers the back in either theme, and both are drawn in the glyphs' one
+ * ink at full strength. The figure is the glass controls' glyph box
+ * (`--ctl-glyph`, 22 under a mouse, 26 under a finger) and the squares a
+ * share of it, so it scales with its neighbours.
+ */
 function TabsGlyph({ n }: { n: number }) {
   return (
-    <span data-tabs-glyph className="relative block size-6">
-      <span aria-hidden="true" className="absolute top-0.5 right-0.5 size-4 rounded-[var(--badge-radius)] border-[length:var(--badge-stroke)] border-current opacity-50" />
-      <span className="absolute bottom-0.5 left-0.5 grid size-4 place-items-center rounded-[var(--badge-radius)] border-[length:var(--badge-stroke)] border-current bg-[var(--glass)] text-[length:var(--badge-text)] leading-none font-title tabular-nums">
+    <span data-tabs-glyph className="relative block size-ctl-glyph">
+      <span
+        aria-hidden="true"
+        data-tabs-back
+        className="absolute top-0 right-0 size-[72%] rounded-[var(--badge-radius)] border-[length:var(--badge-stroke)] border-current bg-(image:--tabs-fill) bg-background"
+      />
+      <span
+        data-tabs-front
+        className="absolute bottom-0 left-0 grid size-[72%] place-items-center rounded-[var(--badge-radius)] border-[length:var(--badge-stroke)] border-current bg-(image:--tabs-fill) bg-background text-[length:var(--badge-text)] leading-none font-title tabular-nums"
+      >
         {n}
       </span>
     </span>
