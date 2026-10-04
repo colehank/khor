@@ -197,6 +197,32 @@ const catalog = (lang) => {
 };
 const words = catalog("zh");
 const wordsEn = catalog("en");
+/** **The strip's order, as the page ships it** (`src/lib/nav-order.ts`
+    `NAV_DEFAULT`): ⌘1…⌘5 are the strip's seats, not fixed landings
+    (docs/design-system/guidelines/30-behavior.md 键盘), and the scratch
+    store has no order of its own, so the default is the one on screen.
+    Read where it is written: this gate expected 会话 on ⌘1 for a round
+    after the redesign put 机器 first. */
+const navDefault = (() => {
+  const text = readFileSync(join(repo, "apps", "gui", "src", "lib", "nav-order.ts"), "utf8");
+  const m = text.match(/export const NAV_DEFAULT: NavKey\[\] = \[([^\]]*)\]/);
+  if (!m) throw new Error("probe dead: nav-order.ts has no NAV_DEFAULT — the gate reads the strip's order there");
+  return [...m[1].matchAll(/"([a-z]+)"/g)].map((x) => x[1]);
+})();
+/** Each landing's name on the View menu (`menu.rs` `name`). */
+const LANDING_WORD = {
+  sessions: "gui.sessions-tab",
+  devices: "gui.devices-tab",
+  workspaces: "gui.workspaces-tab",
+  quota: "gui.accounts-tab",
+  browser: "gui.browser-tab",
+};
+/** The digit ⌘ takes to reach a landing: its seat on the strip. */
+const seat = (landing) => {
+  const i = navDefault.indexOf(landing);
+  if (i < 0) throw new Error(`probe dead: NAV_DEFAULT has no ${landing}`);
+  return String(i + 1);
+};
 const said = (key) => {
   const at = key.includes(".") ? key : `menu.${key}`;
   if (!(at in words)) throw new Error(`probe dead: zh.toml has no ${at} — the gate reads the menu's words there`);
@@ -268,7 +294,7 @@ const choose = (pid, menu, item) => {
 };
 
 /** macOS virtual key codes for the keys the phase presses. */
-const KEY = { 1: 18, 2: 19, 3: 20, 4: 21, 5: 23, n: 45, w: 13, k: 40, l: 37, comma: 43, tab: 48, esc: 53, "]": 30, "[": 33 };
+const KEY = { 1: 18, 2: 19, 3: 20, 4: 21, 5: 23, f: 3, n: 45, w: 13, k: 40, l: 37, comma: 43, tab: 48, esc: 53, "]": 30, "[": 33 };
 
 async function keysPhase(pid) {
   const press = async (key, ...mods) => {
@@ -333,13 +359,16 @@ async function keysPhase(pid) {
     if (!it) fail(`keys: 「${said("edit")}」 has no 「${said(k)}」`);
     else if (it.key.toUpperCase() !== ch) fail(`keys: 「${said(k)}」 is on ${it.key || "no key"}, not ⌘${ch}`);
   }
+  // The table in 30-behavior.md 键盘 is the truth; each row here is one
+  // of its keys as the menu bar shows it.
   const shows = [
-    [said("view"), said("gui.sessions-tab"), "1", 0],
-    [said("view"), said("gui.devices-tab"), "2", 0],
-    [said("view"), said("gui.workspaces-tab"), "3", 0],
-    [said("view"), said("gui.accounts-tab"), "4", 0],
-    [said("view"), said("gui.browser-tab"), "5", 0],
+    ...navDefault.map((l, i) => [said("view"), said(LANDING_WORD[l]), String(i + 1), 0]),
     [said("view"), said("find"), "K", 0],
+    [said("view"), said("hide-sidebar"), "S", 4],
+    [said("view"), said("reload-term"), "R", 0],
+    [said("view"), said("command-history"), ";", 1],
+    [said("edit"), said("find-list"), "F", 0],
+    [said("file"), said("new-tab"), "T", 0],
     [said("file"), said("close-tab"), "W", 0],
     [said("file"), said("close-window"), "W", 1],
     [said("file"), said("import"), "", null],
@@ -388,6 +417,11 @@ async function keysPhase(pid) {
   }
   // A text field keeps the system's menu (cut, copy, paste, spelling) —
   // the positive that says the reading above can see a menu at all.
+  // **Opened first**: since the redesign the list's search is a circle
+  // that becomes a box when pressed (渐进式披露), so the page has no field
+  // until ⌘F (this column's search, 30-behavior.md 键盘) opens one.
+  await press("f", "cmd");
+  await wait(600);
   const field = await menuOn("AXTextField");
   console.log(`keys: right-click on the search box: ${field.found ? `${field.menus} menu(s)` : "not found"}`);
   if (!field.found) fail("probe dead: no text field in the scratch app's page to right-click");
@@ -396,10 +430,12 @@ async function keysPhase(pid) {
   // ── 3. a key runs its act once ──
   // Put focus back on the page: the search box took it on the right-click.
   await press("esc");
-  await press("5", "cmd");
-  const browsing = await until(4000, () => newItem() === said("gui.new-tab") && pageTabs().tabs.length > 0);
-  console.log(`keys: ⌘5 → 「${newItem()}」 first in 「${said("file")}」, ${pageTabs().tabs.length} tab(s)`);
-  if (!browsing) fail(`keys: ⌘5 did not open 「${said("gui.browser-tab")}」 (the menu's first item reads 「${newItem()}」, not 「${said("gui.new-tab")}」)`);
+  await press(seat("browser"), "cmd");
+  // The landing, not a tab: a fresh store's 浏览器 opens on its list
+  // with no page yet (the redesign), and ⌘N below makes the first two.
+  const browsing = await until(4000, () => newItem() === said("gui.new-tab"));
+  console.log(`keys: ⌘${seat("browser")} → 「${newItem()}」 first in 「${said("file")}」, ${pageTabs().tabs.length} tab(s)`);
+  if (!browsing) fail(`keys: ⌘${seat("browser")} did not open 「${said("gui.browser-tab")}」 (the menu's first item reads 「${newItem()}」, not 「${said("gui.new-tab")}」)`);
   const n0 = pageTabs().tabs.length;
   await press("n", "cmd");
   await wait(600);
@@ -438,10 +474,10 @@ async function keysPhase(pid) {
   if (n4 !== n3 + 1) fail(`keys: picking 「${said("gui.new-tab")}」 in the menu bar made ${n4 - n3} tab(s), not one`);
 
   // ── 4. ⌘W with nothing to close leaves the window standing ──
-  await press("1", "cmd");
+  await press(seat("sessions"), "cmd");
   const sessions = await until(4000, () => newItem() === said("gui.new-session-ask"));
-  console.log(`keys: ⌘1 → 「${newItem()}」 first in 「${said("file")}」`);
-  if (!sessions) fail(`keys: ⌘1 did not open 「${said("gui.sessions-tab")}」 (the menu's first item reads 「${newItem()}」)`);
+  console.log(`keys: ⌘${seat("sessions")} → 「${newItem()}」 first in 「${said("file")}」`);
+  if (!sessions) fail(`keys: ⌘${seat("sessions")} did not open 「${said("gui.sessions-tab")}」 (the menu's first item reads 「${newItem()}」)`);
   const closeTab = item(said("file"), said("close-tab"));
   if (closeTab?.enabled) fail(`keys: 「${said("close-tab")}」 is enabled with no session tab open`);
   await press("w", "cmd");
