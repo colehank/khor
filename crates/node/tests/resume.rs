@@ -384,3 +384,43 @@ async fn a_backgrounded_resident_does_not_redial_until_it_resumes() {
     assert!(beta_heard(&out), "the resume's round reaches beta: {out:?}");
     assert!(a.wire_counts().await.unwrap().dialed > during, "and that round dialled");
 }
+
+/// **The pump keeps the quiet pace while no face is on screen**
+/// (round NET-6): a round every `link::QUIET_PACE` with nobody looking,
+/// every `link::SYNC_EVERY` while a face says it is here, and one at once
+/// the moment a face arrives, so a returning person never reads rows
+/// half a minute old. Counted by the resident's own round count; the red
+/// is the faceless window, which ran a round per beat before this round.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_pump_beats_slowly_with_no_face_and_at_once_when_one_arrives() {
+    let ra = root("pace-a");
+    let sa = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let _serve_a = tokio::spawn(async move { sa.serve().await });
+    wait_for_endpoint_file(&ra.0).await;
+    let a = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let rounds = || async { a.wire_counts().await.unwrap().rounds };
+
+    // The first beat rounds; the next two, with no face, do not.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let start = rounds().await;
+    tokio::time::sleep(link::SYNC_EVERY * 2 + Duration::from_secs(1)).await;
+    let quiet = rounds().await;
+    assert_eq!(quiet, start, "rounds with no face on screen");
+
+    // A face arrives: a round now, not at the next quiet beat.
+    a.face_is_here(true).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(rounds().await, quiet + 1, "a face arriving gets a round at once");
+
+    // And while it stays, a round a beat.
+    let here = rounds().await;
+    tokio::time::sleep(link::SYNC_EVERY * 2 + Duration::from_secs(1)).await;
+    assert!(rounds().await >= here + 2, "a face on screen keeps the 5 s beat");
+
+    // It leaves: back to the quiet pace.
+    a.face_is_here(false).await.unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let gone = rounds().await;
+    tokio::time::sleep(link::SYNC_EVERY * 2).await;
+    assert_eq!(rounds().await, gone, "rounds after the face left");
+}

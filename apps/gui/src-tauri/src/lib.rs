@@ -457,6 +457,13 @@ async fn road_share() -> Result<khor_gui_core::RoadShare, String> {
     khor_gui_core::road_share(&Node::root_from_env()).await
 }
 
+/// A face is on screen, or stopped being (`khor_gui_core::face_here`):
+/// what paces the resident's pump. Async: it is a question to the resident.
+#[tauri::command]
+async fn face_here(visible: bool) -> Result<(), String> {
+    khor_gui_core::face_here(&Node::root_from_env(), visible).await
+}
+
 /// The 网络 page's 连接 group (`khor_gui_core::connections`).
 #[tauri::command]
 async fn connections() -> Result<khor_gui_core::Connections, String> {
@@ -3735,6 +3742,7 @@ pub fn run() {
             set_relays,
             road_share,
             connections,
+            face_here,
             set_preferred_relay,
             tell,
             pin_session,
@@ -3974,6 +3982,50 @@ mod traffic;
 #[cfg(test)]
 mod tests {
     use super::page_label;
+
+    /// **set_relays, through the app's own invoke path, reads the
+    /// arguments the face sends** (round NET-6). Tauri reads a command's
+    /// arguments as camelCase unless told otherwise, and the face sends
+    /// `only_mine` (`api.ts` `setRelays`): the bridge took it, the app
+    /// answered "missing required key onlyMine". `check-mobile.mjs` holds
+    /// every command to the names in `api.ts`; this drives the one that
+    /// failed through tauri's decoding itself, against a scratch home.
+    #[test]
+    fn set_relays_takes_the_arguments_the_face_sends() {
+        let home = std::env::temp_dir().join(format!("khor-tauri-relays-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        // SAFETY: the only test here that reads KHOR_HOME.
+        unsafe { std::env::set_var("KHOR_HOME", &home) };
+        let app = tauri::test::mock_builder()
+            .invoke_handler(tauri::generate_handler![super::set_relays])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .unwrap();
+        let asked = |body: serde_json::Value| {
+            tauri::test::get_ipc_response(
+                &webview,
+                tauri::webview::InvokeRequest {
+                    cmd: "set_relays".into(),
+                    callback: tauri::ipc::CallbackFn(0),
+                    error: tauri::ipc::CallbackFn(1),
+                    url: "tauri://localhost".parse().unwrap(),
+                    body: tauri::ipc::InvokeBody::Json(body),
+                    headers: Default::default(),
+                    invoke_key: tauri::test::INVOKE_KEY.to_string(),
+                },
+            )
+        };
+        let face = asked(serde_json::json!({ "relays": [], "only_mine": false }));
+        // The control: the names tauri would have wanted are refused, so
+        // the call above is reading the face's names, not ignoring them.
+        let camel = asked(serde_json::json!({ "relays": [], "onlyMine": false }));
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(face.is_ok(), "the face's own arguments: {face:?}");
+        assert!(camel.is_err(), "camelCase should be refused now: {camel:?}");
+    }
 
     /// What tauri takes in a webview label is alphanumeric, `-`, `/`,
     /// `:` and `_`. What this side mints keeps to a narrower set still,

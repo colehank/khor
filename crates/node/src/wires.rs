@@ -281,6 +281,7 @@ pub(crate) struct Counts {
     pub(crate) read_idle: AtomicU64,
     pub(crate) network_changes: AtomicU64,
     pub(crate) ops_late: AtomicU64,
+    pub(crate) pump_rounds: AtomicU64,
 }
 
 impl Counts {
@@ -303,6 +304,7 @@ impl Counts {
             by_peer: Vec::new(),
             sent_bytes: 0,
             received_bytes: 0,
+            rounds: self.pump_rounds.load(Relaxed),
         }
     }
 

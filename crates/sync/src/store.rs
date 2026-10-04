@@ -55,6 +55,11 @@ pub struct BlockStore {
     /// Blocks ever merged. Compaction deletes files, never ledger lines —
     /// see the `plan` module head.
     ledger: Ledger,
+    /// The block files whose contents this copy of the document holds:
+    /// what it read, wrote and took in. Compaction deletes these and
+    /// nothing else (round NET-6) — a block another writer added after
+    /// this copy was read is not in its snapshot.
+    held: std::collections::BTreeSet<String>,
 }
 
 /// What `load` returns.
@@ -65,6 +70,80 @@ pub struct Loaded<D> {
     /// a missing slice of data the UI must be able to mention; one bad
     /// block must not kill the whole document either.
     pub broken: Vec<PathBuf>,
+    /// The writer name `doc` holds while it is open ([`Lease`]).
+    lease: Lease,
+}
+
+/// **One writer name per open copy of a document** (round NET-6).
+///
+/// Loro names every op by its writer and a counter, and two copies of one
+/// document writing under the same name at the same time mint the same
+/// names for different ops; on import, an op whose name is already held
+/// is skipped, so whichever block merges second loses its writes on every
+/// read after — and no sync brings them back, because by version vector
+/// every replica already has them. Loro's own rule (`LoroDoc::set_peer_id`,
+/// loro 1.13): "Never reuse the same PeerID across concurrent writers …
+/// Duplicate PeerIDs can produce conflicting OpIDs and corrupt the
+/// document", and no fixed PeerID "without strict single-ownership
+/// locking" — which a lease is.
+///
+/// A process used one name for every copy it opened, and a resident
+/// answers requests concurrently: the `Pair` arm's copy of the device
+/// table and any other write to it in flight lost one or the other. That
+/// is how a pairing's row ended up only in the joiner's copy (the joiner
+/// is handed the `Pair` arm's snapshot). So each open copy borrows a name
+/// nobody else in this process holds for that directory, and gives it
+/// back when it drops. The caller's own name is lent first, and a name
+/// lent before is lent again before a new one is made: one name per
+/// copy at once, not one per load, so the version vectors do not grow a
+/// row for every write. A name lent again reads the blocks its last
+/// holder wrote, so its counter carries on from theirs.
+struct Lease {
+    key: (PathBuf, u64),
+    peer: u64,
+}
+
+/// For each directory and caller's name: every name lent for it, and
+/// whether it is out.
+type Lent = std::collections::BTreeMap<(PathBuf, u64), Vec<(u64, bool)>>;
+static LENT: std::sync::Mutex<Lent> = std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+impl Lease {
+    fn take(dir: &Path, peer: u64) -> Lease {
+        static MINTED: AtomicU64 = AtomicU64::new(1);
+        let key = (dir.to_path_buf(), peer);
+        let mut lent = LENT.lock().unwrap_or_else(|p| p.into_inner());
+        let names = lent.entry(key.clone()).or_insert_with(|| vec![(peer, false)]);
+        let peer = match names.iter_mut().find(|(_, out)| !out) {
+            Some((name, out)) => {
+                *out = true;
+                *name
+            }
+            None => {
+                // splitmix64 of the caller's name and a count: distinct in
+                // this process, and as unlikely as any fresh name to meet
+                // another process's.
+                let mut z = peer ^ MINTED.fetch_add(1, Ordering::Relaxed).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                let name = z ^ (z >> 31);
+                names.push((name, true));
+                name
+            }
+        };
+        Lease { key, peer }
+    }
+}
+
+impl Drop for Lease {
+    fn drop(&mut self) {
+        let mut lent = LENT.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(names) = lent.get_mut(&self.key)
+            && let Some(slot) = names.iter_mut().find(|(name, _)| *name == self.peer)
+        {
+            slot.1 = false;
+        }
+    }
 }
 
 /// How many documents this process has read back from disk, and how
@@ -122,7 +201,8 @@ pub fn load<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
 }
 
 fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
-    let (loaded, vanished) = read_once(dir, peer)?;
+    let lease = Lease::take(dir, peer);
+    let (loaded, vanished) = read_once(dir, lease)?;
     if !vanished {
         return Ok(loaded);
     }
@@ -144,19 +224,20 @@ fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
     // than a read can finish, and at that point reporting what was found
     // beats spinning — the next read is two seconds away.
     RELISTS.fetch_add(1, Ordering::Relaxed);
-    Ok(read_once(dir, peer)?.0)
+    Ok(read_once(dir, loaded.lease)?.0)
 }
 
 /// One pass over a document's blocks. The flag is 「a block on the
 /// listing was gone by the time we read it」 — see [`load_inner`].
-fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String> {
-    let doc = D::open(peer)?;
+fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), String> {
+    let doc = D::open(lease.peer)?;
     let mut broken = Vec::new();
     let mut ledger = read_ledger(dir);
     let mut vanished = false;
     // Whether anything was learned that the ledger on disk does not
     // already say. See the write at the end.
     let mut grew = false;
+    let mut held = std::collections::BTreeSet::new();
 
     for p in blocks(dir)? {
         match fs::read(&p) {
@@ -164,7 +245,8 @@ fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String>
                 if doc.merge(&bytes).is_err() {
                     broken.push(p);
                 } else if let Some(n) = file_name(&p) {
-                    grew |= ledger.insert(n);
+                    grew |= ledger.insert(&n);
+                    held.insert(n);
                 }
             }
             // Only a missing file is a compaction; anything else is a
@@ -179,6 +261,7 @@ fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String>
         dir: dir.to_path_buf(),
         on_disk,
         ledger,
+        held,
     };
     // Only write the ledger if the directory exists (an empty document
     // should leave nothing on disk) **and if this read learned a block
@@ -200,7 +283,7 @@ fn read_once<D: Doc>(dir: &Path, peer: u64) -> Result<(Loaded<D>, bool), String>
     if dir.exists() && grew {
         store.save_ledger()?;
     }
-    Ok((Loaded { store, doc, broken }, vanished))
+    Ok((Loaded { store, doc, broken, lease }, vanished))
 }
 
 impl BlockStore {
@@ -224,6 +307,7 @@ impl BlockStore {
         make_dir(&self.dir)?;
         write_atomic(&self.dir.join(name), bytes)?;
         self.ledger.insert(name);
+        self.held.insert(name.to_owned());
         self.save_ledger()?;
         self.on_disk = doc.version();
         Ok(())
@@ -264,7 +348,8 @@ impl BlockStore {
         // Own blocks enter the ledger too: the far side may push one right
         // back, and an unledgered copy would be re-pulled on every sync.
         if let Some(n) = file_name(&path) {
-            self.ledger.insert(n);
+            self.ledger.insert(&n);
+            self.held.insert(n);
         }
         self.save_ledger()?;
         self.on_disk = doc.version();
@@ -276,23 +361,28 @@ impl BlockStore {
     /// in memory would collide, and the collision silently overwrites a
     /// block.
     fn next_seq(&self, peer: u64) -> Result<u32, String> {
-        let prefix = format!("u-{peer:016x}-");
-        let mut max = None::<u32>;
-        if let Ok(rd) = fs::read_dir(&self.dir) {
-            for e in rd.flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                let Some(rest) = name.strip_prefix(&prefix) else {
-                    continue;
-                };
-                let Some(num) = rest.strip_suffix(&format!(".{EXT}")) else {
-                    continue;
-                };
-                if let Ok(n) = u32::from_str_radix(num, 16) {
-                    max = Some(max.map_or(n, |m: u32| m.max(n)));
-                }
-            }
-        }
-        Ok(max.map_or(0, |m| m + 1))
+        Ok(self.next_number(&format!("u-{peer:016x}-")))
+    }
+
+    /// The next number after every name starting `prefix` **on disk or in
+    /// the ledger** (round NET-6). Disk alone let a number come round once
+    /// compaction had deleted the blocks that used it: a new block took a
+    /// name the far side's ledger already marks merged, and a snapshot took
+    /// the name of the one before it — and the delete that follows a
+    /// compaction then took the new snapshot too
+    /// (`store::tests::compacting_twice_keeps_every_word`). The ledger keeps
+    /// every name, so a number counted against it is never reused.
+    fn next_number(&self, prefix: &str) -> u32 {
+        let number = |name: &str| {
+            u32::from_str_radix(name.strip_prefix(prefix)?.strip_suffix(&format!(".{EXT}"))?, 16).ok()
+        };
+        let on_disk = fs::read_dir(&self.dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| number(&e.file_name().to_string_lossy()));
+        let ledgered = self.ledger.names().iter().filter_map(|n| number(n)).collect::<Vec<_>>();
+        on_disk.chain(ledgered).max().map_or(0, |m| m + 1)
     }
 
     /// Compaction: write current state as one snapshot block, then delete
@@ -300,19 +390,32 @@ impl BlockStore {
     /// crash in between must cost a few spare KB, not the whole document.
     /// The ledger keeps every line, or the next sync would pull the
     /// compacted blocks right back, every time.
+    ///
+    /// **Only the increments it covers**: the ones this copy holds. A
+    /// block another writer flushed since this copy was read is on the
+    /// listing and not in the snapshot, and deleting it lost its writes
+    /// for good (`store::tests::a_block_written_while_compacting_is_not_deleted_unread`).
     pub fn compact<D: Doc>(&mut self, doc: &D) -> Result<PathBuf, String> {
         make_dir(&self.dir)?;
-        let old = blocks(&self.dir)?;
+        let old: Vec<PathBuf> = blocks(&self.dir)?
+            .into_iter()
+            .filter(|p| file_name(p).is_some_and(|n| self.held.contains(&n)))
+            .collect();
         let snap = doc.snapshot()?;
-        let path = self
-            .dir
-            .join(format!("snap-{:08x}.{EXT}", self.next_seq(doc.peer_id())?));
+        // The writer in the name as well as the number, as increments
+        // have it: two writers' snapshots never share a name.
+        let prefix = format!("snap-{:016x}-", doc.peer_id());
+        let path = self.dir.join(format!("{prefix}{:08x}.{EXT}", self.next_number(&prefix)));
         write_atomic(&path, &snap)?;
-        for p in old {
+        for p in old.into_iter().filter(|p| *p != path) {
+            if let Some(n) = file_name(&p) {
+                self.held.remove(&n);
+            }
             let _ = fs::remove_file(p);
         }
         if let Some(n) = file_name(&path) {
-            self.ledger.insert(n);
+            self.ledger.insert(&n);
+            self.held.insert(n);
         }
         self.save_ledger()?;
         self.on_disk = doc.version();

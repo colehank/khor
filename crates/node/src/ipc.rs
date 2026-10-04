@@ -303,7 +303,17 @@ pub enum Op {
         machine: String,
         ask: crate::git::GitAsk,
     },
+    /// A face is on screen (`visible`), or stopped being: the resident's
+    /// pump beats every 5 s while one is and every 30 s while none is, and
+    /// a face arriving gets a round at once (round NET-6,
+    /// `link::QUIET_PACE`). Sent again every [`FACE_BEAT`] while visible.
+    /// Answered [`Reply::Noted`]. Tail-appended.
+    FaceHere { visible: bool },
 }
+
+/// How often a visible face says so ([`Op::FaceHere`]); a face not heard
+/// from for three of these is taken to be gone.
+pub const FACE_BEAT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// How long a [`Op::WatchOn`] is held when nothing changes: under
 /// [`DEADLINE_FAR`], which bounds it.
@@ -393,6 +403,7 @@ impl Op {
             Op::SearchOn { .. } => ("SearchOn", DEADLINE_SLOW),
             Op::HistoryOn { .. } => ("HistoryOn", DEADLINE_FAR),
             Op::GitOn { .. } => ("GitOn", DEADLINE_FAR),
+            Op::FaceHere { .. } => ("FaceHere", DEADLINE_LOCAL),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -592,6 +603,8 @@ pub enum Reply {
     },
     /// Tail-appended with [`Op::GitOn`].
     Git { answer: crate::git::GitAnswer },
+    /// Tail-appended with [`Op::FaceHere`]: noted.
+    Noted,
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.
