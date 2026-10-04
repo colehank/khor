@@ -7235,6 +7235,7 @@ impl Node {
                         khor_core::Link {
                             hop: khor_core::Hop::NoServe,
                             heard_ms: None,
+                            rtt_ms: None,
                         },
                     )
                 })
@@ -7270,7 +7271,10 @@ impl Node {
                 let heard_ms = r
                     .heard
                     .map(|h| u64::try_from(h.as_millis()).unwrap_or(u64::MAX));
-                (d.id, khor_core::Link { hop, heard_ms })
+                // Whole milliseconds, never 0 for a wire that has one: a
+                // loopback wire's 0.3 ms reads as 1 ms, not as nothing.
+                let rtt_ms = r.rtt.map(|t| (t.as_micros().div_ceil(1000)).min(u128::from(u32::MAX)) as u32);
+                (d.id, khor_core::Link { hop, heard_ms, rtt_ms })
             })
             .collect()
     }
@@ -8423,6 +8427,9 @@ mod last_links {
                         khor_core::Link {
                             hop: l.hop,
                             heard_ms: l.heard_ms.map(|h| h.saturating_add(since)),
+                            // A recalled reading's round trip is a number
+                            // about a wire that may be gone: not repeated.
+                            rtt_ms: None,
                         },
                     )
                 })

@@ -256,6 +256,14 @@ impl TryFrom<String> for Hop {
 pub struct Link {
     pub hop: Hop,
     pub heard_ms: Option<u64>,
+    /// **The live wire's round trip, whole milliseconds** (round NET-8,
+    /// the machine row's latency): QUIC's own smoothed RTT for the path
+    /// the wire is on — RFC 6298's estimator, 7/8 of the last value and
+    /// 1/8 of the new sample (RFC 9002 §5.3, noq's `RttEstimator`), so it
+    /// is already the EWMA a row wants and is not smoothed again here.
+    /// `None` without a live wire: no wire, no number.
+    #[serde(default)]
+    pub rtt_ms: Option<u32>,
 }
 
 /// **How the resident's wires have fared since it started** — the

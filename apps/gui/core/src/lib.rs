@@ -421,6 +421,13 @@ pub struct DeviceRow {
     /// was never heard since the resident started, and for this machine.
     #[ts(type = "number | null")]
     pub heard_ms: Option<u64>,
+    /// **The row's latency** (round NET-8, UX-15): the live wire's round
+    /// trip in whole milliseconds, QUIC's own smoothed estimate
+    /// (`khor_core::Link::rtt_ms`). `None` without a live wire — the row
+    /// then says 无法获取 beside `heard_ms` — and for this machine, whose
+    /// word is 本机.
+    #[ts(type = "number | null")]
+    pub rtt_ms: Option<u32>,
     /// The machine this satellite speaks through, by name (附属机器批)
     /// — `None` for every ordinary machine. Where `hop` answers "which
     /// road", this answers "whose road": a satellite has none of its
@@ -1167,6 +1174,10 @@ fn rows_of_devices(
                 .then(|| links.iter().find(|(id, _)| *id == d.id))
                 .flatten()
                 .and_then(|(_, l)| l.heard_ms),
+            rtt_ms: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .and_then(|(_, l)| l.rtt_ms),
             face: n.face_of(&d),
             pinned: d.pinned,
             // The background sampler's last round for this machine,

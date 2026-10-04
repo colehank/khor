@@ -394,6 +394,8 @@ pub(crate) struct Reading {
     /// The settled road of a live wire; `None` when none is live.
     pub(crate) road: Option<PathKind>,
     pub(crate) heard: Option<Duration>,
+    /// The live wire's smoothed round trip ([`rtt_of`]).
+    pub(crate) rtt: Option<Duration>,
 }
 
 impl Wires {
@@ -839,18 +841,17 @@ impl Wires {
         let now = Instant::now();
         let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let mut road = None;
+        let mut rtt = None;
         let mut heard: Option<Instant> = None;
         for proto in [Proto::Main, Proto::Tunnel] {
             let Some(slot) = slots.get(&(id.to_owned(), proto)) else {
                 continue;
             };
             if road.is_none()
-                && slot
-                    .conn
-                    .as_ref()
-                    .is_some_and(|c| c.close_reason().is_none())
+                && let Some(conn) = slot.conn.as_ref().filter(|c| c.close_reason().is_none())
             {
                 road = slot.word;
+                rtt = Some(rtt_of(conn)).filter(|r| !r.is_zero());
             }
             if let Some(h) = slot.heard {
                 heard = Some(heard.map_or(h, |was| was.max(h)));
@@ -859,6 +860,7 @@ impl Wires {
         Reading {
             road,
             heard: heard.map(|h| now.saturating_duration_since(h)),
+            rtt,
         }
     }
 
