@@ -23,6 +23,7 @@
 // | ⌃⇧⇥ ⇧⌘[               | prev-tab     | one tab left, wrapping                          |
 // | ⌥⌘S                   | focus-list   | the list's one Tab stop, from anywhere          |
 // | ⌃⌘S (Mac only)        | toggle-list  | folds the list, or brings it back (wide)        |
+// | ⌘+ ⌘− ⌘0 (app only)   | term-bigger… | the terminal's type size, one point a press     |
 //
 // ⌘ is Ctrl off a Mac (Windows, Linux, and a browser there). **On a Mac
 // Ctrl is not ⌘**: ⌃W, ⌃K and ⌃L are a text field's and a terminal's own
@@ -78,6 +79,7 @@
 import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { hear, inApp, menuState, onWebFace, trafficLights } from "@/api";
+import { setTypeSize, TERM_DEFAULT, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 
 export type Act =
   | "landing-1"
@@ -100,7 +102,10 @@ export type Act =
   | "reload-term"
   | "prev-command"
   | "next-command"
-  | "command-history";
+  | "command-history"
+  | "term-bigger"
+  | "term-smaller"
+  | "term-actual";
 
 /** One way to press an act. `mod` is ⌘ on a Mac and Ctrl elsewhere;
     `ctrl` is the Control key itself on every platform. Matched on `code`
@@ -155,6 +160,20 @@ export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
   { act: "next-command", chords: [{ key: "ArrowDown", mod: true }], web: true },
   // iTerm2's Command History key (roadmap 2.6).
   { act: "command-history", chords: [{ code: "Semicolon", mod: true, shift: true }], web: true },
+  // **⌘+ ⌘− ⌘0, the terminal's type size** (item 22): Terminal.app's View ›
+  // Bigger / Smaller / Default Font Size, iTerm2's Make Text Bigger /
+  // Smaller / Normal Size. One point a press, the slider's own steps
+  // (Appearance → Terminal → size). The app's only: in a browser they zoom the page.
+  {
+    act: "term-bigger",
+    chords: [
+      { code: "Equal", mod: true },
+      { code: "Equal", mod: true, shift: true },
+    ],
+    web: false,
+  },
+  { act: "term-smaller", chords: [{ code: "Minus", mod: true }], web: false },
+  { act: "term-actual", chords: [{ code: "Digit0", mod: true }], web: false },
   // The list's one Tab stop, from anywhere — a terminal included, which
   // keeps Tab for its shell (the audit fix plan F3.8; W25). ⌥⌘S, the
   // sidebar's key in Notes.
@@ -191,6 +210,13 @@ export function actOf(e: Keyish, face: "app" | "web", mac = IS_MAC): Act | null 
     }
   }
   return null;
+}
+
+/** The terminal holding the keys, with the acts it lends the keyboard. */
+function termWithKeys(): (HTMLElement & { __clear?: () => void; __find?: () => void }) | null {
+  const at = document.activeElement;
+  if (!at?.classList.contains("xterm-helper-textarea")) return null;
+  return at.closest<HTMLElement>("[data-terminal]");
 }
 
 /**
@@ -339,13 +365,21 @@ export function useShortcuts(acts: ShellActs) {
           if (!acts.lock) return false;
           acts.lock();
           return true;
-        case "find":
+        case "find": {
           // **⌘K in a terminal clears it** (T-17, iTerm2's and Terminal's
-          // ⌘K): left to the terminal (`TerminalPane`), not the app's
-          // find, while the terminal has the keys.
-          if (IS_MAC && document.activeElement?.classList.contains("xterm-helper-textarea")) return false;
+          // ⌘K), not the app's find, while the terminal has the keys. Run
+          // here, not left to the terminal's own key handler: in the Mac
+          // app the menu bar's ⌘K takes the key before the page sees it
+          // (measured in the scratch app, item 22), so this is the only
+          // road it has.
+          const term = termWithKeys();
+          if (IS_MAC && term) {
+            term.__clear?.();
+            return true;
+          }
           acts.find();
           return true;
+        }
         case "import":
           acts.import();
           return true;
@@ -358,7 +392,13 @@ export function useShortcuts(acts: ShellActs) {
           now.new.run();
           return true;
         case "find-list": {
-          if (document.activeElement?.classList.contains("xterm-helper-textarea")) return false;
+          // ⌘F in a terminal is the terminal's own find (the menu bar's
+          // ⌘F reaches here first in the Mac app, as ⌘K does).
+          const term = termWithKeys();
+          if (term) {
+            term.__find?.();
+            return !!term.__find;
+          }
           const open = [...document.querySelectorAll<HTMLElement>("[data-pane-bar] [data-search-open]")].find((e) => e.offsetParent);
           const box = [...document.querySelectorAll<HTMLInputElement>("[data-pane-bar] input")].find((e) => e.offsetParent);
           if (open) open.click();
@@ -411,6 +451,16 @@ export function useShortcuts(acts: ShellActs) {
           );
           if (!box?.__history) return false;
           box.__history();
+          return true;
+        }
+        case "term-bigger":
+        case "term-smaller":
+        case "term-actual": {
+          // While a terminal is on screen, where the change can be seen.
+          if (!document.querySelector("[data-detail-pane] [data-kept-terminal][data-active] [data-terminal]")) return false;
+          const t = typeSize();
+          const term = act === "term-actual" ? TERM_DEFAULT : Math.min(TERM_MAX, Math.max(TERM_MIN, t.term + (act === "term-bigger" ? 1 : -1)));
+          if (term !== t.term) setTypeSize({ ...t, term });
           return true;
         }
         case "next-tab":

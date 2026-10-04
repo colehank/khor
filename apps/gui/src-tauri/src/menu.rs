@@ -46,7 +46,7 @@ use tauri::{AppHandle, Emitter, Manager};
 
 /// The acts the page runs, by the ids their items carry. The same names
 /// as `Act` in `src/lib/shortcuts.ts`.
-const ACTS: [&str; 20] = [
+const ACTS: [&str; 23] = [
     "landing-1",
     "landing-2",
     "landing-3",
@@ -71,6 +71,10 @@ const ACTS: [&str; 20] = [
     // ⚠️ It was listed in the View menu and missing here, so choosing it
     // from the menu did nothing; only its key worked (UX-7).
     "command-history",
+    // ⌘+ ⌘− ⌘0, the terminal's type size (item 22).
+    "term-bigger",
+    "term-smaller",
+    "term-actual",
 ];
 
 /// The five landings by the keys the page's strip orders them by
@@ -259,6 +263,11 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     // ⌘⇧;: the machine's commands, searched (roadmap 2.6) — iTerm2's key
     // for its Command History.
     let command_history = item("command-history", m::command_history(), Some("CmdOrCtrl+Shift+Semicolon"))?;
+    // ⌘+ ⌘− ⌘0: the terminal's type size a point at a time (item 22;
+    // Terminal.app's View › Bigger, Smaller, Default Font Size).
+    let term_bigger = item("term-bigger", m::term_bigger(), Some("CmdOrCtrl+Equal"))?;
+    let term_smaller = item("term-smaller", m::term_smaller(), Some("CmdOrCtrl+Minus"))?;
+    let term_actual = item("term-actual", m::term_actual(), Some("CmdOrCtrl+0"))?;
     // ⌃⌘S, the sidebar's key in Notes and Finder (F6.7).
     let sidebar = item("toggle-list", m::hide_sidebar(), Some("Ctrl+Cmd+S"))?;
     let view = Submenu::with_items(
@@ -278,6 +287,10 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &prev_command,
             &next_command,
             &command_history,
+            &sep()?,
+            &term_bigger,
+            &term_smaller,
+            &term_actual,
             &sep()?,
             &PredefinedMenuItem::fullscreen(app, Some(m::fullscreen()))?,
         ],

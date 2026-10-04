@@ -287,7 +287,25 @@ impl Tmux {
     /// (no `mouse` option) quiet rather than flashing an error on the
     /// person's status line; [`Tmux::knows_mouse`] is where that case
     /// leaves its trace.
-    pub fn grouped_attach_argv(&self, target: &str, window: Option<&str>) -> Vec<String> {
+    ///
+    /// # Which pane is in front, and shells that mark (item 21)
+    ///
+    /// Two more session options, on khor's grouped session alone like
+    /// `mouse`:
+    ///
+    /// - `set-titles on` with `set-titles-string` `#{pane_id}
+    ///   #{pane_title}`: tmux writes the title to khor's client whenever
+    ///   the active pane or window changes, so the host's ledger knows
+    ///   which pane is in front (`commands::Ledger::tmux`). The person's
+    ///   own clients keep their own titles: both are session options.
+    /// - `default-command`, when `shim` is given ([`Tmux::shell_shim`]):
+    ///   a window or pane opened from khor's client starts its shell the
+    ///   way khor starts its own, marking its commands; one opened from
+    ///   the person's own client does not, since `default-command` is
+    ///   read off the session the pane is made in (tmux(1), spawn).
+    /// - `@khor_row`, a user option naming the row, so the session can
+    ///   be found again to move between prompts ([`Tmux::jump_prompt`]).
+    pub fn grouped_attach_argv(&self, row: &str, target: &str, window: Option<&str>, shim: Option<&str>) -> Vec<String> {
         let mut argv = vec![
             self.binaries
                 .first()
@@ -324,12 +342,99 @@ impl Tmux {
             ";",
             "set-option",
             "-q",
-            "mouse",
+            "set-titles",
             "on",
+            ";",
+            "set-option",
+            "-q",
+            "set-titles-string",
+            "#{pane_id} #{pane_title}",
+            ";",
+            "set-option",
+            "-q",
+            "@khor_row",
+            row,
+            ";",
         ] {
             argv.push(a.into());
         }
+        if let Some(shim) = shim {
+            for a in ["set-option", "-q", "default-command", shim, ";"] {
+                argv.push(a.into());
+            }
+        }
+        for a in ["set-option", "-q", "mouse", "on"] {
+            argv.push(a.into());
+        }
         argv
+    }
+
+    /// **Moves between shell prompts in the pane khor's client has in
+    /// front** (item 21): tmux's own copy mode, `previous-prompt` and
+    /// `next-prompt` (tmux 3.4 and later), which find the prompts by the
+    /// unwrapped `OSC 133 ; A` khor's scripts give tmux. The face has no
+    /// history there to scroll: tmux holds the screen. Past the last
+    /// prompt, copy mode is left, which is the bottom. The session is
+    /// the one whose `@khor_row` is `row` ([`Tmux::grouped_attach_argv`]).
+    pub fn jump_prompt(&self, row: &str, up: bool) -> Result<(), String> {
+        let sessions = self
+            .ask(&["list-sessions", "-F", "#{session_id}\t#{@khor_row}"])
+            .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
+        let id = sessions
+            .lines()
+            .find_map(|l| l.split_once('\t').filter(|(_, r)| *r == row).map(|(id, _)| id.to_owned()))
+            .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
+        let step = if up { "previous-prompt" } else { "next-prompt" };
+        let at = |args: &[&str]| self.ask(args).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row));
+        let place = ["display-message", "-p", "-t", &id, "#{pane_in_mode} #{scroll_position} #{copy_cursor_y}"];
+        let before = at(&place)?;
+        at(&["copy-mode", "-t", &id, ";", "send-keys", "-X", "-t", &id, step])?;
+        // Down from the last prompt goes nowhere: that is the bottom.
+        if !up && before.starts_with('1') && at(&place)? == before {
+            at(&["send-keys", "-X", "-t", &id, "cancel"])?;
+        }
+        Ok(())
+    }
+
+    /// **The `default-command` for khor's grouped session** (item 21): the
+    /// person's own shell (`default-shell`, as a login shell, which is what
+    /// tmux starts when `default-command` is empty), started the way a
+    /// shell khor hosts is (`crate::integration::plan`), with the
+    /// variables it carries over read from the tmux server's environment,
+    /// which is what that shell would have seen. `None` — the option left
+    /// alone — when the person set a `default-command` of their own (a
+    /// `reattach-to-user-namespace` wrapper is the classic one), when
+    /// khor has no way to start that shell marking (bash: its init file
+    /// would cost the login shell), when the integration is turned off,
+    /// or when a path will not quote. Quoted for `sh`, `zsh`, `bash` and
+    /// `fish` alike, since tmux runs it with `default-shell -c`.
+    pub fn shell_shim(&self, scripts: &std::path::Path) -> Option<String> {
+        let own = self.ask(&["show-options", "-gv", "default-command"])?;
+        if !own.trim().is_empty() {
+            return None;
+        }
+        let shell = self.ask(&["show-options", "-gv", "default-shell"])?.trim().to_owned();
+        let server_env = |k: &str| {
+            self.ask(&["show-environment", "-g", k])
+                .and_then(|l| l.trim().strip_prefix(&format!("{k}=")).map(str::to_owned))
+        };
+        let plan = crate::integration::plan(scripts, &[shell.clone(), "-l".into()], |k| {
+            if k == "KHOR_SHELL_INTEGRATION" {
+                std::env::var(k).ok()
+            } else {
+                server_env(k)
+            }
+        })?;
+        let quote = |s: &str| (!s.contains(['\'', '\\'])).then(|| format!("'{s}'"));
+        let mut out = String::from("exec env");
+        for (k, v) in &plan.env {
+            out.push_str(&format!(" {k}={}", quote(v)?));
+        }
+        out.push_str(&format!(" {}", quote(&shell)?));
+        for a in &plan.args {
+            out.push_str(&format!(" {}", quote(a)?));
+        }
+        Some(out)
     }
 
     /// Whether this server has a `mouse` option at all — tmux 2.1 and
@@ -1007,7 +1112,7 @@ mod tests {
     #[test]
     fn the_attach_turns_the_mouse_on_last_and_only_for_its_own_session() {
         for window in [None, Some("@3")] {
-            let argv = Tmux::on_socket("s").grouped_attach_argv("$1", window);
+            let argv = Tmux::on_socket("s").grouped_attach_argv("shell/1-1", "$1", window, Some("exec zsh -l"));
             let tail: Vec<&str> = argv[argv.len() - 5..].iter().map(String::as_str).collect();
             assert_eq!(tail, [";", "set-option", "-q", "mouse", "on"], "{argv:?}");
             let mouse = argv.iter().position(|a| a == "mouse").unwrap();
@@ -1016,6 +1121,11 @@ mod tests {
                 !argv[own..].iter().any(|a| a == "-g" || a == "-t"),
                 "{argv:?}"
             );
+            // The title names the pane in front; nothing here is global.
+            let titles = argv.iter().position(|a| a == "set-titles-string").unwrap();
+            assert_eq!(argv[titles + 1], "#{pane_id} #{pane_title}");
+            assert!(argv.iter().any(|a| a == "default-command"), "{argv:?}");
+            assert!(!argv.iter().any(|a| a == "-g"), "{argv:?}");
         }
     }
 
@@ -1031,6 +1141,38 @@ mod tests {
         s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one"]);
         s.until_present("one");
         assert!(s.at().knows_mouse());
+    }
+
+    /// **Prompt to prompt through tmux** (item 21), on a server of the
+    /// test's own: the session is found by its `@khor_row`, up walks back
+    /// over the lines a shell marked with `OSC 133 ; A`, down walks
+    /// forward, and down from the last leaves copy mode.
+    #[test]
+    fn prompts_are_walked_in_tmux_copy_mode_for_khors_session() {
+        if !have_tmux() {
+            return;
+        }
+        let s = Server::start("jump");
+        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "80", "-y", "20", "/bin/sh"]);
+        s.until_present("one");
+        s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
+        s.tmux(&["send-keys", "-t", "one", "printf '\\033]133;A\\033\\\\p1\\n\\033]133;A\\033\\\\p2\\n'", "Enter"]);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !s.tmux(&["capture-pane", "-p", "-t", "one"]).unwrap_or_default().lines().any(|l| l == "p2") {
+            assert!(Instant::now() < deadline, "the marks were never printed");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let at = || s.tmux(&["display-message", "-p", "-t", "one", "#{pane_in_mode} #{copy_cursor_line}"]).unwrap_or_default().trim().to_owned();
+        let t = s.at();
+        assert!(t.jump_prompt("shell/0-0", true).is_err(), "no session is that row's");
+        t.jump_prompt("shell/9-9", true).unwrap();
+        assert_eq!(at(), "1 p2");
+        t.jump_prompt("shell/9-9", true).unwrap();
+        assert_eq!(at(), "1 p1");
+        t.jump_prompt("shell/9-9", false).unwrap();
+        assert_eq!(at(), "1 p2");
+        t.jump_prompt("shell/9-9", false).unwrap();
+        assert!(at().starts_with('0'), "{}", at());
     }
 
     /// The flagship, on a real server of khor's own: a shell sitting at

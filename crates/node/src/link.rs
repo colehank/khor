@@ -79,6 +79,46 @@ fn reading_digest(frame: &[u8]) -> Vec<u8> {
     blake3::hash(frame).as_bytes()[..16].to_vec()
 }
 
+/// The reading an asker names in [`Request::Versions`] to say it takes the
+/// sessions reading as a change (`Response::SessionRowsSince`). Asks for
+/// nothing: [`reading_request`] has no request for it.
+const ROWS_BY_CHANGE: &str = "sessions+";
+
+/// What changed between the rows last sent and these: every id in order
+/// and the rows that differ. `None` when an id repeats (no rebuild could
+/// tell them apart).
+fn rows_since(was: &[khor_core::Session], now: &[khor_core::Session]) -> Option<(Vec<String>, Vec<khor_core::Session>)> {
+    let mut seen = std::collections::HashSet::new();
+    if !now.iter().all(|r| seen.insert(r.id.0.as_str())) {
+        return None;
+    }
+    let was: std::collections::HashMap<&str, Vec<u8>> = was
+        .iter()
+        .filter_map(|r| Some((r.id.0.as_str(), proto::encode(r).ok()?)))
+        .collect();
+    let changed = now
+        .iter()
+        .filter(|r| was.get(r.id.0.as_str()).is_none_or(|b| proto::encode(*r).ok().as_ref() != Some(b)))
+        .cloned()
+        .collect();
+    Some((now.iter().map(|r| r.id.0.clone()).collect(), changed))
+}
+
+/// The rows rebuilt from the copy held and a [`rows_since`] change;
+/// `None` when an id is in neither.
+fn rows_rebuilt(
+    held: &[khor_core::Session],
+    order: &[String],
+    changed: Vec<khor_core::Session>,
+) -> Option<Vec<khor_core::Session>> {
+    let mut by_id: std::collections::HashMap<String, khor_core::Session> =
+        held.iter().map(|r| (r.id.0.clone(), r.clone())).collect();
+    for r in changed {
+        by_id.insert(r.id.0.clone(), r);
+    }
+    order.iter().map(|id| by_id.remove(id)).collect()
+}
+
 /// The request a reading's kind stands for in [`Request::Versions`].
 fn reading_request(kind: &str) -> Option<Request> {
     Some(match kind {
@@ -1650,6 +1690,17 @@ impl Node {
                 Ok(hits) => ipc::Reply::History { hits },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::ActOn {
+                machine,
+                session,
+                action,
+            } => match self.act_on_with(ep, &machine, &session, &action).await {
+                Ok(()) => ipc::Reply::Accepted {
+                    moved: 0,
+                    landed: Vec::new(),
+                },
+                Err(why) => ipc::Reply::Refused { why },
+            },
         }
     }
 
@@ -2762,6 +2813,20 @@ impl Node {
                         // Nothing moved and nothing landed: closing
                         // has no files, and an empty list is the frame's
                         // own word for "nobody said a path".
+                        Ok(Response::Acted {
+                            moved: 0,
+                            landed: Vec::new(),
+                        })
+                    }
+                    // A tmux row's prompts, in the pane its client has in
+                    // front (item 21): tmux runs on this machine.
+                    "prompt-up" | "prompt-down" => {
+                        let id = crate::SessionId(session);
+                        let up = action == "prompt-up";
+                        let live = self.live.clone();
+                        tokio::task::spawn_blocking(move || live.jump_prompt(&id, up))
+                            .await
+                            .map_err(|e| e.to_string())??;
                         Ok(Response::Acted {
                             moved: 0,
                             landed: Vec::new(),
@@ -5807,6 +5872,51 @@ impl Node {
         }
     }
 
+    /// **Moves between the shell prompts of a tmux row** (item 21,
+    /// `LiveKind::jump_prompt`), on the machine the row lives on: `Act`
+    /// "prompt-up" or "prompt-down" there, as closing is.
+    pub async fn jump_prompt_anywhere(&self, id: &crate::SessionId, up: bool) -> Result<(), String> {
+        if let Some(machine) = self.far_machine(id)? {
+            let action = if up { "prompt-up" } else { "prompt-down" };
+            let op = ipc::Op::ActOn {
+                machine: machine.clone(),
+                session: id.0.clone(),
+                action: action.into(),
+            };
+            if let Some(reply) = self.via_serve(op).await {
+                return match reply? {
+                    ipc::Reply::Accepted { .. } => Ok(()),
+                    ipc::Reply::Refused { why } => Err(why),
+                    other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+                };
+            }
+            let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+                .await
+                .map_err(|e| e.to_string())?;
+            let outcome = self.act_on_with(&ep, &machine, &id.0, action).await;
+            ep.close().await;
+            return outcome;
+        }
+        let live = self.live.clone();
+        let id = id.clone();
+        tokio::task::spawn_blocking(move || live.jump_prompt(&id, up))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+
+    async fn act_on_with(&self, ep: &iroh::Endpoint, machine: &str, session: &str, action: &str) -> Result<(), String> {
+        let (channel, _) = self.resolve(machine)?;
+        let req = Request::Act {
+            session: session.to_owned(),
+            action: action.to_owned(),
+        };
+        match self.ask(ep, &channel, &req).await? {
+            Response::Acted { .. } => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
     /// A machine's directory listing, for the files landing. Routed the
     /// way every one-shot verb is: through the resident serve when one
     /// holds this key, on a bound-and-closed endpoint otherwise.
@@ -7153,6 +7263,11 @@ impl Node {
         if !force && let Some(left) = self.wires.backing_off(&d.id) {
             return Err(msg::peer_backing_off(left.as_secs().max(1)));
         }
+        // Its relay said it left: it will dial when it is back
+        // (`wires::LEFT_ALONE_FOR`).
+        if !force && self.wires.left_alone(&d.id) {
+            return Err(msg::peer_left_its_relay().into());
+        }
         let asked = std::time::Instant::now();
         loop {
             let joined = {
@@ -7342,7 +7457,15 @@ impl Node {
                 };
                 (asked, serde_bytes::ByteBuf::from(digest))
             })
-            .collect();
+            .collect::<Vec<_>>();
+        // **This asker takes the rows as a change** (round NET-6): an
+        // answerer that knows the marker may send `SessionRowsSince`; one
+        // that does not finds no request for it and skips it, answering
+        // the rows whole as before.
+        let mut readings = readings;
+        if kinds.iter().any(|k| k == "sessions") {
+            readings.push((ROWS_BY_CHANGE.to_owned(), serde_bytes::ByteBuf::new()));
+        }
         Request::Versions { docs, readings }
     }
 
@@ -7371,6 +7494,31 @@ impl Node {
                 continue;
             }
             let reading = match proto::decode::<Response>(&frame) {
+                Ok(Response::SessionRowsSince { order, rows, full }) => {
+                    // Rebuilt from the copy held and checked against the
+                    // whole answer's digest; asked whole when they differ.
+                    let rebuilt = match held.get(&kind).map(|h| &h.answer) {
+                        Some(Response::SessionRows { rows: was }) => rows_rebuilt(was, &order, rows),
+                        _ => None,
+                    }
+                    .map(|rows| Response::SessionRows { rows })
+                    .and_then(|answer| {
+                        let digest = reading_digest(&proto::encode(&answer).ok()?);
+                        (digest[..] == full[..]).then_some(HeldReading { digest, answer })
+                    });
+                    match rebuilt {
+                        Some(reading) => Some(reading),
+                        None => match self.exchange_on(line, &Request::Sessions).await {
+                            Ok(answer @ Response::SessionRows { .. }) => {
+                                proto::encode(&answer).ok().map(|frame| HeldReading {
+                                    digest: reading_digest(&frame),
+                                    answer,
+                                })
+                            }
+                            _ => None,
+                        },
+                    }
+                }
                 Ok(Response::DaySince { since, full }) => {
                     // Rebuilt from the copy held, and checked against the
                     // whole answer's digest; asked whole when they differ.
@@ -7475,6 +7623,7 @@ impl Node {
                 differ.push((name, version));
             }
         }
+        let by_change = readings.iter().any(|(k, _)| k == ROWS_BY_CHANGE);
         let mut changed = Vec::new();
         for (kind, held) in readings {
             let Some(req) = reading_request(&kind) else {
@@ -7485,9 +7634,36 @@ impl Node {
                 Response::Refused { .. } => Vec::new(),
                 answer => proto::encode(answer)?,
             };
+            // The rows this asker will hold after this answer, and the
+            // ones it held before if they were the last sent it.
+            let rows_before = match &answer {
+                Response::SessionRows { rows } if kind == "sessions" && !frame.is_empty() => {
+                    let mut sent = self.rows_sent.lock().unwrap_or_else(|p| p.into_inner());
+                    sent.insert(remote.to_owned(), (reading_digest(&frame), rows.clone()))
+                        .filter(|(digest, _)| digest[..] == held[..])
+                        .map(|(_, rows)| rows)
+                }
+                _ => None,
+            };
             if !frame.is_empty() && reading_digest(&frame)[..] == held[..] {
                 continue;
             }
+            // **Only what changed**, to an asker that takes it and holds
+            // the copy last sent it — and only when that is smaller.
+            let since = match (&answer, rows_before) {
+                (Response::SessionRows { rows }, Some(was)) if by_change => rows_since(&was, rows)
+                    .and_then(|(order, rows)| {
+                        proto::encode(&Response::SessionRowsSince {
+                            order,
+                            rows,
+                            full: serde_bytes::ByteBuf::from(reading_digest(&frame)),
+                        })
+                        .ok()
+                    })
+                    .filter(|since| since.len() < frame.len()),
+                _ => None,
+            };
+            let frame = since.unwrap_or(frame);
             // The day, as the minutes since the asker's copy, when it
             // holds one this record still overlaps (`crate::day::DaySince`).
             let frame = match (&answer, kind.strip_prefix("days@").and_then(|m| m.parse().ok())) {
@@ -8585,5 +8761,75 @@ mod deafness {
             );
             assert!(!w.observe_at(&[], now), "a mesh of one has nobody to miss");
         }
+    }
+}
+
+#[cfg(test)]
+mod rows_by_change {
+    //! `SessionRowsSince` alone (round NET-6): what a change carries and
+    //! that the rebuild is the whole, byte for byte.
+
+    use super::*;
+    use khor_core::{DeviceId, Session, SessionId, State};
+
+    fn row(id: &str, command: &str) -> Session {
+        Session {
+            id: SessionId(id.into()),
+            kind: khor_core::Kind(khor_core::kind::SHELL.into()),
+            title: id.into(),
+            home: DeviceId([1; 32]),
+            state: khor_core::StateStamp {
+                state: State::Busy,
+                at: khor_core::Millis(1),
+            },
+            unread: 0,
+            place: None,
+            mux: false,
+            doing: Some(khor_core::Doing {
+                command: Some(command.into()),
+                running: true,
+                ..Default::default()
+            }),
+            dead: false,
+            unbacked: false,
+            category: None,
+            last: None,
+            via: None,
+            term: true,
+        }
+    }
+
+    /// A busy session's next command is one row on the wire, not six;
+    /// the rebuild is the whole answer, digest for digest.
+    #[test]
+    fn a_busy_rows_next_command_carries_that_row_alone() {
+        let was: Vec<Session> = (0..6).map(|k| row(&format!("shell/{k}"), "sleep 3600")).collect();
+        let mut now = was.clone();
+        now[5] = row("shell/5", "make test --shard 2");
+        let (order, changed) = rows_since(&was, &now).unwrap();
+        assert_eq!(changed.len(), 1, "only the busy row");
+        let whole = proto::encode(&Response::SessionRows { rows: now.clone() }).unwrap();
+        let since = proto::encode(&Response::SessionRowsSince {
+            order: order.clone(),
+            rows: changed.clone(),
+            full: serde_bytes::ByteBuf::from(reading_digest(&whole)),
+        })
+        .unwrap();
+        assert!(since.len() * 2 < whole.len(), "the change {} B against the whole {} B", since.len(), whole.len());
+        let rebuilt = rows_rebuilt(&was, &order, changed).unwrap();
+        let again = proto::encode(&Response::SessionRows { rows: rebuilt }).unwrap();
+        assert_eq!(reading_digest(&again), reading_digest(&whole));
+    }
+
+    /// A row gone and a row new, in a new order; a repeated id is no change.
+    #[test]
+    fn rows_that_come_go_and_move_rebuild_in_order() {
+        let was = vec![row("a", "x"), row("b", "y"), row("c", "z")];
+        let now = vec![row("c", "z"), row("d", "w"), row("a", "x")];
+        let (order, changed) = rows_since(&was, &now).unwrap();
+        assert_eq!(changed.iter().map(|r| r.id.0.as_str()).collect::<Vec<_>>(), ["d"]);
+        assert_eq!(rows_rebuilt(&was, &order, changed).unwrap(), now);
+        assert!(rows_since(&was, &[row("a", "x"), row("a", "y")]).is_none());
+        assert!(rows_rebuilt(&was, &["e".to_owned()], vec![]).is_none(), "an id in neither");
     }
 }

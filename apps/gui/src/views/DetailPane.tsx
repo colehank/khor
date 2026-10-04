@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 
-import { shortDir } from "@/components/DoingLine";
+import { programOf, shortDir } from "@/components/DoingLine";
+import type { Doing } from "@/gen/bindings/Doing";
 import { type SessionRow } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
 import { SessionFace } from "@/components/SessionFace";
@@ -164,7 +165,7 @@ export function CopyId({
 export function closeWarning(
   kind: string,
   imported = false,
-  host: { hosted?: boolean; mux?: boolean } = {},
+  host: { hosted?: boolean; mux?: boolean; doing?: Doing | null } = {},
 ): string {
   // An imported row leaves the list and nothing else (docs/SHELL.md
   // 第八轮 第 3 条) — the window says so, whatever its kind.
@@ -181,6 +182,11 @@ export function closeWarning(
   // person's tmux session is never ended by khor — only khor's terminal
   // on it goes. Both were asked the agent's sentence below.
   if (kind === "shell" && host.mux) return gui.close_warn_tmux;
+  // A command the shell says is running is named, as Terminal.app names
+  // what closing its window would end.
+  if (kind === "shell" && host.hosted && host.doing?.running && host.doing.command) {
+    return gui.close_warn_running(programOf(host.doing.command));
+  }
   if (kind === "shell" && host.hosted) return gui.close_warn_terminal;
   if (kind === "shell" || kind === "tui" || kind === "borrow") {
     return gui.close_warn_live;
@@ -601,7 +607,7 @@ export function DetailPane({
             aria-hidden={on ? undefined : true}
           >
             <Suspense fallback={null}>
-              <TerminalPane id={t.id} machine={t.machine} active={on} />
+              <TerminalPane id={t.id} machine={t.machine} active={on} doing={on ? row?.doing : undefined} />
             </Suspense>
           </div>
         );

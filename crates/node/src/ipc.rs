@@ -309,6 +309,14 @@ pub enum Op {
     /// `link::QUIET_PACE`). Sent again every [`FACE_BEAT`] while visible.
     /// Answered [`Reply::Noted`]. Tail-appended.
     FaceHere { visible: bool },
+    /// An `Act` on a session on another machine other than closing it
+    /// (`Act` "prompt-up" / "prompt-down", item 21); answered with
+    /// [`Reply::Accepted`]. Tail-appended.
+    ActOn {
+        machine: String,
+        session: String,
+        action: String,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -404,6 +412,7 @@ impl Op {
             Op::HistoryOn { .. } => ("HistoryOn", DEADLINE_FAR),
             Op::GitOn { .. } => ("GitOn", DEADLINE_FAR),
             Op::FaceHere { .. } => ("FaceHere", DEADLINE_LOCAL),
+            Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),

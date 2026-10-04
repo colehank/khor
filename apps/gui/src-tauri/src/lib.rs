@@ -844,6 +844,12 @@ async fn term_history(
     khor_gui_core::term::history(&Node::root_from_env(), machine.as_deref().unwrap_or(""), &text, &dir, failed).await
 }
 
+/// A tmux row's prompts, moved between by tmux (item 21, `term::prompt`).
+#[tauri::command]
+async fn term_prompt(id: String, up: bool) -> Result<(), String> {
+    khor_gui_core::term::prompt(&Node::root_from_env(), &id, up).await
+}
+
 #[tauri::command]
 async fn term_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::term::TermChunk, String> {
     khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
@@ -3808,6 +3814,7 @@ pub fn run() {
             term_attach,
             term_stream,
             term_history,
+            term_prompt,
             term_wait,
             bell_haptic,
             face_note,

@@ -328,6 +328,10 @@ pub(crate) type PipeMap<K> = Arc<
     >,
 >;
 
+/// The digest of the session rows last sent one asker, and the rows
+/// (`Node::rows_sent`).
+pub(crate) type RowsSent = (Vec<u8>, Vec<khor_core::Session>);
+
 pub struct Node {
     root: PathBuf,
     /// The identity key; also what the endpoint binds with. One live
@@ -394,6 +398,9 @@ pub struct Node {
     pub(crate) face_seen: Arc<Mutex<Option<std::time::Instant>>>,
     /// When a round out of turn last started, in ms (`link::Node::nudge`).
     pub(crate) nudged: Arc<std::sync::atomic::AtomicU64>,
+    /// The session rows last sent each asker, by its id, with the digest
+    /// of that frame (`proto::Response::SessionRowsSince`).
+    pub(crate) rows_sent: Arc<Mutex<std::collections::HashMap<String, RowsSent>>>,
     /// The borrow proxies this serve hosts (docs/NET.md 借网), keyed by
     /// their session id. Each is a task holding a local proxy port and a
     /// lease to the exit; the serve reaps one once its session row is
@@ -1054,6 +1061,7 @@ impl Node {
             resting: Arc::default(),
             face_seen: Arc::default(),
             nudged: Arc::default(),
+            rows_sent: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),

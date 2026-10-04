@@ -14,6 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { gui } from "@/gen/catalog";
@@ -25,6 +26,7 @@ import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
 import { setTermBell, useTermBell } from "@/lib/term-bell";
 import { setTermPredict, useTermPredict } from "@/lib/term-predict-setting";
+import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { lasted } from "@/words";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
@@ -34,6 +36,10 @@ import { MoreSection } from "@/views/more/MorePage";
 import { KeyRowEditor } from "@/views/TermKeys";
 
 const ROW = "flex items-center gap-row px-row py-in";
+
+/** The ~/.zshrc line that loads khor's zsh integration in shells tmux
+    starts on its own (`crates/node/shell/khor.zsh`, item 21). */
+const TMUX_ZSHRC = "[[ -n $TMUX && -r ~/.khor/shell/khor.zsh ]] && source ~/.khor/shell/khor.zsh";
 
 /** 界面字号: follows the system, or a slider of iOS's seven sizes. */
 export function TypeSizeSection() {
@@ -86,6 +92,8 @@ export function TerminalSection() {
   const finishedAfter = useFinishedAfter();
   const bell = useTermBell();
   const predicts = useTermPredict();
+  const optionMeta = useTermOptionMeta();
+  const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
   const [editingKeys, setEditingKeys] = useState(false);
   const [here] = useState(() => fontsHere());
   const [refused, setRefused] = useState<string | null>(null);
@@ -263,6 +271,39 @@ export function TerminalSection() {
         on={predicts}
         onToggle={() => setTermPredict(!predicts)}
       />
+      {/* A Mac keyboard's: no Option key under a finger. */}
+      {!coarse && (
+        <SwitchRow
+          name="term-option-meta"
+          label={gui.term_option_meta}
+          hint={gui.term_option_meta_note}
+          on={optionMeta}
+          onToggle={() => setTermOptionMeta(!optionMeta)}
+        />
+      )}
+      {/* The line goes into a computer's ~/.zshrc: a phone has none to
+          edit, so the row is not drawn there (progressive disclosure). */}
+      {!coarse && (
+        <ActionRow
+          name="term-tmux-marks"
+          label={gui.term_tmux_marks}
+          hint={
+            <>
+              {gui.term_tmux_marks_note}
+              <code data-term-tmux-line className="mt-xxs block select-all break-words font-mono text-caption text-foreground">
+                {TMUX_ZSHRC}
+              </code>
+            </>
+          }
+          actionLabel={copied === "copied" ? gui.copied : copied === "failed" ? gui.copy_failed : gui.term_tmux_marks_copy}
+          onPress={() =>
+            void navigator.clipboard.writeText(TMUX_ZSHRC).then(
+              () => setCopied("copied"),
+              () => setCopied("failed"),
+            )
+          }
+        />
+      )}
       {coarse && (
         <PopupRow
           name="term-wake"
