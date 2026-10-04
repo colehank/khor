@@ -1862,14 +1862,16 @@ aside[data-side] {
    audit fix plan F1.5; N02, SYS-16). The drawing keeps its size; what
    grows is the hit box, a transparent `::after` at least 44 each way
    centred on the control. Capsule items, the strip, the verbs and their
-   「…」, VS Code, the capsule's seats, a tab's ×, every shadcn button. A
+   「…」, VS Code, the capsule's seats, a tab's ×, every shadcn button,
+   and a glass circle drawn smaller than its 44 (the terminal deck's
+   reload at 38, UX-9 I12; a list head's circle is 44 already). A
    control that is already placed (`absolute`, `fixed`, `sticky`) is its
    own containing block; a static one is made one. */
 @media (pointer: coarse) {
-  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
+  :is([data-glass-item], [data-glass-circle], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
     position: relative;
   }
-  :is([data-glass-item], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font])::after {
+  :is([data-glass-item], [data-glass-circle], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font])::after {
     content: "";
     position: absolute;
     left: 50%;
