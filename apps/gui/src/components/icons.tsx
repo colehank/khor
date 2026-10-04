@@ -120,6 +120,9 @@ const LIVE = {
   terminal: reshare(fit(2.45, 2.56, 11.1), PLAIN, LIGHT),
   chat: fit(1.6, 2.3, 12.8),
   keyboard: fit(1.17, 1.17, 13.66), // square
+  // The key row's (UX-12, 2026-10-04), computed rather than scanned: a
+  // strip 15 across, centred on the 16 canvas, at the 0.90 share.
+  keyRow: fit(-1.05, -1.05, 18.1),
   file: fit(1.07, 1.07, 13.87), // square
   link: fit(2.14, 2.14, 11.73), // round
   // The cursor key's (2026-10-03): ink 11 across, centred on the 16
@@ -866,6 +869,24 @@ export function IconKeyboard({ className }: IconProps) {
           d="M4.1 4h7.8a1.6 1.6 0 0 1 1.6 1.6v4.8a1.6 1.6 0 0 1-1.6 1.6H4.1a1.6 1.6 0 0 1-1.6-1.6V5.6A1.6 1.6 0 0 1 4.1 4Z"
         />
       )}
+    </Mark>
+  );
+}
+
+/**
+ * The terminal's key row — the deck's circle that opens and closes it on
+ * a phone (UX-12, 2026-10-04): one row of keys, a strip parted into
+ * three, the first part wider, the way Esc sits beside Ctrl and Tab.
+ * **Hollow, where the keyboard is solid**: in 点击按钮 the two circles
+ * stand side by side, and the soft keyboard's is a filled case with its
+ * keys cut out, so the two read apart at a glance. Three caps drawn
+ * apart read at 20 as「000」; one strip parted reads as a row.
+ */
+export function IconKeyRow({ className }: IconProps) {
+  return (
+    <Mark className={className} live={LIVE.keyRow} icon="key-row">
+      <rect x="0.5" y="3.8" width="15" height="8.4" rx="2.2" />
+      <path d="M6 3.8v8.4M10.75 3.8v8.4" />
     </Mark>
   );
 }

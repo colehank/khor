@@ -2294,9 +2294,11 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 }
 
 /* **The deck steps aside while the keyboard is up** (round UX-3): the row
-   under it — the terminal's keys, a conversation's box, the address being
-   edited — rides the keyboard alone, and comes back with it down. */
-:root[data-keyboard] [data-session-deck] {
+   under it — a conversation's box, the address being edited — rides the
+   keyboard alone, and comes back with it down. **Not a terminal's** (UX-12,
+   the owner 2026-10-04): its deck is one row and always there, with the
+   key row's circle on it, and stands over the key row over the keyboard. */
+:root[data-keyboard] [data-session-deck]:not(:has([data-key-row-switch])) {
   display: none;
 }
 

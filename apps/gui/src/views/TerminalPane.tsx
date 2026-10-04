@@ -54,7 +54,7 @@
 //     「不要显示水印」): the title a program sets (OSC 0/2) was shown in
 //     the top right corner, muted on a wash — 「zgh@Mac-mini:/Volumes/…」
 //     over the output. It is not drawn any more, and not kept.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { ImageAddon } from "@xterm/addon-image";
@@ -80,7 +80,7 @@ import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
-import { BarSeat } from "@/components/SessionBar";
+import { BarSeat, useInBar } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
@@ -97,7 +97,8 @@ import { programOf } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
 import { termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
-import { KeyboardSwitch, TermKeys } from "@/views/TermKeys";
+import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
+import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
 import { promptMarks } from "@/lib/term-prompt-sp";
 import { kittyFlags, kittyKey, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
@@ -3045,14 +3046,9 @@ export function TerminalPane({
             button for it is a second door; a swipe down lowers it in every
             mode (this pane's own, `terminalKeyboard`). The mode is
             `lib/term-tap`'s (`useTermWake`). */}
-        {wake === "button" && (
-          <BarSeat at="trail">
-            <KeyboardSwitch field={keysRef} />
-          </BarSeat>
-        )}
-        <BarSeat at="under">
+        <KeyRowSeats field={keysRef} keyboard={wake === "button" && <KeyboardSwitch field={keysRef} />}>
           <TermKeys term={termRef} mods={mods} onMods={latch} />
-        </BarSeat>
+        </KeyRowSeats>
       </>
     )}
     </>
@@ -3071,6 +3067,41 @@ export function TerminalPane({
  * alone spun with no end, and the one move that helps is on the other
  * machine — the pipe comes back by itself once that machine is up.
  */
+/**
+ * **The key row and its circle** (UX-12, the owner 2026-10-04): the deck
+ * is one row and always there — ‹, the pill, the key row's circle and the
+ * tabs circle — and the key row (`row`) stands under it only while open
+ * (`lib/key-row-open`): collapsed with the keyboard down, open with it up,
+ * toggled by the circle. The terminal ends above whichever rows show, and
+ * its composition strip with it. Drawn by the terminal on screen alone,
+ * which is the one whose keyboard the row follows. In 点击按钮 the
+ * keyboard's own circle (`keyboard`) stands just before it, so the row's
+ * circle keeps its place beside the tabs circle. Without a deck (the
+ * wide face under a finger, an iPad) there is no circle, and the row
+ * stands under the screen as it always did.
+ */
+function KeyRowSeats({
+  field,
+  keyboard,
+  children: row,
+}: {
+  field: RefObject<HTMLElement | null>;
+  keyboard: ReactNode;
+  children: ReactNode;
+}) {
+  const { open, toggle } = useKeyRowOpen(field);
+  if (!useInBar()) return <BarSeat at="under">{row}</BarSeat>;
+  return (
+    <>
+      <BarSeat at="trail">
+        {keyboard}
+        <KeyRowSwitch open={open} onToggle={toggle} />
+      </BarSeat>
+      {open && <BarSeat at="under">{row}</BarSeat>}
+    </>
+  );
+}
+
 function RejoinPill({ machine }: { machine?: string | null }) {
   const [since] = useState(() => Date.now());
   const say = useWaited(since) >= WAIT_SAY_MS;
