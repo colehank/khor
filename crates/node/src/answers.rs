@@ -32,8 +32,23 @@
 //! loop ends — exactly T-16's failure, on every machine not yet upgraded.
 //! The shape test the face already uses (`term-replies.ts`) is the same one
 //! this ledger uses, and it costs no wire change.
+//!
+//! **Mouse and focus reports pass only while the program asked for them**
+//! (item 25; the owner's shot: `35;6;5M35;12;6M…` typed at his zsh prompt
+//! after he came back to a session). A face whose modes went stale — a
+//! replay's residue, a mode a program left on — sends reports the pty no
+//! longer wants, and a shell takes them as typing. The ledger keeps the
+//! output's DEC modes (`crate::modes::Modes`, the same reader the ring's
+//! replay is built from) and drops a mouse report while no mouse tracking
+//! mode (9, 1000, 1002, 1003) is set, and a focus report (`CSI I`, `CSI O`)
+//! while 1004 is not, counting each ([`Ledger::dropped_mouse`],
+//! [`Ledger::dropped_focus`]). tmux does the same for its panes: it forwards
+//! a mouse event to a pane only when the pane's own mode asks for it
+//! (`input_key_mouse`, tmux's input-keys.c).
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
+
+use crate::modes::Modes;
 
 /// How long a question waits for an answer before the host gives up on
 /// the faces' answer (spec rule 4).
@@ -202,6 +217,57 @@ pub struct Ledger {
     tail: Vec<u8>,
     /// The last colour answers a face gave, the host's fallback for them.
     colours: HashMap<u16, Vec<u8>>,
+    /// The output's DEC modes: which reports the program asked for.
+    modes: Modes,
+    /// Mouse reports dropped because no mouse mode was set.
+    pub dropped_mouse: u64,
+    /// Focus reports dropped because focus events were off.
+    pub dropped_focus: u64,
+}
+
+/// A mouse tracking mode (X10's 9, 1000, 1002, 1003).
+const MOUSE_MODES: [u16; 4] = [9, 1000, 1002, 1003];
+
+/// Mouse tracking and its encodings, all turned off: what the host writes
+/// into the stream when a program left mouse tracking on and the shell has
+/// the terminal back. Not focus events: fish 4 turns those on for itself at
+/// its prompt (its `fish_focus_in` events).
+pub const MOUSE_OFF: &[u8] = b"\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1005l\x1b[?1006l\x1b[?1015l";
+
+/// What kind of report an input sequence is, if it is one: a mouse event
+/// in any of xterm's encodings, or a focus change. `len` is the whole
+/// report's length (X10's `CSI M` carries three more bytes after it).
+fn report(bytes: &[u8], s: &Seq<'_>, n: usize) -> Option<(bool, usize)> {
+    let Seq::Csi { params, inter, fin } = s else {
+        return None;
+    };
+    if !inter.is_empty() {
+        return None;
+    }
+    match fin {
+        // SGR (1006): `CSI < b ; x ; y M|m`.
+        b'M' | b'm' if params.first() == Some(&b'<') => Some((true, n)),
+        // X10 and normal (`CSI M` then three bytes, 1005 makes them UTF-8).
+        b'M' if params.is_empty() => {
+            let mut at = n;
+            for _ in 0..3 {
+                let lead = *bytes.get(at)?;
+                at += match lead {
+                    0xc0..=0xdf => 2,
+                    0xe0..=0xef => 3,
+                    _ => 1,
+                };
+            }
+            (at <= bytes.len()).then_some((true, at))
+        }
+        // urxvt (1015): `CSI b ; x ; y M`. No key ends that way.
+        b'M' if params.iter().filter(|&&c| c == b';').count() == 2 && params.iter().all(|&c| c.is_ascii_digit() || c == b';') => {
+            Some((true, n))
+        }
+        // Focus (1004).
+        b'I' | b'O' if params.is_empty() => Some((false, n)),
+        _ => None,
+    }
 }
 
 /// The most a question can be split across reads and still be seen.
@@ -210,6 +276,7 @@ const TAIL_MAX: usize = 256;
 impl Ledger {
     /// Records the questions in a read of the program's output.
     pub fn saw_output(&mut self, bytes: &[u8], now: Instant) {
+        self.modes.feed(bytes);
         let mut buf = std::mem::take(&mut self.tail);
         buf.extend_from_slice(bytes);
         let mut i = 0;
@@ -244,6 +311,25 @@ impl Ledger {
         while i < bytes.len() {
             if bytes[i] == 0x1b
                 && let Some((s, n)) = sequence(&bytes[i..])
+                && let Some((mouse, len)) = report(&bytes[i..], &s, n)
+            {
+                let wanted = if mouse {
+                    MOUSE_MODES.iter().any(|&m| self.modes.is_set(m))
+                } else {
+                    self.modes.is_set(1004)
+                };
+                if wanted {
+                    out.extend_from_slice(&bytes[i..i + len]);
+                } else if mouse {
+                    self.dropped_mouse += 1;
+                } else {
+                    self.dropped_focus += 1;
+                }
+                i += len;
+                continue;
+            }
+            if bytes[i] == 0x1b
+                && let Some((s, n)) = sequence(&bytes[i..])
                 && let Some(k) = answer(&s)
             {
                 if let Some(at) = self.pending.iter().position(|(q, _)| *q == k) {
@@ -260,6 +346,11 @@ impl Ledger {
             i += 1;
         }
         out
+    }
+
+    /// Whether a mouse tracking mode is on.
+    pub fn mouse_on(&self) -> bool {
+        MOUSE_MODES.iter().any(|&m| self.modes.is_set(m))
     }
 
     /// The host's own answers for questions no face answered within
@@ -317,6 +408,38 @@ mod tests {
 
     fn t0() -> Instant {
         Instant::now()
+    }
+
+    /// **Mouse and focus reports pass only while asked for** (item 25).
+    /// The owner's prompt held `35;6;5M35;12;6M35;34;10M35;39;10M`: SGR
+    /// motion reports, the `ESC [ <` eaten by zsh's line editor. Recorded
+    /// as a face sent them: dropped with no mouse mode set, keys around
+    /// them kept; passed once a program sets 1003; dropped again after the
+    /// host's own `MOUSE_OFF`. The other encodings (X10, UTF-8 X10, urxvt)
+    /// and focus reports the same way.
+    #[test]
+    fn reports_pass_only_while_the_program_asked() {
+        let now = t0();
+        let owner = b"\x1b[<35;6;5M\x1b[<35;12;6M\x1b[<35;34;10M\x1b[<35;39;10Mls\r";
+        let mut l = Ledger::default();
+        assert_eq!(l.take_input(owner, now), b"ls\r");
+        assert_eq!(l.dropped_mouse, 4);
+        l.saw_output(b"\x1b[?1003h\x1b[?1006h", now);
+        assert!(l.mouse_on());
+        assert_eq!(l.take_input(owner, now), owner);
+        l.saw_output(MOUSE_OFF, now);
+        assert!(!l.mouse_on());
+        let others: &[u8] = b"\x1b[M #!\x1b[M\xc3\x80\xc3\x80 \x1b[32;5;5Ma";
+        assert_eq!(l.take_input(others, now), b"a");
+        assert_eq!(l.dropped_mouse, 7);
+        // Focus: only while 1004 is on.
+        assert_eq!(l.take_input(b"\x1b[I\x1b[Ox", now), b"x");
+        assert_eq!(l.dropped_focus, 2);
+        l.saw_output(b"\x1b[?1004h", now);
+        assert_eq!(l.take_input(b"\x1b[I", now), b"\x1b[I");
+        // Keys that look nothing like reports are never weighed.
+        let keys: &[u8] = b"\x1b[A\x1b[1;5C\x1b[13;2u\x1b[27;5;13~\x1bOP";
+        assert_eq!(l.take_input(keys, now), keys);
     }
 
     /// T-4: two faces answer one question; the pty gets one answer.
@@ -382,9 +505,13 @@ mod tests {
     fn keys_pass_whole() {
         let now = t0();
         let mut l = Ledger::default();
-        for key in [&b"ls -la\r"[..], b"\x1b[A", b"\x1b[1;5D", b"\x1bOP", b"\x1b[15~", b"\x1b", b"\x1bx", b"\x1b[200~text\x1b[201~", b"\x1b[<0;10;5M"] {
+        for key in [&b"ls -la\r"[..], b"\x1b[A", b"\x1b[1;5D", b"\x1bOP", b"\x1b[15~", b"\x1b", b"\x1bx", b"\x1b[200~text\x1b[201~"] {
             assert_eq!(l.take_input(key, now), key);
         }
+        // A mouse report is a key while the program asked for the mouse
+        // (and dropped while it did not: `reports_pass_only_while_the_program_asked`).
+        l.saw_output(b"\x1b[?1000h\x1b[?1006h", now);
+        assert_eq!(l.take_input(b"\x1b[<0;10;5M", now), b"\x1b[<0;10;5M");
         l.saw_output(b"\x1b[c", now);
         assert_eq!(l.take_input(b"a\x1b[?1;2cb", now), b"a\x1b[?1;2cb");
         // An answer with nothing asked is dropped, the keys round it kept.

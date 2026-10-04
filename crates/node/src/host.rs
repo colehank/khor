@@ -1010,6 +1010,12 @@ fn host_serving(
         let commands = commands.clone();
         let history = history.clone();
         let session = id.0.clone();
+        let master = master.clone();
+        // A shell's own pty: the one whose program, once it is gone, takes
+        // its reporting modes with it (below). Never a tmux client or a
+        // viewer, whose foreground is a client of something else, nor an
+        // agent row, whose child is the program itself.
+        let shells_own = kind == khor_core::kind::SHELL && viewer.is_none() && !mux_client;
         std::thread::spawn(move || {
             // **One read is one chunk on every face, up to 64 KiB** (item
             // 18 B): a program's redraw that the PTY hands over in one
@@ -1030,15 +1036,42 @@ fn host_serving(
                     Ok(0) | Err(_) => break,
                     Ok(n) => n,
                 };
+                // Before anyone can see it: a question is pending before
+                // a face can answer it.
+                ledger.lock().unwrap().saw_output(&buf[..n], std::time::Instant::now());
+                // **Mouse tracking off once the shell has the terminal
+                // back** (item 25; the owner's zsh prompt filling with
+                // `35;6;5M…`). A program that turned mouse tracking on and
+                // exited without turning it off — killed, crashed, or
+                // careless — leaves every face sending reports to a shell
+                // that takes them as typing. When a read arrives while a
+                // mouse mode is on and the pty's foreground group is the
+                // shell itself, the host writes the modes off into the
+                // stream, after the read: the faces, the ring, its replay
+                // and the ledgers all see the same `l`. Checked only while
+                // a mouse mode is on.
+                let reset = shells_own
+                    && ledger.lock().unwrap().mouse_on()
+                    && master.lock().unwrap().process_group_leader().map(|p| p as u32) == Some(child_pid);
+                let data: std::borrow::Cow<[u8]> = if reset {
+                    ledger
+                        .lock()
+                        .unwrap()
+                        .saw_output(crate::answers::MOUSE_OFF, std::time::Instant::now());
+                    let mut v = buf[..n].to_vec();
+                    v.extend_from_slice(crate::answers::MOUSE_OFF);
+                    std::borrow::Cow::Owned(v)
+                } else {
+                    std::borrow::Cow::Borrowed(&buf[..n])
+                };
+                let n = data.len();
+                let buf = &data[..];
                 // Before the ring, and in its own scope: the screen lock
                 // is never held while holding either of the other two,
                 // so it cannot join their order (see Shared).
                 if let Some(screen) = &screen {
                     screen.lock().unwrap().feed(&buf[..n]);
                 }
-                // Before anyone can see it: a question is pending before
-                // a face can answer it.
-                ledger.lock().unwrap().saw_output(&buf[..n], std::time::Instant::now());
                 // Its own lock, never held with another.
                 let marked = commands.as_ref().and_then(|c| {
                     let mut c = c.lock().unwrap();
