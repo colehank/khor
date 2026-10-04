@@ -850,6 +850,16 @@ async fn term_prompt(id: String, up: bool) -> Result<(), String> {
     khor_gui_core::term::prompt(&Node::root_from_env(), &id, up).await
 }
 
+/// A tmux row's front pane history from an anchor on (item 31,
+/// `term::pane_history`).
+#[tauri::command]
+async fn term_pane_history(
+    id: String,
+    since: Option<khor_gui_core::term::PaneAnchor>,
+) -> Result<khor_gui_core::term::PaneHistory, String> {
+    khor_gui_core::term::pane_history(&Node::root_from_env(), &id, since).await
+}
+
 #[tauri::command]
 async fn term_wait(id: String, since: u64, ms: u64) -> Result<khor_gui_core::term::TermChunk, String> {
     khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
@@ -4050,6 +4060,7 @@ pub fn run() {
             term_stream,
             term_history,
             term_prompt,
+            term_pane_history,
             term_wait,
             bell_haptic,
             joy_haptic,

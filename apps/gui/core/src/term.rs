@@ -605,6 +605,50 @@ pub async fn prompt(root: &Path, id: &str, up: bool) -> Result<(), String> {
     n.jump_prompt_anywhere(&SessionId(id.to_owned()), up).await
 }
 
+/// Where the face's copy of a tmux pane's history ends (item 31,
+/// `khor_node::adaptor::tmux::HistoryAnchor`): handed back as it came.
+#[derive(Debug, Clone, Serialize, serde::Deserialize, TS)]
+pub struct PaneAnchor {
+    pub pane: String,
+    pub size: u32,
+    pub tail: Vec<String>,
+}
+
+/// One read of a tmux row's front pane history (item 31,
+/// `khor_node::adaptor::tmux::PaneHistory`, whose fields these are).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct PaneHistory {
+    pub pane: String,
+    pub alternate: bool,
+    pub refill: bool,
+    pub lead: String,
+    pub lines: Vec<String>,
+    pub screen: Vec<String>,
+    pub anchor: PaneAnchor,
+}
+
+/// **A tmux row's front pane history from an anchor on** (item 31,
+/// `khor_node::Node::pane_history_anywhere`): what the phone scrolls.
+pub async fn pane_history(root: &Path, id: &str, since: Option<PaneAnchor>) -> Result<PaneHistory, String> {
+    use khor_node::adaptor::tmux::HistoryAnchor;
+    let n = Node::open(root.to_path_buf())?;
+    let since = since.map(|a| HistoryAnchor { pane: a.pane, size: a.size as usize, tail: a.tail });
+    let h = n.pane_history_anywhere(&SessionId(id.to_owned()), since).await?;
+    Ok(PaneHistory {
+        pane: h.pane,
+        alternate: h.alternate,
+        refill: h.refill,
+        lead: h.lead,
+        lines: h.lines,
+        screen: h.screen,
+        anchor: PaneAnchor {
+            pane: h.anchor.pane,
+            size: h.anchor.size.min(u32::MAX as usize) as u32,
+            tail: h.anchor.tail,
+        },
+    })
+}
+
 /// The bytes since `since` — see [`TermChunk`] for the two flags.
 pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
     let term = term_of(id)?;

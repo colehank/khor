@@ -674,6 +674,15 @@ pub fn answer(
             &arg("dir")?,
             flag("failed")?,
         ))?),
+        // A tmux row's front pane history (item 31); `since` is the
+        // anchor the last answer gave, or absent for all of it.
+        "term_pane_history" => {
+            let since = match args.get("since") {
+                None | Some(serde_json::Value::Null) => None,
+                Some(v) => Some(serde_json::from_value(v.clone()).map_err(|e| format!("arg is not an anchor: since ({e})"))?),
+            };
+            to_json(&rt.block_on(crate::term::pane_history(root, &arg("id")?, since))?)
+        }
         // A tmux row's prompts, moved between by tmux (item 21).
         "term_prompt" => to_json(&rt.block_on(crate::term::prompt(root, &arg("id")?, flag("up")?))?),
         // The bridge answers one request at a time, so it never holds one

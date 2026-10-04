@@ -884,6 +884,21 @@ impl LiveKind {
         tmux.jump_prompt(&id.0, up)
     }
 
+    /// **The history of the pane a tmux row's client has in front**
+    /// (item 31, `Tmux::history`), from `since` on: what the phone scrolls
+    /// locally instead of tmux's copy mode.
+    pub fn tmux_history(
+        &self,
+        id: &SessionId,
+        since: Option<&crate::adaptor::tmux::HistoryAnchor>,
+    ) -> Result<crate::adaptor::tmux::PaneHistory, String> {
+        let tmux = self
+            .discovery
+            .tmux()
+            .ok_or_else(|| msg::no_terminal_here(&id.0))?;
+        tmux.history(&id.0, since)
+    }
+
     /// **The address a face attaches to for this row, on the machine
     /// that hosts it** — what a far machine's `Reach` is answered with,
     /// and this machine's own reach of itself.

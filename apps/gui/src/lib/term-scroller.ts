@@ -55,7 +55,13 @@ export function scrollsNatively(
   scroller: HTMLElement,
   room: HTMLElement,
   screen: HTMLElement,
+  opts: {
+    /** Another binding has the scroller for now (a tmux pane's history,
+        `lib/term-tmux-history`): this one does nothing until it is back. */
+    yields?: () => boolean;
+  } = {},
 ): { sync: () => void; stop: () => void } {
+  const yields = opts.yields ?? (() => false);
   let row = 0;
   let kicked = false;
   // The `scrollTop` this code set last, until its scroll event comes back.
@@ -93,7 +99,7 @@ export function scrollsNatively(
   /** xterm's own line → the scroller's range and place. */
   const sync = () => {
     frame = 0;
-    if (!measure()) return;
+    if (yields() || !measure()) return;
     const b = term.buffer.active;
     const inert = programScrolls(term);
     // **Output under a finger goes into the buffer only** (item 30; the
@@ -141,6 +147,7 @@ export function scrollsNatively(
   };
   /** The scroller's place → xterm's line. */
   const scrolled = () => {
+    if (yields()) return;
     const top = scroller.scrollTop;
     if (echo !== null && Math.abs(top - echo) < 1) {
       echo = null;
@@ -186,7 +193,7 @@ export function scrollsNatively(
   };
   /** A scroll that stopped between two rows goes to the nearer one. */
   const rest = () => {
-    if (touching > 0) return;
+    if (touching > 0 || yields()) return;
     // The gesture is over: the range and the place set once, from xterm's
     // line (which followed the finger, trims and all).
     if (held) {
@@ -212,7 +219,7 @@ export function scrollsNatively(
   // Capture, on the way down: a wheel the scroller will take must not
   // reach xterm's scroller, which would take it first and cancel it.
   const wheel = (e: WheelEvent) => {
-    if (programScrolls(term)) return;
+    if (yields() || programScrolls(term)) return;
     e.stopPropagation();
     personAt = performance.now();
   };

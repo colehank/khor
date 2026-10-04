@@ -6063,6 +6063,25 @@ impl Node {
             .map_err(|e| e.to_string())?
     }
 
+    /// **A tmux row's front pane history** (item 31, `LiveKind::tmux_history`),
+    /// for the phone's local scroll. On this machine only for now: a row
+    /// on another machine answers as an action that machine does not know,
+    /// and the face keeps tmux's own scrolling.
+    pub async fn pane_history_anywhere(
+        &self,
+        id: &crate::SessionId,
+        since: Option<crate::adaptor::tmux::HistoryAnchor>,
+    ) -> Result<crate::adaptor::tmux::PaneHistory, String> {
+        if self.far_machine(id)?.is_some() {
+            return Err(msg::unknown_action("pane-history"));
+        }
+        let live = self.live.clone();
+        let id = id.clone();
+        tokio::task::spawn_blocking(move || live.tmux_history(&id, since.as_ref()))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+
     async fn act_on_with(&self, ep: &iroh::Endpoint, machine: &str, session: &str, action: &str) -> Result<(), String> {
         let (channel, _) = self.resolve(machine)?;
         let req = Request::Act {

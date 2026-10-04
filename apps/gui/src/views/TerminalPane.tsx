@@ -63,7 +63,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termPrompt, termResize, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termOpen, termPaneHistory, termPrompt, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { peekOf, type Peek } from "@/lib/term-peek";
@@ -104,6 +104,7 @@ import { kittyFlags, kittyKey, kittyProtocol, kittyTyped } from "@/lib/term-kitt
 import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
+import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { viewportMoving } from "@/lib/viewport";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
@@ -770,7 +771,12 @@ export const wheeled = new WeakSet<Event>();
  * scroller's (`scrollsNatively`). A drag that starts sideways is left
  * alone (the page's edge swipe).
  */
-function fingerWheels(term: Terminal, box: HTMLElement): () => void {
+function fingerWheels(
+  term: Terminal,
+  box: HTMLElement,
+  /** The drag scrolls a tmux pane's history instead (item 31). */
+  yields: () => boolean,
+): () => void {
   let lastY: number | null = null;
   let startX = 0;
   let startY = 0;
@@ -784,7 +790,7 @@ function fingerWheels(term: Terminal, box: HTMLElement): () => void {
     target = e.target;
   };
   const move = (e: TouchEvent) => {
-    if (lastY === null || e.touches.length !== 1 || !programScrolls(term)) return;
+    if (lastY === null || e.touches.length !== 1 || !programScrolls(term) || yields()) return;
     const t = e.touches[0];
     if (!mine) {
       // Whose drag this is, once it has gone anywhere: up or down is the
@@ -1337,6 +1343,7 @@ export function TerminalPane({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
   const doingRef = useRef(doing);
   doingRef.current = doing;
   // The native scroller around the terminal, and the room after it that
@@ -2339,9 +2346,24 @@ export function TerminalPane({
       setHistory({ cwd: marks.cwd(), atPrompt: !marks.running() && !!at?.input && !at.output });
     };
     const selects = pressSelects(term, box, (row, x, y) => showBlock(row, x, y, true));
-    const dragged = fingerWheels(term, box);
+    // **A tmux row on a phone scrolls the front pane's history here**
+    // (item 31, `lib/term-tmux-history`), not tmux's copy mode by the
+    // wheel; a mouse's page keeps the wheel going to tmux.
+    let tmuxHistory: ReturnType<typeof holdsTmuxHistory> | null = null;
+    const historyHas = () => tmuxHistory?.active() ?? false;
+    const dragged = fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
-    const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount);
+    const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas });
+    if (TMUX_ROW.test(id) && window.matchMedia("(pointer: coarse)").matches) {
+      tmuxHistory = holdsTmuxHistory({
+        live: term,
+        seat: historyRef.current!,
+        scroller: scrollerRef.current!,
+        room: roomRef.current!,
+        read: (since) => termPaneHistory(id, since),
+        changed: () => native.sync(),
+      });
+    }
     syncScroller.current = () => {
       native.sync();
       trace("replayed");
@@ -2456,6 +2478,7 @@ export function TerminalPane({
       box.removeEventListener("input", metaEcho, true);
       dragged();
       swiped();
+      tmuxHistory?.stop();
       native.stop();
       selects();
       relined();
@@ -2730,6 +2753,9 @@ export function TerminalPane({
             // screen that arrived, not a live one.
             className={cn("h-full w-full transition-opacity", rejoining && "opacity-50")}
           />
+          {/* A tmux pane's history on a phone (item 31), over the live
+              screen while the person is up in it. */}
+          <div data-term-history ref={historyRef} className="invisible absolute inset-0" />
         </div>
         <div data-term-room ref={roomRef} aria-hidden />
       </div>

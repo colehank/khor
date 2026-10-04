@@ -61,6 +61,8 @@ import type { RecentRow } from "./gen/bindings/RecentRow";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
 import type { TermStart } from "./gen/bindings/TermStart";
 import type { TermChunk } from "./gen/bindings/TermChunk";
+import type { PaneAnchor } from "./gen/bindings/PaneAnchor";
+import type { PaneHistory } from "./gen/bindings/PaneHistory";
 import type { AgentRow } from "./gen/bindings/AgentRow";
 import type { KnownAgent } from "./gen/bindings/KnownAgent";
 import type { AgentSaid } from "./gen/bindings/AgentSaid";
@@ -1353,6 +1355,10 @@ export const fetchCommandHistory = (machine: string, text: string, dir: string, 
 /** The prompt before (`up`) or after the one in view in a tmux row's
     front pane (item 21): tmux holds that screen, so tmux moves. */
 export const termPrompt = (id: string, up: boolean) => call<null>("term_prompt", { id, up });
+/** A tmux row's front pane history from `since` on, or all of it
+    (item 31): what the phone scrolls instead of tmux's copy mode. */
+export const termPaneHistory = (id: string, since: PaneAnchor | null) =>
+  call<PaneHistory>("term_pane_history", { id, since });
 /** Whether the machine khor's backend runs on has a recycle bin. Asked
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */
