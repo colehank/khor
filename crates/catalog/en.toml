@@ -1894,6 +1894,10 @@ term-reload = "Reload Terminal"
 page-back = "Previous page"
 page-forward = "Next page"
 page-reload = "Reload"
+# The tab pill's third seat while a page loads (UX-33): stop the load.
+page-stop = "Stop"
+# …and on a file tab that is clean: read it from the disk again.
+file-reread = "Read Again"
 mesh-map = "Machines in the mesh"
 # Tombstone (2026-10-02): `from-device` named the machine a reported
 # session row came from, on the row's second line. Retired: the row's

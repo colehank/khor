@@ -468,6 +468,11 @@ pub fn step(tab: &str, way: &str) {
                         load(&page.view, &page.url);
                         None
                     }
+                    // The pill's × while a page loads (UX-33).
+                    "stop" => {
+                        let _: () = msg_send![&*page.view, stopLoading];
+                        None
+                    }
                     _ => msg_send![&*page.view, reload],
                 };
             }

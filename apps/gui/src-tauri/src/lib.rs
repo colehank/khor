@@ -1890,6 +1890,9 @@ fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), Stri
         "back" => view.eval("history.back()").map_err(|e| e.to_string()),
         "forward" => view.eval("history.forward()").map_err(|e| e.to_string()),
         "reload" => view.reload().map_err(|e| e.to_string()),
+        // The pill's × while a page loads (UX-33): the page's own stop
+        // (wry has no verb for it; the load ends as a cancelled one).
+        "stop" => view.eval("window.stop()").map_err(|e| e.to_string()),
         // 重试 (UX-22): where the last load failed to go, again — a
         // reload would load the page still there. A Mac that heard no
         // failure, or a platform that hears none, reloads.
