@@ -316,6 +316,28 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
+/* **Chrome never pans the screen** (the owner, 2026-10-05, iPhone build
+   5: 「只要在输入框往上滑，就会抖动」). A drag that starts on something that
+   cannot scroll that way was handed to the webview's own scroll view,
+   which rubber-banded the whole face. The deck, the bar it stands in, the
+   top strip and the landings' capsule decline a pan; taps, the pill's
+   sideways swipe and the joystick are pointer events of their own and
+   are untouched. A scroller inside (the tab strip, the key row, the box)
+   is a scroll container, where WebKit starts the count again, so it keeps
+   its own: the key row pans sideways and nothing else. The box keeps a
+   drag at its end to itself (`overscroll-behavior`, the rule every inner
+   scroller already has by its overflow utility, further down). The
+   native half is `hold_the_face_still` (lib.rs); `check-face` bar l. */
+:is([data-session-bar], [data-session-top], [data-float-nav]) {
+  touch-action: none;
+}
+[data-term-keys-scroll] {
+  touch-action: pan-x;
+}
+[data-composer-text] {
+  overscroll-behavior: contain;
+}
+
 /* **A selected row: a grey block, not the brand** (2026-09-27, the
    owner: 选中行「太亮」; and 额度's rings vanished on the solid — their
    pale track has nothing to stand on over `--brand-strong`). This

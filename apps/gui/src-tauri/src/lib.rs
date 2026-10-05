@@ -3242,6 +3242,37 @@ fn wear_on_the_windows(theme: &str) {
     }
 }
 
+/// **The face's own scroll view never bounces** (the owner, 2026-10-05,
+/// iPhone build 5: 「只要在输入框往上滑，就会抖动」). A drag that starts on
+/// something that cannot scroll that way — the chat composer with a line
+/// or two, the deck, the key row, the bottom capsule — is taken by the
+/// WKWebView's own UIScrollView, which rubber-bands the whole document,
+/// while `lib/viewport` pans it back: the two fought frame by frame until
+/// the finger lifted. CSS (`overflow: hidden`, `overscroll-behavior`) on
+/// the root does not reach the native scroll view. The face is nailed
+/// down (`tokens.css`); every scroller in it is an element of its own.
+/// Main thread only (`with_webview` runs there).
+#[cfg(target_os = "ios")]
+fn hold_the_face_still(webview: *mut std::ffi::c_void) {
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2::msg_send;
+    // SAFETY: UIKit on the main thread; the live webview this closure was
+    // handed, and documented UIScrollView setters.
+    unsafe {
+        let wv = webview as *mut AnyObject;
+        if wv.is_null() {
+            return;
+        }
+        let scroll: *mut AnyObject = msg_send![wv, scrollView];
+        if scroll.is_null() {
+            return;
+        }
+        let _: () = msg_send![scroll, setBounces: Bool::NO];
+        let _: () = msg_send![scroll, setAlwaysBounceVertical: Bool::NO];
+        let _: () = msg_send![scroll, setAlwaysBounceHorizontal: Bool::NO];
+    }
+}
+
 /// **No form-assistant bar above the keyboard** (2026-10-03, the owner on
 /// a phone): WKWebView puts ‹ › and a ✓ over the soft keyboard for every
 /// focused field — 44 points that mean nothing over a terminal, whose
@@ -3871,6 +3902,7 @@ pub fn run() {
                 let _ = _phone.with_webview(|wv| {
                     drop_the_form_bar(wv.inner());
                     wear_the_ground(wv.inner());
+                    hold_the_face_still(wv.inner());
                 });
             }
             Ok(())
