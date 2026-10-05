@@ -135,8 +135,17 @@ export function SessionScreen({
   folded: foldedAsked,
   onUnfold,
   loading = false,
+  editor,
+  onEditCancel,
   children,
 }: {
+  /** **The pill is the address editor while this is given** (UX-18, the
+      owner 2026-10-05: the browser has one deck): the pill's own things
+      give way to the editor drawn inside its glass — the pill's ← → and
+      reload with them — and 取消 stands where the tabs circle was until
+      the editor is put away. */
+  editor?: ReactNode;
+  onEditCancel?: () => void;
   /** **The deck folds to a strip while the content is read** (round UX-3
       §3; UX-13 for every content page, `lib/deck-fold`): ‹, the pill and
       the circles give way to a thin strip with the title — and a
@@ -329,53 +338,72 @@ export function SessionScreen({
           <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
           </GlassCircle>
-          <div
-            data-deck-pill
-            aria-label={gui.session_tabs}
-            className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1"
-            onPointerDown={(e) => {
-              swipe.current = { x: e.clientX, y: e.clientY };
-            }}
-            onPointerUp={(e) => {
-              const from = swipe.current;
-              swipe.current = null;
-              if (!from) return;
-              const dx = e.clientX - from.x;
-              if (Math.abs(dx) > SWIPE_STEPS && Math.abs(dx) > 2 * Math.abs(e.clientY - from.y)) step(dx < 0 ? 1 : -1);
-            }}
-          >
-            <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
-            {face && (
-              <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
-                <TabAvatar f={face} bare="size-tab-face" seat="tab" />
-              </span>
-            )}
-            {onTitle ? (
-              <button type="button" data-deck-title onClick={onTitle} className="min-w-0 flex-1 truncate text-left text-body">
-                {face?.label ?? ""}
-              </button>
-            ) : (
-              <span data-deck-title className="min-w-0 flex-1 truncate text-body">
-                {face?.label ?? ""}
-              </span>
-            )}
-            {caption && (
-              <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
-                {caption}
-              </span>
-            )}
-            <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
-          </div>
-          <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center gap-in empty:hidden" />
-          <GlassCircle
-            data-deck-tabs
-            data-tab-count
-            aria-label={gui.switch_tabs(faces.length)}
-            aria-expanded={sheet}
-            onClick={() => setSheet(true)}
-          >
-            <TabsGlyph n={faces.length} />
-          </GlassCircle>
+          {editor ? (
+            <div data-deck-pill data-deck-editing className="glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full">
+              {editor}
+            </div>
+          ) : (
+            <div
+              data-deck-pill
+              aria-label={gui.session_tabs}
+              className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1"
+              onPointerDown={(e) => {
+                swipe.current = { x: e.clientX, y: e.clientY };
+              }}
+              onPointerUp={(e) => {
+                const from = swipe.current;
+                swipe.current = null;
+                if (!from) return;
+                const dx = e.clientX - from.x;
+                if (Math.abs(dx) > SWIPE_STEPS && Math.abs(dx) > 2 * Math.abs(e.clientY - from.y)) step(dx < 0 ? 1 : -1);
+              }}
+            >
+              <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
+              {face && (
+                <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
+                  <TabAvatar f={face} bare="size-tab-face" seat="tab" />
+                </span>
+              )}
+              {onTitle ? (
+                <button type="button" data-deck-title onClick={onTitle} className="min-w-0 flex-1 truncate text-left text-body">
+                  {face?.label ?? ""}
+                </button>
+              ) : (
+                <span data-deck-title className="min-w-0 flex-1 truncate text-body">
+                  {face?.label ?? ""}
+                </span>
+              )}
+              {caption && (
+                <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
+                  {caption}
+                </span>
+              )}
+              <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
+            </div>
+          )}
+          {editor ? (
+            <button
+              type="button"
+              data-deck-edit-cancel
+              onClick={onEditCancel}
+              className="glass flex h-glass-btn flex-none items-center rounded-full px-row text-body"
+            >
+              {gui.delete_keep}
+            </button>
+          ) : (
+            <>
+              <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center gap-in empty:hidden" />
+              <GlassCircle
+                data-deck-tabs
+                data-tab-count
+                aria-label={gui.switch_tabs(faces.length)}
+                aria-expanded={sheet}
+                onClick={() => setSheet(true)}
+              >
+                <TabsGlyph n={faces.length} />
+              </GlassCircle>
+            </>
+          )}
         </div>
         <div ref={setUnder} data-session-bar-under className="flex flex-none flex-col empty:hidden" />
       </div>

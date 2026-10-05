@@ -2302,14 +2302,14 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
 }
 
-/* **The browser's deck steps aside while the keyboard is up** (round
-   UX-3): the address being edited rides the keyboard alone, and the deck
-   comes back with it down. **Only the browser's** (the UX-13 addendum, the
+/* **The browser's deck steps aside for the page's own keyboard** (round
+   UX-3), and comes back with it down — but not while its pill is the
+   address editor (UX-18), which is what the keyboard is up for. **Only the browser's** (the UX-13 addendum, the
    owner 2026-10-05: 「一个甲板规则」): a terminal's deck stands over its key
    row over the keyboard (UX-12), and a conversation's over its box — two
    rows over the keyboard either way. ⚠️ 墓碑: every deck but a terminal's
    stepped aside (`:not(:has([data-key-row-switch]))`). */
-:root[data-keyboard] [data-session-screen]:has([data-browse-landing]) [data-session-deck] {
+:root[data-keyboard] [data-session-screen]:has([data-browse-landing]) [data-session-deck]:not(:has([data-deck-editing])) {
   display: none;
 }
 

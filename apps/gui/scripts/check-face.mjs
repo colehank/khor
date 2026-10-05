@@ -28747,6 +28747,58 @@ try {
       await page.route("**/machine_log", json({ messages: [], broken: 0 }));
     }
 
+    // ── o. the browser has one deck; the pill is the address editor
+    //       (UX-18, the owner 2026-10-05). A fresh tab: the pill is
+    //       already the editor (the field inside the pill's glass), the
+    //       machine the last one used, no row under the deck, 取消 where
+    //       the tabs circle was, no ← →. 取消: the pill with the tab's
+    //       title. A tap on the title: the editor again. ──
+    {
+      const peerId = "f".repeat(64);
+      await page.evaluate((id) => window.localStorage.setItem("khor.page-machine", id), peerId);
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      if (!(await open("browser"))) {
+        fail("probe dead: bar o · the browser landing never opened on the narrow face");
+      } else {
+        await wait(400);
+        await press("[data-side-head] [data-pane-new]");
+        const read = () =>
+          page.evaluate(() => {
+            const bar = document.querySelector("[data-session-bar]");
+            return bar
+              ? {
+                  editing: bar.querySelectorAll("[data-deck-pill][data-deck-editing] [data-page-field]").length,
+                  ownGlass: bar.querySelectorAll("[data-deck-editing] [data-page-field].glass").length,
+                  machine: bar.querySelector("[data-deck-editing] [data-page-machine-face]")?.getAttribute("aria-label") ?? null,
+                  under: bar.querySelector("[data-session-bar-under]")?.children.length ?? -1,
+                  cancel: bar.querySelectorAll("[data-deck-edit-cancel]").length,
+                  tabs: bar.querySelectorAll("[data-deck-tabs]").length,
+                  steps: bar.querySelectorAll("[data-page-step]").length,
+                  title: bar.querySelector("[data-deck-title]")?.textContent?.trim() ?? null,
+                }
+              : null;
+          });
+        await until(4_000, async () => (await read())?.editing === 1);
+        await wait(400);
+        const fresh = await read();
+        if (fresh) await press("[data-deck-edit-cancel]");
+        await wait(300);
+        const put = await read();
+        if (put?.title !== null && put) await press("[data-session-bar] [data-deck-title]");
+        await wait(300);
+        const again = await read();
+        console.log(`bar o · a fresh tab ${shown(fresh)}; 取消 ${shown(put)}; the title tapped ${shown(again)}`);
+        if (!fresh || fresh.editing !== 1 || fresh.ownGlass !== 0 || fresh.under !== 0 || fresh.cancel !== 1 || fresh.tabs !== 0 || fresh.steps !== 0) {
+          fail(`bar o · a fresh browser tab's deck reads ${shown(fresh)} — the pill is the editor (no glass of its own), nothing under the deck, 取消 in the tabs circle's place, no ← → (UX-18)`);
+        }
+        if (fresh && fresh.machine !== "peer") fail(`bar o · a fresh tab's machine is ${shown(fresh.machine)} — the last one used (peer)`);
+        if (!put || put.editing !== 0 || put.cancel !== 0 || put.tabs !== 1 || !put.title) fail(`bar o · 取消 left ${shown(put)} — the pill with the tab's title, the tabs circle back`);
+        if (!again || again.editing !== 1) fail(`bar o · a tap on the pill's title left ${shown(again)} — the pill turns into the editor`);
+      }
+      await page.evaluate(() => window.localStorage.removeItem("khor.page-machine"));
+    }
+
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
     for (const r of ["**/term_open", "**/term_attach", "**/term_stream", "**/term_resize", "**/term_leave", "**/term_key", "**/machine_log"]) await page.unroute(r);
