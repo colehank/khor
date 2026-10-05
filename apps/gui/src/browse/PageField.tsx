@@ -41,6 +41,26 @@ export function reachable(devices: DeviceRow[]): DeviceRow[] {
   return devices.filter((d) => d.me || (d.hop !== null && d.hop !== "quiet" && !d.paused));
 }
 
+/** **The machine a page last went out through** (UX-18): a fresh tab
+    starts there. Per screen, as the tabs themselves are. */
+const LAST_MACHINE = "khor.page-machine";
+
+export function lastPageMachine(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_MACHINE);
+  } catch {
+    return null;
+  }
+}
+
+export function rememberPageMachine(id: string) {
+  try {
+    window.localStorage.setItem(LAST_MACHINE, id);
+  } catch {
+    // A private window keeps nothing; the next tab asks again.
+  }
+}
+
 
 export function PageField({
   tab,
@@ -53,6 +73,7 @@ export function PageField({
   steps = true,
   autoFocus = false,
   onLeave,
+  inPill = false,
 }: {
   /** The page this field steps (back, forward, reload). */
   tab: string;
@@ -71,7 +92,13 @@ export function PageField({
   autoFocus?: boolean;
   /** The caret left the address: the deck puts the field away. */
   onLeave?: () => void;
+  /** **The deck's pill is the editor** (UX-18): the field is drawn inside
+      the pill's own glass, not as a glass field of its own. */
+  inPill?: boolean;
 }) {
+  const shell = inPill
+    ? "flex h-full min-w-0 flex-1 items-center rounded-full"
+    : "glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full";
   const [draft, setDraft] = useState(at);
   const [picking, setPicking] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -184,7 +211,7 @@ export function PageField({
                 const d = reachable(devices)[0];
                 if (d) choose(d);
               }}
-              className="glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full px-row text-left text-body text-tertiary"
+              className={cn(shell, "px-row text-left text-body text-tertiary")}
             >
               {gui.page_choose_machine}
             </button>
@@ -194,14 +221,14 @@ export function PageField({
                 type="button"
                 data-page-field
                 data-page-field-empty
-                className="glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full px-row text-left text-body text-tertiary"
+                className={cn(shell, "px-row text-left text-body text-tertiary")}
               >
                 {gui.page_choose_machine}
               </button>
             </DropdownMenuTrigger>
           )
         ) : (
-          <label data-page-field className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-row">
+          <label data-page-field className={cn(shell, "gap-in ps-1 pe-row")}>
             {fixed || only ? (
               <span data-page-machine-face className="grid size-glass-item-h flex-none place-items-center">
                 <MachineAvatar face={machine.face} className="size-tab-face" />

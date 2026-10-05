@@ -100,7 +100,8 @@ import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
-import { DetailPane } from "@/views/DetailPane";
+import { DetailPane, isTerminal } from "@/views/DetailPane";
+import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
 import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
@@ -2334,10 +2335,25 @@ export default function App() {
       bar; the session bar at its foot. */
   const fullScreen =
     inSession || (narrow && browses && morePage === null && screen === "detail") || (narrow && fullClaims > 0);
+  /** **The terminal pill opens the session's directory** (UX-17): where
+      its shell is now (the terminal's OSC 7 marks), else where it
+      started. Read at the tap, off the terminal on screen. */
+  const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
+  const terminalPill = selectedRow !== null && isTerminal(selectedRow);
   const sessionScreen = (
     <SessionScreen
       faces={tabFaces}
       active={selected ?? ""}
+      onTitle={
+        terminalPill
+          ? () => {
+              const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
+                | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
+                | null;
+              setPlaceSheet({ dir: box?.__marks?.cwd() ?? selectedRow?.place ?? null });
+            }
+          : undefined
+      }
       onFocus={(id) => {
         sessionTabs.focus(id);
         setScreen("detail");
@@ -2357,6 +2373,18 @@ export default function App() {
       caption={stale ? gui.backend_unreachable : undefined}
     >
       {detail}
+      {placeSheet && selectedRow && (
+        <SessionPlaceSheet
+          key={selectedRow.id}
+          open
+          onOpenChange={(o) => !o && setPlaceSheet(null)}
+          session={selectedRow.id}
+          machine={selectedRow.home}
+          here={devices.find((d) => d.name === selectedRow.home)?.me ?? !selectedRow.source}
+          dir={placeSheet.dir}
+          day={dayOf(selectedRow.id)}
+        />
+      )}
     </SessionScreen>
   );
 

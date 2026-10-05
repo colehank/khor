@@ -28063,7 +28063,9 @@ try {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await open("sessions");
       const row = `[data-list] [data-row="${id}"] [data-row-open]`;
-      if (!(await until(3_000, async () => (await count(row)) > 0))) return false;
+      // Visible, not only there: the list stays mounted under a pushed
+      // screen (UX-11) and is hidden until the way back has settled.
+      if (!(await until(3_000, async () => page.locator(row).first().isVisible().catch(() => false)))) return false;
       await page.locator(row).click();
       return until(5_000, async () => (await count("[data-session-screen], [data-detail-pane]")) > 0);
     };
@@ -28595,6 +28597,260 @@ try {
           `bar l · lib/viewport called scrollTo ${takes.onScroll}× during ten visual-viewport scrolls and ${takes.afterFocus}× after a focus — ` +
             "the pan is taken back once after the keyboard rose, never per scroll (it fought WebKit's bounce frame by frame)",
         );
+      }
+    }
+
+    // ── m. the deck folds on the terminal; the grid never changes size
+    //       (UX-13, the owner 2026-10-05: 「Claude Code 不能重绘」). 300
+    //       lines, then the scroller moved up into the history: the strip
+    //       replaces the deck, the pane's root says `data-folded="true"`
+    //       with `--fold-band` whole rows of it, the box grew by exactly
+    //       the band while the bar shrank by it, and the pty was told
+    //       nothing. Back at the bottom it unfolds; with the keyboard up
+    //       it never folds. ──
+    if (!(await openRow(terms[1].id)) || !(await xtermUp())) {
+      fail("probe dead: bar m · a terminal never opened under a finger");
+    } else {
+      await program(Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\r\n"));
+      const state = () =>
+        page.evaluate(() => {
+          const root = document.querySelector("[data-kept-terminal][data-active]");
+          const box = root?.querySelector("[data-terminal]");
+          const bar = document.querySelector("[data-session-bar]");
+          const band = root ? getComputedStyle(root).getPropertyValue("--fold-band") : "";
+          const probe = document.createElement("div");
+          probe.style.height = band || "0px";
+          root?.appendChild(probe);
+          const bandPx = probe.getBoundingClientRect().height;
+          probe.remove();
+          return {
+            strip: document.querySelectorAll("[data-session-bar] [data-deck-strip]").length,
+            deck: !!document.querySelector("[data-session-deck]")?.getClientRects().length,
+            folded: root?.getAttribute("data-folded") ?? null,
+            row: parseFloat(root ? getComputedStyle(root).getPropertyValue("--term-row") : "") || 0,
+            band: +bandPx.toFixed(2),
+            box: +(box?.getBoundingClientRect().height ?? 0).toFixed(2),
+            bar: +(bar?.getBoundingClientRect().height ?? 0).toFixed(2),
+            rows: document.querySelector("[data-terminal]")?.__xterm?.rows,
+          };
+        });
+      const scrollTo = (fromBottom) =>
+        page.evaluate((d) => {
+          const s = document.querySelector("[data-kept-terminal][data-active] [data-term-scroller]");
+          s.scrollTop = Math.max(0, s.scrollHeight - s.clientHeight - d);
+        }, fromBottom);
+      const rest = await state();
+      resized.length = 0;
+      await scrollTo(100);
+      await wait(150);
+      await scrollTo(400);
+      await until(2_000, async () => (await state()).strip === 1);
+      await wait(300);
+      const up = await state();
+      await scrollTo(0);
+      await until(2_000, async () => (await state()).strip === 0);
+      await wait(300);
+      const back = await state();
+      console.log(`bar m · at rest ${shown(rest)}; up in the history ${shown(up)}; back at the bottom ${shown(back)}; told the pty ${shown(resized)}`);
+      if (up.strip !== 1 || up.deck || up.folded !== "true") {
+        fail(`bar m · 400 px up into the history: strip ${up.strip}, deck ${up.deck ? "shown" : "gone"}, data-folded ${shown(up.folded)} — the deck folds into the strip (UX-13)`);
+      }
+      if (!(up.row > 0) || Math.abs(up.band - 2 * up.row) > 0.5) fail(`bar m · --fold-band is ${up.band} px for rows of ${up.row} — two whole rows (term's item 32 slot)`);
+      if (Math.abs(up.box - rest.box - up.band) > 1 || Math.abs(rest.bar - up.bar - up.band) > 1) {
+        fail(`bar m · folded, the box went ${rest.box} → ${up.box} and the bar ${rest.bar} → ${up.bar} — the box grows by the band (${up.band}) and the bar keeps the rest of the deck`);
+      }
+      if (resized.length !== 0 || up.rows !== rest.rows || back.rows !== rest.rows) {
+        fail(`bar m · the fold told the pty ${shown(resized)} and the grid went ${rest.rows} → ${up.rows} → ${back.rows} — the grid never changes size`);
+      }
+      if (back.strip !== 0 || !back.deck || back.folded !== null || Math.abs(back.box - rest.box) > 1) {
+        fail(`bar m · back at the bottom ${shown(back)} — the deck is back, the root unfolded, the box at rest's ${rest.box}`);
+      }
+      await page.evaluate(() => window.__keyboard(300));
+      await until(2_000, async () => page.evaluate(() => document.documentElement.hasAttribute("data-keyboard")));
+      await wait(400);
+      await scrollTo(100);
+      await wait(150);
+      await scrollTo(400);
+      await wait(600);
+      const typing = await state();
+      await page.evaluate(() => window.__keyboard(0));
+      // The keyboard's refit puts the scroller back where xterm's view
+      // is (400 up); down to the bottom after it has settled.
+      await wait(700);
+      await scrollTo(0);
+      await until(2_000, async () => (await state()).strip === 0);
+      if (typing.strip !== 0 || typing.folded !== null) fail(`bar m · with the keyboard up a scroll into the history folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
+    }
+
+    // ── n. a conversation folds the same way, and keeps its deck over
+    //       the box with the keyboard up (the UX-13 addendum, 「一个甲板
+    //       规则」): 80 messages, read upward → the strip, the box stays;
+    //       at the bottom → the deck; keyboard up → the deck and the box,
+    //       two rows. ──
+    {
+      const said = Array.from({ length: 80 }, (_, i) => ({
+        id: `m${i}`,
+        at_ms: Date.now() - (80 - i) * 60_000,
+        from: i % 2 ? "peer" : "gate",
+        from_me: i % 2 === 0,
+        text: `message ${i}`,
+        files: null,
+        unknown: null,
+        retracted: false,
+        edited: false,
+        word: null,
+        delivery: null,
+      }));
+      await page.unroute("**/machine_log");
+      await page.route("**/machine_log", json({ messages: said, broken: 0 }));
+      // The list screen a beat after the terminal's 「‹」, before the row.
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await open("sessions");
+      await wait(400);
+      if (!(await openRow(chatRow.id)) || !(await until(5_000, async () => (await count("[data-machine-chat-scroll] *")) > 40))) {
+        fail("probe dead: bar n · the machine conversation never drew its 80 messages");
+      } else {
+        await wait(500);
+        const read = () =>
+          page.evaluate(() => ({
+            strip: document.querySelectorAll("[data-session-bar] [data-deck-strip]").length,
+            deck: !!document.querySelector("[data-session-deck]")?.getClientRects().length,
+            box: document.querySelectorAll("[data-session-bar-under] [data-composer-text]").length,
+          }));
+        const scrollTo = (fromBottom) =>
+          page.evaluate((d) => {
+            const s = document.querySelector("[data-machine-chat-scroll]");
+            s.scrollTop = Math.max(0, s.scrollHeight - s.clientHeight - d);
+          }, fromBottom);
+        await scrollTo(0);
+        await wait(200);
+        await scrollTo(100);
+        await wait(150);
+        await scrollTo(500);
+        await until(2_000, async () => (await read()).strip === 1);
+        const up = await read();
+        await scrollTo(0);
+        await until(2_000, async () => (await read()).strip === 0);
+        const back = await read();
+        await page.evaluate(() => window.__keyboard(300));
+        await until(2_000, async () => page.evaluate(() => document.documentElement.hasAttribute("data-keyboard")));
+        await wait(400);
+        const typing = await read();
+        await page.evaluate(() => window.__keyboard(0));
+        await wait(300);
+        console.log(`bar n · a conversation read upward ${shown(up)}; at the bottom ${shown(back)}; keyboard up ${shown(typing)}`);
+        if (up.strip !== 1 || up.deck || up.box !== 1) fail(`bar n · read upward the conversation shows ${shown(up)} — the strip in the deck's place, the box kept`);
+        if (back.strip !== 0 || !back.deck) fail(`bar n · back at the bottom ${shown(back)} — the deck is back`);
+        if (typing.strip !== 0 || !typing.deck || typing.box !== 1) fail(`bar n · with the keyboard up ${shown(typing)} — the deck stays over the box, two rows (UX-13 addendum)`);
+      }
+      await page.unroute("**/machine_log");
+      await page.route("**/machine_log", json({ messages: [], broken: 0 }));
+    }
+
+    // ── o. the browser has one deck; the pill is the address editor
+    //       (UX-18, the owner 2026-10-05). A fresh tab: the pill is
+    //       already the editor (the field inside the pill's glass), the
+    //       machine the last one used, no row under the deck, 取消 where
+    //       the tabs circle was, no ← →. 取消: the pill with the tab's
+    //       title. A tap on the title: the editor again. ──
+    {
+      const peerId = "f".repeat(64);
+      await page.evaluate((id) => window.localStorage.setItem("khor.page-machine", id), peerId);
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      if (!(await open("browser"))) {
+        fail("probe dead: bar o · the browser landing never opened on the narrow face");
+      } else {
+        await wait(400);
+        await press("[data-side-head] [data-pane-new]");
+        const read = () =>
+          page.evaluate(() => {
+            const bar = document.querySelector("[data-session-bar]");
+            return bar
+              ? {
+                  editing: bar.querySelectorAll("[data-deck-pill][data-deck-editing] [data-page-field]").length,
+                  ownGlass: bar.querySelectorAll("[data-deck-editing] [data-page-field].glass").length,
+                  machine: bar.querySelector("[data-deck-editing] [data-page-machine-face]")?.getAttribute("aria-label") ?? null,
+                  under: bar.querySelector("[data-session-bar-under]")?.children.length ?? -1,
+                  cancel: bar.querySelectorAll("[data-deck-edit-cancel]").length,
+                  tabs: bar.querySelectorAll("[data-deck-tabs]").length,
+                  steps: bar.querySelectorAll("[data-page-step]").length,
+                  title: bar.querySelector("[data-deck-title]")?.textContent?.trim() ?? null,
+                }
+              : null;
+          });
+        await until(4_000, async () => (await read())?.editing === 1);
+        await wait(400);
+        const fresh = await read();
+        if (fresh) await press("[data-deck-edit-cancel]");
+        await wait(300);
+        const put = await read();
+        if (put?.title !== null && put) await press("[data-session-bar] [data-deck-title]");
+        await wait(300);
+        const again = await read();
+        console.log(`bar o · a fresh tab ${shown(fresh)}; 取消 ${shown(put)}; the title tapped ${shown(again)}`);
+        if (!fresh || fresh.editing !== 1 || fresh.ownGlass !== 0 || fresh.under !== 0 || fresh.cancel !== 1 || fresh.tabs !== 0 || fresh.steps !== 0) {
+          fail(`bar o · a fresh browser tab's deck reads ${shown(fresh)} — the pill is the editor (no glass of its own), nothing under the deck, 取消 in the tabs circle's place, no ← → (UX-18)`);
+        }
+        if (fresh && fresh.machine !== "peer") fail(`bar o · a fresh tab's machine is ${shown(fresh.machine)} — the last one used (peer)`);
+        if (!put || put.editing !== 0 || put.cancel !== 0 || put.tabs !== 1 || !put.title) fail(`bar o · 取消 left ${shown(put)} — the pill with the tab's title, the tabs circle back`);
+        if (!again || again.editing !== 1) fail(`bar o · a tap on the pill's title left ${shown(again)} — the pill turns into the editor`);
+      }
+      await page.evaluate(() => window.localStorage.removeItem("khor.page-machine"));
+    }
+
+    // ── p. the terminal pill opens the session's directory (UX-17): one
+    //       sheet, 目录 first — the listing at the shell's directory (OSC
+    //       7), else where the session started — and 日志, the 24 hours;
+    //       the last tab kept per session. A conversation's title is not a
+    //       button: it opens nothing. ──
+    {
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      if (!(await openRow(terms[2].id)) || !(await xtermUp())) {
+        fail("probe dead: bar p · a terminal never opened");
+      } else {
+        const sheet = async () => {
+          askedLs.length = 0;
+          await press("[data-session-deck] button[data-deck-title]");
+          await until(3_000, async () => (await count("[data-place-sheet]")) === 1);
+          await wait(600);
+          return page.evaluate(() => ({
+            sheet: document.querySelectorAll("[data-place-sheet]").length,
+            on: document.querySelector('[data-place-tab][aria-checked="true"], [data-place-tab][data-state="on"], [data-place-tab][aria-pressed="true"]')?.getAttribute("data-place-tab") ?? null,
+            dir: document.querySelectorAll("[data-place-sheet] [data-place-dir]").length,
+            log: document.querySelectorAll("[data-place-sheet] [data-place-log]").length,
+          }));
+        };
+        const shut = async () => {
+          await page.keyboard.press("Escape");
+          await until(2_000, async () => (await count("[data-place-sheet]")) === 0);
+        };
+        const first = await sheet();
+        const lsFirst = askedLs.map((a) => a.path);
+        await press('[data-place-tab="log"]');
+        await wait(300);
+        const log = await page.evaluate(() => document.querySelectorAll("[data-place-sheet] [data-place-log]").length);
+        await shut();
+        const kept = await sheet();
+        await press('[data-place-tab="dir"]');
+        await shut();
+        await program("\x1b]7;file://gate/tmp/elsewhere\x07");
+        const moved = await sheet();
+        const lsMoved = askedLs.map((a) => a.path);
+        await shut();
+        console.log(`bar p · first ${shown(first)} listed ${shown(lsFirst)}; 日志 ${log}; reopened ${shown(kept)}; after OSC 7 ${shown(moved)} listed ${shown(lsMoved)}`);
+        if (first.sheet !== 1 || first.on !== "dir" || first.dir !== 1) fail(`bar p · the pill opened ${shown(first)} — one sheet, 目录 first`);
+        if (!lsFirst.includes("/home/gate/work")) fail(`bar p · 目录 listed ${shown(lsFirst)} — where the session started (/home/gate/work), no OSC 7 yet`);
+        if (log !== 1) fail("bar p · 日志 drew no 24-hour view");
+        if (kept.on !== "log" || kept.log !== 1) fail(`bar p · reopened, the sheet is on ${shown(kept.on)} — the last tab is kept per session`);
+        if (!lsMoved.includes("/tmp/elsewhere")) fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 目录 listed ${shown(lsMoved)}`);
+      }
+      if (!(await openRow(chatRow.id))) {
+        fail("probe dead: bar p · the conversation never opened");
+      } else {
+        const btn = await count("[data-session-deck] button[data-deck-title]");
+        if (btn !== 0) fail(`bar p · a conversation's pill title is a button (${btn}) — it opens nothing, so it is not drawn as one`);
       }
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });

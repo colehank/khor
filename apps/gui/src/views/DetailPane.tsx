@@ -209,6 +209,10 @@ export function closeWarning(
 // its id: a GUI session's id is spelled `tui/…` on purpose (the
 // vendor-session agreement — `gui_host` module head), so the id is an
 // address and the kind is the behaviour.
+/** Whether a row is shown as a terminal here — and so whether the deck's
+    pill opens its directory (UX-17, `SessionPlaceSheet`). */
+export const isTerminal = (r: SessionRow) => r.kind !== "chat" && (r.mux || (r.kind !== "gui" && r.attachable));
+
 export function DetailPane({
   row,
   narrow,
@@ -268,7 +272,6 @@ export function DetailPane({
   // longer swaps the pane for the row's facts — the terminal stays, with
   // its own 这个终端结束了.
   const [kept, setKept] = useState<{ id: string; machine: string | null; mux: boolean }[]>([]);
-  const isTerminal = (r: SessionRow) => r.kind !== "chat" && (r.mux || (r.kind !== "gui" && r.attachable));
   useEffect(() => {
     if (!row || !isTerminal(row)) return;
     const machine = row.source ? row.home : null;

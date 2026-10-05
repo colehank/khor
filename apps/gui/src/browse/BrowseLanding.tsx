@@ -55,7 +55,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { onPageWord, openLink, pageStep, recentVisit, type DeviceRow } from "@/api";
-import { PageField } from "@/browse/PageField";
+import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
 import { Tabs } from "@/browse/Tabs";
 import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
@@ -65,6 +65,7 @@ import { IconArrow, IconBrowser, IconReload } from "@/components/icons";
 import { GlassItem } from "@/components/Glass";
 import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
+import { FOLD_AT, foldStep, type FoldMemo } from "@/lib/deck-fold";
 import type { KindMark } from "@/components/FaceMark";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
@@ -98,11 +99,6 @@ function tabLabel(kind: BrowseKind, place: string, machine: DeviceRow | null): s
   if (!place) return machine.name;
   return kind.leafOf(place);
 }
-
-/** How far down a page has to be before its row folds (points). */
-const FOLD_AT = 48;
-/** How far back up (points) brings the row back. */
-const UNFOLD_BY = 24;
 
 /** The stand-in for a kind that holds nothing, so the shell calls one
     hook either way (`BrowseKind.useHeld`). It takes the list it is not
@@ -383,23 +379,15 @@ export function BrowseLanding({
     setFolded(false);
     setPageLoading(false);
     const id = tabs.current.id;
-    let turned: number | null = null;
+    // The one deck rule (UX-13, `lib/deck-fold`): a page rests at its top,
+    // and the top's first hand's width still counts as rest.
+    const memo: FoldMemo = { turned: null };
     const offScroll = onPageWord("page:scroll", id, (t) => {
       const [y, way] = t.split(",");
       const at = Number(y);
       if (!Number.isFinite(at)) return;
-      if (at <= FOLD_AT) {
-        turned = null;
-        setFolded(false);
-      } else if (way === "down") {
-        turned = null;
-        setFolded(true);
-      } else {
-        // Up by a few lines before it comes back, so a finger settling at
-        // the end of a downward flick does not undo it.
-        turned ??= at;
-        if (turned - at >= UNFOLD_BY) setFolded(false);
-      }
+      const next = foldStep(memo, at, way === "down", FOLD_AT);
+      if (next !== null) setFolded(next);
     });
     const offLoad = onPageWord("page:load", id, (t) => setPageLoading(t === "started"));
     return () => {
@@ -407,13 +395,26 @@ export function BrowseLanding({
       offLoad();
     };
   }, [tabs.current.id]);
-  /** The deck's address editor (round UX-3): open while asked for. */
-  const [editing, setEditing] = useState(false);
-  useEffect(() => setEditing(false), [tabs.current.id]);
   /** Whether this tab has somewhere to be: its ← → and reload are drawn
       then, and the editor is not needed to start. */
   const somewhere = !!(machine && tabs.current.device && tabs.current.path);
-  const fieldOnDeck = (
+  /** **The pill is the address editor** (UX-18, the owner 2026-10-05:
+      one deck, no second row): a tap on the pill turns it into the
+      machine's face and the address, Go on the keyboard, 取消 beside it.
+      A fresh tab opens with the pill already editing. */
+  const [editing, setEditing] = useState(!somewhere);
+  useEffect(() => setEditing(!somewhere), [tabs.current.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** **The machine defaults to the last one used** (UX-18): a fresh tab
+      with no machine takes it, once, if it is still reachable. */
+  const defaulted = useRef<string | null>(null);
+  useEffect(() => {
+    if (!narrow || !tabs.ready || tabs.current.device || defaulted.current === tabs.current.id) return;
+    defaulted.current = tabs.current.id;
+    const last = lastPageMachine();
+    if (last && reachable(devices).some((d) => d.id === last)) tabs.goTo(last, "", "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrow, tabs.ready, tabs.current.id, tabs.current.device]);
+  const pillEditor = (
     <PageField
       key={tabs.current.id}
       tab={tabs.current.id}
@@ -421,13 +422,29 @@ export function BrowseLanding({
       devices={devices}
       at={tabs.current.path}
       steps={false}
+      inPill
       autoFocus={editing}
-      onLeave={() => setEditing(false)}
+      // The keyboard put away with the caret out of the field ends the
+      // editing, as Safari's does — but not a press on the machine's face
+      // or its picker, which takes the focus on its way to the menu.
+      onLeave={() =>
+        window.setTimeout(() => {
+          if (document.activeElement?.closest("[data-deck-editing], [data-page-machines]")) return;
+          if (document.querySelector("[data-page-machines]")) return;
+          setEditing(false);
+        }, 150)
+      }
       onGo={(place) => {
         setEditing(false);
-        if (machine) tabs.goTo(machine.id, place);
+        if (machine) {
+          rememberPageMachine(machine.id);
+          tabs.goTo(machine.id, place);
+        }
       }}
-      onMachine={(d) => tabs.goTo(d.id, tabs.current.path, tabs.current.title)}
+      onMachine={(d) => {
+        rememberPageMachine(d.id);
+        tabs.goTo(d.id, tabs.current.path, tabs.current.title);
+      }}
     />
   );
 
@@ -577,6 +594,8 @@ export function BrowseLanding({
         onBack={() => onBack?.()}
         onTitle={() => setEditing(true)}
         caption={caption}
+        editor={tabs.ready && editing ? pillEditor : undefined}
+        onEditCancel={() => setEditing(false)}
         folded={folded && !editing}
         onUnfold={() => setFolded(false)}
         loading={pageLoading}
@@ -617,16 +636,6 @@ export function BrowseLanding({
                 </GlassItem>
               </BarSeat>
             </>
-          )}
-          {tabs.ready && (editing || !somewhere) && (
-            <BarSeat at="under">
-              {/* As tall as a conversation's capsule row, so the deck over
-                  it stands where a session's does (the narrow check: 706
-                  against 702). */}
-              <div data-page-field-seat className="flex min-h-[calc(var(--composer-h)+var(--gap-xxs)+var(--gap-in))] flex-none items-end px-row pt-xxs pb-in">
-                {fieldOnDeck}
-              </div>
-            </BarSeat>
           )}
         </section>
       </SessionScreen>
