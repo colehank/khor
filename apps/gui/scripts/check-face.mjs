@@ -138,6 +138,22 @@ try {
     }
     return (await tap("[data-nav-more]")) && tap("[data-nav-settings]");
   };
+  /** **One 「…」 page, by its key** (UX-16, the more lane: 更多 is 我的 khor ·
+      the folded landing · 设置 · 诊断; 设置 is seven pages — `appearance`,
+      `terminal`, `session`, `workspace`, `connection`, `security`,
+      `about`). Wide, every key is a row of 更多's list. Narrow, the seven
+      are 设置's card; 我的 khor (`me`) and 诊断 (`doctor`) are 更多's own
+      menu items on the bottom bar. ⚠️ 墓碑: `settings` (通用), `network`
+      (网络) and `identity` (这台机器) were pages until UX-16. */
+  const openMore = async (key) => {
+    if ((await narrowNow()) && (key === "me" || key === "doctor")) {
+      for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
+        if (!(await tap("[data-file-back], [data-back], [data-ws-back], [data-more-back]"))) break;
+      }
+      return (await tap("[data-nav-more]")) && tap(key === "me" ? "[data-nav-me]" : "[data-nav-doctor]");
+    }
+    return (await toMore()) && tap(`[data-more-open="${key}"]`);
+  };
   /** **A list's search box, opened** (the redesign: a circle at the
       head's top right until pressed, on every face; ⚠️ 墓碑 UX-11 §4 put
       it beside the bottom bar on the narrow face, the owner took it back
@@ -2063,13 +2079,15 @@ try {
     ["kind-mark", "appearance", "appearance", "类型标记", [["face", "浮现"], ["corner", "角标"]], "类型标记画在头像上，或放在头像右下角"],
     ["lang", "language", "appearance", "界面语言", [["auto", "跟随系统"], ["zh", "中文"], ["en", "English"]]],
     // 标签页上限 (docs/SHELL.md 第三轮): off, then the numbers, each its own word.
-    ["tabs-limit", "general", "settings", "标签页上限", [["off", "关"], ...Array.from({ length: 47 }, (_, i) => [String(i + 4), String(i + 4)])]],
-    ["session-form", "session", "settings", "新会话默认打开方式", [["chat", "对话"], ["term", "终端"]]],
-    ["files-click", "workspace", "settings", "单击文件", [["preview", "预览"], ["pin", "保持打开"]]],
+    // The node's pages since UX-16 (`config::PAGES`): 会话 holds it and
+    // 新会话表单, 工作区 单击文件. ⚠️ 墓碑: section `general`, page `settings`.
+    ["tabs-limit", "session", "session", "标签页上限", [["off", "关"], ...Array.from({ length: 47 }, (_, i) => [String(i + 4), String(i + 4)])]],
+    ["session-form", "session", "session", "新会话默认打开方式", [["chat", "对话"], ["term", "终端"]]],
+    ["files-click", "workspace", "workspace", "单击文件", [["preview", "预览"], ["pin", "保持打开"]]],
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
     ["confirm-delete", "confirm", "security", "删除", [["on", "开"], ["off", "关"]]],
   ];
-  const SECTION_WORD = { appearance: "外观", language: "语言", general: "通用", session: "会话", workspace: "工作区", confirm: "危险操作二次确认" };
+  const SECTION_WORD = { appearance: "外观", language: "语言", session: "会话", workspace: "工作区", confirm: "危险操作二次确认" };
   const configRows = () =>
     CONFIG_SHAPE.map(([name, section, page_, label, choices, note]) => ({
       name,
@@ -2588,8 +2606,7 @@ try {
    * is」 is one fact — two copies of the walk is two places to forget
    * the day it moves again, which it has now done twice.
    */
-  const toMesh = async () =>
-    (await toMore()) && press('[data-more-open="network"]');
+  const toMesh = () => openMore("connection");
   // Reach a landing as a *switch*, never a re-click. Pressing the open
   // landing's own glyph now collapses its list (App.tsx 再点收起,
   // 2026-09-02), and this walk re-opens the same landing across
@@ -2887,7 +2904,7 @@ try {
       // the devices stop above measures). The anchor is its last group's
       // switch, which is only there once the relays have answered.
       name: "the network page",
-      anchor: '[data-more-page="network"] [data-relays-only-mine]',
+      anchor: '[data-more-page="connection"] [data-relays-only-mine]',
       go: toMesh,
       after: async () => {
         await press("[data-more-close]");
@@ -2901,9 +2918,9 @@ try {
       // editor that anchored this stop left the page (「不要冗余」) for
       // the machine row's 编辑… window, the next stop.
       name: "identity",
-      anchor: '[data-more-page="identity"] [data-more-fact="id"]',
-      // In 「…」's list, at either width (UX-11).
-      go: async () => (await toMore()) && press('[data-more-open="identity"]'),
+      anchor: '[data-more-page="me"] [data-more-fact="id"]',
+      // 我的 khor (UX-16): 更多's list wide, 更多's menu narrow.
+      go: () => openMore("me"),
       after: async () => {
         await press("[data-more-close]");
       },
@@ -2934,8 +2951,7 @@ try {
       // threw on the way to its body would still satisfy the frame.
       name: "security",
       anchor: '[data-security-switch="lock"]',
-      go: async () =>
-        (await toMore()) && press('[data-more-open="security"]'),
+      go: () => openMore("security"),
       after: async () => {
         await press("[data-more-close]");
       },
@@ -2948,7 +2964,7 @@ try {
       // a fold and a page that drew *only* the fold would still satisfy
       // the frame.
       anchor: "[data-doctor-list] [data-doctor-card]",
-      go: async () => (await toMore()) && press('[data-more-open="doctor"]'),
+      go: () => openMore("doctor"),
       after: async () => {
         await press("[data-more-close]");
       },
@@ -2985,8 +3001,7 @@ try {
       // old wide path (a rail item that opens no landing and is not the
       // mark) pressed straight through to a dialog; there is no dialog
       // any more.
-      go: async () =>
-        (await toMore()) && press('[data-more-open="appearance"]'),
+      go: () => openMore("appearance"),
       // Closed by its own button rather than Escape: a page is not a
       // dialog and does not answer that key, and leaving it open would
       // hand the next stop a full-region surface over its landing.
@@ -10964,7 +10979,8 @@ try {
     await page.evaluate((k) => window.localStorage.setItem(k, JSON.stringify(["/home/peer/work/a.rs", "/home/peer/work/b.rs", "/home/peer/work/c.rs"])), wsKey);
     await page.reload({ waitUntil: "load" });
     await wait(900);
-    const toSettings = (await toMore()) && (await press('[data-more-open="settings"]'));
+    // 标签页上限 is 会话's (UX-16).
+    const toSettings = await openMore("session");
     const limitOpen = page.locator('[data-setting-select="tabs-limit"], [data-setting-row-name="tabs-limit"]');
     if (!toSettings || (await limitOpen.count()) === 0) {
       fail("probe dead: no 标签页上限 row with a menu on the settings page (src/views/more/ConfigRows.tsx)");
@@ -11641,7 +11657,7 @@ try {
     await wait(900);
     // The settings reach the window when the settings page reads them
     // (4T's road to the same limit), so pass through it once.
-    const readSettings = (await toMore()) && (await press('[data-more-open="settings"]'));
+    const readSettings = await openMore("session");
     await until(3_000, async () =>
       (await page.locator('[data-config-row="tabs-limit"]').getAttribute("data-value").catch(() => null)) === "4",
     );
@@ -12512,22 +12528,24 @@ try {
       } else if (
         more.pages.join(",") !==
         (posture === "wide"
-          ? "identity,settings,appearance,network,security,doctor"
-          : "settings,appearance,network,security,identity,doctor")
+          ? "me,appearance,terminal,session,workspace,connection,security,about,doctor"
+          : "appearance,terminal,session,workspace,connection,security,about")
       ) {
-        // **这台机器 first on the wide face** (the owner, 2026-10-02: its
-        // face left the top row and lives in 更多), over the sections in
-        // round 17's order; narrow keeps it among them.
+        // **UX-16** (the more lane, the owner 2026-10-05): wide, 我的 khor
+        // at the head, 设置's seven, then 诊断; narrow, 设置's list is the
+        // seven alone (我的 khor and 诊断 are 更多's menu items). ⚠️ 墓碑:
+        // 这台机器 · 通用 · 外观 · 网络 · 安全 · 身份 · 诊断 (round 17).
         fail(
-          `${posture}: More lists ${JSON.stringify(more.pages)} — ${posture === "wide" ? "this machine, then " : ""}general / ` +
-            "appearance / network / security / identity / diagnostics, in that order (round 17 §1; src/App.tsx moreList)",
+          `${posture}: More lists ${JSON.stringify(more.pages)} — ${posture === "wide" ? "我的 khor, then " : ""}` +
+            "外观 / 终端 / 会话 / 工作区 / 连接 / 安全 / 关于" + (posture === "wide" ? ", then 诊断" : "") + ", in that order (UX-16; src/App.tsx)",
         );
       }
-      // Wide: the page is on screen beside the list, and it is a detail page.
-      if (posture === "wide" && (more.kind !== "detail" || more.page !== "settings")) {
+      // Wide: the page is on screen beside the list, and it is a detail
+      // page — 我的 khor, 更多's own head (UX-16).
+      if (posture === "wide" && (more.kind !== "detail" || more.page !== "me")) {
         fail(
           `wide: the more glyph landed on data-region-kind=${JSON.stringify(more.kind)} showing ` +
-            `${JSON.stringify(more.page)} — More is an A page and its overview is General (10-layout.md)`,
+            `${JSON.stringify(more.page)} — More is an A page and it opens on 我的 khor (UX-16)`,
         );
       }
       // The landings the narrow bar folds away still have a door: 更多's
@@ -12549,8 +12567,11 @@ try {
       // Each page, opened and closed: what it replaces, what its head
       // carries, and that the landing under it is still the one that was
       // open when it was.
-      for (const key of ["network", "settings", "security", "doctor"]) {
-        if (!(await toMore()) || !(await press(`[data-more-open="${key}"]`))) {
+      // 设置's pages, on both faces; 诊断 too where it is a row of 更多's
+      // list (wide) — narrow it is pushed from 更多's menu, and its 「‹」
+      // goes back to the landing, not to 设置's list.
+      for (const key of posture === "wide" ? ["connection", "session", "security", "doctor"] : ["connection", "session", "security"]) {
+        if (!(await openMore(key))) {
           fail(`probe dead: ${posture} · 「…」 → ${key} did not open`);
           continue;
         }
@@ -12660,14 +12681,25 @@ try {
       // still reachable** — the pause round trip, the relays, leaving —
       // and that the map is not drawn twice. Where each row sits is the
       // acceptance walk's (30-behavior.md).
+      // **UX-16 split 网络 three ways** (the more lane): 中继 and 暂停同步
+      // are 设置 › 连接; 状态 (本机 · 已连接的机器) stands on 诊断; 离开网络
+      // is 我的 khor's. Every capability is still read here, each on its
+      // page now.
       const relaysBefore = relaysAsked.length;
-      if (!(await toMore()) || !(await press('[data-more-open="network"]'))) {
-        fail(`probe dead: ${posture} · 「…」 → 网络 did not open`);
+      // 状态 first, on 诊断.
+      const status = (await openMore("doctor"))
+        ? await page.evaluate(() => ({
+            me: document.querySelector('[data-more-page="doctor"] [data-more-fact="net-me"]')?.textContent?.trim() ?? null,
+            connected: document.querySelector('[data-more-page="doctor"] [data-more-fact="net-connected"]')?.textContent?.trim() ?? null,
+          }))
+        : { me: null, connected: null };
+      if (!(await openMore("connection"))) {
+        fail(`probe dead: ${posture} · 「…」 → 连接 did not open`);
         continue;
       }
-      await until(3_000, async () => (await page.locator('[data-more-page="network"] [data-relays-only-mine]').count()) > 0);
+      await until(3_000, async () => (await page.locator('[data-more-page="connection"] [data-relays-only-mine]').count()) > 0);
       const net = await page.evaluate(() => {
-        const el = document.querySelector('[data-more-page="network"]');
+        const el = document.querySelector('[data-more-page="connection"]');
         if (!el) return null;
         // Wide: R0's buttons. Narrow: the page's own head, seated in the
         // window's first row (`NarrowHead`, 2026-09-28) — so it is not
@@ -12688,10 +12720,9 @@ try {
           mine: el.querySelectorAll("[data-relay-mine]").length,
           add: el.querySelectorAll("[data-relay-add]").length,
           onlyMine: el.querySelectorAll("[data-relays-only-mine]").length,
-          me: el.querySelector('[data-more-fact="net-me"]')?.textContent?.trim() ?? null,
-          connected: el.querySelector('[data-more-fact="net-connected"]')?.textContent?.trim() ?? null,
         };
       });
+      if (net) Object.assign(net, status);
       console.log(`网络 ${posture}: ${JSON.stringify(net)}`);
       if (!net) {
         fail(`${posture}: 「…」 → 网络 drew no page`);
@@ -12708,8 +12739,8 @@ try {
               "in its body — they are the machines landing's ＋ and nowhere else (10-layout, 2026-09-30)",
           );
         }
-        if (net.pause !== 1 || net.leave !== 1) {
-          fail(`${posture}: the 网络 page offers ${net.pause} 暂停同步 switch(es) and ${net.leave} 离开网络… — one of each`);
+        if (net.pause !== 1 || net.leave !== 0) {
+          fail(`${posture}: 连接 offers ${net.pause} 暂停同步 switch(es) and ${net.leave} 离开网络… — the switch, and 离开 is 我的 khor's (UX-16)`);
         }
         if (!net.me || !net.me.includes("gate") || !net.connected) {
           fail(`${posture}: 状态 reads 本机 ${JSON.stringify(net.me)} / 已连接的机器 ${JSON.stringify(net.connected)} — both are facts khor holds`);
@@ -12764,8 +12795,13 @@ try {
         const whilePaused = await page.evaluate(() => ({
           on: document.querySelector("[data-net-pause]")?.getAttribute("aria-checked") ?? null,
           rail: !!document.querySelector("[data-rail-mark][data-paused]"),
-          state: document.querySelector("[data-net-state]")?.getAttribute("data-net-state") ?? null,
         }));
+        // 本机's state word is 诊断's 状态 now (UX-16).
+        whilePaused.state = (await openMore("doctor"))
+          ? await page.evaluate(() => document.querySelector("[data-net-state]")?.getAttribute("data-net-state") ?? null)
+          : null;
+        await openMore("connection");
+        await until(3_000, async () => (await page.locator("[data-net-pause]").count()) > 0);
         console.log(`网络 ${posture} · 暂停: ${JSON.stringify({ talking, ...whilePaused, sent: gatePaused })}`);
         if (talking !== "false" || whilePaused.on !== "true" || gatePaused !== true) {
           fail(`${posture}: 暂停同步 went ${JSON.stringify(talking)} → ${JSON.stringify(whilePaused.on)} with the node at paused=${gatePaused} — a round trip, the switch showing what the file says`);
@@ -12781,12 +12817,13 @@ try {
           page.evaluate(() => document.querySelector("[data-net-pause]")?.getAttribute("aria-checked") === "false"),
         );
 
-        // 离开网络 is a window, and **the confirmation is always there**
+        // 离开网络 is 我的 khor's (UX-16), a window, and **the confirmation is always there**
         // (docs/MORE.md: 这一件不可撤回). Live over an empty box would be
         // one press between reading a page and being in no network.
         // **Always pressable** (`components/Why`): until the name is
         // typed, the press sends nothing and says why. It was a disabled
         // button until the app's buttons stopped going grey.
+        if (!(await openMore("me"))) fail(`probe dead: ${posture} · 我的 khor did not open for 离开网络`);
         await press("[data-net-leave]");
         await until(3_000, async () => (await page.locator("[data-net-leave-name]").count()) > 0);
         const refusedBy = async () => {
@@ -12922,19 +12959,14 @@ try {
       // The face left the rail (the owner, 2026-10-02): this machine is
       // the first row of 更多's list wide, and the foot of 更多's menu on
       // the bottom bar narrow.
-      const toMe =
-        posture === "wide"
-          ? async () => (await toMore()) && press('[data-more-open="identity"]')
-          : async () => {
-              await open("sessions");
-              return (await press("[data-nav-more]")) && press("[data-nav-me]");
-            };
+      // 我的 khor (UX-16): 更多's head wide, 更多's menu narrow.
+      const toMe = () => openMore("me");
       if (!(await toMe())) {
         fail(`probe dead: ${posture} has no way to this machine's own page (更多)`);
         continue;
       }
       const card = await page.evaluate(() => {
-        const el = document.querySelector('[data-more-page="identity"]');
+        const el = document.querySelector('[data-more-page="me"]');
         if (!el) return null;
         const faces = [...el.querySelectorAll("[data-iface]")];
         return {
@@ -12949,7 +12981,8 @@ try {
           // The name and the face, stated — the editor left this page
           // on 2026-09-30 (「不要冗余」; section 13a holds that it has
           // no control left for either).
-          name: el.querySelector('[data-more-fact="name"]')?.textContent?.trim() ?? null,
+          // 我的 khor's head says the name (UX-16, `data-me-name`).
+          name: el.querySelector('[data-me-name], [data-more-fact="name"]')?.textContent?.trim() ?? null,
           editor: el.querySelectorAll("[data-face-settings]").length,
           // 本机开着哪几张界面, 当前是哪张 (docs/MORE.md 头像页).
           faceKeys: faces.map((e) => e.getAttribute("data-iface")),
@@ -13451,31 +13484,43 @@ try {
       );
     }
 
-    if (!(await toMore()) || !(await press('[data-more-open="settings"]'))) {
-      fail("probe dead: 「…」 → 设置 did not open");
+    // **UX-16: 通用 is gone** — 会话 holds 新会话表单 and 标签页上限, 工作区
+    // 单击文件, 关于 the version and the store. The three pages are read
+    // and their sections and rows taken together, so the claims below
+    // keep saying 「one thing in one place」 across them.
+    const readPage = async (key) =>
+      (await openMore(key))
+        ? page.evaluate((k) => {
+            const el = document.querySelector(`[data-more-page="${k}"]`);
+            return {
+              sections: [...(el?.querySelectorAll("[data-more-section]") ?? [])].map((e) => e.getAttribute("data-more-section")),
+              rows: [...(el?.querySelectorAll("[data-config-row]") ?? [])].map((e) => [e.getAttribute("data-config-row"), e.getAttribute("data-value")]),
+              store: el?.querySelector('[data-more-fact="store-path"]')?.textContent?.trim() ?? null,
+              size: el?.querySelector('[data-more-fact="store-size"]')?.textContent?.trim() ?? null,
+              version: el?.querySelector('[data-more-fact="version"]')?.textContent?.trim() ?? null,
+              open: el?.querySelectorAll("[data-store-open]").length ?? 0,
+            };
+          }, key)
+        : null;
+    const pages = [await readPage("session"), await readPage("workspace"), await readPage("about")];
+    if (pages.some((x) => x === null)) {
+      fail("probe dead: 「…」 → 会话 / 工作区 / 关于 did not all open");
     } else {
-      const drew = await page.evaluate(() => {
-        const el = document.querySelector('[data-more-page="settings"]');
-        return {
-          sections: [...(el?.querySelectorAll("[data-more-section]") ?? [])].map((e) =>
-            e.getAttribute("data-more-section"),
-          ),
-          rows: [...(el?.querySelectorAll("[data-config-row]") ?? [])].map((e) => [
-            e.getAttribute("data-config-row"),
-            e.getAttribute("data-value"),
-          ]),
-          // 存储 and 关于 state facts rather than offering switches.
-          store: el?.querySelector('[data-more-fact="store-path"]')?.textContent?.trim() ?? null,
-          size: el?.querySelector('[data-more-fact="store-size"]')?.textContent?.trim() ?? null,
-          version: el?.querySelector('[data-more-fact="version"]')?.textContent?.trim() ?? null,
-          open: el?.querySelectorAll("[data-store-open]").length ?? 0,
-        };
-      });
+      const about = pages[2];
+      const drew = {
+        sections: pages.flatMap((x) => x.sections),
+        rows: pages.flatMap((x) => x.rows),
+        store: about.store,
+        size: about.size,
+        version: about.version,
+        open: about.open,
+      };
       console.log(`config · 设置 drew: ${JSON.stringify(drew)}`);
       // The sections MORE.md names, by the node's own section keys —
       // never by their words, which would be reading the catalog to
       // check the catalog.
-      for (const want of ["session", "workspace", "store", "about"]) {
+      // 存储 is one card with 关于 since UX-16 (`about`).
+      for (const want of ["session", "workspace", "about"]) {
         if (!drew.sections.includes(want)) {
           fail(`设置 has no 「${want}」 section — it drew ${JSON.stringify(drew.sections)}`);
         }
@@ -13687,8 +13732,8 @@ try {
 
       // Set it, and wait for the **store's** answer to come back round
       // through the shell: the page paints from the re-read, never from
-      // what it just sent. (Back on General: session-form is its row.)
-      await press('[data-more-open="settings"]');
+      // what it just sent. (会话's row since UX-16.)
+      await openMore("session");
       await choose("session-form", "term");
       const took = await until(5_000, async () =>
         (await page.locator('[data-config-row="session-form"][data-value="term"]').count()) === 1,
@@ -13712,8 +13757,7 @@ try {
 
       // Put the fixture back, so every stop after this one meets the
       // wizard it has always met.
-      await toMore();
-      await press('[data-more-open="settings"]');
+      await openMore("session");
       await choose("session-form", "chat");
       await until(5_000, async () =>
         (await page.locator('[data-config-row="session-form"][data-value="chat"]').count()) === 1,
@@ -13788,16 +13832,16 @@ try {
     // page only has once its answers are in, so a slow `about` cannot
     // read as a page with no rows.
     const READY = {
-      settings: '[data-more-fact="store-path"]',
+      about: '[data-more-fact="store-path"]',
       appearance: '[data-config-row="theme"]',
-      network: '[data-more-page="network"] [data-relays-only-mine]',
+      connection: '[data-more-page="connection"] [data-relays-only-mine]',
       security: '[data-config-row="confirm-delete"]',
-      identity: "[data-iface]",
+      me: "[data-iface]",
       doctor: "[data-doctor-again]",
     };
     const seen = [];
     for (const [key, ready] of Object.entries(READY)) {
-      if (!(await toMore()) || !(await press(`[data-more-open="${key}"]`))) {
+      if (!(await openMore(key))) {
         fail(`probe dead: 4I could not open 「…」 → ${key}`);
         continue;
       }
@@ -22942,7 +22986,7 @@ try {
     // 「…」 is a page rather than a landing: the rail's own button opens
     // the menu and a row on it opens the page (`App.tsx` morePages —
     // network, settings, security, doctor).
-    if ((await toMore()) && (await press('[data-more-open="settings"]'))) {
+    if (await openMore("appearance")) {
       await wait(400);
       await headless("the 「…」 page");
     } else {
@@ -23278,7 +23322,7 @@ try {
       ["browser", async () => open("browser")],
       ["workspaces · none open", async () => open("workspaces")],
       ["workspaces · one open", async () => (await open("workspaces")) && openWs()],
-      ["「…」", async () => (await toMore()) && press('[data-more-open="settings"]')],
+      ["「…」", () => openMore("appearance")],
     ];
     for (const [where, go] of STOPS) {
       if (!(await go())) {
@@ -23308,7 +23352,7 @@ try {
       // landing's do (one first row): a tabs page.
       ["browser", "tabs", async () => open("browser")],
       ["workspaces", "detail", async () => open("workspaces")],
-      ["「…」", "detail", async () => (await toMore()) && press('[data-more-open="settings"]')],
+      ["「…」", "detail", () => openMore("appearance")],
     ];
     for (const [where, kind, go] of KINDS) {
       if (!(await go())) {
@@ -23388,8 +23432,8 @@ try {
       await wait(300);
 
       // (a) the four row kinds, on every section of More.
-      for (const key of ["settings", "appearance", "network", "security", "identity", "doctor"]) {
-        if (!(await toMore()) || !(await press(`[data-more-open="${key}"]`))) {
+      for (const key of ["appearance", "terminal", "session", "workspace", "connection", "security", "about", "me", "doctor"]) {
+        if (!(await openMore(key))) {
           fail(`probe dead: round 17 (a) could not open More -> ${key}`);
           await page.keyboard.press("Escape");
           await wait(200);
@@ -23431,7 +23475,7 @@ try {
         if (rows.loose) {
           fail(`round 17 (a): More -> ${key} draws ${rows.loose} setting control(s) outside the four row kinds (src/components/settings)`);
         }
-        if ((key === "settings" || key === "appearance") && rows.kinds.length === 0) {
+        if (["appearance", "terminal", "session", "workspace"].includes(key) && rows.kinds.length === 0) {
           fail(`round 17 (a): More -> ${key} has no [data-setting-row] at all — its config keys are drawn as rows`);
         }
       }
@@ -23444,7 +23488,7 @@ try {
         ["quota", async () => open("quota")],
         ["workspaces", async () => open("workspaces")],
         ["browser", async () => open("browser")],
-        ["more", async () => (await toMore()) && press('[data-more-open="settings"]')],
+        ["more", () => openMore("appearance")],
       ];
       for (const [where, go] of reads) {
         if (!(await go())) {
@@ -24726,7 +24770,7 @@ try {
       }],
       ["通用", async () => {
         await hit("[data-rail-more]");
-        await hit('[data-more-open="settings"]');
+        await hit('[data-more-open="appearance"]');
         return until(5_000, async () => (await page.locator("[data-main] [data-page-title]").count()) > 0);
       }],
       ["浏览", async () => {
@@ -24884,12 +24928,12 @@ try {
 
   // a. 这台机器: facts only — the first row of 更多's list since its face
   //    left the rail (the owner, 2026-10-02).
-  if (!((await toMore()) && (await press('[data-more-open="identity"]')))) {
+  if (!(await openMore("me"))) {
     fail("probe dead: entity · no 这台机器 in 更多's list to open");
   } else {
-    await until(3_000, async () => (await page.locator('[data-more-page="identity"] [data-more-fact="id"]').count()) > 0);
+    await until(3_000, async () => (await page.locator('[data-more-page="me"] [data-more-fact="id"]').count()) > 0);
     const mine = await page.evaluate(() => {
-      const el = document.querySelector('[data-more-page="identity"]');
+      const el = document.querySelector('[data-more-page="me"]');
       if (!el) return null;
       const editors = [
         "input",
@@ -25316,7 +25360,7 @@ try {
     if (onChat.links === 0) fail("probe dead: no link in the conversation computes cursor pointer — (b) has no positive to stand on");
     if (onChat.off.length) fail(`cursor: pointer off a link on the sessions landing: ${onChat.off.join(", ")} — controls wear the arrow`);
     for (const [where, go] of [
-      ["the settings page", async () => (await toMore()) && click('[data-more-open="settings"]')],
+      ["the settings page", async () => (await toMore()) && click('[data-more-open="appearance"]')],
       ["the workspace", async () => {
         await click('[data-more-close]');
         await land("workspaces");
@@ -25395,7 +25439,7 @@ try {
     if (tabRows.length !== rowsBefore - 1) fail(`⌘W on the browser landing closed ${rowsBefore - tabRows.length} tab(s), not the front one`);
     // ⌘, opens 通用 over the landing; ⌘W puts it away first.
     await key(`${mod}+,`);
-    const settingsUp = (await n('[data-more-open="settings"][data-on="true"]')) > 0;
+    const settingsUp = (await n('[data-more-open="appearance"][data-on="true"]')) > 0;
     await key(`${mod}+w`);
     const settingsGone = (await n("[data-more-close]")) === 0;
     console.log(`mac · ⌘, → 通用 ${settingsUp}; ⌘W → put away ${settingsGone}, landing ${await landingNow()}`);
@@ -25769,7 +25813,7 @@ try {
         await wait(900);
         return open("devices");
       }],
-      ["「…」 → 网络", async () => (await toMore()) && press('[data-more-open="network"]')],
+      ["「…」 → 连接", () => openMore("connection")],
     ];
     let offered = 0;
     for (const [where, go] of maps) {
@@ -25942,7 +25986,7 @@ try {
       ["the 额度 landing", async () => open("quota"), []],
       [
         "「…」 → 网络",
-        async () => (await toMore()) && press('[data-more-open="network"]'),
+        () => openMore("connection"),
         ["data-more-close"],
       ],
     ];
@@ -26637,10 +26681,9 @@ try {
     await until(5_000, async () => (await page.locator("[data-main] [data-page-avatar-mark]").count()) === 1);
     const provider = await page.locator('[data-quota-row="acc-fill"]').getAttribute("data-provider");
     judgeHead("额度 · acc-fill", await readHead(), { kind: provider, face: false });
-    await toMore();
-    await press('[data-more-open="settings"]');
+    await openMore("appearance");
     await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").count()) > 0);
-    judgeHead("「…」 → 通用", await readHead(), null);
+    judgeHead("「…」 → 外观", await readHead(), null);
     if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
 
     // c, narrow: no R0, so the model is the strip's first cell, and the
@@ -26993,14 +27036,13 @@ try {
     await page.route("**/root_words_seen", (r) => r.fulfill({ contentType: "application/json", body: "null" }));
     const rowSel = '[data-setting-row-name="root-words"]';
     const toSecurity = async () =>
-      (await toMore()) && (await press('[data-more-open="security"]')) &&
-      until(3_000, async () => (await page.locator('[data-more-page="security"]').count()) > 0);
+      (await openMore("me")) && until(3_000, async () => (await page.locator('[data-more-page="me"]').count()) > 0);
     // The web face first: no row, whoever holds the root.
     if (!(await toSecurity())) fail("probe dead: fix c · 「…」 → 安全 did not open on the web face");
     else {
       await wait(600);
       const n = await page.locator(rowSel).count();
-      console.log(`fix c · web face: 恢复词 rows on 安全 ${n}`);
+      console.log(`fix c · web face: 恢复词 rows on 我的 khor ${n}`);
       if (n !== 0) fail("fix c · the web face draws a 恢复词 row — the words are the app's alone (khor_gui_core command_tables)");
     }
     if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
@@ -27022,13 +27064,16 @@ try {
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&as-app`, { waitUntil: "load" });
     await until(5_000, async () => (await page.locator("[data-landing-strip]").count()) > 0);
     await wait(1_500);
-    // **On a Mac the settings are a window of their own** (UX-10: ⌘, and
-    // 设置…, no 「更多」 circle in the strip): the same page at
-    // `?face=settings`, which is what that window loads.
+    // **恢复词 is 我的 khor's since UX-16** (the more lane moved it with
+    // 离开网络 and 重置身份 off 安全). In the Mac app 我的 khor is an app-menu
+    // item (no key; the wide Mac window has no 更多 circle until UX-19), so
+    // the app's window is read narrow, where 更多's menu holds it.
+    // ⚠️ 墓碑: 设置 window → 安全.
     const toSecurityApp = async () => {
-      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&face=settings&as-app`, { waitUntil: "load" });
-      await until(5_000, async () => (await page.locator('[data-more-open="security"]').count()) > 0);
-      return (await press('[data-more-open="security"]')) && until(3_000, async () => (await page.locator('[data-more-page="security"]').count()) > 0);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&as-app`, { waitUntil: "load" });
+      await until(5_000, async () => (await page.locator("[data-float-nav]").count()) > 0);
+      return (await openMore("me")) && until(3_000, async () => (await page.locator('[data-more-page="me"]').count()) > 0);
     };
     const asked = await page.locator("[data-root-words-dialog]").count();
     console.log(`fix c · app, first start of the root's machine: 恢复词 dialogs ${asked}`);
@@ -27036,7 +27081,7 @@ try {
       fail("fix c · the app opened on 「抄下恢复词」 — the words wait on 「…」 → 安全 until somebody asks (the owner, 2026-10-01)");
       await settle();
     }
-    if (!(await toSecurityApp())) fail("probe dead: fix c · 设置 → 安全 did not open in the app");
+    if (!(await toSecurityApp())) fail("probe dead: fix c · 我的 khor did not open");
     else {
       await until(3_000, async () => (await page.locator(rowSel).count()) > 0);
       const look = await page.evaluate((sel) => {
@@ -27048,9 +27093,9 @@ try {
           words: document.querySelectorAll("[data-root-words] li").length,
         };
       }, rowSel);
-      console.log(`fix c · app, 安全 while the root is held: ${JSON.stringify(look)}`);
+      console.log(`fix c · app, 我的 khor while the root is held: ${JSON.stringify(look)}`);
       if (!look) {
-        fail("fix c · 安全 has no 恢复词 row on the machine that holds the root — 「…」 → 安全 is where the words are");
+        fail("fix c · 我的 khor has no 恢复词 row on the machine that holds the root — that is where the words are (UX-16)");
       } else {
         if (!look.act?.endsWith(ELLIPSIS)) fail(`fix c · the 恢复词 row's act reads 「${look.act}」 — it opens a window: 「显示…」`);
         if (look.words !== 0) fail("fix c · the words are on the page before anybody pressed 「显示…」");
@@ -27065,10 +27110,11 @@ try {
       await toSecurityApp();
       await wait(800);
       const n = await page.locator(rowSel).count();
-      console.log(`fix c · app, 安全 where the root is not held: 恢复词 rows ${n}`);
-      if (n !== 0) fail("fix c · 安全 draws a 恢复词 row on a machine that does not hold the root");
+      console.log(`fix c · app, 我的 khor where the root is not held: 恢复词 rows ${n}`);
+      if (n !== 0) fail("fix c · 我的 khor draws a 恢复词 row on a machine that does not hold the root");
       if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
     }
+    await page.setViewportSize({ width: 1400, height: 900 });
   }
 
   // d. only the face dresses the app (浅色下左块是深色材质, 2026-10-01).
@@ -27650,7 +27696,7 @@ try {
       if ((await count("[data-ws-tree]")) === 0) await press("[data-ws-row]");
       return true;
     };
-    const morePage = async (key) => (await toMore()) && press(`[data-more-open="${key}"]`);
+    const morePage = (key) => openMore(key);
     const closeMore = () => press("[data-more-close]");
     const reload = async () => {
       await page.evaluate(() => window.localStorage.clear());
@@ -27696,7 +27742,7 @@ try {
     if (!(await morePage("security"))) fail("probe dead: phone a · 安全 did not open");
     const keyRowA = await count("[data-web-key-rotate]");
     await closeMore();
-    if (!(await morePage("settings"))) fail("probe dead: phone a · 设置 did not open");
+    if (!(await morePage("about"))) fail("probe dead: phone a · 关于 did not open");
     const storeOpenA = await count("[data-store-open]");
     await closeMore();
     await open("workspaces");
@@ -27766,7 +27812,7 @@ try {
     if (await count("[data-web-key-rotate], [data-web-key]")) fail("phone b · 安全 shows the web face's key on a phone, which serves no web face (src/views/more/SecurityPage.tsx)");
     if (sent("web_key")) fail("phone b · web_key was asked on a phone");
     await closeMore();
-    if (!(await morePage("settings"))) fail("probe dead: phone b · 设置 did not open");
+    if (!(await morePage("about"))) fail("probe dead: phone b · 关于 did not open");
     if (await count("[data-store-open]")) fail("phone b · 设置 offers 打开 for the store on a phone, which has nothing to open it with (src/views/more/SettingsPage.tsx)");
     if (!(await count('[data-more-fact="store-path"]'))) fail("phone b · 设置 lost the store's path along with its 打开 — the fact stays");
     await closeMore();
