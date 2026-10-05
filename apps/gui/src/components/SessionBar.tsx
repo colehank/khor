@@ -70,7 +70,6 @@ import { createPortal } from "react-dom";
 
 import { TabAvatar, type TabFace } from "@/browse/TabStrip";
 import { IconBack, IconClose, IconPlus } from "@/components/icons";
-import { PathCut } from "@/components/PathCut";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
@@ -522,13 +521,10 @@ function TabSheet({
                 className="flex min-w-0 flex-1 items-center gap-row text-left"
               >
                 <TabAvatar f={f} bare="size-list-face" seat="row" />
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-body text-foreground">{f.label}</span>
-                  {(f.machine || f.path) && (
-                    // A path keeps its tail, cut at the start like every
-                    // path in a line too short for it (`PathCut`).
-                    <PathCut text={f.machine ?? f.path} className="block min-w-0 text-callout text-muted-foreground" />
-                  )}
+                {/* **One line, the title** (UX-20). ⚠️ 墓碑: the machine or
+                    the path under it, cut at the start (`PathCut`). */}
+                <span data-tab-sheet-name className="min-w-0 flex-1 truncate text-body text-foreground">
+                  {f.label}
                 </span>
               </button>
               <button

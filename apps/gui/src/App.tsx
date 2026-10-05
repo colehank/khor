@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { hereActs, ProgressLine, shortDir, termName } from "@/components/DoingLine";
+import { hereActs, ProgressLine, termName } from "@/components/DoingLine";
 import { FinishedWatch, type Finished } from "@/lib/finished";
 import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
@@ -1686,8 +1686,10 @@ export default function App() {
               label: termName(r),
               face: r.face,
               path: r.doing?.cwd ?? r.place ?? "",
-              // Where the shell stands, under the name (roadmap 2.5).
-              sub: r.doing?.cwd ? shortDir(r.doing.cwd) : undefined,
+              // **One line, the title** (UX-20, the owner 2026-10-05): where
+              // the shell stands is the row's left-bottom (UX-15) and the
+              // pill's 「目录」 (UX-17), never a tab. ⚠️ 墓碑: `sub`, the
+              // directory under the name (roadmap 2.5).
               // What the program says of its progress (roadmap 4.1).
               progress: r.doing?.running && r.doing.progress !== null ? <ProgressLine doing={r.doing} /> : undefined,
               // Where the shell stands, and its two acts (roadmap 2.5).

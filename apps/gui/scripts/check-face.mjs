@@ -17541,6 +17541,12 @@ try {
       await wait(400);
       const listed = await sheetRows();
       if (listed !== opened) fail(`the tabs sheet lists ${listed} of ${opened} open tabs`);
+      // One line per tab here too (UX-20): no machine, no path under it.
+      const twoLine = await page.$$eval("[data-tab-sheet-open]", (els) =>
+        els.filter((e) => e.innerText.split("\n").filter((l) => l.trim()).length > 1).map((e) => e.getAttribute("data-tab-sheet-open")),
+      );
+      console.log(`tabs sheet · ${listed} rows, ${twoLine.length} with a second line`);
+      if (twoLine.length) fail(`the tabs sheet's rows ${twoLine.join(", ")} carry a second line — a tab is one line, its title (UX-20; src/components/SessionBar.tsx TabSheet)`);
       if ((await page.locator("[data-tab-sheet-new]").count()) !== 1) {
         fail("the tabs sheet carries no 新会话 — the sheet is where a new tab starts on a phone (src/components/SessionBar.tsx TabSheet)");
       }
@@ -22709,6 +22715,9 @@ try {
                 cellRight: +r(close).right.toFixed(2),
                 tabRight: +r(t).right.toFixed(2),
                 shown: getComputedStyle(close).opacity !== "0",
+                // The lines of words it draws (UX-20: one, the title).
+                lines: t.innerText.split("\n").filter((l) => l.trim()).length,
+                subs: t.querySelectorAll("[data-tab-sub]").length,
               };
             },
             [strip, id, when],
@@ -22734,6 +22743,12 @@ try {
         if (c.cellRight > c.tabRight + 0.5) fail(`${where}: on tab ${c.id} the ×'s cell runs past the tab (${c.cellRight} > ${c.tabRight})`);
         if (c.when === "hover" && !c.shown) fail(`${where}: under the pointer tab ${c.id} still hides its × — 悬停时画出来`);
         if (c.on && !c.shown) fail(`${where}: the open tab ${c.id} hides its × (${c.when}) — the tab in front always shows it`);
+        // **A tab is one line, its title** (UX-20, the owner 2026-10-05:
+        // 「✳ rsync 连接…」 over 「/Users/zgh」): the directory is the row's
+        // left-bottom and the pill's 「目录」, never a tab.
+        if (c.when === "rest" && (c.lines > 1 || c.subs > 0)) {
+          fail(`${where}: tab ${c.id} draws ${c.lines} lines (${c.subs} [data-tab-sub]) — a tab is one line, its title (UX-20; src/browse/TabStrip.tsx)`);
+        }
       }
     };
     for (const width of [1400, 760]) {

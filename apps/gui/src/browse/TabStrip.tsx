@@ -716,7 +716,7 @@ export function TabStrip({
                       kind={f.rename.kind}
                       id={f.rename.id}
                       title={f.label}
-                      className={cn("min-w-0 flex-1", glass ? "text-tab" : "text-body", f.sub && "leading-tight")}
+                      className={cn("min-w-0 flex-1", glass ? "text-tab" : "text-body")}
                       inputClassName="w-full text-callout"
                       nested
                       // The hook the width gate measures, kept on the box
@@ -725,13 +725,8 @@ export function TabStrip({
                       // detail).
                       boxData={{ "data-tab-label": "" }}
                     />
-                    {/* A terminal's directory under its name (roadmap
-                        2.5): the second line file tabs already wear. */}
-                    {f.sub && (
-                      <span data-tab-sub className="truncate text-caption leading-tight text-muted-foreground">
-                        {f.sub}
-                      </span>
-                    )}
+                    {/* ⚠️ 墓碑 (UX-20): a terminal's directory stood under
+                        its name here (roadmap 2.5). A tab is one line. */}
                     {f.progress}
                   </span>
                 ) : f.sub ? (
@@ -1090,7 +1085,7 @@ export function TabSwitcher({
                 </span>
               ),
               name: f.label,
-              sub: f.path || undefined,
+              // One line (UX-20): no path under a tab's name.
               find: `${f.label} ${f.path}`,
               selected: f.id === active,
               menu: [...(f.menu ?? []), { key: "close-tab", label: gui.close, run: () => onClose(f.id) }],
