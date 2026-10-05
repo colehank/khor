@@ -1,9 +1,8 @@
-// **Blame beside the line numbers** (round UX-4, the file page's 「…」):
-// whether the column is shown, per device like the file's 字号, and how
-// HEAD's blame lands on the lines of the file as it is now.
-//
-// Mac only for now (the brief): a phone's column is too narrow to give
-// a name and a hash a column of their own.
+// **Blame** (round UX-4, the file page's 「…」; UX-23): whether it is
+// shown, per device like the file's 字号, and how HEAD's blame lands on
+// the lines of the file as it is now. Said at the end of the caret's line
+// (`FileView` `InlineBlame`), on every face. ⚠️ 墓碑: a column beside the
+// numbers, Mac only.
 import { useEffect, useState } from "react";
 
 import type { GitBlame } from "@/gen/bindings/GitBlame";

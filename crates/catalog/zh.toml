@@ -4049,7 +4049,7 @@ file-in-code = "在 VS Code 中打开"
 file-size-down = "缩小"
 file-size-up = "放大"
 # 文件页「…」里的 git 历史（round UX-4）：一个文件的提交，点一行就在原处只读打开那一版；
-# 「与当前比较」用已有的差异视图。blame 只在 Mac 上，开着时行号旁一列写每行最后是谁、哪次提交改的。
+# 「与当前比较」用已有的差异视图。blame 开着时，光标所在那一行的行尾写这一行最后是谁、哪次提交改的（UX-23）。
 file-history = "git 历史"
 file-history-none = "这个文件还没有提交过"
 file-history-more = "更早的提交没有列出"

@@ -442,20 +442,9 @@ export default function App() {
   // the sessions pane's meant the drag measured nothing at all on 额度
   // and 浏览 — see the constant.
   const listPane = useListWidth(narrow, "list", "left", LIST_PANE, roomBeside(LIST_PANE));
-  /** The workspace's file tree, as a seam of its own — **held here
-      rather than in the pane**, because the control that folds it now
-      sits on the workspace's row in the list (2026-09-16:「再次点击工作
-      区 list 的某个,也是收起和展开该工作区的文件 list」, landed as a
-      chevron on the open row after the two-meanings trap was talked
-      through), and the list and the pane are siblings: the one thing
-      both can reach is this. */
-  const treePane = useListWidth(
-    narrow,
-    "ws-tree",
-    "left",
-    "[data-ws-tree]",
-    roomBeside("[data-ws-tree]"),
-  );
+  // ⚠️ 墓碑 (UX-23): `treePane`, the workspace's file tree as a seam of
+  // its own beside the list, folded from the open row (2026-09-16 ruling
+  // 42). The tree is the list column's now (`wsTree` below).
   /** Where the face was when it last ran (P3, `lib/place`), read once.
       **On the narrow face only the seat** (UX-14 §7, the owner
       2026-10-05: 「iOS 保持」): a cold start opens the seat's list where it
@@ -594,6 +583,13 @@ export default function App() {
     machine: string;
     path: string;
   } | null>(() => place.ws ?? null);
+  /** **The workspace list drills down** (UX-23 §2, the owner 2026-10-05,
+      Files and Notes' folders): opening a workspace turns the list column
+      into its file tree, under a head 「‹ 工作区名」 that returns to the
+      list; the content holds only the file. Kept per seat — another
+      landing and back finds the tree — and not across a cold start, which
+      lands on the list (UX-14 §7). */
+  const [wsTree, setWsTree] = useState(false);
   // …and the browser landing's own tabs. **A second strip, not a
   // second mechanism** (浏览器接壳批): both browsing landings are the
   // same shell with a different kind, and the two stores are kept apart
@@ -1748,6 +1744,7 @@ export default function App() {
       corners). */
   const openWorkspace = (r: WorkspaceRow) => {
     setOpenWs({ device: r.device, machine: r.machine || r.device, path: r.path });
+    setWsTree(true);
     setScreen("detail");
   };
   // A terminal's 「open enclosing folder」 (roadmap 2.5): that machine's
@@ -1923,11 +1920,9 @@ export default function App() {
             words={words.workspaces}
             reloadAt={wsAdded}
             selected={openWs}
-            // The chevron on the open row. **Not on the narrow face**:
-            // there the list is a screen and the tree the next one, so
-            // there is no column to fold.
-            treeOpen={!treePane.collapsed}
-            onTree={narrow ? undefined : () => treePane.toggle()}
+            // A row opens its workspace's tree in this column (UX-23):
+            // there is no tree beside the list to fold any more.
+            treeOpen={false}
             onOpen={openWorkspace}
           />
         ) : (
@@ -2125,7 +2120,10 @@ export default function App() {
         // into the next one would show somebody a path that is not
         // under the project they just opened.
         key={`${openWs.device} ${openWs.path}`}
-        treePane={treePane}
+        // The tree in the list column (wide), while the list is drilled
+        // into this workspace (`wsTree`); the narrow face's tree is a
+        // screen of the pane's own.
+        side={narrow ? null : { on: wsTree, pane: listPane, set: setWsTree }}
         machine={openWs.machine}
         // **Compared by channel, never by the name on the glass**: the
         // shown name is the user's to retype, and a machine renamed to
@@ -3183,7 +3181,9 @@ export default function App() {
                   a pane and the thing that sizes it are one component
                   (`ListPane`), which is what kept 额度 from having
                   either for four batches. */}
-              {list}
+              {/* Drilled into a workspace, the column is its tree, drawn
+                  by the pane (`WorkspacePane` `side`). */}
+              {!(landing === "workspaces" && openWs !== null && wsTree) && list}
               {/* The open sessions as tabs over the board (iTerm's
                   arrangement), only on the sessions landing and only
                   when something is open — otherwise the row is a blank

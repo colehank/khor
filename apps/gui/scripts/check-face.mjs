@@ -2193,7 +2193,7 @@ try {
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -2672,9 +2672,15 @@ try {
     // Asked over a moment, not once: a column coming back (a width
     // change, a landing switch) is a few frames from its width, and a
     // press taken then would put it away again.
+    // **This landing's own column** (`LIST_PANE`'s one for it), once the
+    // strip says it is the open one: the column being left can still be
+    // on screen for a frame, and reading it said 「out」 for a list that
+    // was put away (section 9, red twice).
+    const own = tab === "quota" ? "[data-quota-pane]" : tab === "browser" ? "[data-browse-tabs]" : tab === "workspaces" ? "[data-list],[data-ws-tree]" : "[data-list]";
     const away = async () => {
+      await until(1_500, async () => (await page.locator(`${rail(tab)}[data-on="true"], [data-rail-more][data-on="true"]`).count()) > 0);
       const wide = () =>
-        page.evaluate(() => Math.max(0, ...[...document.querySelectorAll("[data-list],[data-quota-pane],[data-browse-tabs]")].map((e) => e.getBoundingClientRect().width)));
+        page.evaluate((sel) => Math.max(0, ...[...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect().width)), own);
       return !(await until(800, async () => (await wide()) >= 8));
     };
     if ((await page.locator(rail(tab)).count()) === 0) {
@@ -2688,6 +2694,11 @@ try {
     if (on === "true") await tap(rail(tab === "sessions" ? "devices" : "sessions"));
     if (!(await tap(rail(tab)))) return false;
     if (await away()) await tap(rail(tab));
+    // **A landing is its list** (UX-23 §2): drilled into a workspace, the
+    // column is that workspace's tree; its 「‹」 is the way to the rows.
+    if (tab === "workspaces" && (await page.locator("[data-ws-list-back]").filter({ visible: true }).count()) > 0) {
+      await tap("[data-ws-list-back]");
+    }
     return true;
   };
   /** Open a workspace from the list **and leave its tree out.**
@@ -3268,23 +3279,6 @@ try {
         "cannot ask for the whole-file comparison at all, and the answer " +
         "to that is the letter's row growing a menu item, not a fatter " +
         "letter.",
-    ],
-    "data-ws-seam": [
-      "src/views/WorkspacePane.tsx",
-      "a workspace's own seams — between the file tree and the file, between the file and the " +
-        "editor (2026-09-16 ruling 45), and between the file and the sessions. **The same shape as `data-list-seam` below and the argument has " +
-        "to be made again rather than borrowed, because the two spend their width on different " +
-        "things.** That one takes from a list and a detail; these take from a *file* — every pixel " +
-        "the seam grows is a column of code that stops being on screen, on the one face in this app " +
-        "whose whole job is showing code. WCAG 2.5.5's Essential carve-out in the same literal form: " +
-        "the size is determined by the information being presented. **What it does not buy:** a " +
-        "finger on a wide touch screen. It is also the one place where that costs less than it " +
-        "looks — unlike the list seam, **both of these columns can be put away and brought back " +
-        "without it**: the tree from the workspace's own row in the list and from ⌘B (2026-09-16), the " +
-        "sessions from the switch at R0's right end (`gui.ws_sessions_toggle`, 2026-09-28), and both of those " +
-        "targets do wear the floor. So a touch user loses the *width*, not the column. **It is " +
-        "still not「no problem」**: they cannot choose a width at all, and the answer to that is a " +
-        "width control that is not a two-pixel strip, not a wider strip.",
     ],
     "data-ws-head-where": [
       "src/views/WorkspacePane.tsx",
@@ -5106,69 +5100,42 @@ try {
           fail("an open file's tab carries no kind icon — the tree's icon goes on the tab too (src/views/WorkspacePane.tsx tabFaces)");
         }
       }
-      // **The tree folds from its own row, and from ⌘B** (2026-09-16).
-      // The first shape of this made the chevron the control and the
-      // row the selection; the user changed it:「取消工作区list这个只能
-      // 点击『<』展开文件树吧. 还是点击整个工作区行都可以. 但『<』保留为
-      // 状态展示. 收起状态, 点击行来控制」. So the press is the row's —
-      // the open one's, where it has a second thing left to mean — and
-      // the chevron is a drawing of which way it went.
-      //
-      // ⚠️ 墓碑 (the audit fix plan F2.5, 2026-10-02): the chevron itself
-      // went — a cell at every row's end, an empty gutter on the others.
-      // The open row says so by its block, and `data-tree` on its line
-      // says which way the tree went. The fold is unchanged.
+      // **The list drills into the tree and ‹ climbs back** (UX-23 §2,
+      // the owner 2026-10-05; Files' folders), and ⌘B does the same both
+      // ways. ⚠️ 墓碑 (2026-09-16 → UX-23): the tree folded from the open
+      // row's second press (「还是点击整个工作区行都可以」), with `data-tree`
+      // on the line saying which way — there is no tree beside the list
+      // to fold any more; the row opens it in the list's place.
       {
         const treeCount = () => page.locator("[data-ws-tree]").count();
         const openRow = '[data-ws-row][data-selected="true"]';
         const t0 = await treeCount();
-        await press(openRow);
+        await press("[data-ws-list-back]");
         const t1 = await treeCount();
+        // The selection does not move: the workspace climbed out of is
+        // still the open one, its file still in the content.
+        const stillOpen = await page.locator(openRow).count();
         await press(openRow);
         const t2 = await treeCount();
-        console.log(`tree fold by pressing the open row: ${t0} → ${t1} → ${t2}`);
+        console.log(`tree drill: ${t0} → ‹ ${t1} (open row ${stillOpen}) → row ${t2}`);
         if (!(t0 === 1 && t1 === 0 && t2 === 1)) {
-          fail(
-            `pressing the open workspace's row left the tree at ${t0}/${t1}/${t2} — 「还是点击整个工作区行` +
-              "都可以」, on the row that is already in front (src/views/WorkspacesList.tsx, App.tsx treePane)",
-          );
+          fail(`‹ and the open row left the tree at ${t0}/${t1}/${t2} — the list column is the tree, ‹ the rows, a row the tree again (UX-23; src/views/WorkspacePane.tsx side)`);
         }
-        // …and the line says so, the state a reader is told.
-        const said = await page.$eval('[data-ws-line]:has([data-ws-row][data-selected="true"])', (el) => el.getAttribute("data-tree"));
-        console.log(`tree state: row says ${said}`);
-        if (said !== "true") {
-          fail(
-            `the tree is out and the open row says data-tree=${said} — the line is the state ` +
-              "and nothing else, so it has to be right (src/views/WorkspacesList.tsx)",
-          );
-        }
-        // **The selection does not move under the fold** (the ruling's
-        // second half: 「选中不变, 中栏不变」). A press that both folded
-        // and re-opened the workspace would remount the pane and throw
-        // away what is on the strip.
-        const stillOpen = await page.locator('[data-ws-row][data-selected="true"]').count();
-        if (stillOpen !== 1) {
-          fail(
-            `${stillOpen} workspace row(s) say they are the open one after two presses on the open one — ` +
-              "folding the tree is not a change of workspace (src/views/WorkspacesList.tsx)",
-          );
-        }
+        if (stillOpen !== 1) fail(`${stillOpen} workspace row(s) say they are the open one after ‹ — climbing out is not a change of workspace`);
         await page.keyboard.press("Control+b");
         const k1 = await treeCount();
         await page.keyboard.press("Control+b");
         const k2 = await treeCount();
-        console.log(`tree fold by ⌘B: ${k1} → ${k2}`);
+        console.log(`tree by ⌘B: ${k1} → ${k2}`);
         if (!(k1 === 0 && k2 === 1)) {
-          fail(
-            `⌘B left the tree at ${k1}/${k2} — it is the one way back when both the list and the tree ` +
-              "are folded (src/views/WorkspacePane.tsx)",
-          );
+          fail(`⌘B left the tree at ${k1}/${k2} — the list and the tree, both ways (src/views/WorkspacePane.tsx)`);
         }
       }
       // **The rail's own icon folds the list** (2026-09-16:「再次点击侧边
       // 栏工作区 icon,是收起工作区。这点一直没有实现」), the way the
       // sessions and devices icons already did.
-      const listWidth = () => page.$eval("[data-list]", (el) => Math.round(el.getBoundingClientRect().width));
+      // The column, whichever it holds (the tree since UX-23).
+      const listWidth = () => page.$eval("[data-list], [data-ws-tree]", (el) => Math.round(el.getBoundingClientRect().width));
       const w0 = await listWidth();
       // Raw presses on purpose — the re-press *is* what this probes;
       // everywhere else the walk goes through `open`, which hops so a
@@ -5220,13 +5187,12 @@ try {
       if (open.length !== 1) {
         fail(`pressing one file opened ${open.length} tab(s) — 一个文件一个标签 (src/views/WorkspacePane.tsx)`);
       } else {
-        // The folder it sits in, relative to the root (F4.7: 「where it
-        // is, not its name again」); it was the file's own path.
-        if (open[0].name !== "one.rs" || open[0].sub !== "src") {
+        // **One line, the name** (UX-20, UX-25: the session tabs' pill).
+        // ⚠️ 墓碑 (工作区批⑧, F4.7): the folder it sits in under the name.
+        if (open[0].name !== "one.rs" || open[0].sub !== null) {
           fail(
-            `the tab says ${JSON.stringify([open[0].name, open[0].sub])} — 「标签上显示文件名,下方显示` +
-              "其路径」, and the path is what tells two files of the same name apart " +
-              "(src/views/WorkspacePane.tsx)",
+            `the tab says ${JSON.stringify([open[0].name, open[0].sub])} — the file's name, one line: a tab is ` +
+              "the session tabs' pill (UX-25; src/views/WorkspacePane.tsx)",
           );
         }
         if (open[0].id !== `${pin.name}:${pin.path}/src/one.rs`) {
@@ -6369,61 +6335,41 @@ try {
           "group(s) — the columns' switches are R0's page buttons (src/views/WorkspacePane.tsx)",
       );
     }
-    // **Standing beside both lines and big enough to read** (2026-09-16
-    // ruling 43:「标签页上, 文件类型的icon, 过小了…和这两行对齐」): the
-    // glyph's middle against the middle of name-top to path-bottom, and
-    // its painted height against the two lines it stands beside.
+    // **The session tabs' pill** (UX-25, the owner 2026-10-05: one tab
+    // language): in the glass capsule, the kind icon in the icon seat at
+    // a session face's size, centred on the one line of name.
+    // ⚠️ 墓碑 (2026-09-16 ruling 43): a glyph as tall as a name-over-path
+    // pair, centred on the pair.
     const seat = await page.evaluate(() => {
-      const tab = document.querySelector("[data-tab-open]");
+      const tab = document.querySelector("[data-ws-tab-strip] [data-tab-open]");
       const g = tab?.querySelector("[data-file-kind]");
       const nm = tab?.querySelector("[data-tab-name]");
-      const sub = tab?.querySelector("[data-tab-sub]");
-      if (!g || !nm || !sub) return null;
+      if (!g || !nm) return null;
+      const probe = document.createElement("div");
+      probe.style.height = "var(--tab-face)";
+      document.body.append(probe);
+      const face = Math.round(probe.getBoundingClientRect().height);
+      probe.remove();
       const a = g.getBoundingClientRect();
       const b = nm.getBoundingClientRect();
-      const c = sub.getBoundingClientRect();
-      const svg = g.querySelector("svg");
-      let ink = 0;
-      if (svg) {
-        const bb = svg.getBBox();
-        const vb = svg.viewBox.baseVal;
-        const k = svg.getBoundingClientRect().height / (vb.height || 1);
-        ink = Math.round(bb.height * k * 10) / 10;
-      }
       return {
+        capsule: !!tab.closest("[data-tab-capsule]"),
+        lines: tab.querySelectorAll("[data-tab-sub]").length,
+        glyph: Math.round(a.height),
+        face,
         glyphMid: Math.round((a.top + a.bottom) / 2),
-        pairMid: Math.round((b.top + c.bottom) / 2),
-        pair: `${Math.round(b.top)}–${Math.round(c.bottom)}`,
-        nameLeft: Math.round(b.left),
-        subLeft: Math.round(c.left),
-        ink,
+        nameMid: Math.round((b.top + b.bottom) / 2),
       };
     });
     console.log(`tab glyph seat: ${JSON.stringify(seat)}`);
     if (seat === null) {
-      fail("probe void: the open tab has no kind icon, name and path to measure against each other");
+      fail("probe void: the open tab has no kind icon or name to measure against each other");
     } else {
-      // Three, where the ruling said two: the glyph is centred on the
-      // flex line and the pair is measured box to box, and those differ
-      // by whatever leading the second line carries.
-      if (Math.abs(seat.glyphMid - seat.pairMid) > 3) {
-        fail(
-          `the tab's kind icon is centred at ${seat.glyphMid} while the two lines run ${seat.pair} (middle ` +
-            `${seat.pairMid}) — 「和这两行对齐」 (src/browse/TabStrip.tsx)`,
-        );
+      if (!seat.capsule || seat.lines !== 0) {
+        fail(`the workspace's tab is ${seat.capsule ? "in" : "not in"} the glass capsule with ${seat.lines} second line(s) — the session tabs' pill, one line (UX-25; src/views/WorkspacePane.tsx)`);
       }
-      if (seat.ink < 18) {
-        fail(
-          `the tab's kind icon paints ${seat.ink}px beside two lines — 「过小了…可以放大一点」, and what ` +
-            "has to grow is the ink (src/views/WorkspacePane.tsx tabFaces)",
-        );
-      }
-      if (Math.abs(seat.nameLeft - seat.subLeft) > 1) {
-        fail(
-          `the tab's name starts at ${seat.nameLeft} and its path at ${seat.subLeft} — the glyph is beside the ` +
-            "pair, so both lines start on its right edge (src/browse/TabStrip.tsx)",
-        );
-      }
+      if (Math.abs(seat.glyph - seat.face) > 1) fail(`the tab's kind icon is ${seat.glyph} tall in a pill whose face is ${seat.face} (--tab-face) — the icon seat (UX-25)`);
+      if (Math.abs(seat.glyphMid - seat.nameMid) > 1) fail(`the tab's kind icon is centred at ${seat.glyphMid}, its name at ${seat.nameMid} — one line, one centre (UX-25)`);
     }
     // ii/iii/iv) 编辑, typing, 保存 — and back to reading, rendering what
     // was typed. **The first write's digest**, because a save answers
@@ -7407,6 +7353,9 @@ try {
       // i) open one, and look at what the list says about which.
       await openWs();
       const opened = await until(5_000, async () => (await page.locator("[data-ws-tab-strip]").count()) === 1);
+      // Back up to the rows (UX-23: the open workspace's column is its
+      // tree); it stays the open one, which is what is read.
+      if (await page.locator("[data-ws-list-back]").count()) await press("[data-ws-list-back]");
       // **The pointer is moved off first.** The press that opened the
       // workspace leaves the cursor on that row, and since 2026-09-17
       // hovering a row washes the whole line (ruling 48) — read with
@@ -10070,12 +10019,19 @@ try {
         await press("[data-ws-sessions-switch]");
         await wait(400);
       }
-      const here = await page.evaluate(() =>
-        ["[data-list]", "[data-ws-tree]", "[data-ws-sessions]"].map((s) => {
-          const el = document.querySelector(s);
-          return { pane: s, ground: el ? getComputedStyle(el).backgroundColor : "no such pane" };
-        }),
-      );
+      const read = (sels) =>
+        page.evaluate(
+          (sels) =>
+            sels.map((s) => {
+              const el = document.querySelector(s);
+              return { pane: s, ground: el ? getComputedStyle(el).backgroundColor : "no such pane" };
+            }),
+          sels,
+        );
+      const here = await read(["[data-ws-tree]", "[data-ws-sessions]"]);
+      // The rows are the column the tree was drilled from (UX-23).
+      if (await page.locator("[data-ws-list-back]").count()) await press("[data-ws-list-back]");
+      here.push(...(await read(["[data-list]"])));
       await open("quota");
       await wait(500);
       const quota = await page.evaluate(() => {
@@ -10107,9 +10063,10 @@ try {
             "nothing about the grounds was measured",
         );
       } else {
-        // An open workspace's tree and sessions panes are the board (D8), so
-        // they share the board's ground; every L2 sidebar shares the side's.
-        const board = ["[data-ws-tree]", "[data-ws-sessions]"];
+        // An open workspace's sessions pane is the board (D8), so it wears
+        // the board's ground; every L2 sidebar — the tree too, since it is
+        // the list column's (UX-23) — shares the side's.
+        const board = ["[data-ws-sessions]"];
         for (const group of [panes.filter((p) => !board.includes(p.pane)), panes.filter((p) => board.includes(p.pane))]) {
           if (new Set(group.map((p) => p.ground)).size !== 1) {
             fail(
@@ -12391,7 +12348,9 @@ try {
           const box = document.querySelector("[data-file-scroll]");
           const row = document.querySelector('[data-file-text] [data-line="3"]');
           const on = document.querySelector('[data-rail-item][data-landing="workspaces"]');
-          const open = document.querySelector('[data-ws-row][data-selected="true"] [data-ws-name]');
+          // The open workspace: its row, or — drilled into it, the list
+          // column being its tree (UX-23) — the column's 「‹ 名」.
+          const open = document.querySelector('[data-ws-row][data-selected="true"] [data-ws-name]') ?? document.querySelector("[data-ws-side-head] [data-list-title]");
           return {
             landing: on?.getAttribute("data-on") ?? null,
             workspace: open?.textContent?.trim() ?? null,
@@ -17742,6 +17701,22 @@ try {
   // pins and reorders the machines' list before it gets here.
   await page.setViewportSize({ width: 1400, height: 900 });
   await open("devices");
+  {
+    // Out of the narrow walk just above: say what stood there when the
+    // peer's row did not, then ask for the landing once more.
+    const peerRow = page.locator('[data-list] [data-side-row][data-device="peer"] [data-side-open]').filter({ visible: true });
+    if (!(await until(3_000, async () => (await peerRow.count()) > 0))) {
+      const there = await page.evaluate(() => ({
+        narrow: document.documentElement.hasAttribute("data-narrow"),
+        on: [...document.querySelectorAll('[data-rail-item][data-on="true"]')].map((e) => e.getAttribute("data-landing") ?? "more"),
+        list: Math.round(document.querySelector("[data-list]")?.getBoundingClientRect().width ?? -1),
+        rows: [...document.querySelectorAll("[data-list] [data-side-row]")].map((e) => e.getAttribute("data-device") ?? e.getAttribute("data-side-row")),
+        dialogs: document.querySelectorAll('[role="dialog"], [role="menu"]').length,
+      }));
+      console.log(`section 9 · the peer's row was not on screen after open("devices"): ${JSON.stringify(there)} — asked again`);
+      await open("devices");
+    }
+  }
   await page.locator('[data-list] [data-side-row][data-device="peer"] [data-side-open]').filter({ visible: true }).first().click();
   await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").first().textContent().catch(() => null)) === "peer");
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) === 1);
@@ -23751,7 +23726,9 @@ try {
         }
       }
 
-      // (e) the open workspace: three panes, flush board, heads at --pane-head.
+      // (e) the open workspace: its panes, flush board, heads at --pane-head.
+      // **Two panes in the board since UX-23**: the tree (navigator) is
+      // the list column's, outside the board (⚠️ 墓碑: three).
       if (!(await open("workspaces")) || !(await press("[data-ws-row]"))) {
         fail("probe dead: round 17 (e) could not open a workspace");
       } else {
@@ -23761,7 +23738,7 @@ try {
         await wait(400);
         const w = await page.evaluate(() => {
           const board = document.querySelector("[data-main] [data-board]");
-          const panes = ["[data-ws-tree]", "[data-ws-mid]", "[data-ws-sessions]"].map((s) => {
+          const panes = ["[data-ws-mid]", "[data-ws-sessions]"].map((s) => {
             const p = board?.querySelector(s);
             const h = p?.firstElementChild;
             return p ? { head: h ? +h.getBoundingClientRect().height.toFixed(1) : null } : null;
@@ -23779,9 +23756,9 @@ try {
           fail(`round 17 (e): the open workspace's board keeps margin ${w.margin} and corner ${w.radius} — its panes are the board (D8)`);
         }
         w.panes.forEach((p, i) => {
-          const name = ["navigator", "editor", "inspector"][i];
+          const name = ["editor", "inspector"][i];
           if (!p) fail(`round 17 (e): the open workspace has no ${name} pane in the board`);
-          else if (i !== 1 && p.head !== paneHead) {
+          else if (i !== 0 && p.head !== paneHead) {
             fail(`round 17 (e): the ${name} pane's head is ${p.head} tall, --pane-head is ${paneHead}`);
           }
         });
@@ -24075,6 +24052,8 @@ try {
     await open("workspaces");
     await until(5_000, async () => (await page.locator("[data-ws-row]").count()) >= 3);
     await openWs();
+    // Up to the rows (UX-23: the open workspace's column is its tree).
+    if (await page.locator("[data-ws-list-back]").count()) await press("[data-ws-list-back]");
     await until(5_000, async () => (await page.locator('[data-ws-row][data-selected="true"]').count()) === 1);
     await page.mouse.move(2, 2);
     await wait(300);
@@ -24134,6 +24113,8 @@ try {
     }
 
     // (15) 拉过来: on the hovered, focused and open row; everywhere under a finger.
+    // Back into the open workspace's tree, which (14) climbed out of.
+    if ((await page.locator("[data-ws-tree]").count()) === 0) await press('[data-ws-row][data-selected="true"]');
     await until(5_000, async () => (await page.locator("[data-ws-tree] [data-file] [data-take]").count()) > 1);
     // **By position, not by name**: a name is not unique in a tree (an
     // expanded `src/` holds its own `notes.md`), and a probe keyed on it
@@ -24316,7 +24297,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -24743,7 +24724,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25100,7 +25081,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -25377,7 +25358,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26107,7 +26088,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -26994,7 +26975,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -28325,6 +28306,218 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "scan") console.log("scan · FACE_ONLY=scan: the other sections are skipped");
+
+  // ── 22) the workspace's file, UX-23 and on ─────────────────────────
+  //
+  //   a. **Blame at the caret line's end** (UX-23 §1, the owner
+  //      2026-10-05: the 22ch column squeezed the code to half the pane;
+  //      GitLens' default instead): no column beside the numbers; with
+  //      blame on, one annotation, on the caret's line, starting after
+  //      the line's text and on its last row, `hash · author · age` where
+  //      there is room and the short hash where there is not; a line not
+  //      committed says the catalog's word; the caret moving moves it.
+  //   b. **The workspace list drills down** (UX-23 §2): see the stop.
+  //
+  // `FACE_ONLY=ws` runs this section alone.
+  ws: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "ws") break ws;
+  {
+    const HASH = "7a921aa5c0ffee5c0ffee5c0ffee5c0ffee5c0f";
+    await page.route("**/git_blame", (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          commits: [{ id: HASH, author: "Guohao", when_ms: Date.now() - 3 * 86_400_000, subject: "The notes, first written" }],
+          runs: [{ start: 0, len: 400, commit: 0 }],
+        }),
+      }),
+    );
+    // One line not committed, the last; the three above it are HEAD's.
+    const oneNew = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ hunks: [{ at: 4, lines: 1, was: [] }], more: false }) });
+    await page.route("**/git_diff", oneNew);
+    // Its third line long enough to leave no room for the whole
+    // annotation in a narrow window.
+    const LONG = "the fixture's file, with a line long enough to leave the annotation no room at a narrow width";
+    const longRead = (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ total: 120, at_ms: Date.now(), text: `# notes\n\n${LONG}\n`, cut: false, binary: false, digest: "0".repeat(64) }),
+      });
+    await page.route("**/read_text", longRead);
+    await page.evaluate(() => localStorage.setItem("khor.blame", "1"));
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    // The peer's workspace (the git one), its tree out (the walk's `openWs`).
+    const openWs = async () => {
+      if (!(await press("[data-ws-row]"))) return false;
+      if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+      return true;
+    };
+    // A code file: its source is the editor (notes.md opens rendered).
+    const opened = (await open("workspaces")) && (await openWs()) && (await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button'));
+    const editor = await until(5_000, async () => (await page.locator("textarea[data-edit]").count()) > 0);
+    await wait(600);
+    /** The caret on a line (1-based), the way a press or an arrow leaves it. */
+    const caretTo = (line) =>
+      page.evaluate((line) => {
+        const ed = document.querySelector("textarea[data-edit]");
+        const at = ed.value.split("\n").slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
+        ed.focus();
+        ed.setSelectionRange(at, at);
+        document.dispatchEvent(new Event("selectionchange"));
+        return JSON.stringify(ed.value.split("\n"));
+      }, line);
+    const read = (line) =>
+      page.evaluate((line) => {
+        const r = (el) => el?.getBoundingClientRect() ?? null;
+        const row = document.querySelector(`[data-file-text] [data-line="${line}"]`);
+        const tags = [...document.querySelectorAll("[data-blame-inline]")];
+        const tag = tags[0] ?? null;
+        // The line's last character: where its text ends, on its last row.
+        const range = document.createRange();
+        range.selectNodeContents(row);
+        // An empty line ends where it starts.
+        const rects = [...range.getClientRects()].filter((b) => b.width > 0);
+        const box = r(row);
+        const end = rects[rects.length - 1] ?? (box && { right: box.left, top: box.top });
+        const t = r(tag);
+        return {
+          columns: document.querySelectorAll("[data-blame], [data-blame-line]").length,
+          tags: tags.length,
+          text: tag?.textContent ?? null,
+          short: tag?.hasAttribute("data-blame-short") ?? null,
+          // What is visible of it: never cut to nothing.
+          seen: t ? Math.round(t.width) : 0,
+          left: t && end ? Math.round(t.left - end.right) : null,
+          top: t && end ? Math.round(t.top - end.top) : null,
+          code: Math.round(document.querySelector("[data-file-text]")?.getBoundingClientRect().width ?? 0),
+        };
+      }, line);
+    if (!opened || !editor) {
+      fail("probe dead: ws a · one.rs never opened in the peer's workspace");
+    } else {
+      const lines = await caretTo(3);
+      await wait(400);
+      const two = await read(3);
+      await caretTo(4);
+      await wait(400);
+      const three = await read(4);
+      await page.setViewportSize({ width: 760, height: 900 });
+      await wait(600);
+      await caretTo(3);
+      await wait(400);
+      const tight = await read(3);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      console.log(`ws a · blame at the caret (${lines}): line 3 ${JSON.stringify(two)}; line 4 ${JSON.stringify(three)}; at 760 ${JSON.stringify(tight)}`);
+      for (const [at, r] of [["line 3", two], ["line 4", three], ["760", tight]]) {
+        if (r.tags === 1 && r.seen < 24) fail(`ws a · the annotation on ${at} shows ${r.seen}px of itself — at least the hash, never cut to nothing`);
+      }
+      if (two.columns !== 0) fail(`ws a · ${two.columns} blame column piece(s) beside the numbers — blame is the caret line's end now (UX-23; src/views/FileView.tsx)`);
+      if (two.tags !== 1 || !two.text?.startsWith(`${HASH.slice(0, 7)} · Guohao · `)) {
+        fail(`ws a · the caret's line carries ${two.tags} annotation(s) reading ${JSON.stringify(two.text)} — one, 「${HASH.slice(0, 7)} · Guohao · <age>」`);
+      }
+      if (two.left === null || two.left < 0 || Math.abs(two.top) > 2) fail(`ws a · the annotation stands ${two.left} past the line's end and ${two.top} off its last row — after the text, on its row`);
+      if (three.left === null || three.left < 0 || Math.abs(three.top) > 2) fail(`ws a · on an empty line the annotation stands ${three.left} past its start and ${three.top} off it`);
+      if (three.tags !== 1 || three.text === two.text) fail(`ws a · the caret on line 4 (not committed) left ${three.tags} annotation(s) reading ${JSON.stringify(three.text)} — it moves with the caret and says the catalog's word`);
+      if (tight.tags !== 1 || (!tight.short && tight.text !== two.text) || (tight.short && tight.text !== HASH.slice(0, 7))) {
+        fail(`ws a · at 760 the annotation reads ${JSON.stringify(tight)} — the whole of it where it fits, else the short hash`);
+      }
+    }
+    await page.evaluate(() => localStorage.removeItem("khor.blame"));
+    await page.unroute("**/git_blame");
+    await page.unroute("**/git_diff", oneNew);
+    await page.unroute("**/read_text", longRead);
+
+    // b. **The workspace list drills down** (UX-23 §2, the owner
+    //    2026-10-05, Files and Notes' folders). Wide: a row turns the list
+    //    column into that workspace's tree under 「‹ 工作区名」, and the
+    //    content holds no tree; ‹ is the rows again, the file still open;
+    //    another landing and back finds the tree as it was left. Narrow:
+    //    list → tree → file, a 「‹」 a level each.
+    const where = () =>
+      page.evaluate(() => {
+        // On screen: a narrow screen that slid away keeps its width.
+        const shown = (sel) =>
+          [...document.querySelectorAll(sel)].filter((e) => {
+            const b = e.getBoundingClientRect();
+            return b.width > 0 && b.right > 1 && b.left < window.innerWidth - 1 && e.checkVisibility();
+          });
+        const side = document.querySelector("[data-side-block], aside[data-side]") ?? null;
+        const tree = shown("[data-ws-tree]")[0] ?? null;
+        const region = shown("[data-region]")[0] ?? null;
+        return {
+          rows: shown("[data-ws-row]").length,
+          tree: tree ? 1 : 0,
+          treeInContent: region ? region.querySelectorAll("[data-ws-tree]").length : 0,
+          treeLeft: tree ? Math.round(tree.getBoundingClientRect().left) : null,
+          back: shown("[data-ws-list-back], [data-back]").length,
+          title: shown("[data-list-title]")[0]?.textContent?.trim() ?? null,
+          search: shown("[data-tree-search]").length,
+          file: shown("[data-ws-mid] textarea[data-edit], [data-file-page]").length,
+          side: side ? 1 : 0,
+          // The page in front, where a finger lands in the middle.
+          top: (() => {
+            const at = document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2);
+            return at?.closest("[data-file-page]") ? "file" : at?.closest("[data-ws-tree]") ? "tree" : at?.closest("[data-list]") ? "list" : null;
+          })(),
+        };
+      });
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    // The report's shots (FACE_SHOTS): each level, both faces.
+    const snap = async (name) => process.env.FACE_SHOTS && (await page.screenshot({ path: join(process.env.FACE_SHOTS, `ux23-${name}.png`) }));
+    await open("workspaces");
+    const listed = await where();
+    await snap("wide-list");
+    await press("[data-ws-row]");
+    await wait(600);
+    const drilled = await where();
+    await press('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+    await wait(600);
+    const withFile = await where();
+    await snap("wide-tree-file");
+    await press("[data-ws-list-back]");
+    await wait(500);
+    const backUp = await where();
+    await press("[data-ws-row]");
+    await wait(400);
+    await press('[data-rail-item][data-landing="sessions"]');
+    await wait(400);
+    await press('[data-rail-item][data-landing="workspaces"]');
+    await wait(600);
+    const kept = await where();
+    console.log(`ws b · wide: list ${JSON.stringify(listed)} → row ${JSON.stringify(drilled)} → file ${JSON.stringify(withFile)} → ‹ ${JSON.stringify(backUp)}; another landing and back ${JSON.stringify(kept)}`);
+    if (listed.rows === 0 || listed.tree !== 0) fail(`ws b · the workspaces landing opened on ${JSON.stringify(listed)} — its rows, no tree`);
+    if (drilled.rows !== 0 || drilled.tree !== 1 || drilled.treeInContent !== 0 || drilled.back < 1 || drilled.search !== 1) {
+      fail(`ws b · a row left ${JSON.stringify(drilled)} — the list column becomes the tree (with its search) under 「‹ 工作区名」, no tree in the content (UX-23; src/views/WorkspacePane.tsx side)`);
+    }
+    if (withFile.file !== 1 || withFile.treeInContent !== 0) fail(`ws b · a file opened from the tree reads ${JSON.stringify(withFile)} — the file in the content, the tree beside it in the list column`);
+    if (backUp.rows === 0 || backUp.tree !== 0 || backUp.file !== 1) fail(`ws b · ‹ left ${JSON.stringify(backUp)} — the rows again, the file still open`);
+    if (kept.tree !== 1 || kept.rows !== 0) fail(`ws b · back on 工作区 from another landing the column reads ${JSON.stringify(kept)} — the tree as it was left`);
+    // Narrow: list → tree → file.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await wait(600);
+    await open("workspaces");
+    const nList = await where();
+    await snap("narrow-list");
+    await press("[data-ws-row]");
+    await wait(600);
+    const nTree = await where();
+    await snap("narrow-tree");
+    await press('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+    await wait(600);
+    const nFile = await where();
+    await snap("narrow-file");
+    console.log(`ws b · narrow: list ${JSON.stringify(nList)} → tree ${JSON.stringify(nTree)} → file ${JSON.stringify(nFile)}`);
+    if (nList.top !== "list") fail(`ws b · the narrow workspaces seat opened on ${JSON.stringify(nList)} — its rows`);
+    if (nTree.top !== "tree" || nTree.back < 1) fail(`ws b · a row on the phone left ${JSON.stringify(nTree)} — the tree page with ‹`);
+    if (nFile.top !== "file") fail(`ws b · a file on the phone left ${JSON.stringify(nFile)} — the file page`);
+    await page.setViewportSize({ width: 1400, height: 900 });
+  }
+  }
+  if (process.env.FACE_ONLY === "ws") console.log("ws · FACE_ONLY=ws: the other sections are skipped");
 
   // ── 20) 窄档的会话页：内容在上，标签与操作在下 (iOS 第三步 A, 2026-10-02) ──
   //

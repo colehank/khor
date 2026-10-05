@@ -34,7 +34,7 @@ import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconBack, IconBranch, IconCheck, IconFiles, IconPencil, IconPlus, IconSearch, IconSessions } from "@/components/icons";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
-import { DeeperHeads, NarrowHead } from "@/components/SideHead";
+import { DeeperHeads, NarrowHead, SideSeat } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
@@ -54,7 +54,7 @@ import { Tabs } from "@/browse/Tabs";
 import { cli, gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useHidden } from "@/hooks/use-hidden";
-import { roomBeside, useListWidth } from "@/hooks/use-list-width";
+import { roomBeside, useListWidth, type PaneWidth } from "@/hooks/use-list-width";
 import { reportDrafts } from "@/lib/drafts";
 import { useReadFirst } from "@/hooks/use-read-first";
 import { useTabHost } from "@/lib/shortcuts";
@@ -97,7 +97,7 @@ export function WorkspacePane({
   reveal,
   onRevealSeen,
   narrow,
-  treePane,
+  side,
   listOpen,
   onBack,
 }: {
@@ -187,9 +187,13 @@ export function WorkspacePane({
   /** …and this column has taken it (`onOpenedSeen`'s reason). */
   onRevealSeen: () => void;
   narrow: boolean;
-  /** The file tree's seam, owned by the shell so the list's chevron and
-      this pane fold the same column (`App`). */
-  treePane: ReturnType<typeof useListWidth>;
+  /** **The tree is the list column's** (UX-23 §2), wide: `on` while the
+      list is drilled into this workspace — the tree is drawn in the
+      list's seat with the list's seam (`pane`), under 「‹ 工作区名」, which
+      `set(false)` answers — and `null` on the narrow face, where the tree
+      is a screen of this pane's. ⚠️ 墓碑: `treePane`, a column of its own
+      between the list and the file. */
+  side: { on: boolean; pane: PaneWidth; set: (on: boolean) => void } | null;
   /** Whether the workspace list is holding a column of its own. The
       fifth column's existence is what decides the sessions' default,
       and only the shell knows about it. */
@@ -246,16 +250,15 @@ export function WorkspacePane({
    * the fourth for one batch; it is a window of its own now and a
    * window is not a screen of this face.
    *
-   * **It opens on the tree unless a file was left open** — walking into
-   * a project is walking into its files, and a workspace that reopened
-   * on the tree with a tab already on the strip would hide the thing
-   * somebody was last reading behind a press.
+   * **It opens on the tree** (UX-23 §2, the owner 2026-10-05: list →
+   * tree → file, a level at a time, Files' folders): a workspace chosen
+   * from the list is its tree, and the file left open is one press
+   * further. ⚠️ 墓碑: 「unless a file was left open」 — it opened on that
+   * file, a level skipped.
    *
    * Wide ignores this entirely: `narrow` is what reads it, and the
    * three columns are all on screen there. */
-  const [screen, setScreen] = useState<"tree" | "file" | "sessions">(() =>
-    tabs.length > 0 ? "file" : "tree",
-  );
+  const [screen, setScreen] = useState<"tree" | "file" | "sessions">("tree");
   /** Which tab is the **preview**: opened by one click, and replaced by
       the next one rather than joined by it (VS Code's arrangement, and
       the user asked for VS Code's). `null` when every open tab is
@@ -358,7 +361,7 @@ export function WorkspacePane({
     // the right answer for two columns and not for three.
     roomBeside("[data-ws-sessions]"),
   );
-  const tree = !treePane.collapsed;
+  const tree = side?.on ?? false;
   const sessions = !sidePane.collapsed;
   // **Said as a state, never as a flip** (工作区批⑨): the default below
   // is declared from an effect, and an effect that flips is an effect
@@ -1035,12 +1038,12 @@ export function WorkspacePane({
         // there, and the key's whole job on both faces is the same one
         // — put the tree in front of me, from wherever I am.
         if (narrow) setScreen("tree");
-        else treePane.toggle();
+        else side?.set(!side.on);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [treePane, narrow]);
+  }, [side, narrow]);
 
   // 会话里的路径与网址可点 (ruling 35). What the conversations in the
   // right-hand column are allowed to turn into links, and what happens
@@ -1114,16 +1117,10 @@ export function WorkspacePane({
         face: null,
         path,
         machine,
-        // **Where it is, not its name again** (the audit fix plan F4.7;
-        // W17): the folder it sits in, relative to the workspace root —
-        // the half that tells two tabs called `mod.rs` apart — or the
-        // workspace's own name for a file at its root. The absolute path
-        // is the hover title's, and both are on the menu.
-        sub: (() => {
-          const rel = under(root, path);
-          const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-          return dir || basename(root) || rel;
-        })(),
+        // **One line, the name** (UX-20, UX-25: one tab language — the
+        // session tabs' pill). ⚠️ 墓碑 (F4.7; W17): `sub`, the folder the
+        // file sits in under its name — the absolute path is the hover
+        // title's, and both are on the menu.
         // What the open file has left to whisper — today, a diff that
         // stopped short (第十四轮 第 2 条). Only the front tab has a
         // view to report it, so only the front tab wears it.
@@ -1132,17 +1129,17 @@ export function WorkspacePane({
         dirty: !isDiff && drafts.has(key),
         preview: preview === key,
         // The file's own kind on the tab too (2026-09-16:「标签页打开了,
-        // 最上方也要有 icon」) — the same icon the tree drew for it.
-        //
-        // **32, which is the two lines' own height** (2026-09-16:「标签
-        // 页上, 文件类型的icon, 过小了…可以放大一点, 和这两行对齐」). The
-        // tab is a name over a path, 18 and 14 of leading, and the glyph
-        // stands beside the pair rather than on the first line — so it
-        // paints about 25, most of the pair's height (a 28 box: every
-        // shape fills 0.90 of its box since 2026-10-02, `FileKindIcon`). The size is set here because this is where the glyph is
-        // made; `TabStrip` places what it is handed and sizes nothing
-        // (its own head says so).
-        glyph: <FileKindIcon name={basename(path)} className="size-7" />,
+        // 最上方也要有 icon」) — the same icon the tree drew for it, in
+        // the pill's icon seat at a session face's size (UX-25:
+        // `--tab-face`). ⚠️ 墓碑: 28, the height of the name and path
+        // pair it stood beside. The size is set here because this is
+        // where the glyph is made; `TabStrip` places what it is handed.
+        // In a box of its own so it centres on the pill, not on a line.
+        glyph: (
+          <span className="grid size-tab-face place-items-center">
+            <FileKindIcon name={basename(path)} className="size-tab-face" />
+          </span>
+        ),
         // 预览, on the tab it is about (2026-09-17 ruling 47). Only
         // where there is a second face to switch to — a `.rs` has one
         // face and grows no eye, exactly as the strip's far end drew
@@ -1344,7 +1341,9 @@ export function WorkspacePane({
             aria-pressed={tree}
             data-ws-tree-switch
             on={tree}
-            onClick={() => treePane.toggle()}
+            // The list column between the workspaces and this one's tree
+            // (UX-23 §2).
+            onClick={() => side?.set(!tree)}
           >
             <IconFiles />
           </GlassItem>
@@ -1607,6 +1606,21 @@ export function WorkspacePane({
       )}
 
       <div className="flex min-h-0 flex-1">
+        {/* **The list column's head while it holds the tree** (UX-23 §2):
+            「‹ 工作区名」 where the list's title stands; ‹ is the way back to
+            the workspaces (the head of a folder in Files). */}
+        {!narrow && tree && (
+          <SideSeat>
+            <div data-ws-side-head className="flex min-w-0 flex-1 items-center gap-in">
+              <GlassCircle aria-label={gui.back} data-ws-list-back onClick={() => side?.set(false)}>
+                <IconBack />
+              </GlassCircle>
+              <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
+                {root === "" ? machine : basename(root)}
+              </h1>
+            </div>
+          </SideSeat>
+        )}
         {(narrow ? screen === "tree" : tree) && (
           <ListPane
             mark="data-ws-tree"
@@ -1619,9 +1633,13 @@ export function WorkspacePane({
             // (2026-09-20 第 6 条). The ground, the head's height, the
             // seam and the scroll rule all come from there; the tree
             // keeps its own scroller inside, so `scroll` is off.
-            pane={narrow ? null : treePane}
+            // **Wide, the list column's own seat and seam** (UX-23 §2): the
+            // tree takes the workspaces list's place in the side block,
+            // sized by the list's drag.
+            pane={narrow ? null : (side?.pane ?? null)}
             narrow={narrow}
-            seam={{ "data-ws-seam": "tree" }}
+            seat={narrow ? undefined : "side"}
+            seam={{ "data-list-seam": "" }}
             scroll={false}
             // **A ceiling on the share, not only a width** (工作区批⑨).
             // The dragged width is a number of pixels and the pane it
@@ -1647,7 +1665,7 @@ export function WorkspacePane({
             // floor. It is still worth having, because a width
             // remembered from a wide window is applied unread in a
             // narrow one, and that is the case the seam never sees.
-            className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0")}
+            className={cn(narrow && "min-w-0 flex-1")}
             // ── the tree's own head: a box and ＋ ──────────────────
             // (2026-09-17 ruling 47:「在文件树的侧边上加一个搜索框(可搜
             // 索文件名与内容)」— the user).
@@ -1855,6 +1873,11 @@ export function WorkspacePane({
           ) : (
           <div ref={readFirst.box} className="contents">
           <Tabs
+            // **The session tabs' capsule** (UX-25, the owner 2026-10-05:
+            // one tab language): pills in one glass capsule, the file's
+            // kind in the icon seat, one line of name, × on the one in
+            // front and under the pointer. ⚠️ 墓碑: the VS Code-style strip.
+            glass
             faces={tabFaces}
             active={file === null ? "" : `${machine}:${file}`}
             onFocus={(id) => setFile(id.slice(machine.length + 1))}

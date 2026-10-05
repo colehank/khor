@@ -49,7 +49,7 @@ const STORE = (seam: Seam) => `khor.${seam}-width`;
  * them is what makes 「the pane the seam is beside」 a thing this hook
  * can actually find.
  */
-export const LIST_PANE = "[data-list],[data-quota-pane],[data-browse-tabs]";
+export const LIST_PANE = "[data-list],[data-quota-pane],[data-browse-tabs],[data-ws-tree]";
 
 // Numbers live in tokens.css; these fallbacks only catch the token
 // failing to resolve at all, and mirror the values written there.

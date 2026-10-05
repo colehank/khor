@@ -46,9 +46,9 @@ import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { languageOf, paintFileLines } from "@/lib/highlight";
 import { blameOfLines, useBlameShown } from "@/lib/blame";
+import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { useHereHosts } from "@/lib/here";
-import { useCoarse } from "@/hooks/use-coarse";
 import { ago } from "@/words";
 import { usePinch } from "@/hooks/use-pinch";
 import { cn } from "@/lib/utils";
@@ -468,17 +468,17 @@ export function FileView({
     };
   }, [machine, path, diffAt, git]);
 
-  // **Blame, when it is asked for** (round UX-4): a Mac's column beside
-  // the numbers, asked of the machine holding the file once per file and
-  // again after a save, and mapped onto the lines as they are now.
+  // **Blame, when it is asked for** (round UX-4; UX-23): asked of the
+  // machine holding the file once per file and again after a save, and
+  // mapped onto the lines as they are now. Drawn on the caret's line
+  // only (`InlineBlame`), on every face.
   const blameShown = useBlameShown();
   const ground = usePreviewGround();
-  const coarse = useCoarse();
   const [blame, setBlame] = useState<GitBlame | null>(null);
   useEffect(() => {
     let live = true;
     setBlame(null);
-    if (!git || !blameShown.on || coarse) return;
+    if (!git || !blameShown.on) return;
     fetchGitBlame(machine, path)
       .then((b) => live && setBlame(b))
       // The gutter's rule: what khor could not read is not drawn.
@@ -486,7 +486,7 @@ export function FileView({
     return () => {
       live = false;
     };
-  }, [machine, path, diffAt, git, blameShown.on, coarse]);
+  }, [machine, path, diffAt, git, blameShown.on]);
 
   // **The one thing the vanished rows still had to say**, handed to
   // the tab that owns this file so it can wear it as a hover title
@@ -612,6 +612,11 @@ export function FileView({
     () => (blame === null || diff === null || dirty ? null : blameOfLines(rows.length, blame, diff.hunks)),
     [blame, diff, dirty, rows.length],
   );
+  /** The line the caret is on, 1-based — the one line blame is said on
+      (UX-23, GitLens' arrangement); a press on a line where there is no
+      editor puts it there too. */
+  const [caret, setCaret] = useState<number | null>(null);
+  useEffect(() => setCaret(null), [path]);
   /** Where each source line starts, in pixels down from the sheet's own
       top, plus one last entry for the bottom of the last line — so a
       hunk covering lines `at`…`at+n` is `tops[at-1]` to `tops[at-1+n]`
@@ -1326,6 +1331,12 @@ export function FileView({
         // keyboard switch, and WebKit keeps the focus when the blank under
         // the last line is tapped. A touch anywhere in the view but the
         // text ends the editing, as it does in Notes.
+        // Where there is no editor over the text, a press on a line says
+        // which line is read — blame's line (UX-23).
+        onClick={(e) => {
+          const at = e.target instanceof Element ? e.target.closest("[data-file-text] [data-line]")?.getAttribute("data-line") : null;
+          if (at) setCaret(Number(at));
+        }}
         onPointerDown={(e) => {
           const ed = document.activeElement;
           if (
@@ -1373,32 +1384,10 @@ export function FileView({
               </div>
             ))}
           </pre>
-          {blamed !== null && (
-            <pre
-              data-blame
-              aria-hidden="true"
-              className="w-blame-col shrink-0 select-none overflow-hidden border-r px-2 font-mono text-caption text-muted-foreground"
-            >
-              {blamed.map((c, i) => {
-                // Said once per run: the first line a commit wrote here
-                // carries its hash and author, the rest of the run is blank.
-                const first = i === 0 || blamed[i - 1]?.id !== c?.id;
-                return (
-                  <div
-                    key={i}
-                    data-blame-line={i + 1}
-                    title={c === null ? gui.blame_uncommitted : `${c.id.slice(0, 7)} ${c.author} · ${ago(c.when_ms)}\n${c.subject}`}
-                    // The code's line height, not the caption's: the
-                    // name sits on its line's first row like the number.
-                    className="truncate leading-[var(--text-mono--line-height)]"
-                    style={tops.length > i + 1 ? { height: tops[i + 1] - tops[i] } : undefined}
-                  >
-                    {first ? (c === null ? gui.blame_uncommitted : `${c.id.slice(0, 7)} ${c.author}`) : " "}
-                  </div>
-                );
-              })}
-            </pre>
-          )}
+          {/* ⚠️ 墓碑 (UX-4 → UX-23, the owner 2026-10-05): a blame column
+              beside the numbers, `--blame-col` (22ch) wide — it squeezed
+              the code to half the pane. Blame is the caret's line's end
+              now (`InlineBlame`). */}
           <Gutter
             hunks={hunks}
             shown={shown}
@@ -1437,12 +1426,17 @@ export function FileView({
               // is starting to type *while* looking at what HEAD had —
               // one Esc away, and the buffer is untouched throughout.
               edit={canEdit && !reading}
+              blameAt={blamed !== null ? caret : null}
+              onCaret={setCaret}
               onText={(t) => {
                 setClashes(null);
                 setEdit((e) => (e === null ? e : { ...e, text: t }));
               }}
               onSave={save}
             />
+            {blamed !== null && caret !== null && caret <= blamed.length && (
+              <InlineBlame commit={blamed[caret - 1]} sheet={sheet} tops={tops} />
+            )}
           </div>
         </div>
       </div>
@@ -1643,6 +1637,8 @@ function Sheet({
   peekNext,
   peekH,
   edit,
+  blameAt,
+  onCaret,
   onText,
   onSave,
 }: {
@@ -1675,9 +1671,14 @@ function Sheet({
       no caret, and the strip above already says why this one is only
       to look at. */
   edit: boolean;
+  /** The line blame is said at the end of (`InlineBlame`), or null. */
+  blameAt: number | null;
+  /** The caret moved to a line (1-based). */
+  onCaret: (line: number) => void;
   onText: (text: string) => void;
   onSave: () => void;
 }) {
+  const caretOf = (el: HTMLTextAreaElement) => onCaret(el.value.slice(0, el.selectionStart).split("\n").length);
   return (
     <>
       <pre
@@ -1714,6 +1715,9 @@ function Sheet({
               // generated (`lib/highlight`'s `line`).
               <span dangerouslySetInnerHTML={{ __html: paint[i] }} />
             )}
+            {/* Where the line's text ends: blame is hung off this (it
+                takes no room, so the line wraps as the editor's does). */}
+            {blameAt === i + 1 && <span data-blame-at className="inline-block h-[var(--text-mono--line-height)] w-0 align-top" />}
           </div>
         ))}
         {peek !== null && peekAt !== null && (
@@ -1725,6 +1729,8 @@ function Sheet({
           data-edit
           value={text}
           onChange={(e) => onText(e.target.value)}
+          onSelect={(e) => caretOf(e.currentTarget)}
+          onFocus={(e) => caretOf(e.currentTarget)}
           onKeyDown={(e) => {
             // The one shortcut. `metaKey` and `ctrlKey` both, because
             // this face runs on a mac app, a browser on a phone and a
@@ -1785,6 +1791,109 @@ function hunkInk(h: GitHunk): string {
   // Lines with nothing behind them in HEAD — 新增.
   if (h.was.length === 0) return "bg-git-added";
   return "bg-git-modified";
+}
+
+/**
+ * **Blame at the end of the caret's line** (UX-23, the owner 2026-10-05:
+ * the 22ch column squeezed the code to half the pane — GitLens' default
+ * instead). One annotation, in the muted ink, hung off the line's last
+ * character (`[data-blame-at]` in `Sheet`) so it takes no room and moves
+ * no line: `7a921aa · 作者 · 3 天前`, or the short hash alone where the line
+ * leaves no room for that. The whole commit — and its subject — on hover,
+ * or a long press under a finger. Not committed: the catalog's word.
+ */
+function InlineBlame({
+  commit,
+  sheet,
+  tops,
+}: {
+  commit: GitCommit | null;
+  sheet: React.RefObject<HTMLPreElement | null>;
+  /** The lines' measured tops: a re-wrap moves the line's end. */
+  tops: number[];
+}) {
+  const whole = useRef<HTMLSpanElement>(null);
+  const [at, setAt] = useState<{ x: number; y: number; room: number } | null>(null);
+  const [short, setShort] = useState(false);
+  /** Not even the hash fits after the text (a line that runs to the
+      pane's edge, as a phone's often do): it stands at the row's end,
+      over the text, on the file's ground. */
+  const [over, setOver] = useState(false);
+  const hash = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const press = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const long = commit === null ? gui.blame_uncommitted : `${commit.id.slice(0, 7)} · ${commit.author} · ${ago(commit.when_ms)}`;
+  const brief = commit === null ? gui.blame_uncommitted : commit.id.slice(0, 7);
+  useLayoutEffect(() => {
+    const pre = sheet.current;
+    const mark = pre?.querySelector<HTMLElement>("[data-blame-at]");
+    const box = pre?.parentElement;
+    if (!pre || !mark || !box) {
+      setAt(null);
+      return;
+    }
+    const b = box.getBoundingClientRect();
+    const m = mark.getBoundingClientRect();
+    const end = parseFloat(getComputedStyle(pre).paddingRight) || 0;
+    const x = m.left - b.left;
+    setAt({ x, y: m.top - b.top, room: Math.max(0, b.width - x - end) });
+  }, [sheet, tops, commit]);
+  useLayoutEffect(() => {
+    // The whole annotation measured off screen, then cut to the hash
+    // where it does not fit.
+    const el = whole.current;
+    if (!el || !at) return;
+    setShort(el.offsetWidth > at.room);
+    setOver((hash.current?.offsetWidth ?? 0) > at.room);
+  }, [at, long]);
+  useEffect(() => {
+    if (!open) return;
+    const away = () => setOpen(false);
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [open]);
+  if (!at) return null;
+  return (
+    <>
+      <span ref={whole} aria-hidden="true" className="invisible absolute whitespace-nowrap ps-group font-mono text-caption">
+        {long}
+      </span>
+      <span ref={hash} aria-hidden="true" className="invisible absolute whitespace-nowrap ps-group font-mono text-caption">
+        {brief}
+      </span>
+      <span
+        data-blame-inline
+        data-blame-over={over || undefined}
+        data-blame-short={short || undefined}
+        title={commit === null ? undefined : `${long}\n${commit.subject}`}
+        style={over ? { right: 0, top: at.y } : { left: at.x, top: at.y, maxWidth: at.room }}
+        className={cn(
+          "absolute z-10 overflow-hidden whitespace-nowrap font-mono text-caption leading-[var(--text-mono--line-height)] text-tertiary select-none",
+          over ? "rounded-xs bg-card px-xxs me-3" : "ps-group",
+        )}
+        onPointerDown={(e) => {
+          if (e.pointerType === "mouse" || commit === null) return;
+          e.stopPropagation();
+          press.current = setTimeout(() => setOpen(true), 450);
+        }}
+        onPointerUp={() => press.current && clearTimeout(press.current)}
+        onPointerCancel={() => press.current && clearTimeout(press.current)}
+        onContextMenu={(e) => e.preventDefault()}
+      >
+        {short ? brief : long}
+      </span>
+      {open && commit !== null && (
+        <div
+          data-blame-card
+          style={{ left: Math.max(0, at.x), top: at.y }}
+          className="absolute z-20 mt-[var(--text-mono--line-height)] max-w-[min(32rem,90%)] rounded-md border bg-popover p-in text-caption shadow-(--shadow-float)"
+        >
+          <div className="font-mono text-muted-foreground">{long}</div>
+          <div className="text-foreground">{commit.subject}</div>
+        </div>
+      )}
+    </>
+  );
 }
 
 /** The change gutter: one bar per hunk, each one pressable.
