@@ -514,7 +514,7 @@ export function PillSlot({ loading = false, seat, children }: { loading?: boolea
     while its tab reloads; the screen draws one for `loading`. */
 export function PillProgress() {
   return (
-    <span data-pill-progress aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden">
+    <span data-pill-progress aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-progress-h overflow-hidden">
       <span className="block h-full w-full origin-left bg-brand-strong" />
     </span>
   );

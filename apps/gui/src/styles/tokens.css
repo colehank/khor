@@ -2302,6 +2302,7 @@
   --spacing-list-face: var(--list-face);
   --spacing-deck-strip: var(--deck-strip);
   --spacing-dial-seat: var(--dial-seat);
+  --spacing-progress-h: var(--progress-h);
   --spacing-dial-seat-me: var(--dial-seat-me);
   --spacing-list-head: var(--list-head);
   --spacing-glass-tabs: var(--glass-tabs);
@@ -2760,6 +2761,9 @@
   --dial-seat: 40px;
   --dial-seat-me: 72px;
   --dial-halo: 22px;
+  /* The progress line along a tab pill's bottom edge while the tab
+     reloads (UX-31 §3, UX-33 §2): Safari's run, two points. */
+  --progress-h: 2px;
   /* The session tabs' glass capsule and the pills in it, and a tab's
      face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */
   /* **The conversation's input, one glass capsule** (the redesign,

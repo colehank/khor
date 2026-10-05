@@ -300,7 +300,7 @@ function KeyPanel({ term, mods, onMods }: { term: RefObject<Terminal | null>; mo
             )}
             {/* **The way back to the keyboard**, where iOS keeps its own
                 keyboard switch: the foot's left end. */}
-            <div data-key-panel-foot className="flex flex-none items-center px-row py-xxs pb-[calc(var(--spacing-xxs)+env(safe-area-inset-bottom,0px))]">
+            <div data-key-panel-foot className="flex flex-none items-center px-row py-xxs pb-[calc(var(--spacing-xxs)+var(--safe-bottom))]">
               <button
                 type="button"
                 data-key-panel-keyboard
