@@ -1763,6 +1763,9 @@
    * mistake at a smaller size. 10 is the smallest the three shapes
    * (chat / terminal / agent) stay apart at; the frame keeps the row's
    * one-step margin around it. */
+  /* The mark on the dial's 72 middle face (UX-26): 28, a whole-pixel 22
+   * margin all round; the 40 seats take the row's 18. */
+  --kind-mark-dial-me: 28px;
   --kind-mark-tab: 12px;
   --kind-mark-tab-glyph: 10px;
   /* The gap between a tab's face and the name beside it (第 3 条:
@@ -2256,6 +2259,7 @@
   --spacing-affordance: var(--affordance);
   --spacing-kind-mark: var(--kind-mark);
   --spacing-kind-mark-glyph: var(--kind-mark-glyph);
+  --spacing-kind-mark-dial-me: var(--kind-mark-dial-me);
   --spacing-kind-mark-tab: var(--kind-mark-tab);
   --spacing-kind-mark-tab-glyph: var(--kind-mark-tab-glyph);
   /* `min-h-pane-head` on a pane's top row, `h-pane-head` on the tab

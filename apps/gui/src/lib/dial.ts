@@ -60,10 +60,11 @@ export function frame(w: number, h: number, narrow: boolean, seats: Seats = { se
     screen's y runs down). */
 export function spread(ids: readonly string[], kept: Readonly<Record<string, number>>): Map<string, number> {
   const n = ids.length;
-  // An even count straddles the top; an odd count puts its first seat on
-  // the top, so none lands straight under the middle, where this
-  // machine's name hangs (one fast machine on a phone sat on it).
-  const first = n % 2 === 0 ? 0.5 : 0;
+  // An even count straddles the top; an odd count starts a quarter step
+  // past it, so no seat lands straight over the middle (on the rings'
+  // words) or straight under it (on this machine's name — one fast
+  // machine on a phone sat on it).
+  const first = n % 2 === 0 ? 0.5 : 0.25;
   const out = new Map<string, number>();
   ids.forEach((id, i) => {
     const k = kept[id];

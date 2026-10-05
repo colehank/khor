@@ -62,9 +62,9 @@ import {
   type WorkspaceRow,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { machineMark } from "@/components/BrandIcons";
 import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { GlassCircle } from "@/components/Glass";
+import { MachineFace } from "@/components/SessionFace";
 import { IconBack, IconMore } from "@/components/icons";
 import { WindowControls } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
@@ -784,7 +784,6 @@ function Dial({
     const y = isMe ? f.cy : p!.y;
     const off = !isMe && p!.band === "none";
     const lab = isMe ? { x: 0, y: half + 8, side: "c" as const, vert: "b" as const } : labelOffset(p!.ang, half + 8, narrow);
-    const Mark = machineMark(row.vitals?.vitals.system ?? null);
     const model = row.vitals?.vitals.model?.name ?? null;
     const seen = off ? lastSeenMs(row) : null;
     return (
@@ -825,17 +824,10 @@ function Dial({
         }}
       >
         <div data-dial-face className="absolute rounded-full" style={{ left: hit - half, top: hit - half, width: half * 2, height: half * 2 }}>
-          <MachineAvatar face={row.face} className="size-full" />
-          {/* The system's mark on the face's corner, as the list rows wear
-              it (UX-27's one function, `machineMark`). ux-b's face
-              assembly (UX-32) takes this over when it lands. */}
-          <span
-            data-dial-mark={row.vitals?.vitals.system ?? "machine"}
-            aria-hidden="true"
-            className="absolute -right-0.5 -bottom-0.5 grid size-kind-mark place-items-center rounded-full bg-card text-muted-foreground shadow-[0_0_0_var(--hair)_var(--card)]"
-          >
-            <Mark className="size-kind-mark-glyph" />
-          </span>
+          {/* The one face assembly (UX-32): the machine's face with its
+              system mark drawn the way the 外观 setting says — on the
+              face, on the corner, or the mark as the base. */}
+          <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size={isMe ? "dialMe" : "dial"} />
         </div>
         <div
           data-dial-label
