@@ -16,6 +16,9 @@ export function programScrolls(term: Terminal): boolean {
 
 /** Quiet this long after the last scroll event, a scroll has stopped. */
 export const SETTLE_MS = 140;
+/** Under a finger, while the program scrolls itself, the scroller's range:
+    room for any fling, the place set back to the middle once it rests. */
+export const WHEEL_ROOM = 40_000;
 
 /**
  * **The history scrolls the way a page does** (2026-10-03, item 15 B; the
@@ -59,6 +62,14 @@ export function scrollsNatively(
     /** Another binding has the scroller for now (a tmux pane's history,
         `lib/term-tmux-history`): this one does nothing until it is back. */
     yields?: () => boolean;
+    /** **Under a finger, the program's wheel by the scroller's own
+        travel** (item 36). Where the program scrolls itself (it holds the
+        mouse, or is on its alternate screen — Claude Code in tmux), the
+        scroller keeps a range of its own and scrolls natively, momentum
+        and all, and every row it travels is one notch of the wheel,
+        handed here (positive: later lines). Without it the scroller is
+        inert there, as on a Mac, whose wheel reaches xterm itself. */
+    wheel?: (rows: number) => void;
   } = {},
 ): { sync: () => void; stop: () => void } {
   const yields = opts.yields ?? (() => false);
@@ -79,6 +90,9 @@ export function scrollsNatively(
   /** Lines xterm trimmed off the history's top since the range was last
       set: a finger's place in the scroller counts from before them. */
   let trimmed = 0;
+  /** Wheel mode: the `scrollTop` the last notch was counted from. */
+  let notched: number | null = null;
+  const wheeling = () => !!opts.wheel && programScrolls(term);
   const shape = () => `${scroller.clientHeight}:${scroller.scrollHeight}`;
   /** **A gesture holds the scroller** (item 30): a finger is down, or its
       momentum (or a wheel) is still moving it. */
@@ -102,6 +116,32 @@ export function scrollsNatively(
     if (yields() || !measure()) return;
     const b = term.buffer.active;
     const inert = programScrolls(term);
+    if (inert && opts.wheel) {
+      // The range is the wheel's own; the place goes back to the middle
+      // only while nothing moves it, so a fling never meets an end.
+      const height = `${WHEEL_ROOM}px`;
+      if (room.style.height !== height) {
+        room.style.height = height;
+        // WebKit's stale range on a layer made with nothing to scroll
+        // (item 18 A): read it now, as below.
+        if (!kicked) {
+          kicked = true;
+          scroller.style.overflowY = "hidden";
+          void scroller.offsetHeight;
+          scroller.style.overflowY = "";
+        }
+      }
+      const mid = WHEEL_ROOM / 2;
+      if (!gesture() && (notched === null || Math.abs(scroller.scrollTop - mid) > WHEEL_ROOM / 4)) {
+        echo = mid;
+        scroller.scrollTop = mid;
+        notched = mid;
+      }
+      shift(0);
+      geom = shape();
+      return;
+    }
+    notched = null;
     // **Output under a finger goes into the buffer only** (item 30; the
     // owner: Claude Code's screen shook while he scrolled up). Ink pushes
     // whole frames into the history on every redraw when its frame is
@@ -152,9 +192,28 @@ export function scrollsNatively(
     if (echo !== null && Math.abs(top - echo) < 1) {
       echo = null;
       geom = shape();
+      if (wheeling()) notched = top;
       return;
     }
     echo = null;
+    if (wheeling() && row) {
+      // A resize moved it, not a finger: count from here.
+      if (!gesture() && shape() !== geom) {
+        geom = shape();
+        notched = top;
+        return;
+      }
+      personAt = performance.now();
+      if (notched === null) notched = top;
+      const rows = Math.trunc((top - notched) / row);
+      if (rows !== 0) {
+        notched += rows * row;
+        opts.wheel?.(rows);
+      }
+      window.clearTimeout(settle);
+      settle = window.setTimeout(rest, SETTLE_MS);
+      return;
+    }
     if (programScrolls(term) || !row) return;
     // **A resize is not a scroll** (item 29; the owner: the keyboard came
     // up and the line being typed was not in view). When the box shrinks
@@ -194,6 +253,11 @@ export function scrollsNatively(
   /** A scroll that stopped between two rows goes to the nearer one. */
   const rest = () => {
     if (touching > 0 || yields()) return;
+    if (wheeling()) {
+      personAt = -Infinity;
+      sync();
+      return;
+    }
     // The gesture is over: the range and the place set once, from xterm's
     // line (which followed the finger, trims and all).
     if (held) {

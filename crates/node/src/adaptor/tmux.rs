@@ -466,7 +466,7 @@ impl Tmux {
         let unjoined = "\x1fkhor-rows\x1f";
         let start = format!("-{window}");
         let mut args = vec![
-            "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size} #{pane_top} #{pane_left} #{status} #{status-position}", ";",
+            "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size} #{pane_top} #{pane_left} #{mouse_any_flag} #{status} #{status-position}", ";",
             "capture-pane", "-p", "-e", "-J", "-S", &start, "-E", "-1", "-t", session, ";",
         ];
         if rows {
@@ -484,6 +484,7 @@ impl Tmux {
         // `off`, `on` or a number of lines).
         let pane_top: u16 = words.next()?.parse().ok()?;
         let left: u16 = words.next()?.parse().ok()?;
+        let mouse = words.next()? == "1";
         let status = match words.next()? {
             "off" => 0,
             "on" => 1,
@@ -500,7 +501,7 @@ impl Tmux {
         let lines = |text: &str| -> Vec<String> { if size == 0 { Vec::new() } else { text.lines().map(str::to_owned).collect() } };
         let (history, rows) = (lines(history), lines(unjoined));
         let screen = screen.lines().map(str::to_owned).collect();
-        Some(HistoryRead { pane, alternate, size, top, left, history, rows, screen })
+        Some(HistoryRead { pane, alternate, mouse, size, top, left, history, rows, screen })
     }
 
     /// [`Tmux::ask`] for an answer bigger than a pipe's buffer: a
@@ -1055,11 +1056,19 @@ pub struct PaneHistory {
     /// Columns left of the pane (a split). Tail-appended.
     #[serde(default)]
     pub left: u16,
+    /// The pane's program has taken the mouse (`#{mouse_any_flag}`):
+    /// Claude Code does, and then tmux hands it the wheel, and what tmux
+    /// keeps as history is its frames drawn over and over, not a
+    /// transcript. The program scrolls itself, as on its alternate screen
+    /// (item 36). Tail-appended.
+    #[serde(default)]
+    pub mouse: bool,
 }
 
 struct HistoryRead {
     pane: String,
     alternate: bool,
+    mouse: bool,
     size: usize,
     top: u16,
     left: u16,
@@ -1149,6 +1158,7 @@ impl HistoryRead {
             anchor,
             top: self.top,
             left: self.left,
+            mouse: self.mouse,
         }
     }
 }
@@ -1762,6 +1772,38 @@ mod tests {
         assert!(right.left > 30 && right.top == 1, "{} {}", right.left, right.top);
     }
 
+    /// **A program that takes the mouse** (item 36: Claude Code does) is
+    /// said so with every read, and so is one that lets it go.
+    #[test]
+    fn a_read_says_when_the_program_holds_the_mouse() {
+        if !have_tmux() {
+            return;
+        }
+        let s = Server::start("histmouse");
+        s.tmux(&["-f", "/dev/null", "new-session", "-d", "-s", "one", "-x", "60", "-y", "20", "/bin/sh"]);
+        s.until_present("one");
+        s.tmux(&["set-option", "-t", "one", "@khor_row", "shell/9-9"]);
+        let t = s.at();
+        assert!(!t.history("shell/9-9", None).unwrap().mouse);
+        let held = |want: bool| {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let h = t.history("shell/9-9", None).unwrap();
+                if h.mouse == want {
+                    return;
+                }
+                assert!(Instant::now() < deadline, "the mouse flag never became {want}");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        s.tmux(&["send-keys", "-t", "one", "printf '\\033[?1002h\\033[?1006h'; echo m1", "Enter"]);
+        until_shown(&s, "one", "m1");
+        held(true);
+        s.tmux(&["send-keys", "-t", "one", "printf '\\033[?1002l\\033[?1006l'; echo m2", "Enter"]);
+        until_shown(&s, "one", "m2");
+        held(false);
+    }
+
     /// A history bigger than a pipe's buffer comes back, capped, and the
     /// colours where the face's copy ends lead what follows.
     #[test]
@@ -1799,6 +1841,7 @@ mod tests {
         let read = HistoryRead {
             pane: "%1".into(),
             alternate: false,
+            mouse: false,
             size: 1000,
             top: 0,
             left: 0,
@@ -1821,6 +1864,7 @@ mod tests {
             HistoryRead {
                 pane: self.pane.clone(),
                 alternate: self.alternate,
+                mouse: self.mouse,
                 size: self.size,
                 top: self.top,
                 left: self.left,
@@ -1849,6 +1893,7 @@ mod tests {
         let read = |history: &[&str], rows: &[&str], size: usize| HistoryRead {
             pane: "%1".into(),
             alternate: false,
+            mouse: false,
             size,
             top: 0,
             left: 0,

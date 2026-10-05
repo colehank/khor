@@ -107,6 +107,8 @@ export function holdsTmuxHistory(o: {
   shown: (on: boolean) => void;
   /** The attach has sized the pane for this face: reads may begin. */
   joined: () => void;
+  /** The pane in front, as the newest read found it (`null` before one). */
+  pane: () => { pane: string; mouse: boolean; alternate: boolean } | null;
   stop: () => void;
 } {
   const { live, seat } = o;
@@ -124,6 +126,8 @@ export function holdsTmuxHistory(o: {
   let behind = false;
   /** The last read failed (an older khor there, out of reach). */
   let failed = false;
+  /** What the newest read said of the pane in front. */
+  let held: { pane: string; mouse: boolean; alternate: boolean } | null = null;
   /** A read has succeeded: this terminal is tmux's. */
   let proven = o.known;
   /** Not a tmux terminal after all: no more reads. */
@@ -188,7 +192,13 @@ export function holdsTmuxHistory(o: {
   };
   const apply = (h: PaneHistory) => {
     failed = false;
-    give(!h.alternate);
+    held = { pane: h.pane, mouse: h.mouse, alternate: h.alternate };
+    // **A program that scrolls itself keeps the drag** (item 36): on its
+    // alternate screen, or holding the mouse — Claude Code does, and then
+    // tmux's history of the pane is its frames drawn again and again, not
+    // a transcript; the drag stays the wheel to it. Read again each time,
+    // since the program may leave (Claude exits, the shell is back).
+    give(!(h.alternate || h.mouse));
     if (!on) {
       // Nothing of this read was written: the anchor stays where the
       // copy ends, and the read after the program leaves catches up.
@@ -308,6 +318,7 @@ export function holdsTmuxHistory(o: {
       attached = true;
       if (visible) quietThen();
     },
+    pane: () => held,
     stop: () => {
       stopped = true;
       drop();

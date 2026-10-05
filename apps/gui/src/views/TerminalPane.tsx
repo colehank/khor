@@ -2424,9 +2424,31 @@ export function TerminalPane({
     /** The person is up in a tmux pane's history (item 31). */
     let historyUp = false;
     const historyHas = () => tmuxHistory?.active() ?? false;
-    const dragged = fingerWheels(term, box, historyHas);
+    // **Under a finger the program's wheel comes from the scroller's own
+    // travel** (item 36): a native scroll, momentum and all, one notch of
+    // the wheel per row it moves, at the point the finger is — instead of
+    // a wheel per touch move, which xterm folded to a few notches. A mouse
+    // keeps xterm's own wheel.
+    const fingers = window.matchMedia("(pointer: coarse)").matches;
+    let at = { x: 0, y: 0 };
+    const landedAt = (e: TouchEvent) => {
+      const t = e.touches[0];
+      if (t) at = { x: t.clientX, y: t.clientY };
+    };
+    scrollerRef.current!.addEventListener("touchstart", landedAt, { capture: true, passive: true });
+    const notch = (rows: number) => {
+      const el = term.element;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const x = at.x || r.left + r.width / 2;
+      const y = at.y || r.top + r.height / 2;
+      for (let i = 0; i < Math.abs(rows); i++) {
+        el.dispatchEvent(new WheelEvent("wheel", { deltaY: Math.sign(rows), deltaMode: WheelEvent.DOM_DELTA_LINE, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+      }
+    };
+    const dragged = fingers ? () => {} : fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
-    const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas });
+    const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas, wheel: fingers ? notch : undefined });
     // **A tmux row, or an agent inside a tmux pane** (item 33: the owner
     // opens Claude Code's own row, not the session's): both are khor's
     // grouped client, and the history is the pane in front's.
@@ -2460,6 +2482,7 @@ export function TerminalPane({
       scroller: scrollerRef.current!,
       history: historyHas,
       tmuxRow: tmuxHistory !== null,
+      pane: () => tmuxHistory?.pane() ?? null,
       note: (line) => void faceNote(line).catch(() => {}),
     });
     firstTouchRef.current = firstTouch;
@@ -2594,6 +2617,7 @@ export function TerminalPane({
       box.removeEventListener("beforeinput", metaEcho, true);
       box.removeEventListener("input", metaEcho, true);
       dragged();
+      scrollerRef.current?.removeEventListener("touchstart", landedAt, true);
       swiped();
       tmuxHistory?.stop();
       tmuxHistoryRef.current = null;
