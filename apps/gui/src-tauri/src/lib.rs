@@ -1190,6 +1190,37 @@ fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, (
     EXITS.get_or_init(Default::default)
 }
 
+/// **Whether the face wants each tab's page on screen: state, not an
+/// event** (the owner, 2026-10-05, iPhone: 「出了浏览器这个页面还在」).
+/// `open_page` attaches the page only after its borrow has dialled, which
+/// takes seconds on a slow path; a person who leaves during the dial sends
+/// `hide_page` first, which found no page and did nothing, and the page
+/// then arrived visible over whatever was on screen. `open_page` says
+/// 「wanted」 as it is asked, `hide_page` / `show_page` set it whether or
+/// not the page exists yet, and the attach, new or reused, honours it.
+/// A tab nobody has spoken about is wanted.
+fn page_wanted() -> &'static std::sync::Mutex<std::collections::HashMap<String, bool>> {
+    static WANTED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<String, bool>>> =
+        std::sync::OnceLock::new();
+    WANTED.get_or_init(Default::default)
+}
+
+fn want_page(tab: &str, shown: bool) {
+    if let Ok(mut m) = page_wanted().lock() {
+        m.insert(tab.to_owned(), shown);
+    }
+}
+
+fn page_is_wanted(tab: &str) -> bool {
+    page_wanted().lock().ok().and_then(|m| m.get(tab).copied()).unwrap_or(true)
+}
+
+fn forget_page(tab: &str) {
+    if let Ok(mut m) = page_wanted().lock() {
+        m.remove(tab);
+    }
+}
+
 /// Remembers where a page webview is, keeping whatever exit it is on.
 fn page_went(label: &str, to: &str) {
     if let Ok(mut m) = page_exits().lock()
@@ -1297,6 +1328,7 @@ async fn open_page(
     // is the person's own machine, reached through a pipe khor built.
     // Taking APIs away there would protect nothing and could break an
     // editor.
+    want_page(&tab, true);
     let direct = machine.is_empty();
     let borrow = if direct {
         khor_gui_core::web::WebBorrow {
@@ -1351,7 +1383,12 @@ async fn open_page(
                 .map_err(|e| e.to_string())?;
             live.set_size(LogicalSize::new(at.w, at.h))
                 .map_err(|e| e.to_string())?;
-            live.show().map_err(|e| e.to_string())?;
+            // Left (or covered) while the borrow dialled: `page_wanted`.
+            if page_is_wanted(&tab) {
+                live.show().map_err(|e| e.to_string())?;
+            } else {
+                live.hide().map_err(|e| e.to_string())?;
+            }
             return Ok(borrow);
         }
         let _ = live.close();
@@ -1491,13 +1528,16 @@ async fn open_page(
         tauri::webview::NewWindowResponse::Deny
     });
 
-    window
+    let made = window
         .add_child(
             builder,
             LogicalPosition::new(at.x, top),
             LogicalSize::new(at.w, at.h),
         )
         .map_err(|e| e.to_string())?;
+    if !page_is_wanted(&tab) {
+        made.hide().map_err(|e| e.to_string())?;
+    }
     if let Ok(mut m) = page_exits().lock() {
         m.insert(label, (machine, going_to));
     }
@@ -1532,6 +1572,7 @@ fn move_page(window: tauri::Window, tab: String, at: PageBox) -> Result<(), Stri
 #[tauri::command]
 fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     use tauri::Manager;
+    want_page(&tab, false);
     let Some(view) = app.get_webview(&page_label(&tab)) else {
         return Ok(());
     };
@@ -1550,6 +1591,7 @@ fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 #[tauri::command]
 fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     use tauri::Manager;
+    want_page(&tab, true);
     let Some(view) = app.get_webview(&page_label(&tab)) else {
         return Ok(());
     };
@@ -1842,6 +1884,7 @@ fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), Stri
 fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     use tauri::Manager;
     let label = page_label(&tab);
+    forget_page(&tab);
     if let Ok(mut m) = page_exits().lock() {
         m.remove(&label);
     }
@@ -2633,6 +2676,7 @@ async fn open_page(
 ) -> Result<khor_gui_core::web::WebBorrow, String> {
     #[cfg(target_os = "ios")]
     {
+        want_page(&tab, true);
         let direct = machine.is_empty();
         let borrow = if direct {
             khor_gui_core::web::WebBorrow {
@@ -2682,6 +2726,8 @@ fn move_page(app: tauri::AppHandle, tab: String, at: PageBox) -> Result<(), Stri
 #[tauri::command]
 fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     #[cfg(target_os = "ios")]
+    want_page(&tab, false);
+    #[cfg(target_os = "ios")]
     let _ = app.run_on_main_thread(move || phone_page::hide(&tab, true));
     #[cfg(not(target_os = "ios"))]
     let _ = (app, tab);
@@ -2692,6 +2738,8 @@ fn hide_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 #[tauri::command]
 fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     #[cfg(target_os = "ios")]
+    forget_page(&tab);
+    #[cfg(target_os = "ios")]
     let _ = app.run_on_main_thread(move || phone_page::close(&tab));
     #[cfg(not(target_os = "ios"))]
     let _ = (app, tab);
@@ -2701,6 +2749,8 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 #[cfg(not(desktop))]
 #[tauri::command]
 fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    want_page(&tab, true);
     #[cfg(target_os = "ios")]
     let _ = app.run_on_main_thread(move || phone_page::hide(&tab, false));
     #[cfg(not(target_os = "ios"))]
