@@ -65,7 +65,7 @@
 // no bar** (the wide face, a workspace's session column) a view's `under`
 // renders in place, exactly where it always stood, and its `trail` is
 // not drawn: the wide face has no row that belongs to the open session.
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { TabAvatar, type TabFace } from "@/browse/TabStrip";
@@ -258,11 +258,10 @@ export function SessionScreen({
       (Safari's address bar). Across the pill only, so the content keeps
       its own gestures; a swipe shorter than a third of a circle is a
       press. */
-  const swipe = useRef<{ x: number; y: number } | null>(null);
-  const step = (by: number) => {
+  const swipePill = usePillSwipe((by) => {
     const next = faces[at + by];
     if (next) onFocus(next.id);
-  };
+  });
   // ⚠️ Tombstone (item 28, the terminal lane): a 24-pt drag down anywhere over
   // the content lowered the keyboard here. The key row is a portal into
   // the bar, so React's synthetic touch events from the joystick bubbled
@@ -344,16 +343,7 @@ export function SessionScreen({
               data-deck-pill
               aria-label={gui.session_tabs}
               className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1"
-              onPointerDown={(e) => {
-                swipe.current = { x: e.clientX, y: e.clientY };
-              }}
-              onPointerUp={(e) => {
-                const from = swipe.current;
-                swipe.current = null;
-                if (!from) return;
-                const dx = e.clientX - from.x;
-                if (Math.abs(dx) > SWIPE_STEPS && Math.abs(dx) > 2 * Math.abs(e.clientY - from.y)) step(dx < 0 ? 1 : -1);
-              }}
+              {...swipePill}
             >
               <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
               {face && (
@@ -432,6 +422,26 @@ export function SessionScreen({
 /** How far sideways a swipe on the pill goes before it changes tab. */
 const SWIPE_STEPS = 40;
 
+/** **A sideways swipe on a deck's pill steps to the next or previous
+    tab** (Safari's address bar): the pointer handlers for the pill, with
+    `step(+1 | -1)` once a swipe has gone far enough and sideways enough.
+    The session deck's and the file page's (UX-25). */
+export function usePillSwipe(step: (by: number) => void) {
+  const swipe = useRef<{ x: number; y: number } | null>(null);
+  return {
+    onPointerDown: (e: PointerEvent) => {
+      swipe.current = { x: e.clientX, y: e.clientY };
+    },
+    onPointerUp: (e: PointerEvent) => {
+      const from = swipe.current;
+      swipe.current = null;
+      if (!from) return;
+      const dx = e.clientX - from.x;
+      if (Math.abs(dx) > SWIPE_STEPS && Math.abs(dx) > 2 * Math.abs(e.clientY - from.y)) step(dx < 0 ? 1 : -1);
+    },
+  };
+}
+
 /** **Two squares and the count** (round UX-3): the tabs circle's figure —
     a page behind a page, and how many there are on the front one. */
 /**
@@ -446,7 +456,7 @@ const SWIPE_STEPS = 40;
  * (`--ctl-glyph`, 22 under a mouse, 26 under a finger) and the squares a
  * share of it, so it scales with its neighbours.
  */
-function TabsGlyph({ n }: { n: number }) {
+export function TabsGlyph({ n }: { n: number }) {
   return (
     <span data-tabs-glyph className="relative block size-ctl-glyph">
       <span
@@ -467,7 +477,7 @@ function TabsGlyph({ n }: { n: number }) {
 /** **The tabs, as a sheet from the bottom** (round UX-3): each open tab
     with its face, its name, where it is, and × — the switcher's rows —
     and ＋ at the end, the one place a new tab is opened from the deck. */
-function TabSheet({
+export function TabSheet({
   open,
   onOpenChange,
   faces,

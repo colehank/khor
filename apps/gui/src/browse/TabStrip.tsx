@@ -58,7 +58,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SideList, type SideRow } from "@/components/SideList";
 import { sessionKind } from "@/components/SessionFace";
 import { gui } from "@/gen/catalog";
-import { useTravel } from "@/lib/travel";
+import { stillMotion, TRIP_MS, useTravel } from "@/lib/travel";
 import { cn } from "@/lib/utils";
 
 /** One tab as it is shown: what it calls itself, whose machine it is
@@ -255,6 +255,50 @@ function TabOpen({ menu, children }: { menu?: RowAction[]; children: ReactNode }
   return menu && menu.length > 0 ? <RowMenu items={menu}>{children}</RowMenu> : <>{children}</>;
 }
 
+/**
+ * **The strip re-balances with the usual transition** (UX-25 addendum).
+ * The pills' widths are flex's (the pill in front its name, the rest an
+ * equal share), so a choice re-lays the whole row at once; this runs each
+ * pill from the width it had to the width it has, over the chosen piece's
+ * trip (`lib/travel`, the same beat), so the eye sees the front pill grow
+ * and its neighbours give way rather than a snap. Widths are noted at
+ * every layout and on the strip's resize, so the run starts from where
+ * the pills really were. Reduced motion: no run.
+ */
+function useRebalance(host: () => HTMLElement | null, active: string) {
+  const was = useRef(new Map<string, number>());
+  const last = useRef(active);
+  const note = () => {
+    const h = host();
+    if (!h) return;
+    was.current = new Map([...h.querySelectorAll<HTMLElement>("[data-tab]")].map((t) => [t.getAttribute("data-tab") ?? "", t.getBoundingClientRect().width]));
+  };
+  useLayoutEffect(() => {
+    const h = host();
+    if (!h) return;
+    const before = was.current;
+    const changed = last.current !== active;
+    last.current = active;
+    note();
+    if (!changed || before.size === 0 || stillMotion()) return;
+    const ease = getComputedStyle(document.documentElement).getPropertyValue("--ease-move").trim() || "ease";
+    for (const t of h.querySelectorAll<HTMLElement>("[data-tab]")) {
+      const id = t.getAttribute("data-tab") ?? "";
+      const from = before.get(id);
+      const to = was.current.get(id) ?? 0;
+      if (from === undefined || Math.abs(from - to) < 1) continue;
+      t.animate(
+        [
+          { flexBasis: `${from}px`, flexGrow: 0, flexShrink: 0, minWidth: 0, maxWidth: "none" },
+          { flexBasis: `${to}px`, flexGrow: 0, flexShrink: 0, minWidth: 0, maxWidth: "none" },
+        ],
+        { duration: TRIP_MS, easing: ease },
+      );
+    }
+  });
+  return { note };
+}
+
 export function TabStrip({
   faces,
   active,
@@ -324,6 +368,7 @@ export function TabStrip({
   // The front tab's piece slides to the tab brought forward, in the glass
   // capsule (F7.2, `lib/travel`).
   useTravel(below ? "tabs-below" : "tabs", () => (glass ? strip.current : null), active);
+  const widths = useRebalance(() => (glass ? strip.current : null), active);
   // Whether the strip has given up on its own promise. Measured off the
   // element, not counted from `faces.length` and a width: how many tabs
   // fit depends on the region, which the rail, the window and the
@@ -379,6 +424,7 @@ export function TabStrip({
       const over = el.scrollWidth - el.clientWidth;
       setCrowded(over > 1);
       setCut({ left: el.scrollLeft > 1, right: over - el.scrollLeft > 1 });
+      widths.note();
     };
     measure();
     // The observer catches the region changing; the dependency catches
@@ -625,13 +671,19 @@ export function TabStrip({
                 // one width, which is what 2026-09-02 asked for; only
                 // once every stub is at the floor does the strip overflow.
                 // The tab in front never gives.
-                // **In the glass capsule, one ceiling for every tab** (V07):
-                // a tab coming to the front changes its colour, never its
-                // width — its neighbours do not move.
+                // **In the glass capsule, Safari's widths** (UX-25 addendum,
+                // the owner 2026-10-05): every pill not in front is one
+                // width — an equal share of the capsule, `--tab-w` at most,
+                // `--tab-w-min` at least — and the one in front takes its
+                // whole name up to `--tab-w-on`, the others giving way down
+                // to their floor before the strip scrolls. The strip
+                // re-balances on each choice over the chosen piece's trip
+                // (`useRebalance`). ⚠️ 墓碑 (V07): one ceiling for every
+                // tab, the front one too, so a choice moved no width.
                 glass
                   ? on
-                    ? "max-w-tab flex-none glass-sel text-foreground"
-                    : "max-w-tab flex-none text-muted-foreground hover:bg-fill"
+                    ? "min-w-tab-min max-w-tab-on flex-none glass-sel text-foreground"
+                    : "min-w-tab-min max-w-tab shrink grow basis-0 text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
                     : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",

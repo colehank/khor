@@ -49,7 +49,7 @@ function boxIn(host: HTMLElement, e: Element, r?: string): Box {
     moment the trip starts, and a ref would have been born empty. */
 const seen = new Map<string, Box>();
 
-type Trip = { ghost: HTMLElement; anim: Animation; to: HTMLElement; host: HTMLElement };
+type Trip = { ghost: HTMLElement; anim: Animation; to: HTMLElement; host: HTMLElement; planned: Box };
 
 /** The stand-in's box now, in its host's coordinates. */
 function ghostBox(t: Trip): Box {
@@ -97,12 +97,16 @@ function fly(h: HTMLElement, to: HTMLElement, from: Box, at: Box): Trip {
       { transform: `translate(${from.x}px, ${from.y}px)`, width: `${from.w}px`, height: `${from.h}px`, borderRadius: from.r },
       { transform: `translate(${at.x}px, ${at.y}px)`, width: `${at.w}px`, height: `${at.h}px`, borderRadius: at.r },
     ],
-    { duration: 240, easing: ease, fill: "forwards" },
+    { duration: TRIP_MS, easing: ease, fill: "forwards" },
   );
-  return { ghost, anim, to, host: h };
+  return { ghost, anim, to, host: h, planned: at };
 }
 
 const still = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** Reduced motion is asked for: nothing travels. */
+export const stillMotion = still;
+/** A trip's length, the beat anything moving with the piece keeps. */
+export const TRIP_MS = 240;
 const same = (a: Box, b: Box) => Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1 && Math.abs(a.w - b.w) < 1;
 
 export function useTravel(name: string, host: () => HTMLElement | null, key: string | null) {
@@ -161,10 +165,16 @@ export function useTravel(name: string, host: () => HTMLElement | null, key: str
     }
     const at = boxIn(h, to);
     const running = trip.current;
-    // Already on its way to this very item (started on the press).
+    // Already on its way to this very item (started on the press) — and
+    // to the box it had at the press. **A box that grew since** (the tab
+    // in front takes its whole name, UX-25) is flown to from wherever the
+    // stand-in is, so the piece lands on the item as it is now.
     if (running && running.to === to) {
-      seen.set(name, at);
-      return;
+      const planned = running.planned;
+      if (Math.abs(planned.w - at.w) < 1 && Math.abs(planned.x - at.x) < 1) {
+        seen.set(name, at);
+        return;
+      }
     }
     let from = seen.get(name) ?? null;
     if (running) {

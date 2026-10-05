@@ -30,6 +30,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { launchOn, pullTemp, renamePath, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
 import { GlassCircle, GlassItem } from "@/components/Glass";
+import { TabSheet, TabsGlyph, usePillSwipe } from "@/components/SessionBar";
+import type { TabFace } from "@/browse/TabStrip";
 import { IconBack, IconBranch, IconCheck, IconEye, IconMore, IconShare } from "@/components/icons";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { Button } from "@/components/ui/button";
@@ -386,9 +388,17 @@ export function FilePage({
   onMoved,
   code = null,
   history = false,
+  tabs,
 }: {
   /** The file is in a checkout: git 历史 is offered (round UX-4). */
   history?: boolean;
+  /** **The workspace's open files, as the session page's tabs** (UX-25,
+      one tab language): the deck's tabs circle opens the same sheet the
+      session deck has — each file's kind, its name, × — and a sideways
+      swipe on the pill steps through them. No ＋: a file is opened from
+      the tree, and nothing a bare new tab could open. Absent where the
+      page stands alone (a machine's in-place file). */
+  tabs?: { faces: TabFace[]; active: string; onFocus: (id: string) => void; onClose: (id: string) => void };
   machine: string;
   /** Absolute, on that machine. */
   path: string;
@@ -518,6 +528,13 @@ export function FilePage({
     }, HOLD_MS);
   };
   const name = rev === null ? baseName(path) : `${baseName(path)} · ${shortId(rev)}`;
+  const [sheet, setSheet] = useState(false);
+  const swipePill = usePillSwipe((by) => {
+    if (!tabs) return;
+    const at = tabs.faces.findIndex((f) => f.id === tabs.active);
+    const next = tabs.faces[at + by];
+    if (next) tabs.onFocus(next.id);
+  });
 
   return (
     <div
@@ -584,7 +601,7 @@ export function FilePage({
             >
               <IconBack />
             </GlassCircle>
-            <div data-file-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-row pe-1">
+            <div data-file-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-row pe-1" {...swipePill}>
               <span data-file-name className="min-w-0 flex-1 truncate text-body">
                 {name}
               </span>
@@ -626,9 +643,34 @@ export function FilePage({
             </div>
             {rev === null && verbs.shareCircle}
             {rev === null && verbs.moreCircle}
+            {rev === null && tabs && (
+              <GlassCircle
+                data-deck-tabs
+                data-tab-count
+                aria-label={gui.switch_tabs(tabs.faces.length)}
+                aria-expanded={sheet}
+                tip={!coarse && gui.switch_tabs(tabs.faces.length)}
+                onClick={() => setSheet(true)}
+              >
+                <TabsGlyph n={tabs.faces.length} />
+              </GlassCircle>
+            )}
           </div>
         )}
       </div>
+      {tabs && (
+        <TabSheet
+          open={sheet}
+          onOpenChange={setSheet}
+          faces={tabs.faces}
+          active={tabs.active}
+          onFocus={(id) => {
+            setSheet(false);
+            tabs.onFocus(id);
+          }}
+          onClose={tabs.onClose}
+        />
+      )}
       {verbs.dialogs}
     </div>
   );
