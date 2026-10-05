@@ -466,6 +466,14 @@ pub struct DeviceRow {
     /// table (`khor_sync::devices`' `hosts`), so it is the same answer on
     /// every machine looking; a machine that never said is a computer.
     pub hosts: bool,
+    /// **Every road this machine reports** (round NET-12, the 我的 khor
+    /// dial and its matrix): to whom, direct / by which relay / none, and
+    /// the round trip. On this machine's own row they are its live wires,
+    /// first-hand, as `rtt_ms` is; on another's, what that machine last
+    /// wrote into the table — which moves only when a road changed kind
+    /// and held, or its round trip moved by a quarter (`roadbook`). Empty
+    /// for an older peer, which writes none: the face says 未知.
+    pub roads: Vec<khor_node::Road>,
 }
 
 /// A machine's reading plus its age — the two axes docs/SESSION.md keeps
@@ -1187,6 +1195,14 @@ fn rows_of_devices(
                 .then(|| links.iter().find(|(id, _)| *id == d.id))
                 .flatten()
                 .and_then(|(_, l)| l.relay.clone()),
+            // This machine's from its live wires, first-hand, the same
+            // readings `rtt_ms` and `relay` are; another machine's as it
+            // wrote them into the table (round NET-12).
+            roads: if d.id == me {
+                own_roads(&links)
+            } else {
+                n.roads_of(&d)
+            },
             face: n.face_of(&d),
             pinned: d.pinned,
             // The background sampler's last round for this machine,
@@ -1215,6 +1231,33 @@ fn rows_of_devices(
             name: d.name,
         })
         .collect())
+}
+
+/// This machine's roads, from the live wires: what the face draws for
+/// its own edges, never this machine's own row read back from the table
+/// (round NET-12, `khor_node::roadbook`).
+fn own_roads(links: &[(String, khor_node::Link)]) -> Vec<khor_node::Road> {
+    use khor_node::{Hop, RoadKind};
+    links
+        .iter()
+        .map(|(to, l)| {
+            let road = match l.hop {
+                Hop::Direct => RoadKind::Direct,
+                Hop::Relay => RoadKind::Relay,
+                _ => RoadKind::None,
+            };
+            khor_node::Road {
+                to: to.clone(),
+                road,
+                relay: if road == RoadKind::Relay { l.relay.clone() } else { None },
+                ms: if road == RoadKind::None {
+                    None
+                } else {
+                    l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16)
+                },
+            }
+        })
+        .collect()
 }
 
 /// What every machine in the network has spent, by day and by vendor —

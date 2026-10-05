@@ -111,6 +111,10 @@ export const IconAndroid = brand(
  */
 export function machineMark(system: SystemKind | null | undefined): ComponentType<IconProps> {
   switch (system) {
+    // The Apple mark for both until UX-27 gives macOS its own; `apple`
+    // is an older khor's word for either (round NET-12).
+    case "macos":
+    case "ios":
     case "apple":
       return IconApple;
     case "linux":

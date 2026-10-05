@@ -110,7 +110,8 @@ usage: khor <verb>
                         The old name face still answers and goes next
                         version — an avatar is a picture, an interface
                         is a face (see faces)
-  devices               the network's machines
+  devices [--roads]     the network's machines; --roads adds each one's
+                        roads to the others (as it last reported them)
   top [machine]         what this machine is busy with: process top
                         and the last 24 hours of CPU
   ls <machine> [path]   that machine's directory (no path = its home
@@ -850,6 +851,11 @@ relay-stats-unreadable = "Cannot read the metering file: {0}"
 relay-stats-since = "Since {0}: {1} sent to clients, {2} received from them"
 relay-stats-device = "{0}…  {1} connections, online {2}"
 relay-stats-no-device = "No device has connected yet"
+
+# Round NET-12: `khor devices --roads`.
+roads-ms = "{0} ms"
+roads-none = "no road"
+roads-unreported = "reports no roads (an older khor, or not yet)"
 
 [msg]
 watch-path-relative = "Watched directory must be an absolute path: {0}"
@@ -1940,7 +1946,10 @@ files-pick = "Choose a file"
 top-show-all = "Show all {0}"
 axis-connection = "Connection"
 axis-system = "System"
-system-apple = "macOS"
+# Round NET-12: macOS and iOS apart; `apple` is what an older khor still says.
+system-macos = "macOS"
+system-ios = "iOS"
+system-apple = "Apple"
 system-linux = "Linux"
 system-windows = "Windows"
 system-android = "Android"

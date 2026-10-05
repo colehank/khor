@@ -121,6 +121,10 @@ export function connectionKeyWord(key: string): string | null {
  */
 export function systemWord(key: string): string {
   switch (key) {
+    case "macos":
+      return gui.system_macos;
+    case "ios":
+      return gui.system_ios;
     case "apple":
       return gui.system_apple;
     case "linux":

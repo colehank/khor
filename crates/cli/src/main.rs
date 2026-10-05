@@ -2053,7 +2053,7 @@ fn version(_rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn devices(_rest: &[String]) -> Result<(), String> {
+fn devices(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     // Asked once for the whole list rather than per row: it is one
     // hand-off to the resident, and asking per device would make the
@@ -2106,7 +2106,63 @@ fn devices(_rest: &[String]) -> Result<(), String> {
             vitals_line(&n, &d.id)
         );
     }
+    if rest.iter().any(|a| a == "--roads") {
+        print_roads(&n, &all, &links);
+    }
     Ok(())
+}
+
+/// `khor devices --roads` (round NET-12): every machine's roads to the
+/// others, the matrix the 我的 khor dial draws, for diagnosis. This
+/// machine's from its live wires; every other's as it last wrote them
+/// into the table — which moves only when a road changed and held.
+fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_node::Link)]) {
+    let name = |id: &str| {
+        all.iter()
+            .find(|d| d.id == id)
+            .map(|d| d.shown().to_owned())
+            .unwrap_or_else(|| id.chars().take(8).collect())
+    };
+    for d in all.iter().filter(|d| d.sponsor.is_none()) {
+        let me = d.id == n.device_str();
+        let roads: Vec<khor_node::Road> = if me {
+            links
+                .iter()
+                .map(|(to, l)| {
+                    let road = match l.hop {
+                        khor_node::Hop::Direct => khor_node::RoadKind::Direct,
+                        khor_node::Hop::Relay => khor_node::RoadKind::Relay,
+                        _ => khor_node::RoadKind::None,
+                    };
+                    khor_node::Road {
+                        to: to.clone(),
+                        road,
+                        relay: l.relay.clone(),
+                        ms: l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16),
+                    }
+                })
+                .collect()
+        } else {
+            n.roads_of(d)
+        };
+        let here = if me { cli::this_machine() } else { "" };
+        println!("{}{here}", d.shown());
+        if roads.is_empty() {
+            println!("  {}", cli::roads_unreported());
+        }
+        for r in roads {
+            let word = match r.road {
+                khor_node::RoadKind::Direct => khor_catalog::hop::word("direct").to_owned(),
+                khor_node::RoadKind::Relay => match &r.relay {
+                    Some(relay) => format!("{} {relay}", khor_catalog::hop::word("relay")),
+                    None => khor_catalog::hop::word("relay").to_owned(),
+                },
+                khor_node::RoadKind::None => cli::roads_none().to_owned(),
+            };
+            let ms = r.ms.map(cli::roads_ms).unwrap_or_default();
+            println!("  → {}\t{word}\t{ms}", name(&r.to));
+        }
+    }
 }
 
 /// How many rows `khor top` prints. The card asks for its own count;
