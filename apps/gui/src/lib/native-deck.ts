@@ -61,6 +61,8 @@ const SEATS = [
   "[data-session-deck] [data-page-step=\"reload\"]",
   "[data-session-deck] [data-deck-tabs]",
   "[data-session-bar] [data-deck-strip]",
+  // A page that could not be opened (UX-22).
+  "[data-session-deck] [data-page-retry]",
 ] as const;
 
 /** The DOM control a native seat stands for. */
@@ -225,7 +227,9 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
       });
     }
   }
-  for (const el of bar.querySelectorAll<HTMLElement>("[data-deck-title], [data-deck-strip] > span:first-child, [data-region-caption]")) {
+  // A caption holding the failure is drawn as its two words (UX-22).
+  const said = "[data-deck-title], [data-deck-strip] > span:first-child, [data-region-caption]:not(:has([data-page-failed])), [data-page-failed-word], [data-page-retry]";
+  for (const el of bar.querySelectorAll<HTMLElement>(said)) {
     if (!shown(el)) continue;
     const cs = getComputedStyle(el);
     labels.push({

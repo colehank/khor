@@ -4361,6 +4361,16 @@ web-opened = "已通过 {0} 的网络打开"
 # 本机直接上网(docs/SHELL.md 第四轮 第 5 条):不借谁的网,就没有「谁的网」可说。
 web-opening-here = "正在打开…"
 web-opened-here = "已打开"
+# 页面打不开时（UX-22）：胶囊/标题行里说一句「打不开：原因」，旁边一颗「重试」（region_retry）。
+# 原因按 WebKit 的错误码归类；归不进来的，用系统自己的那句话。
+page-failed = "打不开：{0}"
+page-fail-host = "找不到服务器"
+page-fail-refused = "连接被拒绝"
+page-fail-timeout = "请求超时"
+page-fail-offline = "没有网络"
+page-fail-tls = "安全连接失败"
+page-fail-blocked = "被拦截"
+page-fail-route = "借来的网络连不上这个地址"
 # 浏览标签右键里的一项,只在从本机出去的标签上:借网的页面交给系统浏览器
 # 就换了出口,那不是同一个页面。
 open-in-browser = "在系统浏览器中打开"

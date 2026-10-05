@@ -415,11 +415,28 @@ async fn proxy_one(
             Ok(())
         }
         Err(_) => {
-            let _ = sock.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n").await;
+            // **A page that failed says so** (UX-22): a plain `http://`
+            // page asked through here — absolute-form on a Mac, a CONNECT
+            // from an iPhone's proxy configuration — is answered with this
+            // response *as the page*, and an empty 502 was a blank page and
+            // no word. Its title is the one the app reads instead of a
+            // title ([`PAGE_FAILED_TITLE`]). An `https://` page's CONNECT
+            // refused is a failed load to WebKit, which the app hears too.
+            let body = format!("<!doctype html><meta charset=utf-8><title>{PAGE_FAILED_TITLE}</title>");
+            let reply = format!(
+                "HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = sock.write_all(reply.as_bytes()).await;
             Ok(())
         }
     }
 }
+
+/// The title of the page this proxy answers with when the machine lent
+/// cannot reach the address asked for. The app's pages report it as a
+/// failed load (`page:fail`), never as the tab's title.
+pub const PAGE_FAILED_TITLE: &str = "khor-page-failed:route";
 
 /// Reads a request head into what it is asking for, or `None` for
 /// anything this proxy will not route — which it answers with `405`

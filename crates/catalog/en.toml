@@ -2137,6 +2137,16 @@ web-opening = "Opening through {0}'s network…"
 web-opened = "Opened through {0}'s network"
 web-opening-here = "Opening…"
 web-opened-here = "Opened"
+# A page that could not be opened (UX-22): one line in the pill/caption, 「Retry」 (region_retry) beside it.
+# The reason is WebKit's error code, sorted; anything else is the system's own sentence.
+page-failed = "Can't open the page: {0}"
+page-fail-host = "Server not found"
+page-fail-refused = "Connection refused"
+page-fail-timeout = "Request timed out"
+page-fail-offline = "No network"
+page-fail-tls = "Secure connection failed"
+page-fail-blocked = "Blocked from loading"
+page-fail-route = "The borrowed network can't reach this address"
 open-in-browser = "Open in system browser"
 # ⚠️ Tombstone: pick-exit, retired 2026-09-22 with the fresh tab's button (docs/SHELL.md 第七轮).
 term-over = "This terminal ended"

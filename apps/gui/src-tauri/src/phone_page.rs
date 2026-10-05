@@ -30,6 +30,10 @@
 //! `WKUIDelegate` would be a class of khor's own, and the desktop's answer
 //! (a new tab) is the face's to mint; on the phone the page follows it.
 //!
+//! A load that fails is heard by a navigation delegate of khor's own
+//! (`PageFail`, UX-22): it implements only the two failure methods, so
+//! every other decision is WebKit's default, as it was with none.
+//!
 //! Main thread only: every function here runs inside `with_webview` or
 //! `run_on_main_thread`.
 
@@ -70,6 +74,8 @@ thread_local! {
     static PAGES: RefCell<HashMap<String, Page>> = RefCell::new(HashMap::new());
     /// The one observer every page's scroll view reports to.
     static WATCH: Retained<ScrollWatch> = unsafe { msg_send![ScrollWatch::class(), new] };
+    /// Every page's navigation delegate (WebKit holds it weakly).
+    static FAIL: Retained<PageFail> = unsafe { msg_send![PageFail::class(), new] };
 }
 
 /// The app, for the scroll observer, which is called by UIKit with
@@ -97,6 +103,45 @@ define_class!(
         }
     }
 );
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements, and this class
+    // has no ivars and no `Drop`.
+    #[unsafe(super(NSObject))]
+    #[name = "KhorPageFail"]
+    struct PageFail;
+
+    impl PageFail {
+        // SAFETY: the signatures are WKNavigationDelegate's.
+        #[unsafe(method(webView:didFailProvisionalNavigation:withError:))]
+        fn failed_early(&self, view: *mut AnyObject, _nav: *mut AnyObject, error: *mut AnyObject) {
+            failed(view, error);
+        }
+
+        #[unsafe(method(webView:didFailNavigation:withError:))]
+        fn failed_late(&self, view: *mut AnyObject, _nav: *mut AnyObject, error: *mut AnyObject) {
+            failed(view, error);
+        }
+    }
+);
+
+/// **A load that failed says why** (UX-22): `page:fail` with the error
+/// (`page_fail::word`), and the light out at once rather than at the next
+/// poll.
+fn failed(view: *mut AnyObject, error: *mut AnyObject) {
+    let Some(app) = APP.get() else { return };
+    // SAFETY: WebKit hands a live NSError.
+    let Some(text) = (unsafe { crate::page_fail::word(error) }) else { return };
+    let tab = PAGES.with(|pages| {
+        let mut pages = pages.try_borrow_mut().ok()?;
+        let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view)?;
+        page.loading = false;
+        Some(tab.clone())
+    });
+    let Some(tab) = tab else { return };
+    let _ = app.emit_to("main", "page:load", PageWord { tab: tab.clone(), text: "finished".into() });
+    let _ = app.emit_to("main", "page:fail", PageWord { tab, text });
+}
 
 /// **Where the page is scrolled, as it moves** (round UX-4, the deck's
 /// fold): `page:scroll` with `y,down` or `y,up`, at most once a frame and
@@ -297,6 +342,9 @@ pub fn open(
         }
         // The page's own back and forward, as Safari's edge swipes.
         let _: () = msg_send![&*view, setAllowsBackForwardNavigationGestures: true];
+        FAIL.with(|f| {
+            let _: () = msg_send![&*view, setNavigationDelegate: &**f];
+        });
         // Attached hidden when the face stopped wanting it during the
         // dial (`page_wanted`); `show_page` brings it back.
         let _: () = msg_send![&*view, setHidden: !crate::page_is_wanted(tab)];
@@ -382,6 +430,12 @@ pub fn step(tab: &str, way: &str) {
                 let _: Option<Retained<AnyObject>> = match way {
                     "back" => msg_send![&*page.view, goBack],
                     "forward" => msg_send![&*page.view, goForward],
+                    // 重试 (UX-22): the address asked for, again — a
+                    // failed load leaves the view on the page before it.
+                    "retry" => {
+                        load(&page.view, &page.url);
+                        None
+                    }
                     _ => msg_send![&*page.view, reload],
                 };
             }
@@ -419,7 +473,13 @@ fn tell(app: &tauri::AppHandle) {
                 let title = title.map(|t| t.to_string()).unwrap_or_default();
                 if title != page.told_title {
                     page.told_title = title.clone();
-                    words.push(("page:title", PageWord { tab: tab.clone(), text: title }));
+                    // The borrow's own page for an address the machine
+                    // could not reach (UX-22): a failed load, not a title.
+                    if title == khor_node::tunnel::PAGE_FAILED_TITLE {
+                        words.push(("page:fail", PageWord { tab: tab.clone(), text: format!("route|khor||{}", page.url) }));
+                    } else {
+                        words.push(("page:title", PageWord { tab: tab.clone(), text: title }));
+                    }
                 }
                 // Whether there is a page behind and ahead, as two digits
                 // (`10`: back only) — what the deck's ← → can do.
@@ -437,7 +497,10 @@ fn tell(app: &tauri::AppHandle) {
                     if let Some(u) = u {
                         let s: Option<Retained<NSString>> = msg_send![&*u, absoluteString];
                         let at = s.map(|s| s.to_string()).unwrap_or_default();
-                        if !at.is_empty() && at != page.told_url {
+                        // A view a failed load left on `about:blank` has
+                        // gone nowhere (UX-22): the tab keeps its address,
+                        // and 重试 its way back.
+                        if !at.is_empty() && at != "about:blank" && at != page.told_url {
                             page.told_url = at.clone();
                             page.url = at.clone();
                             words.push(("page:went", PageWord { tab: tab.clone(), text: at }));
