@@ -192,12 +192,103 @@ pub fn load_nanos() -> u64 {
 /// two things out of one document must ask once and derive both, and a
 /// caller on a poll beat pays this per beat. [`loads_taken`] is how that
 /// gets checked rather than argued about.
-pub fn load<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
+pub fn load<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
     let started = std::time::Instant::now();
-    let out = load_inner(dir, peer);
+    let out = load_cached(dir, peer);
     LOADS.fetch_add(1, Ordering::Relaxed);
     LOAD_NANOS.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
     out
+}
+
+/// What a directory's blocks were when a read of them was kept: each
+/// block's name, length and modification time. Blocks are immutable once
+/// written, so the same list is the same document.
+type Fingerprint = Vec<(String, u64, u128)>;
+
+fn fingerprint(dir: &Path) -> Result<Fingerprint, String> {
+    Ok(blocks(dir)?
+        .into_iter()
+        .filter_map(|p| {
+            let meta = fs::metadata(&p).ok()?;
+            let at = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+            Some((file_name(&p)?, meta.len(), at))
+        })
+        .collect())
+}
+
+/// One kept read: the blocks it was made of, the whole document as one
+/// snapshot, and the files that would not read.
+struct Kept {
+    fingerprint: Fingerprint,
+    kind: std::any::TypeId,
+    snapshot: std::sync::Arc<Vec<u8>>,
+    broken: Vec<PathBuf>,
+}
+
+static KEPT: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, Kept>>> =
+    std::sync::LazyLock::new(Default::default);
+
+static KEPT_HITS: AtomicU64 = AtomicU64::new(0);
+
+/// How many [`load`]s were answered from a kept read of an unchanged
+/// directory.
+pub fn loads_kept() -> u64 {
+    KEPT_HITS.load(Ordering::Relaxed)
+}
+
+/// **A read of a directory nothing has written to since is not made
+/// again** (the owner's Mac app, 2026-10-05: 70–260 % CPU, the main thread
+/// and a network worker both inside loro's import, under the session list
+/// and every sync round's opening). Every load used to open an empty
+/// document and merge each block in, every block an import with its own
+/// diff — up to [`PILE`] of them per document, ten documents a list beat,
+/// every chat channel a round. Now the first read of a directory keeps
+/// the document as one snapshot beside the list of blocks it was made
+/// of; while that list is unchanged (a write, a compaction or a sync adds
+/// or removes a file), the next read is one import of that snapshot into
+/// a fresh copy under its own lease. The list is taken before the read
+/// and again after it, and a read the two disagree about is not kept.
+fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
+    let before = fingerprint(dir)?;
+    let kind = std::any::TypeId::of::<D>();
+    let kept = KEPT
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(dir)
+        .filter(|k| k.kind == kind && k.fingerprint == before)
+        .map(|k| (k.snapshot.clone(), k.broken.clone()));
+    if let Some((snapshot, broken)) = kept {
+        let lease = Lease::take(dir, peer);
+        let doc = D::open(lease.peer)?;
+        if doc.merge(&snapshot).is_ok() {
+            KEPT_HITS.fetch_add(1, Ordering::Relaxed);
+            // As a read holds what it merged: never a block that would
+            // not read, which a compaction must leave where it is.
+            let held = before
+                .iter()
+                .map(|(name, _, _)| name.clone())
+                .filter(|name| !broken.iter().any(|b| file_name(b).as_deref() == Some(name.as_str())))
+                .collect();
+            let store = BlockStore {
+                dir: dir.to_path_buf(),
+                on_disk: doc.version(),
+                ledger: read_ledger(dir),
+                held,
+            };
+            return Ok(Loaded { store, doc, broken, lease });
+        }
+    }
+    let loaded: Loaded<D> = load_inner(dir, peer)?;
+    if !before.is_empty()
+        && fingerprint(dir).is_ok_and(|after| after == before)
+        && let Ok(snapshot) = loaded.doc.snapshot()
+    {
+        KEPT.lock().unwrap_or_else(|p| p.into_inner()).insert(
+            dir.to_path_buf(),
+            Kept { fingerprint: before, kind, snapshot: std::sync::Arc::new(snapshot), broken: loaded.broken.clone() },
+        );
+    }
+    Ok(loaded)
 }
 
 fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {

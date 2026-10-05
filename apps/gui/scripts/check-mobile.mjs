@@ -143,7 +143,7 @@ if (!/#\[cfg_attr\(mobile,\s*tauri::mobile_entry_point\)\]\s*pub fn run\(\)/.tes
 // simulator measures the rest (docs/IOS.md, handoff 001).
 const QUICK = new Set([
   // Lists and documents on this machine's own disk.
-  "sessions", "day_strips", "workspaces", "tabs_list", "tabs_open", "tabs_go", "tabs_focus",
+  "day_strips", "workspaces", "tabs_list", "tabs_open", "tabs_go", "tabs_focus",
   "tabs_close", "tabs_pin", "tabs_save", "ws_rm", "ws_pin", "pin_account", "rename_account",
   "update_account", "register_account", "remove_account", "seen", "rename_session",
   "rename_machine", "relays", "set_relays", "tell", "pin_session", "pin_device", "forget_device",
@@ -179,6 +179,10 @@ const WAITS = [
   // thread for minutes — a write to its socket is quick only while the
   // road keeps up.
   "chat_say",
+  // 2026-10-05: the session list read every document and swept the
+  // process table on the main thread, every 2 s (the owner's Mac app at
+  // 70–260 % CPU, typing that lagged).
+  "sessions",
 ];
 {
   const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;

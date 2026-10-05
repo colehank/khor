@@ -635,3 +635,41 @@ fn compacting_twice_keeps_every_word() {
     assert!(text.contains("line 0") && text.contains("line 1"), "both lines survive:\n{text}");
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// **A directory nothing has written to is not read again** (the owner's
+/// Mac app at 70–260 % CPU, 2026-10-05: every list beat and every sync
+/// round merged every block of every document). The second read of an
+/// unchanged directory comes from what the first kept, and reads the
+/// same; a write in between is seen, and a copy read from what was kept
+/// writes like any other.
+#[test]
+fn an_unchanged_directory_is_read_from_what_was_kept() {
+    let dir = tmpdir("kept");
+    let mut st = open_channel(&dir, 1).unwrap();
+    for i in 0..5 {
+        st.doc.tell(&me("a"), &format!("line {i}")).unwrap();
+        st.store.flush(&st.doc).unwrap();
+    }
+    drop(st);
+    let first = render(&open_channel(&dir, 1).unwrap().doc);
+    let kept_before = crate::store::loads_kept();
+    let mut again = open_channel(&dir, 1).unwrap();
+    assert!(crate::store::loads_kept() > kept_before, "the second read came from what the first kept");
+    assert_eq!(render(&again.doc), first, "and it reads the same");
+
+    // A copy read from what was kept writes like any other…
+    again.doc.tell(&me("a"), "written on a kept read").unwrap();
+    again.store.flush(&again.doc).unwrap();
+    drop(again);
+    // …and a write from elsewhere is seen at once.
+    let mut other = open_channel(&dir, 2).unwrap();
+    other.doc.tell(&me("b"), "from another writer").unwrap();
+    other.store.flush(&other.doc).unwrap();
+    drop(other);
+    let now = render(&open_channel(&dir, 1).unwrap().doc);
+    assert!(now.contains("written on a kept read") && now.contains("from another writer"), "{now}");
+    for i in 0..5 {
+        assert!(now.contains(&format!("line {i}")), "{now}");
+    }
+    let _ = fs::remove_dir_all(&dir);
+}

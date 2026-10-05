@@ -29,9 +29,14 @@ async fn off_main<T: Send + 'static>(
 /// `by` is the arrangement key (`khor_node::list::Arrange`). The window
 /// passes the one the user last chose; it is that screen's own state,
 /// not something the network holds an opinion about.
+///
+/// **Off the main thread** (2026-10-05, the owner's Mac app at 70–260 %
+/// CPU and typing that lagged): the list reads every document it shows
+/// and sweeps the process table, and on the main thread each 2 s beat
+/// held the window still for as long as that took.
 #[tauri::command]
-fn sessions(by: String) -> Result<Vec<SessionRow>, String> {
-    khor_gui_core::list_sessions(&Node::root_from_env(), &by)
+async fn sessions(by: String) -> Result<Vec<SessionRow>, String> {
+    off_main(move || khor_gui_core::list_sessions(&Node::root_from_env(), &by)).await
 }
 
 /// The day strips, on their own beat rather than riding the row list
