@@ -3545,6 +3545,10 @@ key-tab-name = "Tab 键"
 key-backspace-name = "退格键"
 key-backtab = "⇧Tab"
 key-backtab-name = "Shift-Tab"
+# Shift+Enter as one cap (item 40): iOS's keyboard cannot type it, and
+# it is how Claude Code takes a newline without sending.
+key-newline = "⇧⏎"
+key-newline-name = "换行"
 key-paste = "粘贴"
 # The cursor key at the row's end (2026-10-03): one key, dragged like a
 # trackpad, in place of the four arrows.

@@ -11,7 +11,9 @@
 //   `CSI 27 ; 2 ; 13 ~`, Ctrl and Alt combinations too; level 1 leaves the
 //   combinations with a control character of their own; `CSI > 4 m` and
 //   RIS end it; modifyCursorKeys (`CSI > 2 ; 1 m`) is not it;
-// - the kitty flags (`CSI > 1 u`) win when both were asked: `CSI 13 ; 2 u`.
+// - the kitty flags (`CSI > 1 u`) win when both were asked: `CSI 13 ; 2 u`;
+// - the key row's 换行 cap (item 40) sends what Shift+Enter sends in every
+//   one of those states, and repeats while held.
 // The bytes crossing a real tmux unchanged are the host's test,
 // `crates/node/tests/tmux_extkeys.rs`.
 import { build } from "esbuild";
@@ -26,7 +28,7 @@ const alias = {
 };
 const out = await build({
   stdin: {
-    contents: `import { Terminal } from "@xterm/xterm"; import * as kitty from "@/lib/term-kitty"; globalThis.lab = { Terminal, kitty };`,
+    contents: `import { Terminal } from "@xterm/xterm"; import * as kitty from "@/lib/term-kitty"; import { KEY_BY_NAME } from "@/lib/term-keys"; globalThis.lab = { Terminal, kitty, KEY_BY_NAME };`,
     resolveDir: gui,
     loader: "ts",
   },
@@ -38,7 +40,8 @@ const out = await build({
   plugins: [alias],
 });
 await import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
-const { Terminal, kitty } = globalThis.lab;
+const { Terminal, kitty, KEY_BY_NAME } = globalThis.lab;
+const newline = KEY_BY_NAME.get("newline");
 
 let bad = 0;
 const fail = (m) => {
@@ -76,8 +79,9 @@ async function after(stream, keys) {
   kitty.kittyProtocol(t, (b) => answers.push(b));
   await new Promise((r) => t.write(stream, r));
   const sent = keys.map((ev) => kitty.kittyKey(t, ev, false));
+  const cap = newline?.send?.(t, { ctrl: false, alt: false });
   t.dispose();
-  return sent;
+  return { sent, cap };
 }
 
 const E = "\x1b";
@@ -116,13 +120,25 @@ const cases = [
 
 let checked = 0;
 for (const [name, stream, expect] of cases) {
-  const sent = await after(stream, expect.map(([ev]) => ev));
+  const { sent, cap } = await after(stream, expect.map(([ev]) => ev));
+  // The 换行 cap: what this state's Shift+Enter sends, or the CR xterm
+  // would send for it.
+  const shiftEnter = sent[expect.findIndex(([ev]) => ev === SHIFT_ENTER)];
+  const wantCap = shiftEnter ?? (expect.some(([ev]) => ev === SHIFT_ENTER) ? "\r" : undefined);
+  if (wantCap !== undefined) {
+    checked++;
+    if (cap !== wantCap) fail(`${name}: the 换行 cap sent ${show(cap ?? null)}, want ${show(wantCap)}`);
+  }
   expect.forEach(([ev, want], i) => {
     checked++;
     const label = `${ev.shiftKey ? "⇧" : ""}${ev.ctrlKey ? "⌃" : ""}${ev.altKey ? "⌥" : ""}${ev.metaKey ? "⌘" : ""}${ev.key}`;
     if (sent[i] !== want) fail(`${name}: ${label} sent ${show(sent[i])}, want ${show(want)}`);
   });
 }
+
+checked++;
+if (!newline) fail("no 换行 cap in the key set");
+else if (newline.repeats !== true) fail("the 换行 cap does not repeat while held");
 
 if (bad) {
   console.error(`keys gate: ${bad} of ${checked} wrong`);

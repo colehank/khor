@@ -307,12 +307,20 @@ export function kittyTyped(term: Terminal, ch: string, ctrl: boolean, alt: boole
 
 /** Esc, Tab, Shift+Tab and Backspace from the key row, as the protocol
     spells them, or `null` to keep the legacy form. */
-export function kittyNamed(term: Terminal, key: "Escape" | "Tab" | "Backspace", shift: boolean, alt: boolean, ctrl = false): string | null {
+export function kittyNamed(term: Terminal, key: "Escape" | "Tab" | "Backspace" | "Enter", shift: boolean, alt: boolean, ctrl = false): string | null {
   const flags = kittyFlags(term);
   if (!(flags & (DISAMBIGUATE | ALL_KEYS))) return null;
   const mods = 1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
   // Tab and Backspace without a modifier keep their legacy bytes unless
   // every key is to be reported (the spec's "disambiguate" leaves them).
   if (key !== "Escape" && mods === 1 && !(flags & ALL_KEYS)) return null;
-  return csi(key === "Escape" ? "27" : key === "Tab" ? "9" : "127", mods, 1, "", "u");
+  return csi(key === "Escape" ? "27" : key === "Tab" ? "9" : key === "Enter" ? "13" : "127", mods, 1, "", "u");
+}
+
+/** Shift+Enter, for the key row's 换行 cap (item 40): what a keyboard's
+    Shift+Enter sends in the current mode — the kitty form when the
+    program set flags, xterm's modifyOtherKeys form when it (or tmux)
+    asked for that, else the CR it has always been. */
+export function shiftEnter(term: Terminal): string {
+  return kittyNamed(term, "Enter", true, false) ?? (otherKeysLevel(term) ? "\x1b[27;2;13~" : "\r");
 }
