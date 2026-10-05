@@ -76,7 +76,7 @@ import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
-import { bandRows, foldStep, RESTS_AT_BOTTOM, type FoldMemo } from "@/lib/deck-fold";
+import { bandRows, foldStep, RESTS_AT_BOTTOM, UnfoldHold, type FoldMemo } from "@/lib/deck-fold";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { keyboardShown } from "@/lib/viewport";
 
@@ -196,6 +196,8 @@ export function SessionScreen({
   const at = faces.findIndex((f) => f.id === active);
   const face = at < 0 ? null : faces[at];
   const [own, setOwn] = useState(false);
+  /** The strip pressed holds the deck through the flick (`UnfoldHold`). */
+  const hold = useRef(new UnfoldHold());
   const [keys, setKeys] = useState(keyboardShown);
   const asked = foldedAsked !== undefined;
   // Nothing folds with the keyboard up, the browser's page included.
@@ -232,6 +234,7 @@ export function SessionScreen({
         return;
       }
       const next = foldStep(memo, now.away, now.away > was.away, 1);
+      if (!hold.current.allows() && next === true) return;
       if (next !== null) setOwn(next);
     };
     el.addEventListener("scroll", on, { capture: true, passive: true });
@@ -329,6 +332,7 @@ export function SessionScreen({
               type="button"
               data-deck-strip
               onClick={() => {
+                hold.current.asked();
                 setOwn(false);
                 onUnfold?.();
               }}
