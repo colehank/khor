@@ -128,10 +128,14 @@ try {
       every narrow 「…」 stop read 「never drew」. */
   const toMore = async () => {
     // Wide, 更多 is the strip's fifth seat and opens the phone's menu
-    // (UX-19); 我的 khor there opens the 「…」 list beside it.
+    // (UX-19); 设置 there opens the 「…」 list beside its first page, and
+    // 我的 khor is that list's head. ⚠️ 墓碑 (UX-26): the menu's 我的 khor
+    // used to open the list too; it is the dial now, with no list beside.
     if (!(await narrowNow())) {
       if (await page.locator("[data-more-open]").first().isVisible().catch(() => false)) return true;
-      return (await tap("[data-rail-more]")) && tap("[data-rail-more-menu] [data-nav-me]");
+      // The dial takes the window (UX-26): its ‹ first, then the strip.
+      if ((await page.locator("[data-dial-page]").count()) > 0) await closeMe();
+      return (await tap("[data-rail-more]")) && tap("[data-rail-more-menu] [data-nav-settings]");
     }
     for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
       if (!(await tap("[data-file-back], [data-back], [data-ws-back], [data-more-back]"))) break;
@@ -146,13 +150,35 @@ try {
       menu items on the bottom bar. ⚠️ 墓碑: `settings` (通用), `network`
       (网络) and `identity` (这台机器) were pages until UX-16. */
   const openMore = async (key) => {
+    let opened;
     if ((await narrowNow()) && (key === "me" || key === "doctor")) {
       for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
         if (!(await tap("[data-file-back], [data-back], [data-ws-back], [data-more-back]"))) break;
       }
-      return (await tap("[data-nav-more]")) && tap(key === "me" ? "[data-nav-me]" : "[data-nav-doctor]");
+      opened = (await tap("[data-nav-more]")) && (await tap(key === "me" ? "[data-nav-me]" : "[data-nav-doctor]"));
+    } else {
+      opened = (await toMore()) && (await tap(`[data-more-open="${key}"]`));
     }
-    return (await toMore()) && tap(`[data-more-open="${key}"]`);
+    // **我的 khor is the dial** (UX-26): the page is the picture alone, and
+    // this machine's facts (id, 版本, the faces) and acts (恢复词, 离开网络,
+    // 重置身份) are on its card — opened by a right-click (a long-press on
+    // the phone) on the seat in the middle. A stop that reads the page
+    // reads the card, so it is opened here, for every posture.
+    if (opened && key === "me") return openMeCard();
+    return opened;
+  };
+  const openMeCard = async () => {
+    if (!(await until(5_000, async () => (await page.locator("[data-dial-seat][data-me]").count()) > 0))) return false;
+    await page.locator("[data-dial-seat][data-me]").first().dispatchEvent("contextmenu");
+    return until(3_000, async () => (await page.locator('[data-dial-card] [data-more-fact="id"]').count()) > 0);
+  };
+  /** Out of 我的 khor: the card (a popover, the phone's sheet) goes first
+      on Esc, then the page's ‹ — pressed through a scrim it would not land. */
+  const closeMe = async () => {
+    await page.keyboard.press("Escape");
+    await wait(250);
+    if ((await page.locator("[data-more-close]").count()) === 0) return true;
+    return tap("[data-more-close]");
   };
   /** **A list's search box, opened** (the redesign: a circle at the
       head's top right until pressed, on every face; ⚠️ 墓碑 UX-11 §4 put
@@ -2952,11 +2978,12 @@ try {
       // editor that anchored this stop left the page (「不要冗余」) for
       // the machine row's 编辑… window, the next stop.
       name: "identity",
-      anchor: '[data-more-page="me"] [data-more-fact="id"]',
+      // On this machine's card, since the page is the dial (UX-26).
+      anchor: '[data-dial-card] [data-more-fact="id"]',
       // 我的 khor (UX-16): 更多's list wide, 更多's menu narrow.
       go: () => openMore("me"),
       after: async () => {
-        await press("[data-more-close]");
+        await closeMe();
       },
     },
     {
@@ -3083,6 +3110,28 @@ try {
   // probe below asserts the reading works at all rather than trusting a
   // zero.
   const BARE_PRESSES = {
+    "data-dial-ground": [
+      "src/views/more/MyKhorPage.tsx",
+      "the 我的 khor dial's ground (UX-26): the room round the seats, which " +
+        "a right-click (a long-press under a finger) opens the add menu on — " +
+        "Radix's `ContextMenuTrigger`, the same handler every row's menu " +
+        "wears. **Not a control, the room around them**: the menu is also " +
+        "the phone's 「…」 circle, a real button, so nothing is reachable " +
+        "only through it; the seats on it are their own targets.",
+    ],
+    "data-dial": [
+      "src/views/more/MyKhorPage.tsx",
+      "the dial itself: a touch on its blank clears the look a tap put on a " +
+        "seat (rule 5: tap ground to clear). It presses nothing; a second tap " +
+        "on the looked-at seat clears the look too, and a mouse leaves it by " +
+        "leaving the seat.",
+    ],
+    "data-dial-scrim": [
+      "src/views/more/MyKhorPage.tsx",
+      "the room round the dial's card on the wide face: a press on it closes " +
+        "the card, as Esc does and as the sheet's own scrim does on the phone " +
+        "(`data-scrim`). Not a control; nothing is reachable only through it.",
+    ],
     "data-scrim": [
       "src/components/ui/dialog.tsx",
       "the scrim under every dialog and sheet (UX-21, 2026-10-05): its " +
@@ -11801,6 +11850,8 @@ try {
             sub: row.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
             top: row.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
             light: row.querySelector("[data-row-latency]")?.getAttribute("data-row-latency") ?? null,
+            // The light's band (UX-26, `lib/latency`): 23 ms is `fast`, no road `none`.
+            band: row.querySelector("[data-row-latency]")?.getAttribute("data-lat") ?? null,
             bottom: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
             road: row.querySelectorAll("[data-row-connection]").length,
           },
@@ -11818,6 +11869,9 @@ try {
       fail(`UX-15 · elder reads ${JSON.stringify(e)} — the light off beside 无法获取, and when it was last heard under it`);
     }
     if (!g || g.top !== "本机" || g.bottom !== null) fail(`UX-15 · this machine reads ${JSON.stringify(g)} — 本机, nothing under it`);
+    if (p?.band !== "fast" || e?.band !== "none") {
+      fail(`UX-26 · the row's light wears bands ${JSON.stringify([p?.band, e?.band])} — 23 ms is 「fast」 (under 30), no road 「none」 (lib/latency)`);
+    }
     if (Object.values(rows).some((r) => r.road !== 0)) fail("UX-15 · a machine row still prints how it is reached — 连接方式 is the machine page's");
     for (const [d, k] of [[peer, keep[0]], [elder, keep[1]]]) {
       if (!d || !k) continue;
@@ -12554,11 +12608,13 @@ try {
         );
       }
       // Wide: the page is on screen beside the list, and it is a detail
-      // page — 我的 khor, 更多's own head (UX-16).
-      if (posture === "wide" && (more.kind !== "detail" || more.page !== "me")) {
+      // page — 设置's first, 外观, since 我的 khor is the dial alone with
+      // no list beside it (UX-26). ⚠️ 墓碑 (UX-16 → UX-26): it opened on
+      // 我的 khor, 更多's own head.
+      if (posture === "wide" && (more.kind !== "detail" || more.page !== "appearance")) {
         fail(
           `wide: the more glyph landed on data-region-kind=${JSON.stringify(more.kind)} showing ` +
-            `${JSON.stringify(more.page)} — More is an A page and it opens on 我的 khor (UX-16)`,
+            `${JSON.stringify(more.page)} — More is an A page and 设置 opens on 外观 beside the list (UX-16, UX-26)`,
         );
       }
       // The landings the narrow bar folds away still have a door: 更多's
@@ -12979,7 +13035,8 @@ try {
         continue;
       }
       const card = await page.evaluate(() => {
-        const el = document.querySelector('[data-more-page="me"]');
+        // This machine's card on the dial (UX-26), where the facts are.
+        const el = document.querySelector("[data-dial-card]");
         if (!el) return null;
         const faces = [...el.querySelectorAll("[data-iface]")];
         return {
@@ -13067,7 +13124,7 @@ try {
           );
         }
       }
-      await press("[data-more-close]");
+      await closeMe();
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await wait(300);
@@ -25042,7 +25099,8 @@ try {
       }],
       ["通用", async () => {
         await hit("[data-rail-more]");
-        await hit("[data-rail-more-menu] [data-nav-me]");
+        // 设置 opens the list beside 外观 (UX-26: 我的 khor is the dial alone).
+        await hit("[data-rail-more-menu] [data-nav-settings]");
         await hit('[data-more-open="appearance"]');
         return until(5_000, async () => (await page.locator("[data-main] [data-page-title]").count()) > 0);
       }],
@@ -25204,9 +25262,10 @@ try {
   if (!(await openMore("me"))) {
     fail("probe dead: entity · no 这台机器 in 更多's list to open");
   } else {
-    await until(3_000, async () => (await page.locator('[data-more-page="me"] [data-more-fact="id"]').count()) > 0);
+    await until(3_000, async () => (await page.locator('[data-dial-card] [data-more-fact="id"]').count()) > 0);
     const mine = await page.evaluate(() => {
-      const el = document.querySelector('[data-more-page="me"]');
+      // The facts are on this machine's card (UX-26, the dial).
+      const el = document.querySelector("[data-dial-card]");
       if (!el) return null;
       const editors = [
         "input",
@@ -25234,7 +25293,7 @@ try {
           "machine's row (右键 → 编辑…), and this page only states them (the owner, 2026-09-30: 「不要冗余」)",
       );
     }
-    if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+    await closeMe();
   }
 
   // b. the row menus, and the dialog 编辑… opens.
@@ -27328,7 +27387,7 @@ try {
       console.log(`fix c · web face: 恢复词 rows on 我的 khor ${n}`);
       if (n !== 0) fail("fix c · the web face draws a 恢复词 row — the words are the app's alone (khor_gui_core command_tables)");
     }
-    if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+    await closeMe();
     // Now the app: tauri's IPC global, every call still over the bridge.
     // **Only on a page asked for as the app** (`&as-app`): an init script
     // outlives this section, and every section after it is the web face
@@ -27370,9 +27429,12 @@ try {
       const look = await page.evaluate((sel) => {
         const row = document.querySelector(sel);
         if (!row) return null;
+        // On the dial (UX-26) the row is the card's item, a button itself:
+        // its word is the act (「恢复词…」, a window follows).
+        const act = row.matches("button") ? row : row.querySelector("button");
         return {
-          title: row.querySelector(".text-body")?.textContent?.trim() ?? null,
-          act: row.querySelector("button")?.textContent?.trim() ?? null,
+          title: (row.matches(".text-body") ? row : row.querySelector(".text-body"))?.textContent?.trim() ?? null,
+          act: act?.textContent?.trim() ?? null,
           words: document.querySelectorAll("[data-root-words] li").length,
         };
       }, rowSel);
@@ -27382,7 +27444,7 @@ try {
       } else {
         if (!look.act?.endsWith(ELLIPSIS)) fail(`fix c · the 恢复词 row's act reads 「${look.act}」 — it opens a window: 「显示…」`);
         if (look.words !== 0) fail("fix c · the words are on the page before anybody pressed 「显示…」");
-        await page.locator(`${rowSel} button`).click();
+        await page.locator(`${rowSel} button, button${rowSel}`).first().click();
         const up = await until(3_000, async () => (await page.locator("[data-root-words-dialog] [data-root-words] li").count()) > 0);
         const shown = await page.locator("[data-root-words-dialog] [data-root-words] li").count();
         console.log(`fix c · 「显示…」 → ${shown} word(s) in a dialog`);
@@ -27395,7 +27457,7 @@ try {
       const n = await page.locator(rowSel).count();
       console.log(`fix c · app, 我的 khor where the root is not held: 恢复词 rows ${n}`);
       if (n !== 0) fail("fix c · 我的 khor draws a 恢复词 row on a machine that does not hold the root");
-      if (await page.locator("[data-more-close]").count()) await press("[data-more-close]");
+      await closeMe();
     }
     await page.setViewportSize({ width: 1400, height: 900 });
   }

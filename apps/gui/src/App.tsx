@@ -555,7 +555,7 @@ export default function App() {
   /** What the machine page opens on when the next machine opens, where
       something asked for more than its dashboard (a conversation's
       「在文件视图中打开」, round CHAT): read once by the reset below. */
-  const bodyNext = useRef<"files" | null>(null);
+  const bodyNext = useRef<"files" | "sessions" | null>(null);
   useEffect(() => {
     setMachineBody(bodyNext.current ?? "dashboard");
     bodyNext.current = null;
@@ -1429,6 +1429,12 @@ export default function App() {
   const me = devices.find((d) => d.me) ?? null;
   /** The wide face's list put away by pressing the open landing again. */
   const folded = !narrow && listPane.collapsed;
+  /** **我的 khor is one page, the dial** (UX-26): on the wide face the
+      list column folds away for the page's lifetime (nothing beside it)
+      and ‹ at its top-left closes it back to the landing it was opened
+      over. The column's own fold state is untouched — it comes back as
+      it was. The settings window never shows it (UX-16). */
+  const dial = !narrow && morePage === "me" && !settingsFace;
   /** The wide face's top row (方案 B): the landings' glyphs beside the
       window's buttons, then 更多. The open landing pressed again folds its
       list, and once more brings it back; another landing switches and
@@ -2531,12 +2537,46 @@ export default function App() {
         devices={devices}
         rows={rows}
         onClose={leaveMorePage}
-        onOpenMachine={(row) => {
-          // Off 更多 and onto the machine's own page, the road a node on
-          // the machines overview takes.
+        // The card's acts (UX-26 rule 6): each one is a road the app
+        // already has — the machine's page on its sessions, the wizard
+        // with the machine picked, a landing narrowed to the machine
+        // (the filter words `lib/list-filter` reads), the ＋ menu's
+        // invite / join windows, 设置 → 连接 for the relays.
+        onOpenMachine={(row, body) => {
           setMorePage(null);
           setLanding("devices");
           onSelectDevice(row);
+          bodyNext.current = body === "sessions" ? "sessions" : null;
+        }}
+        onNewSession={(row) => openNewSession(row.me ? "" : row.name)}
+        onOpenWorkspaces={(row) => {
+          setMorePage(null);
+          setWords((was) => ({ ...was, workspaces: [`dev:${row.id}`] }));
+          rememberWords("workspaces", [`dev:${row.id}`]);
+          setLanding("workspaces");
+          setScreen("list");
+          listPane.expand();
+        }}
+        onOpenBlocked={(row) => {
+          setMorePage(null);
+          setWords((was) => ({ ...was, sessions: [`dev:${row.name}`, "state:blocked"] }));
+          rememberWords("sessions", [`dev:${row.name}`, "state:blocked"]);
+          setLanding("sessions");
+          setScreen("list");
+          listPane.expand();
+        }}
+        onPin={onPinDevice}
+        onForget={onForgetDevice}
+        onInvite={() => setDialog("invite")}
+        onJoin={() => setDialog("join")}
+        onOpenRelays={() => {
+          if (trafficLights && !settingsFace) {
+            openSettings("connection").catch(() => {});
+            return;
+          }
+          setMorePage("connection");
+          setScreen("detail");
+          listPane.expand();
         }}
         onChanged={() => {
           refresh().catch(() => {});
@@ -3089,7 +3129,7 @@ export default function App() {
           <aside
             data-side
             data-search-glass
-            hidden={folded}
+            hidden={folded || dial}
             className="flex flex-none flex-col border-r bg-side"
             style={{ "--list-w": `${listPane.width}px` } as CSSProperties}
           >
@@ -3130,7 +3170,9 @@ export default function App() {
               browsing address bar are rows of their own. */}
           <main data-main className="relative flex min-w-0 flex-1 flex-col bg-background">
           <RegionLead.Provider value={foldedLead}>
-          {morePage ? (
+          {dial ? (
+            morePageEl
+          ) : morePage ? (
             <Region
               kind="detail"
               title={moreName(morePage)}

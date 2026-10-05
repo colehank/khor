@@ -2372,6 +2372,44 @@ map-latency = "延迟"
 map-heard = "上次联系"
 # The chevron that opens a link's facts in the narrow column (aria).
 map-facts = "连接详情"
+# **我的 khor 的表盘**（UX-26，负责人 2026-10-06，定稿在 audit/my-khor-dial.html）：
+# 本机在中间，每台机器按到本机的延迟落在对应的半径上；三个圈的字、脚注的四档、
+# 地图/矩阵两档、长按或右键出的卡片和空白处的菜单。延迟的数字沿用 row-rtt。
+dial-ring-fast = "30 ms"
+dial-ring-mid = "120 ms"
+dial-key-fast = "30 ms 内"
+dial-key-mid = "120 ms 内"
+dial-key-slow = "更慢"
+dial-key-none = "不通"
+dial-count = "{0} 台机器 · {1} 台通"
+dial-view-map = "地图"
+dial-view-matrix = "矩阵"
+dial-rearrange = "重新排布"
+dial-look = "查看 {0} 的连接"
+# The card's facts: this machine's road to each other one (an older peer
+# that wrote none is filter-unknown's 未知, never 不通), when an unreachable
+# machine last answered, the relay a road goes by.
+dial-to = "到 {0}"
+dial-last-answer = "上次应答 {0}前"
+dial-via = "中继 · {0}"
+dial-holds-root = "持有根"
+dial-faces = "脸"
+dial-faces-open = "开着 {0} 个"
+dial-some = "{0} 个"
+dial-some-busy = "{0} 个 · {1} 忙碌"
+dial-none = "没有"
+# The card's acts, in the owner's words.
+dial-new-terminal = "新开终端"
+dial-rename = "改名字和头像…"
+dial-forget = "忘记这台机器…"
+dial-repair = "重新配对…"
+dial-relays = "中继…"
+dial-reset = "重置身份…"
+dial-invite = "生成邀请票…"
+dial-pair = "用票配对…"
+# The matrix: rows are the reporting machine, columns to whom.
+dial-matrix = "每台机器报的路"
+dial-reported-by = "{0} 报的"
 search-open = "搜索"
 search-close = "结束搜索"
 # The browser's address field (the redesign, 2026-10-02): a new page

@@ -2367,3 +2367,149 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 [data-session-screen][data-deck-folded] [data-term-bottom] {
   bottom: calc(var(--deck-strip) + 2 * var(--gap-in));
 }
+
+/* ── 我的 khor 的表盘 (UX-26, the owner 2026-10-06; the spec is
+   audit/my-khor-dial.html) ──────────────────────────────────────
+   One page, nothing but the dial: this machine in the middle, every
+   other machine at the radius its latency says, three hairline rings.
+   The maths is `lib/dial.ts`; the page is `views/more/MyKhorPage.tsx`;
+   what is here is how a road, a ring and a seat are drawn. */
+
+/* The page's own first row on the wide face: the way back, the name and
+   the 地图/矩阵 segment, starting past the window's buttons like every
+   first row (UX-19: at the title inset where there are none). */
+:root:not([data-traffic]) [data-dial-top] {
+  padding-inline-start: var(--gap-group);
+}
+
+/* Rings: hairlines on the ground; the rim (不通) is dotted. */
+[data-dial-ring] {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+[data-dial-ring][data-rim] {
+  stroke-dasharray: 2 4;
+}
+/* A ring's word and a road's number sit on a patch of the ground, so the
+   hairline they stand on breaks behind them. */
+[data-dial-word] {
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 5;
+  stroke-linejoin: round;
+}
+
+/* Roads: the colour is the band (set inline from `BAND_INK`), the dash
+   is the way — solid direct, dashed by a relay, dotted none. At rest
+   only this machine's show; a look lights one machine's and fades the
+   rest. Nothing else moves on its own (rule 9). */
+[data-dial-edge] {
+  fill: none;
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  opacity: 0.55;
+  transition:
+    opacity var(--dur-180) var(--ease-out),
+    stroke-width var(--dur-180) var(--ease-out);
+}
+[data-dial-edge][data-road="relay"] {
+  stroke-dasharray: 4 4;
+}
+[data-dial-edge][data-lat="none"] {
+  stroke-dasharray: 1 5;
+}
+[data-dial-edge][data-far],
+[data-dial-x][data-far] {
+  opacity: 0;
+}
+[data-dial][data-look] :is([data-dial-edge], [data-dial-x]) {
+  opacity: 0;
+}
+[data-dial][data-look] [data-dial-edge][data-lit] {
+  opacity: 1;
+  stroke-width: 1.6;
+}
+[data-dial][data-look] [data-dial-x][data-lit] {
+  opacity: 1;
+}
+[data-dial-x] {
+  opacity: 0.8;
+  transition: opacity var(--dur-180) var(--ease-out);
+}
+[data-dial-ms] {
+  opacity: 0;
+  transition: opacity var(--dur-180) var(--ease-out);
+}
+[data-dial][data-look] [data-dial-ms][data-lit] {
+  opacity: 1;
+}
+
+/* Seats: a face at its point; it fades in on arriving and out on leaving
+   (the one motion the page has). The looked-at or open seat wears the
+   focus ring's colour round its face; a machine with no road is grey. */
+[data-dial-seat] {
+  animation: dial-appear var(--dur-420) var(--ease-out) both;
+}
+@keyframes dial-appear {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+[data-dial-seat][data-leaving] {
+  animation: dial-leave var(--dur-240) var(--ease-out) both;
+}
+@keyframes dial-leave {
+  to {
+    opacity: 0;
+  }
+}
+[data-dial-seat][data-on] [data-dial-face] {
+  outline: var(--ring-w) solid var(--ring);
+  outline-offset: calc(var(--ring-off) + var(--hair));
+}
+[data-dial-seat][data-off] [data-dial-face] {
+  filter: saturate(0) opacity(0.5);
+}
+[data-dial-seat][data-dragging] {
+  z-index: 5;
+}
+/* The face scales a touch under the pointer, as every seat does. */
+[data-dial-seat]:not([data-me]) [data-dial-face] {
+  transition: transform var(--dur-180) var(--ease-out);
+}
+[data-dial-seat]:not([data-me]):active [data-dial-face] {
+  transform: scale(0.96);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-dial-seat] {
+    animation-duration: 1ms;
+  }
+}
+
+/* The matrix's cells: the number in the band's ink on its wash — a
+   reading's cell, never a row's ground; 不通 outlined, a cell nobody
+   reported (an older peer) blank. */
+[data-matrix-cell][data-lat="fast"] {
+  color: var(--state-done);
+  background: color-mix(in srgb, var(--state-done) 12%, transparent);
+}
+[data-matrix-cell][data-lat="mid"] {
+  color: var(--state-errored);
+  background: color-mix(in srgb, var(--state-errored) 12%, transparent);
+}
+[data-matrix-cell][data-lat="slow"] {
+  color: var(--state-failed);
+  background: color-mix(in srgb, var(--state-failed) 12%, transparent);
+}
+[data-matrix-cell][data-lat="none"] {
+  color: var(--tertiary);
+  box-shadow: inset 0 0 0 var(--hair) var(--border);
+}
+[data-matrix-cell]:hover:not([data-self]) {
+  outline: var(--ring-w) solid var(--ring);
+  outline-offset: calc(-1 * var(--ring-w));
+}

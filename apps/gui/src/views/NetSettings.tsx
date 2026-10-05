@@ -63,14 +63,11 @@ export function NetSettings() {
   /** When the first asking began (`Waiting`, below). */
   const [since] = useState(() => Date.now());
   const [error, setError] = useState<string | null>(null);
-  // The add window: its box, the node's refusal of what was in it, and
-  // whether it was opened by the only-mine switch — then saving adds
-  // the relay **and** turns the switch on, which is what the person
-  // pressed the switch for (安全's PIN-then-lock, the same road).
+  // The add window (`RelayAddDialog`), and whether it was opened by the
+  // only-mine switch — then saving adds the relay **and** turns the
+  // switch on, which is what the person pressed the switch for (安全's
+  // PIN-then-lock, the same road).
   const [adding, setAdding] = useState(false);
-  const [typed, setTyped] = useState("");
-  const [typedKey, setTypedKey] = useState("");
-  const [refused, setRefused] = useState<string | null>(null);
   const [arming, setArming] = useState(false);
 
   useEffect(() => {
@@ -101,9 +98,6 @@ export function NetSettings() {
   }, []);
 
   const openAdd = (arm: boolean) => {
-    setTyped("");
-    setTypedKey("");
-    setRefused(null);
     setArming(arm);
     setAdding(true);
   };
@@ -210,79 +204,131 @@ export function NetSettings() {
             mark={{ "data-relays-only-mine": "" }}
           />
 
-          <Dialog open={adding} onOpenChange={setAdding}>
-            <DialogContent form data-relay-add-dialog>
-              <DialogHeader>
-                <DialogTitle>{gui.relays_add}</DialogTitle>
-              </DialogHeader>
-              <form
-                id="relay-add"
-                className="flex flex-col gap-in"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  const url = typed.trim();
-                  // Always pressable (`components/Why`): with no address,
-                  // say so and put the caret in its box.
-                  if (!url) {
-                    setRefused(gui.need_relay);
-                    document.querySelector<HTMLElement>("[data-relay-add-url]")?.focus();
-                    return;
-                  }
-                  const token = typedKey.trim() || null;
-                  // Closed only on success: a refused address stays in
-                  // the box next to the sentence saying why, so the fix
-                  // is an edit and not a retype.
-                  if (
-                    await write(
-                      [...choices.mine.filter((u) => u !== url).map(kept), { url, token }],
-                      arming || choices.only_mine,
-                      setRefused,
-                    )
-                  ) {
-                    setAdding(false);
-                    setArming(false);
-                  }
-                }}
-              >
-                <Input
-                  data-relay-add-url
-                  autoComplete="off"
-                  aria-label={gui.relays_add}
-                  placeholder={gui.relays_hint}
-                  value={typed}
-                  onChange={(e) => setTyped(e.target.value)}
-                  className="min-h-touch w-full font-mono"
-                />
-                {/* The relay's shared key, when its operator set one
-                    (`khor relay --token`, iroh-relay's shared_token).
-                    Masked: it is a secret, and this is the one moment
-                    it is on screen at all. */}
-                <Input
-                  data-relay-add-key
-                  type="password"
-                  autoComplete="off"
-                  aria-label={gui.relays_key}
-                  placeholder={gui.relays_key_hint}
-                  value={typedKey}
-                  onChange={(e) => setTypedKey(e.target.value)}
-                  className="min-h-touch w-full font-mono"
-                />
-              </form>
-              {refused && (
-                <p data-relays-refused className="text-callout text-destructive">
-                  {refused}
-                </p>
-              )}
-              <DialogFooter>
-                <Button onClick={() => setAdding(false)}>{gui.delete_keep}</Button>
-                <Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
-                  {gui.watch_add}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <RelayAddDialog
+            open={adding}
+            arming={arming}
+            onClose={() => {
+              setAdding(false);
+              setArming(false);
+            }}
+            onWritten={setChoices}
+          />
         </>
       )}
     </MoreSection>
+  );
+}
+
+/**
+ * **The one window that adds a relay** (2026-09-30 docs/NET.md 中继; moved
+ * out of the group on 2026-10-06 so the 我的 khor dial's add menu opens
+ * the same one): the address and, when its operator set one, the shared
+ * key — masked, the one moment it is on screen at all. It reads the
+ * relays as they stand when it opens (`fetchRelays`, a local read), so a
+ * caller need not hold them; the whole list goes back in one write
+ * (`Node::set_relays` replaces), and the node's own sentence names an
+ * entry it refused — the address stays in the box next to it, so the
+ * fix is an edit and not a retype. Closed only on success.
+ *
+ * `arming`: opened by the only-mine switch, so the write also turns
+ * that switch on.
+ */
+export function RelayAddDialog({
+  open,
+  arming = false,
+  onClose,
+  onWritten,
+}: {
+  open: boolean;
+  arming?: boolean;
+  onClose: () => void;
+  /** The node's answer after the write: both halves of the relay list. */
+  onWritten?: (choices: RelayChoices) => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const [typedKey, setTypedKey] = useState("");
+  const [refused, setRefused] = useState<string | null>(null);
+  const [was, setWas] = useState<RelayChoices | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    setTyped("");
+    setTypedKey("");
+    setRefused(null);
+    let alive = true;
+    fetchRelays().then(
+      (r) => alive && setWas(r),
+      (e: unknown) => alive && setRefused(String(e instanceof Error ? e.message : e)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent form data-relay-add-dialog>
+        <DialogHeader>
+          <DialogTitle>{gui.relays_add}</DialogTitle>
+        </DialogHeader>
+        <form
+          id="relay-add"
+          className="flex flex-col gap-in"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const url = typed.trim();
+            // Always pressable (`components/Why`): with no address,
+            // say so and put the caret in its box.
+            if (!url) {
+              setRefused(gui.need_relay);
+              document.querySelector<HTMLElement>("[data-relay-add-url]")?.focus();
+              return;
+            }
+            const token = typedKey.trim() || null;
+            const mine = was?.mine ?? [];
+            try {
+              const next = await setRelays([...mine.filter((u) => u !== url).map(kept), { url, token }], arming || (was?.only_mine ?? false));
+              onWritten?.(next);
+              onClose();
+            } catch (err) {
+              setRefused(String(err instanceof Error ? err.message : err));
+            }
+          }}
+        >
+          <Input
+            data-relay-add-url
+            autoComplete="off"
+            aria-label={gui.relays_add}
+            placeholder={gui.relays_hint}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            className="min-h-touch w-full font-mono"
+          />
+          {/* The relay's shared key, when its operator set one
+              (`khor relay --token`, iroh-relay's shared_token).
+              Masked: it is a secret, and this is the one moment
+              it is on screen at all. */}
+          <Input
+            data-relay-add-key
+            type="password"
+            autoComplete="off"
+            aria-label={gui.relays_key}
+            placeholder={gui.relays_key_hint}
+            value={typedKey}
+            onChange={(e) => setTypedKey(e.target.value)}
+            className="min-h-touch w-full font-mono"
+          />
+        </form>
+        {refused && (
+          <p data-relays-refused className="text-callout text-destructive">
+            {refused}
+          </p>
+        )}
+        <DialogFooter>
+          <Button onClick={onClose}>{gui.delete_keep}</Button>
+          <Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
+            {gui.watch_add}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

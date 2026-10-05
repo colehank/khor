@@ -1,16 +1,16 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { DeviceRow } from "@/api";
 // Aliased: `Seat` the name belongs to the component below (one machine
 // in its place); the binding is the place itself.
 import type { Seat as SeatPoint } from "@/gen/bindings/Seat";
 import { MachineAvatar } from "@/components/Avatar";
-import { IconChevronDown, IconChevronRight, IconNetwork } from "@/components/icons";
+import { IconNetwork } from "@/components/icons";
 import { PageSubtitle } from "@/components/Region";
 import { cli, gui, hop, state } from "@/gen/catalog";
-import { lastSeenMs, roadOf, topology, unreachable, type RelayNode, type Road, type Segment } from "@/lib/topology";
+import { lastSeenMs, topology, unreachable, type RelayNode, type Road, type Segment } from "@/lib/topology";
 import { cn } from "@/lib/utils";
-import { ageIfOld, connectionWord, hopWord, span } from "@/words";
+import { ageIfOld, hopWord, span } from "@/words";
 
 /**
  * The network as an ego graph: this machine in the middle, everyone
@@ -336,140 +336,10 @@ export function MandalaMap({
   );
 }
 
-/**
- * **The same map, one column** (UX-16: the narrow face). The picture
- * needs a square a phone cannot spare beside anything else, so the graph
- * (`lib/topology`, the picture's own) is read top to bottom: this
- * machine, then each machine it reaches straight, then each relay with
- * the machines that go by it indented under it, then the satellites,
- * then the machines with no road (grey, last seen). A row opens that
- * machine's page; the chevron at its end opens the link's facts under it
- * — the way, the relay, the latency, when it was last heard — the
- * picture's edge word, spelt out.
- */
-export function TopologyColumn({ rows, onOpen }: { rows: DeviceRow[]; onOpen?: (row: DeviceRow) => void }) {
-  const { me, others, relays } = topology(rows, gui.conn_relay_ms, hopWord);
-  const [open, setOpen] = useState<string | null>(null);
-  const direct = others.filter((r) => !r.sponsor && !unreachable(r, rows) && !(r.hop === "relay" && r.relay));
-  const satellites = others.filter((r) => r.sponsor && !unreachable(r, rows));
-  const away = others.filter((r) => unreachable(r, rows));
-  const machine = (row: DeviceRow, indent = false) => (
-    <MachineLine
-      key={row.id}
-      row={row}
-      rows={rows}
-      indent={indent}
-      open={open === row.id}
-      onToggle={() => setOpen((was) => (was === row.id ? null : row.id))}
-      onOpen={onOpen}
-    />
-  );
-  return (
-    // A fragment: each row is a row of the settings card it stands in,
-    // with the card's padding and hairline (`app.css` `[data-settings-card]`).
-    <>
-      {me && (
-        <div data-topology-row={me.id} data-more-row className="flex min-w-0 items-center gap-row">
-          <MachineAvatar face={me.face} className="size-list-face flex-none" />
-          <span className="min-w-0 flex-1 truncate text-headline">{me.shown}</span>
-          <span data-setting-trail className="flex-none text-muted-foreground">
-            {connectionWord(me)}
-          </span>
-        </div>
-      )}
-      {direct.map((r) => machine(r))}
-      {relays.map((relay) => (
-        <Fragment key={relay.id}>
-          <div data-topology-relay={relay.name} data-more-row className="flex min-w-0 items-center gap-row">
-            <span className="grid size-list-face flex-none place-items-center rounded-full border bg-fill text-muted-foreground [&>svg]:size-1/2">
-              <IconNetwork />
-            </span>
-            <span className="min-w-0 flex-1 truncate">{relay.name}</span>
-            <span data-setting-trail className="flex-none text-muted-foreground">
-              {hop.relay}
-            </span>
-          </div>
-          {relay.rows.map((r) => machine(r, true))}
-        </Fragment>
-      ))}
-      {satellites.map((r) => machine(r, true))}
-      {away.map((r) => machine(r))}
-    </>
-  );
-}
-
-/** One machine in the column: the row opens it, the chevron opens its
-    link's facts. */
-function MachineLine({
-  row,
-  rows,
-  indent,
-  open,
-  onToggle,
-  onOpen,
-}: {
-  row: DeviceRow;
-  rows: readonly DeviceRow[];
-  indent: boolean;
-  open: boolean;
-  onToggle: () => void;
-  onOpen?: (row: DeviceRow) => void;
-}) {
-  const away = unreachable(row, rows);
-  const seen = lastSeenMs(row);
-  const latency = row.rtt_ms !== null ? gui.conn_relay_ms(row.rtt_ms) : null;
-  // The edge's word, as the picture writes it on the line.
-  const summary = away
-    ? seen === null
-      ? gui.day_unreachable
-      : gui.map_last_seen(span(seen))
-    : [row.hop === "relay" && row.relay ? null : connectionWord(row), latency].filter(Boolean).join(" · ");
-  const facts: [string, string][] = [];
-  const way = connectionWord(row);
-  if (way) facts.push([gui.axis_connection, way]);
-  if (row.relay && roadOf(row) === "relay") facts.push([gui.net_relays, row.relay]);
-  if (latency) facts.push([gui.map_latency, latency]);
-  if (seen !== null) facts.push([gui.map_heard, gui.card_age(span(seen))]);
-  return (
-    <div data-topology-row={row.id} data-seat-away={away || undefined} className="flex min-w-0 flex-col">
-      <div className={cn("flex min-w-0 items-center gap-row", indent && "ps-list-face")}>
-        <button
-          type="button"
-          data-topology-open={row.id}
-          disabled={!onOpen}
-          onClick={() => onOpen?.(row)}
-          className={cn("flex min-h-touch min-w-0 flex-1 items-center gap-row text-start", away && "opacity-60")}
-        >
-          <MachineAvatar face={row.face} className="size-list-face flex-none" />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate">{row.shown}</span>
-            {summary && <span className="truncate text-callout text-muted-foreground tabular-nums">{summary}</span>}
-          </span>
-        </button>
-        <button
-          type="button"
-          data-topology-facts={row.id}
-          aria-expanded={open}
-          aria-label={`${row.shown} ${gui.map_facts}`}
-          onClick={onToggle}
-          className="-me-in grid min-h-touch min-w-touch flex-none place-items-center rounded-full text-tertiary"
-        >
-          {open ? <IconChevronDown className="size-affordance" /> : <IconChevronRight className="size-affordance" />}
-        </button>
-      </div>
-      {open && (
-        <div data-topology-fact-list className={cn("flex min-w-0 flex-col pb-in", indent ? "ps-list-face" : "")}>
-          {facts.map(([k, v]) => (
-            <div key={k} className="flex min-w-0 items-baseline gap-row ps-list-face text-callout">
-              <span className="flex-1 text-muted-foreground">{k}</span>
-              <span data-selectable className="min-w-0 text-right tabular-nums [overflow-wrap:anywhere]">{v}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+/* ⚠️ 墓碑 (UX-26, 2026-10-06): `TopologyColumn` — the same graph as one
+   column for the narrow face's 我的 khor — stood here from UX-16. 我的
+   khor is the dial on both faces now (`views/more/MyKhorPage`), and the
+   machines landing is wide-only, so no narrow face draws this graph. */
 
 /**
  * How many rows on each machine are waiting on a person, by device id —

@@ -209,6 +209,10 @@
    * stays as the name shadcn's components read. */
   --brand-wash: rgba(143, 179, 30, 0.16);
   --accent: var(--brand-wash);
+  /* **The halo under this machine on the 我的 khor dial** (UX-26): a
+   * softer wash than `--brand-wash`, a disc and never a row's ground —
+   * the page's one olive. */
+  --brand-halo: rgba(143, 179, 30, 0.10);
   /* The third ink (docs/design-system README 「三层墨」): times, counts,
    * key hints, group headers — **never something a person must read**;
    * it is macOS's tertiaryLabelColor and sits under 4.5 on purpose.
@@ -1961,6 +1965,7 @@
   --read-ink: rgba(238, 238, 231, 0.86);
   --brand-wash: rgba(180, 210, 87, 0.14);
   --accent: var(--brand-wash);
+  --brand-halo: rgba(180, 210, 87, 0.09);
   --tertiary: rgba(238, 238, 231, 0.42);
   --accent-foreground: rgba(238, 238, 231, 0.96);
   /* **#e07f75 since 2026-09-30, from #d4756b**: only OKLCH lightness
@@ -2204,6 +2209,7 @@
   --color-knob: var(--knob);
   --color-brand-ink: var(--brand-ink);
   --color-brand-wash: var(--brand-wash);
+  --color-brand-halo: var(--brand-halo);
   --color-on-destructive: var(--on-destructive);
   --color-on-badge: var(--on-badge);
   --color-tertiary: var(--tertiary);
@@ -2288,6 +2294,8 @@
   --spacing-list-row: var(--list-row);
   --spacing-list-face: var(--list-face);
   --spacing-deck-strip: var(--deck-strip);
+  --spacing-dial-seat: var(--dial-seat);
+  --spacing-dial-seat-me: var(--dial-seat-me);
   --spacing-list-head: var(--list-head);
   --spacing-glass-tabs: var(--glass-tabs);
   --spacing-glass-tab: var(--glass-tab);
@@ -2737,6 +2745,14 @@
   --deck-strip: 28px;
   --ink-on-dark: #ffffff;
   --ink-on-light: #000000;
+  /* **The 我的 khor dial's seats** (UX-26, agreed on the prototype): a
+   * machine's face on the dial, this machine's in the middle, and the
+   * halo's reach past the middle face — the page's one olive. The narrow
+   * face takes a step down (36 / 60). Read by the dial in JS, so a seat's
+   * face and the road clipped to its edge agree on one number. */
+  --dial-seat: 40px;
+  --dial-seat-me: 72px;
+  --dial-halo: 22px;
   /* The session tabs' glass capsule and the pills in it, and a tab's
      face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */
   /* **The conversation's input, one glass capsule** (the redesign,
@@ -2788,6 +2804,8 @@
     --nav-gap: 24px;
     --list-row: 68px;
     --list-face: 40px;
+    --dial-seat: 36px;
+    --dial-seat-me: 60px;
     --tab-face: 22px;
     --composer-h: 48px;
     --menu-r: 20px;
