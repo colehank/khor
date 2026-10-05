@@ -28063,7 +28063,9 @@ try {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await open("sessions");
       const row = `[data-list] [data-row="${id}"] [data-row-open]`;
-      if (!(await until(3_000, async () => (await count(row)) > 0))) return false;
+      // Visible, not only there: the list stays mounted under a pushed
+      // screen (UX-11) and is hidden until the way back has settled.
+      if (!(await until(3_000, async () => page.locator(row).first().isVisible().catch(() => false)))) return false;
       await page.locator(row).click();
       return until(5_000, async () => (await count("[data-session-screen], [data-detail-pane]")) > 0);
     };
@@ -28597,6 +28599,154 @@ try {
         );
       }
     }
+
+    // ── m. the deck folds on the terminal; the grid never changes size
+    //       (UX-13, the owner 2026-10-05: 「Claude Code 不能重绘」). 300
+    //       lines, then the scroller moved up into the history: the strip
+    //       replaces the deck, the pane's root says `data-folded="true"`
+    //       with `--fold-band` whole rows of it, the box grew by exactly
+    //       the band while the bar shrank by it, and the pty was told
+    //       nothing. Back at the bottom it unfolds; with the keyboard up
+    //       it never folds. ──
+    if (!(await openRow(terms[1].id)) || !(await xtermUp())) {
+      fail("probe dead: bar m · a terminal never opened under a finger");
+    } else {
+      await program(Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\r\n"));
+      const state = () =>
+        page.evaluate(() => {
+          const root = document.querySelector("[data-kept-terminal][data-active]");
+          const box = root?.querySelector("[data-terminal]");
+          const bar = document.querySelector("[data-session-bar]");
+          const band = root ? getComputedStyle(root).getPropertyValue("--fold-band") : "";
+          const probe = document.createElement("div");
+          probe.style.height = band || "0px";
+          root?.appendChild(probe);
+          const bandPx = probe.getBoundingClientRect().height;
+          probe.remove();
+          return {
+            strip: document.querySelectorAll("[data-session-bar] [data-deck-strip]").length,
+            deck: !!document.querySelector("[data-session-deck]")?.getClientRects().length,
+            folded: root?.getAttribute("data-folded") ?? null,
+            row: parseFloat(root ? getComputedStyle(root).getPropertyValue("--term-row") : "") || 0,
+            band: +bandPx.toFixed(2),
+            box: +(box?.getBoundingClientRect().height ?? 0).toFixed(2),
+            bar: +(bar?.getBoundingClientRect().height ?? 0).toFixed(2),
+            rows: document.querySelector("[data-terminal]")?.__xterm?.rows,
+          };
+        });
+      const scrollTo = (fromBottom) =>
+        page.evaluate((d) => {
+          const s = document.querySelector("[data-kept-terminal][data-active] [data-term-scroller]");
+          s.scrollTop = Math.max(0, s.scrollHeight - s.clientHeight - d);
+        }, fromBottom);
+      const rest = await state();
+      resized.length = 0;
+      await scrollTo(100);
+      await wait(150);
+      await scrollTo(400);
+      await until(2_000, async () => (await state()).strip === 1);
+      await wait(300);
+      const up = await state();
+      await scrollTo(0);
+      await until(2_000, async () => (await state()).strip === 0);
+      await wait(300);
+      const back = await state();
+      console.log(`bar m · at rest ${shown(rest)}; up in the history ${shown(up)}; back at the bottom ${shown(back)}; told the pty ${shown(resized)}`);
+      if (up.strip !== 1 || up.deck || up.folded !== "true") {
+        fail(`bar m · 400 px up into the history: strip ${up.strip}, deck ${up.deck ? "shown" : "gone"}, data-folded ${shown(up.folded)} — the deck folds into the strip (UX-13)`);
+      }
+      if (!(up.row > 0) || Math.abs(up.band - 2 * up.row) > 0.5) fail(`bar m · --fold-band is ${up.band} px for rows of ${up.row} — two whole rows (term's item 32 slot)`);
+      if (Math.abs(up.box - rest.box - up.band) > 1 || Math.abs(rest.bar - up.bar - up.band) > 1) {
+        fail(`bar m · folded, the box went ${rest.box} → ${up.box} and the bar ${rest.bar} → ${up.bar} — the box grows by the band (${up.band}) and the bar keeps the rest of the deck`);
+      }
+      if (resized.length !== 0 || up.rows !== rest.rows || back.rows !== rest.rows) {
+        fail(`bar m · the fold told the pty ${shown(resized)} and the grid went ${rest.rows} → ${up.rows} → ${back.rows} — the grid never changes size`);
+      }
+      if (back.strip !== 0 || !back.deck || back.folded !== null || Math.abs(back.box - rest.box) > 1) {
+        fail(`bar m · back at the bottom ${shown(back)} — the deck is back, the root unfolded, the box at rest's ${rest.box}`);
+      }
+      await page.evaluate(() => window.__keyboard(300));
+      await until(2_000, async () => page.evaluate(() => document.documentElement.hasAttribute("data-keyboard")));
+      await wait(400);
+      await scrollTo(100);
+      await wait(150);
+      await scrollTo(400);
+      await wait(600);
+      const typing = await state();
+      await page.evaluate(() => window.__keyboard(0));
+      // The keyboard's refit puts the scroller back where xterm's view
+      // is (400 up); down to the bottom after it has settled.
+      await wait(700);
+      await scrollTo(0);
+      await until(2_000, async () => (await state()).strip === 0);
+      if (typing.strip !== 0 || typing.folded !== null) fail(`bar m · with the keyboard up a scroll into the history folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
+    }
+
+    // ── n. a conversation folds the same way, and keeps its deck over
+    //       the box with the keyboard up (the UX-13 addendum, 「一个甲板
+    //       规则」): 80 messages, read upward → the strip, the box stays;
+    //       at the bottom → the deck; keyboard up → the deck and the box,
+    //       two rows. ──
+    {
+      const said = Array.from({ length: 80 }, (_, i) => ({
+        id: `m${i}`,
+        at_ms: Date.now() - (80 - i) * 60_000,
+        from: i % 2 ? "peer" : "gate",
+        from_me: i % 2 === 0,
+        text: `message ${i}`,
+        files: null,
+        unknown: null,
+        retracted: false,
+        edited: false,
+        word: null,
+        delivery: null,
+      }));
+      await page.unroute("**/machine_log");
+      await page.route("**/machine_log", json({ messages: said, broken: 0 }));
+      // The list screen a beat after the terminal's 「‹」, before the row.
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await open("sessions");
+      await wait(400);
+      if (!(await openRow(chatRow.id)) || !(await until(5_000, async () => (await count("[data-machine-chat-scroll] *")) > 40))) {
+        fail("probe dead: bar n · the machine conversation never drew its 80 messages");
+      } else {
+        await wait(500);
+        const read = () =>
+          page.evaluate(() => ({
+            strip: document.querySelectorAll("[data-session-bar] [data-deck-strip]").length,
+            deck: !!document.querySelector("[data-session-deck]")?.getClientRects().length,
+            box: document.querySelectorAll("[data-session-bar-under] [data-composer-text]").length,
+          }));
+        const scrollTo = (fromBottom) =>
+          page.evaluate((d) => {
+            const s = document.querySelector("[data-machine-chat-scroll]");
+            s.scrollTop = Math.max(0, s.scrollHeight - s.clientHeight - d);
+          }, fromBottom);
+        await scrollTo(0);
+        await wait(200);
+        await scrollTo(100);
+        await wait(150);
+        await scrollTo(500);
+        await until(2_000, async () => (await read()).strip === 1);
+        const up = await read();
+        await scrollTo(0);
+        await until(2_000, async () => (await read()).strip === 0);
+        const back = await read();
+        await page.evaluate(() => window.__keyboard(300));
+        await until(2_000, async () => page.evaluate(() => document.documentElement.hasAttribute("data-keyboard")));
+        await wait(400);
+        const typing = await read();
+        await page.evaluate(() => window.__keyboard(0));
+        await wait(300);
+        console.log(`bar n · a conversation read upward ${shown(up)}; at the bottom ${shown(back)}; keyboard up ${shown(typing)}`);
+        if (up.strip !== 1 || up.deck || up.box !== 1) fail(`bar n · read upward the conversation shows ${shown(up)} — the strip in the deck's place, the box kept`);
+        if (back.strip !== 0 || !back.deck) fail(`bar n · back at the bottom ${shown(back)} — the deck is back`);
+        if (typing.strip !== 0 || !typing.deck || typing.box !== 1) fail(`bar n · with the keyboard up ${shown(typing)} — the deck stays over the box, two rows (UX-13 addendum)`);
+      }
+      await page.unroute("**/machine_log");
+      await page.route("**/machine_log", json({ messages: [], broken: 0 }));
+    }
+
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
     for (const r of ["**/term_open", "**/term_attach", "**/term_stream", "**/term_resize", "**/term_leave", "**/term_key", "**/machine_log"]) await page.unroute(r);

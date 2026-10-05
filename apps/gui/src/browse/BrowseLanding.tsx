@@ -65,6 +65,7 @@ import { IconArrow, IconBrowser, IconReload } from "@/components/icons";
 import { GlassItem } from "@/components/Glass";
 import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
+import { FOLD_AT, foldStep, type FoldMemo } from "@/lib/deck-fold";
 import type { KindMark } from "@/components/FaceMark";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
@@ -98,11 +99,6 @@ function tabLabel(kind: BrowseKind, place: string, machine: DeviceRow | null): s
   if (!place) return machine.name;
   return kind.leafOf(place);
 }
-
-/** How far down a page has to be before its row folds (points). */
-const FOLD_AT = 48;
-/** How far back up (points) brings the row back. */
-const UNFOLD_BY = 24;
 
 /** The stand-in for a kind that holds nothing, so the shell calls one
     hook either way (`BrowseKind.useHeld`). It takes the list it is not
@@ -383,23 +379,15 @@ export function BrowseLanding({
     setFolded(false);
     setPageLoading(false);
     const id = tabs.current.id;
-    let turned: number | null = null;
+    // The one deck rule (UX-13, `lib/deck-fold`): a page rests at its top,
+    // and the top's first hand's width still counts as rest.
+    const memo: FoldMemo = { turned: null };
     const offScroll = onPageWord("page:scroll", id, (t) => {
       const [y, way] = t.split(",");
       const at = Number(y);
       if (!Number.isFinite(at)) return;
-      if (at <= FOLD_AT) {
-        turned = null;
-        setFolded(false);
-      } else if (way === "down") {
-        turned = null;
-        setFolded(true);
-      } else {
-        // Up by a few lines before it comes back, so a finger settling at
-        // the end of a downward flick does not undo it.
-        turned ??= at;
-        if (turned - at >= UNFOLD_BY) setFolded(false);
-      }
+      const next = foldStep(memo, at, way === "down", FOLD_AT);
+      if (next !== null) setFolded(next);
     });
     const offLoad = onPageWord("page:load", id, (t) => setPageLoading(t === "started"));
     return () => {

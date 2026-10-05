@@ -146,6 +146,8 @@ export function MachineChat({ id }: { id: string }) {
     <div data-machine-chat className="flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
+        // The deck folds while the messages are read (UX-13, `lib/deck-fold`).
+        data-machine-chat-scroll
         onScroll={(e) => {
           const el = e.currentTarget;
           stickToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;

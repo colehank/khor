@@ -65,7 +65,7 @@
 // no bar** (the wide face, a workspace's session column) a view's `under`
 // renders in place, exactly where it always stood, and its `trail` is
 // not drawn: the wide face has no row that belongs to the open session.
-import { createContext, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { TabAvatar, type TabFace } from "@/browse/TabStrip";
@@ -76,6 +76,9 @@ import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
+import { bandRows, foldStep, RESTS_AT_BOTTOM, type FoldMemo } from "@/lib/deck-fold";
+import { onKeyboardChange } from "@/lib/soft-keyboard";
+import { keyboardShown } from "@/lib/viewport";
 
 type Seats = {
   lead: HTMLElement | null;
@@ -129,17 +132,19 @@ export function SessionScreen({
   onBack,
   onTitle,
   caption,
-  folded = false,
+  folded: foldedAsked,
   onUnfold,
   loading = false,
   children,
 }: {
-  /** **The browser's row folds to a strip while the page is read**
-      (round UX-3 §3, built in UX-4 with the phone page's `page:scroll`):
-      ‹ and the tabs circle go, the pill becomes a thin strip with the
-      title — and a hairline while the page loads — and a tap on it, a
-      scroll up or the top of the page brings the row back. The terminal
-      never folds. */
+  /** **The deck folds to a strip while the content is read** (round UX-3
+      §3; UX-13 for every content page, `lib/deck-fold`): ‹, the pill and
+      the circles give way to a thin strip with the title — and a
+      hairline while a page loads — and a tap on it, a move back toward
+      rest or rest itself brings the row back. The browser says it from
+      its native page's `page:scroll` and passes it here; left out, the
+      screen folds by its own content's scrollers (a terminal's, a
+      conversation's: rest is their bottom). */
   folded?: boolean;
   onUnfold?: () => void;
   /** The page is loading: the folded strip's hairline. */
@@ -175,6 +180,88 @@ export function SessionScreen({
   const seats = useMemo(() => ({ lead, trail, under, pill }), [lead, trail, under, pill]);
   const at = faces.findIndex((f) => f.id === active);
   const face = at < 0 ? null : faces[at];
+  const [own, setOwn] = useState(false);
+  const [keys, setKeys] = useState(keyboardShown);
+  const asked = foldedAsked !== undefined;
+  // Nothing folds with the keyboard up, the browser's page included.
+  const folded = !keys && (foldedAsked ?? own);
+  const content = useRef<HTMLDivElement>(null);
+  const deck = useRef<HTMLDivElement>(null);
+  /** **Folding by the content's own scrollers** (UX-13): a terminal's or a
+      conversation's, measured from their bottom. A move away or back
+      counts only while the scroller kept its height — the fold itself
+      grows the content, which is not anybody reading — but reaching the
+      bottom always unfolds. Nothing folds with the keyboard up. A new
+      tab starts unfolded. */
+  useEffect(() => {
+    setOwn(false);
+    if (asked) return;
+    const el = content.current;
+    if (!el) return;
+    const memo: FoldMemo = { turned: null };
+    const last = new WeakMap<Element, { away: number; h: number }>();
+    const on = (e: Event) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement) || !t.matches(RESTS_AT_BOTTOM)) return;
+      // A terminal kept mounted under the one on screen scrolls on its
+      // own output; it is not what the person reads.
+      if (t.closest("[data-kept-terminal]:not([data-active])")) return;
+      const now = { away: Math.max(0, t.scrollHeight - t.clientHeight - t.scrollTop), h: t.clientHeight };
+      const was = last.get(t);
+      last.set(t, now);
+      if (!was || keyboardShown()) return;
+      // Rest is rest whatever the height did; a direction is read only
+      // from a scroller that kept its height.
+      if (was.h !== now.h) {
+        if (now.away <= 1) setOwn(false);
+        return;
+      }
+      const next = foldStep(memo, now.away, now.away > was.away, 1);
+      if (next !== null) setOwn(next);
+    };
+    el.addEventListener("scroll", on, { capture: true, passive: true });
+    return () => el.removeEventListener("scroll", on, { capture: true });
+  }, [active, asked]);
+  useEffect(
+    () =>
+      onKeyboardChange(() => {
+        const up = keyboardShown();
+        setKeys(up);
+        if (up) setOwn(false);
+      }),
+    [],
+  );
+  /** The deck's full height, read while it shows: what a terminal keeps
+      reserved while folded. */
+  const deckH = useRef(0);
+  const [reserve, setReserve] = useState<number | null>(null);
+  /** **A folded terminal keeps its grid** (UX-13; term's item 32 slot):
+      whole rows of what the fold frees go to the terminal's own box —
+      `data-folded` and `--fold-band` on its root, read by term — and the
+      rest of the deck's height stays the deck's ground, in the frame the
+      deck shrinks, so the mount term holds at the box less the band
+      never changes size and the pty is never told a new one. */
+  useLayoutEffect(() => {
+    if (!folded && deck.current) deckH.current = deck.current.offsetHeight;
+    const root = content.current?.querySelector<HTMLElement>("[data-kept-terminal][data-active]") ?? null;
+    for (const k of content.current?.querySelectorAll<HTMLElement>("[data-kept-terminal][data-folded]") ?? []) {
+      if (k === root && folded) continue;
+      k.removeAttribute("data-folded");
+      k.style.removeProperty("--fold-band");
+    }
+    if (!folded || !root) {
+      setReserve(null);
+      return;
+    }
+    const row = parseFloat(getComputedStyle(root).getPropertyValue("--term-row"));
+    const strip = parseFloat(getComputedStyle(root).getPropertyValue("--deck-strip")) || 0;
+    const n = bandRows(deckH.current - strip, row);
+    if (n > 0) {
+      root.setAttribute("data-folded", "true");
+      root.style.setProperty("--fold-band", `calc(${n} * var(--term-row))`);
+    }
+    setReserve(deckH.current - n * row);
+  }, [folded, active]);
   /** **A sideways swipe on the pill is the next or previous tab**
       (Safari's address bar). Across the pill only, so the content keeps
       its own gestures; a swipe shorter than a third of a circle is a
@@ -198,7 +285,7 @@ export function SessionScreen({
           `data-traffic`) — which is a handle on the window like L0 was. */}
       <div data-session-top {...WINDOW_DRAG} className="h-safe-top flex-none" />
       <SeatsContext.Provider value={seats}>
-        <div data-session-content className="flex min-h-0 flex-1 flex-col">
+        <div ref={content} data-session-content className="flex min-h-0 flex-1 flex-col">
           {children}
         </div>
       </SeatsContext.Provider>
@@ -209,19 +296,31 @@ export function SessionScreen({
           the row under it (the box, the address) rides the keyboard
           alone (`app.css`) — but a terminal's stays, over its key row
           (UX-12, `views/TerminalPane`'s `KeyRowSeats`). */}
-      <div data-session-bar className="flex flex-none flex-col pb-safe-bottom">
+      <div data-session-bar data-folded={folded || undefined} className="flex flex-none flex-col pb-safe-bottom">
         {folded && (
-          <button
-            type="button"
-            data-deck-strip
-            onClick={onUnfold}
-            className="relative flex h-deck-strip flex-none items-center justify-center overflow-hidden px-row text-caption text-muted-foreground"
+          // The strip at the foot of whatever height the fold keeps: its
+          // own, or a terminal's reserve.
+          <div
+            data-deck-fold
+            className="flex flex-none flex-col justify-end"
+            style={reserve !== null ? { height: reserve } : undefined}
           >
-            <span className="min-w-0 truncate">{face?.label ?? ""}</span>
-            {loading && <span data-deck-strip-loading aria-hidden="true" className="absolute inset-x-0 bottom-0 h-px animate-pulse bg-brand-strong" />}
-          </button>
+            <button
+              type="button"
+              data-deck-strip
+              onClick={() => {
+                setOwn(false);
+                onUnfold?.();
+              }}
+              className="relative flex h-deck-strip flex-none animate-in items-center justify-center overflow-hidden px-row text-caption text-muted-foreground fade-in"
+            >
+              <span className="min-w-0 truncate">{face?.label ?? ""}</span>
+              {loading && <span data-deck-strip-loading aria-hidden="true" className="absolute inset-x-0 bottom-0 h-px animate-pulse bg-brand-strong" />}
+            </button>
+          </div>
         )}
         <div
+          ref={deck}
           data-session-deck
           {...WINDOW_DRAG}
           hidden={folded}
