@@ -80,7 +80,7 @@ import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
-import { BarSeat, useInBar } from "@/components/SessionBar";
+import { BarSeat, PillProgress, useInBar } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
@@ -3161,6 +3161,13 @@ export function TerminalPane({
         <IconReload className={cn(joining && "animate-spin motion-reduce:animate-none")} />
       </GlassCircle>
     </BarSeat>
+    )}
+    {/* **The join runs the pill's line** (UX-31): the slot under the pill
+        is this tab's progress while it re-attaches. */}
+    {active && joining && (
+      <BarSeat at="progress">
+        <PillProgress />
+      </BarSeat>
     )}
     {coarse && active && (
       <>

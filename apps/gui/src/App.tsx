@@ -2410,6 +2410,10 @@ export default function App() {
       newLabel={gui.new_session}
       onBack={() => setScreen("list")}
       caption={stale ? gui.backend_unreachable : undefined}
+      // **The window's foot hangs under the pill here** (UX-31): what is
+      // happening elsewhere, in the pill's glass, only while there is
+      // something to say.
+      status={status.items.length > 0 ? <StatusBar at="pill" items={status.items} onDismiss={status.dismiss} /> : undefined}
     >
       {detail}
       {placeSheet && selectedRow && (
@@ -3071,7 +3075,9 @@ export default function App() {
               2026-10-03: not over a file either). */}
           {navShown && nav}
           {dialogs}
-          <StatusBar items={status.items} onDismiss={status.dismiss} />
+          {/* Inside a session the strip is the deck pill's (UX-31); the
+              foot keeps it everywhere else on the narrow face. */}
+          {!inSession && <StatusBar items={status.items} onDismiss={status.dismiss} />}
         </div>
       ) : (
         <div className="flex h-dvh flex-col">

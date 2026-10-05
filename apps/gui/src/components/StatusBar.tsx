@@ -16,24 +16,36 @@
 import { StatusWord } from "@/components/StatusWord";
 import { gui } from "@/gen/catalog";
 import { STATUS_STICKS, type StatusItem } from "@/hooks/use-status-bar";
+import { cn } from "@/lib/utils";
 
 export function StatusBar({
   items,
   onDismiss,
+  at = "foot",
 }: {
   items: StatusItem[];
   onDismiss: (id: string) => void;
+  /** **Where the strip hangs** (UX-31, the owner 2026-10-06): the
+      window's foot on the wide face and the narrow face's lists; under
+      the deck's pill inside a session on the phone, in the pill's own
+      glass (`SessionScreen`'s `status`), like Safari's progress bar. */
+  at?: "foot" | "pill";
 }) {
   if (items.length === 0) return null;
   return (
     <div
       data-statusbar
+      data-at={at}
       // **The window's foot, in the layout** (docs/design-system
       // components/StatusBar, 2026-09-26): one `ctl-sm` line on the
       // `canvas`, `caption` in `tertiary` — not a box floating over the
       // corner with a border and a shadow, which is the toast the system
       // rules out. It takes its line only while there is something on it.
-      className="flex h-ctl-sm flex-none items-center gap-base overflow-hidden bg-background px-row text-caption text-tertiary"
+      // Under the pill it is the same line on the pill's glass instead.
+      className={cn(
+        "flex h-ctl-sm min-w-0 flex-none items-center gap-base overflow-hidden px-row text-caption text-tertiary",
+        at === "foot" ? "bg-background" : "flex-1",
+      )}
     >
       {items.map((i) => {
         const sticks = STATUS_STICKS.includes(i.word);

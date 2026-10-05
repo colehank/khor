@@ -2332,6 +2332,32 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   visibility: hidden;
 }
 
+/* **One slot under the pill** (UX-31): while the tab reloads the slot is
+   the progress line — a 2-pt run along the pill's own bottom edge, left
+   to right, Safari's — and the status strip a session hangs there is not
+   drawn until the run ends: progress and status never share the slot.
+   The run is a sweep from the left, over and over until the load ends;
+   under reduced motion the line simply stands. */
+[data-pill-slot]:has([data-pill-progress]) [data-pill-status] {
+  display: none;
+}
+[data-pill-progress] > span {
+  animation: pill-progress 1.4s var(--ease-move) infinite;
+}
+@keyframes pill-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-pill-progress] > span {
+    animation: none;
+  }
+}
+
 /* **The pill's own controls are not glass on glass** (round UX-3): what a
    view seats at the pill's ends (the reconnect, a page's reload and its
    ← →) is drawn as the pill's items, on the pill's own glass. */

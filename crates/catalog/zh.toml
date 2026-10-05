@@ -3587,6 +3587,9 @@ keys-group-symbol = "符号"
 keys-group-function = "功能键"
 keys-edit-row = "编辑这一行"
 term-key-row = "终端键行"
+# The key panel's foot (UX-31): the cap that brings the system keyboard
+# back in the panel's place, where iOS keeps its own keyboard switch.
+key-keyboard = "键盘"
 # The terminal's reload circle beside ‹: join the session again.
 term-reload = "刷新"
 # The browsing landing's three page controls. **They are not the rail's

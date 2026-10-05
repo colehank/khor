@@ -29232,6 +29232,205 @@ try {
       }
     }
 
+    // ── u. the key row's 「…」 is a keyboard panel (UX-31, the owner
+    //       2026-10-06: it was a sheet, which took the focus and dropped
+    //       the keyboard). With the keyboard up it takes the keyboard's
+    //       place at the keyboard's height and the terminal neither moves
+    //       nor resizes; 「键盘」 (or 「…」 again) gives the keyboard back
+    //       the same way; with the keyboard down it rises to the last
+    //       keyboard's height and the terminal resizes once, as for a
+    //       keyboard. The stand-in viewport plays the keyboard (k). ──
+    if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+      fail("probe dead: bar u · a terminal never opened for the key panel");
+    } else {
+      await wait(500);
+      const read = () =>
+        page.evaluate(() => {
+          const r = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+          const t = document.querySelector("[data-terminal]")?.__xterm;
+          const panel = r("[data-key-panel]");
+          return {
+            stamped: document.documentElement.hasAttribute("data-keyboard"),
+            root: r("#root")?.height,
+            content: r("[data-session-content]")?.bottom,
+            rows: t?.rows,
+            panel: panel ? { top: panel.top, bottom: panel.bottom, height: panel.height } : null,
+            keys: document.querySelectorAll("[data-session-bar-under] [data-term-keys]").length,
+            more: document.querySelector('[data-term-key="more"]')?.getAttribute("aria-expanded") ?? null,
+            focused: !!t && document.activeElement === t.textarea,
+            mode: t?.textarea?.getAttribute("inputmode") ?? null,
+            folded: document.querySelector("[data-session-screen]")?.hasAttribute("data-deck-folded") ?? null,
+          };
+        });
+      const vh = 844;
+      const rest = await read();
+      // Keyboard up: the field asked (as a tap in 自动 does) and the stand-in rose.
+      await page.evaluate(() => {
+        const f = document.querySelector("[data-terminal]").__xterm.textarea;
+        f.setAttribute("inputmode", "text");
+        f.focus({ preventScroll: true });
+        window.__keyboard(300);
+      });
+      await until(2_000, async () => (await read()).rows !== rest.rows);
+      await wait(400);
+      const typing = await read();
+      const sizes = resized.length;
+      // 「…」: the panel in the keyboard's place; the keyboard goes.
+      await press('[data-term-key="more"]');
+      const atOnce = await read();
+      await page.evaluate(() => window.__keyboard(0));
+      await wait(400);
+      const panel = await read();
+      // The report's shot (FACE_SHOTS): the panel in the keyboard's band.
+      if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-key-panel.png") });
+      // 「键盘」: the keyboard asked for, the panel stays until it shows.
+      await press("[data-key-panel-keyboard]");
+      await wait(200);
+      const asked = await read();
+      await page.evaluate(() => window.__keyboard(300));
+      await wait(400);
+      const back = await read();
+      const swapSizes = resized.length - sizes;
+      // The keyboard lowered the one way it is (the swipe, item 42): the
+      // field stops asking, the stand-in goes.
+      await page.evaluate(() => {
+        const f = document.querySelector("[data-terminal]").__xterm.textarea;
+        f.setAttribute("inputmode", "none");
+        window.dispatchEvent(new Event("khor:soft-keyboard"));
+        window.__keyboard(0);
+      });
+      await until(2_000, async () => (await read()).rows === rest.rows);
+      await wait(400);
+      const down = await read();
+      console.log(
+        `bar u · typing ${JSON.stringify(typing)}; 「…」 at once ${JSON.stringify(atOnce)}; panel ${JSON.stringify(panel)}; 「键盘」 asked ${JSON.stringify(asked)}; back ${JSON.stringify(back)}; pty resizes over the swaps ${swapSizes}; down ${JSON.stringify(down)}`,
+      );
+      if (!typing.stamped || typing.keys !== 1 || typing.more !== "false") {
+        fail(`probe dead: bar u · with the keyboard up the row reads ${JSON.stringify(typing)} — the key row and its 「…」 are not there to press`);
+      } else {
+        if (!atOnce.stamped || atOnce.root !== typing.root || atOnce.rows !== typing.rows || !atOnce.panel) {
+          fail(`bar u · 「…」 pressed, before the keyboard has gone: ${JSON.stringify(atOnce)} — the foot is held at once, the panel drawn, nothing above moved`);
+        }
+        if (!panel.panel || Math.abs(panel.panel.height - 300) > 1 || Math.abs(panel.panel.bottom - vh) > 1) {
+          fail(`bar u · the panel stands ${JSON.stringify(panel.panel)} — the keyboard's band, 300 tall to the foot ${vh}`);
+        }
+        if (!panel.stamped || Math.abs(panel.root - (vh - 300)) > 1 || panel.rows !== typing.rows || panel.content > panel.panel?.top + 1) {
+          fail(`bar u · the keyboard gone under the panel: ${JSON.stringify(panel)} — the shell stays ${vh - 300} tall with ${typing.rows} rows, the content above the panel`);
+        }
+        if (panel.mode !== "none" || !panel.focused || panel.more !== "true" || panel.keys !== 1 || panel.folded) {
+          fail(`bar u · under the panel the field reads mode ${shown(panel.mode)}, focused ${panel.focused}, 「…」 ${shown(panel.more)}, key rows ${panel.keys}, folded ${panel.folded} — the terminal keeps the focus with no keyboard asked, the row stays, nothing folds`);
+        }
+        if (!asked.panel || asked.mode !== "text" || !asked.focused) {
+          fail(`bar u · 「键盘」 pressed: ${JSON.stringify(asked)} — the keyboard is asked for and the panel waits for it`);
+        }
+        if (back.panel || !back.stamped || Math.abs(back.root - (vh - 300)) > 1 || back.rows !== typing.rows || back.more !== "false") {
+          fail(`bar u · the keyboard back: ${JSON.stringify(back)} — the panel gone, the shell ${vh - 300} tall with ${typing.rows} rows, 「…」 off`);
+        }
+        if (swapSizes !== 0) fail(`bar u · the two swaps told the pty ${swapSizes} new size(s) — the terminal never resizes for the panel taking the keyboard's place`);
+        if (down.stamped || down.panel || down.rows !== rest.rows) fail(`bar u · the keyboard gone for good: ${JSON.stringify(down)} — back to rest`);
+      }
+      // Keyboard down: the row opened by its circle, 「…」 raises the panel
+      // to the last keyboard's height, the terminal resizes once; 「…」
+      // again lowers it.
+      if (!(await press("[data-session-deck] [data-key-row-switch]"))) fail("probe dead: bar u · no key row circle on the deck");
+      await until(2_000, async () => (await read()).keys === 1);
+      const beforeRaise = resized.length;
+      await press('[data-term-key="more"]');
+      await until(2_000, async () => (await read()).rows !== rest.rows);
+      await wait(400);
+      const raised = await read();
+      const raiseSizes = resized.length - beforeRaise;
+      await press('[data-term-key="more"]');
+      await until(2_000, async () => (await read()).rows === rest.rows);
+      await wait(400);
+      const lowered = await read();
+      console.log(`bar u · keyboard down, 「…」: ${JSON.stringify(raised)} (${raiseSizes} resize); again: ${JSON.stringify(lowered)}`);
+      if (!raised.stamped || !raised.panel || Math.abs(raised.panel.height - 300) > 1 || Math.abs(raised.root - (vh - 300)) > 1 || raised.rows !== typing.rows || raised.more !== "true") {
+        fail(`bar u · with the keyboard down 「…」 reads ${JSON.stringify(raised)} — the panel at the last keyboard's 300, the shell shrunk once as for a keyboard`);
+      }
+      if (raiseSizes !== 1) fail(`bar u · raising the panel from the foot told the pty ${raiseSizes} size(s), one keyboard's worth is one`);
+      if (lowered.stamped || lowered.panel || lowered.rows !== rest.rows || lowered.more !== null && lowered.more !== "false") {
+        fail(`bar u · 「…」 again reads ${JSON.stringify(lowered)} — the panel gone, the shell at rest`);
+      }
+      // Back to the row collapsed, for the steps after.
+      if ((await read()).keys === 1) await press("[data-session-deck] [data-key-row-switch]");
+      await wait(300);
+    }
+
+    // ── v. one slot under the pill (UX-31 §2–3, the owner 2026-10-06):
+    //       the window's foot — what is happening elsewhere — hangs under
+    //       the deck's pill inside a session, in the pill's glass, only
+    //       while there is something to say; while the tab reloads the
+    //       slot is the progress line instead, and the status waits. ──
+    if (!(await openRow(terms[1].id)) || !(await xtermUp())) {
+      fail("probe dead: bar v · a terminal never opened for the pill's slot");
+    } else {
+      await wait(500);
+      const slot = () =>
+        page.evaluate(() => {
+          const r = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+          const vis = (s) => [...document.querySelectorAll(s)].filter((el) => el.getClientRects().length > 0).length;
+          const px = (name) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+          return {
+            slot: document.querySelectorAll("[data-deck-pill] [data-pill-slot]").length,
+            progress: vis("[data-deck-pill] [data-pill-progress]"),
+            status: vis("[data-deck-pill] [data-pill-status]"),
+            inPill: document.querySelectorAll('[data-deck-pill] [data-statusbar][data-at="pill"]').length,
+            atFoot: document.querySelectorAll('[data-statusbar][data-at="foot"]').length,
+            said: document.querySelector("[data-deck-pill] [data-statusbar]")?.textContent?.trim() ?? null,
+            pill: r("[data-deck-pill]")?.height ?? null,
+            rowTop: r("[data-deck-pill-row]")?.top ?? null,
+            backTop: r("[data-session-deck] [data-back]")?.top ?? null,
+            deckBottom: r("[data-session-deck]")?.bottom ?? null,
+            btn: px("--glass-btn"),
+            line: px("--ctl-sm"),
+          };
+        });
+      const quiet = await slot();
+      // A transfer presses the machine's conversation row (`use-status-bar`
+      // admits a change into 忙碌): the strip has something to say.
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json([...terms, { ...chatRow, word: "busy" }, guiRow]));
+      const came = await until(8_000, async () => (await slot()).inPill === 1);
+      const saying = await slot();
+      if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-pill-status.png") });
+      // The tab reloads meanwhile: the join held for a beat so it can be seen.
+      await page.unroute("**/term_attach");
+      await page.route("**/term_attach", async (r) => {
+        await wait(1_500);
+        return r.fulfill({ contentType: "application/json", body: JSON.stringify({ bytes: "", seq: 0 }) });
+      });
+      await page.locator("[data-term-reload]").first().click({ timeout: 3_000 }).catch(() => {});
+      const ran = await until(1_500, async () => (await slot()).progress === 1);
+      const loading = await slot();
+      if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-pill-progress.png") });
+      const ended = await until(4_000, async () => (await slot()).progress === 0);
+      const after = await slot();
+      await page.unroute("**/term_attach");
+      await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
+      // The transfer ends: the line leaves on its own after its beat.
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json(barRows));
+      const went = await until(10_000, async () => (await slot()).inPill === 0);
+      const gone = await slot();
+      console.log(`bar v · quiet ${JSON.stringify(quiet)}; saying ${JSON.stringify(saying)}; loading ${JSON.stringify(loading)}; after ${JSON.stringify(after)}; gone ${JSON.stringify(gone)}`);
+      if (quiet.slot !== 1 || quiet.progress || quiet.status || quiet.atFoot || Math.abs(quiet.pill - quiet.btn) > 0.5) {
+        fail(`bar v · at rest the pill reads ${JSON.stringify(quiet)} — one empty slot, the pill one row (${quiet.btn}), no strip at the foot`);
+      }
+      if (!came || saying.inPill !== 1 || saying.atFoot !== 0 || !saying.said?.includes("peer")) {
+        fail(`bar v · a transfer pressing a row: ${JSON.stringify(saying)} — the strip hangs under the pill, not at the foot, naming the row`);
+      } else {
+        if (Math.abs(saying.pill - (saying.btn + saying.line)) > 1) fail(`bar v · the pill with its strip is ${saying.pill}, one row ${saying.btn} plus a caption line ${saying.line}`);
+        if (Math.abs(saying.backTop - saying.rowTop) > 1) fail(`bar v · the deck's ‹ starts at ${saying.backTop}, the pill's row at ${saying.rowTop} — the circles keep the first row while the pill grows`);
+        if (Math.abs(saying.deckBottom - quiet.deckBottom) > 1) fail(`bar v · the deck's foot moved from ${quiet.deckBottom} to ${saying.deckBottom} — the pill grows upward into the content, the foot stays`);
+      }
+      if (!ran || loading.progress !== 1 || loading.status !== 0 || Math.abs(loading.pill - loading.btn) > 0.5) {
+        fail(`bar v · while the join runs: ${JSON.stringify(loading)} — the progress line along the pill, the status not drawn, the pill one row`);
+      }
+      if (!ended || after.progress !== 0 || after.status !== 1) fail(`bar v · the join done: ${JSON.stringify(after)} — the line gone, the status back`);
+      if (!went || gone.inPill !== 0 || gone.status !== 0 || Math.abs(gone.pill - gone.btn) > 0.5) fail(`bar v · the transfer over: ${JSON.stringify(gone)} — the strip leaves on its own, the pill one row again`);
+    }
+
     // ── l. a drag that starts on chrome does not move the screen (the
     //       owner, 2026-10-05, iPhone build 5: 「只要在输入框往上滑，就会
     //       抖动」). The bounce itself is the WKWebView's scroll view
@@ -29765,8 +29964,7 @@ try {
     //       2026-10-05: 「点击栏外空白都应该要支持收起。现在只能拖动那个横杆
     //       收起」); the tap that puts it away presses nothing under it.
     //       Each sheet the narrow terminal page reaches: the pill's 目录,
-    //       the tabs sheet, its 新会话, the key row's 「…」 where the row
-    //       is up. ──
+    //       the tabs sheet, its 新会话. ──
     {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await wait(300);
@@ -29778,11 +29976,9 @@ try {
           ["标签页", "[data-tab-sheet]", () => press("[data-session-deck] [data-deck-tabs]")],
           ["新会话", "[data-new-session-dialog]", async () => (await press("[data-session-deck] [data-deck-tabs]")) && press("[data-tab-sheet-new]")],
         ];
-        if (await page.locator('[data-term-key="more"]').filter({ visible: true }).count()) {
-          sheets.push(["按键", "[data-term-key-sheet]", () => press('[data-term-key="more"]')]);
-        } else {
-          console.log("bar s · the key row is not up without the keyboard here: 按键's sheet is walked on the simulator");
-        }
+        // ⚠️ 墓碑 (UX-31): the key row's 「…」 was a sheet on this list; it
+        // is a keyboard panel now (bar u), and a tap beside a keyboard
+        // puts nothing away.
         const up = (sel) => until(3_000, async () => (await count(sel)) === 1);
         const gone = (sel) => until(2_000, async () => (await count(sel)) === 0);
         const where = () =>

@@ -77,13 +77,14 @@ import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
 import { foldStep, groundUnder, inkOver, RESTS_AT_BOTTOM, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
-import { keyboardShown } from "@/lib/viewport";
+import { footCovered } from "@/lib/viewport";
 
 type Seats = {
   lead: HTMLElement | null;
   trail: HTMLElement | null;
   under: HTMLElement | null;
   pill: HTMLElement | null;
+  progress: HTMLElement | null;
 };
 
 const SeatsContext = createContext<Seats | null>(null);
@@ -100,11 +101,13 @@ export const VerbSeat = createContext<HTMLElement | null>(null);
  * the tabs circle (the terminal's key row, and its keyboard in 点击按钮
  * mode only), and
  * `under` the row below the deck (the keys, the input box, the address
- * while it is edited). Without a deck around it, `under` stands where it
- * was written, `lead` goes to the wide face's verbs (`VerbSeat`) where
- * there is one, and `trail` and `pill` are not drawn.
+ * while it is edited), and `progress` the slot under the pill (UX-31):
+ * anything put there is the tab reloading, and the pill runs its line
+ * (`PillSlot`). Without a deck around it, `under` stands where it was
+ * written, `lead` goes to the wide face's verbs (`VerbSeat`) where there
+ * is one, and `trail`, `pill` and `progress` are not drawn.
  */
-export function BarSeat({ at, children }: { at: "lead" | "trail" | "under" | "pill"; children: ReactNode }) {
+export function BarSeat({ at, children }: { at: "lead" | "trail" | "under" | "pill" | "progress"; children: ReactNode }) {
   const seats = useContext(SeatsContext);
   const verbs = useContext(VerbSeat);
   if (!seats) {
@@ -139,8 +142,15 @@ export function SessionScreen({
   nativeDeck = false,
   foldOver = true,
   ink,
+  status,
   children,
 }: {
+  /** **The status strip under the pill** (UX-31, the owner 2026-10-06:
+      the window's foot — what is happening elsewhere — hangs under the
+      deck's pill on the phone, like Safari's progress bar): the slot's
+      content once no load runs. A session's; a page and a file show
+      nothing after a load. */
+  status?: ReactNode;
   /** **The folded capsule floats over the content** (UX-29): the fold
       frees the deck's whole height to the content and the capsule stands
       on it. `false` where the content is a native view the DOM cannot
@@ -202,14 +212,15 @@ export function SessionScreen({
   const [trail, setTrail] = useState<HTMLElement | null>(null);
   const [under, setUnder] = useState<HTMLElement | null>(null);
   const [pill, setPill] = useState<HTMLElement | null>(null);
+  const [progress, setProgress] = useState<HTMLElement | null>(null);
   const [sheet, setSheet] = useState(false);
-  const seats = useMemo(() => ({ lead, trail, under, pill }), [lead, trail, under, pill]);
+  const seats = useMemo(() => ({ lead, trail, under, pill, progress }), [lead, trail, under, pill, progress]);
   const at = faces.findIndex((f) => f.id === active);
   const face = at < 0 ? null : faces[at];
   const [own, setOwn] = useState(false);
   /** The strip pressed holds the deck through the flick (`UnfoldHold`). */
   const hold = useRef(new UnfoldHold());
-  const [keys, setKeys] = useState(keyboardShown);
+  const [keys, setKeys] = useState(footCovered);
   const asked = foldedAsked !== undefined;
   // Nothing folds with the keyboard up, the browser's page included.
   const folded = !keys && (foldedAsked ?? own);
@@ -251,7 +262,7 @@ export function SessionScreen({
       const now = { away: Math.max(0, t.scrollHeight - t.clientHeight - t.scrollTop), h: t.clientHeight };
       const was = last.get(t);
       last.set(t, now);
-      if (!was || keyboardShown()) return;
+      if (!was || footCovered()) return;
       // Rest is rest whatever the height did; a direction is read only
       // from a scroller that kept its height.
       if (was.h !== now.h) {
@@ -281,7 +292,9 @@ export function SessionScreen({
   useEffect(
     () =>
       onKeyboardChange(() => {
-        const up = keyboardShown();
+        // The system keyboard, or khor's panel in its place (UX-31):
+        // nothing folds over either.
+        const up = footCovered();
         setKeys(up);
         if (up) setOwn(false);
       }),
@@ -378,7 +391,10 @@ export function SessionScreen({
           data-session-deck
           {...WINDOW_DRAG}
           hidden={folded}
-          className="flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row"
+          // One glass row tall with the pill at one row; a pill grown by
+          // its slot (UX-31) grows the deck under the circles, which keep
+          // the first row.
+          className="flex min-h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-start gap-in px-row py-in"
         >
           <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
@@ -388,35 +404,45 @@ export function SessionScreen({
               {editor}
             </div>
           ) : (
+            // **The pill and its slot** (UX-31): the seats in one row of
+            // the capsule's height, and under them one slot — the
+            // progress line along the pill's own bottom edge while the tab
+            // reloads, else the status strip for a session — in the same
+            // glass. The corner is the one-row capsule's, so a pill grown
+            // by a strip keeps the same ends.
             <div
               data-deck-pill
               aria-label={gui.session_tabs}
-              className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1"
-              {...swipePill}
+              className="glass relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[calc(var(--glass-btn)/2)]"
             >
-              <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
-              {face && (
-                <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
-                  <TabAvatar f={face} bare="size-tab-face" seat="tab" />
-                </span>
-              )}
-              {onTitle ? (
-                <button type="button" data-deck-title onClick={onTitle} className="min-w-0 flex-1 truncate text-left text-body">
-                  {face?.label ?? ""}
-                </button>
-              ) : (
-                <span data-deck-title className="min-w-0 flex-1 truncate text-body">
-                  {face?.label ?? ""}
-                </span>
-              )}
-              {caption && (
-                // Gives way before the pill's own seats do (UX-22: a page's
-                // failure and its 重试 pushed reload out of the pill).
-                <span data-region-caption className="flex min-w-0 shrink items-center truncate text-caption text-tertiary tabular-nums">
-                  {caption}
-                </span>
-              )}
-              <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
+              <div data-deck-pill-row className="flex h-glass-btn min-w-0 items-center gap-in ps-1 pe-1" {...swipePill}>
+                <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
+                {face && (
+                  <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
+                    <TabAvatar f={face} bare="size-tab-face" seat="tab" />
+                  </span>
+                )}
+                {onTitle ? (
+                  <button type="button" data-deck-title onClick={onTitle} className="min-w-0 flex-1 truncate text-left text-body">
+                    {face?.label ?? ""}
+                  </button>
+                ) : (
+                  <span data-deck-title className="min-w-0 flex-1 truncate text-body">
+                    {face?.label ?? ""}
+                  </span>
+                )}
+                {caption && (
+                  // Gives way before the pill's own seats do (UX-22: a page's
+                  // failure and its 重试 pushed reload out of the pill).
+                  <span data-region-caption className="flex min-w-0 shrink items-center truncate text-caption text-tertiary tabular-nums">
+                    {caption}
+                  </span>
+                )}
+                <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
+              </div>
+              <PillSlot loading={loading} seat={setProgress}>
+                {status}
+              </PillSlot>
             </div>
           )}
           {editor ? (
@@ -472,6 +498,45 @@ export function SessionScreen({
 const SWIPE_STEPS = 40;
 /** How often, at most, the folded capsule looks at what is behind it. */
 const SAMPLE_MS = 250;
+
+/**
+ * **One slot under every tab pill** (UX-31 §3, the owner 2026-10-06):
+ * while the tab reloads — a session's re-attach, a page's load, a file's
+ * re-read — it is Safari's progress line, a 2-pt run along the pill's own
+ * bottom edge, left to right, in the pill's glass; when the load ends it
+ * is empty and folds. A session shows the status strip there after
+ * (`status`); a page and a file show nothing. Progress and status never
+ * share it: progress wins while a load runs (`app.css` hides the status
+ * under a running line).
+ *
+ * Two ways to say "loading": the screen's own `loading` (the browser's
+ * page) and the `progress` seat, which the view that holds the tab fills
+ * while it reloads (`BarSeat at="progress"`: a terminal's join). The
+ * wide strip's pills draw the same line from the same fact (UX-33 §2).
+ */
+export function PillSlot({ loading = false, seat, children }: { loading?: boolean; seat: (el: HTMLElement | null) => void; children?: ReactNode }) {
+  return (
+    <div data-pill-slot className="flex min-w-0 flex-col">
+      <span ref={seat} data-pill-progress-seat className="contents" />
+      {loading && <PillProgress />}
+      {children && (
+        <div data-pill-status className="flex min-w-0 items-center">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The progress line itself: a view portals one into the `progress` seat
+    while its tab reloads; the screen draws one for `loading`. */
+export function PillProgress() {
+  return (
+    <span data-pill-progress aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden">
+      <span className="block h-full w-full origin-left bg-brand-strong" />
+    </span>
+  );
+}
 
 /** **A sideways swipe on a deck's pill steps to the next or previous
     tab** (Safari's address bar): the pointer handlers for the pill, with
