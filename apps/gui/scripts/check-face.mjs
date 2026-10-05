@@ -11801,8 +11801,8 @@ try {
     const p = rows.peer;
     const e = rows.elder;
     const g = rows.gate;
-    if (!p || !/23\s*毫秒/.test(p.top ?? "") || p.light !== "on" || p.bottom !== null || !p.sub.includes("CPU 41%")) {
-      fail(`UX-15 · peer reads ${JSON.stringify(p)} — 「CPU 41%」 under its name, the light on and 23 毫秒 at the right, nothing under it while connected`);
+    if (!p || p.top !== "23 ms" || p.light !== "on" || p.bottom !== null || !p.sub.includes("CPU 41%")) {
+      fail(`UX-15 · peer reads ${JSON.stringify(p)} — 「CPU 41%」 under its name, the light on and 「23 ms」 at the right (the owner's unit), nothing under it while connected`);
     }
     if (!e || e.top !== "无法获取" || e.light !== "off" || !(e.bottom ?? "").includes("20 小时")) {
       fail(`UX-15 · elder reads ${JSON.stringify(e)} — the light off beside 无法获取, and when it was last heard under it`);

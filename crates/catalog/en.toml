@@ -1577,6 +1577,9 @@ machine-here = "This machine"
 # account's window (what is left · when it resets).
 row-sessions = "{0} sessions"
 row-cpu = "CPU {0}%"
+# Unspaced: conn-relay-ms already says "{0} ms" and the catalog refuses one text
+# under two names.
+row-rtt = "{0}ms"
 row-changes = "{0} changes"
 row-window = "{0} left · resets {1}"
 row-left = "{0} left"

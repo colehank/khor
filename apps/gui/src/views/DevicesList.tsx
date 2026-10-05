@@ -291,7 +291,7 @@ export function DevicesList({
     // An older resident sends no `rtt_ms` at all: no number, not 「无法获取」.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
     const reached = d.me || rtt !== null || (d.rtt_ms === undefined && d.hop !== "quiet");
-    const latency = d.me ? gui.machine_here : rtt !== null ? gui.conn_relay_ms(rtt) : reached ? null : gui.day_unreachable;
+    const latency = d.me ? gui.machine_here : rtt !== null ? gui.row_rtt(rtt) : reached ? null : gui.day_unreachable;
     return {
       id: d.id,
       group: d.pinned ? "pin" : "",
