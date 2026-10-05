@@ -23951,6 +23951,33 @@ try {
       }
     }
 
+    // (14′) UX-24 (the owner, 2026-10-05): no hairline is drawn within the
+    // selected row's box ± 1 px — its own foot and the foot of the row
+    // above it are not drawn; the rows further off keep theirs.
+    {
+      const lines = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll("[data-list] [data-side-row]")].filter((r) => r.getClientRects().length);
+        const at = rows.findIndex((r) => r.getAttribute("data-selected") === "true");
+        if (at < 0) return null;
+        const box = rows[at].getBoundingClientRect();
+        const drawn = (r) => {
+          const t = r.querySelector("[data-side-text]");
+          if (!t) return null;
+          const cs = getComputedStyle(t);
+          const c = cs.borderBottomColor;
+          const clear = c === "transparent" || /rgba\([^)]*,\s*0\)$/.test(c);
+          return { y: Math.round(t.getBoundingClientRect().bottom), w: parseFloat(cs.borderBottomWidth), clear };
+        };
+        const near = rows.map(drawn).filter((l) => l && !l.clear && l.w > 0 && l.y >= box.top - 1 && l.y <= box.bottom + 1);
+        const far = rows.map(drawn).filter((l, i) => l && i !== at && i !== at - 1 && !l.clear && l.w > 0).length;
+        return { near: near.length, far, box: [Math.round(box.top), Math.round(box.bottom)] };
+      });
+      console.log(`lists (14′) · hairlines at the selected row: ${JSON.stringify(lines)}`);
+      if (!lines) fail("probe dead: (14′) no selected workspace row to measure");
+      else if (lines.near !== 0) fail(`UX-24 · ${lines.near} hairline(s) drawn within the selected row's box ${JSON.stringify(lines.box)} ± 1 — its own foot and the one above are not drawn`);
+      else if (lines.far === 0) fail("UX-24 · no hairline is drawn on the other rows either — the rule hides two, not all");
+    }
+
     // (15) 拉过来: on the hovered, focused and open row; everywhere under a finger.
     await until(5_000, async () => (await page.locator("[data-ws-tree] [data-file] [data-take]").count()) > 1);
     // **By position, not by name**: a name is not unique in a tree (an
