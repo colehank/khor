@@ -2549,6 +2549,7 @@ export function TerminalPane({
       history: historyHas,
       tmuxRow: tmuxHistory !== null,
       pane: () => tmuxHistory?.pane() ?? null,
+      reread: tmuxHistory?.reread,
       note: (line) => void faceNote(line).catch(() => {}),
     });
     firstTouchRef.current = firstTouch;

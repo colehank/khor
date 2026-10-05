@@ -493,7 +493,7 @@ impl Tmux {
         let unjoined = "\x1fkhor-rows\x1f";
         let start = format!("-{window}");
         let mut args = vec![
-            "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size} #{pane_top} #{pane_left} #{mouse_any_flag} #{status} #{status-position}", ";",
+            "display-message", "-p", "-t", session, "#{pane_id} #{alternate_on} #{history_size} #{pane_top} #{pane_left} #{mouse_any_flag} #{status} #{status-position} #{window_width}x#{window_height}", ";",
             "capture-pane", "-p", "-e", "-J", "-S", &start, "-E", "-1", "-t", session, ";",
         ];
         if rows {
@@ -517,7 +517,8 @@ impl Tmux {
             "on" => 1,
             n => n.parse().unwrap_or(1),
         };
-        let top = pane_top + if words.next()?.trim() == "top" { status } else { 0 };
+        let top = pane_top + if words.next()? == "top" { status } else { 0 };
+        let wsize = words.next().unwrap_or_default().trim().to_owned();
         let (history, screen) = rest.split_once(&format!("{split}\n"))?;
         let (history, unjoined) = match rows {
             true => history.split_once(&format!("{unjoined}\n"))?,
@@ -528,7 +529,7 @@ impl Tmux {
         let lines = |text: &str| -> Vec<String> { if size == 0 { Vec::new() } else { text.lines().map(str::to_owned).collect() } };
         let (history, rows) = (lines(history), lines(unjoined));
         let screen = screen.lines().map(str::to_owned).collect();
-        Some(HistoryRead { pane, alternate, mouse, size, top, left, history, rows, screen })
+        Some(HistoryRead { pane, alternate, mouse, size, top, left, window: wsize, history, rows, screen })
     }
 
     /// [`Tmux::ask`] for an answer bigger than a pipe's buffer: a
@@ -1097,6 +1098,12 @@ pub struct PaneHistory {
     /// (item 36). Tail-appended.
     #[serde(default)]
     pub mouse: bool,
+    /// tmux's window size when this was read, `WxH` (`#{window_width}x
+    /// #{window_height}`; item 45). Under `window-size latest` the window
+    /// is sized to whichever client last acted, so the face's notes can
+    /// say whether a drag on the phone claimed it. Tail-appended.
+    #[serde(default)]
+    pub window: String,
 }
 
 struct HistoryRead {
@@ -1106,6 +1113,8 @@ struct HistoryRead {
     size: usize,
     top: u16,
     left: u16,
+    /// The window's size, `WxH`.
+    window: String,
     /// The window's history, wrapped lines joined.
     history: Vec<String>,
     /// The same window's rows, unjoined and plain; read only to place an
@@ -1193,6 +1202,7 @@ impl HistoryRead {
             top: self.top,
             left: self.left,
             mouse: self.mouse,
+            window: self.window,
         }
     }
 }
@@ -1770,6 +1780,7 @@ mod tests {
         until_shown(&s, "one", "d1");
         let t = s.at();
         let first = t.history("shell/9-9", None).unwrap();
+        assert_eq!(first.window, "20x10", "the window's size rides along (item 45)");
         s.tmux(&["resize-window", "-t", "one", "-y", "30"]);
         let deadline = Instant::now() + Duration::from_secs(10);
         while s.tmux(&["display-message", "-p", "-t", "one", "#{pane_height}"]).unwrap_or_default().trim() != "30" {
@@ -1781,6 +1792,7 @@ mod tests {
         assert!(now < first.anchor.size, "tmux pulled rows back: {now} < {}", first.anchor.size);
         let next = t.history("shell/9-9", Some(&first.anchor)).unwrap();
         assert!(next.refill, "{} lines, not a refill", next.lines.len());
+        assert_eq!(next.window, "20x30");
         same(&plains(&next.lines), &tmux_history(&s, "one"), "refilled");
     }
 
@@ -1879,6 +1891,7 @@ mod tests {
             size: 1000,
             top: 0,
             left: 0,
+            window: String::new(),
             history: (0..1000).map(|_| line.clone()).collect(),
             rows: vec![],
             screen: vec!["$ ".into()],
@@ -1902,6 +1915,7 @@ mod tests {
                 size: self.size,
                 top: self.top,
                 left: self.left,
+                window: self.window.clone(),
                 history: self.history.clone(),
                 rows: self.rows.clone(),
                 screen: self.screen.clone(),
@@ -1931,6 +1945,7 @@ mod tests {
             size,
             top: 0,
             left: 0,
+            window: String::new(),
             history: v(history),
             rows: v(rows),
             screen: vec![],

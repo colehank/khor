@@ -204,7 +204,7 @@ export function DoctorPage({
             </span>
           );
           const said = (
-            <span data-doctor-said data-selectable className="[overflow-wrap:anywhere]">
+            <span data-doctor-said data-selectable className="whitespace-pre-line [overflow-wrap:anywhere]">
               {fixed[r.key] ?? r.said}
             </span>
           );

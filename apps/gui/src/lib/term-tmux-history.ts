@@ -113,8 +113,12 @@ export function holdsTmuxHistory(o: {
   /** The history's xterm while it holds the scroller (item 32's band
       reads its lines), else null. */
   terminal: () => Terminal | null;
-  /** The pane in front, as the newest read found it (`null` before one). */
-  pane: () => { pane: string; mouse: boolean; alternate: boolean } | null;
+  /** The pane in front, as the newest read found it (`null` before one),
+      with tmux's window size then (item 45). */
+  pane: () => { pane: string; mouse: boolean; alternate: boolean; window: string } | null;
+  /** Reads now, whether or not the history is behind: for the notes'
+      look at the window size after a touch (item 45). */
+  reread: () => Promise<void>;
   stop: () => void;
 } {
   const { live, seat } = o;
@@ -133,7 +137,7 @@ export function holdsTmuxHistory(o: {
   /** The last read failed (an older khor there, out of reach). */
   let failed = false;
   /** What the newest read said of the pane in front. */
-  let held: { pane: string; mouse: boolean; alternate: boolean } | null = null;
+  let held: { pane: string; mouse: boolean; alternate: boolean; window: string } | null = null;
   /** A read has succeeded: this terminal is tmux's. */
   let proven = o.known;
   /** Not a tmux terminal after all: no more reads. */
@@ -198,7 +202,7 @@ export function holdsTmuxHistory(o: {
   };
   const apply = (h: PaneHistory) => {
     failed = false;
-    held = { pane: h.pane, mouse: h.mouse, alternate: h.alternate };
+    held = { pane: h.pane, mouse: h.mouse, alternate: h.alternate, window: h.window };
     // **A program that scrolls itself keeps the drag** (item 36): on its
     // alternate screen, or holding the mouse — Claude Code does, and then
     // tmux's history of the pane is its frames drawn again and again, not
@@ -326,6 +330,7 @@ export function holdsTmuxHistory(o: {
       if (visible) quietThen();
     },
     pane: () => held,
+    reread: () => read().then(() => {}),
     terminal: () => (on ? history : null),
     stop: () => {
       stopped = true;

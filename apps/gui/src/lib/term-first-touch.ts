@@ -20,6 +20,8 @@ const DRAG_PX = 10;
 const PRESS_MS = 450;
 /** A tap's keyboard is read once the keyboard has had time to rise. */
 const KEYBOARD_MS = 700;
+/** A drag's window size is read once tmux has had time to resize. */
+const WINDOW_MS = 700;
 /** A replay that comes by the stream is taken as landed after this much
     quiet, or this long at most. */
 const STREAM_QUIET_MS = 300;
@@ -42,8 +44,12 @@ export function notesFirstTouch(o: {
   /** Whether this row would hold a tmux history view on this device. */
   tmuxRow: boolean;
   /** The pane in front, as the history's newest read found it (item 36:
-      whether its program holds the mouse). */
-  pane?: () => { pane: string; mouse: boolean; alternate: boolean } | null;
+      whether its program holds the mouse; item 45: tmux's window size). */
+  pane?: () => { pane: string; mouse: boolean; alternate: boolean; window: string } | null;
+  /** Reads the pane again (item 45): a drag's line says the window size
+      before and after it, so a drag that did not make khor's client
+      tmux's `latest` is visible. */
+  reread?: () => Promise<void>;
   note: (line: string) => void;
 }): { attached: (bytes: number) => void; stop: () => void } {
   const { id, term, box, scroller } = o;
@@ -95,8 +101,17 @@ export function notesFirstTouch(o: {
         t.scroller === "wheel to the program"
           ? `${t.wheels} wheels, ${t.reports} reports, mouse ${term.modes.mouseTrackingMode}, ${cell(term)}`
           : `moved ${Math.round(scroller.scrollTop - t.top)} px of ${Math.round(scroller.scrollHeight - scroller.clientHeight)}`;
-      const p = o.pane?.();
-      say(`${head}: drag, ${t.scroller}: ${what}${p ? `; pane ${p.pane} mouse ${p.mouse ? "held" : "free"}` : ""}`);
+      const before = o.pane?.();
+      const line = (after: typeof before) =>
+        say(
+          `${head}: drag, ${t.scroller}: ${what}` +
+            (before ? `; pane ${before.pane} mouse ${before.mouse ? "held" : "free"}` : "") +
+            (before && after ? `, window ${before.window || "?"} → ${after.window || "?"}` : ""),
+        );
+      // Under tmux (item 45): the window's size after the drag, read
+      // once tmux has had time to answer the drag's reports.
+      if (before && o.reread) window.setTimeout(() => void o.reread!().finally(() => line(o.pane?.() ?? null)), WINDOW_MS);
+      else line(null);
     } else if (performance.now() - t.at >= PRESS_MS) {
       say(`${head}: press, selection ${term.hasSelection() ? "made" : "none"}`);
     } else {
@@ -115,7 +130,7 @@ export function notesFirstTouch(o: {
       attachedAt = performance.now();
       const paneSaid = () => {
         const p = o.pane?.();
-        return p ? `pane ${p.pane} mouse ${p.mouse ? "held" : "free"}${p.alternate ? ", alternate screen" : ""}` : "pane not read yet";
+        return p ? `pane ${p.pane} mouse ${p.mouse ? "held" : "free"}${p.alternate ? ", alternate screen" : ""}, window ${p.window || "?"}` : "pane not read yet";
       };
       const now = (how: string) => {
         const b = term.buffer.active;
