@@ -96,7 +96,8 @@ import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
 import { termWake, useTermWake } from "@/lib/term-tap";
-import { holdFocus, keyboardUp, lowerKeyboard, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
+import { holdFocus, keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
+import { dropsComposition } from "@/lib/term-compose-drop";
 import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
 import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
@@ -1976,6 +1977,17 @@ export function TerminalPane({
     const composeOff = () => (composingNow = false);
     term.textarea?.addEventListener("compositionstart", composeOn);
     term.textarea?.addEventListener("compositionend", composeOff);
+    // **The keyboard going down ends a composition** (item 37,
+    // `lib/term-compose-drop`): iOS drops it without a `compositionend`,
+    // and the strip stayed on the screen.
+    const undrafted = dropsComposition(term, {
+      keyboardUp: () => keyboardUp(term.textarea ?? null),
+      onKeyboardChange,
+      dropped: () => {
+        composingNow = false;
+        setComposingText(null);
+      },
+    });
     const predictResized = term.onResize(({ cols, rows }) => {
       predict.clear();
       rememberTermSize(cols, rows);
@@ -2696,6 +2708,7 @@ export function TerminalPane({
       kitty.dispose();
       term.textarea?.removeEventListener("compositionstart", composeOn);
       term.textarea?.removeEventListener("compositionend", composeOff);
+      undrafted();
       marks.dispose();
       shown();
       window.clearTimeout(bellTimer.current);
