@@ -10,13 +10,11 @@
 // browser's since UX-4 (`page:scroll`), mirrored for the pages that rest
 // at the bottom.
 //
-// The terminal keeps its grid (the owner: 「Claude Code 不能重绘」): the
-// height the full deck takes stays reserved while folded, all but whole
-// terminal rows of it, which go to the terminal's own box as the band
-// term's item 32 draws history into (`audit/term-tmux-history.md`, the
-// item 32 handoff): `data-folded` and `--fold-band` on the pane's root
-// `[data-kept-terminal]`, set in the same frame the deck shrinks, so the
-// mount term keeps at the box's height less the band never changes size.
+// A terminal's grid resizes with the fold, as it does with the keyboard
+// (item 44, 2026-10-06; the owner withdrew 10-05's 「网格不重排」): the
+// whole height the deck frees is the content's, the terminal's box grows
+// by it and refits, and the pty is told. The band of history the fold
+// once uncovered (term's item 32) is gone with the reserve it needed.
 
 /** How far from rest (points) before the deck folds. */
 export const FOLD_AT = 48;
@@ -73,12 +71,4 @@ export function foldStep(memo: FoldMemo, away: number, leaving: boolean, rest: n
   // end of a flick away from rest does not undo it.
   memo.turned ??= away;
   return memo.turned - away >= UNFOLD_BY ? false : null;
-}
-
-/** Whole terminal rows (at most two) that fit in what the fold frees
-    over the strip: two on a phone (60 − 24 against 16-px rows), one in a
-    Mac window dragged narrow, where the deck is shorter. */
-export function bandRows(freed: number, row: number): number {
-  if (!(row > 0)) return 0;
-  return Math.max(0, Math.min(2, Math.floor(freed / row)));
 }
