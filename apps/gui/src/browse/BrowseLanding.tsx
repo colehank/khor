@@ -66,7 +66,7 @@ import { IconArrow, IconBrowser, IconReload } from "@/components/icons";
 import { GlassItem } from "@/components/Glass";
 import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
-import { FOLD_AT, foldStep, type FoldMemo } from "@/lib/deck-fold";
+import { FOLD_AT, foldStep, UnfoldHold, type FoldMemo } from "@/lib/deck-fold";
 import type { KindMark } from "@/components/FaceMark";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
@@ -375,6 +375,8 @@ export function BrowseLanding({
       the fold's threshold folds it, a scroll up by a hand's width or the
       top of the page brings it back — the phone page's `page:scroll`. */
   const [folded, setFolded] = useState(false);
+  /** The strip pressed holds the deck through the flick (`UnfoldHold`). */
+  const hold = useRef(new UnfoldHold());
   const [pageLoading, setPageLoading] = useState(false);
   useEffect(() => {
     setFolded(false);
@@ -388,6 +390,7 @@ export function BrowseLanding({
       const at = Number(y);
       if (!Number.isFinite(at)) return;
       const next = foldStep(memo, at, way === "down", FOLD_AT);
+      if (!hold.current.allows() && next === true) return;
       if (next !== null) setFolded(next);
     });
     const offLoad = onPageWord("page:load", id, (t) => setPageLoading(t === "started"));
@@ -644,7 +647,10 @@ export function BrowseLanding({
         nativeDeck={native}
         onEditCancel={() => setEditing(false)}
         folded={folded && !editing}
-        onUnfold={() => setFolded(false)}
+        onUnfold={() => {
+          hold.current.asked();
+          setFolded(false);
+        }}
         loading={pageLoading}
       >
         <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">

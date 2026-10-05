@@ -23,6 +23,32 @@ export const FOLD_AT = 48;
 /** How far back toward rest (points) brings it back. */
 export const UNFOLD_BY = 24;
 
+/** **A deck brought back by hand stays until the next gesture** (the
+    simulator, a real drag then a tap on the strip): the flick's momentum
+    goes on scrolling after the finger lifts, and every one of those moves
+    read as reading on and folded the deck straight back. After an unfold
+    that was asked for, folding waits for the scroll to stop for a beat
+    (the momentum ended) — the next drag may fold it again. */
+export class UnfoldHold {
+  private held = false;
+  private last = -Infinity;
+  /** The strip was pressed. */
+  asked() {
+    this.held = true;
+    this.last = performance.now();
+  }
+  /** A scroll arrived; whether it may fold the deck. */
+  allows(): boolean {
+    const now = performance.now();
+    if (this.held && now - this.last > QUIET_MS) this.held = false;
+    this.last = now;
+    return !this.held;
+  }
+}
+
+/** A gap in the scroll events this long is the end of a gesture. */
+const QUIET_MS = 250;
+
 /** Scrollers whose rest is their bottom: a terminal's, a conversation's. */
 export const RESTS_AT_BOTTOM = "[data-term-scroller], [data-chat-scroll], [data-machine-chat-scroll]";
 
