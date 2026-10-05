@@ -41,6 +41,9 @@ export function notesFirstTouch(o: {
   history: () => boolean;
   /** Whether this row would hold a tmux history view on this device. */
   tmuxRow: boolean;
+  /** The pane in front, as the history's newest read found it (item 36:
+      whether its program holds the mouse). */
+  pane?: () => { pane: string; mouse: boolean; alternate: boolean } | null;
   note: (line: string) => void;
 }): { attached: (bytes: number) => void; stop: () => void } {
   const { id, term, box, scroller } = o;
@@ -92,7 +95,8 @@ export function notesFirstTouch(o: {
         t.scroller === "wheel to the program"
           ? `${t.wheels} wheels, ${t.reports} reports, mouse ${term.modes.mouseTrackingMode}, ${cell(term)}`
           : `moved ${Math.round(scroller.scrollTop - t.top)} px of ${Math.round(scroller.scrollHeight - scroller.clientHeight)}`;
-      say(`${head}: drag, ${t.scroller}: ${what}`);
+      const p = o.pane?.();
+      say(`${head}: drag, ${t.scroller}: ${what}${p ? `; pane ${p.pane} mouse ${p.mouse ? "held" : "free"}` : ""}`);
     } else if (performance.now() - t.at >= PRESS_MS) {
       say(`${head}: press, selection ${term.hasSelection() ? "made" : "none"}`);
     } else {
@@ -109,13 +113,29 @@ export function notesFirstTouch(o: {
       drop?.();
       armed = true;
       attachedAt = performance.now();
-      const state = (how: string) => {
+      const paneSaid = () => {
+        const p = o.pane?.();
+        return p ? `pane ${p.pane} mouse ${p.mouse ? "held" : "free"}${p.alternate ? ", alternate screen" : ""}` : "pane not read yet";
+      };
+      const now = (how: string) => {
         const b = term.buffer.active;
         say(
           `attach ${how}; ${b.type} buffer, mouse ${term.modes.mouseTrackingMode}; ` +
             `${term.cols}x${term.rows}, ${cell(term)}; ` +
-            (o.tmuxRow ? `tmux row, history view ${o.history() ? "on" : "not yet"}` : "row"),
+            (o.tmuxRow ? `tmux row, ${paneSaid()}, history view ${o.history() ? "on" : "off"}` : "row"),
         );
+      };
+      // A tmux row's line waits for the pane's first read (at most
+      // `STREAM_MAX_MS`): whether its program holds the mouse is the point.
+      const state = (how: string) => {
+        if (!o.tmuxRow || o.pane?.()) return now(how);
+        const from = performance.now();
+        const poll = window.setInterval(() => {
+          if (o.pane?.() || performance.now() - from > STREAM_MAX_MS) {
+            window.clearInterval(poll);
+            now(how);
+          }
+        }, 100);
       };
       if (bytes > 0) return state(`${bytes} B`);
       // The feed was empty at the attach (it had only just opened): the

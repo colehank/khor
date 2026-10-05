@@ -2001,6 +2001,10 @@ not-a-face-shape = "不是一种形状：{0}。有：{1}"
 # ── the persistent host (node) ──
 no-host = "这个 session 没有宿主（临时的，或宿主还没起来）"
 host-file-garbled = "无法解析宿主记录：{0}"
+# A host that took the connection but sent no word back within the
+# handshake's time (item 36): stopped, wedged, or a far pipe that went
+# quiet. Said instead of the socket's own errno (「os error 35」).
+host-silent = "主机 {0} 秒没有应答"
 no-frame = "无法读取帧：{0}"
 frame-too-big = "帧超限：{0}"
 # A machine asked to watch the folders a tree has open, that cannot

@@ -2460,6 +2460,7 @@ mod tests {
             anchor,
             top: 1,
             left: 0,
+            mouse: true,
         };
         let bytes = encode(&Response::PaneHistory { history: history.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {

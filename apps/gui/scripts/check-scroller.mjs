@@ -11,6 +11,12 @@
 //       Ink on a phone) while a finger drags up through the history: until
 //       the lift, every `scrollTop` the scroller takes is one the finger
 //       set; on settle the code places it once.
+//   36. **A program's wheel by the scroller's travel.** Where the program
+//       holds the mouse (Claude Code in tmux), under a finger the scroller
+//       keeps a range of its own and every row it travels is one notch:
+//       300 px of travel at 16 px rows is 18 notches (it was 5: a wheel per
+//       touch move, folded by xterm), the place goes back to the middle
+//       once it rests, and nothing is handed on while it does.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -53,8 +59,8 @@ await page.setContent(`<!doctype html><meta charset=utf-8><style>${css}
   </style><div id=box><div id=scroller><div id=stick><div id=screen></div></div><div id=room></div></div></div>`);
 await page.addScriptTag({ content: bundle.outputFiles[0].text });
 
-const fresh = (scrollback = 2000) =>
-  page.evaluate(async (scrollback) => {
+const fresh = (scrollback = 2000, wheel = false) =>
+  page.evaluate(async ({ scrollback, wheel }) => {
     const { Terminal, FitAddon, scroller } = window.lab;
     window.t?.dispose();
     window.native?.stop();
@@ -68,9 +74,10 @@ const fresh = (scrollback = 2000) =>
     window.fit = fit;
     window.resizes = 0;
     term.onResize(() => window.resizes++);
-    window.native = scroller.scrollsNatively(term, document.querySelector("#scroller"), document.querySelector("#room"), document.querySelector("#screen"));
+    window.notches = [];
+    window.native = scroller.scrollsNatively(term, document.querySelector("#scroller"), document.querySelector("#room"), document.querySelector("#screen"), wheel ? { wheel: (n) => window.notches.push(n) } : {});
     return { cols: term.cols, rows: term.rows };
-  }, scrollback);
+  }, { scrollback, wheel });
 const frames = (n) => page.evaluate((n) => new Promise((r) => { let i = 0; const f = () => (++i >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); }), n);
 
 // ── 29 ──
@@ -149,6 +156,34 @@ console.log(`scroller gate: 30 scroller moves not the finger's during the drag: 
 if (run.duringDrag > 0) fail(`30: output moved the scroller ${run.duringDrag} times while the finger held it`);
 if (run.afterLift > 2) fail(`30: the settle placed the scroller ${run.afterLift} times, not once`);
 
+// ── 36 ──
+await page.evaluate(() => { document.querySelector("#box").style.height = "600px"; });
+await fresh(2000, true);
+await page.evaluate(() => new Promise((r) => window.t.write("\x1b[?1002h\x1b[?1006h", r)));
+await frames(4);
+const wheel = await page.evaluate(async () => {
+  const sc = document.querySelector("#scroller");
+  const row = document.querySelector(".xterm-screen").getBoundingClientRect().height / window.t.rows;
+  const range = Math.round(sc.scrollHeight - sc.clientHeight);
+  const mid = Math.round(sc.scrollTop);
+  const touch = (type) => sc.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === "touchend" ? [] : [new Touch({ identifier: 1, target: sc, clientY: 100 })] }));
+  touch("touchstart");
+  for (let i = 1; i <= 15; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    sc.scrollTop = mid - i * 20;
+  }
+  touch("touchend");
+  await new Promise((r) => setTimeout(r, 30));
+  const atLift = window.notches.reduce((a, b) => a + b, 0);
+  await new Promise((r) => setTimeout(r, 600));
+  return { row, range, mid, atLift, settled: window.notches.reduce((a, b) => a + b, 0), back: Math.round(sc.scrollTop) };
+});
+console.log(`scroller gate: 36 wheel by travel: ${JSON.stringify(wheel)}`);
+const want = -Math.trunc(300 / wheel.row);
+if (wheel.range < 10000) fail(`36: the program's scroller has no range of its own (${wheel.range})`);
+if (wheel.atLift !== want) fail(`36: 300 px of travel handed ${wheel.atLift} notches, want ${want}`);
+if (wheel.settled !== wheel.atLift) fail(`36: setting the place back handed ${wheel.settled - wheel.atLift} more notches`);
+
 await browser.close();
 if (bad) process.exit(1);
-console.log("scroller gate: a resize keeps the bottom, and output never moves the scroller under a finger");
+console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, and a program's wheel follows the travel");
