@@ -14,6 +14,12 @@
 // keyboard (`soft` false) xterm's own keydown road is untouched and the
 // field is never filled; a pinyin commit is the committed text, once, with
 // and without the module.
+//
+// And item 37: a composition the keyboard goes down in the middle of —
+// iOS sends no `compositionend` — is dropped, by the field's `inputmode`
+// turning to none or by the screen losing the keyboard: xterm's composition
+// view is gone, nothing reaches the terminal, and the next key types clean
+// (`src/lib/term-compose-drop.ts`).
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -34,7 +40,8 @@ const bundle = await build({
     contents: `
       import { Terminal } from "@xterm/xterm";
       import * as soft from "./src/lib/term-soft-delete.ts";
-      window.lab = { Terminal, soft };
+      import * as drop from "./src/lib/term-compose-drop.ts";
+      window.lab = { Terminal, soft, drop };
     `,
     resolveDir: gui,
     loader: "ts",
@@ -55,7 +62,8 @@ await page.addScriptTag({ content: bundle.outputFiles[0].text });
 const run = (events, softOn, withModule) =>
   page.evaluate(
     async ({ events, softOn, withModule }) => {
-      const { Terminal, soft } = window.lab;
+      const { Terminal, soft, drop } = window.lab;
+      window.undrop?.();
       window.t?.dispose();
       window.sd?.stop();
       const t = new Terminal({ cols: 40, rows: 10 });
@@ -70,6 +78,15 @@ const run = (events, softOn, withModule) =>
         : null;
       window.sd = sd;
       t.attachCustomKeyEventHandler((ev) => !(sd && sd.key(ev) === false));
+      window.kbUp = true;
+      window.dropped = 0;
+      window.undrop = withModule
+        ? drop.dropsComposition(t, {
+            keyboardUp: () => window.kbUp,
+            onKeyboardChange: (run) => ((window.kbRun = run), () => {}),
+            dropped: () => window.dropped++,
+          })
+        : null;
       field.focus();
       let keyPrevented = false;
       let comp = null; // [start, end) of the composition
@@ -136,6 +153,12 @@ const run = (events, softOn, withModule) =>
           if (e.type === "compositionstart") comp = [caret(), caret()];
           field.dispatchEvent(new CompositionEvent(e.type, { data: e.data ?? "", bubbles: true }));
           if (e.type === "compositionend") comp = null;
+        } else if (e.type === "inputmode-none") {
+          field.setAttribute("inputmode", "none");
+          await new Promise((z) => setTimeout(z, 20));
+        } else if (e.type === "keyboard-down") {
+          window.kbUp = false;
+          window.kbRun?.();
         } else if (e.type === "repeat") {
           for (let i = 0; i < e.times; i++) {
             input(e.inputType);
@@ -151,7 +174,8 @@ const run = (events, softOn, withModule) =>
         await tick();
       }
       await new Promise((z) => setTimeout(z, 50));
-      return { sent: sent.join(""), emptied, filled, value: field.value };
+      const helper = t._core?._compositionHelper;
+      return { sent: sent.join(""), emptied, filled, value: field.value, dropped: window.dropped, composing: !!helper?._isComposing, viewActive: !!helper?._compositionView?.classList.contains("active") };
     },
     { events, softOn, withModule },
   );
@@ -183,6 +207,37 @@ for (const s of fixture.sequences) {
   const before = await run(held.events, true, false);
   console.log(`soft delete gate: without the module, a held delete sends ${show(before.sent)} (xterm's keydown ends the repeat)`);
   if (before.sent !== "\x7f") fail(`without the module a held delete sent ${show(before.sent)}: the replay no longer shows the bug`);
+}
+
+// Item 37: the keyboard goes down in the middle of a composition.
+{
+  const half = [
+    { type: "keydown", key: "n", code: 229 },
+    { type: "compositionstart", data: "" },
+    { type: "compositionupdate", data: "n" },
+    { type: "beforeinput", inputType: "insertCompositionText", data: "n", composing: true },
+    { type: "keyup", key: "n", code: 78, composing: true },
+    { type: "keydown", key: "i", code: 229, composing: true },
+    { type: "compositionupdate", data: "ni" },
+    { type: "beforeinput", inputType: "insertCompositionText", data: "ni", composing: true },
+    { type: "keyup", key: "i", code: 73, composing: true },
+  ];
+  const after = [
+    { type: "keydown", key: "a", code: 65 },
+    { type: "beforeinput", inputType: "insertText", data: "a" },
+    { type: "keyup", key: "a", code: 65 },
+  ];
+  for (const [how, down] of [["inputmode none", { type: "inputmode-none" }], ["the screen lost the keyboard", { type: "keyboard-down" }]]) {
+    const got = await run([...half, down, ...after], true, true);
+    if (got.dropped !== 1) fail(`37, ${how}: the composition was dropped ${got.dropped} times`);
+    if (got.viewActive || got.composing) fail(`37, ${how}: xterm still composing (view ${got.viewActive}, state ${got.composing})`);
+    if (got.sent !== "a") fail(`37, ${how}: sent ${show(got.sent)}, want "a": nothing of the pinyin, then the next key`);
+    console.log(`soft delete gate: 37, keyboard down mid-composition (${how}) → dropped, then sent ${show(got.sent)}`);
+  }
+  const still = await run([...half, { type: "keyboard-down" }], true, false);
+  const later = await run([...half, { type: "keyboard-down" }, ...after], true, false);
+  console.log(`soft delete gate: 37, without the module xterm is still composing (${still.composing}), and the next key sends ${show(later.sent)}`);
+  if (!still.composing) fail("37: without the module the replay no longer shows the stuck composition");
 }
 
 await browser.close();
