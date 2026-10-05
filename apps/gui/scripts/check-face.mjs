@@ -127,11 +127,11 @@ try {
       pressed `[data-rail-more]` at every width since the redesign, so
       every narrow 「…」 stop read 「never drew」. */
   const toMore = async () => {
-    // Wide, the circle is a toggle once the list is up: pressed again it
-    // folds the list it opened (App's `onMore`).
+    // Wide, 更多 is the strip's fifth seat and opens the phone's menu
+    // (UX-19); 我的 khor there opens the 「…」 list beside it.
     if (!(await narrowNow())) {
       if (await page.locator("[data-more-open]").first().isVisible().catch(() => false)) return true;
-      return tap("[data-rail-more]");
+      return (await tap("[data-rail-more]")) && tap("[data-rail-more-menu] [data-nav-me]");
     }
     for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
       if (!(await tap("[data-file-back], [data-back], [data-ws-back], [data-more-back]"))) break;
@@ -2663,9 +2663,32 @@ try {
       await page.keyboard.press("Escape");
       await wait(300);
     }
+    // **A landing past the fourth is in 更多's menu** on the wide strip too
+    // (UX-19: the phone's five seats at the top).
+    // **With its list out**: a stop may have left it put away, which the
+    // page remembers, and choosing the landing in front again puts it
+    // away (the `land` helpers below say the same). Any landing's column
+    // (`LIST_PANE`, `hooks/use-list-width`).
+    // Asked over a moment, not once: a column coming back (a width
+    // change, a landing switch) is a few frames from its width, and a
+    // press taken then would put it away again.
+    const away = async () => {
+      const wide = () =>
+        page.evaluate(() => Math.max(0, ...[...document.querySelectorAll("[data-list],[data-quota-pane],[data-browse-tabs]")].map((e) => e.getBoundingClientRect().width)));
+      return !(await until(800, async () => (await wide()) >= 8));
+    };
+    if ((await page.locator(rail(tab)).count()) === 0) {
+      const viaMore = async () => (await tap("[data-rail-more]")) && tap(`[data-rail-more-menu] [data-more-landing="${tab}"]`);
+      if (!(await viaMore())) return false;
+      await wait(300);
+      if (await away()) await viaMore();
+      return true;
+    }
     const on = await page.locator(rail(tab)).getAttribute("data-on").catch(() => null);
     if (on === "true") await tap(rail(tab === "sessions" ? "devices" : "sessions"));
-    return tap(rail(tab));
+    if (!(await tap(rail(tab)))) return false;
+    if (await away()) await tap(rail(tab));
+    return true;
   };
   /** Open a workspace from the list **and leave its tree out.**
    *
@@ -10223,10 +10246,15 @@ try {
         await open(key);
         await wait(300);
         const out = await widthOf(sel);
-        await press(rail(key));
+        // A landing past the fourth is pressed again in 更多's menu (UX-19).
+        const again = async () =>
+          (await page.locator(rail(key)).count()) > 0
+            ? press(rail(key))
+            : (await press("[data-rail-more]")) && press(`[data-rail-more-menu] [data-more-landing="${key}"]`);
+        await again();
         await wait(400);
         const away = await widthOf(sel);
-        await press(rail(key));
+        await again();
         await wait(400);
         const back = await widthOf(sel);
         console.log(`${key} · press twice: ${out} → ${away} → ${back}`);
@@ -12499,8 +12527,9 @@ try {
         continue;
       }
       await wait(300);
-      // 第十七轮 §1: the more glyph opens More itself - a detail page with its
-      // sections listed beside it — and no menu pops at all.
+      // 第十七轮 §1, as UX-19 has it: 更多's menu (wide and narrow alike)
+      // leads to More's pages, a detail page with its sections listed beside
+      // it; once there, no menu is left open.
       const more = await page.evaluate(() => {
         const list = document.querySelector("[data-more-list]");
         return {
@@ -12517,8 +12546,8 @@ try {
       console.log(`round 17 · more ${posture}: ${JSON.stringify(more)}`);
       if (more.menus !== 0) {
         fail(
-          `${posture}: pressing the more glyph put ${more.menus} menu(s) on screen — it opens More directly, ` +
-            "no menu pops (docs/SHELL.md round 17 §1)",
+          `${posture}: 「…」's page is up and ${more.menus} menu(s) are still on screen — choosing in 更多's ` +
+            "menu closes it (UX-19)",
         );
         await page.keyboard.press("Escape");
         await wait(200);
@@ -22756,6 +22785,94 @@ try {
       fail(`the first rows do not drag the window (${onTheRow.join("+") || "nothing at all"}) — both blanks are 顶部空白 now`);
     }
 
+    // ── (e′) UX-19 (the owner, 2026-10-05): the wide first row is the
+    //        phone's five seats across the column — the capsule's left edge
+    //        on the title's below (no window buttons in this face), its
+    //        right edge on the search circle's, 更多 its fifth seat with
+    //        the phone's menu, no circle beside it. ──
+    {
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await open("sessions");
+      await wait(300);
+      const row = await page.evaluate(() => {
+        const r = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+        const strip = r("[data-landing-strip]");
+        // The title row: its own left edge (the bar's), and the search
+        // circle's right edge — or the open box's, which takes its place.
+        const title = r("[data-side-head] [data-list-title]") ?? r("[data-side-head] [data-pane-bar]");
+        const search = r("[data-side-head] [data-search-open]") ?? r("[data-side-head] [data-search-close]") ?? r("[data-side-head] [data-pane-bar]");
+        const more = document.querySelector("[data-landing-strip] [data-rail-more]");
+        return {
+          has: { strip: !!strip, title: !!title, search: !!search },
+          seats: document.querySelectorAll("[data-landing-strip] [data-rail-item]").length,
+          moreInside: !!more,
+          beside: [...(document.querySelector("[data-landing-pair]")?.children ?? [])].length,
+          left: strip && title ? +(strip.left - title.left).toFixed(1) : null,
+          right: strip && search ? +(strip.right - search.right).toFixed(1) : null,
+          moreRight: more && search ? +(more.getBoundingClientRect().right - search.right).toFixed(1) : null,
+        };
+      });
+      // The report's shots (FACE_SHOTS): the web face (fullscreen is the
+      // same, the stamp dropped), then a Mac window — the stamp put on by
+      // hand, the buttons' 76 — wide and dragged narrow.
+      const shotsAt = process.env.FACE_SHOTS;
+      // What the walk left, put back after the shots' narrow window and the
+      // settings window below (both share this origin's storage, and a
+      // narrow window puts the list away).
+      const kept = await page.evaluate(() => JSON.stringify({ ...localStorage }));
+      const stamp = (on) =>
+        page.evaluate((on) => {
+          const root = document.documentElement;
+          if (on) {
+            root.setAttribute("data-traffic", "");
+            root.style.setProperty("--traffic", "76px");
+          } else {
+            root.removeAttribute("data-traffic");
+            root.style.removeProperty("--traffic");
+          }
+        }, on);
+      if (shotsAt) {
+        await page.screenshot({ path: join(shotsAt, "ux19-web.png") });
+        await stamp(true);
+        await wait(300);
+        await page.screenshot({ path: join(shotsAt, "ux19-mac.png") });
+        await page.setViewportSize({ width: 420, height: 800 });
+        await wait(500);
+        await page.screenshot({ path: join(shotsAt, "ux19-mac-narrow.png") });
+        await page.setViewportSize({ width: 1400, height: 900 });
+        await stamp(false);
+        await wait(500);
+        await open("sessions");
+        await wait(300);
+      }
+      await press("[data-rail-more]");
+      await wait(300);
+      if (shotsAt) await page.screenshot({ path: join(shotsAt, "ux19-menu.png") });
+      const menu = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-rail-more-menu] [role=menuitem]")].map(
+          (e) => e.getAttribute("data-nav-me") !== null ? "me" : e.getAttribute("data-nav-settings") !== null ? "settings" : e.getAttribute("data-nav-doctor") !== null ? "doctor" : e.getAttribute("data-more-landing"),
+        ),
+      );
+      await page.keyboard.press("Escape");
+      await wait(200);
+      console.log(`UX-19 · wide first row: ${JSON.stringify(row)}; 更多's menu ${JSON.stringify(menu)}`);
+      if (row.seats !== 5 || !row.moreInside || row.beside !== 1) {
+        fail(`UX-19 · the wide first row holds ${row.seats} seat(s), 更多 inside ${row.moreInside}, ${row.beside} piece(s) in the row — five seats, 更多 the fifth, nothing beside`);
+      }
+      if (row.left === null || Math.abs(row.left) > 1 || row.right === null || Math.abs(row.right) > 1) {
+        fail(`UX-19 · the capsule runs ${row.left} past the title's left and ${row.right} past the search circle's right — both 0 (±1)`);
+      }
+      if (menu.join(",") !== "me,browser,settings,doctor") fail(`UX-19 · 更多's menu reads ${JSON.stringify(menu)} — 我的 khor, 浏览器, 设置, 诊断`);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+      await page.evaluate((k) => {
+        localStorage.clear();
+        for (const [key, v] of Object.entries(JSON.parse(k))) localStorage.setItem(key, v);
+      }, kept);
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    }
+
     // ── (f) narrow: the first row is the search and the 「+」, nothing
     //        of the old row ──
     await page.setViewportSize({ width: 390, height: 844 });
@@ -24121,6 +24238,11 @@ try {
       if ((await page.locator(seat).count()) > 0) return press(seat);
       return (await press("[data-nav-more]")) && press(`[data-more-landing="${tab}"]`);
     }
+    // **A landing past the fourth is in 更多's menu** on the wide strip too
+    // (UX-19: the phone's five seats at the top).
+    if ((await page.locator(tailRail(tab)).count()) === 0) {
+      return (await press("[data-rail-more]")) && press(`[data-rail-more-menu] [data-more-landing="${tab}"]`);
+    }
     const on = await page.locator(tailRail(tab)).getAttribute("data-on").catch(() => null);
     if (on === "true") await press(tailRail(tab === "sessions" ? "devices" : "sessions"));
     return press(tailRail(tab));
@@ -24626,6 +24748,10 @@ try {
       // The narrow face's landings are the bottom bar's (UX-11): the
       // walk's own `open` knows its seats and its 更多.
       if (await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"))) return open(k);
+      // Past the fourth: 更多's menu on the wide strip too (UX-19).
+      if ((await page.locator(railAt(k)).count()) === 0) {
+        return (await hit("[data-rail-more]")) && hit(`[data-rail-more-menu] [data-more-landing="${k}"]`);
+      }
       await hit(railAt(k === "devices" ? "quota" : "devices"));
       const ok = await hit(railAt(k));
       const narrow = await page.evaluate(() => document.documentElement.hasAttribute("data-narrow"));
@@ -24797,6 +24923,7 @@ try {
       }],
       ["通用", async () => {
         await hit("[data-rail-more]");
+        await hit("[data-rail-more-menu] [data-nav-me]");
         await hit('[data-more-open="appearance"]');
         return until(5_000, async () => (await page.locator("[data-main] [data-page-title]").count()) > 0);
       }],
@@ -25251,8 +25378,14 @@ try {
     await wait(900);
     const mod = (await page.evaluate(() => /mac/i.test(navigator.platform))) ? "Meta" : "Control";
     const railAt = (k) => `[data-rail-item][data-landing="${k}"]`;
+    // A landing past the fourth lights 更多 (UX-19); the browser is the one
+    // there by default, and says so by its landing.
     const landingNow = () =>
-      page.evaluate(() => document.querySelector('[data-rail-item][data-landing][data-on="true"]')?.getAttribute("data-landing") ?? null);
+      page.evaluate(
+        () =>
+          document.querySelector('[data-rail-item][data-landing][data-on="true"]')?.getAttribute("data-landing") ??
+          (document.querySelector('[data-rail-more][data-on="true"]') && document.querySelector("[data-browse-landing]") ? "browser" : null),
+      );
     const n = (sel) => page.locator(sel).count();
     const key = async (combo) => {
       await page.keyboard.press(combo);
@@ -25277,9 +25410,13 @@ try {
     const land = async (k) => {
       // Out of a narrow session page first: it has no landings' bar.
       if ((await page.locator("[data-session-bar] [data-back]").count()) > 0) await click("[data-session-bar] [data-back]");
-      if ((await landingNow()) !== k) await click(railAt(k));
+      if ((await landingNow()) !== k) {
+        // Past the fourth: 更多's menu (UX-19).
+        if ((await n(railAt(k))) === 0) await click("[data-rail-more]").then(() => click(`[data-rail-more-menu] [data-more-landing="${k}"]`));
+        else await click(railAt(k));
+      }
       const away = await page.evaluate(() => (document.querySelector("[data-list]")?.getBoundingClientRect().width ?? 0) < 8);
-      if (away) await click(railAt(k));
+      if (away && (await n(railAt(k))) > 0) await click(railAt(k));
     };
     const frontTab = () =>
       page.evaluate(() => document.querySelector('[data-session-tabs] [data-tab][data-on="true"]')?.getAttribute("data-tab") ?? null);

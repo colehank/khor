@@ -143,33 +143,53 @@ export function FloatNav({
           onCloseAutoFocus={(e) => e.preventDefault()}
           className="min-w-nav-menu"
         >
-          {/* 我的 khor first: this machine's face in the glyphs' box, so
-              its word starts where the others' do. */}
-          <DropdownMenuItem data-nav-me className={MENU_ITEM} onSelect={onMe}>
-            <MachineAvatar face={me?.face ?? null} className="size-nav-glyph" />
-            {gui.my_khor}
-          </DropdownMenuItem>
-          {more.map((s) => (
-            <DropdownMenuItem
-              key={s.key}
-              data-more-landing={s.key}
-              className={MENU_ITEM}
-              onSelect={() => onGo(s.key)}
-            >
-              {s.glyph}
-              {s.name}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuItem data-nav-settings className={MENU_ITEM} onSelect={onSettings}>
-            <IconGear />
-            {gui.nav_settings}
-          </DropdownMenuItem>
-          <DropdownMenuItem data-nav-doctor className={MENU_ITEM} onSelect={onDoctor}>
-            <IconPulse />
-            {gui.doctor}
-          </DropdownMenuItem>
+          <MoreMenuItems more={more} onGo={onGo} onSettings={onSettings} onDoctor={onDoctor} me={me} onMe={onMe} />
         </DropdownMenuContent>
       </DropdownMenu>
     </nav>
+  );
+}
+
+/** **更多's four** (UX-16): 我的 khor, the landings past the fourth, 设置
+    and 诊断 — the narrow bar's menu and the wide strip's (UX-19), one list
+    in one order. */
+export function MoreMenuItems({
+  more,
+  onGo,
+  onSettings,
+  onDoctor,
+  me,
+  onMe,
+}: {
+  more: NavSeat[];
+  onGo: (key: string) => void;
+  onSettings: () => void;
+  onDoctor: () => void;
+  me: { face: Avatar | null } | null;
+  onMe: () => void;
+}) {
+  return (
+    <>
+      {/* 我的 khor first: this machine's face in the glyphs' box, so
+          its word starts where the others' do. */}
+      <DropdownMenuItem data-nav-me className={MENU_ITEM} onSelect={onMe}>
+        <MachineAvatar face={me?.face ?? null} className="size-nav-glyph" />
+        {gui.my_khor}
+      </DropdownMenuItem>
+      {more.map((s) => (
+        <DropdownMenuItem key={s.key} data-more-landing={s.key} className={MENU_ITEM} onSelect={() => onGo(s.key)}>
+          {s.glyph}
+          {s.name}
+        </DropdownMenuItem>
+      ))}
+      <DropdownMenuItem data-nav-settings className={MENU_ITEM} onSelect={onSettings}>
+        <IconGear />
+        {gui.nav_settings}
+      </DropdownMenuItem>
+      <DropdownMenuItem data-nav-doctor className={MENU_ITEM} onSelect={onDoctor}>
+        <IconPulse />
+        {gui.doctor}
+      </DropdownMenuItem>
+    </>
   );
 }
