@@ -350,11 +350,18 @@ const ECHO_WITHIN: Duration = Duration::from_secs(10);
 /// means the ears work; no echo with a relay answering means they do
 /// not; no relay answering means the network is down and new ears would
 /// not help either.
+///
+/// `homed_before` is whether these ears ever had a home relay. Ears that
+/// never reached one (lecun: no road to the internet from its campus
+/// network, its peers all on the LAN) are never deaf: the relay path was
+/// never working, so it cannot have stopped, and new ears would only find
+/// the same nothing — every 2.5 minutes, all day, on lecun.
 pub async fn ears_heard(
     ep: &iroh::Endpoint,
     relay_map: &[khor_net::endpoint::Relay],
     n0: bool,
     relays: &[String],
+    homed_before: bool,
 ) -> Hearing {
     let home: Vec<iroh::RelayUrl> = ep
         .addr()
@@ -382,11 +389,82 @@ pub async fn ears_heard(
         if echoed {
             return Hearing::Echoed;
         }
+    } else if !homed_before {
+        return Hearing::NoRelay;
     }
     if crate::doctor::any_relay_answers(relays.to_vec()).await {
         Hearing::Unheard
     } else {
         Hearing::NoRelay
+    }
+}
+
+fn has_home_relay(ep: &iroh::Endpoint) -> bool {
+    ep.addr().addrs.iter().any(|t| matches!(t, iroh::TransportAddr::Relay(_)))
+}
+
+/// The shortest and the longest wait between two tries at new ears
+/// (round NET-11): 4, 8, 16 … 30 minutes after the first.
+const DEAF_WAIT_FIRST: Duration = Duration::from_secs(4 * 60);
+const DEAF_WAIT_MOST: Duration = Duration::from_secs(30 * 60);
+
+/// The wait after the `step`-th try in a row.
+fn deaf_wait(step: u32) -> Duration {
+    DEAF_WAIT_FIRST
+        .saturating_mul(1u32 << step.saturating_sub(1).min(8))
+        .min(DEAF_WAIT_MOST)
+}
+
+impl Node {
+    /// Where the tries at new ears are counted: `<tries in a row>
+    /// <when the last was, ms>`. A file, because a kept serve's try is
+    /// its own exit and the count has to outlive it.
+    fn deaf_file(&self) -> std::path::PathBuf {
+        self.root().join(".khor").join("deaf-tries")
+    }
+
+    fn deaf_record(&self) -> Option<(u32, u64)> {
+        let text = std::fs::read_to_string(self.deaf_file()).ok()?;
+        let mut it = text.split_whitespace();
+        Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
+    }
+
+    /// Minutes since the last try and minutes left, while a try would
+    /// come too soon after it.
+    fn deaf_waits(&self, now: u64) -> Option<(u64, u64)> {
+        let (step, at) = self.deaf_record()?;
+        let until = at.saturating_add(deaf_wait(step).as_millis() as u64);
+        (now < until).then(|| (now.saturating_sub(at) / 60_000, (until - now).div_ceil(60_000)))
+    }
+
+    fn deaf_tried(&self, now: u64) {
+        let step = self.deaf_record().map_or(0, |(s, _)| s).saturating_add(1);
+        let _ = std::fs::write(self.deaf_file(), format!("{step} {now}\n"));
+    }
+
+    /// A round went through or the ears echoed: the next silence starts
+    /// from the beginning, and says why again.
+    fn deaf_cleared(&self) {
+        if self.deaf_file().exists() {
+            let _ = std::fs::remove_file(self.deaf_file());
+        }
+        *self.deaf_said.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    /// One line per reason, not one per beat: lecun's log was the same
+    /// two lines every 2.5 minutes, all day.
+    fn say_once(&self, why: &'static str, line: String) {
+        let mut said = self.deaf_said.lock().unwrap_or_else(|p| p.into_inner());
+        if *said != Some(why) {
+            *said = Some(why);
+            eprintln!("{line}");
+        }
+    }
+
+    /// Whether any machine reached this one with a request within `span`.
+    fn reached_within(&self, span: Duration) -> bool {
+        let at = self.reached_at.load(std::sync::atomic::Ordering::Relaxed);
+        at != 0 && crate::now_ms().saturating_sub(at) < span.as_millis() as u64
     }
 }
 
@@ -764,6 +842,8 @@ impl Node {
     /// The endpoint the resident answers on from now (`Node::ears`).
     fn set_ears(&self, ep: &std::sync::Arc<iroh::Endpoint>) {
         *self.ears.lock().unwrap_or_else(|p| p.into_inner()) = Some(ep.clone());
+        // New ears have homed nowhere yet (round NET-11, `ears_heard`).
+        self.ears_homed.store(false, std::sync::atomic::Ordering::Relaxed);
         // **What the relays say about who left** (round NET-5,
         // `wires::Wires::departed`), for as long as these ears live: the
         // subscription ends when the endpoint does.
@@ -1380,19 +1460,52 @@ impl Node {
                         // an answer, not deafness, and replacing ears over
                         // it every two minutes would fix nothing.
                         let heard = if n.self_admitted() { out.as_slice() } else { &[] };
+                        // A round that went through clears the backoff and
+                        // the once-said reason: the next silence is new.
+                        if heard.iter().any(|(_, r)| r.is_ok()) {
+                            n.deaf_cleared();
+                        }
+                        if has_home_relay(&e) {
+                            n.ears_homed.store(true, std::sync::atomic::Ordering::Relaxed);
+                        }
                         if deaf.lock().expect("deaf watch poisoned").observe(heard) {
                             // Claimed before the test, so the beats behind
                             // this one do not ask again; the next look is
                             // another DEAF_AFTER of silence away.
                             *deaf.lock().expect("deaf watch poisoned") = DeafWatch::new();
-                            // **Silence is not deafness** (round NET-11):
-                            // only ears the relay cannot carry an echo to,
-                            // on a machine whose relay answers, are.
-                            if ears_heard(&e, n.relay_map(), n.relays_n0(), n.relays()).await != Hearing::Unheard {
-                                return;
-                            }
                             let stamp =
                                 jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                            // **Silence is not deafness** (round NET-11).
+                            // Not while any machine has reached this one
+                            // lately; not while these ears echo through
+                            // their relay; not on a machine whose relay
+                            // path never worked, or none answers now.
+                            if n.reached_within(DEAF_AFTER) {
+                                n.say_once("reached", msg::serve_silent_reached(&stamp, DEAF_AFTER.as_secs()));
+                                return;
+                            }
+                            let homed = n.ears_homed.load(std::sync::atomic::Ordering::Relaxed);
+                            match ears_heard(&e, n.relay_map(), n.relays_n0(), n.relays(), homed).await {
+                                Hearing::Echoed => {
+                                    n.deaf_cleared();
+                                    n.say_once("echoed", msg::serve_silent_echoed(&stamp));
+                                    return;
+                                }
+                                Hearing::NoRelay => {
+                                    n.say_once("no-relay", msg::serve_silent_no_relay(&stamp));
+                                    return;
+                                }
+                                Hearing::Unheard => {}
+                            }
+                            // **And then not every two minutes**: 4, 8, 16,
+                            // 30 minutes between tries, kept on disk so a
+                            // kept serve's restart does not reset it.
+                            let now = crate::now_ms();
+                            if let Some((ago, left)) = n.deaf_waits(now) {
+                                n.say_once("waits", msg::serve_deaf_waits(&stamp, ago, left));
+                                return;
+                            }
+                            n.deaf_tried(now);
                             // **New ears in place**, for every resumable
                             // serve — the phone, and the app on a desktop
                             // too (round NET-FIX: the Mac app used to exit
@@ -2533,6 +2646,8 @@ impl Node {
             let Ok(seat) = seats.clone().acquire_owned().await else {
                 return Ok(());
             };
+            // A machine reached this one: these ears work (round NET-11).
+            self.reached_at.store(crate::now_ms(), std::sync::atomic::Ordering::Relaxed);
             let (node, ep, remote, mut done) = (self.clone(), ep.clone(), remote.clone(), done.clone());
             tokio::spawn(async move {
                 let _seat = seat;
@@ -9161,6 +9276,18 @@ mod deafness {
         assert!(
             w.observe_at(&all_dead(), t0 + DEAF_AFTER),
             "the budget spent in silence is"
+        );
+    }
+
+    /// Round NET-11: tries at new ears, once the hearing test says they
+    /// are needed, come 4, 8, 16 and then every 30 minutes — never every
+    /// DEAF_AFTER.
+    #[test]
+    fn tries_at_new_ears_back_off_to_half_an_hour() {
+        let min = |m: u64| Duration::from_secs(m * 60);
+        assert_eq!(
+            [1, 2, 3, 4, 5, 40].map(super::deaf_wait),
+            [min(4), min(8), min(16), min(30), min(30), min(30)]
         );
     }
 

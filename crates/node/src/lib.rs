@@ -403,6 +403,14 @@ pub struct Node {
     /// When this node last vouched for itself to each machine, by id
     /// (`link::Node::vouch_to`, round NET-10).
     pub(crate) vouched: Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
+    /// When a request from another machine last arrived, in ms; 0 for
+    /// never (round NET-11: a machine reached is not deaf).
+    pub(crate) reached_at: Arc<std::sync::atomic::AtomicU64>,
+    /// Whether the ears this node answers on ever had a home relay.
+    pub(crate) ears_homed: Arc<std::sync::atomic::AtomicBool>,
+    /// The reason the deaf watch last said it stayed, so it says each
+    /// once (`link::Node::say_once`).
+    pub(crate) deaf_said: Arc<Mutex<Option<&'static str>>>,
     /// The session rows last sent each asker, by its id, with the digest
     /// of that frame (`proto::Response::SessionRowsSince`).
     pub(crate) rows_sent: Arc<Mutex<std::collections::HashMap<String, RowsSent>>>,
@@ -1070,6 +1078,9 @@ impl Node {
             face_seen: Arc::default(),
             nudged: Arc::default(),
             vouched: Arc::default(),
+            reached_at: Arc::default(),
+            ears_homed: Arc::default(),
+            deaf_said: Arc::default(),
             rows_sent: Arc::default(),
             wsfacts: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),

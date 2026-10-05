@@ -1128,6 +1128,11 @@ serve-ears-closed = "[{0}] the endpoint closed under serve and it hears nobody �
 serve-fresh-ears = "[{0}] fresh ears in {1} ms — syncing now"
 serve-fresh-ears-failed = "[{0}] could not get fresh ears: {1}"
 serve-deaf-fresh-ears = "[{0}] unreachable by anyone for {1}s — its ears are probably broken, getting a new pair in place (no restart)"
+# Round NET-11: why a silence was not taken as deafness, said once per reason.
+serve-silent-reached = "[{0}] no round with anyone went through, but a machine reached this one in the last {1}s — its ears work; staying"
+serve-silent-echoed = "[{0}] nobody answers, but this machine hears itself through its relay — the others are away; staying"
+serve-silent-no-relay = "[{0}] nobody answers and no relay answers from here — this machine's network, not its ears; staying"
+serve-deaf-waits = "[{0}] its ears look broken, but it took new ones {1} min ago; next try in {2} min"
 serve-gone-midway = "serve ended while getting fresh ears"
 serve-network-changed = "[{0}] network changed (or woke from sleep) — connections silent for three seconds are let go, then a sync round"
 round-cancelled = "Sync was interrupted"

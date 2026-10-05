@@ -1743,6 +1743,11 @@ serve-ears-closed = "[{0}] 端点在 serve 底下关了，暂时听不见；回�
 serve-fresh-ears = "[{0}] 换了一副新耳朵（{1} 毫秒），马上同步一轮"
 serve-fresh-ears-failed = "[{0}] 没换成新耳朵：{1}"
 serve-deaf-fresh-ears = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了，就地换一副（不退出）"
+# Round NET-11: why a silence was not taken as deafness, said once per reason.
+serve-silent-reached = "[{0}] 这一轮谁都没同步上，但近 {1} 秒内有机器连进来过——耳朵是好的，不换"
+serve-silent-echoed = "[{0}] 谁都没回应，但经中继能听到自己——是别的机器不在，不换耳朵"
+serve-silent-no-relay = "[{0}] 谁都没回应，这里也连不上任何中继——是本机网络的事，不是耳朵坏了，不换"
+serve-deaf-waits = "[{0}] 耳朵像是坏了，但 {1} 分钟前才换过；{2} 分钟后再试"
 serve-gone-midway = "serve 在换新耳朵的半路结束了"
 serve-network-changed = "[{0}] 网络变了（或刚从睡眠醒来）——三秒内没回音的连接收回，然后同步一轮"
 round-cancelled = "同步被中断"

@@ -44,17 +44,17 @@ async fn ears_that_work_echo_and_closed_ones_do_not() {
     let ep = endpoint::bind_with(iroh::SecretKey::generate(), &map, false).await.unwrap();
     answering(&ep);
     homed(&ep).await;
-    assert_eq!(ears_heard(&ep, &map, false, &relays).await, Hearing::Echoed, "healthy ears");
+    assert_eq!(ears_heard(&ep, &map, false, &relays, true).await, Hearing::Echoed, "healthy ears");
 
     // Closed under it, the relay still up: what new ears cure.
     ep.close().await;
-    assert_eq!(ears_heard(&ep, &map, false, &relays).await, Hearing::Unheard, "closed ears, relay up");
+    assert_eq!(ears_heard(&ep, &map, false, &relays, true).await, Hearing::Unheard, "closed ears, relay up");
 
     // Nothing answers on the road out: not deafness, the network.
     let dead = vec![Relay { url: "http://127.0.0.1:9".into(), token: None }];
     let lone = endpoint::bind_with(iroh::SecretKey::generate(), &dead, false).await.unwrap();
     assert_eq!(
-        ears_heard(&lone, &dead, false, &["http://127.0.0.1:9".to_owned()]).await,
+        ears_heard(&lone, &dead, false, &["http://127.0.0.1:9".to_owned()], false).await,
         Hearing::NoRelay,
         "no relay answers"
     );
