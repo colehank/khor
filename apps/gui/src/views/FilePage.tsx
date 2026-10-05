@@ -174,8 +174,9 @@ function useFileVerbs({
     },
     { key: "rename", label: gui.rename_ask, run: () => setRenaming(true) },
     ...(history && onRevision ? [{ key: "history", label: gui.file_history, run: () => setHistoryOpen(true) }] : []),
-    // Blame is a column beside the numbers, which a phone has no room for.
-    ...(history && !coarse
+    // Blame is said at the end of the caret's line (UX-23), which a phone
+    // has room for as well.
+    ...(history
       ? [{ key: "blame", label: blame.on ? gui.blame_hide : gui.blame_show, run: () => blame.set(!blame.on) }]
       : []),
     ...(code?.offered ? [{ key: "code", label: gui.file_in_code, run: () => code.want() }] : []),

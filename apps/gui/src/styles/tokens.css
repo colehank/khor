@@ -2287,7 +2287,6 @@
   --spacing-nav-menu: var(--nav-menu);
   --spacing-list-row: var(--list-row);
   --spacing-list-face: var(--list-face);
-  --spacing-blame-col: var(--blame-col);
   --spacing-deck-strip: var(--deck-strip);
   --spacing-list-head: var(--list-head);
   --spacing-glass-tabs: var(--glass-tabs);
@@ -2727,9 +2726,8 @@
   --nav-menu: 236px;
   --list-row: 56px;
   --list-face: 32px;
-  /* **The blame column** (round UX-4, Mac only): a short hash and an
-   * author on the first line of each run, cut where it runs out. */
-  --blame-col: 22ch;
+  /* ⚠️ 墓碑 (UX-23): `--blame-col`, 22ch, the blame column beside the
+   * line numbers. Blame is the caret's line's end now (`InlineBlame`). */
   /* **The browser's folded row** (round UX-3 §3): a strip with the
    * page's title, the height of one caption line with room. */
   --deck-strip: 24px;

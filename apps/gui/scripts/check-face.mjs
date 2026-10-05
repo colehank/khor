@@ -2193,7 +2193,7 @@ try {
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -24338,7 +24338,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -24765,7 +24765,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25122,7 +25122,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -25399,7 +25399,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26129,7 +26129,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27016,7 +27016,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -28347,6 +28347,115 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "scan") console.log("scan · FACE_ONLY=scan: the other sections are skipped");
+
+  // ── 22) the workspace's file, UX-23 and on ─────────────────────────
+  //
+  //   a. **Blame at the caret line's end** (UX-23 §1, the owner
+  //      2026-10-05: the 22ch column squeezed the code to half the pane;
+  //      GitLens' default instead): no column beside the numbers; with
+  //      blame on, one annotation, on the caret's line, starting after
+  //      the line's text and on its last row, `hash · author · age` where
+  //      there is room and the short hash where there is not; a line not
+  //      committed says the catalog's word; the caret moving moves it.
+  //
+  // `FACE_ONLY=ws` runs this section alone.
+  ws: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "ws") break ws;
+  {
+    const HASH = "7a921aa5c0ffee5c0ffee5c0ffee5c0ffee5c0f";
+    await page.route("**/git_blame", (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          commits: [{ id: HASH, author: "Guohao", when_ms: Date.now() - 3 * 86_400_000, subject: "The notes, first written" }],
+          runs: [{ start: 0, len: 400, commit: 0 }],
+        }),
+      }),
+    );
+    // One line not committed, the last; the three above it are HEAD's.
+    const oneNew = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ hunks: [{ at: 4, lines: 1, was: [] }], more: false }) });
+    await page.route("**/git_diff", oneNew);
+    await page.evaluate(() => localStorage.setItem("khor.blame", "1"));
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    // The peer's workspace (the git one), its tree out (the walk's `openWs`).
+    const openWs = async () => {
+      if (!(await press("[data-ws-row]"))) return false;
+      if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+      return true;
+    };
+    // A code file: its source is the editor (notes.md opens rendered).
+    const opened = (await open("workspaces")) && (await openWs()) && (await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button'));
+    const editor = await until(5_000, async () => (await page.locator("textarea[data-edit]").count()) > 0);
+    await wait(600);
+    /** The caret on a line (1-based), the way a press or an arrow leaves it. */
+    const caretTo = (line) =>
+      page.evaluate((line) => {
+        const ed = document.querySelector("textarea[data-edit]");
+        const at = ed.value.split("\n").slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
+        ed.focus();
+        ed.setSelectionRange(at, at);
+        document.dispatchEvent(new Event("selectionchange"));
+        return JSON.stringify(ed.value.split("\n"));
+      }, line);
+    const read = (line) =>
+      page.evaluate((line) => {
+        const r = (el) => el?.getBoundingClientRect() ?? null;
+        const row = document.querySelector(`[data-file-text] [data-line="${line}"]`);
+        const tags = [...document.querySelectorAll("[data-blame-inline]")];
+        const tag = tags[0] ?? null;
+        // The line's last character: where its text ends, on its last row.
+        const range = document.createRange();
+        range.selectNodeContents(row);
+        // An empty line ends where it starts.
+        const rects = [...range.getClientRects()].filter((b) => b.width > 0);
+        const box = r(row);
+        const end = rects[rects.length - 1] ?? (box && { right: box.left, top: box.top });
+        const t = r(tag);
+        return {
+          columns: document.querySelectorAll("[data-blame], [data-blame-line]").length,
+          tags: tags.length,
+          text: tag?.textContent ?? null,
+          short: tag?.hasAttribute("data-blame-short") ?? null,
+          left: t && end ? Math.round(t.left - end.right) : null,
+          top: t && end ? Math.round(t.top - end.top) : null,
+          code: Math.round(document.querySelector("[data-file-text]")?.getBoundingClientRect().width ?? 0),
+        };
+      }, line);
+    if (!opened || !editor) {
+      fail("probe dead: ws a · one.rs never opened in the peer's workspace");
+    } else {
+      const lines = await caretTo(3);
+      await wait(400);
+      const two = await read(3);
+      await caretTo(4);
+      await wait(400);
+      const three = await read(4);
+      await page.setViewportSize({ width: 760, height: 900 });
+      await wait(600);
+      await caretTo(3);
+      await wait(400);
+      const tight = await read(3);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      console.log(`ws a · blame at the caret (${lines}): line 3 ${JSON.stringify(two)}; line 4 ${JSON.stringify(three)}; at 760 ${JSON.stringify(tight)}`);
+      if (two.columns !== 0) fail(`ws a · ${two.columns} blame column piece(s) beside the numbers — blame is the caret line's end now (UX-23; src/views/FileView.tsx)`);
+      if (two.tags !== 1 || !two.text?.startsWith(`${HASH.slice(0, 7)} · Guohao · `)) {
+        fail(`ws a · the caret's line carries ${two.tags} annotation(s) reading ${JSON.stringify(two.text)} — one, 「${HASH.slice(0, 7)} · Guohao · <age>」`);
+      }
+      if (two.left === null || two.left < 0 || Math.abs(two.top) > 2) fail(`ws a · the annotation stands ${two.left} past the line's end and ${two.top} off its last row — after the text, on its row`);
+      if (three.left === null || three.left < 0 || Math.abs(three.top) > 2) fail(`ws a · on an empty line the annotation stands ${three.left} past its start and ${three.top} off it`);
+      if (three.tags !== 1 || three.text === two.text) fail(`ws a · the caret on line 4 (not committed) left ${three.tags} annotation(s) reading ${JSON.stringify(three.text)} — it moves with the caret and says the catalog's word`);
+      if (tight.tags !== 1 || (!tight.short && tight.text !== two.text) || (tight.short && tight.text !== HASH.slice(0, 7))) {
+        fail(`ws a · at 760 the annotation reads ${JSON.stringify(tight)} — the whole of it where it fits, else the short hash`);
+      }
+    }
+    await page.evaluate(() => localStorage.removeItem("khor.blame"));
+    await page.unroute("**/git_blame");
+    await page.unroute("**/git_diff", oneNew);
+  }
+  }
+  if (process.env.FACE_ONLY === "ws") console.log("ws · FACE_ONLY=ws: the other sections are skipped");
 
   // ── 20) 窄档的会话页：内容在上，标签与操作在下 (iOS 第三步 A, 2026-10-02) ──
   //
