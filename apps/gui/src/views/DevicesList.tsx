@@ -7,7 +7,7 @@ import { EditableName } from "@/components/EditableName";
 import { machineKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
-import { cn } from "@/lib/utils";
+import { band, BAND_INK } from "@/lib/latency";
 import { gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { runningOn } from "@/lib/row-facts";
@@ -285,13 +285,17 @@ export function DevicesList({
       running > 0 ? gui.row_sessions(running) : null,
       cpu !== undefined && cpu !== null && d.hop !== "quiet" ? gui.row_cpu(Math.round(cpu)) : null,
     ].filter((w): w is string => w !== null);
-    // The latency light, in the session halo's two words: reached (the
-    // 完成 green) or not (the idle grey) — never the colour alone: the
-    // number, 本机 or 无法获取 is always beside it.
+    // The latency light, in the app's one scale of bands (UX-26,
+    // `lib/latency`: under 30 ms the 完成 green, under 120 the 出错 amber,
+    // slower the 失败 red, no road `tertiary`'s grey; the 我的 khor dial
+    // reads the same four) — never the colour alone: the number, 本机 or
+    // 无法获取 is always beside it. This machine's own row wears the
+    // fast light: it answers by looking. ⚠️ 墓碑: reached-green / idle-grey.
     // An older resident sends no `rtt_ms` at all: no number, not 「无法获取」.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
     const reached = d.me || rtt !== null || (d.rtt_ms === undefined && d.hop !== "quiet");
     const latency = d.me ? gui.machine_here : rtt !== null ? gui.row_rtt(rtt) : reached ? null : gui.day_unreachable;
+    const rowBand = d.me ? "fast" : reached ? band(rtt) : "none";
     return {
       id: d.id,
       group: d.pinned ? "pin" : "",
@@ -332,11 +336,8 @@ export function DevicesList({
       ) : undefined,
       corners: {
         top: latency && (
-          <span data-row-latency={reached ? "on" : "off"} className="flex items-center gap-xxs">
-            <span
-              aria-hidden="true"
-              className={cn("size-1.5 flex-none rounded-full", reached ? "bg-state-done" : "bg-state-idle")}
-            />
+          <span data-row-latency={reached ? "on" : "off"} data-lat={rowBand} className="flex items-center gap-xxs">
+            <span aria-hidden="true" className="size-1.5 flex-none rounded-full" style={{ background: BAND_INK[rowBand] }} />
             {latency}
           </span>
         ),
