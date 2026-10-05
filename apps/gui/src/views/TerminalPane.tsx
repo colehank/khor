@@ -2939,7 +2939,12 @@ export function TerminalPane({
       {/* xterm's mount. Everything inside is the renderer's own — the
           gates read the buffer through `__xterm`, not this subtree. */}
       <div data-term-scroller ref={scrollerRef} className="h-full w-full overflow-x-hidden overflow-y-auto">
-        <div data-term-stick className="sticky top-0 h-full w-full">
+        {/* **The deck folded** (item 32, UX-13): the box grows by
+            `--fold-band`, a whole number of rows, and the grid moves down by
+            it instead of growing — xterm's mount keeps its height, so the
+            fold refits nothing and resizes no pty. The band above the grid
+            is the terminal's own (its history rows, item 32). */}
+        <div data-term-stick className="sticky top-0 h-full w-full [[data-folded]_&]:pt-[var(--fold-band)]">
           <div
             data-term-screen
             ref={mountRef}
