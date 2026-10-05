@@ -356,24 +356,30 @@ input[type="search"]::-webkit-search-decoration {
 
    **Everything but the face** (`[data-side-face]`) keeps its own inks: a
    quota row's ring and a session's kind mark and halo are drawn there. */
-/* (The redesign: wide only — a narrow list has no picked state.) */
-:root:not([data-narrow]) [data-side-row][data-selected="true"] {
+/* (The redesign: wide only — a narrow list has no picked state.)
+   **The narrow posture is an ancestor's, not the window's** (UX-30): the
+   shell stamps `data-narrow` on the root for a narrow window, and a
+   `NarrowBox` (`hooks/use-narrow.ts`) stamps it on itself for the narrow
+   face mounted inside a wide one — the session's 附栏. So a narrow rule
+   is keyed `[data-narrow] …` and a wide-only one `…:not([data-narrow] *)`;
+   never `:root[data-narrow]`, which would see only the window. */
+[data-side-row][data-selected="true"]:not([data-narrow] *) {
   background-color: var(--fill-strong);
 }
-:root:not([data-narrow]) [data-side-row][data-selected="true"] > :not([data-side-open]),
-:root:not([data-narrow]) [data-side-row][data-selected="true"] [data-side-open] [data-side-text] {
+[data-side-row][data-selected="true"]:not([data-narrow] *) > :not([data-side-open]),
+[data-side-row][data-selected="true"]:not([data-narrow] *) [data-side-open] [data-side-text] {
   --muted-foreground: var(--foreground);
   --tertiary: var(--foreground);
 }
-:root:not([data-narrow]) [data-side-row][data-selected="true"] [data-word-text] {
+[data-side-row][data-selected="true"]:not([data-narrow] *) [data-word-text] {
   color: var(--foreground) !important;
 }
 /* **The hairlines touching a selected or pressed row are not drawn**
    (UX-24, the owner 2026-10-05, UITableView's rule): its own foot and the
    foot of the row above it. The grey block then stands between rows, not
    between two lines that run past it. */
-:root:not([data-narrow]) [data-side-row][data-selected="true"] [data-side-text],
-:root:not([data-narrow]) [data-side-row]:has(+ [data-side-row][data-selected="true"]) [data-side-text],
+[data-side-row][data-selected="true"]:not([data-narrow] *) [data-side-text],
+[data-side-row]:not([data-narrow] *):has(+ [data-side-row][data-selected="true"]) [data-side-text],
 [data-side-row]:active [data-side-text],
 [data-side-row]:has(+ [data-side-row]:active) [data-side-text] {
   border-bottom-color: transparent;
@@ -676,7 +682,7 @@ aside[data-side] {
 [data-sheet-grabber] {
   display: none;
 }
-:root[data-narrow] [data-slot="dialog-content"][data-form] {
+[data-narrow] [data-slot="dialog-content"][data-form] {
   top: auto;
   left: 0;
   right: 0;
@@ -693,16 +699,16 @@ aside[data-side] {
   padding-bottom: calc(var(--page-inset) + var(--safe-bottom));
   transition: transform var(--dur-240) var(--ease-out);
 }
-:root[data-narrow] [data-slot="dialog-content"][data-form][data-sheet-pulling] {
+[data-narrow] [data-slot="dialog-content"][data-form][data-sheet-pulling] {
   transition: none;
 }
-:root[data-narrow] [data-slot="dialog-content"][data-form][data-state="open"] {
+[data-narrow] [data-slot="dialog-content"][data-form][data-state="open"] {
   animation: sheet-up var(--dur-240) var(--ease-out);
 }
-:root[data-narrow] [data-slot="dialog-content"][data-form][data-state="closed"] {
+[data-narrow] [data-slot="dialog-content"][data-form][data-state="closed"] {
   animation: sheet-down var(--dur-180) var(--ease-out) forwards;
 }
-:root[data-narrow] [data-sheet-grabber] {
+[data-narrow] [data-sheet-grabber] {
   display: block;
   position: absolute;
   top: var(--grabber-top);
@@ -724,7 +730,7 @@ aside[data-side] {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  :root[data-narrow] [data-slot="dialog-content"][data-form] {
+  [data-narrow] [data-slot="dialog-content"][data-form] {
     animation: none !important;
     transition: none;
   }
@@ -739,8 +745,8 @@ aside[data-side] {
    edge — and the row stays at the top while the form scrolls under it,
    above the soft keyboard with the sheet. A wide window keeps the
    dialog's footer where a Mac puts it. */
-:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"],
-:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
+[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"],
+[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
   grid-row: 1;
   grid-column: 1;
   position: sticky;
@@ -748,12 +754,12 @@ aside[data-side] {
   align-self: center;
   margin: 0;
 }
-:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
+[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] {
   justify-content: space-between;
   background: var(--popover);
   z-index: 1;
 }
-:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] {
+[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] {
   z-index: 2;
   /* The title lies over the row the buttons stand in; it takes no
      press, and it keeps clear of them. */
@@ -761,7 +767,7 @@ aside[data-side] {
   text-align: center;
   padding-inline: calc(2 * var(--touch));
 }
-:root[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] [data-slot="dialog-title"] {
+[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] [data-slot="dialog-title"] {
   font-size: var(--text-headline);
   line-height: var(--text-headline--line-height);
   overflow: hidden;
@@ -1891,7 +1897,7 @@ aside[data-side] {
 
 /* The narrow face's page edge: its head starts after the platform's
    corner at the list's own 20, and the page under it matches. */
-:root[data-narrow] {
+[data-narrow] {
   --page-inset: var(--gap-group);
 }
 
@@ -2035,7 +2041,7 @@ aside[data-side] {
 
 /* The workspace's sessions column stands at the pane's right edge: its
    head's glass ends on the content's right line (W-V5). */
-:root:not([data-narrow]) [data-ws-sessions] [data-pane-bar] {
+[data-ws-sessions]:not([data-narrow] *) [data-pane-bar] {
   padding-inline-end: var(--page-inset);
 }
 
@@ -2058,7 +2064,7 @@ aside[data-side] {
 /* **A form on the narrow face is one column** (the audit fix plan F4.5;
    N12): each question's label over its control, every control on the
    same left edge. */
-:root[data-narrow] [data-form-grid] {
+[data-narrow] [data-form-grid] {
   grid-template-columns: minmax(0, 1fr);
   row-gap: var(--gap-in);
 }
@@ -2067,10 +2073,10 @@ aside[data-side] {
    after the first opens `gap-base` under the last one. ⚠️ 墓碑: one
    `gap-xxs` for both, so the groups ran together and a note sat as
    close to the next label as to its own control. */
-:root[data-narrow] [data-form-grid] > [data-form-label]:not(:first-child) {
+[data-narrow] [data-form-grid] > [data-form-label]:not(:first-child) {
   margin-top: calc(var(--gap-base) - var(--gap-in));
 }
-:root[data-narrow] [data-form-grid] > * {
+[data-narrow] [data-form-grid] > * {
   grid-column: 1 / -1;
   text-align: start;
 }
