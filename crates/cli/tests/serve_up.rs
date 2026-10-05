@@ -13,8 +13,8 @@
 //!
 //! Nothing here reaches a real store: `HOME` is a scratch directory, the
 //! identity in it is minted for the test, and the "serve" the script
-//! starts is a stand-in that only writes down the `KHOR_HOME` it was
-//! handed.
+//! starts is a stand-in that only writes down the store it would serve:
+//! the `KHOR_HOME` it was handed, or else what `khor root` works out.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -75,7 +75,7 @@ fn home_with(tag: &str, serve_up: &str) -> Scratch {
     );
     let bin = home.0.join(".local").join("bin");
     let stand_in = format!(
-        "#!/bin/sh\ncase \"$1\" in\nroot) exec '{}' root ;;\nserve) printf '%s' \"$KHOR_HOME\" > \"$HOME/started-with\"; exec sleep 30 ;;\nesac\nexit 2\n",
+        "#!/bin/sh\ncase \"$1\" in\nroot) exec '{0}' root ;;\nserve) printf '%s' \"${{KHOR_HOME-unset}}\" > \"$HOME/given\"; printf '%s' \"${{KHOR_HOME:-$('{0}' root)}}\" > \"$HOME/started-with\"; exec sleep 30 ;;\nesac\nexit 2\n",
         env!("CARGO_BIN_EXE_khor")
     );
     fs::write(bin.join("khor"), stand_in).unwrap();
@@ -156,6 +156,10 @@ fn the_pull_up_onset_ships_sends_the_owner_to_its_own_store() {
         home.0,
         "the machine that owns $HOME serves $HOME, not a side room of its own"
     );
+    // **And it names no store itself** (round NET-11): khor works out its
+    // own room, so every start names it one way and a second start on the
+    // same room is seen as a second serve (turing ran two trees).
+    assert_eq!(fs::read_to_string(home.0.join("given")).unwrap(), "unset");
 }
 
 /// The control, and the field bug in one line: the script the fleet
