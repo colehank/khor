@@ -73,7 +73,7 @@ import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { lasted } from "@/words";
-import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
+import { setSessionSide, useSessionSide } from "@/hooks/use-session-side";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
@@ -100,9 +100,10 @@ import { draftCount, watchDrafts } from "@/lib/drafts";
 import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
-import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
+import { type Day } from "@/views/DayStrip";
 import { DetailPane, isTerminal } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
+import { SIDE_ID, SessionSide } from "@/views/SessionSide";
 import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
@@ -1659,9 +1660,10 @@ export default function App() {
   /** One session's day as the pane holds it (`DayStrip` `Day`): `null`
       until the first answer, then its runs. */
   const dayOf = (id: string): Day => (days === null ? null : (days[id] ?? []));
-  // Whether the day is asked for under the tabs (`use-day-shown`): the
-  // front tab is the switch, and says so on hover.
-  const dayShown = useDayShown();
+  /** **The front tab's press opens the session's 附栏** (UX-30: the
+      phone's pill gesture, docked). One memory per session
+      (`use-session-side`): open, width, seat. */
+  const side = useSessionSide(selected);
   // The open sessions as the strip paints them: each tab wears its
   // row's title and the row's own identity assembly (`SessionFace` —
   // face, state halo, kind mark), the same facts in the same clothes. A
@@ -1671,16 +1673,16 @@ export default function App() {
     () =>
       openTabs.map((id) => {
         const r = rows.find((row) => row.id === id);
-        // **Pressed again, the tab in front shows or hides its day**
-        // (2026-09-29:「点击标签后显示吧。悬停的时候加一个提示」). Read
-        // by the strip only on the tab in front; the words and whether
-        // there is anything to open are the day's (`daySwitch`).
-        const sw = daySwitch(days === null ? null : (days[id] ?? []), dayShown, () => setDayShown(!dayShown));
+        // **Pressed again, the tab in front opens or closes its 附栏**
+        // (UX-30; ⚠️ 墓碑 2026-09-29 → 10-06: it showed or hid the day —
+        // 「点击标签后显示吧」 — which is the column's ruler now). Read by
+        // the strip only on the tab in front, so the front tab's memory
+        // is the one consulted.
         const again = {
-          hint: sw.hint,
-          expanded: sw.expanded,
-          controls: sw.expanded ? DAY_ROW_ID : undefined,
-          toggle: sw.toggle,
+          hint: side.open ? gui.side_hide : gui.side_show,
+          expanded: side.open,
+          controls: side.open ? SIDE_ID : undefined,
+          toggle: () => setSessionSide(id, { open: !side.open }),
         };
         return r
           ? {
@@ -1727,7 +1729,7 @@ export default function App() {
           : { id, label: id, face: null, path: "", again };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [openTabs, rows, days, dayShown, actsVersion],
+    [openTabs, rows, side, actsVersion],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
@@ -2077,6 +2079,48 @@ export default function App() {
     }, onPage);
   };
 
+  /** **Where the session is**, for the column's 工作区 seat (UX-30 §2:
+      the OSC 7 cwd, else where the session started) — read off the
+      terminal on screen, as the pill's tap reads it (`placeSheet`), when
+      the column opens on it or the session changes. */
+  const [sideDir, setSideDir] = useState<{ session: string; dir: string | null } | null>(null);
+  useEffect(() => {
+    if (narrow || !side.open || !selectedRow) return;
+    const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
+      | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
+      | null;
+    setSideDir({ session: selectedRow.id, dir: box?.__marks?.cwd() ?? selectedRow.place ?? null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrow, side.open, selectedRow?.id]);
+  /** The column's seat, composed here because the narrow pages read the
+      shell's own state (`SessionSide` is the box and the capsule). */
+  const sideSeat = (): ReactNode => {
+    if (!selectedRow) return null;
+    const here = devices.find((d) => d.name === selectedRow.home)?.me ?? !selectedRow.source;
+    switch (side.seat) {
+      case "workspace": {
+        const dir = sideDir?.session === selectedRow.id ? sideDir.dir : (selectedRow.place ?? null);
+        return <MachineFiles key={`${selectedRow.home} ${dir ?? ""}`} machine={selectedRow.home} here={here} startDir={dir} />;
+      }
+      default:
+        return null;
+    }
+  };
+  const sessionSide =
+    !narrow && side.open && selectedRow ? (
+      <SessionSide
+        key={selectedRow.id}
+        session={selectedRow.id}
+        width={side.w}
+        seat={side.seat}
+        onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
+        onWidth={(w) => setSessionSide(selectedRow.id, { w })}
+        onClose={() => setSessionSide(selectedRow.id, { open: false })}
+      >
+        {sideSeat()}
+      </SessionSide>
+    ) : undefined;
+
   const detail = sessions ? (
     // The conversation in this pane is painted inside the workspace it
     // is running in, as far as its paths are concerned (2026-09-18
@@ -2088,6 +2132,7 @@ export default function App() {
     <DetailPane
       row={selectedRow}
       narrow={narrow}
+      side={sessionSide}
       openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}

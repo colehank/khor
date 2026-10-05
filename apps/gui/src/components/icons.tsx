@@ -136,6 +136,10 @@ const LIVE = {
   // pencil laid on the diagonal (round), and the tray with its arrow.
   pencil: fit(1.99, 1.95, 12.06), // round
   share: fit(1.2, 0.9, 13.6),
+  // 最近's clock (UX-30, 2026-10-06), on the 24 canvas beside the
+  // landings' glyphs: a ring of r 8.5 — the rack's 17 across — computed
+  // rather than scanned (ink = 17 + the line, at the round share).
+  recent: fit(1.98, 1.98, 20.05), // round
 } as const;
 
 /**
@@ -333,6 +337,18 @@ export function IconBrowser({ className }: IconProps) {
           <ellipse cx="12" cy="12" rx="8.1" ry="2.9" transform="rotate(-20 12 12)" />
         </>
       )}
+    </RailGlyph>
+  );
+}
+
+/** 最近 = a clock face: the ring, and the two hands from its centre
+    (UX-30's first seat, the one mixed newest-first list). A line glyph
+    like search's — nothing solid, so its ring is what gives it weight. */
+export function IconRecent({ className }: IconProps) {
+  return (
+    <RailGlyph className={className} live={LIVE.recent}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M12 7.4V12.3L15.1 14.1" />
     </RailGlyph>
   );
 }

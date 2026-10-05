@@ -18,7 +18,7 @@
 // is portaled to `document.body` (dialogs, menus) stays the window's —
 // a sheet from inside the column is still a dialog on a wide face —
 // and those read the root attribute directly.
-import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, createElement, useContext, useEffect, useState, type ComponentPropsWithRef } from "react";
 
 export const NARROW_QUERY = "(max-width: 759px)";
 
@@ -46,16 +46,12 @@ export function useNarrow(): boolean {
  * The narrow face in a box. Everything inside lays itself out as on
  * the phone, whatever the window's width: `useNarrow` answers `true`
  * and the element wears `data-narrow` for the stylesheets. The box is
- * a block that fills what it is given (`className` for the rest).
+ * a `div` and takes a `div`'s props (`ref` among them, React 19).
  */
-export function NarrowBox({
-  className,
-  children,
-  ...rest
-}: { className?: string; children?: ReactNode } & Record<`data-${string}`, string | undefined>) {
+export function NarrowBox({ children, ...rest }: ComponentPropsWithRef<"div">) {
   return createElement(
     NarrowContext.Provider,
     { value: true },
-    createElement("div", { "data-narrow": "", "data-narrow-box": "", className, ...rest }, children),
+    createElement("div", { "data-narrow": "", "data-narrow-box": "", ...rest }, children),
   );
 }

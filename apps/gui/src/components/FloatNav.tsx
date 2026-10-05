@@ -29,8 +29,10 @@ import { cn } from "@/lib/utils";
 export type NavSeat = { key: string; name: string; glyph: ReactNode; badge?: number };
 
 // A seat is `--nav-item` wide and gives way when five do not fit the
-// screen (UX-11): the bar never runs past the screen's gaps.
-const SEAT =
+// screen (UX-11): the bar never runs past the screen's gaps. Exported for
+// the session's 附栏 (`views/SessionSide`), whose capsule is this bar at
+// the top of its box — one seat, drawn twice, not two seats.
+export const NAV_SEAT =
   "relative flex h-full w-nav-item min-w-0 shrink flex-col items-center justify-center gap-px rounded-full text-foreground " +
   "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring " +
   "[&_svg]:size-nav-glyph data-[on=true]:glass-sel data-[on=true]:text-[var(--rail-on-ink)]";
@@ -45,7 +47,7 @@ function Seat({ seat, on, onClick }: { seat: NavSeat; on: boolean; onClick: () =
       data-on={on}
       aria-current={on ? "page" : undefined}
       onClick={onClick}
-      className={SEAT}
+      className={NAV_SEAT}
     >
       {seat.glyph}
       {/* One weight in both states (F5.2; SYS-12): the chosen piece and the
@@ -127,7 +129,7 @@ export function FloatNav({
             data-nav-more
             data-on={moreOn}
             aria-label={gui.rail_more}
-            className={cn(SEAT, "data-[state=open]:glass-sel")}
+            className={cn(NAV_SEAT, "data-[state=open]:glass-sel")}
           >
             <IconMore />
             <span className="text-nav-label">{gui.rail_more}</span>

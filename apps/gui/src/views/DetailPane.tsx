@@ -222,9 +222,16 @@ export function DetailPane({
   empty,
   tabs,
   openIds,
+  side,
 }: {
   row: SessionRow | null;
   narrow: boolean;
+  /** **The session's 附栏** (UX-30): the narrow face docked at the pane's
+      right edge, beside the session — a terminal or a conversation —
+      which gives up the column's width (a terminal refits as the seam
+      moves). Composed by the shell (`views/SessionSide`); absent on the
+      narrow face, where the phone's sheet is the same object. */
+  side?: ReactNode;
   onBack: () => void;
   /** This session's last day (`DayStrip`), drawn as a band under the
       tabs — the one place it is shown (2026-09-02:「session的状态bar不要
@@ -507,7 +514,10 @@ export function DetailPane({
           </div>
         </div>
       )}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* The session and, beside it, its 附栏 (UX-30): a row, the session
+          taking what the column leaves. */}
+      <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {terminalShown ? null : row && row.kind === "chat" ? (
         // A machine's conversation — the stream `khor log` prints,
         // with the composer `tell` fills. Keyed so switching machines
@@ -615,6 +625,8 @@ export function DetailPane({
           </div>
         );
       })}
+      </div>
+      {side}
       </div>
       {/* **In the bar's screen the day hangs at the foot** (2026-10-02):
           the tab that opens it is under the session there, so the band
