@@ -827,16 +827,53 @@ impl Node {
     /// The one bind that serves this machine: this key, these relays.
     /// Also what [`Self::fresh_ears`] binds again.
     async fn bind_ears(&self) -> Result<std::sync::Arc<iroh::Endpoint>, String> {
-        Ok(std::sync::Arc::new(
-            endpoint::bind_preferring(
+        let preferred = self.preferred_relay();
+        let bind = |ports| {
+            endpoint::bind_pinned(
                 self.secret_key().clone(),
                 self.relay_map(),
                 self.relays_n0(),
-                self.preferred_relay().as_deref(),
+                preferred.as_deref(),
+                ports,
             )
-            .await
-            .map_err(|e| e.to_string())?,
-        ))
+        };
+        // **The ports these ears had last time** (round NET-11), so a
+        // restart leaves this machine's row as it was. Taken — by the old
+        // ears still closing, or by somebody else — any port, as before.
+        let kept = self.kept_ports();
+        let ep = match kept {
+            Some(ports) => match bind(ports).await {
+                Ok(ep) => ep,
+                Err(_) => bind((0, 0)).await.map_err(|e| e.to_string())?,
+            },
+            None => bind((0, 0)).await.map_err(|e| e.to_string())?,
+        };
+        self.keep_ports(&ep);
+        Ok(std::sync::Arc::new(ep))
+    }
+
+    /// `.khor/ports`: `<v4> <v6>`, the UDP ports the last ears bound.
+    fn ports_file(&self) -> std::path::PathBuf {
+        self.root().join(".khor").join("ports")
+    }
+
+    fn kept_ports(&self) -> Option<(u16, u16)> {
+        let text = fs::read_to_string(self.ports_file()).ok()?;
+        let mut it = text.split_whitespace();
+        Some((it.next()?.parse().ok()?, it.next()?.parse().ok()?))
+    }
+
+    fn keep_ports(&self, ep: &iroh::Endpoint) {
+        let (mut v4, mut v6) = (0, 0);
+        for s in ep.bound_sockets() {
+            match s {
+                std::net::SocketAddr::V4(a) => v4 = a.port(),
+                std::net::SocketAddr::V6(a) => v6 = a.port(),
+            }
+        }
+        if v4 != 0 && self.kept_ports() != Some((v4, v6)) {
+            let _ = fs::write(self.ports_file(), format!("{v4} {v6}\n"));
+        }
     }
 
     /// The endpoint the resident answers on from now (`Node::ears`).

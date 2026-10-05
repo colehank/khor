@@ -414,7 +414,39 @@ pub async fn bind_preferring(
     n0: bool,
     preferred: Option<&str>,
 ) -> Result<iroh::Endpoint> {
+    bind_pinned(secret, relays, n0, preferred, (0, 0)).await
+}
+
+/// [`bind_preferring`] on the UDP ports `(v4, v6)` it was on last time
+/// (round NET-11); `0` for either is any free port, as iroh binds by
+/// default. **Fails when a port is taken**: the caller binds again on
+/// any port, which is what every start did before.
+///
+/// Why: the device table carries each machine's addresses with their
+/// ports, and every start on a fresh port wrote the row again — a block
+/// every machine copies and a writer more in every version vector
+/// (lecun, 10-05: about 600 rewrites of its own row). A port kept across
+/// restarts also keeps the hints the peers hold true. Field practice:
+/// Tailscale's tailscaled keeps one UDP port (41641 by default),
+/// WireGuard a fixed `ListenPort`, Syncthing 22000.
+pub async fn bind_pinned(
+    secret: iroh::SecretKey,
+    relays: &[Relay],
+    n0: bool,
+    preferred: Option<&str>,
+    (v4, v6): (u16, u16),
+) -> Result<iroh::Endpoint> {
     let mut b = builder(secret, relays, n0, on_the_segment())?;
+    if (v4, v6) != (0, 0) && std::env::var_os(RELAY_ONLY_ENV).is_none() {
+        use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+        b = b
+            .clear_ip_transports()
+            .bind_addr(SocketAddr::from((Ipv4Addr::UNSPECIFIED, v4)))?
+            .bind_addr_with_opts(
+                SocketAddr::from((Ipv6Addr::UNSPECIFIED, v6)),
+                iroh::endpoint::BindOpts::default().set_is_required(false),
+            )?;
+    }
     let preferred = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok());
     let successors = successors(relays);
     if preferred.is_some() || !successors.is_empty() {
