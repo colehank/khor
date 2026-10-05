@@ -13,7 +13,10 @@ use khor_net::endpoint;
 use std::time::Duration;
 
 fn env_or(name: &str, default: u64) -> u64 {
-    std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 /// This process's user plus system time, in seconds, as `ps` reads it.
@@ -23,15 +26,21 @@ fn cpu_seconds() -> f64 {
         .output()
         .expect("ps runs");
     let text = String::from_utf8_lossy(&out.stdout);
-    text.trim()
-        .split(':')
-        .fold(0.0, |acc, part| acc * 60.0 + part.parse::<f64>().unwrap_or(0.0))
+    text.trim().split(':').fold(0.0, |acc, part| {
+        acc * 60.0 + part.parse::<f64>().unwrap_or(0.0)
+    })
 }
 
 /// Sockets this process holds on UDP 5353, as `lsof` reads them.
 fn mdns_sockets() -> usize {
     let out = std::process::Command::new("lsof")
-        .args(["-nP", "-a", "-p", &std::process::id().to_string(), "-iUDP:5353"])
+        .args([
+            "-nP",
+            "-a",
+            "-p",
+            &std::process::id().to_string(),
+            "-iUDP:5353",
+        ])
         .output()
         .expect("lsof runs");
     String::from_utf8_lossy(&out.stdout).lines().skip(1).count()
@@ -59,7 +68,10 @@ async fn mdns_cost_of_a_long_lived_process() {
     for _ in 0..3 {
         let before = cpu_seconds();
         tokio::time::sleep(Duration::from_secs(secs)).await;
-        windows.push(format!("{:.1} %", (cpu_seconds() - before) * 100.0 / secs as f64));
+        windows.push(format!(
+            "{:.1} %",
+            (cpu_seconds() - before) * 100.0 / secs as f64
+        ));
     }
     println!(
         "mdns_cost: mdns {mdns}, binds closed {binds}, sockets on 5353 {sockets}, cpu per {secs} s window: {}",
