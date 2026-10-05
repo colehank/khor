@@ -97,6 +97,9 @@ export function holdsTmuxHistory(o: {
   outOfReach: () => void;
   /** The person went up into the history, or came back to the bottom. */
   moved: (up: boolean) => void;
+  /** The deck is folded (item 32): the band shows the history's newest
+      lines, so a quiet after output reads even at the bottom. */
+  folded?: () => boolean;
 }): {
   active: () => boolean;
   /** The history xterm while the person is up in it: what a long press
@@ -107,6 +110,9 @@ export function holdsTmuxHistory(o: {
   shown: (on: boolean) => void;
   /** The attach has sized the pane for this face: reads may begin. */
   joined: () => void;
+  /** The history's xterm while it holds the scroller (item 32's band
+      reads its lines), else null. */
+  terminal: () => Terminal | null;
   /** The pane in front, as the newest read found it (`null` before one). */
   pane: () => { pane: string; mouse: boolean; alternate: boolean } | null;
   stop: () => void;
@@ -277,7 +283,8 @@ export function holdsTmuxHistory(o: {
   };
   const wrote = live.onWriteParsed(() => {
     behind = true;
-    if (up()) quietThen();
+    // Up in it, or folded: the band at the bottom shows its newest lines.
+    if (up() || (on && o.folded?.())) quietThen();
   });
   // Another pane or window in front: tmux retitles khor's client with the
   // pane's id (`Tmux::grouped_attach_argv`), and the next read is that
@@ -319,6 +326,7 @@ export function holdsTmuxHistory(o: {
       if (visible) quietThen();
     },
     pane: () => held,
+    terminal: () => (on ? history : null),
     stop: () => {
       stopped = true;
       drop();
