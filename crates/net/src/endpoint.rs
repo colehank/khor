@@ -288,10 +288,23 @@ impl iroh::address_lookup::AddressLookupBuilder for Prebuilt {
 /// truth about where that machine is *now*, and a union would keep a
 /// port it has since moved off. Expired removes — a neighbour that left
 /// the wire should stop being dialled as if it were on it.
-fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup) {
+///
+/// **The task holds the stream, not the service.** A copy of the service
+/// kept here would keep it alive after its endpoint closed, and the stream
+/// ends only when the service does: every bind used to leave one behind,
+/// answering and decoding on 5353 for the life of the process (the owner's
+/// app held 50 sockets there three hours after launch, term-mdns.md). With
+/// the copy dropped once subscribed, the endpoint's is the last one, and
+/// closing the endpoint ends the service, the stream and this task.
+fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup, id: iroh::EndpointId) {
     tokio::spawn(async move {
         use n0_future::StreamExt;
+        #[cfg(test)]
+        let _following = tests::Following::new(id);
+        #[cfg(not(test))]
+        let _ = id;
         let mut events = mdns.subscribe().await;
+        drop(mdns);
         while let Some(event) = events.next().await {
             let Ok(mut map) = NEARBY.lock() else { return };
             match event {
@@ -430,7 +443,7 @@ fn builder(
         let built = iroh_mdns_address_lookup::MdnsAddressLookup::builder()
             .build(secret.public())
             .context(msg::no_local_lookup())?;
-        follow(built.clone());
+        follow(built.clone(), secret.public());
         Some(built)
     } else {
         None
@@ -735,6 +748,64 @@ impl Ticket {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The [`follow`] tasks alive, by the key whose mDNS service each
+    /// reads: a guard held for as long as the task runs.
+    static FOLLOWING: std::sync::LazyLock<
+        std::sync::Mutex<std::collections::HashMap<iroh::EndpointId, usize>>,
+    > = std::sync::LazyLock::new(Default::default);
+
+    pub(super) struct Following(iroh::EndpointId);
+
+    impl Following {
+        pub(super) fn new(id: iroh::EndpointId) -> Self {
+            *FOLLOWING.lock().unwrap().entry(id).or_default() += 1;
+            Self(id)
+        }
+
+        fn alive(id: &iroh::EndpointId) -> usize {
+            FOLLOWING.lock().unwrap().get(id).copied().unwrap_or(0)
+        }
+    }
+
+    impl Drop for Following {
+        fn drop(&mut self) {
+            if let Some(n) = FOLLOWING.lock().unwrap().get_mut(&self.0) {
+                *n -= 1;
+            }
+        }
+    }
+
+    /// **A closed endpoint takes its mDNS service with it.** `follow` used
+    /// to hold a copy of the service for as long as its event stream ran,
+    /// and the stream ran for as long as the service lived: every bind
+    /// left a service behind, answering and decoding on 5353 for the
+    /// life of the process (term-mdns.md: the owner's app held 50 sockets
+    /// on 5353 three hours after launch).
+    #[tokio::test]
+    async fn a_closed_endpoint_takes_its_mdns_with_it() {
+        let secret = iroh::SecretKey::generate();
+        let id = secret.public();
+        let relays = [Relay::bare("http://203.0.113.9:3340")];
+        let ep = builder(secret, &relays, false, true).unwrap().bind().await.unwrap();
+        let until = |want: usize| async move {
+            for _ in 0..100 {
+                if Following::alive(&id) == want {
+                    return true;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            false
+        };
+        assert!(until(1).await, "control: the bind's service is followed");
+        ep.close().await;
+        drop(ep);
+        assert!(
+            until(0).await,
+            "the service outlived its endpoint: {} follower(s) left",
+            Following::alive(&id)
+        );
+    }
 
     /// Stored hints carry both road shapes mixed; garbage is skipped,
     /// never fatal — hints come from tickets and human-set env vars.
