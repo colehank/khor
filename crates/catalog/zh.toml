@@ -1409,6 +1409,8 @@ not-in-roster = "这台机器不在名单上：在等持根的机器批准，或
 words-need-confirm = "恢复词能找回整张网的根钥匙，谁看见谁就能把自己的机器签进你的网。确认要看，把本机的名字原样打一遍：khor root words {0}"
 words-names-another = "「{0}」不是本机的名字。要看恢复词，打本机的名字：khor root words {1}"
 peer-not-in-roster = "那台机器不在名单上（待批或已撤销），不和它同步"
+# Round NET-10: a machine whose table lost its rows is taken back only on a roster signed by its own root.
+vouch-refused = "没有收回：那份名单不是这张网的、比这里的旧、已过期，或者没有同时写着两台机器"
 pair-two-roots = "两边各是一张网、各有自己的根钥匙，配对不会把两张网合成一张。要把那台并进来，先在它上面 khor leave，再用这张票配对"
 root-not-here = "这台机器不持根钥匙。根钥匙在持根的机器上；用恢复词也能在这台上找回：khor root recover <24 个词>"
 approve-needs-root = "批准只能在持根的机器上做，这台不持根。在持根的那台上跑 khor pending 和 khor approve"

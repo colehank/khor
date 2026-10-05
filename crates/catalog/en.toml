@@ -974,6 +974,8 @@ not-in-roster = "This machine is not on the roster: it is waiting for the root h
 words-need-confirm = "The recovery words restore the whole network's root key; anyone who sees them can sign their own machine into your network. To see them, type this machine's name back: khor root words {0}"
 words-names-another = "\"{0}\" is not this machine's name. To see the recovery words, type this machine's name: khor root words {1}"
 peer-not-in-roster = "That machine is not on the roster (waiting or revoked); not syncing with it"
+# Round NET-10: a machine whose table lost its rows is taken back only on a roster signed by its own root.
+vouch-refused = "Not taken back: that roster is not this network's, is older than the one here, is stale, or does not name both machines"
 pair-two-roots = "Each side is its own network with its own root key; pairing does not merge two networks. To bring that machine in, run khor leave on it first, then pair with this ticket"
 root-not-here = "This machine does not hold the root key. The root holder does; the recovery words can restore it here too: khor root recover <24 words>"
 approve-needs-root = "Approving happens on the machine that holds the root, and this one does not. Run khor pending and khor approve there"

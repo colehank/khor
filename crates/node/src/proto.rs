@@ -666,6 +666,23 @@ pub enum Request {
     /// changed; an older khor has no request for that reading and skips
     /// it. Answered as [`Response::WorkspaceFacts`].
     WorkspaceFacts,
+    /// **A machine the roster names, vouching for itself to one whose
+    /// table lost it** (round NET-10). `roster` is the asker's newest
+    /// signed roster; `name` and `addrs` are its row, as `Pair` carries
+    /// them. The root's signature is the admission here, as the token is
+    /// for `Pair`: the answerer takes it only when the roster verifies
+    /// under its own anchor, is fresh, is not older than its own, and
+    /// admits both machines (`Node::take_vouch`). Then the asker's row
+    /// and the roster are written, and the next round carries the rest.
+    ///
+    /// Sent only after the answerer refused a round's opening. **A new
+    /// variant**: a khor that predates it refuses the frame, and the
+    /// asker's round fails as it did before, with the refusal's words.
+    Vouch {
+        name: String,
+        addrs: Vec<String>,
+        roster: serde_bytes::ByteBuf,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -993,6 +1010,9 @@ pub enum Response {
     },
     /// [`Request::WorkspaceFacts`]'s answer, by path.
     WorkspaceFacts { facts: Vec<khor_core::WorkspaceFact> },
+    /// [`Request::Vouch`] taken: the asker's row and the roster are in
+    /// the answerer's table.
+    Vouched,
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
