@@ -94,12 +94,20 @@ export function followVisualViewport(): () => void {
   const vv = window.visualViewport;
   if (!vv) return () => {};
   const root = document.documentElement;
+  // The pan WebKit made to show the field, taken back: the field is in
+  // view without it once the shell is as tall as what is left, and a
+  // panned shell is a page that scrolled. **Once after the keyboard rose
+  // — the focus's late beat, and the settled state flipping — never on
+  // every visual-viewport scroll** (the owner, 2026-10-05, iPhone build
+  // 5: 「只要在输入框往上滑，就会抖动」): a drag on the composer or the
+  // deck was taken by the webview's own scroll view, which bounced while
+  // this took the pan back frame by frame, and the two fought until the
+  // finger lifted. The bounce is off on the phone (`hold_the_face_still`).
+  const takeBack = () => {
+    if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
+  };
   const apply = () => {
     steppedAt = performance.now();
-    // The pan WebKit made to show the field, taken back first: the field
-    // is in view without it once the shell is as tall as what is left,
-    // and a panned shell is a page that scrolled.
-    if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
     const covered = keyboardCover();
     // A pinch shrinks the visual viewport too, and that is somebody
     // looking closer, not a keyboard: only an unzoomed page counts.
@@ -119,15 +127,21 @@ export function followVisualViewport(): () => void {
       const now = root.hasAttribute("data-keyboard");
       if (now === shown) return;
       shown = now;
+      takeBack();
       window.dispatchEvent(new Event("khor:soft-keyboard"));
     }, SETTLED_MS);
   };
   apply();
+  takeBack();
   vv.addEventListener("resize", apply);
   vv.addEventListener("scroll", apply);
   // Focus moves before the keyboard has finished rising on some
   // versions; asking again a beat later costs nothing.
-  const late = () => window.setTimeout(apply, 350);
+  const late = () =>
+    window.setTimeout(() => {
+      apply();
+      takeBack();
+    }, 350);
   window.addEventListener("focusin", late);
   window.addEventListener("focusout", late);
   return () => {

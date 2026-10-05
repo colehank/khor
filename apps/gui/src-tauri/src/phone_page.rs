@@ -246,7 +246,10 @@ pub fn open(
                         load(&page.view, url);
                     }
                     let _: () = msg_send![&*page.view, setFrame: rect];
-                    let _: () = msg_send![&*page.view, setHidden: false];
+                    // Shown only if the face still wants it: the person
+                    // may have left while the borrow dialled
+                    // (`page_wanted`).
+                    let _: () = msg_send![&*page.view, setHidden: !crate::page_is_wanted(tab)];
                     return true;
                 }
                 unwatch(page);
@@ -293,6 +296,9 @@ pub fn open(
         }
         // The page's own back and forward, as Safari's edge swipes.
         let _: () = msg_send![&*view, setAllowsBackForwardNavigationGestures: true];
+        // Attached hidden when the face stopped wanting it during the
+        // dial (`page_wanted`); `show_page` brings it back.
+        let _: () = msg_send![&*view, setHidden: !crate::page_is_wanted(tab)];
         let parent: *mut AnyObject = msg_send![face, superview];
         let _: () = msg_send![parent, addSubview: &*view];
         load(&view, url);

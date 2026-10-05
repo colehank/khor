@@ -54,6 +54,11 @@ const HANGS_FROM_ABOVE = 48;
 const OVERLAYS =
   '[data-radix-popper-content-wrapper],[data-omni-menu],[role="dialog"],[role="tooltip"],[role="menu"]';
 
+/** **Which pane holds each tab's page now**: the open errand of a pane
+    that has gone hides the page it arrived with only when no pane has
+    taken the tab up since. */
+const showing = new Map<string, object>();
+
 /** What the open action is doing or has done, said in place. */
 type Opening = { url: string; state: "opening" | "opened" | "failed"; word: string };
 
@@ -255,6 +260,8 @@ export function BrowserPane({
     const at = boxOf();
     if (!at) return;
     let stopped = false;
+    const me = {};
+    showing.set(tab, me);
     setOpening({
       url: want,
       state: "opening",
@@ -295,7 +302,18 @@ export function BrowserPane({
         // the first one's answer arrived after the second had started).
         // A load nobody is left to finish is the ceiling's to end
         // (`browse/loading-rule.ts`).
-        if (stopped) return;
+        //
+        // **Left during the dial: hidden again here, the second end of
+        // the fix** (the owner, 2026-10-05, iPhone: 「出了浏览器这个页面
+        // 还在」). The unmount's `hidePage` went out before the page
+        // existed; the app now keeps that as state (`page_wanted`), and
+        // this says it once more after the attach — unless another pane
+        // has taken the tab up since (a tab left and come back to), whose
+        // page this would hide.
+        if (stopped) {
+          if (!showing.has(tab)) hidePage(tab).catch(() => {});
+          return;
+        }
         setOpening({
           url: want,
           state: "opened",
@@ -326,6 +344,7 @@ export function BrowserPane({
     );
     return () => {
       stopped = true;
+      if (showing.get(tab) === me) showing.delete(tab);
       // **Hidden, not closed.** Leaving this tab is not closing it, and
       // a page that was torn down here would lose its scroll, its
       // half-filled form and its live connection every time somebody

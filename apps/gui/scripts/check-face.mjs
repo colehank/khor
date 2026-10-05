@@ -28486,6 +28486,117 @@ try {
         );
       }
     }
+
+    // ── l. a drag that starts on chrome does not move the screen (the
+    //       owner, 2026-10-05, iPhone build 5: 「只要在输入框往上滑，就会
+    //       抖动」). The bounce itself is the WKWebView's scroll view
+    //       (`hold_the_face_still`, read on the simulator); what a page
+    //       can hold is measured here: the chrome declines a pan
+    //       (`touch-action`), a sideways row pans sideways only, the box
+    //       keeps its overscroll, a synthetic drag on the deck and on the
+    //       box leaves `scrollY` and the visual viewport's `offsetTop` at
+    //       0, and `lib/viewport` no longer takes a pan back on every
+    //       visual-viewport scroll — once, after the keyboard rose. ──
+    {
+      const styleOf = (sel, prop) =>
+        page.evaluate(([s, p]) => {
+          const el = document.querySelector(s);
+          return el ? getComputedStyle(el)[p] : null;
+        }, [sel, prop]);
+      /** The pan a touch there may start, as WebKit decides it: the
+          element's and its ancestors' `touch-action` up to the nearest
+          scroll container (itself, if it is one), any `none` winning (the property is not
+          inherited, so the deck reads `auto` under a bar of `none`). */
+      const touchOf = (sel) =>
+        page.evaluate((s) => {
+          const el = document.querySelector(s);
+          if (!el) return null;
+          for (let e = el; e; e = e.parentElement) {
+            const cs = getComputedStyle(e);
+            if (cs.touchAction === "none") return "none";
+            if (/(auto|scroll)/.test(cs.overflowX + cs.overflowY)) break;
+          }
+          return getComputedStyle(el).touchAction;
+        }, sel);
+      const dragFrom = async (sel) => {
+        const b = await rect(sel);
+        if (!b) return null;
+        const x = Math.round(b.left + b.width / 2);
+        const y0 = Math.round(b.top + b.height / 2);
+        const seen = [];
+        const sample = () =>
+          page.evaluate(() => [window.scrollY, window.visualViewport?.offsetTop ?? 0, document.scrollingElement?.scrollTop ?? 0]);
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
+        for (let i = 1; i <= 8; i += 1) {
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y0 - 25 * i }] });
+          seen.push(...(await sample()));
+        }
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await wait(150);
+        seen.push(...(await sample()));
+        return Math.max(...seen.map((v) => Math.abs(v)));
+      };
+      if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+        fail("probe dead: bar l · a terminal never opened under a finger");
+      } else {
+        const deckTa = await touchOf("[data-session-deck] [data-deck-title]");
+        const barTa = await touchOf("[data-session-bar]");
+        const topTa = await touchOf("[data-session-top]");
+        await page.evaluate(() => window.__keyboard(300));
+        await until(2_000, async () => (await count("[data-term-keys-scroll]")) > 0);
+        const keysTa = await touchOf("[data-term-keys-scroll]");
+        await page.evaluate(() => window.__keyboard(0));
+        await wait(300);
+        const deckMoved = await dragFrom("[data-session-deck] [data-deck-title]");
+        console.log(`bar l · touch-action: deck ${deckTa}, bar ${barTa}, top ${topTa}, key row ${keysTa}; a drag on the deck moved the screen ${deckMoved}`);
+        if (deckTa !== "none" || barTa !== "none" || topTa !== "none") {
+          fail(`bar l · touch-action on the deck ${deckTa}, the bar ${barTa}, the top strip ${topTa} — chrome declines a pan (none), so the webview's own scroll view never takes it`);
+        }
+        if (keysTa !== "pan-x") fail(`bar l · the key row's scroller is touch-action ${keysTa} — it scrolls sideways and nothing else (pan-x)`);
+        if (deckMoved !== 0) fail(`bar l · a finger dragged up the deck moved the screen ${deckMoved} px (scrollY / the visual viewport's offsetTop)`);
+      }
+      if (!(await openRow(chatRow.id)) || !(await until(5_000, async () => (await count("[data-composer-text]")) > 0))) {
+        fail("probe dead: bar l · the machine conversation never drew its box under a finger");
+      } else {
+        const boxOs = await styleOf("[data-composer-text]", "overscrollBehaviorY");
+        const boxMoved = await dragFrom("[data-composer-text]");
+        console.log(`bar l · the box: overscroll-behavior-y ${boxOs}; a drag up from it moved the screen ${boxMoved}`);
+        if (boxOs !== "contain") fail(`bar l · the conversation's box is overscroll-behavior-y ${boxOs} — contain, so a drag at its end is not handed to the page`);
+        if (boxMoved !== 0) fail(`bar l · a finger dragged up from the box moved the screen ${boxMoved} px`);
+      }
+      // The pan taken back once, not per scroll: `scrollY` reads 30 (a
+      // pan WebKit made), ten visual-viewport scrolls follow, then a
+      // focus — `lib/viewport` answers the focus a beat later and only it.
+      const takes = await page.evaluate(async () => {
+        const vv = window.visualViewport;
+        const was = window.scrollTo;
+        let n = 0;
+        const own = Object.getOwnPropertyDescriptor(window, "scrollY");
+        Object.defineProperty(window, "scrollY", { configurable: true, get: () => 30 });
+        window.scrollTo = () => {
+          n += 1;
+        };
+        try {
+          for (let i = 0; i < 10; i += 1) vv.dispatchEvent(new Event("scroll"));
+          const onScroll = n;
+          const field = document.querySelector("[data-composer-text]");
+          field?.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+          await new Promise((r) => setTimeout(r, 500));
+          return { onScroll, afterFocus: n - onScroll };
+        } finally {
+          window.scrollTo = was;
+          if (own) Object.defineProperty(window, "scrollY", own);
+          else delete window.scrollY;
+        }
+      });
+      console.log(`bar l · lib/viewport took the pan back ${takes.onScroll}× over ten visual-viewport scrolls and ${takes.afterFocus}× after a focus`);
+      if (takes.onScroll !== 0 || takes.afterFocus !== 1) {
+        fail(
+          `bar l · lib/viewport called scrollTo ${takes.onScroll}× during ten visual-viewport scrolls and ${takes.afterFocus}× after a focus — ` +
+            "the pan is taken back once after the keyboard rose, never per scroll (it fought WebKit's bounce frame by frame)",
+        );
+      }
+    }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
     for (const r of ["**/term_open", "**/term_attach", "**/term_stream", "**/term_resize", "**/term_leave", "**/term_key", "**/machine_log"]) await page.unroute(r);
