@@ -2763,6 +2763,33 @@ fn show_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     Ok(())
 }
 
+/// **The browser's deck, drawn natively over the page** (UX-13): the deck
+/// as the face read it from its own DOM deck, or `None` to put it away
+/// (`phone_page::deck`, `lib/native-deck.ts`).
+#[cfg(not(desktop))]
+#[tauri::command]
+fn page_deck(app: tauri::AppHandle, tab: String, drawing: Option<serde_json::Value>) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        let drawing = match drawing {
+            Some(d) => Some(serde_json::from_value::<phone_page::DeckDrawing>(d).map_err(|e| e.to_string())?),
+            None => None,
+        };
+        let _ = app.run_on_main_thread(move || phone_page::deck(&tab, drawing));
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, tab, drawing);
+    Ok(())
+}
+
+/// A Mac's page stands beside its DOM deck: nothing to draw.
+#[cfg(desktop)]
+#[tauri::command]
+fn page_deck(tab: String, drawing: Option<serde_json::Value>) -> Result<(), String> {
+    let _ = (tab, drawing);
+    Ok(())
+}
+
 #[cfg(not(desktop))]
 #[tauri::command]
 fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
@@ -4177,6 +4204,7 @@ pub fn run() {
             close_page,
             show_page,
             page_step,
+            page_deck,
             show_menu,
             hide_menu,
             size_menu,

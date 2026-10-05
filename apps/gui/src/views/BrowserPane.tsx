@@ -207,7 +207,11 @@ export function BrowserPane({
       if (b.top <= r.top + HANGS_FROM_ABOVE) top = Math.max(top, b.bottom);
       else covered = true;
     }
-    const h = r.bottom - top;
+    // **Under a native deck the page runs to the screen's foot** (UX-13,
+    // `lib/native-deck`): the deck is drawn over it and the page keeps a
+    // bottom inset of the deck's height, so it scrolls under the glass.
+    const native = host.current?.closest("[data-session-screen]")?.querySelector("[data-session-bar][data-native-deck]");
+    const h = (native ? native.getBoundingClientRect().bottom : r.bottom) - top;
     // A page squeezed to nothing is a page nobody can read; below this it
     // is honest to take it away rather than draw a sliver.
     if (covered || h < 24) {

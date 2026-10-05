@@ -1468,6 +1468,12 @@ export const showPage = (tab: string) =>
 export const pageStep = (tab: string, way: "back" | "forward" | "reload") =>
   onWebFace ? Promise.resolve(null) : call<null>("page_step", { tab, way });
 
+/** **The browser's deck, drawn natively over an iPhone's page** (UX-13,
+    `lib/native-deck`): the deck as the face reads it, or `null` to put it
+    away. Nothing anywhere else: a Mac's page sits beside its DOM deck. */
+export const pageDeck = (tab: string, drawing: import("@/lib/native-deck").DeckDrawing | null) =>
+  onWebFace ? Promise.resolve(null) : call<null>("page_deck", { tab, drawing });
+
 /**
  * What a page said about itself, addressed to one tab.
  *
@@ -1476,7 +1482,7 @@ export const pageStep = (tab: string, way: "back" | "forward" | "reload") =>
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll",
+  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck",
   tab: string,
   said: (text: string) => void,
 ): () => void {

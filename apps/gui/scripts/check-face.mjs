@@ -28883,6 +28883,69 @@ try {
       await page.evaluate(() => window.localStorage.removeItem("khor.page-machine"));
     }
 
+    // ── r. the browser's native deck is read from the DOM deck (UX-13,
+    //       `lib/native-deck`): what the iPhone draws over the page is
+    //       what the tokens laid out — three glass shapes (‹, the pill,
+    //       the tabs circle) at --glass-btn, the tint --glass, every seat
+    //       a place to press, the pill a swipe, the page's inset the deck
+    //       row and the safe area; folded, the strip. Read here off the
+    //       same module the app runs; the drawing itself is the
+    //       simulator's. ──
+    {
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      if (!(await open("browser")) || !(await press('[data-side-row="t1"] [data-side-open]'))) {
+        fail("probe dead: bar r · a browser tab with a page never opened on the narrow face");
+      } else {
+        await until(3_000, async () => (await count("[data-session-deck] [data-deck-tabs]")) === 1);
+        await wait(400);
+        const readOf = () =>
+          page.evaluate(async () => {
+            const { readDeck } = await import("/src/lib/native-deck.ts");
+            const d = await readDeck(document.querySelector("[data-session-screen]"));
+            const probe = document.createElement("div");
+            probe.style.cssText = "position:absolute;height:var(--glass-btn);width:var(--deck-strip)";
+            document.body.appendChild(probe);
+            const btn = probe.getBoundingClientRect().height;
+            const strip = probe.getBoundingClientRect().width;
+            probe.remove();
+            const c = document.createElement("canvas").getContext("2d");
+            c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--glass").trim();
+            const deck = document.querySelector("[data-session-deck]")?.getBoundingClientRect().height ?? 0;
+            const safe = parseFloat(getComputedStyle(document.querySelector("[data-session-bar]")).paddingBottom) || 0;
+            return d && {
+              glass: d.glass.map((g) => Math.round(g.h)),
+              tint: d.tint,
+              want: String(c.fillStyle),
+              btn,
+              strip,
+              seats: d.hits.filter((h) => !h.swipe).map((h) => h.seat).sort(),
+              swipe: d.hits.filter((h) => h.swipe).length,
+              images: d.images.length,
+              title: d.labels.map((l) => l.text).filter(Boolean),
+              inset: d.inset,
+              deck,
+              safe,
+            };
+          });
+        const rest = await readOf();
+        console.log(`bar r · the native deck read: ${shown(rest)}`);
+        if (!rest) {
+          fail("bar r · readDeck read nothing off the narrow browser's deck");
+        } else {
+          if (rest.glass.length !== 3 || rest.glass.some((h) => Math.abs(h - rest.btn) > 0.5)) {
+            fail(`bar r · glass shapes ${shown(rest.glass)} — ‹, the pill and the tabs circle, each --glass-btn (${rest.btn}) tall`);
+          }
+          if (rest.tint !== rest.want) fail(`bar r · the native tint is ${rest.tint}, --glass is ${rest.want}`);
+          if (!rest.seats.includes(0) || !rest.seats.includes(3) || !rest.seats.includes(5) || rest.swipe !== 1) {
+            fail(`bar r · seats ${shown(rest.seats)}, swipe ${rest.swipe} — ‹ (0), the title (3), the tabs (5), and the pill's swipe`);
+          }
+          if (Math.abs(rest.inset - (rest.deck + rest.safe)) > 0.5) fail(`bar r · the page's inset ${rest.inset} is not the deck row ${rest.deck} and the safe area ${rest.safe}`);
+          if (rest.images < 3) fail(`bar r · ${rest.images} glyph/face image(s) — ‹, a face or glyph in the pill, the tabs figure at least`);
+        }
+      }
+    }
+
     // ── p. the terminal pill opens the session's directory (UX-17): one
     //       sheet, 目录 first — the listing at the shell's directory (OSC
     //       7), else where the session started — and 日志, the 24 hours;

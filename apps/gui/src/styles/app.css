@@ -2313,6 +2313,13 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   display: none;
 }
 
+/* **A deck drawn natively over the page** (UX-13, an iPhone's browser):
+   the DOM deck keeps its layout — the native one is read from it, and a
+   native press clicks it — and is not painted. */
+[data-session-bar][data-native-deck] > * {
+  visibility: hidden;
+}
+
 /* **The pill's own controls are not glass on glass** (round UX-3): what a
    view seats at the pill's ends (the reconnect, a page's reload and its
    ← →) is drawn as the pill's items, on the pill's own glass. */

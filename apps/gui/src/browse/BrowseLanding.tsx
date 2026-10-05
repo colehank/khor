@@ -54,8 +54,9 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { onPageWord, openLink, pageStep, recentVisit, type DeviceRow } from "@/api";
+import { onPageWord, openLink, pageDeck, pageStep, recentVisit, type DeviceRow } from "@/api";
 import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
+import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
 import { Tabs } from "@/browse/Tabs";
 import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
@@ -414,6 +415,51 @@ export function BrowseLanding({
     if (last && reachable(devices).some((d) => d.id === last)) tabs.goTo(last, "", "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow, tabs.ready, tabs.current.id, tabs.current.device]);
+  /** **On an iPhone the deck is drawn natively over the page** (UX-13,
+      `lib/native-deck`): read from the DOM deck after every change to it
+      and handed to the page, put away while the pill edits the address
+      (the DOM deck is the deck then) or where there is no page. A press
+      on it comes back as the DOM control it stands for. */
+  const native = nativeDeckHere && narrow && tabs.ready && somewhere && !editing;
+  const nativeTab = tabs.current.id;
+  const nativeKey = `${folded}|${pageLoading}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}`;
+  useEffect(() => {
+    if (!nativeDeckHere || !narrow) return;
+    if (!native) {
+      void pageDeck(nativeTab, null).catch(() => {});
+      return;
+    }
+    let gone = false;
+    // After the layout this render made, and after the face's own glyphs
+    // have their size.
+    const frame = requestAnimationFrame(() => {
+      const screen = document.querySelector<HTMLElement>("[data-session-screen]");
+      if (!screen) return;
+      void readDeck(screen).then((d) => {
+        if (!gone && d) void pageDeck(nativeTab, d).catch(() => {});
+      });
+    });
+    return () => {
+      gone = true;
+      cancelAnimationFrame(frame);
+    };
+  }, [native, nativeTab, nativeKey, narrow]);
+  useEffect(() => {
+    if (!native) return;
+    return onPageWord("page:deck", nativeTab, (t) => {
+      const screen = document.querySelector<HTMLElement>("[data-session-screen]");
+      if (!screen) return;
+      if (t.startsWith("swipe:")) {
+        const by = Number(t.slice("swipe:".length));
+        const at = tabs.tabs.findIndex((x) => x.id === nativeTab);
+        const next = tabs.tabs[at + by];
+        if (next) tabs.focus(next.id);
+        return;
+      }
+      seatControl(screen, Number(t))?.click();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [native, nativeTab]);
   const pillEditor = (
     <PageField
       key={tabs.current.id}
@@ -595,6 +641,7 @@ export function BrowseLanding({
         onTitle={() => setEditing(true)}
         caption={caption}
         editor={tabs.ready && editing ? pillEditor : undefined}
+        nativeDeck={native}
         onEditCancel={() => setEditing(false)}
         folded={folded && !editing}
         onUnfold={() => setFolded(false)}

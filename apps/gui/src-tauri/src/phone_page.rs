@@ -259,6 +259,7 @@ pub fn open(
             false
         });
         if reused {
+            deck_follows(tab);
             return Ok(());
         }
         let store = store_for(exit).ok_or_else(|| "no data store".to_string())?;
@@ -338,6 +339,7 @@ pub fn place(face: *mut AnyObject, tab: &str, at: PageBox) {
             }
         }
     });
+    deck_follows(tab);
 }
 
 pub fn hide(tab: &str, hidden: bool) {
@@ -348,6 +350,7 @@ pub fn hide(tab: &str, hidden: bool) {
             }
         }
     });
+    deck_follows(tab);
 }
 
 /// Stops watching a page's scroll view, before the page goes.
@@ -361,6 +364,7 @@ fn unwatch(page: &Page) {
 }
 
 pub fn close(tab: &str) {
+    deck(tab, None);
     PAGES.with(|pages| {
         if let Some(page) = pages.borrow_mut().remove(tab) {
             unwatch(&page);
@@ -451,4 +455,344 @@ fn tell(app: &tauri::AppHandle) {
 /// khor's own webview, for `with_webview` callers.
 pub fn face(app: &tauri::AppHandle) -> Option<tauri::Webview> {
     app.get_webview("main")
+}
+
+// ── the deck, drawn natively over the page (UX-13, the owner 2026-10-05) ──
+//
+// The face reads its own DOM deck — laid out where it always is, covered
+// by the page — into rectangles: glass shapes, glyphs and faces as PNGs,
+// the title and the count as text, and where a finger lands
+// (`lib/native-deck.ts`). Drawn here exactly as read, over the page, so
+// the page scrolls under the glass; the page's scroll view keeps a
+// bottom inset of the deck (or the folded strip) so its last line rests
+// clear. One reading per change; `None` puts the deck away (the pill is
+// the address editor then, and the DOM deck is the deck).
+
+/// A shape of glass: a capsule, a circle, the strip's band.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckGlass {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    r: f64,
+    sel: bool,
+}
+
+/// A glyph or a face, a PNG at the screen's scale (base64).
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckImage {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    png: String,
+}
+
+/// A line of text in the system font.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckLabel {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    text: String,
+    size: f64,
+    weight: f64,
+    color: String,
+    center: bool,
+}
+
+/// Where a finger lands: the DOM control's index, or the pill's swipe.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckHit {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    seat: i64,
+    swipe: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeckDrawing {
+    h: f64,
+    inset: f64,
+    dark: bool,
+    tint: String,
+    sel_tint: String,
+    rim: String,
+    glass: Vec<DeckGlass>,
+    images: Vec<DeckImage>,
+    labels: Vec<DeckLabel>,
+    hits: Vec<DeckHit>,
+}
+
+struct Deck {
+    view: Retained<AnyObject>,
+    h: f64,
+    /// The pill, in the deck's points: where a sideways swipe changes tab.
+    pill: Option<(f64, f64, f64, f64)>,
+}
+
+thread_local! {
+    static DECKS: RefCell<HashMap<String, Deck>> = RefCell::new(HashMap::new());
+    /// The tabs a deck was ever drawn for, by the tag their deck carries.
+    static DECK_TABS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static DECK_TARGET: Retained<DeckTarget> = unsafe { msg_send![DeckTarget::class(), new] };
+}
+
+/// UIKit's `UIEdgeInsets`, for the page's scroll view.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Insets {
+    top: f64,
+    left: f64,
+    bottom: f64,
+    right: f64,
+}
+
+// SAFETY: four CGFloats (f64 on every iOS this builds for), UIKit's layout.
+unsafe impl objc2::Encode for Insets {
+    const ENCODING: objc2::Encoding =
+        objc2::Encoding::Struct("UIEdgeInsets", &[f64::ENCODING, f64::ENCODING, f64::ENCODING, f64::ENCODING]);
+}
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements, and this class
+    // has no ivars and no `Drop`.
+    #[unsafe(super(NSObject))]
+    #[name = "KhorDeckTarget"]
+    struct DeckTarget;
+
+    impl DeckTarget {
+        // SAFETY: a UIControl action with its sender.
+        #[unsafe(method(hit:))]
+        fn hit(&self, sender: *mut AnyObject) {
+            let seat: isize = unsafe { msg_send![sender, tag] };
+            let deck: *mut AnyObject = unsafe { msg_send![sender, superview] };
+            said(deck, &seat.to_string());
+        }
+
+        // SAFETY: a gesture recogniser's action with the recogniser.
+        #[unsafe(method(swipe:))]
+        fn swipe(&self, rec: *mut AnyObject) {
+            let deck: *mut AnyObject = unsafe { msg_send![rec, view] };
+            let at: NSPoint = unsafe { msg_send![rec, locationInView: deck] };
+            let tag: isize = unsafe { msg_send![deck, tag] };
+            let on_pill = DECK_TABS.with(|t| t.borrow().get(tag as usize).cloned()).is_some_and(|tab| {
+                DECKS.with(|d| {
+                    d.borrow().get(&tab).and_then(|k| k.pill).is_some_and(|(x, y, w, h)| {
+                        at.x >= x && at.x <= x + w && at.y >= y && at.y <= y + h
+                    })
+                })
+            });
+            if !on_pill {
+                return;
+            }
+            // 1: right (the previous tab), 2: left (the next), Safari's.
+            let way: usize = unsafe { msg_send![rec, direction] };
+            said(deck, if way == 2 { "swipe:1" } else { "swipe:-1" });
+        }
+    }
+);
+
+/// A press on the deck, said to the face as `page:deck`.
+fn said(deck: *mut AnyObject, text: &str) {
+    let Some(app) = APP.get() else { return };
+    let tag: isize = unsafe { msg_send![deck, tag] };
+    let Some(tab) = DECK_TABS.with(|t| t.borrow().get(tag as usize).cloned()) else { return };
+    let _ = app.emit_to(
+        "main",
+        "page:deck",
+        PageWord {
+            tab,
+            text: text.to_owned(),
+        },
+    );
+}
+
+/// `#rrggbb`, `#rgb`, `rgb(…)` or `rgba(…)` as UIColor; ink if unread.
+unsafe fn color(text: &str) -> Retained<AnyObject> {
+    let t = text.trim();
+    let (mut r, mut g, mut b, mut a) = (0.1, 0.1, 0.08, 1.0);
+    if let Some(hex) = t.strip_prefix('#') {
+        let hex = if hex.len() == 3 { hex.chars().flat_map(|c| [c, c]).collect::<String>() } else { hex.to_owned() };
+        if let Ok(v) = u32::from_str_radix(&hex[..6.min(hex.len())], 16) {
+            r = f64::from((v >> 16) & 0xff) / 255.0;
+            g = f64::from((v >> 8) & 0xff) / 255.0;
+            b = f64::from(v & 0xff) / 255.0;
+        }
+    } else if let Some(inner) = t.strip_prefix("rgba(").or_else(|| t.strip_prefix("rgb(")) {
+        let n: Vec<f64> = inner.trim_end_matches(')').split(',').filter_map(|p| p.trim().parse().ok()).collect();
+        if n.len() >= 3 {
+            (r, g, b) = (n[0] / 255.0, n[1] / 255.0, n[2] / 255.0);
+            a = n.get(3).copied().unwrap_or(1.0);
+        }
+    }
+    unsafe { msg_send![class!(UIColor), colorWithRed: r, green: g, blue: b, alpha: a] }
+}
+
+unsafe fn rect(x: f64, y: f64, w: f64, h: f64) -> NSRect {
+    NSRect::new(NSPoint::new(x, y), NSSize::new(w.max(0.0), h.max(0.0)))
+}
+
+/// Draws (or, with `None`, puts away) `tab`'s deck over its page.
+pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
+    // Whatever was drawn before goes; a reading is the whole deck.
+    DECKS.with(|d| {
+        if let Some(old) = d.borrow_mut().remove(tab) {
+            unsafe {
+                let _: () = msg_send![&*old.view, removeFromSuperview];
+            }
+        }
+    });
+    let Some(dr) = drawing else {
+        inset(tab, 0.0);
+        return;
+    };
+    let tag = DECK_TABS.with(|t| {
+        let mut t = t.borrow_mut();
+        t.iter().position(|x| x == tab).unwrap_or_else(|| {
+            t.push(tab.to_owned());
+            t.len() - 1
+        })
+    });
+    let page = PAGES.with(|p| p.borrow().get(tab).map(|p| p.view.clone()));
+    let Some(page) = page else { return };
+    unsafe {
+        let pf: NSRect = msg_send![&*page, frame];
+        let a: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
+        let view: Retained<AnyObject> = msg_send![a, initWithFrame: rect(pf.origin.x, pf.origin.y + pf.size.height - dr.h, pf.size.width, dr.h)];
+        let _: () = msg_send![&*view, setTag: tag as isize];
+        // 1 light, 2 dark: the glass and the system font follow khor's
+        // theme, not the phone's.
+        let _: () = msg_send![&*view, setOverrideUserInterfaceStyle: if dr.dark { 2isize } else { 1isize }];
+        let hidden: bool = msg_send![&*page, isHidden];
+        let _: () = msg_send![&*view, setHidden: hidden];
+        // 6: UIBlurEffectStyleSystemUltraThinMaterial — the DOM glass's
+        // blur and saturation; the tint over it is `--glass`.
+        let blur: Retained<AnyObject> = msg_send![class!(UIBlurEffect), effectWithStyle: 6isize];
+        for g in &dr.glass {
+            let a: Allocated<AnyObject> = msg_send![class!(UIVisualEffectView), alloc];
+            let fx: Retained<AnyObject> = msg_send![a, initWithEffect: &*blur];
+            let _: () = msg_send![&*fx, setFrame: rect(g.x, g.y, g.w, g.h)];
+            let _: () = msg_send![&*fx, setClipsToBounds: true];
+            let layer: *mut AnyObject = msg_send![&*fx, layer];
+            let _: () = msg_send![layer, setCornerRadius: g.r];
+            let _: () = msg_send![layer, setBorderWidth: 1.0f64];
+            let rim = color(&dr.rim);
+            let cg: *mut std::ffi::c_void = msg_send![&*rim, CGColor];
+            let _: () = msg_send![layer, setBorderColor: cg];
+            let content: *mut AnyObject = msg_send![&*fx, contentView];
+            let tint = color(if g.sel { &dr.sel_tint } else { &dr.tint });
+            let _: () = msg_send![content, setBackgroundColor: &*tint];
+            let _: () = msg_send![&*view, addSubview: &*fx];
+        }
+        let scale: f64 = {
+            let screen: *mut AnyObject = msg_send![class!(UIScreen), mainScreen];
+            msg_send![screen, scale]
+        };
+        for im in &dr.images {
+            let text = NSString::from_str(&im.png);
+            let a: Allocated<AnyObject> = msg_send![class!(NSData), alloc];
+            let data: Option<Retained<AnyObject>> = msg_send![a, initWithBase64EncodedString: &*text, options: 0usize];
+            let Some(data) = data else { continue };
+            let img: Option<Retained<AnyObject>> = msg_send![class!(UIImage), imageWithData: &*data, scale: scale];
+            let Some(img) = img else { continue };
+            let a: Allocated<AnyObject> = msg_send![class!(UIImageView), alloc];
+            let iv: Retained<AnyObject> = msg_send![a, initWithImage: &*img];
+            let _: () = msg_send![&*iv, setFrame: rect(im.x, im.y, im.w, im.h)];
+            let _: () = msg_send![&*view, addSubview: &*iv];
+        }
+        for l in &dr.labels {
+            let a: Allocated<AnyObject> = msg_send![class!(UILabel), alloc];
+            let lab: Retained<AnyObject> = msg_send![a, initWithFrame: rect(l.x, l.y, l.w, l.h)];
+            let text = NSString::from_str(&l.text);
+            let _: () = msg_send![&*lab, setText: &*text];
+            // CSS weights to UIFontWeight: 400 regular (0), 500 medium
+            // (0.23), 600 semibold (0.3), 700 bold (0.4).
+            let w = match l.weight as i64 {
+                ..=449 => 0.0f64,
+                450..=549 => 0.23,
+                550..=649 => 0.3,
+                _ => 0.4,
+            };
+            let font: Retained<AnyObject> = msg_send![class!(UIFont), systemFontOfSize: l.size, weight: w];
+            let _: () = msg_send![&*lab, setFont: &*font];
+            let ink = color(&l.color);
+            let _: () = msg_send![&*lab, setTextColor: &*ink];
+            // 1 centre, 4 natural; 4 truncating the tail.
+            let _: () = msg_send![&*lab, setTextAlignment: if l.center { 1isize } else { 4isize }];
+            let _: () = msg_send![&*lab, setLineBreakMode: 4isize];
+            let _: () = msg_send![&*view, addSubview: &*lab];
+        }
+        let mut pill = None;
+        DECK_TARGET.with(|target| {
+            for h in &dr.hits {
+                if h.swipe {
+                    pill = Some((h.x, h.y, h.w, h.h));
+                    continue;
+                }
+                // 0: UIButtonTypeCustom — a clear press area over what is drawn.
+                let b: Retained<AnyObject> = msg_send![class!(UIButton), buttonWithType: 0isize];
+                let _: () = msg_send![&*b, setFrame: rect(h.x, h.y, h.w, h.h)];
+                let _: () = msg_send![&*b, setTag: h.seat as isize];
+                // 64: UIControlEventTouchUpInside.
+                let _: () = msg_send![&*b, addTarget: &**target, action: objc2::sel!(hit:), forControlEvents: 64usize];
+                let _: () = msg_send![&*view, addSubview: &*b];
+            }
+            if pill.is_some() {
+                for way in [1usize, 2usize] {
+                    let a: Allocated<AnyObject> = msg_send![class!(UISwipeGestureRecognizer), alloc];
+                    let rec: Retained<AnyObject> = msg_send![a, initWithTarget: &**target, action: objc2::sel!(swipe:)];
+                    let _: () = msg_send![&*rec, setDirection: way];
+                    let _: () = msg_send![&*view, addGestureRecognizer: &*rec];
+                }
+            }
+        });
+        let parent: *mut AnyObject = msg_send![&*page, superview];
+        if !parent.is_null() {
+            let _: () = msg_send![parent, addSubview: &*view];
+        }
+        DECKS.with(|d| {
+            d.borrow_mut().insert(tab.to_owned(), Deck { view, h: dr.h, pill });
+        });
+    }
+    inset(tab, dr.inset);
+}
+
+/// The page's scroll view keeps `bottom` points clear at its end: the
+/// deck's height, the strip's when folded, 0 with no native deck.
+fn inset(tab: &str, bottom: f64) {
+    PAGES.with(|p| {
+        if let Some(page) = p.borrow().get(tab) {
+            let e = Insets { top: 0.0, left: 0.0, bottom, right: 0.0 };
+            unsafe {
+                let _: () = msg_send![&*page.scroll, setContentInset: e];
+                let _: () = msg_send![&*page.scroll, setVerticalScrollIndicatorInsets: e];
+            }
+        }
+    });
+}
+
+/// The deck follows its page: moved with it, hidden with it, gone with it.
+fn deck_follows(tab: &str) {
+    let frame = PAGES.with(|p| p.borrow().get(tab).map(|p| unsafe { msg_send![&*p.view, frame] }));
+    let hidden = PAGES.with(|p| p.borrow().get(tab).map(|p| unsafe { msg_send![&*p.view, isHidden] }));
+    DECKS.with(|d| {
+        let d = d.borrow();
+        let Some(k) = d.get(tab) else { return };
+        unsafe {
+            if let Some(pf) = frame {
+                let pf: NSRect = pf;
+                let _: () = msg_send![&*k.view, setFrame: rect(pf.origin.x, pf.origin.y + pf.size.height - k.h, pf.size.width, k.h)];
+            }
+            if let Some(h) = hidden {
+                let h: bool = h;
+                let _: () = msg_send![&*k.view, setHidden: h];
+            }
+        }
+    });
 }
