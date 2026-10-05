@@ -1,0 +1,96 @@
+// The tap gate (item 43): which cells a tap raises the keyboard from, in
+// `auto` (`src/lib/term-marks.ts` `inInput`), run in Node against a real
+// xterm buffer. A program's input box (Claude Code's `─` edges around the
+// `>` line) counts with two rows beyond each edge and no more — not down
+// to the screen's bottom; a bare cursor row counts with one row either
+// side; a shell at its prompt without marks counts its row and the blank
+// below it, as item 28 ruled.
+import { build } from "esbuild";
+import { fileURLToPath } from "node:url";
+
+const gui = fileURLToPath(new URL("..", import.meta.url));
+const alias = {
+  name: "alias",
+  setup(b) {
+    b.onResolve({ filter: /^@\// }, (a) => b.resolve(`./src/${a.path.slice(2)}`, { resolveDir: gui, kind: a.kind }));
+  },
+};
+const out = await build({
+  stdin: {
+    contents: `import { Terminal } from "@xterm/xterm"; import { inInput } from "@/lib/term-marks"; globalThis.lab = { Terminal, inInput };`,
+    resolveDir: gui,
+    loader: "ts",
+  },
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  write: false,
+  logLevel: "error",
+  define: { "import.meta.env.DEV": "false" },
+  plugins: [alias],
+});
+await import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
+const { Terminal, inInput } = globalThis.lab;
+
+let bad = 0;
+const fail = (m) => {
+  bad++;
+  console.error(`tap gate: ${m}`);
+};
+/** A program's rows, no shell marks. */
+const unmarked = { current: () => null, marked: () => false };
+const ROWS = 24;
+
+/** A screen of `rows` (top down, the rest blank), the cursor on row `y`;
+    which rows a tap raises from. */
+async function raises(rows, y, alternate = false) {
+  const t = new Terminal({ cols: 40, rows: ROWS, allowProposedApi: true });
+  const text = (alternate ? "\x1b[?1049h" : "") + rows.map((r, i) => `\x1b[${i + 1};1H${r}`).join("");
+  await new Promise((r) => t.write(text, r));
+  const top = t.buffer.active.baseY;
+  const on = [];
+  for (let line = 0; line < ROWS; line++) if (inInput(t, unmarked, top + line, 3, { x: 2, y })) on.push(line);
+  t.dispose();
+  return on;
+}
+const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+const check = async (name, rows, y, want, alternate) => {
+  const got = await raises(rows, y, alternate);
+  console.log(`tap gate: ${name}: rows ${JSON.stringify(got)}`);
+  if (!same(got, want)) fail(`${name}: a tap raises from rows ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+};
+
+// Claude Code 2.1: output, a three-row box (`─`, `>` with the cursor,
+// `─`), the hint line, blank below. The box and two rows beyond each
+// edge; the output two rows up and the blank under the hint do not.
+const edge = "─".repeat(40);
+await check(
+  "Claude Code's box",
+  ["Claude: here is the plan.", "", "1. read the file", "2. edit it", "3. run the tests", "", edge, "> ", edge, "  ? for shortcuts"],
+  7,
+  range(4, 10),
+);
+// The same box with nothing under it: still not down to the screen's bottom.
+await check("the box with nothing below", ["output", "", "", "", "", "", edge, "> ", edge], 7, range(4, 10));
+// A bare cursor row in a full-screen program (an editor): the row and one
+// either side.
+await check(
+  "a bare cursor row",
+  Array.from({ length: ROWS }, (_, i) => `line ${i} of the file`),
+  10,
+  range(9, 11),
+  true,
+);
+// A shell at its prompt without marks: its row, one above, and the blank
+// below — a fresh shell's prompt at the top with the screen blank under it.
+await check("a shell at its prompt", ["Last login: today", "", "$ "], 2, range(1, ROWS - 1));
+// The same under tmux (alternate screen, a status line on the last row).
+const tmux = ["Last login: today", "", "$ "];
+tmux[ROWS - 1] = "[khor] 0:zsh*";
+await check("a shell at its prompt under tmux", tmux.map((r) => r ?? ""), 2, range(1, ROWS - 1), true);
+// Output below the prompt row (a command running): the row and one either side only.
+await check("a shell mid-command", ["$ sleep 10", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "waiting"], 0, range(0, 1));
+
+if (bad) process.exit(1);
+console.log("tap gate: a tap raises from the box and two rows beyond it, from a bare cursor row and one beyond it, and from a shell prompt's blank below");
