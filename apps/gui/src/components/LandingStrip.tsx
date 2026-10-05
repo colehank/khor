@@ -23,6 +23,7 @@
 import { useRef, type ReactNode } from "react";
 
 import { IconMore } from "@/components/icons";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
 import { useTravel } from "@/lib/travel";
@@ -35,15 +36,12 @@ function Seat({
   on,
   mark,
   onClick,
-  round = false,
   children,
 }: {
   label: string;
   on: boolean;
   mark: Record<string, string>;
   onClick: () => void;
-  /** 更多's: a round as tall as a pill, not a pill. */
-  round?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -59,8 +57,7 @@ function Seat({
           onClick={onClick}
           {...mark}
           className={cn(
-            "relative grid h-strip-item-h place-items-center rounded-full text-rail-ink",
-            round ? "w-strip-item-h" : "w-strip-item",
+            "relative grid h-strip-item-h w-strip-item place-items-center rounded-full text-rail-ink",
             "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
             on && "glass-sel text-[var(--rail-on-ink)]",
           )}
@@ -80,31 +77,34 @@ export function LandingStrip({
   active,
   moreOn,
   onGo,
-  onMore,
+  moreMenu,
 }: {
+  /** The four landings on the bar (`NAV_SHOWN`), as the phone's. */
   seats: StripSeat[];
   /** The open landing, or null while a 「…」 page is up. */
   active: string | null;
-  /** Whether 更多's pages are the thing on screen. */
+  /** Whether 更多 holds the page on screen. */
   moreOn: boolean;
   onGo: (key: string) => void;
-  /** 更多's circle; absent, no circle (the Mac app, whose settings are a
-      window of their own — UX-10). */
-  onMore?: () => void;
+  /** 更多's menu: 我的 khor, the folded landings, 设置, 诊断 (`MoreMenuItems`). */
+  moreMenu: ReactNode;
 }) {
   // The chosen pill slides to the landing pressed (F7.2, `lib/travel`).
   const strip = useRef<HTMLElement>(null);
-  useTravel("strip", () => strip.current, active);
+  useTravel("strip", () => strip.current, active ?? (moreOn ? "more" : null));
   return (
-    // The landings in one glass capsule, and 更多 a glass circle of its own
-    // beside it (the owner, 2026-10-02: 「单独一个按钮，和别的四个分开」) —
-    // the list head's grammar, a capsule and a circle.
-    <div data-landing-pair className="flex flex-none items-center gap-in">
+    // **The phone's five seats, at the top** (UX-19, the owner 2026-10-05):
+    // one glass capsule across the list column — the four landings, then
+    // 更多 as the fifth seat, its menu the phone's — its left edge on the
+    // title's below, 更多 ending over the search circle. ⚠️ 墓碑: 更多 was a
+    // circle of its own beside the capsule (2026-10-02 「单独一个按钮」), and
+    // the Mac had none (UX-10).
+    <div data-landing-pair className="flex min-w-0 flex-1 items-center">
       <nav
         ref={strip}
         data-landing-strip
         aria-label={gui.nav}
-        className="glass flex h-strip-h flex-none items-center rounded-full px-glass-pad"
+        className="glass flex h-strip-h min-w-0 flex-1 items-center justify-between rounded-full px-glass-pad"
       >
         {seats.map((s) => (
           <Seat key={s.key} label={s.name} on={active === s.key} mark={{ "data-landing": s.key }} onClick={() => onGo(s.key)}>
@@ -116,14 +116,38 @@ export function LandingStrip({
             )}
           </Seat>
         ))}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              data-slot="button"
+              data-rail-item
+              data-rail-more
+              data-on={moreOn}
+              aria-label={gui.rail_more}
+              className={cn(
+                "relative grid h-strip-item-h w-strip-item place-items-center rounded-full text-rail-ink",
+                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+                "data-[state=open]:glass-sel",
+                moreOn && "glass-sel text-[var(--rail-on-ink)]",
+              )}
+            >
+              <IconMore />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            side="bottom"
+            align="end"
+            sideOffset={8}
+            data-nav-menu
+            data-rail-more-menu
+            onCloseAutoFocus={(e) => e.preventDefault()}
+            className="min-w-nav-menu"
+          >
+            {moreMenu}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </nav>
-      {onMore && (
-        <div className="glass grid size-strip-h flex-none place-items-center rounded-full">
-          <Seat label={gui.rail_more} on={moreOn} mark={{ "data-rail-more": "" }} onClick={onMore} round>
-            <IconMore />
-          </Seat>
-        </div>
-      )}
     </div>
   );
 }

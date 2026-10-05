@@ -456,10 +456,12 @@ aside[data-side] {
    starts at the row inset the title row ends with: the strip fits, its
    right edge on the title row's, 「更多」 over the search circle — folded
    or not. */
-@media (pointer: coarse) {
-  :root:not([data-traffic]) :is([data-wide-top], [data-folded-lead]) {
-    padding-inline-start: var(--spacing-row);
-  }
+/* UX-19: wherever there are no window buttons — a finger, the web face,
+   a Mac window in fullscreen (the stamp is dropped there) — the first row
+   starts where the title under it does (the list's 20, `SideHead`).
+   ⚠️ 墓碑: under a finger only, at the row inset. */
+:root:not([data-traffic]) :is([data-wide-top], [data-folded-lead]) {
+  padding-inline-start: var(--gap-group);
 }
 
 /* ⚠️ 墓碑 (the redesign, 2026-10-02): the narrow face took the board's

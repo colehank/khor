@@ -347,6 +347,7 @@ export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChan
                 <button
                   type="button"
                   data-key-row-grip
+                  data-sheet-hold
                   aria-label={nameOf(k)}
                   aria-keyshortcuts="ArrowUp ArrowDown"
                   className="grid min-h-touch min-w-touch flex-none cursor-grab touch-none place-items-center rounded-full text-tertiary [&_svg]:size-4"

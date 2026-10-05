@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
-import { hereActs, ProgressLine, shortDir, termName } from "@/components/DoingLine";
+import { hereActs, ProgressLine, termName } from "@/components/DoingLine";
 import { FinishedWatch, type Finished } from "@/lib/finished";
 import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
@@ -56,7 +56,7 @@ import {
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
-import { FloatNav, type NavSeat } from "@/components/FloatNav";
+import { FloatNav, MoreMenuItems, type NavSeat } from "@/components/FloatNav";
 import { LandingStrip } from "@/components/LandingStrip";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
@@ -1437,33 +1437,62 @@ export default function App() {
       window's buttons, then 更多. The open landing pressed again folds its
       list, and once more brings it back; another landing switches and
       brings it back (the owner: no toggle button). */
+  /** **更多's four, on both bars** (UX-16; UX-19 gave the wide strip the
+      phone's menu): 我的 khor, the landings past the fourth, 设置, 诊断. */
+  const moreSettings = () => {
+    // A Mac opens the settings window, from either bar.
+    if (trafficLights && !settingsFace) {
+      openSettings().catch(() => {});
+      return;
+    }
+    setMorePage("appearance");
+    setSwitchingTabs(false);
+    // Narrow: 设置's list of seven, one screen; wide: its first page
+    // beside the list in the list column.
+    setScreen(narrow ? "list" : "detail");
+    listPane.expand();
+  };
+  const moreDoctor = () => {
+    setMorePage("doctor");
+    setScreen("detail");
+    setSwitchingTabs(false);
+    listPane.expand();
+  };
+  const moreMe = () => {
+    setMorePage("me");
+    setScreen("detail");
+    setSwitchingTabs(false);
+    listPane.expand();
+  };
+  const moreMenu = (
+    <MoreMenuItems
+      more={navOrder.slice(NAV_SHOWN).map(seatOf)}
+      // The open landing chosen again folds its list, the strip's one
+      // rule, from 更多's menu too (wide; narrow `goLanding` pops it).
+      onGo={(key) => {
+        if (!narrow && morePage === null && landing === key) listPane.toggle();
+        else goLanding(key as Landing);
+      }}
+      onSettings={moreSettings}
+      onDoctor={moreDoctor}
+      me={me ? { face: me.face } : null}
+      onMe={moreMe}
+    />
+  );
   const strip = (
     <LandingStrip
-      seats={navOrder.map(seatOf)}
+      seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
       active={morePage === null ? landing : null}
-      // Tinted on every page reached through it, 这台机器 too (F3.6; W23).
-      moreOn={morePage !== null}
+      // Tinted on every page reached through it, 我的 khor too (F3.6; W23),
+      // and while the open landing is one of the folded ones.
+      moreOn={morePage !== null || navOrder.slice(NAV_SHOWN).includes(landing)}
       onGo={(key) => {
         if (morePage === null && landing === key) listPane.toggle();
         else goLanding(key as Landing);
       }}
-      // 更多's pages, the same place narrow's 设置 opens: the sections
-      // in the list column, the first one beside them. **Not on a Mac**
-      // (UX-10; ux-9 M1): settings are a window of their own there,
-      // opened by ⌘, and 设置…, and HIG Settings asks for no settings
-      // button in a window's toolbar — so the circle is not drawn.
-      onMore={trafficLights && !settingsFace ? undefined : () => {
-        // Open already: folds the list, like any open landing's glyph.
-        if (morePage !== null) {
-          listPane.toggle();
-          return;
-        }
-        // 我的 khor, the list's head, beside the list of the rest.
-        setMorePage("me");
-        setSwitchingTabs(false);
-        setScreen("detail");
-        listPane.expand();
-      }}
+      // ⚠️ 墓碑 (UX-19): `onMore`, a circle of its own that opened 我的 khor
+      // beside 更多's list, and none on a Mac (UX-10).
+      moreMenu={moreMenu}
     />
   );
   /** **Folded, the strip does not move** (the audit fix plan F3.1; W01):
@@ -1657,8 +1686,10 @@ export default function App() {
               label: termName(r),
               face: r.face,
               path: r.doing?.cwd ?? r.place ?? "",
-              // Where the shell stands, under the name (roadmap 2.5).
-              sub: r.doing?.cwd ? shortDir(r.doing.cwd) : undefined,
+              // **One line, the title** (UX-20, the owner 2026-10-05): where
+              // the shell stands is the row's left-bottom (UX-15) and the
+              // pill's 「目录」 (UX-17), never a tab. ⚠️ 墓碑: `sub`, the
+              // directory under the name (roadmap 2.5).
               // What the program says of its progress (roadmap 4.1).
               progress: r.doing?.running && r.doing.progress !== null ? <ProgressLine doing={r.doing} /> : undefined,
               // Where the shell stands, and its two acts (roadmap 2.5).
@@ -2904,7 +2935,7 @@ export default function App() {
       on top has none (a session, full screen) — elsewhere the one on
       screen is already the list's, and stays put. Never under the
       switcher, whose page is a session. */
-  const underNav = !switchingTabs;
+  const underNav = !switchingTabs && !settingsFace;
   /** **The landings' bar belongs to the landings** (2026-10-03, the owner
       on a phone: the capsule sat over a file's text). It floats over a
       landing's own list — 机器, 会话, 额度, 更多's list and the landings
@@ -2919,7 +2950,10 @@ export default function App() {
     morePage !== null || quotas || browses
       ? screen !== "detail"
       : !(switchingTabs && openTabs.length > 0) && !(screen === "detail" && detail);
-  const navShown = !switchingTabs && onLanding;
+  // **The settings window is the settings page alone** (UX-19, the owner
+  // 2026-10-05: the window carried the bar's capsule and 更多): no bar in
+  // it at any width.
+  const navShown = !switchingTabs && onLanding && !settingsFace;
 
   return (
     <SettingsProvider value={settings.rows}>
@@ -3071,14 +3105,14 @@ export default function App() {
                 <div
                   data-wide-top
                   {...WINDOW_DRAG}
-                  // **Right-aligned with the title row under it** (the owner,
-                  // 2026-10-02: 「这要右对齐」): the window buttons' room at the
-                  // left, then the strip pushed to the right edge — 更多 over the
-                  // search circle, the capsule's end over 筛选 / ＋'s — on the
-                  // same inset (`pe-row`, the title row's) and the same gap.
+                  // **Across the column** (UX-19, the owner 2026-10-05): the
+                  // window buttons' room at the left where there are window
+                  // buttons (`app.css`: the title row's inset where there are
+                  // not), then the five-seat capsule to the title row's right
+                  // inset (`pe-row`) — 更多 over the search circle. ⚠️ 墓碑:
+                  // right-aligned, its own width (「这要右对齐」, 10-02).
                   className="flex h-pane-head flex-none items-center ps-wide-lead-start pe-row select-none"
                 >
-                  <span className="flex-1" />
                   {/* Folded, the strip stands in the content's lead
                       (`foldedLead`) and only there: a second copy in the
                       hidden column was a second set of the same buttons. */}
