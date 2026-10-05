@@ -84,7 +84,12 @@ pub enum ClientOp {
 /// **The host protocol's version** (audit/term-attach.md). 1 is every
 /// host and client before the handshake: `Hello`, `Welcome`, raw bytes,
 /// `Input` and `Resize`. 2 adds [`ClientOp::Version`] and
-/// [`ClientOp::Forget`].
+/// [`ClientOp::Forget`]. 3 (item 46) changes what an attacher is handed
+/// first: a client that says `Version(3)` gets the host's **snapshot**
+/// ([`Model::snapshot`]: the scrollback as styled lines, the screen with
+/// its attributes and cursor, the modes) instead of the ring's bytes; an
+/// older client still gets the ring. No new frame: the host waits
+/// [`FIRST_FRAME`] for the client's first word before choosing.
 ///
 /// **How it is agreed without changing a frame's shape.** msgpack here
 /// is positional, and a struct read from a longer array fails
@@ -95,7 +100,14 @@ pub enum ClientOp {
 /// answer is no — and a client that sees it answers with
 /// [`ClientOp::Version`] before anything else. Neither side sends a word
 /// the other has not said it knows.
-pub const HOST_VERSION: u32 = 2;
+pub const HOST_VERSION: u32 = 3;
+
+/// How long a host waits after its `Welcome` for the client's first frame
+/// before handing it the ring (item 46): a versioned client's `Version`
+/// is its first write and arrives in a round trip — loopback, since far
+/// faces attach through the node beside the host — and a client older
+/// than the handshake, which never sends one, pays this once per attach.
+const FIRST_FRAME: Duration = Duration::from_millis(300);
 
 /// The `why` of a successful `Welcome` from a versioned host: this, then
 /// the version.
@@ -775,6 +787,229 @@ struct Shared {
     /// reader is broadcasting.
     ring: Mutex<Ring>,
     clients: Mutex<Vec<Client>>,
+    /// The screen the host keeps (item 46), fed under the ring's lock;
+    /// `None` for a tmux client, whose screen is tmux's (item 41).
+    model: Mutex<Option<Model>>,
+}
+
+/// Rows of history the model keeps above the screen: about what the
+/// ring held of an 80-column shell, kept as cells now (item 46; the
+/// face's own scrollback setting, item 17, bounds what it shows).
+const MODEL_SCROLLBACK: usize = 2000;
+
+/// **The host keeps a screen, not only bytes** (item 46; the owner chose
+/// this over a private tmux). A vt100 terminal (MIT, the crate
+/// `khor_detect` already reads agent screens with) over every shell khor
+/// hosts, with scrollback; an attacher of version 3 is handed what it
+/// shows — never the ring's bytes parsed visibly on the phone. The ring
+/// stays for older clients and for ⌘K's `Forget`.
+struct Model {
+    parser: vt100::Parser,
+}
+
+impl Model {
+    fn new(rows: u16, cols: u16) -> Self {
+        Model { parser: vt100::Parser::new(rows, cols, MODEL_SCROLLBACK) }
+    }
+
+    /// vt100 has corner-case panics on real streams (`khor_detect::Screen`
+    /// met one: a wide character at the last column). One bad frame must
+    /// not kill the host: the parser is replaced at its size, and the
+    /// program's next repaint restores the picture (the history is lost).
+    fn feed(&mut self, bytes: &[u8]) {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        let (rows, cols) = self.parser.screen().size();
+        if catch_unwind(AssertUnwindSafe(|| self.parser.process(bytes))).is_err() {
+            self.parser = vt100::Parser::new(rows, cols, MODEL_SCROLLBACK);
+        }
+    }
+
+    fn resize(&mut self, rows: u16, cols: u16) {
+        let (r, c) = self.parser.screen().size();
+        if (r, c) != (rows, cols) {
+            self.parser.screen_mut().set_size(rows, cols);
+        }
+    }
+
+    /// **⌘K** ([`ClientOp::Forget`]), kept by the model as the ring keeps
+    /// it: the history and the rows above the cursor's go, the cursor's
+    /// row and what follows it stand at the top of a fresh screen, in the
+    /// attributes and input modes in force. Normal screen only, as the
+    /// face's ⌘K is.
+    fn forget(&mut self) {
+        let screen = self.parser.screen_mut();
+        if screen.alternate_screen() {
+            return;
+        }
+        let (rows, cols) = screen.size();
+        screen.set_scrollback(0);
+        let (cy, cx) = screen.cursor_position();
+        let mut bytes = Vec::new();
+        let mut look = CellLook::default();
+        for r in cy..rows {
+            write_row(&mut bytes, screen, r, cols, &mut look);
+        }
+        if bytes.ends_with(b"\r\n") {
+            bytes.truncate(bytes.len() - 2);
+        }
+        bytes.extend_from_slice(format!("\x1b[0m\x1b[1;{}H", cx + 1).as_bytes());
+        if screen.hide_cursor() {
+            bytes.extend_from_slice(b"\x1b[?25l");
+        }
+        bytes.extend_from_slice(&screen.attributes_formatted());
+        bytes.extend_from_slice(&screen.input_mode_formatted());
+        let mut fresh = vt100::Parser::new(rows, cols, MODEL_SCROLLBACK);
+        fresh.process(&bytes);
+        self.parser = fresh;
+    }
+
+    /// **The snapshot**: on the normal screen, the scrollback as styled
+    /// lines (oldest first, wrapped rows joined so the face wraps them
+    /// at its own width), then the screen with its attributes and the
+    /// cursor where it is, then `modes` (the ring's, for what vt100 does
+    /// not model: the kitty flags, modifyOtherKeys) and vt100's own input
+    /// modes. On the alternate screen the modes switch the face to it
+    /// and the program's screen follows; the normal screen underneath
+    /// is not sent (vt100 shows one grid at a time).
+    fn snapshot(&mut self, modes: &[u8]) -> Vec<u8> {
+        let screen = self.parser.screen_mut();
+        let (rows, cols) = screen.size();
+        let mut out = Vec::new();
+        out.extend_from_slice(b"\x1b[0m");
+        if !screen.alternate_screen() {
+            screen.set_scrollback(usize::MAX);
+            let total = screen.scrollback();
+            let mut left = total;
+            let mut attrs = CellLook::default();
+            while left > 0 {
+                screen.set_scrollback(left);
+                let take = left.min(rows as usize);
+                for r in 0..take as u16 {
+                    write_row(&mut out, screen, r, cols, &mut attrs);
+                }
+                left -= take;
+            }
+            screen.set_scrollback(0);
+            // The last rows written are still on the face's screen: the
+            // rest of a screen of line ends moves them into its history,
+            // then the screen is drawn over the blank.
+            out.extend_from_slice(b"\x1b[0m");
+            if total > 0 {
+                out.extend_from_slice(&b"\r\n".repeat(rows.saturating_sub(1) as usize));
+            }
+            out.extend_from_slice(&screen.contents_formatted());
+            out.extend_from_slice(modes);
+        } else {
+            out.extend_from_slice(modes);
+            out.extend_from_slice(&screen.contents_formatted());
+        }
+        out.extend_from_slice(&screen.input_mode_formatted());
+        out
+    }
+}
+
+/// The attributes the last cell written left in force.
+#[derive(Default, PartialEq, Clone, Copy)]
+struct CellLook {
+    fg: Option<vt100::Color>,
+    bg: Option<vt100::Color>,
+    bold: bool,
+    dim: bool,
+    italic: bool,
+    underline: bool,
+    inverse: bool,
+}
+
+impl CellLook {
+    fn of(c: &vt100::Cell) -> Self {
+        CellLook {
+            fg: Some(c.fgcolor()),
+            bg: Some(c.bgcolor()),
+            bold: c.bold(),
+            dim: c.dim(),
+            italic: c.italic(),
+            underline: c.underline(),
+            inverse: c.inverse(),
+        }
+    }
+
+    fn plain(&self) -> bool {
+        *self == CellLook::default()
+            || (matches!(self.fg, None | Some(vt100::Color::Default))
+                && matches!(self.bg, None | Some(vt100::Color::Default))
+                && !self.bold
+                && !self.dim
+                && !self.italic
+                && !self.underline
+                && !self.inverse)
+    }
+
+    /// The SGR that sets this look from scratch.
+    fn sgr(&self) -> Vec<u8> {
+        let mut p: Vec<String> = vec!["0".into()];
+        if self.bold {
+            p.push("1".into());
+        }
+        if self.dim {
+            p.push("2".into());
+        }
+        if self.italic {
+            p.push("3".into());
+        }
+        if self.underline {
+            p.push("4".into());
+        }
+        if self.inverse {
+            p.push("7".into());
+        }
+        let colour = |p: &mut Vec<String>, c: Option<vt100::Color>, base: u8| match c {
+            Some(vt100::Color::Idx(n)) if n < 8 => p.push((base + n).to_string()),
+            Some(vt100::Color::Idx(n)) if n < 16 => p.push((base + 60 + n - 8).to_string()),
+            Some(vt100::Color::Idx(n)) => p.push(format!("{};5;{n}", base + 8)),
+            Some(vt100::Color::Rgb(r, g, b)) => p.push(format!("{};2;{r};{g};{b}", base + 8)),
+            _ => {}
+        };
+        colour(&mut p, self.fg, 30);
+        colour(&mut p, self.bg, 40);
+        format!("\x1b[{}m", p.join(";")).into_bytes()
+    }
+}
+
+/// One scrollback row of the model, as the face's terminal takes it: the
+/// cells with their looks, trailing plain blanks dropped, then a line
+/// end — unless the row wraps into the next, which then continues it
+/// (the full row makes the face wrap exactly there).
+fn write_row(out: &mut Vec<u8>, screen: &vt100::Screen, row: u16, cols: u16, look: &mut CellLook) {
+    let wrapped = screen.row_wrapped(row);
+    let mut end = cols;
+    if !wrapped {
+        while end > 0 {
+            match screen.cell(row, end - 1) {
+                Some(c) if !c.has_contents() && CellLook::of(c).plain() => end -= 1,
+                Some(c) if c.is_wide_continuation() => end -= 1,
+                _ => break,
+            }
+        }
+    }
+    for col in 0..end {
+        let Some(c) = screen.cell(row, col) else { break };
+        if c.is_wide_continuation() {
+            continue;
+        }
+        let want = CellLook::of(c);
+        if want != *look {
+            out.extend_from_slice(&want.sgr());
+            *look = want;
+        }
+        if c.has_contents() {
+            out.extend_from_slice(c.contents().as_bytes());
+        } else {
+            out.push(b' ');
+        }
+    }
+    if !wrapped {
+        out.extend_from_slice(b"\r\n");
+    }
 }
 
 /// How many bytes may wait for one client before it is let go. A face
@@ -1104,6 +1339,8 @@ fn host_serving(
     let shared = Arc::new(Shared {
         ring: Mutex::new(Ring::default()),
         clients: Mutex::new(Vec::new()),
+        // A tmux client's screen is tmux's (item 41): no model.
+        model: Mutex::new((!mux_client).then(|| Model::new(size.1, size.0))),
     });
     let output_done = Arc::new(AtomicBool::new(false));
     // The questions the program asked its terminal, and which answers
@@ -1241,6 +1478,9 @@ fn host_serving(
                 }
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
+                if let Some(m) = shared.model.lock().unwrap().as_mut() {
+                    m.feed(&buf[..n]);
+                }
                 let chunk: Arc<[u8]> = Arc::from(&buf[..n]);
                 let mut clients = shared.clients.lock().unwrap();
                 // Queued, never written here: the program must not wait
@@ -1403,6 +1643,9 @@ fn host_serving(
                     pixel_width: 0,
                     pixel_height: 0,
                 });
+                if let Some(m) = shared.model.lock().unwrap().as_mut() {
+                    m.resize(hello.rows, hello.cols);
+                }
                 // The reader has to follow, or it is matching against a
                 // screen of a different shape than the one the agent is
                 // drawing to — and the first thing to break is the box
@@ -1423,15 +1666,37 @@ fn host_serving(
                     continue;
                 }
                 {
-                    // The replay is the client's first queued chunk, under
-                    // the ring's lock so nothing the reader broadcasts is
-                    // missed or doubled — and queued, not written, so a
-                    // slow far viewer attaching does not stall the program
-                    // while the ring crosses a relay.
-                    let ring = shared.ring.lock().unwrap();
-                    let Ok(readable) = conn.try_clone() else {
+                    let Ok(mut readable) = conn.try_clone() else {
                         continue;
                     };
+                    // **The client's first word, before anything is
+                    // queued** (item 46): a versioned client's `Version`
+                    // decides between the snapshot and the ring. Waited for
+                    // `FIRST_FRAME` at most; a frame that has begun to
+                    // arrive is read whole.
+                    let mut first_op: Option<ClientOp> = None;
+                    let _ = readable.set_read_timeout(Some(FIRST_FRAME));
+                    if matches!(readable.peek(&mut [0u8; 1]), Ok(n) if n > 0) {
+                        let _ = readable.set_read_timeout(None);
+                        match read_client_frame::<ClientOp>(&mut readable) {
+                            Ok(op) => first_op = op,
+                            Err(_) => continue,
+                        }
+                    }
+                    let _ = readable.set_read_timeout(None);
+                    let agreed_first = match first_op {
+                        Some(ClientOp::Version(v)) => v.min(HOST_VERSION),
+                        _ => 1,
+                    };
+                    // Anything else said first (an old client's keystroke
+                    // in the window) is the loop's first op below.
+                    let mut pending = first_op.filter(|op| !matches!(op, ClientOp::Version(_)));
+                    // The first chunk is queued under the ring's lock so
+                    // nothing the reader broadcasts is missed or doubled —
+                    // and queued, not written, so a slow far viewer
+                    // attaching does not stall the program while it
+                    // crosses a relay.
+                    let ring = shared.ring.lock().unwrap();
                     let Ok(client) = Client::new(conn) else {
                         continue;
                     };
@@ -1440,7 +1705,15 @@ fn host_serving(
                     // over, up to a MiB, parsed visibly on the phone, and
                     // tmux can draw the screen afresh instead; the history
                     // is read from tmux (item 31). The modes still go first.
-                    let first = if mux_client { ring.modes_now() } else { ring.replay() };
+                    // **A version-3 client gets the snapshot** (item 46);
+                    // an older one the ring, as before.
+                    let mut model = shared.model.lock().unwrap();
+                    let first = match model.as_mut() {
+                        _ if mux_client => ring.modes_now(),
+                        Some(m) if agreed_first >= 3 => m.snapshot(&ring.modes_now()),
+                        _ => ring.replay(),
+                    };
+                    drop(model);
                     if !client.feed(&Arc::from(first)) {
                         continue;
                     }
@@ -1457,9 +1730,16 @@ fn host_serving(
                         let mut readable = readable;
                         // What this client and this host speak: 1 until
                         // the client says otherwise.
-                        let mut agreed = 1;
-                        while let Ok(op) = read_client_frame::<ClientOp>(&mut readable) {
-                            let Some(op) = op else { continue };
+                        let mut agreed = agreed_first;
+                        loop {
+                            let op = match pending.take() {
+                                Some(op) => op,
+                                None => match read_client_frame::<ClientOp>(&mut readable) {
+                                    Ok(Some(op)) => op,
+                                    Ok(None) => continue,
+                                    Err(_) => break,
+                                },
+                            };
                             match op {
                                 ClientOp::Input(bytes) => {
                                     // An answer only while its question waits
@@ -1480,9 +1760,19 @@ fn host_serving(
                                         pixel_width: 0,
                                         pixel_height: 0,
                                     });
+                                    if let Some(m) = shared.model.lock().unwrap().as_mut() {
+                                        m.resize(rows, cols);
+                                    }
                                 }
                                 ClientOp::Version(v) => agreed = v.min(HOST_VERSION),
-                                ClientOp::Forget if agreed >= 2 => shared.ring.lock().unwrap().forget(),
+                                ClientOp::Forget if agreed >= 2 => {
+                                    let mut ring = shared.ring.lock().unwrap();
+                                    ring.forget();
+                                    if let Some(m) = shared.model.lock().unwrap().as_mut() {
+                                        m.forget();
+                                    }
+                                    drop(ring);
+                                }
                                 ClientOp::Forget => {}
                             }
                         }
@@ -1615,8 +1905,10 @@ mod tests {
 #[cfg(test)]
 mod last_line_tests {
     use super::{
-        last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last, tmux_socket_args,
+        CellLook, MODEL_SCROLLBACK, Model, last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last, tmux_socket_args,
     };
+    use crate::modes::Modes;
+    use std::path::Path;
 
     /// The preview strip reads bytes the way `tail -1` would: ANSI
     /// dropped, CR dropped, the last line with visible content wins.
@@ -1684,6 +1976,130 @@ mod last_line_tests {
 
     /// Which hosts the writer gate applies to: any argv whose command is
     /// tmux, by basename — both bridge shapes get there through one.
+    /// The three streams the snapshot is checked against, here and in the
+    /// face's gate (`apps/gui/scripts/check-snapshot.mjs`, through xterm):
+    /// a shell transcript with colours and a wrapped line, a full-screen
+    /// program on the alternate screen holding the mouse, and wide
+    /// characters with every attribute.
+    fn snapshot_streams() -> Vec<(&'static str, Vec<u8>)> {
+        let mut shell = Vec::new();
+        for i in 0..120 {
+            shell.extend_from_slice(format!("\x1b[32mdesk\x1b[0m:\x1b[34m~/work\x1b[0m$ echo {i}\r\n").as_bytes());
+            if i % 7 == 0 {
+                shell.extend_from_slice(format!("\x1b[1;33mwarning\x1b[0m line {i} {}\r\n", "0123456789".repeat(12)).as_bytes());
+            } else {
+                shell.extend_from_slice(format!("{i}\r\n").as_bytes());
+            }
+        }
+        shell.extend_from_slice(b"\x1b[32mdesk\x1b[0m:\x1b[34m~/work\x1b[0m$ ");
+        let mut tui = Vec::new();
+        tui.extend_from_slice(b"\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H\x1b[2J");
+        tui.extend_from_slice("\x1b[2;3H\x1b[36m\u{256d}\u{2500}\u{2500}\u{2500}\u{2500}\u{256e}\x1b[0m".as_bytes());
+        tui.extend_from_slice("\x1b[3;3H\x1b[36m\u{2502}\x1b[0m > hi \x1b[36m\u{2502}\x1b[0m".as_bytes());
+        tui.extend_from_slice("\x1b[4;3H\x1b[36m\u{2570}\u{2500}\u{2500}\u{2500}\u{2500}\u{256f}\x1b[0m".as_bytes());
+        tui.extend_from_slice(b"\x1b[10;1H\x1b[7m status \x1b[0m\x1b[3;9H");
+        let mut wide = Vec::new();
+        wide.extend_from_slice("\x1b[1m\u{4f60}\u{597d}\x1b[0m \x1b[4m\u{4e16}\u{754c}\x1b[0m \x1b[38;5;208mo\x1b[48;2;10;20;30mb\x1b[0m\r\n".as_bytes());
+        wide.extend_from_slice(format!("{}\r\n", "\u{6f22}".repeat(50)).as_bytes());
+        wide.extend_from_slice(format!("{}", "x".repeat(80)).as_bytes());
+        wide.extend_from_slice(b"\x1b[3;2mdim italic\x1b[0m end\r\n$ ");
+        vec![("shell", shell), ("tui", tui), ("wide", wide)]
+    }
+
+    /// A snapshot fed to a fresh terminal shows what the model shows:
+    /// the screen cell for cell, the cursor, the history's text, the
+    /// alternate screen and the modes (item 46).
+    #[test]
+    fn a_snapshot_rebuilds_the_screen_and_its_history() {
+        for (name, raw) in snapshot_streams() {
+            let mut model = Model::new(24, 80);
+            model.feed(&raw);
+            let mut modes = Modes::default();
+            modes.feed(&raw);
+            let snap = model.snapshot(&modes.preamble());
+            let mut again = vt100::Parser::new(24, 80, MODEL_SCROLLBACK);
+            again.process(&snap);
+            let a = model.parser.screen();
+            let b = again.screen();
+            assert_eq!(a.alternate_screen(), b.alternate_screen(), "{name}: the buffer");
+            assert_eq!(a.contents(), b.contents(), "{name}: the screen's text");
+            assert_eq!(a.cursor_position(), b.cursor_position(), "{name}: the cursor");
+            for r in 0..24 {
+                for c in 0..80 {
+                    let (x, y) = (a.cell(r, c).unwrap(), b.cell(r, c).unwrap());
+                    assert_eq!((x.contents(), CellLook::of(x) == CellLook::of(y)), (y.contents(), true), "{name}: cell {r},{c}");
+                }
+            }
+            assert_eq!(a.mouse_protocol_mode(), b.mouse_protocol_mode(), "{name}: the mouse");
+            if !a.alternate_screen() {
+                let mut a = Model::new(24, 80);
+                a.feed(&raw);
+                let a = a.parser.screen_mut();
+                a.set_scrollback(usize::MAX);
+                let total = a.scrollback();
+                b_history(&mut again, total, a, name);
+            }
+            assert!(snap.len() < raw.len() + 4096, "{name}: a snapshot is not longer than the stream it stands for by more than its framing ({} vs {})", snap.len(), raw.len());
+        }
+    }
+
+    /// The history rows of the rebuilt terminal read as the model's, row
+    /// for row from the top.
+    fn b_history(again: &mut vt100::Parser, total: usize, a: &mut vt100::Screen, name: &str) {
+        let b = again.screen_mut();
+        b.set_scrollback(usize::MAX);
+        assert_eq!(b.scrollback(), total, "{name}: the history's length");
+        let text = |s: &mut vt100::Screen, off: usize| {
+            s.set_scrollback(off);
+            s.rows(0, 80).next().unwrap_or_default()
+        };
+        let mut off = total;
+        while off > 0 {
+            assert_eq!(text(a, off), text(b, off), "{name}: history row {} from the top", total - off);
+            off -= 1;
+        }
+    }
+
+    /// ⌘K in the model: the history and the rows above the cursor's are
+    /// gone, the cursor's row stands first, the attributes and modes stay.
+    #[test]
+    fn the_model_forgets_what_was_cleared() {
+        let mut model = Model::new(24, 80);
+        model.feed(b"\x1b[?2004h");
+        for i in 0..40 {
+            model.feed(format!("line {i}\r\n").as_bytes());
+        }
+        model.feed(b"\x1b[33m$ \x1b[0mtyped");
+        model.forget();
+        let s = model.parser.screen_mut();
+        assert_eq!(s.cursor_position(), (0, 7));
+        assert_eq!(s.contents().trim_end(), "$ typed");
+        assert_eq!(s.cell(0, 0).unwrap().fgcolor(), vt100::Color::Idx(3), "the prompt keeps its colour");
+        assert!(s.bracketed_paste(), "the modes stay");
+        s.set_scrollback(usize::MAX);
+        assert_eq!(s.scrollback(), 0, "the history is gone");
+        let snap = model.snapshot(b"");
+        assert!(!String::from_utf8_lossy(&snap).contains("line 39"), "a later attacher does not see it");
+    }
+
+    /// Writes the streams and their snapshots for the face's gate
+    /// (`npm run snapshot` compares them through xterm). Run by hand:
+    /// `cargo test -p khor-node --lib writes_snapshot_fixtures -- --ignored`.
+    #[test]
+    #[ignore]
+    fn writes_snapshot_fixtures() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/gui/scripts/fixtures/snapshot");
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, raw) in snapshot_streams() {
+            let mut model = Model::new(24, 80);
+            model.feed(&raw);
+            let mut modes = Modes::default();
+            modes.feed(&raw);
+            std::fs::write(dir.join(format!("{name}.raw")), &raw).unwrap();
+            std::fs::write(dir.join(format!("{name}.snap")), model.snapshot(&modes.preamble())).unwrap();
+        }
+    }
+
     /// The socket of the server a client argv speaks to (item 41), with
     /// the other global flags, valued or not, stepped over.
     #[test]

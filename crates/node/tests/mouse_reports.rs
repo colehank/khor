@@ -62,15 +62,18 @@ fn a_mouse_mode_left_on_is_turned_off_and_its_reports_never_reach_the_shell() {
         std::thread::sleep(Duration::from_millis(50));
     }
 
-    // The replay: the program's `h`, and after it the host's `l`.
+    // What an attacher starts in: the mouse off — the program's `h` was
+    // answered by the host's `l` (a version-3 attacher is handed the
+    // modes in force, item 46; an older one the ring, with the `l` after
+    // the `h`), so the reports a stale face still sends never reach the
+    // shell as keys.
     let mut conn = khor_node::host::connect(&dir, 80, 24).expect("the host takes an attacher");
     conn.set_read_timeout(Some(Duration::from_millis(200))).unwrap();
     let mut seen = Vec::new();
     read_until(&mut conn, "SET-MARK", &mut seen);
-    let text = String::from_utf8_lossy(&seen).into_owned();
-    let on = text.find("\x1b[?1003h").expect("the program's mode in the replay");
-    let off = text.find("\x1b[?1003l").expect("the host turned the mode off in the stream");
-    assert!(off > on, "the `l` comes after the `h`: {text:?}");
+    let mut modes = khor_node::modes::Modes::default();
+    modes.feed(&seen);
+    assert!(!modes.is_set(1003), "the attacher starts with the mouse off: {:?}", String::from_utf8_lossy(&seen));
 
     // A stale face still sends the owner's reports, then a line.
     let mut writer = conn.try_clone().unwrap();

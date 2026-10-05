@@ -4599,6 +4599,7 @@ dependencies = [
  "sysinfo",
  "tokio",
  "trash",
+ "vt100",
 ]
 
 [[package]]
