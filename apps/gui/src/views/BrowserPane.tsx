@@ -212,6 +212,9 @@ export function BrowserPane({
     // bottom inset of the deck's height, so it scrolls under the glass.
     const native = host.current?.closest("[data-session-screen]")?.querySelector("[data-session-bar][data-native-deck]");
     const h = (native ? native.getBoundingClientRect().bottom : r.bottom) - top;
+    // What was decided, for the gate (`check-face` bar r: a sheet over
+    // the page takes it away).
+    document.dispatchEvent(new CustomEvent("khor:page-place", { detail: { tab, covered, top, h } }));
     // A page squeezed to nothing is a page nobody can read; below this it
     // is honest to take it away rather than draw a sliver.
     if (covered || h < 24) {
@@ -389,8 +392,23 @@ export function BrowserPane({
     // question. `attributes` was in here too and is not: it fires on
     // every class this app rewrites, which is constantly.
     watch.observe(document.body, { childList: true, subtree: true });
+    // **An overlay that rises into place is measured again when it has
+    // risen** (UX-28, the owner's phone: the native page covered every
+    // sheet). The phone's sheets slide up from under the screen's foot,
+    // so at the mutation the tabs sheet stood at y 874..1082 on an 874
+    // screen — nothing over the page — and nothing fired after it had
+    // arrived. Its motion's end is the second look.
+    const settled = (e: Event) => {
+      if (e.target instanceof Element && e.target.closest(OVERLAYS)) place();
+    };
+    document.addEventListener("animationend", settled, true);
+    document.addEventListener("transitionend", settled, true);
     place();
-    return () => watch.disconnect();
+    return () => {
+      watch.disconnect();
+      document.removeEventListener("animationend", settled, true);
+      document.removeEventListener("transitionend", settled, true);
+    };
   }, [place]);
 
   // **The page is the one that knows where it is.** A link, a redirect, a

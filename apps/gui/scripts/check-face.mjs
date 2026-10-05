@@ -29547,6 +29547,29 @@ try {
           if (Math.abs(rest.inset - (rest.deck + rest.safe)) > 0.5) fail(`bar r · the page's inset ${rest.inset} is not the deck row ${rest.deck} and the safe area ${rest.safe}`);
           if (rest.images < 3) fail(`bar r · ${rest.images} glyph/face image(s) — ‹, a face or glyph in the pill, the tabs figure at least`);
         }
+        // **A sheet over the page takes the page away** (UX-28, the owner's
+        // phone: the native page painted over every sheet). The pane says
+        // what it decided on `khor:page-place`; the sheet rises from under
+        // the screen's foot, so the decision that counts is the one after
+        // its motion has ended, not the one at its arrival.
+        const over = await page.evaluate(async () => {
+          const said = [];
+          document.addEventListener("khor:page-place", (e) => said.push(e.detail.covered));
+          document.querySelector("[data-session-deck] [data-deck-tabs]")?.click();
+          await new Promise((r) => setTimeout(r, 900));
+          const up = { sheet: document.querySelectorAll("[data-tab-sheet]").length, covered: said.at(-1) ?? null, looks: said.length };
+          said.length = 0;
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          await new Promise((r) => setTimeout(r, 900));
+          return { up, down: { sheet: document.querySelectorAll("[data-tab-sheet]").length, covered: said.at(-1) ?? null } };
+        });
+        console.log(`bar r · the tabs sheet over the page: ${shown(over)}`);
+        if (over.up.sheet !== 1 || over.up.covered !== true) {
+          fail(`bar r · with the tabs sheet up the page pane decided ${shown(over.up)} — the page steps aside for a sheet (UX-28; src/views/BrowserPane.tsx place)`);
+        }
+        if (over.down.sheet !== 0 || over.down.covered !== false) {
+          fail(`bar r · with the sheet gone the page pane decided ${shown(over.down)} — the page comes back`);
+        }
       }
     }
 
