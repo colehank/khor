@@ -53,8 +53,8 @@ function check(path) {
 // ── The one named exception: brand marks (docs/SHELL.md 第五轮第 7 条改画法)
 //
 // Claude's, Codex's, Cursor's marks and the four system families' (apple,
-// linux, windows, android) are **somebody else's marks**, filled, drawn on
-// a 1024 canvas: redrawn in this family's strokes they stop being
+// linux, windows, android; macOS's Finder is ours, drawn in icons.tsx —
+// UX-27) are **somebody else's marks**, filled, drawn on a 1024 canvas: redrawn in this family's strokes they stop being
 // recognisable, which is the only thing they are for. So they are let in
 // — **by name, in one file**, `src/components/BrandIcons.tsx` — and held
 // to the two things that keep them from becoming a second family by the

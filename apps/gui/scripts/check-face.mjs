@@ -11691,12 +11691,15 @@ try {
 
   // ── 4M) 第五轮第 7 条改画法:机器角标按系统,型号进副标题 (docs/SHELL.md) ──
   //
-  // 「机器行的角标按系统画」 — apple / linux / windows / android, and the
-  // plain machine mark for a machine that could not say. The node's
+  // 「机器行的角标按系统画」 — macos / ios / linux / windows / android, and
+  // the plain machine mark for a machine that could not say. The node's
   // `vitals.system` is the answer; `vitals.model` no longer draws the
   // corner, and its name goes under the machine's name. Three machines:
-  // `peer` linux (with a model name), `elder` apple, `gate` (this one,
-  // no reading at all) nothing.
+  // `peer` linux (with a model name), `elder` macos, `gate` (this one,
+  // no reading at all) nothing. **The Mac wears the Finder** (UX-27,
+  // 2026-10-06: a phone must be known as a phone): elder's mark is the
+  // family's own `finder` glyph, not the Apple mark — which stays for
+  // `ios` and for an older peer's `apple`.
   {
     const peer = devs.find((d) => d.name === "peer");
     const elder = devs.find((d) => d.name === "elder");
@@ -11705,7 +11708,7 @@ try {
       peer.vitals.vitals.system = "linux";
       peer.vitals.vitals.model = { kind: "server", name: "SYS-4028GR-TR" };
     }
-    if (elder?.vitals?.vitals) elder.vitals.vitals.system = "apple";
+    if (elder?.vitals?.vitals) elder.vitals.vitals.system = "macos";
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.reload({ waitUntil: "load" });
     await wait(900);
@@ -11717,6 +11720,7 @@ try {
             row.getAttribute("data-device"),
             {
               corner: row.querySelector("[data-side-mark]")?.getAttribute("data-side-mark") ?? null,
+              glyph: row.querySelector("[data-side-mark] svg")?.getAttribute("data-icon") ?? null,
               sub: row.querySelector("[data-side-sub]")?.textContent ?? "",
               aside: row.querySelector("[data-side-aside]")?.textContent ?? "",
             },
@@ -11727,7 +11731,7 @@ try {
     await until(3_000, async () => (await read()).peer?.corner === "linux");
     const seen = await read();
     console.log(`devices 4M · rows: ${JSON.stringify(seen)}`);
-    const want = { peer: "linux", elder: "apple", gate: "machine" };
+    const want = { peer: "linux", elder: "macos", gate: "machine" };
     if (Object.keys(seen).length < 3) {
       fail(`probe dead: the devices column drew ${Object.keys(seen).length} row(s)`);
     } else {
@@ -11738,6 +11742,9 @@ try {
               "(docs/SHELL.md 第五轮第 7 条改画法)",
           );
         }
+      }
+      if (seen.elder?.corner === "macos" && seen.elder?.glyph !== "finder") {
+        fail(`the elder row (macOS) wears 「${seen.elder?.glyph}」 where the Mac wears the Finder (UX-27)`);
       }
       // UX-15: the model is the title's aside (「左上身份 · 型号」);
       // ⚠️ 墓碑: 「型号文字进机器行的副标题」, the second line until 10-05.
