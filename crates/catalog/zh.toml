@@ -2819,6 +2819,9 @@ machine-here = "本机"
 # account's window (what is left · when it resets).
 row-sessions = "{0} 个会话"
 row-cpu = "CPU {0}%"
+# The row's latency keeps the Latin unit (the owner, 2026-10-05: 「23 ms」); the
+# relay rows on 连接 keep theirs (conn-relay-ms).
+row-rtt = "{0} ms"
 row-changes = "{0} 个改动"
 row-window = "剩 {0} · {1} 重置"
 row-left = "剩余 {0}"

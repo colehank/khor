@@ -368,6 +368,16 @@ input[type="search"]::-webkit-search-decoration {
 :root:not([data-narrow]) [data-side-row][data-selected="true"] [data-word-text] {
   color: var(--foreground) !important;
 }
+/* **The hairlines touching a selected or pressed row are not drawn**
+   (UX-24, the owner 2026-10-05, UITableView's rule): its own foot and the
+   foot of the row above it. The grey block then stands between rows, not
+   between two lines that run past it. */
+:root:not([data-narrow]) [data-side-row][data-selected="true"] [data-side-text],
+:root:not([data-narrow]) [data-side-row]:has(+ [data-side-row][data-selected="true"]) [data-side-text],
+[data-side-row]:active [data-side-text],
+[data-side-row]:has(+ [data-side-row]:active) [data-side-text] {
+  border-bottom-color: transparent;
+}
 
 /* **A picked row in a floating list is a chosen row, and wears one ink
    too** (2026-09-30). The ⌘K hits, a box's completions, the slash
