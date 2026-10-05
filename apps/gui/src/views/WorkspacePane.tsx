@@ -1098,6 +1098,13 @@ export function WorkspacePane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reveal]);
 
+  // **The last file closed from the page's tabs sheet leaves the page**
+  // (UX-25): on the narrow face the file screen with no file is the
+  // tree's turn, as the session page's last × is the list's.
+  useEffect(() => {
+    if (narrow && screen === "file" && file === null) setScreen("tree");
+  }, [narrow, screen, file]);
+
   /** What the strip draws. **Built here because the facts are this
       pane's** — which files are open, which one is in front, which one
       has something typed in it — and `TabStrip` paints and decides
@@ -1869,6 +1876,13 @@ export function WorkspacePane({
               onMoved={moved}
               code={codeWin}
               history={git !== null}
+              // The open files in the deck's tabs circle (UX-25).
+              tabs={{
+                faces: tabFaces,
+                active: `${machine}:${file}`,
+                onFocus: (id) => setFile(id.slice(machine.length + 1)),
+                onClose: (id) => shut(id.slice(machine.length + 1)),
+              }}
             />
           ) : (
           <div ref={readFirst.box} className="contents">

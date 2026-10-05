@@ -2820,6 +2820,27 @@ fn page_deck(tab: String, drawing: Option<serde_json::Value>) -> Result<(), Stri
     Ok(())
 }
 
+/// **The page's ground under the folded capsule** (UX-29): asked of the
+/// phone's page, `y` up from its foot; answered as `page:ground`
+/// (`phone_page::ground`). A Mac's capsule stands under the page on the
+/// app's own ground, so it asks nothing.
+#[cfg(not(desktop))]
+#[tauri::command]
+fn page_ground(app: tauri::AppHandle, tab: String, y: f64) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    let _ = app.run_on_main_thread(move || phone_page::ground(&tab, y));
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, tab, y);
+    Ok(())
+}
+
+#[cfg(desktop)]
+#[tauri::command]
+fn page_ground(tab: String, y: f64) -> Result<(), String> {
+    let _ = (tab, y);
+    Ok(())
+}
+
 #[cfg(not(desktop))]
 #[tauri::command]
 fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
@@ -4235,6 +4256,7 @@ pub fn run() {
             show_page,
             page_step,
             page_deck,
+            page_ground,
             show_menu,
             hide_menu,
             size_menu,

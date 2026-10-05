@@ -54,7 +54,7 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { fetchPageIcons, onPageWord, openLink, pageDeck, pageStep, recentVisit, type DeviceRow } from "@/api";
+import { fetchPageIcons, onPageWord, openLink, pageDeck, pageGround, pageStep, recentVisit, type DeviceRow } from "@/api";
 import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
 import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
 import { pageFail, type PageFail } from "@/browse/page-fail";
@@ -67,7 +67,7 @@ import { IconArrow, IconBrowser, IconReload } from "@/components/icons";
 import { GlassItem } from "@/components/Glass";
 import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
-import { FOLD_AT, foldStep, UnfoldHold, type FoldMemo } from "@/lib/deck-fold";
+import { FOLD_AT, foldStep, inkOver, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import type { KindMark } from "@/components/FaceMark";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
@@ -427,9 +427,24 @@ export function BrowseLanding({
   /** **Why the page could not be opened** (UX-22), until the next load
       starts: said in the pill (narrow) or the caption (wide), with 重试. */
   const [failed, setFailed] = useState<PageFail | null>(null);
+  /** **The folded capsule's ink, from the page's own ground** (UX-29):
+      the phone's native page is asked what it paints under the capsule
+      (`pageGround`, as the fold happens and a few times a second as the
+      page scrolls on) and answers `page:ground`; the DOM cannot see into
+      it. Dark ink until the page says otherwise (a white page). */
+  const [ink, setInk] = useState<DeckInk>("dark");
+  const askedAt = useRef(0);
+  const askGround = () => {
+    const bar = document.querySelector<HTMLElement>("[data-session-bar][data-native-deck]");
+    const cap = bar?.querySelector<HTMLElement>("[data-deck-strip]");
+    if (!bar || !cap) return;
+    const c = cap.getBoundingClientRect();
+    void pageGround(tabs.current.id, bar.getBoundingClientRect().bottom - (c.top + c.height / 2)).catch(() => {});
+  };
   useEffect(() => {
     setFolded(false);
     setFailed(null);
+    setInk("dark");
     const id = tabs.current.id;
     // The one deck rule (UX-13, `lib/deck-fold`): a page rests at its top,
     // and the top's first hand's width still counts as rest.
@@ -441,16 +456,31 @@ export function BrowseLanding({
       const next = foldStep(memo, at, way === "down", FOLD_AT);
       if (!hold.current.allows() && next === true) return;
       if (next !== null) setFolded(next);
+      const now = performance.now();
+      if (now - askedAt.current > 250) {
+        askedAt.current = now;
+        // After the fold's own render, so the capsule is there to measure.
+        requestAnimationFrame(askGround);
+      }
     });
+    const offGround = onPageWord("page:ground", id, (t) => setInk(inkOver(t)));
     const offLoad = onPageWord("page:load", id, (t) => {
-      if (t === "started") setFailed(null);
+      // A page starting to load is a page at its top: the deck unfolds
+      // (measured on the simulator: a new address typed into a folded
+      // tab arrived folded, its first scroll word lost to the editing).
+      if (t === "started") {
+        setFailed(null);
+        setFolded(false);
+      }
     });
     const offFail = onPageWord("page:fail", id, (t) => setFailed(pageFail(t)));
     return () => {
       offScroll();
+      offGround();
       offLoad();
       offFail();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs.current.id]);
   /** Whether this tab has somewhere to be: its ← → and reload are drawn
       then, and the editor is not needed to start. */
@@ -502,7 +532,7 @@ export function BrowseLanding({
       on it comes back as the DOM control it stands for. */
   const native = nativeDeckHere && narrow && tabs.ready && somewhere && !editing;
   const nativeTab = tabs.current.id;
-  const nativeKey = `${folded}|${pageLoading}|${failed?.reason ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}`;
+  const nativeKey = `${folded}|${ink}|${pageLoading}|${failed?.reason ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}`;
   useEffect(() => {
     if (!nativeDeckHere || !narrow) return;
     if (!native) {
@@ -726,6 +756,11 @@ export function BrowseLanding({
         caption={failedWord || caption}
         editor={tabs.ready && editing ? pillEditor : undefined}
         nativeDeck={native}
+        // The page is a native view the capsule cannot float over: it
+        // keeps its own room under the page (UX-29); on the phone the
+        // native deck draws it over the page from this layout.
+        foldOver={false}
+        ink={native ? ink : undefined}
         onEditCancel={() => setEditing(false)}
         folded={folded && !editing}
         onUnfold={() => {

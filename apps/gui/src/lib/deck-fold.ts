@@ -72,3 +72,64 @@ export function foldStep(memo: FoldMemo, away: number, leaving: boolean, rest: n
   memo.turned ??= away;
   return memo.turned - away >= UNFOLD_BY ? false : null;
 }
+
+/** The folded deck's ink, by what is behind it. */
+export type DeckInk = "light" | "dark";
+
+/**
+ * **The capsule's text adapts to what is behind it** (UX-29, the owner's
+ * Safari shots): white over a dark ground, black over a light one. The
+ * ground as a CSS colour — `r,g,b` as the page's sampler says it, or
+ * anything a canvas reads (`#rrggbb`, `rgb()`, a name) — to the ink that
+ * reads on it, by the ground's relative luminance (sRGB, the WCAG
+ * weights). Nothing known (`""`, or a colour nothing can read) is a white
+ * page's ground: dark ink.
+ */
+export function inkOver(ground: string): DeckInk {
+  const rgb = rgbOf(ground);
+  if (!rgb) return "dark";
+  const lin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const l = 0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2]);
+  return l > 0.36 ? "dark" : "light";
+}
+
+let pen: CanvasRenderingContext2D | null = null;
+function rgbOf(color: string): [number, number, number] | null {
+  const bare = /^\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*$/.exec(color);
+  if (bare) return [Number(bare[1]), Number(bare[2]), Number(bare[3])];
+  if (!color.trim() || typeof document === "undefined") return null;
+  pen ??= document.createElement("canvas").getContext("2d");
+  if (!pen) return null;
+  pen.fillStyle = "#000000";
+  pen.fillStyle = "#010203";
+  pen.fillStyle = color;
+  const got = String(pen.fillStyle);
+  // A colour the canvas could not read leaves the sentinel in place.
+  if (got === "#010203" && color.trim() !== "#010203") return null;
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(got);
+  if (hex) return [parseInt(hex[1], 16), parseInt(hex[2], 16), parseInt(hex[3], 16)];
+  const fn = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(got);
+  return fn ? [Number(fn[1]), Number(fn[2]), Number(fn[3])] : null;
+}
+
+/**
+ * **What the app's own content paints under a point**: the first painted
+ * background up from the elements at `(x, y)`, skipping anything inside
+ * `skip` (the deck itself, over the content) — a terminal's theme, a
+ * preview's ground, the app's ground. `""` where nothing paints.
+ */
+export function groundUnder(x: number, y: number, skip: Element | null): string {
+  if (typeof document === "undefined") return "";
+  for (const hit of document.elementsFromPoint(x, y)) {
+    if (skip && skip.contains(hit)) continue;
+    for (let e: Element | null = hit; e; e = e.parentElement) {
+      const bg = getComputedStyle(e).backgroundColor;
+      const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(bg);
+      if (m && (m[4] === undefined || Number(m[4]) > 0.5)) return `${m[1]},${m[2]},${m[3]}`;
+    }
+  }
+  return "";
+}

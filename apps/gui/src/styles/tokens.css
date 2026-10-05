@@ -2728,9 +2728,15 @@
   --list-face: 32px;
   /* ⚠️ 墓碑 (UX-23): `--blame-col`, 22ch, the blame column beside the
    * line numbers. Blame is the caret's line's end now (`InlineBlame`). */
-  /* **The browser's folded row** (round UX-3 §3): a strip with the
-   * page's title, the height of one caption line with room. */
-  --deck-strip: 24px;
+  /* **The folded deck is Safari's capsule** (UX-29, the owner 2026-10-06:
+   * after a scroll only one small capsule remains, centred at the foot,
+   * holding the title alone): its height, and the two inks it wears over
+   * what is behind it — white over a dark ground, black over a light one,
+   * as Safari's; the one place the app's ink is not a theme's. ⚠️ 墓碑
+   * (round UX-3 §3 → UX-13): a 24-pt strip across the width. */
+  --deck-strip: 28px;
+  --ink-on-dark: #ffffff;
+  --ink-on-light: #000000;
   /* The session tabs' glass capsule and the pills in it, and a tab's
      face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */
   /* **The conversation's input, one glass capsule** (the redesign,

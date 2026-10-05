@@ -423,6 +423,38 @@ pub fn close(tab: &str) {
     });
 }
 
+/// **What is behind the folded capsule** (UX-29): the page's ground at
+/// the point under the capsule's centre, `y` up from the page view's
+/// foot, asked of the page itself — the nearest painted background up
+/// from the element at that point, else the page's `theme-color` as a
+/// hint — and told to the face as `page:ground` (`r,g,b`, a colour the
+/// face can read, or empty: nothing known, a white page's ground).
+pub fn ground(tab: &str, y: f64) {
+    let Some(app) = APP.get().cloned() else { return };
+    let view = PAGES.with(|p| p.borrow().get(tab).map(|p| p.view.clone()));
+    let Some(view) = view else { return };
+    let js = format!(
+        "(function(){{var es=document.elementsFromPoint(innerWidth/2,innerHeight-{y:.1});\
+         for(var i=0;i<es.length;i++){{for(var e=es[i];e;e=e.parentElement){{\
+         var m=/rgba?\\(([\\d.]+),\\s*([\\d.]+),\\s*([\\d.]+)(?:,\\s*([\\d.]+))?\\)/.exec(getComputedStyle(e).backgroundColor);\
+         if(m&&(m[4]===undefined||+m[4]>0.5))return m[1]+','+m[2]+','+m[3];}}}}\
+         var t=document.querySelector('meta[name=theme-color]');return t&&t.content?t.content:'';}})()"
+    );
+    let tab = tab.to_owned();
+    let done = block2::RcBlock::new(move |result: *mut AnyObject, _err: *mut AnyObject| {
+        let text = if result.is_null() {
+            String::new()
+        } else {
+            let s: Option<Retained<NSString>> = unsafe { msg_send![result, description] };
+            s.map(|s| s.to_string()).unwrap_or_default()
+        };
+        let _ = app.emit_to("main", "page:ground", PageWord { tab: tab.clone(), text });
+    });
+    unsafe {
+        let _: () = msg_send![&*view, evaluateJavaScript: &*NSString::from_str(&js), completionHandler: &*done];
+    }
+}
+
 pub fn step(tab: &str, way: &str) {
     PAGES.with(|pages| {
         if let Some(page) = pages.borrow().get(tab) {

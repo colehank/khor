@@ -3137,6 +3137,14 @@ try {
         "reader; both reach every tab through the tabs circle's sheet, a " +
         "real button beside it.",
     ],
+    "data-file-pill": [
+      "src/views/FilePage.tsx",
+      "the same gesture surface on the file page's deck (UX-25): a sideways " +
+        "swipe steps through the workspace's open files; what is pressed on " +
+        "it are its items (the preview eye, ✓), buttons measured as such. " +
+        "**What it does not buy:** the swipe for a keyboard or a reader; " +
+        "every file is reached through the tabs circle's sheet beside it.",
+    ],
     "data-row-menu": [
       "src/components/RowMenu.tsx (the handler is Radix's, not ours)",
       "not a target and not ours: the carrier is the menu's own box, and the " +
@@ -10799,53 +10807,60 @@ try {
         return h;
       });
 
-    // ── (a) the glass strip at 1080: one ceiling, a press moves nothing ──
+    // ── (a) the glass strip at 1080: Safari's widths — the stubs one
+    //        width, the front tab its whole name, a press re-balances ──
     //
-    // ⚠️ 墓碑 (the redesign V07, 2026-10-02): 「先压，再溢出」 and
-    // 「未选中固定长度」 were asked here — stubs that shrank together
-    // before the strip scrolled. A glass tab takes its name's width up
-    // to one ceiling, the front one too, so a tab coming to the front
-    // changes its colour and never its width, and its neighbours do not
-    // move; past the edge the strip scrolls (b).
+    // UX-25's addendum (the owner, 2026-10-05 17:40): every pill not in
+    // front has the same width (an equal share of the capsule, `--tab-w`
+    // at most, `--tab-w-min` at least), the one in front takes its whole
+    // name up to `--tab-w-on`, and the strip re-balances on each choice.
+    // ⚠️ 墓碑 (the redesign V07, 2026-10-02): one ceiling for every tab,
+    // the front one too, and a press moved no width.
     await page.setViewportSize({ width: 1080, height: 800 });
     await open("sessions");
     await wait(300);
     const rowCount = await page.locator("[data-list] [data-row-open]").count();
     for (let i = 0; i < rowCount; i++) await pressNth("[data-list] [data-row-open]", i);
-    await wait(400);
+    await wait(600);
     const fit = await stripOf("[data-session-tabs]");
     console.log(`tabs 4T · sessions at 1080: ${JSON.stringify(fit && { ...fit, tabs: fit.tabs.length })}`);
     if (!fit || fit.tabs.length < 5) {
       fail(`probe dead: the sessions strip holds ${fit?.tabs.length ?? 0} tabs at 1080 — nothing to measure`);
     } else {
-      const ceiling = await page.evaluate(() => {
-        const el = document.createElement("div");
-        el.style.width = "var(--tab-w)";
-        document.body.append(el);
-        const w = Math.round(el.getBoundingClientRect().width);
-        el.remove();
-        return w;
+      const bounds = await page.evaluate(() => {
+        const px = (v) => {
+          const el = document.createElement("div");
+          el.style.width = v;
+          document.body.append(el);
+          const w = Math.round(el.getBoundingClientRect().width);
+          el.remove();
+          return w;
+        };
+        const front = document.querySelector('[data-session-tabs] [data-tab][data-on="true"] [data-tab-label]');
+        return { ceiling: px("var(--tab-w)"), floor: px("var(--tab-w-min)"), cut: front ? front.scrollWidth > front.clientWidth + 1 : null };
       });
-      const wide = fit.tabs.filter((t) => t.w > ceiling + 1);
-      if (wide.length) {
-        fail(
-          `${wide.length} session tab(s) stand past the one ceiling (${wide.map((t) => t.w).join(", ")} over ${ceiling}) — ` +
-            "one ceiling for every tab, the front one too (redesign V07; src/browse/TabStrip.tsx)",
-        );
+      const stubs = fit.tabs.filter((t) => !t.on);
+      const front = fit.tabs.find((t) => t.on);
+      const widths = [...new Set(stubs.map((t) => t.w))];
+      console.log(`tabs 4T · stubs ${JSON.stringify(stubs.map((t) => t.w))}, front ${front?.w}, bounds ${JSON.stringify(bounds)}`);
+      if (Math.max(...widths) - Math.min(...widths) > 1) {
+        fail(`the stubs are ${widths.join(", ")} wide — every pill not in front is one width (UX-25 addendum; src/browse/TabStrip.tsx)`);
       }
+      if (stubs.some((t) => t.w > bounds.ceiling + 1 || t.w < bounds.floor - 1)) {
+        fail(`a stub stands outside --tab-w-min..--tab-w (${bounds.floor}..${bounds.ceiling}): ${stubs.map((t) => t.w).join(", ")}`);
+      }
+      if (bounds.cut !== false) fail(`the front tab's name is cut (${bounds.cut}) with room on the strip — the one in front takes its whole name (UX-25 addendum)`);
       await press('[data-session-tabs] [data-tab-strip] [data-tab]:not([data-on="true"]) > button:first-of-type');
-      await wait(300);
+      await wait(600);
       const after = await stripOf("[data-session-tabs]");
-      const moved = (after?.tabs ?? []).filter((t) => {
-        const was = fit.tabs.find((b) => b.id === t.id);
-        return was && Math.abs(was.w - t.w) > 1;
-      });
-      console.log(`tabs 4T · a press on another tab moved ${moved.length} width(s)`);
-      if (moved.length) {
-        fail(
-          `bringing another tab to the front changed ${moved.length} tab width(s) (${moved.map((t) => t.id).join(", ")}) — ` +
-            "a tab coming to the front changes its colour, never its width (redesign V07; src/browse/TabStrip.tsx)",
-        );
+      const nowFront = after?.tabs.find((t) => t.on);
+      const was = after?.tabs.find((t) => t.id === front?.id);
+      const nowStubs = (after?.tabs ?? []).filter((t) => !t.on).map((t) => t.w);
+      console.log(`tabs 4T · another tab pressed: front ${nowFront?.id} ${nowFront?.w}, the old front now ${was?.w}, stubs ${JSON.stringify(nowStubs)}`);
+      if (!nowFront || nowFront.id === front?.id) {
+        fail("probe dead: tabs 4T · the press brought no other tab to the front");
+      } else if (Math.max(...nowStubs) - Math.min(...nowStubs) > 1) {
+        fail(`after the press the stubs are ${nowStubs.join(", ")} — the strip re-balances to one stub width (UX-25 addendum)`);
       }
     }
 
@@ -28599,6 +28614,46 @@ try {
     if (nList.top !== "list") fail(`ws b · the narrow workspaces seat opened on ${JSON.stringify(nList)} — its rows`);
     if (nTree.top !== "tree" || nTree.back < 1) fail(`ws b · a row on the phone left ${JSON.stringify(nTree)} — the tree page with ‹`);
     if (nFile.top !== "file") fail(`ws b · a file on the phone left ${JSON.stringify(nFile)} — the file page`);
+    // ── c. the file page's tabs circle opens the session deck's sheet
+    //       (UX-25, one tab language): a second file opened from the tree,
+    //       the circle says 2, the sheet lists both with ×, a row brings
+    //       that file to the front, × on the other closes it. ──
+    {
+      await press("[data-file-back]");
+      await wait(500);
+      await press('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file="notes.md"] > button');
+      await wait(600);
+      const read = () =>
+        page.evaluate(() => ({
+          circle: document.querySelector("[data-file-deck] [data-deck-tabs]")?.textContent?.trim() ?? null,
+          name: document.querySelector("[data-file-deck] [data-file-name]")?.textContent?.trim() ?? null,
+          sheet: document.querySelectorAll("[data-tab-sheet]").length,
+          rows: [...document.querySelectorAll("[data-tab-sheet-row]")].map((r) => r.querySelector("[data-tab-sheet-name]")?.textContent?.trim()),
+          closes: document.querySelectorAll("[data-tab-sheet-close]").length,
+          plus: document.querySelectorAll("[data-tab-sheet-new]").length,
+        }));
+      const two = await read();
+      await press("[data-file-deck] [data-deck-tabs]");
+      await wait(500);
+      const up = await read();
+      const other = up.rows.findIndex((n) => n !== up.name);
+      if (other >= 0) await page.locator("[data-tab-sheet-open]").nth(other).click();
+      await wait(500);
+      const picked = await read();
+      await press("[data-file-deck] [data-deck-tabs]");
+      await wait(500);
+      const back = up.rows.findIndex((n) => n !== picked.name);
+      if (back >= 0) await page.locator("[data-tab-sheet-close]").nth(back).click();
+      await wait(500);
+      await page.keyboard.press("Escape");
+      await wait(400);
+      const closed = await read();
+      console.log(`ws c · two files ${JSON.stringify(two)}; the sheet ${JSON.stringify(up)}; a row picked ${JSON.stringify(picked)}; the other closed ${JSON.stringify(closed)}`);
+      if (two.circle !== "2" || two.name !== "notes.md") fail(`ws c · with two files open the file page's deck reads ${JSON.stringify(two)} — a tabs circle saying 2 (UX-25; src/views/FilePage.tsx)`);
+      if (up.sheet !== 1 || up.rows.length !== 2 || up.closes !== 2 || up.plus !== 0) fail(`ws c · the circle opened ${JSON.stringify(up)} — the tabs sheet with both files, × on each, no ＋`);
+      if (picked.sheet !== 0 || picked.name !== "one.rs") fail(`ws c · a row of the sheet left ${JSON.stringify(picked)} — that file in front, the sheet away`);
+      if (closed.circle !== "1" || closed.name !== "one.rs") fail(`ws c · × on the other file left ${JSON.stringify(closed)} — one file, the front one kept`);
+    }
     await page.setViewportSize({ width: 1400, height: 900 });
   }
   }
@@ -29308,6 +29363,32 @@ try {
           const bar = document.querySelector("[data-session-bar]");
           const t = document.querySelector("[data-terminal]")?.__xterm;
           const screen = box?.querySelector(".xterm-screen");
+          // **The folded deck is Safari's capsule** (UX-29): centred on the
+          // screen, `--deck-strip` tall, as wide as its title and padding,
+          // its ink by the ground behind it.
+          const cap = document.querySelector("[data-session-bar] [data-deck-strip]");
+          const capsule = cap && (() => {
+            const b = cap.getBoundingClientRect();
+            const sc = document.querySelector("[data-session-screen]").getBoundingClientRect();
+            const word = cap.querySelector("span");
+            const cs = getComputedStyle(cap);
+            const probe = document.createElement("div");
+            probe.style.cssText = "position:absolute;height:var(--deck-strip);width:var(--page-inset)";
+            document.body.appendChild(probe);
+            const want = probe.getBoundingClientRect().height;
+            probe.remove();
+            return {
+              off: +(b.left + b.width / 2 - (sc.left + sc.width / 2)).toFixed(1),
+              w: +b.width.toFixed(1),
+              h: +b.height.toFixed(1),
+              want,
+              slack: +(b.width - word.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)).toFixed(1),
+              cut: word.scrollWidth > word.clientWidth + 1,
+              ink: cap.getAttribute("data-deck-ink"),
+              color: cs.color,
+              overContent: b.bottom <= (box?.getBoundingClientRect().bottom ?? 0) + 0.5,
+            };
+          })();
           return {
             strip: document.querySelectorAll("[data-session-bar] [data-deck-strip]").length,
             deck: !!document.querySelector("[data-session-deck]")?.getClientRects().length,
@@ -29316,6 +29397,7 @@ try {
             box: +(box?.getBoundingClientRect().height ?? 0).toFixed(2),
             bar: +(bar?.getBoundingClientRect().height ?? 0).toFixed(2),
             rows: t?.rows,
+            capsule,
           };
         });
       const scrollTo = (fromBottom) =>
@@ -29331,6 +29413,25 @@ try {
       await until(2_000, async () => (await state()).strip === 1);
       await wait(300);
       const up = await state();
+      // The ink by the ground: the terminal's own theme under the capsule.
+      const inks = await page.evaluate(async () => {
+        const { inkOver, groundUnder } = await import("/src/lib/deck-fold.ts");
+        const cap = document.querySelector("[data-session-bar] [data-deck-strip]");
+        const b = cap.getBoundingClientRect();
+        const ground = groundUnder(b.left + b.width / 2, b.top + b.height / 2, cap.closest("[data-session-bar]"));
+        const onDark = getComputedStyle(document.documentElement).getPropertyValue("--ink-on-dark").trim();
+        const onLight = getComputedStyle(document.documentElement).getPropertyValue("--ink-on-light").trim();
+        const c = document.createElement("canvas").getContext("2d");
+        const plain = (x) => ((c.fillStyle = "#000"), (c.fillStyle = x), String(c.fillStyle));
+        return {
+          ground,
+          want: inkOver(ground),
+          got: cap.getAttribute("data-deck-ink"),
+          color: plain(getComputedStyle(cap).color),
+          wantColor: plain(inkOver(ground) === "light" ? onDark : onLight),
+          table: [inkOver("255,255,255"), inkOver("0,0,0"), inkOver("#1e1e1e"), inkOver("rgb(244, 244, 239)"), inkOver("#9a6a00"), inkOver(""), inkOver("nonsense")],
+        };
+      });
       await scrollTo(0);
       await until(2_000, async () => (await state()).strip === 0);
       await wait(300);
@@ -29344,10 +29445,24 @@ try {
         fail(`bar m · folded, the box went ${rest.box} → ${up.box} and the bar ${rest.bar} → ${up.bar} — the box grows by what the fold frees (item 44)`);
       }
       const gained = up.row > 0 ? Math.floor((up.box - rest.box) / up.row) : 0;
-      if (!(up.rows > rest.rows) || up.rows - rest.rows !== gained || !resized.some(([, r]) => r === up.rows)) {
+      // Within a row of the arithmetic: xterm's fit of the grown box is
+      // its own (the box's padding against whole rows), and a 60-px
+      // growth fit four rows where 60 / 16 says three (UX-29).
+      if (!(up.rows > rest.rows) || Math.abs(up.rows - rest.rows - gained) > 1 || !resized.some(([, r]) => r === up.rows)) {
         fail(`bar m · the grid went ${rest.rows} → ${up.rows} (rows of ${up.row.toFixed(1)} px, ${gained} fit) and the pty was told ${shown(resized)} — the fold resizes the grid as the keyboard does (item 44)`);
       }
       if (up.folded !== null) fail(`bar m · the pane's root still says data-folded=${shown(up.folded)} — item 32's band is gone (item 44)`);
+      const c = up.capsule;
+      if (!c || Math.abs(c.off) > 1 || Math.abs(c.h - c.want) > 0.5 || c.slack > 1 || c.cut || !c.overContent) {
+        fail(`bar m · folded, the capsule reads ${shown(c)} — centred on the screen, --deck-strip tall, as wide as its title and padding, over the content (UX-29; src/components/SessionBar.tsx)`);
+      }
+      console.log(`bar m · the capsule's ink: ${shown(inks)}`);
+      if (inks.got !== inks.want || inks.color !== inks.wantColor) {
+        fail(`bar m · over the terminal's ground ${shown(inks.ground)} the capsule wears ${shown(inks.got)} ${inks.color} — ${inks.want} (${inks.wantColor}) reads on it (UX-29; lib/deck-fold inkOver)`);
+      }
+      if (inks.table.join() !== "dark,light,light,dark,light,dark,dark") {
+        fail(`bar m · inkOver over white, black, #1e1e1e, the light ground, the amber, nothing, nonsense says ${shown(inks.table)} — dark, light, light, dark, light, dark, dark`);
+      }
       if (back.strip !== 0 || !back.deck || back.rows !== rest.rows || Math.abs(back.box - rest.box) > 1) {
         fail(`bar m · back at the bottom ${shown(back)} — the deck is back, the box at rest's ${rest.box}, the grid at ${rest.rows} rows`);
       }
