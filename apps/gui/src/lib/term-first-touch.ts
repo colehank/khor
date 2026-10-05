@@ -89,18 +89,22 @@ export function notesFirstTouch(o: {
   const data = term.onData((d) => {
     if (touch && REPORT.test(d)) touch.reports += 1;
   });
-  const end = () => {
+  const end = (e: Event) => {
     const t = touch;
     if (!t) return;
     touch = null;
     armed = false;
     const after = Math.round(t.at - attachedAt);
     const head = `first touch after ${after} ms`;
+    // How the touch ended and how far it went (item 45, the owner's
+    // phone: a drag the face judged a tap sent tmux nothing — iOS ends a
+    // touch it takes for its own gesture with `touchcancel`).
+    const went = `${e.type === "touchcancel" ? "cancelled" : "lifted"} after ${Math.round(performance.now() - t.at)} ms, moved ${Math.round(t.moved)} px`;
     if (t.moved >= DRAG_PX) {
       const what =
-        t.scroller === "wheel to the program"
+        (t.scroller === "wheel to the program"
           ? `${t.wheels} wheels, ${t.reports} reports, mouse ${term.modes.mouseTrackingMode}, ${cell(term)}`
-          : `moved ${Math.round(scroller.scrollTop - t.top)} px of ${Math.round(scroller.scrollHeight - scroller.clientHeight)}`;
+          : `moved ${Math.round(scroller.scrollTop - t.top)} px of ${Math.round(scroller.scrollHeight - scroller.clientHeight)}`) + `, ${went}`;
       const before = o.pane?.();
       const line = (after: typeof before) =>
         say(
@@ -113,9 +117,9 @@ export function notesFirstTouch(o: {
       if (before && o.reread) window.setTimeout(() => void o.reread!().finally(() => line(o.pane?.() ?? null)), WINDOW_MS);
       else line(null);
     } else if (performance.now() - t.at >= PRESS_MS) {
-      say(`${head}: press, selection ${term.hasSelection() ? "made" : "none"}`);
+      say(`${head}: press, selection ${term.hasSelection() ? "made" : "none"}, ${went}`);
     } else {
-      window.setTimeout(() => say(`${head}: tap, keyboard ${keyboardShown() ? "up" : "down"}`), KEYBOARD_MS);
+      window.setTimeout(() => say(`${head}: tap, keyboard ${keyboardShown() ? "up" : "down"}, ${went}, ${t.wheels} wheels`), KEYBOARD_MS);
     }
   };
   box.addEventListener("touchstart", start, { capture: true, passive: true });
