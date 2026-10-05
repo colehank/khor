@@ -120,6 +120,9 @@ const LIVE = {
   terminal: reshare(fit(2.45, 2.56, 11.1), PLAIN, LIGHT),
   chat: fit(1.6, 2.3, 12.8),
   keyboard: fit(1.17, 1.17, 13.66), // square
+  // The Finder's (UX-27, 2026-10-06): the same 11 square as the keyboard's
+  // case, on the 16 canvas.
+  finder: fit(1.17, 1.17, 13.66), // square
   // The key row's (UX-12, 2026-10-04), computed rather than scanned: a
   // strip 15 across, centred on the 16 canvas, at the 0.90 share.
   keyRow: fit(-1.05, -1.05, 18.1),
@@ -868,6 +871,56 @@ export function IconKeyboard({ className }: IconProps) {
           mask={`url(#${cutId})`}
           d="M4.1 4h7.8a1.6 1.6 0 0 1 1.6 1.6v4.8a1.6 1.6 0 0 1-1.6 1.6H4.1a1.6 1.6 0 0 1-1.6-1.6V5.6A1.6 1.6 0 0 1 4.1 4Z"
         />
+      )}
+    </Mark>
+  );
+}
+
+/** The Finder's features, drawn once: the two eyes and the smile are the
+    front form, and the one shape that cuts the solid half behind them. */
+const FINDER_FACE = "M4.9 4.7v1.1M11.1 4.7v1.1M4.5 9.7Q8 12.6 11.5 9.7";
+
+/**
+ * The Finder — macOS's mark on a machine's face (UX-27, 2026-10-06: a
+ * phone must be known as a phone, so the Mac stops wearing the Apple
+ * mark and wears the Finder). The 33rd glyph, 16 canvas, redrawn from
+ * the filled 1024 glyph the owner handed over (`audit/finder-source.svg`)
+ * into the family's two rules rather than scaled in: only its silhouette
+ * — the rounded square split into two halves by the line that steps
+ * right at the middle — and the face's two eyes and smile are kept.
+ *
+ * **The left half is the solid piece** (`data-body`, the dark half of
+ * the real Finder); the right half is its outline alone, so the split is
+ * drawn once, as the body's own edge. The eyes and the smile are the
+ * front form: they cut the body with the family's equal-width gap and
+ * are drawn over both halves — the smile crosses the split, as it does
+ * on the real one. The pulse's construction, not the keyboard's: a
+ * feature drawn on the hollow half must be a line, so it is a line on
+ * the solid half too, in its own channel.
+ */
+export function IconFinder({ className }: IconProps) {
+  return (
+    <Mark
+      className={className}
+      live={LIVE.finder}
+      icon="finder"
+      cut={<path d={FINDER_FACE} stroke="black" strokeWidth={cutOf(LIVE.finder)} strokeLinecap="round" />}
+    >
+      {(cutId) => (
+        <>
+          {/* The right half: an open outline from the split's top to its
+              foot, round the square's right side. */}
+          <path d="M8.5 2.5h3.4a1.6 1.6 0 0 1 1.6 1.6v7.8a1.6 1.6 0 0 1-1.6 1.6H8.6" />
+          {/* The left half, closed: down the split — the curve bowing
+              left from the top, the step right at the middle, straight
+              to the foot — and back round the square's left side. */}
+          <path
+            data-body
+            mask={`url(#${cutId})`}
+            d="M4.1 2.5h4.4c-.8 1.7-1.2 3.7-1.2 5.5h1.3v5.5H4.1a1.6 1.6 0 0 1-1.6-1.6V4.1a1.6 1.6 0 0 1 1.6-1.6Z"
+          />
+          <path d={FINDER_FACE} />
+        </>
       )}
     </Mark>
   );

@@ -70,6 +70,12 @@ pub const SECTIONS: &[Section] = &[
         name: "appearance",
         page: "appearance",
     },
+    // 头像, under 外观 (UX-32): how every row's and tab's identity seat
+    // is assembled — whose face is the base, what the mark says.
+    Section {
+        name: "avatar",
+        page: "appearance",
+    },
     // 语言, under 外观: the two are what this whole app is written in.
     Section {
         name: "language",
@@ -166,11 +172,28 @@ pub const KEYS: &[Key] = &[
     // picked it from the drawing as the one he wants to see, and `corner`
     // stays one row away. **Only the face reads this** (`FaceMark`), the
     // same way only the face resolves `theme`.
+    //
+    // Under 头像 since UX-32 (the owner, 2026-10-06: 「底座永远是谁的，标记
+    // 是什么」); the key and its store did not move, so what a person
+    // chose carries over.
     Key {
         name: "kind-mark",
-        section: "appearance",
+        section: "avatar",
         values: &["face", "corner"],
         default: "face",
+    },
+    // 角标是 (UX-32): with 类型标记 on `corner`, which of the two parts
+    // sits on the corner. `kind` — the base is the machine's face and the
+    // kind mark is the corner badge; `machine` — the base is the kind's
+    // glyph on a neutral disc and the machine's face is the small one on
+    // the corner (a browser page then has its favicon as the base). Read
+    // only while `kind-mark` is `corner`; the face does not draw the row
+    // otherwise (用不上的控件不画).
+    Key {
+        name: "corner-is",
+        section: "avatar",
+        values: &["kind", "machine"],
+        default: "kind",
     },
     // ── 语言 ──────────────────────────────────────────────────────
     //

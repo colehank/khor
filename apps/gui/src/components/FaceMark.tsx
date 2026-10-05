@@ -10,9 +10,16 @@ import { useSetting } from "@/settings";
  * machine's record — `{ machine }`, `null` for one that has no face —
  * and drawn here, so the ink its mark wears is read off **the same
  * record** the face is painted from (`Avatar.mark`): the two cannot
- * belong to different machines. Anything that is not a machine's face
- * (the 额度 dial) is `{ art }`, a drawing already sized, and never
- * carries a mark on it.
+ * belong to different machines. `{ art }` is a drawing already sized
+ * that stands in a face's seat and never carries a mark — the tab
+ * switcher's file glyph still arrives this way.
+ *
+ * **The base is always the machine** (UX-32, the owner 2026-10-06:「底座
+ * 永远是谁的，标记是什么」): every list row and every tab pill is a
+ * machine's face carrying a mark. ⚠️ 墓碑 (2026-09-07 → UX-32): the 额度
+ * row's seat was the account's dial as `{ art }`; the dial is the row's
+ * right-top now and the seat is the home machine's face wearing the
+ * provider's mark.
  *
  * ⚠️ 墓碑 (2026-10-02, the same day): the face arrived as a node built
  * by the column, which was enough while every mark wore one white ink.
@@ -37,6 +44,10 @@ export type KindMark = {
   /** Extra anchors on the mark, for the surfaces that were measured by
       an older name (`data-kind-mark` on a session's). */
   data?: Record<string, string>;
+  /** The mark is a picture of its own — a page's favicon, a file kind's
+      coloured glyph — and takes no ink from the face: drawn as it came,
+      everywhere (README 图标:「网站图标是一张图，原样画在脸上，不染墨」). */
+  picture?: boolean;
 };
 
 /**
@@ -67,13 +78,32 @@ export const SIZES = {
   tab: { face: "size-tab-face", on: "size-kind-mark-tab", frame: "size-kind-mark-tab", glyph: "size-kind-mark-tab-glyph" },
 } as const;
 
-/** Whether this app draws kind marks in the corner (「角标」) rather
-    than on the face (「浮现」, the default). Read here and nowhere else:
+/**
+ * **The three ways the assembly is drawn** (外观 › 头像, UX-32): the two
+ * controls 类型标记 (浮现 / 角标) and 角标是 (类型 / 机器) make three, and
+ * the second is read only under 角标 — the row is not drawn otherwise.
+ *
+ * - `face` (浮现): the base is the machine, the mark floats on it.
+ * - `corner` (角标 · 类型): the base is the machine, the mark on its corner.
+ * - `machine` (角标 · 机器): the base is the mark's glyph on a neutral disc,
+ *   and the machine's face is the small one on the corner.
+ */
+export type FaceWay = "face" | "corner" | "machine";
+
+/** Which way this app draws the assembly. Read here and nowhere else:
     every avatar that carries a kind is a `FaceMark`. */
-export function useMarkInCorner(): boolean {
+export function useFaceWay(): FaceWay {
   // The reader tests for the value that is *not* the default
   // (`src/settings.ts`): not answered yet, and `face`, are one case.
-  return useSetting("kind-mark") === "corner";
+  const corner = useSetting("kind-mark") === "corner";
+  const machine = useSetting("corner-is") === "machine";
+  return corner ? (machine ? "machine" : "corner") : "face";
+}
+
+/** Whether this app draws kind marks in the corner (「角标」) rather
+    than on the face (「浮现」, the default) — either corner way. */
+export function useMarkInCorner(): boolean {
+  return useFaceWay() !== "face";
 }
 
 /**
@@ -81,13 +111,13 @@ export function useMarkInCorner(): boolean {
  * avatar says a kind** (docs/SHELL.md 第四轮 第 2 条:「统一头像的原语一致
  * 性」; 2026-10-02 two ways of drawing it).
  *
- * What sits in the middle is the column's: a machine's avatar for a
- * session, a machine, a workspace and a browsing tab, the dial for an
- * account. The mark says *what kind of thing* the row is — a session's
- * kind, a machine's system, a folder or a repository, a page — and it is
- * drawn one of two ways, by the 外观 setting 类型标记 (the owner,
- * 2026-10-02:「对象类型的绘制形式，角标、浮现这样。不做对调了，就是这两种
- * 选择」):
+ * The base is the machine's face — a session's, a machine's, a
+ * workspace's, a page's, a file's, an account's home (UX-32: 「底座永远
+ * 是谁的」). The mark says *what kind of thing* the row is — a session's
+ * kind, a machine's system, a folder or a repository, a file's kind, a
+ * page's favicon, an account's provider — and it is drawn one of three
+ * ways, by the 外观 › 头像 settings (the owner, 2026-10-02:「对象类型的绘
+ * 制形式，角标、浮现这样」; 2026-10-06, the third under 角标):
  *
  * - **浮现** (`face`, the default): the mark is painted on the face,
  *   centred, opaque, in the ink the face was given (`Avatar.mark`:
@@ -100,16 +130,22 @@ export function useMarkInCorner(): boolean {
  * - **角标** (`corner`): the face is the avatar and the mark sits on a
  *   solid punch-out at its bottom right, or its strokes dissolve into
  *   the face under it — what khor drew before the setting.
+ * - **角标 · 机器** (`machine`, UX-32): the mark is the base — its glyph
+ *   on a neutral disc, `--fill-strong` with the secondary ink, a page's
+ *   favicon as the picture itself — and the machine's face is the small
+ *   one on the corner, the same punch-out, round because the face is.
  *
  * Anchors: the mark carries `data-side-mark` (its key) and
- * `data-mark-at` (`face` / `corner`) either way; only the corner is
- * `data-side-badge`; on the face, `data-mark-ink` says which ink
- * (`light` / `dark` / `blank`).
+ * `data-mark-at` (`face` / `corner` / `base`) in every way; only the
+ * corner badge is `data-side-badge`; on the face, `data-mark-ink` says
+ * which ink (`light` / `dark` / `blank`); the machine's face on the
+ * corner is `data-face-corner`. The wrapper says the way it was drawn,
+ * `data-mark-way`.
  *
  * A `halo` is the session's state ring and nobody else's: the six state
  * words belong to sessions (the palette ruling), so the prop exists for
  * that one caller rather than as a colour any row could wear. It paints
- * outside the face's box, so it is the same ring in both ways.
+ * outside the face's box, so it is the same ring in every way.
  */
 export function FaceMark({
   face,
@@ -136,20 +172,40 @@ export function FaceMark({
      words under a corner and the prop went with its one caller. */
   className?: string;
 }) {
-  const corner = useMarkInCorner();
+  const way = useFaceWay();
   const s = SIZES[size];
-  const onFace = mark !== undefined && !corner;
+  const onFace = mark !== undefined && way === "face";
+  const asBase = mark !== undefined && way === "machine";
   // The ink the face was given, or the theme's on the blank.
   const ink = "machine" in face ? (face.machine?.mark.ink ?? "blank") : "blank";
+  /** A mark drawn as it came, or in the ink its seat gives it. */
+  const inked = (cls: string) => (mark?.picture ? "" : cls);
   return (
     // `flex`, not inline: an inline wrap grows the baseline's few
     // pixels under the face and the mark's corner offset bites into
     // that gap instead of the face (mandala's .badged-face fix, the
     // flex spelling of display:block+line-height:0).
-    <span data-side-face data-mark-way={mark ? (corner ? "corner" : "face") : undefined} className={cn("relative flex flex-none", className)}>
-      <UnderMark.Provider value={onFace}>
-        {"machine" in face ? <MachineAvatar face={face.machine} className={s.face} /> : face.art}
-      </UnderMark.Provider>
+    <span data-side-face data-mark-way={mark ? way : undefined} className={cn("relative flex flex-none", className)}>
+      {asBase ? (
+        // **The mark is the base**: its glyph on the neutral disc, at
+        // the on-face size, so the two corner ways draw the kind at one
+        // size and the switch between them moves the machine, not the
+        // mark.
+        <span
+          data-side-mark={mark.key}
+          data-mark-at="base"
+          data-mark-base
+          {...mark.data}
+          aria-hidden="true"
+          className={cn("grid place-items-center rounded-full bg-fill-strong", inked("text-muted-foreground"), s.face)}
+        >
+          {mark.glyph(s.on)}
+        </span>
+      ) : (
+        <UnderMark.Provider value={onFace}>
+          {"machine" in face ? <MachineAvatar face={face.machine} className={s.face} /> : face.art}
+        </UnderMark.Provider>
+      )}
       {halo !== undefined && (
         // Behind nothing and in front of nothing — it paints outside the
         // face's box entirely (`app.css`), so it can neither cover the
@@ -161,7 +217,18 @@ export function FaceMark({
           style={{ "--halo-color": `var(--state-${halo})` } as CSSProperties}
         />
       )}
+      {asBase && "machine" in face && (
+        // **The machine on the corner**: its face at the badge's size,
+        // round, on the same punch-out the kind badge stands on.
+        <span
+          data-face-corner
+          className={cn("absolute -right-0.5 -bottom-0.5 grid place-items-center rounded-full bg-card", s.frame)}
+        >
+          <MachineAvatar face={face.machine} className={s.glyph} />
+        </span>
+      )}
       {mark !== undefined &&
+        !asBase &&
         (onFace ? (
           // **On the face**: centred over the face's box, opaque, in the
           // ink the face was given. The veil is the face's own
@@ -175,7 +242,7 @@ export function FaceMark({
             aria-hidden="true"
             className={cn(
               "pointer-events-none absolute inset-0 grid place-items-center",
-              ink === "light" ? "text-mark-ink-light" : ink === "dark" ? "text-mark-ink-dark" : "text-mark-ink-blank",
+              inked(ink === "light" ? "text-mark-ink-light" : ink === "dark" ? "text-mark-ink-dark" : "text-mark-ink-blank"),
             )}
           >
             {mark.glyph(s.on)}
@@ -187,7 +254,8 @@ export function FaceMark({
             data-mark-at="corner"
             {...mark.data}
             className={cn(
-              "absolute -right-0.5 -bottom-0.5 grid place-items-center rounded-sm bg-card text-muted-foreground",
+              "absolute -right-0.5 -bottom-0.5 grid place-items-center rounded-sm bg-card",
+              inked("text-muted-foreground"),
               s.frame,
             )}
           >

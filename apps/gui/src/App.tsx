@@ -2145,6 +2145,7 @@ export default function App() {
         // machine leaving the table (工作区批①), and its column then
         // says nothing rather than somebody else's work.
         channel={devices.find((d) => d.id === openWs.device)?.name ?? null}
+        machineFace={devices.find((d) => d.id === openWs.device)?.face ?? null}
         // The same four the sessions landing gets: one project's column
         // is the same rows with the same verbs (工作区批③).
         onPin={onPinSession}
@@ -2908,6 +2909,7 @@ export default function App() {
                 <QuotaLanding
                   narrow
                   stale={stale}
+                  devices={devices}
                   pane={null}
                   query={queries.quota}
                   onQuery={setQuery}
@@ -3045,6 +3047,7 @@ export default function App() {
                     <QuotaLanding
                       narrow
                       stale={stale}
+                      devices={devices}
                       // Narrow has one screen and nothing beside it, so
                       // there is no width to remember and no seam to
                       // drag — `ListPane` takes the same `null` every
@@ -3165,6 +3168,7 @@ export default function App() {
             <QuotaLanding
               narrow={false}
               stale={stale}
+              devices={devices}
               // **The shell's own seam, not a `w-72` of its own**
               // (第 6 条 / 第 4 条). Sharing `listPane` is what makes
               // the rail's second press work here: the thing the rail
