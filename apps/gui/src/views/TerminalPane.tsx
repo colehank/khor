@@ -2090,8 +2090,6 @@ export function TerminalPane({
         .then(() => termAttach(id))
         .then((a) => {
           if (stopped || mine !== generation) return;
-          setOpening(false);
-          setOpenedAt(null);
           setJoining(false);
           // An open that lands after 停止等待 is still an open: the
           // terminal is there, so the pane shows it.
@@ -2111,12 +2109,26 @@ export function TerminalPane({
           // replay the host gives any attacher. Its old questions get no
           // answers (`replay`).
           trace(`attach ${a.bytes.length} to ${a.seq}`);
+          // **Shown once the attach is parsed** (item 46): a version-3
+          // host hands a snapshot, and the screen appears whole — never
+          // the bytes scrolling by under the person. The opening cover
+          // stays over the pane until xterm has them.
+          const landed = () => {
+            setOpening(false);
+            setOpenedAt(null);
+          };
           // What the replay left the face in, for the app's notes (item 33).
           const noted = (n: number) => () => firstTouchRef.current?.attached(n);
           if (a.bytes) {
             const bytes = b64bytes(a.bytes);
-            replay(bytes, noted(bytes.length));
-          } else noted(0)();
+            replay(bytes, () => {
+              landed();
+              noted(bytes.length)();
+            });
+          } else {
+            landed();
+            noted(0)();
+          }
           lastBeat = performance.now();
           seq = a.seq;
           joined = true;
