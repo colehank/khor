@@ -476,16 +476,10 @@ aside[data-side] {
   height: var(--pane-head);
 }
 
-/* **The file page in a Mac window dragged narrow** (UX-6): its name pill
-   stood a gap below the window's top edge, beside the three buttons and
-   off their centreline, and the text began under it. In the window's
-   corner the first row is the platform's (as `[data-session-top]` above):
-   the pill sits on that row's centre, and the text starts below it. */
-:root[data-traffic] [data-file-name-pill] {
-  top: 0;
-  height: var(--pane-head);
-  align-items: center;
-}
+/* **The file page in a Mac window dragged narrow** (UX-6): in the
+   window's corner the first row is the platform's (as `[data-session-top]`
+   above), so the text starts below it. ⚠️ 墓碑 (UX-14): the name pill sat
+   on that row's centre; the name is the deck's now. */
 :root[data-traffic] [data-file-page] :is([data-file-scroll], [data-file-preview], [data-diff-tab]) {
   padding-top: calc(var(--pane-head) + var(--gap-in));
   scroll-padding-top: calc(var(--pane-head) + var(--gap-in));
@@ -2285,20 +2279,26 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 }
 
 
-/* **The file page's text clears what floats over it** (round UX-3): the
-   name at the top centre and the row of circles at the bottom. Padding on
-   the scroller itself, so the text still passes under both while it
-   moves and the first and last lines can rest clear of them. */
+/* **The file page's text clears what floats over it** (round UX-3; UX-14):
+   the status bar at the top — nothing else is there — and the deck at the
+   bottom. Padding on the scroller itself, so the text still passes under
+   the deck while it moves and the last line can rest clear of it. */
 [data-file-page] :is([data-file-scroll], [data-file-preview]) {
-  padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
+  padding-top: calc(var(--safe-top) + var(--gap-in));
   padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
-  scroll-padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
+  scroll-padding-top: calc(var(--safe-top) + var(--gap-in));
+}
+/* The file's one floating notice (a refused save, a merge, the gutter
+   gone quiet while the buffer differs) stands over the deck, not on it:
+   the deck holds ✓, which is what the notice is about (UX-14). */
+[data-file-page] [data-file-notice] {
+  bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
 }
 /* A revision compared with the file (round UX-4, git 历史) is the diff
    view, whose two halves scroll on their own: the view as a whole clears
-   the name and the circles instead. */
+   the status bar and the deck instead. */
 [data-file-page] [data-diff-tab] {
-  padding-top: calc(var(--safe-top) + var(--glass-btn) + var(--gap-in));
+  padding-top: calc(var(--safe-top) + var(--gap-in));
   padding-bottom: calc(var(--safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
 }
 
