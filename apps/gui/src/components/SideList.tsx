@@ -22,7 +22,7 @@
 //
 // It came out of `SessionsList`, which was the one list that already
 // did all of this; the other four had each grown part of it.
-import { Fragment, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { EmptyState } from "@/components/RegionState";
 import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
@@ -60,6 +60,16 @@ export type SideRow = {
   /** A session's state ring. */
   halo?: string;
   title: ReactNode;
+  /** **The title line's aside** (UX-15, the owner 2026-10-05): small
+      muted words after the name — a machine's model, an account's kind,
+      a workspace's place — cut before the name is (`PageTitleAside`'s
+      rule on the page head). Absent draws the name alone. */
+  aside?: ReactNode;
+  /** **The right two corners** (UX-15: 「左上身份、左下在做什么、右上状态、
+      右下状态的时间；空的格子不画」): the state over its time, caption,
+      tabular — the session row's right end, one shape for every list. A
+      corner with nothing to say is not drawn. */
+  corners?: { top?: ReactNode; bottom?: ReactNode };
   /** The row's name as plain text, for the delete window's question
       (「删除 mandala？」) — `title` is a drawing, and may be an editor. */
   name?: string;
@@ -403,9 +413,23 @@ export function SideList({
               under a finger), on every list and whether or not the row
               is the picked one — a picked row shows by its block, never
               by its weight (F2.1; SYS-05, N15, W09). */}
-          <span data-side-title className="block min-w-0 truncate text-headline">
-            {r.title}
-          </span>
+          {r.aside ? (
+            <span data-side-title className="flex min-w-0 items-baseline gap-in text-headline">
+              <span data-side-name className="max-w-full min-w-0 shrink-0 truncate">
+                {r.title}
+              </span>
+              {/* The name keeps its width (cut only past the whole line);
+                  the aside has what is left, to nothing — all of it, so a
+                  path cut to fit (`PathCut`) measures the room it has. */}
+              <span data-side-aside className="min-w-0 flex-1 truncate text-callout font-normal text-muted-foreground">
+                {r.aside}
+              </span>
+            </span>
+          ) : (
+            <span data-side-title className="block min-w-0 truncate text-headline">
+              {r.title}
+            </span>
+          )}
           {/* Always drawn, empty where a row has nothing to say under its
               name — an empty block takes no height, and every row keeps
               one shape. */}
@@ -414,6 +438,7 @@ export function SideList({
           </span>
         </span>
         {r.trailing}
+        {r.corners && (r.corners.top || r.corners.bottom) && <Corners top={r.corners.top} bottom={r.corners.bottom} />}
         {/* A row that opens a page says so on the narrow face, where the
             page is the next screen (F2.1). */}
         {narrow && r.onOpen && (
@@ -593,5 +618,66 @@ export function SideList({
       )}
       {showOld && run(aged)}
     </div>
+  );
+}
+
+/**
+ * **The right corners give way before the name** (「优先折叠 branch 名,保留
+ * 工作区名」, the workspace row's rule since 2026-09; every list's since
+ * UX-15). As wide as the state wants, but never more than what the row has
+ * left once the name is whole — and never less than the time under it,
+ * which is not cut (an 「ago」 missing its tail is a different amount of
+ * time). Measured, because what the name needs is its own text's width,
+ * which no flex rule can hand a sibling. The title's aside is not counted:
+ * it is cut first, to nothing.
+ */
+function Corners({ top, bottom }: { top?: ReactNode; bottom?: ReactNode }) {
+  const box = useRef<HTMLSpanElement | null>(null);
+  const fit = useCallback(() => {
+    const el = box.current;
+    const text = el?.closest<HTMLElement>("[data-side-text]");
+    const name = text?.querySelector<HTMLElement>("[data-side-name]") ?? text?.querySelector<HTMLElement>("[data-side-title]");
+    if (!el || !text || !name) return;
+    const cs = getComputedStyle(text);
+    const room =
+      text.clientWidth -
+      Number.parseFloat(cs.paddingLeft) -
+      Number.parseFloat(cs.paddingRight) -
+      Number.parseFloat(cs.columnGap || "0") -
+      // The name's own text: a row's title cuts itself (`truncate` on
+      // its own box), so the outer box only reports what it was given.
+      Math.max(name.scrollWidth, ...[...name.querySelectorAll<HTMLElement>("*")].map((e) => e.scrollWidth));
+    const time = el.querySelector<HTMLElement>('[data-corner="bottom"]')?.scrollWidth ?? 0;
+    el.style.maxWidth = `${Math.max(time, room)}px`;
+  }, []);
+  // Every render: a rename or a new state changes what the two need.
+  useLayoutEffect(fit);
+  useLayoutEffect(() => {
+    const text = box.current?.closest<HTMLElement>("[data-side-text]");
+    if (!text) return;
+    const watch = new ResizeObserver(fit);
+    watch.observe(text);
+    return () => watch.disconnect();
+  }, [fit]);
+  return (
+    <span
+      ref={box}
+      data-side-corners
+      className="flex min-w-0 flex-none flex-col items-end gap-xxs text-caption tabular-nums text-muted-foreground"
+    >
+      {top && (
+        // A flex row: its words are a flex item, which keeps its width
+        // unless told it may shrink (`min-w-0`) — the branch would spill
+        // past the corner instead of being cut.
+        <span data-corner="top" className="flex max-w-full min-w-0 items-center gap-xxs overflow-hidden [&>*]:min-w-0">
+          {top}
+        </span>
+      )}
+      {bottom && (
+        <span data-corner="bottom" className="whitespace-nowrap">
+          {bottom}
+        </span>
+      )}
+    </span>
   );
 }
