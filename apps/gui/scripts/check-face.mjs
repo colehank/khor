@@ -3072,6 +3072,16 @@ try {
   // probe below asserts the reading works at all rather than trusting a
   // zero.
   const BARE_PRESSES = {
+    "data-scrim": [
+      "src/components/ui/dialog.tsx",
+      "the scrim under every dialog and sheet (UX-21, 2026-10-05): its " +
+        "`onClick` does nothing — it is there so WebKit sends a click for a " +
+        "tap on it at all, which is what Radix waits for before it puts a " +
+        "sheet away on a touch outside. **Not a control, the room around " +
+        "one**: what puts the sheet away is Radix's outside-press rule, the " +
+        "same one a mouse meets; the keyboard has Esc and the sheet's own " +
+        "取消, so nothing is reachable only through it.",
+    ],
     "data-overview": [
       "src/views/FileView.tsx",
       "the overview ruler's own strip, pressable since 2026-09-17 (工作区第五轮 " +
@@ -29333,6 +29343,101 @@ try {
       } else {
         const btn = await count("[data-session-deck] button[data-deck-title]");
         if (btn !== 0) fail(`bar p · a conversation's pill title is a button (${btn}) — it opens nothing, so it is not drawn as one`);
+      }
+    }
+
+    // ── s. every sheet that rises from the bottom goes away on a tap
+    //       beside it, a pull down on its body, and Esc (UX-21, the owner
+    //       2026-10-05: 「点击栏外空白都应该要支持收起。现在只能拖动那个横杆
+    //       收起」); the tap that puts it away presses nothing under it.
+    //       Each sheet the narrow terminal page reaches: the pill's 目录,
+    //       the tabs sheet, its 新会话, the key row's 「…」 where the row
+    //       is up. ──
+    {
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      if (!(await openRow(terms[3].id)) || !(await xtermUp())) {
+        fail("probe dead: bar s · a terminal never opened");
+      } else {
+        const sheets = [
+          ["目录", "[data-place-sheet]", () => press("[data-session-deck] button[data-deck-title]")],
+          ["标签页", "[data-tab-sheet]", () => press("[data-session-deck] [data-deck-tabs]")],
+          ["新会话", "[data-new-session-dialog]", async () => (await press("[data-session-deck] [data-deck-tabs]")) && press("[data-tab-sheet-new]")],
+        ];
+        if (await page.locator('[data-term-key="more"]').filter({ visible: true }).count()) {
+          sheets.push(["按键", "[data-term-key-sheet]", () => press('[data-term-key="more"]')]);
+        } else {
+          console.log("bar s · the key row is not up without the keyboard here: 按键's sheet is walked on the simulator");
+        }
+        const up = (sel) => until(3_000, async () => (await count(sel)) === 1);
+        const gone = (sel) => until(2_000, async () => (await count(sel)) === 0);
+        const where = () =>
+          page.evaluate(() => ({
+            title: document.querySelector("[data-deck-title]")?.textContent?.trim() ?? null,
+            dialogs: document.querySelectorAll('[role="dialog"]').length,
+          }));
+        const said = [];
+        for (const [name, sel, opener] of sheets) {
+          // A tap on the scrim, above the sheet's top edge.
+          const before = await where();
+          if (!(await opener()) || !(await up(sel))) {
+            fail(`probe dead: bar s · ${name}'s sheet never rose`);
+            continue;
+          }
+          await wait(400);
+          const top = await page.evaluate((s) => document.querySelector(s).getBoundingClientRect().top, sel);
+          if (top < 40) {
+            fail(`probe dead: bar s · ${name}'s sheet reaches ${Math.round(top)} from the top — no scrim above it to tap`);
+            await page.keyboard.press("Escape");
+            await gone(sel);
+            continue;
+          }
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 195, y: Math.round(top / 2) }] });
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          const tapped = await gone(sel);
+          if (!tapped) {
+            await page.keyboard.press("Escape");
+            await gone(sel);
+          }
+          await wait(300);
+          const after = await where();
+          // Esc on a hardware keyboard.
+          await opener();
+          await up(sel);
+          await wait(300);
+          await page.keyboard.press("Escape");
+          const esc = await gone(sel);
+          await wait(300);
+          // A pull down that starts on the body, under the grabber's band.
+          await opener();
+          await up(sel);
+          await wait(400);
+          const body = await page.evaluate((s) => {
+            const b = document.querySelector(s).getBoundingClientRect();
+            return { x: Math.round(b.left + b.width / 2), y: Math.round(b.top + Math.min(b.height / 2, 120)) };
+          }, sel);
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [body] });
+          for (let i = 1; i <= 8; i++) {
+            await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: body.x, y: body.y + i * 30 }] });
+            await wait(16);
+          }
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          const pulled = true;
+          const drag = pulled && (await gone(sel));
+          if (!drag) {
+            await page.keyboard.press("Escape");
+            await gone(sel);
+          }
+          await wait(300);
+          said.push(`${name} tap ${tapped} esc ${esc} pull ${drag}`);
+          if (!tapped) fail(`bar s · a tap on the scrim above ${name}'s sheet left it up — every sheet goes away on a tap beside it (UX-21; src/components/ui/dialog.tsx)`);
+          if (tapped && (after.title !== before.title || after.dialogs !== 0)) {
+            fail(`bar s · the tap that put ${name}'s sheet away pressed what was under it: ${shown(before)} → ${shown(after)}`);
+          }
+          if (!esc) fail(`bar s · Esc left ${name}'s sheet up`);
+          if (!drag) fail(`bar s · a pull down on ${name}'s sheet's body left it up — the grabber is not the only handle (UX-21; ui/dialog useSheet)`);
+        }
+        console.log(`bar s · ${said.join(" · ")}`);
       }
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });

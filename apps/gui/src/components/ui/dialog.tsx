@@ -28,6 +28,14 @@ function DialogOverlay({
   return (
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
+      // **A tap on the scrim has to arrive as a click on iOS** (UX-21):
+      // Radix closes on a touch outside only when the click that follows
+      // reaches the document, and WebKit sends no click for a tap on an
+      // element nothing listens to — so every sheet on the phone ignored
+      // a tap beside it. A listener of its own (React sets `onclick`)
+      // makes the scrim a thing a tap clicks.
+      onClick={() => {}}
+      data-scrim
       className={cn(
         "fixed inset-0 z-50 bg-black/50",
         "duration-[var(--dur-180)] ease-[var(--ease-out)]",
@@ -49,9 +57,12 @@ function DialogContent({
       选择目录, the relay and the PIN. Two things differ from a question
       dialog and nothing else: it is wider, because a form is two columns
       (the questions right-aligned against their answers, `ui/form-grid`),
-      and **a press outside it does not close it** — what was typed is not
-      thrown away by a stray click; Esc, 取消 and its own button do. Same
-      place, same surface, same scrim (components/Dialog). */
+      and **a press outside it does not close it** on the wide face — what
+      was typed is not thrown away by a stray click; Esc, 取消 and its own
+      button do. **On the phone it is a sheet, and a tap beside it puts it
+      away** (UX-21, the owner 2026-10-05: 「点击栏外空白都应该要支持收起」),
+      as every sheet that rises from the bottom does. Same place, same
+      surface, same scrim (components/Dialog). */
   form?: boolean;
 }) {
   // ⚠️ 墓碑 (2026-09-30): a `sheet` variant stood here from 第十七轮 (D10)
@@ -109,7 +120,19 @@ function DialogContent({
         // dialog is for is exactly the decorative copy docs/UX.md bans.
         // Callers that genuinely have one can pass their own.
         aria-describedby={undefined}
-        onInteractOutside={form ? (e) => e.preventDefault() : undefined}
+        onInteractOutside={
+          form
+            ? (e) => {
+                // **The scrim, and only the scrim**: a press on a layer the
+                // sheet put up of its own (the scanner's camera and its
+                // 取消, `ScanTicket`) is outside its box and is not a tap
+                // beside it.
+                const on = e.detail.originalEvent.target;
+                const scrim = on instanceof Element && on.closest("[data-scrim]") !== null;
+                if (!document.documentElement.hasAttribute("data-narrow") || !scrim) e.preventDefault();
+              }
+            : undefined
+        }
         className={cn(
           // components/Dialog: `dialog-w` 380 for a question, 32rem for a
           // form (the width the retired sheet had, which the two-column
@@ -165,9 +188,16 @@ function DialogContent({
 /**
  * The narrow sheet's two behaviours (F7.4): it rides the soft keyboard
  * (`--sheet-kb`, the part of the layout viewport the keyboard covers, from
- * `visualViewport`), and a pull down from its top quarter that goes past a
- * quarter of its height, or is thrown, puts it away; anything less springs
- * back. Inert on the wide face, where a form is a centred dialog.
+ * `visualViewport`), and a pull down that goes past a quarter of its
+ * height, or is thrown, puts it away; anything less springs back. **The
+ * pull starts on the grabber or anywhere on the sheet** (UX-21): on the
+ * body it is a drag that goes down first, where nothing under the finger
+ * scrolls up — a list scrolled down scrolls back first, a sideways drag
+ * is the row's, and a slider or anything marked `data-sheet-hold` (the
+ * key row's grips) keeps its own touches; a field is pulled like the rest
+ * of the sheet, as UIKit's are, and a tap on it still types. Inert on the
+ * wide face, where
+ * a form is a centred dialog.
  */
 function useSheet(on: boolean, el: HTMLDivElement | null, dismiss: () => void) {
   React.useEffect(() => {
@@ -187,24 +217,49 @@ function useSheet(on: boolean, el: HTMLDivElement | null, dismiss: () => void) {
     // by the browser's pan (`pointercancel`) before it has moved far; a
     // touch move that is prevented is the sheet's.
     let from: number | null = null;
+    let fromX = 0;
+    // Whether the touch is the sheet's yet: at once on the grabber, on
+    // the body once it has gone down rather than sideways.
+    let pulling = false;
     let dy = 0;
     let speed = 0;
     let lastY = 0;
     let lastT = 0;
+    /** Something between the finger and the sheet scrolled down. */
+    const scrolled = (t: Element | null) => {
+      for (let n = t; n && n !== el.parentElement; n = n.parentElement) {
+        if (n instanceof HTMLElement && n.scrollTop > 0) return true;
+      }
+      return false;
+    };
     const down = (e: TouchEvent) => {
       if (!narrow() || e.touches.length !== 1) return;
       const y = e.touches[0].clientY;
-      // From the grabber's band only: the rest of the sheet is a form.
-      if (y - el.getBoundingClientRect().top > 28) return;
+      const t = e.target instanceof Element ? e.target : null;
+      const band = y - el.getBoundingClientRect().top <= 28;
+      if (!band && (t?.closest('[data-sheet-hold], input[type="range"]') || scrolled(t))) return;
       from = y;
+      fromX = e.touches[0].clientX;
+      pulling = band;
       lastY = y;
       lastT = e.timeStamp;
       dy = 0;
       speed = 0;
-      el.setAttribute("data-sheet-pulling", "");
+      if (band) el.setAttribute("data-sheet-pulling", "");
     };
     const move = (e: TouchEvent) => {
       if (from === null) return;
+      if (!pulling) {
+        const ddy = e.touches[0].clientY - from;
+        const ddx = Math.abs(e.touches[0].clientX - fromX);
+        if (Math.max(Math.abs(ddy), ddx) < 6) return;
+        if (ddy <= ddx) {
+          from = null;
+          return;
+        }
+        pulling = true;
+        el.setAttribute("data-sheet-pulling", "");
+      }
       e.preventDefault();
       const y = e.touches[0].clientY;
       dy = Math.max(0, y - from);
@@ -217,6 +272,8 @@ function useSheet(on: boolean, el: HTMLDivElement | null, dismiss: () => void) {
     const up = () => {
       if (from === null) return;
       from = null;
+      if (!pulling) return;
+      pulling = false;
       el.removeAttribute("data-sheet-pulling");
       const go = dy > el.getBoundingClientRect().height / 4 || speed > 0.5;
       el.style.setProperty("--sheet-pull", "0px");
