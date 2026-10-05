@@ -142,7 +142,7 @@ const check = (ok, m) => {
   const seats = { seat: 36, me: 60, halo: 22 };
   const phone = dial.frame(390, 760, true, seats);
   check(phone.cx + phone.r1 + seats.seat / 2 <= 390 - 8, `a phone's rim reaches ${phone.cx + phone.r1 + seats.seat / 2}, past the box's edge`);
-  check(phone.r0 >= seats.me / 2 + seats.halo, `a phone's inner radius ${phone.r0} puts a 0 ms seat inside the halo`);
+  check(phone.r0 >= seats.me / 2 + seats.halo + seats.seat / 2, `a phone's inner radius ${phone.r0} puts a 0 ms seat on the halo`);
   check(phone.r0 < phone.r1, "a phone's inner radius is not inside its rim");
   const wide = dial.frame(1400, 848, false, { seat: 40, me: 72, halo: 22 });
   check(near(wide.r1, 788 * 0.46) && near(wide.r0, 788 * 0.16) && near(wide.cx, 700) && near(wide.cy, 424), `a wide frame reads ${JSON.stringify(wide)}`);
@@ -190,6 +190,11 @@ const check = (ok, m) => {
   const angs = ids.map((id) => s.get(id));
   check(near(angs[0], -Math.PI / 2 + Math.PI / 4), `the first seat is at ${angs[0]}, not a half-step past the top`);
   for (let i = 1; i < angs.length; i += 1) check(near(angs[i] - angs[i - 1], Math.PI / 2), `seats ${i - 1} and ${i} are ${angs[i] - angs[i - 1]} apart, not a quarter turn`);
+  // An odd count: the first seat on the top, none straight down.
+  const one = dial.spread(["x"], {});
+  check(near(one.get("x"), -Math.PI / 2), `one seat sits at ${one.get("x")}, not on the top`);
+  const three = [...dial.spread(["x", "y", "z"], {}).values()];
+  check(near(three[0], -Math.PI / 2) && three.every((a) => Math.abs(Math.sin(a) - 1) > 0.1), `three seats at ${three.map((a) => a.toFixed(2))} — one is straight under the middle`);
   const kept = dial.spread(ids, { b: 1.25, c: Number.NaN });
   check(near(kept.get("b"), 1.25), "a remembered angle is not kept");
   check(near(kept.get("c"), angs[2]), "a nonsense remembered angle is not ignored");

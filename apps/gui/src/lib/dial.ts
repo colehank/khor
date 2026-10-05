@@ -50,7 +50,7 @@ export function frame(w: number, h: number, narrow: boolean, seats: Seats = { se
   // the faces, `labelSide`); and the inner radius keeps a 0 ms seat's
   // centre past the halo, so it stands on the halo's rim at worst.
   const r1 = Math.max(0, Math.min(u * 0.46, w / 2 - seats.seat / 2 - 12));
-  const r0 = Math.min(r1 * 0.6, Math.max(u * 0.16, seats.me / 2 + seats.halo));
+  const r0 = Math.min(r1 * 0.6, Math.max(u * 0.16, seats.me / 2 + seats.halo + seats.seat / 2 + 4));
   return { cx: w / 2, cy: h / 2 + (narrow ? -16 : 0), r0, r1 };
 }
 
@@ -60,10 +60,14 @@ export function frame(w: number, h: number, narrow: boolean, seats: Seats = { se
     screen's y runs down). */
 export function spread(ids: readonly string[], kept: Readonly<Record<string, number>>): Map<string, number> {
   const n = ids.length;
+  // An even count straddles the top; an odd count puts its first seat on
+  // the top, so none lands straight under the middle, where this
+  // machine's name hangs (one fast machine on a phone sat on it).
+  const first = n % 2 === 0 ? 0.5 : 0;
   const out = new Map<string, number>();
   ids.forEach((id, i) => {
     const k = kept[id];
-    out.set(id, typeof k === "number" && Number.isFinite(k) ? k : -Math.PI / 2 + (i + 0.5) * ((2 * Math.PI) / n));
+    out.set(id, typeof k === "number" && Number.isFinite(k) ? k : -Math.PI / 2 + (i + first) * ((2 * Math.PI) / n));
   });
   return out;
 }

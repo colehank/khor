@@ -721,7 +721,11 @@ function Dial({
     e.stopPropagation();
     const el = e.currentTarget;
     drag.current = { id, sx: e.clientX, sy: e.clientY, went: false, el };
-    el.setPointerCapture(e.pointerId);
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      // A synthetic pointer (a walk's dispatched event) has no capture to take.
+    }
     clearHold();
     if (e.pointerType === "touch") {
       hold.current = window.setTimeout(() => {
