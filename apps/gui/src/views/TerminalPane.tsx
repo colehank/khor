@@ -74,7 +74,7 @@ import { TermHistory } from "@/views/TermHistory";
 import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, useWaited, WAIT_SAY_MS, Waiting } from "@/components/RegionState";
-import { gui, menu } from "@/gen/catalog";
+import { gui, menu, msg } from "@/gen/catalog";
 import { ago } from "@/words";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
@@ -128,6 +128,19 @@ const LIVE_MS = 50;
     and well under `CATCH_UP_MS`: a wait that ran its whole length is a
     quiet screen, not a catch-up. */
 const WAIT_MS = 1000;
+/** The longest wait between beats that came back with no answer (item 36). */
+const FAILED_MS_MOST = 5000;
+/** A host that did not answer is asked again after this, doubling… */
+const SILENT_RETRY_FIRST = 2000;
+/** …up to this. */
+const SILENT_RETRY_MOST = 30_000;
+
+/** Whether an open's error is the node's 「the host did not answer」
+    (`host-silent`, any number of seconds), not a refusal. */
+function hostSilent(why: string): boolean {
+  const [head, tail] = msg.host_silent("\u0000").split("\u0000");
+  return why.startsWith(head) && why.endsWith(tail);
+}
 /** A beat this long after the last one is a catch-up: what it carries
     was asked while nobody was looking, and is replayed (`replay`). */
 const CATCH_UP_MS = 2_000;
@@ -2010,7 +2023,9 @@ export function TerminalPane({
     /** When the last beat came back: a beat after a long gap (the pane
         was hidden, the app was suspended) is a catch-up, not live. */
     let lastBeat = performance.now();
-    const tick = async () => {
+    /** What a beat came back with: bytes or a wait answered, the
+        attachment ended, or no answer at all. */
+    const tick = async (): Promise<"live" | "ended" | "failed"> => {
       const mine = generation;
       // **The place this ask was made from.** An ask that left before the
       // join set `seq` (a poll the page's own focus effect started while
@@ -2025,7 +2040,7 @@ export function TerminalPane({
         // no longer waits for the next beat. Elsewhere, the beat.
         const pushed = inApp && pace.current === LIVE_MS;
         const b = await (pushed ? termWait(id, seq, WAIT_MS) : termStream(id, seq));
-        if (stopped || mine !== generation || from !== seq) return;
+        if (stopped || mine !== generation || from !== seq) return "live";
         const gap = performance.now() - lastBeat;
         lastBeat = performance.now();
         if (performance.now() - born < 1500 && (b.bytes || b.reset)) {
@@ -2052,10 +2067,14 @@ export function TerminalPane({
         seq = b.seq;
         if (b.gone) setGone(true);
         setRejoining(b.rejoining && !b.gone);
+        return b.gone ? "ended" : "live";
       } catch {
-        /* the next beat asks again */
+        // The next beat asks again, after a wait (below).
+        return "failed";
       }
     };
+    /** Beats in a row that came back with no answer. */
+    let failures = 0;
     // **Strictly one request in flight.** The cell-snapshot poll this
     // replaces was idempotent — two answers out of order repainted the
     // same screen. A byte stream is not: the same bytes written twice
@@ -2065,14 +2084,25 @@ export function TerminalPane({
       // Nothing to ask before the join has said where the stream starts.
       if (stopped || busy || !joined) return;
       busy = true;
+      let got: "live" | "ended" | "failed" = "live";
       try {
-        await tick();
+        got = await tick();
       } finally {
         busy = false;
       }
+      // **A beat answered at once is not a reason to ask at once** (item
+      // 36: the app spun at 100–260 % CPU on a terminal whose host had
+      // stopped answering). The pushed wait returns straight away for an
+      // attachment that ended or is not there any more, and the next beat
+      // went out at 0 ms, forever. An ended one asks no more (a reload
+      // starts the loop again); a failed one asks again after a wait that
+      // doubles, up to `FAILED_MS_MOST`.
+      if (got === "ended") return;
+      failures = got === "failed" ? failures + 1 : 0;
       if (!stopped) {
         window.clearTimeout(timer);
-        timer = window.setTimeout(() => void loop(), inApp && pace.current === LIVE_MS ? 0 : pace.current);
+        const after = failures > 0 ? Math.min(FAILED_MS_MOST, LIVE_MS * 2 ** failures) : inApp && pace.current === LIVE_MS ? 0 : pace.current;
+        timer = window.setTimeout(() => void loop(), after);
       }
     };
     pollNow.current = () => {
@@ -2112,6 +2142,8 @@ export function TerminalPane({
           // An open that lands after 停止等待 is still an open: the
           // terminal is there, so the pane shows it.
           setWhy(null);
+          silentWait = SILENT_RETRY_FIRST;
+          failures = 0;
           setGone(false);
           if (again) {
             frames.drop();
@@ -2157,9 +2189,22 @@ export function TerminalPane({
           setOpening(false);
           setOpenedAt(null);
           setJoining(false);
-          setWhy(String((e as { message?: string })?.message ?? e));
+          const why = String((e as { message?: string })?.message ?? e);
+          setWhy(why);
+          // No attachment behind this pane now: its beats stop asking.
+          joined = false;
+          // **A host that did not answer is asked again** (item 36), on
+          // a wait that doubles, while the pane says why; one that
+          // answered with a refusal is not.
+          if (hostSilent(why)) {
+            window.clearTimeout(silentRetry);
+            silentRetry = window.setTimeout(() => void join(true), silentWait);
+            silentWait = Math.min(SILENT_RETRY_MOST, silentWait * 2);
+          }
         });
     };
+    let silentRetry = 0;
+    let silentWait = SILENT_RETRY_FIRST;
     const reopenHere = () => join(true);
     reopenRef.current = reopenHere;
     // For the gates, as `__xterm` is.
@@ -2606,6 +2651,7 @@ export function TerminalPane({
       stopped = true;
       frames.drop();
       window.clearTimeout(timer);
+      window.clearTimeout(silentRetry);
       pollNow.current = () => {};
       if (raf) window.cancelAnimationFrame(raf);
       observer.disconnect();

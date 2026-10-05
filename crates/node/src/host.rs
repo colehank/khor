@@ -617,7 +617,7 @@ pub fn connect_versioned(addr: &str, cookie: &str, cols: u16, rows: u16) -> Resu
             rows,
         },
     )?;
-    let w: Welcome = read_frame(&mut s)?;
+    let w: Welcome = read_welcome(&mut s)?;
     if !w.ok {
         return Err(w.why);
     }
@@ -628,6 +628,21 @@ pub fn connect_versioned(addr: &str, cookie: &str, cols: u16, rows: u16) -> Resu
     let _ = s.set_read_timeout(None);
     let _ = s.set_write_timeout(None);
     Ok(Attached { stream: s, version })
+}
+
+/// The host's `Welcome`, or **why it did not come** in words a person
+/// reads (item 36): a host that took the connection and stayed silent
+/// past [`HANDSHAKE`] ran the read into its deadline, which the socket
+/// reports as `WouldBlock` — on macOS and iOS 「Resource temporarily
+/// unavailable (os error 35)」, what the owner was shown.
+fn read_welcome(s: &mut TcpStream) -> Result<Welcome, String> {
+    let mut len = [0u8; 4];
+    if let Err(e) = s.peek(&mut len) {
+        if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) {
+            return Err(msg::host_silent(HANDSHAKE.as_secs()));
+        }
+    }
+    read_frame(s)
 }
 
 /// How long [`connect_at`] waits for a host to welcome it: a far pipe's
@@ -1632,7 +1647,7 @@ mod last_line_tests {
 
 #[cfg(test)]
 mod handshake_tests {
-    use super::{ClientOp, Hello, Welcome, connect_at, connect_versioned, read_frame, write_frame};
+    use super::{ClientOp, HANDSHAKE, Hello, Welcome, connect_at, connect_versioned, read_frame, write_frame};
 
     /// **A versioned client against a host from before the handshake**:
     /// the host welcomes with an empty `why`, so the client speaks version
@@ -1698,9 +1713,13 @@ mod handshake_tests {
         let (answer, took) = rx
             .recv_timeout(Duration::from_secs(40))
             .expect("connect_at must come back from a host that never answers");
-        assert!(
-            answer.is_err(),
-            "a silent host is not a welcome: {answer:?}"
+        // **And it is said in words** (item 36): the read ran into its
+        // deadline, which macOS and iOS report as 「Resource temporarily
+        // unavailable (os error 35)」 — what the owner was shown.
+        assert_eq!(
+            answer,
+            Err(khor_catalog::msg::host_silent(HANDSHAKE.as_secs())),
+            "a silent host is not a welcome, and the face is told why"
         );
         assert!(
             took >= Duration::from_secs(5),
