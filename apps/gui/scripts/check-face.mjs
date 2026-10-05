@@ -2672,9 +2672,15 @@ try {
     // Asked over a moment, not once: a column coming back (a width
     // change, a landing switch) is a few frames from its width, and a
     // press taken then would put it away again.
+    // **This landing's own column** (`LIST_PANE`'s one for it), once the
+    // strip says it is the open one: the column being left can still be
+    // on screen for a frame, and reading it said 「out」 for a list that
+    // was put away (section 9, red twice).
+    const own = tab === "quota" ? "[data-quota-pane]" : tab === "browser" ? "[data-browse-tabs]" : "[data-list]";
     const away = async () => {
+      await until(1_500, async () => (await page.locator(`${rail(tab)}[data-on="true"], [data-rail-more][data-on="true"]`).count()) > 0);
       const wide = () =>
-        page.evaluate(() => Math.max(0, ...[...document.querySelectorAll("[data-list],[data-quota-pane],[data-browse-tabs]")].map((e) => e.getBoundingClientRect().width)));
+        page.evaluate((sel) => Math.max(0, ...[...document.querySelectorAll(sel)].map((e) => e.getBoundingClientRect().width)), own);
       return !(await until(800, async () => (await wide()) >= 8));
     };
     if ((await page.locator(rail(tab)).count()) === 0) {
@@ -17742,6 +17748,22 @@ try {
   // pins and reorders the machines' list before it gets here.
   await page.setViewportSize({ width: 1400, height: 900 });
   await open("devices");
+  {
+    // Out of the narrow walk just above: say what stood there when the
+    // peer's row did not, then ask for the landing once more.
+    const peerRow = page.locator('[data-list] [data-side-row][data-device="peer"] [data-side-open]').filter({ visible: true });
+    if (!(await until(3_000, async () => (await peerRow.count()) > 0))) {
+      const there = await page.evaluate(() => ({
+        narrow: document.documentElement.hasAttribute("data-narrow"),
+        on: [...document.querySelectorAll('[data-rail-item][data-on="true"]')].map((e) => e.getAttribute("data-landing") ?? "more"),
+        list: Math.round(document.querySelector("[data-list]")?.getBoundingClientRect().width ?? -1),
+        rows: [...document.querySelectorAll("[data-list] [data-side-row]")].map((e) => e.getAttribute("data-device") ?? e.getAttribute("data-side-row")),
+        dialogs: document.querySelectorAll('[role="dialog"], [role="menu"]').length,
+      }));
+      console.log(`section 9 · the peer's row was not on screen after open("devices"): ${JSON.stringify(there)} — asked again`);
+      await open("devices");
+    }
+  }
   await page.locator('[data-list] [data-side-row][data-device="peer"] [data-side-open]').filter({ visible: true }).first().click();
   await until(5_000, async () => (await page.locator("[data-main] [data-page-title]").first().textContent().catch(() => null)) === "peer");
   await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) === 1);
