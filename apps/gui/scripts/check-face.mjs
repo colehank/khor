@@ -28387,6 +28387,8 @@ try {
           tags: tags.length,
           text: tag?.textContent ?? null,
           short: tag?.hasAttribute("data-blame-short") ?? null,
+          // What is visible of it: never cut to nothing.
+          seen: t ? Math.round(t.width) : 0,
           left: t && end ? Math.round(t.left - end.right) : null,
           top: t && end ? Math.round(t.top - end.top) : null,
           code: Math.round(document.querySelector("[data-file-text]")?.getBoundingClientRect().width ?? 0),
@@ -28408,6 +28410,9 @@ try {
       const tight = await read(3);
       await page.setViewportSize({ width: 1400, height: 900 });
       console.log(`ws a · blame at the caret (${lines}): line 3 ${JSON.stringify(two)}; line 4 ${JSON.stringify(three)}; at 760 ${JSON.stringify(tight)}`);
+      for (const [at, r] of [["line 3", two], ["line 4", three], ["760", tight]]) {
+        if (r.tags === 1 && r.seen < 24) fail(`ws a · the annotation on ${at} shows ${r.seen}px of itself — at least the hash, never cut to nothing`);
+      }
       if (two.columns !== 0) fail(`ws a · ${two.columns} blame column piece(s) beside the numbers — blame is the caret line's end now (UX-23; src/views/FileView.tsx)`);
       if (two.tags !== 1 || !two.text?.startsWith(`${HASH.slice(0, 7)} · Guohao · `)) {
         fail(`ws a · the caret's line carries ${two.tags} annotation(s) reading ${JSON.stringify(two.text)} — one, 「${HASH.slice(0, 7)} · Guohao · <age>」`);

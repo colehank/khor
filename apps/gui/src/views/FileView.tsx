@@ -1815,6 +1815,11 @@ function InlineBlame({
   const whole = useRef<HTMLSpanElement>(null);
   const [at, setAt] = useState<{ x: number; y: number; room: number } | null>(null);
   const [short, setShort] = useState(false);
+  /** Not even the hash fits after the text (a line that runs to the
+      pane's edge, as a phone's often do): it stands at the row's end,
+      over the text, on the file's ground. */
+  const [over, setOver] = useState(false);
+  const hash = useRef<HTMLSpanElement>(null);
   const [open, setOpen] = useState(false);
   const press = useRef<ReturnType<typeof setTimeout> | null>(null);
   const long = commit === null ? gui.blame_uncommitted : `${commit.id.slice(0, 7)} · ${commit.author} · ${ago(commit.when_ms)}`;
@@ -1837,7 +1842,9 @@ function InlineBlame({
     // The whole annotation measured off screen, then cut to the hash
     // where it does not fit.
     const el = whole.current;
-    if (el && at) setShort(el.offsetWidth > at.room);
+    if (!el || !at) return;
+    setShort(el.offsetWidth > at.room);
+    setOver((hash.current?.offsetWidth ?? 0) > at.room);
   }, [at, long]);
   useEffect(() => {
     if (!open) return;
@@ -1851,12 +1858,19 @@ function InlineBlame({
       <span ref={whole} aria-hidden="true" className="invisible absolute whitespace-nowrap ps-group font-mono text-caption">
         {long}
       </span>
+      <span ref={hash} aria-hidden="true" className="invisible absolute whitespace-nowrap ps-group font-mono text-caption">
+        {brief}
+      </span>
       <span
         data-blame-inline
+        data-blame-over={over || undefined}
         data-blame-short={short || undefined}
         title={commit === null ? undefined : `${long}\n${commit.subject}`}
-        style={{ left: at.x, top: at.y, maxWidth: at.room }}
-        className="absolute z-10 overflow-hidden whitespace-nowrap ps-group font-mono text-caption leading-[var(--text-mono--line-height)] text-tertiary select-none"
+        style={over ? { right: 0, top: at.y } : { left: at.x, top: at.y, maxWidth: at.room }}
+        className={cn(
+          "absolute z-10 overflow-hidden whitespace-nowrap font-mono text-caption leading-[var(--text-mono--line-height)] text-tertiary select-none",
+          over ? "rounded-xs bg-card px-xxs me-3" : "ps-group",
+        )}
         onPointerDown={(e) => {
           if (e.pointerType === "mouse" || commit === null) return;
           e.stopPropagation();
