@@ -4015,6 +4015,19 @@ fn serve(_rest: &[String]) -> Result<(), String> {
         return Ok(());
     }
     if !khor_node::keeper::is_inner() {
+        // **Never a second resident on one store** (round NET-10): a
+        // serve started by hand beside the kept one wrote its pid over
+        // the keeper's, and stopping it left the file naming a dead
+        // process. Said and left, as beside the app.
+        let root = Node::root_from_env();
+        let seen = khor_node::serves::residents(
+            &khor_node::serves::here(),
+            &Node::root_from_env_default(),
+        );
+        if let Some(pid) = khor_node::serves::beside(&seen, &root, std::process::id()) {
+            eprintln!("{}", cli::serve_already_here(pid));
+            return Ok(());
+        }
         // The keeper's own pid, where `khor quit` and the installer
         // both look. serve-up writes the same number when it is the
         // parent; this write is for the starts nobody scripted (a GUI,

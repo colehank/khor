@@ -41,6 +41,10 @@ struct Keeper(Child);
 
 impl Drop for Keeper {
     fn drop(&mut self) {
+        // Already reaped: its pid may be somebody else's by now.
+        if self.0.try_wait().ok().flatten().is_some() {
+            return;
+        }
         let _ = Command::new("kill")
             .args(["-TERM", &self.0.id().to_string()])
             .status();
@@ -66,6 +70,7 @@ fn keeper(home: &Path, name: &str) -> Keeper {
             // test is about, and the doctor must see both whatever
             // the ports do.
             .env("KHOR_WEB_PORT", "0")
+            .env("KHOR_NO_MDNS", "1")
             .env_remove("KHOR_SESSION")
             .stderr(fs::File::create(home.join("serve.log")).unwrap())
             .stdout(std::process::Stdio::null())
@@ -160,4 +165,52 @@ fn the_doctor_names_a_second_serve_on_the_same_machine() {
         "the doctor asked from the second store names the first: {said_b}"
     );
     drop(kc);
+}
+
+/// **A second `khor serve` on one store stands down** (round NET-10).
+/// The owner's fleet: a serve started by hand beside the kept one wrote
+/// its pid over the keeper's in `serve.pid`, and once it was stopped the
+/// file named a dead process while the keeper ran on. The second serve
+/// now says who holds the store and leaves, and the file still names the
+/// keeper.
+#[test]
+fn a_second_serve_on_one_store_stands_down() {
+    let home = root("again");
+    // Off the real relays and off the segment: a loopback relay nobody
+    // listens on.
+    fs::create_dir_all(home.0.join(".khor")).unwrap();
+    fs::write(
+        home.0.join(".khor").join("relays.json"),
+        r#"{"relays":[{"url":"http://127.0.0.1:9"}],"only_mine":true}"#,
+    )
+    .unwrap();
+    let first = keeper(&home.0, "box-a");
+    wait_for("the first serve to stand up", 30, || inner_pid(&home.0).is_some());
+    let inner = inner_pid(&home.0);
+    let pid_file = || fs::read_to_string(home.0.join(".khor").join("serve.pid")).unwrap_or_default();
+    assert_eq!(pid_file().trim(), first.0.id().to_string());
+
+    let mut second = Keeper(
+        Command::new(env!("CARGO_BIN_EXE_khor"))
+            .arg("serve")
+            .env("KHOR_HOME", &home.0)
+            .env("KHOR_NAME", "box-a")
+            .env("KHOR_WEB_PORT", "0")
+            .env("KHOR_NO_MDNS", "1")
+            .env_remove("KHOR_SESSION")
+            .stderr(fs::File::create(home.0.join("second.log")).unwrap())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let mut status = None;
+    wait_for("the second serve to stand down", 20, || {
+        status = second.0.try_wait().unwrap();
+        status.is_some()
+    });
+    assert!(status.unwrap().success());
+    let said = fs::read_to_string(home.0.join("second.log")).unwrap();
+    assert!(said.contains(&first.0.id().to_string()), "it names the serve in the way: {said}");
+    assert_eq!(pid_file().trim(), first.0.id().to_string(), "serve.pid still names the keeper");
+    assert_eq!(inner_pid(&home.0), inner, "and the resident is the one that was there");
 }

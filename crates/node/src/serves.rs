@@ -80,6 +80,31 @@ pub fn own(residents: Vec<Resident>, home: &Path) -> Vec<Resident> {
         .collect()
 }
 
+/// **The resident already serving `root`**, other than `me` — what a
+/// second `khor serve` on the same store must stop at (round NET-10).
+///
+/// Two residents on one store are two endpoints on one key, which knock
+/// each other off the relay, and two writers of one `serve.pid`: the
+/// owner's fleet had a serve started by hand beside the kept one, its
+/// pid written over the keeper's, and once it was stopped the file
+/// named a dead process while the keeper ran on, so `khor quit` and the
+/// app's hand-over both looked in the wrong place. The process table is
+/// the truth here; the file is only where a stop looks first.
+///
+/// `me` is this process: a keeper that re-executes itself (off a network
+/// disk, or onto a new generation) keeps its pid and has already reaped
+/// its child, so it never finds itself.
+pub fn beside(residents: &[Resident], root: &Path, me: u32) -> Option<u32> {
+    let same = |a: &Path, b: &Path| match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    };
+    residents
+        .iter()
+        .find(|r| r.pid != me && same(&r.root, root))
+        .map(|r| r.pid)
+}
+
 /// Whether a command line is `khor serve`: the program's file name
 /// starts with `khor` (the keeper runs from `khor-<fingerprint>` copies
 /// behind the shield) and is not the app, and the verb is `serve`.
@@ -189,6 +214,23 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// A second serve on a store finds the first, whether it is the
+    /// keeper or a lone serve; a serve on another store, or this very
+    /// process re-executed, is not in the way.
+    #[test]
+    fn a_second_serve_on_one_store_finds_the_first() {
+        let side = "/nfs/home/.khor-hosts/hinton";
+        let ps = [
+            seen(833241, 1, false, Some(side)),
+            seen(833250, 833241, true, Some(side)),
+            seen(900001, 1, false, Some("/nfs/home/.khor-hosts/lecun")),
+        ];
+        let rs = residents(&ps, Path::new("/unused"));
+        assert_eq!(beside(&rs, Path::new(side), 999), Some(833241), "the keeper, not its child");
+        assert_eq!(beside(&rs, Path::new(side), 833241), None, "a keeper re-executed is itself");
+        assert_eq!(beside(&rs, Path::new("/nfs/home"), 999), None, "another store is not in the way");
     }
 
     /// hinton the same morning: a keeper and its child, one resident —

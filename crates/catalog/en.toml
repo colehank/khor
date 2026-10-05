@@ -765,6 +765,7 @@ borrowing = "Using {0}'s network, proxy port at {1}; point your browser or HTTPS
 broken-blocks = "{0} blocks couldn't be read, this part of the conversation is missing"
 serve-banner = "khor serve: {0} listening, handles pairing and sync"
 serve-app-holds = "the khor app is this machine's resident (pid {0}) — not starting a second serve beside it"
+serve-already-here = "khor serve is already running on this store (pid {0}) — not starting a second one beside it"
 web-banner = "Web access listening on {0}; for a link, run khor web"
 hooks-file = "Hooks written to: {0}"
 hook-here = "Installed"
