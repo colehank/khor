@@ -127,7 +127,8 @@ const front = (pid) =>
 // A tmux server of its own too: without it the app finds the owner's
 // tmux on the default socket and opens their live terminal sessions as
 // tabs (found on the first run).
-const env = { ...process.env, KHOR_HOME: home, TMUX_TMPDIR: scratch };
+// Off the segment, like every scratch node (`fake-home.mjs`).
+const env = { ...process.env, KHOR_HOME: home, KHOR_NO_MDNS: "1", TMUX_TMPDIR: scratch };
 delete env.TMUX;
 const setTheme = (t) => execFileSync(cliBin, ["config", "set", "theme", t], { env, encoding: "utf8" });
 

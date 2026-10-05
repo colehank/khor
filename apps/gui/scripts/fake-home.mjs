@@ -91,6 +91,10 @@ export function fakeHome(dir, usageUrl) {
   const loopback = [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",");
   return {
     HOME: dir,
+    // No scratch node on the segment: every machine on this Wi-Fi decodes
+    // every node's mDNS announcement, the operator's own app included
+    // (`endpoint::NO_MDNS_ENV`).
+    KHOR_NO_MDNS: "1",
     KHOR_CLAUDE_USAGE_URL: usageUrl,
     KHOR_CODEX_USAGE_URL: codexUrlOf(usageUrl),
     NO_PROXY: loopback,

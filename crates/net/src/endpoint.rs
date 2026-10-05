@@ -329,6 +329,23 @@ fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup) {
 /// The environment switch that binds with relays only ([`builder`]).
 pub const RELAY_ONLY_ENV: &str = "KHOR_RELAY_ONLY";
 
+/// The environment switch that binds with no mDNS service: the node
+/// neither announces itself on the segment nor listens for others.
+///
+/// **For scratch nodes, not for people.** Every machine on a segment
+/// decodes every other's announcement, so each scratch bridge, test
+/// serve and loopback relay a lane leaves running costs the person's own
+/// app on the same Wi-Fi (term-cpu.md: a 14 h app spent most of its
+/// time decoding announcements). A scratch node finds its peers through
+/// the device table and the loopback relay; mDNS adds nothing there.
+/// The tests' harnesses set it for every node they start.
+pub const NO_MDNS_ENV: &str = "KHOR_NO_MDNS";
+
+/// Whether this process binds with mDNS ([`NO_MDNS_ENV`]).
+fn on_the_segment() -> bool {
+    std::env::var_os(NO_MDNS_ENV).is_none()
+}
+
 /// Binds this machine's endpoint. One live endpoint per key — a second
 /// bind with the same key knocks the first off the relay, and both stop
 /// working (learned in production).
@@ -384,7 +401,7 @@ pub async fn bind_preferring(
     n0: bool,
     preferred: Option<&str>,
 ) -> Result<iroh::Endpoint> {
-    let mut b = builder(secret, relays, n0)?;
+    let mut b = builder(secret, relays, n0, on_the_segment())?;
     let preferred = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok());
     let successors = successors(relays);
     if preferred.is_some() || !successors.is_empty() {
@@ -399,13 +416,25 @@ pub async fn bind_preferring(
 
 /// Everything [`bind`] configures, short of binding — split out so the
 /// configuration can be read (its `Debug`) without a socket.
-fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::endpoint::Builder> {
+/// `mdns` off is [`NO_MDNS_ENV`]: no service is built, so nothing
+/// announces and [`NEARBY`] stays empty.
+fn builder(
+    secret: iroh::SecretKey,
+    relays: &[Relay],
+    n0: bool,
+    mdns: bool,
+) -> Result<iroh::endpoint::Builder> {
     // Built here rather than by iroh so that `follow` can read what it
     // finds; registered on the builder all the same (`Prebuilt`).
-    let mdns = iroh_mdns_address_lookup::MdnsAddressLookup::builder()
-        .build(secret.public())
-        .context(msg::no_local_lookup())?;
-    follow(mdns.clone());
+    let mdns = if mdns {
+        let built = iroh_mdns_address_lookup::MdnsAddressLookup::builder()
+            .build(secret.public())
+            .context(msg::no_local_lookup())?;
+        follow(built.clone());
+        Some(built)
+    } else {
+        None
+    };
     // The n0 preset is n0's relays plus a pkarr publisher, a pkarr
     // resolver and a DNS lookup, all pointed at n0's servers; `Minimal`
     // keeps only the crypto provider. The relay map is replaced below
@@ -447,19 +476,9 @@ fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::
         .proxy_from_env()
         .transport_config(transport())
         .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()])
-        // **On the builder, not on the bound endpoint — and that is the
-        // whole difference between wired up and merely present.**
-        // `endpoint.address_lookup().add(..)` after a bind (what the
-        // crate's own README shows) leaves a service that discovers and
-        // answers `resolve()` correctly while the dialer never consults
-        // it: measured 2026-09-18, A saw B, `resolve(B)` handed back B's
-        // three addresses with provenance "mdns", dialling B by key
-        // alone timed out, and dialling the very same addresses by hand
-        // connected. Every piece worked and the chain did not.
-        .address_lookup(Prebuilt(mdns.clone()))
-        // Same door, same reason: the filter that keeps this machine
-        // from publishing an address nobody can route to belongs where
-        // the services are assembled.
+        // The filter that keeps this machine from publishing an address
+        // nobody can route to belongs where the services are assembled
+        // (the reason is the mDNS service's, below).
         .addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
             if addrs.iter().any(unroutable) {
                 std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
@@ -467,6 +486,18 @@ fn builder(secret: iroh::SecretKey, relays: &[Relay], n0: bool) -> Result<iroh::
                 std::borrow::Cow::Borrowed(addrs)
             }
         }));
+    // **On the builder, not on the bound endpoint — and that is the
+    // whole difference between wired up and merely present.**
+    // `endpoint.address_lookup().add(..)` after a bind (what the
+    // crate's own README shows) leaves a service that discovers and
+    // answers `resolve()` correctly while the dialer never consults
+    // it: measured 2026-09-18, A saw B, `resolve(B)` handed back B's
+    // three addresses with provenance "mdns", dialling B by key
+    // alone timed out, and dialling the very same addresses by hand
+    // connected. Every piece worked and the chain did not.
+    if let Some(mdns) = mdns {
+        builder = builder.address_lookup(Prebuilt(mdns));
+    }
     let map = full_relay_map(relays, n0);
     if !map.is_empty() {
         builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(map));
@@ -793,13 +824,13 @@ mod tests {
 
         let n0 = format!("{:?}", iroh::Endpoint::builder(iroh::endpoint::presets::N0));
         assert!(n0.contains(N0), "control: the needle must find n0 in n0's preset");
-        let ours = format!("{:?}", builder(iroh::SecretKey::generate(), &relays, false).unwrap());
+        let ours = format!("{:?}", builder(iroh::SecretKey::generate(), &relays, false, true).unwrap());
         assert!(!ours.contains(N0), "the builder names an n0 service: {ours}");
         assert!(
             ours.contains("203.0.113.9"),
             "control: the builder's Debug must show the relays it holds: {ours}"
         );
-        let with = format!("{:?}", builder(iroh::SecretKey::generate(), &relays, true).unwrap());
+        let with = format!("{:?}", builder(iroh::SecretKey::generate(), &relays, true, true).unwrap());
         assert!(with.contains(N0), "the n0 switch must name n0's services: {with}");
         let urls: Vec<iroh::RelayUrl> = full_relay_map(&relays, true).urls();
         assert_eq!(urls[0], MINE.parse().unwrap(), "ours comes first: {urls:?}");
@@ -812,7 +843,13 @@ mod tests {
             "the hermetic map is ours alone"
         );
 
-        let ep = bind(iroh::SecretKey::generate(), &relays).await.unwrap();
+        // `builder` rather than `bind`: what `bind` adds is the process's
+        // `KHOR_NO_MDNS`, which a test run may well carry.
+        let ep = builder(iroh::SecretKey::generate(), &relays, false, true)
+            .unwrap()
+            .bind()
+            .await
+            .unwrap();
         let lookup = ep.address_lookup().unwrap();
         assert_eq!(lookup.len(), 1, "mDNS is the one lookup service: {lookup:?}");
         assert!(!format!("{lookup:?}").contains(N0), "{lookup:?}");
@@ -826,6 +863,21 @@ mod tests {
             ep.remove_relay(&MINE.parse().unwrap()).await.is_some(),
             "control: the probe must find the relay that is in the map"
         );
+        ep.close().await;
+    }
+
+    /// `KHOR_NO_MDNS`: no lookup service at all on a hermetic bind, so
+    /// the node neither announces nor listens on the segment.
+    #[tokio::test]
+    async fn a_bind_off_the_segment_has_no_mdns() {
+        let relays = [Relay::bare("http://203.0.113.9:3340")];
+        let ep = builder(iroh::SecretKey::generate(), &relays, false, false)
+            .unwrap()
+            .bind()
+            .await
+            .unwrap();
+        let lookup = ep.address_lookup().unwrap();
+        assert_eq!(lookup.len(), 0, "no lookup service without mDNS: {lookup:?}");
         ep.close().await;
     }
 

@@ -86,7 +86,7 @@ const B = join(SCRATCH, "beta");
 const usage = await fakeUsage();
 const FAKE_HOME = join(SCRATCH, "home");
 const homeEnv = (dir, name) => {
-  const e = { ...process.env, HOME: FAKE_HOME, KHOR_CLAUDE_USAGE_URL: usage.url, KHOR_CODEX_USAGE_URL: codexUrlOf(usage.url), KHOR_HOME: dir, KHOR_NAME: name };
+  const e = { ...process.env, HOME: FAKE_HOME, KHOR_CLAUDE_USAGE_URL: usage.url, KHOR_CODEX_USAGE_URL: codexUrlOf(usage.url), KHOR_NO_MDNS: "1", KHOR_HOME: dir, KHOR_NAME: name };
   delete e.KHOR_SESSION;
   return e;
 };

@@ -342,6 +342,8 @@ const homeEnv = (dir, name) => {
     KHOR_CLAUDE_USAGE_URL: usage.url,
     KHOR_CODEX_USAGE_URL: codexUrlOf(usage.url),
     VSCODE_CLI_DATA_DIR: codeData,
+    // Off the segment, like every scratch node (`fake-home.mjs`).
+    KHOR_NO_MDNS: "1",
     KHOR_HOME: dir,
     KHOR_NAME: name,
     KHOR_WEB_PORT: String(webPort++),
