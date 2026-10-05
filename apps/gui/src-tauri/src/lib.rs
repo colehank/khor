@@ -1431,6 +1431,21 @@ async fn open_page(
     }
     let builder = builder
         .on_document_title_changed(move |view, title| {
+            // The borrow's own page for an address the machine could not
+            // reach (`khor_node::tunnel::PAGE_FAILED_TITLE`, UX-22): a
+            // failed load, not a title.
+            if title == khor_node::tunnel::PAGE_FAILED_TITLE {
+                let at = view.url().map(|u| u.to_string()).unwrap_or_default();
+                let _ = view.app_handle().emit_to(
+                    t_face.clone(),
+                    "page:fail",
+                    PageWord {
+                        tab: t_tab.clone(),
+                        text: format!("route|khor||{at}"),
+                    },
+                );
+                return;
+            }
             let _ = view.app_handle().emit_to(
                 t_face.clone(),
                 "page:title",
@@ -1543,6 +1558,9 @@ async fn open_page(
     if !page_is_wanted(&tab) {
         made.hide().map_err(|e| e.to_string())?;
     }
+    // A load that fails says so (UX-22, `page_fail`).
+    #[cfg(target_os = "macos")]
+    page_fail::watch(&made, face.clone(), tab.clone());
     if let Ok(mut m) = page_exits().lock() {
         m.insert(label, (machine, going_to));
     }
@@ -1872,6 +1890,16 @@ fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), Stri
         "back" => view.eval("history.back()").map_err(|e| e.to_string()),
         "forward" => view.eval("history.forward()").map_err(|e| e.to_string()),
         "reload" => view.reload().map_err(|e| e.to_string()),
+        // 重试 (UX-22): where the last load failed to go, again — a
+        // reload would load the page still there. A Mac that heard no
+        // failure, or a platform that hears none, reloads.
+        "retry" => {
+            #[cfg(target_os = "macos")]
+            if let Some(url) = page_fail::take_failed(&tab).and_then(|u| u.parse::<tauri::Url>().ok()) {
+                return view.navigate(url).map_err(|e| e.to_string());
+            }
+            view.reload().map_err(|e| e.to_string())
+        }
         // Refused by name, the `load` rule: a word this build does not
         // know, read as one of the three, would look like a working
         // button doing somebody else's job.
@@ -1890,6 +1918,8 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     use tauri::Manager;
     let label = page_label(&tab);
     forget_page(&tab);
+    #[cfg(target_os = "macos")]
+    page_fail::forget(&tab);
     if let Ok(mut m) = page_exits().lock() {
         m.remove(&label);
     }
@@ -4385,6 +4415,8 @@ fn say_signals() {
 
 #[cfg(desktop)]
 mod menu;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod page_fail;
 #[cfg(target_os = "ios")]
 mod phone_page;
 #[cfg(desktop)]

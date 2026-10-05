@@ -40,6 +40,7 @@ import {
   type Usage,
 } from "@/api";
 import { EmptyState, RegionState } from "@/components/RegionState";
+import { DetailFrame } from "@/components/DetailFrame";
 import { Bar } from "@/components/Bar";
 import { IconBack } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
@@ -1467,7 +1468,7 @@ export function QuotaLanding({
   const isSub = current?.kind === "sub";
   const dials = current && isSub ? subDials(current) : [];
   const subDetail = current && isSub && (
-    <div data-quota-detail={current.id} className="box-content flex max-w-detail flex-col gap-row px-page py-row">
+    <DetailFrame data-quota-detail={current.id} className="flex flex-col gap-row py-row">
       {/* No head: the name is R0's, the plan and the age are R0's
           caption (`ReadCaption`). */}
       {/* **The dial, and what it is made of beside it.** Every window
@@ -1693,11 +1694,11 @@ export function QuotaLanding({
         const u = fromUsage(usage, current.provider);
         return <UsageHalf rows={u.rows} why={u.why} today={u.today} cacheKnown={u.cacheKnown} source="transcript" />;
       })()}
-    </div>
+    </DetailFrame>
   );
 
   const detail = acc && current && !isSub && (
-    <div data-quota-detail={acc.reading.account} className="box-content flex max-w-detail flex-col gap-row px-page py-row">
+    <DetailFrame data-quota-detail={acc.reading.account} className="flex flex-col gap-row py-row">
       {/* No head: the name is R0's, the plan and the age are R0's
           caption (`ReadCaption`). */}
       {/* **The same two columns the subscription's card has**: the dial
@@ -1886,7 +1887,7 @@ export function QuotaLanding({
           the account. The phone half decides it outright — a control
           that only appears beside a card is one a narrow face has no
           room for. */}
-    </div>
+    </DetailFrame>
   );
 
   // Never read yet: the skeleton, not a blank (components/RegionState).

@@ -31,7 +31,7 @@
 // **The open tab is the board's colour and joins it** — that is the
 // whole of how a tab says it is in front (`TabStrip`): its bottom edge
 // has no edge, and the board is what it is continuous with.
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { windowClose, windowMaximizeToggle, windowMinimize, windowsApp } from "@/api";
@@ -313,9 +313,10 @@ export function Region({
   className,
   children,
 }: {
-  /** **The head stops where the page's content does** (W-V5): on a page
-      capped at `--detail-max`, the verbs and VS Code end on the
-      content's right edge, not on the window's. */
+  /** **The head stands over the page's content** (W-V5; UX-22): on a
+      page in a `DetailFrame`, R0's name starts on the content's left
+      edge and its verbs end on its right one, wherever the frame sits —
+      the frame is centred once the pane is wider than `--detail-max`. */
   capped?: boolean;
   kind: RegionKind;
   /** What R0 holds where it is not a `PageHead` — the tab strip (tabs),
@@ -350,6 +351,34 @@ export function Region({
   const [sub, setSub] = useState<HTMLElement | null>(null);
   const [aside, setAside] = useState<HTMLElement | null>(null);
   const [avatar, setAvatar] = useState<HTMLElement | null>(null);
+  /** The head's own inset over a centred frame (`capped`): what lies
+      between the pane's inset and the frame's edge, less what R0 already
+      spends there — the folded list's strip at its start, the caption and
+      the window's buttons at its end. Measured, because the frame is
+      centred in the pane and R0's lead is not part of the frame. */
+  const [over, setOver] = useState<HTMLDivElement | null>(null);
+  const [pad, setPad] = useState<[number, number]>([0, 0]);
+  useLayoutEffect(() => {
+    if (!capped || !over?.parentElement) {
+      setPad([0, 0]);
+      return;
+    }
+    const row = over.parentElement;
+    const fit = () => {
+      const root = getComputedStyle(document.documentElement);
+      const max = parseFloat(root.getPropertyValue("--detail-max")) || 960;
+      const head = over.querySelector<HTMLElement>("[data-page-head]");
+      const inset = head ? parseFloat(getComputedStyle(head).paddingLeft) || 0 : 0;
+      const room = Math.max(0, (row.clientWidth - max) / 2 - inset);
+      const start = Math.max(0, Math.round(room - over.offsetLeft));
+      const end = Math.max(0, Math.round(room - (row.clientWidth - over.offsetLeft - over.offsetWidth)));
+      setPad((was) => (was[0] === start && was[1] === end ? was : [start, end]));
+    };
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(row);
+    return () => watch.disconnect();
+  }, [capped, over]);
   return (
     <div data-region data-region-kind={kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div
@@ -362,13 +391,14 @@ export function Region({
         // (`shell.ts`): its blank moves the window, and what is pressable
         // inside it keeps its press by tauri's own rule.
         {...WINDOW_DRAG}
-        className={cn(
-          "relative flex h-pane-head flex-none items-end select-none",
-          capped && "max-w-[calc(var(--detail-max)+2*var(--page-inset))]",
-        )}
+        className="relative flex h-pane-head flex-none items-end select-none"
       >
         {lead}
-        <div className="flex min-w-0 flex-1 self-stretch">
+        <div
+          ref={setOver}
+          className="flex min-w-0 flex-1 self-stretch"
+          style={capped ? { paddingInlineStart: pad[0], paddingInlineEnd: pad[1] } : undefined}
+        >
           {head ?? (
             <PageHead
               title={title}

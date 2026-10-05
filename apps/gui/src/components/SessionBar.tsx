@@ -309,7 +309,20 @@ export function SessionScreen({
               className="relative flex h-deck-strip flex-none animate-in items-center justify-center overflow-hidden px-row text-caption text-muted-foreground fade-in"
             >
               <span className="min-w-0 truncate">{face?.label ?? ""}</span>
-              {loading && <span data-deck-strip-loading aria-hidden="true" className="absolute inset-x-0 bottom-0 h-px animate-pulse bg-brand-strong" />}
+              {/* **One steady pulse** (UX-22): drawn the whole time and
+                  lit while the page loads, so a load that hops does not
+                  restart the breath — mounted per state, every hop began
+                  it again from its first frame. */}
+              <span
+                data-deck-strip-loading={loading || undefined}
+                aria-hidden="true"
+                className={cn(
+                  "absolute inset-x-0 bottom-0 h-px transition-opacity duration-[var(--dur-420)]",
+                  !loading && "opacity-0",
+                )}
+              >
+                <span className="block h-full animate-pulse bg-brand-strong" />
+              </span>
             </button>
           </div>
         )}
@@ -358,7 +371,9 @@ export function SessionScreen({
                 </span>
               )}
               {caption && (
-                <span data-region-caption className="flex-none truncate text-caption text-tertiary tabular-nums">
+                // Gives way before the pill's own seats do (UX-22: a page's
+                // failure and its 重试 pushed reload out of the pill).
+                <span data-region-caption className="flex min-w-0 shrink items-center truncate text-caption text-tertiary tabular-nums">
                   {caption}
                 </span>
               )}

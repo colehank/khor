@@ -14752,6 +14752,91 @@ try {
     fail(`a peer's card draws ${peerCard.windows} quota windows`);
   }
 
+  // ── UX-22 §3: one detail frame — the list put away, every landing's
+  //    content re-lays out to the pane: 机器 and 额度 capped at
+  //    `--detail-max` and centred in it, R0's name over the content's
+  //    left edge; 工作区 and 浏览器 fill it. (The owner, 2026-10-05: with
+  //    the list collapsed the right side stayed empty on 机器 and 额度.) ──
+  {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    const frameOf = (sel) =>
+      page.evaluate((sel) => {
+        const f = [...document.querySelectorAll(sel)].find((e) => e.getBoundingClientRect().width > 0);
+        const region = f?.closest("[data-region]") ?? [...document.querySelectorAll("[data-region]")].find((e) => e.getBoundingClientRect().width > 0);
+        if (!region) return null;
+        const p = region.getBoundingClientRect();
+        const list = Math.max(0, ...[...document.querySelectorAll("[data-list],[data-quota-pane],[data-browse-tabs]")].map((e) => e.getBoundingClientRect().width));
+        if (!f) return { list, pane: [Math.round(p.left), Math.round(p.right)], frame: null };
+        const b = f.getBoundingClientRect();
+        const pad = parseFloat(getComputedStyle(f).paddingLeft) || 0;
+        const head = region.querySelector("[data-region-head] [data-page-head]");
+        const inset = head ? parseFloat(getComputedStyle(head).paddingLeft) || 0 : 0;
+        const title = head ? head.getBoundingClientRect().left + inset : null;
+        // The folded list's strip at R0's start: the name cannot start
+        // before it ends.
+        const lead = region.querySelector("[data-region-head] [data-folded-lead]");
+        const after = lead ? Math.round(lead.getBoundingClientRect().right + inset) : 0;
+        return {
+          list,
+          pane: [Math.round(p.left), Math.round(p.right)],
+          frame: [Math.round(b.left), Math.round(b.right)],
+          gaps: [Math.round(b.left - p.left), Math.round(p.right - b.right)],
+          win: Math.round(window.innerWidth - b.right),
+          text: Math.round(b.left + pad),
+          title: title === null ? null : Math.round(title),
+          after,
+        };
+      }, sel);
+    const fold = async (key) => {
+      // The open landing chosen again puts its list away (UX-19's rule,
+      // from the strip or from 更多's menu).
+      if ((await page.locator(rail(key)).count()) > 0) await press(rail(key));
+      else await (async () => (await press("[data-rail-more]")) && press(`[data-rail-more-menu] [data-more-landing="${key}"]`))();
+      await wait(500);
+    };
+    const said = [];
+    for (const [key, sel, pick, capped] of [
+      ["devices", "[data-machine-card] [data-detail-frame]", "[data-list] [data-row-open]", true],
+      ["quota", "[data-quota-detail]", "[data-quota-pane] [data-side-row] [data-side-open]", true],
+      ["workspaces", "[data-region]", null, false],
+      ["browser", "[data-region]", null, false],
+    ]) {
+      await open(key);
+      await wait(300);
+      if (pick) await pressNth(pick, key === "devices" ? 1 : 0);
+      await wait(600);
+      const out = await frameOf(sel);
+      await fold(key);
+      const away = await frameOf(sel);
+      await fold(key);
+      said.push(`${key} ${JSON.stringify(out)} → folded ${JSON.stringify(away)}`);
+      if (!away || away.list > 1) {
+        fail(`probe dead: UX-22 §3 · ${key}'s list never went away (${JSON.stringify(away)})`);
+        continue;
+      }
+      if (!away.frame) {
+        fail(`probe dead: UX-22 §3 · ${key} drew no content frame (${sel})`);
+        continue;
+      }
+      if (capped) {
+        if (Math.abs(away.gaps[0] - away.gaps[1]) > 1) fail(`UX-22 §3 · ${key} with its list away sits ${away.gaps[0]} from the pane's left and ${away.gaps[1]} from its right — centred in the pane (src/components/DetailFrame.tsx)`);
+        // Over the content's edge, or right after the folded strip where
+        // the strip stands over it.
+        const want = Math.max(away.text, away.after);
+        if (away.title !== null && Math.abs(away.title - want) > 1) fail(`UX-22 §3 · ${key}'s R0 name starts at ${away.title}, its content at ${away.text} (the strip ends at ${away.after}) — the head over the frame (src/components/Region.tsx capped)`);
+        if (out && out.title !== null && Math.abs(out.title - out.text) > 1) fail(`UX-22 §3 · ${key}'s R0 name starts at ${out.title}, its content at ${out.text} with the list out`);
+      } else if (Math.abs(away.win) > 1) {
+        fail(`UX-22 §3 · ${key}'s content stops ${away.win} short of the window's right edge with the list away — it fills the pane`);
+      }
+    }
+    console.log(`UX-22 §3 · ${said.join(" · ")}`);
+    await page.setViewportSize({ width: 1120, height: 1000 });
+    // Back where the dials below are read: the peer's card.
+    await open("devices");
+    await pressNth("[data-list] [data-row-open]", 1);
+    await until(5_000, async () => (await page.locator("[data-machine-card] [data-vitals]").count()) > 0);
+  }
+
   //   ── the dials: the box follows the ink, and the air is a stated
   //      number ────────────────────────────────────────────────────
   //
@@ -29460,6 +29545,29 @@ try {
           if (Math.abs(rest.inset - (rest.deck + rest.safe)) > 0.5) fail(`bar r · the page's inset ${rest.inset} is not the deck row ${rest.deck} and the safe area ${rest.safe}`);
           if (rest.images < 3) fail(`bar r · ${rest.images} glyph/face image(s) — ‹, a face or glyph in the pill, the tabs figure at least`);
         }
+        // **A sheet over the page takes the page away** (UX-28, the owner's
+        // phone: the native page painted over every sheet). The pane says
+        // what it decided on `khor:page-place`; the sheet rises from under
+        // the screen's foot, so the decision that counts is the one after
+        // its motion has ended, not the one at its arrival.
+        const over = await page.evaluate(async () => {
+          const said = [];
+          document.addEventListener("khor:page-place", (e) => said.push(e.detail.covered));
+          document.querySelector("[data-session-deck] [data-deck-tabs]")?.click();
+          await new Promise((r) => setTimeout(r, 900));
+          const up = { sheet: document.querySelectorAll("[data-tab-sheet]").length, covered: said.at(-1) ?? null, looks: said.length };
+          said.length = 0;
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          await new Promise((r) => setTimeout(r, 900));
+          return { up, down: { sheet: document.querySelectorAll("[data-tab-sheet]").length, covered: said.at(-1) ?? null } };
+        });
+        console.log(`bar r · the tabs sheet over the page: ${shown(over)}`);
+        if (over.up.sheet !== 1 || over.up.covered !== true) {
+          fail(`bar r · with the tabs sheet up the page pane decided ${shown(over.up)} — the page steps aside for a sheet (UX-28; src/views/BrowserPane.tsx place)`);
+        }
+        if (over.down.sheet !== 0 || over.down.covered !== false) {
+          fail(`bar r · with the sheet gone the page pane decided ${shown(over.down)} — the page comes back`);
+        }
       }
     }
 
@@ -29630,6 +29738,72 @@ try {
         }
         console.log(`bar s · ${said.join(" · ")}`);
       }
+    }
+
+    // ── t. a page's row wears its site's icon (UX-22 §1): the node's kept
+    //       icons (`page_icons`) read once, the row's mark that picture —
+    //       the browser's mark only for a site with none. And a page that
+    //       could not be opened says why in the catalog's words (§2,
+    //       `browse/page-fail`); the app's own event is walked on the
+    //       simulator and the scratch app. ──
+    {
+      const ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+      await page.route("**/page_icons", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ "https://khor.example": ICON }) }));
+      const marks = async () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll("[data-browse-tabs] [data-side-row]")].map((row) => {
+            const m = row.querySelector("[data-side-mark]");
+            return { id: row.getAttribute("data-side-row"), mark: m?.getAttribute("data-side-mark") ?? null, src: m?.querySelector("img")?.getAttribute("src") ?? null };
+          }),
+        );
+      await page.reload({ waitUntil: "load" });
+      await wait(1_000);
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await open("browser");
+      await until(3_000, async () => (await count("[data-browse-tabs] [data-side-row]")) > 0);
+      await wait(400);
+      const kept = await marks();
+      await page.unroute("**/page_icons");
+      await page.route("**/page_icons", (r) => r.fulfill({ contentType: "application/json", body: "{}" }));
+      await page.reload({ waitUntil: "load" });
+      await wait(1_000);
+      await open("browser");
+      await until(3_000, async () => (await count("[data-browse-tabs] [data-side-row]")) > 0);
+      await wait(400);
+      const none = await marks();
+      await page.unroute("**/page_icons");
+      console.log(`bar t · kept icons ${shown(kept)}; none kept ${shown(none)}`);
+      if (kept.length === 0) fail("probe dead: bar t · the browser drew no rows");
+      // t0 and t1 are on khor.example; a tab opened since points nowhere.
+      for (const r of kept) {
+        const site = r.id === "t0" || r.id === "t1";
+        if (!site && r.mark !== "page") fail(`bar t · row ${r.id}, on no site, wears ${shown(r)} — the browser's mark`);
+        if (site && (r.mark !== "favicon" || r.src !== ICON)) fail(`bar t · row ${r.id} wears ${shown(r)} with its site's icon kept — the site's icon, not the browser's mark (UX-22; src/browse/BrowseLanding.tsx markOf)`);
+      }
+      for (const r of none) {
+        if (r.mark !== "page") fail(`bar t · row ${r.id} wears ${shown(r)} with no icon kept — the browser's mark until there is one`);
+      }
+      // §2's words, off the module the app runs and the catalog it reads.
+      const words = await page.evaluate(async () => {
+        const { pageFail } = await import("/src/browse/page-fail.ts");
+        const { gui } = await import("/src/gen/catalog.ts");
+        const at = "https://nowhere.example/";
+        return {
+          host: pageFail(`-1003|NSURLErrorDomain|A server with the specified hostname could not be found.|${at}`),
+          refused: pageFail(`-1004|NSURLErrorDomain|Could not connect to the server.|${at}`),
+          timeout: pageFail(`-1001|NSURLErrorDomain|The request timed out.|${at}`),
+          tls: pageFail(`-1202|NSURLErrorDomain|The certificate for this server is invalid.|${at}`),
+          route: pageFail(`route|khor||${at}`),
+          proxy: pageFail(`310|kCFErrorDomainCFNetwork|There was a problem communicating with the secure web proxy server (HTTPS).|${at}`),
+          other: pageFail(`-1100|NSURLErrorDomain|The requested URL was not found on this server.|${at}`),
+          want: { host: gui.page_fail_host, refused: gui.page_fail_refused, timeout: gui.page_fail_timeout, tls: gui.page_fail_tls, route: gui.page_fail_route, proxy: gui.page_fail_route },
+        };
+      });
+      console.log(`bar t · failure words ${shown(words)}`);
+      for (const k of ["host", "refused", "timeout", "tls", "route", "proxy"]) {
+        if (words[k]?.reason !== words.want[k] || words[k]?.url !== "https://nowhere.example/") fail(`bar t · a ${k} failure reads ${shown(words[k])} — the catalog's ${shown(words.want[k])} and the address`);
+      }
+      if (!words.other?.reason?.startsWith("The requested URL")) fail(`bar t · an unsorted failure reads ${shown(words.other)} — the system's own sentence, never silence`);
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 

@@ -25,6 +25,13 @@
 //
 // The ceiling over both is `loading-rule.ts`, which is where the whole
 // rule lives and where it is measured.
+//
+// **One pulse from a load's start to its end** (UX-22, the owner
+// 2026-10-05: 「the status light flashes wildly」): a page that redirects,
+// or moves itself with `location =`, is several loads to WebKit and each
+// one reported its own start and finish, so the ring went out and came
+// back — and restarted its breath — on every hop. A finish is held for
+// `SETTLE_MS` and a start inside that time carries on the same pulse.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { hear, inApp } from "@/api";
@@ -33,6 +40,10 @@ import { alive, ended, loading, NONE, started, type Loads } from "@/browse/loadi
 /** How often the ceiling is swept — the delay between a load running out
     of time and the row going quiet, which nobody can see. */
 const BEAT_MS = 1_000;
+
+/** How long a load's finish is held before the light goes out: a hop of
+    a redirect chain arrives well inside it. */
+export const SETTLE_MS = 600;
 
 export type Loading = {
   /** Is this tab loading? Ask at paint: the ceiling is counted from the
@@ -46,14 +57,31 @@ export type Loading = {
 
 export function useLoading(): Loading {
   const [loads, setLoads] = useState<Loads>(NONE);
+  /** Each tab's finish, held (`SETTLE_MS`). */
+  const settling = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   // The app's own report, for every tab. Subscribed once for the life of
   // the landing: this is not per tab, and a subscription per row would
   // be the same event heard n times.
   useEffect(
     () =>
       hear<{ tab: string; text: string }>("page:load", (said) => {
-        setLoads((was) =>
-          said.text === "started" ? started(was, said.tab, Date.now()) : ended(was, said.tab),
+        const held = settling.current.get(said.tab);
+        if (held !== undefined) {
+          clearTimeout(held);
+          settling.current.delete(said.tab);
+        }
+        if (said.text === "started") {
+          // Carried on: a start inside the hold is the same pulse, and
+          // the ceiling's clock is not restarted by a hop.
+          setLoads((was) => (held !== undefined && was.has(said.tab) ? was : started(was, said.tab, Date.now())));
+          return;
+        }
+        settling.current.set(
+          said.tab,
+          setTimeout(() => {
+            settling.current.delete(said.tab);
+            setLoads((was) => ended(was, said.tab));
+          }, SETTLE_MS),
         );
       }),
     [],

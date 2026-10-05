@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import { fetchAbout, fetchLoad, inApp, setWatch } from "@/api";
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
+import { DetailFrame } from "@/components/DetailFrame";
 import { MachineFace } from "@/components/SessionFace";
 import { PageAvatar, PageSubtitle } from "@/components/Region";
 import { RegionState } from "@/components/RegionState";
@@ -292,9 +293,9 @@ function Body({
   const answered = load !== null || lost !== null;
   const never = !row.vitals && !answered;
   return (
-        <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto px-page py-4">
-          {/* Capped and left on the page's line (`--detail-max`). */}
-          <div className="flex max-w-detail flex-col gap-row">
+        <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto py-4">
+          {/* The pane's width, capped and centred (`DetailFrame`, UX-22). */}
+          <DetailFrame className="flex flex-col gap-row">
             <Strip row={row} sayModel={sayModel} />
             {never ? (
               <RegionState state="loading-never" />
@@ -344,7 +345,7 @@ function Body({
               onUninstall={onUninstallHooks}
             />
           )}
-          </div>
+          </DetailFrame>
         </div>
   );
 }

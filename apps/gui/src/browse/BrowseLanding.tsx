@@ -54,9 +54,10 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { onPageWord, openLink, pageDeck, pageStep, recentVisit, type DeviceRow } from "@/api";
+import { fetchPageIcons, onPageWord, openLink, pageDeck, pageStep, recentVisit, type DeviceRow } from "@/api";
 import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
 import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
+import { pageFail, type PageFail } from "@/browse/page-fail";
 import { Tabs } from "@/browse/Tabs";
 import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
@@ -91,6 +92,29 @@ function hostOf(path: string): string {
 }
 
 const PAGE_MARK: KindMark = { key: "page", glyph: (c: string) => <IconBrowser className={c} /> };
+
+/** **The site's icon, where there is one** (UX-22, the owner 2026-10-05:
+    every row wore khor's browser glyph): the mark on the machine's face is
+    the page's favicon once it has been fetched — this window, or any
+    time before (the node keeps them, `favicons.json`) — and the browser's
+    mark only before or without one. A site's icon is its own picture,
+    drawn as it came (README 图标). ⚠️ 墓碑 (2026-10-02 → UX-22): the
+    browser's mark on every row. */
+function markOf(src: string | undefined): KindMark {
+  return src ? { key: "favicon", glyph: (c: string) => <img src={src} alt="" className={`${c} rounded-sm`} /> } : PAGE_MARK;
+}
+
+/** The site a page is on, spelled as the node keys its kept icons
+    (`khor_node::favicon::origin`: `scheme://host[:port]`); `""` for
+    anything that is not an http(s) page. */
+function originOf(path: string): string {
+  try {
+    const u = new URL(path);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.origin : "";
+  } catch {
+    return "";
+  }
+}
 
 /** What a tab calls itself: the way a browser tab wears a page's title
     rather than its URL. A machine with nothing open on it wears its own
@@ -207,6 +231,24 @@ export function BrowseLanding({
       body is only ever mounted for the tab in front and a tab loading
       behind one has to breathe too. */
   const load = useLoading();
+  /** Each tab's site icon, once its page has loaded here in this window. */
+  const [icons, setIcons] = useState<Map<string, string>>(new Map());
+  /** **And every icon fetched before, read off this disk by site**
+      (docs/SHELL.md 第五轮 第 8 条:「favicon 存盘…重开 app 就有」): a read
+      of the node's file that asks no site anything. Once, on mount. */
+  const [kept, setKept] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let live = true;
+    fetchPageIcons().then(
+      (m) => live && setKept(m),
+      // A cache that cannot be read is rows wearing the browser's mark.
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  const iconOf = (t: { id: string; path: string }) => icons.get(t.id) ?? kept[originOf(t.path)];
   // An element, never a call — see `BrowseKind.Body`.
   const Body = kind.Body;
   // What the kind is holding on the machines the tabs name, so it can
@@ -318,9 +360,9 @@ export function BrowseLanding({
       // this row: the strip's own tab is 80 wide and has no room for a
       // ring around its face (第十二轮 第 3 条).
       halo: load.busy(t.id) ? "busy" : undefined,
-      // The machine's face with the browser's kind mark, as a session row
+      // The machine's face with the site's icon on it, as a session row
       // wears its kind (`FaceMark`, on the face or its corner by 外观).
-      mark: PAGE_MARK,
+      mark: markOf(iconOf(t)),
       // **The page's title over its host** (F2.4; N16, W22): one line
       // where the two would say the same thing.
       title: (
@@ -377,10 +419,17 @@ export function BrowseLanding({
   const [folded, setFolded] = useState(false);
   /** The strip pressed holds the deck through the flick (`UnfoldHold`). */
   const hold = useRef(new UnfoldHold());
-  const [pageLoading, setPageLoading] = useState(false);
+  /** **The deck's light is the row's** (UX-22): one rule, held across a
+      load's hops and bounded by the ceiling (`use-loading`). ⚠️ 墓碑: its
+      own state, set on every `page:load` and with no ceiling — a load
+      that started and never finished pulsed forever. */
+  const pageLoading = load.busy(tabs.current.id);
+  /** **Why the page could not be opened** (UX-22), until the next load
+      starts: said in the pill (narrow) or the caption (wide), with 重试. */
+  const [failed, setFailed] = useState<PageFail | null>(null);
   useEffect(() => {
     setFolded(false);
-    setPageLoading(false);
+    setFailed(null);
     const id = tabs.current.id;
     // The one deck rule (UX-13, `lib/deck-fold`): a page rests at its top,
     // and the top's first hand's width still counts as rest.
@@ -393,15 +442,43 @@ export function BrowseLanding({
       if (!hold.current.allows() && next === true) return;
       if (next !== null) setFolded(next);
     });
-    const offLoad = onPageWord("page:load", id, (t) => setPageLoading(t === "started"));
+    const offLoad = onPageWord("page:load", id, (t) => {
+      if (t === "started") setFailed(null);
+    });
+    const offFail = onPageWord("page:fail", id, (t) => setFailed(pageFail(t)));
     return () => {
       offScroll();
       offLoad();
+      offFail();
     };
   }, [tabs.current.id]);
   /** Whether this tab has somewhere to be: its ← → and reload are drawn
       then, and the editor is not needed to start. */
   const somewhere = !!(machine && tabs.current.device && tabs.current.path);
+  /** The failure, where the caption stands — the pill's end narrow, the
+      tabs row's end wide — never silence (UX-22). 重试 goes where the load
+      failed to go. */
+  const failedWord = failed && (
+    <span data-page-failed className="flex min-w-0 items-center gap-in">
+      <span data-page-failed-word title={failed.url || undefined} className="min-w-0 truncate text-caption text-muted-foreground">
+        {/* The phone's pill has room for the reason and 重试, not the
+            whole sentence (measured: 「打不开：连接被拒绝」 is cut to
+            「打不开：…」 there). */}
+        {narrow ? failed.reason : gui.page_failed(failed.reason)}
+      </span>
+      <button
+        type="button"
+        data-page-retry
+        onClick={() => {
+          setFailed(null);
+          void pageStep(tabs.current.id, "retry").catch(() => {});
+        }}
+        className="grid min-h-touch flex-none place-items-center px-in text-caption font-medium text-brand-strong"
+      >
+        {gui.region_retry}
+      </button>
+    </span>
+  );
   /** **The pill is the address editor** (UX-18, the owner 2026-10-05:
       one deck, no second row): a tap on the pill turns it into the
       machine's face and the address, Go on the keyboard, 取消 beside it.
@@ -425,7 +502,7 @@ export function BrowseLanding({
       on it comes back as the DOM control it stands for. */
   const native = nativeDeckHere && narrow && tabs.ready && somewhere && !editing;
   const nativeTab = tabs.current.id;
-  const nativeKey = `${folded}|${pageLoading}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}`;
+  const nativeKey = `${folded}|${pageLoading}|${failed?.reason ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}`;
   useEffect(() => {
     if (!nativeDeckHere || !narrow) return;
     if (!native) {
@@ -518,6 +595,10 @@ export function BrowseLanding({
           // would leave the row on its bare address until the next word.
           onPlace={(place) => tabs.goTo(machine.id, place, tabs.current.title)}
           onTitle={(title) => tabs.goTo(machine.id, tabs.current.path, title)}
+          onIcon={(src) => {
+            const id = tabs.current.id;
+            setIcons((m) => (m.get(id) === src ? m : new Map(m).set(id, src)));
+          }}
           // What khor itself has out for this tab. Whether that is what
           // the row breathes on is `use-loading`'s call: in the app the
           // page's own report wins, and this only lights it.
@@ -596,7 +677,7 @@ export function BrowseLanding({
       face: d?.face ?? null,
       path: t.path,
       machine: d?.shown ?? null,
-      mark: PAGE_MARK,
+      mark: markOf(iconOf(t)),
       menu: menuOf(t),
     };
   });
@@ -642,7 +723,7 @@ export function BrowseLanding({
         }}
         onBack={() => onBack?.()}
         onTitle={() => setEditing(true)}
-        caption={caption}
+        caption={failedWord || caption}
         editor={tabs.ready && editing ? pillEditor : undefined}
         nativeDeck={native}
         onEditCancel={() => setEditing(false)}
@@ -724,7 +805,7 @@ export function BrowseLanding({
           onFocus={(id) => tabs.focus(id)}
           onClose={(id) => void tabs.close(id).catch(() => {})}
           stripData={{ "data-page-tabs": "" }}
-          caption={caption}
+          caption={failedWord || caption}
           bodyClass="flex flex-col"
         >
           <div data-page-field-seat className="flex flex-none px-page pt-xxs pb-in">
