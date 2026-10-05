@@ -164,7 +164,10 @@ fi
 # would override the rule it was replaced by.
 khor_drop_profile_line "$HOME/.profile"
 
-KHOR_HOME="$ROOT" "$BIN_DIR/khor" id
+# **Nor on the command line** (round NET-11): khor works out its own
+# room, and `$ROOT` above is that same answer. Two ways to name one store
+# is how turing came to run two serve trees on it.
+env -u KHOR_HOME "$BIN_DIR/khor" id
 
 [ -n "${KHOR_NO_SERVE:-}" ] && exit 0
 
@@ -203,10 +206,12 @@ if [ -f "$EP" ] && grep -q '"app":true' "$EP"; then
 fi
 # setsid where it exists (Linux); launchd/nohup orphaning does the same
 # job on macOS, which has no setsid.
+# Without KHOR_HOME (round NET-11): the serve finds the room `$R` names
+# by itself, one way to name it for every start.
 if command -v setsid >/dev/null 2>&1; then
-    KHOR_HOME="$R" setsid nohup "$BIN" serve >> "$R/.khor/serve.log" 2>&1 &
+    env -u KHOR_HOME setsid nohup "$BIN" serve >> "$R/.khor/serve.log" 2>&1 &
 else
-    KHOR_HOME="$R" nohup "$BIN" serve >> "$R/.khor/serve.log" 2>&1 &
+    env -u KHOR_HOME nohup "$BIN" serve >> "$R/.khor/serve.log" 2>&1 &
 fi
 echo $! > "$PIDF"
 SERVEUP

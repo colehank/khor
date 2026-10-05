@@ -389,7 +389,12 @@ fi
 # `khor_drop_profile_line`, which takes an old one back out.
 khor_drop_profile_line "$HOME/.profile"
 
-KHOR_HOME="$root" "$HOME/.local/bin/khor" id
+# **No KHOR_HOME on the command line either** (round NET-11): khor works
+# out its own room (`Node::store_under`), and the room `khor_root` printed
+# above is that same answer. An explicit one is a second way to name the
+# store, which is how turing came to run two serve trees on one room:
+# this script's, with KHOR_HOME set, and the login pull-up's, without.
+env -u KHOR_HOME "$HOME/.local/bin/khor" id
 REMOTE
 remote "$STAGE/on.sh"
 
@@ -415,7 +420,10 @@ fi
 # how a new one gets scrolled off by a healthy start.
 was=0
 [ -f "$root/.khor/serve.log" ] && was=$(wc -c < "$root/.khor/serve.log")
-KHOR_HOME="$root" setsid nohup "$HOME/.local/bin/khor" serve >> "$root/.khor/serve.log" 2>&1 &
+# Without KHOR_HOME, as the login pull-up starts it: one way to name the
+# room, so a second start is seen as a second serve on the same store and
+# stands down (`serves::beside`).
+env -u KHOR_HOME setsid nohup "$HOME/.local/bin/khor" serve >> "$root/.khor/serve.log" 2>&1 &
 echo $! > "$pidf"
 # **Alive twice, seconds apart, not once at two seconds.** A serve that
 # dies at load is a pid for a moment — long enough for one `kill -0` to
