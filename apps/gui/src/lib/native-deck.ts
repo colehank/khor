@@ -121,6 +121,101 @@ async function facePng(box: HTMLElement, w: number, h: number): Promise<string |
   return c.toDataURL("image/png").slice("data:image/png;base64,".length);
 }
 
+/** An `<svg>` or `<img>` decoded as a drawable, or null. */
+async function drawable(el: SVGSVGElement | HTMLImageElement, w: number, h: number, color: string): Promise<HTMLImageElement | null> {
+  const img = new Image();
+  if (el instanceof HTMLImageElement) {
+    img.crossOrigin = "anonymous";
+    img.src = el.currentSrc || el.src;
+  } else {
+    const copy = el.cloneNode(true) as SVGSVGElement;
+    copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    copy.setAttribute("width", String(w));
+    copy.setAttribute("height", String(h));
+    copy.style.color = color;
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(copy))}`;
+  }
+  try {
+    await img.decode();
+  } catch {
+    return null;
+  }
+  return img;
+}
+
+/** **The whole face seat as one picture** (UX-34): under UX-32's
+    assembly a seat is the machine's face, the kind mark on it or on a
+    corner punch-out, or the mark as the base with the small face on the
+    corner — painted here in DOM order, each piece at its own box: a
+    ground (a punch-out, the neutral disc) as its rounded fill, a face's
+    svg clipped round the way the DOM crops it, a glyph in its own ink, a
+    favicon as it is. ⚠️ 墓碑: the deck rasterised `[data-face]` alone and
+    the glyphs on their own, so the 角标 · 机器 way put the 10-px corner
+    face where the seat is. */
+async function seatPng(seat: HTMLElement, w: number, h: number): Promise<string | null> {
+  const k = window.devicePixelRatio || 1;
+  const c = document.createElement("canvas");
+  c.width = Math.round(w * k);
+  c.height = Math.round(h * k);
+  const g = c.getContext("2d");
+  if (!g) return null;
+  const o = seat.getBoundingClientRect();
+  const at = (el: Element) => {
+    const b = el.getBoundingClientRect();
+    return { x: (b.left - o.left) * k, y: (b.top - o.top) * k, w: b.width * k, h: b.height * k };
+  };
+  const radius = (el: Element, b: { w: number; h: number }) => {
+    const r = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+    return Math.min(r * k, b.w / 2, b.h / 2);
+  };
+  let drew = 0;
+  for (const el of [seat, ...seat.querySelectorAll<Element>("*")]) {
+    // A svg's own children are the svg's.
+    if (el instanceof SVGElement && !(el instanceof SVGSVGElement)) continue;
+    if (el.getClientRects().length === 0) continue;
+    const b = at(el);
+    if (b.w <= 0 || b.h <= 0) continue;
+    const cs = getComputedStyle(el);
+    const bg = cs.backgroundColor;
+    if (bg && !/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)/.test(bg) && bg !== "transparent") {
+      g.save();
+      g.beginPath();
+      g.roundRect(b.x, b.y, b.w, b.h, radius(el, b));
+      g.fillStyle = bg;
+      g.fill();
+      g.restore();
+      drew += 1;
+    }
+    if (el instanceof SVGSVGElement || el instanceof HTMLImageElement) {
+      const img = await drawable(el, b.w / k, b.h / k, cs.color);
+      if (!img) continue;
+      // A face's svg is cropped by its box (`[data-face]`, round or
+      // rounded); a glyph is drawn as it is.
+      const crop = el.closest<HTMLElement>("[data-face]");
+      g.save();
+      if (crop) {
+        const cb = at(crop);
+        g.beginPath();
+        g.roundRect(cb.x, cb.y, cb.w, cb.h, radius(crop, cb) || cb.w / 2);
+        g.clip();
+      }
+      try {
+        g.drawImage(img, b.x, b.y, b.w, b.h);
+        drew += 1;
+      } catch {
+        // A favicon from another origin: nothing to draw, the rest stands.
+      }
+      g.restore();
+    }
+  }
+  if (drew === 0) return null;
+  try {
+    return c.toDataURL("image/png").slice("data:image/png;base64,".length);
+  } catch {
+    return null;
+  }
+}
+
 /** Two pages, the front one holding the count (`SessionBar`'s
     `TabsGlyph`), drawn from its own laid-out squares. */
 function tabsSvg(glyph: HTMLElement, color: string, fill: string): SVGSVGElement | null {
@@ -198,16 +293,24 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
     const b = el.getBoundingClientRect();
     glass.push({ ...rel(b, o), r: Math.min(b.width, b.height) / 2, sel: el.classList.contains("glass-sel") });
   }
-  // Glyphs: every svg in the deck that is not a face, in its own ink.
+  // Face seats (UX-32's assembly), each as one picture (UX-34).
+  for (const seat of bar.querySelectorAll<HTMLElement>("[data-side-face]")) {
+    if (!shown(seat)) continue;
+    const b = seat.getBoundingClientRect();
+    const png = await seatPng(seat, b.width, b.height);
+    if (png) images.push({ ...rel(b, o), png });
+  }
+  // Glyphs: every svg in the deck that is not a face or in a seat, in its own ink.
   for (const svg of bar.querySelectorAll<SVGSVGElement>("svg")) {
-    if (!shown(svg) || svg.closest("[data-face], [data-tabs-glyph]")) continue;
+    if (!shown(svg) || svg.closest("[data-face], [data-tabs-glyph], [data-side-face]")) continue;
     const b = svg.getBoundingClientRect();
     const color = getComputedStyle(svg).color;
     const png = await svgPng(svg, b.width, b.height, color);
     if (png) images.push({ ...rel(b, o), png });
   }
+  // A face standing outside a seat, cropped as the DOM crops it.
   for (const face of bar.querySelectorAll<HTMLElement>("[data-face]")) {
-    if (!shown(face)) continue;
+    if (!shown(face) || face.closest("[data-side-face]")) continue;
     const b = face.getBoundingClientRect();
     const png = await facePng(face, b.width, b.height);
     if (png) images.push({ ...rel(b, o), png });
