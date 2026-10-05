@@ -210,3 +210,6 @@ iroh = { path = "vendor/iroh" }
 # noq-proto 1.3.0 with BBRv3's app-limited signal ported from
 # moq-dev/noq#5: vendor/noq-proto/KHOR.md.
 noq-proto = { path = "vendor/noq-proto" }
+# iroh-mdns-address-lookup 0.5.0, matching a received id against the
+# known ones before decoding it: vendor/iroh-mdns-address-lookup/KHOR.md.
+iroh-mdns-address-lookup = { path = "vendor/iroh-mdns-address-lookup" }
