@@ -204,6 +204,16 @@ const F_CERT: &str = "cert";
 /// untouched and never reads it.
 const F_HOSTS: &str = "hosts";
 
+/// **The roads a machine reports about itself** (round NET-12, the 我的
+/// khor dial): one register per peer, `<id>/road/<to>`, holding a small
+/// JSON object (`khor_core::Road`, minus `to`). Only the machine itself
+/// writes its own (`khor_node::roadbook`), and only when the road's kind
+/// changed and held, or its round trip moved by more than a quarter at
+/// most once in ten minutes — so the table grows by tens of ops a day,
+/// not by every reading. Flat only, `F_CERT`'s reason; an older khor
+/// replicates the registers untouched and never reads them.
+const F_ROAD: &str = "road/";
+
 /// The roster's home: a map **beside** `devices`, not inside it, keyed by
 /// whatever the writer names a version (`khor_node` uses the roster's
 /// `seq` and a piece of its signature). Every signed version is its own
@@ -271,6 +281,9 @@ pub struct DeviceInfo {
     /// Whether the machine can host a session (`F_HOSTS`): `false` for a
     /// phone, `true` for a computer and for a row that never said.
     pub hosts: bool,
+    /// The roads this machine reports to the others (`F_ROAD`), as
+    /// `(to, the register's JSON)`: opaque here, read by `khor_node`.
+    pub roads: Vec<(String, String)>,
 }
 
 impl DeviceInfo {
@@ -638,6 +651,7 @@ impl DeviceDoc {
                     .str_field(&id, F_LABEL)
                     .filter(|l| !l.trim().is_empty()),
                 hosts: !matches!(self.flat(&id, F_HOSTS), Some(LoroValue::Bool(false))),
+                roads: self.roads_raw(&id),
                 id,
             })
             .collect();
@@ -777,6 +791,39 @@ impl DeviceDoc {
     pub fn name_of(&self, id: &str) -> Option<String> {
         let label = self.str_field(id, F_LABEL).filter(|l| !l.trim().is_empty());
         label.or_else(|| self.str_field(id, F_NAME))
+    }
+
+    /// Writes one road `id` reports to `to` (`F_ROAD`); `false`, and no
+    /// op, when the register already holds `json`.
+    pub fn set_road(&self, id: &str, to: &str, json: &str) -> Result<bool, String> {
+        let key = fkey(id, &format!("{F_ROAD}{to}"));
+        if let Some(LoroValue::String(have)) = self.map().get(&key).and_then(|v| v.into_value().ok())
+            && have.as_str() == json
+        {
+            return Ok(false);
+        }
+        self.map().insert(&key, json).map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(true)
+    }
+
+    /// Every road `id` reports, as `(to, json)`, sorted by `to`.
+    pub fn roads_raw(&self, id: &str) -> Vec<(String, String)> {
+        let prefix = fkey(id, F_ROAD);
+        let map = self.map();
+        let mut out: Vec<(String, String)> = map
+            .keys()
+            .filter_map(|k| {
+                let k = k.to_string();
+                let to = k.strip_prefix(&prefix)?.to_owned();
+                match map.get(&k)?.into_value().ok()? {
+                    LoroValue::String(v) => Some((to, v.to_string())),
+                    _ => None,
+                }
+            })
+            .collect();
+        out.sort();
+        out
     }
 
     /// Renames a machine, or takes the rename back when `label` is

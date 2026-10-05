@@ -183,7 +183,8 @@ usage = """
                         后写的赢（和改名同一条路）。
                         旧名 face 还认，下一版撤——头像是头像，
                         界面是界面（见 faces）
-  devices               网里的机器
+  devices [--roads]     网里的机器；--roads 再列每台到其他机器的路
+                        （它最后一次报告的）
   top [机器]            这台机器在忙什么：进程 top 与最近 24 小时 CPU
   ls <机器> [路径]       看那台机器的目录（不给路径=它的主目录）
   pull <机器> <文件> [目录]
@@ -1254,6 +1255,11 @@ relay-stats-unreadable = "读不了计量文件：{0}"
 relay-stats-since = "{0} 起：发给客户端 {1}，从客户端收到 {2}"
 relay-stats-device = "{0}…  连接 {1} 次，在线 {2}"
 relay-stats-no-device = "还没有设备连过"
+
+# Round NET-12: `khor devices --roads`.
+roads-ms = "{0} 毫秒"
+roads-none = "不通"
+roads-unreported = "没有报告路（旧版 khor，或还没报）"
 
 [msg]
 # ── the watch list (关注目录) ──
@@ -3729,7 +3735,10 @@ axis-system = "系统"
 # 「Apple」,为的是不把一台 iPhone 说成 Mac;负责人定了 macOS,代价照实记下:
 # iOS 设备报上来的也是 apple 这个家族,在筛选里会落在「macOS」这一项里。
 # 键名不动,因为它说的是节点给的那个家族,不是这个词。
-system-apple = "macOS"
+# Round NET-12: macOS and iOS apart; `apple` is what an older khor still says.
+system-macos = "macOS"
+system-ios = "iOS"
+system-apple = "Apple"
 system-linux = "Linux"
 system-windows = "Windows"
 system-android = "Android"
