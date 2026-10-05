@@ -314,6 +314,82 @@ impl DeafWatch {
         now.duration_since(since) >= DEAF_AFTER
     }
 }
+/// What the hearing test found (round NET-11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hearing {
+    /// A throwaway endpoint reached these ears through their own home
+    /// relay: they work, and the silence is the peers' (all off, or
+    /// refusing).
+    Echoed,
+    /// No echo, and a relay answers from this machine: the road out is
+    /// up and these ears are not on it. The one case new ears cure.
+    Unheard,
+    /// No relay answers from here at all: this machine's own network is
+    /// down, and new ears would be bound on the same nothing.
+    NoRelay,
+}
+
+/// How long the echo may take: a relay round trip from either side and
+/// a handshake, on the slowest road a relay path has been measured on.
+const ECHO_WITHIN: Duration = Duration::from_secs(10);
+
+/// **Whether these ears can be heard at all** (round NET-11), asked only
+/// once everyone with a road has been silent for [`DEAF_AFTER`].
+///
+/// Silence from every peer used to be the whole verdict, and it is also
+/// what a machine whose peers are simply off sees: lecun, 2026-10-05,
+/// with hinton refusing, the phone away and turing's two serves knocking
+/// each other off the relay, exited as deaf every two to three minutes,
+/// and each restart wrote its row again with a new port. The owner's Mac
+/// app, every peer off overnight, took new ears every two minutes.
+///
+/// The test is the cure's own observation turned round (批23: 「a fresh
+/// endpoint on the same box echoed through the same relay in seconds」):
+/// a throwaway key dials this endpoint's id through its own home relay,
+/// with no direct address, so only the relay path can carry it. An echo
+/// means the ears work; no echo with a relay answering means they do
+/// not; no relay answering means the network is down and new ears would
+/// not help either.
+pub async fn ears_heard(
+    ep: &iroh::Endpoint,
+    relay_map: &[khor_net::endpoint::Relay],
+    n0: bool,
+    relays: &[String],
+) -> Hearing {
+    let home: Vec<iroh::RelayUrl> = ep
+        .addr()
+        .addrs
+        .iter()
+        .filter_map(|t| match t {
+            iroh::TransportAddr::Relay(u) => Some(u.clone()),
+            _ => None,
+        })
+        .collect();
+    if !home.is_empty()
+        && let Ok(probe) = endpoint::bind_with(iroh::SecretKey::generate(), relay_map, n0).await
+    {
+        let addr = home
+            .into_iter()
+            .fold(iroh::EndpointAddr::new(ep.id()), |a, u| a.with_relay_url(u));
+        let echoed = match tokio::time::timeout(ECHO_WITHIN, probe.connect(addr, ALPN)).await {
+            Ok(Ok(conn)) => {
+                conn.close(0u32.into(), b"echo");
+                true
+            }
+            _ => false,
+        };
+        probe.close().await;
+        if echoed {
+            return Hearing::Echoed;
+        }
+    }
+    if crate::doctor::any_relay_answers(relays.to_vec()).await {
+        Hearing::Unheard
+    } else {
+        Hearing::NoRelay
+    }
+}
+
 // ── fresh ears (docs/IOS.md 第三步) ─────────────────────────────────
 
 /// What a resumable serve is asked from outside its loop.
@@ -1305,6 +1381,16 @@ impl Node {
                         // it every two minutes would fix nothing.
                         let heard = if n.self_admitted() { out.as_slice() } else { &[] };
                         if deaf.lock().expect("deaf watch poisoned").observe(heard) {
+                            // Claimed before the test, so the beats behind
+                            // this one do not ask again; the next look is
+                            // another DEAF_AFTER of silence away.
+                            *deaf.lock().expect("deaf watch poisoned") = DeafWatch::new();
+                            // **Silence is not deafness** (round NET-11):
+                            // only ears the relay cannot carry an echo to,
+                            // on a machine whose relay answers, are.
+                            if ears_heard(&e, n.relay_map(), n.relays_n0(), n.relays()).await != Hearing::Unheard {
+                                return;
+                            }
                             let stamp =
                                 jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                             // **New ears in place**, for every resumable
