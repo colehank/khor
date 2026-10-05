@@ -138,13 +138,14 @@ try {
     }
     return (await tap("[data-nav-more]")) && tap("[data-nav-settings]");
   };
-  /** **A list's search box, opened** (the redesign: a circle until
-      pressed; UX-11: on the narrow face the circle is beside the bottom
-      bar and the field opens there). */
-  const SEARCH_BOX = "[data-side-head] [data-pane-search], [data-bottom-search] [data-pane-search]";
+  /** **A list's search box, opened** (the redesign: a circle at the
+      head's top right until pressed, on every face; ⚠️ 墓碑 UX-11 §4 put
+      it beside the bottom bar on the narrow face, the owner took it back
+      2026-10-05). */
+  const SEARCH_BOX = "[data-side-head] [data-pane-search]";
   const openSearch = async () => {
     if ((await page.locator(SEARCH_BOX).count()) > 0) return true;
-    return (await tap("[data-side-head] [data-search-open]")) || tap("[data-nav-search]");
+    return tap("[data-side-head] [data-search-open]");
   };
   const toEdit = async () => {
     if ((await page.locator("[data-edit]").count()) > 0) return;
@@ -2743,7 +2744,7 @@ try {
     },
     {
       // **The list's search, open** (the redesign: a circle until
-      // pressed; UX-11 put it beside the bottom bar on a phone). Its own
+      // pressed, at the head's top right on every face). Its own
       // stop, because the field and the omnibox's forwarder only exist
       // while it is open — without it 4's census reads the forwarder's
       // waiver as stale on every run.
@@ -11082,7 +11083,7 @@ try {
         .map((x) => x.title)
         .find((t) => t.length > 2 && said.filter((x) => x.all.includes(t)).length === 1);
       await openSearch();
-      const box = page.locator("[data-side-head] [data-pane-bar] input, [data-bottom-search] input").first();
+      const box = page.locator("[data-side-head] [data-pane-bar] input").first();
       if (!unique || (await box.count()) === 0) {
         fail(`probe dead: the ${c.landing} sidebar has no unique title or no search box to type it into`);
       } else {
@@ -13929,7 +13930,7 @@ try {
         // The box's own completions (2026-09-28): the chips a landing
         // narrows by, hung under L0's box. They wore `rounded-md`.
         "a box's completions",
-        "[data-side-head] [data-omni-menu], [data-bottom-search] [data-omni-menu]",
+        "[data-side-head] [data-omni-menu]",
         async () => {
           if (!(await open("sessions")) || !(await openSearch())) return false;
           await page.locator(SEARCH_BOX).first().click();
@@ -22579,18 +22580,33 @@ try {
         top: +r.top.toFixed(2),
         search: !!head.querySelector("[data-pane-search], [data-search-open]"),
         plus: !!head.querySelector("[data-pane-new]"),
-        // UX-11: the narrow face's search is the circle beside the bottom bar.
-        below: !!document.querySelector("[data-nav-search]"),
+        // ⚠️ 墓碑 UX-11 §4: a search circle beside the bottom bar. The
+        // owner, 2026-10-05: 「下面的导航栏就是 5 个一块儿」.
+        below: document.querySelectorAll("[data-nav-search], [data-bottom-search], [data-nav-row]").length,
+        seats: document.querySelector("[data-float-nav]")?.children.length ?? 0,
+        beside: (() => {
+          const nav = document.querySelector("[data-float-nav]");
+          return nav?.parentElement ? [...nav.parentElement.children].filter((c) => c !== nav && c.matches("button, [role=button], .glass")).length : 0;
+        })(),
         old: [...document.querySelectorAll("*")].filter((el) => [...el.attributes].some((a) => a.name.startsWith("data-title-"))).length,
       };
     });
     console.log(`narrow first row: ${JSON.stringify(phone)}`);
     if (!phone) {
       fail("narrow drew no [data-side-head] — the first row is every face's");
-    } else if (phone.h !== paneHead || phone.top !== 0 || phone.search || !phone.below || !phone.plus || phone.old !== 0) {
+    } else if (
+      phone.h !== paneHead ||
+      phone.top !== 0 ||
+      !phone.search ||
+      phone.below !== 0 ||
+      phone.seats !== 5 ||
+      phone.beside !== 0 ||
+      !phone.plus ||
+      phone.old !== 0
+    ) {
       fail(
-        `narrow's first row reads ${JSON.stringify(phone)} — the list's title with ＋ at --pane-head ${paneHead}, the search beside the ` +
-          "bottom bar (UX-11), and nothing of the old row",
+        `narrow's first row reads ${JSON.stringify(phone)} — the list's title with ＋ and the search circle at --pane-head ${paneHead} ` +
+          "(UX-11 §4 reversed), a bottom bar of exactly five seats with nothing beside it, and nothing of the old row",
       );
     }
     await page.setViewportSize({ width: 1400, height: 900 });
@@ -23925,7 +23941,6 @@ try {
   // **The chips are in the box, and the box is a circle until pressed**
   // (the redesign): opened to be read and put away again, so the filter
   // button stands in the head for the next tick.
-  // Narrow, the box opens beside the bottom bar (UX-11).
   const searchOpen = async () => {
     await openSearch();
     await until(2_000, async () => (await page.locator(SEARCH_BOX).count()) > 0);
@@ -23938,14 +23953,14 @@ try {
   const chipKeys = async () => {
     await searchOpen();
     const got = await page
-      .locator(`${head} [data-chip], [data-bottom-search] [data-chip]`)
+      .locator(`${head} [data-chip]`)
       .evaluateAll((els) => els.map((e) => e.getAttribute("data-chip")).sort());
     await searchShut();
     return got;
   };
   const unchip = async (k) => {
     await searchOpen();
-    await press(`${head} [data-chip-remove="${k}"], [data-bottom-search] [data-chip-remove="${k}"]`);
+    await press(`${head} [data-chip-remove="${k}"]`);
     await searchShut();
   };
   // What the menu offers, key → { label, axis heading }, read with the
@@ -24109,8 +24124,8 @@ try {
           fail("lists · machines · 已暂停 is still offered with no machine paused and nothing ticked");
         }
       }
-      // (f) the narrow list screen: L0 is the filter and ＋, the search the
-      // circle beside the bottom bar (UX-11).
+      // (f) the narrow list screen: L0 is the filter and ＋, then the
+      // search circle (UX-11 §4 reversed, 2026-10-05).
       await page.setViewportSize({ width: 390, height: 844 });
       await wait(600);
       const narrowBar = await page.evaluate((h) => {
@@ -24120,13 +24135,21 @@ try {
               box: bar.querySelectorAll("[data-pane-search]").length,
               filter: bar.querySelectorAll("[data-pane-filter]").length,
               plus: bar.querySelectorAll("[data-pane-new]").length,
-              below: document.querySelectorAll("[data-nav-search]").length,
+              circle: bar.querySelectorAll("[data-search-open]").length,
+              below: document.querySelectorAll("[data-nav-search], [data-bottom-search]").length,
             }
           : null;
       }, head);
       console.log(`lists · machines · narrow bar: ${JSON.stringify(narrowBar)}`);
-      if (!narrowBar || narrowBar.box !== 0 || narrowBar.filter !== 1 || narrowBar.plus !== 1 || narrowBar.below !== 1) {
-        fail(`lists · machines · the narrow list screen's first row is ${JSON.stringify(narrowBar)} — the filter and ＋, the search beside the bottom bar (UX-11)`);
+      if (
+        !narrowBar ||
+        narrowBar.box !== 0 ||
+        narrowBar.filter !== 1 ||
+        narrowBar.plus !== 1 ||
+        narrowBar.circle !== 1 ||
+        narrowBar.below !== 0
+      ) {
+        fail(`lists · machines · the narrow list screen's first row is ${JSON.stringify(narrowBar)} — the filter and ＋, then the search circle (UX-11 §4 reversed)`);
       } else {
         await toggle("link:direct");
         await check("narrow · 连接方式 = direct", { rows: ["peer"], chips: ["link:direct"] });

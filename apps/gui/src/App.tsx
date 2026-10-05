@@ -50,7 +50,6 @@ import {
   IconNetwork,
   IconPulse,
   IconQuota,
-  IconSearch,
   IconSessions,
   IconShield,
   IconTerminal,
@@ -66,7 +65,6 @@ import { HereHostsProvider, hereHosts } from "@/lib/here";
 import { PaneBar, type PaneAction } from "@/components/PaneBar";
 import { StatusBar } from "@/components/StatusBar";
 import { GlassCircle } from "@/components/Glass";
-import { SEARCH_OPEN } from "@/lib/bottom-search";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowseLanding } from "@/browse/BrowseLanding";
 import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
@@ -1503,34 +1501,10 @@ export default function App() {
         setScreen("detail");
         setSwitchingTabs(false);
       }}
+      // Floating over the foot of whatever holds it — the screen, or the
+      // list column — centred, clear of a phone's home indicator.
+      className="absolute bottom-[calc(var(--nav-gap)+var(--safe-bottom))] left-1/2 z-30 -translate-x-1/2"
     />
-  );
-  /** **The bottom row**: the bar, and on a landing with a list the search
-      circle beside it (UX-11, `lib/bottom-search`) — floating over the
-      foot of whatever holds it, centred, clear of a phone's home
-      indicator, inside the screen's gaps. Pressed, the circle asks the
-      landing to open its search here: the landing's field and its 取消
-      take the row (`[data-bottom-search-seat]`), and the bar and circle
-      step aside until it closes. Only the row on screen carries the seat;
-      the one drawn under a swipe is a picture of the page below. */
-  const navRow = (main: boolean) => (
-    <div
-      data-nav-row
-      className="pointer-events-none absolute inset-x-nav-gap bottom-[calc(var(--nav-gap)+var(--safe-bottom))] z-30 flex justify-center gap-in [&>*]:pointer-events-auto"
-    >
-      {nav}
-      {morePage === null && (
-        <GlassCircle
-          data-nav-search
-          aria-label={gui.search_open}
-          className="size-nav-h"
-          onClick={() => window.dispatchEvent(new Event(SEARCH_OPEN))}
-        >
-          <IconSearch />
-        </GlassCircle>
-      )}
-      {main && <div data-bottom-search-seat className="contents" />}
-    </div>
   );
 
   // **The keyboard and the menu bar** (`lib/shortcuts`, 2026-09-28): the
@@ -2948,7 +2922,7 @@ export default function App() {
                   </div>
                 )}
                 <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">{under}</div>
-                {underNav && navRow(false)}
+                {underNav && nav}
               </SideSeatsProvider>
             </div>
           )}
@@ -3025,7 +2999,7 @@ export default function App() {
           {/* The navigation floats over the landings and nothing else
               (`navShown`; the owner, 2026-10-02: 「会话里不显示」, and
               2026-10-03: not over a file either). */}
-          {navShown && navRow(true)}
+          {navShown && nav}
           {dialogs}
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>

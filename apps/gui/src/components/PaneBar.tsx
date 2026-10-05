@@ -12,8 +12,7 @@
 //
 // Every control carries a name from the catalog. A control the eye reads
 // by its shape still has to say what it is out loud.
-import { Fragment, useEffect, useRef, useState, type CSSProperties } from "react";
-import { createPortal } from "react-dom";
+import { Fragment, useState, type CSSProperties } from "react";
 
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { IconClose, IconFilter, IconPlus, IconSearch } from "@/components/icons";
@@ -33,8 +32,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
-import { SEARCH_OPEN, searchSeat } from "@/lib/bottom-search";
-import { useNarrow } from "@/hooks/use-narrow";
 import { keyLabel, useNewAct } from "@/lib/shortcuts";
 import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
@@ -185,30 +182,6 @@ export function PaneBar({
   const banded = !!bandProp && seat === undefined;
   const [searching, setSearching] = useState(query !== "");
   const open = !glass || searching || query !== "";
-  // **On a phone the search is at the bottom** (UX-11, `lib/bottom-search`):
-  // the head keeps its name and 筛选 / ＋; the field opens in the bottom
-  // row's seat when the bar's circle is pressed, and closes back into it.
-  const narrow = useNarrow();
-  const bottom = glass && narrow;
-  const row = useRef<HTMLDivElement>(null);
-  const [seatEl, setSeatEl] = useState<HTMLElement | null>(null);
-  useEffect(() => {
-    if (!bottom) return;
-    const on = () => {
-      // The page drawn under a swipe has a bar of its own; only the one
-      // on screen answers.
-      if (!row.current || row.current.closest("[data-screen-under]")) return;
-      setSeatEl(searchSeat());
-      setSearching(true);
-      requestAnimationFrame(() => searchSeat()?.querySelector<HTMLInputElement>("input")?.focus());
-    };
-    window.addEventListener(SEARCH_OPEN, on);
-    return () => window.removeEventListener(SEARCH_OPEN, on);
-  }, [bottom]);
-  // A query left from before (a place restored) keeps the field open there.
-  useEffect(() => {
-    if (bottom && open && !seatEl) setSeatEl(searchSeat());
-  }, [bottom, open, seatEl]);
   /** **The glass head controls everywhere** (the audit fix plan F4.7;
       W17): seated or not — the workspace's sessions column, the tab
       switcher — filter and ＋ are a glass capsule's items. ⚠️ 墓碑: bare
@@ -220,9 +193,7 @@ export function PaneBar({
     const row = from?.closest("[data-pane-bar]");
     onQuery("");
     setSearching(false);
-    requestAnimationFrame(() =>
-      (bottom ? document.querySelector<HTMLElement>("[data-nav-search]") : row?.querySelector<HTMLElement>("[data-search-open]"))?.focus(),
-    );
+    requestAnimationFrame(() => row?.querySelector<HTMLElement>("[data-search-open]")?.focus());
   };
   const box = (
       <div
@@ -408,45 +379,7 @@ export function PaneBar({
   // in one glass capsule, then the search circle, which opens the box in
   // this row. On the wide face it is the left column's second row, under
   // the window's own.
-  const closeCircle = (
-    <GlassCircle aria-label={gui.search_close} data-search-close onClick={(e) => endSearch(e.currentTarget)}>
-      <IconClose />
-    </GlassCircle>
-  );
-  const bar = bottom ? (
-    <div
-      ref={row}
-      data-pane-bar
-      data-searching={open || undefined}
-      data-search-glass
-      className="@container/bar flex min-h-glass-btn min-w-0 flex-1 items-center gap-in"
-      style={{ "--menu-inset": "var(--seat-menu-inset)" } as CSSProperties}
-    >
-      {title ? (
-        <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
-          {title}
-        </h1>
-      ) : (
-        <span className="flex-1" />
-      )}
-      {hasActs && <GlassCapsule>{acts}</GlassCapsule>}
-      {open &&
-        seatEl &&
-        createPortal(
-          <div
-            data-bottom-search
-            data-search-glass
-            // The suggestions span the field from its own edge
-            // (`--menu-inset` unset: zero).
-            className="flex min-w-0 flex-1 items-center gap-in"
-          >
-            {box}
-            {closeCircle}
-          </div>,
-          seatEl,
-        )}
-    </div>
-  ) : glass ? (
+  const bar = glass ? (
     <div
       data-pane-bar
       data-searching={open || undefined}
@@ -457,7 +390,13 @@ export function PaneBar({
       {open ? (
         <>
           {box}
-          {closeCircle}
+          <GlassCircle
+            aria-label={gui.search_close}
+            data-search-close
+            onClick={(e) => endSearch(e.currentTarget)}
+          >
+            <IconClose />
+          </GlassCircle>
         </>
       ) : (
         <>
