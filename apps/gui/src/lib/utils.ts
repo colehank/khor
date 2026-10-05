@@ -52,7 +52,11 @@ import { extendTailwindMerge } from "tailwind-merge";
 // measurement from before, kept as it was taken. **`body` is on this list
 // though Tailwind knows no such size**: without it `text-body` would be
 // filed as a colour like every other name here was.
+// `tab` (the pill's one line, UX-25/33) and `nav-label` (the capsule's
+// seat word under its glyph) joined with the redesign; both are sizes.
 const OWN_SIZES = [
+  "tab",
+  "nav-label",
   "title-lg",
   "title-md",
   "title-sm",

@@ -101,12 +101,14 @@ let TYPE = { cap: 11, call: 12 };
 const textW = (s, size) => String(s).length * size * 0.62;
 /** A word's width as the drawing will set it: laid into the figure,
     measured, taken away. `textW` guesses Latin widths; a row name can be
-    「内存」. */
-function inkW(svg, s, size, weight){
-  const t = txt(svg, {x:0, y:0, 'font-size':size, 'font-weight':weight, opacity:0}, s);
-  const w = t.getComputedTextLength ? t.getComputedTextLength() : textW(s, size);
+    「内存」. The size is the scale's caption (`TYPE.cap`), the one a
+    row name is drawn at — read there, never passed in as a number. */
+function inkW(svg, s, weight){
+  const cap = TYPE.cap;
+  const t = txt(svg, {x:0, y:0, 'font-size':cap, 'font-weight':weight, opacity:0}, s);
+  const w = t.getComputedTextLength ? t.getComputedTextLength() : textW(s, cap);
   t.remove();
-  return w || textW(s, size);
+  return w || textW(s, cap);
 }
 /** The window: when the oldest bucket opens, and how wide one is. */
 let T0 = 0;
@@ -230,7 +232,7 @@ function drawHeat(svg, T, W, narrow, fill){
   // measured as drawn (`inkW`). ⚠️ 墓碑: a fixed 52 / 56 gutter with
   // the names right-anchored in it, which pushed the legend's word past
   // the page's edge.
-  const GL = Math.ceil(Math.max(0, ...T.map(t=>inkW(svg,t.name,cap,700)))) + (narrow?8:10);
+  const GL = Math.ceil(Math.max(0, ...T.map(t=>inkW(svg,t.name,700)))) + (narrow?8:10);
   const GR = narrow?42:58;
   const CH = narrow?13:11, HB = Math.round(CH*0.64);
   // AXIS 是**最后一笔墨到图底还剩多少**,两张图的这个数是一组、要一起改:

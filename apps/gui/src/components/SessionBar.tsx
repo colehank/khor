@@ -410,7 +410,7 @@ export function SessionScreen({
             <div
               data-deck-pill
               aria-label={gui.session_tabs}
-              className="glass relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-[calc(var(--glass-btn)/2)]"
+              className="glass relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-glass-btn"
             >
               <div data-deck-pill-row className="flex h-glass-btn min-w-0 items-center gap-in ps-1 pe-1">
                 <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />

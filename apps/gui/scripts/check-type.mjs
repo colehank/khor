@@ -112,7 +112,19 @@ function check(path) {
 // measures every word on the card; this half names the line.
 {
   const tokens = readFileSync(join(root, "src/styles/tokens.css"), "utf8");
-  const caption = Number(tokens.match(/--text-caption:\s*([\d.]+)px/)?.[1]);
+  // `--text-caption` is `var(--fs-caption)` since the scale went through
+  // `--ui-scale` (`--fs-caption: calc(11px * var(--ui-scale))`), so the
+  // probe follows one `var()` hop and reads the first px in the value —
+  // the base size, at scale 1. A probe written for the old `11px` form
+  // went dead quietly (UX-34 §4).
+  const tokenValue = (name) => tokens.match(new RegExp(`^\\s*${name}:\\s*([^;]+);`, "m"))?.[1]?.trim();
+  const basePx = (name) => {
+    const v = tokenValue(name);
+    if (!v) return NaN;
+    const hop = v.match(/^var\((--[\w-]+)\)$/);
+    return hop ? basePx(hop[1]) : Number(v.match(/([\d.]+)px/)?.[1]);
+  };
+  const caption = basePx("--text-caption");
   if (!(caption > 0)) offenders.push("type floor: probe dead — --text-caption not found in tokens.css");
   const dayDir = join(root, "src/day");
   const lines = (rel) => readFileSync(join(root, rel), "utf8").split("\n");

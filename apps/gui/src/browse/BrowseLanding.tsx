@@ -499,7 +499,7 @@ export function BrowseLanding({
           setFailed(null);
           void pageStep(tabs.current.id, "retry").catch(() => {});
         }}
-        className="grid min-h-touch flex-none place-items-center px-in text-caption font-medium text-brand-strong"
+        className="grid min-h-touch flex-none place-items-center px-in text-caption font-label text-brand-strong"
       >
         {gui.region_retry}
       </button>

@@ -2282,6 +2282,9 @@
   --spacing-composer: var(--composer-h);
   --spacing-composer-item: var(--composer-item);
   --radius-composer: calc(var(--composer-h) / 2);
+  /* the deck pill's corner: a one-row capsule's, kept by a pill grown by
+     its strip (UX-31/33) */
+  --radius-glass-btn: calc(var(--glass-btn) / 2);
   --radius-menu: var(--menu-r);
   --radius-menu-item: calc(var(--menu-r) - var(--menu-inset));
   --spacing-menu-item: var(--menu-item);
