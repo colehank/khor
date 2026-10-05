@@ -4,6 +4,8 @@ import type { Avatar } from "@/gen/bindings/Avatar";
 import type { SystemKind } from "@/gen/bindings/SystemKind";
 import { machineMark, sessionMark } from "@/components/BrandIcons";
 import { FaceMark, SIZES, type KindMark } from "@/components/FaceMark";
+import { FileKindIcon } from "@/components/FileKindIcon";
+import { IconBranch, IconBrowser, IconFiles } from "@/components/icons";
 
 /** A glyph component as a `KindMark`'s drawing, at whatever size the
     assembly asks for. */
@@ -24,6 +26,38 @@ export function sessionKind(kind: string, category: string | null): KindMark {
     (`machineMark`). */
 export function machineKind(system: SystemKind | null | undefined): KindMark {
   return { key: system ?? "machine", glyph: drawn(machineMark(system)) };
+}
+
+// ── The other marks (UX-32: one assembly for every row and tab) ────────
+//
+// Each is made in one place, here, so a row and a tab about the same
+// thing wear the same mark, and the gate reads one key per kind.
+
+/** A workspace's: a folder, or the branch when it is a repository
+    (docs/SHELL.md 第四轮 第 2 条:「文件夹, 是 git 仓库时换分支」). */
+export function workspaceKind(repo: boolean): KindMark {
+  return repo ? { key: "branch", glyph: drawn(IconBranch) } : { key: "folder", glyph: drawn(IconFiles) };
+}
+
+/** A file's: its kind's glyph, the set the tree draws (`FileKindIcon`,
+    VS Code's colours) — a picture of its own, not inked by the face. */
+export function fileKind(name: string): KindMark {
+  return { key: "file", glyph: (c) => <FileKindIcon name={name} className={c} />, picture: true };
+}
+
+/** A page's: **the site's own icon** where one was fetched (UX-22, the
+    owner 2026-10-05), drawn as it came; the browser's glyph before or
+    without one. */
+export function pageKind(favicon: string | undefined): KindMark {
+  return favicon
+    ? { key: "favicon", glyph: (c) => <img src={favicon} alt="" className={`${c} rounded-sm`} />, picture: true }
+    : { key: "page", glyph: drawn(IconBrowser) };
+}
+
+/** An account's: the provider's mark (Claude's, OpenAI's — `sessionMark`
+    already judges a vendor's glyph for an agent session). */
+export function providerKind(provider: string): KindMark {
+  return { key: `provider:${provider}`, glyph: drawn(sessionMark("agent", provider)) };
 }
 
 /**

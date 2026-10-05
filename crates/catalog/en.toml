@@ -60,6 +60,7 @@ square = "Square"
 # names and value names all cross the wire, so these are data with the
 # same shape as the state words and the face options.
 appearance = "Appearance"
+avatar = "Avatar"
 language = "Language"
 session = "Sessions"
 workspace = "Workspace"
@@ -69,6 +70,7 @@ confirm = "Confirm dangerous actions"
 
 theme = "Theme"
 kind-mark = "Kind mark"
+corner-is = "The corner is"
 lang = "Interface language"
 tabs-limit = "Tab limit"
 session-form = "New sessions open as"
@@ -95,6 +97,8 @@ on = "On"
 off = "Off"
 face = "On the face"
 corner = "Corner badge"
+kind = "The kind"
+machine = "The machine"
 
 [cli]
 usage = """

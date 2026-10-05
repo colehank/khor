@@ -2071,12 +2071,14 @@ try {
   // fixture is for is the *page*: that a row draws, that pressing one
   // sends the key and the value, and that another screen reads the
   // answer.
-  const configValues = { theme: "auto", "kind-mark": "face", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
+  const configValues = { theme: "auto", "kind-mark": "face", "corner-is": "kind", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
   const CONFIG_SHAPE = [
     ["theme", "appearance", "appearance", "主题", [["auto", "跟随系统"], ["light", "浅色"], ["dark", "深色"]]],
-    // 类型标记 (2026-10-02): the one row with a note so far — the sixth
-    // field, `ConfigRow.note`.
-    ["kind-mark", "appearance", "appearance", "类型标记", [["face", "浮现"], ["corner", "角标"]], "类型标记画在头像上，或放在头像右下角"],
+    // 头像's two (UX-32): 类型标记 (2026-10-02; the one row with a note
+    // so far — the sixth field, `ConfigRow.note`) and 角标是, which the
+    // page draws only while 类型标记 is 角标.
+    ["kind-mark", "avatar", "appearance", "类型标记", [["face", "浮现"], ["corner", "角标"]], "类型标记画在头像上，或放在头像右下角"],
+    ["corner-is", "avatar", "appearance", "角标是", [["kind", "类型"], ["machine", "机器"]]],
     ["lang", "language", "appearance", "界面语言", [["auto", "跟随系统"], ["zh", "中文"], ["en", "English"]]],
     // 标签页上限 (docs/SHELL.md 第三轮): off, then the numbers, each its own word.
     // The node's pages since UX-16 (`config::PAGES`): 会话 holds it and
@@ -2087,7 +2089,7 @@ try {
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
     ["confirm-delete", "confirm", "security", "删除", [["on", "开"], ["off", "关"]]],
   ];
-  const SECTION_WORD = { appearance: "外观", language: "语言", session: "会话", workspace: "工作区", confirm: "危险操作二次确认" };
+  const SECTION_WORD = { appearance: "外观", avatar: "头像", language: "语言", session: "会话", workspace: "工作区", confirm: "危险操作二次确认" };
   const configRows = () =>
     CONFIG_SHAPE.map(([name, section, page_, label, choices, note]) => ({
       name,
@@ -6340,9 +6342,12 @@ try {
     // a session face's size, centred on the one line of name.
     // ⚠️ 墓碑 (2026-09-16 ruling 43): a glyph as tall as a name-over-path
     // pair, centred on the pair.
+    // UX-32: the seat is the assembly — the machine's face wearing the
+    // file's kind as its mark — so the seat measured is `[data-side-face]`
+    // and the kind icon is inside it, at the mark's size.
     const seat = await page.evaluate(() => {
       const tab = document.querySelector("[data-ws-tab-strip] [data-tab-open]");
-      const g = tab?.querySelector("[data-file-kind]");
+      const g = tab?.querySelector("[data-side-face]:has([data-file-kind])");
       const nm = tab?.querySelector("[data-tab-name]");
       if (!g || !nm) return null;
       const probe = document.createElement("div");
@@ -6368,7 +6373,7 @@ try {
       if (!seat.capsule || seat.lines !== 0) {
         fail(`the workspace's tab is ${seat.capsule ? "in" : "not in"} the glass capsule with ${seat.lines} second line(s) — the session tabs' pill, one line (UX-25; src/views/WorkspacePane.tsx)`);
       }
-      if (Math.abs(seat.glyph - seat.face) > 1) fail(`the tab's kind icon is ${seat.glyph} tall in a pill whose face is ${seat.face} (--tab-face) — the icon seat (UX-25)`);
+      if (Math.abs(seat.glyph - seat.face) > 1) fail(`the tab's face seat is ${seat.glyph} tall in a pill whose face is ${seat.face} (--tab-face) — the icon seat (UX-25; the assembly since UX-32)`);
       if (Math.abs(seat.glyphMid - seat.nameMid) > 1) fail(`the tab's kind icon is centred at ${seat.glyphMid}, its name at ${seat.nameMid} — one line, one centre (UX-25)`);
     }
     // ii/iii/iv) 编辑, typing, 保存 — and back to reading, rendering what
@@ -15063,12 +15068,15 @@ try {
   if (quotaRows !== listed) {
     fail(`\u989d\u5ea6 draws ${quotaRows} rows for ${board.length} routed accounts and one subscription`);
   }
-  // The share inside the row's dial, **without its percent sign** (the
-  // owner, 2026-10-03: the dial is a list face's size, three digits at
-  // 12 are what its bowl holds, and the detail page says the unit).
-  const fillDial = (await page.locator('[data-quota-row="acc-fill"] [data-dial-row]').textContent().catch(() => null))?.trim() ?? null;
-  if (fillDial !== "45") {
-    fail(`the fraction row's dial does not say its share — got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
+  // The share beside the row's ring at its right-top (UX-32: the ring is
+  // the state, a reading, and readings sit right), with its sign — there
+  // is room beside a 16 glyph. ⚠️ 墓碑 (2026-10-03 → UX-32): inside the
+  // row's dial without the sign, three digits at 12 being what its bowl
+  // held.
+  const fillRing = (await page.locator('[data-quota-row="acc-fill"] [data-quota-ring]').count()) === 1;
+  const fillDial = (await page.locator('[data-quota-row="acc-fill"] [data-quota-ring-word]').textContent().catch(() => null))?.trim() ?? null;
+  if (!fillRing || fillDial !== "45%") {
+    fail(`the fraction row's ring does not say its share at the right-top — ring ${fillRing}, got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
   }
   // The refused account: the trouble on the glass is a sentence, not
   // the wire key. Clicking the row is also the finder proving itself —
@@ -15160,11 +15168,15 @@ try {
     //   Measured 2026-09-07 by putting the old `scope === null` filter
     //   back: the red reads「2 pips for 2 parts and 3 routed windows」,
     //   which is the third term firing and the first two staying quiet.
+    //   **Read off the card's dial since UX-32** (the owner 2026-10-06):
+    //   the row's ring is a 16 glyph at its right-top — a reading, no
+    //   rim to carry marks — and the subscription's dial with its pips is
+    //   the card's lead. ⚠️ 墓碑: the row's own dial carried them.
     const rim = await page.evaluate(() => {
-      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
       const detail = document.querySelector("[data-quota-detail]");
+      const lead = detail?.querySelector("[data-quota-lead]") ?? detail;
       return {
-        pips: [...(row?.querySelectorAll("[data-dial-pip]") ?? [])].map((e) => ({
+        pips: [...(lead?.querySelectorAll("[data-dial-pip]") ?? [])].map((e) => ({
           word: e.getAttribute("data-dial-pip"),
           at: Number(e.getAttribute("data-dial-pip-at")),
         })),
@@ -15174,7 +15186,7 @@ try {
         // The hairline from the lowest mark to the highest: 「spread out
         // or not」 with a length, drawn only where there are two marks
         // to span between.
-        span: row?.querySelectorAll("[data-dial-span]").length ?? 0,
+        span: lead?.querySelectorAll("[data-dial-span]").length ?? 0,
       };
     });
     const scopedWindow = quotaWindows.find((w) => w.scope !== null);
@@ -15357,11 +15369,17 @@ try {
     //   alone. The fixture has a fraction (0.45), a reading with no
     //   denominator (a spend, no limit) and a refusal, so each wrong
     //   rule is caught by one of the other two.
+    //   The row's ring is the heading glyph since UX-32 (`Face.tsx`
+    //   `Glyph`, `[data-ring-glyph]` at the row's right-top): the same
+    //   210° geometry, so the angle reads the same way off its own two
+    //   paths (`data-glyph-track`, `data-glyph-fill`). A trouble row draws
+    //   no ring at all and reads 「no dial」 → null below.
     const arcs = await page.locator("[data-quota-row]").evaluateAll((rows) =>
       rows.map((row) => {
         const id = row.getAttribute("data-quota-row");
-        const svg = row.querySelector("[data-dial-face]");
-        const arc = svg?.querySelector("[data-ring-fill]");
+        const svg = row.querySelector("[data-quota-ring] [data-ring-glyph]");
+        if (!svg && row.querySelector("[data-quota-state]")) return { id, drawn: null };
+        const arc = svg?.querySelector("[data-glyph-fill]");
         // The track is always drawn, so its absence means the dial
         // itself never rendered — a different failure from「no arc」and
         // it must not read as one.
@@ -15384,7 +15402,7 @@ try {
         // (−195°), so its own `d` gives the centre with nothing
         // assumed about the box at all: `M x0 y0 A r r …`, and
         // `centre = start − r·(cos ARC0, sin ARC0)`.
-        const track = svg.querySelector("path");
+        const track = svg.querySelector("[data-glyph-track]");
         const td = /M([-\d.]+)\s+([-\d.]+)\s*A([-\d.]+)/.exec(track?.getAttribute("d") ?? "");
         if (!td) return { id, drawn: "no track" };
         const [x0, y0, r] = [Number(td[1]), Number(td[2]), Number(td[3])];
@@ -15463,50 +15481,50 @@ try {
     //   Every row, because the band that broke was 10–99.99 (`12.34`,
     //   five characters) and it is one account among several — a check
     //   on 「the first row」 would have passed while that one overflowed.
+    //   **Beside the ring since UX-32** (the owner 2026-10-06): the
+    //   reading stands at the row's right-top next to a 16 glyph, so the
+    //   fit is no longer a ring's bowl but the corner cell — the word is
+    //   whole, on one line, and the four-character rule still holds the
+    //   word short. ⚠️ 墓碑: the middle of the row's dial, measured
+    //   against the rim's inner diameter.
     const middles = await page.evaluate(() => {
       return [...document.querySelectorAll("[data-quota-row]")].map((r) => {
-        const svg = r.querySelector("[data-dial-face]");
-        const t = svg?.querySelector("text");
-        // **The rim's own radius and stroke, off the track that was
-        // drawn.**
-        //
-        // ⚠️ Was `2 * 30 * (vbH / 88) - 2.6` — the reference size and
-        // the row's stroke written out again here, with the box's
-        // height standing in for `size`. Both halves of that broke on
-        // 2026-09-07: the box stopped being `size` tall (it is cropped
-        // to the drawing now), and a hard-coded `2.6` cannot describe
-        // two dials of different strokes. It reported five middles
-        // spilling that were not.
-        const track = svg?.querySelector("path");
-        const td = /A([-\d.]+)/.exec(track?.getAttribute("d") ?? "");
-        const inner = td ? 2 * Number(td[1]) - Number(track.getAttribute("stroke-width") ?? 0) : 0;
-        const b = t?.getBBox();
+        const cell = r.querySelector("[data-quota-ring]");
+        const t = cell?.querySelector("[data-quota-ring-word]");
+        const ring = cell?.querySelector("[data-ring-glyph]");
+        const b = t?.getBoundingClientRect();
+        const c = cell?.getBoundingClientRect();
         return {
           id: r.getAttribute("data-quota-row"),
           text: t?.textContent ?? "",
           chars: (t?.textContent ?? "").length,
-          over: b ? +(b.width - inner).toFixed(1) : -1,
+          // Spilling = the word's box past its cell's, or wrapped to a
+          // second line (taller than one line of caption).
+          over: b && c ? +Math.max(b.right - c.right, c.left - b.left, b.height - 20).toFixed(1) : -1,
           w: b ? +b.width.toFixed(1) : -1,
-          inner: +inner.toFixed(1),
-          box: svg ? `${Math.round(svg.getBoundingClientRect().width)}x${Math.round(svg.getBoundingClientRect().height)}` : "?",
+          ring: !!ring,
+          state: !!r.querySelector("[data-quota-state]"),
         };
       });
     });
     console.log(
-      `ring middles: ${middles.map((m) => `${m.id} "${m.text}" ${m.w}/${m.inner} box ${m.box}`).join(" · ")}`,
+      `ring words: ${middles.map((m) => `${m.id} "${m.text}" ${m.w} ring ${m.ring} state ${m.state}`).join(" · ")}`,
     );
-    const tooLong = middles.filter((m) => m.chars > 4);
+    const tooLong = middles.filter((m) => m.text && m.chars > 4);
     const spilling = middles.filter((m) => m.over > 0);
+    const bare = middles.filter((m) => !m.ring && !m.state);
     if (middles.length === 0) {
-      fail("probe dead: no row drew a dial, so nothing below measures a middle");
+      fail("probe dead: no row drew a ring cell, so nothing below measures a reading");
     } else if (tooLong.length > 0) {
       fail(
-        `a ring's middle reads ${JSON.stringify(tooLong.map((m) => m.text))} — four characters is the rule (「保持在 4 位字符以内」)`,
+        `a ring's reading reads ${JSON.stringify(tooLong.map((m) => m.text))} — four characters is the rule (「保持在 4 位字符以内」)`,
       );
     } else if (spilling.length > 0) {
       fail(
-        `a ring's middle spills out of its ring: ${JSON.stringify(spilling.map((m) => [m.text, m.over]))} — four characters is the rule, fitting is the outcome, and both are owed`,
+        `a ring's reading spills out of its cell: ${JSON.stringify(spilling.map((m) => [m.text, m.over]))} — one line, whole, beside the ring (UX-32)`,
       );
+    } else if (bare.length > 0) {
+      fail(`${JSON.stringify(bare.map((m) => m.id))} draw neither a ring nor a state word at the right-top — the ring is the state (UX-32)`);
     }
 
     //   ── 8·the dial's box holds the drawing, not a margin ───────
@@ -22101,11 +22119,12 @@ try {
     });
     await open("quota");
     await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
-    // The dial's seat since W-V11 (2026-10-03, the owner: as large as
-    // the session page's avatars): the list face's slot, the whole
-    // drawing — pips and all — across its width inside it.
+    // The 额度 row's seat is the assembly's face since UX-32 — its home
+    // machine's face wearing the provider's mark — in the same slot.
+    // ⚠️ 墓碑 (W-V11, 2026-10-03 → UX-32): the dial, as large as the
+    // session page's avatars, pips and all, in that slot.
     const dial = await page.evaluate(() => {
-      const e = document.querySelector("[data-quota-row] [data-dial-row]");
+      const e = document.querySelector("[data-quota-pane] [data-side-row] [data-side-face] > :first-child");
       return e ? +e.getBoundingClientRect().height.toFixed(1) : null;
     });
     return { mark, dial };
@@ -24100,42 +24119,49 @@ try {
 
     // (8) the 额度 rows' numbers.
     await open("quota");
-    // The reading is a word laid over the drawing since the dial took a
-    // list face's size (`Face` `fluid`, W-V11): `data-dial-reading`, its
-    // box the fluid frame round the svg.
-    await until(5_000, async () => (await page.locator("[data-quota-row] [data-dial-reading]").count()) > 1);
+    // The reading stands beside the ring at the row's right-top since
+    // UX-32 (`data-quota-ring` → `data-ring-glyph` + `data-quota-ring-word`):
+    // whole, inside the row, to the right of the title, never under the
+    // face's mark. ⚠️ 墓碑 (W-V11 → UX-32): a word laid over the row's
+    // fluid dial (`data-dial-reading`), judged against its frame and the
+    // provider's mark beside it.
+    await until(5_000, async () => (await page.locator("[data-quota-row] [data-quota-ring-word]").count()) > 1);
     const dials = await page.evaluate(() =>
       [...document.querySelectorAll("[data-quota-row]")].flatMap((row) => {
-        const svg = row.querySelector("[data-dial-fluid]") ?? row.querySelector("[data-dial-face]");
-        const text = row.querySelector("[data-dial-reading]") ?? svg?.querySelector("text");
-        const badge = row.querySelector("[data-side-mark]");
-        if (!svg || !text || (text.textContent ?? "").trim() === "") return [];
+        const ring = row.querySelector("[data-quota-ring] [data-ring-glyph]");
+        const text = row.querySelector("[data-quota-ring-word]");
+        const title = row.querySelector("[data-side-title]") ?? row.querySelector("[data-quota-name]");
+        const face = row.querySelector("[data-side-face]");
+        if (!ring || !text || (text.textContent ?? "").trim() === "") return [];
         const n = (r) => [+r.left.toFixed(1), +r.top.toFixed(1), +r.right.toFixed(1), +r.bottom.toFixed(1)];
         return [
           {
             id: row.getAttribute("data-quota-row"),
             says: text.textContent,
             text: n(text.getBoundingClientRect()),
-            svg: n(svg.getBoundingClientRect()),
-            badge: badge ? n(badge.getBoundingClientRect()) : null,
+            ring: n(ring.getBoundingClientRect()),
+            row: n(row.getBoundingClientRect()),
+            title: title ? n(title.getBoundingClientRect()) : null,
+            face: face ? n(face.getBoundingClientRect()) : null,
           },
         ];
       }),
     );
-    console.log(`lists (8) · dial numbers [l,t,r,b]: ${JSON.stringify(dials)}`);
-    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a number in the dial — (8) measured nothing`);
+    console.log(`lists (8) · ring readings [l,t,r,b]: ${JSON.stringify(dials)}`);
+    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a reading beside the ring — (8) measured nothing`);
     for (const d of dials) {
       const [l, t, r, b] = d.text;
-      const clipped = l < d.svg[0] - 0.5 || r > d.svg[2] + 0.5 || t < d.svg[1] - 0.5 || b > d.svg[3] + 0.5;
-      const covered =
-        d.badge !== null && l < d.badge[2] - 0.5 && r > d.badge[0] + 0.5 && t < d.badge[3] - 0.5 && b > d.badge[1] + 0.5;
+      const clipped = l < d.row[0] - 0.5 || r > d.row[2] + 0.5 || t < d.row[1] - 0.5 || b > d.row[3] + 0.5;
+      const leftOfRing = r <= d.ring[0] + 0.5;
+      const underTitle = d.title !== null && l < d.title[2] - 0.5;
+      const onFace = d.face !== null && l < d.face[2] - 0.5;
       if (clipped) {
-        fail(`the ${d.id} dial's 「${d.says}」 runs to ${JSON.stringify(d.text)} past its box ${JSON.stringify(d.svg)} — the number is clipped (src/components/Face.tsx)`);
+        fail(`the ${d.id} ring's 「${d.says}」 runs to ${JSON.stringify(d.text)} past its row ${JSON.stringify(d.row)} — the reading is clipped (src/views/QuotaLanding.tsx)`);
       }
-      if (covered) {
+      if (leftOfRing || underTitle || onFace) {
         fail(
-          `the ${d.id} dial's 「${d.says}」 at ${JSON.stringify(d.text)} runs under the provider mark at ${JSON.stringify(d.badge)} — ` +
-            "the reading stays whole beside the mark, not under it (src/views/QuotaLanding.tsx, src/components/FaceMark.tsx)",
+          `the ${d.id} ring's 「${d.says}」 at ${JSON.stringify(d.text)} is not at the right-top beside its ring ${JSON.stringify(d.ring)} (title to ${d.title?.[2]}, face to ${d.face?.[2]}) — ` +
+            "the ring and its reading are the row's right-top (UX-32; src/views/QuotaLanding.tsx)",
         );
       }
     }
@@ -25395,16 +25421,17 @@ try {
   await until(8_000, async () => (await page.locator("[data-quota-row]").count()) > 1);
   const titles = await page.evaluate(() =>
     [...document.querySelectorAll("[data-quota-row]")].map((row) => {
-      // UX-15 (the owner 2026-10-05): the mark opens the name's aside —
-      // 「{icon} Claude 订阅」 after the account's own name. ⚠️ 墓碑: it
-      // opened the title (2026-09-30).
+      // UX-32 (the owner 2026-10-06): the provider's mark is the face's
+      // (`[data-side-mark]`, on the home machine's face), and the aside
+      // is the words alone — 「Claude 订阅」 after the account's own name.
+      // ⚠️ 墓碑: the mark opened the title (2026-09-30), then the aside
+      // (UX-15).
       const what = row.querySelector("[data-quota-what]");
-      const first = what?.firstElementChild ?? null;
       return {
         id: row.getAttribute("data-quota-row"),
-        first: first ? first.tagName.toLowerCase() : null,
+        mark: row.querySelector("[data-side-face] [data-side-mark]")?.getAttribute("data-side-mark") ?? null,
+        glyphs: what?.querySelectorAll("svg, img").length ?? 0,
         what: what?.textContent?.trim() ?? null,
-        badge: row.querySelectorAll("[data-side-badge]").length,
         editable: row.querySelectorAll("[data-editable-name]").length,
       };
     }),
@@ -25412,10 +25439,10 @@ try {
   console.log(`entity e · 额度 titles: ${JSON.stringify(titles)}`);
   if (titles.length < 2) fail(`probe dead: entity e · ${titles.length} 额度 row(s) to read`);
   for (const t of titles) {
-    if (t.first !== "svg") {
-      fail(`entity e · the ${t.id} row's aside starts with ${JSON.stringify(t.first)}, not its kind's mark (svg) — 「{icon} Claude 订阅」 (UX-15)`);
+    if (!t.mark?.startsWith("provider:")) {
+      fail(`entity e · the ${t.id} row's face wears ${JSON.stringify(t.mark)}, not the provider's mark — the base is the machine, the mark the provider (UX-32)`);
     }
-    if (t.badge !== 0) fail(`entity e · the ${t.id} row still wears a corner beside its dial — the mark is the title's now`);
+    if (t.glyphs !== 0 || !t.what) fail(`entity e · the ${t.id} row's aside is ${JSON.stringify(t.what)} with ${t.glyphs} glyph(s) — words alone, 「Claude 订阅」 (UX-32)`);
   }
   const editable = titles.find((t) => t.id === "acc-fill");
   if (!editable || editable.editable !== 1) {
@@ -27616,7 +27643,15 @@ try {
   //      there turns every one of those avatars into the corner — no
   //      mark on any face, no veil, the features back — tab included;
   //   c. **it stays after a reload** (the fixture holds the store like the
-  //      node: `set_config` → `config`), and choosing 浮现 brings it back.
+  //      node: `set_config` → `config`), and choosing 浮现 brings it back;
+  //   d. **角标是 机器** (UX-32, the owner 2026-10-06): the row is drawn
+  //      on 外观 › 头像 only under 角标; chosen, every assembly puts the
+  //      mark on the base (a neutral disc, the mark at the on-face size)
+  //      and the machine's face on the corner (14 on a row, 10 on a tab),
+  //      whole and under no veil; 类型 brings the corner badge back.
+  //      Every way is read on four columns (额度's rows wear the home
+  //      machine's face with the provider's mark) and on a session tab
+  //      and a file tab (the file's kind as the mark, a picture).
   //
   // New behaviour, not a fix: no red was owed first (30-behavior). The
   // contrast of the mark on real faces is `check-palette`'s.
@@ -27681,6 +27716,10 @@ try {
               at: mark.getAttribute("data-mark-at"),
               row: f.closest("[data-side-row]")?.getAttribute("data-side-row") ?? null,
               badge: f.querySelectorAll("[data-side-badge]").length,
+              // UX-32's third way: the mark as the base, the face on the corner.
+              base: f.querySelectorAll("[data-mark-base]").length,
+              faceCorner: f.querySelectorAll("[data-face-corner]").length,
+              way: f.getAttribute("data-mark-way"),
               veil: f.querySelectorAll("[data-face-veil]").length,
               veilColor: veil ? getComputedStyle(veil).backgroundColor : null,
               veilAlpha: veil ? Number(getComputedStyle(veil).opacity) : null,
@@ -27695,14 +27734,64 @@ try {
         });
       }, scope);
     const whole = (v) => Math.abs(v - Math.round(v)) < 0.01;
-    const COLUMNS = ["sessions", "devices", "workspaces"];
+    // 额度 too (UX-32): its rows are the account's home machine's face
+    // — every fixture account is homed on gate — with the provider's mark.
+    const COLUMNS = ["sessions", "devices", "workspaces", "quota"];
     /** The face record a row was drawn from, where the fixture can say
-        (a machine's row, a workspace's machine); `undefined` elsewhere. */
+        (a machine's row, a workspace's machine, an account's home);
+        `undefined` elsewhere. */
     const recordOf = (col, row) => {
       if (!row || col === "sessions") return undefined;
+      if (col === "quota") return gateDev ? gateDev.face : undefined;
       const id = col === "workspaces" ? row.split(":")[0] : row;
       const d = devs.find((x) => x.id === id);
       return d ? d.face : undefined;
+    };
+    /** The report's shots (UX-32): one per column and strip per way,
+        when `FACE_SHOTS` names a folder. */
+    const shot = async (name) => {
+      if (!process.env.FACE_SHOTS) return;
+      await page.screenshot({ path: join(process.env.FACE_SHOTS, `ux32-${name}.png`) }).catch(() => {});
+    };
+    /** The marks a column's rows may wear (UX-32: one key per kind). */
+    const KEYS_OF = {
+      sessions: /^(shell|claude|codex|cursor|agent|chat|transfer|borrow)$/,
+      devices: /^(macos|ios|apple|linux|windows|android|machine)$/,
+      workspaces: /^(folder|branch)$/,
+      quota: /^provider:[a-z0-9-]+$/,
+    };
+    /** Where a column's rows are: the 额度 pane answers to its own name. */
+    const paneOf = (col) => (col === "quota" ? "[data-quota-pane]" : "[data-list]");
+    const judgeKeys = (when, col, marks) => {
+      for (const m of marks) {
+        if (!KEYS_OF[col].test(m.key)) fail(`mark ${when} · ${col} ${m.row} wears the mark 「${m.key}」, not one of the column's kinds (src/components/SessionFace.tsx)`);
+      }
+    };
+    /** A file tab on the workspace strip: the machine's face with the
+        file's kind as its mark — a picture, so no ink to judge — drawn
+        the way the setting says (UX-32; the strip is UX-25's pill). */
+    const judgeFileTab = async (when, wantAt) => {
+      // The peer's workspace (the git one), its tree out (section 22's `openWs`).
+      const openWs = async () => {
+        if (!(await press("[data-ws-row]"))) return false;
+        if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+        return true;
+      };
+      const opened = (await open("workspaces")) && (await openWs()) && (await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button'));
+      const drew = opened && (await until(5_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab] [data-side-mark]").count()) > 0));
+      if (!drew) {
+        fail(`probe dead: mark ${when} · no file tab with a kind on the workspace strip (src/views/WorkspacePane.tsx tabFaces)`);
+        return;
+      }
+      const tabs = await readMarks("[data-ws-tab-strip] [data-tab]");
+      await shot(`${wantAt}-file-tab`);
+      console.log(`mark ${when} · file tabs: ${JSON.stringify(tabs.map((m) => [m.key, m.at, m.badge, m.base, m.faceCorner, m.face?.w, m.glyph?.w]))}`);
+      for (const m of tabs) {
+        if (m.key !== "file") fail(`mark ${when} · a file tab wears 「${m.key}」 — the file's kind is the mark (src/components/SessionFace.tsx fileKind)`);
+        if (m.at !== wantAt || !m.face) fail(`mark ${when} · a file tab's mark is ${JSON.stringify(m.at)} with ${m.badge} corner(s), face ${m.face ? "drawn" : "missing"} — the tab follows the setting (${wantAt}), on the machine's face`);
+      }
+      // Back to the rows for the next column.
+      if ((await page.locator("[data-ws-list-back]").count()) > 0) await press("[data-ws-list-back]");
     };
     /** a′: the ink and the veil are the face's (the blank's the theme's). */
     const judgeInk = (where, m, record) => {
@@ -27732,16 +27821,18 @@ try {
     const judgeFace = async (when) => {
       for (const col of COLUMNS) {
         await open(col);
-        await until(5_000, async () => (await page.locator("[data-list] [data-side-row] [data-side-mark]").count()) > 0);
-        const marks = await readMarks("[data-list] [data-side-row]");
+        await until(5_000, async () => (await page.locator(`${paneOf(col)} [data-side-row] [data-side-mark]`).count()) > 0);
+        const marks = await readMarks(`${paneOf(col)} [data-side-row]`);
+        await shot(`face-${col}`);
         console.log(`mark ${when} · ${col}: ${JSON.stringify(marks.map((m) => [m.key, m.at, m.badge, m.veil, m.features, m.glyph?.w]))}`);
         if (marks.length === 0) {
           fail(`probe dead: mark ${when} · the ${col} column drew no avatar with a kind (src/components/FaceMark.tsx)`);
           continue;
         }
+        judgeKeys(when, col, marks);
         for (const m of marks) {
           const where = `mark ${when} · ${col} ${m.row} (${m.key})`;
-          if (m.at !== "face" || m.badge !== 0) {
+          if (m.at !== "face" || m.badge !== 0 || m.base !== 0 || m.faceCorner !== 0) {
             fail(`${where}: the mark is ${JSON.stringify(m.at)} with ${m.badge} corner(s) — 浮现 is the default, and it has no corner`);
             continue;
           }
@@ -27781,6 +27872,7 @@ try {
       await press("[data-list] [data-row-open]");
       await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-side-mark]").count()) > 0);
       const tab = await readMarks("[data-session-tabs] [data-tab]");
+      await shot("face-session-tab");
       console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.badge, m.inkKey, m.veil, m.face?.w, m.glyph?.w]))}`);
       if (tab.length === 0) fail(`probe dead: mark ${when} · no session tab with a kind on the strip`);
       for (const m of tab) {
@@ -27795,16 +27887,19 @@ try {
           fail(`mark ${when} · a session tab's mark is ${m.glyph?.w} on a ${m.face?.w} face at ${m.glyph && m.face ? [m.glyph.x - m.face.x, m.glyph.y - m.face.y] : "?"} — 12 on 18, 3 in`);
         }
       }
+      await judgeFileTab(when, "face");
     };
     const judgeCorner = async (when) => {
       for (const col of COLUMNS) {
         await open(col);
-        await until(5_000, async () => (await page.locator("[data-list] [data-side-row] [data-side-badge]").count()) > 0);
-        const marks = await readMarks("[data-list] [data-side-row]");
+        await until(5_000, async () => (await page.locator(`${paneOf(col)} [data-side-row] [data-side-badge]`).count()) > 0);
+        const marks = await readMarks(`${paneOf(col)} [data-side-row]`);
+        await shot(`corner-${col}`);
         console.log(`mark ${when} · ${col}: ${JSON.stringify(marks.map((m) => [m.key, m.at, m.badge, m.veil, m.features]))}`);
         if (marks.length === 0) fail(`probe dead: mark ${when} · the ${col} column drew no avatar with a kind`);
+        judgeKeys(when, col, marks);
         for (const m of marks) {
-          if (m.at !== "corner" || m.badge !== 1 || m.veil !== 0) {
+          if (m.at !== "corner" || m.badge !== 1 || m.veil !== 0 || m.base !== 0 || m.faceCorner !== 0) {
             fail(`mark ${when} · ${col} ${m.row}: ${JSON.stringify(m.at)}, ${m.badge} corner(s), ${m.veil} veil(s) — 角标 is the corner, and no face under a veil`);
           }
         }
@@ -27817,10 +27912,82 @@ try {
       await press("[data-list] [data-row-open]");
       await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-side-badge]").count()) > 0);
       const tab = await readMarks("[data-session-tabs] [data-tab]");
+      await shot("corner-session-tab");
       console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.badge]))}`);
       if (tab.length === 0 || tab.some((m) => m.at !== "corner" || m.badge !== 1)) {
         fail(`mark ${when} · the session tab's mark is ${JSON.stringify(tab.map((m) => m.at))} — the tab follows the setting to the corner`);
       }
+      await judgeFileTab(when, "corner");
+    };
+    /** d (UX-32): 角标是 = 机器 — the mark is the base, on a neutral disc
+        the face's size, and the machine's face is the small one on the
+        corner, whole (its features back) and under no veil. */
+    const judgeMachine = async (when) => {
+      for (const col of COLUMNS) {
+        await open(col);
+        await until(5_000, async () => (await page.locator(`${paneOf(col)} [data-side-row] [data-mark-base]`).count()) > 0);
+        const marks = await readMarks(`${paneOf(col)} [data-side-row]`);
+        await shot(`machine-${col}`);
+        console.log(`mark ${when} · ${col}: ${JSON.stringify(marks.map((m) => [m.key, m.at, m.base, m.faceCorner, m.badge, m.features, m.face?.w, m.glyph?.w]))}`);
+        if (marks.length === 0) fail(`probe dead: mark ${when} · the ${col} column drew no avatar with a kind`);
+        judgeKeys(when, col, marks);
+        for (const m of marks) {
+          const where = `mark ${when} · ${col} ${m.row} (${m.key})`;
+          if (m.at !== "base" || m.base !== 1 || m.badge !== 0 || m.veil !== 0 || m.way !== "machine") {
+            fail(`${where}: ${JSON.stringify(m.at)}, ${m.base} base(s), ${m.badge} corner(s), ${m.veil} veil(s), way ${m.way} — 角标是 机器 puts the mark on the base and nothing on a veil`);
+            continue;
+          }
+          if (m.faceCorner !== 1 || !m.face) {
+            fail(`${where}: the machine's face is ${m.faceCorner ? "drawn" : "missing"} on the corner — 角标是 机器 puts the face there`);
+            continue;
+          }
+          // The face on the corner is the badge's glyph size (14 on a
+          // row), the mark the on-face size (18) centred on the disc.
+          if (m.face.w !== 14 || m.glyph?.w !== 18) {
+            fail(`${where}: the corner face is ${m.face.w} and the mark ${m.glyph?.w} — 14 on the corner, 18 on the disc (src/components/FaceMark.tsx SIZES)`);
+          }
+        }
+        if (col === "devices") {
+          const gate = marks.find((m) => m.row === gateDev?.id);
+          if (!gate || gate.features !== 1) fail(`mark ${when} · on the corner the 笑脸 face draws ${gate?.features ?? "no"} set(s) of features — it is whole there`);
+        }
+      }
+      await open("sessions");
+      await press("[data-list] [data-row-open]");
+      await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-mark-base]").count()) > 0);
+      const tab = await readMarks("[data-session-tabs] [data-tab]");
+      await shot("machine-session-tab");
+      console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.faceCorner, m.face?.w, m.glyph?.w]))}`);
+      if (tab.length === 0 || tab.some((m) => m.at !== "base" || m.faceCorner !== 1)) {
+        fail(`mark ${when} · the session tab's mark is ${JSON.stringify(tab.map((m) => [m.at, m.faceCorner]))} — the tab follows the setting: the mark as the base, the face on the corner`);
+      }
+      for (const m of tab) {
+        if (m.face?.w !== 10 || m.glyph?.w !== 12) fail(`mark ${when} · a session tab's corner face is ${m.face?.w} and its mark ${m.glyph?.w} — 10 on the corner, 12 on the disc`);
+      }
+      await judgeFileTab(when, "base");
+    };
+    /** The 角标是 row on 外观: drawn only under 角标 (用不上的控件不画). */
+    const chooseCornerIs = async (value, expectRow) => {
+      if (!((await toMore()) && (await press('[data-more-open="appearance"]')))) {
+        fail("probe dead: mark · More › 外观 did not open");
+        return false;
+      }
+      const row = page.locator('[data-config-row="corner-is"]');
+      const n = await row.count();
+      if (n !== (expectRow ? 1 : 0)) {
+        fail(`mark d · 外观 draws ${n} 角标是 row(s) while 类型标记 is ${configValues["kind-mark"]} — the row is drawn only under 角标 (src/views/more/AppearancePage.tsx shownWhen)`);
+        await press("[data-more-close]");
+        return false;
+      }
+      if (!expectRow) {
+        await press("[data-more-close]");
+        return true;
+      }
+      await page.locator('[data-setting-select="corner-is"]').selectOption(value);
+      const took = await until(3_000, async () => configValues["corner-is"] === value && (await row.getAttribute("data-value")) === value);
+      if (!took) fail(`mark d · choosing ${value} on 角标是 did not reach the store (it holds ${configValues["corner-is"]})`);
+      await press("[data-more-close]");
+      return took;
     };
     /** b: the row on 外观, and choosing on it the way a person does. */
     const chooseOnPage = async (value) => {
@@ -27843,16 +28010,23 @@ try {
     };
 
     await judgeFace("default");
+    await chooseCornerIs(null, false);
     if (await chooseOnPage("corner")) {
       await judgeCorner("角标");
       await page.reload({ waitUntil: "load" });
       await wait(900);
       await judgeCorner("角标 after a reload");
+      // d: the third way, and back.
+      if (await chooseCornerIs("machine", true)) {
+        await judgeMachine("角标 · 机器");
+        if (await chooseCornerIs("kind", true)) await judgeCorner("角标 · 类型 again");
+      }
       if (await chooseOnPage("face")) await judgeFace("浮现 again");
     }
     if (gateDev) gateDev.face = facesWere[0];
     if (peerDev) peerDev.face = facesWere[1];
     configValues["kind-mark"] = "face";
+    configValues["corner-is"] = "kind";
     await page.reload({ waitUntil: "load" });
     await wait(900);
   }

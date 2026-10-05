@@ -2905,6 +2905,23 @@ fn the_kind_mark_starts_on_the_face_and_takes_two_ways() {
     // machine's face with the mark instead, so the note went.
 }
 
+/// 角标是 (UX-32, the owner 2026-10-06): under 头像 beside 类型标记, it
+/// starts on `kind` — the corner carries the kind, the base is the
+/// machine — and takes only the two parts of the assembly. The key
+/// 类型标记 kept its name and its section's page, so a stored `corner`
+/// carries over.
+#[test]
+fn the_corner_is_the_kind_unless_said_and_takes_two_parts() {
+    let r = scratch("config-corner-is");
+    assert_eq!(config::get(&r, "corner-is").unwrap(), "kind");
+    let k = config::key("corner-is").unwrap();
+    assert_eq!(k.section, config::key("kind-mark").unwrap().section);
+    assert_eq!(config::section(k.section).unwrap().page, "appearance");
+    assert_eq!(config::set(&r, "corner-is", "machine").unwrap(), "machine");
+    assert_eq!(config::get(&r, "corner-is").unwrap(), "machine");
+    assert!(config::set(&r, "corner-is", "favicon").is_err());
+}
+
 /// **设置 in seven groups, and nothing a person set is lost** (UX-16,
 /// the owner 2026-10-05). Every key is on one of the seven pages and
 /// `khor config list` groups them in the pages' order; 标签页上限 moved
@@ -2939,7 +2956,10 @@ fn settings_group_into_the_seven_pages_and_keep_their_values() {
     assert_eq!(on("session"), [("tabs-limit", "7"), ("session-form", "term")]);
     assert_eq!(on("workspace"), [("files-click", "pin")]);
     assert_eq!(on("security"), [("confirm-takeover", "on"), ("confirm-delete", "off")]);
-    assert_eq!(on("appearance"), [("theme", "dark"), ("kind-mark", "face"), ("lang", "auto")]);
+    assert_eq!(
+        on("appearance"),
+        [("theme", "dark"), ("kind-mark", "face"), ("corner-is", "kind"), ("lang", "auto")]
+    );
     assert_eq!(config::tabs_limit(&r), Some(7));
 }
 

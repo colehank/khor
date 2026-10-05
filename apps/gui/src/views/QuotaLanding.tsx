@@ -35,6 +35,7 @@ import {
   removeAccount,
   updateAccount,
   type AccountRing,
+  type DeviceRow,
   type QuotaCredits,
   type QuotaWindow,
   type Usage,
@@ -54,19 +55,11 @@ import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { type RowAction } from "@/components/RowMenu";
 import { sessionMark } from "@/components/BrandIcons";
+import { providerKind } from "@/components/SessionFace";
 import { EditableName } from "@/components/EditableName";
 import { SideList, type SideRow } from "@/components/SideList";
 import { rowWindow } from "@/lib/row-facts";
-import {
-  DIAL_CARD_RATIO,
-  DIAL_CARD_SIZE,
-  DIAL_CARD_STROKE,
-  DIAL_FLUID_RATIO,
-  DIAL_FLUID_SIZE,
-  DIAL_FLUID_STROKE,
-  Face,
-  type Pip,
-} from "@/components/Face";
+import { DIAL_CARD_RATIO, DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, Glyph, type Pip } from "@/components/Face";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -946,10 +939,14 @@ export function QuotaLanding({
   onOpen,
   onBack,
   stale = false,
+  devices,
 }: {
   /** The shell cannot reach khor: what is on the board is the last
       answer, and R0's caption says so (components/RegionState). */
   stale?: boolean;
+  /** Only for the faces (UX-32): a row's base is its account's home
+      machine, and the device table is where faces live. */
+  devices: DeviceRow[];
   narrow: boolean;
   /**
    * The list column's width, **the shell's and not this landing's**
@@ -1265,10 +1262,6 @@ export function QuotaLanding({
     r.account?.pinned ? "pin" : groupBy === GROUP_NONE ? "" : `${groupBy}${answersOf(r)[groupBy] ?? ""}`;
   const side: SideRow[] = grouped.map((r) => {
     const on = current?.id === r.id;
-    // The pips are the windows themselves, so **every** subscription row
-    // has them — probed or registered.
-    const dials = r.kind === "sub" ? subDials(r) : [];
-    const M = sessionMark("agent", r.provider);
     const win = rowWindow({ windows: r.windows, fill: r.fill, resets_at: r.account?.reading.resets_at ?? null });
     const left = win
       ? win.resets_at !== null
@@ -1281,36 +1274,15 @@ export function QuotaLanding({
       id: r.id,
       group: groupOf(r),
       pinned: !!r.account?.pinned,
-      // **The machine card's dial, one size down** — the same geometry,
-      // milestones and rim (2026-09-07:「环全部和机器卡对齐」); the
-      // reading is inside the ring.
-      // Not a machine's face, so `art`, and no mark on it.
-      face: {
-        art: (
-          // **The dial is the size of every list's face** (2026-10-03,
-          // the owner: as large as the session page's avatars): the slot
-          // every list wears (`--list-face`, 40 under a finger, 32 with a
-          // mouse), the whole drawing — pips and all — across its width,
-          // the reading at caption size (`Face` `fluid`) and without its
-          // percent sign: three digits at 12 are what the 40 bowl holds, and the
-          // detail page says the unit. Tombstone: drawn
-          // at a fixed 32 wide, a cropped arc 22 tall beside 17px titles.
-          <span data-dial-row className="grid size-list-face flex-none place-items-center">
-            <Face
-              size={DIAL_FLUID_SIZE}
-              stroke={DIAL_FLUID_STROKE}
-              ratio={DIAL_FLUID_RATIO}
-              fluid
-              crop
-              fraction={arcOf(r)}
-              strain={r.account?.strain ?? null}
-              pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
-            >
-              {centreOf(r).replace(/%$/, "")}
-            </Face>
-          </span>
-        ),
-      },
+      // **The base is the machine the account lives on, the mark the
+      // provider** (UX-32, the owner 2026-10-06): the one assembly every
+      // row wears. The home is the reading's (`AccountReading.home`, the
+      // device id the key stays on); a home this face has no row for —
+      // a machine since forgotten — draws the blank.
+      // ⚠️ 墓碑 (2026-09-07 → UX-32): the machine card's dial, one size
+      // down, as the row's face (`{ art }`); it is the right-top now.
+      face: { machine: devices.find((d) => d.id === r.account?.reading.home)?.face ?? null },
+      mark: providerKind(r.provider),
       // **The kind's mark opens the title** (2026-09-30, the owner: 「额度
       // 页 list 里，把类型的头像做成标题的开头，如 f"{icon} Claude Code
       // 订阅"」): the provider's glyph, then the name, on one line and one
@@ -1332,13 +1304,15 @@ export function QuotaLanding({
       // and it renames the session row's way: double-click, type, Enter
       // (`EditableName`, `nested` inside the button that opens the row).
       // **One rule for the four lists** (UX-15, the owner 2026-10-05):
-      // left-top the account's name, and as its aside what it is — the
-      // provider's mark and 「Claude 订阅」 / 「OpenAI API」, in that
-      // order, no 「·」; left-bottom what is left and when it resets;
-      // right-top a state word only when it is not normal; right-bottom
-      // when this was read (moved down from the top).
-      // ⚠️ 墓碑: the mark opened the title (2026-09-30) and the second
-      // line was 「类型 · 提供商」 (`subLine`, still the filter's words).
+      // left-top the account's name, and as its aside what it is —
+      // 「Claude 订阅」 / 「OpenAI API」; left-bottom what is left and when
+      // it resets; right-top **the ring, as the state** (UX-32: it is a
+      // reading, and readings sit right) with the reading beside it, or
+      // the state word when it is not normal; right-bottom when this
+      // was read (moved down from the top).
+      // ⚠️ 墓碑: the mark opened the title (2026-09-30), then the aside
+      // (UX-15); it is the face's mark now. The second line was 「类型 ·
+      // 提供商」 (`subLine`, still the filter's words).
       title: (
         <span data-quota-name className="block min-w-0">
           <EditableName
@@ -1352,15 +1326,19 @@ export function QuotaLanding({
         </span>
       ),
       name: r.name,
-      aside: (
-        <span data-quota-what className="inline-flex min-w-0 items-baseline gap-xxs">
-          <M className="size-kind-mark-glyph flex-none translate-y-[0.15em]" />
-          <span className="min-w-0 truncate">{whatOf(r)}</span>
-        </span>
-      ),
+      aside: <span data-quota-what className="min-w-0 truncate">{whatOf(r)}</span>,
       sub: left ? <span data-quota-sub-line>{left}</span> : undefined,
       corners: {
-        top: state ? <span data-quota-state>{state}</span> : undefined,
+        // The ring is the heading's glyph (`Glyph`: the same 210° gauge
+        // one size down, the strain's colour), the number the dial's
+        // centre reading without its unit's sign; a trouble leaves the
+        // ring off (no reading to draw) and says the word.
+        top: (
+          <span data-quota-ring className="inline-flex items-center gap-xxs">
+            {!trouble && <Glyph fraction={arcOf(r)} strain={r.account?.strain ?? null} />}
+            {state ? <span data-quota-state>{state}</span> : <span data-quota-ring-word>{centreOf(r)}</span>}
+          </span>
+        ),
         bottom: (
           <span data-quota-age-cell>{r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}</span>
         ),

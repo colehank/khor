@@ -32,10 +32,10 @@ import {
   type GitStatus,
   type WorkspaceRow,
 } from "@/api";
-import { IconBranch, IconFiles } from "@/components/icons";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
 import { type RowAction } from "@/components/RowMenu";
+import { workspaceKind } from "@/components/SessionFace";
 import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
@@ -592,9 +592,7 @@ export function WorkspacesList({
       face: { machine: devices.find((d) => d.id === r.device)?.face ?? null },
       // 「工作区: 文件夹, 是 git 仓库时换分支」 (docs/SHELL.md 第四轮 第 2 条).
       // On the face or on its corner by the 外观 setting (`FaceMark`).
-      mark: repo
-        ? { key: "branch", glyph: (c: string) => <IconBranch className={c} /> }
-        : { key: "folder", glyph: (c: string) => <IconFiles className={c} /> },
+      mark: workspaceKind(repo),
       title: (
         <span data-ws-name className="block min-w-0 truncate">
           {r.name}

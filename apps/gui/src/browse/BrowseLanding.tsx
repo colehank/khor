@@ -63,12 +63,12 @@ import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { useLoading } from "@/browse/use-loading";
-import { IconArrow, IconBrowser, IconReload } from "@/components/icons";
+import { IconArrow, IconReload } from "@/components/icons";
 import { GlassItem } from "@/components/Glass";
 import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
 import { FOLD_AT, foldStep, UnfoldHold, type FoldMemo } from "@/lib/deck-fold";
-import type { KindMark } from "@/components/FaceMark";
+import { pageKind } from "@/components/SessionFace";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar } from "@/components/PaneBar";
 import type { RowAction } from "@/components/RowMenu";
@@ -91,18 +91,14 @@ function hostOf(path: string): string {
   }
 }
 
-const PAGE_MARK: KindMark = { key: "page", glyph: (c: string) => <IconBrowser className={c} /> };
-
 /** **The site's icon, where there is one** (UX-22, the owner 2026-10-05:
     every row wore khor's browser glyph): the mark on the machine's face is
     the page's favicon once it has been fetched — this window, or any
     time before (the node keeps them, `favicons.json`) — and the browser's
-    mark only before or without one. A site's icon is its own picture,
-    drawn as it came (README 图标). ⚠️ 墓碑 (2026-10-02 → UX-22): the
-    browser's mark on every row. */
-function markOf(src: string | undefined): KindMark {
-  return src ? { key: "favicon", glyph: (c: string) => <img src={src} alt="" className={`${c} rounded-sm`} /> } : PAGE_MARK;
-}
+    mark only before or without one. The mark itself is the assembly's
+    (`pageKind`, UX-32). ⚠️ 墓碑 (2026-10-02 → UX-22): the browser's mark
+    on every row. */
+const markOf = pageKind;
 
 /** The site a page is on, spelled as the node keys its kept icons
     (`khor_node::favicon::origin`: `scheme://host[:port]`); `""` for
