@@ -5489,12 +5489,15 @@ try {
         // The whole value, not the drawn cut: `PathCut` draws the tail
         // that fits and keeps the path as its title and for a reader.
         where: el.querySelector("[data-ws-where]")?.getAttribute("title") ?? null,
-        git: el.querySelector("[data-ws-git]")?.textContent?.trim() ?? null,
-        touched: el.querySelector("[data-ws-touched]")?.textContent?.trim() ?? null,
+        // **An empty corner is not drawn** (UX-15, the owner 2026-10-05:
+        // 「空的格子不画」): absent reads as blank. ⚠️ 墓碑: the two corner
+        // anchors were always drawn, empty where there was nothing to say.
+        git: el.querySelector("[data-ws-git]")?.textContent?.trim() ?? "",
+        touched: el.querySelector("[data-ws-touched]")?.textContent?.trim() ?? "",
       })),
     );
     console.log(`workspaces: ${JSON.stringify(seen)}`);
-    for (const corner of ["name", "where", "git", "touched"]) {
+    for (const corner of ["name", "where"]) {
       if (seen.some((r) => r[corner] === null)) {
         fail(
           `a workspace row has no ${corner} corner — the anchor is the fact, and a corner that is not ` +
@@ -11031,7 +11034,7 @@ try {
     // with the face (`data-side-mark` — on it or on its corner by 类型标记,
     // 2026-10-02) on four columns, and on 额度 the
     // title's first glyph (the owner: 「把类型的头像做成标题的开头」,
-    // section 13e holds it). Either seat counts as the row having its
+    // section 13e holds it; since UX-15 its aside's first glyph). Either seat counts as the row having its
     // kind said; a row with neither is a row missing a part.
     const PARTS = ["data-side-open", "data-side-face", "kind-mark", "data-side-title", "data-side-sub"];
     await page.setViewportSize({ width: 1400, height: 900 });
@@ -11047,7 +11050,9 @@ try {
           const has = (a) =>
             a === "kind-mark"
               ? !!row.querySelector("[data-side-mark]") ||
-                row.querySelector("[data-side-title] > *")?.firstElementChild?.tagName.toLowerCase() === "svg"
+                row.querySelector("[data-side-title] > *")?.firstElementChild?.tagName.toLowerCase() === "svg" ||
+                // UX-15: 额度's mark opens the title's aside (「Claude 订阅」).
+                row.querySelector("[data-side-aside] > *")?.firstElementChild?.tagName.toLowerCase() === "svg"
               : row.hasAttribute(a) || !!row.querySelector(`[${a}]`);
           return parts.filter(has);
         },
@@ -11702,6 +11707,7 @@ try {
             {
               corner: row.querySelector("[data-side-mark]")?.getAttribute("data-side-mark") ?? null,
               sub: row.querySelector("[data-side-sub]")?.textContent ?? "",
+              aside: row.querySelector("[data-side-aside]")?.textContent ?? "",
             },
           ]),
         ),
@@ -11722,8 +11728,10 @@ try {
           );
         }
       }
-      if (!seen.peer?.sub.includes("SYS-4028GR-TR")) {
-        fail(`the peer row's second line reads ${JSON.stringify(seen.peer?.sub)} — 「型号文字进机器行的副标题」`);
+      // UX-15: the model is the title's aside (「左上身份 · 型号」);
+      // ⚠️ 墓碑: 「型号文字进机器行的副标题」, the second line until 10-05.
+      if (!seen.peer?.aside.includes("SYS-4028GR-TR") || seen.peer?.sub.includes("SYS-4028GR-TR")) {
+        fail(`the peer row reads aside ${JSON.stringify(seen.peer?.aside)}, second line ${JSON.stringify(seen.peer?.sub)} — the model is the name's aside (UX-15)`);
       }
     }
     if (peer?.vitals?.vitals) {
@@ -11731,6 +11739,66 @@ try {
       peer.vitals.vitals.model = was[1];
     }
     if (elder?.vitals?.vitals) elder.vitals.vitals.system = was[2];
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+
+  // ── 4M′) UX-15: the machine row's four corners (the owner, 2026-10-05:
+  //        「左上身份、左下在做什么、右上状态、右下状态的时间；空的格子
+  //        不画」). peer answers in 23 ms with 41% CPU; elder said
+  //        nothing for 20 hours; gate is this machine. The latency light
+  //        is never the colour alone. New, not a fix: no red first. ──
+  {
+    const peer = devs.find((d) => d.name === "peer");
+    const elder = devs.find((d) => d.name === "elder");
+    const keep = [peer && { ...peer }, elder && { ...elder }, peer?.vitals?.vitals?.cpu_pct];
+    if (peer) {
+      peer.rtt_ms = 23;
+      if (peer.vitals?.vitals) peer.vitals.vitals.cpu_pct = 41.2;
+    }
+    if (elder) {
+      elder.rtt_ms = null;
+      elder.hop = "quiet";
+      elder.heard_ms = Date.now() - 20 * 3600_000;
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("devices");
+    await until(5_000, async () => (await page.locator("[data-side-row][data-device]").count()) >= 3);
+    await wait(400);
+    const rows = await page.evaluate(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll("[data-side-row][data-device]")].map((row) => [
+          row.getAttribute("data-device"),
+          {
+            sub: row.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
+            top: row.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
+            light: row.querySelector("[data-row-latency]")?.getAttribute("data-row-latency") ?? null,
+            bottom: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
+            road: row.querySelectorAll("[data-row-connection]").length,
+          },
+        ]),
+      ),
+    );
+    console.log(`UX-15 · machine rows: ${JSON.stringify(rows)}`);
+    const p = rows.peer;
+    const e = rows.elder;
+    const g = rows.gate;
+    if (!p || !/23\s*毫秒/.test(p.top ?? "") || p.light !== "on" || p.bottom !== null || !p.sub.includes("CPU 41%")) {
+      fail(`UX-15 · peer reads ${JSON.stringify(p)} — 「CPU 41%」 under its name, the light on and 23 毫秒 at the right, nothing under it while connected`);
+    }
+    if (!e || e.top !== "无法获取" || e.light !== "off" || !(e.bottom ?? "").includes("20 小时")) {
+      fail(`UX-15 · elder reads ${JSON.stringify(e)} — the light off beside 无法获取, and when it was last heard under it`);
+    }
+    if (!g || g.top !== "本机" || g.bottom !== null) fail(`UX-15 · this machine reads ${JSON.stringify(g)} — 本机, nothing under it`);
+    if (Object.values(rows).some((r) => r.road !== 0)) fail("UX-15 · a machine row still prints how it is reached — 连接方式 is the machine page's");
+    for (const [d, k] of [[peer, keep[0]], [elder, keep[1]]]) {
+      if (!d || !k) continue;
+      for (const f of ["rtt_ms", "hop", "heard_ms"]) if (!(f in k)) delete d[f];
+      Object.assign(d, k);
+    }
+    if (peer?.vitals?.vitals) peer.vitals.vitals.cpu_pct = keep[2];
     await page.reload({ waitUntil: "load" });
     await wait(900);
   }
@@ -23819,12 +23887,17 @@ try {
       })),
     );
     console.log(`lists (14) · workspace right column edges: ${JSON.stringify(cols)}`);
-    const onRow = cols.find((c) => c.on);
-    const offRows = cols.filter((c) => !c.on);
-    if (!onRow || offRows.length === 0 || cols.some((c) => Number.isNaN(c.git) || Number.isNaN(c.touched))) {
-      fail("probe dead: no open workspace row beside a closed one, or a row without its right column — (14) measured nothing");
+    // **An empty corner is not drawn** (UX-15): a plain folder has no
+    // branch, a quiet machine no time; the edges are compared where both
+    // rows draw one.
+    const onRow = cols.find((c) => c.on && !Number.isNaN(c.git) && !Number.isNaN(c.touched));
+    const offRows = cols.filter((c) => !c.on && (!Number.isNaN(c.git) || !Number.isNaN(c.touched)));
+    if (!onRow || offRows.length === 0) {
+      fail("probe dead: no open workspace row with both corners beside a closed one with either — (14) measured nothing");
     } else {
-      const bad = offRows.filter((c) => !edge(c.git, onRow.git) || !edge(c.touched, onRow.touched));
+      const bad = offRows.filter(
+        (c) => (!Number.isNaN(c.git) && !edge(c.git, onRow.git)) || (!Number.isNaN(c.touched) && !edge(c.touched, onRow.touched)),
+      );
       if (bad.length) {
         fail(
           `the open workspace row's right column ends at ${onRow.git}/${onRow.touched}, the others at ` +
@@ -24140,13 +24213,14 @@ try {
       if (axes.size !== 2 || [...axes].some((a) => !a)) {
         fail(`lists · machines · the menu's headings are ${JSON.stringify([...axes])} — 连接方式 and 系统, one each`);
       }
-      // The connection option says what the row says (`connectionWord`).
-      const peerSays = await page
-        .locator('[data-list] [data-side-row][data-device="peer"] [data-row-connection]')
-        .textContent()
-        .catch(() => null);
-      if (menu["link:direct"] && menu["link:direct"].label !== (peerSays ?? "").trim()) {
-        fail(`lists · machines · the menu calls peer's road 「${menu["link:direct"].label}」 and the row 「${peerSays}」 — one word (words.ts connectionKeyWord)`);
+      // **连接方式 left the row** (UX-15, the owner 2026-10-05: it is the
+      // machine page's 连接 fact now); the filter still narrows by it, in
+      // the word that page prints (`connectionKeyWord`). ⚠️ 墓碑: the
+      // option was held to the row's second-line word.
+      const rowRoads = await page.locator("[data-list] [data-side-row] [data-row-connection]").count();
+      if (rowRoads !== 0) fail(`lists · machines · ${rowRoads} row(s) still print how the machine is reached — 连接方式 is the machine page's (UX-15)`);
+      if (menu["link:direct"] && menu["link:direct"].label !== "直连") {
+        fail(`lists · machines · the menu calls peer's road 「${menu["link:direct"].label}」 — 直连, the machine page's word (words.ts connectionKeyWord)`);
       }
       // (b) one tick
       await toggle("sys:linux");
@@ -25012,11 +25086,15 @@ try {
   await until(8_000, async () => (await page.locator("[data-quota-row]").count()) > 1);
   const titles = await page.evaluate(() =>
     [...document.querySelectorAll("[data-quota-row]")].map((row) => {
-      const name = row.querySelector("[data-quota-name]");
-      const first = name?.firstElementChild ?? null;
+      // UX-15 (the owner 2026-10-05): the mark opens the name's aside —
+      // 「{icon} Claude 订阅」 after the account's own name. ⚠️ 墓碑: it
+      // opened the title (2026-09-30).
+      const what = row.querySelector("[data-quota-what]");
+      const first = what?.firstElementChild ?? null;
       return {
         id: row.getAttribute("data-quota-row"),
         first: first ? first.tagName.toLowerCase() : null,
+        what: what?.textContent?.trim() ?? null,
         badge: row.querySelectorAll("[data-side-badge]").length,
         editable: row.querySelectorAll("[data-editable-name]").length,
       };
@@ -25026,7 +25104,7 @@ try {
   if (titles.length < 2) fail(`probe dead: entity e · ${titles.length} 额度 row(s) to read`);
   for (const t of titles) {
     if (t.first !== "svg") {
-      fail(`entity e · the ${t.id} row's title starts with ${JSON.stringify(t.first)}, not its kind's mark (svg) — 「{icon} Claude Code 订阅」`);
+      fail(`entity e · the ${t.id} row's aside starts with ${JSON.stringify(t.first)}, not its kind's mark (svg) — 「{icon} Claude 订阅」 (UX-15)`);
     }
     if (t.badge !== 0) fail(`entity e · the ${t.id} row still wears a corner beside its dial — the mark is the title's now`);
   }

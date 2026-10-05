@@ -1,15 +1,17 @@
 import { useMemo, useState } from "react";
 
-import type { DeviceRow } from "@/api";
+import type { DeviceRow, SessionRow } from "@/api";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
 import { EditableName } from "@/components/EditableName";
 import { machineKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
+import { cn } from "@/lib/utils";
 import { gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
-import { connectionKey, connectionKeyWord, connectionWord, groupLabel, systemWord } from "@/words";
+import { runningOn } from "@/lib/row-facts";
+import { ago, connectionKey, connectionKeyWord, groupLabel, systemWord } from "@/words";
 import { MachineEditDialog } from "@/views/MachineEditDialog";
 import { PendingStrip } from "@/views/PairDialogs";
 
@@ -147,8 +149,12 @@ export function DevicesList({
   onPause,
   pauseRefused,
   onRestyled,
+  sessions = [],
 }: {
   rows: DeviceRow[];
+  /** The session rows the face holds: a machine's row says how many of
+      its sessions are running (UX-15, `runningOn`). */
+  sessions?: readonly SessionRow[];
   /** Not answered yet: a skeleton rather than 「there are none」. */
   loading?: boolean;
   query: string;
@@ -264,9 +270,28 @@ export function DevicesList({
   // rule. What is left here is what a machine row says — of the rows
   // the ticks leave standing (`DEVICE_SIEVE`).
   const side: SideRow[] = sieve(rows, words, DEVICE_SIEVE, DEVICE_KEYS).map((d) => {
-    const connection = connectionWord(d);
     const system = d.vitals?.vitals.system ?? null;
     const modelName = d.vitals?.vitals.model?.name ?? null;
+    // **One rule for the four lists** (UX-15, the owner 2026-10-05, the
+    // session row the model): left-top who (the name, its model aside),
+    // left-bottom what is happening, right-top the state, right-bottom
+    // the state's time; a slot with nothing to say is not drawn.
+    // ⚠️ 墓碑: the second line said how the machine is reached (直连 /
+    // 中继 / 本机) then the model; 连接方式 is the machine page's now.
+    const running = runningOn(sessions, d);
+    const cpu = d.vitals?.vitals.cpu_pct;
+    const doing = [
+      d.paused ? gui.machine_paused : null,
+      running > 0 ? gui.row_sessions(running) : null,
+      cpu !== undefined && cpu !== null && d.hop !== "quiet" ? gui.row_cpu(Math.round(cpu)) : null,
+    ].filter((w): w is string => w !== null);
+    // The latency light, in the session halo's two words: reached (the
+    // 完成 green) or not (the idle grey) — never the colour alone: the
+    // number, 本机 or 无法获取 is always beside it.
+    // An older resident sends no `rtt_ms` at all: no number, not 「无法获取」.
+    const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
+    const reached = d.me || rtt !== null || (d.rtt_ms === undefined && d.hop !== "quiet");
+    const latency = d.me ? gui.machine_here : rtt !== null ? gui.conn_relay_ms(rtt) : reached ? null : gui.day_unreachable;
     return {
       id: d.id,
       group: d.pinned ? "pin" : "",
@@ -276,7 +301,7 @@ export function DevicesList({
       // 「角标按系统」) — the node's `vitals.system`. A machine that could
       // not say (an older peer, a satellite, no reading yet) wears the
       // plain machine mark, never a guess. The model is not the mark's
-      // any more; its name is the second line's (`sub`). On the face or
+      // any more; its name is the title's aside. On the face or
       // on its corner by the 外观 setting (`FaceMark`, 2026-10-02) — and
       // `MachineFace` is this same assembly for anywhere else.
       mark: machineKind(system),
@@ -296,27 +321,32 @@ export function DevicesList({
         <span className="block truncate">{d.shown}</span>
       ),
       name: d.shown,
-      // How this machine is reached — the fact a person picks a row by;
-      // this machine's own word is 本机 — and then what the box is, as
-      // the machine names itself (`vitals.model.name`: 「型号文字进机器行
-      // 的副标题」). Either can be missing; absent rather than an empty line.
-      // A paused row says so first (第 10 条: 「暂停中的行变灰并标『已暂停』」).
-      sub:
-        d.paused || connection || modelName ? (
-          <span className="flex min-w-0 items-baseline gap-1.5">
-            {d.paused && <span data-row-paused>{gui.machine_paused}</span>}
-            {connection && <span data-row-connection>{connection}</span>}
-            {modelName && (
-              <span data-row-model className="min-w-0 truncate">
-                {modelName}
-              </span>
-            )}
+      aside: modelName ? <span data-row-model>{modelName}</span> : undefined,
+      // What it is doing: paused first (第 10 条), then its running
+      // sessions and its CPU (net's NET-8: a percent, not 负载).
+      sub: doing.length ? (
+        <span data-row-doing>
+          {d.paused && <span data-row-paused>{gui.machine_paused}</span>}
+          {(d.paused ? doing.slice(1) : doing).map((w, i) => (d.paused || i > 0 ? ` · ${w}` : w))}
+        </span>
+      ) : undefined,
+      corners: {
+        top: latency && (
+          <span data-row-latency={reached ? "on" : "off"} className="flex items-center gap-xxs">
+            <span
+              aria-hidden="true"
+              className={cn("size-1.5 flex-none rounded-full", reached ? "bg-state-done" : "bg-state-idle")}
+            />
+            {latency}
           </span>
-        ) : undefined,
+        ),
+        // Empty while connected; when it is not, when it was last heard.
+        bottom: !reached && typeof d.heard_ms === "number" ? <span data-row-heard>{ago(d.heard_ms)}</span> : undefined,
+      },
       // **Both names are searchable**, and the id people paste: a renamed
       // machine must be findable by what it is called now and by the
       // name this person knew it by.
-      find: `${d.shown} ${d.name} ${d.id}`,
+      find: `${d.shown} ${d.name} ${d.id} ${modelName ?? ""} ${doing.join(" ")}`,
       selected: onOpen !== undefined && d.id === selected,
       // A pane with nowhere to send a row has not earned actions on it.
       menu: onOpen ? actions(d) : [],
