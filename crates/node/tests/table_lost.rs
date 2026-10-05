@@ -75,6 +75,14 @@ async fn a_machine_whose_table_lost_its_rows_is_brought_back_by_the_next_round()
         .unwrap();
     assert_eq!(names(&b), ["alpha", "beta"]);
     assert_eq!(b.standing_of(b.device_str()), Standing::Trusted, "alpha holds the root and signed beta in");
+    // Alpha's resident goes: the round below is the one under test, not
+    // one its pump happens to run first, and it starts from no vouch
+    // sent (a vouch in the pairing's own race would hold the next one
+    // back for `VOUCH_EVERY`).
+    let alpha_serve = serves.remove(0);
+    alpha_serve.abort();
+    let _ = alpha_serve.await;
+    std::fs::remove_file(ra.join(".khor").join("endpoint.json")).unwrap();
 
     // Beta's table loses every block — its ledger stays, as hinton's did —
     // and its next open writes its own row back.
@@ -88,7 +96,8 @@ async fn a_machine_whose_table_lost_its_rows_is_brought_back_by_the_next_round()
     assert_eq!(names(&b), ["beta"], "only its own row is left");
     assert_eq!(b.standing_of(b.device_str()), Standing::Pending, "and no roster");
 
-    // Alpha's next round: refused at beta's door, then let in.
+    // Alpha's next round, from a one-shot node: refused at beta's door,
+    // then let in.
     let outcomes = timeout(Duration::from_secs(60), a.sync_now())
         .await
         .expect("a round must not hang")
