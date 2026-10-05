@@ -108,6 +108,7 @@ import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { notesFirstTouch } from "@/lib/term-first-touch";
+import { drawsFoldBand } from "@/lib/term-fold-band";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
 
@@ -1376,6 +1377,7 @@ export function TerminalPane({
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  const bandRef = useRef<HTMLDivElement>(null);
   // A tmux row's history on a phone (item 31): held only while the pane
   // is on screen, and why it is not there when it cannot be read.
   const tmuxHistoryRef = useRef<ReturnType<typeof holdsTmuxHistory> | null>(null);
@@ -2477,6 +2479,8 @@ export function TerminalPane({
     // (item 31, `lib/term-tmux-history`), not tmux's copy mode by the
     // wheel; a mouse's page keeps the wheel going to tmux.
     let tmuxHistory: ReturnType<typeof holdsTmuxHistory> | null = null;
+    /** The folded deck's band (item 32), made once the pane's root is known. */
+    let band: ReturnType<typeof drawsFoldBand> | null = null;
     let outShown = 0;
     /** The person is up in a tmux pane's history (item 31). */
     let historyUp = false;
@@ -2518,11 +2522,16 @@ export function TerminalPane({
         scroller: scrollerRef.current!,
         room: roomRef.current!,
         read: (since) => termPaneHistory(id, since),
-        changed: () => native.sync(),
+        changed: () => {
+          native.sync();
+          band?.draw();
+        },
         moved: (to) => {
           historyUp = to;
           sync();
+          band?.draw();
         },
+        folded: () => root.dataset.folded === "true",
         outOfReach: () => {
           setHistoryOut(true);
           window.clearTimeout(outShown);
@@ -2565,6 +2574,14 @@ export function TerminalPane({
     // terminal to whole rows of it. Published where the pane's root is,
     // whenever a frame drawn says it changed (a font, a size).
     const root = box.closest<HTMLElement>("[data-kept-terminal]") ?? box;
+    // The folded deck's rows (item 32).
+    band = drawsFoldBand({
+      band: bandRef.current!,
+      root,
+      live: term,
+      history: () => tmuxHistory?.terminal() ?? null,
+      screens: [mount, historyRef.current!],
+    });
     let rowPx = "";
     const rowed = term.onRender(() => {
       const el = term.element?.querySelector(".xterm-screen");
@@ -2680,6 +2697,7 @@ export function TerminalPane({
       tmuxHistory?.stop();
       tmuxHistoryRef.current = null;
       firstTouch.stop();
+      band?.stop();
       firstTouchRef.current = null;
       window.clearTimeout(outShown);
       native.stop();
@@ -2967,7 +2985,16 @@ export function TerminalPane({
           />
           {/* A tmux pane's history on a phone (item 31), over the live
               screen while the person is up in it. */}
-          <div data-term-history ref={historyRef} className="invisible absolute inset-0" />
+          <div data-term-history ref={historyRef} className="invisible absolute inset-0 [[data-folded]_&]:top-[var(--fold-band)]" />
+          {/* The folded deck's rows (item 32, `lib/term-fold-band`): the
+              history just above what the grid shows, in the band the
+              grid moved down by. */}
+          <div
+            data-term-fold-band
+            ref={bandRef}
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 top-0 hidden h-[var(--fold-band)] overflow-hidden [[data-folded]_&]:block"
+          />
         </div>
         <div data-term-room ref={roomRef} aria-hidden />
       </div>

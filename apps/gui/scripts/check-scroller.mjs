@@ -17,6 +17,12 @@
 //       300 px of travel at 16 px rows is 18 notches (it was 5: a wheel per
 //       touch move, folded by xterm), the place goes back to the middle
 //       once it rests, and nothing is handed on while it does.
+//   32. **The folded deck's band** (`src/lib/term-fold-band.ts`). Folded,
+//       the band above the grid holds the two lines just above the
+//       source's viewport — the live buffer, then a tmux history view's
+//       when one is given — at the bottom and scrolled up; it takes the
+//       grid's part-row shift; a program on its alternate screen with no
+//       history leaves it empty, and so does unfolding. No resize.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -35,7 +41,8 @@ const bundle = await build({
       import { Terminal } from "@xterm/xterm";
       import { FitAddon } from "@xterm/addon-fit";
       import * as scroller from "./src/lib/term-scroller.ts";
-      window.lab = { Terminal, FitAddon, scroller };
+      import { drawsFoldBand } from "./src/lib/term-fold-band.ts";
+      window.lab = { Terminal, FitAddon, scroller, drawsFoldBand };
     `,
     resolveDir: gui,
     loader: "ts",
@@ -56,7 +63,9 @@ await page.setContent(`<!doctype html><meta charset=utf-8><style>${css}
   #scroller{height:100%;width:100%;overflow-x:hidden;overflow-y:auto}
   #stick{position:sticky;top:0;height:100%;width:100%}
   #screen{height:100%;width:100%}
-  </style><div id=box><div id=scroller><div id=stick><div id=screen></div></div><div id=room></div></div></div>`);
+  #band{position:absolute;left:0;right:0;top:0;overflow:hidden;display:none}
+  #box[data-folded] #band{display:block}
+  </style><div id=box><div id=scroller><div id=stick><div id=screen></div><div id=band></div></div><div id=room></div></div></div>`);
 await page.addScriptTag({ content: bundle.outputFiles[0].text });
 
 const fresh = (scrollback = 2000, wheel = false) =>
@@ -184,6 +193,82 @@ if (wheel.range < 10000) fail(`36: the program's scroller has no range of its ow
 if (wheel.atLift !== want) fail(`36: 300 px of travel handed ${wheel.atLift} notches, want ${want}`);
 if (wheel.settled !== wheel.atLift) fail(`36: setting the place back handed ${wheel.settled - wheel.atLift} more notches`);
 
+// ── 32 ──
+await fresh();
+await page.evaluate(() => new Promise((r) => { let s = ""; for (let i = 1; i <= 200; i++) s += `\x1b[3${i % 8}mline ${i}\x1b[0m end\r\n`; window.t.write(s, r); }));
+await frames(4);
+const band = await page.evaluate(async () => {
+  const box = document.querySelector("#box");
+  const el = document.querySelector("#band");
+  const screen = document.querySelector("#screen");
+  const t = window.t;
+  const frames = (n) => new Promise((r) => { let i = 0; const f = () => (++i >= n ? r() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+  let history = null;
+  const b = window.lab.drawsFoldBand({ band: el, root: box, live: t, history: () => history, screens: [screen] });
+  const row = document.querySelector(".xterm-screen").getBoundingClientRect().height / t.rows;
+  const look = (src) => {
+    const rows = [...el.children].map((x) => x.textContent.replace(/\s+$/, ""));
+    const buf = src?.buffer.active;
+    const want = buf ? rows.map((_, i) => buf.getLine(buf.viewportY - rows.length + i)?.translateToString(true)) : [];
+    return { n: Number(el.dataset.rows), rows, same: rows.length > 0 && rows.every((x, i) => x === want[i]), coloured: el.querySelectorAll("span[style*='color']").length };
+  };
+  const out = {};
+  // The fold, as UX-13 makes it: the box grows by the band, the grid moves down.
+  box.style.height = `${600 + 2 * row}px`;
+  el.style.height = `${2 * row}px`;
+  document.querySelector("#stick").style.paddingTop = `${2 * row}px`;
+  box.dataset.folded = "true";
+  await frames(4);
+  out.bottom = look(t);
+  t.scrollLines(-30);
+  await frames(3);
+  out.up = look(t);
+  screen.style.transform = "translateY(5px)";
+  await frames(1);
+  out.shift = el.style.transform;
+  screen.style.transform = "";
+  await frames(1);
+  out.unshift = el.style.transform;
+  // A tmux pane's history view: the band reads it, not the live screen.
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:absolute;left:-9999px;width:400px;height:600px";
+  document.body.appendChild(holder);
+  const h = new window.lab.Terminal({ fontFamily: "monospace", fontSize: 14, lineHeight: 1, cols: t.cols, rows: t.rows });
+  h.open(holder);
+  await new Promise((r) => { let s = ""; for (let i = 1; i <= 120; i++) s += `pane ${i}\r\n`; h.write(s, r); });
+  h.scrollLines(-10);
+  history = h;
+  b.draw();
+  await frames(3);
+  out.history = look(h);
+  history = null;
+  // A program on its alternate screen, with no history view: nothing above it.
+  await new Promise((r) => t.write("\x1b[?1049h", r));
+  await frames(3);
+  out.alternate = look(null).n;
+  await new Promise((r) => t.write("\x1b[?1049l", r));
+  delete box.dataset.folded;
+  await frames(2);
+  out.unfolded = { n: Number(el.dataset.rows), children: el.children.length };
+  b.stop();
+  h.dispose();
+  holder.remove();
+  box.style.height = "600px";
+  document.querySelector("#stick").style.paddingTop = "";
+  return { ...out, resizes: window.resizes };
+});
+console.log(`scroller gate: 32 band: ${JSON.stringify(band)}`);
+for (const k of ["bottom", "up", "history"]) {
+  if (band[k].n !== 2) fail(`32 ${k}: the band drew ${band[k].n} rows, want 2`);
+  if (!band[k].same) fail(`32 ${k}: the band's rows are not the two lines above the viewport (${JSON.stringify(band[k].rows)})`);
+}
+if (!band.bottom.coloured) fail("32: the band's rows lost their colours");
+if (band.bottom.rows[0] === band.up.rows[0]) fail("32: the band did not follow a scroll");
+if (band.shift !== "translateY(5px)" || band.unshift !== "") fail(`32: the band did not take the grid's part-row shift (${band.shift} / ${band.unshift})`);
+if (band.alternate !== 0) fail(`32: a program's alternate screen left ${band.alternate} rows in the band`);
+if (band.unfolded.n !== 0 || band.unfolded.children !== 0) fail(`32: unfolding left the band drawn (${JSON.stringify(band.unfolded)})`);
+if (band.resizes !== 0) fail(`32: the band resized the terminal ${band.resizes} times`);
+
 await browser.close();
 if (bad) process.exit(1);
-console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, and a program's wheel follows the travel");
+console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, and the folded deck's band shows the lines above");
