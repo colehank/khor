@@ -1949,16 +1949,17 @@ aside[data-side] {
    audit fix plan F1.5; N02, SYS-16). The drawing keeps its size; what
    grows is the hit box, a transparent `::after` at least 44 each way
    centred on the control. Capsule items, the strip, the verbs and their
-   「…」, VS Code, the capsule's seats, a tab's ×, every shadcn button,
+   「…」, VS Code, the capsule's seats, a tab's third seat (UX-33; ⚠️ 墓碑
+   its ×), every shadcn button,
    and a glass circle drawn smaller than its 44 (the terminal deck's
    reload at 38, UX-9 I12; a list head's circle is 44 already). A
    control that is already placed (`absolute`, `fixed`, `sticky`) is its
    own containing block; a static one is made one. */
 @media (pointer: coarse) {
-  :is([data-glass-item], [data-glass-circle], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
+  :is([data-glass-item], [data-glass-circle], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-act], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font]):not([class*="absolute"], [class*="fixed"], [class*="sticky"], .glass-sel) {
     position: relative;
   }
-  :is([data-glass-item], [data-glass-circle], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-close], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font])::after {
+  :is([data-glass-item], [data-glass-circle], [data-rail-item], [data-verbs-more], [data-code], [data-glass-hit], [data-tab-act], [data-chat-send], [data-chat-stop], [data-slot="button"], [data-term-key], [data-search-clear], [data-tab-open], [data-term-font])::after {
     content: "";
     position: absolute;
     left: 50%;
@@ -2366,4 +2367,20 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
    lane's (`TerminalPane` `data-term-bottom`); only its place is set here. */
 [data-session-screen][data-deck-folded] [data-term-bottom] {
   bottom: calc(var(--deck-strip) + 2 * var(--gap-in));
+}
+
+/* **A pill's own progress** (UX-33 §2): Safari's line, running left to
+   right along the pill's bottom edge while that tab reloads. */
+@keyframes tab-load {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(185%); }
+}
+.animate-tab-load {
+  animation: tab-load 1.6s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-tab-load {
+    animation: none;
+    width: 100%;
+  }
 }

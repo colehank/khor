@@ -179,7 +179,16 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
   const images: DeckImage[] = [];
   const labels: DeckLabel[] = [];
   const hits: DeckHit[] = [];
-  const shown = (el: Element) => el.getClientRects().length > 0;
+  // Laid out, and not clipped away: the band's neighbours (UX-33) stand
+  // outside its box until a drag pulls them in.
+  const shown = (el: Element) => {
+    if (el.getClientRects().length === 0) return false;
+    const clip = el.closest("[data-deck-band]");
+    if (!clip) return true;
+    const c = clip.getBoundingClientRect();
+    const b = el.getBoundingClientRect();
+    return b.left < c.right && b.right > c.left;
+  };
   // ⚠️ 墓碑 (UX-13 → UX-29): the folded strip stood on a band of glass to
   // the screen's foot. The folded deck is Safari's capsule now — a `.glass`
   // shape like the rest, read below, its words in the ink the face chose

@@ -165,7 +165,9 @@ try {
   };
   const toEdit = async () => {
     if ((await page.locator("[data-edit]").count()) > 0) return;
-    const go = page.locator('[data-file-edit="edit"]');
+    // The rendered face: 预览 off puts the source under the caret (UX-33
+    // §4; ⚠️ 墓碑: the 编辑 circle).
+    const go = page.locator('[data-file-face-toggle="preview"]');
     if ((await go.count()) === 0) return;
     await go.first().click();
     await wait(300);
@@ -2528,6 +2530,18 @@ try {
   // stop say *probe dead* instead of quietly measuring the surface we
   // were already on and reporting its offenders a second time.
   const rail = (key) => `[data-rail-item][data-landing="${key}"]`;
+  /** **A tab is closed from its menu** (UX-33: the pill carries no ×; the
+      right-click menu, ⌘W and the tabs sheet close): the tab's own
+      button right-clicked, 关闭 picked. `tab` is a locator of the tab box. */
+  const closeTab = async (tab) => {
+    if ((await tab.count()) === 0) return false;
+    await tab.locator("[data-tab-open]").first().click({ button: "right" });
+    const up = await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="close"]').count()) === 1);
+    if (!up) return false;
+    await page.locator('[data-row-menu] [data-menu-item="close"]').click();
+    await wait(150);
+    return true;
+  };
   const pressNth = async (sel, n) => {
     if ((await page.locator(sel).count()) <= n) return false;
     // **A press that cannot land is a false, not a thrown walk**: one
@@ -3127,23 +3141,15 @@ try {
         "for a keyboard or a reader — those have 保存 and Esc, which are real " +
         "buttons and keys and are measured where they are.",
     ],
-    "data-deck-pill": [
+    // ⚠️ 墓碑 (round UX-3 → UX-33): `data-deck-pill`, the pill's sideways
+    // swipe; the band inside it (`data-deck-band`, below) is the surface now.
+    "data-deck-band": [
       "src/components/SessionBar.tsx",
-      "a gesture surface, not a target: the deck's pill hears a sideways " +
-        "swipe across it to step to the next or previous tab (round UX-3, " +
-        "Safari's address bar). What is pressed on it are its items — the " +
-        "title, the reload — which are buttons and are measured as such. " +
-        "**What it does not buy:** the swipe itself for a keyboard or a " +
-        "reader; both reach every tab through the tabs circle's sheet, a " +
-        "real button beside it.",
-    ],
-    "data-file-pill": [
-      "src/views/FilePage.tsx",
-      "the same gesture surface on the file page's deck (UX-25): a sideways " +
-        "swipe steps through the workspace's open files; what is pressed on " +
-        "it are its items (the preview eye, ✓), buttons measured as such. " +
-        "**What it does not buy:** the swipe for a keyboard or a reader; " +
-        "every file is reached through the tabs circle's sheet beside it.",
+      "the band inside a deck's pill (UX-33): a sideways drag pans the name " +
+        "and pulls one neighbour tab in; what is pressed on it is the title, " +
+        "a button measured as such. **What it does not buy:** the drag for a " +
+        "keyboard or a reader; every tab is reached through the tabs circle's " +
+        "sheet beside it.",
     ],
     "data-row-menu": [
       "src/components/RowMenu.tsx (the handler is Radix's, not ours)",
@@ -3835,13 +3841,13 @@ try {
     // **⌘S is the save**, and it is the only one: the 存 button lived on
     // that row and went with it.
     await page.keyboard.press("Control+s");
-    await until(5_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0);
+    await until(5_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab-act="save"]').count()) === 0);
     const afterSave = await page.evaluate(() => ({
       buttons: document.querySelectorAll("[data-save], [data-undo]").length,
       notice: document.querySelectorAll("[data-file-notice]").length,
       wrote: null,
       text: document.querySelector("textarea")?.value ?? "",
-      dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
+      dot: document.querySelectorAll('[data-ws-tab-strip] [data-tab-act="save"]').length,
     }));
     console.log(`save by ⌘S: ${JSON.stringify(afterSave)}`);
     if (!afterSave.text.includes("X")) {
@@ -3974,7 +3980,7 @@ try {
       // **「not saved」 is the tab's dot now** (2026-09-16 ruling 30):
       // the row that used to carry a word for it is gone, and what says
       // a file has something unwritten in it is the mark on its tab.
-      dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
+      dot: document.querySelectorAll('[data-ws-tab-strip] [data-tab-act="save"]').length,
     }));
     console.log(
       `merge: asked with base ${JSON.stringify((asked?.base ?? "").slice(0, 18))}, ` +
@@ -4637,15 +4643,15 @@ try {
           // A preview wears a ring before its name (the audit fix plan
           // F4.7), where it wore the app's one italic until 2026-10-02.
           slope: e.querySelector("[data-tab-preview]") ? "italic" : "normal",
-          dot: e.querySelector("[data-tab-dot]") !== null,
+          dot: e.querySelector('[data-tab-act="save"]') !== null,
         })),
       );
     /** Put the strip back to nothing, whatever the walk left on it. */
     const clearTabs = async () => {
       for (let i = 0; i < 12; i += 1) {
-        const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+        const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
         if ((await one.count()) === 0) break;
-        await one.click();
+        await closeTab(one);
         await wait(120);
         if ((await page.locator("[data-close-draft]").count()) === 1) {
           await press("[data-close-drop]");
@@ -5308,11 +5314,8 @@ try {
         // Put the preview seat and the front tab back where the rest of
         // this section expects them: `data.csv` took the seat `notes.md`
         // was in, so it is closed and `notes.md` opened again.
-        const csv = page.locator('[data-ws-tab-strip] [data-tab-close]').last();
-        if ((await csv.count()) === 1) {
-          await csv.click();
-          await wait(150);
-        }
+        const csv = page.locator("[data-ws-tab-strip] [data-tab]").last();
+        if ((await csv.count()) === 1) await closeTab(csv);
         await press('[data-file-tree] [data-depth="1"][data-file="notes.md"] > button');
         await wait(250);
       }
@@ -5341,7 +5344,7 @@ try {
         // above put it there — and that is where the shortcut lives.
         await page.keyboard.press("Control+s");
         const gone = await until(5_000, async () =>
-          (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0,
+          (await page.locator('[data-ws-tab-strip] [data-tab-act="save"]').count()) === 0,
         );
         console.log(`tabs · after saving: ${wrote.length - before} write(s), dot ${gone ? "gone" : "still there"}`);
         if (wrote.length === before) {
@@ -5362,7 +5365,7 @@ try {
       await page.keyboard.type("Y");
       await wait(250);
       const front = (await strip()).find((t) => t.on === "true");
-      await press(`[data-tab-close="${front.id}"]`);
+      await closeTab(page.locator(`[data-ws-tab-strip] [data-tab="${front.id}"]`));
       const asked = await until(3_000, async () =>
         (await page.locator("[data-close-draft]").count()) === 1,
       );
@@ -5390,7 +5393,7 @@ try {
           );
         }
         // …and 不存,关掉 really drops it.
-        await press(`[data-tab-close="${front.id}"]`);
+        await closeTab(page.locator(`[data-ws-tab-strip] [data-tab="${front.id}"]`));
         await until(3_000, async () => (await page.locator("[data-close-draft]").count()) === 1);
         await press("[data-close-drop]");
         await wait(250);
@@ -6306,8 +6309,10 @@ try {
     const asOpened = await page.evaluate(() => ({
       editor: document.querySelectorAll("[data-edit]").length,
       h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
-      edits: [...document.querySelectorAll("[data-file-edit]")].map((e) => ({
-        what: e.getAttribute("data-file-edit"),
+      // 预览 at the first row's right end (UX-33 §4): on for the rendered
+      // face. ⚠️ 墓碑: the 编辑 / 保存 circle (round UX-3 item 2).
+      edits: [...document.querySelectorAll("[data-file-face-toggle]")].map((e) => ({
+        what: e.getAttribute("data-file-face-toggle"),
         onStrip: document.querySelector("[data-ws-tab-strip]")?.contains(e) === true,
       })),
       eyes: document.querySelectorAll("[data-file-face-switch]").length,
@@ -6325,10 +6330,10 @@ try {
           "one press away (round UX-3 item 2; src/views/FileView.tsx)",
       );
     }
-    if (asOpened.edits.length !== 1 || asOpened.edits[0].what !== "edit" || !asOpened.edits[0].onStrip) {
+    if (asOpened.edits.length !== 1 || asOpened.edits[0].what !== "preview" || !asOpened.edits[0].onStrip) {
       fail(
-        `the file's 编辑 reads ${JSON.stringify(asOpened.edits)} — one, at the strip's end, saying 编辑 ` +
-          "(src/browse/TabStrip.tsx, src/views/WorkspacePane.tsx)",
+        `the file's 预览 reads ${JSON.stringify(asOpened.edits)} — one circle at the first row's end, on (UX-33 §4; ` +
+          "src/views/WorkspacePane.tsx fileTail)",
       );
     }
     if (asOpened.eyes !== 0 || asOpened.oldRow !== 0) {
@@ -6392,11 +6397,11 @@ try {
     });
     await toEdit();
     const editing = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
-    const saveSays = await page.locator("[data-file-edit]").first().getAttribute("data-file-edit").catch(() => null);
-    if (!editing || saveSays !== "save") {
+    const saveSays = await page.locator("[data-file-face-toggle]").first().getAttribute("data-file-face-toggle").catch(() => null);
+    if (!editing || saveSays !== "source") {
       fail(
-        `编辑 left editor=${editing} and the button at ${JSON.stringify(saveSays)} — it opens the source and becomes ` +
-          "保存 (src/browse/TabStrip.tsx)",
+        `预览 off left editor=${editing} and the circle at ${JSON.stringify(saveSays)} — it opens the source under the caret ` +
+          "(UX-33 §4; src/views/WorkspacePane.tsx)",
       );
     } else {
       // **The sheet carries colour only** (2026-09-16:「编辑时的光标没有
@@ -6428,16 +6433,20 @@ try {
       await page.locator("[data-edit]").click();
       await page.keyboard.press("Control+End");
       await page.keyboard.type("\n## typed\n");
-      const dotted = await until(3_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 1);
-      await press('[data-file-edit="save"]');
+      const dotted = await until(3_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab-act="save"]').count()) === 1);
+      // The pill's ✓ saves and stays on the source (UX-33); 预览 on again
+      // renders what was typed. ⚠️ 墓碑: 保存 saved and went back by itself.
+      await press('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="save"]');
       const saved = await until(5_000, async () => wrote.length > 0);
+      await until(3_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="reload"]').count()) === 1);
+      await press('[data-file-face-toggle="source"]');
       const read = await until(5_000, async () => (await page.locator("[data-file-preview] h2").count()) === 1);
       const after = await page.evaluate(() => ({
         editor: document.querySelectorAll("[data-edit]").length,
         h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
         h2: document.querySelector("[data-file-preview] h2")?.textContent?.trim() ?? null,
-        dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
-        button: document.querySelector("[data-file-edit]")?.getAttribute("data-file-edit") ?? null,
+        dot: document.querySelectorAll('[data-ws-tab-strip] [data-tab-act="save"]').length,
+        button: document.querySelector("[data-file-face-toggle]")?.getAttribute("data-file-face-toggle") ?? null,
       }));
       console.log(`md 编辑 → 保存: was ${JSON.stringify(wrote)}, typed dot ${dotted}, then ${JSON.stringify(after)}`);
       if (!dotted) {
@@ -6449,10 +6458,10 @@ try {
             "whole of the save contract (src/views/FileView.tsx)",
         );
       }
-      if (!read || after.editor !== 0 || after.h1 !== "notes" || after.h2 !== "typed" || after.button !== "edit") {
+      if (!read || after.editor !== 0 || after.h1 !== "notes" || after.h2 !== "typed" || after.button !== "preview") {
         fail(
-          `保存 left ${JSON.stringify(after)} — it saves and returns to reading, rendering what was typed, and the ` +
-            "button says 编辑 again (src/views/FileView.tsx)",
+          `✓ then 预览 left ${JSON.stringify(after)} — the save lands and the rendered face shows what was typed, ` +
+            "the circle on again (src/views/FileView.tsx; UX-33)",
         );
       }
       if (after.dot !== 0) {
@@ -6744,9 +6753,9 @@ try {
     // remounted never re-reads — so the fixture above would go
     // unasked and this section would measure the previous one's text.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(120);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -7216,9 +7225,9 @@ try {
     // would still be holding the previous section's text and the first
     // 「nothing changed」 reading would be against the wrong bytes.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(120);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -7753,9 +7762,9 @@ try {
     // open on this path holds a `FileView` that is never remounted, and
     // one that is not remounted never re-reads.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(120);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -8437,9 +8446,9 @@ try {
     await open("workspaces");
     await openWs();
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(150);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -8651,8 +8660,11 @@ try {
           page.evaluate(() => ({
             namePill: document.querySelectorAll("[data-file-name-pill]").length,
             back: document.querySelectorAll("[data-file-deck] [data-file-back]").length,
-            name: document.querySelector("[data-file-deck] [data-file-pill] [data-file-name]")?.textContent?.trim() ?? null,
-            eye: document.querySelector("[data-file-pill] [data-file-face-toggle]")?.getAttribute("data-file-face-toggle") ?? null,
+            // The name in the pill's band (UX-33), or alone where the page stands alone.
+            name: document.querySelector("[data-file-deck] [data-file-pill] [data-deck-title], [data-file-deck] [data-file-pill] [data-file-name]")?.textContent?.trim() ?? null,
+            // 预览 is the circle beside the pill (UX-33 §4).
+            eye: document.querySelector("[data-file-deck] [data-file-face-toggle]")?.getAttribute("data-file-face-toggle") ?? null,
+            reread: document.querySelectorAll("[data-file-pill] [data-file-reread]").length,
             save: document.querySelectorAll("[data-file-pill] [data-file-save]").length,
             more: document.querySelectorAll("[data-file-deck] [data-file-more]").length,
             edit: document.querySelectorAll("[data-file-edit]").length,
@@ -8678,7 +8690,7 @@ try {
         await page.route("**/write_text", wrote14);
         const atRest = await deck();
         const readMenu = await menu();
-        await press("[data-file-pill] [data-file-face-toggle]");
+        await press("[data-file-deck] [data-file-face-toggle]");
         await until(3_000, async () => (await deck()).editor === 1);
         const source = await deck();
         const sourceMenu = await menu();
@@ -8704,8 +8716,8 @@ try {
           `UX-14 · at rest ${JSON.stringify(atRest)} menu ${JSON.stringify(readMenu)}; source ${JSON.stringify(source)} menu ${JSON.stringify(sourceMenu)}; ` +
             `typed ${JSON.stringify(dirty)}; saved (${writes.length} write) ${JSON.stringify(savedDeck)}; left with a draft asked ${leftAsked}; back ${JSON.stringify(kept)}`,
         );
-        if (atRest.namePill !== 0 || atRest.back !== 1 || atRest.name !== "notes.md" || atRest.eye !== "preview" || atRest.save !== 0 || atRest.more !== 1 || atRest.edit !== 0) {
-          fail(`UX-14 · the file page reads ${JSON.stringify(atRest)} — nothing at the top, the deck ‹ · pill (name, eye, no ✓) · 「…」, no 编辑 circle`);
+        if (atRest.namePill !== 0 || atRest.back !== 1 || atRest.name !== "notes.md" || atRest.eye !== "preview" || atRest.save !== 0 || atRest.reread !== 1 || atRest.more !== 1 || atRest.edit !== 0) {
+          fail(`UX-14 · the file page reads ${JSON.stringify(atRest)} — nothing at the top, the deck ‹ · pill (name, ↻) · 预览 · 「…」 (UX-33), no 编辑 circle`);
         }
         if (readMenu.size !== 1 || readMenu.ground !== 1 || sourceMenu.size !== 0 || sourceMenu.ground !== 0) {
           fail(`UX-14 · 「…」 rendered ${JSON.stringify(readMenu)}, source ${JSON.stringify(sourceMenu)} — 字号 and 预览背景 only while previewing`);
@@ -8828,9 +8840,9 @@ try {
     await atTree();
     // Every tab off, so 「no tab」 is a state this can stand in.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(120);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -8900,9 +8912,9 @@ try {
       await wait(250);
     }
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(150);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -9500,9 +9512,9 @@ try {
     }
     // Leave the draft behind, or every stop after this one meets a sheet.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(150);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -22786,7 +22798,9 @@ try {
               // clips it is `[data-tab-label]` (`EditableName`'s
               // `boxData`); a plain tab's is `[data-tab-name]`.
               const name = t?.querySelector("[data-tab-label], [data-tab-name]");
-              const close = t?.querySelector("[data-tab-close]");
+              // The third seat (UX-33) stands where the ×'s cell stood, the
+              // same cell: name before it, `--tab-close` wide, inside the tab.
+              const close = t?.querySelector("[data-tab-act]");
               if (!t || !name || !close) return { id, when, missing: true };
               const r = (el) => el.getBoundingClientRect();
               return {
@@ -22818,7 +22832,7 @@ try {
     const judge = (where, reads) => {
       for (const c of reads) {
         if (c.missing) {
-          fail(`${where}: tab ${c.id} has no [data-tab-label]/[data-tab-name] or no [data-tab-close] — the × is a cell of the tab`);
+          fail(`${where}: tab ${c.id} has no [data-tab-label]/[data-tab-name] or no [data-tab-act] — the third seat is a cell of the tab (UX-33)`);
           continue;
         }
         if (c.nameRight > c.cellLeft + 0.5) {
@@ -24946,9 +24960,9 @@ try {
           }
           for (const t of r0.querySelectorAll("[data-tab]")) {
             const name = t.querySelector("[data-tab-label]");
-            const close = t.querySelector("[data-tab-close]");
+            const close = t.querySelector("[data-tab-act]");
             if (name) put("R0", `tab ${t.getAttribute("data-tab")}'s label`, name);
-            if (close) put("R0", `tab ${t.getAttribute("data-tab")}'s ×`, close);
+            if (close) put("R0", `tab ${t.getAttribute("data-tab")}'s seat`, close);
             tabs.push({ id: t.getAttribute("data-tab"), ...box(t) });
           }
         }
@@ -28626,7 +28640,7 @@ try {
       const read = () =>
         page.evaluate(() => ({
           circle: document.querySelector("[data-file-deck] [data-deck-tabs]")?.textContent?.trim() ?? null,
-          name: document.querySelector("[data-file-deck] [data-file-name]")?.textContent?.trim() ?? null,
+          name: document.querySelector("[data-file-deck] [data-file-pill] [data-deck-title], [data-file-deck] [data-file-name]")?.textContent?.trim() ?? null,
           sheet: document.querySelectorAll("[data-tab-sheet]").length,
           rows: [...document.querySelectorAll("[data-tab-sheet-row]")].map((r) => r.querySelector("[data-tab-sheet-name]")?.textContent?.trim()),
           closes: document.querySelectorAll("[data-tab-sheet-close]").length,
@@ -28655,6 +28669,47 @@ try {
       if (closed.circle !== "1" || closed.name !== "one.rs") fail(`ws c · × on the other file left ${JSON.stringify(closed)} — one file, the front one kept`);
     }
     await page.setViewportSize({ width: 1400, height: 900 });
+    // ── d. the file pill's third seat (UX-33): ↻ while the file is as on
+    //       the disk, ✓ while something is typed in it; every pill has its
+    //       three seats and no ×; 预览 is the first row's circle. ──
+    {
+      await wait(400);
+      await open("workspaces");
+      await press("[data-ws-row]");
+      await wait(500);
+      await press('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+      await wait(600);
+      const seats = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll("[data-ws-tab-strip] [data-tab]")].map((t) => ({
+            id: t.getAttribute("data-tab")?.split("/").pop(),
+            on: t.getAttribute("data-on") === "true",
+            face: !!t.querySelector("[data-tab-open] svg, [data-tab-open] img"),
+            name: !!t.querySelector("[data-tab-label], [data-tab-name]"),
+            act: t.querySelector("[data-tab-act]")?.getAttribute("data-tab-act") ?? null,
+            close: t.querySelectorAll("[data-tab-close]").length,
+          })),
+        );
+      const clean = await seats();
+      const wroteD = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ at_ms: Date.now(), digest: "4".repeat(64) }) });
+      await page.route("**/write_text", wroteD);
+      await toEdit();
+      await page.locator("[data-edit]").click();
+      await page.keyboard.type("Z");
+      await wait(300);
+      const typed = await seats();
+      const front = page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="save"]');
+      if ((await front.count()) === 1) await front.click();
+      const saved = await until(4_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="reload"]').count()) === 1);
+      const eye = await page.locator("[data-ws-file-tail] [data-file-face-toggle]").count();
+      console.log(`ws d · clean ${JSON.stringify(clean)}; typed ${JSON.stringify(typed)}; ✓ pressed → ↻ ${saved}; 预览 circles on the first row ${eye}`);
+      if (clean.some((t) => !t.face || !t.name || !t.act || t.close)) fail(`ws d · a file pill lacks a seat or keeps a ×: ${JSON.stringify(clean)} — 头像 · 名称 · 对齐位 on every pill (UX-33; src/browse/TabStrip.tsx)`);
+      if (clean.find((t) => t.on)?.act !== "reload") fail(`ws d · the clean front file's seat is ${JSON.stringify(clean.find((t) => t.on)?.act)} — ↻ read again`);
+      if (typed.find((t) => t.on)?.act !== "save") fail(`ws d · with a letter typed the front file's seat is ${JSON.stringify(typed.find((t) => t.on)?.act)} — ✓ save (UX-33)`);
+      if (!saved) fail("ws d · ✓ pressed did not save: the seat never went back to ↻");
+      await page.unroute("**/write_text", wroteD);
+      await page.setViewportSize({ width: 1400, height: 900 });
+    }
   }
   }
   if (process.env.FACE_ONLY === "ws") console.log("ws · FACE_ONLY=ws: the other sections are skipped");
@@ -29919,6 +29974,79 @@ try {
         if (words[k]?.reason !== words.want[k] || words[k]?.url !== "https://nowhere.example/") fail(`bar t · a ${k} failure reads ${shown(words[k])} — the catalog's ${shown(words.want[k])} and the address`);
       }
       if (!words.other?.reason?.startsWith("The requested URL")) fail(`bar t · an unsorted failure reads ${shown(words.other)} — the system's own sentence, never silence`);
+    }
+
+    // ── u. the deck pill is a band (UX-33 §3): at rest one tab, a drag
+    //       pulls one neighbour in and never more; past half the neighbour
+    //       is current, short of it the band springs back. Eight terminals
+    //       open; the band dragged a long way left (towards the next). ──
+    {
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      // term-3 opened after term-2, then term-2 in front: a next neighbour
+      // exists whatever the stops before left open.
+      if (!(await openRow(terms[2].id)) || !(await openRow(terms[3].id)) || !(await openRow(terms[2].id))) {
+        fail("probe dead: bar u · a terminal never opened for the band");
+      } else {
+        await until(3_000, async () => (await count("[data-session-deck] [data-deck-band]")) === 1);
+        const read = () =>
+          page.evaluate(() => {
+            const band = document.querySelector("[data-session-deck] [data-deck-band]");
+            const track = band?.querySelector("[data-deck-band-track]");
+            if (!band || !track) return null;
+            const b = band.getBoundingClientRect();
+            const segs = [...track.querySelectorAll("[data-band-seg]")].map((e) => {
+              const r = e.getBoundingClientRect();
+              return { role: e.getAttribute("data-band-seg"), l: +(r.left - b.left).toFixed(1), r: +(r.right - b.left).toFixed(1), w: +r.width.toFixed(1) };
+            });
+            const x = new DOMMatrixReadOnly(getComputedStyle(track).transform).m41;
+            return { bw: +b.width.toFixed(1), x: +x.toFixed(1), segs, title: document.querySelector("[data-session-deck] [data-deck-title]")?.textContent?.trim() ?? null, inView: segs.filter((s) => s.r > 0.5 && s.l < b.width - 0.5).map((s) => s.role) };
+          });
+        const rest = await read();
+        const box = await page.locator("[data-session-deck] [data-deck-band]").boundingBox();
+        const dragTo = async (dx, release) => {
+          const x0 = box.x + box.width / 2;
+          const y = box.y + box.height / 2;
+          await page.mouse.move(x0, y);
+          await page.mouse.down();
+          for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + (dx * i) / 12, y);
+          const held = await read();
+          if (release) {
+            await page.mouse.up();
+            await wait(400);
+          }
+          return held;
+        };
+        // Three widths left: clamped to the next neighbour exactly.
+        const held = await dragTo(-3 * (rest?.bw ?? 300), false);
+        await page.mouse.up();
+        await wait(400);
+        const after = await read();
+        console.log(`bar u · at rest ${shown(rest)}; held three widths left ${shown(held)}; released ${shown(after)}`);
+        if (!rest || rest.inView.join() !== "cur" || rest.title !== terms[2].title) {
+          fail(`bar u · at rest the band shows ${shown(rest?.inView)} with 「${rest?.title}」 — exactly the current tab (UX-33 §3; src/components/SessionBar.tsx DeckBand)`);
+        } else {
+          const next = held.segs.find((s) => s.role === "next");
+          const cur = held.segs.find((s) => s.role === "cur");
+          const prev = held.segs.find((s) => s.role === "prev");
+          // The next one fully in means its left edge at the band's left; the
+          // current one wholly out to the left; the previous further still.
+          if (!next || Math.abs(next.l) > 1 || (cur && cur.r > 0.5) || (prev && prev.r > 0.5)) {
+            fail(`bar u · dragged three widths the band holds ${shown(held.segs)} — one neighbour fully in and no further`);
+          }
+          if (after.title !== terms[3].title || after.inView.join() !== "cur") {
+            fail(`bar u · released past half the band reads ${shown(after)} — the next tab (${terms[3].title}) current, one tab at rest`);
+          }
+        }
+        // A short pull springs back.
+        const base = await read();
+        const short = await dragTo(-(base.bw * 0.3), true);
+        const back = await read();
+        console.log(`bar u · a short pull ${shown(short.inView)} → ${shown(back)}`);
+        if (back.title !== base.title || back.inView.join() !== "cur" || Math.abs(back.x - base.x) > 1) {
+          fail(`bar u · a pull of a third of the band left ${shown(back)} — it springs back to ${shown(base)}`);
+        }
+      }
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 

@@ -50,6 +50,7 @@
 //   cost more than the walls of source did, the way back is this one
 //   element — the fold and the frames are unchanged, which is why the
 //   change is reversible and this note can be short.
+import { offerTabAct } from "@/lib/tab-acts";
 import { takeHandOff } from "@/lib/composer-handoff";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
@@ -931,6 +932,9 @@ export function ChatView({
   const [openWhy, setOpenWhy] = useState<string | null>(null);
   const [openedAt, setOpenedAt] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
+  // **The tab pill's third seat is this conversation's re-attach**
+  // (UX-33): the same attempt its 重试 makes.
+  useEffect(() => offerTabAct(id, { kind: "reload", run: () => setAttempt((n) => n + 1) }), [id]);
   const [inTurn, setInTurn] = useState(false);
   /** When the running turn started. Cleared with the turn, so a
       finished conversation counts nothing — and see `waiting` below for

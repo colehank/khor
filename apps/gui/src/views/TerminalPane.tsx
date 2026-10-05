@@ -66,6 +66,7 @@ import "@xterm/xterm/css/xterm.css";
 import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
+import { offerTabAct } from "@/lib/tab-acts";
 import { peekOf, type Peek } from "@/lib/term-peek";
 import { predictEcho, type Predict } from "@/lib/term-predict";
 import { termPredict } from "@/lib/term-predict-setting";
@@ -1339,6 +1340,13 @@ export function TerminalPane({
   // The reload circle's join in flight (`reopen`): its glyph turns.
   const [joining, setJoining] = useState(false);
   const reopenRef = useRef<(() => Promise<void>) | null>(null);
+  // **The tab pill's third seat is this terminal's re-attach** (UX-33):
+  // offered by id while the pane is mounted, with whether it is joining
+  // (the pill's line runs then).
+  useEffect(
+    () => offerTabAct(id, { kind: "reload", busy: joining, run: () => void reopenRef.current?.() }),
+    [id, joining],
+  );
   // Why the terminal never opened, in khor's own words. **Not the same
   // fact as `gone`**: `gone` means the host this pane was watching
   // ended, and 这个终端结束了 is true of it; a failed open means there

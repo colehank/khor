@@ -1,6 +1,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { hereActs, ProgressLine, termName } from "@/components/DoingLine";
+import { tabAct, useTabActs } from "@/lib/tab-acts";
 import { FinishedWatch, type Finished } from "@/lib/finished";
 import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
@@ -1659,6 +1660,7 @@ export default function App() {
   // row's title and the row's own identity assembly (`SessionFace` —
   // face, state halo, kind mark), the same facts in the same clothes. A
   // tab whose row has not been listed yet (just opened) wears its id.
+  const actsVersion = useTabActs();
   const tabFaces: TabFace[] = useMemo(
     () =>
       openTabs.map((id) => {
@@ -1688,8 +1690,13 @@ export default function App() {
               // directory under the name (roadmap 2.5).
               // What the program says of its progress (roadmap 4.1).
               progress: r.doing?.running && r.doing.progress !== null ? <ProgressLine doing={r.doing} /> : undefined,
-              // Where the shell stands, and its two acts (roadmap 2.5).
-              menu: r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : undefined,
+              // Where the shell stands, and its two acts (roadmap 2.5) —
+              // and 关闭 (UX-33: the pill has no ×; the menu, ⌘W and the
+              // tabs sheet close).
+              menu: [
+                ...(r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : []),
+                { key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) },
+              ],
               session: { word: r.word, kind: r.kind, category: r.category },
               // A session tab's name is the row's title, which is a
               // name somebody gave it — so double-click renames it
@@ -1697,10 +1704,24 @@ export default function App() {
               // name and hands none of this in.
               rename: { kind: "session" as const, id },
               again,
+              // **The third seat, re-attach** (UX-33): the pane's own act,
+              // offered by id while it is mounted (`lib/tab-acts`); a tab
+              // whose pane has not offered one yet is brought to the front,
+              // where it mounts and offers it.
+              act: {
+                kind: "reload" as const,
+                label: gui.term_reload,
+                onPress: () => {
+                  sessionTabs.focus(id);
+                  tabAct(id)?.run();
+                },
+              },
+              loading: tabAct(id)?.busy ?? false,
             }
           : { id, label: id, face: null, path: "", again };
       }),
-    [openTabs, rows, days, dayShown],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [openTabs, rows, days, dayShown, actsVersion],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:

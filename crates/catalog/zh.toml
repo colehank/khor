@@ -3595,6 +3595,10 @@ term-reload = "刷新"
 page-back = "上一页"
 page-forward = "下一页"
 page-reload = "重新加载"
+# The tab pill's third seat while a page loads (UX-33): stop the load.
+page-stop = "停止"
+# …and on a file tab that is clean: read it from the disk again.
+file-reread = "重新读取"
 # The mandala map's region name. No page carries a title (docs/UX.md), so
 # this is read aloud and takes no room. It names what the picture is of —
 # the machines — rather than the picture, because「坛城」 is how the layout

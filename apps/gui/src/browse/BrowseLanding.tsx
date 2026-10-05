@@ -709,6 +709,11 @@ export function BrowseLanding({
       machine: d?.shown ?? null,
       mark: markOf(iconOf(t)),
       menu: menuOf(t),
+      // **The third seat** (UX-33): reload, or × while the page loads.
+      act: load.busy(t.id)
+        ? { kind: "stop" as const, label: gui.page_stop, onPress: () => void pageStep(t.id, "stop").catch(() => {}) }
+        : { kind: "reload" as const, label: gui.page_reload, onPress: () => void pageStep(t.id, "reload").catch(() => {}) },
+      loading: load.busy(t.id),
     };
   });
 

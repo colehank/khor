@@ -1467,7 +1467,7 @@ export const showPage = (tab: string) =>
     **The two arrows cannot know whether there is anywhere to go** —
     tauri has no `can_go_back` — so they stay lit and a press with no
     history behind it quietly does nothing. */
-export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry") =>
+export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry" | "stop") =>
   onWebFace ? Promise.resolve(null) : call<null>("page_step", { tab, way });
 
 /** **The browser's deck, drawn natively over an iPhone's page** (UX-13,

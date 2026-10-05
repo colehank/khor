@@ -48,7 +48,7 @@ import type { EditItem } from "@/hooks/use-read-first";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
 import { FaceMark, type KindMark } from "@/components/FaceMark";
-import { IconBack, IconClose, IconEye, IconPlus } from "@/components/icons";
+import { IconBack, IconCheck, IconClose, IconPlus, IconReload } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { PaneBar } from "@/components/PaneBar";
 import { RegionLead } from "@/components/Region";
@@ -164,6 +164,15 @@ export type TabFace = {
    * the one caller (`App`), and the words are the caller's.
    */
   again?: { hint: string; expanded?: boolean; controls?: string; toggle?: () => void };
+  /** **The pill's third seat, 「和来源对齐」** (UX-33, the owner 2026-10-06):
+      on every pill, in front or not — a session's ↻ re-attach, a page's
+      ↻ reload (× while it loads), a file's ↻ re-read when clean and ✓
+      save when changed. ⚠️ 墓碑: the × cell (closing is the sheet's, ⌘W's
+      and the menu's now). Absent only on a tab nobody has listed yet. */
+  act?: { kind: "reload" | "stop" | "save"; label: string; onPress: () => void };
+  /** **The pill reloads**: a 2-pt line runs along its own bottom edge
+      while a join, a load or a read is under way (UX-33 §2; UX-31's slot). */
+  loading?: boolean;
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -303,7 +312,9 @@ export function TabStrip({
   faces,
   active,
   onFocus,
-  onClose,
+  // Closing left the pill with UX-33 (the sheet, ⌘W and the menu close);
+  // the strip still takes the handler so every caller stays one shape.
+  onClose: _onClose,
   onNew,
   onSwitch,
   switching = false,
@@ -828,115 +839,51 @@ export function TabStrip({
                 </TooltipContent>
               )}
               </Tooltip>
-              {/* 预览, between the name and the ×: the order a person
-                  reads the tab in is what it is, then what to do with
-                  it. The ×'s own box, `--affordance`: every mark fills
-                  one share of its box (icons.tsx `LIVE`), so one box is
-                  one painted size — the eye 11.4 of ink, the × 12, under
-                  the label. ⚠️ 墓碑: 「deliberately the smaller mark」 at
-                  `size-3.5` — in a box under the ×'s it painted 14 to the
-                  ×'s 9.5. */}
-              {on && f.look && (
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  data-file-face-switch
-                  data-on={f.look.on}
-                  aria-label={f.look.label}
-                  onClick={() => f.look?.onToggle()}
-                  className={cn(
-                    "min-h-touch min-w-touch flex-none",
-                    f.look.on
-                      ? "text-[var(--rail-on-ink)] hover:text-[var(--rail-on-ink)]"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  <IconEye className="size-affordance" />
-                </Button>
+              {/* **The third seat** (UX-33): what aligns this tab with its
+                  source — on every pill, so a stuck session three tabs
+                  over is re-attached where it stands, a changed file saved
+                  without being opened. The pill's ground colour comes
+                  through it; the save face wears the brand ink. ⚠️ 墓碑:
+                  the ×'s cell (docs/SHELL.md 第十三轮 第 6 条) and the
+                  front tab's 预览 eye and 编辑/保存 (UX-14's pill). */}
+              {f.act && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      data-tab-act={f.act.kind}
+                      aria-label={f.act.label}
+                      className={cn(
+                        "flex h-full w-tab-close flex-none items-center justify-center focus-visible:-outline-offset-2",
+                        glass ? "rounded-full" : "rounded-sm",
+                        f.act.kind === "save" ? "text-brand-strong" : on ? "text-muted-foreground" : "text-tertiary group-hover:text-muted-foreground",
+                        "hover:bg-muted hover:text-foreground",
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        f.act?.onPress();
+                      }}
+                    >
+                      {f.act.kind === "save" ? (
+                        <IconCheck className="size-affordance" />
+                      ) : f.act.kind === "stop" ? (
+                        <IconClose className="size-affordance" />
+                      ) : (
+                        <IconReload className={cn("size-affordance", f.loading && "animate-spin motion-reduce:animate-none")} />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side={below ? "top" : "bottom"}>{f.act.label}</TooltipContent>
+                </Tooltip>
               )}
-              {on && f.edit && (
-                <button
-                  type="button"
-                  data-file-edit={f.edit.writing ? "save" : "edit"}
-                  onClick={f.edit.onPress}
-                  className="min-h-touch flex-none rounded-full px-in text-callout font-title text-foreground"
-                >
-                  {f.edit.label}
-                </button>
+              {/* **Progress under the pill itself** (UX-33 §2): a 2-pt line
+                  along this pill's bottom edge while it reloads, Safari's
+                  manner; nothing when done. */}
+              {f.loading && (
+                <span data-tab-progress aria-hidden="true" className="pointer-events-none absolute inset-x-3 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-fill">
+                  <span className="block h-full w-[55%] animate-tab-load rounded-full bg-brand-strong" />
+                </span>
               )}
-              <Tooltip>
-              <TooltipTrigger asChild>
-              <button
-                type="button"
-                data-tab-close={f.id}
-                aria-label={gui.close_tab}
-                // **The ×'s own cell** (docs/SHELL.md 第十三轮 第 6 条, the
-                // user's VS Code screenshot:「标签页的 x 按钮不要覆盖在
-                // 文字上, 就是标签页的一块」). Every tab is a face, a
-                // name and this cell — `--tab-close` wide, the tab's whole
-                // height, **always there**: the name is a flex item
-                // before it and truncates in front of it, so it can never
-                // run under the ×. That is the arrangement the cell
-                // replaces: a 44-wide close that, on a stub, sat
-                // `absolute` over the name's end on a patch of `--muted`,
-                // which was the × drawn on top of the word.
-                //
-                // **On every tab** (the redesign, 2026-10-02, the owner:
-                // 「那些标签页, 可以把关闭的 "x" 带上去, 不然, 一定得打开
-                // 标签才能关闭」): the front tab's in secondary ink, the
-                // others' in tertiary, taking secondary when the tab is
-                // under the pointer. A press closes that tab where it
-                // stands — it is not brought forward first, so the tab in
-                // front stays in front. ⚠️ 墓碑: drawn only on the open tab
-                // and under the pointer (the session rows' rule), which left
-                // a phone no way to close a tab without opening it. Its own
-                // target, the tab's full height and `--tab-close` wide (24
-                // under a mouse, 32 under a finger), so a thumb on the label
-                // does not close it; the label gives width before it does.
-                //
-                // **A tab with a draft keeps its mark drawn**, dot or
-                // not: the dot *is* the report that something is waiting
-                // here, and a report that only appears under a pointer
-                // is one a phone never sees — it stands in the cell.
-                //
-                // A bare `<button>` rather than the icon `Button`: that
-                // variant carries `w-ctl-md`, and `cn()` cannot lift a
-                // `ctl-*` width off (`button.tsx` measured that), so a
-                // cell that asked for `--ctl-sm` would have got whichever
-                // the stylesheet emitted last. Under the floor on purpose,
-                // and the face gate names it so (第十三轮): the cell's width
-                // is the ruling's, and a finger has the switcher's close
-                // at the floor.
-                className={cn(
-                  // The one ring (W-V6): no ring utilities of its own; the
-                  // base rule draws it, inside the cell.
-                  "flex h-full w-tab-close flex-none items-center justify-center focus-visible:-outline-offset-2",
-                  glass ? "rounded-full" : "rounded-sm",
-                  on || f.dirty ? "text-muted-foreground" : "text-tertiary group-hover:text-muted-foreground",
-                  "hover:bg-muted hover:text-foreground",
-                )}
-                onClick={() => onClose(f.id)}
-              >
-                {/* 「正在修改的,和 vscode 一致,标签上有一个圆点。保存
-                    成功了,圆点消失。」— the user, 2026-09-15. **The dot
-                    replaces the ×, it does not sit beside it**: one mark
-                    in one place, and pressing it still closes, which is
-                    what makes 「关一个有草稿的标签问一句」 the thing
-                    that catches the mistake rather than a second
-                    control nobody aimed at. */}
-                {f.dirty ? (
-                  <span
-                    data-tab-dot
-                    aria-hidden="true"
-                    className="size-2 rounded-full bg-current"
-                  />
-                ) : (
-                  <IconClose className="size-affordance" />
-                )}
-              </button>
-              </TooltipTrigger>
-              <TooltipContent side={below ? "top" : "bottom"}>{gui.close_tab}</TooltipContent>
-              </Tooltip>
             </div>
           );
         })}

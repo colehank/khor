@@ -30,9 +30,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { launchOn, pullTemp, renamePath, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
 import { GlassCircle, GlassItem } from "@/components/Glass";
-import { TabSheet, TabsGlyph, usePillSwipe } from "@/components/SessionBar";
+import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
-import { IconBack, IconBranch, IconCheck, IconEye, IconMore, IconShare } from "@/components/icons";
+import { IconBack, IconBranch, IconCheck, IconEye, IconMore, IconReload, IconShare } from "@/components/icons";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -125,11 +125,15 @@ function useFileVerbs({
   history = false,
   onRevision,
   previewing,
+  shareInMore = false,
 }: {
   /** The file page's face (UX-14): 字号 and 预览背景 are offered only
       while the file is shown rendered. Left out (the Mac's workspace
       strip), they are offered as before. */
   previewing?: boolean;
+  /** **分享 inside 「…」** (UX-33 §4, the phone's deck: ‹ · pill · 预览 ·
+      「…」): the share circle is not drawn and its acts head the menu. */
+  shareInMore?: boolean;
   machine: string;
   path: string;
   here: boolean;
@@ -169,6 +173,14 @@ function useFileVerbs({
   const previewKind = rendererOf(path) !== null || kind === "image" || kind === "svg" || kind === "pdf";
   const textKind = kind === "text";
   const menu: { key: string; label: string; run: () => void; destructive?: boolean }[] = [
+    ...(shareInMore && finder
+      ? [
+          { key: "open-other", label: gui.file_open_other, run: () => void local().then((p) => launchOn("", p)).catch(fail) },
+          { key: "reveal", label: gui.chat_file_reveal, run: () => void local().then((p) => reveal(p)).catch(fail) },
+        ]
+      : shareInMore && sharing
+        ? [{ key: "share", label: gui.chat_file_share, run: share }]
+        : []),
     {
       key: "copy-path",
       label: gui.tab_copy_path,
@@ -184,7 +196,7 @@ function useFileVerbs({
     ...(code?.offered ? [{ key: "code", label: gui.file_in_code, run: () => code.want() }] : []),
     ...removal.actions(path, false).map((a) => ({ key: a.key, label: a.label, run: () => void a.run(), destructive: true })),
   ];
-  const shareCircle: ReactNode = finder ? (
+  const shareCircle: ReactNode = shareInMore ? null : finder ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <GlassCircle aria-label={gui.chat_file_share} data-file-share tip={!coarse && gui.chat_file_share}>
@@ -455,7 +467,12 @@ export function FilePage({
     },
     // 字号 and 预览背景 only while the file is read rendered (UX-14).
     previewing: previewable ? face === "preview" : false,
+    // The phone's deck: 分享 inside 「…」 (UX-33 §4).
+    shareInMore: true,
   });
+  /** A re-read asked for from the pill's ↻ (UX-33), added to the one asked
+      from outside. */
+  const [reads, setReads] = useState(0);
 
   useEffect(() => {
     setFace(rendererOf(path) !== null ? "preview" : "source");
@@ -548,12 +565,6 @@ export function FilePage({
   };
   const name = rev === null ? baseName(path) : `${baseName(path)} · ${shortId(rev)}`;
   const [sheet, setSheet] = useState(false);
-  const swipePill = usePillSwipe((by) => {
-    if (!tabs) return;
-    const at = tabs.faces.findIndex((f) => f.id === tabs.active);
-    const next = tabs.faces[at + by];
-    if (next) tabs.onFocus(next.id);
-  });
 
   return (
     <div
@@ -578,7 +589,7 @@ export function FilePage({
           face={face}
           git={git}
           saveAt={saveAt + saves}
-          readAt={readAt}
+          readAt={readAt + reads}
           goLine={goLine}
           onSaved={onSaved}
           onNote={onNote}
@@ -625,10 +636,21 @@ export function FilePage({
             >
               <IconBack />
             </GlassCircle>
-            <div data-file-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-row pe-1" {...swipePill}>
-              <span data-file-name className="min-w-0 flex-1 truncate text-body">
-                {name}
-              </span>
+            {/* **The pill: 头像 · 名称 · 对齐位** (UX-33): the band of the
+                workspace's open files (one at rest, a drag pulls one
+                neighbour in), or the name alone where the page stands
+                alone; the third seat ↻ reads the file from the disk again
+                when clean and is ✓ save while it differs. A revision keeps
+                its compare switch there. ⚠️ 墓碑 (UX-14): name · 预览 eye ·
+                ✓ — 预览 is the circle beside the pill now. */}
+            <div data-file-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1">
+              {tabs && rev === null ? (
+                <DeckBand faces={tabs.faces} active={tabs.active} onFocus={tabs.onFocus} />
+              ) : (
+                <span data-file-name className="min-w-0 flex-1 truncate ps-2 text-body">
+                  {name}
+                </span>
+              )}
               {rev !== null ? (
                 <GlassItem
                   aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare}
@@ -639,32 +661,28 @@ export function FilePage({
                 >
                   <IconBranch />
                 </GlassItem>
+              ) : dirty && can ? (
+                <GlassItem aria-label={gui.watch_save} data-file-save data-tab-act="save" onClick={save} className="text-brand-strong">
+                  <IconCheck />
+                </GlassItem>
               ) : (
-                <>
-                  {previewable && (
-                    <GlassItem
-                      aria-label={gui.file_face_preview}
-                      aria-pressed={face === "preview"}
-                      data-file-face-toggle={face}
-                      onClick={turn}
-                      className={cn(face === "preview" && "glass-sel text-[var(--rail-on-ink)]")}
-                    >
-                      <IconEye />
-                    </GlassItem>
-                  )}
-                  {dirty && can && (
-                    <GlassItem
-                      aria-label={gui.watch_save}
-                      data-file-save
-                      onClick={save}
-                      className="glass-sel text-[var(--rail-on-ink)]"
-                    >
-                      <IconCheck />
-                    </GlassItem>
-                  )}
-                </>
+                <GlassItem aria-label={gui.file_reread} data-file-reread data-tab-act="reload" onClick={() => setReads((n) => n + 1)}>
+                  <IconReload />
+                </GlassItem>
               )}
             </div>
+            {rev === null && previewable && (
+              <GlassCircle
+                aria-label={gui.file_face_preview}
+                aria-pressed={face === "preview"}
+                data-file-face-toggle={face}
+                tip={!coarse && gui.file_face_preview}
+                onClick={turn}
+                className={cn(face === "preview" && "glass-sel text-[var(--rail-on-ink)]")}
+              >
+                <IconEye />
+              </GlassCircle>
+            )}
             {rev === null && verbs.shareCircle}
             {rev === null && verbs.moreCircle}
             {rev === null && tabs && (
