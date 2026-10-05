@@ -22863,6 +22863,19 @@ try {
         fail(`UX-19 · the capsule runs ${row.left} past the title's left and ${row.right} past the search circle's right — both 0 (±1)`);
       }
       if (menu.join(",") !== "me,browser,settings,doctor") fail(`UX-19 · 更多's menu reads ${JSON.stringify(menu)} — 我的 khor, 浏览器, 设置, 诊断`);
+      // The settings window (`?face=settings`) is the settings page alone.
+      // It shares this origin's storage, and a window that narrow puts the
+      // list away — so what the walk left is put back after it.
+      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&face=settings`, { waitUntil: "load" });
+      await wait(1_200);
+      for (const size of [{ width: 900, height: 700 }, { width: 420, height: 700 }]) {
+        await page.setViewportSize(size);
+        await wait(400);
+        if (shotsAt) await page.screenshot({ path: join(shotsAt, `ux19-settings-${size.width}.png`) });
+        const bars = await page.locator("[data-landing-strip], [data-float-nav], [data-rail-more]").count();
+        console.log(`UX-19 · the settings window at ${size.width}: ${bars} nav piece(s)`);
+        if (bars !== 0) fail(`UX-19 · the settings window at ${size.width} draws ${bars} piece(s) of the main window's navigation — it is the settings page alone`);
+      }
       await page.setViewportSize({ width: 1400, height: 900 });
       await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
       await page.evaluate((k) => {

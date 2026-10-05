@@ -2933,7 +2933,7 @@ export default function App() {
       on top has none (a session, full screen) — elsewhere the one on
       screen is already the list's, and stays put. Never under the
       switcher, whose page is a session. */
-  const underNav = !switchingTabs;
+  const underNav = !switchingTabs && !settingsFace;
   /** **The landings' bar belongs to the landings** (2026-10-03, the owner
       on a phone: the capsule sat over a file's text). It floats over a
       landing's own list — 机器, 会话, 额度, 更多's list and the landings
@@ -2948,7 +2948,10 @@ export default function App() {
     morePage !== null || quotas || browses
       ? screen !== "detail"
       : !(switchingTabs && openTabs.length > 0) && !(screen === "detail" && detail);
-  const navShown = !switchingTabs && onLanding;
+  // **The settings window is the settings page alone** (UX-19, the owner
+  // 2026-10-05: the window carried the bar's capsule and 更多): no bar in
+  // it at any width.
+  const navShown = !switchingTabs && onLanding && !settingsFace;
 
   return (
     <SettingsProvider value={settings.rows}>
