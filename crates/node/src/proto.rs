@@ -1212,6 +1212,20 @@ pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
     rmp_serde::from_slice(bytes).map_err(khor_catalog::msg::cant_decode_frame)
 }
 
+/// **A far machine's answer, as this machine reads it** (round NET-9): a
+/// refusal is the far machine's sentence in the far machine's language,
+/// and it is said again here in this one's (`khor_catalog::reword`). A
+/// sentence the catalog never said — an OS error, a variant an older
+/// khor does not know — is kept as it came.
+pub fn answer(bytes: &[u8]) -> Result<Response, String> {
+    decode::<Response>(bytes).map(|r| match r {
+        Response::Refused { why } => Response::Refused {
+            why: khor_catalog::reword(&why).unwrap_or(why),
+        },
+        other => other,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

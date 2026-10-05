@@ -67,7 +67,7 @@ async fn read_frame(recv: &mut iroh::endpoint::RecvStream) -> Result<Response, S
     }
     let mut body = vec![0u8; len];
     recv.read_exact(&mut body).await.map_err(|e| e.to_string())?;
-    proto::decode(&body)
+    proto::answer(&body)
 }
 
 /// **The far half**: watches `dirs` and writes what changes to `send`

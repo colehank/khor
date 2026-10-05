@@ -673,7 +673,27 @@ async fn call_unbounded(port: u16, cookie: &str, op: Op) -> Result<Reply, String
         .read_to_end(&mut bytes)
         .await
         .map_err(msg::no_reply_from_serve)?;
-    proto::decode(&bytes)
+    proto::decode(&bytes).map(heard)
+}
+
+/// **The resident's words, in this process's language** (round NET-9):
+/// a verb and the resident it asks may speak differently (a terminal's
+/// `LANG` against the app's setting), and a far refusal the resident
+/// passes on was said again in the resident's. Each refusal and each
+/// round's failure is said again here (`khor_catalog::reword`).
+fn heard(reply: Reply) -> Reply {
+    let again = |why: String| khor_catalog::reword(&why).unwrap_or(why);
+    match reply {
+        Reply::Refused { why } => Reply::Refused { why: again(why) },
+        Reply::Unreached { why } => Reply::Unreached { why: again(why) },
+        Reply::Synced { outcomes } => Reply::Synced {
+            outcomes: outcomes
+                .into_iter()
+                .map(|(name, out)| (name, out.map_err(again)))
+                .collect(),
+        },
+        other => other,
+    }
 }
 
 #[cfg(test)]

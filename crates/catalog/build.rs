@@ -63,6 +63,7 @@ fn main() {
         gen_rust(&mut rs, section, z, e);
         gen_ts(&mut ts, section, z, e);
     }
+    gen_templates(&mut rs, &zh, &en);
     assert_eq!(
         table(&zh, "state", "zh.toml").len(),
         6,
@@ -238,6 +239,31 @@ fn gen_rust(rs: &mut String, section: &str, zh: &toml::Table, en: &toml::Table) 
         writeln!(rs, "];").unwrap();
     }
     writeln!(rs, "}}").unwrap();
+}
+
+/// The sections whose sentences can come from another khor: what a far
+/// machine refuses with, and what a resident says to a verb (round
+/// NET-9). Both languages of every entry, by key, for
+/// [`crate::reword`](../src/reword.rs) to read a sentence back.
+const SAID_ACROSS: [&str; 2] = ["msg", "cli"];
+
+fn gen_templates(rs: &mut String, zh: &toml::Table, en: &toml::Table) {
+    writeln!(rs, "/// `(section.key, zh, en)` for every entry of {SAID_ACROSS:?}.").unwrap();
+    writeln!(rs, "pub static TEMPLATES: &[(&str, &str, &str)] = &[").unwrap();
+    for section in SAID_ACROSS {
+        let (z, e) = (table(zh, section, "zh.toml"), table(en, section, "en.toml"));
+        for k in z.keys() {
+            writeln!(
+                rs,
+                "    ({:?}, {:?}, {:?}),",
+                format!("{section}.{k}"),
+                text(z, k, section, "zh.toml"),
+                text(e, k, section, "en.toml")
+            )
+            .unwrap();
+        }
+    }
+    writeln!(rs, "];").unwrap();
 }
 
 /// The TS side's one moving part, printed once at the top of the file.

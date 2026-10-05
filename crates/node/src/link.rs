@@ -2301,7 +2301,7 @@ impl Node {
                         .await
                         .ok()?
                         .ok()?;
-                    proto::decode::<Response>(&bytes).ok()
+                    proto::answer(&bytes).ok()
                 })
             };
             match early
@@ -8646,7 +8646,7 @@ async fn exchange(
             .read_to_end(MAX_FRAME)
             .await
             .map_err(|e| lost(msg::no_answer(e)))?;
-        proto::decode(&bytes).map_err(Miss::Garbled)
+        proto::answer(&bytes).map_err(Miss::Garbled)
     };
     tokio::pin!(work);
     let mut beat = tokio::time::interval(LIVENESS_BEAT);

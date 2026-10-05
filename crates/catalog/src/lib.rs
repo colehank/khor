@@ -9,6 +9,9 @@
 //! `KEYS` is the exception and stays a `const` array — those are keys.
 
 pub mod lang;
+mod reword;
+
+pub use reword::reword;
 
 include!(concat!(env!("OUT_DIR"), "/catalog.rs"));
 
