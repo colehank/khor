@@ -124,6 +124,7 @@ export function ConfigSections({
   onChanged,
   previews,
   after,
+  shownWhen,
 }: {
   /** Which 「…」 page is asking. Which sections that is, and in what
       order, is the node's answer — the rows arrive grouped and each one
@@ -140,6 +141,10 @@ export function ConfigSections({
       cards, after the node's rows, by section name — 会话's 完成通知,
       a face setting, beside the node's 标签页上限 (UX-16). */
   after?: Record<string, ReactNode>;
+  /** A row drawn only while another row holds one value (用不上的控件
+      不画, the owner): 角标是 under 类型标记 = 角标 (UX-32). The key
+      still stores and lists as itself; only the drawing waits. */
+  shownWhen?: Record<string, { key: string; value: string }>;
 }) {
   const rows = useSettings();
   const reread = useSettingsReread();
@@ -163,7 +168,12 @@ export function ConfigSections({
     return <RegionState state="error" message={gui.backend_unreachable} onRetry={reread} />;
   }
 
-  const mine = rows.filter((r) => r.page === page);
+  const mine = rows
+    .filter((r) => r.page === page)
+    .filter((r) => {
+      const when = shownWhen?.[r.name];
+      return !when || rows.some((o) => o.name === when.key && o.value === when.value);
+    });
 
   return (
     <>

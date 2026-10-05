@@ -60,6 +60,7 @@ square = "Square"
 # names and value names all cross the wire, so these are data with the
 # same shape as the state words and the face options.
 appearance = "Appearance"
+avatar = "Avatar"
 language = "Language"
 session = "Sessions"
 workspace = "Workspace"
@@ -69,6 +70,7 @@ confirm = "Confirm dangerous actions"
 
 theme = "Theme"
 kind-mark = "Kind mark"
+corner-is = "The corner is"
 lang = "Interface language"
 tabs-limit = "Tab limit"
 session-form = "New sessions open as"
@@ -95,6 +97,8 @@ on = "On"
 off = "Off"
 face = "On the face"
 corner = "Corner badge"
+kind = "The kind"
+machine = "The machine"
 
 [cli]
 usage = """
@@ -1915,10 +1919,15 @@ keys-group-symbol = "Symbols"
 keys-group-function = "Function Keys"
 keys-edit-row = "Edit this row"
 term-key-row = "Terminal key row"
+key-keyboard = "Keyboard"
 term-reload = "Reload Terminal"
 page-back = "Previous page"
 page-forward = "Next page"
 page-reload = "Reload"
+# The tab pill's third seat while a page loads (UX-33): stop the load.
+page-stop = "Stop"
+# …and on a file tab that is clean: read it from the disk again.
+file-reread = "Read Again"
 mesh-map = "Machines in the mesh"
 # Tombstone (2026-10-02): `from-device` named the machine a reported
 # session row came from, on the row's second line. Retired: the row's

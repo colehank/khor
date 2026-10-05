@@ -32,7 +32,7 @@ import {
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconBranch, IconCheck, IconFiles, IconPencil, IconPlus, IconSearch, IconSessions } from "@/components/icons";
+import { IconBack, IconBranch, IconEye, IconFiles, IconPlus, IconSearch, IconSessions } from "@/components/icons";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { DeeperHeads, NarrowHead, SideSeat } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
@@ -50,6 +50,8 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { stalestTab, useTabsLimit } from "@/browse/tab-limit";
 import { type TabFace } from "@/browse/TabStrip";
+import { fileKind } from "@/components/SessionFace";
+import type { Avatar } from "@/gen/bindings/Avatar";
 import { Tabs } from "@/browse/Tabs";
 import { cli, gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
@@ -82,6 +84,7 @@ import { WorkspaceEmpty, rememberOpened, storedOpened } from "@/views/WorkspaceE
 
 export function WorkspacePane({
   machine,
+  machineFace,
   here,
   root,
   rows,
@@ -129,6 +132,10 @@ export function WorkspacePane({
       this machine's: compared by channel, never by the name on the
       glass. */
   channel: string | null;
+  /** This workspace's machine's face — the base of every file tab's
+      seat (UX-32: the base is always the machine, the file's kind is
+      the mark). `null` draws the blank. */
+  machineFace: Avatar | null;
   /** The row actions, handed down from the shell unchanged (工作区批③).
       **Not a reduced set**: the same verbs on the same rows, wherever
       the rows are being read — a pin that works on one landing and not
@@ -294,7 +301,8 @@ export function WorkspacePane({
   /** Where to put the reader once the face has changed (a source line). */
   const restore = useRef<number | null>(null);
   /** A ✓ waiting on its save before the face goes back to reading. */
-  const savingBack = useRef(false);
+  // ⚠️ 墓碑 (UX-33): `savingBack` — the Mac's 保存 circle saved and went
+  // back to the rendered face; the pill's ✓ saves and stays.
   useLayoutEffect(() => {
     const line = restore.current;
     if (line === null) return;
@@ -1121,7 +1129,7 @@ export function WorkspacePane({
         return {
         id: `${machine}:${key}`,
         label: isDiff ? diffLabel(basename(path)) : basename(path),
-        face: null,
+        face: machineFace,
         path,
         machine,
         // **One line, the name** (UX-20, UX-25: one tab language — the
@@ -1136,17 +1144,11 @@ export function WorkspacePane({
         dirty: !isDiff && drafts.has(key),
         preview: preview === key,
         // The file's own kind on the tab too (2026-09-16:「标签页打开了,
-        // 最上方也要有 icon」) — the same icon the tree drew for it, in
-        // the pill's icon seat at a session face's size (UX-25:
-        // `--tab-face`). ⚠️ 墓碑: 28, the height of the name and path
-        // pair it stood beside. The size is set here because this is
-        // where the glyph is made; `TabStrip` places what it is handed.
-        // In a box of its own so it centres on the pill, not on a line.
-        glyph: (
-          <span className="grid size-tab-face place-items-center">
-            <FileKindIcon name={basename(path)} className="size-tab-face" />
-          </span>
-        ),
+        // 最上方也要有 icon」) — the same icon the tree drew for it, as
+        // the mark on the machine's face, the way every pill's seat is
+        // assembled (UX-32; `fileKind`). ⚠️ 墓碑 (UX-25 → UX-32): the
+        // glyph alone, at `--tab-face`, in the seat instead of a face.
+        mark: fileKind(basename(path)),
         // 预览, on the tab it is about (2026-09-17 ruling 47). Only
         // where there is a second face to switch to — a `.rs` has one
         // face and grows no eye, exactly as the strip's far end drew
@@ -1156,10 +1158,36 @@ export function WorkspacePane({
         // strip's right end is the way to its source (`fileTail`).
         edit: !isDiff && key === file ? readFirst.item : null,
         menu: tabMenu(key),
+        // **The third seat** (UX-33): ✓ save while something is typed in
+        // it, ↻ read from the disk again when clean. A tab not in front is
+        // brought to the front first — the save is made by the view that
+        // holds the buffer (`wantSave`), the read by the mounted view.
+        act: isDiff
+          ? undefined
+          : drafts.has(key)
+            ? {
+                kind: "save" as const,
+                label: gui.watch_save,
+                onPress: () => {
+                  if (key === file) setSaveAt((n) => n + 1);
+                  else {
+                    setFile(key);
+                    setWantSave(key);
+                  }
+                },
+              }
+            : {
+                kind: "reload" as const,
+                label: gui.file_reread,
+                onPress: () => {
+                  setFile(key);
+                  setReadAt((n) => n + 1);
+                },
+              },
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tabs, machine, root, drafts, preview, shut, file, fileNote, readFirst.item?.label, readFirst.item === null],
+    [tabs, machine, machineFace, root, drafts, preview, shut, file, fileNote, readFirst.item?.label, readFirst.item === null],
   );
 
   /** 关闭 / 关闭其他 / 复制路径 / 复制相对路径.
@@ -1247,11 +1275,8 @@ export function WorkspacePane({
   };
   const readHere = () => {
     (document.activeElement as HTMLElement | null)?.blur?.();
-    if (file !== null && drafts.has(file)) {
-      savingBack.current = true;
-      setSaveAt((n) => n + 1);
-      return;
-    }
+    // Back to the rendered face as it is: a draft stays a draft (the
+    // pill's ✓ saves it, UX-33). ⚠️ 墓碑: a save on the way back.
     restore.current = topLine(mid.current);
     setFace("preview");
   };
@@ -1299,15 +1324,21 @@ export function WorkspacePane({
             setRevCompare(false);
           }}
         />
+        {/* **预览 at the first row's right end** (UX-33 §4, the owner): the
+            file's two faces switched here, beside the page's buttons — on
+            for the rendered face, off for the source, keeping the place
+            (`restore`). The save is the pill's own third seat (✓). ⚠️ 墓碑:
+            the 编辑 / 保存 circle (round UX-3; UX-14's Mac edit-and-save). */}
         {rendererOf(file) !== null && (
           <GlassCircle
-            aria-label={face === "source" ? gui.watch_save : gui.accounts_edit}
-            tip={face === "source" ? gui.watch_save : gui.accounts_edit}
-            data-file-edit={face === "source" ? "save" : "edit"}
-            onClick={face === "source" ? readHere : editHere}
-            className={cn(face === "source" && "glass-sel text-[var(--rail-on-ink)]")}
+            aria-label={gui.file_face_preview}
+            aria-pressed={face === "preview"}
+            tip={gui.file_face_preview}
+            data-file-face-toggle={face}
+            onClick={face === "preview" ? editHere : readHere}
+            className={cn(face === "preview" && "glass-sel text-[var(--rail-on-ink)]")}
           >
-            {face === "source" ? <IconCheck /> : <IconPencil />}
+            <IconEye />
           </GlassCircle>
         )}
       </div>
@@ -1936,11 +1967,6 @@ export function WorkspacePane({
               onSaved={() => {
                 setGitAt((n) => n + 1);
                 readFirst.saved();
-                if (savingBack.current) {
-                  savingBack.current = false;
-                  restore.current = topLine(mid.current);
-                  setFace("preview");
-                }
               }}
               reading={readFirst.reading}
               onCanEdit={readFirst.onCanEdit}

@@ -11,8 +11,10 @@
 //
 // **Three parts.** The caps a person chose (`lib/term-keys`, default the
 // row of 2026-10-02) scroll sideways; after them, pinned, the cursor pad
-// (`views/CursorPad`) and 「…」, a sheet with every key and the row's editor
-// (`KeySheet`, `KeyRowEditor`).
+// (`views/CursorPad`) and 「…」, **a panel in the keyboard's place** with
+// every key, the row's editor and the keyboard's own settings
+// (`KeyPanel`, `lib/key-panel`; UX-31 — it was a sheet, which took the
+// focus and dropped the keyboard).
 //
 // **Real bytes, the terminal's own road.** A key here is handed to xterm
 // as if typed (`Terminal.input`, `wasUserInput`), so it leaves through
@@ -35,16 +37,21 @@
 // press is answered on `mousedown` with `preventDefault` (WebKit's tap
 // focuses on its synthesized mousedown) and acted on at the click.
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import type { Terminal } from "@xterm/xterm";
 
-import { IconChevronDown, IconChevronUp, IconGrip, IconKeyboard, IconKeyRow, IconMore } from "@/components/icons";
+import { IconChevronDown, IconChevronRight, IconChevronUp, IconGrip, IconKeyboard, IconKeyRow, IconMore } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
 import { GROUPS, KEYS, KEY_BY_NAME, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
+import { keyPanelGone, swapToKeyboard, toggleKeyPanel, useKeyPanel } from "@/lib/key-panel";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { useHeldKey } from "@/lib/key-repeat";
+import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
+import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { cn } from "@/lib/utils";
 import { CursorKey } from "@/views/CursorPad";
 
@@ -151,123 +158,207 @@ export function TermKeys({
         ))}
       </div>
       <CursorKey term={term} mods={mods} onMods={onMods} />
-      <KeySheet term={term} mods={mods} onMods={onMods} />
+      <KeyPanel term={term} mods={mods} onMods={onMods} />
     </div>
   );
 }
 
 /**
- * **「…」: every key, and the row's editor** (2026-10-03). The row's last
- * seat, pinned. A press opens a sheet with every key in four groups —
- * 移动, 修饰, 符号, 功能键 — and a press there sends the key the way the
- * row does and leaves the sheet open, so several go in a row. A press
- * outside or on the grabber puts it away. Its last line opens the row's
- * editor (`KeyRowEditor`).
+ * **「…」: a panel in the keyboard's place** (UX-31, the owner 2026-10-06;
+ * `lib/key-panel`). The row's last seat, pinned. A press puts the panel
+ * where the keyboard is, as tall as it, with every key in four groups —
+ * 移动, 修饰, 符号, 功能键 — and the two jumps between prompts; a press
+ * there sends the key the way the row does and leaves the panel up, so
+ * several go in a row. Under the keys, the keyboard's own matters and
+ * nothing else: 键盘唤醒, Option as Meta, and 编辑这一行, which turns the
+ * panel into the row's editor in place (`KeyRowList`). At its foot the
+ * 「键盘」 key brings the system keyboard back in the panel's place.
+ * Nothing here takes the focus: the terminal keeps it throughout.
+ * ⚠️ 墓碑 (2026-10-03): a bottom sheet (`KeySheet`), which took the focus
+ * — the keyboard dropped under it, and its drop closed the sheet.
  */
-function KeySheet({ term, mods, onMods }: { term: RefObject<Terminal | null>; mods: Mods; onMods: (m: Mods) => void }) {
-  const [open, setOpen] = useState(false);
+function KeyPanel({ term, mods, onMods }: { term: RefObject<Terminal | null>; mods: Mods; onMods: (m: Mods) => void }) {
+  const up = useKeyPanel();
   const [editing, setEditing] = useState(false);
+  const field = () => term.current?.textarea ?? null;
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
     if (t) pressKey(k, t, under, under === mods ? onMods : () => {});
   };
+  // The row gone (collapsed, the page left) takes the panel with it.
+  useEffect(() => () => keyPanelGone(), []);
+  useEffect(() => {
+    if (!up) setEditing(false);
+  }, [up]);
   return (
     <>
       <button
         type="button"
         data-term-key="more"
+        data-on={up || undefined}
         aria-label={gui.key_more}
-        aria-haspopup="dialog"
+        aria-expanded={up}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          const el = field();
+          if (el) toggleKeyPanel(el);
+        }}
         className={CAP_BOX}
       >
-        <span className={capFace(false)}>
+        <span className={capFace(up)}>
           <IconMore className="size-5" />
         </span>
       </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          form
-          data-term-key-sheet
-          // Unlike a form, a press outside puts this one away: there is
-          // nothing typed in it to lose.
-          onInteractOutside={() => {}}
-          onPointerUp={(e) => onGrabber(e, () => setOpen(false))}
-        >
-          <DialogTitle className="sr-only">{gui.key_more}</DialogTitle>
-          {GROUPS.map(({ group, label }) => (
-            <section key={group} data-term-key-group={group} className="flex flex-col gap-in">
-              <h3 className="text-group text-muted-foreground">{label}</h3>
-              <div className="flex flex-wrap gap-1.5">
-                {KEYS.filter((k) => k.group === group).map((k) => (
-                  <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
+      {up &&
+        createPortal(
+          <div
+            data-key-panel
+            role="group"
+            aria-label={gui.key_more}
+            // Nothing on the panel takes the focus from the terminal (the
+            // caps' own rule, for the switches and the editor too).
+            onMouseDown={(e) => e.preventDefault()}
+            // **In the keyboard's band**: fixed to the layout viewport's
+            // foot, as tall as the foot the panel holds (`--kb`,
+            // `lib/viewport`), under the shell that ends above it. The
+            // home indicator's room is its own, as a keyboard's is.
+            className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--kb)] flex-col border-t bg-background font-sans text-foreground"
+          >
+            {editing ? (
+              <>
+                <div className="flex flex-none items-center gap-row px-row">
+                  <span className="min-w-0 flex-1 text-body font-label">{gui.term_key_row}</span>
+                  <button
+                    type="button"
+                    data-key-row-done
+                    onClick={() => setEditing(false)}
+                    className="flex min-h-touch flex-none items-center text-body font-label"
+                  >
+                    {gui.edit_done}
+                  </button>
+                </div>
+                <div data-key-panel-scroll className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-row">
+                  <KeyRowList />
+                </div>
+              </>
+            ) : (
+              <div data-key-panel-scroll className="flex min-h-0 flex-1 touch-pan-y flex-col gap-base overflow-y-auto overscroll-contain px-row pt-in">
+                {GROUPS.map(({ group, label }) => (
+                  <section key={group} data-term-key-group={group} className="flex flex-col gap-in">
+                    <h3 className="text-group text-muted-foreground">{label}</h3>
+                    <div className="flex flex-wrap gap-1.5">
+                      {KEYS.filter((k) => k.group === group).map((k) => (
+                        <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
+                      ))}
+                    </div>
+                  </section>
                 ))}
+                {/* From prompt to prompt (roadmap 2.3): the phone's ⌘↑ ⌘↓;
+                    and the machine's commands, searched (roadmap 2.6), the
+                    phone's ⌘⇧;. */}
+                <section data-term-key-group="commands" className="flex flex-col gap-in">
+                  <h3 className="text-group text-muted-foreground">{gui.key_group_commands}</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {([-1, 1] as const).map((dir) => (
+                      <button
+                        key={dir}
+                        type="button"
+                        data-term-key={dir < 0 ? "command-prev" : "command-next"}
+                        aria-label={dir < 0 ? gui.command_prev : gui.command_next}
+                        onClick={() => {
+                          const box = term.current?.element?.closest("[data-terminal]") as
+                            | (HTMLElement & { __jump?: (d: -1 | 1) => void })
+                            | null
+                            | undefined;
+                          box?.__jump?.(dir);
+                        }}
+                        className={CAP_BOX}
+                      >
+                        <span className={capFace(false)}>
+                          {dir < 0 ? <IconChevronUp className="size-5" /> : <IconChevronDown className="size-5" />}
+                        </span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      data-term-key="history"
+                      onClick={() => {
+                        const box = term.current?.element?.closest("[data-terminal]") as
+                          | (HTMLElement & { __history?: () => void })
+                          | null
+                          | undefined;
+                        box?.__history?.();
+                      }}
+                      className={CAP_BOX}
+                    >
+                      <span className={capFace(false)}>{gui.command_history}</span>
+                    </button>
+                  </div>
+                </section>
+                <KeyboardMatters onEdit={() => setEditing(true)} />
               </div>
-            </section>
-          ))}
-          {/* From prompt to prompt (roadmap 2.3): the phone's ⌘↑ ⌘↓. The
-              sheet goes away so the jump can be seen. */}
-          <section data-term-key-group="commands" className="flex flex-col gap-in">
-            <h3 className="text-group text-muted-foreground">{gui.key_group_commands}</h3>
-            <div className="flex flex-wrap gap-1.5">
-              {([-1, 1] as const).map((dir) => (
-                <button
-                  key={dir}
-                  type="button"
-                  data-term-key={dir < 0 ? "command-prev" : "command-next"}
-                  aria-label={dir < 0 ? gui.command_prev : gui.command_next}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    const box = term.current?.element?.closest("[data-terminal]") as
-                      | (HTMLElement & { __jump?: (d: -1 | 1) => void })
-                      | null
-                      | undefined;
-                    box?.__jump?.(dir);
-                    setOpen(false);
-                  }}
-                  className={CAP_BOX}
-                >
-                  <span className={capFace(false)}>
-                    {dir < 0 ? <IconChevronUp className="size-5" /> : <IconChevronDown className="size-5" />}
-                  </span>
-                </button>
-              ))}
-              {/* The machine's commands, searched (roadmap 2.6): the
-                  phone's ⌘⇧;. */}
+            )}
+            {/* **The way back to the keyboard**, where iOS keeps its own
+                keyboard switch: the foot's left end. */}
+            <div data-key-panel-foot className="flex flex-none items-center px-row py-xxs pb-[calc(var(--spacing-xxs)+env(safe-area-inset-bottom,0px))]">
               <button
                 type="button"
-                data-term-key="history"
-                onMouseDown={(e) => e.preventDefault()}
+                data-key-panel-keyboard
+                aria-label={gui.keyboard_show}
                 onClick={() => {
-                  const box = term.current?.element?.closest("[data-terminal]") as
-                    | (HTMLElement & { __history?: () => void })
-                    | null
-                    | undefined;
-                  setOpen(false);
-                  box?.__history?.();
+                  const el = field();
+                  if (el) swapToKeyboard(el);
                 }}
                 className={CAP_BOX}
               >
-                <span className={capFace(false)}>{gui.command_history}</span>
+                <span className={cn(capFace(false), "gap-xxs")}>
+                  <IconKeyboard className="size-5" />
+                  {gui.key_keyboard}
+                </span>
               </button>
             </div>
-          </section>
-          <button
-            type="button"
-            data-term-keys-edit
-            onClick={() => {
-              setOpen(false);
-              setEditing(true);
-            }}
-            className="flex min-h-touch items-center border-t text-body"
-          >
-            {gui.keys_edit_row}
-          </button>
-        </DialogContent>
-      </Dialog>
-      <KeyRowEditor open={editing} onOpenChange={setEditing} />
+          </div>,
+          document.body,
+        )}
     </>
+  );
+}
+
+/**
+ * **The keyboard's own matters, under the keys** (UX-31): 键盘唤醒 (自动 /
+ * 点击屏幕 / 点击按钮, `lib/term-tap`), Option as Meta (`lib/term-option-meta`,
+ * a hardware keyboard's) and the way into the row's editor. The same
+ * settings 外观 → 终端 keeps; this is where a person is when they want
+ * them.
+ */
+function KeyboardMatters({ onEdit }: { onEdit: () => void }) {
+  const wake = useTermWake();
+  const optionMeta = useTermOptionMeta();
+  const row = "flex min-h-touch items-center gap-row border-t";
+  return (
+    <section data-key-panel-matters className="flex flex-col">
+      <div className={row} data-setting-row-name="term-wake">
+        <span className="min-w-0 flex-1 text-body">{gui.term_wake}</span>
+        <SegmentedControl
+          label={gui.term_wake}
+          value={wake}
+          onChange={(w) => setTermWake(w as Wake)}
+          mark={{ "data-key-panel-wake": true }}
+          options={WAKES.map((w) => ({
+            key: w,
+            label: { auto: gui.term_wake_auto, screen: gui.term_wake_screen, button: gui.term_wake_button }[w],
+          }))}
+        />
+      </div>
+      <div className={row} data-setting-row-name="term-option-meta">
+        <span className="min-w-0 flex-1 text-body">{gui.term_option_meta}</span>
+        <Switch on={optionMeta} label={gui.term_option_meta} onToggle={() => setTermOptionMeta(!optionMeta)} />
+      </div>
+      <button type="button" data-term-keys-edit onClick={onEdit} className={cn(row, "w-full text-left")}>
+        <span className="min-w-0 flex-1 text-body">{gui.keys_edit_row}</span>
+        <IconChevronRight className="size-affordance text-tertiary" />
+      </button>
+    </section>
   );
 }
 
@@ -282,13 +373,41 @@ function onGrabber(e: PointerEvent<HTMLDivElement>, close: () => void) {
 const nameOf = (k: KeyDef) => k.label ?? k.cap;
 
 /**
- * **The row's editor** (2026-10-03): every key the sheet offers, and 粘贴,
+ * **The row's editor** (2026-10-03): every key the panel offers, and 粘贴,
  * each with a switch (in the row or not) and a grip to move it — iOS's
  * own list for this, the one 外观's navigation order already is. Kept at
  * once (`lib/term-keys`); the row follows. The cursor pad and 「…」 are
- * the row's own and not listed. Opened from the sheet and from 外观 → 终端.
+ * the row's own and not listed. A sheet from 外观 → 终端; in place inside
+ * the key panel (`KeyRowList`, UX-31).
  */
 export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        form
+        data-key-row-editor
+        onInteractOutside={() => {}}
+        onPointerUp={(e) => onGrabber(e, () => onOpenChange(false))}
+      >
+        <div className="flex items-center gap-row">
+          <DialogTitle className="min-w-0 flex-1">{gui.term_key_row}</DialogTitle>
+          <button
+            type="button"
+            data-key-row-done
+            onClick={() => onOpenChange(false)}
+            className="flex min-h-touch flex-none items-center text-body font-label"
+          >
+            {gui.edit_done}
+          </button>
+        </div>
+        <KeyRowList />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The editor's list: the seats, their switches and grips. */
+function KeyRowList() {
   const row = useKeyRow();
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -313,67 +432,47 @@ export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChan
     return slot;
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        form
-        data-key-row-editor
-        onInteractOutside={() => {}}
-        onPointerUp={(e) => onGrabber(e, () => onOpenChange(false))}
-      >
-        <div className="flex items-center gap-row">
-          <DialogTitle className="min-w-0 flex-1">{gui.term_key_row}</DialogTitle>
-          <button
-            type="button"
-            data-key-row-done
-            onClick={() => onOpenChange(false)}
-            className="flex min-h-touch flex-none items-center text-body font-label"
+    <div ref={box} data-key-row-list className="flex flex-col">
+      {row.map((s) => {
+        const k = KEY_BY_NAME.get(s.name);
+        if (!k) return null;
+        return (
+          <div
+            key={s.name}
+            data-key-row-seat={s.name}
+            data-dragging={dragging === s.name || undefined}
+            className={cn("flex min-h-touch items-center gap-row border-b", dragging === s.name && "bg-fill")}
           >
-            {gui.edit_done}
-          </button>
-        </div>
-        <div ref={box} className="flex flex-col">
-          {row.map((s) => {
-            const k = KEY_BY_NAME.get(s.name);
-            if (!k) return null;
-            return (
-              <div
-                key={s.name}
-                data-key-row-seat={s.name}
-                data-dragging={dragging === s.name || undefined}
-                className={cn("flex min-h-touch items-center gap-row border-b", dragging === s.name && "bg-fill")}
-              >
-                <span className="min-w-0 flex-1 truncate text-body">{k.cap}</span>
-                <Switch on={s.on} label={nameOf(k)} onToggle={() => toggle(s.name)} />
-                <button
-                  type="button"
-                  data-key-row-grip
-                  data-sheet-hold
-                  aria-label={nameOf(k)}
-                  aria-keyshortcuts="ArrowUp ArrowDown"
-                  className="grid min-h-touch min-w-touch flex-none cursor-grab touch-none place-items-center rounded-full text-tertiary [&_svg]:size-4"
-                  onPointerDown={(e) => {
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    setDragging(s.name);
-                  }}
-                  onPointerMove={(e) => {
-                    if (dragging === s.name) move(s.name, slotAt(s.name, e.clientY));
-                  }}
-                  onPointerUp={() => setDragging(null)}
-                  onPointerCancel={() => setDragging(null)}
-                  onKeyDown={(e: KeyboardEvent<HTMLButtonElement>) => {
-                    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-                    e.preventDefault();
-                    move(s.name, row.findIndex((r) => r.name === s.name) + (e.key === "ArrowUp" ? -1 : 1));
-                  }}
-                >
-                  <IconGrip />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </DialogContent>
-    </Dialog>
+            <span className="min-w-0 flex-1 truncate text-body">{k.cap}</span>
+            <Switch on={s.on} label={nameOf(k)} onToggle={() => toggle(s.name)} />
+            <button
+              type="button"
+              data-key-row-grip
+              data-sheet-hold
+              aria-label={nameOf(k)}
+              aria-keyshortcuts="ArrowUp ArrowDown"
+              className="grid min-h-touch min-w-touch flex-none cursor-grab touch-none place-items-center rounded-full text-tertiary [&_svg]:size-4"
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                setDragging(s.name);
+              }}
+              onPointerMove={(e) => {
+                if (dragging === s.name) move(s.name, slotAt(s.name, e.clientY));
+              }}
+              onPointerUp={() => setDragging(null)}
+              onPointerCancel={() => setDragging(null)}
+              onKeyDown={(e: KeyboardEvent<HTMLButtonElement>) => {
+                if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+                e.preventDefault();
+                move(s.name, row.findIndex((r) => r.name === s.name) + (e.key === "ArrowUp" ? -1 : 1));
+              }}
+            >
+              <IconGrip />
+            </button>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

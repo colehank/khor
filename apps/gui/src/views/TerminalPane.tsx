@@ -66,6 +66,7 @@ import "@xterm/xterm/css/xterm.css";
 import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
+import { offerTabAct } from "@/lib/tab-acts";
 import { peekOf, type Peek } from "@/lib/term-peek";
 import { predictEcho, type Predict } from "@/lib/term-predict";
 import { termPredict } from "@/lib/term-predict-setting";
@@ -80,7 +81,7 @@ import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
-import { BarSeat, useInBar } from "@/components/SessionBar";
+import { BarSeat, PillProgress, useInBar } from "@/components/SessionBar";
 import { onTermSize } from "@/lib/type-size";
 import { onTermFont } from "@/lib/term-font";
 import { onTermCursor, termCursor, type CursorShape } from "@/lib/term-cursor";
@@ -109,6 +110,7 @@ import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { swipeLowers } from "@/lib/term-swipe";
+import { keyPanelEdge, keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
 
@@ -1339,6 +1341,13 @@ export function TerminalPane({
   // The reload circle's join in flight (`reopen`): its glyph turns.
   const [joining, setJoining] = useState(false);
   const reopenRef = useRef<(() => Promise<void>) | null>(null);
+  // **The tab pill's third seat is this terminal's re-attach** (UX-33):
+  // offered by id while the pane is mounted, with whether it is joining
+  // (the pill's line runs then).
+  useEffect(
+    () => offerTabAct(id, { kind: "reload", busy: joining, run: () => void reopenRef.current?.() }),
+    [id, joining],
+  );
   // Why the terminal never opened, in khor's own words. **Not the same
   // fact as `gone`**: `gone` means the host this pane was watching
   // ended, and 这个终端结束了 is true of it; a failed open means there
@@ -2459,6 +2468,14 @@ export function TerminalPane({
     };
     const dragged = fingers ? () => {} : fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
+    // **The same swipe lowers khor's key panel** (UX-31; term-4's reading
+    // of item 42): the finger reaching the panel's top edge, which is
+    // where the shell ends while the foot is held.
+    const swipedPanel = swipeLowers(scrollerRef.current!, term.textarea ?? null, {
+      up: keyPanelUp,
+      edge: keyPanelEdge,
+      lower: lowerKeyPanel,
+    });
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas, wheel: fingers ? notch : undefined });
     // **A tmux row, or an agent inside a tmux pane** (item 33: the owner
     // opens Claude Code's own row, not the session's): both are khor's
@@ -2617,6 +2634,7 @@ export function TerminalPane({
       dragged();
       scrollerRef.current?.removeEventListener("touchstart", landedAt, true);
       swiped();
+      swipedPanel();
       tmuxHistory?.stop();
       tmuxHistoryRef.current = null;
       firstTouch.stop();
@@ -3161,6 +3179,13 @@ export function TerminalPane({
         <IconReload className={cn(joining && "animate-spin motion-reduce:animate-none")} />
       </GlassCircle>
     </BarSeat>
+    )}
+    {/* **The join runs the pill's line** (UX-31): the slot under the pill
+        is this tab's progress while it re-attaches. */}
+    {active && joining && (
+      <BarSeat at="progress">
+        <PillProgress />
+      </BarSeat>
     )}
     {coarse && active && (
       <>

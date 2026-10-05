@@ -191,7 +191,9 @@ try {
   };
   const toEdit = async () => {
     if ((await page.locator("[data-edit]").count()) > 0) return;
-    const go = page.locator('[data-file-edit="edit"]');
+    // The rendered face: 预览 off puts the source under the caret (UX-33
+    // §4; ⚠️ 墓碑: the 编辑 circle).
+    const go = page.locator('[data-file-face-toggle="preview"]');
     if ((await go.count()) === 0) return;
     await go.first().click();
     await wait(300);
@@ -2097,12 +2099,14 @@ try {
   // fixture is for is the *page*: that a row draws, that pressing one
   // sends the key and the value, and that another screen reads the
   // answer.
-  const configValues = { theme: "auto", "kind-mark": "face", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
+  const configValues = { theme: "auto", "kind-mark": "face", "corner-is": "kind", lang: "auto", "tabs-limit": "off", "session-form": "chat", "files-click": "preview", "confirm-takeover": "on", "confirm-delete": "on" };
   const CONFIG_SHAPE = [
     ["theme", "appearance", "appearance", "主题", [["auto", "跟随系统"], ["light", "浅色"], ["dark", "深色"]]],
-    // 类型标记 (2026-10-02): the one row with a note so far — the sixth
-    // field, `ConfigRow.note`.
-    ["kind-mark", "appearance", "appearance", "类型标记", [["face", "浮现"], ["corner", "角标"]], "类型标记画在头像上，或放在头像右下角"],
+    // 头像's two (UX-32): 类型标记 (2026-10-02; the one row with a note
+    // so far — the sixth field, `ConfigRow.note`) and 角标是, which the
+    // page draws only while 类型标记 is 角标.
+    ["kind-mark", "avatar", "appearance", "类型标记", [["face", "浮现"], ["corner", "角标"]], "类型标记画在头像上，或放在头像右下角"],
+    ["corner-is", "avatar", "appearance", "角标是", [["kind", "类型"], ["machine", "机器"]]],
     ["lang", "language", "appearance", "界面语言", [["auto", "跟随系统"], ["zh", "中文"], ["en", "English"]]],
     // 标签页上限 (docs/SHELL.md 第三轮): off, then the numbers, each its own word.
     // The node's pages since UX-16 (`config::PAGES`): 会话 holds it and
@@ -2113,7 +2117,7 @@ try {
     ["confirm-takeover", "confirm", "security", "接管会话", [["on", "开"], ["off", "关"]]],
     ["confirm-delete", "confirm", "security", "删除", [["on", "开"], ["off", "关"]]],
   ];
-  const SECTION_WORD = { appearance: "外观", language: "语言", session: "会话", workspace: "工作区", confirm: "危险操作二次确认" };
+  const SECTION_WORD = { appearance: "外观", avatar: "头像", language: "语言", session: "会话", workspace: "工作区", confirm: "危险操作二次确认" };
   const configRows = () =>
     CONFIG_SHAPE.map(([name, section, page_, label, choices, note]) => ({
       name,
@@ -2554,6 +2558,18 @@ try {
   // stop say *probe dead* instead of quietly measuring the surface we
   // were already on and reporting its offenders a second time.
   const rail = (key) => `[data-rail-item][data-landing="${key}"]`;
+  /** **A tab is closed from its menu** (UX-33: the pill carries no ×; the
+      right-click menu, ⌘W and the tabs sheet close): the tab's own
+      button right-clicked, 关闭 picked. `tab` is a locator of the tab box. */
+  const closeTab = async (tab) => {
+    if ((await tab.count()) === 0) return false;
+    await tab.locator("[data-tab-open]").first().click({ button: "right" });
+    const up = await until(3_000, async () => (await page.locator('[data-row-menu] [data-menu-item="close"]').count()) === 1);
+    if (!up) return false;
+    await page.locator('[data-row-menu] [data-menu-item="close"]').click();
+    await wait(150);
+    return true;
+  };
   const pressNth = async (sel, n) => {
     if ((await page.locator(sel).count()) <= n) return false;
     // **A press that cannot land is a false, not a thrown walk**: one
@@ -3176,23 +3192,15 @@ try {
         "for a keyboard or a reader — those have 保存 and Esc, which are real " +
         "buttons and keys and are measured where they are.",
     ],
-    "data-deck-pill": [
+    // ⚠️ 墓碑 (round UX-3 → UX-33): `data-deck-pill`, the pill's sideways
+    // swipe; the band inside it (`data-deck-band`, below) is the surface now.
+    "data-deck-band": [
       "src/components/SessionBar.tsx",
-      "a gesture surface, not a target: the deck's pill hears a sideways " +
-        "swipe across it to step to the next or previous tab (round UX-3, " +
-        "Safari's address bar). What is pressed on it are its items — the " +
-        "title, the reload — which are buttons and are measured as such. " +
-        "**What it does not buy:** the swipe itself for a keyboard or a " +
-        "reader; both reach every tab through the tabs circle's sheet, a " +
-        "real button beside it.",
-    ],
-    "data-file-pill": [
-      "src/views/FilePage.tsx",
-      "the same gesture surface on the file page's deck (UX-25): a sideways " +
-        "swipe steps through the workspace's open files; what is pressed on " +
-        "it are its items (the preview eye, ✓), buttons measured as such. " +
-        "**What it does not buy:** the swipe for a keyboard or a reader; " +
-        "every file is reached through the tabs circle's sheet beside it.",
+      "the band inside a deck's pill (UX-33): a sideways drag pans the name " +
+        "and pulls one neighbour tab in; what is pressed on it is the title, " +
+        "a button measured as such. **What it does not buy:** the drag for a " +
+        "keyboard or a reader; every tab is reached through the tabs circle's " +
+        "sheet beside it.",
     ],
     "data-row-menu": [
       "src/components/RowMenu.tsx (the handler is Radix's, not ours)",
@@ -3884,13 +3892,13 @@ try {
     // **⌘S is the save**, and it is the only one: the 存 button lived on
     // that row and went with it.
     await page.keyboard.press("Control+s");
-    await until(5_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0);
+    await until(5_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab-act="save"]').count()) === 0);
     const afterSave = await page.evaluate(() => ({
       buttons: document.querySelectorAll("[data-save], [data-undo]").length,
       notice: document.querySelectorAll("[data-file-notice]").length,
       wrote: null,
       text: document.querySelector("textarea")?.value ?? "",
-      dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
+      dot: document.querySelectorAll('[data-ws-tab-strip] [data-tab-act="save"]').length,
     }));
     console.log(`save by ⌘S: ${JSON.stringify(afterSave)}`);
     if (!afterSave.text.includes("X")) {
@@ -4023,7 +4031,7 @@ try {
       // **「not saved」 is the tab's dot now** (2026-09-16 ruling 30):
       // the row that used to carry a word for it is gone, and what says
       // a file has something unwritten in it is the mark on its tab.
-      dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
+      dot: document.querySelectorAll('[data-ws-tab-strip] [data-tab-act="save"]').length,
     }));
     console.log(
       `merge: asked with base ${JSON.stringify((asked?.base ?? "").slice(0, 18))}, ` +
@@ -4686,15 +4694,15 @@ try {
           // A preview wears a ring before its name (the audit fix plan
           // F4.7), where it wore the app's one italic until 2026-10-02.
           slope: e.querySelector("[data-tab-preview]") ? "italic" : "normal",
-          dot: e.querySelector("[data-tab-dot]") !== null,
+          dot: e.querySelector('[data-tab-act="save"]') !== null,
         })),
       );
     /** Put the strip back to nothing, whatever the walk left on it. */
     const clearTabs = async () => {
       for (let i = 0; i < 12; i += 1) {
-        const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+        const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
         if ((await one.count()) === 0) break;
-        await one.click();
+        await closeTab(one);
         await wait(120);
         if ((await page.locator("[data-close-draft]").count()) === 1) {
           await press("[data-close-drop]");
@@ -5357,11 +5365,8 @@ try {
         // Put the preview seat and the front tab back where the rest of
         // this section expects them: `data.csv` took the seat `notes.md`
         // was in, so it is closed and `notes.md` opened again.
-        const csv = page.locator('[data-ws-tab-strip] [data-tab-close]').last();
-        if ((await csv.count()) === 1) {
-          await csv.click();
-          await wait(150);
-        }
+        const csv = page.locator("[data-ws-tab-strip] [data-tab]").last();
+        if ((await csv.count()) === 1) await closeTab(csv);
         await press('[data-file-tree] [data-depth="1"][data-file="notes.md"] > button');
         await wait(250);
       }
@@ -5390,7 +5395,7 @@ try {
         // above put it there — and that is where the shortcut lives.
         await page.keyboard.press("Control+s");
         const gone = await until(5_000, async () =>
-          (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 0,
+          (await page.locator('[data-ws-tab-strip] [data-tab-act="save"]').count()) === 0,
         );
         console.log(`tabs · after saving: ${wrote.length - before} write(s), dot ${gone ? "gone" : "still there"}`);
         if (wrote.length === before) {
@@ -5411,7 +5416,7 @@ try {
       await page.keyboard.type("Y");
       await wait(250);
       const front = (await strip()).find((t) => t.on === "true");
-      await press(`[data-tab-close="${front.id}"]`);
+      await closeTab(page.locator(`[data-ws-tab-strip] [data-tab="${front.id}"]`));
       const asked = await until(3_000, async () =>
         (await page.locator("[data-close-draft]").count()) === 1,
       );
@@ -5439,7 +5444,7 @@ try {
           );
         }
         // …and 不存,关掉 really drops it.
-        await press(`[data-tab-close="${front.id}"]`);
+        await closeTab(page.locator(`[data-ws-tab-strip] [data-tab="${front.id}"]`));
         await until(3_000, async () => (await page.locator("[data-close-draft]").count()) === 1);
         await press("[data-close-drop]");
         await wait(250);
@@ -6355,8 +6360,10 @@ try {
     const asOpened = await page.evaluate(() => ({
       editor: document.querySelectorAll("[data-edit]").length,
       h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
-      edits: [...document.querySelectorAll("[data-file-edit]")].map((e) => ({
-        what: e.getAttribute("data-file-edit"),
+      // 预览 at the first row's right end (UX-33 §4): on for the rendered
+      // face. ⚠️ 墓碑: the 编辑 / 保存 circle (round UX-3 item 2).
+      edits: [...document.querySelectorAll("[data-file-face-toggle]")].map((e) => ({
+        what: e.getAttribute("data-file-face-toggle"),
         onStrip: document.querySelector("[data-ws-tab-strip]")?.contains(e) === true,
       })),
       eyes: document.querySelectorAll("[data-file-face-switch]").length,
@@ -6374,10 +6381,10 @@ try {
           "one press away (round UX-3 item 2; src/views/FileView.tsx)",
       );
     }
-    if (asOpened.edits.length !== 1 || asOpened.edits[0].what !== "edit" || !asOpened.edits[0].onStrip) {
+    if (asOpened.edits.length !== 1 || asOpened.edits[0].what !== "preview" || !asOpened.edits[0].onStrip) {
       fail(
-        `the file's 编辑 reads ${JSON.stringify(asOpened.edits)} — one, at the strip's end, saying 编辑 ` +
-          "(src/browse/TabStrip.tsx, src/views/WorkspacePane.tsx)",
+        `the file's 预览 reads ${JSON.stringify(asOpened.edits)} — one circle at the first row's end, on (UX-33 §4; ` +
+          "src/views/WorkspacePane.tsx fileTail)",
       );
     }
     if (asOpened.eyes !== 0 || asOpened.oldRow !== 0) {
@@ -6397,9 +6404,12 @@ try {
     // a session face's size, centred on the one line of name.
     // ⚠️ 墓碑 (2026-09-16 ruling 43): a glyph as tall as a name-over-path
     // pair, centred on the pair.
+    // UX-32: the seat is the assembly — the machine's face wearing the
+    // file's kind as its mark — so the seat measured is `[data-side-face]`
+    // and the kind icon is inside it, at the mark's size.
     const seat = await page.evaluate(() => {
       const tab = document.querySelector("[data-ws-tab-strip] [data-tab-open]");
-      const g = tab?.querySelector("[data-file-kind]");
+      const g = tab?.querySelector("[data-side-face]:has([data-file-kind])");
       const nm = tab?.querySelector("[data-tab-name]");
       if (!g || !nm) return null;
       const probe = document.createElement("div");
@@ -6425,7 +6435,7 @@ try {
       if (!seat.capsule || seat.lines !== 0) {
         fail(`the workspace's tab is ${seat.capsule ? "in" : "not in"} the glass capsule with ${seat.lines} second line(s) — the session tabs' pill, one line (UX-25; src/views/WorkspacePane.tsx)`);
       }
-      if (Math.abs(seat.glyph - seat.face) > 1) fail(`the tab's kind icon is ${seat.glyph} tall in a pill whose face is ${seat.face} (--tab-face) — the icon seat (UX-25)`);
+      if (Math.abs(seat.glyph - seat.face) > 1) fail(`the tab's face seat is ${seat.glyph} tall in a pill whose face is ${seat.face} (--tab-face) — the icon seat (UX-25; the assembly since UX-32)`);
       if (Math.abs(seat.glyphMid - seat.nameMid) > 1) fail(`the tab's kind icon is centred at ${seat.glyphMid}, its name at ${seat.nameMid} — one line, one centre (UX-25)`);
     }
     // ii/iii/iv) 编辑, typing, 保存 — and back to reading, rendering what
@@ -6441,11 +6451,11 @@ try {
     });
     await toEdit();
     const editing = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
-    const saveSays = await page.locator("[data-file-edit]").first().getAttribute("data-file-edit").catch(() => null);
-    if (!editing || saveSays !== "save") {
+    const saveSays = await page.locator("[data-file-face-toggle]").first().getAttribute("data-file-face-toggle").catch(() => null);
+    if (!editing || saveSays !== "source") {
       fail(
-        `编辑 left editor=${editing} and the button at ${JSON.stringify(saveSays)} — it opens the source and becomes ` +
-          "保存 (src/browse/TabStrip.tsx)",
+        `预览 off left editor=${editing} and the circle at ${JSON.stringify(saveSays)} — it opens the source under the caret ` +
+          "(UX-33 §4; src/views/WorkspacePane.tsx)",
       );
     } else {
       // **The sheet carries colour only** (2026-09-16:「编辑时的光标没有
@@ -6477,16 +6487,20 @@ try {
       await page.locator("[data-edit]").click();
       await page.keyboard.press("Control+End");
       await page.keyboard.type("\n## typed\n");
-      const dotted = await until(3_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab-dot]").count()) === 1);
-      await press('[data-file-edit="save"]');
+      const dotted = await until(3_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab-act="save"]').count()) === 1);
+      // The pill's ✓ saves and stays on the source (UX-33); 预览 on again
+      // renders what was typed. ⚠️ 墓碑: 保存 saved and went back by itself.
+      await press('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="save"]');
       const saved = await until(5_000, async () => wrote.length > 0);
+      await until(3_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="reload"]').count()) === 1);
+      await press('[data-file-face-toggle="source"]');
       const read = await until(5_000, async () => (await page.locator("[data-file-preview] h2").count()) === 1);
       const after = await page.evaluate(() => ({
         editor: document.querySelectorAll("[data-edit]").length,
         h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
         h2: document.querySelector("[data-file-preview] h2")?.textContent?.trim() ?? null,
-        dot: document.querySelectorAll("[data-ws-tab-strip] [data-tab-dot]").length,
-        button: document.querySelector("[data-file-edit]")?.getAttribute("data-file-edit") ?? null,
+        dot: document.querySelectorAll('[data-ws-tab-strip] [data-tab-act="save"]').length,
+        button: document.querySelector("[data-file-face-toggle]")?.getAttribute("data-file-face-toggle") ?? null,
       }));
       console.log(`md 编辑 → 保存: was ${JSON.stringify(wrote)}, typed dot ${dotted}, then ${JSON.stringify(after)}`);
       if (!dotted) {
@@ -6498,10 +6512,10 @@ try {
             "whole of the save contract (src/views/FileView.tsx)",
         );
       }
-      if (!read || after.editor !== 0 || after.h1 !== "notes" || after.h2 !== "typed" || after.button !== "edit") {
+      if (!read || after.editor !== 0 || after.h1 !== "notes" || after.h2 !== "typed" || after.button !== "preview") {
         fail(
-          `保存 left ${JSON.stringify(after)} — it saves and returns to reading, rendering what was typed, and the ` +
-            "button says 编辑 again (src/views/FileView.tsx)",
+          `✓ then 预览 left ${JSON.stringify(after)} — the save lands and the rendered face shows what was typed, ` +
+            "the circle on again (src/views/FileView.tsx; UX-33)",
         );
       }
       if (after.dot !== 0) {
@@ -6793,9 +6807,9 @@ try {
     // remounted never re-reads — so the fixture above would go
     // unasked and this section would measure the previous one's text.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(120);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -7265,9 +7279,9 @@ try {
     // would still be holding the previous section's text and the first
     // 「nothing changed」 reading would be against the wrong bytes.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(120);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -7802,9 +7816,9 @@ try {
     // open on this path holds a `FileView` that is never remounted, and
     // one that is not remounted never re-reads.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(120);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -8486,9 +8500,9 @@ try {
     await open("workspaces");
     await openWs();
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(150);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -8700,8 +8714,11 @@ try {
           page.evaluate(() => ({
             namePill: document.querySelectorAll("[data-file-name-pill]").length,
             back: document.querySelectorAll("[data-file-deck] [data-file-back]").length,
-            name: document.querySelector("[data-file-deck] [data-file-pill] [data-file-name]")?.textContent?.trim() ?? null,
-            eye: document.querySelector("[data-file-pill] [data-file-face-toggle]")?.getAttribute("data-file-face-toggle") ?? null,
+            // The name in the pill's band (UX-33), or alone where the page stands alone.
+            name: document.querySelector("[data-file-deck] [data-file-pill] [data-deck-title], [data-file-deck] [data-file-pill] [data-file-name]")?.textContent?.trim() ?? null,
+            // 预览 is the circle beside the pill (UX-33 §4).
+            eye: document.querySelector("[data-file-deck] [data-file-face-toggle]")?.getAttribute("data-file-face-toggle") ?? null,
+            reread: document.querySelectorAll("[data-file-pill] [data-file-reread]").length,
             save: document.querySelectorAll("[data-file-pill] [data-file-save]").length,
             more: document.querySelectorAll("[data-file-deck] [data-file-more]").length,
             edit: document.querySelectorAll("[data-file-edit]").length,
@@ -8727,7 +8744,7 @@ try {
         await page.route("**/write_text", wrote14);
         const atRest = await deck();
         const readMenu = await menu();
-        await press("[data-file-pill] [data-file-face-toggle]");
+        await press("[data-file-deck] [data-file-face-toggle]");
         await until(3_000, async () => (await deck()).editor === 1);
         const source = await deck();
         const sourceMenu = await menu();
@@ -8753,8 +8770,8 @@ try {
           `UX-14 · at rest ${JSON.stringify(atRest)} menu ${JSON.stringify(readMenu)}; source ${JSON.stringify(source)} menu ${JSON.stringify(sourceMenu)}; ` +
             `typed ${JSON.stringify(dirty)}; saved (${writes.length} write) ${JSON.stringify(savedDeck)}; left with a draft asked ${leftAsked}; back ${JSON.stringify(kept)}`,
         );
-        if (atRest.namePill !== 0 || atRest.back !== 1 || atRest.name !== "notes.md" || atRest.eye !== "preview" || atRest.save !== 0 || atRest.more !== 1 || atRest.edit !== 0) {
-          fail(`UX-14 · the file page reads ${JSON.stringify(atRest)} — nothing at the top, the deck ‹ · pill (name, eye, no ✓) · 「…」, no 编辑 circle`);
+        if (atRest.namePill !== 0 || atRest.back !== 1 || atRest.name !== "notes.md" || atRest.eye !== "preview" || atRest.save !== 0 || atRest.reread !== 1 || atRest.more !== 1 || atRest.edit !== 0) {
+          fail(`UX-14 · the file page reads ${JSON.stringify(atRest)} — nothing at the top, the deck ‹ · pill (name, ↻) · 预览 · 「…」 (UX-33), no 编辑 circle`);
         }
         if (readMenu.size !== 1 || readMenu.ground !== 1 || sourceMenu.size !== 0 || sourceMenu.ground !== 0) {
           fail(`UX-14 · 「…」 rendered ${JSON.stringify(readMenu)}, source ${JSON.stringify(sourceMenu)} — 字号 and 预览背景 only while previewing`);
@@ -8877,9 +8894,9 @@ try {
     await atTree();
     // Every tab off, so 「no tab」 is a state this can stand in.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(120);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -8949,9 +8966,9 @@ try {
       await wait(250);
     }
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(150);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -9549,9 +9566,9 @@ try {
     }
     // Leave the draft behind, or every stop after this one meets a sheet.
     for (let i = 0; i < 12; i += 1) {
-      const one = page.locator("[data-ws-tab-strip] [data-tab-close]").first();
+      const one = page.locator("[data-ws-tab-strip] [data-tab]").first();
       if ((await one.count()) === 0) break;
-      await one.click();
+      await closeTab(one);
       await wait(150);
       if ((await page.locator("[data-close-draft]").count()) === 1) {
         await press("[data-close-drop]");
@@ -11755,12 +11772,15 @@ try {
 
   // ── 4M) 第五轮第 7 条改画法:机器角标按系统,型号进副标题 (docs/SHELL.md) ──
   //
-  // 「机器行的角标按系统画」 — apple / linux / windows / android, and the
-  // plain machine mark for a machine that could not say. The node's
+  // 「机器行的角标按系统画」 — macos / ios / linux / windows / android, and
+  // the plain machine mark for a machine that could not say. The node's
   // `vitals.system` is the answer; `vitals.model` no longer draws the
   // corner, and its name goes under the machine's name. Three machines:
-  // `peer` linux (with a model name), `elder` apple, `gate` (this one,
-  // no reading at all) nothing.
+  // `peer` linux (with a model name), `elder` macos, `gate` (this one,
+  // no reading at all) nothing. **The Mac wears the Finder** (UX-27,
+  // 2026-10-06: a phone must be known as a phone): elder's mark is the
+  // family's own `finder` glyph, not the Apple mark — which stays for
+  // `ios` and for an older peer's `apple`.
   {
     const peer = devs.find((d) => d.name === "peer");
     const elder = devs.find((d) => d.name === "elder");
@@ -11769,7 +11789,7 @@ try {
       peer.vitals.vitals.system = "linux";
       peer.vitals.vitals.model = { kind: "server", name: "SYS-4028GR-TR" };
     }
-    if (elder?.vitals?.vitals) elder.vitals.vitals.system = "apple";
+    if (elder?.vitals?.vitals) elder.vitals.vitals.system = "macos";
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.reload({ waitUntil: "load" });
     await wait(900);
@@ -11781,6 +11801,7 @@ try {
             row.getAttribute("data-device"),
             {
               corner: row.querySelector("[data-side-mark]")?.getAttribute("data-side-mark") ?? null,
+              glyph: row.querySelector("[data-side-mark] svg")?.getAttribute("data-icon") ?? null,
               sub: row.querySelector("[data-side-sub]")?.textContent ?? "",
               aside: row.querySelector("[data-side-aside]")?.textContent ?? "",
             },
@@ -11791,7 +11812,7 @@ try {
     await until(3_000, async () => (await read()).peer?.corner === "linux");
     const seen = await read();
     console.log(`devices 4M · rows: ${JSON.stringify(seen)}`);
-    const want = { peer: "linux", elder: "apple", gate: "machine" };
+    const want = { peer: "linux", elder: "macos", gate: "machine" };
     if (Object.keys(seen).length < 3) {
       fail(`probe dead: the devices column drew ${Object.keys(seen).length} row(s)`);
     } else {
@@ -11802,6 +11823,9 @@ try {
               "(docs/SHELL.md 第五轮第 7 条改画法)",
           );
         }
+      }
+      if (seen.elder?.corner === "macos" && seen.elder?.glyph !== "finder") {
+        fail(`the elder row (macOS) wears 「${seen.elder?.glyph}」 where the Mac wears the Finder (UX-27)`);
       }
       // UX-15: the model is the title's aside (「左上身份 · 型号」);
       // ⚠️ 墓碑: 「型号文字进机器行的副标题」, the second line until 10-05.
@@ -15128,12 +15152,15 @@ try {
   if (quotaRows !== listed) {
     fail(`\u989d\u5ea6 draws ${quotaRows} rows for ${board.length} routed accounts and one subscription`);
   }
-  // The share inside the row's dial, **without its percent sign** (the
-  // owner, 2026-10-03: the dial is a list face's size, three digits at
-  // 12 are what its bowl holds, and the detail page says the unit).
-  const fillDial = (await page.locator('[data-quota-row="acc-fill"] [data-dial-row]').textContent().catch(() => null))?.trim() ?? null;
-  if (fillDial !== "45") {
-    fail(`the fraction row's dial does not say its share — got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
+  // The share beside the row's ring at its right-top (UX-32: the ring is
+  // the state, a reading, and readings sit right), with its sign — there
+  // is room beside a 16 glyph. ⚠️ 墓碑 (2026-10-03 → UX-32): inside the
+  // row's dial without the sign, three digits at 12 being what its bowl
+  // held.
+  const fillRing = (await page.locator('[data-quota-row="acc-fill"] [data-quota-ring]').count()) === 1;
+  const fillDial = (await page.locator('[data-quota-row="acc-fill"] [data-quota-ring-word]').textContent().catch(() => null))?.trim() ?? null;
+  if (!fillRing || fillDial !== "45%") {
+    fail(`the fraction row's ring does not say its share at the right-top — ring ${fillRing}, got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
   }
   // The refused account: the trouble on the glass is a sentence, not
   // the wire key. Clicking the row is also the finder proving itself —
@@ -15225,11 +15252,15 @@ try {
     //   Measured 2026-09-07 by putting the old `scope === null` filter
     //   back: the red reads「2 pips for 2 parts and 3 routed windows」,
     //   which is the third term firing and the first two staying quiet.
+    //   **Read off the card's dial since UX-32** (the owner 2026-10-06):
+    //   the row's ring is a 16 glyph at its right-top — a reading, no
+    //   rim to carry marks — and the subscription's dial with its pips is
+    //   the card's lead. ⚠️ 墓碑: the row's own dial carried them.
     const rim = await page.evaluate(() => {
-      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
       const detail = document.querySelector("[data-quota-detail]");
+      const lead = detail?.querySelector("[data-quota-lead]") ?? detail;
       return {
-        pips: [...(row?.querySelectorAll("[data-dial-pip]") ?? [])].map((e) => ({
+        pips: [...(lead?.querySelectorAll("[data-dial-pip]") ?? [])].map((e) => ({
           word: e.getAttribute("data-dial-pip"),
           at: Number(e.getAttribute("data-dial-pip-at")),
         })),
@@ -15239,7 +15270,7 @@ try {
         // The hairline from the lowest mark to the highest: 「spread out
         // or not」 with a length, drawn only where there are two marks
         // to span between.
-        span: row?.querySelectorAll("[data-dial-span]").length ?? 0,
+        span: lead?.querySelectorAll("[data-dial-span]").length ?? 0,
       };
     });
     const scopedWindow = quotaWindows.find((w) => w.scope !== null);
@@ -15422,11 +15453,17 @@ try {
     //   alone. The fixture has a fraction (0.45), a reading with no
     //   denominator (a spend, no limit) and a refusal, so each wrong
     //   rule is caught by one of the other two.
+    //   The row's ring is the heading glyph since UX-32 (`Face.tsx`
+    //   `Glyph`, `[data-ring-glyph]` at the row's right-top): the same
+    //   210° geometry, so the angle reads the same way off its own two
+    //   paths (`data-glyph-track`, `data-glyph-fill`). A trouble row draws
+    //   no ring at all and reads 「no dial」 → null below.
     const arcs = await page.locator("[data-quota-row]").evaluateAll((rows) =>
       rows.map((row) => {
         const id = row.getAttribute("data-quota-row");
-        const svg = row.querySelector("[data-dial-face]");
-        const arc = svg?.querySelector("[data-ring-fill]");
+        const svg = row.querySelector("[data-quota-ring] [data-ring-glyph]");
+        if (!svg && row.querySelector("[data-quota-state]")) return { id, drawn: null };
+        const arc = svg?.querySelector("[data-glyph-fill]");
         // The track is always drawn, so its absence means the dial
         // itself never rendered — a different failure from「no arc」and
         // it must not read as one.
@@ -15449,7 +15486,7 @@ try {
         // (−195°), so its own `d` gives the centre with nothing
         // assumed about the box at all: `M x0 y0 A r r …`, and
         // `centre = start − r·(cos ARC0, sin ARC0)`.
-        const track = svg.querySelector("path");
+        const track = svg.querySelector("[data-glyph-track]");
         const td = /M([-\d.]+)\s+([-\d.]+)\s*A([-\d.]+)/.exec(track?.getAttribute("d") ?? "");
         if (!td) return { id, drawn: "no track" };
         const [x0, y0, r] = [Number(td[1]), Number(td[2]), Number(td[3])];
@@ -15528,50 +15565,50 @@ try {
     //   Every row, because the band that broke was 10–99.99 (`12.34`,
     //   five characters) and it is one account among several — a check
     //   on 「the first row」 would have passed while that one overflowed.
+    //   **Beside the ring since UX-32** (the owner 2026-10-06): the
+    //   reading stands at the row's right-top next to a 16 glyph, so the
+    //   fit is no longer a ring's bowl but the corner cell — the word is
+    //   whole, on one line, and the four-character rule still holds the
+    //   word short. ⚠️ 墓碑: the middle of the row's dial, measured
+    //   against the rim's inner diameter.
     const middles = await page.evaluate(() => {
       return [...document.querySelectorAll("[data-quota-row]")].map((r) => {
-        const svg = r.querySelector("[data-dial-face]");
-        const t = svg?.querySelector("text");
-        // **The rim's own radius and stroke, off the track that was
-        // drawn.**
-        //
-        // ⚠️ Was `2 * 30 * (vbH / 88) - 2.6` — the reference size and
-        // the row's stroke written out again here, with the box's
-        // height standing in for `size`. Both halves of that broke on
-        // 2026-09-07: the box stopped being `size` tall (it is cropped
-        // to the drawing now), and a hard-coded `2.6` cannot describe
-        // two dials of different strokes. It reported five middles
-        // spilling that were not.
-        const track = svg?.querySelector("path");
-        const td = /A([-\d.]+)/.exec(track?.getAttribute("d") ?? "");
-        const inner = td ? 2 * Number(td[1]) - Number(track.getAttribute("stroke-width") ?? 0) : 0;
-        const b = t?.getBBox();
+        const cell = r.querySelector("[data-quota-ring]");
+        const t = cell?.querySelector("[data-quota-ring-word]");
+        const ring = cell?.querySelector("[data-ring-glyph]");
+        const b = t?.getBoundingClientRect();
+        const c = cell?.getBoundingClientRect();
         return {
           id: r.getAttribute("data-quota-row"),
           text: t?.textContent ?? "",
           chars: (t?.textContent ?? "").length,
-          over: b ? +(b.width - inner).toFixed(1) : -1,
+          // Spilling = the word's box past its cell's, or wrapped to a
+          // second line (taller than one line of caption).
+          over: b && c ? +Math.max(b.right - c.right, c.left - b.left, b.height - 20).toFixed(1) : -1,
           w: b ? +b.width.toFixed(1) : -1,
-          inner: +inner.toFixed(1),
-          box: svg ? `${Math.round(svg.getBoundingClientRect().width)}x${Math.round(svg.getBoundingClientRect().height)}` : "?",
+          ring: !!ring,
+          state: !!r.querySelector("[data-quota-state]"),
         };
       });
     });
     console.log(
-      `ring middles: ${middles.map((m) => `${m.id} "${m.text}" ${m.w}/${m.inner} box ${m.box}`).join(" · ")}`,
+      `ring words: ${middles.map((m) => `${m.id} "${m.text}" ${m.w} ring ${m.ring} state ${m.state}`).join(" · ")}`,
     );
-    const tooLong = middles.filter((m) => m.chars > 4);
+    const tooLong = middles.filter((m) => m.text && m.chars > 4);
     const spilling = middles.filter((m) => m.over > 0);
+    const bare = middles.filter((m) => !m.ring && !m.state);
     if (middles.length === 0) {
-      fail("probe dead: no row drew a dial, so nothing below measures a middle");
+      fail("probe dead: no row drew a ring cell, so nothing below measures a reading");
     } else if (tooLong.length > 0) {
       fail(
-        `a ring's middle reads ${JSON.stringify(tooLong.map((m) => m.text))} — four characters is the rule (「保持在 4 位字符以内」)`,
+        `a ring's reading reads ${JSON.stringify(tooLong.map((m) => m.text))} — four characters is the rule (「保持在 4 位字符以内」)`,
       );
     } else if (spilling.length > 0) {
       fail(
-        `a ring's middle spills out of its ring: ${JSON.stringify(spilling.map((m) => [m.text, m.over]))} — four characters is the rule, fitting is the outcome, and both are owed`,
+        `a ring's reading spills out of its cell: ${JSON.stringify(spilling.map((m) => [m.text, m.over]))} — one line, whole, beside the ring (UX-32)`,
       );
+    } else if (bare.length > 0) {
+      fail(`${JSON.stringify(bare.map((m) => m.id))} draw neither a ring nor a state word at the right-top — the ring is the state (UX-32)`);
     }
 
     //   ── 8·the dial's box holds the drawing, not a margin ───────
@@ -22166,11 +22203,12 @@ try {
     });
     await open("quota");
     await until(5_000, async () => (await page.locator("[data-quota-row]").count()) > 0);
-    // The dial's seat since W-V11 (2026-10-03, the owner: as large as
-    // the session page's avatars): the list face's slot, the whole
-    // drawing — pips and all — across its width inside it.
+    // The 额度 row's seat is the assembly's face since UX-32 — its home
+    // machine's face wearing the provider's mark — in the same slot.
+    // ⚠️ 墓碑 (W-V11, 2026-10-03 → UX-32): the dial, as large as the
+    // session page's avatars, pips and all, in that slot.
     const dial = await page.evaluate(() => {
-      const e = document.querySelector("[data-quota-row] [data-dial-row]");
+      const e = document.querySelector("[data-quota-pane] [data-side-row] [data-side-face] > :first-child");
       return e ? +e.getBoundingClientRect().height.toFixed(1) : null;
     });
     return { mark, dial };
@@ -22843,7 +22881,9 @@ try {
               // clips it is `[data-tab-label]` (`EditableName`'s
               // `boxData`); a plain tab's is `[data-tab-name]`.
               const name = t?.querySelector("[data-tab-label], [data-tab-name]");
-              const close = t?.querySelector("[data-tab-close]");
+              // The third seat (UX-33) stands where the ×'s cell stood, the
+              // same cell: name before it, `--tab-close` wide, inside the tab.
+              const close = t?.querySelector("[data-tab-act]");
               if (!t || !name || !close) return { id, when, missing: true };
               const r = (el) => el.getBoundingClientRect();
               return {
@@ -22875,7 +22915,7 @@ try {
     const judge = (where, reads) => {
       for (const c of reads) {
         if (c.missing) {
-          fail(`${where}: tab ${c.id} has no [data-tab-label]/[data-tab-name] or no [data-tab-close] — the × is a cell of the tab`);
+          fail(`${where}: tab ${c.id} has no [data-tab-label]/[data-tab-name] or no [data-tab-act] — the third seat is a cell of the tab (UX-33)`);
           continue;
         }
         if (c.nameRight > c.cellLeft + 0.5) {
@@ -24165,42 +24205,49 @@ try {
 
     // (8) the 额度 rows' numbers.
     await open("quota");
-    // The reading is a word laid over the drawing since the dial took a
-    // list face's size (`Face` `fluid`, W-V11): `data-dial-reading`, its
-    // box the fluid frame round the svg.
-    await until(5_000, async () => (await page.locator("[data-quota-row] [data-dial-reading]").count()) > 1);
+    // The reading stands beside the ring at the row's right-top since
+    // UX-32 (`data-quota-ring` → `data-ring-glyph` + `data-quota-ring-word`):
+    // whole, inside the row, to the right of the title, never under the
+    // face's mark. ⚠️ 墓碑 (W-V11 → UX-32): a word laid over the row's
+    // fluid dial (`data-dial-reading`), judged against its frame and the
+    // provider's mark beside it.
+    await until(5_000, async () => (await page.locator("[data-quota-row] [data-quota-ring-word]").count()) > 1);
     const dials = await page.evaluate(() =>
       [...document.querySelectorAll("[data-quota-row]")].flatMap((row) => {
-        const svg = row.querySelector("[data-dial-fluid]") ?? row.querySelector("[data-dial-face]");
-        const text = row.querySelector("[data-dial-reading]") ?? svg?.querySelector("text");
-        const badge = row.querySelector("[data-side-mark]");
-        if (!svg || !text || (text.textContent ?? "").trim() === "") return [];
+        const ring = row.querySelector("[data-quota-ring] [data-ring-glyph]");
+        const text = row.querySelector("[data-quota-ring-word]");
+        const title = row.querySelector("[data-side-title]") ?? row.querySelector("[data-quota-name]");
+        const face = row.querySelector("[data-side-face]");
+        if (!ring || !text || (text.textContent ?? "").trim() === "") return [];
         const n = (r) => [+r.left.toFixed(1), +r.top.toFixed(1), +r.right.toFixed(1), +r.bottom.toFixed(1)];
         return [
           {
             id: row.getAttribute("data-quota-row"),
             says: text.textContent,
             text: n(text.getBoundingClientRect()),
-            svg: n(svg.getBoundingClientRect()),
-            badge: badge ? n(badge.getBoundingClientRect()) : null,
+            ring: n(ring.getBoundingClientRect()),
+            row: n(row.getBoundingClientRect()),
+            title: title ? n(title.getBoundingClientRect()) : null,
+            face: face ? n(face.getBoundingClientRect()) : null,
           },
         ];
       }),
     );
-    console.log(`lists (8) · dial numbers [l,t,r,b]: ${JSON.stringify(dials)}`);
-    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a number in the dial — (8) measured nothing`);
+    console.log(`lists (8) · ring readings [l,t,r,b]: ${JSON.stringify(dials)}`);
+    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a reading beside the ring — (8) measured nothing`);
     for (const d of dials) {
       const [l, t, r, b] = d.text;
-      const clipped = l < d.svg[0] - 0.5 || r > d.svg[2] + 0.5 || t < d.svg[1] - 0.5 || b > d.svg[3] + 0.5;
-      const covered =
-        d.badge !== null && l < d.badge[2] - 0.5 && r > d.badge[0] + 0.5 && t < d.badge[3] - 0.5 && b > d.badge[1] + 0.5;
+      const clipped = l < d.row[0] - 0.5 || r > d.row[2] + 0.5 || t < d.row[1] - 0.5 || b > d.row[3] + 0.5;
+      const leftOfRing = r <= d.ring[0] + 0.5;
+      const underTitle = d.title !== null && l < d.title[2] - 0.5;
+      const onFace = d.face !== null && l < d.face[2] - 0.5;
       if (clipped) {
-        fail(`the ${d.id} dial's 「${d.says}」 runs to ${JSON.stringify(d.text)} past its box ${JSON.stringify(d.svg)} — the number is clipped (src/components/Face.tsx)`);
+        fail(`the ${d.id} ring's 「${d.says}」 runs to ${JSON.stringify(d.text)} past its row ${JSON.stringify(d.row)} — the reading is clipped (src/views/QuotaLanding.tsx)`);
       }
-      if (covered) {
+      if (leftOfRing || underTitle || onFace) {
         fail(
-          `the ${d.id} dial's 「${d.says}」 at ${JSON.stringify(d.text)} runs under the provider mark at ${JSON.stringify(d.badge)} — ` +
-            "the reading stays whole beside the mark, not under it (src/views/QuotaLanding.tsx, src/components/FaceMark.tsx)",
+          `the ${d.id} ring's 「${d.says}」 at ${JSON.stringify(d.text)} is not at the right-top beside its ring ${JSON.stringify(d.ring)} (title to ${d.title?.[2]}, face to ${d.face?.[2]}) — ` +
+            "the ring and its reading are the row's right-top (UX-32; src/views/QuotaLanding.tsx)",
         );
       }
     }
@@ -25003,9 +25050,9 @@ try {
           }
           for (const t of r0.querySelectorAll("[data-tab]")) {
             const name = t.querySelector("[data-tab-label]");
-            const close = t.querySelector("[data-tab-close]");
+            const close = t.querySelector("[data-tab-act]");
             if (name) put("R0", `tab ${t.getAttribute("data-tab")}'s label`, name);
-            if (close) put("R0", `tab ${t.getAttribute("data-tab")}'s ×`, close);
+            if (close) put("R0", `tab ${t.getAttribute("data-tab")}'s seat`, close);
             tabs.push({ id: t.getAttribute("data-tab"), ...box(t) });
           }
         }
@@ -25462,16 +25509,17 @@ try {
   await until(8_000, async () => (await page.locator("[data-quota-row]").count()) > 1);
   const titles = await page.evaluate(() =>
     [...document.querySelectorAll("[data-quota-row]")].map((row) => {
-      // UX-15 (the owner 2026-10-05): the mark opens the name's aside —
-      // 「{icon} Claude 订阅」 after the account's own name. ⚠️ 墓碑: it
-      // opened the title (2026-09-30).
+      // UX-32 (the owner 2026-10-06): the provider's mark is the face's
+      // (`[data-side-mark]`, on the home machine's face), and the aside
+      // is the words alone — 「Claude 订阅」 after the account's own name.
+      // ⚠️ 墓碑: the mark opened the title (2026-09-30), then the aside
+      // (UX-15).
       const what = row.querySelector("[data-quota-what]");
-      const first = what?.firstElementChild ?? null;
       return {
         id: row.getAttribute("data-quota-row"),
-        first: first ? first.tagName.toLowerCase() : null,
+        mark: row.querySelector("[data-side-face] [data-side-mark]")?.getAttribute("data-side-mark") ?? null,
+        glyphs: what?.querySelectorAll("svg, img").length ?? 0,
         what: what?.textContent?.trim() ?? null,
-        badge: row.querySelectorAll("[data-side-badge]").length,
         editable: row.querySelectorAll("[data-editable-name]").length,
       };
     }),
@@ -25479,10 +25527,10 @@ try {
   console.log(`entity e · 额度 titles: ${JSON.stringify(titles)}`);
   if (titles.length < 2) fail(`probe dead: entity e · ${titles.length} 额度 row(s) to read`);
   for (const t of titles) {
-    if (t.first !== "svg") {
-      fail(`entity e · the ${t.id} row's aside starts with ${JSON.stringify(t.first)}, not its kind's mark (svg) — 「{icon} Claude 订阅」 (UX-15)`);
+    if (!t.mark?.startsWith("provider:")) {
+      fail(`entity e · the ${t.id} row's face wears ${JSON.stringify(t.mark)}, not the provider's mark — the base is the machine, the mark the provider (UX-32)`);
     }
-    if (t.badge !== 0) fail(`entity e · the ${t.id} row still wears a corner beside its dial — the mark is the title's now`);
+    if (t.glyphs !== 0 || !t.what) fail(`entity e · the ${t.id} row's aside is ${JSON.stringify(t.what)} with ${t.glyphs} glyph(s) — words alone, 「Claude 订阅」 (UX-32)`);
   }
   const editable = titles.find((t) => t.id === "acc-fill");
   if (!editable || editable.editable !== 1) {
@@ -27686,7 +27734,15 @@ try {
   //      there turns every one of those avatars into the corner — no
   //      mark on any face, no veil, the features back — tab included;
   //   c. **it stays after a reload** (the fixture holds the store like the
-  //      node: `set_config` → `config`), and choosing 浮现 brings it back.
+  //      node: `set_config` → `config`), and choosing 浮现 brings it back;
+  //   d. **角标是 机器** (UX-32, the owner 2026-10-06): the row is drawn
+  //      on 外观 › 头像 only under 角标; chosen, every assembly puts the
+  //      mark on the base (a neutral disc, the mark at the on-face size)
+  //      and the machine's face on the corner (14 on a row, 10 on a tab),
+  //      whole and under no veil; 类型 brings the corner badge back.
+  //      Every way is read on four columns (额度's rows wear the home
+  //      machine's face with the provider's mark) and on a session tab
+  //      and a file tab (the file's kind as the mark, a picture).
   //
   // New behaviour, not a fix: no red was owed first (30-behavior). The
   // contrast of the mark on real faces is `check-palette`'s.
@@ -27751,6 +27807,10 @@ try {
               at: mark.getAttribute("data-mark-at"),
               row: f.closest("[data-side-row]")?.getAttribute("data-side-row") ?? null,
               badge: f.querySelectorAll("[data-side-badge]").length,
+              // UX-32's third way: the mark as the base, the face on the corner.
+              base: f.querySelectorAll("[data-mark-base]").length,
+              faceCorner: f.querySelectorAll("[data-face-corner]").length,
+              way: f.getAttribute("data-mark-way"),
               veil: f.querySelectorAll("[data-face-veil]").length,
               veilColor: veil ? getComputedStyle(veil).backgroundColor : null,
               veilAlpha: veil ? Number(getComputedStyle(veil).opacity) : null,
@@ -27765,14 +27825,64 @@ try {
         });
       }, scope);
     const whole = (v) => Math.abs(v - Math.round(v)) < 0.01;
-    const COLUMNS = ["sessions", "devices", "workspaces"];
+    // 额度 too (UX-32): its rows are the account's home machine's face
+    // — every fixture account is homed on gate — with the provider's mark.
+    const COLUMNS = ["sessions", "devices", "workspaces", "quota"];
     /** The face record a row was drawn from, where the fixture can say
-        (a machine's row, a workspace's machine); `undefined` elsewhere. */
+        (a machine's row, a workspace's machine, an account's home);
+        `undefined` elsewhere. */
     const recordOf = (col, row) => {
       if (!row || col === "sessions") return undefined;
+      if (col === "quota") return gateDev ? gateDev.face : undefined;
       const id = col === "workspaces" ? row.split(":")[0] : row;
       const d = devs.find((x) => x.id === id);
       return d ? d.face : undefined;
+    };
+    /** The report's shots (UX-32): one per column and strip per way,
+        when `FACE_SHOTS` names a folder. */
+    const shot = async (name) => {
+      if (!process.env.FACE_SHOTS) return;
+      await page.screenshot({ path: join(process.env.FACE_SHOTS, `ux32-${name}.png`) }).catch(() => {});
+    };
+    /** The marks a column's rows may wear (UX-32: one key per kind). */
+    const KEYS_OF = {
+      sessions: /^(shell|claude|codex|cursor|agent|chat|transfer|borrow)$/,
+      devices: /^(macos|ios|apple|linux|windows|android|machine)$/,
+      workspaces: /^(folder|branch)$/,
+      quota: /^provider:[a-z0-9-]+$/,
+    };
+    /** Where a column's rows are: the 额度 pane answers to its own name. */
+    const paneOf = (col) => (col === "quota" ? "[data-quota-pane]" : "[data-list]");
+    const judgeKeys = (when, col, marks) => {
+      for (const m of marks) {
+        if (!KEYS_OF[col].test(m.key)) fail(`mark ${when} · ${col} ${m.row} wears the mark 「${m.key}」, not one of the column's kinds (src/components/SessionFace.tsx)`);
+      }
+    };
+    /** A file tab on the workspace strip: the machine's face with the
+        file's kind as its mark — a picture, so no ink to judge — drawn
+        the way the setting says (UX-32; the strip is UX-25's pill). */
+    const judgeFileTab = async (when, wantAt) => {
+      // The peer's workspace (the git one), its tree out (section 22's `openWs`).
+      const openWs = async () => {
+        if (!(await press("[data-ws-row]"))) return false;
+        if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+        return true;
+      };
+      const opened = (await open("workspaces")) && (await openWs()) && (await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button'));
+      const drew = opened && (await until(5_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab] [data-side-mark]").count()) > 0));
+      if (!drew) {
+        fail(`probe dead: mark ${when} · no file tab with a kind on the workspace strip (src/views/WorkspacePane.tsx tabFaces)`);
+        return;
+      }
+      const tabs = await readMarks("[data-ws-tab-strip] [data-tab]");
+      await shot(`${wantAt}-file-tab`);
+      console.log(`mark ${when} · file tabs: ${JSON.stringify(tabs.map((m) => [m.key, m.at, m.badge, m.base, m.faceCorner, m.face?.w, m.glyph?.w]))}`);
+      for (const m of tabs) {
+        if (m.key !== "file") fail(`mark ${when} · a file tab wears 「${m.key}」 — the file's kind is the mark (src/components/SessionFace.tsx fileKind)`);
+        if (m.at !== wantAt || !m.face) fail(`mark ${when} · a file tab's mark is ${JSON.stringify(m.at)} with ${m.badge} corner(s), face ${m.face ? "drawn" : "missing"} — the tab follows the setting (${wantAt}), on the machine's face`);
+      }
+      // Back to the rows for the next column.
+      if ((await page.locator("[data-ws-list-back]").count()) > 0) await press("[data-ws-list-back]");
     };
     /** a′: the ink and the veil are the face's (the blank's the theme's). */
     const judgeInk = (where, m, record) => {
@@ -27802,16 +27912,18 @@ try {
     const judgeFace = async (when) => {
       for (const col of COLUMNS) {
         await open(col);
-        await until(5_000, async () => (await page.locator("[data-list] [data-side-row] [data-side-mark]").count()) > 0);
-        const marks = await readMarks("[data-list] [data-side-row]");
+        await until(5_000, async () => (await page.locator(`${paneOf(col)} [data-side-row] [data-side-mark]`).count()) > 0);
+        const marks = await readMarks(`${paneOf(col)} [data-side-row]`);
+        await shot(`face-${col}`);
         console.log(`mark ${when} · ${col}: ${JSON.stringify(marks.map((m) => [m.key, m.at, m.badge, m.veil, m.features, m.glyph?.w]))}`);
         if (marks.length === 0) {
           fail(`probe dead: mark ${when} · the ${col} column drew no avatar with a kind (src/components/FaceMark.tsx)`);
           continue;
         }
+        judgeKeys(when, col, marks);
         for (const m of marks) {
           const where = `mark ${when} · ${col} ${m.row} (${m.key})`;
-          if (m.at !== "face" || m.badge !== 0) {
+          if (m.at !== "face" || m.badge !== 0 || m.base !== 0 || m.faceCorner !== 0) {
             fail(`${where}: the mark is ${JSON.stringify(m.at)} with ${m.badge} corner(s) — 浮现 is the default, and it has no corner`);
             continue;
           }
@@ -27851,6 +27963,7 @@ try {
       await press("[data-list] [data-row-open]");
       await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-side-mark]").count()) > 0);
       const tab = await readMarks("[data-session-tabs] [data-tab]");
+      await shot("face-session-tab");
       console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.badge, m.inkKey, m.veil, m.face?.w, m.glyph?.w]))}`);
       if (tab.length === 0) fail(`probe dead: mark ${when} · no session tab with a kind on the strip`);
       for (const m of tab) {
@@ -27865,16 +27978,19 @@ try {
           fail(`mark ${when} · a session tab's mark is ${m.glyph?.w} on a ${m.face?.w} face at ${m.glyph && m.face ? [m.glyph.x - m.face.x, m.glyph.y - m.face.y] : "?"} — 12 on 18, 3 in`);
         }
       }
+      await judgeFileTab(when, "face");
     };
     const judgeCorner = async (when) => {
       for (const col of COLUMNS) {
         await open(col);
-        await until(5_000, async () => (await page.locator("[data-list] [data-side-row] [data-side-badge]").count()) > 0);
-        const marks = await readMarks("[data-list] [data-side-row]");
+        await until(5_000, async () => (await page.locator(`${paneOf(col)} [data-side-row] [data-side-badge]`).count()) > 0);
+        const marks = await readMarks(`${paneOf(col)} [data-side-row]`);
+        await shot(`corner-${col}`);
         console.log(`mark ${when} · ${col}: ${JSON.stringify(marks.map((m) => [m.key, m.at, m.badge, m.veil, m.features]))}`);
         if (marks.length === 0) fail(`probe dead: mark ${when} · the ${col} column drew no avatar with a kind`);
+        judgeKeys(when, col, marks);
         for (const m of marks) {
-          if (m.at !== "corner" || m.badge !== 1 || m.veil !== 0) {
+          if (m.at !== "corner" || m.badge !== 1 || m.veil !== 0 || m.base !== 0 || m.faceCorner !== 0) {
             fail(`mark ${when} · ${col} ${m.row}: ${JSON.stringify(m.at)}, ${m.badge} corner(s), ${m.veil} veil(s) — 角标 is the corner, and no face under a veil`);
           }
         }
@@ -27887,10 +28003,82 @@ try {
       await press("[data-list] [data-row-open]");
       await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-side-badge]").count()) > 0);
       const tab = await readMarks("[data-session-tabs] [data-tab]");
+      await shot("corner-session-tab");
       console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.badge]))}`);
       if (tab.length === 0 || tab.some((m) => m.at !== "corner" || m.badge !== 1)) {
         fail(`mark ${when} · the session tab's mark is ${JSON.stringify(tab.map((m) => m.at))} — the tab follows the setting to the corner`);
       }
+      await judgeFileTab(when, "corner");
+    };
+    /** d (UX-32): 角标是 = 机器 — the mark is the base, on a neutral disc
+        the face's size, and the machine's face is the small one on the
+        corner, whole (its features back) and under no veil. */
+    const judgeMachine = async (when) => {
+      for (const col of COLUMNS) {
+        await open(col);
+        await until(5_000, async () => (await page.locator(`${paneOf(col)} [data-side-row] [data-mark-base]`).count()) > 0);
+        const marks = await readMarks(`${paneOf(col)} [data-side-row]`);
+        await shot(`machine-${col}`);
+        console.log(`mark ${when} · ${col}: ${JSON.stringify(marks.map((m) => [m.key, m.at, m.base, m.faceCorner, m.badge, m.features, m.face?.w, m.glyph?.w]))}`);
+        if (marks.length === 0) fail(`probe dead: mark ${when} · the ${col} column drew no avatar with a kind`);
+        judgeKeys(when, col, marks);
+        for (const m of marks) {
+          const where = `mark ${when} · ${col} ${m.row} (${m.key})`;
+          if (m.at !== "base" || m.base !== 1 || m.badge !== 0 || m.veil !== 0 || m.way !== "machine") {
+            fail(`${where}: ${JSON.stringify(m.at)}, ${m.base} base(s), ${m.badge} corner(s), ${m.veil} veil(s), way ${m.way} — 角标是 机器 puts the mark on the base and nothing on a veil`);
+            continue;
+          }
+          if (m.faceCorner !== 1 || !m.face) {
+            fail(`${where}: the machine's face is ${m.faceCorner ? "drawn" : "missing"} on the corner — 角标是 机器 puts the face there`);
+            continue;
+          }
+          // The face on the corner is the badge's glyph size (14 on a
+          // row), the mark the on-face size (18) centred on the disc.
+          if (m.face.w !== 14 || m.glyph?.w !== 18) {
+            fail(`${where}: the corner face is ${m.face.w} and the mark ${m.glyph?.w} — 14 on the corner, 18 on the disc (src/components/FaceMark.tsx SIZES)`);
+          }
+        }
+        if (col === "devices") {
+          const gate = marks.find((m) => m.row === gateDev?.id);
+          if (!gate || gate.features !== 1) fail(`mark ${when} · on the corner the 笑脸 face draws ${gate?.features ?? "no"} set(s) of features — it is whole there`);
+        }
+      }
+      await open("sessions");
+      await press("[data-list] [data-row-open]");
+      await until(3_000, async () => (await page.locator("[data-session-tabs] [data-tab] [data-mark-base]").count()) > 0);
+      const tab = await readMarks("[data-session-tabs] [data-tab]");
+      await shot("machine-session-tab");
+      console.log(`mark ${when} · session tabs: ${JSON.stringify(tab.map((m) => [m.key, m.at, m.faceCorner, m.face?.w, m.glyph?.w]))}`);
+      if (tab.length === 0 || tab.some((m) => m.at !== "base" || m.faceCorner !== 1)) {
+        fail(`mark ${when} · the session tab's mark is ${JSON.stringify(tab.map((m) => [m.at, m.faceCorner]))} — the tab follows the setting: the mark as the base, the face on the corner`);
+      }
+      for (const m of tab) {
+        if (m.face?.w !== 10 || m.glyph?.w !== 12) fail(`mark ${when} · a session tab's corner face is ${m.face?.w} and its mark ${m.glyph?.w} — 10 on the corner, 12 on the disc`);
+      }
+      await judgeFileTab(when, "base");
+    };
+    /** The 角标是 row on 外观: drawn only under 角标 (用不上的控件不画). */
+    const chooseCornerIs = async (value, expectRow) => {
+      if (!((await toMore()) && (await press('[data-more-open="appearance"]')))) {
+        fail("probe dead: mark · More › 外观 did not open");
+        return false;
+      }
+      const row = page.locator('[data-config-row="corner-is"]');
+      const n = await row.count();
+      if (n !== (expectRow ? 1 : 0)) {
+        fail(`mark d · 外观 draws ${n} 角标是 row(s) while 类型标记 is ${configValues["kind-mark"]} — the row is drawn only under 角标 (src/views/more/AppearancePage.tsx shownWhen)`);
+        await press("[data-more-close]");
+        return false;
+      }
+      if (!expectRow) {
+        await press("[data-more-close]");
+        return true;
+      }
+      await page.locator('[data-setting-select="corner-is"]').selectOption(value);
+      const took = await until(3_000, async () => configValues["corner-is"] === value && (await row.getAttribute("data-value")) === value);
+      if (!took) fail(`mark d · choosing ${value} on 角标是 did not reach the store (it holds ${configValues["corner-is"]})`);
+      await press("[data-more-close]");
+      return took;
     };
     /** b: the row on 外观, and choosing on it the way a person does. */
     const chooseOnPage = async (value) => {
@@ -27913,16 +28101,23 @@ try {
     };
 
     await judgeFace("default");
+    await chooseCornerIs(null, false);
     if (await chooseOnPage("corner")) {
       await judgeCorner("角标");
       await page.reload({ waitUntil: "load" });
       await wait(900);
       await judgeCorner("角标 after a reload");
+      // d: the third way, and back.
+      if (await chooseCornerIs("machine", true)) {
+        await judgeMachine("角标 · 机器");
+        if (await chooseCornerIs("kind", true)) await judgeCorner("角标 · 类型 again");
+      }
       if (await chooseOnPage("face")) await judgeFace("浮现 again");
     }
     if (gateDev) gateDev.face = facesWere[0];
     if (peerDev) peerDev.face = facesWere[1];
     configValues["kind-mark"] = "face";
+    configValues["corner-is"] = "kind";
     await page.reload({ waitUntil: "load" });
     await wait(900);
   }
@@ -28688,7 +28883,7 @@ try {
       const read = () =>
         page.evaluate(() => ({
           circle: document.querySelector("[data-file-deck] [data-deck-tabs]")?.textContent?.trim() ?? null,
-          name: document.querySelector("[data-file-deck] [data-file-name]")?.textContent?.trim() ?? null,
+          name: document.querySelector("[data-file-deck] [data-file-pill] [data-deck-title], [data-file-deck] [data-file-name]")?.textContent?.trim() ?? null,
           sheet: document.querySelectorAll("[data-tab-sheet]").length,
           rows: [...document.querySelectorAll("[data-tab-sheet-row]")].map((r) => r.querySelector("[data-tab-sheet-name]")?.textContent?.trim()),
           closes: document.querySelectorAll("[data-tab-sheet-close]").length,
@@ -28717,6 +28912,47 @@ try {
       if (closed.circle !== "1" || closed.name !== "one.rs") fail(`ws c · × on the other file left ${JSON.stringify(closed)} — one file, the front one kept`);
     }
     await page.setViewportSize({ width: 1400, height: 900 });
+    // ── d. the file pill's third seat (UX-33): ↻ while the file is as on
+    //       the disk, ✓ while something is typed in it; every pill has its
+    //       three seats and no ×; 预览 is the first row's circle. ──
+    {
+      await wait(400);
+      await open("workspaces");
+      await press("[data-ws-row]");
+      await wait(500);
+      await press('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+      await wait(600);
+      const seats = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll("[data-ws-tab-strip] [data-tab]")].map((t) => ({
+            id: t.getAttribute("data-tab")?.split("/").pop(),
+            on: t.getAttribute("data-on") === "true",
+            face: !!t.querySelector("[data-tab-open] svg, [data-tab-open] img"),
+            name: !!t.querySelector("[data-tab-label], [data-tab-name]"),
+            act: t.querySelector("[data-tab-act]")?.getAttribute("data-tab-act") ?? null,
+            close: t.querySelectorAll("[data-tab-close]").length,
+          })),
+        );
+      const clean = await seats();
+      const wroteD = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ at_ms: Date.now(), digest: "4".repeat(64) }) });
+      await page.route("**/write_text", wroteD);
+      await toEdit();
+      await page.locator("[data-edit]").click();
+      await page.keyboard.type("Z");
+      await wait(300);
+      const typed = await seats();
+      const front = page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="save"]');
+      if ((await front.count()) === 1) await front.click();
+      const saved = await until(4_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="reload"]').count()) === 1);
+      const eye = await page.locator("[data-ws-file-tail] [data-file-face-toggle]").count();
+      console.log(`ws d · clean ${JSON.stringify(clean)}; typed ${JSON.stringify(typed)}; ✓ pressed → ↻ ${saved}; 预览 circles on the first row ${eye}`);
+      if (clean.some((t) => !t.face || !t.name || !t.act || t.close)) fail(`ws d · a file pill lacks a seat or keeps a ×: ${JSON.stringify(clean)} — 头像 · 名称 · 对齐位 on every pill (UX-33; src/browse/TabStrip.tsx)`);
+      if (clean.find((t) => t.on)?.act !== "reload") fail(`ws d · the clean front file's seat is ${JSON.stringify(clean.find((t) => t.on)?.act)} — ↻ read again`);
+      if (typed.find((t) => t.on)?.act !== "save") fail(`ws d · with a letter typed the front file's seat is ${JSON.stringify(typed.find((t) => t.on)?.act)} — ✓ save (UX-33)`);
+      if (!saved) fail("ws d · ✓ pressed did not save: the seat never went back to ↻");
+      await page.unroute("**/write_text", wroteD);
+      await page.setViewportSize({ width: 1400, height: 900 });
+    }
   }
   }
   if (process.env.FACE_ONLY === "ws") console.log("ws · FACE_ONLY=ws: the other sections are skipped");
@@ -29294,6 +29530,217 @@ try {
       }
     }
 
+    // ── u. the key row's 「…」 is a keyboard panel (UX-31, the owner
+    //       2026-10-06: it was a sheet, which took the focus and dropped
+    //       the keyboard). With the keyboard up it takes the keyboard's
+    //       place at the keyboard's height and the terminal neither moves
+    //       nor resizes; 「键盘」 (or 「…」 again) gives the keyboard back
+    //       the same way; with the keyboard down it rises to the last
+    //       keyboard's height and the terminal resizes once, as for a
+    //       keyboard. The stand-in viewport plays the keyboard (k). ──
+    if (!(await openRow(terms[0].id)) || !(await xtermUp())) {
+      fail("probe dead: bar u · a terminal never opened for the key panel");
+    } else {
+      await wait(500);
+      const read = () =>
+        page.evaluate(() => {
+          const r = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+          const t = document.querySelector("[data-terminal]")?.__xterm;
+          const panel = r("[data-key-panel]");
+          return {
+            stamped: document.documentElement.hasAttribute("data-keyboard"),
+            root: r("#root")?.height,
+            content: r("[data-session-content]")?.bottom,
+            rows: t?.rows,
+            panel: panel ? { top: panel.top, bottom: panel.bottom, height: panel.height } : null,
+            keys: document.querySelectorAll("[data-session-bar-under] [data-term-keys]").length,
+            more: document.querySelector('[data-term-key="more"]')?.getAttribute("aria-expanded") ?? null,
+            focused: !!t && document.activeElement === t.textarea,
+            mode: t?.textarea?.getAttribute("inputmode") ?? null,
+            folded: document.querySelector("[data-session-screen]")?.hasAttribute("data-deck-folded") ?? null,
+          };
+        });
+      const vh = 844;
+      const rest = await read();
+      // Keyboard up: the field asked (as a tap in 自动 does) and the stand-in rose.
+      await page.evaluate(() => {
+        const f = document.querySelector("[data-terminal]").__xterm.textarea;
+        f.setAttribute("inputmode", "text");
+        f.focus({ preventScroll: true });
+        window.__keyboard(300);
+      });
+      await until(2_000, async () => (await read()).rows !== rest.rows);
+      await wait(400);
+      const typing = await read();
+      const sizes = resized.length;
+      // 「…」: the panel in the keyboard's place; the keyboard goes.
+      await press('[data-term-key="more"]');
+      const atOnce = await read();
+      await page.evaluate(() => window.__keyboard(0));
+      await wait(400);
+      const panel = await read();
+      // The report's shot (FACE_SHOTS): the panel in the keyboard's band.
+      if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-key-panel.png") });
+      // 「键盘」: the keyboard asked for, the panel stays until it shows.
+      await press("[data-key-panel-keyboard]");
+      await wait(200);
+      const asked = await read();
+      await page.evaluate(() => window.__keyboard(300));
+      await wait(400);
+      const back = await read();
+      const swapSizes = resized.length - sizes;
+      // The keyboard lowered the one way it is (the swipe, item 42): the
+      // field stops asking, the stand-in goes.
+      await page.evaluate(() => {
+        const f = document.querySelector("[data-terminal]").__xterm.textarea;
+        f.setAttribute("inputmode", "none");
+        window.dispatchEvent(new Event("khor:soft-keyboard"));
+        window.__keyboard(0);
+      });
+      await until(2_000, async () => (await read()).rows === rest.rows);
+      await wait(400);
+      const down = await read();
+      console.log(
+        `bar u · typing ${JSON.stringify(typing)}; 「…」 at once ${JSON.stringify(atOnce)}; panel ${JSON.stringify(panel)}; 「键盘」 asked ${JSON.stringify(asked)}; back ${JSON.stringify(back)}; pty resizes over the swaps ${swapSizes}; down ${JSON.stringify(down)}`,
+      );
+      if (!typing.stamped || typing.keys !== 1 || typing.more !== "false") {
+        fail(`probe dead: bar u · with the keyboard up the row reads ${JSON.stringify(typing)} — the key row and its 「…」 are not there to press`);
+      } else {
+        if (!atOnce.stamped || atOnce.root !== typing.root || atOnce.rows !== typing.rows || !atOnce.panel) {
+          fail(`bar u · 「…」 pressed, before the keyboard has gone: ${JSON.stringify(atOnce)} — the foot is held at once, the panel drawn, nothing above moved`);
+        }
+        if (!panel.panel || Math.abs(panel.panel.height - 300) > 1 || Math.abs(panel.panel.bottom - vh) > 1) {
+          fail(`bar u · the panel stands ${JSON.stringify(panel.panel)} — the keyboard's band, 300 tall to the foot ${vh}`);
+        }
+        if (!panel.stamped || Math.abs(panel.root - (vh - 300)) > 1 || panel.rows !== typing.rows || panel.content > panel.panel?.top + 1) {
+          fail(`bar u · the keyboard gone under the panel: ${JSON.stringify(panel)} — the shell stays ${vh - 300} tall with ${typing.rows} rows, the content above the panel`);
+        }
+        if (panel.mode !== "none" || !panel.focused || panel.more !== "true" || panel.keys !== 1 || panel.folded) {
+          fail(`bar u · under the panel the field reads mode ${shown(panel.mode)}, focused ${panel.focused}, 「…」 ${shown(panel.more)}, key rows ${panel.keys}, folded ${panel.folded} — the terminal keeps the focus with no keyboard asked, the row stays, nothing folds`);
+        }
+        if (!asked.panel || asked.mode !== "text" || !asked.focused) {
+          fail(`bar u · 「键盘」 pressed: ${JSON.stringify(asked)} — the keyboard is asked for and the panel waits for it`);
+        }
+        if (back.panel || !back.stamped || Math.abs(back.root - (vh - 300)) > 1 || back.rows !== typing.rows || back.more !== "false") {
+          fail(`bar u · the keyboard back: ${JSON.stringify(back)} — the panel gone, the shell ${vh - 300} tall with ${typing.rows} rows, 「…」 off`);
+        }
+        if (swapSizes !== 0) fail(`bar u · the two swaps told the pty ${swapSizes} new size(s) — the terminal never resizes for the panel taking the keyboard's place`);
+        if (down.stamped || down.panel || down.rows !== rest.rows) fail(`bar u · the keyboard gone for good: ${JSON.stringify(down)} — back to rest`);
+      }
+      // Keyboard down: the row opened by its circle, 「…」 raises the panel
+      // to the last keyboard's height, the terminal resizes once; 「…」
+      // again lowers it.
+      if (!(await press("[data-session-deck] [data-key-row-switch]"))) fail("probe dead: bar u · no key row circle on the deck");
+      await until(2_000, async () => (await read()).keys === 1);
+      const beforeRaise = resized.length;
+      await press('[data-term-key="more"]');
+      await until(2_000, async () => (await read()).rows !== rest.rows);
+      await wait(400);
+      const raised = await read();
+      const raiseSizes = resized.length - beforeRaise;
+      // A drag down the screen that reaches the panel's top edge lowers
+      // it, as it lowers the keyboard (item 42).
+      const screenBox = await rect("[data-terminal]");
+      {
+        const x = Math.round(screenBox.left + screenBox.width / 2);
+        const y0 = Math.round(screenBox.top + 40);
+        const y1 = (raised.panel?.top ?? vh - 300) + 30;
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
+        for (let i = 1; i <= 8; i += 1) {
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: Math.round(y0 + ((y1 - y0) * i) / 8) }] });
+        }
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      }
+      await until(2_000, async () => (await read()).rows === rest.rows);
+      await wait(400);
+      const lowered = await read();
+      console.log(`bar u · keyboard down, 「…」: ${JSON.stringify(raised)} (${raiseSizes} resize); dragged down to the panel: ${JSON.stringify(lowered)}`);
+      if (!raised.stamped || !raised.panel || Math.abs(raised.panel.height - 300) > 1 || Math.abs(raised.root - (vh - 300)) > 1 || raised.rows !== typing.rows || raised.more !== "true") {
+        fail(`bar u · with the keyboard down 「…」 reads ${JSON.stringify(raised)} — the panel at the last keyboard's 300, the shell shrunk once as for a keyboard`);
+      }
+      if (raiseSizes !== 1) fail(`bar u · raising the panel from the foot told the pty ${raiseSizes} size(s), one keyboard's worth is one`);
+      if (lowered.stamped || lowered.panel || lowered.rows !== rest.rows || lowered.more !== null && lowered.more !== "false") {
+        fail(`bar u · the drag down reaching the panel reads ${JSON.stringify(lowered)} — the panel gone as a keyboard goes, the shell at rest`);
+      }
+      // Back to the row collapsed, for the steps after.
+      if ((await read()).keys === 1) await press("[data-session-deck] [data-key-row-switch]");
+      await wait(300);
+    }
+
+    // ── v. one slot under the pill (UX-31 §2–3, the owner 2026-10-06):
+    //       the window's foot — what is happening elsewhere — hangs under
+    //       the deck's pill inside a session, in the pill's glass, only
+    //       while there is something to say; while the tab reloads the
+    //       slot is the progress line instead, and the status waits. ──
+    if (!(await openRow(terms[1].id)) || !(await xtermUp())) {
+      fail("probe dead: bar v · a terminal never opened for the pill's slot");
+    } else {
+      await wait(500);
+      const slot = () =>
+        page.evaluate(() => {
+          const r = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+          const vis = (s) => [...document.querySelectorAll(s)].filter((el) => el.getClientRects().length > 0).length;
+          const px = (name) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+          return {
+            slot: document.querySelectorAll("[data-deck-pill] [data-pill-slot]").length,
+            progress: vis("[data-deck-pill] [data-pill-progress]"),
+            status: vis("[data-deck-pill] [data-pill-status]"),
+            inPill: document.querySelectorAll('[data-deck-pill] [data-statusbar][data-at="pill"]').length,
+            atFoot: document.querySelectorAll('[data-statusbar][data-at="foot"]').length,
+            said: document.querySelector("[data-deck-pill] [data-statusbar]")?.textContent?.trim() ?? null,
+            pill: r("[data-deck-pill]")?.height ?? null,
+            rowTop: r("[data-deck-pill-row]")?.top ?? null,
+            backTop: r("[data-session-deck] [data-back]")?.top ?? null,
+            deckBottom: r("[data-session-deck]")?.bottom ?? null,
+            btn: px("--glass-btn"),
+            line: px("--ctl-sm"),
+          };
+        });
+      const quiet = await slot();
+      // A transfer presses the machine's conversation row (`use-status-bar`
+      // admits a change into 忙碌): the strip has something to say.
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json([...terms, { ...chatRow, word: "busy" }, guiRow]));
+      const came = await until(8_000, async () => (await slot()).inPill === 1);
+      const saying = await slot();
+      if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-pill-status.png") });
+      // The tab reloads meanwhile: the join held for a beat so it can be seen.
+      await page.unroute("**/term_attach");
+      await page.route("**/term_attach", async (r) => {
+        await wait(1_500);
+        return r.fulfill({ contentType: "application/json", body: JSON.stringify({ bytes: "", seq: 0 }) });
+      });
+      await page.locator("[data-term-reload]").first().click({ timeout: 3_000 }).catch(() => {});
+      const ran = await until(1_500, async () => (await slot()).progress === 1);
+      const loading = await slot();
+      if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-pill-progress.png") });
+      const ended = await until(4_000, async () => (await slot()).progress === 0);
+      const after = await slot();
+      await page.unroute("**/term_attach");
+      await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
+      // The transfer ends: the line leaves on its own after its beat.
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json(barRows));
+      const went = await until(10_000, async () => (await slot()).inPill === 0);
+      const gone = await slot();
+      console.log(`bar v · quiet ${JSON.stringify(quiet)}; saying ${JSON.stringify(saying)}; loading ${JSON.stringify(loading)}; after ${JSON.stringify(after)}; gone ${JSON.stringify(gone)}`);
+      if (quiet.slot !== 1 || quiet.progress || quiet.status || quiet.atFoot || Math.abs(quiet.pill - quiet.btn) > 0.5) {
+        fail(`bar v · at rest the pill reads ${JSON.stringify(quiet)} — one empty slot, the pill one row (${quiet.btn}), no strip at the foot`);
+      }
+      if (!came || saying.inPill !== 1 || saying.atFoot !== 0 || !saying.said?.includes("peer")) {
+        fail(`bar v · a transfer pressing a row: ${JSON.stringify(saying)} — the strip hangs under the pill, not at the foot, naming the row`);
+      } else {
+        if (Math.abs(saying.pill - (saying.btn + saying.line)) > 1) fail(`bar v · the pill with its strip is ${saying.pill}, one row ${saying.btn} plus a caption line ${saying.line}`);
+        if (Math.abs(saying.backTop - saying.rowTop) > 1) fail(`bar v · the deck's ‹ starts at ${saying.backTop}, the pill's row at ${saying.rowTop} — the circles keep the first row while the pill grows`);
+        if (Math.abs(saying.deckBottom - quiet.deckBottom) > 1) fail(`bar v · the deck's foot moved from ${quiet.deckBottom} to ${saying.deckBottom} — the pill grows upward into the content, the foot stays`);
+      }
+      if (!ran || loading.progress !== 1 || loading.status !== 0 || Math.abs(loading.pill - loading.btn) > 0.5) {
+        fail(`bar v · while the join runs: ${JSON.stringify(loading)} — the progress line along the pill, the status not drawn, the pill one row`);
+      }
+      if (!ended || after.progress !== 0 || after.status !== 1) fail(`bar v · the join done: ${JSON.stringify(after)} — the line gone, the status back`);
+      if (!went || gone.inPill !== 0 || gone.status !== 0 || Math.abs(gone.pill - gone.btn) > 0.5) fail(`bar v · the transfer over: ${JSON.stringify(gone)} — the strip leaves on its own, the pill one row again`);
+    }
+
     // ── l. a drag that starts on chrome does not move the screen (the
     //       owner, 2026-10-05, iPhone build 5: 「只要在输入框往上滑，就会
     //       抖动」). The bounce itself is the WKWebView's scroll view
@@ -29827,8 +30274,7 @@ try {
     //       2026-10-05: 「点击栏外空白都应该要支持收起。现在只能拖动那个横杆
     //       收起」); the tap that puts it away presses nothing under it.
     //       Each sheet the narrow terminal page reaches: the pill's 目录,
-    //       the tabs sheet, its 新会话, the key row's 「…」 where the row
-    //       is up. ──
+    //       the tabs sheet, its 新会话. ──
     {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await wait(300);
@@ -29840,11 +30286,9 @@ try {
           ["标签页", "[data-tab-sheet]", () => press("[data-session-deck] [data-deck-tabs]")],
           ["新会话", "[data-new-session-dialog]", async () => (await press("[data-session-deck] [data-deck-tabs]")) && press("[data-tab-sheet-new]")],
         ];
-        if (await page.locator('[data-term-key="more"]').filter({ visible: true }).count()) {
-          sheets.push(["按键", "[data-term-key-sheet]", () => press('[data-term-key="more"]')]);
-        } else {
-          console.log("bar s · the key row is not up without the keyboard here: 按键's sheet is walked on the simulator");
-        }
+        // ⚠️ 墓碑 (UX-31): the key row's 「…」 was a sheet on this list; it
+        // is a keyboard panel now (bar u), and a tap beside a keyboard
+        // puts nothing away.
         const up = (sel) => until(3_000, async () => (await count(sel)) === 1);
         const gone = (sel) => until(2_000, async () => (await count(sel)) === 0);
         const where = () =>
@@ -29981,6 +30425,79 @@ try {
         if (words[k]?.reason !== words.want[k] || words[k]?.url !== "https://nowhere.example/") fail(`bar t · a ${k} failure reads ${shown(words[k])} — the catalog's ${shown(words.want[k])} and the address`);
       }
       if (!words.other?.reason?.startsWith("The requested URL")) fail(`bar t · an unsorted failure reads ${shown(words.other)} — the system's own sentence, never silence`);
+    }
+
+    // ── u. the deck pill is a band (UX-33 §3): at rest one tab, a drag
+    //       pulls one neighbour in and never more; past half the neighbour
+    //       is current, short of it the band springs back. Eight terminals
+    //       open; the band dragged a long way left (towards the next). ──
+    {
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      // term-3 opened after term-2, then term-2 in front: a next neighbour
+      // exists whatever the stops before left open.
+      if (!(await openRow(terms[2].id)) || !(await openRow(terms[3].id)) || !(await openRow(terms[2].id))) {
+        fail("probe dead: bar u · a terminal never opened for the band");
+      } else {
+        await until(3_000, async () => (await count("[data-session-deck] [data-deck-band]")) === 1);
+        const read = () =>
+          page.evaluate(() => {
+            const band = document.querySelector("[data-session-deck] [data-deck-band]");
+            const track = band?.querySelector("[data-deck-band-track]");
+            if (!band || !track) return null;
+            const b = band.getBoundingClientRect();
+            const segs = [...track.querySelectorAll("[data-band-seg]")].map((e) => {
+              const r = e.getBoundingClientRect();
+              return { role: e.getAttribute("data-band-seg"), l: +(r.left - b.left).toFixed(1), r: +(r.right - b.left).toFixed(1), w: +r.width.toFixed(1) };
+            });
+            const x = new DOMMatrixReadOnly(getComputedStyle(track).transform).m41;
+            return { bw: +b.width.toFixed(1), x: +x.toFixed(1), segs, title: document.querySelector("[data-session-deck] [data-deck-title]")?.textContent?.trim() ?? null, inView: segs.filter((s) => s.r > 0.5 && s.l < b.width - 0.5).map((s) => s.role) };
+          });
+        const rest = await read();
+        const box = await page.locator("[data-session-deck] [data-deck-band]").boundingBox();
+        const dragTo = async (dx, release) => {
+          const x0 = box.x + box.width / 2;
+          const y = box.y + box.height / 2;
+          await page.mouse.move(x0, y);
+          await page.mouse.down();
+          for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + (dx * i) / 12, y);
+          const held = await read();
+          if (release) {
+            await page.mouse.up();
+            await wait(400);
+          }
+          return held;
+        };
+        // Three widths left: clamped to the next neighbour exactly.
+        const held = await dragTo(-3 * (rest?.bw ?? 300), false);
+        await page.mouse.up();
+        await wait(400);
+        const after = await read();
+        console.log(`bar u · at rest ${shown(rest)}; held three widths left ${shown(held)}; released ${shown(after)}`);
+        if (!rest || rest.inView.join() !== "cur" || rest.title !== terms[2].title) {
+          fail(`bar u · at rest the band shows ${shown(rest?.inView)} with 「${rest?.title}」 — exactly the current tab (UX-33 §3; src/components/SessionBar.tsx DeckBand)`);
+        } else {
+          const next = held.segs.find((s) => s.role === "next");
+          const cur = held.segs.find((s) => s.role === "cur");
+          const prev = held.segs.find((s) => s.role === "prev");
+          // The next one fully in means its left edge at the band's left; the
+          // current one wholly out to the left; the previous further still.
+          if (!next || Math.abs(next.l) > 1 || (cur && cur.r > 0.5) || (prev && prev.r > 0.5)) {
+            fail(`bar u · dragged three widths the band holds ${shown(held.segs)} — one neighbour fully in and no further`);
+          }
+          if (after.title !== terms[3].title || after.inView.join() !== "cur") {
+            fail(`bar u · released past half the band reads ${shown(after)} — the next tab (${terms[3].title}) current, one tab at rest`);
+          }
+        }
+        // A short pull springs back.
+        const base = await read();
+        const short = await dragTo(-(base.bw * 0.3), true);
+        const back = await read();
+        console.log(`bar u · a short pull ${shown(short.inView)} → ${shown(back)}`);
+        if (back.title !== base.title || back.inView.join() !== "cur" || Math.abs(back.x - base.x) > 1) {
+          fail(`bar u · a pull of a third of the band left ${shown(back)} — it springs back to ${shown(base)}`);
+        }
+      }
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 

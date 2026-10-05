@@ -446,7 +446,12 @@ export function Glyph({ fraction, strain }: { fraction: number | null; strain?: 
   const cy = S / 2;
   return (
     <svg data-ring-glyph viewBox={`0 0 ${S} ${S}`} width={S} height={S} aria-hidden="true" className="flex-none">
+      {/* The track and the fill carry their own names, not the dial's
+          (`data-dial-face` / `data-ring-fill`): a heading's glyph beside
+          a card's dial would otherwise answer for it. The 额度 row's
+          ring (UX-32) is read through these. */}
       <path
+        data-glyph-track
         d={arc(cx, cy, R, ARC0, ARC0 + SPAN)}
         fill="none"
         stroke="currentColor"
@@ -456,6 +461,7 @@ export function Glyph({ fraction, strain }: { fraction: number | null; strain?: 
       />
       {fraction !== null && (
         <path
+          data-glyph-fill
           d={arc(cx, cy, R, ARC0, ang(fraction))}
           fill="none"
           stroke={gaugeColor(strain)}

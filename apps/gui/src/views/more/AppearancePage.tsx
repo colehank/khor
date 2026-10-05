@@ -20,8 +20,9 @@ export function AppearancePage({
   me,
 }: {
   onClose: () => void;
-  /** This machine, whose face shows what 类型标记 draws (its system's
-      mark, on the face or in the corner as the setting says). */
+  /** This machine, whose face shows what 头像's rows draw (its system's
+      mark, on the face, on the corner, or as the base with the face on
+      the corner, as the two rows say). */
   me: DeviceRow | null;
   /** The shell re-reads the store after a change. */
   onSettingChanged: () => void;
@@ -31,7 +32,18 @@ export function AppearancePage({
       <ConfigSections
         page="appearance"
         onChanged={onSettingChanged}
-        previews={me ? { "kind-mark": <MachineFace face={me.face} system={me.vitals?.vitals.system ?? null} /> } : undefined}
+        // 头像's two rows (UX-32) both show this machine's face with its
+        // system's mark, assembled the way the two rows together say.
+        previews={
+          me
+            ? {
+                "kind-mark": <MachineFace face={me.face} system={me.vitals?.vitals.system ?? null} />,
+                "corner-is": <MachineFace face={me.face} system={me.vitals?.vitals.system ?? null} />,
+              }
+            : undefined
+        }
+        // 角标是 is a question only under 角标 (用不上的控件不画).
+        shownWhen={{ "corner-is": { key: "kind-mark", value: "corner" } }}
       />
       <TypeSizeSection />
       <NavOrderSection />
