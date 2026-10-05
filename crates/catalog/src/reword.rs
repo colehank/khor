@@ -283,4 +283,31 @@ mod tests {
         }
         assert!(missed.is_empty(), "{} entries do not read back:\n{}", missed.len(), missed.join("\n"));
     }
+
+    /// Free text in the arguments — a far machine's names and paths, in
+    /// Chinese and ASCII, with spaces — comes back exactly as it was
+    /// said, in every entry, either way.
+    #[test]
+    fn free_text_arguments_round_trip_exactly() {
+        let words = ["/Users/zgh/项目/khor 2", "实验室的 Mac", "hinton", "a b.txt", "~/.khor-hosts/lecun", "12"];
+        let mut missed = Vec::new();
+        for (n, (key, zh, en)) in crate::TEMPLATES.iter().enumerate() {
+            let (pz, pe) = (pieces(zh), pieces(en));
+            if own_text(&pz) < OWN_TEXT || own_text(&pe) < OWN_TEXT {
+                continue;
+            }
+            let args: Vec<(usize, String)> = (0..9).map(|i| (i, words[(n + i) % words.len()].to_owned())).collect();
+            for (from, to, lang) in [(&pz, &pe, Lang::En), (&pe, &pz, Lang::Zh)] {
+                let said = render(from, &args);
+                let twins = crate::TEMPLATES.iter().any(|(k, z, e)| {
+                    k != key && render(&pieces(if lang == Lang::En { z } else { e }), &args) == said
+                });
+                let got = said_again(&said, lang, DEPTH);
+                if got.as_deref() != Some(render(to, &args).as_str()) && !twins {
+                    missed.push(format!("{key}: {said:?} -> {got:?}"));
+                }
+            }
+        }
+        assert!(missed.is_empty(), "{} entries do not round-trip:\n{}", missed.len(), missed.join("\n"));
+    }
 }
