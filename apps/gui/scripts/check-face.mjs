@@ -8630,6 +8630,90 @@ try {
         );
       }
 
+      // **UX-14: no edit mode; the content pages' deck** (the owner,
+      // 2026-10-05). Nothing at the top; the deck is ‹ · pill (name, the
+      // preview eye for a file that renders, ✓ only while the buffer
+      // differs) · 分享 · 「…」, and no 编辑 circle. The eye turns the
+      // file to its source, which is the editor at once; typing draws ✓,
+      // ✓ writes and goes away. 字号 and 预览背景 are in 「…」 only while
+      // the file is rendered. Leaving with a draft asks nothing and keeps
+      // it: back on the file, ✓ is there.
+      {
+        const deck = () =>
+          page.evaluate(() => ({
+            namePill: document.querySelectorAll("[data-file-name-pill]").length,
+            back: document.querySelectorAll("[data-file-deck] [data-file-back]").length,
+            name: document.querySelector("[data-file-deck] [data-file-pill] [data-file-name]")?.textContent?.trim() ?? null,
+            eye: document.querySelector("[data-file-pill] [data-file-face-toggle]")?.getAttribute("data-file-face-toggle") ?? null,
+            save: document.querySelectorAll("[data-file-pill] [data-file-save]").length,
+            more: document.querySelectorAll("[data-file-deck] [data-file-more]").length,
+            edit: document.querySelectorAll("[data-file-edit]").length,
+            editor: document.querySelectorAll("[data-file-page] textarea[data-edit]").length,
+            asked: document.querySelectorAll("[data-close-draft]").length,
+          }));
+        const menu = async () => {
+          await press("[data-file-deck] [data-file-more]");
+          await wait(250);
+          const got = await page.evaluate(() => ({
+            size: document.querySelectorAll("[data-file-more-menu] [data-file-size]").length,
+            ground: document.querySelectorAll("[data-file-more-menu] [data-preview-ground]").length,
+          }));
+          await page.keyboard.press("Escape");
+          await wait(200);
+          return got;
+        };
+        const writes = [];
+        const wrote14 = (r) => {
+          writes.push(1);
+          return r.fulfill({ contentType: "application/json", body: JSON.stringify({ at_ms: Date.now(), digest: "3".repeat(64) }) });
+        };
+        await page.route("**/write_text", wrote14);
+        const atRest = await deck();
+        const readMenu = await menu();
+        await press("[data-file-pill] [data-file-face-toggle]");
+        await until(3_000, async () => (await deck()).editor === 1);
+        const source = await deck();
+        const sourceMenu = await menu();
+        await page.locator("[data-file-page] textarea[data-edit]").click();
+        await page.keyboard.press("Control+End");
+        await page.keyboard.type("\nmore");
+        await until(3_000, async () => (await deck()).save === 1);
+        const dirty = await deck();
+        await press("[data-file-pill] [data-file-save]");
+        await until(5_000, async () => writes.length > 0 && (await deck()).save === 0);
+        const savedDeck = await deck();
+        await page.locator("[data-file-page] textarea[data-edit]").click();
+        await page.keyboard.press("Control+End");
+        await page.keyboard.type(" again");
+        await until(3_000, async () => (await deck()).save === 1);
+        await press("[data-file-back]");
+        await wait(300);
+        const leftAsked = await page.evaluate(() => document.querySelectorAll("[data-close-draft]").length);
+        await press('[data-file="notes.md"] > button');
+        await wait(500);
+        const kept = await deck();
+        console.log(
+          `UX-14 · at rest ${JSON.stringify(atRest)} menu ${JSON.stringify(readMenu)}; source ${JSON.stringify(source)} menu ${JSON.stringify(sourceMenu)}; ` +
+            `typed ${JSON.stringify(dirty)}; saved (${writes.length} write) ${JSON.stringify(savedDeck)}; left with a draft asked ${leftAsked}; back ${JSON.stringify(kept)}`,
+        );
+        if (atRest.namePill !== 0 || atRest.back !== 1 || atRest.name !== "notes.md" || atRest.eye !== "preview" || atRest.save !== 0 || atRest.more !== 1 || atRest.edit !== 0) {
+          fail(`UX-14 · the file page reads ${JSON.stringify(atRest)} — nothing at the top, the deck ‹ · pill (name, eye, no ✓) · 「…」, no 编辑 circle`);
+        }
+        if (readMenu.size !== 1 || readMenu.ground !== 1 || sourceMenu.size !== 0 || sourceMenu.ground !== 0) {
+          fail(`UX-14 · 「…」 rendered ${JSON.stringify(readMenu)}, source ${JSON.stringify(sourceMenu)} — 字号 and 预览背景 only while previewing`);
+        }
+        if (source.eye !== "source" || source.editor !== 1) fail(`UX-14 · the eye left ${JSON.stringify(source)} — the source, and it is the editor with no edit mode`);
+        if (dirty.save !== 1) fail(`UX-14 · typing drew ${dirty.save} ✓ in the pill`);
+        if (writes.length !== 1 || savedDeck.save !== 0 || savedDeck.editor !== 1) fail(`UX-14 · ✓ wrote ${writes.length} time(s) and left ${JSON.stringify(savedDeck)} — one write, ✓ gone, still editable`);
+        if (leftAsked !== 0 || kept.save !== 1) fail(`UX-14 · leaving with a draft asked ${leftAsked} time(s); back on the file ✓ is ${kept.save} — no question, the draft kept`);
+        // Saved, so the walk after this finds the file as it found it.
+        if (kept.save === 1) {
+          await press("[data-file-pill] [data-file-save]");
+          await until(5_000, async () => (await deck()).save === 0);
+        }
+        await page.unroute("**/write_text", wrote14);
+      }
+
       await press("[data-file-back]");
       await wait(300);
       const back = await screens();
@@ -28846,6 +28930,25 @@ try {
         if (kept.on !== "log" || kept.log !== 1) fail(`bar p · reopened, the sheet is on ${shown(kept.on)} — the last tab is kept per session`);
         if (!lsMoved.includes("/tmp/elsewhere")) fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 目录 listed ${shown(lsMoved)}`);
       }
+      // ── q. a cold start opens the seat, never a pushed page (UX-14 §7):
+      //       the place left was a workspace open on the workspaces
+      //       seat; relaunched narrow, the seat's list is on screen with
+      //       the bar, and no workspace. ──
+      await page.evaluate(() =>
+        window.localStorage.setItem(
+          "khor.place",
+          JSON.stringify({ landing: "workspaces", more: null, screen: "detail", device: null, ws: { device: "f".repeat(64), machine: "peer", path: "/home/peer/work" } }),
+        ),
+      );
+      await page.reload({ waitUntil: "load" });
+      await wait(1_200);
+      const cold = await page.evaluate(() => ({
+        seat: document.querySelector('[data-float-nav] [data-on="true"], [data-float-nav] [aria-current="page"]')?.getAttribute("data-landing") ?? null,
+        bar: !!document.querySelector("[data-float-nav]")?.getClientRects().length,
+        ws: [...document.querySelectorAll("[data-ws-tree], [data-file-page]")].filter((e) => e.getClientRects().length).length,
+      }));
+      console.log(`bar q · a cold start after a pushed workspace: ${shown(cold)}`);
+      if (cold.seat !== "workspaces" || !cold.bar || cold.ws !== 0) fail(`bar q · a cold start reads ${shown(cold)} — the workspaces seat's list, the bar, no pushed workspace`);
       if (!(await openRow(chatRow.id))) {
         fail("probe dead: bar p · the conversation never opened");
       } else {

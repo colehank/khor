@@ -4,33 +4,33 @@
  * sits top-left; what is not content floats at the bottom).
  *
  * The phone's file — out of a workspace's tree or a machine's files —
- * and a machine's in-place file on every platform. No title rows: the
- * file starts under the status bar, and its name is a small glass pill at
- * the top centre that steps aside while the text moves and comes back
- * when it rests or is tapped (Safari's address bar). At the bottom, one
- * row of glass circles: ‹ at the left — a way out that can be seen, the
- * edge swipe being the other — and at the right 分享, 「…」 and 编辑.
+ * and a machine's in-place file on every platform. Nothing at the top:
+ * the file starts under the status bar. At the bottom the content pages'
+ * deck (UX-14, the owner 2026-10-05): ‹ · a pill with the name, the
+ * preview eye where the file renders, and ✓ while the buffer differs from
+ * the file · 分享 · 「…」. It folds into the title strip while the file
+ * is read (UX-13) and stays over the keyboard with ✓ in reach.
  *
- * **Read first, edit in place** (P1, now on this page's circle). A file
- * opens to be read — Markdown and tables rendered, code as code. 编辑
- * opens the editor **at the line the reader was at** (for Markdown, the
- * line the top block starts on) and raises the keyboard; the circle then
- * reads ✓ 保存, and saving goes back to reading at the same place. Before
- * this the switch landed at the top of the file, which was the bug the
- * owner named. Leaving with something unsaved asks first.
+ * **No edit mode** (UX-14): a text file is editable as soon as it is open
+ * (Notes) — a tap puts the caret where the finger is, a drag scrolls, the
+ * keyboard's rise does not move the text. A file that renders opens
+ * rendered and the eye turns it to its source at the same place. Saving
+ * is the ✓; leaving keeps the draft (the row carries its dot), and
+ * nothing asks. A Mac clicks into the text and saves with ⌘S, as before.
+ * ⚠️ 墓碑: the name pill at the top centre (it faded while the text
+ * moved), the 编辑 circle that turned into ✓ 保存, and the question on
+ * leaving with a draft.
  *
- * Nothing is drawn that cannot be used: no 编辑 on a file that is not
- * whole here (a picture, a cut file), no share where nothing can take a
- * file, no VS Code where the machine has none.
+ * Nothing is drawn that cannot be used: no ✓ on a file that is not whole
+ * here (a picture, a cut file), no share where nothing can take a file,
+ * no VS Code where the machine has none.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { flushSync } from "react-dom";
 
 import { launchOn, pullTemp, renamePath, reveal } from "@/api";
-import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import type { CodeWindow } from "@/components/CodeWindow";
-import { GlassCircle } from "@/components/Glass";
-import { IconBack, IconBranch, IconCheck, IconMore, IconPencil, IconShare } from "@/components/icons";
+import { GlassCircle, GlassItem } from "@/components/Glass";
+import { IconBack, IconBranch, IconCheck, IconEye, IconMore, IconShare } from "@/components/icons";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -45,6 +45,9 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useCoarse } from "@/hooks/use-coarse";
+import { FOLD_AT, foldStep, type FoldMemo } from "@/lib/deck-fold";
+import { onKeyboardChange } from "@/lib/soft-keyboard";
+import { keyboardShown } from "@/lib/viewport";
 import { useBlameShown } from "@/lib/blame";
 import { FILE_STEPS, fileSizeStyle, useFileSize } from "@/lib/file-size";
 import { groundAttr, GROUNDS, usePreviewGround } from "@/lib/preview-ground";
@@ -53,7 +56,7 @@ import { cn } from "@/lib/utils";
 import { bytesOf, revealHere, shares } from "@/views/chat-files";
 import { HistorySheet, RevisionView, shortId } from "@/views/FileHistory";
 import { useRemoveFlow } from "@/views/fileRow";
-import { beginEditing, FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
+import { FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
 
 // ── where the reader is ───────────────────────────────────────────
 
@@ -97,30 +100,12 @@ export function placeAt(box: HTMLElement | null, line: number): void {
   s.scrollTop += mark.getBoundingClientRect().top - s.getBoundingClientRect().top - pad;
 }
 
-/** **The place holds while the keyboard comes up** (round UX-3, measured
-    in the simulator): WebKit on iOS reveals the focused field as the
-    keyboard rises, and the file's editor is the whole sheet, so it was
-    revealed from its top — the source placed at line 30 was at line 1
-    185 ms later, intermittently, as the keyboard came in or did not. For
-    a moment after 编辑, a jump back to the top and every resize of the
-    visible area put the line back. */
-function holdWhileKeyboardRises(box: HTMLElement | null, line: number): void {
-  const s = box?.querySelector<HTMLElement>("[data-file-scroll]");
-  if (!s || line <= 1) return;
-  const vv = window.visualViewport;
-  const put = () => placeAt(box, line);
-  const jumped = () => {
-    if (s.scrollTop < 1) put();
-  };
-  s.addEventListener("scroll", jumped);
-  vv?.addEventListener("resize", put);
-  window.setTimeout(() => {
-    s.removeEventListener("scroll", jumped);
-    vv?.removeEventListener("resize", put);
-  }, HOLD_MS);
-}
+/* ⚠️ 墓碑 (UX-14): `holdWhileKeyboardRises` put the source back at the
+   line 编辑 opened it on while the keyboard rose (round UX-3: WebKit
+   revealed the whole-file editor from its top). There is no 编辑 now; the
+   page's `hold` keeps the scroller where the tap left it instead. */
 
-/** How long the place is held after 编辑: the keyboard's rise, with room. */
+/** How long the place is held after a tap: the keyboard's rise, with room. */
 const HOLD_MS = 900;
 
 // ── the verbs, for the page's circles and the wide strip ──────────
@@ -137,7 +122,12 @@ function useFileVerbs({
   onMoved,
   history = false,
   onRevision,
+  previewing,
 }: {
+  /** The file page's face (UX-14): 字号 and 预览背景 are offered only
+      while the file is shown rendered. Left out (the Mac's workspace
+      strip), they are offered as before. */
+  previewing?: boolean;
   machine: string;
   path: string;
   here: boolean;
@@ -229,7 +219,7 @@ function useFileVerbs({
           ))}
         {/* 字号, for what reads (text, rendered or not); a picture or a
             PDF has no type to size. Two keys on one row, kept open. */}
-        {(textKind || previewKind) && kind !== "image" && kind !== "svg" && kind !== "pdf" && (
+        {(textKind || previewKind) && kind !== "image" && kind !== "svg" && kind !== "pdf" && previewing !== false && (
           <div data-file-size className="flex min-h-menu-item items-center gap-in px-row text-body">
             <span className="flex-1">{gui.type_size}</span>
             <Button
@@ -254,7 +244,7 @@ function useFileVerbs({
         )}
         {/* 预览背景, for a document that renders (round UX-4): three keys on
             one row like 字号's, the one in use pressed. */}
-        {rendererOf(path) !== null && (
+        {rendererOf(path) !== null && previewing !== false && (
           <div data-preview-ground className="flex min-h-menu-item items-center gap-in px-row text-body">
             <span className="flex-1">{gui.preview_ground}</span>
             {GROUNDS.map((g) => (
@@ -424,20 +414,22 @@ export function FilePage({
 }) {
   const coarse = useCoarse();
   const box = useRef<HTMLDivElement>(null);
-  const [writing, setWriting] = useState(false);
   const [can, setCan] = useState(false);
   const [saves, setSaves] = useState(0);
-  const [asking, setAsking] = useState(false);
   /** Where to put the reader after the face changes (a source line). */
   const restore = useRef<number | null>(null);
-  /** A save this page asked for, and what follows it: back to reading, or
-      leaving the page (the draft question's 保存). */
-  const saving = useRef<"read" | "leave" | null>(null);
   /** **A revision from git 历史, shown where the file was** (round UX-4):
-      read-only, the bottom row's ‹ going back to the file as it is, and
-      the compare circle putting it beside the current file. */
+      read-only, the deck's ‹ going back to the file as it is, and the
+      pill's compare switch putting it beside the current file. */
   const [rev, setRev] = useState<GitCommit | null>(null);
   const [compare, setCompare] = useState(false);
+  const previewable = rendererOf(path) !== null;
+  /** **No edit mode** (UX-14, the owner 2026-10-05: 「像备忘录」): a text
+      file is editable as soon as it is open — a tap puts the caret where
+      the finger is, a drag scrolls. A file that renders opens rendered;
+      the pill's eye is the one switch between the two faces, and it keeps
+      the place. */
+  const [face, setFace] = useState<"source" | "preview">(previewable ? "preview" : "source");
   const verbs = useFileVerbs({
     machine,
     path,
@@ -450,15 +442,14 @@ export function FilePage({
       setRev(c);
       setCompare(false);
     },
+    // 字号 and 预览背景 only while the file is read rendered (UX-14).
+    previewing: previewable ? face === "preview" : false,
   });
+
   useEffect(() => {
-    setWriting(false);
-    saving.current = null;
+    setFace(rendererOf(path) !== null ? "preview" : "source");
     setRev(null);
   }, [path]);
-
-  const previewable = rendererOf(path) !== null;
-  const face = writing ? "source" : previewable ? "preview" : "source";
   const dirty = draft !== undefined;
 
   // The face changed: put the reader where they were, before paint.
@@ -467,69 +458,79 @@ export function FilePage({
     if (line === null) return;
     restore.current = null;
     placeAt(box.current, line);
-  }, [writing]);
-
-  const edit = () => {
-    const line = topLine(box.current);
-    restore.current = line;
-    flushSync(() => setWriting(true));
-    // Placed already by the layout effect; focus at that line, in the
-    // press's own gesture so a phone raises its keyboard.
-    beginEditing(box.current);
-    holdWhileKeyboardRises(box.current, line);
-  };
-  const read = () => {
+  }, [face]);
+  const turn = () => {
     restore.current = topLine(box.current);
-    setWriting(false);
+    setFace((f) => (f === "preview" ? "source" : "preview"));
   };
-  const save = (then: "read" | "leave") => {
-    (document.activeElement as HTMLElement | null)?.blur?.();
-    if (!dirty) {
-      if (then === "leave") onBack();
-      else read();
-      return;
-    }
-    saving.current = then;
-    setSaves((n) => n + 1);
-  };
-  const saved = () => {
-    onSaved?.();
-    const then = saving.current;
-    saving.current = null;
-    if (then === "leave") onBack();
-    else if (then === "read") read();
-  };
-  const leave = () => (dirty ? setAsking(true) : onBack());
+  /** **Saving is explicit** (UX-14): the ✓ at the pill's end, drawn while
+      the buffer differs from the file. Leaving keeps the draft (its row
+      carries the dot); nothing asks. */
+  const save = () => setSaves((n) => n + 1);
 
-  // **The name steps aside while the text moves** and comes back when it
-  // rests, or when the text is tapped.
-  const [rest, setRest] = useState(true);
-  const still = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(still.current), []);
-  const moved = () => {
-    setRest(false);
-    clearTimeout(still.current);
-    still.current = setTimeout(() => setRest(true), 700);
+  // **The deck folds while the file is read** (UX-13, `lib/deck-fold`): a
+  // file rests at its top. Nothing folds with the keyboard up.
+  const [folded, setFolded] = useState(false);
+  const memo = useRef<FoldMemo>({ turned: null });
+  const lastTop = useRef(0);
+  useEffect(() => {
+    setFolded(false);
+    memo.current = { turned: null };
+    lastTop.current = 0;
+  }, [path, face, rev]);
+  useEffect(
+    () =>
+      onKeyboardChange(() => {
+        if (keyboardShown()) setFolded(false);
+      }),
+    [],
+  );
+  const scrolled = (e: React.UIEvent) => {
+    const t = e.target as HTMLElement;
+    if (!t.matches("[data-file-scroll], [data-file-preview]")) return;
+    const top = t.scrollTop;
+    const leaving = top > lastTop.current;
+    lastTop.current = top;
+    if (keyboardShown()) return;
+    const next = foldStep(memo.current, top, leaving, FOLD_AT);
+    if (next !== null) setFolded(next);
   };
+  /** **The tap's caret stays where the finger is** (UX-14): WebKit reveals
+      the focused editor as the keyboard rises, and the editor is the
+      whole file, so it scrolled; for a moment after a tap puts the caret
+      in, every jump and every resize of the visible area put the scroller
+      back where it was. */
+  const hold = (e: React.FocusEvent) => {
+    if (!coarse || !(e.target as HTMLElement).matches("textarea[data-edit]")) return;
+    const s = box.current?.querySelector<HTMLElement>("[data-file-scroll]");
+    if (!s) return;
+    const at = s.scrollTop;
+    const put = () => {
+      if (Math.abs(s.scrollTop - at) > 1) s.scrollTop = at;
+    };
+    const vv = window.visualViewport;
+    s.addEventListener("scroll", put);
+    vv?.addEventListener("resize", put);
+    window.setTimeout(() => {
+      s.removeEventListener("scroll", put);
+      vv?.removeEventListener("resize", put);
+    }, HOLD_MS);
+  };
+  const name = rev === null ? baseName(path) : `${baseName(path)} · ${shortId(rev)}`;
 
   return (
     <div
       data-file-page
-      data-writing={writing || undefined}
+      data-folded={folded || undefined}
       // **预览背景 covers the page, not only the text** (round UX-4): the
-      // name and the circles float over the document, so they wear the
-      // ground it is read on, or they would be the app's ink on a ground
-      // that is not the app's.
+      // deck floats over the document, so it wears the ground it is read
+      // on, or it would be the app's ink on a ground that is not the
+      // app's.
       {...(rev === null ? face === "preview" : !compare && rendererOf(path) === "md") ? groundAttr(verbs.ground) : {}}
       className="relative flex min-h-0 flex-1 flex-col bg-card"
       style={fileSizeStyle(verbs.size.step)}
     >
-      <div
-        ref={box}
-        className="flex min-h-0 flex-1 flex-col"
-        onScrollCapture={moved}
-        onPointerUp={() => setRest(true)}
-      >
+      <div ref={box} className="flex min-h-0 flex-1 flex-col" onScrollCapture={scrolled} onFocusCapture={hold}>
         {rev !== null ? (
           <RevisionView machine={machine} path={path} rev={rev} compare={compare} narrow />
         ) : (
@@ -542,94 +543,92 @@ export function FilePage({
           saveAt={saveAt + saves}
           readAt={readAt}
           goLine={goLine}
-          onSaved={saved}
+          onSaved={onSaved}
           onNote={onNote}
-          // Read first under a finger (P1); a mouse edits on a click, as
-          // it always has — 编辑 still opens the source where it reads.
-          reading={coarse && !writing}
           onCanEdit={setCan}
           draft={draft}
           onDraft={onDraft}
         />
         )}
       </div>
-      {/* The name, at the top centre, over the text. */}
-      <div
-        data-file-name-pill
-        data-rest={rest || undefined}
-        aria-hidden={!rest || undefined}
-        className={cn(
-          "pointer-events-none absolute inset-x-0 top-[calc(var(--safe-top)+var(--gap-in))] flex justify-center px-[calc(var(--glass-btn)+var(--page-inset))]",
-          "transition-opacity duration-[var(--dur-180)] motion-reduce:transition-none",
-          rest ? "opacity-100" : "opacity-0",
-        )}
-      >
-        <span className="glass max-w-full truncate rounded-full px-row py-1 text-callout font-title text-foreground">
-          {rev === null ? baseName(path) : `${baseName(path)} · ${shortId(rev)}`}
-        </span>
-      </div>
-      {/* The bottom row: ‹ at the left; 分享, 「…」 and 编辑 at the right. */}
+      {/* **The content pages' deck** (UX-14): ‹ · the pill (the name; the
+          preview eye where the file renders; ✓ while it differs from the
+          disk) · 分享 · 「…」. Nothing at the top of the page. Folded, the
+          strip with the name; a tap brings the deck back. */}
       <div
         data-file-deck
-        className="pointer-events-none absolute inset-x-0 bottom-[calc(var(--safe-bottom)+var(--gap-in))] flex items-end justify-between px-page"
+        className="pointer-events-none absolute inset-x-0 bottom-[var(--safe-bottom)] flex flex-col items-stretch"
       >
-        <GlassCircle
-          aria-label={rev === null ? gui.back : gui.file_rev_back}
-          data-file-back
-          tip={!coarse && (rev === null ? gui.back : gui.file_rev_back)}
-          onClick={rev === null ? leave : () => setRev(null)}
-          className="pointer-events-auto"
-        >
-          <IconBack />
-        </GlassCircle>
-        {rev !== null ? (
-          <GlassCircle
-            aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare}
-            aria-pressed={compare}
-            data-file-rev-compare
-            tip={!coarse && (compare ? gui.file_rev_alone : gui.file_rev_compare)}
-            onClick={() => setCompare(!compare)}
-            className={cn("pointer-events-auto", compare && "glass-sel text-[var(--rail-on-ink)]")}
+        {verbs.said && (
+          <span data-file-said className="glass pointer-events-auto mx-auto mb-in rounded-full px-row py-1 text-callout text-muted-foreground">
+            {verbs.said}
+          </span>
+        )}
+        {folded ? (
+          <button
+            type="button"
+            data-deck-strip
+            onClick={() => setFolded(false)}
+            className="pointer-events-auto flex h-deck-strip flex-none animate-in items-center justify-center px-row text-caption text-muted-foreground fade-in"
           >
-            <IconBranch />
-          </GlassCircle>
+            <span className="min-w-0 truncate">{name}</span>
+          </button>
         ) : (
-        <div className="pointer-events-auto flex items-center gap-in">
-          {verbs.said && (
-            <span data-file-said className="glass rounded-full px-row py-1 text-callout text-muted-foreground">
-              {verbs.said}
-            </span>
-          )}
-          {verbs.shareCircle}
-          {verbs.moreCircle}
-          {can && (
+          <div className="pointer-events-auto flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
             <GlassCircle
-              aria-label={writing ? gui.watch_save : gui.accounts_edit}
-              data-file-edit={writing ? "save" : "edit"}
-              tip={!coarse && (writing ? gui.watch_save : gui.accounts_edit)}
-              onClick={() => (writing ? save("read") : edit())}
-              className={cn(writing && "glass-sel text-[var(--rail-on-ink)]")}
+              aria-label={rev === null ? gui.back : gui.file_rev_back}
+              data-file-back
+              tip={!coarse && (rev === null ? gui.back : gui.file_rev_back)}
+              onClick={rev === null ? onBack : () => setRev(null)}
             >
-              {writing ? <IconCheck /> : <IconPencil />}
+              <IconBack />
             </GlassCircle>
-          )}
-        </div>
+            <div data-file-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-row pe-1">
+              <span data-file-name className="min-w-0 flex-1 truncate text-body">
+                {name}
+              </span>
+              {rev !== null ? (
+                <GlassItem
+                  aria-label={compare ? gui.file_rev_alone : gui.file_rev_compare}
+                  aria-pressed={compare}
+                  data-file-rev-compare
+                  onClick={() => setCompare(!compare)}
+                  className={cn(compare && "glass-sel text-[var(--rail-on-ink)]")}
+                >
+                  <IconBranch />
+                </GlassItem>
+              ) : (
+                <>
+                  {previewable && (
+                    <GlassItem
+                      aria-label={gui.file_face_preview}
+                      aria-pressed={face === "preview"}
+                      data-file-face-toggle={face}
+                      onClick={turn}
+                      className={cn(face === "preview" && "glass-sel text-[var(--rail-on-ink)]")}
+                    >
+                      <IconEye />
+                    </GlassItem>
+                  )}
+                  {dirty && can && (
+                    <GlassItem
+                      aria-label={gui.watch_save}
+                      data-file-save
+                      onClick={save}
+                      className="glass-sel text-[var(--rail-on-ink)]"
+                    >
+                      <IconCheck />
+                    </GlassItem>
+                  )}
+                </>
+              )}
+            </div>
+            {rev === null && verbs.shareCircle}
+            {rev === null && verbs.moreCircle}
+          </div>
         )}
       </div>
       {verbs.dialogs}
-      <CloseDraftDialog
-        name={asking ? baseName(path) : null}
-        onSave={() => {
-          setAsking(false);
-          save("leave");
-        }}
-        onDrop={() => {
-          setAsking(false);
-          onDraft?.(null);
-          onBack();
-        }}
-        onKeep={() => setAsking(false)}
-      />
     </div>
   );
 }
