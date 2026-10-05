@@ -53,7 +53,8 @@ async function until(what, ms, f) {
 }
 
 async function main() {
-  const env = { ...process.env, KHOR_HOME: HOME, KHOR_NAME: "webface", KHOR_WEB_PORT: String(PORT) };
+  // Off the segment, like every scratch node (`fake-home.mjs`).
+  const env = { ...process.env, KHOR_HOME: HOME, KHOR_NAME: "webface", KHOR_NO_MDNS: "1", KHOR_WEB_PORT: String(PORT) };
   delete env.KHOR_SESSION;
   const serve = spawn(KHOR, ["serve"], { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
   children.push(serve);

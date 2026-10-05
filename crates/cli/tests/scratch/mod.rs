@@ -123,6 +123,19 @@ pub fn own_tmux() -> &'static Path {
 /// The scratch tmux socket's name (`own_tmux`).
 pub const TMUX_SOCKET: &str = "khor-scratch";
 
+/// **No scratch node on the segment** (`KHOR_NO_MDNS`): every machine on
+/// this Wi-Fi decodes every node's mDNS announcement, the person's own app
+/// included (term-cpu.md). Set for this process's own binds and handed to
+/// every process the harness starts ([`khor_from`]).
+pub fn off_the_segment() {
+    static DONE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    DONE.get_or_init(|| {
+        // SAFETY: once per test binary, before its first bind; the value
+        // only ever turns this process's own announcing off.
+        unsafe { std::env::set_var(khor_net::endpoint::NO_MDNS_ENV, "1") };
+    });
+}
+
 pub fn khor(home: &Path) -> Command {
     khor_from(home, Path::new(env!("CARGO_BIN_EXE_khor")))
 }
@@ -130,9 +143,11 @@ pub fn khor(home: &Path) -> Command {
 /// [`khor`], from another build of khor — an older one, for a test of
 /// two versions talking (`sync_mixed.rs`).
 pub fn khor_from(home: &Path, bin: &Path) -> Command {
+    off_the_segment();
     let mut cmd = Command::new(bin);
     cmd.env("KHOR_HOME", home)
         .env("KHOR_WEB_PORT", "0")
+        .env(khor_net::endpoint::NO_MDNS_ENV, "1")
         .env("TMUX_TMPDIR", own_tmux())
         .env("KHOR_TMUX_SOCKET", TMUX_SOCKET)
         .env_remove("TMUX")

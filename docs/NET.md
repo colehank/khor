@@ -111,6 +111,12 @@ iroh 的 `N0` 预设，关就是 `Minimal` 只留 mDNS）；大陆侧查不到�
 测试 `a_hermetic_bind_has_no_n0_and_the_n0_switch_adds_it_behind_ours` 守两半：
 不开就一个 n0 服务都没有，开了 n0 排在自己的后面。
 
+**`KHOR_NO_MDNS=1` 连 mDNS 也不挂**（`endpoint::NO_MDNS_ENV`，2026-10-05 TERM 38）：
+不广播、不监听。给临时节点用，不给人用——同一个 Wi-Fi 上每台机器都要解码每条广播，
+各车道留着的临时节点会算到负责人自己的 app 头上（term-cpu.md）。测试的 harness
+（`scratch::off_the_segment`、`util::off_the_segment`、`fake-home.mjs` 等门）都设它；
+`tests/mdns.rs` 是唯一要 mDNS 开着的地方。
+
 **中继名单归设备，只往外走**（2026-09-29 按代码更正；这里原写「名单全网
 一份，CRDT 那行管这个」，代码从来不是那样）：每台自己的 `.khor/relays.json`
 （设置→网络）加 `KHOR_RELAY`，写进设备表的地址提示和配对票，别人拨它时

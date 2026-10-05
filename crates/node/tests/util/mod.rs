@@ -18,6 +18,7 @@ pub async fn raw_request(
     target_addrs: &[String],
     req: &Request,
 ) -> Result<Response, String> {
+    off_the_segment();
     let ep = endpoint::bind(secret, &[])
         .await
         .map_err(|e| e.to_string())?;
@@ -50,6 +51,7 @@ pub async fn raw_tunnel(
     target_addrs: &[String],
     dest: &str,
 ) -> Result<u8, String> {
+    off_the_segment();
     let ep = endpoint::bind(secret, &[])
         .await
         .map_err(|e| e.to_string())?;
@@ -110,6 +112,7 @@ pub fn loop_relay() -> &'static str {
 /// the file 设置 → 网络 writes). Call before the home's first node opens.
 pub fn hermetic(root: &Path) {
     own_tmux();
+    off_the_segment();
     std::fs::create_dir_all(root.join(".khor")).unwrap();
     std::fs::write(
         root.join(".khor").join("relays.json"),
@@ -119,6 +122,18 @@ pub fn hermetic(root: &Path) {
         ),
     )
     .unwrap();
+}
+
+/// **No test node on the segment** (`KHOR_NO_MDNS`; the CLI harness's
+/// `off_the_segment`): every machine on this Wi-Fi decodes every node's
+/// mDNS announcement, the person's own app included (term-cpu.md).
+pub fn off_the_segment() {
+    static DONE: OnceLock<()> = OnceLock::new();
+    DONE.get_or_init(|| {
+        // SAFETY: once per test binary, before its first bind; the value
+        // only ever turns this process's own announcing off.
+        unsafe { std::env::set_var(endpoint::NO_MDNS_ENV, "1") };
+    });
 }
 
 /// **This test process's own tmux, never the person's** (the CLI
