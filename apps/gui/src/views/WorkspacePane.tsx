@@ -1117,16 +1117,10 @@ export function WorkspacePane({
         face: null,
         path,
         machine,
-        // **Where it is, not its name again** (the audit fix plan F4.7;
-        // W17): the folder it sits in, relative to the workspace root —
-        // the half that tells two tabs called `mod.rs` apart — or the
-        // workspace's own name for a file at its root. The absolute path
-        // is the hover title's, and both are on the menu.
-        sub: (() => {
-          const rel = under(root, path);
-          const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "";
-          return dir || basename(root) || rel;
-        })(),
+        // **One line, the name** (UX-20, UX-25: one tab language — the
+        // session tabs' pill). ⚠️ 墓碑 (F4.7; W17): `sub`, the folder the
+        // file sits in under its name — the absolute path is the hover
+        // title's, and both are on the menu.
         // What the open file has left to whisper — today, a diff that
         // stopped short (第十四轮 第 2 条). Only the front tab has a
         // view to report it, so only the front tab wears it.
@@ -1135,17 +1129,17 @@ export function WorkspacePane({
         dirty: !isDiff && drafts.has(key),
         preview: preview === key,
         // The file's own kind on the tab too (2026-09-16:「标签页打开了,
-        // 最上方也要有 icon」) — the same icon the tree drew for it.
-        //
-        // **32, which is the two lines' own height** (2026-09-16:「标签
-        // 页上, 文件类型的icon, 过小了…可以放大一点, 和这两行对齐」). The
-        // tab is a name over a path, 18 and 14 of leading, and the glyph
-        // stands beside the pair rather than on the first line — so it
-        // paints about 25, most of the pair's height (a 28 box: every
-        // shape fills 0.90 of its box since 2026-10-02, `FileKindIcon`). The size is set here because this is where the glyph is
-        // made; `TabStrip` places what it is handed and sizes nothing
-        // (its own head says so).
-        glyph: <FileKindIcon name={basename(path)} className="size-7" />,
+        // 最上方也要有 icon」) — the same icon the tree drew for it, in
+        // the pill's icon seat at a session face's size (UX-25:
+        // `--tab-face`). ⚠️ 墓碑: 28, the height of the name and path
+        // pair it stood beside. The size is set here because this is
+        // where the glyph is made; `TabStrip` places what it is handed.
+        // In a box of its own so it centres on the pill, not on a line.
+        glyph: (
+          <span className="grid size-tab-face place-items-center">
+            <FileKindIcon name={basename(path)} className="size-tab-face" />
+          </span>
+        ),
         // 预览, on the tab it is about (2026-09-17 ruling 47). Only
         // where there is a second face to switch to — a `.rs` has one
         // face and grows no eye, exactly as the strip's far end drew
@@ -1879,6 +1873,11 @@ export function WorkspacePane({
           ) : (
           <div ref={readFirst.box} className="contents">
           <Tabs
+            // **The session tabs' capsule** (UX-25, the owner 2026-10-05:
+            // one tab language): pills in one glass capsule, the file's
+            // kind in the icon seat, one line of name, × on the one in
+            // front and under the pointer. ⚠️ 墓碑: the VS Code-style strip.
+            glass
             faces={tabFaces}
             active={file === null ? "" : `${machine}:${file}`}
             onFocus={(id) => setFile(id.slice(machine.length + 1))}

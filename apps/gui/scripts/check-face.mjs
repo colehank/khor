@@ -5187,13 +5187,12 @@ try {
       if (open.length !== 1) {
         fail(`pressing one file opened ${open.length} tab(s) — 一个文件一个标签 (src/views/WorkspacePane.tsx)`);
       } else {
-        // The folder it sits in, relative to the root (F4.7: 「where it
-        // is, not its name again」); it was the file's own path.
-        if (open[0].name !== "one.rs" || open[0].sub !== "src") {
+        // **One line, the name** (UX-20, UX-25: the session tabs' pill).
+        // ⚠️ 墓碑 (工作区批⑧, F4.7): the folder it sits in under the name.
+        if (open[0].name !== "one.rs" || open[0].sub !== null) {
           fail(
-            `the tab says ${JSON.stringify([open[0].name, open[0].sub])} — 「标签上显示文件名,下方显示` +
-              "其路径」, and the path is what tells two files of the same name apart " +
-              "(src/views/WorkspacePane.tsx)",
+            `the tab says ${JSON.stringify([open[0].name, open[0].sub])} — the file's name, one line: a tab is ` +
+              "the session tabs' pill (UX-25; src/views/WorkspacePane.tsx)",
           );
         }
         if (open[0].id !== `${pin.name}:${pin.path}/src/one.rs`) {
@@ -6336,61 +6335,41 @@ try {
           "group(s) — the columns' switches are R0's page buttons (src/views/WorkspacePane.tsx)",
       );
     }
-    // **Standing beside both lines and big enough to read** (2026-09-16
-    // ruling 43:「标签页上, 文件类型的icon, 过小了…和这两行对齐」): the
-    // glyph's middle against the middle of name-top to path-bottom, and
-    // its painted height against the two lines it stands beside.
+    // **The session tabs' pill** (UX-25, the owner 2026-10-05: one tab
+    // language): in the glass capsule, the kind icon in the icon seat at
+    // a session face's size, centred on the one line of name.
+    // ⚠️ 墓碑 (2026-09-16 ruling 43): a glyph as tall as a name-over-path
+    // pair, centred on the pair.
     const seat = await page.evaluate(() => {
-      const tab = document.querySelector("[data-tab-open]");
+      const tab = document.querySelector("[data-ws-tab-strip] [data-tab-open]");
       const g = tab?.querySelector("[data-file-kind]");
       const nm = tab?.querySelector("[data-tab-name]");
-      const sub = tab?.querySelector("[data-tab-sub]");
-      if (!g || !nm || !sub) return null;
+      if (!g || !nm) return null;
+      const probe = document.createElement("div");
+      probe.style.height = "var(--tab-face)";
+      document.body.append(probe);
+      const face = Math.round(probe.getBoundingClientRect().height);
+      probe.remove();
       const a = g.getBoundingClientRect();
       const b = nm.getBoundingClientRect();
-      const c = sub.getBoundingClientRect();
-      const svg = g.querySelector("svg");
-      let ink = 0;
-      if (svg) {
-        const bb = svg.getBBox();
-        const vb = svg.viewBox.baseVal;
-        const k = svg.getBoundingClientRect().height / (vb.height || 1);
-        ink = Math.round(bb.height * k * 10) / 10;
-      }
       return {
+        capsule: !!tab.closest("[data-tab-capsule]"),
+        lines: tab.querySelectorAll("[data-tab-sub]").length,
+        glyph: Math.round(a.height),
+        face,
         glyphMid: Math.round((a.top + a.bottom) / 2),
-        pairMid: Math.round((b.top + c.bottom) / 2),
-        pair: `${Math.round(b.top)}–${Math.round(c.bottom)}`,
-        nameLeft: Math.round(b.left),
-        subLeft: Math.round(c.left),
-        ink,
+        nameMid: Math.round((b.top + b.bottom) / 2),
       };
     });
     console.log(`tab glyph seat: ${JSON.stringify(seat)}`);
     if (seat === null) {
-      fail("probe void: the open tab has no kind icon, name and path to measure against each other");
+      fail("probe void: the open tab has no kind icon or name to measure against each other");
     } else {
-      // Three, where the ruling said two: the glyph is centred on the
-      // flex line and the pair is measured box to box, and those differ
-      // by whatever leading the second line carries.
-      if (Math.abs(seat.glyphMid - seat.pairMid) > 3) {
-        fail(
-          `the tab's kind icon is centred at ${seat.glyphMid} while the two lines run ${seat.pair} (middle ` +
-            `${seat.pairMid}) — 「和这两行对齐」 (src/browse/TabStrip.tsx)`,
-        );
+      if (!seat.capsule || seat.lines !== 0) {
+        fail(`the workspace's tab is ${seat.capsule ? "in" : "not in"} the glass capsule with ${seat.lines} second line(s) — the session tabs' pill, one line (UX-25; src/views/WorkspacePane.tsx)`);
       }
-      if (seat.ink < 18) {
-        fail(
-          `the tab's kind icon paints ${seat.ink}px beside two lines — 「过小了…可以放大一点」, and what ` +
-            "has to grow is the ink (src/views/WorkspacePane.tsx tabFaces)",
-        );
-      }
-      if (Math.abs(seat.nameLeft - seat.subLeft) > 1) {
-        fail(
-          `the tab's name starts at ${seat.nameLeft} and its path at ${seat.subLeft} — the glyph is beside the ` +
-            "pair, so both lines start on its right edge (src/browse/TabStrip.tsx)",
-        );
-      }
+      if (Math.abs(seat.glyph - seat.face) > 1) fail(`the tab's kind icon is ${seat.glyph} tall in a pill whose face is ${seat.face} (--tab-face) — the icon seat (UX-25)`);
+      if (Math.abs(seat.glyphMid - seat.nameMid) > 1) fail(`the tab's kind icon is centred at ${seat.glyphMid}, its name at ${seat.nameMid} — one line, one centre (UX-25)`);
     }
     // ii/iii/iv) 编辑, typing, 保存 — and back to reading, rendering what
     // was typed. **The first write's digest**, because a save answers
