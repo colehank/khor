@@ -712,6 +712,61 @@ impl Ring {
         self.pictures.splice(&self.bytes, self.gone, &mut out);
         out
     }
+
+    /// **The modes in force now, and nothing else** (item 41): what a
+    /// multiplexer client's attacher is handed instead of the ring. The
+    /// head's modes, then every byte still held fed through them — a
+    /// tmux client's `ESC [ ? 1049 h` may be in the ring or trimmed past
+    /// it, and the attacher must start in it either way.
+    fn modes_now(&self) -> Vec<u8> {
+        let mut modes = self.head.clone();
+        let (a, b) = self.bytes.as_slices();
+        modes.feed(a);
+        modes.feed(b);
+        modes.preamble()
+    }
+}
+
+/// The socket a tmux client's argv names (`-L name` or `-S path`, before
+/// the command), to speak to the same server.
+fn tmux_socket_args(cmd: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 1;
+    while i + 1 < cmd.len() {
+        match cmd[i].as_str() {
+            "-L" | "-S" => {
+                out.push(cmd[i].clone());
+                out.push(cmd[i + 1].clone());
+                i += 2;
+            }
+            // A global flag with no value, or the command: stop at the
+            // first word that is neither.
+            s if s.starts_with('-') && s.len() == 2 && !["-f", "-T"].contains(&s) => i += 1,
+            "-f" | "-T" => i += 2,
+            _ => break,
+        }
+    }
+    out
+}
+
+/// **tmux draws the screen for a new attacher** (item 41): the client is
+/// khor's own, so the attacher got the modes and no bytes; `refresh-client`
+/// on this pty's tty makes tmux redraw it whole, through the reader and
+/// so to every face, the new one included. A face opening at the same
+/// size sends no SIGWINCH, which is why the ask is explicit.
+fn redraw_tmux_client(cmd: &[String], tty: Option<std::path::PathBuf>) {
+    let Some(tty) = tty else { return };
+    let path = crate::spawn_path(&cmd[0]);
+    let Some(tmux) = crate::find_program(&cmd[0], &path) else { return };
+    let mut c = std::process::Command::new(tmux);
+    c.args(tmux_socket_args(cmd)).arg("refresh-client").arg("-t").arg(tty).env("PATH", &path);
+    for k in ["TMUX", "TMUX_PANE"] {
+        c.env_remove(k);
+    }
+    c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    std::thread::spawn(move || {
+        let _ = c.status();
+    });
 }
 
 struct Shared {
@@ -1324,6 +1379,7 @@ fn host_serving(
         let ledger = ledger.clone();
         let master = master.clone();
         let writer = writer.clone();
+        let cmd = cmd.clone();
         std::thread::spawn(move || {
             for conn in listener.incoming().flatten() {
                 let _ = conn.set_write_timeout(Some(Duration::from_secs(2)));
@@ -1379,11 +1435,20 @@ fn host_serving(
                     let Ok(client) = Client::new(conn) else {
                         continue;
                     };
-                    if !client.feed(&Arc::from(ring.replay())) {
+                    // **A tmux row is never replayed the ring** (item 41):
+                    // the ring of a tmux client is its redraws over and
+                    // over, up to a MiB, parsed visibly on the phone, and
+                    // tmux can draw the screen afresh instead; the history
+                    // is read from tmux (item 31). The modes still go first.
+                    let first = if mux_client { ring.modes_now() } else { ring.replay() };
+                    if !client.feed(&Arc::from(first)) {
                         continue;
                     }
                     shared.clients.lock().unwrap().push(client);
                     drop(ring);
+                    if mux_client {
+                        redraw_tmux_client(&cmd, master.lock().unwrap().tty_name());
+                    }
                     let master = master.clone();
                     let writer = writer.clone();
                     let ledger = ledger.clone();
@@ -1550,7 +1615,7 @@ mod tests {
 #[cfg(test)]
 mod last_line_tests {
     use super::{
-        last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last,
+        last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last, tmux_socket_args,
     };
 
     /// The preview strip reads bytes the way `tail -1` would: ANSI
@@ -1619,6 +1684,16 @@ mod last_line_tests {
 
     /// Which hosts the writer gate applies to: any argv whose command is
     /// tmux, by basename — both bridge shapes get there through one.
+    /// The socket of the server a client argv speaks to (item 41), with
+    /// the other global flags, valued or not, stepped over.
+    #[test]
+    fn a_tmux_argv_names_its_socket() {
+        let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        assert_eq!(tmux_socket_args(&argv(&["tmux", "-L", "khor", "-T", "extkeys", "new-session", "-t", "$0"])), argv(&["-L", "khor"]));
+        assert_eq!(tmux_socket_args(&argv(&["tmux", "-u", "-f", "/dev/null", "-S", "/tmp/s", "attach"])), argv(&["-S", "/tmp/s"]));
+        assert!(tmux_socket_args(&argv(&["tmux", "attach", "-t", "-L"])).is_empty());
+    }
+
     #[test]
     fn a_tmux_argv_marks_the_pty_as_a_multiplexer_client() {
         let argv = |s: &[&str]| s.iter().map(|w| w.to_string()).collect::<Vec<_>>();
