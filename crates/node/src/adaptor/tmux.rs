@@ -305,6 +305,29 @@ impl Tmux {
     ///   read off the session the pane is made in (tmux(1), spawn).
     /// - `@khor_row`, a user option naming the row, so the session can
     ///   be found again to move between prompts ([`Tmux::jump_prompt`]).
+    ///
+    /// # Shift+Enter: khor's client says it has extended keys (item 39)
+    ///
+    /// The owner, 2026-10-05: in the same tmux session, Shift+Enter is a
+    /// newline in Claude Code under iTerm2 and sends the line under khor.
+    /// tmux sends a pane extended keys (`CSI 27 ; 2 ; 13 ~`) only when the
+    /// pane asked (Claude Code does), `extended-keys` is on, and the
+    /// *outer terminal* has the `extkeys` feature: then tmux asks it for
+    /// xterm's modifyOtherKeys (`CSI > 4 ; 2 m`) and reads its modified
+    /// keys. tmux learns the feature from `terminal-features` or from the
+    /// terminal's own name: iTerm2 answers XTVERSION and is in tmux's table
+    /// with `extkeys` (tmux 3.7b, tty-features.c `tty_default_features`,
+    /// tty-keys.c on `iTerm2 `); xterm.js answers `xterm.js(6.0.0)`, which
+    /// is not, so khor's client had no `extkeys` and Shift+Enter crossed
+    /// as a bare CR (measured on a scratch server with `extended-keys on`:
+    /// `client_termfeatures` without `extkeys`, the pane read `\r`).
+    ///
+    /// The face speaks modifyOtherKeys (`lib/term-kitty.ts`), so khor's
+    /// client says so itself: `-T extkeys` (tmux(1), tmux 3.2 and later),
+    /// a flag on this one client, not the global `terminal-features`.
+    /// Asked of a tmux that knows `terminal-features` only
+    /// ([`Tmux::takes_client_features`]): an older one refuses `-T`, and
+    /// the attach with it.
     pub fn grouped_attach_argv(&self, row: &str, target: &str, window: Option<&str>, shim: Option<&str>) -> Vec<String> {
         let mut argv = vec![
             self.binaries
@@ -315,6 +338,10 @@ impl Tmux {
         if let Some(sock) = &self.socket {
             argv.push("-L".into());
             argv.push(sock.clone());
+        }
+        if self.takes_client_features() {
+            argv.push("-T".into());
+            argv.push("extkeys".into());
         }
         for a in ["new-session", "-t", target, ";"] {
             argv.push(a.into());
@@ -580,6 +607,13 @@ impl Tmux {
     /// attach that follows then fails on its own, with its own words.
     pub fn knows_mouse(&self) -> bool {
         self.ask(&["show-options", "-gv", "mouse"]).is_some()
+    }
+
+    /// Whether this tmux takes `-T features` for a client: 3.2 and later,
+    /// the release that brought `terminal-features` too, which is what is
+    /// asked (read-only). `false` for a server that will not answer.
+    pub fn takes_client_features(&self) -> bool {
+        self.ask(&["show-options", "-sv", "terminal-features"]).is_some()
     }
 
     /// The window of session `target` whose panes hold any of `wanted`,
