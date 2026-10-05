@@ -240,7 +240,11 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
   SEATS.forEach((sel, seat) => {
     const el = screen.querySelector<HTMLElement>(sel);
     if (!el || !shown(el) || el.getAttribute("aria-disabled") === "true") return;
-    hits.push({ ...rel(el.getBoundingClientRect(), o), seat, swipe: false });
+    const at = rel(el.getBoundingClientRect(), o);
+    // The strip answers on its whole band, to the screen's foot: over a
+    // page there is nothing else a finger there could mean.
+    if (el.matches("[data-deck-strip]")) at.h = o.height - at.y;
+    hits.push({ ...at, seat, swipe: false });
   });
   // The pill swipes sideways between tabs, as the DOM pill does.
   const pill = bar.querySelector<HTMLElement>("[data-deck-pill]");
