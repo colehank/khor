@@ -37,7 +37,11 @@ export function MachineFiles({
   here,
   onOpenFile,
   start = null,
+  startDir = null,
 }: {
+  /** The directory the listing opens at (UX-17: a session's 目录 sheet
+      opens where the session is); the machine's home without it. */
+  startDir?: string | null;
   machine: string;
   here: boolean;
   /** A file to open, from outside the page (a conversation's
@@ -53,7 +57,7 @@ export function MachineFiles({
 }) {
   const narrow = useNarrow();
   // `""` is the machine's home, the listing's own contract.
-  const [at, setAt] = useState(() => (start ? start.path.slice(0, start.path.lastIndexOf("/")) || "/" : ""));
+  const [at, setAt] = useState(() => (start ? start.path.slice(0, start.path.lastIndexOf("/")) || "/" : (startDir ?? "")));
   const [file, setFile] = useState<string | null>(start?.path ?? null);
   /** Bumped to read the listing again after the file page renamed or
       deleted what it showed. */

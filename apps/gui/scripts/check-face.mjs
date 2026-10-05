@@ -28799,6 +28799,60 @@ try {
       await page.evaluate(() => window.localStorage.removeItem("khor.page-machine"));
     }
 
+    // ── p. the terminal pill opens the session's directory (UX-17): one
+    //       sheet, 目录 first — the listing at the shell's directory (OSC
+    //       7), else where the session started — and 日志, the 24 hours;
+    //       the last tab kept per session. A conversation's title is not a
+    //       button: it opens nothing. ──
+    {
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      if (!(await openRow(terms[2].id)) || !(await xtermUp())) {
+        fail("probe dead: bar p · a terminal never opened");
+      } else {
+        const sheet = async () => {
+          askedLs.length = 0;
+          await press("[data-session-deck] button[data-deck-title]");
+          await until(3_000, async () => (await count("[data-place-sheet]")) === 1);
+          await wait(600);
+          return page.evaluate(() => ({
+            sheet: document.querySelectorAll("[data-place-sheet]").length,
+            on: document.querySelector('[data-place-tab][aria-checked="true"], [data-place-tab][data-state="on"], [data-place-tab][aria-pressed="true"]')?.getAttribute("data-place-tab") ?? null,
+            dir: document.querySelectorAll("[data-place-sheet] [data-place-dir]").length,
+            log: document.querySelectorAll("[data-place-sheet] [data-place-log]").length,
+          }));
+        };
+        const shut = async () => {
+          await page.keyboard.press("Escape");
+          await until(2_000, async () => (await count("[data-place-sheet]")) === 0);
+        };
+        const first = await sheet();
+        const lsFirst = askedLs.map((a) => a.path);
+        await press('[data-place-tab="log"]');
+        await wait(300);
+        const log = await page.evaluate(() => document.querySelectorAll("[data-place-sheet] [data-place-log]").length);
+        await shut();
+        const kept = await sheet();
+        await press('[data-place-tab="dir"]');
+        await shut();
+        await program("\x1b]7;file://gate/tmp/elsewhere\x07");
+        const moved = await sheet();
+        const lsMoved = askedLs.map((a) => a.path);
+        await shut();
+        console.log(`bar p · first ${shown(first)} listed ${shown(lsFirst)}; 日志 ${log}; reopened ${shown(kept)}; after OSC 7 ${shown(moved)} listed ${shown(lsMoved)}`);
+        if (first.sheet !== 1 || first.on !== "dir" || first.dir !== 1) fail(`bar p · the pill opened ${shown(first)} — one sheet, 目录 first`);
+        if (!lsFirst.includes("/home/gate/work")) fail(`bar p · 目录 listed ${shown(lsFirst)} — where the session started (/home/gate/work), no OSC 7 yet`);
+        if (log !== 1) fail("bar p · 日志 drew no 24-hour view");
+        if (kept.on !== "log" || kept.log !== 1) fail(`bar p · reopened, the sheet is on ${shown(kept.on)} — the last tab is kept per session`);
+        if (!lsMoved.includes("/tmp/elsewhere")) fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 目录 listed ${shown(lsMoved)}`);
+      }
+      if (!(await openRow(chatRow.id))) {
+        fail("probe dead: bar p · the conversation never opened");
+      } else {
+        const btn = await count("[data-session-deck] button[data-deck-title]");
+        if (btn !== 0) fail(`bar p · a conversation's pill title is a button (${btn}) — it opens nothing, so it is not drawn as one`);
+      }
+    }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
     for (const r of ["**/term_open", "**/term_attach", "**/term_stream", "**/term_resize", "**/term_leave", "**/term_key", "**/machine_log"]) await page.unroute(r);
