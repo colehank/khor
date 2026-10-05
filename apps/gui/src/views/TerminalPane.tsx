@@ -109,6 +109,7 @@ import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { swipeLowers } from "@/lib/term-swipe";
+import { keyPanelEdge, keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
 
@@ -2459,6 +2460,14 @@ export function TerminalPane({
     };
     const dragged = fingers ? () => {} : fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
+    // **The same swipe lowers khor's key panel** (UX-31; term-4's reading
+    // of item 42): the finger reaching the panel's top edge, which is
+    // where the shell ends while the foot is held.
+    const swipedPanel = swipeLowers(scrollerRef.current!, term.textarea ?? null, {
+      up: keyPanelUp,
+      edge: keyPanelEdge,
+      lower: lowerKeyPanel,
+    });
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas, wheel: fingers ? notch : undefined });
     // **A tmux row, or an agent inside a tmux pane** (item 33: the owner
     // opens Claude Code's own row, not the session's): both are khor's
@@ -2617,6 +2626,7 @@ export function TerminalPane({
       dragged();
       scrollerRef.current?.removeEventListener("touchstart", landedAt, true);
       swiped();
+      swipedPanel();
       tmuxHistory?.stop();
       tmuxHistoryRef.current = null;
       firstTouch.stop();

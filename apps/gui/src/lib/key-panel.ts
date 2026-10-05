@@ -119,6 +119,22 @@ export function swapToKeyboard(field: HTMLElement) {
   swapping = window.setTimeout(release, KEYBOARD_WAIT_MS);
 }
 
+/** **The panel's top edge** in client px while it is up (the swipe that
+    lowers it is the finger reaching it, as the keyboard's is — item 42),
+    else null: the panel starts where the held foot begins. */
+export function keyPanelEdge(): number | null {
+  const held = footHeld();
+  if (!up || held === null) return null;
+  const panel = document.querySelector("[data-key-panel]");
+  return panel ? panel.getBoundingClientRect().top : document.documentElement.clientHeight - held;
+}
+
+/** The swipe's lowering: the panel goes to the foot, never back to a
+    keyboard — a drag down is a person wanting the screen. */
+export function lowerKeyPanel() {
+  if (up) release();
+}
+
 /** The panel's view is gone (the row collapsed, the page left): the
     foot is let go. */
 export function keyPanelGone() {
