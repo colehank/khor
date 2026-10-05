@@ -49,6 +49,7 @@ pub mod reactor;
 pub(crate) mod roads;
 pub mod satellite;
 pub mod serves;
+pub mod roadbook;
 pub mod tabs;
 #[cfg(test)]
 pub(crate) mod testdir;
@@ -67,7 +68,7 @@ pub use khor_core::avatar::{
     Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    CpuDay, Fill, Hop, Link, Load, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
+    CpuDay, Fill, Hop, Link, Load, Road, RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
     WireCounts,
     UsageDay, Vitals, kind,
 };
@@ -411,6 +412,9 @@ pub struct Node {
     /// The reason the deaf watch last said it stayed, so it says each
     /// once (`link::Node::say_once`).
     pub(crate) deaf_said: Arc<Mutex<Option<&'static str>>>,
+    /// What this machine has written about its own roads, and what is
+    /// waiting to settle (`roadbook`, round NET-12).
+    pub(crate) roadbook: Arc<Mutex<roadbook::RoadBook>>,
     /// The session rows last sent each asker, by its id, with the digest
     /// of that frame (`proto::Response::SessionRowsSince`).
     pub(crate) rows_sent: Arc<Mutex<std::collections::HashMap<String, RowsSent>>>,
@@ -1081,6 +1085,7 @@ impl Node {
             reached_at: Arc::default(),
             ears_homed: Arc::default(),
             deaf_said: Arc::default(),
+            roadbook: Arc::default(),
             rows_sent: Arc::default(),
             wsfacts: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),

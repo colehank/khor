@@ -1475,6 +1475,14 @@ impl Node {
                                 );
                             }
                         }
+                        // What this machine's roads are, written into the
+                        // table only when one changed and held (round
+                        // NET-12, `roadbook`). Not while backgrounded: a
+                        // phone that let its wires go has not lost its roads.
+                        if !n.resting.load(std::sync::atomic::Ordering::Relaxed) {
+                            let book = n.clone();
+                            let _ = tokio::task::spawn_blocking(move || book.note_roads()).await;
+                        }
                         if !round { return }
                         // Every machine at once, each on its own wire and
                         // budget; one still in a round from an earlier

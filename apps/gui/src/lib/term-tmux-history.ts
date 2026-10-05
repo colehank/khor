@@ -97,9 +97,6 @@ export function holdsTmuxHistory(o: {
   outOfReach: () => void;
   /** The person went up into the history, or came back to the bottom. */
   moved: (up: boolean) => void;
-  /** The deck is folded (item 32): the band shows the history's newest
-      lines, so a quiet after output reads even at the bottom. */
-  folded?: () => boolean;
 }): {
   active: () => boolean;
   /** The history xterm while the person is up in it: what a long press
@@ -110,11 +107,12 @@ export function holdsTmuxHistory(o: {
   shown: (on: boolean) => void;
   /** The attach has sized the pane for this face: reads may begin. */
   joined: () => void;
-  /** The history's xterm while it holds the scroller (item 32's band
-      reads its lines), else null. */
-  terminal: () => Terminal | null;
-  /** The pane in front, as the newest read found it (`null` before one). */
-  pane: () => { pane: string; mouse: boolean; alternate: boolean } | null;
+  /** The pane in front, as the newest read found it (`null` before one),
+      with tmux's window size then (item 45). */
+  pane: () => { pane: string; mouse: boolean; alternate: boolean; window: string } | null;
+  /** Reads now, whether or not the history is behind: for the notes'
+      look at the window size after a touch (item 45). */
+  reread: () => Promise<void>;
   stop: () => void;
 } {
   const { live, seat } = o;
@@ -133,7 +131,7 @@ export function holdsTmuxHistory(o: {
   /** The last read failed (an older khor there, out of reach). */
   let failed = false;
   /** What the newest read said of the pane in front. */
-  let held: { pane: string; mouse: boolean; alternate: boolean } | null = null;
+  let held: { pane: string; mouse: boolean; alternate: boolean; window: string } | null = null;
   /** A read has succeeded: this terminal is tmux's. */
   let proven = o.known;
   /** Not a tmux terminal after all: no more reads. */
@@ -198,7 +196,7 @@ export function holdsTmuxHistory(o: {
   };
   const apply = (h: PaneHistory) => {
     failed = false;
-    held = { pane: h.pane, mouse: h.mouse, alternate: h.alternate };
+    held = { pane: h.pane, mouse: h.mouse, alternate: h.alternate, window: h.window };
     // **A program that scrolls itself keeps the drag** (item 36): on its
     // alternate screen, or holding the mouse — Claude Code does, and then
     // tmux's history of the pane is its frames drawn again and again, not
@@ -283,8 +281,7 @@ export function holdsTmuxHistory(o: {
   };
   const wrote = live.onWriteParsed(() => {
     behind = true;
-    // Up in it, or folded: the band at the bottom shows its newest lines.
-    if (up() || (on && o.folded?.())) quietThen();
+    if (up()) quietThen();
   });
   // Another pane or window in front: tmux retitles khor's client with the
   // pane's id (`Tmux::grouped_attach_argv`), and the next read is that
@@ -326,7 +323,7 @@ export function holdsTmuxHistory(o: {
       if (visible) quietThen();
     },
     pane: () => held,
-    terminal: () => (on ? history : null),
+    reread: () => read().then(() => {}),
     stop: () => {
       stopped = true;
       drop();

@@ -660,6 +660,8 @@ pub struct PaneHistory {
     pub left: u16,
     /// The pane's program holds the mouse (item 36): it scrolls itself.
     pub mouse: bool,
+    /// tmux's window size at the read, `WxH` (item 45).
+    pub window: String,
 }
 
 /// **A tmux row's front pane history from an anchor on** (item 31,
@@ -684,6 +686,7 @@ pub async fn pane_history(root: &Path, id: &str, since: Option<PaneAnchor>) -> R
         top: h.top,
         left: h.left,
         mouse: h.mouse,
+        window: h.window,
     })
 }
 

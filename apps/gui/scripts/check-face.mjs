@@ -29288,14 +29288,15 @@ try {
       }
     }
 
-    // ── m. the deck folds on the terminal; the grid never changes size
-    //       (UX-13, the owner 2026-10-05: 「Claude Code 不能重绘」). 300
-    //       lines, then the scroller moved up into the history: the strip
-    //       replaces the deck, the pane's root says `data-folded="true"`
-    //       with `--fold-band` whole rows of it, the box grew by exactly
-    //       the band while the bar shrank by it, and the pty was told
-    //       nothing. Back at the bottom it unfolds; with the keyboard up
-    //       it never folds. ──
+    // ── m. the deck folds on the terminal, and the grid resizes with it
+    //       as it does with the keyboard (UX-13; item 44, the owner
+    //       2026-10-06 withdrawing 「网格不重排」). 300 lines, then the
+    //       scroller moved up into the history: the strip replaces the
+    //       deck, the box grew by what the fold freed (the deck less the
+    //       strip) while the bar shrank by it, the grid gained the rows
+    //       that fit, and the pty was told once. Back at the bottom it
+    //       unfolds and the grid is back. With the keyboard up it never
+    //       folds. ──
     if (!(await openRow(terms[1].id)) || !(await xtermUp())) {
       fail("probe dead: bar m · a terminal never opened under a finger");
     } else {
@@ -29305,21 +29306,16 @@ try {
           const root = document.querySelector("[data-kept-terminal][data-active]");
           const box = root?.querySelector("[data-terminal]");
           const bar = document.querySelector("[data-session-bar]");
-          const band = root ? getComputedStyle(root).getPropertyValue("--fold-band") : "";
-          const probe = document.createElement("div");
-          probe.style.height = band || "0px";
-          root?.appendChild(probe);
-          const bandPx = probe.getBoundingClientRect().height;
-          probe.remove();
+          const t = document.querySelector("[data-terminal]")?.__xterm;
+          const screen = box?.querySelector(".xterm-screen");
           return {
             strip: document.querySelectorAll("[data-session-bar] [data-deck-strip]").length,
             deck: !!document.querySelector("[data-session-deck]")?.getClientRects().length,
             folded: root?.getAttribute("data-folded") ?? null,
-            row: parseFloat(root ? getComputedStyle(root).getPropertyValue("--term-row") : "") || 0,
-            band: +bandPx.toFixed(2),
+            row: screen && t ? screen.getBoundingClientRect().height / t.rows : 0,
             box: +(box?.getBoundingClientRect().height ?? 0).toFixed(2),
             bar: +(bar?.getBoundingClientRect().height ?? 0).toFixed(2),
-            rows: document.querySelector("[data-terminal]")?.__xterm?.rows,
+            rows: t?.rows,
           };
         });
       const scrollTo = (fromBottom) =>
@@ -29340,18 +29336,20 @@ try {
       await wait(300);
       const back = await state();
       console.log(`bar m · at rest ${shown(rest)}; up in the history ${shown(up)}; back at the bottom ${shown(back)}; told the pty ${shown(resized)}`);
-      if (up.strip !== 1 || up.deck || up.folded !== "true") {
-        fail(`bar m · 400 px up into the history: strip ${up.strip}, deck ${up.deck ? "shown" : "gone"}, data-folded ${shown(up.folded)} — the deck folds into the strip (UX-13)`);
+      if (up.strip !== 1 || up.deck) {
+        fail(`bar m · 400 px up into the history: strip ${up.strip}, deck ${up.deck ? "shown" : "gone"} — the deck folds into the strip (UX-13)`);
       }
-      if (!(up.row > 0) || Math.abs(up.band - 2 * up.row) > 0.5) fail(`bar m · --fold-band is ${up.band} px for rows of ${up.row} — two whole rows (term's item 32 slot)`);
-      if (Math.abs(up.box - rest.box - up.band) > 1 || Math.abs(rest.bar - up.bar - up.band) > 1) {
-        fail(`bar m · folded, the box went ${rest.box} → ${up.box} and the bar ${rest.bar} → ${up.bar} — the box grows by the band (${up.band}) and the bar keeps the rest of the deck`);
+      const freed = rest.bar - up.bar;
+      if (!(freed > 0) || Math.abs(up.box - rest.box - freed) > 1) {
+        fail(`bar m · folded, the box went ${rest.box} → ${up.box} and the bar ${rest.bar} → ${up.bar} — the box grows by what the fold frees (item 44)`);
       }
-      if (resized.length !== 0 || up.rows !== rest.rows || back.rows !== rest.rows) {
-        fail(`bar m · the fold told the pty ${shown(resized)} and the grid went ${rest.rows} → ${up.rows} → ${back.rows} — the grid never changes size`);
+      const gained = up.row > 0 ? Math.floor((up.box - rest.box) / up.row) : 0;
+      if (!(up.rows > rest.rows) || up.rows - rest.rows !== gained || !resized.some(([, r]) => r === up.rows)) {
+        fail(`bar m · the grid went ${rest.rows} → ${up.rows} (rows of ${up.row.toFixed(1)} px, ${gained} fit) and the pty was told ${shown(resized)} — the fold resizes the grid as the keyboard does (item 44)`);
       }
-      if (back.strip !== 0 || !back.deck || back.folded !== null || Math.abs(back.box - rest.box) > 1) {
-        fail(`bar m · back at the bottom ${shown(back)} — the deck is back, the root unfolded, the box at rest's ${rest.box}`);
+      if (up.folded !== null) fail(`bar m · the pane's root still says data-folded=${shown(up.folded)} — item 32's band is gone (item 44)`);
+      if (back.strip !== 0 || !back.deck || back.rows !== rest.rows || Math.abs(back.box - rest.box) > 1) {
+        fail(`bar m · back at the bottom ${shown(back)} — the deck is back, the box at rest's ${rest.box}, the grid at ${rest.rows} rows`);
       }
       await page.evaluate(() => window.__keyboard(300));
       await until(2_000, async () => page.evaluate(() => document.documentElement.hasAttribute("data-keyboard")));
@@ -29367,7 +29365,7 @@ try {
       await wait(700);
       await scrollTo(0);
       await until(2_000, async () => (await state()).strip === 0);
-      if (typing.strip !== 0 || typing.folded !== null) fail(`bar m · with the keyboard up a scroll into the history folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
+      if (typing.strip !== 0) fail(`bar m · with the keyboard up a scroll into the history folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
     }
 
     // ── n. a conversation folds the same way, and keeps its deck over

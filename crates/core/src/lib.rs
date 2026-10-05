@@ -802,15 +802,29 @@ pub struct Vitals {
 
 /// The families a machine row's corner has a mark for. **Closed on
 /// purpose**, [`ModelKind`]'s reason: a new family is a new mark, which
-/// is a decision. macOS and iOS are one family, `apple` — the user,
-/// 2026-09-22:「所有的macos系统(ios和macos)都用这个」.
+/// is a decision.
+///
+/// **macOS and iOS are two** (round NET-12, UX-27, the owner 2026-10-06:
+/// a phone must be known as a phone; the Mac wears the Finder, the
+/// iPhone the Apple mark). They were one, `apple`, from 2026-09-22
+/// (「所有的macos系统(ios和macos)都用这个」); `Apple` stays as what an
+/// older peer still says, and the face draws it as the Apple mark.
+/// This build never says it.
+///
+/// Wire: enum variants travel by name, so an older peer meets `macos`
+/// or `ios` as a variant it does not know and refuses that vitals frame
+/// whole, as it refuses any longer frame (`khor_node::proto`'s head):
+/// its row keeps its last reading until it is updated too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum SystemKind {
-    Apple,
+    Macos,
+    Ios,
     Linux,
     Windows,
     Android,
+    /// macOS or iOS, as a khor from before the split said it.
+    Apple,
 }
 
 #[cfg(test)]
@@ -822,15 +836,23 @@ mod system_kind_tests {
     #[test]
     fn a_system_family_crosses_as_one_kebab_word() {
         assert_eq!(
-            serde_json::to_string(&SystemKind::Apple).unwrap(),
-            "\"apple\""
+            serde_json::to_string(&SystemKind::Macos).unwrap(),
+            "\"macos\""
         );
+        assert_eq!(serde_json::to_string(&SystemKind::Ios).unwrap(), "\"ios\"");
+        // What an older peer says still reads, as the family it meant.
+        assert_eq!(
+            serde_json::from_str::<SystemKind>("\"apple\"").unwrap(),
+            SystemKind::Apple
+        );
+        assert!(SystemKind::Ios.is_handheld() && SystemKind::Android.is_handheld());
+        assert!(!SystemKind::Macos.is_handheld() && !SystemKind::Apple.is_handheld());
         assert_eq!(
             serde_json::to_string(&SystemKind::Android).unwrap(),
             "\"android\""
         );
         #[cfg(target_os = "macos")]
-        assert_eq!(SystemKind::this_machine(), Some(SystemKind::Apple));
+        assert_eq!(SystemKind::this_machine(), Some(SystemKind::Macos));
         #[cfg(target_os = "linux")]
         assert_eq!(SystemKind::this_machine(), Some(SystemKind::Linux));
     }
@@ -840,8 +862,10 @@ impl SystemKind {
     /// The family this binary was built for — which is the family the
     /// machine it runs on belongs to. `None` for anything else.
     pub fn this_machine() -> Option<SystemKind> {
-        if cfg!(any(target_os = "macos", target_os = "ios")) {
-            Some(SystemKind::Apple)
+        if cfg!(target_os = "macos") {
+            Some(SystemKind::Macos)
+        } else if cfg!(target_os = "ios") {
+            Some(SystemKind::Ios)
         } else if cfg!(target_os = "android") {
             Some(SystemKind::Android)
         } else if cfg!(target_os = "linux") {
@@ -852,6 +876,41 @@ impl SystemKind {
             None
         }
     }
+
+    /// **A phone or a tablet**: what the face asks rather than matching
+    /// family names. `false` for an older peer's `apple`, which cannot
+    /// say which it was; the device table's `hosts` says so for every
+    /// machine whatever its age.
+    pub fn is_handheld(self) -> bool {
+        matches!(self, SystemKind::Ios | SystemKind::Android)
+    }
+}
+
+/// **One road a machine reports about itself** (round NET-12, the 我的
+/// khor dial): how it reaches `to` right now. Written into the device
+/// table by the machine itself (`khor_node::roadbook`), read by every
+/// other machine for the pairs it is not part of.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Road {
+    /// The machine reached, by id.
+    pub to: String,
+    pub road: RoadKind,
+    /// The relay's name when `road` is `relay` (`Link::relay`).
+    #[serde(default)]
+    pub relay: Option<String>,
+    /// Round trip in whole ms, as last written: it moves in the table
+    /// only by more than a quarter, at most once in ten minutes.
+    #[serde(default)]
+    pub ms: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum RoadKind {
+    Direct,
+    Relay,
+    /// No live wire: unreachable from that machine.
+    None,
 }
 
 /// Whether this build's machine can **host** — hold a session's process
@@ -3378,7 +3437,7 @@ mod tests {
                 kind: ModelKind::MacMini,
                 name: Some("Mac mini (2024)".to_owned()),
             }),
-            system: Some(SystemKind::Apple),
+            system: Some(SystemKind::Macos),
         };
         let bytes = rmp_serde::to_vec(&v).unwrap();
         assert_eq!(

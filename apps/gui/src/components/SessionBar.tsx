@@ -65,7 +65,7 @@
 // no bar** (the wide face, a workspace's session column) a view's `under`
 // renders in place, exactly where it always stood, and its `trail` is
 // not drawn: the wide face has no row that belongs to the open session.
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { TabAvatar, type TabFace } from "@/browse/TabStrip";
@@ -75,7 +75,7 @@ import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
-import { bandRows, foldStep, RESTS_AT_BOTTOM, UnfoldHold, type FoldMemo } from "@/lib/deck-fold";
+import { foldStep, RESTS_AT_BOTTOM, UnfoldHold, type FoldMemo } from "@/lib/deck-fold";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { keyboardShown } from "@/lib/viewport";
 
@@ -202,7 +202,6 @@ export function SessionScreen({
   // Nothing folds with the keyboard up, the browser's page included.
   const folded = !keys && (foldedAsked ?? own);
   const content = useRef<HTMLDivElement>(null);
-  const deck = useRef<HTMLDivElement>(null);
   /** **Folding by the content's own scrollers** (UX-13): a terminal's or a
       conversation's, measured from their bottom. A move away or back
       counts only while the scroller kept its height — the fold itself
@@ -248,37 +247,13 @@ export function SessionScreen({
       }),
     [],
   );
-  /** The deck's full height, read while it shows: what a terminal keeps
-      reserved while folded. */
-  const deckH = useRef(0);
-  const [reserve, setReserve] = useState<number | null>(null);
-  /** **A folded terminal keeps its grid** (UX-13; term's item 32 slot):
-      whole rows of what the fold frees go to the terminal's own box —
-      `data-folded` and `--fold-band` on its root, read by term — and the
-      rest of the deck's height stays the deck's ground, in the frame the
-      deck shrinks, so the mount term holds at the box less the band
-      never changes size and the pty is never told a new one. */
-  useLayoutEffect(() => {
-    if (!folded && deck.current) deckH.current = deck.current.offsetHeight;
-    const root = content.current?.querySelector<HTMLElement>("[data-kept-terminal][data-active]") ?? null;
-    for (const k of content.current?.querySelectorAll<HTMLElement>("[data-kept-terminal][data-folded]") ?? []) {
-      if (k === root && folded) continue;
-      k.removeAttribute("data-folded");
-      k.style.removeProperty("--fold-band");
-    }
-    if (!folded || !root) {
-      setReserve(null);
-      return;
-    }
-    const row = parseFloat(getComputedStyle(root).getPropertyValue("--term-row"));
-    const strip = parseFloat(getComputedStyle(root).getPropertyValue("--deck-strip")) || 0;
-    const n = bandRows(deckH.current - strip, row);
-    if (n > 0) {
-      root.setAttribute("data-folded", "true");
-      root.style.setProperty("--fold-band", `calc(${n} * var(--term-row))`);
-    }
-    setReserve(deckH.current - n * row);
-  }, [folded, active]);
+  // ⚠️ Tombstone (item 44, the terminal lane, 2026-10-06): a folded
+  // terminal kept its grid here — whole rows of what the fold freed went
+  // to a band the terminal drew history into (`data-folded`,
+  // `--fold-band`, term's item 32), and the rest of the deck's height
+  // stayed reserved as the deck's ground. The owner withdrew 「网格不重排」:
+  // the fold frees the deck's whole height to the content, the terminal's
+  // box grows by it and its grid refits, as it does for the keyboard.
   /** **A sideways swipe on the pill is the next or previous tab**
       (Safari's address bar). Across the pill only, so the content keeps
       its own gestures; a swipe shorter than a third of a circle is a
@@ -320,13 +295,9 @@ export function SessionScreen({
         className="flex flex-none flex-col pb-safe-bottom"
       >
         {folded && (
-          // The strip at the foot of whatever height the fold keeps: its
-          // own, or a terminal's reserve.
-          <div
-            data-deck-fold
-            className="flex flex-none flex-col justify-end"
-            style={reserve !== null ? { height: reserve } : undefined}
-          >
+          // The strip at the foot, at its own height: the rest of the deck's
+          // is the content's now.
+          <div data-deck-fold className="flex flex-none flex-col justify-end">
             <button
               type="button"
               data-deck-strip
@@ -356,7 +327,6 @@ export function SessionScreen({
           </div>
         )}
         <div
-          ref={deck}
           data-session-deck
           {...WINDOW_DRAG}
           hidden={folded}

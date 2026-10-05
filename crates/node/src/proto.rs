@@ -2495,6 +2495,7 @@ mod tests {
             top: 1,
             left: 0,
             mouse: true,
+            window: "132x39".into(),
         };
         let bytes = encode(&Response::PaneHistory { history: history.clone() }).unwrap();
         match decode::<Response>(&bytes).unwrap() {

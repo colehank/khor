@@ -350,18 +350,50 @@ pub fn note_face(root: &Path, line: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// The newest entry into a terminal, as the face noted it: its attach,
-/// and its first touch when it came after.
+/// How many terminals the `terminal` row keeps (item 45).
+const TERMINAL_ENTRIES: usize = 5;
+
+/// Which terminal a face note is about: `term <id>: …`.
+fn terminal_of(line: &str) -> Option<&str> {
+    line.split_once(" term ")?.1.split_once(": ").map(|(id, _)| id)
+}
+
+/// The newest terminals entered, as the face noted them: for each, its
+/// newest attach, the first second's fit (item 18 A: whether the
+/// scroller ever had a range) and the first touch that followed the
+/// attach (item 45: the row showed only the newest attach and the
+/// newest touch, which were two different terminals, so the attach of
+/// the one the owner had trouble with was gone). Newest first, a line
+/// each.
 async fn check_terminal(root: PathBuf) -> (Health, String, Option<String>) {
     let text = std::fs::read_to_string(face_notes_path(&root)).unwrap_or_default();
     let lines: Vec<&str> = text.lines().collect();
-    let Some(at) = lines.iter().rposition(|l| l.contains(" attach ")) else {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut said: Vec<String> = Vec::new();
+    for (at, line) in lines.iter().enumerate().rev() {
+        if !line.contains(" attach ") {
+            continue;
+        }
+        let Some(id) = terminal_of(line) else { continue };
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id);
+        let mine = |l: &&&str| terminal_of(l) == Some(id);
+        let after = |word: &str| lines[at + 1..].iter().find(|l| l.contains(word) && mine(l)).copied();
+        // The fit is noted 1.5 s after the pane is made: usually after the
+        // attach, before it when the open was slow.
+        let fit = after(": fit at ").or_else(|| lines[..at].iter().rev().find(|l| l.contains(": fit at ") && mine(l)).copied());
+        let touch = after(" first touch ");
+        said.push(std::iter::once(*line).chain(fit).chain(touch).collect::<Vec<_>>().join(" · "));
+        if said.len() == TERMINAL_ENTRIES {
+            break;
+        }
+    }
+    if said.is_empty() {
         return (Health::Ok, cli::doctor_terminal_none().to_owned(), None);
-    };
-    let said: Vec<&str> = std::iter::once(lines[at])
-        .chain(lines[at + 1..].iter().find(|l| l.contains(" first touch ")).copied())
-        .collect();
-    (Health::Ok, cli::doctor_terminal_last(said.join(" · ")), None)
+    }
+    (Health::Ok, cli::doctor_terminal_last(said.join("\n")), None)
 }
 
 /// Which khor this is, and whether the `khor` a terminal would run is
@@ -1101,8 +1133,9 @@ fn bytes(n: u64) -> String {
 mod face_note_tests {
     use super::*;
 
-    /// The terminal row says the newest entry and its first touch, and
-    /// the notes stay under their bound however many entries there were.
+    /// The terminal row says the newest terminals, each with its attach
+    /// and its first touch, and the notes stay under their bound however
+    /// many entries there were.
     #[test]
     fn the_terminal_row_reads_the_newest_entry_and_the_notes_stay_bounded() {
         let root = std::env::temp_dir().join(format!("khor-face-notes-{}", std::process::id()));
@@ -1120,9 +1153,26 @@ mod face_note_tests {
         note_face(&root, "term b: attach 20B; normal; mouse none").unwrap();
         let (state, said, fix) = row();
         assert_eq!((state, fix), (Health::Ok, None));
-        assert!(said.contains("term b: attach") && !said.contains("term a"), "{said}");
+        assert!(said.starts_with(&cli::doctor_terminal_last("")) && said.contains("term b: attach"), "{said}");
+        assert!(said.lines().nth(1).is_some_and(|l| l.contains("term a: attach 10B") && l.contains("6 wheels")), "{said}");
         note_face(&root, "term b: first touch tap after 300 ms: keyboard up").unwrap();
         assert!(row().1.contains("term b: first touch tap"), "{}", row().1);
+        // Per terminal (item 45): b's attach and touch on one line, a's on
+        // the next; a touch after another terminal's attach is still its own.
+        note_face(&root, "term a: attach 30B; normal; mouse none").unwrap();
+        note_face(&root, "term b: first touch drag after 2000 ms: native, moved 100 px").unwrap();
+        note_face(&root, "term a: fit at 9 ms (44x48), range > 0 at never ms, last range 0").unwrap();
+        note_face(&root, "term a: first touch tap after 500 ms: keyboard up").unwrap();
+        let said = row().1;
+        let rows: Vec<&str> = said.lines().collect();
+        assert_eq!(rows.len(), 2, "{said}");
+        assert!(rows[0].contains("term a: attach 30B") && rows[0].contains("term a: fit at 9 ms") && rows[0].contains("term a: first touch tap after 500"), "{said}");
+        assert!(rows[1].contains("term b: attach 20B") && rows[1].contains("term b: first touch tap after 300"), "{said}");
+        assert!(!said.contains("term a: attach 10B") && !said.contains("drag after 2000"), "{said}");
+        for i in 0..8 {
+            note_face(&root, &format!("term t{i}: attach 1B")).unwrap();
+        }
+        assert_eq!(row().1.lines().count(), TERMINAL_ENTRIES, "{}", row().1);
 
         for i in 0..2000 {
             note_face(&root, &format!("term c: attach {i}; {}", "x".repeat(80))).unwrap();

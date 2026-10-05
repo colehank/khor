@@ -45,12 +45,25 @@ export function keyboardShown(): boolean {
   return forced ?? shown;
 }
 
+/** **Where the soft keyboard's top edge is**, in client px (item 42: the
+    swipe that lowers it is the finger reaching that edge) — `null` with
+    no keyboard up. The visual viewport ends where the keyboard begins. */
+export function keyboardEdge(): number | null {
+  if (forcedEdge !== null) return forcedEdge;
+  const vv = window.visualViewport;
+  if (!vv || !keyboardShown()) return null;
+  return vv.offsetTop + vv.height;
+}
+
 // The gates' seam, in the dev server only: a desktop browser has no soft
-// keyboard to bring up, so a walk under touch says one is up by hand.
+// keyboard to bring up, so a walk under touch says one is up by hand,
+// and where its edge is.
 let forced: boolean | null = null;
+let forcedEdge: number | null = null;
 if (import.meta.env.DEV && typeof window !== "undefined") {
-  (window as unknown as { __khorKeyboard?: (on: boolean | null) => void }).__khorKeyboard = (on) => {
+  (window as unknown as { __khorKeyboard?: (on: boolean | null, edge?: number | null) => void }).__khorKeyboard = (on, edge = null) => {
     forced = on;
+    forcedEdge = on ? edge : null;
     window.dispatchEvent(new Event("khor:soft-keyboard"));
   };
 }
