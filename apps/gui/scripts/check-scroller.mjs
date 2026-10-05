@@ -23,6 +23,11 @@
 //       when one is given — at the bottom and scrolled up; it takes the
 //       grid's part-row shift; a program on its alternate screen with no
 //       history leaves it empty, and so does unfolding. No resize.
+//   42. **The swipe that lowers the keyboard is the finger reaching the
+//       keyboard's top edge** (`src/lib/term-swipe.ts`): a drag more down
+//       than across lowers it the moment it crosses the edge, however slow
+//       or paused, once; one that stops short, goes more across, starts on
+//       the bar, or finds no keyboard up lowers nothing.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -42,7 +47,8 @@ const bundle = await build({
       import { FitAddon } from "@xterm/addon-fit";
       import * as scroller from "./src/lib/term-scroller.ts";
       import { drawsFoldBand } from "./src/lib/term-fold-band.ts";
-      window.lab = { Terminal, FitAddon, scroller, drawsFoldBand };
+      import { swipeLowers } from "./src/lib/term-swipe.ts";
+      window.lab = { Terminal, FitAddon, scroller, drawsFoldBand, swipeLowers };
     `,
     resolveDir: gui,
     loader: "ts",
@@ -51,6 +57,13 @@ const bundle = await build({
   format: "iife",
   write: false,
   logLevel: "silent",
+  define: { "import.meta.env.DEV": "false" },
+  plugins: [{
+    name: "alias",
+    setup(b) {
+      b.onResolve({ filter: /^@\// }, (a) => b.resolve(`./src/${a.path.slice(2)}`, { resolveDir: gui, kind: a.kind }));
+    },
+  }],
 });
 const css = readFileSync(`${gui}/node_modules/@xterm/xterm/css/xterm.css`, "utf8");
 
@@ -269,6 +282,65 @@ if (band.alternate !== 0) fail(`32: a program's alternate screen left ${band.alt
 if (band.unfolded.n !== 0 || band.unfolded.children !== 0) fail(`32: unfolding left the band drawn (${JSON.stringify(band.unfolded)})`);
 if (band.resizes !== 0) fail(`32: the band resized the terminal ${band.resizes} times`);
 
+// ── 42 ──
+const swipe = await page.evaluate(async () => {
+  const scroller = document.querySelector("#scroller");
+  const field = document.createElement("textarea");
+  document.body.appendChild(field);
+  let up = true;
+  let lowered = 0;
+  const stop = window.lab.swipeLowers(scroller, field, { up: () => up, edge: () => 500, lower: () => lowered++ });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const touch = (type, x, y, target = scroller) => {
+    const t = new Touch({ identifier: 1, target, clientX: x, clientY: y });
+    const touches = type === "touchend" ? [] : [t];
+    target.dispatchEvent(new TouchEvent(type, { touches, changedTouches: [t], bubbles: true, cancelable: true }));
+  };
+  const drag = async (points, target) => {
+    touch("touchstart", points[0][0], points[0][1], target);
+    for (const [x, y, pause] of points.slice(1)) {
+      if (pause) await wait(pause);
+      touch("touchmove", x, y, target);
+    }
+    touch("touchend", points[points.length - 1][0], points[points.length - 1][1], target);
+  };
+  const out = {};
+  const count = async (name, points, target) => {
+    const was = lowered;
+    await drag(points, target);
+    out[name] = lowered - was;
+  };
+  // Slow, paused, and short of the edge: nothing.
+  await count("short", [[200, 300], [200, 330, 300], [200, 360, 600], [200, 480]]);
+  // Slow and paused (300 px in 1.8 s: 0.17 px/ms, under item 28's 0.3
+  // average that failed the owner), across the edge: lowered once, and
+  // only once.
+  await count("slow", [[200, 300], [200, 330, 300], [200, 360, 1500], [200, 505], [200, 560], [200, 600]]);
+  // More across than down, past the edge's height: nothing.
+  await count("across", [[20, 300], [120, 350], [380, 520]]);
+  // Upward: nothing.
+  await count("upward", [[200, 580], [200, 400]]);
+  // No keyboard up: nothing.
+  up = false;
+  await count("down", [[200, 300], [200, 520]]);
+  up = true;
+  // From the bar: nothing.
+  const bar = document.createElement("div");
+  bar.setAttribute("data-session-bar", "");
+  scroller.appendChild(bar);
+  await count("bar", [[200, 300], [200, 520]], bar);
+  bar.remove();
+  stop();
+  await count("stopped", [[200, 300], [200, 520]]);
+  field.remove();
+  return out;
+});
+console.log(`scroller gate: 42 swipe: ${JSON.stringify(swipe)}`);
+if (swipe.slow !== 1) fail(`42: a slow, paused drag across the keyboard's edge lowered it ${swipe.slow} times, want 1`);
+for (const k of ["short", "across", "upward", "down", "bar", "stopped"]) {
+  if (swipe[k] !== 0) fail(`42 ${k}: lowered the keyboard ${swipe[k]} times, want 0`);
+}
+
 await browser.close();
 if (bad) process.exit(1);
-console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, and the folded deck's band shows the lines above");
+console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, the folded deck's band shows the lines above, and the swipe lowers the keyboard at its edge");

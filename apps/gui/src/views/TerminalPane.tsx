@@ -109,6 +109,7 @@ import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { drawsFoldBand } from "@/lib/term-fold-band";
+import { swipeLowers } from "@/lib/term-swipe";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
 
@@ -490,11 +491,6 @@ function cellAt(term: Terminal, x: number, y: number): { col: number; row: numbe
   return { col, row: term.buffer.active.viewportY + inView };
 }
 
-/** A downward swipe this long (pt) and this fast (pt/ms), judged at the
-    lift, puts the keyboard away (item 28). */
-const DISMISS_PT = 48;
-const DISMISS_SPEED = 0.3;
-
 /** How long the corner says a tmux history cannot be read (item 31). */
 const HISTORY_OUT_MS = 4000;
 
@@ -621,60 +617,6 @@ function tapsAskFirst(
     box.removeEventListener("touchmove", moved);
     box.removeEventListener("touchend", lifted);
     field.removeEventListener("focusout", left);
-  };
-}
-
-/**
- * **The one rule that lowers the keyboard: a swipe down over the
- * terminal** (item 28). iOS's own gesture for it in a scrolling view is
- * `keyboardDismissMode = .interactive`, which a web view cannot ask for, so
- * it is judged here at the lift: at least `DISMISS_PT` down, more down than
- * sideways, at least `DISMISS_SPEED`. Native listeners on the terminal's
- * own scroller, so a touch on the key row or the deck (a portal into the
- * bar, `BarSeat`) never reaches it — React's synthetic events bubbled the
- * joystick's drags up through that portal into the session page's old
- * 24-pt rule, and the keyboard dropped under the thumb. A drag the
- * program takes as its wheel (`fingerWheels`) counts as well: under tmux's
- * mouse the swipe lowers too.
- */
-function swipeLowers(scroller: HTMLElement, field: HTMLElement | null): () => void {
-  if (!field) return () => {};
-  let x0 = 0;
-  let y0 = 0;
-  let x = 0;
-  let y = 0;
-  let at = 0;
-  let one = false;
-  const start = (e: TouchEvent) => {
-    one = e.touches.length === 1 && !(e.target as Element | null)?.closest?.("[data-session-bar]");
-    x0 = x = e.touches[0]?.clientX ?? 0;
-    y0 = y = e.touches[0]?.clientY ?? 0;
-    // The touch's own time, not when this ran: a page busy drawing a
-    // program's frames hears the moves late, and the swipe was not slow.
-    at = e.timeStamp;
-  };
-  const move = (e: TouchEvent) => {
-    if (e.touches.length !== 1) one = false;
-    const t = e.touches[0];
-    if (!t) return;
-    x = t.clientX;
-    y = t.clientY;
-  };
-  const end = (e: TouchEvent) => {
-    if (!one) return;
-    one = false;
-    const dy = y - y0;
-    const took = Math.max(1, e.timeStamp - at);
-    if (dy >= DISMISS_PT && dy > Math.abs(x - x0) && dy / took >= DISMISS_SPEED && keyboardUp(field)) lowerKeyboard(field);
-  };
-  scroller.addEventListener("touchstart", start, { passive: true });
-  scroller.addEventListener("touchmove", move, { passive: true });
-  scroller.addEventListener("touchend", end, { passive: true });
-  scroller.addEventListener("touchcancel", () => (one = false), { passive: true });
-  return () => {
-    scroller.removeEventListener("touchstart", start);
-    scroller.removeEventListener("touchmove", move);
-    scroller.removeEventListener("touchend", end);
   };
 }
 
