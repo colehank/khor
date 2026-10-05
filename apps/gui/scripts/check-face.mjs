@@ -29363,6 +29363,32 @@ try {
           const bar = document.querySelector("[data-session-bar]");
           const t = document.querySelector("[data-terminal]")?.__xterm;
           const screen = box?.querySelector(".xterm-screen");
+          // **The folded deck is Safari's capsule** (UX-29): centred on the
+          // screen, `--deck-strip` tall, as wide as its title and padding,
+          // its ink by the ground behind it.
+          const cap = document.querySelector("[data-session-bar] [data-deck-strip]");
+          const capsule = cap && (() => {
+            const b = cap.getBoundingClientRect();
+            const sc = document.querySelector("[data-session-screen]").getBoundingClientRect();
+            const word = cap.querySelector("span");
+            const cs = getComputedStyle(cap);
+            const probe = document.createElement("div");
+            probe.style.cssText = "position:absolute;height:var(--deck-strip);width:var(--page-inset)";
+            document.body.appendChild(probe);
+            const want = probe.getBoundingClientRect().height;
+            probe.remove();
+            return {
+              off: +(b.left + b.width / 2 - (sc.left + sc.width / 2)).toFixed(1),
+              w: +b.width.toFixed(1),
+              h: +b.height.toFixed(1),
+              want,
+              slack: +(b.width - word.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)).toFixed(1),
+              cut: word.scrollWidth > word.clientWidth + 1,
+              ink: cap.getAttribute("data-deck-ink"),
+              color: cs.color,
+              overContent: b.bottom <= (box?.getBoundingClientRect().bottom ?? 0) + 0.5,
+            };
+          })();
           return {
             strip: document.querySelectorAll("[data-session-bar] [data-deck-strip]").length,
             deck: !!document.querySelector("[data-session-deck]")?.getClientRects().length,
@@ -29371,6 +29397,7 @@ try {
             box: +(box?.getBoundingClientRect().height ?? 0).toFixed(2),
             bar: +(bar?.getBoundingClientRect().height ?? 0).toFixed(2),
             rows: t?.rows,
+            capsule,
           };
         });
       const scrollTo = (fromBottom) =>
@@ -29386,6 +29413,25 @@ try {
       await until(2_000, async () => (await state()).strip === 1);
       await wait(300);
       const up = await state();
+      // The ink by the ground: the terminal's own theme under the capsule.
+      const inks = await page.evaluate(async () => {
+        const { inkOver, groundUnder } = await import("/src/lib/deck-fold.ts");
+        const cap = document.querySelector("[data-session-bar] [data-deck-strip]");
+        const b = cap.getBoundingClientRect();
+        const ground = groundUnder(b.left + b.width / 2, b.top + b.height / 2, cap.closest("[data-session-bar]"));
+        const onDark = getComputedStyle(document.documentElement).getPropertyValue("--ink-on-dark").trim();
+        const onLight = getComputedStyle(document.documentElement).getPropertyValue("--ink-on-light").trim();
+        const c = document.createElement("canvas").getContext("2d");
+        const plain = (x) => ((c.fillStyle = "#000"), (c.fillStyle = x), String(c.fillStyle));
+        return {
+          ground,
+          want: inkOver(ground),
+          got: cap.getAttribute("data-deck-ink"),
+          color: plain(getComputedStyle(cap).color),
+          wantColor: plain(inkOver(ground) === "light" ? onDark : onLight),
+          table: [inkOver("255,255,255"), inkOver("0,0,0"), inkOver("#1e1e1e"), inkOver("rgb(244, 244, 239)"), inkOver("#9a6a00"), inkOver(""), inkOver("nonsense")],
+        };
+      });
       await scrollTo(0);
       await until(2_000, async () => (await state()).strip === 0);
       await wait(300);
@@ -29399,10 +29445,24 @@ try {
         fail(`bar m · folded, the box went ${rest.box} → ${up.box} and the bar ${rest.bar} → ${up.bar} — the box grows by what the fold frees (item 44)`);
       }
       const gained = up.row > 0 ? Math.floor((up.box - rest.box) / up.row) : 0;
-      if (!(up.rows > rest.rows) || up.rows - rest.rows !== gained || !resized.some(([, r]) => r === up.rows)) {
+      // Within a row of the arithmetic: xterm's fit of the grown box is
+      // its own (the box's padding against whole rows), and a 60-px
+      // growth fit four rows where 60 / 16 says three (UX-29).
+      if (!(up.rows > rest.rows) || Math.abs(up.rows - rest.rows - gained) > 1 || !resized.some(([, r]) => r === up.rows)) {
         fail(`bar m · the grid went ${rest.rows} → ${up.rows} (rows of ${up.row.toFixed(1)} px, ${gained} fit) and the pty was told ${shown(resized)} — the fold resizes the grid as the keyboard does (item 44)`);
       }
       if (up.folded !== null) fail(`bar m · the pane's root still says data-folded=${shown(up.folded)} — item 32's band is gone (item 44)`);
+      const c = up.capsule;
+      if (!c || Math.abs(c.off) > 1 || Math.abs(c.h - c.want) > 0.5 || c.slack > 1 || c.cut || !c.overContent) {
+        fail(`bar m · folded, the capsule reads ${shown(c)} — centred on the screen, --deck-strip tall, as wide as its title and padding, over the content (UX-29; src/components/SessionBar.tsx)`);
+      }
+      console.log(`bar m · the capsule's ink: ${shown(inks)}`);
+      if (inks.got !== inks.want || inks.color !== inks.wantColor) {
+        fail(`bar m · over the terminal's ground ${shown(inks.ground)} the capsule wears ${shown(inks.got)} ${inks.color} — ${inks.want} (${inks.wantColor}) reads on it (UX-29; lib/deck-fold inkOver)`);
+      }
+      if (inks.table.join() !== "dark,light,light,dark,light,dark,dark") {
+        fail(`bar m · inkOver over white, black, #1e1e1e, the light ground, the amber, nothing, nonsense says ${shown(inks.table)} — dark, light, light, dark, light, dark, dark`);
+      }
       if (back.strip !== 0 || !back.deck || back.rows !== rest.rows || Math.abs(back.box - rest.box) > 1) {
         fail(`bar m · back at the bottom ${shown(back)} — the deck is back, the box at rest's ${rest.box}, the grid at ${rest.rows} rows`);
       }

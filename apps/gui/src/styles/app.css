@@ -2346,3 +2346,24 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   width: var(--glass-item-h, 2rem);
   height: var(--glass-item-h, 2rem);
 }
+
+/* **The folded capsule's ink follows what is behind it** (UX-29): the
+   deck says `data-deck-ink` from the ground it sampled — the page's, a
+   terminal's theme, a preview's ground — and the capsule's words wear
+   the ink that reads on it (tokens.css `--ink-on-dark` / `--ink-on-light`). */
+[data-deck-strip][data-deck-ink="light"] {
+  color: var(--ink-on-dark);
+}
+[data-deck-strip][data-deck-ink="dark"] {
+  color: var(--ink-on-light);
+}
+
+/* **The terminal's way back down stands above the folded capsule**
+   (UX-29): both float at the foot's centre, and the capsule has the
+   foot (the owner's Safari shots), so 「回到底部 / 新输出」 moves up by the
+   capsule and its gap while the deck is folded (measured on the
+   simulator: the two sat on each other). The float is the terminal
+   lane's (`TerminalPane` `data-term-bottom`); only its place is set here. */
+[data-session-screen][data-deck-folded] [data-term-bottom] {
+  bottom: calc(var(--deck-strip) + 2 * var(--gap-in));
+}

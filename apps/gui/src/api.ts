@@ -1473,6 +1473,11 @@ export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retr
 /** **The browser's deck, drawn natively over an iPhone's page** (UX-13,
     `lib/native-deck`): the deck as the face reads it, or `null` to put it
     away. Nothing anywhere else: a Mac's page sits beside its DOM deck. */
+/** **What is behind the folded capsule** (UX-29): asks the phone's page
+    for its ground `y` up from the page view's foot; it answers as
+    `page:ground` (`r,g,b` or a `theme-color`, or nothing). */
+export const pageGround = (tab: string, y: number) => (onWebFace ? Promise.resolve(null) : call<null>("page_ground", { tab, y }));
+
 export const pageDeck = (tab: string, drawing: import("@/lib/native-deck").DeckDrawing | null) =>
   onWebFace ? Promise.resolve(null) : call<null>("page_deck", { tab, drawing });
 
@@ -1484,7 +1489,7 @@ export const pageDeck = (tab: string, drawing: import("@/lib/native-deck").DeckD
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail",
+  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground",
   tab: string,
   said: (text: string) => void,
 ): () => void {

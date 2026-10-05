@@ -47,7 +47,7 @@ import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useCoarse } from "@/hooks/use-coarse";
-import { FOLD_AT, foldStep, type FoldMemo } from "@/lib/deck-fold";
+import { FOLD_AT, foldStep, groundUnder, inkOver, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { keyboardShown } from "@/lib/viewport";
 import { useBlameShown } from "@/lib/blame";
@@ -496,6 +496,21 @@ export function FilePage({
       }),
     [],
   );
+  /** **The capsule's ink from what is behind it** (UX-29): the file's
+      ground under the capsule's centre — a preview's 预览背景, the code's
+      ground — sampled as the fold happens and as the reading goes on. */
+  const deck = useRef<HTMLDivElement>(null);
+  const [ink, setInk] = useState<DeckInk>("dark");
+  const sampledAt = useRef(0);
+  const sample = () => {
+    const cap = deck.current?.querySelector<HTMLElement>("[data-deck-strip]");
+    if (!cap) return;
+    const b = cap.getBoundingClientRect();
+    setInk(inkOver(groundUnder(b.left + b.width / 2, b.top + b.height / 2, deck.current)));
+  };
+  useLayoutEffect(() => {
+    if (folded) sample();
+  }, [folded, face, rev]);
   const scrolled = (e: React.UIEvent) => {
     const t = e.target as HTMLElement;
     if (!t.matches("[data-file-scroll], [data-file-preview]")) return;
@@ -505,6 +520,10 @@ export function FilePage({
     if (keyboardShown()) return;
     const next = foldStep(memo.current, top, leaving, FOLD_AT);
     if (next !== null) setFolded(next);
+    if (folded && e.timeStamp - sampledAt.current > 250) {
+      sampledAt.current = e.timeStamp;
+      sample();
+    }
   };
   /** **The tap's caret stays where the finger is** (UX-14): WebKit reveals
       the focused editor as the keyboard rises, and the editor is the
@@ -574,6 +593,7 @@ export function FilePage({
           disk) · 分享 · 「…」. Nothing at the top of the page. Folded, the
           strip with the name; a tap brings the deck back. */}
       <div
+        ref={deck}
         data-file-deck
         className="pointer-events-none absolute inset-x-0 bottom-[var(--safe-bottom)] flex flex-col items-stretch"
       >
@@ -583,11 +603,15 @@ export function FilePage({
           </span>
         )}
         {folded ? (
+          // **Safari's capsule** (UX-29): the name alone, centred, on glass
+          // over the file, its ink from the ground behind it. ⚠️ 墓碑
+          // (UX-13/14): a 24-pt strip across the width.
           <button
             type="button"
             data-deck-strip
+            data-deck-ink={ink}
             onClick={() => setFolded(false)}
-            className="pointer-events-auto flex h-deck-strip flex-none animate-in items-center justify-center px-row text-caption text-muted-foreground fade-in"
+            className="glass pointer-events-auto mx-auto mb-in flex h-deck-strip max-w-[calc(100%-2*var(--page-inset))] flex-none animate-in items-center justify-center overflow-hidden rounded-full px-row text-callout fade-in"
           >
             <span className="min-w-0 truncate">{name}</span>
           </button>

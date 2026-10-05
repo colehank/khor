@@ -65,7 +65,7 @@
 // no bar** (the wide face, a workspace's session column) a view's `under`
 // renders in place, exactly where it always stood, and its `trail` is
 // not drawn: the wide face has no row that belongs to the open session.
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { TabAvatar, type TabFace } from "@/browse/TabStrip";
@@ -75,7 +75,7 @@ import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
-import { foldStep, RESTS_AT_BOTTOM, UnfoldHold, type FoldMemo } from "@/lib/deck-fold";
+import { foldStep, groundUnder, inkOver, RESTS_AT_BOTTOM, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { keyboardShown } from "@/lib/viewport";
 
@@ -137,8 +137,20 @@ export function SessionScreen({
   editor,
   onEditCancel,
   nativeDeck = false,
+  foldOver = true,
+  ink,
   children,
 }: {
+  /** **The folded capsule floats over the content** (UX-29): the fold
+      frees the deck's whole height to the content and the capsule stands
+      on it. `false` where the content is a native view the DOM cannot
+      float over (a Mac window's page): the capsule keeps its own room
+      under the content. */
+  foldOver?: boolean;
+  /** The capsule's ink, where the screen cannot sample what is behind it
+      (the phone's native page says its ground, `page:ground`). Left out,
+      the screen samples its own content under the capsule. */
+  ink?: DeckInk;
   /** **The deck is drawn natively over the page** (UX-13, an iPhone's
       browser, `lib/native-deck`): the DOM deck keeps its place and its
       layout — it is what the native one is read from, and what a native
@@ -202,6 +214,21 @@ export function SessionScreen({
   // Nothing folds with the keyboard up, the browser's page included.
   const folded = !keys && (foldedAsked ?? own);
   const content = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
+  /** **The capsule's ink from what is behind it** (UX-29): the content
+      under the capsule's centre, sampled as the fold happens and as the
+      content scrolls on, a few times a second. */
+  const [sampled, setSampled] = useState<DeckInk>("dark");
+  const sampledAt = useRef(0);
+  const sample = () => {
+    const cap = bar.current?.querySelector<HTMLElement>("[data-deck-strip]");
+    if (!cap) return;
+    const b = cap.getBoundingClientRect();
+    setSampled(inkOver(groundUnder(b.left + b.width / 2, b.top + b.height / 2, bar.current)));
+  };
+  useLayoutEffect(() => {
+    if (folded && ink === undefined) sample();
+  }, [folded, ink, active]);
   /** **Folding by the content's own scrollers** (UX-13): a terminal's or a
       conversation's, measured from their bottom. A move away or back
       counts only while the scroller kept its height — the fold itself
@@ -228,12 +255,25 @@ export function SessionScreen({
       // Rest is rest whatever the height did; a direction is read only
       // from a scroller that kept its height.
       if (was.h !== now.h) {
-        if (now.away <= 1) setOwn(false);
+        if (now.away <= 1) {
+          hold.current.asked();
+          setOwn(false);
+        }
         return;
       }
       const next = foldStep(memo, now.away, now.away > was.away, 1);
       if (!hold.current.allows() && next === true) return;
+      // **An unfold holds the deck through the refit** (UX-29): the deck
+      // coming back shrinks the content, a terminal refits its grid, and
+      // the scroller's geometry settles over a few events — measured 60 →
+      // 64 px from the bottom with the same height, which read as leaving
+      // and folded it straight back. The same hold as the strip's tap.
+      if (next === false) hold.current.asked();
       if (next !== null) setOwn(next);
+      if (ink === undefined && e.timeStamp - sampledAt.current > SAMPLE_MS && bar.current?.querySelector("[data-deck-strip]")) {
+        sampledAt.current = e.timeStamp;
+        sample();
+      }
     };
     el.addEventListener("scroll", on, { capture: true, passive: true });
     return () => el.removeEventListener("scroll", on, { capture: true });
@@ -269,7 +309,7 @@ export function SessionScreen({
   // rule is now the terminal's swipe, on its own scroller
   // (`TerminalPane`'s `swipeLowers`).
   return (
-    <div data-session-screen className="flex h-full min-h-0 flex-col bg-card">
+    <div data-session-screen data-deck-folded={folded || undefined} className="flex h-full min-h-0 flex-col bg-card">
       {/* The top of the glass is the platform's: a phone's status bar
           (`--safe-top`), or on a Mac window dragged narrow the corner its
           three buttons stand in (`app.css`, `[data-session-top]` under
@@ -288,24 +328,33 @@ export function SessionScreen({
           alone (`app.css`) — but a terminal's stays, over its key row
           (UX-12, `views/TerminalPane`'s `KeyRowSeats`). */}
       <div
+        ref={bar}
         data-session-bar
         data-folded={folded || undefined}
         data-native-deck={nativeDeck || undefined}
         className="flex flex-none flex-col pb-safe-bottom"
       >
         {folded && (
-          // The strip at the foot, at its own height: the rest of the deck's
-          // is the content's now.
-          <div data-deck-fold className="flex flex-none flex-col justify-end">
+          // **Safari's capsule** (UX-29, the owner 2026-10-06): one small
+          // glass capsule centred at the foot with the title alone, over
+          // the content — the deck's whole height is the content's now —
+          // its ink from what is behind it. Where the content is a native
+          // view (`foldOver` false) the capsule keeps its own room instead.
+          // ⚠️ 墓碑 (UX-13): a 24-pt strip across the width.
+          <div
+            data-deck-fold
+            className={cn("relative flex flex-none items-end justify-center", foldOver ? "h-0" : "h-[calc(var(--deck-strip)+var(--gap-in))]")}
+          >
             <button
               type="button"
               data-deck-strip
+              data-deck-ink={ink ?? sampled}
               onClick={() => {
                 hold.current.asked();
                 setOwn(false);
                 onUnfold?.();
               }}
-              className="relative flex h-deck-strip flex-none animate-in items-center justify-center overflow-hidden px-row text-caption text-muted-foreground fade-in"
+              className="glass absolute bottom-[var(--gap-in)] flex h-deck-strip max-w-[calc(100%-2*var(--page-inset))] animate-in items-center justify-center overflow-hidden rounded-full px-row text-callout fade-in"
             >
               <span className="min-w-0 truncate">{face?.label ?? ""}</span>
               {/* **One steady pulse** (UX-22): drawn the whole time and
@@ -421,6 +470,8 @@ export function SessionScreen({
 
 /** How far sideways a swipe on the pill goes before it changes tab. */
 const SWIPE_STEPS = 40;
+/** How often, at most, the folded capsule looks at what is behind it. */
+const SAMPLE_MS = 250;
 
 /** **A sideways swipe on a deck's pill steps to the next or previous
     tab** (Safari's address bar): the pointer handlers for the pill, with

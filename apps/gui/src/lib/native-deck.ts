@@ -180,14 +180,10 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
   const labels: DeckLabel[] = [];
   const hits: DeckHit[] = [];
   const shown = (el: Element) => el.getClientRects().length > 0;
-  // **The folded strip stands on a band of glass** to the screen's foot:
-  // in the DOM it sits on the app's ground under the page; over the page
-  // its words need a ground of their own.
-  const folded = bar.querySelector<HTMLElement>("[data-deck-strip]");
-  if (folded && shown(folded)) {
-    const b = folded.getBoundingClientRect();
-    glass.push({ x: 0, y: b.top - o.top, w: o.width, h: o.bottom - b.top, r: 0, sel: false });
-  }
+  // ⚠️ 墓碑 (UX-13 → UX-29): the folded strip stood on a band of glass to
+  // the screen's foot. The folded deck is Safari's capsule now — a `.glass`
+  // shape like the rest, read below, its words in the ink the face chose
+  // from the page's ground (`page:ground`).
   for (const el of bar.querySelectorAll<HTMLElement>(".glass")) {
     if (!shown(el)) continue;
     const b = el.getBoundingClientRect();
@@ -245,9 +241,6 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
     const el = screen.querySelector<HTMLElement>(sel);
     if (!el || !shown(el) || el.getAttribute("aria-disabled") === "true") return;
     const at = rel(el.getBoundingClientRect(), o);
-    // The strip answers on its whole band, to the screen's foot: over a
-    // page there is nothing else a finger there could mean.
-    if (el.matches("[data-deck-strip]")) at.h = o.height - at.y;
     hits.push({ ...at, seat, swipe: false });
   });
   // The pill swipes sideways between tabs, as the DOM pill does.
@@ -255,10 +248,12 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
   if (pill && shown(pill)) hits.push({ ...rel(pill.getBoundingClientRect(), o), seat: -1, swipe: true });
   const strip = bar.querySelector<HTMLElement>("[data-deck-strip]");
   const row = strip && shown(strip) ? strip : bar.querySelector<HTMLElement>("[data-session-deck]");
-  const safe = parseFloat(getComputedStyle(bar).paddingBottom) || 0;
+  // The page's last lines rest above the row — the deck, or the folded
+  // capsule with its gap — and the safe area under it.
+  const rowTop = row?.getBoundingClientRect().top ?? o.bottom;
   return {
     h: o.height,
-    inset: (row?.getBoundingClientRect().height ?? 0) + safe,
+    inset: o.bottom - rowTop,
     dark: document.documentElement.getAttribute("data-theme") === "dark" ||
       (document.documentElement.getAttribute("data-theme") !== "light" && matchMedia("(prefers-color-scheme: dark)").matches),
     tint: plain(root.getPropertyValue("--glass").trim()),
