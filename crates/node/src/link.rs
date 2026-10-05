@@ -217,6 +217,10 @@ pub(crate) struct HeldReading {
 /// stop covering the tick the day this changes.
 pub const SYNC_EVERY: Duration = Duration::from_secs(5);
 
+/// How often a machine that keeps refusing rounds is vouched to
+/// (`Node::vouch_to`, round NET-10).
+const VOUCH_EVERY: Duration = Duration::from_secs(5 * 60);
+
 /// **The pump's beat while no face is on screen** (round NET-6, the
 /// owner's ruling through the lead): a round every 30 s instead of every
 /// [`SYNC_EVERY`]. Rounds are what keep other machines' rows fresh for a
@@ -2522,7 +2526,7 @@ impl Node {
         // request a stranger may make — the token is its admission. It
         // used to be a table check repeated at the head of every arm;
         // an arm added without it would have been a door with no lock.
-        if !matches!(req, Request::Pair { .. })
+        if !matches!(req, Request::Pair { .. } | Request::Vouch { .. })
             && let Err(e) = self.admit(remote)
         {
             // **A stranger knocking is a reason to round now** (round
@@ -2589,6 +2593,15 @@ impl Node {
                     devices: B64.encode(loaded.doc.snapshot()?),
                     roster: serde_bytes::ByteBuf::from(self.roster_offer_in(&loaded.doc)),
                 })
+            }
+            // The other door a stranger may knock on (round NET-10): the
+            // root's signature is its admission, as the token is `Pair`'s.
+            Request::Vouch { name, addrs, roster } => {
+                self.take_vouch(remote, &name, &addrs, &roster)?;
+                // Its row is here now: the round that brings the rest
+                // starts from this side too, not at the next quiet beat.
+                self.nudge(ep);
+                Ok(Response::Vouched)
             }
             Request::Sync { doc, have, changes } => {
                 let reply = with_doc!(self, doc.as_str(), |loaded| wire::answer(
@@ -7628,6 +7641,14 @@ impl Node {
             .map_err(unreached)?;
         let moved = match self.sync_what_changed(&line, d, &kinds, &opening, early).await? {
             Some(moved) => moved,
+            // Refused at the door by a machine this one's roster admits:
+            // its table may have lost this machine (round NET-10).
+            None if self.vouch_to(&line, d).await => {
+                match self.sync_what_changed(&line, d, &kinds, &opening, None).await? {
+                    Some(moved) => moved,
+                    None => self.sync_everything(&line, d).await?,
+                }
+            }
             None => self.sync_everything(&line, d).await?,
         };
         Ok(if moved == 0 {
@@ -7635,6 +7656,35 @@ impl Node {
         } else {
             msg::moved_bytes(moved)
         })
+    }
+
+    /// **Vouches for this machine to one that refused a round's
+    /// opening** ([`Request::Vouch`], round NET-10), and answers whether
+    /// it was taken. A machine on this side's roster that refuses every
+    /// request is most often one whose table lost its rows, and it cannot
+    /// bring them back by itself (`Node::take_vouch` has the case).
+    ///
+    /// At most once per [`VOUCH_EVERY`] for each machine: a refusal for
+    /// any other reason — an older khor that does not know the opening,
+    /// a revocation this side has not heard of — costs one small frame
+    /// per interval, not one per round.
+    async fn vouch_to(&self, line: &Line, d: &DeviceInfo) -> bool {
+        {
+            let mut last = self.vouched.lock().unwrap_or_else(|p| p.into_inner());
+            if last.get(&d.id).is_some_and(|t| t.elapsed() < VOUCH_EVERY) {
+                return false;
+            }
+            last.insert(d.id.clone(), std::time::Instant::now());
+        }
+        let Some((name, addrs, roster)) = self.vouch_offer() else {
+            return false;
+        };
+        let ask = Request::Vouch {
+            name,
+            addrs,
+            roster: serde_bytes::ByteBuf::from(roster),
+        };
+        matches!(self.exchange_on(line, &ask).await, Ok(Response::Vouched))
     }
 
     /// **A round by what changed** (round NET-3). One exchange first,

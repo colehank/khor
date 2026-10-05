@@ -745,6 +745,81 @@ impl Node {
         Ok(signed)
     }
 
+    // ── a table that lost its rows ──────────────────────────────────
+
+    /// What this machine sends a machine that refused its round
+    /// ([`crate::proto::Request::Vouch`]): its own row and its newest
+    /// roster. `None` where there is nothing to vouch with — a network
+    /// from before roots, or a roster that does not admit this machine.
+    pub(crate) fn vouch_offer(&self) -> Option<(String, Vec<String>, Vec<u8>)> {
+        let anchor = self.anchor()?;
+        let loaded = self.devices_loaded().ok()?;
+        let r = newest_in(&loaded.doc, &anchor)?;
+        if !r.admits(&self.my_id(), crate::now_ms()) {
+            return None;
+        }
+        let addrs = loaded.doc.get(self.device_str()).map(|d| d.addrs).unwrap_or_default();
+        Some((self.name().to_owned(), addrs, r.bytes().to_vec()))
+    }
+
+    /// **Takes a machine back on the root's word** (round NET-10).
+    ///
+    /// A table that lost its rows cannot heal by itself: the gate refuses
+    /// every machine it no longer lists, and the pump visits only the
+    /// machines it lists — so nobody can bring the rows back. Measured on
+    /// the owner's hinton, 2026-10-05: its device table held its own row
+    /// and nothing else (no roster, no certificate) for a day and a half,
+    /// while every other machine still listed it as paired; each of their
+    /// rounds was refused with 「not in the machine table」.
+    ///
+    /// The roster is what decides trust (docs/CONNECT.md 名单是信任的唯一
+    /// 出处), and the anchor (`root.pub`) is a file of its own, beside
+    /// the table, so it survives the table. A roster that verifies under
+    /// it and names both machines is the same admission a round with a
+    /// machine on the roster already grants — this only writes the row a
+    /// round needs to start. Refused when:
+    ///
+    /// - there is no anchor (a network from before roots, or a machine
+    ///   that left: `leave_trust` removes it);
+    /// - the roster is not signed by the anchor's root, does not admit
+    ///   both machines, or is stale (the freshness rule presented
+    ///   certificates keep, `standing`);
+    /// - it is older than the roster this table holds — an old roster
+    ///   must not undo a revocation;
+    /// - this table shows the asker the door (`set_gone`): a person
+    ///   decided that here.
+    pub(crate) fn take_vouch(
+        &self,
+        remote: &str,
+        name: &str,
+        addrs: &[String],
+        roster: &[u8],
+    ) -> Result<(), String> {
+        let refused = || msg::vouch_refused().to_owned();
+        let anchor = self.anchor().ok_or_else(refused)?;
+        let r = nt::verify_roster(roster, &anchor).map_err(|_| refused())?;
+        let them = id_of(remote)?;
+        let now = crate::now_ms();
+        if r.is_stale(now) || !r.admits(&them, now) || !r.admits(&self.my_id(), now) {
+            return Err(refused());
+        }
+        let mut loaded = self.devices_loaded()?;
+        if newest_in(&loaded.doc, &anchor).is_some_and(|mine| mine.seq > r.seq)
+            || loaded.doc.gone_ids().iter().any(|g| g == remote)
+        {
+            return Err(refused());
+        }
+        self.store_roster(&loaded.doc, &r)?;
+        loaded.doc.upsert(remote, name, addrs)?;
+        for id in [remote, self.device_str()] {
+            if let Some(c) = nt::id_from_hex(id).and_then(|b| r.signed_cert(&b).map(<[u8]>::to_vec)) {
+                loaded.doc.set_cert(id, &c)?;
+            }
+        }
+        loaded.store.flush(&loaded.doc)?;
+        Ok(())
+    }
+
     // ── keeping it alive ────────────────────────────────────────────
 
     /// Called once when a node opens. Answers whether a root was born
@@ -1355,6 +1430,76 @@ mod tests {
         assert_eq!(a.revoke_here("beta").unwrap_err(), msg::already_revoked("beta"));
         assert_eq!(a.revoke_here("alpha").unwrap_err(), msg::cant_revoke_holder());
         assert_eq!(b.revoke_here("alpha").unwrap_err(), msg::revoke_needs_root());
+    }
+
+    /// Empties a table on disk the way hinton's was found (round NET-10):
+    /// every block gone, the ledger kept — so no sync would pull the
+    /// blocks back by name — and the machine's own row written again by
+    /// its next open.
+    fn lose_the_table(t: &TempTree, name: &str) -> Node {
+        let dir = khor_sync::devices::devices_dir(&t.path());
+        for e in std::fs::read_dir(&dir).unwrap().flatten() {
+            if e.path().extension().is_some_and(|x| x == "loro") {
+                std::fs::remove_file(e.path()).unwrap();
+            }
+        }
+        node(t, name)
+    }
+
+    /// NET-10: a machine whose table lost every row but its own is taken
+    /// back on a roster signed by its own root, and on nothing else.
+    #[test]
+    fn a_table_that_lost_its_rows_takes_a_machine_back_on_the_roots_word_only() {
+        let (ta, tb, tc) = (
+            TempTree::fresh("trust-vouch-a"),
+            TempTree::fresh("trust-vouch-b"),
+            TempTree::fresh("trust-vouch-c"),
+        );
+        let a = node(&ta, "alpha");
+        let b = node(&tb, "beta");
+        join_through_a_member(&a, &b);
+        a.approve_here("beta").unwrap();
+        carry(&a, &b);
+        let old = a.vouch_offer().expect("a member on the roster vouches");
+
+        let b = lose_the_table(&tb, "beta");
+        let names = |n: &Node| n.devices().unwrap().into_iter().map(|d| d.name).collect::<Vec<_>>();
+        assert_eq!(names(&b), ["beta"], "only its own row is left");
+        assert_eq!(b.admit(a.device_str()).unwrap_err(), msg::not_paired());
+        assert_eq!(b.standing_of(b.device_str()), Standing::Pending, "and no roster");
+
+        // Another network's roster, and a roster that does not name the asker.
+        let c = node(&tc, "gamma");
+        let (cn, ca, cr) = c.vouch_offer().unwrap();
+        assert_eq!(b.take_vouch(c.device_str(), &cn, &ca, &cr).unwrap_err(), msg::vouch_refused());
+        let stranger = fake_id(0x5e);
+        assert_eq!(b.take_vouch(&stranger, "x", &[], &old.2).unwrap_err(), msg::vouch_refused());
+        assert_eq!(names(&b), ["beta"], "a refusal writes nothing");
+
+        b.take_vouch(a.device_str(), &old.0, &old.1, &old.2).unwrap();
+        assert_eq!(b.admit(a.device_str()), Ok(()));
+        assert_eq!(b.standing_of(b.device_str()), Standing::Trusted);
+        carry(&a, &b);
+        assert_eq!(names(&b), ["alpha", "beta"], "the round after brings the rest");
+
+        // An older roster cannot undo a newer one, and a machine shown
+        // the door here is not let back in by vouching for itself.
+        a.enter_satellite(&fake_id(0x51), "box", "box.example", false).unwrap();
+        carry(&a, &b);
+        assert!(b.roster().unwrap().seq > old_seq(&old.2, &a));
+        assert_eq!(b.take_vouch(a.device_str(), &old.0, &old.1, &old.2).unwrap_err(), msg::vouch_refused());
+        let (n, ad, r) = a.vouch_offer().unwrap();
+        {
+            let lb = b.devices_loaded().unwrap();
+            lb.doc.set_gone(a.device_str(), true).unwrap();
+            let mut s = lb.store;
+            s.flush(&lb.doc).unwrap();
+        }
+        assert_eq!(b.take_vouch(a.device_str(), &n, &ad, &r).unwrap_err(), msg::vouch_refused());
+    }
+
+    fn old_seq(roster: &[u8], under: &Node) -> u64 {
+        nt::verify_roster(roster, &under.anchor().unwrap()).unwrap().seq
     }
 
     /// B6: a roster past its date is said by `khor doctor` in days, and
