@@ -137,8 +137,14 @@ export function SessionScreen({
   loading = false,
   editor,
   onEditCancel,
+  nativeDeck = false,
   children,
 }: {
+  /** **The deck is drawn natively over the page** (UX-13, an iPhone's
+      browser, `lib/native-deck`): the DOM deck keeps its place and its
+      layout — it is what the native one is read from, and what a native
+      press clicks — but is not painted. */
+  nativeDeck?: boolean;
   /** **The pill is the address editor while this is given** (UX-18, the
       owner 2026-10-05: the browser has one deck): the pill's own things
       give way to the editor drawn inside its glass — the pill's ← → and
@@ -305,7 +311,12 @@ export function SessionScreen({
           the row under it (the box, the address) rides the keyboard
           alone (`app.css`) — but a terminal's stays, over its key row
           (UX-12, `views/TerminalPane`'s `KeyRowSeats`). */}
-      <div data-session-bar data-folded={folded || undefined} className="flex flex-none flex-col pb-safe-bottom">
+      <div
+        data-session-bar
+        data-folded={folded || undefined}
+        data-native-deck={nativeDeck || undefined}
+        className="flex flex-none flex-col pb-safe-bottom"
+      >
         {folded && (
           // The strip at the foot of whatever height the fold keeps: its
           // own, or a terminal's reserve.

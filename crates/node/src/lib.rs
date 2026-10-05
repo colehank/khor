@@ -400,6 +400,9 @@ pub struct Node {
     pub(crate) face_seen: Arc<Mutex<Option<std::time::Instant>>>,
     /// When a round out of turn last started, in ms (`link::Node::nudge`).
     pub(crate) nudged: Arc<std::sync::atomic::AtomicU64>,
+    /// When this node last vouched for itself to each machine, by id
+    /// (`link::Node::vouch_to`, round NET-10).
+    pub(crate) vouched: Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
     /// The session rows last sent each asker, by its id, with the digest
     /// of that frame (`proto::Response::SessionRowsSince`).
     pub(crate) rows_sent: Arc<Mutex<std::collections::HashMap<String, RowsSent>>>,
@@ -1066,6 +1069,7 @@ impl Node {
             resting: Arc::default(),
             face_seen: Arc::default(),
             nudged: Arc::default(),
+            vouched: Arc::default(),
             rows_sent: Arc::default(),
             wsfacts: Arc::default(),
             borrows: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),

@@ -84,7 +84,7 @@ import { useStoredSettings } from "@/hooks/use-settings";
 import { SettingsProvider, SettingsRereadProvider } from "@/settings";
 import { speakLang, type LangPref } from "@/lang";
 import { wearTheme, type ThemePref } from "@/theme";
-import { useNarrow } from "@/hooks/use-narrow";
+import { NARROW_QUERY, useNarrow } from "@/hooks/use-narrow";
 import { useStatusBar } from "@/hooks/use-status-bar";
 import {
   arrange,
@@ -456,8 +456,17 @@ export default function App() {
     "[data-ws-tree]",
     roomBeside("[data-ws-tree]"),
   );
-  /** Where the face was when it last ran (P3, `lib/place`), read once. */
-  const [place] = useState(storedPlace);
+  /** Where the face was when it last ran (P3, `lib/place`), read once.
+      **On the narrow face only the seat** (UX-14 §7, the owner
+      2026-10-05: 「iOS 保持」): a cold start opens the seat's list where it
+      was scrolled (`useKeptScroll`), never a pushed page — a machine, a
+      workspace, a session, a 「…」 page. ⚠️ 墓碑: P3 (10-03) restored the
+      pushed page too, and a relaunch went straight into the last
+      workspace (「进入工作区直奔最近内容」). The wide face is unchanged. */
+  const [place] = useState(() => {
+    const p = storedPlace();
+    return window.matchMedia(NARROW_QUERY).matches ? { landing: p.landing } : p;
+  });
   const [landing, setLanding] = useState<Landing>(() =>
     landings().some((l) => l.key === place.landing) ? (place.landing as Landing) : "sessions",
   );

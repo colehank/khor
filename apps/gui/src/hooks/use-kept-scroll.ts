@@ -25,12 +25,38 @@ function scrollers(): HTMLElement[] {
   );
 }
 
+/** **A list's place survives a cold start** (UX-14 §7, the owner
+    2026-10-05: iOS keeps): a relaunch opens the seat it was on at its
+    list, scrolled where it was — never a pushed page (`App`'s `place`).
+    Only the lists' keys are written down; pushed pages stay in memory. */
+const LISTS = "khor.list-scroll";
+type Kept = { top: number; height: number }[];
+
+function storedLists(): Map<string, Kept> {
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(LISTS) ?? "{}") as Record<string, Kept>;
+    return new Map(Object.entries(raw).filter(([, v]) => Array.isArray(v)));
+  } catch {
+    return new Map();
+  }
+}
+
+function storeLists(all: Map<string, Kept>) {
+  try {
+    const lists = Object.fromEntries([...all].filter(([k]) => k.endsWith(":list:")));
+    window.localStorage.setItem(LISTS, JSON.stringify(lists));
+  } catch {
+    // Without storage a relaunch starts at the top.
+  }
+}
+
 export function useKeptScroll(key: string) {
-  const kept = useRef(new Map<string, { top: number; height: number }[]>());
+  const kept = useRef<Map<string, Kept>>(storedLists());
   const now = useRef(key);
   now.current = key;
 
   useEffect(() => {
+    let write = 0;
     const on = (e: Event) => {
       const t = e.target;
       if (!(t instanceof HTMLElement) || !t.matches(SCROLLERS)) return;
@@ -38,9 +64,15 @@ export function useKeptScroll(key: string) {
         now.current,
         scrollers().map((s) => ({ top: s.scrollTop, height: s.scrollHeight })),
       );
+      if (!now.current.endsWith(":list:")) return;
+      window.clearTimeout(write);
+      write = window.setTimeout(() => storeLists(kept.current), 300);
     };
     document.addEventListener("scroll", on, true);
-    return () => document.removeEventListener("scroll", on, true);
+    return () => {
+      document.removeEventListener("scroll", on, true);
+      window.clearTimeout(write);
+    };
   }, []);
 
   useLayoutEffect(() => {
@@ -85,5 +117,8 @@ export function useKeptScroll(key: string) {
   }, [key]);
 
   /** Forget a place's scroll: its root was asked for again. */
-  return (k: string) => kept.current.delete(k);
+  return (k: string) => {
+    kept.current.delete(k);
+    if (k.endsWith(":list:")) storeLists(kept.current);
+  };
 }

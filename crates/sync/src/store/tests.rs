@@ -673,3 +673,42 @@ fn an_unchanged_directory_is_read_from_what_was_kept() {
     }
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// **A snapshot pulled from another machine is not taken by this one's
+/// compaction** (round NET-10, the owner's hinton). Blocks cross between
+/// machines under their own names, snapshots included, and before round
+/// NET-6 a snapshot's name was only a number: this machine's count of
+/// its own increments. Two machines whose compactors had written the
+/// same count named their snapshots alike, so a local compaction wrote
+/// over the one it had pulled and then deleted it with the blocks it
+/// covered, and the document was empty from then on. hinton's device
+/// table: every row gone, its ledger still naming `snap-00000040`, which
+/// lecun's ledger names too. Red on 0fd2715b^, green since.
+#[test]
+fn a_snapshot_pulled_from_another_machine_survives_a_local_compaction() {
+    use crate::store::{AnyDoc, load};
+    let (far, here) = (tmpdir("pulled-far"), tmpdir("pulled-here"));
+    let mut w = open_channel(&far, 0xF1).unwrap();
+    w.doc.tell(&me("far"), "written far away").unwrap();
+    w.store.flush(&w.doc).unwrap();
+    let c = load::<AnyDoc>(&far, 0xF2).unwrap();
+    let mut store = c.store;
+    let snap = store.compact(&c.doc).unwrap();
+
+    let mut h = open_channel(&here, 0xE1).unwrap();
+    h.doc.tell(&me("here"), "written here").unwrap();
+    h.store.flush(&h.doc).unwrap();
+    let name = snap.file_name().unwrap().to_string_lossy().to_string();
+    h.store.absorb(&h.doc, &name, &fs::read(&snap).unwrap()).unwrap();
+    let c = load::<AnyDoc>(&here, 0xF2).unwrap();
+    let mut store = c.store;
+    store.compact(&c.doc).unwrap();
+
+    let text = render(&open_channel(&here, 0xE3).unwrap().doc);
+    assert!(
+        text.contains("written far away") && text.contains("written here"),
+        "both lines survive the compaction:\n{text}"
+    );
+    let _ = fs::remove_dir_all(&far);
+    let _ = fs::remove_dir_all(&here);
+}

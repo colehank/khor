@@ -8630,6 +8630,90 @@ try {
         );
       }
 
+      // **UX-14: no edit mode; the content pages' deck** (the owner,
+      // 2026-10-05). Nothing at the top; the deck is ‹ · pill (name, the
+      // preview eye for a file that renders, ✓ only while the buffer
+      // differs) · 分享 · 「…」, and no 编辑 circle. The eye turns the
+      // file to its source, which is the editor at once; typing draws ✓,
+      // ✓ writes and goes away. 字号 and 预览背景 are in 「…」 only while
+      // the file is rendered. Leaving with a draft asks nothing and keeps
+      // it: back on the file, ✓ is there.
+      {
+        const deck = () =>
+          page.evaluate(() => ({
+            namePill: document.querySelectorAll("[data-file-name-pill]").length,
+            back: document.querySelectorAll("[data-file-deck] [data-file-back]").length,
+            name: document.querySelector("[data-file-deck] [data-file-pill] [data-file-name]")?.textContent?.trim() ?? null,
+            eye: document.querySelector("[data-file-pill] [data-file-face-toggle]")?.getAttribute("data-file-face-toggle") ?? null,
+            save: document.querySelectorAll("[data-file-pill] [data-file-save]").length,
+            more: document.querySelectorAll("[data-file-deck] [data-file-more]").length,
+            edit: document.querySelectorAll("[data-file-edit]").length,
+            editor: document.querySelectorAll("[data-file-page] textarea[data-edit]").length,
+            asked: document.querySelectorAll("[data-close-draft]").length,
+          }));
+        const menu = async () => {
+          await press("[data-file-deck] [data-file-more]");
+          await wait(250);
+          const got = await page.evaluate(() => ({
+            size: document.querySelectorAll("[data-file-more-menu] [data-file-size]").length,
+            ground: document.querySelectorAll("[data-file-more-menu] [data-preview-ground]").length,
+          }));
+          await page.keyboard.press("Escape");
+          await wait(200);
+          return got;
+        };
+        const writes = [];
+        const wrote14 = (r) => {
+          writes.push(1);
+          return r.fulfill({ contentType: "application/json", body: JSON.stringify({ at_ms: Date.now(), digest: "3".repeat(64) }) });
+        };
+        await page.route("**/write_text", wrote14);
+        const atRest = await deck();
+        const readMenu = await menu();
+        await press("[data-file-pill] [data-file-face-toggle]");
+        await until(3_000, async () => (await deck()).editor === 1);
+        const source = await deck();
+        const sourceMenu = await menu();
+        await page.locator("[data-file-page] textarea[data-edit]").click();
+        await page.keyboard.press("Control+End");
+        await page.keyboard.type("\nmore");
+        await until(3_000, async () => (await deck()).save === 1);
+        const dirty = await deck();
+        await press("[data-file-pill] [data-file-save]");
+        await until(5_000, async () => writes.length > 0 && (await deck()).save === 0);
+        const savedDeck = await deck();
+        await page.locator("[data-file-page] textarea[data-edit]").click();
+        await page.keyboard.press("Control+End");
+        await page.keyboard.type(" again");
+        await until(3_000, async () => (await deck()).save === 1);
+        await press("[data-file-back]");
+        await wait(300);
+        const leftAsked = await page.evaluate(() => document.querySelectorAll("[data-close-draft]").length);
+        await press('[data-file="notes.md"] > button');
+        await wait(500);
+        const kept = await deck();
+        console.log(
+          `UX-14 · at rest ${JSON.stringify(atRest)} menu ${JSON.stringify(readMenu)}; source ${JSON.stringify(source)} menu ${JSON.stringify(sourceMenu)}; ` +
+            `typed ${JSON.stringify(dirty)}; saved (${writes.length} write) ${JSON.stringify(savedDeck)}; left with a draft asked ${leftAsked}; back ${JSON.stringify(kept)}`,
+        );
+        if (atRest.namePill !== 0 || atRest.back !== 1 || atRest.name !== "notes.md" || atRest.eye !== "preview" || atRest.save !== 0 || atRest.more !== 1 || atRest.edit !== 0) {
+          fail(`UX-14 · the file page reads ${JSON.stringify(atRest)} — nothing at the top, the deck ‹ · pill (name, eye, no ✓) · 「…」, no 编辑 circle`);
+        }
+        if (readMenu.size !== 1 || readMenu.ground !== 1 || sourceMenu.size !== 0 || sourceMenu.ground !== 0) {
+          fail(`UX-14 · 「…」 rendered ${JSON.stringify(readMenu)}, source ${JSON.stringify(sourceMenu)} — 字号 and 预览背景 only while previewing`);
+        }
+        if (source.eye !== "source" || source.editor !== 1) fail(`UX-14 · the eye left ${JSON.stringify(source)} — the source, and it is the editor with no edit mode`);
+        if (dirty.save !== 1) fail(`UX-14 · typing drew ${dirty.save} ✓ in the pill`);
+        if (writes.length !== 1 || savedDeck.save !== 0 || savedDeck.editor !== 1) fail(`UX-14 · ✓ wrote ${writes.length} time(s) and left ${JSON.stringify(savedDeck)} — one write, ✓ gone, still editable`);
+        if (leftAsked !== 0 || kept.save !== 1) fail(`UX-14 · leaving with a draft asked ${leftAsked} time(s); back on the file ✓ is ${kept.save} — no question, the draft kept`);
+        // Saved, so the walk after this finds the file as it found it.
+        if (kept.save === 1) {
+          await press("[data-file-pill] [data-file-save]");
+          await until(5_000, async () => (await deck()).save === 0);
+        }
+        await page.unroute("**/write_text", wrote14);
+      }
+
       await press("[data-file-back]");
       await wait(300);
       const back = await screens();
@@ -28799,6 +28883,69 @@ try {
       await page.evaluate(() => window.localStorage.removeItem("khor.page-machine"));
     }
 
+    // ── r. the browser's native deck is read from the DOM deck (UX-13,
+    //       `lib/native-deck`): what the iPhone draws over the page is
+    //       what the tokens laid out — three glass shapes (‹, the pill,
+    //       the tabs circle) at --glass-btn, the tint --glass, every seat
+    //       a place to press, the pill a swipe, the page's inset the deck
+    //       row and the safe area; folded, the strip. Read here off the
+    //       same module the app runs; the drawing itself is the
+    //       simulator's. ──
+    {
+      if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
+      await wait(300);
+      if (!(await open("browser")) || !(await press('[data-side-row="t1"] [data-side-open]'))) {
+        fail("probe dead: bar r · a browser tab with a page never opened on the narrow face");
+      } else {
+        await until(3_000, async () => (await count("[data-session-deck] [data-deck-tabs]")) === 1);
+        await wait(400);
+        const readOf = () =>
+          page.evaluate(async () => {
+            const { readDeck } = await import("/src/lib/native-deck.ts");
+            const d = await readDeck(document.querySelector("[data-session-screen]"));
+            const probe = document.createElement("div");
+            probe.style.cssText = "position:absolute;height:var(--glass-btn);width:var(--deck-strip)";
+            document.body.appendChild(probe);
+            const btn = probe.getBoundingClientRect().height;
+            const strip = probe.getBoundingClientRect().width;
+            probe.remove();
+            const c = document.createElement("canvas").getContext("2d");
+            c.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--glass").trim();
+            const deck = document.querySelector("[data-session-deck]")?.getBoundingClientRect().height ?? 0;
+            const safe = parseFloat(getComputedStyle(document.querySelector("[data-session-bar]")).paddingBottom) || 0;
+            return d && {
+              glass: d.glass.map((g) => Math.round(g.h)),
+              tint: d.tint,
+              want: String(c.fillStyle),
+              btn,
+              strip,
+              seats: d.hits.filter((h) => !h.swipe).map((h) => h.seat).sort(),
+              swipe: d.hits.filter((h) => h.swipe).length,
+              images: d.images.length,
+              title: d.labels.map((l) => l.text).filter(Boolean),
+              inset: d.inset,
+              deck,
+              safe,
+            };
+          });
+        const rest = await readOf();
+        console.log(`bar r · the native deck read: ${shown(rest)}`);
+        if (!rest) {
+          fail("bar r · readDeck read nothing off the narrow browser's deck");
+        } else {
+          if (rest.glass.length !== 3 || rest.glass.some((h) => Math.abs(h - rest.btn) > 0.5)) {
+            fail(`bar r · glass shapes ${shown(rest.glass)} — ‹, the pill and the tabs circle, each --glass-btn (${rest.btn}) tall`);
+          }
+          if (rest.tint !== rest.want) fail(`bar r · the native tint is ${rest.tint}, --glass is ${rest.want}`);
+          if (!rest.seats.includes(0) || !rest.seats.includes(3) || !rest.seats.includes(5) || rest.swipe !== 1) {
+            fail(`bar r · seats ${shown(rest.seats)}, swipe ${rest.swipe} — ‹ (0), the title (3), the tabs (5), and the pill's swipe`);
+          }
+          if (Math.abs(rest.inset - (rest.deck + rest.safe)) > 0.5) fail(`bar r · the page's inset ${rest.inset} is not the deck row ${rest.deck} and the safe area ${rest.safe}`);
+          if (rest.images < 3) fail(`bar r · ${rest.images} glyph/face image(s) — ‹, a face or glyph in the pill, the tabs figure at least`);
+        }
+      }
+    }
+
     // ── p. the terminal pill opens the session's directory (UX-17): one
     //       sheet, 目录 first — the listing at the shell's directory (OSC
     //       7), else where the session started — and 日志, the 24 hours;
@@ -28846,6 +28993,25 @@ try {
         if (kept.on !== "log" || kept.log !== 1) fail(`bar p · reopened, the sheet is on ${shown(kept.on)} — the last tab is kept per session`);
         if (!lsMoved.includes("/tmp/elsewhere")) fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 目录 listed ${shown(lsMoved)}`);
       }
+      // ── q. a cold start opens the seat, never a pushed page (UX-14 §7):
+      //       the place left was a workspace open on the workspaces
+      //       seat; relaunched narrow, the seat's list is on screen with
+      //       the bar, and no workspace. ──
+      await page.evaluate(() =>
+        window.localStorage.setItem(
+          "khor.place",
+          JSON.stringify({ landing: "workspaces", more: null, screen: "detail", device: null, ws: { device: "f".repeat(64), machine: "peer", path: "/home/peer/work" } }),
+        ),
+      );
+      await page.reload({ waitUntil: "load" });
+      await wait(1_200);
+      const cold = await page.evaluate(() => ({
+        seat: document.querySelector('[data-float-nav] [data-on="true"], [data-float-nav] [aria-current="page"]')?.getAttribute("data-landing") ?? null,
+        bar: !!document.querySelector("[data-float-nav]")?.getClientRects().length,
+        ws: [...document.querySelectorAll("[data-ws-tree], [data-file-page]")].filter((e) => e.getClientRects().length).length,
+      }));
+      console.log(`bar q · a cold start after a pushed workspace: ${shown(cold)}`);
+      if (cold.seat !== "workspaces" || !cold.bar || cold.ws !== 0) fail(`bar q · a cold start reads ${shown(cold)} — the workspaces seat's list, the bar, no pushed workspace`);
       if (!(await openRow(chatRow.id))) {
         fail("probe dead: bar p · the conversation never opened");
       } else {
