@@ -23,7 +23,7 @@ import { useEffect, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 
 import { gui } from "@/gen/catalog";
-import { kittyNamed, kittyTyped } from "@/lib/term-kitty";
+import { kittyNamed, kittyTyped, shiftEnter } from "@/lib/term-kitty";
 
 /** The latched modifiers the next key goes out with. */
 export type Mods = { ctrl: boolean; alt: boolean };
@@ -149,6 +149,9 @@ export const KEYS: KeyDef[] = [
     send: (t, m) => kittyNamed(t, "Tab", false, m.alt) ?? (m.alt ? "\x1b\t" : "\t"),
   },
   { name: "backtab", cap: gui.key_backtab, label: gui.key_backtab_name, group: "function", repeats: true, send: (t) => kittyNamed(t, "Tab", true, false) ?? "\x1b[Z" },
+  // Shift+Enter (item 40): the soft keyboard has none, and it is Claude
+  // Code's newline. Off on the row by default; in the sheet.
+  { name: "newline", cap: gui.key_newline, label: gui.key_newline_name, group: "function", repeats: true, send: (t) => shiftEnter(t) },
   ...F_KEYS.map(([cap, send]): KeyDef => ({ name: cap.toLowerCase(), cap, group: "function", send: (_, m) => send(m) })),
   { name: "paste", cap: gui.key_paste, group: null },
 ];

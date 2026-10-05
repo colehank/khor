@@ -74,6 +74,7 @@ A program asks its terminal things in its output (DA1/DA2, DSR, OSC 10/11/12/4 c
 - **Command history** on a tmux row takes 这个目录 and "at a prompt" from the row's reading of the front pane.
 - **Which shells mark.** A pane opened from khor's client starts its shell through khor's `default-command` (set on khor's grouped session only, and only when the person has no `default-command` of their own; zsh and fish). For every other shell in tmux, one line in `~/.zshrc`, shown with a copy button in 设置 → 终端:
   `[[ -n $TMUX && -r ~/.khor/shell/khor.zsh ]] && source ~/.khor/shell/khor.zsh`
+- **Shift+Enter and other modified keys** (item 39). khor's client is attached with `-T extkeys` (tmux 3.2 and later), so tmux asks the face for xterm's modifyOtherKeys (`CSI > 4 ; 2 m`) without any `terminal-features` line; the face sends Shift+Enter as `CSI 27 ; 2 ; 13 ~` (`lib/term-kitty.ts`), and tmux hands it to a program that asked for extended keys (Claude Code does). The one line still the person's: `set -s extended-keys on`, a server option khor does not write. Without it tmux sends every pane a bare CR, under iTerm2 too.
 - **Not here:** blocks drawn over a tmux pane. They need tmux's control mode (`-CC`, iTerm2's way): one xterm per pane, each with its own scrollback. Sized in `audit/term-tmux-marks.md`.
 
 **Prediction** (`lib/term-predict.ts`). This is mosh's model, as VS Code's TypeAheadAddon carries it onto xterm.js.

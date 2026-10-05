@@ -1,0 +1,147 @@
+// The extended keys gate (item 39): what a modified key sends once the
+// program, or tmux on its behalf, asked for extended keys
+// (`src/lib/term-kitty.ts`). Run in Node against a real xterm: the
+// requests go in through xterm's parser as a program's output would, and
+// the keys through the pane's own encoder.
+//
+// Asserted:
+// - nothing asked: every key is left to xterm (Shift+Enter is a CR);
+// - xterm's modifyOtherKeys (`CSI > 4 ; 2 m`, what tmux asks of an outer
+//   terminal with `extkeys`, measured from tmux 3.7b): Shift+Enter is
+//   `CSI 27 ; 2 ; 13 ~`, Ctrl and Alt combinations too; level 1 leaves the
+//   combinations with a control character of their own; `CSI > 4 m` and
+//   RIS end it; modifyCursorKeys (`CSI > 2 ; 1 m`) is not it;
+// - the kitty flags (`CSI > 1 u`) win when both were asked: `CSI 13 ; 2 u`;
+// - the key row's 换行 cap (item 40) sends what Shift+Enter sends in every
+//   one of those states, and repeats while held.
+// The bytes crossing a real tmux unchanged are the host's test,
+// `crates/node/tests/tmux_extkeys.rs`.
+import { build } from "esbuild";
+import { fileURLToPath } from "node:url";
+
+const gui = fileURLToPath(new URL("..", import.meta.url));
+const alias = {
+  name: "alias",
+  setup(b) {
+    b.onResolve({ filter: /^@\// }, (a) => b.resolve(`./src/${a.path.slice(2)}`, { resolveDir: gui, kind: a.kind }));
+  },
+};
+const out = await build({
+  stdin: {
+    contents: `import { Terminal } from "@xterm/xterm"; import * as kitty from "@/lib/term-kitty"; import { KEY_BY_NAME } from "@/lib/term-keys"; globalThis.lab = { Terminal, kitty, KEY_BY_NAME };`,
+    resolveDir: gui,
+    loader: "ts",
+  },
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  write: false,
+  logLevel: "error",
+  plugins: [alias],
+});
+await import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
+const { Terminal, kitty, KEY_BY_NAME } = globalThis.lab;
+const newline = KEY_BY_NAME.get("newline");
+
+let bad = 0;
+const fail = (m) => {
+  bad++;
+  console.error(`keys gate: ${m}`);
+};
+const show = (s) => (s === null ? "xterm's own" : JSON.stringify(s));
+
+/** A keydown as the browser gives it. */
+const key = (k, code, mods = {}) => ({
+  type: "keydown",
+  key: k,
+  code,
+  shiftKey: !!mods.shift,
+  altKey: !!mods.alt,
+  ctrlKey: !!mods.ctrl,
+  metaKey: !!mods.meta,
+  repeat: false,
+  isComposing: false,
+  keyCode: 0,
+});
+const SHIFT_ENTER = key("Enter", "Enter", { shift: true });
+const ENTER = key("Enter", "Enter");
+const CTRL_ENTER = key("Enter", "Enter", { ctrl: true });
+const SHIFT_TAB = key("Tab", "Tab", { shift: true });
+const CTRL_A = key("a", "KeyA", { ctrl: true });
+const CTRL_SHIFT_A = key("A", "KeyA", { ctrl: true, shift: true });
+const SHIFT_A = key("A", "KeyA", { shift: true });
+const CMD_ENTER = key("Enter", "Enter", { meta: true });
+
+/** A fresh pane that has read `stream`; what each key sends. */
+async function after(stream, keys) {
+  const t = new Terminal({ cols: 40, rows: 10, allowProposedApi: true });
+  const answers = [];
+  kitty.kittyProtocol(t, (b) => answers.push(b));
+  await new Promise((r) => t.write(stream, r));
+  const sent = keys.map((ev) => kitty.kittyKey(t, ev, false));
+  const cap = newline?.send?.(t, { ctrl: false, alt: false });
+  t.dispose();
+  return { sent, cap };
+}
+
+const E = "\x1b";
+const cases = [
+  ["nothing asked", "", [[SHIFT_ENTER, null], [ENTER, null], [CTRL_A, null]]],
+  [
+    "modifyOtherKeys 2 (tmux with extkeys)",
+    `${E}[>4;2m`,
+    [
+      [SHIFT_ENTER, `${E}[27;2;13~`],
+      [ENTER, null],
+      [CTRL_ENTER, `${E}[27;5;13~`],
+      [SHIFT_TAB, `${E}[27;2;9~`],
+      [CTRL_A, `${E}[27;5;97~`],
+      [CTRL_SHIFT_A, `${E}[27;6;65~`],
+      [SHIFT_A, null],
+      [CMD_ENTER, null],
+    ],
+  ],
+  [
+    "modifyOtherKeys 1",
+    `${E}[>4;1m`,
+    [
+      [SHIFT_ENTER, `${E}[27;2;13~`],
+      [CTRL_A, null],
+      [CTRL_SHIFT_A, `${E}[27;6;65~`],
+    ],
+  ],
+  ["modifyOtherKeys reset", `${E}[>4;2m${E}[>4m`, [[SHIFT_ENTER, null]]],
+  ["modifyOtherKeys, then RIS", `${E}[>4;2m${E}c`, [[SHIFT_ENTER, null]]],
+  ["modifyCursorKeys is not it", `${E}[>2;1m`, [[SHIFT_ENTER, null]]],
+  ["kitty flags", `${E}[>1u`, [[SHIFT_ENTER, `${E}[13;2u`], [ENTER, null]]],
+  ["kitty flags and modifyOtherKeys: kitty wins", `${E}[>4;2m${E}[>1u`, [[SHIFT_ENTER, `${E}[13;2u`]]],
+  ["kitty popped, modifyOtherKeys left", `${E}[>4;2m${E}[>1u${E}[<u`, [[SHIFT_ENTER, `${E}[27;2;13~`]]],
+];
+
+let checked = 0;
+for (const [name, stream, expect] of cases) {
+  const { sent, cap } = await after(stream, expect.map(([ev]) => ev));
+  // The 换行 cap: what this state's Shift+Enter sends, or the CR xterm
+  // would send for it.
+  const shiftEnter = sent[expect.findIndex(([ev]) => ev === SHIFT_ENTER)];
+  const wantCap = shiftEnter ?? (expect.some(([ev]) => ev === SHIFT_ENTER) ? "\r" : undefined);
+  if (wantCap !== undefined) {
+    checked++;
+    if (cap !== wantCap) fail(`${name}: the 换行 cap sent ${show(cap ?? null)}, want ${show(wantCap)}`);
+  }
+  expect.forEach(([ev, want], i) => {
+    checked++;
+    const label = `${ev.shiftKey ? "⇧" : ""}${ev.ctrlKey ? "⌃" : ""}${ev.altKey ? "⌥" : ""}${ev.metaKey ? "⌘" : ""}${ev.key}`;
+    if (sent[i] !== want) fail(`${name}: ${label} sent ${show(sent[i])}, want ${show(want)}`);
+  });
+}
+
+checked++;
+if (!newline) fail("no 换行 cap in the key set");
+else if (newline.repeats !== true) fail("the 换行 cap does not repeat while held");
+
+if (bad) {
+  console.error(`keys gate: ${bad} of ${checked} wrong`);
+  process.exit(1);
+}
+console.log(`keys gate: ${checked} keys right across ${cases.length} terminal states`);

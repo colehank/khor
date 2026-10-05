@@ -55,6 +55,7 @@ import { type RowAction } from "@/components/RowMenu";
 import { sessionMark } from "@/components/BrandIcons";
 import { EditableName } from "@/components/EditableName";
 import { SideList, type SideRow } from "@/components/SideList";
+import { rowWindow } from "@/lib/row-facts";
 import {
   DIAL_CARD_RATIO,
   DIAL_CARD_SIZE,
@@ -757,6 +758,30 @@ function valueWord(axis: string, value: string): string {
  * vendor's one product, and a row's job here is to say what *kind* of
  * thing this is.
  */
+/** **What the account is, in the natural order** (UX-15): 「Claude 订阅」,
+    「OpenAI API」 — the provider, then the kind, no 「·」. */
+function whatOf(r: Row): string {
+  // A subscription names the product (「Claude 订阅」), not the API the
+  // same vendor sells (`subLine`'s rule).
+  const who = r.kind === "sub" && r.provider === "claude" ? gui.quota_sub_provider_claude : providerWord(r.provider);
+  return r.kind === "sub" ? gui.row_kind_sub(who) : r.kind === "bill" ? gui.row_kind_api(who) : `${who} ${kindWord(r.kind)}`;
+}
+
+/** A share left, as the row says it: whole percent. */
+function pctWord(left: number): string {
+  return `${Math.round(left * 100)}%`;
+}
+
+/** **When a window resets, as a moment** (UX-15: 「周三 14:00 重置」): the
+    weekday and the time within a week, the date beyond it. */
+function resetWord(at: number): string {
+  const when = new Date(at * 1000);
+  const soon = at * 1000 - Date.now() < 6 * 24 * 3600_000;
+  return when.toLocaleString(document.documentElement.lang || undefined, soon
+    ? { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }
+    : { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 function subLine(r: Row): string {
   // A subscription names the product (「订阅 · Claude」), not the API the
   // same vendor sells (`quota-sub-provider-claude`, 2026-10-03).
@@ -1243,6 +1268,14 @@ export function QuotaLanding({
     // has them — probed or registered.
     const dials = r.kind === "sub" ? subDials(r) : [];
     const M = sessionMark("agent", r.provider);
+    const win = rowWindow({ windows: r.windows, fill: r.fill, resets_at: r.account?.reading.resets_at ?? null });
+    const left = win
+      ? win.resets_at !== null
+        ? gui.row_window(pctWord(win.left), resetWord(win.resets_at))
+        : gui.row_left(pctWord(win.left))
+      : null;
+    const trouble = r.account?.reading.trouble ?? null;
+    const state = trouble ? gui.day_unreachable : win && win.left <= 0 ? gui.quota_credits_out : null;
     return {
       id: r.id,
       group: groupOf(r),
@@ -1297,33 +1330,41 @@ export function QuotaLanding({
       // so the line under it carries what the row *is*: 类型 · 提供商 —
       // and it renames the session row's way: double-click, type, Enter
       // (`EditableName`, `nested` inside the button that opens the row).
+      // **One rule for the four lists** (UX-15, the owner 2026-10-05):
+      // left-top the account's name, and as its aside what it is — the
+      // provider's mark and 「Claude 订阅」 / 「OpenAI API」, in that
+      // order, no 「·」; left-bottom what is left and when it resets;
+      // right-top a state word only when it is not normal; right-bottom
+      // when this was read (moved down from the top).
+      // ⚠️ 墓碑: the mark opened the title (2026-09-30) and the second
+      // line was 「类型 · 提供商」 (`subLine`, still the filter's words).
       title: (
-        // ⚠️ The audit fix plan (F2.1) put the mark after the name, so every
-        // list's words start on one x; the owner's own ruling above has it
-        // open the title, and the ruling stands.
-        <span data-quota-name className="flex min-w-0 items-baseline gap-xxs">
-          <M className="size-kind-mark-glyph flex-none translate-y-[0.15em]" />
-          <span className="block min-w-0 flex-1">
-            <EditableName
-              kind="account"
-              id={r.id}
-              title={r.name}
-              className="block"
-              inputClassName="w-full text-body"
-              nested
-            />
-          </span>
+        <span data-quota-name className="block min-w-0">
+          <EditableName
+            kind="account"
+            id={r.id}
+            title={r.name}
+            className="block"
+            inputClassName="w-full text-body"
+            nested
+          />
         </span>
       ),
       name: r.name,
-      sub: <span data-quota-sub-line>{subLine(r)}</span>,
-      // **The right end is when this was read**, not what it says.
-      trailing: (
-        <span data-quota-age-cell className="flex-none text-caption tabular-nums text-muted-foreground">
-          {r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}
+      aside: (
+        <span data-quota-what className="inline-flex min-w-0 items-baseline gap-xxs">
+          <M className="size-kind-mark-glyph flex-none translate-y-[0.15em]" />
+          <span className="min-w-0 truncate">{whatOf(r)}</span>
         </span>
       ),
-      find: `${r.name} ${subLine(r)}`,
+      sub: left ? <span data-quota-sub-line>{left}</span> : undefined,
+      corners: {
+        top: state ? <span data-quota-state>{state}</span> : undefined,
+        bottom: (
+          <span data-quota-age-cell>{r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}</span>
+        ),
+      },
+      find: `${r.name} ${subLine(r)} ${whatOf(r)} ${left ?? ""}`,
       selected: on,
       menu: actionsFor(r),
       onOpen: () => {

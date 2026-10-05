@@ -35,7 +35,9 @@ export function runningOn(rows: readonly SessionRow[], machine: Pick<DeviceRow, 
     figure (an API account's budget). `left` is what remains, 0–1;
     `resets_at` unix seconds, `null` when the provider does not say.
     `null` when there is no number at all. */
-export function rowWindow(r: AccountReading): { left: number; resets_at: number | null } | null {
+export function rowWindow(
+  r: Pick<AccountReading, "fill"> & { windows?: AccountReading["windows"] | null; resets_at?: number | null },
+): { left: number; resets_at: number | null } | null {
   let best: { used: number; resets_at: number | null } | null = null;
   for (const w of r.windows ?? []) {
     if (w.scope !== null) continue;

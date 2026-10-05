@@ -19,7 +19,7 @@
 // reason: a beat is a dial plus a walk of somebody else's disk for an
 // answer that is almost always the one already on screen, and coming
 // back to the window is the moment staleness starts to mislead.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   fetchCheckout,
@@ -569,10 +569,16 @@ export function WorkspacesList({
     const k = keyOf(r);
     const isOpen = selected?.device === r.device && selected.path === r.path;
     const git = marks[k];
-    const at = times[k] ?? 0;
+    // **The holding machine's own facts first** (net's NET-8,
+    // `WorkspaceRow.branch` / `changed` / `changed_ms`, kept by its
+    // resident and carried by a round), the per-row asks only for a
+    // machine too old to say them.
+    const at = r.changed_ms ?? times[k] ?? 0;
     // **Ignored paths are rows too since 2026-09-16, and they are not
     // changes** (`khor_node::git::IGNORED`).
-    const changed = git ? git.rows.filter((w) => w.mark !== IGNORED).length : 0;
+    const changed = r.changed ?? (git ? git.rows.filter((w) => w.mark !== IGNORED).length : null);
+    const capped = r.changed !== null && r.changed_capped;
+    const branch = r.branch ?? (git && git.branch !== "" ? git.branch : null);
     // Only the branch *name* waits on the walk; whether it is a
     // repository at all is `kindOf`'s.
     const repo = r.kind === "branch";
@@ -595,31 +601,23 @@ export function WorkspacesList({
         </span>
       ),
       name: r.name,
-      // Where it is, in full — the machine and the absolute path are one
-      // fact, and this pair is what the CLI prints. **Not shortened to
-      // `~`**: whose home that is, is a fact about the far machine. **Cut
-      // at its start** (F2.5; N10): the last segment is the part a person
-      // reads, and the end is where it is.
-      sub: <PathCut data-ws-where text={r.machine === "" ? r.path : `${r.machine}:${r.path}`} />,
-      // The row's meta at the right end, as every list's (F2.1): the
-      // branch — or nothing at all: not a repository, a machine that could
-      // not be asked, a detached HEAD all arrive here as nothing — over
-      // when it was last touched, caption, tabular.
-      trailing: (
-        <YieldingCorner>
-          <span data-ws-git className="max-w-full truncate">
-            {git && git.branch !== ""
-              ? changed > 0
-                ? `${git.branch} · ${gui.ws_marked(changed)}`
-                : git.branch
-              : ""}
-          </span>
-          <span data-ws-touched className="whitespace-nowrap">{at > 0 ? ago(at) : ""}</span>
-        </YieldingCorner>
-      ),
+      // **One rule for the four lists** (UX-15, the owner 2026-10-05):
+      // the name, and where it is as its aside — the machine and the path,
+      // cut at its start (F2.5; N10), not shortened to `~` (whose home that
+      // is, is a fact about the far machine); under it what is happening
+      // (「3 个改动」); right-top the branch, right-bottom the last change.
+      // A plain folder: only the time. ⚠️ 墓碑: the place was the second
+      // line, and the branch shared its corner with the count
+      // (`YieldingCorner`, 「main · 3 个已修改」).
+      aside: <PathCut data-ws-where text={r.machine === "" ? r.path : `${r.machine}:${r.path}`} />,
+      sub: changed !== null && changed > 0 ? <span data-ws-changes>{gui.row_changes(capped ? `${changed}+` : changed)}</span> : undefined,
+      corners: {
+        top: branch !== null && repo ? <span data-ws-git className="max-w-full truncate">{branch}</span> : undefined,
+        bottom: at > 0 ? <span data-ws-touched>{ago(at)}</span> : undefined,
+      },
       // **The three things the row says out loud**: its name, its
       // machine, its path (2026-09-17 ruling 50).
-      find: `${r.name} ${r.machine} ${r.path}`,
+      find: `${r.name} ${r.machine} ${r.path} ${changed ? gui.row_changes(changed) : ""}`,
       selected: isOpen,
       menu: actions(r),
       // **The row is the control, and pressing the open one folds its
@@ -676,47 +674,5 @@ export function WorkspacesList({
   );
 }
 
-/**
- * **The branch gives way before the name** (「优先折叠 branch 名,保留工作区名」;
- * the corner moved to the row's end in F2.1 and kept the rule). The meta
- * column at the right end is as wide as the branch wants, but never more
- * than what the row has left once the name is whole — and never less than
- * the time under it, which is not cut (an 「ago」 missing its tail is a
- * different amount of time). Measured, because what the name needs is its
- * own text's width, which no flex rule can hand a sibling.
- */
-function YieldingCorner({ children }: { children: ReactNode }) {
-  const box = useRef<HTMLSpanElement | null>(null);
-  const fit = useCallback(() => {
-    const el = box.current;
-    const text = el?.closest<HTMLElement>("[data-side-text]");
-    const name = text?.querySelector<HTMLElement>("[data-ws-name]");
-    if (!el || !text || !name) return;
-    const cs = getComputedStyle(text);
-    const room =
-      text.clientWidth -
-      Number.parseFloat(cs.paddingLeft) -
-      Number.parseFloat(cs.paddingRight) -
-      Number.parseFloat(cs.columnGap || "0") -
-      name.scrollWidth;
-    const time = el.querySelector<HTMLElement>("[data-ws-touched]")?.scrollWidth ?? 0;
-    el.style.maxWidth = `${Math.max(time, room)}px`;
-  }, []);
-  // Every render: a rename or a new branch changes what the two need.
-  useLayoutEffect(fit);
-  useLayoutEffect(() => {
-    const text = box.current?.closest<HTMLElement>("[data-side-text]");
-    if (!text) return;
-    const watch = new ResizeObserver(fit);
-    watch.observe(text);
-    return () => watch.disconnect();
-  }, [fit]);
-  return (
-    <span
-      ref={box}
-      className="flex min-w-0 flex-none flex-col items-end gap-xxs text-caption tabular-nums text-muted-foreground"
-    >
-      {children}
-    </span>
-  );
-}
+/* ⚠️ 墓碑 (UX-15): `YieldingCorner` — the branch gives way before the name
+   — lived here; it is `SideList`'s corners' rule now, for every list. */

@@ -2814,6 +2814,16 @@ accounts-log-capped = "只取到最近 {0} 条"
 # 那条读数(2026-09-02:「本机不用写一个括号在机器名旁边。连接方式就是本机」)。
 # [cli] 的 this-machine 是括号后缀,还给终端列表和向导用;别混。
 machine-here = "本机"
+# **The list rows' four corners** (UX-15, the owner 2026-10-05): a machine's
+# activity (sessions running · CPU) and its latency, a workspace's changes, an
+# account's window (what is left · when it resets).
+row-sessions = "{0} 个会话"
+row-cpu = "CPU {0}%"
+row-changes = "{0} 个改动"
+row-window = "剩 {0} · {1} 重置"
+row-left = "剩余 {0}"
+row-kind-sub = "{0} 订阅"
+row-kind-api = "{0} API"
 # The machine card's head, right side (2026-09-06:「右上角的『khor xxx N 秒前
 # 的读数』,改为『Khor xxx N 秒前』」). **Two keys of the card's own**, not the
 # CLI's `vitals-version` / `vitals-taken`, which `khor devices` prints and
@@ -3550,6 +3560,10 @@ key-tab-name = "Tab 键"
 key-backspace-name = "退格键"
 key-backtab = "⇧Tab"
 key-backtab-name = "Shift-Tab"
+# Shift+Enter as one cap (item 40): iOS's keyboard cannot type it, and
+# it is how Claude Code takes a newline without sending.
+key-newline = "⇧⏎"
+key-newline-name = "换行"
 key-paste = "粘贴"
 # The cursor key at the row's end (2026-10-03): one key, dragged like a
 # trackpad, in place of the four arrows.
