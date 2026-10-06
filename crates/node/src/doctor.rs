@@ -325,8 +325,9 @@ pub fn face_notes_path(root: &Path) -> PathBuf {
     root.join(".khor").join("face-notes.log")
 }
 
-/// The notes file's bound: past it, the older half goes.
-const FACE_NOTES_CAP: usize = 64 * 1024;
+/// The notes file's bound: past it, the older half goes. Room for a few
+/// hundred swipes (item 61) without losing the attach they belong to.
+const FACE_NOTES_CAP: usize = 256 * 1024;
 
 /// **A line from a terminal, kept where `khor doctor` reads it** (item
 /// 33). The owner's phone failed in a way no simulator showed (a drag did
@@ -352,6 +353,8 @@ pub fn note_face(root: &Path, line: &str) -> std::io::Result<()> {
 
 /// How many terminals the `terminal` row keeps (item 45).
 const TERMINAL_ENTRIES: usize = 5;
+/// How many of a terminal's newest swipes the row shows (item 61).
+const TERMINAL_SWIPES: usize = 3;
 
 /// Which terminal a face note is about: `term <id>: …`.
 fn terminal_of(line: &str) -> Option<&str> {
@@ -363,8 +366,9 @@ fn terminal_of(line: &str) -> Option<&str> {
 /// scroller ever had a range) and the first touch that followed the
 /// attach (item 45: the row showed only the newest attach and the
 /// newest touch, which were two different terminals, so the attach of
-/// the one the owner had trouble with was gone). Newest first, a line
-/// each.
+/// the one the owner had trouble with was gone), then its newest swipes
+/// and what each did to the deck (item 61: a flick that did not fold
+/// said nothing). Newest first, a line each.
 async fn check_terminal(root: PathBuf) -> (Health, String, Option<String>) {
     let text = std::fs::read_to_string(face_notes_path(&root)).unwrap_or_default();
     let lines: Vec<&str> = text.lines().collect();
@@ -394,7 +398,15 @@ async fn check_terminal(root: PathBuf) -> (Health, String, Option<String>) {
             .take_while(|l| !(l.contains(" attach ") && mine(l)))
             .find(|l| l.contains(" first touch before the attach") && mine(l))
             .copied();
-        said.push(std::iter::once(*line).chain(fit).chain(early).chain(touch).collect::<Vec<_>>().join(" · "));
+        let mut swipes: Vec<&str> = lines[at + 1..]
+            .iter()
+            .rev()
+            .filter(|l| l.contains(": swipe ") && mine(l))
+            .take(TERMINAL_SWIPES)
+            .copied()
+            .collect();
+        swipes.reverse();
+        said.push(std::iter::once(*line).chain(fit).chain(early).chain(touch).chain(swipes).collect::<Vec<_>>().join(" · "));
         if said.len() == TERMINAL_ENTRIES {
             break;
         }
@@ -1190,18 +1202,31 @@ mod face_note_tests {
         note_face(&root, "term e: attach 2B").unwrap();
         let said = row().1;
         assert!(said.lines().any(|l| l.contains("term d: attach 1B") && l.contains("term d: first touch before the attach, 90 ms")), "{said}");
+        // A terminal's newest swipes, oldest of them first (item 61); not
+        // another terminal's, not one before its attach.
+        note_face(&root, "term e: swipe down 30 px, before").unwrap();
+        note_face(&root, "term e: attach 3B").unwrap();
+        for i in 0..5 {
+            note_face(&root, &format!("term e: swipe down {i}0 px; nothing: down {i}0 of 48")).unwrap();
+        }
+        note_face(&root, "term d: swipe up 40 px; told unfold").unwrap();
+        let said = row().1;
+        let e = said.lines().find(|l| l.contains("term e: attach 3B")).unwrap_or_default();
+        assert!(e.contains("swipe down 20 px") && e.contains("swipe down 40 px") && e.find("down 20 px") < e.find("down 40 px"), "{said}");
+        assert!(!e.contains("swipe down 10 px") && !e.contains("before") && !e.contains("told unfold"), "{said}");
+        assert!(said.lines().any(|l| l.contains("term d: attach 1B") && l.contains("term d: swipe up 40 px")), "{said}");
         assert!(!said.contains("term e: first touch before"), "{said}");
         for i in 0..8 {
             note_face(&root, &format!("term t{i}: attach 1B")).unwrap();
         }
         assert_eq!(row().1.lines().count(), TERMINAL_ENTRIES, "{}", row().1);
 
-        for i in 0..2000 {
+        for i in 0..5000 {
             note_face(&root, &format!("term c: attach {i}; {}", "x".repeat(80))).unwrap();
         }
         let text = std::fs::read_to_string(face_notes_path(&root)).unwrap();
         assert!(text.len() <= FACE_NOTES_CAP, "{}", text.len());
-        assert!(text.lines().last().unwrap().contains("attach 1999;"));
+        assert!(text.lines().last().unwrap().contains("attach 4999;"));
         assert!(text.lines().next().unwrap().contains("term c: attach"), "cut at a line's start");
         let _ = std::fs::remove_dir_all(&root);
     }

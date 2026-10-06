@@ -30312,7 +30312,9 @@ try {
               cut: word.scrollWidth > word.clientWidth + 1,
               ink: cap.getAttribute("data-deck-ink"),
               color: cs.color,
-              overContent: b.bottom <= (box?.getBoundingClientRect().bottom ?? 0) + 0.5,
+              // Under the content, never over it (item 62; ⚠️ Tombstone
+              // UX-29: the capsule floated over the content's foot).
+              offContent: b.top >= (box?.getBoundingClientRect().bottom ?? Infinity) - 0.5,
             };
           })();
           return {
@@ -30356,7 +30358,7 @@ try {
       await until(2_000, async () => (await state()).strip === 1);
       await wait(300);
       const up = await state();
-      // The ink by the ground: the terminal's own theme under the capsule.
+      // The ink by the ground: what is behind the capsule in the band.
       const inks = await page.evaluate(async () => {
         const { inkOver, groundUnder } = await import("/src/lib/deck-fold.ts");
         const cap = document.querySelector("[data-session-bar] [data-deck-strip]");
@@ -30396,8 +30398,8 @@ try {
       }
       if (up.folded !== null) fail(`bar m · the pane's root still says data-folded=${shown(up.folded)} — item 32's band is gone (item 44)`);
       const c = up.capsule;
-      if (!c || Math.abs(c.off) > 1 || Math.abs(c.h - c.want) > 0.5 || c.slack > 1 || c.cut || !c.overContent) {
-        fail(`bar m · folded, the capsule reads ${shown(c)} — centred on the screen, --deck-strip tall, as wide as its title and padding, over the content (UX-29; src/components/SessionBar.tsx)`);
+      if (!c || Math.abs(c.off) > 1 || Math.abs(c.h - c.want) > 0.5 || c.slack > 1 || c.cut || !c.offContent) {
+        fail(`bar m · folded, the capsule reads ${shown(c)} — centred on the screen, --deck-strip tall, as wide as its title and padding, under the content (UX-29, item 62; src/components/SessionBar.tsx)`);
       }
       console.log(`bar m · the capsule's ink: ${shown(inks)}`);
       if (inks.got !== inks.want || inks.color !== inks.wantColor) {
@@ -30423,6 +30425,70 @@ try {
       await until(2_000, async () => (await state()).strip === 0);
       if (typing.strip !== 0) fail(`bar m · with the keyboard up a drag down folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
     }
+
+    // ── x. the folded capsule sits in the home indicator's band and the
+    //       grid ends at its top (item 62, the owner 2026-10-07: half of
+    //       it covered the terminal's last rows). At 390×844 with a 34-pt
+    //       band and at 375×667 with none, folded by a finger: the grid
+    //       and its box end at or above the capsule's top, the capsule's
+    //       bottom is inside the viewport, the folded bar is the band (or
+    //       the finger's floor, 44, where there is none) with the capsule
+    //       in it, and the grid gained rows over the unfolded deck. ──
+    for (const [w, h, band] of [[390, 844, 34], [375, 667, 0]]) {
+      await fresh(w, h);
+      await page.evaluate((b) => document.documentElement.style.setProperty("--safe-bottom", `${b}px`), band);
+      if (!(await openRow(terms[1].id)) || !(await xtermUp())) {
+        fail(`probe dead: bar x · a terminal never opened at ${w}×${h}`);
+        continue;
+      }
+      await program(Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\r\n"));
+      const geo = () =>
+        page.evaluate(() => {
+          const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]");
+          const screen = box?.querySelector(".xterm-screen")?.getBoundingClientRect();
+          const cap = document.querySelector("[data-session-bar] [data-deck-strip]")?.getBoundingClientRect();
+          const bar = document.querySelector("[data-session-bar]")?.getBoundingClientRect();
+          const r = (n) => (n === undefined ? null : +n.toFixed(1));
+          return {
+            rows: box?.__xterm?.rows,
+            grid: r(screen?.bottom),
+            box: r(box?.getBoundingClientRect().bottom),
+            capTop: r(cap?.top),
+            capBottom: r(cap?.bottom),
+            bar: r(bar?.height),
+            vh: window.innerHeight,
+          };
+        });
+      await wait(400);
+      const open62 = await geo();
+      const b = await rect("[data-kept-terminal][data-active] [data-terminal]");
+      const x = Math.round(b.left + b.width / 2);
+      const y0 = Math.round(b.top + 60);
+      await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
+      for (let i = 1; i <= 8; i += 1) {
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y0 + 25 * i }] });
+      }
+      await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await until(2_000, async () => (await geo()).capTop !== null);
+      await wait(500);
+      const f = await geo();
+      const room = Math.max(band, await tokenPx("--deck-strip"), band ? 0 : await tokenPx("--touch"));
+      console.log(`bar x · ${w}×${h}, band ${band}: open ${shown(open62)}; folded ${shown(f)}; the room wanted ${room}`);
+      if (f.capTop === null) {
+        fail(`bar x · ${w}×${h}: a finger's drag down did not fold the deck (${shown(f)})`);
+        continue;
+      }
+      if (!(f.grid <= f.capTop + 0.5) || !(f.box <= f.capTop + 0.5)) {
+        fail(`bar x · ${w}×${h}, folded: the grid ends at ${f.grid} and its box at ${f.box}, the capsule's top is ${f.capTop} — no row of the terminal under the capsule (item 62)`);
+      }
+      if (!(f.capBottom <= f.vh + 0.5) || !(f.capTop >= f.vh - room - 0.5)) {
+        fail(`bar x · ${w}×${h}, folded: the capsule runs ${f.capTop}–${f.capBottom} in a ${f.vh} viewport — inside the bottom ${room} (the band, or the finger's floor without one; item 62)`);
+      }
+      if (Math.abs(f.bar - room) > 0.5) fail(`bar x · ${w}×${h}, folded: the bar is ${f.bar} tall — the room is ${room} (--deck-fold; item 62)`);
+      if (!(f.rows > open62.rows)) fail(`bar x · ${w}×${h}: the grid has ${f.rows} rows folded against ${open62.rows} open — the fold gives the terminal rows (item 44, item 62)`);
+    }
+    await page.evaluate(() => document.documentElement.style.removeProperty("--safe-bottom"));
+    await fresh(390, 844);
 
     // ── n. a conversation folds the same way, and keeps its deck over
     //       the box with the keyboard up (the UX-13 addendum, 「一个甲板

@@ -2434,14 +2434,27 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   color: var(--ink-on-light);
 }
 
-/* **The terminal's way back down stands above the folded capsule**
-   (UX-29): both float at the foot's centre, and the capsule has the
-   foot (the owner's Safari shots), so 「回到底部 / 新输出」 moves up by the
-   capsule and its gap while the deck is folded (measured on the
-   simulator: the two sat on each other). The float is the terminal
-   lane's (`TerminalPane` `data-term-bottom`); only its place is set here. */
-[data-session-screen][data-deck-folded] [data-term-bottom] {
-  bottom: calc(var(--deck-strip) + 2 * var(--gap-in));
+/* **The folded capsule sits in the home indicator's band** (item 62, the
+   owner 2026-10-07: half of it covered the terminal's last rows, and the
+   point is the most room for the terminal). With nothing seated under the deck, the
+   bar folds to the band alone (`--deck-fold`: the band, or the finger's
+   floor on a phone without one) and the capsule stands centred in it, so
+   the content — a terminal's grid — ends at the capsule's top. A row
+   seated under the deck keeps the capsule's own room above it
+   (`SessionBar`). ⚠️ Tombstone (UX-29): the capsule floated over the
+   content's foot, and the terminal's way-back float (`data-term-bottom`)
+   was lifted over it here; with the content ending above the capsule the
+   float needs no lift. */
+[data-session-bar][data-folded][data-fold-over]:not(:has(> [data-session-bar-under]:not(:empty))) {
+  padding-bottom: 0;
+}
+[data-session-bar][data-folded][data-fold-over]:not(:has(> [data-session-bar-under]:not(:empty))) > [data-deck-fold] {
+  height: var(--deck-fold);
+  align-items: center;
+}
+[data-session-bar][data-folded][data-fold-over]:not(:has(> [data-session-bar-under]:not(:empty))) > [data-deck-fold] > [data-deck-strip] {
+  position: relative;
+  bottom: auto;
 }
 
 /* ── 我的 khor 的表盘 (UX-26, the owner 2026-10-06; the spec is

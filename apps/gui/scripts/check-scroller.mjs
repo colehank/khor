@@ -1,4 +1,4 @@
-// The scroller gate (items 29, 30, 36, 49, 50 and 52): the terminal's history on the page's
+// The scroller gate (items 29, 30, 36, 49, 50, 52 and 61): the terminal's history on the page's
 // own scroller (`src/lib/term-scroller.ts`), driven in headless Chrome
 // against a real xterm, in the same DOM the pane builds.
 //
@@ -29,6 +29,16 @@
 //       at the bottom and lowered the keyboard settles back to the bottom
 //       once the keyboard has gone; one from up in the history, or
 //       followed by a new touch, does not.
+//   61 a. **Each swipe is read for the doctor** (`swipeFolds`' `judged`):
+//       which way and how far, the end speed, what it told the deck or
+//       which rule kept it out (short, more across than along, a press
+//       first, the keyboard up, from the bar, two fingers), and the deck
+//       before and after; a tap writes nothing.
+//   61 b. **A flick folds** (`FLICK`): drags shaped like the streams the
+//       simulator delivered (60 Hz, 15–30 px in 26–93 ms) fold the deck,
+//       one up unfolds it; 30 px over 450 ms, one that rests 150 ms
+//       before the lift, one more across, or with the keyboard up tells
+//       nothing.
 //   52. **「新输出」 means lines** (`src/lib/term-gain.ts`): up in the
 //       history, a prompt redrawn in place, the same after a resize, a
 //       cursor toggled, a cleared screen and tmux's status line ticking
@@ -361,7 +371,8 @@ const fold = await page.evaluate(async () => {
   };
   await said("down", [[200, 200], [200, 230], [200, 260], [200, 300]]);
   await said("up", [[200, 400], [200, 385], [200, 370]]);
-  await said("short", [[200, 200], [200, 220], [200, 240]]);
+  // At rest before the lift: no flick (61 b).
+  await said("short", [[200, 200], [200, 220], [200, 240], [200, 240, 120]]);
   await said("turn", [[200, 200], [200, 260], [200, 320], [200, 300], [200, 290]]);
   await said("across", [[20, 200], [120, 260], [300, 300]]);
   await said("press", [[200, 200], [200, 202, 500], [200, 300]]);
@@ -381,6 +392,137 @@ console.log(`scroller gate: 50 fold: ${JSON.stringify(fold)}`);
 const foldWant = { down: "true", up: "false", short: "", turn: "true,false", across: "", press: "", keyboard: "", bar: "", stopped: "" };
 for (const [k, v] of Object.entries(foldWant)) {
   if (fold[k] !== v) fail(`50 ${k}: the finger told the deck ${JSON.stringify(fold[k])}, want ${JSON.stringify(v)}`);
+}
+
+// ── 61 a: each swipe's reading for the doctor ──
+const read61 = await page.evaluate(async () => {
+  const scroller = document.querySelector("#scroller");
+  let covered = false;
+  let deck = false;
+  const lines = [];
+  const stop = window.lab.swipeFolds(scroller, {
+    covered: () => covered,
+    tell: (f) => (deck = f),
+    folded: () => deck,
+    judged: (l) => lines.push(l),
+  });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const at = (id, x, y, target) => new Touch({ identifier: id, target, clientX: x, clientY: y });
+  const send = (type, touches, changed, target = scroller) =>
+    target.dispatchEvent(new TouchEvent(type, { touches, changedTouches: changed, bubbles: true, cancelable: true }));
+  const drag = async (points, target = scroller) => {
+    const [x, y] = points[0];
+    send("touchstart", [at(1, x, y, target)], [at(1, x, y, target)], target);
+    for (const [x, y, pause] of points.slice(1)) {
+      await wait(pause ?? 16);
+      send("touchmove", [at(1, x, y, target)], [at(1, x, y, target)], target);
+    }
+    const [lx, ly] = points[points.length - 1];
+    send("touchend", [], [at(1, lx, ly, target)], target);
+  };
+  const out = {};
+  const said = async (name, run) => {
+    lines.length = 0;
+    await run();
+    await wait(400);
+    out[name] = lines.join(" | ");
+  };
+  await said("tap", () => drag([[200, 200], [202, 203]]));
+  await said("short", () => drag([[200, 200], [200, 215], [200, 230], [200, 230, 120]]));
+  await said("fold", () => drag([[200, 200], [200, 230], [200, 260], [200, 300]]));
+  await said("unfold", () => drag([[200, 400], [200, 385], [200, 370]]));
+  await said("across", () => drag([[20, 200], [120, 260], [300, 300]]));
+  await said("press", () => drag([[200, 200], [200, 202, 500], [200, 300]]));
+  covered = true;
+  await said("keyboard", () => drag([[200, 200], [200, 300]]));
+  covered = false;
+  const bar = document.createElement("div");
+  bar.setAttribute("data-session-bar", "");
+  scroller.appendChild(bar);
+  await said("bar", () => drag([[200, 200], [200, 300]], bar));
+  bar.remove();
+  await said("two", async () => {
+    send("touchstart", [at(1, 200, 200, scroller)], [at(1, 200, 200, scroller)]);
+    send("touchstart", [at(1, 200, 200, scroller), at(2, 260, 200, scroller)], [at(2, 260, 200, scroller)]);
+    await wait(16);
+    send("touchmove", [at(1, 200, 300, scroller), at(2, 260, 300, scroller)], [at(1, 200, 300, scroller)]);
+    send("touchend", [at(1, 200, 300, scroller)], [at(2, 260, 300, scroller)]);
+    send("touchend", [], [at(1, 200, 300, scroller)]);
+  });
+  stop();
+  return out;
+});
+console.log(`scroller gate: 61 a readings: ${JSON.stringify(read61, null, 1)}`);
+const read61Want = {
+  tap: /^$/,
+  short: /^swipe down 30 px, across 0, in \d+ ms, end 0\.00 px\/ms, lifted; nothing: down 30 of 48, end under 0\.2; deck open → open$/,
+  fold: /^swipe down 100 px.*; told fold; deck open → folded$/,
+  unfold: /^swipe up 30 px.*; told unfold; deck folded → open$/,
+  across: /nothing: more across than along/,
+  press: /nothing: press first, \d+ ms; deck open → open$/,
+  keyboard: /nothing: keyboard or key panel up/,
+  bar: /nothing: from the bar/,
+  two: /^swipe down 100 px.*nothing: two fingers/,
+};
+for (const [k, re] of Object.entries(read61Want)) {
+  if (!re.test(read61[k] ?? "")) fail(`61 a ${k}: the reading was ${JSON.stringify(read61[k])}, want ${re}`);
+}
+
+// ── 61 b: a flick folds ──
+// The streams the simulator delivered for the tap tool's drags (deck-61.md):
+// touchmoves at 60 Hz with gaps of 16–34 ms, the first one 15–30 ms in,
+// the lift right after the last move. Each case is [dy per move, gap ms]…
+// then how long the finger rests before the lift.
+const flick = await page.evaluate(async () => {
+  const scroller = document.querySelector("#scroller");
+  let covered = false;
+  let told = [];
+  const stop = window.lab.swipeFolds(scroller, { covered: () => covered, tell: (f) => told.push(f) });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const touch = (type, x, y) => {
+    const t = new Touch({ identifier: 1, target: scroller, clientX: x, clientY: y });
+    scroller.dispatchEvent(new TouchEvent(type, { touches: type === "touchend" ? [] : [t], changedTouches: [t], bubbles: true, cancelable: true }));
+  };
+  const run = async (steps, rest = 0, dx = 0) => {
+    told = [];
+    let x = 200;
+    let y = 300;
+    touch("touchstart", x, y);
+    for (const [d, gap] of steps) {
+      await wait(gap);
+      y += d;
+      x += dx;
+      touch("touchmove", x, y);
+    }
+    if (rest) await wait(rest);
+    touch("touchend", x, y);
+    return told.join(",");
+  };
+  const out = {};
+  // 30 px in ~93 ms (#11: iOS carried it on 167 px).
+  out.flick30 = await run([[9, 27], [7, 16], [7, 17], [7, 16]]);
+  // 15 px in ~52 ms (#20: 204 px on).
+  out.flick15 = await run([[8, 19], [7, 17], [0, 16]]);
+  // 29 px in 26 ms (#1: 402 px on).
+  out.fast = await run([[14, 11], [15, 13]]);
+  // Up, 15 px in ~52 ms: a flick back toward rest.
+  out.up = await run([[-8, 19], [-7, 17], [0, 16]]);
+  // 30 px over ~450 ms at 60 Hz (#5: end 0.03 px/ms, nothing carried on).
+  out.slow = await run(Array.from({ length: 27 }, (_, i) => [i % 9 === 0 ? 2 : 1, 16]).slice(0, 27));
+  // 30 px quickly, then the finger rests 150 ms before the lift.
+  out.rested = await run([[9, 27], [7, 16], [7, 17], [7, 16]], 150);
+  // Across more than down.
+  out.across = await run([[8, 19], [7, 17], [0, 16]], 0, 12);
+  covered = true;
+  out.keyboard = await run([[9, 27], [7, 16], [7, 17], [7, 16]]);
+  covered = false;
+  stop();
+  return out;
+});
+console.log(`scroller gate: 61 b flicks: ${JSON.stringify(flick)}`);
+const flickWant = { flick30: "true", flick15: "true", fast: "true", up: "false", slow: "", rested: "", across: "", keyboard: "" };
+for (const [k, v] of Object.entries(flickWant)) {
+  if (flick[k] !== v) fail(`61 b ${k}: the flick told the deck ${JSON.stringify(flick[k])}, want ${JSON.stringify(v)}`);
 }
 
 // ── 52 ──
@@ -433,4 +575,4 @@ for (const [k, v] of Object.entries(gainWant)) {
 
 await browser.close();
 if (bad) process.exit(1);
-console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, any swipe down lowers the keyboard, the finger folds the deck, and 新输出 counts lines, not writes");
+console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, any swipe down lowers the keyboard, the finger folds the deck, a flick folds it, and 新输出 counts lines, not writes");
