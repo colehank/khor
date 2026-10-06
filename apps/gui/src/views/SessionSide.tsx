@@ -77,9 +77,13 @@ export function SessionSide({
   onWidth,
   onClose,
   who,
+  boxRef,
   children,
 }: {
   session: string;
+  /** The box the day's band is measured in (`useStripWidth`): its row
+      is 最近's first (UX-39 §4), in this column. */
+  boxRef?: (el: HTMLDivElement | null) => void;
   /** Whose column: the session's face and title in the head. */
   who: SideWho;
   /** The width it was dragged to, or `null` for the token's default. */
@@ -96,6 +100,7 @@ export function SessionSide({
   const box = useRef<HTMLDivElement | null>(null);
   const setBox = (el: HTMLDivElement | null) => {
     box.current = el;
+    boxRef?.(el);
   };
 
   // The drag paints through the box's own style each move — a poll-driven

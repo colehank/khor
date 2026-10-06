@@ -606,7 +606,12 @@ export default function App() {
   // **Watched while its landing is open** (`useBrowseTabs`'s `WATCH_MS`):
   // `.khor/tabs.json` has two writers now, and `khor tabs open` in a
   // terminal has to show up in the column without anybody reloading.
-  const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser");
+  // …and while the 附栏 is on its 浏览器 seat (UX-39 walk: the seat drew
+  // the tabs as they were when the landing was last open, and a page a
+  // terminal opened into it was not among them). Set below, where the
+  // 附栏's state is.
+  const [sideBrowsing, setSideBrowsing] = useState(false);
+  const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser" || sideBrowsing);
   const browsing = { kind: PAGES, tabs: pageTabs };
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">(() => place.screen ?? "list");
@@ -1907,8 +1912,12 @@ export default function App() {
   const openUrlMain = (machine: string, url: string, column: boolean) => {
     const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
     void openTab("page", d?.id ?? "", url, fromSession())
-      .then(() => {
+      .then((id) => {
         if (column && selectedRow) {
+          // In front at once, and in the list: the 附栏's page is the tab
+          // just opened, not the one in front before (the landing's beat
+          // would have caught up a beat late, the 附栏 had none).
+          pageTabs.focus(id);
           setSideBrowse({ page: true });
           sideTo("browser");
           return;
@@ -2226,8 +2235,10 @@ export default function App() {
   /** Bumped as a seat is entered: the seat's page mounts afresh, so a
       page that lands by itself (额度's account) lands again. */
   const [sideEntry, setSideEntry] = useState(0);
-  /** Every seat back on its slice — the pill's tap, a seat pressed. */
+  /** Every seat back on its slice — the pill's tap, a seat pressed —
+      and nothing opened from 最近 any more. */
   const toSlices = () => {
+    setSideFrom(null);
     setSideBrowse({ page: false });
     setSideQuota("list");
     setSideEntry((n) => n + 1);
@@ -2236,7 +2247,6 @@ export default function App() {
       now (the pill's own rule). */
   const enterSeat = (seat: PlaceSeat) => {
     if (!selectedRow) return;
-    setSideFrom(null);
     toSlices();
     if (seat === "workspace") {
       const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
@@ -2260,6 +2270,7 @@ export default function App() {
   const dayTotals = useDayTotals(selectedRow?.id ?? null, (narrow ? placeSheet !== null : side.open) && side.seat === "recent");
   const sheetToday = (row: SessionRow) => <DayToday runs={dayOf(row.id)} totals={dayTotals} />;
   const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
+  useEffect(() => setSideBrowsing(sideOn && side.seat === "browser"), [sideOn, side.seat]);
   const recent = useSideRecent(sideOn && side.seat === "recent");
   /** 最近's rows open in place (§4): a page in the column's browser, a
       workspace as the column's listing, a file as its file page. */
@@ -2386,6 +2397,7 @@ export default function App() {
         onSeat={enterSeat}
         onWidth={(w) => setSessionSide(selectedRow.id, { w })}
         onClose={() => setSessionSide(selectedRow.id, { open: false })}
+        boxRef={setDetailBox}
         who={{ face: selectedRow.face, title: termName(selectedRow), word: selectedRow.word, kind: selectedRow.kind, category: selectedRow.category }}
       >
         {sideSeat()}
