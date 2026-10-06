@@ -2474,12 +2474,24 @@ export function TerminalPane({
       }
     };
     const dragged = fingers ? () => {} : fingerWheels(term, box, historyHas);
-    const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
+    // **At the bottom before, at the bottom after** (item 50's rest): a
+    // swipe that began with the shell's own buffer at its bottom puts the
+    // view back there once the keyboard has gone. A program's wheel and a
+    // tmux history view have no such bottom.
+    const atRest = () => !historyUp && !programScrolls(term) && term.buffer.active.viewportY === term.buffer.active.baseY;
+    const toRest = () => {
+      if (historyUp || programScrolls(term)) return;
+      term.scrollToBottom();
+      native.sync();
+    };
+    const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null, { atRest, toRest });
     // **The same swipe lowers khor's key panel** (UX-31, item 49): any
     // downward swipe, as for the keyboard.
     const swipedPanel = swipeLowers(scrollerRef.current!, term.textarea ?? null, {
       up: keyPanelUp,
       lower: lowerKeyPanel,
+      atRest,
+      toRest,
     });
     // **The finger folds the deck** (item 50): a program holding the
     // mouse takes the drag as its wheel, and the scroller's events alone

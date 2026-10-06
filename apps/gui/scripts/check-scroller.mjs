@@ -25,7 +25,10 @@
 //   50. **The finger folds the deck** (`swipeFolds`): 60 px down folds
 //       it once, 30 px up unfolds it, a turn is measured from the
 //       finger's furthest point; short, sideways, a press first, from the
-//       bar, or with the keyboard up tells nothing.
+//       bar, or with the keyboard up tells nothing. A swipe that began
+//       at the bottom and lowered the keyboard settles back to the bottom
+//       once the keyboard has gone; one from up in the history, or
+//       followed by a new touch, does not.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -263,6 +266,66 @@ if (swipe.slow !== 1) fail(`49: a slow, paused drag down lowered the keyboard ${
 for (const k of ["dead", "across", "upward", "press", "down", "bar", "stopped"]) {
   if (swipe[k] !== 0) fail(`49 ${k}: lowered the keyboard ${swipe[k]} times, want 0`);
 }
+
+// ── 50's rest: a swipe that began at the bottom settles back there ──
+const settle = await page.evaluate(async () => {
+  const scroller = document.querySelector("#scroller");
+  const field = document.createElement("textarea");
+  document.body.appendChild(field);
+  let up = true;
+  let rest = true;
+  let settled = 0;
+  const stop = window.lab.swipeLowers(scroller, field, {
+    up: () => up,
+    lower: () => {
+      // The keyboard goes a beat after it is asked to.
+      setTimeout(() => (up = false), 120);
+    },
+    atRest: () => rest,
+    toRest: () => settled++,
+  });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const touch = (type, x, y) => {
+    const t = new Touch({ identifier: 1, target: scroller, clientX: x, clientY: y });
+    scroller.dispatchEvent(new TouchEvent(type, { touches: type === "touchend" ? [] : [t], changedTouches: [t], bubbles: true, cancelable: true }));
+  };
+  const swipe = () => {
+    touch("touchstart", 200, 200);
+    touch("touchmove", 200, 210);
+    touch("touchmove", 200, 225);
+    touch("touchend", 200, 225);
+  };
+  const out = {};
+  // At the bottom: settled once, after the keyboard has gone.
+  swipe();
+  await wait(60);
+  out.early = settled;
+  await wait(600);
+  out.atBottom = settled;
+  // Up in the history: left where it is.
+  up = true;
+  rest = false;
+  settled = 0;
+  swipe();
+  await wait(700);
+  out.upInHistory = settled;
+  // A new touch before the settle: the person's, no settle.
+  up = true;
+  rest = true;
+  settled = 0;
+  swipe();
+  touch("touchstart", 200, 400);
+  await wait(700);
+  out.touchedAgain = settled;
+  touch("touchend", 200, 400);
+  stop();
+  field.remove();
+  return out;
+});
+console.log(`scroller gate: 50 rest after the swipe: ${JSON.stringify(settle)}`);
+if (settle.early !== 0 || settle.atBottom !== 1) fail(`50 rest: a swipe from the bottom settled ${settle.early} before the keyboard went and ${settle.atBottom} after, want 0 then 1`);
+if (settle.upInHistory !== 0) fail(`50 rest: a swipe from up in the history settled ${settle.upInHistory} times, want 0`);
+if (settle.touchedAgain !== 0) fail(`50 rest: a new touch before the settle still settled ${settle.touchedAgain} times, want 0`);
 
 // ── 50 ──
 const fold = await page.evaluate(async () => {
