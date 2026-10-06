@@ -31260,7 +31260,13 @@ try {
   //      the wide tabs (§7): × on every pill, no act on any, the front
   //      pill as wide as its whole name;
   //   f. the width is remembered per session: dragged, another session
-  //      shows no column, this one comes back at the dragged width.
+  //      shows no column, this one comes back at the dragged width;
+  //   g. in the app (UX-39 §9), the column extends the window: the press
+  //      asks the window to grow by the column's width before the column
+  //      is drawn, and the close gives the same width back. Read as the
+  //      bridge's `widen` calls on a page asked for as the app (`as-app`,
+  //      fix c's stub); the web face asks nothing (4l). Whether the window
+  //      really grew is the Mac app's to show, not this page's.
   //
   // `FACE_ONLY=side` runs this section alone.
   side: {
@@ -31636,6 +31642,52 @@ try {
       await page.mouse.up();
       await wait(500);
       if ((await count(col)) !== 0) fail("side f · dragging the seam under the floor did not fold the column away");
+    }
+
+    // g. the window grows by the column (UX-39 §9)
+    {
+      await page.addInitScript(() => {
+        if (!new URLSearchParams(location.search).has("as-app")) return;
+        window.__TAURI_INTERNALS__ = {
+          invoke: () => Promise.resolve(null),
+          transformCallback: () => 0,
+          unregisterCallback: () => {},
+          convertFileSrc: (p) => p,
+          metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
+        };
+        window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
+      });
+      await page.evaluate(() => window.localStorage.clear());
+      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&as-app`, { waitUntil: "load" });
+      await wait(1_200);
+      const was = widened.length;
+      // The column's count at the moment each ask arrives: the window
+      // grows first, the column arrives into the room it made.
+      const colAtAsk = [];
+      const asked = async (r) => {
+        widened.push(r.request().postDataJSON() ?? {});
+        // Read while the ask is still unanswered.
+        colAtAsk.push(await page.evaluate(() => document.querySelectorAll("[data-session-side]").length).catch(() => null));
+        return r.fulfill({ contentType: "application/json", body: "null" });
+      };
+      await page.route("**/widen", asked);
+      await openSession("tui/side-1");
+      const w = await tokenPx("--session-side-w");
+      await press(front("tui/side-1"));
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(400);
+      const open = widened.slice(was).map((a) => a.delta);
+      await press(front("tui/side-1"));
+      await until(3_000, async () => (await count(col)) === 0);
+      await wait(400);
+      const shut = widened.slice(was).map((a) => a.delta);
+      await page.unroute("**/widen", asked);
+      console.log(`side g · as the app: widen ${JSON.stringify(open)} on the press (the column at the ask: ${JSON.stringify(colAtAsk)}), then ${JSON.stringify(shut)} with the close; the column's width ${w}`);
+      if (open.length !== 1 || Math.abs(open[0] - w) > 1) fail(`side g · the press asked the window to widen ${JSON.stringify(open)} — once, by the column's ${w} (UX-39 §9)`);
+      else if (colAtAsk[0] !== 0) fail(`side g · the column was drawn (${colAtAsk[0]}) when the window was asked to grow — it grows first, the column arrives into the room (UX-39 §9)`);
+      if (shut.length !== 2 || shut[1] !== -open[0]) fail(`side g · the close asked ${JSON.stringify(shut.slice(1))} — the same width back (UX-39 §9)`);
+      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+      await wait(900);
     }
 
     await page.evaluate(() => window.localStorage.clear());
