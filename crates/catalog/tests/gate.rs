@@ -4,7 +4,7 @@
 //! generates.
 
 use khor_core::avatar::{FaceShape, PRESETS, Variant};
-use khor_core::{Hop, State};
+use khor_core::{Hop, Link, State};
 
 #[test]
 fn every_state_word_is_translated_and_unknown_keys_echo() {
@@ -30,9 +30,13 @@ fn every_hop_has_a_word_and_every_word_names_a_hop() {
         assert_ne!(w, h.key(), "{} must map to a word, not echo", h.key());
         assert!(!w.is_ascii(), "{w} should be the word, not the key");
     }
+    // …and the one word that is not a road: a machine whose last attempt
+    // failed (`Link::down_ms`, round NET-13), said in the road's place.
+    let down = khor_catalog::hop::word(Link::DOWN_KEY);
+    assert!(!down.is_ascii(), "{down} should be the word, not the key");
     for key in khor_catalog::hop::KEYS {
         assert!(
-            Hop::ALL.iter().any(|h| h.key() == key),
+            Hop::ALL.iter().any(|h| h.key() == key) || key == Link::DOWN_KEY,
             "hop.{key} is a word for a reading khor cannot produce"
         );
     }

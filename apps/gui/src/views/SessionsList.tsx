@@ -13,6 +13,7 @@ import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
 import { closeWarning } from "@/views/DetailPane";
 import { sieve } from "@/lib/list-filter";
+import { isDown } from "@/lib/topology";
 import { SESSION_SIEVE } from "@/lib/session-filter";
 import { AXES, ago, groupLabel, placeLabels, quietFor } from "@/words";
 
@@ -278,12 +279,16 @@ export function SessionsList({
       run: () => onClose(r),
     },
   ];
-  /** A row whose machine this one cannot reach now (`hop` 「quiet」), and
+  /** A row whose machine this one cannot reach (round NET-13: no live
+      wire **and** the resident's last attempt failed, `down_ms`), and
       how old what the row shows is: the report's age where the row is a
-      report, else the machine's last reading. */
+      report, else the machine's last reading. An idle machine's row is
+      drawn as any other — its wire closed while nothing was asked, and
+      opening the row dials it fine (the owner, 2026-10-06: greyed rows
+      that opened at a click). */
   const far = (r: SessionRow): { shown: string; age: number } | null => {
     const d = devices.find((x) => x.name === r.home);
-    if (!d || d.me || d.hop !== "quiet") return null;
+    if (!d || d.me || d.hop !== "quiet" || !isDown(d.down_ms)) return null;
     return { shown: d.shown, age: r.source?.age_ms ?? d.vitals?.age_ms ?? 0 };
   };
   const side: SideRow[] = ticked.map((r) => {

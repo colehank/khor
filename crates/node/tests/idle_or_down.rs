@@ -1,5 +1,5 @@
-//! **An idle wire is not an unreachable machine** (round NET-13, the
-//! owner: 「明明点得开、可以连接，还是灰色显示无法连接」). Two residents in
+//! **An idle wire is not an unreachable machine** (round NET-13: the
+//! owner saw rows greyed as unreachable that opened at a click). Two residents in
 //! this process, reachable through the tests' loopback relay only. A wire
 //! let go of reads idle with no `down_ms` — it was not an attempt that
 //! failed, and the next ask dials it fine; a dial that fails reads

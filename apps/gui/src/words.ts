@@ -2,6 +2,7 @@
 // looked up at the last moment; unknown keys echo — an old face must
 // still render a session whose kind it has never heard of.
 import { avatar, category, cli, gui, hop, one, state } from "./gen/catalog";
+import { isDown } from "./lib/topology";
 
 /**
  * **Counted words, singular where the language has one** (`[one]` in the
@@ -53,15 +54,20 @@ export function hopWord(key: string): string {
 /**
  * The road word with its liveness beside it, when that says something
  * (`khor_core::Link`): a machine **not connected** that was heard before
- * reads 「未连接 · 上次 3 分钟前」. A connected one is heard every few
+ * reads 「未连 · 上次 3 分钟前」. A connected one is heard every few
  * seconds by keepalive alone, so its age would only ever say "now" —
  * it is left off, the way `ageIfOld` leaves off a fresh reading.
+ *
+ * **Idle is not down** (round NET-13): `quiet` is no live wire, and the
+ * next open dials it fine; 「不通」 is said only when the resident's last
+ * attempt failed and nothing was heard since (`downMs`, `Link::down_ms`).
  */
-export function linkWord(key: string, heardMs: number | null | undefined): string {
-  const road = hopWord(key);
+export function linkWord(key: string, heardMs: number | null | undefined, downMs?: number | null): string {
+  const road = hopWord(key === "quiet" && isDown(downMs) ? "down" : key);
   if (key !== "quiet" || heardMs == null) return road;
   return gui.link_last_heard(road, span(heardMs));
 }
+
 
 /**
  * How this machine reaches that one, as the word a row or a card prints
@@ -83,8 +89,9 @@ export function connectionWord(row: {
   sponsor: string | null;
   hop: string | null;
   heard_ms?: number | null;
+  down_ms?: number | null;
 }): string | null {
-  if (!row.me && !row.sponsor && row.hop) return linkWord(row.hop, row.heard_ms);
+  if (!row.me && !row.sponsor && row.hop) return linkWord(row.hop, row.heard_ms, row.down_ms);
   return connectionKeyWord(connectionKey(row));
 }
 
@@ -96,11 +103,18 @@ export function connectionWord(row: {
  * filter and the word on the row cannot come apart — there is one
  * derivation, which is this one. The prefixes cannot collide: a hop key
  * is one kebab word (`khor_core::Hop`), never `here` and never with a
- * colon in it.
+ * colon in it. An idle machine whose last attempt failed is `down`, the
+ * one key here that is not a road (`khor_core::Link::DOWN_KEY`).
  */
-export function connectionKey(row: { me: boolean; sponsor: string | null; hop: string | null }): string {
+export function connectionKey(row: {
+  me: boolean;
+  sponsor: string | null;
+  hop: string | null;
+  down_ms?: number | null;
+}): string {
   if (row.me) return "here";
   if (row.sponsor) return `via:${row.sponsor}`;
+  if (row.hop === "quiet" && isDown(row.down_ms)) return "down";
   return row.hop ?? "";
 }
 

@@ -304,8 +304,8 @@ pub struct Link {
     #[serde(default)]
     pub relay: Option<String>,
     /// **How long ago the attempt that failed was, while that machine is
-    /// unreachable** (round NET-13, the owner: 「明明点得开、可以连接，
-    /// 还是灰色显示无法连接」): the resident's last dial to it failed,
+    /// unreachable** (round NET-13: the owner saw rows greyed as
+    /// unreachable that opened at a click): the resident's last dial to it failed,
     /// or a request on its wire went unanswered, and nothing has been
     /// heard from it since. `None` otherwise — a live wire, a wire that
     /// closed idle, a machine not dialled since the resident started —

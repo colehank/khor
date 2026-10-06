@@ -2454,8 +2454,14 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 [data-dial-edge][data-road="relay"] {
   stroke-dasharray: 4 4;
 }
-[data-dial-edge][data-lat="none"] {
+[data-dial-edge][data-lat="none"],
+[data-dial-edge][data-road="idle"] {
   stroke-dasharray: 1 5;
+}
+/* An idle edge (round NET-13): no live wire, nothing wrong — dotted like
+   no road, in its last reading's band, its number at half ink. */
+[data-dial-ms][data-idle] {
+  opacity: 0.5;
 }
 [data-dial-edge][data-far],
 [data-dial-x][data-far] {
@@ -2542,6 +2548,9 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 [data-matrix-cell][data-lat="slow"] {
   color: var(--state-failed);
   background: color-mix(in srgb, var(--state-failed) 12%, transparent);
+}
+[data-matrix-cell][data-idle] {
+  opacity: 0.5;
 }
 [data-matrix-cell][data-lat="none"] {
   color: var(--tertiary);

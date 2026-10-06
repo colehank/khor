@@ -3035,6 +3035,25 @@ mod top_table {
         assert_eq!(words.len(), pairs.len(), "two tokens share a word");
         assert_eq!(status_word("unknown-13"), "unknown-13");
     }
+
+    /// **Idle and down are two words** (round NET-13): no live wire is
+    /// 「未连」; 「不通」 only with `down_ms`, which an older resident
+    /// never sends.
+    #[test]
+    fn an_idle_machine_is_not_said_down() {
+        let idle = khor_node::Link {
+            hop: khor_node::Hop::Idle,
+            heard_ms: None,
+            rtt_ms: None,
+            relay: None,
+            down_ms: None,
+            last_rtt_ms: Some(23),
+        };
+        let down = khor_node::Link { down_ms: Some(4_000), ..idle.clone() };
+        assert_eq!(super::link_words(idle, false), khor_catalog::hop::word("quiet"));
+        assert_eq!(super::link_words(down, false), khor_catalog::hop::word("down"));
+        assert_ne!(khor_catalog::hop::word("quiet"), khor_catalog::hop::word("down"));
+    }
 }
 
 /// The road word for one row — and **nothing at all for this machine**.
@@ -3047,11 +3066,20 @@ mod top_table {
 /// The road word, and — for a machine not connected that was heard
 /// before — how long ago that was. A connected machine is heard every
 /// few seconds by keepalive alone, so its age would only ever say "now".
+///
+/// **Idle is not down** (round NET-13): with no live wire the word is
+/// 「未连」, and 「不通」 only when the resident's last attempt to reach
+/// that machine failed and nothing was heard since (`Link::down_ms`) —
+/// the two words the faces say.
 fn link_words(link: khor_node::Link, is_me: bool) -> String {
     if is_me {
         return String::new();
     }
-    let road = khor_catalog::hop::word(link.hop.key());
+    let key = match (link.hop, link.down_ms) {
+        (khor_node::Hop::Idle, Some(_)) => khor_node::Link::DOWN_KEY,
+        (hop, _) => hop.key(),
+    };
+    let road = khor_catalog::hop::word(key);
     match (link.hop, link.heard_ms) {
         (khor_node::Hop::Idle, Some(ms)) => cli::link_last_heard(road, lasting(ms / 1000)),
         _ => road.to_owned(),

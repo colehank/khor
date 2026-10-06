@@ -10,10 +10,13 @@
 // faces' edges, and which road the table knows between any two machines.
 import type { DeviceRow } from "@/api";
 import type { RoadKind } from "@/gen/bindings/RoadKind";
-import { roadOf } from "@/lib/topology";
+import { isDown, roadOf } from "@/lib/topology";
 
-/** One road between two machines as the dial draws it. */
-export type Link = { road: RoadKind; ms: number | null; relay: string | null };
+/** One road between two machines as the dial draws it. `idle` is this
+    machine's own edge with no live wire and nothing known to be wrong
+    (round NET-13): seated by its last reading (`ms`, `last_rtt_ms`) at
+    half ink, never on the 不通 rim unless it has no reading at all. */
+export type Link = { road: RoadKind | "idle"; ms: number | null; relay: string | null };
 
 /** The rim: a road this slow (or none) sits on the 不通 ring. The log
     scale runs `ln(1 + ms) / ln(1 + RIM_MS)`. */
@@ -128,7 +131,11 @@ export function clip(a: Pt, b: Pt, ra: number, rb: number, air = 3): { x1: numbe
     its sponsor's. */
 export function firstHand(row: DeviceRow, rows: readonly DeviceRow[]): Link {
   const via = row.sponsor ? (rows.find((r) => r.name === row.sponsor) ?? row) : row;
-  return { road: via.me ? "direct" : roadOf(via), ms: via.rtt_ms ?? null, relay: via.relay ?? null };
+  if (via.me) return { road: "direct", ms: via.rtt_ms ?? null, relay: via.relay ?? null };
+  const road = roadOf(via);
+  // No live road is 不通 only when the resident's last attempt failed.
+  if (road === "none" && !isDown(via.down_ms)) return { road: "idle", ms: via.last_rtt_ms ?? null, relay: null };
+  return { road, ms: via.rtt_ms ?? null, relay: via.relay ?? null };
 }
 
 /** What `from` wrote into the table about its road to `to` (NET-12,

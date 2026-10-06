@@ -11,7 +11,9 @@ import { band, BAND_INK } from "@/lib/latency";
 import { gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { runningOn } from "@/lib/row-facts";
-import { ago, connectionKey, connectionKeyWord, groupLabel, systemWord } from "@/words";
+import { isDown } from "@/lib/topology";
+import { cn } from "@/lib/utils";
+import { ago, connectionKey, connectionKeyWord, groupLabel, hopWord, systemWord } from "@/words";
 import { MachineEditDialog } from "@/views/MachineEditDialog";
 import { PendingStrip } from "@/views/PairDialogs";
 
@@ -292,10 +294,30 @@ export function DevicesList({
     // 无法获取 is always beside it. This machine's own row wears the
     // fast light: it answers by looking. ⚠️ 墓碑: reached-green / idle-grey.
     // An older resident sends no `rtt_ms` at all: no number, not 「无法获取」.
+    //
+    // **Three states without a live number** (round NET-13): unreachable
+    // (`down_ms`: the resident's last attempt failed) is the grey light
+    // and 无法获取, the row dimmed; idle (no live wire, nothing known to
+    // be wrong — it closed while nothing was asked) is the last reading's
+    // band at half ink, its number, or 未连 when there never was one;
+    // either says when it was last heard under it.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
+    const down = !d.me && d.hop === "quiet" && isDown(d.down_ms);
     const reached = d.me || rtt !== null || (d.rtt_ms === undefined && d.hop !== "quiet");
-    const latency = d.me ? gui.machine_here : rtt !== null ? gui.row_rtt(rtt) : reached ? null : gui.day_unreachable;
-    const rowBand = d.me ? "fast" : reached ? band(rtt) : "none";
+    const idle = !reached && !down;
+    const last = typeof d.last_rtt_ms === "number" ? d.last_rtt_ms : null;
+    const latency = d.me
+      ? gui.machine_here
+      : rtt !== null
+        ? gui.row_rtt(rtt)
+        : reached
+          ? null
+          : down
+            ? gui.day_unreachable
+            : last !== null
+              ? gui.row_rtt(last)
+              : hopWord("quiet");
+    const rowBand = d.me ? "fast" : reached ? band(rtt) : idle ? band(last) : "none";
     return {
       id: d.id,
       group: d.pinned ? "pin" : "",
@@ -336,8 +358,12 @@ export function DevicesList({
       ) : undefined,
       corners: {
         top: latency && (
-          <span data-row-latency={reached ? "on" : "off"} data-lat={rowBand} className="flex items-center gap-xxs">
-            <span aria-hidden="true" className="size-1.5 flex-none rounded-full" style={{ background: BAND_INK[rowBand] }} />
+          <span data-row-latency={reached ? "on" : idle ? "idle" : "off"} data-lat={rowBand} className="flex items-center gap-xxs">
+            <span
+              aria-hidden="true"
+              className={cn("size-1.5 flex-none rounded-full", idle && "opacity-50")}
+              style={{ background: BAND_INK[rowBand] }}
+            />
             {latency}
           </span>
         ),
@@ -355,10 +381,11 @@ export function DevicesList({
       // Grey, the way SideList greys a row (`dim`) — the machine is still
       // in the table and still openable; this machine is not talking to it.
       // **And a machine it cannot reach** (the redesign's 下拉刷新 ruling:
-      // 「够不到的机器的行灰显并注明无法获取和上次的时间」, UX-5): 未连接, its
-      // second line already says when it was last heard (`linkWord`); the
-      // sessions list greys its far rows the same way.
-      dim: d.paused || d.hop === "quiet",
+      // 「够不到的机器的行灰显并注明无法获取和上次的时间」, UX-5): unreachable,
+      // and its corner says when it was last heard; the sessions list
+      // greys its far rows the same way. Idle is not unreachable (round
+      // NET-13): its row is drawn as any other.
+      dim: d.paused || down,
       rowData: {
         "data-device": d.name,
         "data-row": d.id,

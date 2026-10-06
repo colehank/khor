@@ -621,19 +621,23 @@ export const fetchDayStrips = (cells: number) =>
       The road is `null`, the shape every surface already draws as 「not
       named yet」: no 未连接, no 无法获取, no dimming; what is asked of the
       machine itself wears its skeleton or `Waiting` meanwhile;
-    - **unreachable**: `quiet` after that, or `quiet` with a time it was
-      last heard — it was there and is gone: said at once (P6);
+    - **idle**: `quiet` after that, or `quiet` with a time it was last
+      heard — no live wire, nothing known to be wrong: 未连, undimmed;
+    - **unreachable**: `quiet` with `down_ms` (round NET-13: the
+      resident's last attempt failed and nothing was heard since) — the
+      one reading that dims a row and says 无法获取, at once (P6), the
+      budget or not;
     - **reachable**: a road.
 
     The clock is this page's first answer, not the node's start, which no
     face is told: a face opened long after its node waits the budget once
-    before saying a machine is away. */
+    before naming a machine idle. */
 export const fetchDevices = () =>
   call<DeviceRow[]>("devices").then((rows) => {
     const now = Date.now();
     devicesFirstRead ??= now;
     if (now - devicesFirstRead >= DIAL_BUDGET_MS) return rows;
-    return rows.map((d) => (d.hop === "quiet" && d.heard_ms == null ? { ...d, hop: null } : d));
+    return rows.map((d) => (d.hop === "quiet" && d.heard_ms == null && d.down_ms == null ? { ...d, hop: null } : d));
   });
 /** When this page first read the machines (`fetchDevices`). */
 let devicesFirstRead: number | null = null;

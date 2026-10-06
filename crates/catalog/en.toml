@@ -24,7 +24,8 @@ unknown = "Unrecognized"
 [hop]
 direct = "Direct"
 relay = "Relay"
-quiet = "Not connected"
+quiet = "Idle"
+down = "Down"
 no-serve = "Serve not running"
 
 [avatar]
