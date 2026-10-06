@@ -102,7 +102,7 @@ define_class!(
             &self,
             key: *mut AnyObject,
             object: *mut AnyObject,
-            _change: *mut AnyObject,
+            change: *mut AnyObject,
             _context: *mut std::ffi::c_void,
         ) {
             // SAFETY: KVO hands the key path as an NSString.
@@ -110,9 +110,13 @@ define_class!(
             if loading {
                 // Heard on the beat after: a load begun from inside this
                 // module (`open`, `step`) fires while the pages are held.
+                // So the value is the change's own, taken now: read again
+                // on that beat, a load quicker than it is `false` twice
+                // and says nothing (UX-42, audit row 6).
                 let view = object as usize;
+                let now = new_bool(change);
                 if let Some(app) = APP.get() {
-                    let _ = app.run_on_main_thread(move || load_heard(view));
+                    let _ = app.run_on_main_thread(move || load_heard(view, now));
                 }
             } else {
                 scrolled(object);
@@ -308,12 +312,17 @@ fn failed(view: *mut AnyObject, error: *mut AnyObject) {
 /// new page's first load never said `started`; the face lit the line from
 /// its own errand instead, and coming back to a tab ran it for the whole
 /// ceiling with nothing loading (measured on the simulator: 30 s).
-fn load_heard(view: usize) {
+///
+/// `now` is the value the change carried (`NSKeyValueChangeNewKey`), so a
+/// load that began and ended inside one beat is still `started` then
+/// `finished`, and the face's hold (`use-loading`'s `SETTLE_MS`) shows
+/// its line briefly; `None` (no value in the change) reads the view.
+fn load_heard(view: usize, now: Option<bool>) {
     let Some(app) = APP.get() else { return };
     let word = PAGES.with(|pages| {
         let mut pages = pages.try_borrow_mut().ok()?;
         let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as usize == view)?;
-        let loading: bool = unsafe { msg_send![&*page.view, isLoading] };
+        let loading: bool = now.unwrap_or_else(|| unsafe { msg_send![&*page.view, isLoading] });
         if loading == page.loading {
             return None;
         }
@@ -322,6 +331,29 @@ fn load_heard(view: usize) {
     });
     if let Some(w) = word {
         let _ = app.emit_to("main", "page:load", w);
+    }
+}
+
+unsafe extern "C" {
+    /// Foundation's key for a KVO change's new value.
+    static NSKeyValueChangeNewKey: *const AnyObject;
+}
+
+/// A KVO change's new value, as a bool (`isLoading` arrives boxed in an
+/// `NSNumber`).
+fn new_bool(change: *mut AnyObject) -> Option<bool> {
+    if change.is_null() {
+        return None;
+    }
+    // SAFETY: KVO hands the change as an NSDictionary, and the new value
+    // of a BOOL property is an NSNumber (or NSNull, never for this one).
+    unsafe {
+        let v: *mut AnyObject = msg_send![change, objectForKey: NSKeyValueChangeNewKey];
+        if v.is_null() {
+            return None;
+        }
+        let number: bool = msg_send![v, isKindOfClass: class!(NSNumber)];
+        number.then(|| msg_send![v, boolValue])
     }
 }
 
