@@ -2252,6 +2252,8 @@ forget-place = "Remove from {0}"
 search-terminal = "Search terminal"
 match-prev = "Previous match"
 match-next = "Next match"
+match-case = "Match case"
+match-regex = "Use regular expression"
 
 usage-title = "Token usage"
 usage-view-day = "By day"

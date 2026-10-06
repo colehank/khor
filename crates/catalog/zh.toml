@@ -4604,6 +4604,10 @@ search-terminal = "搜索终端"
 # and ⇧⏎ do the same from inside the field.
 match-prev = "上一个"
 match-next = "下一个"
+# The find bar's two toggles (item 70), named for what they turn on,
+# the words Terminal.app's and VS Code's find bars use.
+match-case = "区分大小写"
+match-regex = "使用正则表达式"
 
 # ── 额度详情页下半张:花掉的 token ──────────────────────────────
 #

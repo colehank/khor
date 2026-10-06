@@ -27761,6 +27761,51 @@ try {
       break term;
     }
     await wait(400);
+    // **Find has case and regex** (item 70): the two toggles narrow the
+    // matches as xterm's search addon counts them, an unfinished pattern
+    // is no matches rather than an error, and the choice is this device's.
+    {
+      await page.evaluate(() => window.localStorage.removeItem("khor.term-find"));
+      await page.evaluate(
+        () => new Promise((r) => document.querySelector("[data-terminal]").__xterm.write("Alpha alpha ALPHA a1 a22 a333\r\n", r)),
+      );
+      await page.evaluate(() => document.querySelector("[data-terminal]").__find());
+      const input = page.locator("[data-term-find-input]");
+      if (!(await until(3_000, async () => (await input.count()) > 0))) fail("probe dead: term find · the find bar did not open");
+      else {
+        const hits = async () => {
+          await wait(250);
+          return (await page.locator("[data-term-find-hits]").innerText()).trim();
+        };
+        const said = {};
+        await input.fill("alpha");
+        said.plain = await hits();
+        await page.locator("[data-term-find-case]").click();
+        said.caseOn = await hits();
+        await input.fill("a\\d+");
+        said.literal = await hits();
+        await page.locator("[data-term-find-regex]").click();
+        said.regex = await hits();
+        await input.fill("a(");
+        said.unfinished = await hits();
+        said.kept = await page.evaluate(() => window.localStorage.getItem("khor.term-find"));
+        said.pressed = await page.locator("[data-term-find-regex]").getAttribute("aria-pressed");
+        said.focus = await page.evaluate(() => document.activeElement?.hasAttribute("data-term-find-input") ?? false);
+        console.log(`term find · ${JSON.stringify(said)}`);
+        if (!/\/ 3$/.test(said.plain)) fail(`term find · "alpha" in any case counted ${said.plain}, want 3`);
+        if (!/\/ 1$/.test(said.caseOn)) fail(`term find · "alpha" with 区分大小写 counted ${said.caseOn}, want 1`);
+        if (/\/ \d+$/.test(said.literal)) fail(`term find · "a\\d+" as text counted ${said.literal}, want none`);
+        if (!/\/ 3$/.test(said.regex)) fail(`term find · "a\\d+" as a pattern counted ${said.regex}, want 3`);
+        if (said.unfinished !== "没有匹配项") fail(`term find · an unfinished pattern "a(" said ${said.unfinished}, want 没有匹配项`);
+        if (said.kept !== '{"regex":true,"caseSensitive":true}') fail(`term find · the toggles were kept as ${said.kept}`);
+        if (said.pressed !== "true") fail("term find · the regex toggle does not say it is pressed");
+        if (!said.focus) fail("term find · a toggle took the caret from the field");
+        await page.locator("[data-term-find-case]").click();
+        await page.locator("[data-term-find-regex]").click();
+        await page.locator("[data-term-find-close]").click();
+        await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.clear());
+      }
+    }
     // One press, replayed: `steps` are [type, init] for key events,
     // ["input", data] for the text the input method commits, and
     // ["pause"] for the time between two presses — xterm's 229 road
