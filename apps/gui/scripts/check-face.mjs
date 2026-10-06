@@ -30219,6 +30219,22 @@ try {
             fail(`bar r · the native title's press is ${shown(rest.titleHit)} — the band's whole current segment ${shown(rest.band)} (UX-35 §1)`);
           }
         }
+        // **The pill writes the host** (UX-35 §4): t1 is 「Khor One Page」 at
+        // https://khor.example/one — the pill says khor.example, the tabs
+        // sheet's row the title.
+        const words = await page.evaluate(async () => {
+          const pill = document.querySelector("[data-session-deck] [data-deck-title]")?.textContent?.trim() ?? null;
+          document.querySelector("[data-session-deck] [data-deck-tabs]")?.click();
+          await new Promise((r) => setTimeout(r, 600));
+          const row = document.querySelector('[data-tab-sheet-row="t1"] [data-tab-sheet-name]')?.textContent?.trim() ?? null;
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          await new Promise((r) => setTimeout(r, 600));
+          return { pill, row };
+        });
+        console.log(`bar r · the page's words: ${shown(words)}`);
+        if (words.pill !== "khor.example" || words.row !== "Khor One Page") {
+          fail(`bar r · the page pill writes ${shown(words.pill)} and its sheet row ${shown(words.row)} — the host (khor.example) on the pill, the title (Khor One Page) in the sheet (UX-35 §4; browse/BrowseLanding.tsx pillHost)`);
+        }
         // **A sheet over the page takes the page away** (UX-28, the owner's
         // phone: the native page painted over every sheet). The pane says
         // what it decided on `khor:page-place`; the sheet rises from under

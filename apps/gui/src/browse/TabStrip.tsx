@@ -67,6 +67,11 @@ import { cn } from "@/lib/utils";
 export type TabFace = {
   id: string;
   label: string;
+  /** The tab's long name, where `label` is the short one: a page's own
+      title while its pill writes the host (UX-35 §4). The tabs sheet's
+      and the switcher's rows write it, and it leads the hover title.
+      Absent, `label` is the whole name. */
+  title?: string;
   face: Avatar | null;
   /** The whole address, for the switcher's second line and the wide
       tab's hover title. Empty on a fresh tab. */
@@ -641,7 +646,7 @@ export function TabStrip({
               title={
                 again
                   ? undefined
-                  : [[f.machine, f.path].filter(Boolean).join(": "), f.note]
+                  : [f.title, [f.machine, f.path].filter(Boolean).join(": "), f.note]
                       .filter(Boolean)
                       .join(" · ") || undefined
               }
@@ -1027,7 +1032,7 @@ export function TabSwitcher({
   const [query, setQuery] = useState("");
   // By what a row shows — the name and where it is — and nothing else.
   const q = query.trim().toLowerCase();
-  const shown = q === "" ? faces : faces.filter((f) => `${f.label} ${f.path}`.toLowerCase().includes(q));
+  const shown = q === "" ? faces : faces.filter((f) => `${f.title ?? f.label} ${f.path}`.toLowerCase().includes(q));
   const box = search && (
     <PaneBar searchLabel={gui.search_tabs} query={query} onQuery={setQuery} seat={onBack ? "head" : seat} />
   );
@@ -1078,12 +1083,12 @@ export function TabSwitcher({
               halo: f.session?.word,
               title: (
                 <span data-tab-label data-tab-name className="block truncate">
-                  {f.label}
+                  {f.title ?? f.label}
                 </span>
               ),
-              name: f.label,
+              name: f.title ?? f.label,
               // One line (UX-20): no path under a tab's name.
-              find: `${f.label} ${f.path}`,
+              find: `${f.title ?? f.label} ${f.path}`,
               selected: f.id === active,
               menu: [...(f.menu ?? []), { key: "close-tab", label: gui.close, run: () => onClose(f.id) }],
               onOpen: () => onFocus(f.id),

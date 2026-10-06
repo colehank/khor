@@ -773,7 +773,7 @@ export function TabSheet({
                 {/* **One line, the title** (UX-20). ⚠️ 墓碑: the machine or
                     the path under it, cut at the start (`PathCut`). */}
                 <span data-tab-sheet-name className="min-w-0 flex-1 truncate text-body text-foreground">
-                  {f.label}
+                  {f.title ?? f.label}
                 </span>
               </button>
               <button
