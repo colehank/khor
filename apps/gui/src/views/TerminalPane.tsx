@@ -108,6 +108,7 @@ import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
+import { countsGain } from "@/lib/term-gain";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
 import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
@@ -2532,6 +2533,7 @@ export function TerminalPane({
           historyUp = to;
           sync();
         },
+        gained: () => setFreshBelow(true),
         outOfReach: () => {
           setHistoryOut(true);
           window.clearTimeout(outShown);
@@ -2564,17 +2566,28 @@ export function TerminalPane({
     // fire, which is right: that screen has no history to be up in.
     // Up in a tmux pane's history (item 31) is up too: the pill takes
     // the person back down there, and says when output arrived meanwhile.
+    //
+    // **Output means lines** (item 52, `lib/term-gain`): an idle shell
+    // writes when the fold resizes it (a prompt redrawn in place, tmux's
+    // whole client) and tmux's clock ticks; none of that is 新输出. In a
+    // tmux pane's history the history's own reads say what arrived.
+    const gain = countsGain(term);
+    let wasBehind = false;
     const sync = () => {
       const b = term.buffer.active;
       const behind = b.viewportY < b.baseY || historyUp;
+      if (behind && !wasBehind) gain.mark();
+      wasBehind = behind;
       setBack(behind);
       if (!behind) setFreshBelow(false);
     };
     const scrolled = term.onScroll(sync);
     const wrote = term.onWriteParsed(() => {
       const b = term.buffer.active;
-      if (b.viewportY < b.baseY || historyUp) setFreshBelow(true);
-      else sync();
+      if (historyUp) return;
+      if (b.viewportY < b.baseY) {
+        if (gain.grew()) setFreshBelow(true);
+      } else sync();
     });
 
     // Coalesced to one fit per frame: dragging a window fires
@@ -2687,6 +2700,7 @@ export function TerminalPane({
       box.removeEventListener("contextmenu", rightClick);
       scrolled.dispose();
       wrote.dispose();
+      gain.stop();
       found.dispose();
       rung.dispose();
       selected.dispose();
