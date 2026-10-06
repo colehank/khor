@@ -28229,6 +28229,93 @@ try {
       await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
       await page.setViewportSize({ width: 1400, height: 900 });
     }
+    // **A picture pasted into a terminal (item 60 part 4)** rides the
+    // drop's road: staged (`term_drop_stage`, under a `paste-<time>`
+    // name), then one `term_drop` of the staged path from this machine.
+    //
+    //  ix. ⌘V with only a picture on the clipboard (the paste event);
+    //   x. a picture and text together: the text is pasted, as in
+    //      iTerm2, and nothing is staged;
+    //  xi. the right-click menu's 粘贴, the clipboard read for it
+    //      (`navigator.clipboard.read`, stubbed) holding a picture.
+    {
+      const staged = [];
+      const stage = async (r) => {
+        const url = new URL(r.request().url());
+        staged.push({ name: url.searchParams.get("name"), bytes: r.request().postDataBuffer()?.length ?? 0 });
+        await r.fulfill({ contentType: "application/json", body: JSON.stringify(`/stage/${staged.length}/${url.searchParams.get("name")}`) });
+      };
+      await page.route(/\/term_drop_stage\?/, stage);
+      const shown = '[data-kept-terminal="tui/face-term"] [data-terminal]';
+      await openRow("tui/face-term");
+      await wait(400);
+      const pasteEvent = (text, size) =>
+        page.evaluate(
+          ([shown, text, size]) => {
+            const t = document.querySelector(shown)?.__xterm;
+            if (!t?.textarea) return false;
+            const dt = new DataTransfer();
+            if (text) dt.setData("text/plain", text);
+            dt.items.add(new File([new Uint8Array(size)], "image.png", { type: "image/png" }));
+            t.textarea.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+            return true;
+          },
+          [shown, text, size],
+        );
+      const named = (got) => /^paste-\d{8}-\d{6}\.png$/.test(got?.name ?? "");
+      const landed = (size, n) =>
+        staged.length === 1 &&
+        named(staged[0]) &&
+        staged[0].bytes === size &&
+        drops.length === 1 &&
+        drops[0].id === "tui/face-term" &&
+        JSON.stringify(drops[0].paths) === JSON.stringify([`/stage/${n}/${staged[0].name}`]) &&
+        drops[0].from === null;
+      // ix.
+      staged.length = 0;
+      drops.length = 0;
+      sentKeys.length = 0;
+      const fired = await pasteEvent("", 7);
+      await until(3_000, async () => drops.length > 0);
+      await wait(300);
+      console.log(`term ix · ⌘V of a picture: fired ${fired}, staged ${JSON.stringify(staged)}, term_drop ${JSON.stringify(drops)}, typed ${JSON.stringify(sentKeys.join(""))}`);
+      if (!fired) fail("probe dead: term ix · no xterm textarea on the shown local terminal");
+      else if (!landed(7, 1) || sentKeys.join("") !== "") {
+        fail("term ix · a picture pasted with ⌘V should be staged once under a paste-<time>.png name and dropped from this machine, nothing typed (item 60 part 4)");
+      }
+      // x.
+      staged.length = 0;
+      drops.length = 0;
+      sentKeys.length = 0;
+      await pasteEvent("echo pasted", 7);
+      await until(3_000, async () => sentKeys.join("").includes("echo pasted"));
+      await wait(300);
+      console.log(`term x · ⌘V of a picture and text: typed ${JSON.stringify(sentKeys.join(""))}, staged ${staged.length}, term_drop ${drops.length}`);
+      if (!sentKeys.join("").includes("echo pasted") || staged.length !== 0 || drops.length !== 0) {
+        fail("term x · a picture and text pasted together should paste the text and stage nothing (iTerm2's rule, item 60 part 4)");
+      }
+      // xi.
+      staged.length = 0;
+      drops.length = 0;
+      const menu = await page.evaluate((shown) => {
+        navigator.clipboard.read = async () => [new ClipboardItem({ "image/png": new Blob([new Uint8Array(9)], { type: "image/png" }) })];
+        const el = document.querySelector(shown);
+        const r = el?.getBoundingClientRect();
+        if (!r) return false;
+        el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+        return true;
+      }, shown);
+      const act = page.locator('[data-kept-terminal="tui/face-term"] [data-term-block-act="paste"]');
+      const offered = await until(3_000, async () => (await act.count()) > 0);
+      if (offered) await act.click();
+      await until(3_000, async () => drops.length > 0);
+      await wait(300);
+      await page.evaluate(() => delete navigator.clipboard.read);
+      console.log(`term xi · right-click 粘贴 of a picture: menu ${menu && offered}, staged ${JSON.stringify(staged)}, term_drop ${JSON.stringify(drops)}`);
+      if (!menu || !offered) fail("probe dead: term xi · the right-click menu offered no 粘贴");
+      else if (!landed(9, 1)) fail("term xi · the right-click menu's 粘贴 of a picture should stage it and drop it from this machine (item 60 part 4)");
+      await page.unroute(/\/term_drop_stage\?/, stage);
+    }
     await page.unroute("**/term_drop");
     await page.unroute("**/term_drop_progress");
     await page.unroute("**/term_open");

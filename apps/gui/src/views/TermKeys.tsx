@@ -23,7 +23,8 @@
 // the program's cursor-key mode and the latches change it, is
 // `lib/term-keys`. Paste reads the clipboard and hands the text to xterm's
 // own paste (`Terminal.paste`), which brackets it when the program asked
-// for that (DECSET 2004) — the same path ⌘V takes on a Mac.
+// for that (DECSET 2004) — the same path ⌘V takes on a Mac; a picture
+// with no text goes down the drop's road instead (`lib/term-paste`).
 //
 // **Ctrl and Alt are latches.** Pressed, one waits for the next key — from
 // this row, the sheet or the soft keyboard (`TerminalPane` applies them to
@@ -50,6 +51,7 @@ import { GROUPS, KEYS, KEY_BY_NAME, setKeyRow, useKeyRow, type KeyDef, type Mods
 import { keyPanelGone, swapToKeyboard, toggleKeyPanel, useKeyPanel, useKeyPanelKind } from "@/lib/key-panel";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { useHeldKey } from "@/lib/key-repeat";
+import { pasteInto } from "@/lib/term-paste";
 import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { cn } from "@/lib/utils";
@@ -75,7 +77,7 @@ const heldOf = (k: KeyDef, mods: Mods) => (k.name === "ctrl" && mods.ctrl) || (k
     anything else is sent under the latches, which let go first —
     `TerminalPane` reads them for whatever xterm hands out, and these
     bytes are already in their modified form. */
-function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void) {
+function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void, images: (files: File[]) => void) {
   if (k.name === "ctrl" || k.name === "alt") {
     onMods({ ...mods, [k.name]: !mods[k.name] });
     return;
@@ -86,14 +88,8 @@ function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void)
     return;
   }
   if (k.name === "paste") {
-    // The clipboard can refuse (no permission, a WebKit paste callout
-    // dismissed); then nothing is typed, which is the true answer.
-    void navigator.clipboard
-      ?.readText()
-      .then((text) => {
-        if (text) t.paste(text);
-      })
-      .catch(() => {});
+    // A picture with no text goes down the drop's road (`lib/term-paste`).
+    pasteInto(t, images);
     return;
   }
   const bytes = k.send?.(t, mods);
@@ -149,7 +145,7 @@ export function TermKeys({
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
     // A repeat after the first key: the latches have let go already.
-    if (t) pressKey(k, t, under, under === mods ? onMods : () => {});
+    if (t) pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles);
   };
   return (
     <div
@@ -205,7 +201,7 @@ function KeyPanel({
   const field = () => term.current?.textarea ?? null;
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
-    if (t) pressKey(k, t, under, under === mods ? onMods : () => {});
+    if (t) pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles);
   };
   // The row gone (collapsed, the page left) takes the panel with it.
   useEffect(() => () => keyPanelGone(), []);

@@ -119,6 +119,7 @@ import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
 import { nativeSelects, selectionHolds, type Picked, type Selects } from "@/lib/term-select";
 import { offerEditMenu, type EditItem } from "@/lib/edit-menu";
+import { pastedFrom, pastedImage, pasteInto } from "@/lib/term-paste";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -1371,6 +1372,8 @@ export function TerminalPane({
   const [asking, setAsking] = useState<{ text: string; detail?: string; yes: string; no: string; go: () => void; stop: () => void } | null>(null);
   // A command block's actions (roadmap 2.3), where it was pressed: from a
   // right-click, or a long press on its prompt.
+  /** The pane's `dropFiles`, for its paste handlers (set below). */
+  const dropFilesRef = useRef<(files: File[]) => void>(() => {});
   const [blockMenu, setBlockMenu] = useState<{ x: number; y: number; acts: { name: string; label: string; run: () => void }[] } | null>(null);
   const bellTimer = useRef(0);
   // **Ctrl and Alt, latched from the key row** (`TermKeys`, 2026-10-02;
@@ -2289,12 +2292,14 @@ export function TerminalPane({
       });
     };
     term.paste = guarded;
+    // A picture with no text goes down the drop's road (item 60 part 4).
     const pasted = (e: ClipboardEvent) => {
-      const text = e.clipboardData?.getData("text/plain") ?? "";
-      if (!text) return;
+      const got = pastedFrom(e.clipboardData);
+      if ("text" in got && !got.text) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      guarded(text);
+      if ("images" in got) dropFilesRef.current(got.images);
+      else guarded(got.text);
     };
     term.textarea?.addEventListener("paste", pasted, true);
     // **The size follows the face in use** (the audit's spec rule 8,
@@ -2419,13 +2424,7 @@ export function TerminalPane({
       acts.push({
         name: "paste",
         label: menu.paste,
-        run: () =>
-          void navigator.clipboard
-            ?.readText()
-            .then((text) => {
-              if (text) term.paste(text);
-            })
-            .catch(() => {}),
+        run: () => pasteInto(term, (files) => dropFilesRef.current(files)),
       });
       if (b) acts.push(...actsFor(b));
       const r = box.getBoundingClientRect();
@@ -2486,9 +2485,10 @@ export function TerminalPane({
       items.push({
         id: "paste",
         title: menu.paste,
-        run: (text) => {
+        run: (text, image) => {
           done();
           if (text) term.paste(text);
+          else if (image) dropFilesRef.current([pastedImage(image)]);
         },
       });
       offerEditMenu(items.slice());
@@ -2921,6 +2921,8 @@ export function TerminalPane({
   );
   const dropRef = useRef(drop);
   dropRef.current = drop;
+  // A pasted picture (item 60 part 4), from the pane's own handlers.
+  dropFilesRef.current = dropFiles;
 
   // **The OS drop is tauri's** (`lib/window-drop`): the real paths
   // arrive on a window-wide event, so the point is checked against this
