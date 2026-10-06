@@ -37,6 +37,11 @@ const CHANGED = "khor:key-panel";
 const KEYBOARD_WAIT_MS = 1_500;
 
 let up = false;
+/** **Which panel stands in the keyboard's place** (UX-41): the keys
+    (「…」) or the files (📎). One band, one hold: switching between the
+    two moves nothing above. */
+export type PanelKind = "keys" | "files";
+let kind: PanelKind = "keys";
 /** The panel took a keyboard's place: 「…」 gives it back. */
 let replaced = false;
 /** The keyboard was asked for and the panel waits for it to show. */
@@ -74,10 +79,28 @@ export function useKeyPanel(): boolean {
   );
 }
 
-/** 「…」: the panel up in the keyboard's place or from the foot; up
-    already, back to the keyboard it replaced, else down. Only from
-    inside a press. */
-export function toggleKeyPanel(field: HTMLElement) {
+export function useKeyPanelKind(): PanelKind {
+  return useSyncExternalStore(
+    (run) => {
+      window.addEventListener(CHANGED, run);
+      return () => window.removeEventListener(CHANGED, run);
+    },
+    () => kind,
+    () => "keys",
+  );
+}
+
+/** 「…」 (or 📎, `want`): the panel up in the keyboard's place or from
+    the foot; up already as the other panel, turned to this one in
+    place; up as this one, back to the keyboard it replaced, else down.
+    Only from inside a press. */
+export function toggleKeyPanel(field: HTMLElement, want: PanelKind = "keys") {
+  if (up && kind !== want) {
+    kind = want;
+    changed();
+    return;
+  }
+  kind = want;
   if (!up) raise(field);
   else if (replaced) swapToKeyboard(field);
   else release();

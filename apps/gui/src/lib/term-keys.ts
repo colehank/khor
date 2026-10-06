@@ -154,6 +154,8 @@ export const KEYS: KeyDef[] = [
   { name: "newline", cap: gui.key_newline, label: gui.key_newline_name, group: "function", repeats: true, send: (t) => shiftEnter(t) },
   ...F_KEYS.map(([cap, send]): KeyDef => ({ name: cap.toLowerCase(), cap, group: "function", send: (_, m) => send(m) })),
   { name: "paste", cap: gui.key_paste, group: null },
+  // 📎 (UX-41): the files panel in the keyboard's place (`TermFiles`).
+  { name: "attach", cap: gui.key_attach_name, group: null },
 ];
 
 export const KEY_BY_NAME = new Map(KEYS.map((k) => [k.name, k]));
@@ -171,7 +173,13 @@ export type RowSeat = { name: string; on: boolean };
 /** The row as it was before it could be edited (2026-10-02): the escape
     and the modifier, what moves through a form, paste, then the
     characters a shell lives on. Every other key follows, off. */
-const DEFAULT_ON = ["esc", "ctrl", "tab", "backtab", "paste", "/", "-", "|", ":"];
+const DEFAULT_ON = ["esc", "ctrl", "tab", "backtab", "attach", "paste", "/", "-", "|", ":"];
+
+/** **Keys that came after a row was stored, drawn on** (UX-41): the
+    owner's row was stored before 📎 existed, and a key appended off is a
+    key nobody finds. Each goes in on, before the key named (inside the
+    row's first screenful), or last. */
+const LATER_ON: Record<string, string> = { attach: "paste" };
 
 export function defaultRow(): RowSeat[] {
   const on = DEFAULT_ON.map((name) => ({ name, on: true }));
@@ -205,7 +213,16 @@ export function keyRow(): RowSeat[] {
     seen.add(name);
     row.push({ name, on: (s as RowSeat).on === true });
   }
-  for (const k of KEYS) if (!seen.has(k.name)) row.push({ name: k.name, on: false });
+  for (const k of KEYS) {
+    if (seen.has(k.name)) continue;
+    const before = LATER_ON[k.name];
+    if (before === undefined) {
+      row.push({ name: k.name, on: false });
+      continue;
+    }
+    const at = row.findIndex((s) => s.name === before);
+    row.splice(at < 0 ? row.length : at, 0, { name: k.name, on: true });
+  }
   return row;
 }
 
