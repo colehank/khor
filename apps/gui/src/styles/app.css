@@ -331,6 +331,16 @@ input[type="search"]::-webkit-search-decoration {
 :is([data-session-bar], [data-session-top], [data-float-nav]) {
   touch-action: none;
 }
+/* **The address editor is a text field, not chrome** (UX-38 §3, the
+   owner 2026-10-06: the address could not be seen whole and the caret
+   could not be moved). A `touch-action` is the meet of the element's and
+   every ancestor's up to a scroller, so the bar's `none` reached the
+   field: a drag in it never got to WebKit (measured on the simulator: no
+   `touchmove` at all). While the pill edits, the bar gives the field its
+   finger back. */
+[data-session-bar]:has([data-deck-editing]) {
+  touch-action: auto;
+}
 [data-term-keys-scroll] {
   touch-action: pan-x;
 }
