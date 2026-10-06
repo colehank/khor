@@ -129,11 +129,21 @@ fn ms_of(at: std::time::SystemTime) -> i64 {
         .unwrap_or(0)
 }
 
-/// The working directory a transcript records, from its head.
+/// The working directory a transcript records: the first line that
+/// carries one, read forward from the head.
 ///
-/// Every entry carries one, so the first is the answer; the bound is
-/// there because these files reach hundreds of megabytes and this is
-/// read once per directory when the wizard opens.
+/// Every conversation entry carries one, so the first is the answer;
+/// the bound is there because these files reach hundreds of megabytes
+/// and this is read once per directory when the wizard opens.
+///
+/// # Lines until one says, not a fixed head
+///
+/// **It used to read the first 64 KiB.** Claude Code now opens a
+/// transcript with attachments that carry no `cwd` and run to tens of
+/// KiB each — on the owner's, a `skill_listing` of 49 777 bytes and a
+/// `deferred_tools_delta` of 17 814 — so the first entry with one can
+/// start past any small head (SESS-BRIEF 2a). Lines are read until one
+/// carries `cwd`, up to `MOST` bytes in all.
 ///
 /// # Why the bytes are decoded lossily, and what it cost not to
 ///
@@ -141,7 +151,8 @@ fn ms_of(at: std::time::SystemTime) -> i64 {
 /// to end there. `read_to_string` **fails the whole read** when it
 /// does — not the last line, the whole thing — so a transcript with any
 /// multi-byte text near the bound answered "no working directory
-/// recorded" while holding one in plain sight on line 6.
+/// recorded" while holding one in plain sight on line 6. Each line is
+/// decoded on its own now, lossily, for the line the bound cuts.
 ///
 /// Measured on this machine 2026-09-01: the newest transcript of the
 /// project khor itself is worked on cut mid-character at exactly 65534,
@@ -152,43 +163,61 @@ fn ms_of(at: std::time::SystemTime) -> i64 {
 /// else*. Lossy decoding costs one possibly-mangled character at the
 /// tail of a bounded read, on a line nothing parses.
 ///
-/// # Cached forever, misses included
+/// # A hit is kept forever, a miss until the file changes
 ///
 /// The list's post-pass asks this for every claude row that has no
-/// place of its own, every poll. A transcript's `cwd` is on its first
-/// entries and never changes, so the answer is a fact about the file
-/// and is kept for the life of the process — the same reasoning
-/// `ai_title` gives for its permanent cache. A **miss is cached too**:
-/// a transcript with no `cwd` in its first 64 KiB is not going to grow
-/// one, and without this the placeless rows — the very ones this is
-/// for — would be the ones read again on every poll.
+/// place of its own, every poll. A transcript's `cwd` never changes
+/// once written, so a found answer is a fact about the file and is kept
+/// for the life of the process — the same reasoning `ai_title` gives
+/// for its permanent cache. A **miss is kept against the file's length
+/// and mtime**: an unchanged file is not read again, so the placeless
+/// rows are not the ones read on every poll; but a transcript caught
+/// before its first entry is written gets that entry, and a miss
+/// cached forever filed the row under no directory for good.
 fn cwd_in(path: &Path) -> Option<PathBuf> {
     use std::collections::HashMap;
-    use std::io::Read;
+    use std::io::{BufRead, BufReader, Read};
     use std::sync::{Mutex, OnceLock};
-    static KNOWN: OnceLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> = OnceLock::new();
+    /// Far past any opening run of attachments seen (about 68 KiB on
+    /// the owner's), and still a bounded cost for a file that has none.
+    const MOST: u64 = 4 * 1024 * 1024;
+    type Stamp = (u64, std::time::SystemTime);
+    static KNOWN: OnceLock<Mutex<HashMap<PathBuf, (Option<Stamp>, Option<PathBuf>)>>> =
+        OnceLock::new();
     let known = KNOWN.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(hit) = known.lock().ok().and_then(|k| k.get(path).cloned()) {
-        return hit;
+    let stamp = std::fs::metadata(path)
+        .ok()
+        .and_then(|m| Some((m.len(), m.modified().ok()?)));
+    if let Some((at, hit)) = known.lock().ok().and_then(|k| k.get(path).cloned()) {
+        if hit.is_some() || at == stamp {
+            return hit;
+        }
     }
     let read = || -> Option<PathBuf> {
-        let mut head = Vec::new();
-        std::fs::File::open(path)
-            .ok()?
-            .take(64 * 1024)
-            .read_to_end(&mut head)
-            .ok()?;
-        String::from_utf8_lossy(&head).lines().find_map(|l| {
-            serde_json::from_str::<serde_json::Value>(l)
-                .ok()?
-                .get("cwd")?
-                .as_str()
-                .map(PathBuf::from)
-        })
+        let mut lines = BufReader::new(std::fs::File::open(path).ok()?.take(MOST));
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            if lines.read_until(b'\n', &mut line).ok()? == 0 {
+                return None;
+            }
+            let text = String::from_utf8_lossy(&line);
+            // Cheap reject before parsing: the attachments this reads
+            // past are the large lines.
+            if !text.contains("\"cwd\"") {
+                continue;
+            }
+            let cwd = serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v.get("cwd")?.as_str().map(PathBuf::from));
+            if cwd.is_some() {
+                return cwd;
+            }
+        }
     };
     let found = read();
     if let Ok(mut k) = known.lock() {
-        k.insert(path.to_path_buf(), found.clone());
+        k.insert(path.to_path_buf(), (stamp, found.clone()));
     }
     found
 }
@@ -1504,6 +1533,40 @@ mod tests {
         );
 
         assert_eq!(cwd_in(&path), Some(PathBuf::from("/somewhere/deep")));
+    }
+
+    /// **The working directory past a head of attachments** (SESS-BRIEF
+    /// 2a). Claude Code now opens a transcript with attachments of tens
+    /// of KiB — measured on the owner's: a `skill_listing` of 49 777
+    /// bytes and a `deferred_tools_delta` of 17 814 — so the first line
+    /// carrying `cwd` can start past a 64 KiB head, and the row was
+    /// filed under no directory for the life of the process.
+    ///
+    /// And a miss is only as good as the file it was read from: a
+    /// transcript caught before its first entry with a `cwd` gets one
+    /// later, and the next look must see it.
+    #[test]
+    fn a_working_directory_past_the_opening_attachments_is_found() {
+        let dir = Scratch(std::env::temp_dir().join(format!("khor-cwdfar-{}", std::process::id())));
+        let _ = std::fs::remove_dir_all(&*dir);
+        std::fs::create_dir_all(&*dir).unwrap();
+
+        let path = dir.join("far.jsonl");
+        let mut text = bookkeeping(49_777) + &bookkeeping(17_814);
+        assert!(text.len() > 64 * 1024, "the fixture must put the cwd past 64 KiB");
+        text.push_str(r#"{"type":"user","cwd":"/far/down","message":{}}"#);
+        text.push('\n');
+        std::fs::write(&path, &text).unwrap();
+        assert_eq!(cwd_in(&path), Some(PathBuf::from("/far/down")));
+
+        let path = dir.join("late.jsonl");
+        std::fs::write(&path, bookkeeping(100)).unwrap();
+        assert_eq!(cwd_in(&path), None);
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        std::io::Write::write_all(&mut f, br#"{"type":"user","cwd":"/later","message":{}}"#).unwrap();
+        std::io::Write::write_all(&mut f, b"\n").unwrap();
+        drop(f);
+        assert_eq!(cwd_in(&path), Some(PathBuf::from("/later")), "a miss must not outlive the file's next change");
     }
 
     /// Every line shape a real transcript holds (sampled on this
