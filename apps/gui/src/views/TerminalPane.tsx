@@ -93,7 +93,7 @@ import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
 import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { termBell } from "@/lib/term-bell";
-import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
+import { covers, pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
 import { tapAsks, termWake, useTermWake } from "@/lib/term-tap";
@@ -1918,7 +1918,7 @@ export function TerminalPane({
         return true;
       }
       void pathsOn(term, here, cwdAt, row).then((found) => {
-        const hit = found.find((f) => col + 1 >= f.x0 && col + 1 <= f.x1);
+        const hit = found.find((f) => covers(f, row, col));
         if (hit) openPath(hit.target);
       });
       return false;
