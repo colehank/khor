@@ -1919,7 +1919,11 @@ export function TerminalPane({
     // **Paths and URLs open khor's own views** (roadmap 3.1, 3.2): under
     // a mouse a ⌘-click on an underlined path; under a finger a tap.
     const here = machine ?? "";
-    const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd();
+    // After an attach the face has no marks and no OSC 7 of its own until
+    // the next prompt (the host's snapshot carries neither, item 46), and
+    // a relative path printed before it was no link (the terminal audit,
+    // item 53); the host's ledger still knows where the shell stands.
+    const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd() ?? doingRef.current?.cwd ?? undefined;
     const openPath = (t: { path: string; dir: boolean; line: number | null }) =>
       askOpenPath(here, t.path, t.dir, t.line);
     fileLink = (uri) => {
