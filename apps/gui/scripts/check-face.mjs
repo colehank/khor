@@ -29688,6 +29688,14 @@ try {
             slot: document.querySelectorAll("[data-deck-pill] [data-pill-slot]").length,
             progress: vis("[data-deck-pill] [data-pill-progress]"),
             status: vis("[data-deck-pill] [data-pill-status]"),
+            // UX-36: the session's day in the slot at rest.
+            log: vis("[data-deck-pill] [data-pill-log] [data-day-ruler-line]"),
+            logBox: (() => {
+              const l = r("[data-deck-pill] [data-pill-log] [data-day-ruler-line]");
+              const p = r("[data-deck-pill]");
+              return l && p ? { left: l.left - p.left, right: p.right - l.right, bottom: l.bottom, h: l.height } : null;
+            })(),
+            rowBottom: r("[data-deck-pill-row]")?.bottom ?? null,
             inPill: document.querySelectorAll('[data-deck-pill] [data-statusbar][data-at="pill"]').length,
             atFoot: document.querySelectorAll('[data-statusbar][data-at="foot"]').length,
             said: document.querySelector("[data-deck-pill] [data-statusbar]")?.textContent?.trim() ?? null,
@@ -29716,9 +29724,39 @@ try {
       await page.locator("[data-term-reload]").first().click({ timeout: 3_000 }).catch(() => {});
       const ran = await until(1_500, async () => (await slot()).progress === 1);
       const loading = await slot();
+      // **The native deck reads the line too** (UX-35 §2): the iPhone's
+      // browser deck is drawn from this reading, so the line is in it
+      // while the DOM's runs — the pill's bottom edge, its width, the
+      // DOM's ink and sweep — and gone from it after.
+      const nativeLine = () =>
+        page.evaluate(async () => {
+          const { readDeck } = await import("/src/lib/native-deck.ts");
+          const d = await readDeck(document.querySelector("[data-session-screen]"));
+          const bar = document.querySelector("[data-session-bar]")?.getBoundingClientRect();
+          const pill = document.querySelector("[data-deck-pill]")?.getBoundingClientRect();
+          const run = document.querySelector("[data-pill-progress] > span");
+          const c = document.createElement("canvas").getContext("2d");
+          c.fillStyle = run ? getComputedStyle(run).backgroundColor : "#000";
+          return {
+            p: d?.progress ?? null,
+            pill: bar && pill ? { x: pill.left - bar.left, w: pill.width, bottom: pill.bottom - bar.top } : null,
+            ink: run ? String(c.fillStyle) : null,
+          };
+        });
+      const readLoading = await nativeLine();
       if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-pill-progress.png") });
       const ended = await until(4_000, async () => (await slot()).progress === 0);
       const after = await slot();
+      const readAfter = await nativeLine();
+      console.log(`bar v · the native reading while loading ${shown(readLoading)}; after ${shown(readAfter.p)}`);
+      {
+        const p = readLoading.p;
+        const pill = readLoading.pill;
+        if (!p || !pill || Math.abs(p.x - pill.x) > 0.5 || Math.abs(p.w - pill.w) > 0.5 || Math.abs(p.y + p.h - pill.bottom) > 0.5 || p.color !== readLoading.ink || !(p.ms > 0) || p.ease.length !== 4) {
+          fail(`bar v · the native deck read the reloading pill's line as ${shown(p)} — the pill's bottom edge ${shown(pill)}, the DOM's ink ${readLoading.ink} and sweep (UX-35 §2; lib/native-deck.ts)`);
+        }
+        if (readAfter.p !== null) fail(`bar v · the load ended and the native reading still has a line ${shown(readAfter.p)}`);
+      }
       await page.unroute("**/term_attach");
       await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
       // The transfer ends: the line leaves on its own after its beat.
@@ -29727,6 +29765,17 @@ try {
       const went = await until(10_000, async () => (await slot()).inPill === 0);
       const gone = await slot();
       console.log(`bar v · quiet ${JSON.stringify(quiet)}; saying ${JSON.stringify(saying)}; loading ${JSON.stringify(loading)}; after ${JSON.stringify(after)}; gone ${JSON.stringify(gone)}`);
+      // **The log hangs under the session pill, always** (UX-36): the line
+      // at rest along the first row's foot, as wide as the pill; above a
+      // status strip; given up to a reload's line while it runs; back after.
+      if (quiet.log !== 1 || !quiet.logBox || Math.abs(quiet.logBox.left) > 0.5 || Math.abs(quiet.logBox.right) > 0.5 || Math.abs(quiet.logBox.bottom - quiet.rowBottom) > 0.5) {
+        fail(`bar v · at rest the session pill's day line reads ${shown(quiet.log)} ${shown(quiet.logBox)} — one line along the pill's first row's foot, as wide as the pill (UX-36; SessionBar PillSlot log)`);
+      }
+      if (saying.log !== 1 || !saying.logBox || Math.abs(saying.logBox.bottom - saying.rowBottom) > 0.5) {
+        fail(`bar v · with a status strip the day line reads ${shown(saying.logBox)} against the row's foot ${saying.rowBottom} — the strip hangs below the line`);
+      }
+      if (loading.log !== 0) fail(`bar v · during the reload the day line is still drawn (${loading.log}) — progress takes the slot while it runs (UX-36 §2)`);
+      if (after.log !== 1) fail(`bar v · after the reload the day line is ${after.log} — the line is back when the run ends`);
       if (quiet.slot !== 1 || quiet.progress || quiet.status || quiet.atFoot || Math.abs(quiet.pill - quiet.btn) > 0.5) {
         fail(`bar v · at rest the pill reads ${JSON.stringify(quiet)} — one empty slot, the pill one row (${quiet.btn}), no strip at the foot`);
       }
@@ -30155,6 +30204,18 @@ try {
               inset: d.inset,
               deck,
               safe,
+              // UX-35 §3: every label inside the band, the title's press
+              // the whole current segment (§1); the band's own box to
+              // hold them to.
+              band: (() => {
+                const bar = document.querySelector("[data-session-bar]").getBoundingClientRect();
+                const b = document.querySelector("[data-session-deck] [data-deck-band]")?.getBoundingClientRect();
+                return b ? { x: b.left - bar.left, w: b.width } : null;
+              })(),
+              named: d.labels.filter((l) => l.text === document.querySelector("[data-session-deck] [data-deck-title]")?.textContent).map((l) => ({ x: l.x, w: l.w })),
+              titleHit: d.hits.filter((h) => h.seat === 3).map((h) => ({ x: h.x, w: h.w })),
+              // UX-36 §3: a page has no log.
+              log: document.querySelectorAll("[data-session-deck] [data-pill-log]").length,
             };
           });
         const rest = await readOf();
@@ -30171,6 +30232,30 @@ try {
           }
           if (Math.abs(rest.inset - (rest.deck + rest.safe)) > 0.5) fail(`bar r · the page's inset ${rest.inset} is not the deck row ${rest.deck} and the safe area ${rest.safe}`);
           if (rest.images < 3) fail(`bar r · ${rest.images} glyph/face image(s) — ‹, a face or glyph in the pill, the tabs figure at least`);
+          const inBand = (r) => rest.band && r.x >= rest.band.x - 0.5 && r.x + r.w <= rest.band.x + rest.band.w + 0.5;
+          if (!rest.band || rest.named.length !== 1 || !inBand(rest.named[0])) {
+            fail(`bar r · the native title reads ${shown(rest.named)} against the band ${shown(rest.band)} — cut to the band's box (UX-35 §3; lib/native-deck.ts seen)`);
+          }
+          if (rest.log !== 0) fail(`bar r · a page pill draws ${rest.log} day line(s) — a page has no log, its slot is empty at rest (UX-36 §3)`);
+          if (rest.titleHit.length !== 1 || !inBand(rest.titleHit[0]) || Math.abs(rest.titleHit[0].w - (rest.band?.w ?? 0)) > 0.5) {
+            fail(`bar r · the native title's press is ${shown(rest.titleHit)} — the band's whole current segment ${shown(rest.band)} (UX-35 §1)`);
+          }
+        }
+        // **The pill writes the host** (UX-35 §4): t1 is 「Khor One Page」 at
+        // https://khor.example/one — the pill says khor.example, the tabs
+        // sheet's row the title.
+        const words = await page.evaluate(async () => {
+          const pill = document.querySelector("[data-session-deck] [data-deck-title]")?.textContent?.trim() ?? null;
+          document.querySelector("[data-session-deck] [data-deck-tabs]")?.click();
+          await new Promise((r) => setTimeout(r, 600));
+          const row = document.querySelector('[data-tab-sheet-row="t1"] [data-tab-sheet-name]')?.textContent?.trim() ?? null;
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          await new Promise((r) => setTimeout(r, 600));
+          return { pill, row };
+        });
+        console.log(`bar r · the page's words: ${shown(words)}`);
+        if (words.pill !== "khor.example" || words.row !== "Khor One Page") {
+          fail(`bar r · the page pill writes ${shown(words.pill)} and its sheet row ${shown(words.row)} — the host (khor.example) on the pill, the title (Khor One Page) in the sheet (UX-35 §4; browse/BrowseLanding.tsx pillHost)`);
         }
         // **A sheet over the page takes the page away** (UX-28, the owner's
         // phone: the native page painted over every sheet). The pane says
@@ -30218,7 +30303,8 @@ try {
             sheet: document.querySelectorAll("[data-place-sheet]").length,
             seats: [...document.querySelectorAll("[data-place-sheet] [data-col-seat]")].map((e) => e.dataset.colSeat).join(" "),
             on: document.querySelector('[data-place-sheet] [data-col-seat][data-on="true"]')?.getAttribute("data-col-seat") ?? null,
-            ruler: document.querySelectorAll("[data-place-sheet] [data-day-ruler]").length,
+            ruler: document.querySelectorAll("[data-place-sheet] [data-day-ruler], [data-place-sheet] [data-day-ruler-line]").length,
+            today: document.querySelectorAll("[data-place-sheet] [data-day-today]").length,
             page: document.querySelectorAll("[data-place-sheet] [data-side-page]").length,
           }));
         };
@@ -30239,8 +30325,8 @@ try {
         const lsMoved = askedLs.map((a) => a.path);
         await shut();
         console.log(`bar p · first ${shown(first)}; 工作区 listed ${shown(lsFirst)}; reopened ${shown(kept)}; after OSC 7 ${shown(moved)} listed ${shown(lsMoved)}`);
-        if (first.sheet !== 1 || first.seats !== "recent workspace browser machine quota" || first.ruler !== 1 || first.page !== 1) {
-          fail(`bar p · the pill opened ${shown(first)} — one sheet, the five seats and the ruler (UX-30 §6)`);
+        if (first.sheet !== 1 || first.seats !== "recent workspace browser machine quota" || first.ruler !== 0 || first.today !== 1 || first.page !== 1) {
+          fail(`bar p · the pill opened ${shown(first)} — one sheet, the five seats, the 「今天」 row and no ruler (UX-30 §6, UX-36)`);
         }
         if (first.on !== "recent") fail(`bar p · a fresh session's sheet lands on ${shown(first.on)} — 最近 is the landing`);
         if (!lsFirst.includes("/home/gate/work")) fail(`bar p · 工作区 listed ${shown(lsFirst)} — where the session started (/home/gate/work), no OSC 7 yet`);
@@ -30505,6 +30591,32 @@ try {
         if (back.title !== base.title || back.inView.join() !== "cur" || Math.abs(back.x - base.x) > 1) {
           fail(`bar u · a pull of a third of the band left ${shown(back)} — it springs back to ${shown(base)}`);
         }
+        // A tap anywhere on the current segment is the title's (UX-35 §1):
+        // on the face, and in the room after a short name — the owner's
+        // 「khor」 pill answered only on its four letters.
+        const spots = await page.evaluate(() => {
+          const band = document.querySelector("[data-session-deck] [data-deck-band]")?.getBoundingClientRect();
+          const face = document.querySelector('[data-session-deck] [data-band-seg="cur"] [data-deck-face]')?.getBoundingClientRect();
+          const name = document.querySelector("[data-session-deck] [data-deck-title]")?.getBoundingClientRect();
+          if (!band || !face || !name) return null;
+          const y = band.top + band.height / 2;
+          return { face: { x: face.left + face.width / 2, y }, after: name.right < band.right - 12 ? { x: band.right - 6, y } : null };
+        });
+        const tapOpens = async (at) => {
+          await page.mouse.click(at.x, at.y);
+          const up = await until(2_000, async () => (await count("[data-place-sheet]")) === 1);
+          if (up) {
+            await page.keyboard.press("Escape");
+            await until(2_000, async () => (await count("[data-place-sheet]")) === 0);
+          }
+          return up;
+        };
+        const onFace = spots ? await tapOpens(spots.face) : false;
+        const pastName = spots?.after ? await tapOpens(spots.after) : null;
+        console.log(`bar u · a tap on the face opens the sheet: ${onFace}; after the name: ${pastName ?? "no room after the name"}`);
+        if (!onFace || pastName === false) {
+          fail(`bar u · a tap on the band's face ${onFace} / after the name ${pastName} — anywhere on the current segment is the title's press (UX-35 §1; SessionBar DeckBand)`);
+        }
       }
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
@@ -30738,34 +30850,37 @@ try {
       }
     }
 
-    // d. the ruler
+    // d. the day hangs under the session's pill (UX-36, overriding UX-30
+    //    §5's ruler): the column holds no line; the front pill does, along
+    //    its bottom edge; its menu's 「今天」 hangs the day in full from it,
+    //    over the session (the column's page does not move), and Esc folds.
     {
-      const seatsBox = await rect("[data-session-side] [data-col-seats]");
-      const line = await rect("[data-session-side] [data-day-ruler-line]");
+      const front = '[data-session-tabs] [data-tab][data-on="true"]';
+      const inColumn = await count("[data-session-side] [data-day-ruler-line], [data-session-side] [data-day-ruler]");
+      const pill = await rect(front);
+      const line = await rect(`${front} [data-tab-log] [data-day-ruler-line]`);
       const h = await tokenPx("--day-ruler-h");
-      console.log(`side d · ruler ${JSON.stringify(line)} under the capsule ending ${seatsBox?.bottom} (token ${h})`);
-      if (!line || !seatsBox) fail("side d · no ruler under the capsule — the day is the column's ruler, always present (UX-30 §5)");
+      console.log(`side d · the front pill ${JSON.stringify(pill)} holds the line ${JSON.stringify(line)} (token ${h}); ${inColumn} in the column`);
+      if (inColumn !== 0) fail(`side d · the column still draws ${inColumn} ruler(s) — the day hangs under the session's pill (UX-36)`);
+      if (!line || !pill) fail("side d · no day line under the front session pill — always present (UX-36 §1; TabStrip data-tab-log)");
       else {
-        if (Math.abs(line.height - h) > 0.5) fail(`side d · the ruler is ${line.height} tall, --day-ruler-h is ${h}`);
-        if (line.top < seatsBox.bottom || line.top - seatsBox.bottom > 12) fail(`side d · the ruler stands ${line.top - seatsBox.bottom} under the capsule — directly under it`);
+        if (Math.abs(line.height - h) > 0.5) fail(`side d · the pill's line is ${line.height} tall, --day-ruler-h is ${h}`);
+        if (line.left < pill.left || line.right > pill.right || line.bottom > pill.bottom || pill.bottom - line.bottom > 4) {
+          fail(`side d · the line ${JSON.stringify(line)} is not along the pill's bottom edge ${JSON.stringify(pill)}`);
+        }
         const pageTop = (await rect("[data-session-side] [data-side-page]"))?.top;
-        await press("[data-session-side] [data-day-ruler]");
-        const up = await until(2_000, async () => (await count("[data-session-side] [data-detail-day] [data-day-strip]")) === 1);
-        if (!up) fail("side d · a tap on the ruler did not expand the day in the column");
+        await page.locator(`${front} [data-tab-open]`).click({ button: "right" });
+        await press('[data-menu-item="today"]');
+        const up = await until(3_000, async () => (await count("[data-day-pop] [data-detail-day] [data-day-strip]")) === 1);
+        if (!up) fail("side d · the pill's menu 「今天」 did not hang the day from the pill (UX-36 §1)");
         const pageAfter = (await rect("[data-session-side] [data-side-page]"))?.top;
-        if (pageTop !== pageAfter) fail(`side d · expanding the ruler moved the seat's page from ${pageTop} to ${pageAfter} — it expands over the content`);
-        const over = await page.evaluate(() => {
-          const day = document.querySelector("[data-session-side] [data-detail-day]");
-          const pageEl = document.querySelector("[data-session-side] [data-side-page]");
-          if (!day || !pageEl) return null;
-          const d = day.getBoundingClientRect();
-          const p = pageEl.getBoundingClientRect();
-          return { dayTop: d.top, dayBottom: d.bottom, pageTop: p.top, lines: day.querySelectorAll("[data-day-line]").length };
-        });
-        console.log(`side d · expanded ${JSON.stringify(over)}`);
-        if (over && over.dayBottom <= over.pageTop) fail("side d · the expanded day does not reach over the seat's page");
-        await press("[data-session-side] [data-day-ruler]");
-        if (!(await until(2_000, async () => (await count("[data-session-side] [data-detail-day]")) === 0))) fail("side d · a second tap did not fold the day");
+        if (pageTop !== pageAfter) fail(`side d · opening the day moved the column's page from ${pageTop} to ${pageAfter} — it hangs over the content`);
+        const pop = await rect("[data-day-pop]");
+        console.log(`side d · the day hangs at ${JSON.stringify(pop)}`);
+        if (pop && Math.abs(pop.left - pill.left) > 1) fail(`side d · the day hangs at x ${pop.left}, the pill starts at ${pill.left} — it opens from the pill`);
+        if (pop && pop.top < pill.bottom) fail(`side d · the day's top ${pop.top} is above the pill's foot ${pill.bottom} — it hangs under the line`);
+        await page.keyboard.press("Escape");
+        if (!(await until(2_000, async () => (await count("[data-day-pop]")) === 0))) fail("side d · Esc did not fold the day");
       }
     }
 

@@ -424,7 +424,7 @@ export function SessionScreen({
                 )}
                 <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
               </div>
-              <PillSlot loading={loading} seat={setProgress}>
+              <PillSlot loading={loading} seat={setProgress} log={face?.log}>
                 {status}
               </PillSlot>
             </div>
@@ -495,12 +495,33 @@ const SAMPLE_MS = 250;
  * page) and the `progress` seat, which the view that holds the tab fills
  * while it reloads (`BarSeat at="progress"`: a terminal's join). The
  * wide strip's pills draw the same line from the same fact (UX-33 §2).
+ *
+ * **A session's slot holds its day at rest** (UX-36, the owner
+ * 2026-10-06): `log`, the 24 hours flattened (`DayLine`), along the
+ * bottom edge of the pill's first row — so a status strip hangs below
+ * it — and a reload's line replaces it while it runs (`app.css`). A page
+ * and a file have none.
  */
-export function PillSlot({ loading = false, seat, children }: { loading?: boolean; seat: (el: HTMLElement | null) => void; children?: ReactNode }) {
+export function PillSlot({
+  loading = false,
+  seat,
+  log,
+  children,
+}: {
+  loading?: boolean;
+  seat: (el: HTMLElement | null) => void;
+  log?: ReactNode;
+  children?: ReactNode;
+}) {
   return (
     <div data-pill-slot className="flex min-w-0 flex-col">
       <span ref={seat} data-pill-progress-seat className="contents" />
       {loading && <PillProgress />}
+      {log && (
+        <span data-pill-log className="pointer-events-none absolute inset-x-0 top-[calc(var(--glass-btn)-var(--day-ruler-h))] flex">
+          {log}
+        </span>
+      )}
       {children && (
         <div data-pill-status className="flex min-w-0 items-center">
           {children}
@@ -527,8 +548,9 @@ export function PillProgress() {
  * and the next. A sideways drag first pans the name's own overflow; at
  * its end it keeps going and pulls **one** neighbour in, never more;
  * released past half, that tab becomes current; released short, it
- * springs back. More than one neighbour: the tabs circle. A tap on the
- * name is the title's own press (the address editor, the 目录 sheet). The
+ * springs back. More than one neighbour: the tabs circle. A tap anywhere
+ * on the current segment — face, name or the room after it — is the
+ * title's own press (the address editor, the 目录 sheet; UX-35 §1). The
  * face seat takes the shared face assembly (`TabAvatar`, ux-b's). ⚠️ 墓碑
  * (UX-25): a sideways swipe stepped one tab per flick.
  */
@@ -592,7 +614,9 @@ export function DeckBand({
       y0: e.clientY,
       start: x.current,
       moved: false,
-      onTitle: e.target instanceof Element && e.target.closest("[data-deck-title]") !== null,
+      // Anywhere on the current segment, its face included (UX-35 §1):
+      // a short name left most of the pill deaf to a tap.
+      onTitle: e.target instanceof Element && e.target.closest('[data-band-seg="cur"]') !== null,
     };
     band.current?.setPointerCapture(e.pointerId);
   };
@@ -617,9 +641,11 @@ export function DeckBand({
     const g = geometry();
     if (!d || !g) return;
     // **A press that did not move is the title's** (the address editor,
-    // the 目录 sheet): with the pointer captured by the band the click
-    // lands here, not on the title's button — that one answers the
-    // keyboard.
+    // the 目录 sheet), wherever on the current segment it began: with the
+    // pointer captured by the band the click lands here, not on the
+    // title's button — that one answers the keyboard. ⚠️ 墓碑 (UX-35 §1):
+    // only a press begun on the name's text counted, so 「khor」 left the
+    // rest of the pill doing nothing.
     if (!d.moved) {
       if (d.onTitle) onTitle?.();
       return;
@@ -768,7 +794,7 @@ export function TabSheet({
                 {/* **One line, the title** (UX-20). ⚠️ 墓碑: the machine or
                     the path under it, cut at the start (`PathCut`). */}
                 <span data-tab-sheet-name className="min-w-0 flex-1 truncate text-body text-foreground">
-                  {f.label}
+                  {f.title ?? f.label}
                 </span>
               </button>
               <button

@@ -91,6 +91,21 @@ function hostOf(path: string): string {
   }
 }
 
+/** **The pill's word for a page** (UX-35 §4, the owner 2026-10-06: iOS
+    Safari's compact bar): the host alone — no scheme, no `www.`, no path
+    — with its port kept (`localhost:5467`). `""` for a place that is not
+    an http(s) page, which keeps its leaf (`tabLabel`). An address typed
+    without its scheme reads as the http one it opens. */
+function pillHost(path: string): string {
+  const at = /^[a-z][a-z0-9+.-]*:\/\//i.test(path) ? path : /^[\w.-]+(?::\d+)?(?:[/?#]|$)/.test(path) ? `http://${path}` : "";
+  try {
+    const u = new URL(at);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.host.replace(/^www\./i, "") : "";
+  } catch {
+    return "";
+  }
+}
+
 /** **The site's icon, where there is one** (UX-22, the owner 2026-10-05:
     every row wore khor's browser glyph): the mark on the machine's face is
     the page's favicon once it has been fetched — this window, or any
@@ -696,10 +711,15 @@ export function BrowseLanding({
       face — its machine's face with the browser's mark. */
   const faces: TabFace[] = tabs.tabs.map((t) => {
     const d = deviceOf(t.device);
-    const bare = t.path.replace(/^https?:\/\//i, "").replace(/^([^/]+)\/$/, "$1");
     return {
       id: t.id,
-      label: t.title || bare || tabLabel(kind, t.path, d),
+      // **The pill writes the host** (UX-35 §4), on the phone's deck and
+      // the wide strip alike — one pill, one word; the page's own title
+      // is the tabs sheet's row and the hover title (`title`). The
+      // address editor still opens on the whole address (UX-18). ⚠️ 墓碑:
+      // the title, else the address without its scheme.
+      label: pillHost(t.path) || tabLabel(kind, t.path, d),
+      title: t.title || undefined,
       face: d?.face ?? null,
       path: t.path,
       machine: d?.shown ?? null,

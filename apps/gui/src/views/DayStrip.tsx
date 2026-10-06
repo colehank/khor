@@ -107,7 +107,8 @@ import { stretch, word } from "@/words";
  *   delay is 0; the first spelling of this, 2026-09-01, went through the
  *   OS `title` and its 1.5 s wait read as no hover at all). It hangs
  *   **below** the band, the side a toolbar's tooltip takes, and is held
- *   inside the pane by the pane itself as its collision boundary.
+ *   inside the pane (or the panel hanging from the pill, UX-36) by it as
+ *   its collision boundary.
  * - **Pressed or tapped** — a popover (Radix, `ui/popover`) anchored to
  *   the stretch, on the one floating language: the word with its dot,
  *   the two clocks, the duration, and for 不知道 the sentence that says
@@ -318,7 +319,9 @@ export function DayStrip({ runs }: { runs: Day }) {
   const laid = lay(runs, total, Date.now());
   const inked = laid.filter((s) => s.label !== null);
   const tabStop = inked.some((s) => s.i === stop) ? stop : (inked[inked.length - 1]?.i ?? null);
-  const bound = box.current?.closest("[data-detail-pane]") ?? null;
+  // The pane it lies in, or the panel hanging from the session's pill
+  // (UX-36), which is portaled out of the pane it floats over.
+  const bound = box.current?.closest("[data-detail-pane], [data-day-pop]") ?? null;
   const pad = inset();
   const holds = (s: Stretch, at: number | null) => at !== null && at >= s.from && at < s.to;
 

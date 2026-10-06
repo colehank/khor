@@ -8,8 +8,9 @@
  * itself out as on the phone — list ⇄ detail, the same memory rules —
  * and nothing in here is designed twice. At its top a capsule of five
  * seats, 最近 · 工作区 · 浏览器 · 机器 · 额度, the phone's bar at the top
- * of the box; under it the ruler (the session's day, flattened; UX-30
- * §5) and then the seat's page. The seat's content is composed by the
+ * of the box, and under it the seat's page. (⚠️ 墓碑 UX-30 §5 → UX-36:
+ * the session's day stood between them as a ruler; it hangs under the
+ * session's pill now, `views/DayLine`.) The seat's content is composed by the
  * shell (`App`), which owns the state those pages read; this file is the
  * box, the capsule, and the seam.
  *
@@ -92,14 +93,9 @@ export function SessionSide({
   onSeat,
   onWidth,
   onClose,
-  ruler,
-  boxRef,
   children,
 }: {
   session: string;
-  /** The box the day's axis is measured in (`useStripWidth`): the band
-      drawn in the ruler's panel is this column's width. */
-  boxRef?: (el: HTMLDivElement | null) => void;
   /** The width it was dragged to, or `null` for the token's default. */
   width: number | null;
   seat: SideSeat;
@@ -108,15 +104,12 @@ export function SessionSide({
   onWidth: (w: number | null) => void;
   /** The seam dragged under the snap line: the column goes away. */
   onClose: () => void;
-  /** The ruler under the capsule (UX-30 §5), handed in by the shell. */
-  ruler?: ReactNode;
   /** The seat's page, composed by the shell. */
   children?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement | null>(null);
   const setBox = (el: HTMLDivElement | null) => {
     box.current = el;
-    boxRef?.(el);
   };
 
   // The drag paints through the box's own style each move — a poll-driven
@@ -219,7 +212,7 @@ export function SessionSide({
         onKeyDown={onKeyDown}
         className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize outline-none transition-colors hover:bg-border focus-visible:bg-ring"
       />
-      <SideBody seat={seat} onSeat={onSeat} ruler={ruler}>
+      <SideBody seat={seat} onSeat={onSeat}>
         {children}
       </SideBody>
     </NarrowBox>
@@ -227,19 +220,22 @@ export function SessionSide({
 }
 
 /**
- * The column's inside — the capsule, the ruler, the seat's page — which
- * is also the phone's pill sheet (UX-30 §6: both faces share the
- * components; `SessionPlaceSheet` mounts this in a bottom sheet).
+ * The column's inside — the capsule and the seat's page — which is also
+ * the phone's pill sheet (UX-30 §6: both faces share the components;
+ * `SessionPlaceSheet` mounts this in a bottom sheet, with its 「今天」 row
+ * under the capsule, UX-36).
  */
 export function SideBody({
   seat,
   onSeat,
-  ruler,
+  today,
   children,
 }: {
   seat: SideSeat;
   onSeat: (seat: SideSeat) => void;
-  ruler?: ReactNode;
+  /** The phone sheet's 「今天」 row (`DayToday`): where the day opens on
+      the phone, whose pill's tap is the sheet's (UX-36 §1). */
+  today?: ReactNode;
   children?: ReactNode;
 }) {
   const capsule = useRef<HTMLElement>(null);
@@ -274,7 +270,7 @@ export function SideBody({
           ))}
         </nav>
       </div>
-      {ruler}
+      {today}
       {/* The seat's page: the narrow face's own, in a box. `relative`
           because the pages float their own navigation against the
           nearest placed ancestor, which must be this box and not the

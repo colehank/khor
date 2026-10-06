@@ -614,6 +614,31 @@ pub struct DeckHit {
     swipe: bool,
 }
 
+/// The capsule a progress line is clipped to, with its corner.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckClip {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    r: f64,
+}
+
+/// The pill's progress line while its tab reloads (UX-35 §2): where it
+/// runs, the glass it is clipped to, its ink, and the DOM sweep's period
+/// (ms, 0 where it stands still) and `cubic-bezier`.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckProgress {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    clip: DeckClip,
+    color: String,
+    ms: f64,
+    ease: [f32; 4],
+}
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeckDrawing {
@@ -627,6 +652,9 @@ pub struct DeckDrawing {
     images: Vec<DeckImage>,
     labels: Vec<DeckLabel>,
     hits: Vec<DeckHit>,
+    /// Absent when no load runs: the line goes with the reading.
+    #[serde(default)]
+    progress: Option<DeckProgress>,
 }
 
 struct Deck {
@@ -641,6 +669,10 @@ thread_local! {
     /// The tabs a deck was ever drawn for, by the tag their deck carries.
     static DECK_TABS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static DECK_TARGET: Retained<DeckTarget> = unsafe { msg_send![DeckTarget::class(), new] };
+    /// When each tab's progress line began running: a reading redraws the
+    /// whole deck, and the sweep picks up where it was rather than
+    /// starting over at every change of title during a load.
+    static RUNS: RefCell<HashMap<String, std::time::Instant>> = RefCell::new(HashMap::new());
 }
 
 /// UIKit's `UIEdgeInsets`, for the page's scroll view.
@@ -749,6 +781,7 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         }
     });
     let Some(dr) = drawing else {
+        RUNS.with(|r| r.borrow_mut().remove(tab));
         inset(tab, 0.0);
         return;
     };
@@ -828,6 +861,12 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
             let _: () = msg_send![&*lab, setLineBreakMode: 4isize];
             let _: () = msg_send![&*view, addSubview: &*lab];
         }
+        match &dr.progress {
+            Some(p) => run_line(&view, tab, p),
+            None => {
+                RUNS.with(|r| r.borrow_mut().remove(tab));
+            }
+        }
         let mut pill = None;
         DECK_TARGET.with(|target| {
             for h in &dr.hits {
@@ -861,6 +900,60 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         });
     }
     inset(tab, dr.inset);
+}
+
+/// **The progress line under the pill** (UX-35 §2; UX-33 §2 in the DOM):
+/// a 2-pt run along the capsule's bottom edge, clipped to its corners,
+/// swept from the left over and over in the DOM's period and curve —
+/// Safari's — until a reading comes without it. The DOM pill is the
+/// source of truth; this draws what it read.
+unsafe fn run_line(deck: &AnyObject, tab: &str, p: &DeckProgress) {
+    let since = RUNS.with(|r| *r.borrow_mut().entry(tab.to_owned()).or_insert_with(std::time::Instant::now));
+    unsafe {
+        let a: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
+        let clip: Retained<AnyObject> = msg_send![a, initWithFrame: rect(p.clip.x, p.clip.y, p.clip.w, p.clip.h)];
+        let _: () = msg_send![&*clip, setClipsToBounds: true];
+        let _: () = msg_send![&*clip, setUserInteractionEnabled: false];
+        let layer: *mut AnyObject = msg_send![&*clip, layer];
+        let _: () = msg_send![layer, setCornerRadius: p.clip.r];
+        let a: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
+        let line: Retained<AnyObject> = msg_send![a, initWithFrame: rect(0.0, 0.0, 0.0, 0.0)];
+        let ink = color(&p.color);
+        let _: () = msg_send![&*line, setBackgroundColor: &*ink];
+        let layer: *mut AnyObject = msg_send![&*line, layer];
+        // Grown from its left end: the anchor first, then the frame, so
+        // the frame lands where it was read.
+        let _: () = msg_send![layer, setAnchorPoint: NSPoint::new(0.0, 0.5)];
+        let _: () = msg_send![&*line, setFrame: rect(p.x - p.clip.x, p.y - p.clip.y, p.w, p.h)];
+        if p.ms > 0.0 {
+            let key = NSString::from_str("transform.scale.x");
+            let anim: Retained<AnyObject> = msg_send![class!(CABasicAnimation), animationWithKeyPath: &*key];
+            let from: Retained<AnyObject> = msg_send![class!(NSNumber), numberWithDouble: 0.0f64];
+            let to: Retained<AnyObject> = msg_send![class!(NSNumber), numberWithDouble: 1.0f64];
+            let _: () = msg_send![&*anim, setFromValue: &*from];
+            let _: () = msg_send![&*anim, setToValue: &*to];
+            let period = p.ms / 1000.0;
+            let _: () = msg_send![&*anim, setDuration: period];
+            let _: () = msg_send![&*anim, setRepeatCount: f32::INFINITY];
+            let _: () = msg_send![&*anim, setRemovedOnCompletion: false];
+            let _: () = msg_send![&*anim, setTimeOffset: since.elapsed().as_secs_f64() % period];
+            // `functionWithControlPoints::::` has unnamed parts, which
+            // `msg_send!` cannot spell.
+            let [c1x, c1y, c2x, c2y] = p.ease;
+            let curve: *mut AnyObject = objc2::runtime::MessageReceiver::send_message(
+                class!(CAMediaTimingFunction),
+                objc2::sel!(functionWithControlPoints::::),
+                (c1x, c1y, c2x, c2y),
+            );
+            if !curve.is_null() {
+                let _: () = msg_send![&*anim, setTimingFunction: curve];
+            }
+            let name = NSString::from_str("progress");
+            let _: () = msg_send![layer, addAnimation: &*anim, forKey: &*name];
+        }
+        let _: () = msg_send![&*clip, addSubview: &*line];
+        let _: () = msg_send![deck, addSubview: &*clip];
+    }
 }
 
 /// The page's scroll view keeps `bottom` points clear at its end: the
