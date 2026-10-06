@@ -221,7 +221,7 @@ function csi(keys: string, mods: number, event: number, text: string, final: str
  */
 export function kittyKey(term: Terminal, ev: KeyboardEvent, release: boolean): string | null {
   const flags = kittyFlags(term);
-  if (!(flags & (DISAMBIGUATE | ALL_KEYS))) return otherKey(term, ev, release);
+  if (!(flags & (DISAMBIGUATE | ALL_KEYS))) return otherKey(term, ev, release) ?? plainShiftEnter(ev, release);
   // An IME's keys are the composition's, and what it commits is text.
   if (ev.isComposing || ev.keyCode === 229) return null;
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
@@ -317,10 +317,25 @@ export function kittyNamed(term: Terminal, key: "Escape" | "Tab" | "Backspace" |
   return csi(key === "Escape" ? "27" : key === "Tab" ? "9" : key === "Enter" ? "13" : "127", mods, 1, "", "u");
 }
 
+/** **Shift+Enter where no key protocol is in force** (item 59): `ESC CR`,
+    Meta+Enter, not the bare CR xterm sends. Measured 2026-10-06, sent
+    straight to the program and through a tmux 3.7b with `extended-keys
+    off` (the owner's server; tmux passes it as M-Enter): a newline in
+    Claude Code's and codex's prompt, and in zsh's line (its emacs map
+    binds it to self-insert-unmeta); bash 3.2 ignores it, so nothing runs.
+    A plain CR submitted all of them. */
+const META_ENTER = "\x1b\r";
+
+function plainShiftEnter(ev: KeyboardEvent, release: boolean): string | null {
+  if (release || ev.key !== "Enter" || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return null;
+  if (ev.isComposing || ev.keyCode === 229) return null;
+  return META_ENTER;
+}
+
 /** Shift+Enter, for the key row's 换行 cap (item 40): what a keyboard's
     Shift+Enter sends in the current mode — the kitty form when the
     program set flags, xterm's modifyOtherKeys form when it (or tmux)
-    asked for that, else the CR it has always been. */
+    asked for that, else `ESC CR` (item 59). */
 export function shiftEnter(term: Terminal): string {
-  return kittyNamed(term, "Enter", true, false) ?? (otherKeysLevel(term) ? "\x1b[27;2;13~" : "\r");
+  return kittyNamed(term, "Enter", true, false) ?? (otherKeysLevel(term) ? "\x1b[27;2;13~" : META_ENTER);
 }
