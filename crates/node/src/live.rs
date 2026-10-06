@@ -3539,7 +3539,10 @@ mod tests {
     /// still the conversation's newest sentence (SESS-BRIEF 1a).
     #[test]
     fn a_khor_started_claude_row_says_its_transcript_past_the_bookkeeping() {
-        for (tag, pad) in [("small", 200usize), ("large", 96 * 1024)] {
+        // Measured on the owner's (lead, 2026-10-07): a `prompt_snapshot`
+        // attachment of 131 887 bytes on one line right after the answer,
+        // so one bookkeeping line alone outgrew the old 64 KiB tail.
+        for (tag, pad) in [("small", 200usize), ("large", 130 * 1024)] {
             let root = tmp(&format!("preview-owner-{tag}"));
             let proj = root.join(".claude/projects/-Users-someone");
             fs::create_dir_all(&proj).unwrap();
@@ -3548,8 +3551,9 @@ mod tests {
             let lines = [
                 r#"{"type":"user","message":{"role":"user","content":"what is in this repo"},"sessionId":"S"}"#.to_owned(),
                 r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Three crates and an app."}]},"sessionId":"S"}"#.to_owned(),
-                format!(r#"{{"type":"attachment","attachment":{{"type":"skill_listing","content":"{blob}"}},"sessionId":"S"}}"#),
+                format!(r#"{{"type":"attachment","attachment":{{"type":"prompt_snapshot","content":"{blob}"}},"sessionId":"S"}}"#),
                 r#"{"type":"system","subtype":"turn_duration","durationMs":5123,"sessionId":"S"}"#.to_owned(),
+                r#"{"type":"system","subtype":"stop_hook_summary","sessionId":"S"}"#.to_owned(),
                 r#"{"type":"last-prompt","lastPrompt":"what is in this repo","sessionId":"S"}"#.to_owned(),
                 r#"{"type":"mode","mode":"normal","sessionId":"S"}"#.to_owned(),
                 r#"{"type":"permission-mode","permissionMode":"auto","sessionId":"S"}"#.to_owned(),
