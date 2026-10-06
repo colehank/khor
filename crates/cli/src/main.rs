@@ -2123,44 +2123,47 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
             .map(|d| d.shown().to_owned())
             .unwrap_or_else(|| id.chars().take(8).collect())
     };
+    let way = |road: khor_node::RoadKind, relay: Option<&str>| match road {
+        khor_node::RoadKind::Direct => khor_catalog::hop::word("direct").to_owned(),
+        khor_node::RoadKind::Relay => match relay {
+            Some(relay) => format!("{} {relay}", khor_catalog::hop::word("relay")),
+            None => khor_catalog::hop::word("relay").to_owned(),
+        },
+        // `none` is unreachable, never idle (round NET-13).
+        khor_node::RoadKind::None => khor_catalog::hop::word(khor_node::Link::DOWN_KEY).to_owned(),
+    };
     for d in all.iter().filter(|d| d.sponsor.is_none()) {
         let me = d.id == n.device_str();
-        let roads: Vec<khor_node::Road> = if me {
+        // (to, word, ms) per road. This machine's own include idle ones,
+        // which no table holds: an idle wire writes no road.
+        let lines: Vec<(String, String, Option<u16>)> = if me {
+            let ms = |m: u32| m.min(u32::from(u16::MAX)) as u16;
             links
                 .iter()
                 .map(|(to, l)| {
-                    let road = match l.hop {
-                        khor_node::Hop::Direct => khor_node::RoadKind::Direct,
-                        khor_node::Hop::Relay => khor_node::RoadKind::Relay,
-                        _ => khor_node::RoadKind::None,
+                    let (word, at) = match (l.hop, l.down_ms) {
+                        (khor_node::Hop::Direct, _) => (way(khor_node::RoadKind::Direct, None), l.rtt_ms),
+                        (khor_node::Hop::Relay, _) => (way(khor_node::RoadKind::Relay, l.relay.as_deref()), l.rtt_ms),
+                        (khor_node::Hop::Idle, Some(_)) => (way(khor_node::RoadKind::None, None), None),
+                        (hop, _) => (khor_catalog::hop::word(hop.key()).to_owned(), None),
                     };
-                    khor_node::Road {
-                        to: to.clone(),
-                        road,
-                        relay: l.relay.clone(),
-                        ms: l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16),
-                    }
+                    (to.clone(), word, at.map(ms))
                 })
                 .collect()
         } else {
             n.roads_of(d)
+                .into_iter()
+                .map(|r| (r.to.clone(), way(r.road, r.relay.as_deref()), r.ms))
+                .collect()
         };
         let here = if me { cli::this_machine() } else { "" };
         println!("{}{here}", d.shown());
-        if roads.is_empty() {
+        if lines.is_empty() {
             println!("  {}", cli::roads_unreported());
         }
-        for r in roads {
-            let word = match r.road {
-                khor_node::RoadKind::Direct => khor_catalog::hop::word("direct").to_owned(),
-                khor_node::RoadKind::Relay => match &r.relay {
-                    Some(relay) => format!("{} {relay}", khor_catalog::hop::word("relay")),
-                    None => khor_catalog::hop::word("relay").to_owned(),
-                },
-                khor_node::RoadKind::None => cli::roads_none().to_owned(),
-            };
-            let ms = r.ms.map(cli::roads_ms).unwrap_or_default();
-            println!("  → {}\t{word}\t{ms}", name(&r.to));
+        for (to, word, ms) in lines {
+            let ms = ms.map(cli::roads_ms).unwrap_or_default();
+            println!("  → {}\t{word}\t{ms}", name(&to));
         }
     }
 }

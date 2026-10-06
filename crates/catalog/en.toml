@@ -859,7 +859,6 @@ relay-stats-no-device = "No device has connected yet"
 
 # Round NET-12: `khor devices --roads`.
 roads-ms = "{0} ms"
-roads-none = "no road"
 roads-unreported = "reports no roads (an older khor, or not yet)"
 
 [msg]

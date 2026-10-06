@@ -1270,7 +1270,6 @@ relay-stats-no-device = "还没有设备连过"
 
 # Round NET-12: `khor devices --roads`.
 roads-ms = "{0} 毫秒"
-roads-none = "不通"
 roads-unreported = "没有报告路（旧版 khor，或还没报）"
 
 [msg]

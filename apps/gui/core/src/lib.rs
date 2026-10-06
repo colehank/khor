@@ -1262,13 +1262,16 @@ fn own_roads(links: &[(String, khor_node::Link)]) -> Vec<khor_node::Road> {
     use khor_node::{Hop, RoadKind};
     links
         .iter()
-        .map(|(to, l)| {
-            let road = match l.hop {
-                Hop::Direct => RoadKind::Direct,
-                Hop::Relay => RoadKind::Relay,
-                _ => RoadKind::None,
+        .filter_map(|(to, l)| {
+            // `none` is unreachable (round NET-13); an idle wire is no road
+            // at all, as the table would hold none for it.
+            let road = match (l.hop, l.down_ms) {
+                (Hop::Direct, _) => RoadKind::Direct,
+                (Hop::Relay, _) => RoadKind::Relay,
+                (_, Some(_)) => RoadKind::None,
+                _ => return None,
             };
-            khor_node::Road {
+            Some(khor_node::Road {
                 to: to.clone(),
                 road,
                 relay: if road == RoadKind::Relay { l.relay.clone() } else { None },
@@ -1277,7 +1280,7 @@ fn own_roads(links: &[(String, khor_node::Link)]) -> Vec<khor_node::Road> {
                 } else {
                     l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16)
                 },
-            }
+            })
         })
         .collect()
 }
