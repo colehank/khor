@@ -1159,6 +1159,8 @@ export default function App() {
   // two rules about what may appear here.
   const status = useStatusBar(rows);
   const selectedRow = rows.find((r) => r.id === selected) ?? null;
+  /** A session's machine, by name (the browser's machine chips, UX-42). */
+  const homeOf = (id: string) => rows.find((r) => r.id === id)?.home ?? null;
   // **A session the wizard just opened, not listed yet** (UX-8, the first
   // run): its row arrives with the next sync, and a machine that went away
   // in between left the pane showing the network's overview under a tab
@@ -2351,6 +2353,7 @@ export default function App() {
             onOpen={() => setSideBrowse({ page: true })}
             onBack={sideFrom === "recent" ? backToRecent : () => setSideBrowse({ page: false })}
             bare={{ here: selectedRow.id }}
+            homeOf={homeOf}
           />
         );
       case "machine": {
@@ -3204,6 +3207,7 @@ export default function App() {
       screen={screen}
       onOpen={() => setScreen("detail")}
       onBack={() => setScreen("list")}
+      homeOf={homeOf}
     />
   );
 
