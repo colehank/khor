@@ -589,6 +589,8 @@ pub struct Discovery {
     /// production; a test that pins it here has a closed world, since
     /// the root is already a parameter.
     procs: Option<Procs>,
+    /// Fixed answers for [`Discovery::attached`], for tests.
+    attached: Vec<(u32, SessionId)>,
 }
 
 impl Discovery {
@@ -600,6 +602,7 @@ impl Discovery {
             adaptors: Vec::new(),
             tmux: None,
             procs: None,
+            attached: Vec::new(),
         }
     }
 
@@ -614,6 +617,32 @@ impl Discovery {
     pub fn with_tmux(mut self, tmux: tmux::Tmux) -> Discovery {
         self.tmux = Some(tmux);
         self
+    }
+
+    /// Answers [`Discovery::attached`] with these instead: a shell's
+    /// pid and the session row its terminal's tmux client shows.
+    pub fn with_attached(mut self, attached: Vec<(u32, SessionId)>) -> Discovery {
+        self.attached = attached;
+        self
+    }
+
+    /// **The tmux session a shell's terminal is showing** (SESS-BRIEF
+    /// 1b): `shell` is a khor host's child, and the answer is the row id
+    /// of the session the tmux client in front of its terminal is
+    /// attached to — only on the server this discovery watches, since a
+    /// session id (`$3`) means nothing on another one.
+    ///
+    /// The seam the row side is written against. The lookup is the
+    /// terminal lane's `adaptor::tmux::client_in_front` (TERM-BRIEF item
+    /// 58, redesign-term c8d2804b, not on this branch yet): its
+    /// `session_id` matched against the watched server's sessions by
+    /// `tmux_target_of`, after checking `.server()` is that server.
+    /// Until it is wired, only the fixed answers above are given.
+    pub fn attached(&self, shell: u32) -> Option<SessionId> {
+        self.attached
+            .iter()
+            .find(|(pid, _)| *pid == shell)
+            .map(|(_, row)| row.clone())
     }
     /// Adaptors reading the vendor directories under `home`.
     ///
@@ -638,6 +667,7 @@ impl Discovery {
             ],
             tmux: None,
             procs: None,
+            attached: Vec::new(),
         }
     }
 

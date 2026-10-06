@@ -1407,6 +1407,48 @@ impl LiveKind {
                 panes: held.panes,
             });
         }
+        // **A khor shell with `tmux` typed in it holds the session that
+        // client shows** (SESS-BRIEF 1b). The client descends from the
+        // shell, but what it shows lives under the tmux server, so the
+        // descent stopped at the client: the shell said 「正在运行 tmux」
+        // and the claude in the pane was another row's. The session's
+        // processes are the shell's now, so the shell wears what its
+        // panes hold — an agent's form, as a shell running claude
+        // directly does — and the session is no second row. A session
+        // with a row of its own (a bridge, an imported row) keeps it.
+        let mut taken: Vec<usize> = Vec::new();
+        for k in 0..hosts.len() {
+            // Asked only of a khor shell with a tmux client somewhere in
+            // it: the lookup runs `ps` and asks tmux, and a list poll
+            // must not pay that for every shell.
+            let Some(child) = hosts[k].own.and_then(|i| registered[i].host_child) else {
+                continue;
+            };
+            if hosts[k].tmux.is_some()
+                || !hosts[k]
+                    .holds
+                    .iter()
+                    .any(|&p| procs.get(p).is_some_and(|x| x.name == "tmux"))
+            {
+                continue;
+            }
+            let Some(session) = self.discovery.attached(child) else {
+                continue;
+            };
+            if let Some(m) = hosts
+                .iter()
+                .position(|h| h.tmux.is_some() && h.own.is_none() && h.id == session)
+            {
+                let held = hosts[m].holds.clone();
+                hosts[k].holds.extend(held);
+                taken.push(m);
+            }
+        }
+        let mut m = 0;
+        hosts.retain(|_| {
+            m += 1;
+            !taken.contains(&(m - 1))
+        });
         // **An agent nobody registered, gone from a host that is still
         // there.** Nothing else remembers it — its status file and its
         // process went with it — so its note stands it back up as a row,
@@ -1680,10 +1722,9 @@ impl LiveKind {
         // transcript last said. **The transcript outranks the hosted
         // screen line**, not the other way around: an agent TUI's last
         // non-empty screen line is its chrome ("⏵⏵ bypass permissions
-        // on…"), which is true of the screen and useless as a preview —
-        // the screen line stays only as the fallback for a row whose
-        // transcript nobody can find yet (no hook has spoken, no leaf
-        // matches). The leaf is the vendor's own where a hook recorded
+        // on…"), which is true of the screen and useless as a preview,
+        // so an agent row without a transcript says nothing rather than
+        // that (SESS-BRIEF 1d). The leaf is the vendor's own where a hook recorded
         // one (`Meta::vendor_leaf` — a khor-minted id names no vendor
         // file), else the id's leaf, which for discovered rows is the
         // vendor's id already. Cached by (path, mtime) inside
@@ -1695,7 +1736,19 @@ impl LiveKind {
         let claude = crate::adaptor::claude::Claude::at(
             crate::adaptor::vendor_home(&self.root).join(".claude"),
         );
+        let codex = crate::adaptor::codex::Codex::at(
+            crate::adaptor::vendor_home(&self.root).join(".codex"),
+        );
         for r in out.iter_mut() {
+            // **An agent row never says its screen's bottom line**
+            // (SESS-BRIEF 1d): that line is the program's chrome, not
+            // what was said. Until a transcript answers below — a
+            // session just opened, a vendor khor cannot read yet — the
+            // line is absent. A shell keeps its own line: it is what the
+            // shell runs or where it stands.
+            if r.kind.0 == khor_core::kind::TUI {
+                r.last = None;
+            }
             // **Claude's rows, and rows nobody filed.** The preview and
             // the title below are claude's answers and go only on rows
             // known to be claude's; but a `gui` row started without a
@@ -1708,14 +1761,22 @@ impl LiveKind {
             // 不在任何地方. So an unfiled row gets as far as the place
             // read, and no further.
             let filed = r.category.as_deref();
-            if filed.is_some() && filed != Some("claude") {
-                continue;
-            }
             let leaf = vendor_leaves.get(&r.id.0).cloned().or_else(|| {
                 r.id.0
                     .strip_prefix(&format!("{}/", khor_core::kind::TUI))
                     .map(str::to_owned)
             });
+            // codex's rows read codex's rollout the same way: its newest
+            // sentence, past the token counts (SESS-BRIEF 1c).
+            if filed == Some(crate::adaptor::codex::VENDOR) {
+                if let Some(l) = leaf {
+                    r.last = codex.last_said(&l);
+                }
+                continue;
+            }
+            if filed.is_some() && filed != Some(crate::adaptor::claude::VENDOR) {
+                continue;
+            }
             // **One resolution, two answers.** Both of these walk the
             // same projects directory to find the same file, so the
             // leaf is computed once and the two readers share the trip
@@ -1832,6 +1893,20 @@ impl LiveKind {
                     r.dead = false;
                     r.unbacked = false;
                     r.last = agent.last;
+                    // The shell's own reading is 「正在运行 claude」 (or
+                    // tmux), and the face draws a command before the
+                    // preview: a row whose session is an agent says the
+                    // agent's sentence (SESS-BRIEF 1). Where it stands and
+                    // what it is called stay.
+                    if let Some(d) = r.doing.as_mut() {
+                        *d = khor_core::Doing {
+                            cwd: d.cwd.take(),
+                            title: d.title.take(),
+                            notice: d.notice.take(),
+                            notice_ms: d.notice_ms,
+                            ..Default::default()
+                        };
+                    }
                     r.term = true;
                     r.mux = mux;
                 }
@@ -3440,8 +3515,8 @@ mod tests {
     /// "⏵⏵ bypass permissions on…" — true of the screen, useless as a
     /// preview. Three rows, one edge each:
     /// - a row whose id leaf finds a transcript: the transcript wins;
-    /// - a row with no transcript anywhere: the screen line is the
-    ///   honest fallback and stays;
+    /// - a row with no transcript anywhere: no line at all, since the
+    ///   screen's is chrome (SESS-BRIEF 1d);
     /// - a khor-minted row whose transcript is reachable only through
     ///   the recorded vendor leaf: the vendor leaf is the path.
     #[test]
@@ -3484,16 +3559,100 @@ mod tests {
         let rows = k.rows(|_| 0);
         let last = |id: &SessionId| rows.iter().find(|r| r.id == *id).unwrap().last.clone();
         assert_eq!(last(&hooked).as_deref(), Some("from the transcript"));
-        assert_eq!(
-            last(&bare).as_deref(),
-            Some("$ make test"),
-            "no transcript: the screen line is the honest fallback"
-        );
+        assert_eq!(last(&bare), None, "no transcript: no line, not the screen's");
         assert_eq!(
             last(&minted).as_deref(),
             Some("from the transcript"),
             "a khor-minted row reaches its transcript through the vendor leaf"
         );
+    }
+
+    /// A claude started from khor's own form (`claude --session-id`):
+    /// the row id's leaf is the transcript's, no hook ever ran, the host
+    /// is live and its screen line is Claude Code's bottom line. The
+    /// transcript holds the conversation first and the CLI's bookkeeping
+    /// after it — attachments, system notes, modes — and the answer is
+    /// still the conversation's newest sentence (SESS-BRIEF 1a).
+    #[test]
+    fn a_khor_started_claude_row_says_its_transcript_past_the_bookkeeping() {
+        // Measured on the owner's (lead, 2026-10-07): a `prompt_snapshot`
+        // attachment of 131 887 bytes on one line right after the answer,
+        // so one bookkeeping line alone outgrew the old 64 KiB tail.
+        for (tag, pad) in [("small", 200usize), ("large", 130 * 1024)] {
+            let root = tmp(&format!("preview-owner-{tag}"));
+            let proj = root.join(".claude/projects/-Users-someone");
+            fs::create_dir_all(&proj).unwrap();
+            let uuid = "20ccc275-8480-4c8e-ba73-0123456789ab";
+            let blob = "x".repeat(pad);
+            let lines = [
+                r#"{"type":"user","message":{"role":"user","content":"what is in this repo"},"sessionId":"S"}"#.to_owned(),
+                r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Three crates and an app."}]},"sessionId":"S"}"#.to_owned(),
+                format!(r#"{{"type":"attachment","attachment":{{"type":"prompt_snapshot","content":"{blob}"}},"sessionId":"S"}}"#),
+                r#"{"type":"system","subtype":"turn_duration","durationMs":5123,"sessionId":"S"}"#.to_owned(),
+                r#"{"type":"system","subtype":"stop_hook_summary","sessionId":"S"}"#.to_owned(),
+                r#"{"type":"last-prompt","lastPrompt":"what is in this repo","sessionId":"S"}"#.to_owned(),
+                r#"{"type":"mode","mode":"normal","sessionId":"S"}"#.to_owned(),
+                r#"{"type":"permission-mode","permissionMode":"auto","sessionId":"S"}"#.to_owned(),
+                r#"{"type":"atis-latch","sessionId":"S"}"#.to_owned(),
+            ];
+            fs::write(proj.join(format!("{uuid}.jsonl")), lines.join("\n") + "\n").unwrap();
+            let k = kind_at(&root);
+            let id = sid(&format!("tui/{}", clean_leaf(uuid)));
+            k.register(&id, "tui", "claude", None, Some("claude")).unwrap();
+            let dir = k.dir_of(&id).unwrap();
+            let me = std::process::id();
+            fs::write(
+                crate::host::host_file_path(&dir),
+                format!(r#"{{"port":1,"cookie":"c","host_pid":{me},"child_pid":{me}}}"#),
+            )
+            .unwrap();
+            fs::write(dir.join("last.txt"), "⏵⏵ auto mode on (shift+tab to cycle)").unwrap();
+            let rows = k.rows(|_| 0);
+            let row = rows.iter().find(|r| r.id == id).unwrap();
+            assert_eq!(
+                row.last.as_deref(),
+                Some("Three crates and an app."),
+                "{tag} bookkeeping after the answer"
+            );
+        }
+        // An agent khor cannot read the words of yet: no line, not its chrome.
+        let root = tmp("preview-unread-vendor");
+        let k = kind_at(&root);
+        let id = sid("tui/some-codex-session");
+        k.register(&id, "tui", "codex", None, Some("codex")).unwrap();
+        fs::write(k.dir_of(&id).unwrap().join("last.txt"), "› Ask Codex to do anything").unwrap();
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last, None);
+    }
+
+    /// A codex row says codex's newest sentence, as a claude row says
+    /// claude's (SESS-BRIEF 1c): the rollout behind the id's leaf, its
+    /// `event_msg` words, past the token counts after them — and not
+    /// the composer's bottom line from the screen.
+    #[test]
+    fn a_codex_row_says_its_rollouts_newest_sentence() {
+        let root = tmp("preview-codex");
+        let day = root.join(".codex/sessions/2026/10/06");
+        fs::create_dir_all(&day).unwrap();
+        let uuid = "019fd755-0000-7000-8000-0000000000aa";
+        let lines = [
+            r#"{"type":"session_meta","payload":{"id":"x","cwd":"/w"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":"run the tests"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"agent_message","message":"All 40 pass."}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
+            r#"{"type":"turn_context","payload":{"cwd":"/w"}}"#,
+        ];
+        fs::write(
+            day.join(format!("rollout-2026-10-06T00-00-00-{uuid}.jsonl")),
+            lines.join("\n") + "\n",
+        )
+        .unwrap();
+        let k = kind_at(&root);
+        let id = crate::adaptor::id_for(uuid);
+        k.register(&id, "tui", "codex", None, Some("codex")).unwrap();
+        fs::write(k.dir_of(&id).unwrap().join("last.txt"), "› Ask Codex to do anything").unwrap();
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last.as_deref(), Some("All 40 pass."));
     }
 
     /// The same rule against the **registry**: `khor run` started inside
@@ -4059,6 +4218,74 @@ mod tests {
             Some(khor_core::category::SHELL)
         );
         assert!(!rows[0].dead);
+    }
+
+    /// **A khor shell with `tmux` typed in it** (SESS-BRIEF 1b): the
+    /// client descends from the shell, the claude in the session's pane
+    /// from the tmux server. The shell wears that claude, as it would
+    /// a claude started in it directly; its 「正在运行 tmux」 gives way to
+    /// the agent's preview; and neither the claude nor the session is a
+    /// second row.
+    #[test]
+    fn a_khor_shell_attached_to_tmux_wears_the_agent_in_that_session() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let root = tmp("seat-shell-tmux");
+        let tmux = crate::adaptor::tmux::fake_tmux(
+            "seat-shell-tmux",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%11\x1fwork\n",
+        );
+        let host = FakeHost::up();
+        let shell = proc_under(5001, "zsh", host.pid());
+        let client = proc_under(5002, "tmux", 5001);
+        let pane = proc_under(3001, "zsh", 1);
+        let claude = proc_under(4001, "claude", 3001);
+        let term = sid("shell/a1b2c3d4e5f6");
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&fixture_vendors())
+                .with_procs(Procs::of([shell, client, pane, claude]))
+                .with_tmux(Tmux::at_binary(&tmux))
+                .with_attached(vec![(5001, sid(T_ID))]),
+        ));
+        k.register(
+            &term,
+            "shell",
+            "zsh",
+            Some(host.pid()),
+            Some(khor_core::category::SHELL),
+        )
+        .unwrap();
+        let dir = k.dir_of(&term).unwrap();
+        host.serve(&dir, 5001);
+        crate::commands::write_saved(
+            &dir,
+            &crate::commands::Saved {
+                doing: khor_core::Doing {
+                    command: Some("tmux".into()),
+                    running: true,
+                    started_ms: 1,
+                    cwd: Some("/w/one".into()),
+                    ..Default::default()
+                },
+                recent: Vec::new(),
+                pane: None,
+            },
+        );
+
+        let rows = k.rows(|_| 0);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+        assert_eq!(ids, vec![term.0.as_str()], "one row: the shell");
+        let row = &rows[0];
+        assert_eq!(row.kind.0, khor_core::kind::TUI, "wearing the agent");
+        assert_eq!(row.category.as_deref(), Some("claude"));
+        let doing = row.doing.as_ref().unwrap();
+        assert_eq!(doing.command, None, "not 「正在运行 tmux」");
+        assert_eq!(doing.cwd.as_deref(), Some("/w/one"), "and still where it stands");
+        assert_eq!(
+            k.worn_by(&term, |_| false).map(|s| s.0),
+            Some(AGENT.to_owned()),
+            "a press on it acts on that claude"
+        );
     }
 
     /// **khor's own terminal.** A shell khor hosts wears the claude
