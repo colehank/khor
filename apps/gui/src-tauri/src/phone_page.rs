@@ -54,6 +54,9 @@ struct Page {
     view: Retained<AnyObject>,
     /// The exit machine the view's data store is wired to (`""`: direct).
     exit: String,
+    /// Its borrow's proxy, for a loopback address the page goes to on its
+    /// own (`failed`).
+    proxy: Option<String>,
     /// Where the page last was, as asked or as it arrived.
     url: String,
     /// What the face was last told, so a poll reports changes only.
@@ -144,13 +147,44 @@ fn failed(view: *mut AnyObject, error: *mut AnyObject) {
     let Some(app) = APP.get() else { return };
     // SAFETY: WebKit hands a live NSError.
     let Some(text) = (unsafe { crate::page_fail::word(error) }) else { return };
-    let tab = PAGES.with(|pages| {
+    let found = PAGES.with(|pages| {
         let mut pages = pages.try_borrow_mut().ok()?;
         let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view)?;
         page.loading = false;
-        Some(tab.clone())
+        Some((tab.clone(), page.proxy.clone()))
     });
-    let Some(tab) = tab else { return };
+    let Some((tab, proxy)) = found else { return };
+    let mut parts = text.splitn(4, '|');
+    let (code, domain, _, url) = (parts.next(), parts.next(), parts.next(), parts.next().unwrap_or_default().to_owned());
+    // **A loopback address the page went to on its own** (a link, a
+    // redirect; UX-38 §1): refused because it went to the phone's own
+    // port. Piped to the machine's, then asked again, once per port.
+    if let (Some(proxy), Some((host, port))) = (&proxy, khor_gui_core::web::loopback_of(&url)) {
+        if domain == Some("NSURLErrorDomain") && code == Some("-1004") && !khor_gui_core::web::loopback_held(port) {
+            let (proxy, app, tab) = (proxy.clone(), app.clone(), tab.clone());
+            tauri::async_runtime::spawn(async move {
+                if khor_gui_core::web::hold_loopback(&host, port, &proxy).await.is_err() {
+                    return;
+                }
+                let _ = app.run_on_main_thread(move || {
+                    if let Some(page) = PAGES.with(|p| p.borrow().get(&tab).map(|p| p.view.clone())) {
+                        // SAFETY: main thread, a live view.
+                        unsafe { load(&page, &url) };
+                    }
+                });
+            });
+            return;
+        }
+    }
+    // A CONNECT the machine could not carry through: WebKit asks eight
+    // times and then says the connection was lost (measured: -1005 on
+    // every status a proxy answers), which is the route's failure, not
+    // the site's.
+    let text = if proxy.is_some() && domain == Some("NSURLErrorDomain") && code == Some("-1005") && khor_gui_core::web::loopback_of(&url).is_none() {
+        format!("route|khor||{url}")
+    } else {
+        text
+    };
     let _ = app.emit_to("main", "page:load", PageWord { tab: tab.clone(), text: "finished".into() });
     let _ = app.emit_to("main", "page:fail", PageWord { tab, text });
 }
@@ -401,6 +435,7 @@ pub fn open(
                 Page {
                     view,
                     exit: exit.to_owned(),
+                    proxy: wiring.proxy.clone(),
                     url: url.to_owned(),
                     told_url: url.to_owned(),
                     told_title: String::new(),

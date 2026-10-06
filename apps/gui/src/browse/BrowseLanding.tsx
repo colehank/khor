@@ -485,11 +485,15 @@ export function BrowseLanding({
       }
     });
     const offFail = onPageWord("page:fail", id, (t) => setFailed(pageFail(t)));
+    // Arrived somewhere: whatever failed before is over (UX-38 §1; a load
+    // quicker than the phone's poll used to leave the word standing).
+    const offWent = onPageWord("page:went", id, () => setFailed(null));
     return () => {
       offScroll();
       offGround();
       offLoad();
       offFail();
+      offWent();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs.current.id]);

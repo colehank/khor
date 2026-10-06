@@ -376,6 +376,35 @@ async fn the_local_proxy_connects_a_client_through_the_borrowed_network() {
         String::from_utf8_lossy(&refused_tls)
     );
 
+    // **A target the exit cannot reach is said as the page, and said
+    // again at once to the asks right behind it** (UX-38 §1): WebKit
+    // asks a refused CONNECT eight times before it gives up, and each ask
+    // cost the exit's whole connect attempt.
+    let closed = {
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        l.local_addr().unwrap().to_string()
+    };
+    for ask in 0..3 {
+        let mut c = tokio::net::TcpStream::connect(proxy_addr).await.unwrap();
+        c.write_all(format!("CONNECT {closed} HTTP/1.1\r\nHost: {closed}\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
+        let started = std::time::Instant::now();
+        let mut said = Vec::new();
+        timeout(Duration::from_secs(30), c.read_to_end(&mut said))
+            .await
+            .expect("a refusal must not hang")
+            .unwrap();
+        let said = String::from_utf8_lossy(&said);
+        assert!(
+            said.starts_with("HTTP/1.1 502") && said.contains(khor_node::tunnel::PAGE_FAILED_TITLE),
+            "ask {ask}: the refusal is said as the failed page: {said}"
+        );
+        if ask > 0 {
+            assert!(started.elapsed() < Duration::from_millis(500), "ask {ask} waited {:?} for the exit again", started.elapsed());
+        }
+    }
+
     serve_a.abort();
 }
 
