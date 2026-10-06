@@ -1776,6 +1776,11 @@ export const termKey = (id: string, keys: string) => call<null>("term_key", { id
 /** A line from the face into the app's own log (its stderr, which the
     device's console keeps): what a page saw that only a device shows. */
 export const faceNote = (line: string) => call<null>("face_note", { line });
+/** **khor's items in the system's edit menu** (item 54,
+    `src-tauri/src/edit_menu.rs`): `[id, title]` pairs the next menu over
+    a selection adds; none clears them. Only the phone app has the menu. */
+export const editMenu = (items: [string, string][]) =>
+  inApp ? call<null>("edit_menu", { items }) : Promise.resolve(null);
 /** A bell felt: a light haptic tap on a phone (roadmap 4.2). */
 export const bellHaptic = () => call<null>("bell_haptic");
 /** The cursor joystick, felt (item 23, `joy_haptic`): `prepare` at

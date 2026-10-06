@@ -925,6 +925,17 @@ fn bell_haptic(app: tauri::AppHandle) {
     let _ = app;
 }
 
+/// **khor's items in the system's edit menu** (item 54, `edit_menu.rs`):
+/// the `(id, title)` pairs the next menu over a selection adds, none to
+/// clear them. Memory only; a Mac keeps xterm's own selection and menu.
+#[tauri::command]
+fn edit_menu(items: Vec<(String, String)>) {
+    #[cfg(target_os = "ios")]
+    edit_menu::offer(items);
+    #[cfg(not(target_os = "ios"))]
+    let _ = items;
+}
+
 /// **A haptic with a meaning** (UX-10; ux-9 B5, `lib/haptics`): the
 /// system's own generators, each for what Apple documents it for —
 /// `selection` (UISelectionFeedbackGenerator) when a picked value moves,
@@ -3987,6 +3998,7 @@ pub fn run() {
             {
                 let _ = _phone.with_webview(|wv| {
                     drop_the_form_bar(wv.inner());
+                    edit_menu::install(wv.inner());
                     wear_the_ground(wv.inner());
                     hold_the_face_still(wv.inner());
                 });
@@ -4238,6 +4250,7 @@ pub fn run() {
             term_forget,
             term_wait,
             bell_haptic,
+            edit_menu,
             joy_haptic,
             haptic,
             open_settings,
@@ -4440,6 +4453,8 @@ fn say_signals() {
 
 #[cfg(desktop)]
 mod menu;
+#[cfg(target_os = "ios")]
+mod edit_menu;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod page_fail;
 #[cfg(target_os = "ios")]

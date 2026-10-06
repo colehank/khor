@@ -171,6 +171,8 @@ const QUICK = new Set([
   // A line to the app's log; a notification handed to the OS; a haptic
   // handed to UIKit's thread (`bell_haptic` queues it and returns).
   "face_note", "notify_finished", "bell_haptic", "joy_haptic", "haptic",
+  // What the next edit menu over a selection adds (item 54): memory.
+  "edit_menu",
 ]);
 // The ones that waited on the main thread on 2026-10-02, named so the
 // red says which: each must be `async`.
