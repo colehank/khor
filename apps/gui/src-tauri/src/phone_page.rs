@@ -428,6 +428,24 @@ var a = e.target && e.target.closest ? e.target.closest('a[target]') : null; \
 if (a && a.target !== '_self') a.target = '_self'; }, true); \
 window.open = function (u) { if (u) location.href = u; return null; };";
 
+/// **A single image is centred and fitted, as Safari shows it** (UX-42,
+/// audit row 18): WebKit's own image document on the phone lays the
+/// picture at its natural size from the top left. Only that document —
+/// an `image/*` response whose body is the one `<img>` — is touched; the
+/// page's own ground is kept, and a pinch still zooms it.
+const FIT_IMAGE: &str = "(function () { \
+if (!/^image\\//.test(document.contentType)) return; \
+var b = document.body; \
+if (!b || b.children.length !== 1 || b.firstElementChild.tagName !== 'IMG') return; \
+var at = document.head || document.documentElement; \
+var m = document.createElement('meta'); m.name = 'viewport'; \
+m.content = 'width=device-width, initial-scale=1'; at.appendChild(m); \
+var s = document.createElement('style'); \
+s.textContent = 'html, body { height: 100%; margin: 0; } \
+body { display: flex; align-items: center; justify-content: center; } \
+img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }'; \
+at.appendChild(s); })();";
+
 /// What to build a page with.
 pub struct Wiring {
     /// `host:port` of the borrow's local proxy; `None` goes direct.
@@ -465,6 +483,17 @@ unsafe fn add_script(controller: *mut AnyObject, source: &str) {
     // 0: WKUserScriptInjectionTimeAtDocumentStart; every frame.
     let script: Retained<AnyObject> = unsafe {
         msg_send![a, initWithSource: &*src, injectionTime: 0isize, forMainFrameOnly: false]
+    };
+    let _: () = unsafe { msg_send![controller, addUserScript: &*script] };
+}
+
+/// A script run once the document is parsed, in the main frame only.
+unsafe fn add_end_script(controller: *mut AnyObject, source: &str) {
+    let src = NSString::from_str(source);
+    let a: Allocated<AnyObject> = unsafe { msg_send![class!(WKUserScript), alloc] };
+    // 1: WKUserScriptInjectionTimeAtDocumentEnd.
+    let script: Retained<AnyObject> = unsafe {
+        msg_send![a, initWithSource: &*src, injectionTime: 1isize, forMainFrameOnly: true]
     };
     let _: () = unsafe { msg_send![controller, addUserScript: &*script] };
 }
@@ -560,6 +589,7 @@ pub fn open(
             add_script(controller, khor_gui_core::web::PAGE_SHIM);
         }
         add_script(controller, SAME_TAB);
+        add_end_script(controller, FIT_IMAGE);
         let a: Allocated<AnyObject> = msg_send![class!(WKWebView), alloc];
         let view: Retained<AnyObject> = msg_send![a, initWithFrame: rect, configuration: &*cfg];
         if let Some(agent) = &wiring.agent {
