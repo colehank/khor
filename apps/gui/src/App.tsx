@@ -1831,17 +1831,30 @@ export default function App() {
     openWorkspace({ device: d.id, machine, path } as WorkspaceRow);
   };
   /** **Whether a thing a session printed opens in its 附栏** (UX-30 §4):
-      on the wide face, with a session in front, paths, URLs and
-      directories open inside the column — the main area is the session,
-      always. Elsewhere (the phone, another landing) the old roads stand. */
-  const inColumn = () => !narrow && landing === "sessions" && selectedRow !== null;
-  /** The column's 工作区 seat, pointed somewhere (and the column opened
-      on it): a directory, or a file to open in place. */
+      with a session in front, paths, URLs and directories open inside
+      the 附栏 — the main area is the session, always. On the wide face
+      that is the column; **on the phone the half sheet** (UX-37 addendum
+      A1, the owner 18:40), over the session's own screen, the terminal
+      staying where it is. Elsewhere (another landing) the old roads
+      stand. ⚠️ 墓碑 (UX-30 → A1): on the phone a tapped file opened in
+      the main area, and its ‹ climbed the directory tree there. */
+  const inColumn = () => landing === "sessions" && selectedRow !== null && (!narrow || inSession);
+  /** The 附栏 turned to a seat: the column opened on it, or on the phone
+      the sheet risen on it (a sheet already up keeps its detent). */
+  const sideTo = (seat: PlaceSeat) => {
+    if (!selectedRow) return;
+    if (!narrow) return setSessionSide(selectedRow.id, { open: true, seat });
+    setSessionSide(selectedRow.id, { seat });
+    setPlaceSheet((was) => was ?? { dir: null });
+  };
+  /** The 附栏's 工作区 seat, pointed somewhere (and the 附栏 opened on
+      it): a directory, or a file to open in place — the file page inside
+      the 附栏, whose ‹ is the seat's own (the listing, then up). */
   const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) => {
     if (!selectedRow) return;
     setSideFiles({ session: selectedRow.id, machine, dir, start });
     setSideWsAll(false);
-    setSessionSide(selectedRow.id, { open: true, seat: "workspace" });
+    sideTo("workspace");
   };
   /** **The session a thing was opened from** (UX-37 §1): the one in
       front of the sessions landing — its terminal printed the path or
@@ -1913,7 +1926,7 @@ export default function App() {
       .then(() => {
         if (column && selectedRow) {
           setSideBrowse({ list: "here", page: true });
-          setSessionSide(selectedRow.id, { open: true, seat: "browser" });
+          sideTo("browser");
           return;
         }
         setMorePage(null);

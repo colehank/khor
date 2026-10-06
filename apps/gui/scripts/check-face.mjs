@@ -30737,6 +30737,44 @@ try {
             fail(`bar p · the file page in the sheet reads ${shown(filePage)} — ‹ · ${named} · the content, 「…」 in its head, no deck (UX-37 §6)`);
           }
           if (await count("[data-place-sheet] [data-files-page]")) await press("[data-place-sheet] [data-file-page] [data-seat-back]");
+          // ── UX-37 addendum A1: a path or a URL tapped in the terminal
+          //    opens in the half sheet — a file as the 工作区 seat's file
+          //    page, a directory as its listing, a URL as the 浏览器 seat's
+          //    page — and the terminal stays; the file page's ‹ is the
+          //    seat's own (back to the listing). ⚠️ 墓碑: a tap opened the
+          //    file in the main area. ──
+          await shut();
+          const tapped = async (kind, detail) => {
+            await page.evaluate(([k, d]) => window.dispatchEvent(new CustomEvent(k, { detail: d })), [kind, detail]);
+            await until(3_000, async () => (await count("[data-place-sheet]")) === 1);
+            await wait(800);
+            return page.evaluate(() => ({
+              sheet: document.querySelector("[data-place-sheet]")?.getAttribute("data-detent") ?? null,
+              seat: document.querySelector('[data-place-sheet] [data-col-seat][data-on="true"]')?.getAttribute("data-col-seat") ?? null,
+              file: document.querySelector("[data-place-sheet] [data-file-page] [data-seat-title]")?.textContent ?? null,
+              here: document.querySelector("[data-place-sheet] [data-files-here]")?.textContent ?? null,
+              page: document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null,
+              terminal: !!document.querySelector("[data-kept-terminal][data-active] [data-terminal]"),
+              mainFile: document.querySelectorAll("[data-file-page]:not([data-place-sheet] *)").length,
+            }));
+          };
+          const aFile = await tapped("khor:open-path", { machine: "gate", path: "/home/gate/work/notes.md", dir: false, line: null });
+          await press("[data-place-sheet] [data-file-page] [data-seat-back]");
+          await wait(500);
+          const fileBack = await page.evaluate(() => document.querySelector("[data-place-sheet] [data-files-here]")?.textContent ?? null);
+          await shut();
+          const aDir = await tapped("khor:open-path", { machine: "gate", path: "/home/gate/work/src", dir: true, line: null });
+          await shut();
+          const aUrl = await tapped("khor:open-url", { machine: "", url: "https://tapped.example/" });
+          await shut();
+          console.log(`bar p · UX-37 A1 a tapped file ${shown(aFile)}, its ‹ ${fileBack}; a directory ${shown(aDir)}; a URL ${shown(aUrl)}`);
+          if (aFile.sheet !== "half" || aFile.seat !== "workspace" || aFile.file !== "notes.md" || !aFile.terminal || aFile.mainFile !== 0) {
+            fail(`bar p · a tapped file opened ${shown(aFile)} — the 工作区 seat's file page in the half sheet over the terminal (UX-37 A1)`);
+          }
+          if (fileBack !== "work") fail(`bar p · ‹ on the tapped file's page reached ${fileBack} — the seat's own listing, its directory (UX-37 A1)`);
+          if (aDir.seat !== "workspace" || aDir.here !== "src" || !aDir.terminal) fail(`bar p · a tapped directory opened ${shown(aDir)} — its listing in the 工作区 seat (UX-37 A1)`);
+          if (aUrl.seat !== "browser" || aUrl.page !== "page" || !aUrl.terminal) fail(`bar p · a tapped URL opened ${shown(aUrl)} — the 浏览器 seat's page in the sheet (UX-37 A1)`);
+          await sheet();
         }
         await press('[data-place-sheet] [data-col-seat="workspace"]');
         await wait(600);
