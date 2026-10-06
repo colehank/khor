@@ -107,6 +107,10 @@ export function holdsTmuxHistory(o: {
   shown: (on: boolean) => void;
   /** The attach has sized the pane for this face: reads may begin. */
   joined: () => void;
+  /** Resolves once the first read since the attach has answered, or
+      failed: whose the scroller is — the history's or the program's
+      wheel — is decided from then on (item 51). */
+  decided: () => Promise<void>;
   /** The pane in front, as the newest read found it (`null` before one),
       with tmux's window size then (item 45). */
   pane: () => { pane: string; mouse: boolean; alternate: boolean; window: string } | null;
@@ -137,6 +141,14 @@ export function holdsTmuxHistory(o: {
   /** Not a tmux terminal after all: no more reads. */
   let absent = false;
   let quiet = 0;
+  /** **The scroller's owner is decided before the screen is shown** (item
+      51; the owner, a cold start: a drag did nothing). The first read
+      lands a round trip after the attach's quiet, and gave the history
+      the scroller then — its range and place rewritten under a finger
+      that had begun a drag on the program's wheel, which stops iOS's
+      pan dead. The pane keeps its opening cover until this resolves. */
+  let decide = () => {};
+  const firstAnswer = new Promise<void>((done) => (decide = done));
   /** When the read now waiting for quiet was first asked for. */
   let waitingSince = 0;
   /** Whether the person is up in the history. */
@@ -183,6 +195,8 @@ export function holdsTmuxHistory(o: {
   };
   /** Off the screen: the history and its lines go. */
   const drop = () => {
+    // Off the screen there is nothing to wait for.
+    decide();
     window.clearTimeout(quiet);
     waitingSince = 0;
     give(false);
@@ -267,6 +281,7 @@ export function holdsTmuxHistory(o: {
       })
       .finally(() => {
         reading = false;
+        decide();
         if (again) {
           again = false;
           void read();
@@ -322,6 +337,7 @@ export function holdsTmuxHistory(o: {
       attached = true;
       if (visible) quietThen();
     },
+    decided: () => firstAnswer,
     pane: () => held,
     reread: () => read().then(() => {}),
     stop: () => {
