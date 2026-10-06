@@ -16386,11 +16386,13 @@ try {
     //   thing says it should be.
     await routeQuota(quotaCreditsCapped);
     await goToQuota();
+    //   Read off the card's lead dial since UX-32 (as the rim read above):
+    //   the row's ring is a reading with no rim for marks.
     const capped = await page.evaluate(() => {
-      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
       const detail = document.querySelector("[data-quota-detail]");
+      const lead = detail?.querySelector("[data-quota-lead]") ?? detail;
       return {
-        pips: [...(row?.querySelectorAll("[data-dial-pip]") ?? [])].map((e) => ({
+        pips: [...(lead?.querySelectorAll("[data-dial-pip]") ?? [])].map((e) => ({
           word: e.getAttribute("data-dial-pip"),
           at: Number(e.getAttribute("data-dial-pip-at")),
         })),
@@ -16423,10 +16425,10 @@ try {
     await routeQuota(quotaCreditsUncapped);
     await goToQuota();
     const uncapped = await page.evaluate(() => {
-      const row = document.querySelector('[data-quota-row][data-quota-kind="sub"]');
       const detail = document.querySelector("[data-quota-detail]");
+      const lead = detail?.querySelector("[data-quota-lead]") ?? detail;
       return {
-        pips: (row?.querySelectorAll("[data-dial-pip]") ?? []).length,
+        pips: (lead?.querySelectorAll("[data-dial-pip]") ?? []).length,
         parts: (detail?.querySelectorAll("[data-quota-part]") ?? []).length,
         used: detail?.querySelector("[data-quota-credits-used]")?.textContent ?? null,
       };
