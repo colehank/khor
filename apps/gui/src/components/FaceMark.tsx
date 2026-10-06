@@ -76,6 +76,11 @@ export const SIZES = {
   row: { face: "size-list-face", on: "size-kind-mark", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
   head: { face: "size-head-ctl", on: "size-kind-mark", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
   tab: { face: "size-tab-face", on: "size-kind-mark-tab", frame: "size-kind-mark-tab", glyph: "size-kind-mark-tab-glyph" },
+  // The 我的 khor dial's seats (UX-26): a machine's 40 and this machine's
+  // 72 (36 / 60 under a finger), the row's corner; the mark on the
+  // larger face steps up once (`--kind-mark-dial-me`).
+  dial: { face: "size-dial-seat", on: "size-kind-mark", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
+  dialMe: { face: "size-dial-seat-me", on: "size-kind-mark-dial-me", frame: "size-kind-mark", glyph: "size-kind-mark-glyph" },
 } as const;
 
 /**

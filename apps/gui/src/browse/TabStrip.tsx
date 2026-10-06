@@ -117,10 +117,10 @@ export type TabFace = {
       place this app uses the slope, because what it marks is exactly
       「this is not settled」. */
   preview?: boolean;
-  /** What this tab wears instead of a face. A file tab's subject is a
-      file, and a machine's portrait on it would say whose disk rather
-      than which file — the one thing the row already repeats. */
-  glyph?: ReactNode;
+  /* ⚠️ 墓碑 (UX-34, 2026-10-06): `glyph` — what a file tab wore instead
+     of a face — went with UX-32's WorkspacePane: a file tab's seat is the
+     assembly (the machine's face, the file's kind as the mark) like every
+     other tab's. */
   /** The tab's own right-click menu. **Hung on the button that opens
       the tab**, never on the tab box around it: `RowMenu`'s trigger
       carries an `onPointerDown`, and a press handler on a bare element
@@ -182,7 +182,6 @@ export type TabFace = {
     (`SessionFace` `tab`, halo and corner inside the tab's box); the
     switcher's rows are list rows and keep a row's. */
 export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "tab" | "row" }) {
-  if (f.glyph) return <span className="flex-none">{f.glyph}</span>;
   if (f.session) return <SessionFace face={f.face} {...f.session} size={seat} />;
   // A browsing page: the machine it goes through, wearing its kind's
   // mark the way a session's tab does (the redesign, 2026-10-02).
@@ -767,8 +766,7 @@ export function TabStrip({
                     both lines it has the pair itself as its measure,
                     which is where a session tab's avatar already
                     stands. */}
-                {!(f.glyph && f.sub) && <TabAvatar f={f} bare="size-4 flex-none" seat="tab" />}
-                {f.glyph && f.sub && <span className="flex-none">{f.glyph}</span>}
+                <TabAvatar f={f} bare="size-4 flex-none" seat="tab" />
                 {/* `nested`: the name sits inside the button that opens
                     the tab, so it is not a control here — the same
                     arrangement the list rows keep, and for the same
@@ -1075,7 +1073,7 @@ export function TabSwitcher({
               id: f.id,
               group: "",
               pinned: false,
-              face: f.glyph ? { art: f.glyph } : { machine: f.face },
+              face: { machine: f.face },
               mark: f.session ? sessionKind(f.session.kind, f.session.category) : f.mark,
               halo: f.session?.word,
               title: (

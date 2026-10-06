@@ -190,11 +190,13 @@ const check = (ok, m) => {
   const angs = ids.map((id) => s.get(id));
   check(near(angs[0], -Math.PI / 2 + Math.PI / 4), `the first seat is at ${angs[0]}, not a half-step past the top`);
   for (let i = 1; i < angs.length; i += 1) check(near(angs[i] - angs[i - 1], Math.PI / 2), `seats ${i - 1} and ${i} are ${angs[i] - angs[i - 1]} apart, not a quarter turn`);
-  // An odd count: the first seat on the top, none straight down.
+  // An odd count: none straight over or under the middle.
   const one = dial.spread(["x"], {});
-  check(near(one.get("x"), -Math.PI / 2), `one seat sits at ${one.get("x")}, not on the top`);
-  const three = [...dial.spread(["x", "y", "z"], {}).values()];
-  check(near(three[0], -Math.PI / 2) && three.every((a) => Math.abs(Math.sin(a) - 1) > 0.1), `three seats at ${three.map((a) => a.toFixed(2))} — one is straight under the middle`);
+  check(near(one.get("x"), 0), `one seat sits at ${one.get("x")}, not to the right`);
+  for (const n of [1, 3, 5, 7]) {
+    const angs = [...dial.spread(Array.from({ length: n }, (_, i) => `m${i}`), {}).values()];
+    check(angs.every((a) => Math.abs(Math.abs(Math.sin(a)) - 1) > 0.02), `${n} seats at ${angs.map((a) => a.toFixed(2))} — one is straight over or under the middle`);
+  }
   const kept = dial.spread(ids, { b: 1.25, c: Number.NaN });
   check(near(kept.get("b"), 1.25), "a remembered angle is not kept");
   check(near(kept.get("c"), angs[2]), "a nonsense remembered angle is not ignored");
