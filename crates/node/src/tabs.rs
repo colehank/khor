@@ -316,10 +316,19 @@ pub fn open(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, 
 /// [`open`], remembering the session it was opened from (`Tab::session`;
 /// empty = none known).
 pub fn open_from(root: &Path, kind: &str, device: &str, url: &str, session: &str) -> Result<String, String> {
+    open_beside(root, kind, device, url, session, "")
+}
+
+/// [`open_from`], the new row right after the tab `after` rather than at
+/// the end — **a link that asked for a new window** (UX-42 §15): Safari
+/// puts that tab beside the one it came from. An `after` naming no row
+/// (or none) is the end, as [`open`].
+pub fn open_beside(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str) -> Result<String, String> {
     let limit = crate::config::tabs_limit(root);
     change(root, kind, |open| {
         let id = mint();
-        open.tabs.push(Tab {
+        let at = open.tabs.iter().position(|t| !after.is_empty() && t.id == after).map_or(open.tabs.len(), |i| i + 1);
+        open.tabs.insert(at, Tab {
             id: id.clone(),
             device: device.to_string(),
             url: url.to_string(),
@@ -972,6 +981,22 @@ mod tests {
             open(&r.0, "page", "m", &u.to_string()).unwrap();
         }
         assert_eq!(list(&r.0, "page").tabs.len(), 12);
+    }
+
+    /// **A tab a page opened sits beside the page** (UX-42 §15), and an
+    /// opener nobody knows is the end, as a plain open.
+    #[test]
+    fn a_tab_a_page_opened_sits_beside_it() {
+        let r = root("beside");
+        let a = open(&r.0, "page", "m", "a").unwrap();
+        open(&r.0, "page", "m", "b").unwrap();
+        let c = open_beside(&r.0, "page", "m", "c", "tui/one", &a).unwrap();
+        assert_eq!(order(&r), ["a", "c", "b"]);
+        let now = list(&r.0, "page");
+        assert_eq!(now.active, c, "the new tab is in front");
+        assert_eq!(now.tabs[1].session, "tui/one", "it keeps the opener's session");
+        open_beside(&r.0, "page", "m", "d", "", "gone").unwrap();
+        assert_eq!(order(&r), ["a", "c", "b", "d"], "an unknown opener is the end");
     }
 
     /// **Where a tab came from survives a drag, and costs nothing where

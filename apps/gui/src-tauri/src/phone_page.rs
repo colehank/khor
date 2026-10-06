@@ -27,9 +27,11 @@
 //! where each page is once a load ends (`page:went`), its title
 //! (`page:title`) and whether it is loading (`page:load`) — the desktop's
 //! three events; the loading is also observed, so it is told the moment
-//! it changes (`load_heard`, UX-38 §2). A link that asks for a new window opens in place: a
-//! `WKUIDelegate` would be a class of khor's own, and the desktop's answer
-//! (a new tab) is the face's to mint; on the phone the page follows it.
+//! it changes (`load_heard`, UX-38 §2). A link that asks for a new window
+//! is told as `page:popup`, and the face opens it as a new tab beside this
+//! one — the desktop's answer (`on_new_window`), the UI delegate's
+//! `createWebView` (`PageAsk`, UX-42 §15). ⚠️ 墓碑: a script made every
+//! such link and `window.open` navigate this page instead.
 //!
 //! A load that fails is heard by a navigation delegate of khor's own
 //! (`PageFail`, UX-22): it implements only the two failure methods, so
@@ -171,6 +173,16 @@ define_class!(
                 done.call((said,));
             });
         }
+
+        /// **A link that asks for a new window is a new tab** (UX-42 §15):
+        /// the face mints it beside this one (`page:popup`), as the
+        /// desktop's `on_new_window` does; no view is made here, so the
+        /// page's own `window.open` answers null.
+        #[unsafe(method(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:))]
+        fn new_window(&self, view: *mut AnyObject, _cfg: *mut AnyObject, action: *mut AnyObject, _features: *mut AnyObject) -> *mut AnyObject {
+            popped(view, action);
+            std::ptr::null_mut()
+        }
     }
 );
 
@@ -249,6 +261,30 @@ fn ask(
         let yes = act(khor_catalog::msg::page_ask_ok().into(), 0, true);
         let _: () = msg_send![&*alert, addAction: &*yes];
         let _: () = msg_send![top, presentViewController: &*alert, animated: true, completion: std::ptr::null::<AnyObject>()];
+    }
+}
+
+/// The address a new-window action asks for, told to the face as the
+/// opener tab's `page:popup`. A window opened blank (`about:blank`, to be
+/// written into by its opener) has nowhere to go and is not told.
+fn popped(view: *mut AnyObject, action: *mut AnyObject) {
+    let Some(app) = APP.get() else { return };
+    // SAFETY: WebKit hands a live WKNavigationAction on the main thread.
+    let url = unsafe {
+        let req: *mut AnyObject = msg_send![action, request];
+        let u: *mut AnyObject = if req.is_null() { std::ptr::null_mut() } else { msg_send![req, URL] };
+        let s: Option<Retained<NSString>> = if u.is_null() { None } else { msg_send![u, absoluteString] };
+        s.map(|s| s.to_string()).unwrap_or_default()
+    };
+    if url.is_empty() || url == "about:blank" {
+        return;
+    }
+    let tab = PAGES.with(|pages| {
+        let pages = pages.try_borrow().ok()?;
+        pages.iter().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view).map(|(t, _)| t.clone())
+    });
+    if let Some(tab) = tab {
+        let _ = app.emit_to("main", "page:popup", PageWord { tab, text: url });
     }
 }
 
@@ -390,12 +426,6 @@ unsafe extern "C" {
     ) -> *mut AnyObject;
 }
 
-/// A link that asks for a new window navigates this page instead.
-const SAME_TAB: &str = "document.addEventListener('click', function (e) { \
-var a = e.target && e.target.closest ? e.target.closest('a[target]') : null; \
-if (a && a.target !== '_self') a.target = '_self'; }, true); \
-window.open = function (u) { if (u) location.href = u; return null; };";
-
 /// What to build a page with.
 pub struct Wiring {
     /// `host:port` of the borrow's local proxy; `None` goes direct.
@@ -527,7 +557,6 @@ pub fn open(
             // The proxy and the shim ride together (`open_page`).
             add_script(controller, khor_gui_core::web::PAGE_SHIM);
         }
-        add_script(controller, SAME_TAB);
         let a: Allocated<AnyObject> = msg_send![class!(WKWebView), alloc];
         let view: Retained<AnyObject> = msg_send![a, initWithFrame: rect, configuration: &*cfg];
         if let Some(agent) = &wiring.agent {

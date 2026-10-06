@@ -143,8 +143,9 @@ export type BrowseTabs = {
   goTo: (device: string, path: string, title?: string) => void;
   /** Opens a **new** tab, focused. What arriving from somewhere else
       does — the machine card's 借它的网 — because there the tab you are
-      looking at is not part of the request. */
-  open: (device: string, path: string) => void;
+      looking at is not part of the request. `from`: a page's new window
+      (UX-42 §15), beside its opener and in its session. */
+  open: (device: string, path: string, from?: { session: string; after: string }) => void;
   /** Points the open tab at nothing: taking the machine off the address
       bar. **Not `close` and not `goTo("")`** — the tab is still the tab
       the person is looking at, it has simply stopped naming a place. */
@@ -276,8 +277,8 @@ export function useBrowseTabs(kind: string, watch = false): BrowseTabs {
   );
 
   const open = useCallback(
-    (device: string, path: string) => {
-      sending(openTab(kind, device, path).then(() => fetchTabs(kind)))
+    (device: string, path: string, from?: { session: string; after: string }) => {
+      sending(openTab(kind, device, path, from?.session || undefined, from?.after).then(() => fetchTabs(kind)))
         .then(take)
         .catch(() => {});
     },

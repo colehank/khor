@@ -86,8 +86,10 @@ pub fn list(root: &Path, kind: &str) -> TabsOpen {
 
 /// Opens one and puts it in front; answers its id. Both arguments may
 /// be empty — that is the fresh tab the 「+」 mints.
-pub fn open(root: &Path, kind: &str, device: &str, url: &str, session: &str) -> Result<String, String> {
-    tabs::open_from(root, kind, device, url, session)
+/// `after`, where given, is the tab it opens beside (a page's new
+/// window, UX-42 §15).
+pub fn open(root: &Path, kind: &str, device: &str, url: &str, session: &str, after: &str) -> Result<String, String> {
+    tabs::open_beside(root, kind, device, url, session, after)
 }
 
 /// Points an open tab somewhere and names it. Refused by name for a tab

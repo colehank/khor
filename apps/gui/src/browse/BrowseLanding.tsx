@@ -687,8 +687,9 @@ export function BrowseLanding({
           onBusy={(busy) => load.errand(tabs.current.id, busy)}
           // A new tab beside this one, on the same machine — `open`
           // rather than `goTo`, which is the whole difference the shell
-          // draws between the two (`BrowseTabs`).
-          onPopup={(place) => tabs.open(machine.id, place)}
+          // draws between the two (`BrowseTabs`) — and in this one's
+          // session, so it is in the same 附栏 slice (UX-42 §15).
+          onPopup={(place) => tabs.open(machine.id, place, { session: tabs.current.session, after: tabs.current.id })}
           onLanded={(place) => {
             // **The visit is recorded here, once, for every kind.** The
             // ledger is the node's (`khor_sync::recents`); fire and forget.
