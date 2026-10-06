@@ -1283,6 +1283,11 @@ const KEYBOARD_MOVING_MS = 400;
 /** …and is refitted once it has held still this long (ms). */
 const KEYBOARD_STILL_MS = 50;
 
+/** The longest the opening cover waits for a tmux row's first history
+    read after the attach has landed (ms): a far machine slower than this
+    shows the screen anyway (item 51). */
+const DECIDE_MAX_MS = 1500;
+
 /** The open terminals' re-joins, by session (`reopenTerminal`). */
 const reopeners = new Map<string, () => Promise<void>>();
 
@@ -2129,9 +2134,21 @@ export function TerminalPane({
           // host hands a snapshot, and the screen appears whole — never
           // the bytes scrolling by under the person. The opening cover
           // stays over the pane until xterm has them.
+          //
+          // **…and once the scroller knows whose it is** (item 51): a tmux
+          // row on a phone gives the scroller to the pane's history or to
+          // the program's wheel by the first history read, and a drag
+          // begun before that read landed was stopped dead by it. The
+          // cover waits for the read, `DECIDE_MAX_MS` at most.
           const landed = () => {
-            setOpening(false);
-            setOpenedAt(null);
+            const shown = () => {
+              if (stopped || mine !== generation) return;
+              setOpening(false);
+              setOpenedAt(null);
+            };
+            const history = tmuxHistoryRef.current;
+            if (!history) return shown();
+            void Promise.race([history.decided(), new Promise((r) => window.setTimeout(r, DECIDE_MAX_MS))]).then(shown);
           };
           // What the replay left the face in, for the app's notes (item 33).
           const noted = (n: number) => () => firstTouchRef.current?.attached(n);

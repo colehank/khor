@@ -29046,7 +29046,10 @@ try {
     const terms = Array.from({ length: 8 }, (_, n) => ({ ...base, id: `tui/bar-term-${n}`, title: `bar-term-${n}` }));
     const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
     const guiRow = { ...base, id: "tui/bar-gui", kind: "gui", title: "bar-gui", category: "claude", attachable: false };
-    const barRows = [...terms, chatRow, guiRow];
+    // A tmux session's row (item 51: on a phone its history is read from
+    // tmux, `lib/term-tmux-history`).
+    const tmuxRow = { ...base, id: "shell/1791000000-9", kind: "shell", title: "bar-tmux", hosted: false };
+    const barRows = [...terms, chatRow, guiRow, tmuxRow];
     const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     /** What reached `term_key`, in order. */
     const sentKeys = [];
@@ -29439,6 +29442,70 @@ try {
         const keys = await count("[data-term-keys]");
         const sws = await count("[data-keyboard-switch], [data-key-row-switch]");
         if (inBar !== 1 || keys !== 0 || sws !== 0) fail(`bar e · ${what} under a finger: box in the bar ${inBar}, key rows ${keys}, keyboard or key-row switches ${sws} — want 1, 0, 0`);
+      }
+
+      // ── w. a tmux row is shown once the scroller knows whose it is
+      //       (item 51, the owner's cold start: a drag did nothing). tmux
+      //       holds the mouse on khor's client, so the scroller starts as
+      //       the program's wheel (40 000 of room); the pane's first
+      //       history read, a round trip after the attach's quiet, says
+      //       the pane's own program does not hold it and hands the
+      //       scroller to the history — its range and place rewritten,
+      //       which stops a drag already under way on iOS. The opening
+      //       cover stays until that read has answered, so the room the
+      //       screen is shown with is the one it keeps. ──
+      {
+        const HISTORY_MS = 700;
+        let answeredAt = 0;
+        const history = Array.from({ length: 120 }, (_, i) => `history ${i}`);
+        await page.route("**/term_pane_history", async (r) => {
+          await wait(HISTORY_MS);
+          answeredAt = Date.now();
+          return r.fulfill({
+            contentType: "application/json",
+            body: JSON.stringify({ pane: "%9", alternate: false, refill: true, lead: "", lines: history, screen: ["$ "], anchor: { pane: "%9", size: 120, tail: history.slice(-8) }, top: 0, left: 0, mouse: false, window: "46x40" }),
+          });
+        });
+        // tmux's own first words to khor's client: the alternate screen
+        // and the mouse.
+        let tmuxFeed = "\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[H$ ";
+        const tmuxStream = (r) => {
+          if (JSON.parse(r.request().postData() || "{}").id !== tmuxRow.id) return r.fallback();
+          const bytes = tmuxFeed ? Buffer.from(tmuxFeed, "binary").toString("base64") : "";
+          tmuxFeed = "";
+          return r.fulfill({ contentType: "application/json", body: JSON.stringify({ bytes, seq: bytes ? 1 : 0, gone: false, reset: false }) });
+        };
+        await page.route("**/term_stream", tmuxStream);
+        /** Every room the scroller was given, and whether the cover was up. */
+        const seen = [];
+        const watch = () =>
+          page.evaluate(() => {
+            const box = [...document.querySelectorAll("[data-terminal]")].find((b) => b.closest("[data-kept-terminal][data-active]"));
+            const room = box?.querySelector("[data-term-room]");
+            return room ? { cover: !!box.querySelector("[data-term-opening]"), room: room.style.height } : null;
+          });
+        if (!(await openRow(tmuxRow.id))) fail("probe dead: bar w · the tmux row never opened under a finger");
+        else {
+          const from = Date.now();
+          while (Date.now() - from < HISTORY_MS + 2_500) {
+            const now = await watch();
+            if (now && (seen.length === 0 || seen[seen.length - 1].cover !== now.cover || seen[seen.length - 1].room !== now.room)) seen.push({ ...now, at: Date.now() });
+            await wait(20);
+          }
+          // Shown: the cover gone, after the open had put it up (before
+          // the join there is no screen to show).
+          const shownAt = seen.find((x, i) => !x.cover && seen.slice(0, i).some((y) => y.cover));
+          const after = shownAt ? seen.filter((x) => x.at >= shownAt.at && x.room !== shownAt.room) : [];
+          console.log(`bar w · tmux row: ${seen.map((x) => `${x.cover ? "cover" : "shown"} ${x.room || "-"} @${x.at - from}`).join(", ")}; history answered @${answeredAt ? answeredAt - from : "never"}`);
+          if (!answeredAt) fail("probe dead: bar w · the tmux row's history was never read");
+          else if (!shownAt) fail("bar w · the tmux row's screen was never shown");
+          else {
+            if (shownAt.at < answeredAt) fail(`bar w · the tmux row was shown ${answeredAt - shownAt.at} ms before its first history read answered — a drag begun then was stopped by the read (item 51)`);
+            if (after.length) fail(`bar w · after the tmux row was shown with ${shownAt.room} of room, the scroller was rebuilt to ${after.map((x) => x.room).join(", ")} — under a finger that stops iOS's pan (item 51)`);
+          }
+        }
+        await page.unroute("**/term_pane_history");
+        await page.unroute("**/term_stream", tmuxStream);
       }
 
       // ── i. wide, a finger ──
