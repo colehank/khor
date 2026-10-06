@@ -229,6 +229,11 @@
   --on-destructive: #ffffff;
   --destructive-foreground: var(--on-destructive);
   --border: rgba(26, 26, 20, 0.12);
+  /* **The sheet's scrim** (UX-39): what the page behind a bottom sheet
+     turns while it is up — darker on the light ground, *lighter* on the
+     dark one, so a black terminal reads as grey and the sheet, in the
+     app's own ground, stands off it. `bg-black/50` was invisible on black. */
+  --sheet-scrim: rgba(26, 26, 20, 0.32);
   --input: rgba(26, 26, 20, 0.12);
   /* The focus ring, ink for the same reason and to the same reading.
    *
@@ -1982,6 +1987,7 @@
   --on-destructive: #1a1a14;
   --destructive-foreground: var(--on-destructive);
   --border: rgba(238, 238, 231, 0.14);
+  --sheet-scrim: rgba(238, 238, 231, 0.16);
   --input: rgba(238, 238, 231, 0.14);
   --ring: var(--brand-strong);
 

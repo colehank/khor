@@ -22,6 +22,7 @@
  */
 import { useRef, type ReactNode } from "react";
 
+import { GlassCircle } from "@/components/Glass";
 import { IconMore } from "@/components/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -93,13 +94,13 @@ export function LandingStrip({
   const strip = useRef<HTMLElement>(null);
   useTravel("strip", () => strip.current, active ?? (moreOn ? "more" : null));
   return (
-    // **The phone's five seats, at the top** (UX-19, the owner 2026-10-05):
-    // one glass capsule across the list column — the four landings, then
-    // 更多 as the fifth seat, its menu the phone's — its left edge on the
-    // title's below, 更多 ending over the search circle. ⚠️ 墓碑: 更多 was a
-    // circle of its own beside the capsule (2026-10-02 「单独一个按钮」), and
-    // the Mac had none (UX-10).
-    <div data-landing-pair className="flex min-w-0 flex-1 items-center">
+    // **Four in the capsule, 更多 a circle of its own** (UX-39, the owner
+    // 2026-10-06 23:00: 「更多和其他分开，更多和下面的搜索按钮对齐」; the
+    // 2026-10-02 arrangement again): the four landings share the glass
+    // capsule, and 更多 stands after it as a glass circle on the search
+    // circle's column below. The phone's bar keeps all five in one
+    // (`FloatNav`). ⚠️ 墓碑 (UX-19): 更多 as the capsule's fifth seat.
+    <div data-landing-pair className="flex min-w-0 flex-1 items-center gap-in">
       <nav
         ref={strip}
         data-landing-strip
@@ -116,38 +117,31 @@ export function LandingStrip({
             )}
           </Seat>
         ))}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              data-slot="button"
-              data-rail-item
-              data-rail-more
-              data-on={moreOn}
-              aria-label={gui.rail_more}
-              className={cn(
-                "relative grid h-strip-item-h w-strip-item place-items-center rounded-full text-rail-ink",
-                "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-                "data-[state=open]:glass-sel",
-                moreOn && "glass-sel text-[var(--rail-on-ink)]",
-              )}
-            >
-              <IconMore />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            side="bottom"
-            align="end"
-            sideOffset={8}
-            data-nav-menu
-            data-rail-more-menu
-            onCloseAutoFocus={(e) => e.preventDefault()}
-            className="min-w-nav-menu"
-          >
-            {moreMenu}
-          </DropdownMenuContent>
-        </DropdownMenu>
       </nav>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <GlassCircle
+            data-rail-item
+            data-rail-more
+            data-on={moreOn}
+            aria-label={gui.rail_more}
+            className={cn("data-[state=open]:glass-sel", moreOn && "glass-sel text-[var(--rail-on-ink)]")}
+          >
+            <IconMore />
+          </GlassCircle>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="bottom"
+          align="end"
+          sideOffset={8}
+          data-nav-menu
+          data-rail-more-menu
+          onCloseAutoFocus={(e) => e.preventDefault()}
+          className="min-w-nav-menu"
+        >
+          {moreMenu}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

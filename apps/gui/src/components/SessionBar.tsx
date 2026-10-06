@@ -365,6 +365,8 @@ export function SessionScreen({
         data-folded={folded || undefined}
         data-native-deck={nativeDeck || undefined}
         data-deck-away={away || undefined}
+        // The deck steps away while the sheet is up (UX-37 §4; the owner
+        // 2026-10-06 21:05 again: 「展开了不要有下面的药丸这一行」).
         className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible")}
       >
         {folded && (

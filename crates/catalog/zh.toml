@@ -3862,14 +3862,13 @@ recent-none = "还没有去过哪里"
 # The 附栏's seats land on this session's slice and ‹ goes to the whole
 # (UX-37 §1): the slice's title, the whole's, and the slice with nothing
 # in it yet.
-side-recent-here = "这个会话碰过的"
-side-recent-all = "全部最近"
-side-recent-here-none = "这个会话还没碰过什么"
-side-pages-here = "这个会话打开的"
+side-recent-here-none = "还没有打开过什么"
 side-pages-all = "全部网页"
-side-pages-here-none = "这个会话还没打开网页"
+side-pages-here-none = "还没有打开网页"
 # 今天's row in 最近 (UX-37 §5): the day's two totals beside its bar.
 day-busy-idle = "忙碌 {0} · 空闲 {1}"
+# The row's name (the owner 2026-10-06 22:20: 「不叫 Today，叫 Last 24h」).
+day-last-24h = "过去24小时"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.

@@ -753,27 +753,25 @@ aside[data-side] {
    flat glass over the pages, which keep its room at their scrollers'
    foot (`[data-nav-shown]` above). */
 [data-place-sheet] {
-  /* **The sheet is the card** (UX-37 §2): a page inside wears no ground
-     of its own — a list's `side`, a page's `card`, the landing's
-     `background` all read the sheet's surface here. */
-  --background: var(--popover);
-  --card: var(--popover);
-  --side: var(--popover);
+  /* **The sheet wears the app's own ground** (UX-39, the owner 2026-10-06
+     21:10: 「展开了就是 app 的颜色，不要额外颜色」): no surface colour of
+     its own, and every page inside reads the same ground — a list's
+     `side` and a page's `card` are the background here. ⚠️ 墓碑 (UX-37
+     §2): `popover` as the sheet's surface. */
+  --card: var(--background);
+  --side: var(--background);
+  --popover: var(--background);
   height: calc(var(--place-sheet-half) * 100dvh);
   transition: height var(--dur-240) var(--ease-out);
   animation: sheet-up var(--dur-240) var(--ease-out);
-  --nav-room: calc(var(--nav-h) + var(--safe-bottom) + var(--gap-in));
+  /* No seats row at the foot any more (UX-39): the pages keep only the safe area. */
+  --nav-room: var(--safe-bottom);
 }
 [data-place-sheet][data-detent="full"] {
   height: calc(var(--place-sheet-full) * 100dvh);
 }
 [data-place-sheet][data-sheet-pulling] {
   transition: none;
-}
-[data-side-foot] {
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
 }
 @media (prefers-reduced-motion: reduce) {
   [data-place-sheet] {

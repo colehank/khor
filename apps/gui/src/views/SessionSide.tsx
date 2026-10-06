@@ -21,16 +21,15 @@
  * width; ← → Home walk the stops from a keyboard. Width and open state
  * are one memory per session (`use-session-side`).
  */
-import { useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useMemo, useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
-import { IconBrowser, IconDevices, IconFiles, IconQuota, IconRecent } from "@/components/icons";
-import { NAV_SEAT } from "@/components/FloatNav";
+import type { Avatar } from "@/gen/bindings/Avatar";
+import { SeatPick, SeatTitle } from "@/components/SeatTitle";
+import { SessionFace } from "@/components/SessionFace";
 import { SideSeatsProvider } from "@/components/SideHead";
 import { gui } from "@/gen/catalog";
 import { NarrowBox } from "@/hooks/use-narrow";
-import { SIDE_SEATS, type SideSeat } from "@/hooks/use-session-side";
-import { useTravel } from "@/lib/travel";
-import { cn } from "@/lib/utils";
+import { type SideSeat } from "@/hooks/use-session-side";
 
 /** The column, for whatever reaches it by name (the front tab's
     `aria-controls`, the gates). */
@@ -63,29 +62,6 @@ function bounds(box: HTMLElement | null) {
   };
 }
 
-const SEAT_GLYPH: Record<SideSeat, ReactNode> = {
-  recent: <IconRecent />,
-  workspace: <IconFiles />,
-  browser: <IconBrowser />,
-  machine: <IconDevices />,
-  quota: <IconQuota />,
-};
-
-function seatName(seat: SideSeat): string {
-  switch (seat) {
-    case "recent":
-      return gui.group_recent;
-    case "workspace":
-      return gui.workspaces_tab;
-    case "browser":
-      return gui.browser_tab;
-    case "machine":
-      return gui.devices_tab;
-    case "quota":
-      return gui.accounts_tab;
-  }
-}
-
 export function SessionSide({
   session,
   width,
@@ -93,9 +69,12 @@ export function SessionSide({
   onSeat,
   onWidth,
   onClose,
+  who,
   children,
 }: {
   session: string;
+  /** Whose column: the session's face and title in the head. */
+  who?: SideWho;
   /** The width it was dragged to, or `null` for the token's default. */
   width: number | null;
   seat: SideSeat;
@@ -212,7 +191,7 @@ export function SessionSide({
         onKeyDown={onKeyDown}
         className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize outline-none transition-colors hover:bg-border focus-visible:bg-ring"
       />
-      <SideBody seat={seat} onSeat={onSeat}>
+      <SideBody seat={seat} onSeat={onSeat} who={who}>
         {children}
       </SideBody>
     </NarrowBox>
@@ -224,86 +203,49 @@ export function SessionSide({
  * the phone's pill sheet (UX-30 §6: both faces share the components;
  * `SessionPlaceSheet` mounts this in a bottom sheet with `foot`).
  */
+/** Whose 附栏 this is: the session's face and title, as its list row
+    draws them (`SessionFace`). */
+export type SideWho = { face: Avatar | null; title: string; word: string; kind: string; category: string | null };
+
 export function SideBody({
   seat,
   onSeat,
-  foot = false,
+  who,
+  foot: _foot = false,
   children,
 }: {
   seat: SideSeat;
   onSeat: (seat: SideSeat) => void;
-  /** **The seats at the foot** (UX-37 §4, the phone's sheet): one flat
-      row on the screen's foot wearing the safe area, the page scrolling
-      under it. Without it the capsule stands at the box's top (the wide
-      column, UX-30 §2: no deck to share the foot with). */
+  who?: SideWho;
+  /** The phone's sheet (kept for the callers; the seats row it once put
+      at the foot is gone — UX-39, the title is the menu). */
   foot?: boolean;
   children?: ReactNode;
 }) {
-  const capsule = useRef<HTMLElement>(null);
-  // The chosen seat slides to the one pressed (F7.2, `lib/travel`).
-  useTravel("side", () => capsule.current, seat);
-  const seats = SIDE_SEATS.map((s) => (
-    <button
-      key={s}
-      type="button"
-      data-slot="button"
-      data-col-seat={s}
-      data-on={seat === s}
-      aria-current={seat === s ? "page" : undefined}
-      onClick={() => onSeat(s)}
-      className={cn(NAV_SEAT, foot && "flex-1")}
-    >
-      {SEAT_GLYPH[s]}
-      <span className="text-nav-label">{seatName(s)}</span>
-    </button>
-  ));
-  // The seat's page: the narrow face's own, in a box. `relative` because
-  // the pages float their own navigation against the nearest placed
-  // ancestor, which must be this box and not the window. No window row
-  // to seat a head in (`NarrowHead`): the pages draw their own `‹ title`
-  // bar in place, as the workspace column's session bar does.
-  const page = (
-    <SideSeatsProvider value={null}>
-      <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        {children}
-      </div>
-    </SideSeatsProvider>
-  );
-  if (foot) {
-    return (
-      <>
-        {page}
-        {/* ⚠️ 墓碑 (UX-30 §6 → UX-37 §4): on the phone the capsule stood
-            at the sheet's top, and the deck stayed under the sheet. */}
-        <div data-side-foot className="absolute inset-x-0 bottom-0 z-20 border-t pb-safe-bottom">
-          <nav
-            ref={capsule}
-            data-col-seats
-            aria-label={gui.session_side}
-            className="flex h-nav-h items-stretch px-in py-[calc(var(--gap-xxs)+var(--hair))] select-none"
-          >
-            {seats}
-          </nav>
-        </div>
-      </>
-    );
-  }
+  // **One head** (UX-39, the owner 2026-10-06 21:40: 「左上角是 session
+  // 的头像+标题，右上角是可展开的标题」): the session at the left — its
+  // face and title, the subject the 附栏 belongs to — and the seat's
+  // noun with its menu at the right (`SeatTitle`, a native picker). The
+  // seats' own heads step back inside (`SeatHead` draws no title here).
+  // ⚠️ 墓碑: the glass capsule at the column's top (UX-30 §2), the flat
+  // row at the sheet's foot (UX-37 §4), the seat's title at the left.
+  const pick = useMemo(() => ({ seat, onSeat }), [seat, onSeat]);
   return (
-    <>
-      {/* **The five seats, at the top of the box** (UX-30 §2): one glass
-          capsule across the column, the width the phone's bar keeps off
-          its edges. */}
-      <div data-side-head className="flex flex-none justify-center px-nav-gap pt-in pb-xxs">
-        <nav
-          ref={capsule}
-          data-col-seats
-          aria-label={gui.session_side}
-          className="glass flex h-nav-h max-w-full items-stretch rounded-full p-[calc(var(--gap-xxs)+var(--hair))] select-none"
-        >
-          {seats}
-        </nav>
-      </div>
-      {page}
-    </>
+    <SeatPick.Provider value={pick}>
+      <SideSeatsProvider value={null}>
+        <header data-side-head className="flex h-pane-head flex-none items-center gap-row border-b px-(--page-inset)">
+          {who && (
+            <span data-side-who className="flex min-w-0 flex-1 items-center gap-in">
+              <SessionFace face={who.face} word={who.word} kind={who.kind} category={who.category} size="tab" />
+              <span className="min-w-0 truncate text-title-md font-title">{who.title}</span>
+            </span>
+          )}
+          <SeatTitle className={who ? "flex-none" : "flex-1"} />
+        </header>
+        <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </div>
+      </SideSeatsProvider>
+    </SeatPick.Provider>
   );
 }

@@ -31,7 +31,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { DialogOverlay } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import type { SideSeat } from "@/hooks/use-session-side";
-import { SideBody } from "@/views/SessionSide";
+import { SideBody, type SideWho } from "@/views/SessionSide";
 
 export type PlaceDetent = "half" | "full";
 
@@ -165,6 +165,7 @@ export function SessionPlaceSheet({
   onOpenChange,
   seat,
   onSeat,
+  who,
   boxRef,
   children,
 }: {
@@ -174,6 +175,7 @@ export function SessionPlaceSheet({
   onOpenChange: (open: boolean) => void;
   seat: SideSeat;
   onSeat: (seat: SideSeat) => void;
+  who?: SideWho;
   /** The seat's page, composed by the shell (`App`'s `sideSeat`). */
   children?: ReactNode;
 }) {
@@ -185,7 +187,9 @@ export function SessionPlaceSheet({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogOverlay />
+        {/* The page behind turns grey (UX-39): a scrim that shows on both
+            grounds, the token's. */}
+        <DialogOverlay className="bg-(--sheet-scrim)" />
         <DialogPrimitive.Content
           ref={setEl}
           data-place-sheet
@@ -203,7 +207,7 @@ export function SessionPlaceSheet({
             e.preventDefault();
             el?.focus({ preventScroll: true });
           }}
-          className="fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden rounded-t-(--menu-r) bg-popover shadow-(--shadow-float) outline-none"
+          className="fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden rounded-t-(--menu-r) border-t bg-background shadow-(--shadow-float) outline-none"
         >
           <DialogPrimitive.Title className="sr-only">{gui.session_side}</DialogPrimitive.Title>
           {/* The grabber's band: where a pull is the sheet's at once. */}
@@ -217,9 +221,9 @@ export function SessionPlaceSheet({
             // and their scrollers keep the seats row's room at their foot
             // (`data-nav-shown`, `--nav-room` in `app.css`).
             data-nav-shown
-            className="relative flex min-h-0 flex-1 flex-col [--side-ground:var(--popover)]"
+            className="relative flex min-h-0 flex-1 flex-col [--side-ground:var(--background)]"
           >
-            <SideBody seat={seat} onSeat={onSeat} foot>
+            <SideBody seat={seat} onSeat={onSeat} who={who} foot>
               {children}
             </SideBody>
           </div>

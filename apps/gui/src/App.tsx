@@ -106,7 +106,7 @@ import { DetailPane } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
 import { SeatHead } from "@/components/SeatHead";
 import { SIDE_ID, SessionSide } from "@/views/SessionSide";
-import { DayLine, DayPanel, DayToday } from "@/views/DayLine";
+import { DayToday } from "@/views/DayLine";
 import { SideRecent } from "@/views/SideRecent";
 import { useSideRecent, type RecentItem } from "@/hooks/use-side-recent";
 import { useDayTotals } from "@/hooks/use-day-totals";
@@ -114,6 +114,7 @@ import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHo
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
+import { SideWorkspace } from "@/views/SideWorkspace";
 import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspacesNow } from "@/views/WorkspacesNow";
 import { LockScreen } from "@/views/LockScreen";
@@ -1697,28 +1698,10 @@ export default function App() {
         // **The session's day hangs under its pill** (UX-36): the line in
         // the pill's slot, and the day in full hanging from it — opened
         // by the menu's 「今天」, the pill's press being the 附栏's.
-        const front = id === selected;
-        const log = <DayLine runs={dayOf(id)} />;
-        const day = {
-          open: front && side.day,
-          onOpenChange: (open: boolean) => setSessionSide(id, { day: open }),
-          // The box the band's axis is measured in (`useStripWidth`).
-          panel: (
-            <div ref={setDetailBox}>
-              <DayPanel runs={dayOf(id)} className="max-h-[60dvh] overflow-y-auto px-[calc(var(--nav-gap)-var(--gap-in))] pb-in" />
-            </div>
-          ),
-        };
-        // It opens; a press outside or Esc folds (the menu's own press is
-        // one outside the open panel, so a toggle here would reopen it).
-        const today = {
-          key: "today",
-          label: gui.today,
-          run: () => {
-            sessionTabs.focus(id);
-            setSessionSide(id, { day: true });
-          },
-        };
+        // ⚠️ 墓碑 (UX-36 → UX-39, the owner 2026-10-06 22:10: 「药丸下面就
+        // 不绘制 session 的日志了，日志在最近里面，放在最上面」): the day's
+        // line in the pill's slot, the day in full hanging from it, and the
+        // menu's 「今天」. The day is 最近's first row now, on both faces.
         return r
           ? {
               id,
@@ -1737,12 +1720,9 @@ export default function App() {
               // and 关闭 (UX-33: the pill has no ×; the menu, ⌘W and the
               // tabs sheet close).
               menu: [
-                today,
                 ...(r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : []),
                 { key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) },
               ],
-              log,
-              day,
               session: { word: r.word, kind: r.kind, category: r.category },
               // A session tab's name is the row's title, which is a
               // name somebody gave it — so double-click renames it
@@ -1764,7 +1744,7 @@ export default function App() {
               },
               loading: tabAct(id)?.busy ?? false,
             }
-          : { id, label: id, face: null, path: "", again, log };
+          : { id, label: id, face: null, path: "", again };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [openTabs, rows, side, actsVersion, days, selected],
@@ -1841,6 +1821,15 @@ export default function App() {
   const inColumn = () => landing === "sessions" && selectedRow !== null && (!narrow || inSession);
   /** The 附栏 turned to a seat: the column opened on it, or on the phone
       the sheet risen on it (a sheet already up keeps its detent). */
+  /** **Opened from 最近** (UX-39, the owner 2026-10-06 22:25: 「Recent 里
+      点开了一个文件或什么，返回应该是返回到 Recent」): the page a row of
+      最近 opens wears ‹ back to 最近; a seat entered by the menu does not. */
+  const [sideFrom, setSideFrom] = useState<"recent" | null>(null);
+  const backToRecent = () => {
+    setSideFrom(null);
+    setSideBrowse((b) => ({ ...b, page: false }));
+    sideTo("recent");
+  };
   const sideTo = (seat: PlaceSeat) => {
     if (!selectedRow) return;
     if (!narrow) return setSessionSide(selectedRow.id, { open: true, seat });
@@ -2212,6 +2201,29 @@ export default function App() {
   const [sideMachine, setSideMachine] = useState<{ device: string | null; screen: "list" | "detail" }>({ device: null, screen: "detail" });
   const [sideRecentAll, setSideRecentAll] = useState(false);
   const [sideWsAll, setSideWsAll] = useState(false);
+  /** The workspace that holds the open session's directory (UX-39: the
+      工作区 seat's ceiling), asked once per session from the local table. */
+  const [sideRoot, setSideRoot] = useState<{ session: string; root: string | null } | null>(null);
+  useEffect(() => {
+    if (!selectedRow || !selectedRow.place) return;
+    const sid = selectedRow.id;
+    const place = selectedRow.place;
+    const dev = devices.find((d) => d.name === selectedRow.home)?.id ?? "";
+    let live = true;
+    void fetchWorkspaces().then(
+      (list) => {
+        if (!live) return;
+        const under = holding(list, dev, `${place.replace(/\/$/, "")}/`);
+        const own = list.find((w) => w.device === dev && w.path === place) ?? null;
+        setSideRoot({ session: sid, root: (own ?? under)?.path ?? null });
+      },
+      () => live && setSideRoot({ session: sid, root: null }),
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRow?.id, selectedRow?.place, selectedRow?.home, devices.length]);
   /** Bumped as a seat is entered: the seat's page mounts afresh, so a
       page that lands by itself (额度's account) lands again. */
   const [sideEntry, setSideEntry] = useState(0);
@@ -2228,6 +2240,7 @@ export default function App() {
       now (the pill's own rule). */
   const enterSeat = (seat: PlaceSeat) => {
     if (!selectedRow) return;
+    setSideFrom(null);
     toSlices();
     if (seat === "workspace") {
       const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
@@ -2245,15 +2258,17 @@ export default function App() {
       is the sheet, so the day in full opens from here. ⚠️ 墓碑 (UX-36
       §1): a 「今天」 row under the sheet's capsule. ⚠️ 墓碑 (UX-30 §5):
       the ruler, under the column's capsule and the sheet's. */
-  const dayTotals = useDayTotals(selectedRow?.id ?? null, narrow && placeSheet !== null && side.seat === "recent");
-  const sheetToday = (row: SessionRow) => (
-    <DayToday runs={dayOf(row.id)} totals={dayTotals} open={side.day} onToggle={() => setSessionSide(row.id, { day: !side.day })} />
-  );
+  const dayTotals = useDayTotals(selectedRow?.id ?? null, (narrow ? placeSheet !== null : side.open) && side.seat === "recent");
+  // **今天 is 最近's first row, on both faces, and does not expand**
+  // (UX-39, the owner 2026-10-06 20:30 and 22:10): the line and its two
+  // numbers; hover or a press says the day's sentence.
+  const sheetToday = (row: SessionRow) => <DayToday runs={dayOf(row.id)} totals={dayTotals} />;
   const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
   const recent = useSideRecent(sideOn && side.seat === "recent");
   /** 最近's rows open in place (§4): a page in the column's browser, a
       workspace as the column's listing, a file as its file page. */
   const openRecent = (it: RecentItem) => {
+    setSideFrom("recent");
     if (it.kind === "page") return openUrlMain(it.machine, it.url, true);
     if (it.kind === "workspace") {
       touched("dir", it.machine, it.path);
@@ -2280,7 +2295,7 @@ export default function App() {
             items={recent}
             slice={sideRecentAll ? null : selectedRow.id}
             onAll={() => setSideRecentAll(true)}
-            today={narrow ? sheetToday(selectedRow) : undefined}
+            today={sheetToday(selectedRow)}
             faceOf={faceOf}
             onOpen={openRecent}
             onOpenMain={openRecentMain}
@@ -2311,19 +2326,24 @@ export default function App() {
         }
         const f = sideFiles?.session === selectedRow.id ? sideFiles : { machine: selectedRow.home, dir: selectedRow.place ?? null, start: null };
         const here = devices.find((d) => d.name === f.machine)?.me ?? !selectedRow.source;
+        // **The workspace's own tree, and nothing above it** (UX-39, the
+        // owner 2026-10-06 22:00): the ceiling is the workspace holding the
+        // session's directory, else that directory. ⚠️ 墓碑: `MachineFiles`
+        // climbing to the root (UX-37 §1).
+        const root = (sideRoot?.session === selectedRow.id ? sideRoot.root : null) ?? f.dir ?? selectedRow.place ?? "/";
         return (
-          <MachineFiles
-            key={`${sideEntry} ${f.machine} ${f.dir ?? ""}`}
+          <div data-side-files className="flex min-h-0 flex-1 flex-col">
+          <SideWorkspace
+            key={`${sideEntry} ${f.machine} ${root}`}
             machine={f.machine}
             here={here}
-            startDir={f.dir}
+            root={root}
             start={f.start}
-            onTop={() => setSideWsAll(true)}
-            topLabel={gui.workspaces_tab}
+            onLeave={sideFrom === "recent" ? backToRecent : undefined}
             onRead={(path) => touched("file", f.machine, path)}
-            bare
             fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
           />
+          </div>
         );
       }
       case "browser":
@@ -2338,7 +2358,7 @@ export default function App() {
             caption={stale ? gui.backend_unreachable : undefined}
             screen={sideBrowse.page ? "detail" : "list"}
             onOpen={() => setSideBrowse((b) => ({ ...b, page: true }))}
-            onBack={() => setSideBrowse((b) => ({ ...b, page: false }))}
+            onBack={sideFrom === "recent" ? backToRecent : () => setSideBrowse((b) => ({ ...b, page: false }))}
             bare={{ here: sideBrowse.list === "here" ? selectedRow.id : null, onAll: () => setSideBrowse({ list: "all", page: false }) }}
           />
         );
@@ -2415,6 +2435,7 @@ export default function App() {
         onSeat={enterSeat}
         onWidth={(w) => setSessionSide(selectedRow.id, { w })}
         onClose={() => setSessionSide(selectedRow.id, { open: false })}
+        who={{ face: selectedRow.face, title: termName(selectedRow), word: selectedRow.word, kind: selectedRow.kind, category: selectedRow.category }}
       >
         {sideSeat()}
       </SessionSide>
@@ -2431,7 +2452,6 @@ export default function App() {
     <DetailPane
       row={selectedRow}
       narrow={narrow}
-      side={sessionSide}
       openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}
@@ -2804,6 +2824,7 @@ export default function App() {
           seat={side.seat}
           onSeat={enterSeat}
           boxRef={setDetailBox}
+          who={{ face: selectedRow.face, title: termName(selectedRow), word: selectedRow.word, kind: selectedRow.kind, category: selectedRow.category }}
         >
           {sideSeat()}
         </SessionPlaceSheet>
@@ -3624,6 +3645,12 @@ export default function App() {
               {/* ⚠️ 墓碑 (UX-30): `ref={setDetailBox}` stood here — the day's
                   axis was this pane's; it is the column's now
                   (`SessionSide` `boxRef`). */}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-row">
+              {/* **The column stands beside the strip too** (UX-39, the
+                  owner 2026-10-06 21:45: 「桌面都要顶部对齐」): its head is
+                  on the window's first row, level with the tabs' capsule,
+                  not under it. ⚠️ 墓碑 (UX-30): the column inside
+                  `DetailPane`, below the strip. */}
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                 {sessions && openTabs.length > 0 ? (
                   <VerbSeat.Provider value={verbSeat}>
@@ -3679,6 +3706,8 @@ export default function App() {
                     {detail}
                   </Region>
                 )}
+              </div>
+              {sessionSide}
               </div>
             </>
           )}

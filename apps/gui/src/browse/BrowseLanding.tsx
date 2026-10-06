@@ -806,7 +806,7 @@ export function BrowseLanding({
           <SeatHead
             title={pillHost(tabs.current.path) || tabLabel(kind, tabs.current.path, deviceOf(tabs.current.device))}
             back={() => onBack?.()}
-            backLabel={bare.here === null ? gui.side_pages_all : gui.side_pages_here}
+            backLabel={gui.browser_tab}
           />
           {/* The page's box stops at the seats row (`data-nav-clear`):
               the native page is framed to it and must not cover them. */}
@@ -819,11 +819,9 @@ export function BrowseLanding({
     const mine = bare.here === null ? null : new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id));
     return (
       <section data-browse-tabs data-browse-bare={bare.here === null ? "all" : "here"} className="flex h-full min-h-0 flex-col">
-        {bare.here === null ? (
-          <SeatHead title={gui.side_pages_all} />
-        ) : (
-          <SeatHead title={gui.side_pages_here} back={bare.onAll} backLabel={gui.side_pages_all} />
-        )}
+        {/* **浏览器, no road to the whole** (UX-39, the owner 2026-10-06
+            21:05: 「都不可返回」). ⚠️ 墓碑 (UX-37 §1): ‹ to 全部网页. */}
+        <SeatHead title={gui.browser_tab} />
         <div data-tab-switcher data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
           <SideList
             rows={mine === null ? side : side.filter((r) => mine.has(r.id))}

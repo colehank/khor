@@ -57,7 +57,7 @@ function asideOf(it: RecentItem): string {
 export function SideRecent({
   items,
   slice,
-  onAll,
+  onAll: _onAll,
   today,
   faceOf,
   onOpen,
@@ -108,13 +108,14 @@ export function SideRecent({
         if (it) onOpenMain(it);
       }}
     >
-      {slice === null ? (
-        <SeatHead title={gui.side_recent_all} />
-      ) : (
-        <SeatHead title={gui.side_recent_here} back={onAll} backLabel={gui.side_recent_all} />
-      )}
+      {/* **本会话, and only the list** (UX-39, the owner 2026-10-06
+          20:30): no road to 「全部最近」 (⚠️ 墓碑: ‹ to the whole, UX-37
+          §1) and no 今天 row (⚠️ 墓碑: UX-37 §5 — the day is the pill's
+          own line, UX-36). */}
+      <SeatHead title={gui.group_recent} />
       <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
-        {slice !== null && today}
+        {/* 今天 first (UX-39): the day's line, not a seat and not a pill's. */}
+        {today}
         <SideList
           rows={rows}
           loading={items === null}

@@ -1929,6 +1929,7 @@ export function WorkspacePane({
             onClose={(id) => shut(id.slice(machine.length + 1))}
             stripData={{ "data-ws-tab-strip": "" }}
             tail={fileTail}
+            frontAct
             bodyClass="flex flex-col"
             // This strip heads the middle column, between the tree and
             // the sessions column — not the region (第十三轮 第 5 条's

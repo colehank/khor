@@ -45,10 +45,13 @@ export function Tabs({
   frame = true,
   caption,
   glass = false,
+  frontAct = false,
   children,
 }: {
   /** The strip's glass look (`TabStrip` `glass`): the session tabs. */
   glass?: boolean;
+  /** The front tab's act at the capsule's end (`TabStrip` `frontAct`). */
+  frontAct?: boolean;
   /** A stale region's one line at R0's right end, after the strip
       (`Region caption`; components/RegionState). Framed strips only. */
   caption?: ReactNode;
@@ -93,6 +96,7 @@ export function Tabs({
   const strip = (
     <div {...stripData} className="flex min-w-0 flex-1 flex-col">
       <TabStrip
+        frontAct={frontAct}
         faces={faces}
         active={active}
         onFocus={onFocus}

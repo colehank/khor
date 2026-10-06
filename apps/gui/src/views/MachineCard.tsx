@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
@@ -32,6 +32,7 @@ import {
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
+import { SeatPick, SeatTitle } from "@/components/SeatTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
@@ -97,6 +98,8 @@ export function MachineCard({
       place R0 puts them wide (第十七轮 §3). */
   actions?: ReactNode;
 }) {
+  // Inside the 附栏 the head draws no ‹ (UX-39: 「都不可返回」).
+  const inSide = useContext(SeatPick) !== null;
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
       {/* **A strip only where something has to live in it.** Back exists
@@ -116,20 +119,32 @@ export function MachineCard({
         // it was a second bar under L0's magnifier.
         <NarrowHead>
         {(seated) => (
+        inSide ? (
+          <div data-head-name className="flex min-h-ctl-lg flex-none items-center border-b px-(--page-inset) text-body font-label">
+            <span className="min-w-0 truncate">{row?.shown ?? ""}</span>
+          </div>
+        ) : (
         <header className={seated ? "flex min-w-0 flex-1 items-center gap-row self-stretch" : "flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"}>
           {/* The canvas's machine head (the redesign, 2026-10-02): the way
               back as a glass circle, the machine's own face, its name
               over one line of facts, and its verbs in a glass capsule. */}
-          <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
+          {!inSide && <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
-          </GlassCircle>
-          {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
+          </GlassCircle>}
+          {/* Inside the 附栏 the seat's own icon stands before the name
+              (UX-39: 「icon 都用自己的 icon」); the face is the card's. */}
+          {row && !inSide && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
           <span data-head-name className="flex min-w-0 flex-1 flex-col">
-            <span className="min-w-0 truncate text-title-md font-title">{row?.shown ?? ""}</span>
-            {row && <HeadModel row={row} yields />}
+            <SeatTitle>{row?.shown ?? ""}</SeatTitle>
+            {row && inSide ? (
+              <span className="min-w-0 truncate text-callout text-muted-foreground">{row.shown}</span>
+            ) : (
+              row && <HeadModel row={row} yields />
+            )}
           </span>
           {actions}
         </header>
+        )
         )}
         </NarrowHead>
       )}

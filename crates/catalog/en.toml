@@ -2015,14 +2015,12 @@ recent-none = "Nowhere yet"
 # The 附栏's seats land on this session's slice and ‹ goes to the whole
 # (UX-37 §1): the slice's title, the whole's, and the slice with nothing
 # in it yet.
-side-recent-here = "Touched here"
-side-recent-all = "All recent"
-side-recent-here-none = "Nothing touched from this session yet"
-side-pages-here = "Opened here"
+side-recent-here-none = "Nothing opened yet"
 side-pages-all = "All pages"
-side-pages-here-none = "No pages opened from this session yet"
+side-pages-here-none = "No pages opened yet"
 # 今天's row in 最近 (UX-37 §5): the day's two totals beside its bar.
 day-busy-idle = "Busy {0} · idle {1}"
+day-last-24h = "Last 24h"
 new-item = "New"
 
 no-matches = "No matches"

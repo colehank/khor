@@ -25,7 +25,6 @@
  * day was a band that the front tab's press brought down under the tabs.
  */
 import { cli, gui } from "@/gen/catalog";
-import { IconChevronDown, IconChevronUp } from "@/components/icons";
 import type { DayTotals } from "@/hooks/use-day-totals";
 import { cn } from "@/lib/utils";
 import { count, stretch } from "@/words";
@@ -109,39 +108,28 @@ export function DayPanel({ runs, className }: { runs: Day; className?: string })
     counted at the record's minute), and a tap expands the day in full in
     place, under the row; a tap folds it. The pill's own day line is
     unchanged. */
-export function DayToday({
-  runs,
-  totals,
-  open,
-  onToggle,
-}: {
-  runs: Day;
-  totals: DayTotals | null;
-  open: boolean;
-  onToggle: () => void;
-}) {
+/**
+ * **过去24小时, 最近's first row** (UX-37 §5 → UX-39, the owner
+ * 2026-10-06 22:20–22:40: 「不可展开」, 「不叫 Today，叫 Last 24h」, 「点击
+ * 日志条是显示所点击部分的状态」): the two numbers over the day's band —
+ * `DayStrip`, whose every stretch already answers a hover with its
+ * readout and a press with its popover (the stretch's hours, its word,
+ * its length). Nothing else opens from the row. ⚠️ 墓碑: the chevron and
+ * the day in full (`DayPanel`) under it; a legend of the three inks.
+ */
+export function DayToday({ runs, totals }: { runs: Day; totals: DayTotals | null }) {
+  const said = totals ? gui.day_busy_idle(totalOf(totals.busy), totalOf(totals.idle)) : null;
   return (
-    <div data-day-today-row className="flex-none border-b">
-      <button
-        type="button"
-        data-day-today
-        aria-expanded={open}
-        aria-controls={open ? DAY_ROW_ID : undefined}
-        onClick={onToggle}
-        className="flex w-full flex-col gap-in px-(--page-inset) py-in text-left"
-      >
-        <span className="flex w-full items-baseline gap-in text-callout text-muted-foreground">
-          <span className="min-w-0 flex-1 truncate text-foreground">{gui.today}</span>
-          {totals && (
-            <span data-day-totals className="flex-none tabular-nums">
-              {gui.day_busy_idle(totalOf(totals.busy), totalOf(totals.idle))}
-            </span>
-          )}
-          {open ? <IconChevronUp className="size-affordance flex-none self-center text-tertiary" /> : <IconChevronDown className="size-affordance flex-none self-center text-tertiary" />}
-        </span>
-        <DayLine runs={runs} band />
-      </button>
-      {open && <DayPanel runs={runs} className="px-[calc(var(--page-inset)-var(--gap-in))] pb-in" />}
+    <div data-day-today-row data-day-today className="flex flex-none flex-col gap-in border-b px-(--page-inset) py-in">
+      <span className="flex w-full items-baseline gap-in text-callout text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate text-foreground">{gui.day_last_24h}</span>
+        {said && (
+          <span data-day-totals className="flex-none tabular-nums">
+            {said}
+          </span>
+        )}
+      </span>
+      <DayStrip runs={runs} />
     </div>
   );
 }

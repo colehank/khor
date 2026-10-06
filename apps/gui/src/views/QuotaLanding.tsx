@@ -25,7 +25,7 @@
 // Registration happens here too, and the form says the two things a
 // person cannot guess: the key stays on this machine, and the two
 // vendors' usage is an **admin** key's to read.
-import { useEffect, useRef, useMemo, useState } from "react";
+import { useContext, useEffect, useRef, useMemo, useState } from "react";
 
 import {
   fetchQuotaBoard,
@@ -51,6 +51,7 @@ import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { PageAvatar, PageSubtitle, Region } from "@/components/Region";
 import { FlushInk } from "@/hooks/use-flush-ink";
 import { NarrowHead } from "@/components/SideHead";
+import { SeatPick, SeatTitle } from "@/components/SeatTitle";
 import { SeatHead } from "@/components/SeatHead";
 import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
@@ -996,6 +997,8 @@ export function QuotaLanding({
       quota) — once, and only while nothing is picked yet. */
   landOn?: string | null;
 }) {
+  // Inside the 附栏 the head draws no ‹ (UX-39: 「都不可返回」).
+  const inSide = useContext(SeatPick) !== null;
   // **Both outlive a remount.** The narrow face keys its screen box on
   // `screen` (`App`, for the entrance slide), so opening a row mounts
   // this landing afresh: with the board back at null the dead-end guard
@@ -2040,13 +2043,13 @@ export function QuotaLanding({
               {/* **The only exit from this screen**, so it carries the
                   finger floor outright — the rule `DetailPane`'s back
                   button was rewritten for. */}
-              <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
+              {!inSide && <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
                 <IconBack />
-              </GlassCircle>
+              </GlassCircle>}
               {/* The head the machine page has (the redesign): the
                   vendor's mark at the head's size, the name over the
                   reading's caption. */}
-              {VendorMark && <VendorMark className="block size-head-ctl flex-none" />}
+              {VendorMark && !inSide && <VendorMark className="block size-head-ctl flex-none" />}
               {/* **The name, said once, here** — the narrow face's R0.
                   ⚠️ Rewritten 2026-09-27: this bar used to hold the way
                   back and nothing else, because the card's first line
@@ -2056,7 +2059,7 @@ export function QuotaLanding({
                   is this bar, as wide R0 does — with the reading's
                   caption at its right end. */}
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="min-w-0 truncate text-title-md font-title">{current.name}</span>
+                <SeatTitle>{current.name}</SeatTitle>
                 <span data-region-caption className="min-w-0 truncate text-callout text-muted-foreground tabular-nums">
                   {caption}
                 </span>
