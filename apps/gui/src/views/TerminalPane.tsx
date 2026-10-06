@@ -1773,6 +1773,7 @@ export function TerminalPane({
     // xterm's own do, so a replayed question answers into nothing.
     const kitty = kittyProtocol(term, (bytes) => term.input(bytes, false));
     (box as HTMLDivElement & { __kitty?: () => number }).__kitty = () => kittyFlags(term);
+    let bellAt = -Infinity;
     const rung = term.onBell(() => {
       // The person's bell setting (roadmap 4.2): off is silent; under a
       // finger it is felt as well as seen.
@@ -1780,6 +1781,12 @@ export function TerminalPane({
       // A bell from history rang again on every attach (the terminal
       // audit, item 53).
       if (replaying > 0) return;
+      // **One bell per flash** (the terminal audit, item 53): a stream of
+      // BELs (a tab completion held, `yes $'\a'`) was a stream of
+      // haptics. The bells inside one flash are that flash.
+      const now = performance.now();
+      if (now - bellAt < BELL_MS) return;
+      bellAt = now;
       if (window.matchMedia("(pointer: coarse)").matches) bellHaptic().catch(() => {});
       setRang(true);
       window.clearTimeout(bellTimer.current);
