@@ -29716,9 +29716,39 @@ try {
       await page.locator("[data-term-reload]").first().click({ timeout: 3_000 }).catch(() => {});
       const ran = await until(1_500, async () => (await slot()).progress === 1);
       const loading = await slot();
+      // **The native deck reads the line too** (UX-35 §2): the iPhone's
+      // browser deck is drawn from this reading, so the line is in it
+      // while the DOM's runs — the pill's bottom edge, its width, the
+      // DOM's ink and sweep — and gone from it after.
+      const nativeLine = () =>
+        page.evaluate(async () => {
+          const { readDeck } = await import("/src/lib/native-deck.ts");
+          const d = await readDeck(document.querySelector("[data-session-screen]"));
+          const bar = document.querySelector("[data-session-bar]")?.getBoundingClientRect();
+          const pill = document.querySelector("[data-deck-pill]")?.getBoundingClientRect();
+          const run = document.querySelector("[data-pill-progress] > span");
+          const c = document.createElement("canvas").getContext("2d");
+          c.fillStyle = run ? getComputedStyle(run).backgroundColor : "#000";
+          return {
+            p: d?.progress ?? null,
+            pill: bar && pill ? { x: pill.left - bar.left, w: pill.width, bottom: pill.bottom - bar.top } : null,
+            ink: run ? String(c.fillStyle) : null,
+          };
+        });
+      const readLoading = await nativeLine();
       if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-pill-progress.png") });
       const ended = await until(4_000, async () => (await slot()).progress === 0);
       const after = await slot();
+      const readAfter = await nativeLine();
+      console.log(`bar v · the native reading while loading ${shown(readLoading)}; after ${shown(readAfter.p)}`);
+      {
+        const p = readLoading.p;
+        const pill = readLoading.pill;
+        if (!p || !pill || Math.abs(p.x - pill.x) > 0.5 || Math.abs(p.w - pill.w) > 0.5 || Math.abs(p.y + p.h - pill.bottom) > 0.5 || p.color !== readLoading.ink || !(p.ms > 0) || p.ease.length !== 4) {
+          fail(`bar v · the native deck read the reloading pill's line as ${shown(p)} — the pill's bottom edge ${shown(pill)}, the DOM's ink ${readLoading.ink} and sweep (UX-35 §2; lib/native-deck.ts)`);
+        }
+        if (readAfter.p !== null) fail(`bar v · the load ended and the native reading still has a line ${shown(readAfter.p)}`);
+      }
       await page.unroute("**/term_attach");
       await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
       // The transfer ends: the line leaves on its own after its beat.
@@ -30155,6 +30185,16 @@ try {
               inset: d.inset,
               deck,
               safe,
+              // UX-35 §3: every label inside the band, the title's press
+              // the whole current segment (§1); the band's own box to
+              // hold them to.
+              band: (() => {
+                const bar = document.querySelector("[data-session-bar]").getBoundingClientRect();
+                const b = document.querySelector("[data-session-deck] [data-deck-band]")?.getBoundingClientRect();
+                return b ? { x: b.left - bar.left, w: b.width } : null;
+              })(),
+              named: d.labels.filter((l) => l.text === document.querySelector("[data-session-deck] [data-deck-title]")?.textContent).map((l) => ({ x: l.x, w: l.w })),
+              titleHit: d.hits.filter((h) => h.seat === 3).map((h) => ({ x: h.x, w: h.w })),
             };
           });
         const rest = await readOf();
@@ -30171,6 +30211,13 @@ try {
           }
           if (Math.abs(rest.inset - (rest.deck + rest.safe)) > 0.5) fail(`bar r · the page's inset ${rest.inset} is not the deck row ${rest.deck} and the safe area ${rest.safe}`);
           if (rest.images < 3) fail(`bar r · ${rest.images} glyph/face image(s) — ‹, a face or glyph in the pill, the tabs figure at least`);
+          const inBand = (r) => rest.band && r.x >= rest.band.x - 0.5 && r.x + r.w <= rest.band.x + rest.band.w + 0.5;
+          if (!rest.band || rest.named.length !== 1 || !inBand(rest.named[0])) {
+            fail(`bar r · the native title reads ${shown(rest.named)} against the band ${shown(rest.band)} — cut to the band's box (UX-35 §3; lib/native-deck.ts seen)`);
+          }
+          if (rest.titleHit.length !== 1 || !inBand(rest.titleHit[0]) || Math.abs(rest.titleHit[0].w - (rest.band?.w ?? 0)) > 0.5) {
+            fail(`bar r · the native title's press is ${shown(rest.titleHit)} — the band's whole current segment ${shown(rest.band)} (UX-35 §1)`);
+          }
         }
         // **A sheet over the page takes the page away** (UX-28, the owner's
         // phone: the native page painted over every sheet). The pane says

@@ -33,6 +33,23 @@ export type DeckImage = { x: number; y: number; w: number; h: number; png: strin
 export type DeckLabel = { x: number; y: number; w: number; h: number; text: string; size: number; weight: number; color: string; center: boolean };
 /** Where a finger lands, and which DOM control it presses. */
 export type DeckHit = { x: number; y: number; w: number; h: number; seat: number; swipe: boolean };
+/** **The pill's progress line** (UX-35 §2): the slot's run while the tab
+    reloads — its box, the pill's glass it is clipped to (the capsule's
+    corners, `r`), its ink, and the DOM sweep's period and curve, so the
+    native line runs as the DOM one does: from the left, over and over,
+    until a reading comes without it. */
+export type DeckProgress = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  clip: { x: number; y: number; w: number; h: number; r: number };
+  color: string;
+  /** One sweep, in ms; 0 under reduced motion, where the line stands. */
+  ms: number;
+  /** The sweep's `cubic-bezier`, linear when the DOM's is not one. */
+  ease: [number, number, number, number];
+};
 
 export type DeckDrawing = {
   /** The deck's band, from its top to the screen's foot (safe area in). */
@@ -48,6 +65,8 @@ export type DeckDrawing = {
   images: DeckImage[];
   labels: DeckLabel[];
   hits: DeckHit[];
+  /** Absent once the load ends: the native line goes with it. */
+  progress: DeckProgress | null;
 };
 
 /** The iPhone app, where pages are native views over the face. */
@@ -260,6 +279,22 @@ function rel(r: DOMRect, o: DOMRect) {
   return { x: r.left - o.left, y: r.top - o.top, w: r.width, h: r.height };
 }
 
+/** **An element's box as the band shows it** (UX-35 §3): inside the deck
+    band (`[data-deck-band]`) a name is as wide as it is long — the band
+    clips it, a reading would not — so the box is cut to the band's
+    before it is sent and `UILabel` truncates the tail there. ⚠️ 墓碑: the
+    title's whole width went out and the native name ran past the
+    capsule. */
+function seen(el: Element, o: DOMRect) {
+  const b = el.getBoundingClientRect();
+  const band = el.closest("[data-deck-band]");
+  if (!band) return rel(b, o);
+  const c = band.getBoundingClientRect();
+  const left = Math.max(b.left, c.left);
+  const right = Math.min(b.right, c.right);
+  return { x: left - o.left, y: b.top - o.top, w: Math.max(0, right - left), h: b.height };
+}
+
 /**
  * Reads the DOM deck under `screen` (`[data-session-screen]`) into what
  * the native side draws. `null` when there is no deck to read.
@@ -341,7 +376,7 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
     if (!shown(el)) continue;
     const cs = getComputedStyle(el);
     labels.push({
-      ...rel(el.getBoundingClientRect(), o),
+      ...seen(el, o),
       text: el.textContent ?? "",
       size: parseFloat(cs.fontSize),
       weight: Number(cs.fontWeight) || 400,
@@ -352,9 +387,29 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
   SEATS.forEach((sel, seat) => {
     const el = screen.querySelector<HTMLElement>(sel);
     if (!el || !shown(el) || el.getAttribute("aria-disabled") === "true") return;
-    const at = rel(el.getBoundingClientRect(), o);
+    // The title is pressed anywhere on the band's current segment, its
+    // face included, as the DOM band takes it (UX-35 §1).
+    const at = seen(el.closest('[data-band-seg="cur"]') ?? el, o);
     hits.push({ ...at, seat, swipe: false });
   });
+  // The pill's progress line, read from the DOM's own (`PillProgress`)
+  // while it is there: the DOM pill stays the source of truth.
+  let progress: DeckProgress | null = null;
+  const line = bar.querySelector<HTMLElement>("[data-pill-progress]");
+  const run = line?.firstElementChild;
+  const glassOf = line?.closest<HTMLElement>("[data-deck-pill]");
+  if (line && run && glassOf && shown(line)) {
+    const cs = getComputedStyle(run);
+    const g = glassOf.getBoundingClientRect();
+    const curve = /cubic-bezier\(([^)]+)\)/.exec(cs.animationTimingFunction)?.[1].split(",").map(Number);
+    progress = {
+      ...rel(line.getBoundingClientRect(), o),
+      clip: { ...rel(g, o), r: Math.min(g.width, g.height) / 2 },
+      color: plain(cs.backgroundColor),
+      ms: cs.animationName === "none" ? 0 : (parseFloat(cs.animationDuration) || 0) * (cs.animationDuration.endsWith("ms") ? 1 : 1000),
+      ease: curve?.length === 4 && curve.every(Number.isFinite) ? (curve as DeckProgress["ease"]) : [0, 0, 1, 1],
+    };
+  }
   // The pill swipes sideways between tabs, as the DOM pill does.
   const pill = bar.querySelector<HTMLElement>("[data-deck-pill]");
   if (pill && shown(pill)) hits.push({ ...rel(pill.getBoundingClientRect(), o), seat: -1, swipe: true });
@@ -375,5 +430,6 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
     images,
     labels,
     hits,
+    progress,
   };
 }
