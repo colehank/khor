@@ -858,6 +858,13 @@ async fn term_prompt(id: String, up: bool) -> Result<(), String> {
     khor_gui_core::term::prompt(&Node::root_from_env(), &id, up).await
 }
 
+/// The wheel over a shell's own tmux client (item 58, `term::scroll`):
+/// true when tmux took it.
+#[tauri::command]
+async fn term_scroll(id: String, rows: i32) -> Result<bool, String> {
+    khor_gui_core::term::scroll(&Node::root_from_env(), &id, rows).await
+}
+
 /// ⌘K kept where the bytes are (`term::term_forget`): true when the host
 /// kept it too.
 #[tauri::command]
@@ -4257,6 +4264,7 @@ pub fn run() {
             term_stream,
             term_history,
             term_prompt,
+            term_scroll,
             term_pane_history,
             term_forget,
             term_wait,

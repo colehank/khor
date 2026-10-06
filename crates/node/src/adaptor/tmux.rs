@@ -201,6 +201,9 @@ pub struct Tmux {
     /// only one production ever touches; tests name their own so that
     /// they never see, and can never disturb, the user's sessions.
     socket: Option<String>,
+    /// `-S <path>`: a server named by its socket's path, as a person's
+    /// own client may name it (item 58, [`client_in_front`]).
+    path: Option<String>,
     /// Where to look for the binary, in order. Resolved once at
     /// construction rather than per call: `KHOR_TMUX` read inside
     /// [`Tmux::sweep`] would make every test that sets it a hazard for
@@ -213,6 +216,7 @@ impl Tmux {
     pub fn default_server() -> Tmux {
         Tmux {
             socket: None,
+            path: None,
             binaries: Tmux::binaries(),
         }
     }
@@ -221,8 +225,24 @@ impl Tmux {
     pub fn on_socket(name: &str) -> Tmux {
         Tmux {
             socket: Some(name.to_owned()),
+            path: None,
             binaries: Tmux::binaries(),
         }
+    }
+
+    /// The server a client's own socket arguments name (`-L name`,
+    /// `-S path`, the last of each winning as tmux's own parse does);
+    /// none is the default server.
+    pub fn on_socket_args(args: &[String]) -> Tmux {
+        let mut tmux = Tmux::default_server();
+        for pair in args.chunks(2) {
+            match pair {
+                [flag, value] if flag == "-L" => tmux.socket = Some(value.clone()),
+                [flag, value] if flag == "-S" => tmux.path = Some(value.clone()),
+                _ => {}
+            }
+        }
+        tmux
     }
 
     /// This one binary and no fallbacks. How the "there is no tmux on
@@ -231,6 +251,7 @@ impl Tmux {
     pub fn at_binary(path: &str) -> Tmux {
         Tmux {
             socket: None,
+            path: None,
             binaries: vec![path.to_owned()],
         }
     }
@@ -339,6 +360,10 @@ impl Tmux {
             argv.push("-L".into());
             argv.push(sock.clone());
         }
+        if let Some(path) = &self.path {
+            argv.push("-S".into());
+            argv.push(path.clone());
+        }
         if self.takes_client_features() {
             argv.push("-T".into());
             argv.push("extkeys".into());
@@ -405,14 +430,20 @@ impl Tmux {
     /// the one whose `@khor_row` is `row` ([`Tmux::grouped_attach_argv`]).
     pub fn jump_prompt(&self, row: &str, up: bool) -> Result<(), String> {
         let id = self.session_of_row(row)?;
+        self.jump_prompt_in(&id, row, up)
+    }
+
+    /// [`Tmux::jump_prompt`] in the session `id` (`$3`), whose current
+    /// window's active pane is the one moved in; `row` names it in errors.
+    pub fn jump_prompt_in(&self, id: &str, row: &str, up: bool) -> Result<(), String> {
         let step = if up { "previous-prompt" } else { "next-prompt" };
         let at = |args: &[&str]| self.ask(args).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row));
-        let place = ["display-message", "-p", "-t", &id, "#{pane_in_mode} #{scroll_position} #{copy_cursor_y}"];
+        let place = ["display-message", "-p", "-t", id, "#{pane_in_mode} #{scroll_position} #{copy_cursor_y}"];
         let before = at(&place)?;
-        at(&["copy-mode", "-t", &id, ";", "send-keys", "-X", "-t", &id, step])?;
+        at(&["copy-mode", "-t", id, ";", "send-keys", "-X", "-t", id, step])?;
         // Down from the last prompt goes nowhere: that is the bottom.
         if !up && before.starts_with('1') && at(&place)? == before {
-            at(&["send-keys", "-X", "-t", &id, "cancel"])?;
+            at(&["send-keys", "-X", "-t", id, "cancel"])?;
         }
         Ok(())
     }
@@ -439,13 +470,19 @@ impl Tmux {
     /// pane output between the commands of a list.
     pub fn history(&self, row: &str, since: Option<&HistoryAnchor>) -> Result<PaneHistory, String> {
         let id = self.session_of_row(row)?;
+        self.history_in(&id, row, since)
+    }
+
+    /// [`Tmux::history`] of the session `id` (`$3`): its current window's
+    /// active pane; `row` names it in errors.
+    pub fn history_in(&self, id: &str, row: &str, since: Option<&HistoryAnchor>) -> Result<PaneHistory, String> {
         // A first read looks near the end for the anchor; one with no
         // anchor to look for takes everything at once.
         let mut anchor = since.filter(|a| !a.tail.is_empty());
         let mut window = if anchor.is_some() { HISTORY_FIRST_WINDOW } else { HISTORY_CAP };
         loop {
             let read = self
-                .read_history(&id, window, anchor.is_some())
+                .read_history(id, window, anchor.is_some())
                 .ok_or_else(|| khor_catalog::msg::tmux_session_gone(row))?;
             // Everything there is, or as much as is sent. The window is in
             // rows, as `history_size` is; the lines come joined (`-J`), so a
@@ -470,6 +507,36 @@ impl Tmux {
             }
             window = (window * 8).min(HISTORY_CAP);
         }
+    }
+
+    /// **The wheel over a person's own tmux client** (item 58): what
+    /// tmux's default `WheelUpPane` / `WheelDownPane` bindings do with
+    /// `mouse` on, done for a client whose `mouse` is the person's and
+    /// off. Nothing of theirs is written — no option, no `-g`, no file —
+    /// only the pane state a wheel would have set: up enters copy mode
+    /// (`-e`, which leaves again at the bottom) and scrolls; down scrolls
+    /// while in it. A pane whose program is on the alternate screen or
+    /// holds the mouse gets the arrow keys a terminal sends for a wheel
+    /// there, as before. `rows` up when positive; `row` names the session
+    /// in errors.
+    pub fn wheel_in(&self, id: &str, row: &str, rows: i32) -> Result<(), String> {
+        let at = |args: &[&str]| self.ask(args).ok_or_else(|| khor_catalog::msg::tmux_session_gone(row));
+        let state = at(&["display-message", "-p", "-t", id, "#{pane_in_mode} #{alternate_on} #{mouse_any_flag}"])?;
+        if rows == 0 {
+            return Ok(());
+        }
+        let mut flags = state.split_whitespace();
+        let in_mode = flags.next() == Some("1");
+        let program = flags.any(|f| f == "1");
+        let n = rows.unsigned_abs().to_string();
+        if in_mode {
+            at(&["send-keys", "-X", "-N", &n, "-t", id, if rows > 0 { "scroll-up" } else { "scroll-down" }])?;
+        } else if program {
+            at(&["send-keys", "-N", &n, "-t", id, if rows > 0 { "Up" } else { "Down" }])?;
+        } else if rows > 0 {
+            at(&["copy-mode", "-e", "-t", id, ";", "send-keys", "-X", "-N", &n, "-t", id, "scroll-up"])?;
+        }
+        Ok(())
     }
 
     fn session_of_row(&self, row: &str) -> Result<String, String> {
@@ -778,6 +845,9 @@ impl Tmux {
             if let Some(sock) = &self.socket {
                 c.arg("-L").arg(sock);
             }
+            if let Some(path) = &self.path {
+                c.arg("-S").arg(path);
+            }
             c.args(args)
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
@@ -790,6 +860,76 @@ impl Tmux {
         }
         None
     }
+}
+
+/// **A person's own tmux client in front of a terminal** (item 58): a
+/// khor shell in which the person typed `tmux`. What the face needs to
+/// treat it as a tmux row — the server and the session to read history
+/// from, scroll and move between prompts in — without writing anything
+/// of the person's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientInFront {
+    /// The client's socket arguments as its argv gave them (`-L name`,
+    /// `-S path`); empty for the default server.
+    pub socket: Vec<String>,
+    /// The terminal it draws on, as tmux names it (`/dev/ttys012`).
+    pub tty: String,
+    /// The session it is attached to: tmux's id (`$3`) and its name.
+    pub session_id: String,
+    pub session_name: String,
+}
+
+impl ClientInFront {
+    /// The client's server.
+    pub fn server(&self) -> Tmux {
+        Tmux::on_socket_args(&self.socket)
+    }
+}
+
+/// **The tmux client in the foreground of the terminal process `pid` is
+/// on** (item 58), and the session it is attached to; `None` when the
+/// foreground is anything else, when it is `pid` itself (a host whose
+/// own program is a tmux client: khor's grouped client, not a shell's),
+/// or when the client's server lists no client on that terminal.
+///
+/// The kernel says who is in front (`ps`: `+` in the state is the
+/// terminal's foreground process group), the client's argv says which
+/// server (`-L` / `-S`, else the default one, resolved in this process's
+/// environment — the shell inherited it), and that server confirms by
+/// the terminal: `list-clients` by `client_tty`. A `-S` path with a
+/// space in it is not found (`ps` joins the argv with spaces).
+pub fn client_in_front(pid: u32) -> Option<ClientInFront> {
+    let tty = ps(&["-o", "tty=", "-p", &pid.to_string()])?.trim().to_owned();
+    if tty.is_empty() || tty.starts_with('?') {
+        return None;
+    }
+    let procs = ps(&["-t", &tty, "-o", "pid=,stat=,args="])?;
+    let argv: Vec<String> = procs.lines().find_map(|l| {
+        let mut words = l.split_whitespace();
+        let who: u32 = words.next()?.parse().ok()?;
+        let stat = words.next()?;
+        let argv: Vec<String> = words.map(str::to_owned).collect();
+        let tmux = argv.first().map(std::path::Path::new).and_then(std::path::Path::file_name).is_some_and(|n| n == "tmux");
+        (who != pid && stat.contains('+') && tmux).then_some(argv)
+    })?;
+    let socket = crate::host::tmux_socket_args(&argv);
+    let tty = if tty.starts_with('/') { tty } else { format!("/dev/{tty}") };
+    let clients = Tmux::on_socket_args(&socket).ask(&["list-clients", "-F", "#{client_tty}\t#{session_id}\t#{session_name}"])?;
+    clients.lines().find_map(|l| {
+        let mut f = l.splitn(3, '\t');
+        (f.next()? == tty).then(|| ClientInFront {
+            socket: socket.clone(),
+            tty: tty.clone(),
+            session_id: f.next().unwrap_or_default().to_owned(),
+            session_name: f.next().unwrap_or_default().to_owned(),
+        })
+    })
+}
+
+/// `ps` with `args`, its output, or `None`.
+fn ps(args: &[&str]) -> Option<String> {
+    let out = Command::new("ps").args(args).stdin(Stdio::null()).stderr(Stdio::null()).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// One pane, as tmux describes it.

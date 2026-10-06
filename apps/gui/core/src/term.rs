@@ -663,6 +663,15 @@ pub async fn prompt(root: &Path, id: &str, up: bool) -> Result<(), String> {
     n.jump_prompt_anywhere(&SessionId(id.to_owned()), up).await
 }
 
+/// **The wheel over a shell's own tmux client** (item 58,
+/// `Node::tmux_wheel_anywhere`): `rows` up when positive. False when no
+/// tmux client is in front of the row's terminal: the face keeps the
+/// wheel. 0 rows only asks.
+pub async fn scroll(root: &Path, id: &str, rows: i32) -> Result<bool, String> {
+    let n = Node::open(root.to_path_buf())?;
+    n.tmux_wheel_anywhere(&SessionId(id.to_owned()), rows).await
+}
+
 /// Where the face's copy of a tmux pane's history ends (item 31,
 /// `khor_node::adaptor::tmux::HistoryAnchor`): handed back as it came.
 #[derive(Debug, Clone, Serialize, serde::Deserialize, TS)]

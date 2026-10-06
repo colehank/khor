@@ -1974,9 +1974,9 @@ impl Node {
                 machine,
                 session,
                 action,
-            } => match self.act_on_with(ep, &machine, &session, &action).await {
-                Ok(()) => ipc::Reply::Accepted {
-                    moved: 0,
+            } => match self.act_on_moved(ep, &machine, &session, &action).await {
+                Ok(moved) => ipc::Reply::Accepted {
+                    moved,
                     landed: Vec::new(),
                 },
                 Err(why) => ipc::Reply::Refused { why },
@@ -3243,6 +3243,20 @@ impl Node {
                             .map_err(|e| e.to_string())??;
                         Ok(Response::Acted {
                             moved: 0,
+                            landed: Vec::new(),
+                        })
+                    }
+                    // The wheel over a shell's own tmux client (item
+                    // 58): `moved` 1 when tmux took it.
+                    other if other.starts_with("wheel:") => {
+                        let rows: i32 = other["wheel:".len()..].parse().map_err(|_| msg::unknown_action(other))?;
+                        let id = crate::SessionId(session);
+                        let live = self.live.clone();
+                        let took = tokio::task::spawn_blocking(move || live.tmux_wheel(&id, rows))
+                            .await
+                            .map_err(|e| e.to_string())??;
+                        Ok(Response::Acted {
+                            moved: took as u64,
                             landed: Vec::new(),
                         })
                     }
@@ -6356,6 +6370,42 @@ impl Node {
             .map_err(|e| e.to_string())?
     }
 
+    /// **The wheel over a shell's own tmux client** (item 58,
+    /// `LiveKind::tmux_wheel`), on the machine the row lives on: `Act`
+    /// "wheel:<rows>" there. `Ok(false)` when no tmux client is in front,
+    /// or a khor there predates the question: the face keeps the wheel.
+    pub async fn tmux_wheel_anywhere(&self, id: &crate::SessionId, rows: i32) -> Result<bool, String> {
+        if let Some(machine) = self.far_machine(id)? {
+            let action = format!("wheel:{rows}");
+            let op = ipc::Op::ActOn {
+                machine: machine.clone(),
+                session: id.0.clone(),
+                action: action.clone(),
+            };
+            let reply = match self.via_serve(op).await {
+                Some(reply) => match reply? {
+                    ipc::Reply::Accepted { moved, .. } => Ok(moved > 0),
+                    ipc::Reply::Refused { .. } => Ok(false),
+                    other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+                },
+                None => {
+                    let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    let outcome = self.act_on_moved(&ep, &machine, &id.0, &action).await;
+                    ep.close().await;
+                    outcome.map(|moved| moved > 0).or(Ok(false))
+                }
+            };
+            return reply;
+        }
+        let live = self.live.clone();
+        let id = id.clone();
+        tokio::task::spawn_blocking(move || live.tmux_wheel(&id, rows))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+
     /// **A tmux row's front pane history** (item 31,
     /// `LiveKind::tmux_history`), on the machine the row lives on: what a
     /// phone scrolls locally. A khor there that predates the question
@@ -6430,13 +6480,19 @@ impl Node {
     }
 
     async fn act_on_with(&self, ep: &iroh::Endpoint, machine: &str, session: &str, action: &str) -> Result<(), String> {
+        self.act_on_moved(ep, machine, session, action).await.map(|_| ())
+    }
+
+    /// [`Node::act_on_with`], keeping what the act says it moved (the
+    /// wheel's "taken", item 58).
+    async fn act_on_moved(&self, ep: &iroh::Endpoint, machine: &str, session: &str, action: &str) -> Result<u64, String> {
         let (channel, _) = self.resolve(machine)?;
         let req = Request::Act {
             session: session.to_owned(),
             action: action.to_owned(),
         };
         match self.ask(ep, &channel, &req).await? {
-            Response::Acted { .. } => Ok(()),
+            Response::Acted { moved, .. } => Ok(moved),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }

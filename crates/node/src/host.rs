@@ -746,7 +746,7 @@ impl Ring {
 
 /// The socket a tmux client's argv names (`-L name` or `-S path`, before
 /// the command), to speak to the same server.
-fn tmux_socket_args(cmd: &[String]) -> Vec<String> {
+pub(crate) fn tmux_socket_args(cmd: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut i = 1;
     while i + 1 < cmd.len() {

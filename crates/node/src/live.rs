@@ -877,11 +877,42 @@ impl LiveKind {
     /// `Tmux::jump_prompt`): there tmux holds the screen and its history,
     /// so the face asks tmux.
     pub fn jump_prompt(&self, id: &SessionId, up: bool) -> Result<(), String> {
-        let tmux = self
-            .discovery
-            .tmux()
-            .ok_or_else(|| msg::no_terminal_here(&id.0))?;
-        tmux.jump_prompt(&id.0, up)
+        let row = self.discovery.tmux().ok_or_else(|| msg::no_terminal_here(&id.0)).and_then(|t| t.jump_prompt(&id.0, up));
+        // A shell with the person's own tmux client in front (item 58).
+        match row {
+            Err(e) => match self.tmux_in_shell(id) {
+                Some(c) => c.server().jump_prompt_in(&c.session_id, &id.0, up),
+                None => Err(e),
+            },
+            ok => ok,
+        }
+    }
+
+    /// **A person's own tmux client in front of this row's terminal**
+    /// (item 58, `adaptor::tmux::client_in_front`): a khor shell in which
+    /// they typed `tmux`, and the session that client is attached to.
+    /// `None` when the row has no running host here, or its terminal's
+    /// foreground is anything else — the moment the client leaves
+    /// (`exit`, a detach), the row is a plain shell again.
+    pub fn tmux_in_shell(&self, id: &SessionId) -> Option<crate::adaptor::tmux::ClientInFront> {
+        let dir = self.dir_of(id)?;
+        let hf = crate::host::read_host_file(&dir).ok()?;
+        if !crate::link::pid_running(hf.host_pid) {
+            return None;
+        }
+        crate::adaptor::tmux::client_in_front(hf.child_pid)
+    }
+
+    /// **The wheel over a shell's own tmux client** (item 58,
+    /// `Tmux::wheel_in`): `rows` up when positive, in the session the
+    /// client in front is attached to. `Ok(false)` when no tmux client is
+    /// in front: the face keeps the wheel for itself. `rows` 0 only asks.
+    pub fn tmux_wheel(&self, id: &SessionId, rows: i32) -> Result<bool, String> {
+        let Some(c) = self.tmux_in_shell(id) else {
+            return Ok(false);
+        };
+        c.server().wheel_in(&c.session_id, &id.0, rows)?;
+        Ok(true)
     }
 
     /// **The history of the pane a tmux row's client has in front**
@@ -892,11 +923,16 @@ impl LiveKind {
         id: &SessionId,
         since: Option<&crate::adaptor::tmux::HistoryAnchor>,
     ) -> Result<crate::adaptor::tmux::PaneHistory, String> {
-        let tmux = self
-            .discovery
-            .tmux()
-            .ok_or_else(|| msg::no_terminal_here(&id.0))?;
-        tmux.history(&id.0, since)
+        let row = self.discovery.tmux().ok_or_else(|| msg::no_terminal_here(&id.0)).and_then(|t| t.history(&id.0, since));
+        // A shell with the person's own tmux client in front (item 58):
+        // the history of the session that client is attached to.
+        match row {
+            Err(e) => match self.tmux_in_shell(id) {
+                Some(c) => c.server().history_in(&c.session_id, &id.0, since),
+                None => Err(e),
+            },
+            ok => ok,
+        }
     }
 
     /// **The address a face attaches to for this row, on the machine
