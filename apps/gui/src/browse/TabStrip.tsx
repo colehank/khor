@@ -872,6 +872,8 @@ export function TabStrip({
                 <button
                   type="button"
                   data-tab-close
+                  // Under a finger the × is a 44 hit box (app.css F1.5).
+                  data-glass-hit
                   aria-label={gui.close}
                   className={cn(
                     "flex h-full w-tab-close flex-none items-center justify-center hover:bg-muted hover:text-foreground",
