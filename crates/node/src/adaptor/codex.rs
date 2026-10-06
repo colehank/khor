@@ -203,11 +203,27 @@ impl Codex {
     /// all is also the vendor verdict: whichever store resolves a leaf
     /// owns the session (`Node::takeover`'s fork).
     pub fn full_session_id(&self, leaf: &str) -> Option<String> {
-        self.rollouts().into_iter().find_map(|r| {
-            let name = r.path.file_name()?.to_str()?;
-            let uuid = uuid_in_name(name)?;
-            (crate::live::clean_leaf(uuid) == leaf).then(|| uuid.to_owned())
+        let path = self.rollout_of_leaf(leaf)?;
+        uuid_in_name(path.file_name()?.to_str()?).map(str::to_owned)
+    }
+
+    /// The rollout behind a lossy khor leaf, by name alone.
+    fn rollout_of_leaf(&self, leaf: &str) -> Option<PathBuf> {
+        self.rollouts().into_iter().map(|r| r.path).find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .and_then(uuid_in_name)
+                .is_some_and(|u| crate::live::clean_leaf(u) == leaf)
         })
+    }
+
+    /// The newest sentence in a leaf's rollout, as one preview line —
+    /// claude's [`super::claude::Claude::last_said`] with codex's
+    /// reading of the lines, and the same cache.
+    pub fn last_said(&self, leaf: &str) -> Option<String> {
+        let path = self.rollout_of_leaf(leaf)?;
+        let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok()?;
+        super::claude::heard_last(path, mtime, utterances_of)
     }
 
     /// The rollout that belongs to this thread id — names carry the

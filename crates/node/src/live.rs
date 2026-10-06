@@ -1658,6 +1658,9 @@ impl LiveKind {
         let claude = crate::adaptor::claude::Claude::at(
             crate::adaptor::vendor_home(&self.root).join(".claude"),
         );
+        let codex = crate::adaptor::codex::Codex::at(
+            crate::adaptor::vendor_home(&self.root).join(".codex"),
+        );
         for r in out.iter_mut() {
             // **An agent row never says its screen's bottom line**
             // (SESS-BRIEF 1d): that line is the program's chrome, not
@@ -1680,14 +1683,22 @@ impl LiveKind {
             // 不在任何地方. So an unfiled row gets as far as the place
             // read, and no further.
             let filed = r.category.as_deref();
-            if filed.is_some() && filed != Some("claude") {
-                continue;
-            }
             let leaf = vendor_leaves.get(&r.id.0).cloned().or_else(|| {
                 r.id.0
                     .strip_prefix(&format!("{}/", khor_core::kind::TUI))
                     .map(str::to_owned)
             });
+            // codex's rows read codex's rollout the same way: its newest
+            // sentence, past the token counts (SESS-BRIEF 1c).
+            if filed == Some(crate::adaptor::codex::VENDOR) {
+                if let Some(l) = leaf {
+                    r.last = codex.last_said(&l);
+                }
+                continue;
+            }
+            if filed.is_some() && filed != Some(crate::adaptor::claude::VENDOR) {
+                continue;
+            }
             // **One resolution, two answers.** Both of these walk the
             // same projects directory to find the same file, so the
             // leaf is computed once and the two readers share the trip
@@ -3516,6 +3527,36 @@ mod tests {
         fs::write(k.dir_of(&id).unwrap().join("last.txt"), "› Ask Codex to do anything").unwrap();
         let rows = k.rows(|_| 0);
         assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last, None);
+    }
+
+    /// A codex row says codex's newest sentence, as a claude row says
+    /// claude's (SESS-BRIEF 1c): the rollout behind the id's leaf, its
+    /// `event_msg` words, past the token counts after them — and not
+    /// the composer's bottom line from the screen.
+    #[test]
+    fn a_codex_row_says_its_rollouts_newest_sentence() {
+        let root = tmp("preview-codex");
+        let day = root.join(".codex/sessions/2026/10/06");
+        fs::create_dir_all(&day).unwrap();
+        let uuid = "019fd755-0000-7000-8000-0000000000aa";
+        let lines = [
+            r#"{"type":"session_meta","payload":{"id":"x","cwd":"/w"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"user_message","message":"run the tests"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"agent_message","message":"All 40 pass."}}"#,
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#,
+            r#"{"type":"turn_context","payload":{"cwd":"/w"}}"#,
+        ];
+        fs::write(
+            day.join(format!("rollout-2026-10-06T00-00-00-{uuid}.jsonl")),
+            lines.join("\n") + "\n",
+        )
+        .unwrap();
+        let k = kind_at(&root);
+        let id = crate::adaptor::id_for(uuid);
+        k.register(&id, "tui", "codex", None, Some("codex")).unwrap();
+        fs::write(k.dir_of(&id).unwrap().join("last.txt"), "› Ask Codex to do anything").unwrap();
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last.as_deref(), Some("All 40 pass."));
     }
 
     /// The same rule against the **registry**: `khor run` started inside
