@@ -79,6 +79,10 @@ pub enum ClientOp {
     /// a reload, a re-attach, another face — is not handed the history
     /// the person cleared.
     Forget,
+    /// **The face's 历史行数** (version 4, item 56): the rows of history
+    /// it shows, said once after `Version`. The host's model keeps the
+    /// most any face has asked for, up to [`MODEL_SCROLLBACK_MOST`].
+    Scrollback(u32),
 }
 
 /// **The host protocol's version** (audit/term-attach.md). 1 is every
@@ -89,7 +93,8 @@ pub enum ClientOp {
 /// ([`Model::snapshot`]: the scrollback as styled lines, the screen with
 /// its attributes and cursor, the modes) instead of the ring's bytes; an
 /// older client still gets the ring. No new frame: the host waits
-/// [`FIRST_FRAME`] for the client's first word before choosing.
+/// [`FIRST_FRAME`] for the client's first word before choosing. 4 adds
+/// [`ClientOp::Scrollback`] (item 56).
 ///
 /// **How it is agreed without changing a frame's shape.** msgpack here
 /// is positional, and a struct read from a longer array fails
@@ -100,7 +105,7 @@ pub enum ClientOp {
 /// answer is no — and a client that sees it answers with
 /// [`ClientOp::Version`] before anything else. Neither side sends a word
 /// the other has not said it knows.
-pub const HOST_VERSION: u32 = 3;
+pub const HOST_VERSION: u32 = 4;
 
 /// How long a host waits after its `Welcome` for the client's first frame
 /// before handing it the ring (item 46): a versioned client's `Version`
@@ -792,10 +797,16 @@ struct Shared {
     model: Mutex<Option<Model>>,
 }
 
-/// Rows of history the model keeps above the screen: about what the
-/// ring held of an 80-column shell, kept as cells now (item 46; the
-/// face's own scrollback setting, item 17, bounds what it shows).
+/// Rows of history the model keeps above the screen until a face says
+/// its own setting: about what the ring held of an 80-column shell, kept
+/// as cells now (item 46). A shell opened from a face is told at once.
 const MODEL_SCROLLBACK: usize = 2000;
+
+/// **The most a face can ask the model to keep** (item 56): the face's
+/// 历史行数 (item 17) goes up to 20 000, the host keeps 10 000 at most. A
+/// vt100 row is 32 bytes a column whatever it holds — measured in
+/// `model_memory`: 27 MB for 10 000 rows at 80 columns, 40 MB at 120.
+pub const MODEL_SCROLLBACK_MOST: usize = 10_000;
 
 /// **The host keeps a screen, not only bytes** (item 46; the owner chose
 /// this over a private tmux). A vt100 terminal (MIT, the crate
@@ -805,11 +816,47 @@ const MODEL_SCROLLBACK: usize = 2000;
 /// stays for older clients and for ⌘K's `Forget`.
 struct Model {
     parser: vt100::Parser,
+    /// The rows of history `parser` keeps.
+    keeps: usize,
+    /// The most any face has asked for ([`ClientOp::Scrollback`]): taken
+    /// on the normal screen, since the rebuild that grows the history
+    /// cannot carry the normal screen under an alternate one.
+    asked: usize,
 }
 
 impl Model {
     fn new(rows: u16, cols: u16) -> Self {
-        Model { parser: vt100::Parser::new(rows, cols, MODEL_SCROLLBACK) }
+        Model {
+            parser: vt100::Parser::new(rows, cols, MODEL_SCROLLBACK),
+            keeps: MODEL_SCROLLBACK,
+            asked: MODEL_SCROLLBACK,
+        }
+    }
+
+    /// **The history follows the faces' setting** (item 56): a face says
+    /// its 历史行数 on attach and the model keeps the most any face has
+    /// asked for, up to [`MODEL_SCROLLBACK_MOST`] — never fewer, so the
+    /// phone's 5000 does not cut the Mac's 10 000 under it. vt100 fixes
+    /// the length at birth, so the model is rebuilt from its own
+    /// snapshot at the new length (what an attacher is handed, proven
+    /// cell for cell by `a_snapshot_rebuilds_the_screen_and_its_history`).
+    fn keep(&mut self, lines: usize) {
+        self.asked = self.asked.max(lines.min(MODEL_SCROLLBACK_MOST));
+        self.settle();
+    }
+
+    fn settle(&mut self) {
+        if self.asked <= self.keeps || self.parser.screen().alternate_screen() {
+            return;
+        }
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        let (rows, cols) = self.parser.screen().size();
+        let bytes = self.snapshot(&[]);
+        let mut fresh = vt100::Parser::new(rows, cols, self.asked);
+        if catch_unwind(AssertUnwindSafe(|| fresh.process(&bytes))).is_ok() {
+            self.parser = fresh;
+        }
+        self.keeps = self.asked;
     }
 
     /// vt100 has corner-case panics on real streams (`khor_detect::Screen`
@@ -820,7 +867,10 @@ impl Model {
         use std::panic::{AssertUnwindSafe, catch_unwind};
         let (rows, cols) = self.parser.screen().size();
         if catch_unwind(AssertUnwindSafe(|| self.parser.process(bytes))).is_err() {
-            self.parser = vt100::Parser::new(rows, cols, MODEL_SCROLLBACK);
+            self.parser = vt100::Parser::new(rows, cols, self.keeps);
+        }
+        if self.asked > self.keeps {
+            self.settle();
         }
     }
 
@@ -858,7 +908,7 @@ impl Model {
         }
         bytes.extend_from_slice(&screen.attributes_formatted());
         bytes.extend_from_slice(&screen.input_mode_formatted());
-        let mut fresh = vt100::Parser::new(rows, cols, MODEL_SCROLLBACK);
+        let mut fresh = vt100::Parser::new(rows, cols, self.keeps);
         fresh.process(&bytes);
         self.parser = fresh;
     }
@@ -1774,6 +1824,12 @@ fn host_serving(
                                     drop(ring);
                                 }
                                 ClientOp::Forget => {}
+                                ClientOp::Scrollback(lines) if agreed >= 4 => {
+                                    if let Some(m) = shared.model.lock().unwrap().as_mut() {
+                                        m.keep(lines as usize);
+                                    }
+                                }
+                                ClientOp::Scrollback(_) => {}
                             }
                         }
                     });
@@ -1905,7 +1961,7 @@ mod tests {
 #[cfg(test)]
 mod last_line_tests {
     use super::{
-        CellLook, MODEL_SCROLLBACK, Model, last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last, tmux_socket_args,
+        CellLook, MODEL_SCROLLBACK, MODEL_SCROLLBACK_MOST, Model, last_plain_line, looks_like_a_tmux_status_line, pty_is_a_multiplexer_client, read_last, tmux_socket_args,
     };
     use crate::modes::Modes;
     use std::path::Path;
@@ -2058,6 +2114,88 @@ mod last_line_tests {
             assert_eq!(text(a, off), text(b, off), "{name}: history row {} from the top", total - off);
             off -= 1;
         }
+    }
+
+    /// The history's length in rows, and its oldest row's text.
+    fn history_of(model: &mut Model) -> (usize, String) {
+        let s = model.parser.screen_mut();
+        s.set_scrollback(usize::MAX);
+        let total = s.scrollback();
+        let oldest = s.rows(0, 80).next().unwrap_or_default();
+        s.set_scrollback(0);
+        (total, oldest.trim_end().to_owned())
+    }
+
+    /// **The faces' 历史行数** (item 56): a face that asks for more grows
+    /// the model's history without losing what it holds or the screen; a
+    /// smaller ask never cuts it; the ask is capped at the most.
+    #[test]
+    fn the_model_keeps_the_history_the_faces_ask_for() {
+        let mut model = Model::new(24, 80);
+        model.feed(b"\x1b[?2004h");
+        for i in 0..3000 {
+            model.feed(format!("\x1b[3{}mline {i}\x1b[0m\r\n", i % 7 + 1).as_bytes());
+        }
+        model.feed(b"$ typed");
+        assert_eq!(history_of(&mut model).0, MODEL_SCROLLBACK, "the length before any face asks");
+        let before = model.parser.screen().contents_formatted();
+        model.keep(5000);
+        assert_eq!(model.parser.screen().contents_formatted(), before, "the screen, its colours and the cursor survive the rebuild");
+        assert!(model.parser.screen().bracketed_paste(), "the modes survive it");
+        let (total, oldest) = history_of(&mut model);
+        assert_eq!((total, oldest.as_str()), (MODEL_SCROLLBACK, "line 977"), "the rows held are kept, none invented");
+        for i in 3000..9000 {
+            model.feed(format!("line {i}\r\n").as_bytes());
+        }
+        assert_eq!(history_of(&mut model).0, 5000, "the history grows to the ask");
+        model.keep(1000);
+        assert_eq!(history_of(&mut model).0, 5000, "a smaller ask (the phone's) does not cut a larger one (the Mac's)");
+        model.keep(50_000);
+        for i in 9000..21000 {
+            model.feed(format!("line {i}\r\n").as_bytes());
+        }
+        assert_eq!(history_of(&mut model).0, MODEL_SCROLLBACK_MOST, "capped at the most");
+    }
+
+    /// An ask that comes while a program holds the alternate screen waits
+    /// for it to end: the rebuild cannot carry the normal screen under it.
+    #[test]
+    fn the_model_grows_after_the_alternate_screen() {
+        let mut model = Model::new(24, 80);
+        for i in 0..2500 {
+            model.feed(format!("line {i}\r\n").as_bytes());
+        }
+        model.feed(b"\x1b[?1049h\x1b[Hfull screen");
+        model.keep(5000);
+        assert_eq!(model.keeps, MODEL_SCROLLBACK, "not rebuilt on the alternate screen");
+        model.feed(b"\x1b[?1049l");
+        assert_eq!(model.keeps, 5000, "rebuilt once it ends");
+        assert_eq!(history_of(&mut model), (MODEL_SCROLLBACK, "line 477".to_owned()), "the normal screen's history came through");
+    }
+
+    /// What one shell's model costs (item 56): the process's resident
+    /// size before and after filling one model's history, `MODEL_COLS`
+    /// wide and `MODEL_LINES` long — one measurement a process, since
+    /// freed pages stay resident. Run alone:
+    /// `MODEL_COLS=80 MODEL_LINES=10000 cargo test -p khor-node --lib model_memory -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn model_memory() {
+        let rss = || {
+            let out = std::process::Command::new("ps").args(["-o", "rss=", "-p", &std::process::id().to_string()]).output().unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().parse::<u64>().unwrap()
+        };
+        let env = |k: &str, or: usize| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(or);
+        let (cols, lines) = (env("MODEL_COLS", 80) as u16, env("MODEL_LINES", MODEL_SCROLLBACK));
+        let start = rss();
+        let mut model = Model::new(40, cols);
+        model.keep(lines);
+        let line = format!("\x1b[32m$\x1b[0m {}\r\n", "x".repeat(40.min(cols as usize - 3)));
+        for _ in 0..lines + 40 {
+            model.feed(line.as_bytes());
+        }
+        assert_eq!(history_of(&mut model).0, lines.min(MODEL_SCROLLBACK_MOST).max(MODEL_SCROLLBACK));
+        eprintln!("model {cols} columns, {lines} rows: {:.1} MB", rss().saturating_sub(start) as f64 / 1024.0);
     }
 
     /// ⌘K in the model: the history and the rows above the cursor's are

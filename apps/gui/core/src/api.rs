@@ -661,7 +661,9 @@ pub fn answer(
         // `trash_here`'s reason, never read off `navigator`.
         "pdf_here" => to_json(&crate::files::pdf_here()),
         "term_open" => {
-            crate::term::term_open(root, &arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
+            // `history` is a newer face's (item 56); an older one says nothing.
+            let history = args.get("history").and_then(|v| v.as_u64()).unwrap_or(0).min(u32::MAX as u64) as u32;
+            crate::term::term_open(root, &arg("id")?, num("cols")? as u16, num("rows")? as u16, history)?;
             Ok("null".to_owned())
         }
         "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),

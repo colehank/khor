@@ -822,8 +822,8 @@ fn pdf_here() -> bool {
 /// A terminal on another machine is reached over the network
 /// ([`off_main`]).
 #[tauri::command]
-async fn term_open(id: String, cols: u16, rows: u16) -> Result<(), String> {
-    off_main(move || khor_gui_core::term::term_open(&Node::root_from_env(), &id, cols, rows)).await
+async fn term_open(id: String, cols: u16, rows: u16, history: Option<u32>) -> Result<(), String> {
+    off_main(move || khor_gui_core::term::term_open(&Node::root_from_env(), &id, cols, rows, history.unwrap_or(0))).await
 }
 
 #[tauri::command]

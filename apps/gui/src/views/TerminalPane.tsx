@@ -2179,8 +2179,8 @@ export function TerminalPane({
       const opened = again
         ? termLeave(id)
             .catch(() => {})
-            .then(() => termOpen(id, term.cols, term.rows))
-        : termOpen(id, term.cols, term.rows);
+            .then(() => termOpen(id, term.cols, term.rows, termHistory()))
+        : termOpen(id, term.cols, term.rows, termHistory());
       return opened
         .then(() => termAttach(id))
         .then((a) => {

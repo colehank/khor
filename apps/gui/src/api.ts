@@ -1748,9 +1748,10 @@ export function onFullscreen(tell: (full: boolean) => void): () => void {
 }
 
 /** Attaches a terminal to a hosted session at cols×rows; the host
-    resizes its PTY to match. */
-export const termOpen = (id: string, cols: number, rows: number) =>
-  call<null>("term_open", { id, cols, rows });
+    resizes its PTY to match, and keeps `history` rows of it (the face's
+    历史行数, item 56; capped by the host). */
+export const termOpen = (id: string, cols: number, rows: number, history: number) =>
+  call<null>("term_open", { id, cols, rows, history });
 /** Everything the feed holds so far (it began with the host's ring, so
     history rides along) and the cursor to stream from. The pane writes
     it into xterm and then follows with `termStream`.
