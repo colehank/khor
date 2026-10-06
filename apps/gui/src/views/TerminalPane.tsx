@@ -3352,7 +3352,7 @@ export function TerminalPane({
             mode (this pane's own, `terminalKeyboard`). The mode is
             `lib/term-tap`'s (`useTermWake`). */}
         <KeyRowSeats field={keysRef} keyboard={wake === "button" && <KeyboardSwitch field={keysRef} />}>
-          <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null }} />
+          <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, drop }} />
         </KeyRowSeats>
       </>
     )}

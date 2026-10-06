@@ -18,9 +18,13 @@
  *
  * Nothing takes the focus: the terminal keeps it, as under the keys.
  *
- * ⚠️ **Lab draft**: the paths are typed as the road would answer them;
- * the lane that takes this wires `term_drop(id, paths, from)` (term-60.md)
- * and the phone as a source.
+ * A machine's file rides the pane's drop (`FilesRoad.drop`, item 60's
+ * road): on the session's machine the path goes in as it is; on another,
+ * the session's machine pulls it into its `~/khor-drop/` and the path
+ * there goes in when the copy is done.
+ *
+ * ⚠️ **Lab draft still**: the pickers' paths are typed as the road would
+ * answer them; the phone as a source is the next step.
  */
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Terminal } from "@xterm/xterm";
@@ -51,6 +55,11 @@ export type FilesRoad = {
   /** The session's machine by its table name (`DeviceRow.name`);
       `null` for a session hosted on this one. */
   machine: string | null;
+  /** Paths on `from` (a machine's table name; `null`: this one) put
+      where the session's machine reads them, and pasted when they are
+      there: the pane's own drop (item 60's road, `term_drop`), its
+      progress on the pill's line and a failure in its corner. */
+  drop: (paths: string[], from: string | null) => void;
 };
 
 /** The mesh's machines for the panel: the session's first, then the
@@ -151,13 +160,7 @@ export function TermFiles({ term, road }: { term: RefObject<Terminal | null>; ro
               key={e.name}
               type="button"
               data-files-entry={e.dir ? "dir" : "file"}
-              onClick={() =>
-                e.dir
-                  ? open(machine, path)
-                  : // Lab: this machine's file goes in as itself; another
-                    // machine's as the copy the session's machine pulls.
-                    putIn(term.current, [machine.me ? path : `~/khor-drop/${e.name}`])
-              }
+              onClick={() => (e.dir ? open(machine, path) : road.drop([path], machine.me ? null : machine.name))}
               className={ROW}
             >
               {e.dir ? <IconFiles className="size-kind-mark flex-none text-muted-foreground" /> : <FileKindIcon name={e.name} className="size-kind-mark flex-none" />}

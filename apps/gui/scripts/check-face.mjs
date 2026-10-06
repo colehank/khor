@@ -28032,7 +28032,10 @@ try {
     //
     //  vi. its machine list: the session's machine first, marked as the
     //      session's — a far row's machine, a local row's this one — and
-    //      a machine that hosts nothing (a phone) not listed.
+    //      a machine that hosts nothing (a phone) not listed;
+    // vii. a file pressed in a machine's listing is one `term_drop` of
+    //      the pane, with its path and that machine (`null` for this
+    //      one) — the road decides whether anything moves.
     {
       const cdp = await page.context().newCDPSession(page);
       await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
@@ -28042,6 +28045,36 @@ try {
       const pocket = { ...devs.find((d) => d.name === "peer"), id: "f".repeat(64), name: "pocket", shown: "pocket", hosts: false };
       const meshDevices = json([...devs, pocket]);
       await page.route("**/devices", meshDevices);
+      const meshLs = (r) => {
+        const { machine, path: asked } = r.request().postDataJSON() ?? {};
+        const path = asked || `/home/${machine}`;
+        return r.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({ path, entries: [{ name: "x y.txt", dir: false, size: 3, at_ms: 0 }], truncated: false }),
+        });
+      };
+      await page.route("**/ls", meshLs);
+      /** In the panel up: a machine opened, its one file pressed; the
+          `term_drop` that asked, if one did. */
+      const pressFile = async (name) => {
+        drops.length = 0;
+        if ((await page.locator(`[data-files-machine="${name}"]`).count()) === 0) {
+          return `no machine ${name} (panel ${await page.locator("[data-files-panel]").count()}, up ${await page.locator("[data-files-up]").count()}, ` +
+            `listing ${await page.locator("[data-files-entry]").count()})`;
+        }
+        await page.locator(`[data-files-machine="${name}"]`).click();
+        const file = page.locator('[data-files-entry="file"]');
+        if (!(await until(3_000, async () => (await file.count()) > 0))) return `no listing for ${name}`;
+        await file.first().click();
+        await until(3_000, async () => drops.length > 0);
+        await wait(200);
+        // Back up to the machines for the next.
+        for (let i = 0; i < 6 && (await page.locator("[data-files-machine]").count()) === 0; i++) {
+          await page.locator("[data-files-up]").click({ timeout: 3_000 }).catch(() => {});
+          await wait(200);
+        }
+        return drops.slice();
+      };
       await page.route("**/term_resize", json(null));
       await page.route("**/term_leave", json(null));
       await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
@@ -28089,6 +28122,24 @@ try {
             "marked as the session's, no other marked, and no phone (item 60 part 3, the owner 2026-10-07)",
         );
       }
+      // vii, on peer's session: peer's own file, and elder's.
+      if (Array.isArray(machinesFar)) {
+        const own = await pressFile("peer");
+        const other = await pressFile("elder");
+        console.log(`term vii · on peer's session, peer's file: ${JSON.stringify(own)}; elder's: ${JSON.stringify(other)}`);
+        const one = (got, from) =>
+          Array.isArray(got) &&
+          got.length === 1 &&
+          got[0].id === "tui/face-far" &&
+          JSON.stringify(got[0].paths) === `["/home/${from}/x y.txt"]` &&
+          got[0].from === from;
+        if (!one(own, "peer") || !one(other, "elder")) {
+          fail(
+            `term vii · files pressed in the panel asked ${JSON.stringify(own)} and ${JSON.stringify(other)} — wanted one term_drop ` +
+              "each on the far session, with the file's path and its machine (item 60 part 3: the panel rides the drop's road)",
+          );
+        }
+      }
       await page.locator('[data-term-key="attach"]').filter({ visible: true }).first().click();
       const machinesHere = await panelFor("tui/face-term");
       console.log(`term vi · 📎 on a local row: ${JSON.stringify(machinesHere)}`);
@@ -28097,6 +28148,15 @@ try {
       } else if (machinesHere[0]?.name !== "gate" || !machinesHere[0].session || machinesHere.slice(1).some((m) => m.session)) {
         fail(`term vi · the files panel on this machine's session listed ${JSON.stringify(machinesHere)} — this machine first and marked`);
       }
+      // vii, on this machine's session: its own file goes as itself.
+      if (Array.isArray(machinesHere)) {
+        const own = await pressFile("gate");
+        console.log(`term vii · on this machine's session, its own file: ${JSON.stringify(own)}`);
+        if (!Array.isArray(own) || own.length !== 1 || own[0].id !== "tui/face-term" || own[0].from !== null) {
+          fail(`term vii · this machine's file pressed on its own session asked ${JSON.stringify(own)}, not one term_drop from null`);
+        }
+      }
+      await page.unroute("**/ls", meshLs);
       await page.unroute("**/devices", meshDevices);
       await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
       await page.setViewportSize({ width: 1400, height: 900 });
