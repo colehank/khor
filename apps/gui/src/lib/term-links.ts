@@ -227,10 +227,32 @@ export function pathLinks(
   };
 }
 
-/** A URL under a cell of buffer line `y`, for a finger's tap; one the
-    grid wrapped onto the next rows is read whole (`logical`). */
+/** The internals an OSC 8 link is read through, as xterm's own link
+    provider reads it: the cell's link id, and the service that holds the
+    id's target. Not in the public API (xterm 6). */
+type LinkedCell = { hasExtendedAttrs?: () => number | boolean; extended?: { urlId?: number } };
+type LinkService = { getLinkData(id: number): { uri: string } | undefined };
+
+/** **The OSC 8 link on a cell** (`ls --hyperlink`, a compiler's
+    `file://`, a program's 「read the docs」; the terminal audit, item
+    68): its target, or `null`. A link's text need not be a URL, so the
+    regex below never found these. */
+export function oscLinkAt(term: Terminal, y: number, x: number): string | null {
+  const cell = term.buffer.active.getLine(y)?.getCell(x) as LinkedCell | undefined;
+  const id = cell?.hasExtendedAttrs?.() ? cell.extended?.urlId : 0;
+  if (!id) return null;
+  const links = (term as unknown as { _core?: { _oscLinkService?: LinkService } })._core?._oscLinkService;
+  return links?.getLinkData(id)?.uri ?? null;
+}
+
+/** A URL under a cell of buffer line `y`, for a finger's tap: the cell's
+    OSC 8 link first (http(s) or `file://`; the caller sends a file where
+    paths go), else a URL in the text; one the grid wrapped onto the next
+    rows is read whole (`logical`). */
 export function urlAt(term: Terminal, y: number, x: number): string | null {
   if (!term.buffer.active.getLine(y)) return null;
+  const linked = oscLinkAt(term, y, x);
+  if (linked && /^(https?|file):/i.test(linked)) return linked;
   const { text, at } = logical(term, y);
   for (const m of text.matchAll(/https?:\/\/[^\s"'<>`]+[^\s"'<>`.,;:!?)\]]/g)) {
     const from = cellOf(at, m.index);

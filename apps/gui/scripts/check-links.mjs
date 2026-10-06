@@ -70,7 +70,9 @@ await new Promise((r) =>
       "see https://example.com/a/very/long/path?q=1 ok\r\n" +
       "/proj/报告/图.png\r\n" +
       "open '/proj/my file.txt'\r\n" +
-      "/proj/src/nothing.rs\r\n",
+      "/proj/src/nothing.rs\r\n" +
+      "\x1b]8;;https://example.com/docs\x1b\\read the docs\x1b]8;;\x1b\\ x\r\n" +
+      "\x1b]8;id=f;file:///proj/src/a.rs\x1b\\a.rs\x1b]8;;\x1b\\\r\n",
     r,
   ),
 );
@@ -109,6 +111,15 @@ const quoted = await pathsOn(t, "m", cwdAt, lineOf("open '"));
 said.quoted = quoted.map((f) => f.target.path).join(",");
 if (!quoted.some((f) => f.target.path === "/proj/my file.txt")) fail(`a quoted name with a space is no link (${said.quoted})`);
 
+// **A tap on an OSC 8 link** (item 68): its target, though its text is
+// not a URL; a file:// link's too (the pane sends it where paths go); a
+// cell beside it, nothing.
+const d = lineOf("read the docs");
+said.osc8 = [urlAt(t, d, 5), urlAt(t, d + 1, 1), urlAt(t, d, 15)];
+if (said.osc8[0] !== "https://example.com/docs") fail(`a tap on an OSC 8 link's text gave ${JSON.stringify(said.osc8[0])}`);
+if (said.osc8[1] !== "file:///proj/src/a.rs") fail(`a tap on an OSC 8 file link gave ${JSON.stringify(said.osc8[1])}`);
+if (said.osc8[2] !== null) fail(`a tap beside an OSC 8 link gave ${JSON.stringify(said.osc8[2])}`);
+
 const missing = await pathsOn(t, "m", cwdAt, lineOf("nothing.rs"));
 said.missing = missing.map((f) => f.target.path).join(",");
 if (missing.some((f) => f.target.path.endsWith("nothing.rs"))) fail("a path the machine does not have became a link");
@@ -116,4 +127,4 @@ if (missing.some((f) => f.target.path.endsWith("nothing.rs"))) fail("a path the 
 t.dispose();
 console.log(`links gate: ${JSON.stringify(said)}`);
 if (bad) process.exit(1);
-console.log("links gate: wrapped paths and URLs are whole, any script's names and quoted names with spaces are paths, and only what exists is a link");
+console.log("links gate: OSC 8 links tap to their targets, wrapped paths and URLs are whole, any script's names and quoted names with spaces are paths, and only what exists is a link");

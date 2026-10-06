@@ -1845,7 +1845,8 @@ export function TerminalPane({
       if (picture(row, col)) return true;
       const url = urlAt(term, row, col);
       if (url) {
-        follow(url, machine);
+        if (/^file:/i.test(url)) fileLink(url);
+        else follow(url, machine);
         return true;
       }
       void pathsOn(term, here, cwdAt, row).then((found) => {
@@ -2479,7 +2480,7 @@ export function TerminalPane({
           },
         });
       const url = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(p.text) ? p.text : urlAt(term, p.from.row, p.from.col);
-      if (url) open(() => follow(url, machine));
+      if (url) open(() => (/^file:/i.test(url) ? fileLink(url) : follow(url, machine)));
       items.push({
         id: "paste",
         title: menu.paste,
