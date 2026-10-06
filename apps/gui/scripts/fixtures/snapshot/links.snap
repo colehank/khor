@@ -1,0 +1,69 @@
+[0m[0m$ ls --hyperlink
+]8;;file://desk/home/u/src/main0.rs\main0.rs]8;;\  plain 0
+]8;;file://desk/home/u/src/main1.rs\main1.rs]8;;\  plain 1
+]8;;file://desk/home/u/src/main2.rs\main2.rs]8;;\  plain 2
+]8;;file://desk/home/u/src/main3.rs\main3.rs]8;;\  plain 3
+]8;;file://desk/home/u/src/main4.rs\main4.rs]8;;\  plain 4
+]8;;file://desk/home/u/src/main5.rs\main5.rs]8;;\  plain 5
+]8;;file://desk/home/u/src/main6.rs\main6.rs]8;;\  plain 6
+]8;;file://desk/home/u/src/main7.rs\main7.rs]8;;\  plain 7
+]8;;file://desk/home/u/src/main8.rs\main8.rs]8;;\  plain 8
+]8;;file://desk/home/u/src/main9.rs\main9.rs]8;;\  plain 9
+]8;;file://desk/home/u/src/main10.rs\main10.rs]8;;\  plain 10
+]8;;file://desk/home/u/src/main11.rs\main11.rs]8;;\  plain 11
+]8;;file://desk/home/u/src/main12.rs\main12.rs]8;;\  plain 12
+]8;;file://desk/home/u/src/main13.rs\main13.rs]8;;\  plain 13
+]8;;file://desk/home/u/src/main14.rs\main14.rs]8;;\  plain 14
+]8;;file://desk/home/u/src/main15.rs\main15.rs]8;;\  plain 15
+]8;;file://desk/home/u/src/main16.rs\main16.rs]8;;\  plain 16
+]8;;file://desk/home/u/src/main17.rs\main17.rs]8;;\  plain 17
+]8;;file://desk/home/u/src/main18.rs\main18.rs]8;;\  plain 18
+]8;;file://desk/home/u/src/main19.rs\main19.rs]8;;\  plain 19
+]8;;file://desk/home/u/src/main20.rs\main20.rs]8;;\  plain 20
+]8;;file://desk/home/u/src/main21.rs\main21.rs]8;;\  plain 21
+[0m
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[?25h[m[H[Jmain22.rs  plain 22
+main23.rs  plain 23
+main24.rs  plain 24
+main25.rs  plain 25
+main26.rs  plain 26
+main27.rs  plain 27
+main28.rs  plain 28
+main29.rs  plain 29
+main30.rs  plain 30
+main31.rs  plain 31
+main32.rs  plain 32
+main33.rs  plain 33
+main34.rs  plain 34
+main35.rs  plain 35
+main36.rs  plain 36
+main37.rs  plain 37
+main38.rs  plain 38
+main39.rs  plain 39
+[34mdocs[m and more
+see https://example.com/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/ end
+报告.txt ok
+plain over it
+$ [1;1H]8;;file://desk/home/u/src/main22.rs\[0mmain22.rs]8;;\[2;1H]8;;file://desk/home/u/src/main23.rs\[0mmain23.rs]8;;\[3;1H]8;;file://desk/home/u/src/main24.rs\[0mmain24.rs]8;;\[4;1H]8;;file://desk/home/u/src/main25.rs\[0mmain25.rs]8;;\[5;1H]8;;file://desk/home/u/src/main26.rs\[0mmain26.rs]8;;\[6;1H]8;;file://desk/home/u/src/main27.rs\[0mmain27.rs]8;;\[7;1H]8;;file://desk/home/u/src/main28.rs\[0mmain28.rs]8;;\[8;1H]8;;file://desk/home/u/src/main29.rs\[0mmain29.rs]8;;\[9;1H]8;;file://desk/home/u/src/main30.rs\[0mmain30.rs]8;;\[10;1H]8;;file://desk/home/u/src/main31.rs\[0mmain31.rs]8;;\[11;1H]8;;file://desk/home/u/src/main32.rs\[0mmain32.rs]8;;\[12;1H]8;;file://desk/home/u/src/main33.rs\[0mmain33.rs]8;;\[13;1H]8;;file://desk/home/u/src/main34.rs\[0mmain34.rs]8;;\[14;1H]8;;file://desk/home/u/src/main35.rs\[0mmain35.rs]8;;\[15;1H]8;;file://desk/home/u/src/main36.rs\[0mmain36.rs]8;;\[16;1H]8;;file://desk/home/u/src/main37.rs\[0mmain37.rs]8;;\[17;1H]8;;file://desk/home/u/src/main38.rs\[0mmain38.rs]8;;\[18;1H]8;;file://desk/home/u/src/main39.rs\[0mmain39.rs]8;;\[19;1H]8;id=x1;https://example.com/a\[0;34mdocs]8;;\[20;5H]8;;https://example.com/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/\[0mhttps://example.com/very-long-path/very-long-path/very-long-path/very-long-p]8;;\[21;1H]8;;https://example.com/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/\[0math/very-long-path/very-long-path/]8;;\[22;1H]8;;file:///tmp/%E6%8A%A5%E5%91%8A.txt\[0m报告.txt]8;;\[?25h[24;3H[0m[m>[?1l[?2004l

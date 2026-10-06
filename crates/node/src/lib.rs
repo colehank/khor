@@ -13,6 +13,7 @@ pub mod commands;
 pub mod integration;
 pub mod adaptor;
 pub mod backup;
+pub(crate) mod beside;
 pub mod cagent;
 pub mod chat;
 pub mod code;

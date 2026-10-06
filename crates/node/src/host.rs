@@ -32,6 +32,7 @@ use std::time::Duration;
 use khor_catalog::msg;
 use khor_core::{SessionId, State};
 
+use crate::beside::{Beside, RowMarks};
 use crate::modes::Modes;
 use crate::pictures::Pictures;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -895,9 +896,12 @@ pub const MODEL_SCROLLBACK_MOST: usize = 10_000;
 /// `khor_detect` already reads agent screens with) over every shell khor
 /// hosts, with scrollback; an attacher of version 3 is handed what it
 /// shows — never the ring's bytes parsed visibly on the phone. The ring
-/// stays for older clients and for ⌘K's `Forget`.
+/// stays for older clients and for ⌘K's `Forget`. What vt100 does not
+/// keep — the OSC 8 links on its cells, the pictures among its rows — is
+/// kept beside it (item 66, `crate::beside`) and goes into the snapshot.
 struct Model {
     parser: vt100::Parser,
+    beside: Beside,
     /// The rows of history `parser` keeps.
     keeps: usize,
     /// The most any face has asked for ([`ClientOp::Scrollback`]): taken
@@ -910,6 +914,7 @@ impl Model {
     fn new(rows: u16, cols: u16) -> Self {
         Model {
             parser: vt100::Parser::new(rows, cols, MODEL_SCROLLBACK),
+            beside: Beside::default(),
             keeps: MODEL_SCROLLBACK,
             asked: MODEL_SCROLLBACK,
         }
@@ -952,9 +957,11 @@ impl Model {
     /// the modes' `ESC [ ? 1049 h` as a blank alternate screen.
     fn feed(&mut self, bytes: &[u8]) -> bool {
         use std::panic::{AssertUnwindSafe, catch_unwind};
-        let replaced = catch_unwind(AssertUnwindSafe(|| self.parser.process(bytes))).is_err();
+        let (parser, beside, keeps) = (&mut self.parser, &mut self.beside, self.keeps);
+        let replaced = catch_unwind(AssertUnwindSafe(|| beside.feed(parser, bytes, keeps))).is_err();
         if replaced {
             self.parser = parser_like(self.parser.screen(), self.keeps);
+            self.beside = Beside::default();
         }
         if self.asked > self.keeps {
             self.settle();
@@ -966,6 +973,7 @@ impl Model {
     /// ([`resize_screen`], item 57).
     fn resize(&mut self, rows: u16, cols: u16) {
         resize_screen(&mut self.parser, rows, cols);
+        self.beside.resize(rows);
     }
 
     /// **⌘K** ([`ClientOp::Forget`]), kept by the model as the ring keeps
@@ -981,10 +989,11 @@ impl Model {
         let (rows, cols) = screen.size();
         screen.set_scrollback(0);
         let (cy, cx) = screen.cursor_position();
+        self.beside.forget(self.beside.scrolled() + cy as u64);
         let mut bytes = Vec::new();
-        let mut look = CellLook::default();
+        let mut pen = Pen::default();
         for r in cy..rows {
-            write_row(&mut bytes, screen, r, cols, &mut look);
+            write_row(&mut bytes, screen, r, cols, &mut pen, &RowMarks::default());
         }
         if bytes.ends_with(b"\r\n") {
             bytes.truncate(bytes.len() - 2);
@@ -1008,40 +1017,183 @@ impl Model {
     /// modes. On the alternate screen the modes switch the face to it
     /// and the program's screen follows; the normal screen underneath
     /// is not sent (vt100 shows one grid at a time).
+    ///
+    /// **The links and the pictures go where they were** (item 66): a
+    /// link around its cells, in the history's lines and written again
+    /// over the screen's; a picture at its place among the lines. A
+    /// picture still on the screen was drawn among the screen's rows and
+    /// pushed the rows after it down, so then the screen is written as
+    /// lines too, the picture between them, and the cursor is moved back
+    /// up to its row.
     fn snapshot(&mut self, modes: &[u8]) -> Vec<u8> {
+        let beside = &self.beside;
         let screen = self.parser.screen_mut();
         let (rows, cols) = screen.size();
         let mut out = Vec::new();
         out.extend_from_slice(b"\x1b[0m");
         if !screen.alternate_screen() {
+            let top = beside.scrolled();
             screen.set_scrollback(usize::MAX);
             let total = screen.scrollback();
             let mut left = total;
-            let mut attrs = CellLook::default();
+            let mut pen = Pen::default();
             while left > 0 {
                 screen.set_scrollback(left);
                 let take = left.min(rows as usize);
                 for r in 0..take as u16 {
-                    write_row(&mut out, screen, r, cols, &mut attrs);
+                    let at = (top + r as u64).saturating_sub(left as u64);
+                    let marks = beside.marks(false, at, screen, r, cols);
+                    write_row(&mut out, screen, r, cols, &mut pen, &marks);
                 }
                 left -= take;
             }
             screen.set_scrollback(0);
-            // The last rows written are still on the face's screen: the
-            // rest of a screen of line ends moves them into its history,
-            // then the screen is drawn over the blank.
+            pen.unlink(&mut out);
             out.extend_from_slice(b"\x1b[0m");
-            if total > 0 {
-                out.extend_from_slice(&b"\r\n".repeat(rows.saturating_sub(1) as usize));
+            if beside.pictures_from(false, top) {
+                let mut pen = Pen::default();
+                for r in 0..rows {
+                    let marks = beside.marks(false, top + r as u64, screen, r, cols);
+                    write_row(&mut out, screen, r, cols, &mut pen, &marks);
+                }
+                pen.unlink(&mut out);
+                if out.ends_with(b"\r\n") {
+                    out.truncate(out.len() - 2);
+                }
+                cursor_from_the_bottom(&mut out, screen);
+            } else {
+                // The last rows written are still on the face's screen:
+                // the rest of a screen of line ends moves them into its
+                // history, then the screen is drawn over the blank.
+                if total > 0 {
+                    out.extend_from_slice(&b"\r\n".repeat(rows.saturating_sub(1) as usize));
+                }
+                out.extend_from_slice(&screen.contents_formatted());
+                overlay(&mut out, beside, false, top, screen);
             }
-            out.extend_from_slice(&screen.contents_formatted());
             out.extend_from_slice(modes);
         } else {
             out.extend_from_slice(modes);
             out.extend_from_slice(&screen.contents_formatted());
+            overlay(&mut out, beside, true, 0, screen);
         }
         out.extend_from_slice(&screen.input_mode_formatted());
         out
+    }
+}
+
+/// The links and pictures of the screen in view, drawn over what
+/// `contents_formatted` drew (item 66): each linked run written again in
+/// its looks inside its OSC 8, each picture at its place, then the
+/// cursor and the attributes put back as they were.
+fn overlay(out: &mut Vec<u8>, beside: &Beside, alt: bool, top: u64, screen: &vt100::Screen) {
+    let (rows, cols) = screen.size();
+    let mut over = Vec::new();
+    for r in 0..rows {
+        let marks = beside.marks(alt, top + r as u64, screen, r, cols);
+        let mut c = 0;
+        while (c as usize) < marks.links.len() {
+            let Some(link) = &marks.links[c as usize] else {
+                c += 1;
+                continue;
+            };
+            over.extend_from_slice(format!("\x1b[{};{}H", r + 1, c + 1).as_bytes());
+            let mut pen = Pen::default();
+            while marks.links.get(c as usize).is_some_and(|l| l.as_deref() == Some(&**link)) {
+                if let Some(cell) = screen.cell(r, c) {
+                    pen.cell(&mut over, cell, Some(link));
+                }
+                c += 1;
+            }
+            pen.unlink(&mut over);
+        }
+        for (col, bytes) in &marks.pictures {
+            over.extend_from_slice(format!("\x1b[{};{}H", r + 1, col + 1).as_bytes());
+            over.extend_from_slice(bytes);
+        }
+    }
+    if over.is_empty() {
+        return;
+    }
+    out.extend_from_slice(&over);
+    out.extend_from_slice(&screen.cursor_state_formatted());
+    out.extend_from_slice(b"\x1b[0m");
+    out.extend_from_slice(&screen.attributes_formatted());
+}
+
+/// After the screen was written as lines from the face's bottom row:
+/// the cursor goes back up to its own row and column, a cursor waiting
+/// past the last column waits there again (its cell written once more),
+/// and the attributes and its visibility are put back.
+fn cursor_from_the_bottom(out: &mut Vec<u8>, screen: &vt100::Screen) {
+    let (rows, cols) = screen.size();
+    let (cy, cx) = screen.cursor_position();
+    out.extend_from_slice(b"\x1b[0m\r");
+    let up = rows.saturating_sub(1).saturating_sub(cy);
+    if up > 0 {
+        out.extend_from_slice(format!("\x1b[{up}A").as_bytes());
+    }
+    let last = screen.cell(cy, cols.saturating_sub(1)).filter(|c| c.has_contents() && !c.is_wide_continuation());
+    match last {
+        Some(cell) if cx >= cols => {
+            out.extend_from_slice(format!("\x1b[{cols}G").as_bytes());
+            Pen::default().cell(out, cell, None);
+        }
+        _ => out.extend_from_slice(format!("\x1b[{}G", cx.min(cols.saturating_sub(1)) + 1).as_bytes()),
+    }
+    out.extend_from_slice(b"\x1b[0m");
+    out.extend_from_slice(&screen.attributes_formatted());
+    if screen.hide_cursor() {
+        out.extend_from_slice(b"\x1b[?25l");
+    }
+}
+
+/// What the cells written so far left in force: their looks and the
+/// link they are inside.
+#[derive(Default)]
+struct Pen {
+    look: CellLook,
+    link: Option<Arc<str>>,
+}
+
+impl Pen {
+    /// Inside `link` (an OSC 8 payload: parameters, `;`, target) or
+    /// outside any.
+    fn link_to(&mut self, out: &mut Vec<u8>, link: Option<&Arc<str>>) {
+        if self.link.as_deref() == link.map(|l| &**l) {
+            return;
+        }
+        match link {
+            Some(l) => {
+                out.extend_from_slice(b"\x1b]8;");
+                out.extend_from_slice(l.as_bytes());
+                out.extend_from_slice(b"\x1b\\");
+            }
+            None => out.extend_from_slice(b"\x1b]8;;\x1b\\"),
+        }
+        self.link = link.cloned();
+    }
+
+    fn unlink(&mut self, out: &mut Vec<u8>) {
+        self.link_to(out, None);
+    }
+
+    /// One cell in its looks, inside `link`.
+    fn cell(&mut self, out: &mut Vec<u8>, c: &vt100::Cell, link: Option<&Arc<str>>) {
+        if c.is_wide_continuation() {
+            return;
+        }
+        self.link_to(out, link);
+        let want = CellLook::of(c);
+        if want != self.look {
+            out.extend_from_slice(&want.sgr());
+            self.look = want;
+        }
+        if c.has_contents() {
+            out.extend_from_slice(c.contents().as_bytes());
+        } else {
+            out.push(b' ');
+        }
     }
 }
 
@@ -1113,10 +1265,11 @@ impl CellLook {
 }
 
 /// One scrollback row of the model, as the face's terminal takes it: the
-/// cells with their looks, trailing plain blanks dropped, then a line
-/// end — unless the row wraps into the next, which then continues it
-/// (the full row makes the face wrap exactly there).
-fn write_row(out: &mut Vec<u8>, screen: &vt100::Screen, row: u16, cols: u16, look: &mut CellLook) {
+/// cells with their looks and links, trailing plain blanks dropped, then
+/// a line end — unless the row wraps into the next, which then continues
+/// it (the full row makes the face wrap exactly there). A picture drawn
+/// on the row goes in before the cell it was drawn at (item 66).
+fn write_row(out: &mut Vec<u8>, screen: &vt100::Screen, row: u16, cols: u16, pen: &mut Pen, marks: &RowMarks) {
     let wrapped = screen.row_wrapped(row);
     let mut end = cols;
     if !wrapped {
@@ -1128,23 +1281,26 @@ fn write_row(out: &mut Vec<u8>, screen: &vt100::Screen, row: u16, cols: u16, loo
             }
         }
     }
+    let mut pictures = marks.pictures.iter().peekable();
+    let picture = |out: &mut Vec<u8>, pen: &mut Pen, bytes: &[u8]| {
+        pen.unlink(out);
+        out.extend_from_slice(bytes);
+    };
     for col in 0..end {
+        while let Some((_, bytes)) = pictures.next_if(|(at, _)| *at <= col) {
+            picture(out, pen, bytes);
+        }
         let Some(c) = screen.cell(row, col) else { break };
-        if c.is_wide_continuation() {
-            continue;
+        pen.cell(out, c, marks.links.get(col as usize).and_then(Option::as_ref));
+    }
+    for (at, bytes) in pictures {
+        if *at > end {
+            out.extend_from_slice(format!("\x1b[{}G", at + 1).as_bytes());
         }
-        let want = CellLook::of(c);
-        if want != *look {
-            out.extend_from_slice(&want.sgr());
-            *look = want;
-        }
-        if c.has_contents() {
-            out.extend_from_slice(c.contents().as_bytes());
-        } else {
-            out.push(b' ');
-        }
+        picture(out, pen, bytes);
     }
     if !wrapped {
+        pen.unlink(out);
         out.extend_from_slice(b"\r\n");
     }
 }
@@ -2153,7 +2309,286 @@ mod last_line_tests {
         wide.extend_from_slice(format!("{}\r\n", "\u{6f22}".repeat(50)).as_bytes());
         wide.extend_from_slice(format!("{}", "x".repeat(80)).as_bytes());
         wide.extend_from_slice(b"\x1b[3;2mdim italic\x1b[0m end\r\n$ ");
-        vec![("shell", shell), ("tui", tui), ("wide", wide)]
+        vec![("shell", shell), ("tui", tui), ("wide", wide), ("links", links_stream()), ("pictures", pictures_stream())]
+    }
+
+    /// `ls --hyperlink` and friends (item 66): OSC 8 links scrolled into
+    /// the history and on the screen, one with an `id=` and a colour, one
+    /// the grid wraps, one in Chinese ended by BEL, and one a line
+    /// redrawn over (`gone`), whose text is no longer the link's.
+    fn links_stream() -> Vec<u8> {
+        let mut s = b"$ ls --hyperlink\r\n".to_vec();
+        for i in 0..40 {
+            s.extend_from_slice(format!("\x1b]8;;file://desk/home/u/src/main{i}.rs\x1b\\main{i}.rs\x1b]8;;\x1b\\  plain {i}\r\n").as_bytes());
+        }
+        s.extend_from_slice(b"\x1b[34m\x1b]8;id=x1;https://example.com/a\x1b\\docs\x1b]8;;\x1b\\\x1b[0m and more\r\n");
+        let long = format!("https://example.com/{}", "very-long-path/".repeat(6));
+        s.extend_from_slice(format!("see \x1b]8;;{long}\x1b\\{long}\x1b]8;;\x1b\\ end\r\n").as_bytes());
+        s.extend_from_slice("\x1b]8;;file:///tmp/%E6%8A%A5%E5%91%8A.txt\x07\u{62a5}\u{544a}.txt\x1b]8;;\x07 ok\r\n".as_bytes());
+        s.extend_from_slice(b"\x1b]8;;https://gone.example/\x1b\\gone\x1b]8;;\x1b\\\r\x1b[Kplain over it\r\n");
+        s.extend_from_slice(b"$ ");
+        s
+    }
+
+    const IIP_A: &[u8] = b"\x1b]1337;File=name=YS5wbmc=;inline=1:QUFBQQ==\x07";
+    const IIP_C: &[u8] = b"\x1b]1337;File=name=Yy5wbmc=;inline=1:Q0NDQw==\x1b\\";
+    const SIXEL_B: &[u8] = b"\x1bP0;1;0q\"1;1;4;4#0;2;100;0;0#0~~~~-\x1b\\";
+
+    /// `imgcat` and `chafa` (item 66): a picture scrolled into the
+    /// history, one cleared off the screen with `clear` (gone from a face
+    /// that watched), and one on the screen at the end.
+    fn pictures_stream() -> Vec<u8> {
+        let mut s = b"$ imgcat a.png\r\n".to_vec();
+        s.extend_from_slice(IIP_A);
+        s.extend_from_slice(b"\r\n");
+        for i in 0..30 {
+            s.extend_from_slice(format!("$ echo {i}\r\n{i}\r\n").as_bytes());
+        }
+        s.extend_from_slice(b"$ imgcat c.png\r\n");
+        s.extend_from_slice(IIP_C);
+        s.extend_from_slice(b"\r\n$ clear\r\n\x1b[H\x1b[2J$ ls\r\na b\r\n$ chafa b\r\n");
+        s.extend_from_slice(SIXEL_B);
+        s.extend_from_slice(b"\r\n$ ");
+        s
+    }
+
+    /// The OSC 8 runs a stream prints, in order: each link's target and
+    /// the text printed under it, consecutive runs of one target as one
+    /// (a run the grid wrapped may be written row by row). Read without
+    /// the host's model, as the oracle for it.
+    fn linked_text(bytes: &[u8]) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        let mut on: Option<String> = None;
+        let mut i = 0;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if b == 0x1b && bytes.get(i + 1) == Some(&b']') {
+                let start = i + 2;
+                let mut j = start;
+                let mut end = None;
+                while j < bytes.len() {
+                    if bytes[j] == 0x07 {
+                        end = Some((j, j + 1));
+                        break;
+                    }
+                    if bytes[j] == 0x1b && bytes.get(j + 1) == Some(&b'\\') {
+                        end = Some((j, j + 2));
+                        break;
+                    }
+                    j += 1;
+                }
+                let Some((stop, next)) = end else { break };
+                let body = String::from_utf8_lossy(&bytes[start..stop]).into_owned();
+                if let Some(rest) = body.strip_prefix("8;") {
+                    let uri = rest.split_once(';').map(|(_, u)| u).unwrap_or("");
+                    on = (!uri.is_empty()).then(|| uri.to_owned());
+                }
+                i = next;
+                continue;
+            }
+            if b == 0x1b {
+                // CSI to its final byte; any other escape is two bytes,
+                // and a DCS runs to its ST.
+                match bytes.get(i + 1) {
+                    Some(b'[') => {
+                        i += 2;
+                        while i < bytes.len() && !(0x40..=0x7e).contains(&bytes[i]) {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                    Some(b'P') => {
+                        i += 2;
+                        while i + 1 < bytes.len() && !(bytes[i] == 0x1b && bytes[i + 1] == b'\\') {
+                            i += 1;
+                        }
+                        i += 2;
+                    }
+                    _ => i += 2,
+                }
+                continue;
+            }
+            if b < 0x20 || b == 0x7f {
+                i += 1;
+                continue;
+            }
+            let len = match b {
+                0xf0.. => 4,
+                0xe0.. => 3,
+                0xc0.. => 2,
+                _ => 1,
+            };
+            let ch = String::from_utf8_lossy(&bytes[i..(i + len).min(bytes.len())]).into_owned();
+            i += len;
+            if let Some(uri) = &on {
+                match out.last_mut() {
+                    Some((u, t)) if u == uri => t.push_str(&ch),
+                    _ => out.push((uri.clone(), ch)),
+                }
+            }
+        }
+        out
+    }
+
+    /// Where each of `pictures` is drawn in `bytes`, in the order drawn:
+    /// which one, the text of the row above the cursor, and the cursor's
+    /// column — read by a terminal that has read everything before it.
+    fn picture_places(bytes: &[u8], pictures: &[&[u8]]) -> Vec<(usize, String, u16)> {
+        let mut found: Vec<(usize, usize)> = Vec::new();
+        for (n, p) in pictures.iter().enumerate() {
+            if let Some(at) = bytes.windows(p.len()).position(|w| w == *p) {
+                found.push((at, n));
+            }
+        }
+        found.sort();
+        found
+            .into_iter()
+            .map(|(at, n)| {
+                let mut t = vt100::Parser::new(24, 80, 5000);
+                t.process(&bytes[..at]);
+                let s = t.screen_mut();
+                let (row, col) = s.cursor_position();
+                let above = if row > 0 {
+                    s.rows(0, 80).nth(row as usize - 1).unwrap_or_default()
+                } else {
+                    s.set_scrollback(1);
+                    s.rows(0, 80).next().unwrap_or_default()
+                };
+                (n, above.trim_end().to_owned(), col)
+            })
+            .collect()
+    }
+
+    /// **A link or picture printed before an attach is alive after it**
+    /// (item 66): the snapshot carries the OSC 8 links still on their
+    /// text, history and screen alike, and the pictures still kept, each
+    /// where a face that watched them arrive has it. A link whose text
+    /// was redrawn and a picture `clear` took are not carried.
+    #[test]
+    fn a_snapshot_carries_the_links_and_the_pictures() {
+        let raw = links_stream();
+        let mut model = Model::new(24, 80);
+        model.feed(&raw);
+        let snap = model.snapshot(b"");
+        let want: Vec<_> = linked_text(&raw).into_iter().filter(|(u, _)| !u.contains("gone")).collect();
+        assert_eq!(want.len(), 43, "the oracle reads the stream's links");
+        assert_eq!(linked_text(&snap), want, "the links on their text, in order");
+        assert!(!String::from_utf8_lossy(&snap).contains("gone.example"), "a link redrawn over is not carried");
+
+        let raw = pictures_stream();
+        let mut model = Model::new(24, 80);
+        model.feed(&raw);
+        let snap = model.snapshot(b"");
+        let all = [IIP_A, IIP_C, SIXEL_B];
+        let watched = picture_places(&raw, &all);
+        assert_eq!(watched.iter().map(|p| p.0).collect::<Vec<_>>(), [0, 1, 2], "the oracle finds the stream's pictures");
+        let want: Vec<_> = watched.into_iter().filter(|p| p.0 != 1).collect();
+        assert_eq!(picture_places(&snap, &all), want, "the pictures kept, each where it was drawn; the cleared one not");
+    }
+
+    /// Each row's links, history first, as the model hands them out.
+    fn links_of(model: &mut Model) -> Vec<Vec<Option<String>>> {
+        let top = model.beside.scrolled();
+        let s = model.parser.screen_mut();
+        let (rows, cols) = s.size();
+        s.set_scrollback(usize::MAX);
+        let total = s.scrollback();
+        let mut out = Vec::new();
+        let row = |s: &vt100::Screen, r: u16, at: u64| {
+            let links = model.beside.marks(s.alternate_screen(), at, s, r, cols).links;
+            (0..cols as usize).map(|c| links.get(c).cloned().flatten().map(|l| l.to_string())).collect::<Vec<_>>()
+        };
+        for h in 0..total {
+            s.set_scrollback(total - h);
+            out.push(row(s, 0, top - (total - h) as u64));
+        }
+        s.set_scrollback(0);
+        let top = if s.alternate_screen() { 0 } else { top };
+        for r in 0..rows {
+            out.push(row(s, r, top + r as u64));
+        }
+        out
+    }
+
+    /// **The links come back on the same cells** (item 66): a model fed
+    /// the snapshot hands out the links a model fed the stream does, cell
+    /// for cell over the history and the screen — fed whole or a byte at
+    /// a time, with the history full past its cap, and on a program's
+    /// alternate screen.
+    #[test]
+    fn the_links_come_back_on_the_same_cells() {
+        let mut full = Vec::new();
+        for i in 0..MODEL_SCROLLBACK + 100 {
+            full.extend_from_slice(format!("\x1b]8;;https://e.example/{i}\x1b\\item {i}\x1b]8;;\x1b\\ text\r\n").as_bytes());
+        }
+        let mut alt = b"$ vim\r\n\x1b[?1049h\x1b[H\x1b[2J".to_vec();
+        alt.extend_from_slice(b"\x1b[3;5H\x1b[4m\x1b]8;;https://alt.example/\x1b\\in the program\x1b]8;;\x1b\\\x1b[0m\x1b[10;1H");
+        alt.extend_from_slice(b"\x1b[5;2H\x1b]1337;File=inline=1:QQ==\x07\x1b[20;1H");
+        for (name, raw) in [("links", links_stream()), ("full", full), ("alt", alt)] {
+            let mut a = Model::new(24, 80);
+            a.feed(&raw);
+            let want = links_of(&mut a);
+            assert!(want.iter().flatten().any(Option::is_some), "{name}: the stream has links in the model");
+            let snap = a.snapshot(b"");
+            let mut b = Model::new(24, 80);
+            b.feed(&snap);
+            assert_eq!(links_of(&mut b), want, "{name}: the snapshot's links on the stream's cells");
+            if name != "full" {
+                let mut c = Model::new(24, 80);
+                for byte in raw.chunks(1) {
+                    c.feed(byte);
+                }
+                assert_eq!(c.snapshot(b""), snap, "{name}: fed a byte at a time, the same snapshot");
+            }
+        }
+    }
+
+    /// What the side table costs the reader (item 66): one model fed the
+    /// same 20 000 lines plain and with every name linked, as
+    /// `ls --hyperlink` prints them, in 4 KiB reads. Run alone:
+    /// `cargo test --release -p khor-node --lib model_feed_cost -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn model_feed_cost() {
+        let lines = |linked: bool| {
+            let mut s = Vec::new();
+            for i in 0..20_000 {
+                let name = format!("file-{i}.rs");
+                if linked {
+                    s.extend_from_slice(format!("\x1b]8;;file://desk/home/u/{name}\x1b\\{name}\x1b]8;;\x1b\\  4.0K  Oct  7\r\n").as_bytes());
+                } else {
+                    s.extend_from_slice(format!("{name}  4.0K  Oct  7\r\n").as_bytes());
+                }
+            }
+            s
+        };
+        for linked in [false, true] {
+            let raw = lines(linked);
+            let mut model = Model::new(40, 120);
+            let t = std::time::Instant::now();
+            for chunk in raw.chunks(4096) {
+                model.feed(chunk);
+            }
+            let fed = t.elapsed();
+            let t = std::time::Instant::now();
+            let snap = model.snapshot(b"");
+            eprintln!("{}: fed {} KB in {:.1} ms, snapshot {} KB in {:.1} ms", if linked { "linked" } else { "plain" }, raw.len() >> 10, fed.as_secs_f64() * 1e3, snap.len() >> 10, t.elapsed().as_secs_f64() * 1e3);
+        }
+    }
+
+    /// The snapshot of a model with no links and no pictures is what it
+    /// was before item 66, byte for byte: the face's fixtures stand.
+    #[test]
+    fn a_plain_snapshot_is_unchanged() {
+        for (name, raw) in snapshot_streams().into_iter().filter(|(n, _)| ["shell", "tui", "wide"].contains(n)) {
+            let mut model = Model::new(24, 80);
+            model.feed(&raw);
+            let mut modes = Modes::default();
+            modes.feed(&raw);
+            let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/gui/scripts/fixtures/snapshot");
+            let kept = std::fs::read(dir.join(format!("{name}.snap"))).unwrap();
+            assert_eq!(model.snapshot(&modes.preamble()), kept, "{name}");
+        }
     }
 
     /// A snapshot fed to a fresh terminal shows what the model shows:

@@ -1,0 +1,46 @@
+$ ls --hyperlink
+]8;;file://desk/home/u/src/main0.rs\main0.rs]8;;\  plain 0
+]8;;file://desk/home/u/src/main1.rs\main1.rs]8;;\  plain 1
+]8;;file://desk/home/u/src/main2.rs\main2.rs]8;;\  plain 2
+]8;;file://desk/home/u/src/main3.rs\main3.rs]8;;\  plain 3
+]8;;file://desk/home/u/src/main4.rs\main4.rs]8;;\  plain 4
+]8;;file://desk/home/u/src/main5.rs\main5.rs]8;;\  plain 5
+]8;;file://desk/home/u/src/main6.rs\main6.rs]8;;\  plain 6
+]8;;file://desk/home/u/src/main7.rs\main7.rs]8;;\  plain 7
+]8;;file://desk/home/u/src/main8.rs\main8.rs]8;;\  plain 8
+]8;;file://desk/home/u/src/main9.rs\main9.rs]8;;\  plain 9
+]8;;file://desk/home/u/src/main10.rs\main10.rs]8;;\  plain 10
+]8;;file://desk/home/u/src/main11.rs\main11.rs]8;;\  plain 11
+]8;;file://desk/home/u/src/main12.rs\main12.rs]8;;\  plain 12
+]8;;file://desk/home/u/src/main13.rs\main13.rs]8;;\  plain 13
+]8;;file://desk/home/u/src/main14.rs\main14.rs]8;;\  plain 14
+]8;;file://desk/home/u/src/main15.rs\main15.rs]8;;\  plain 15
+]8;;file://desk/home/u/src/main16.rs\main16.rs]8;;\  plain 16
+]8;;file://desk/home/u/src/main17.rs\main17.rs]8;;\  plain 17
+]8;;file://desk/home/u/src/main18.rs\main18.rs]8;;\  plain 18
+]8;;file://desk/home/u/src/main19.rs\main19.rs]8;;\  plain 19
+]8;;file://desk/home/u/src/main20.rs\main20.rs]8;;\  plain 20
+]8;;file://desk/home/u/src/main21.rs\main21.rs]8;;\  plain 21
+]8;;file://desk/home/u/src/main22.rs\main22.rs]8;;\  plain 22
+]8;;file://desk/home/u/src/main23.rs\main23.rs]8;;\  plain 23
+]8;;file://desk/home/u/src/main24.rs\main24.rs]8;;\  plain 24
+]8;;file://desk/home/u/src/main25.rs\main25.rs]8;;\  plain 25
+]8;;file://desk/home/u/src/main26.rs\main26.rs]8;;\  plain 26
+]8;;file://desk/home/u/src/main27.rs\main27.rs]8;;\  plain 27
+]8;;file://desk/home/u/src/main28.rs\main28.rs]8;;\  plain 28
+]8;;file://desk/home/u/src/main29.rs\main29.rs]8;;\  plain 29
+]8;;file://desk/home/u/src/main30.rs\main30.rs]8;;\  plain 30
+]8;;file://desk/home/u/src/main31.rs\main31.rs]8;;\  plain 31
+]8;;file://desk/home/u/src/main32.rs\main32.rs]8;;\  plain 32
+]8;;file://desk/home/u/src/main33.rs\main33.rs]8;;\  plain 33
+]8;;file://desk/home/u/src/main34.rs\main34.rs]8;;\  plain 34
+]8;;file://desk/home/u/src/main35.rs\main35.rs]8;;\  plain 35
+]8;;file://desk/home/u/src/main36.rs\main36.rs]8;;\  plain 36
+]8;;file://desk/home/u/src/main37.rs\main37.rs]8;;\  plain 37
+]8;;file://desk/home/u/src/main38.rs\main38.rs]8;;\  plain 38
+]8;;file://desk/home/u/src/main39.rs\main39.rs]8;;\  plain 39
+[34m]8;id=x1;https://example.com/a\docs]8;;\[0m and more
+see ]8;;https://example.com/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/\https://example.com/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/very-long-path/]8;;\ end
+]8;;file:///tmp/%E6%8A%A5%E5%91%8A.txt报告.txt]8;; ok
+]8;;https://gone.example/\gone]8;;\[Kplain over it
+$ 
