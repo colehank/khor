@@ -2869,7 +2869,7 @@ export function TerminalPane({
   /** `paths` may first have to be made: files picked on a phone are
       staged here before the drop (`dropFiles`), under the same line. */
   const dropFrom = useCallback(
-    (paths: string[] | (() => Promise<string[]>), from: string | null) => {
+    (paths: string[] | (() => Promise<string[]>), from: string | null, into: string | null = null) => {
       if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return;
       dropping.current = true;
       setDropWhy(null);
@@ -2885,7 +2885,7 @@ export function TerminalPane({
         );
       }, DROP_LOOK_MS);
       Promise.resolve(Array.isArray(paths) ? paths : paths())
-        .then((made) => termDrop(id, made, from))
+        .then((made) => termDrop(id, made, from, into))
         .then(() => pollNow.current())
         .catch((err: unknown) => {
           setDropWhy(String((err as { message?: string })?.message ?? err));
@@ -2898,7 +2898,8 @@ export function TerminalPane({
     },
     [id],
   );
-  const drop = useCallback((paths: string[], from: string | null) => dropFrom(paths, from), [dropFrom]);
+  // `into`: the shell's current directory (「放到当前目录」, part 5).
+  const drop = useCallback((paths: string[], from: string | null, into?: string | null) => dropFrom(paths, from, into ?? null), [dropFrom]);
   // **Files picked on the phone** (item 60 part 3): bytes in the web
   // view, staged where this machine's node serves them by path, then the
   // same drop from this machine — the session's machine pulls them.
@@ -3384,7 +3385,7 @@ export function TerminalPane({
             mode (this pane's own, `terminalKeyboard`). The mode is
             `lib/term-tap`'s (`useTermWake`). */}
         <KeyRowSeats field={keysRef} keyboard={wake === "button" && <KeyboardSwitch field={keysRef} />}>
-          <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, drop, dropFiles }} />
+          <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, cwd: doing?.cwd ?? null, drop, dropFiles }} />
         </KeyRowSeats>
       </>
     )}

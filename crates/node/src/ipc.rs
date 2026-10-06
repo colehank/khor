@@ -343,6 +343,16 @@ pub enum Op {
         path: String,
         to: String,
     },
+    /// [`Op::DropOn`] into `dir` on `to` (absolute there) in place of its
+    /// drop directory (item 60 part 5). Answered with
+    /// [`Reply::DropFile`]. Tail-appended.
+    DropInto {
+        token: String,
+        from: String,
+        path: String,
+        to: String,
+        dir: String,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -441,6 +451,7 @@ impl Op {
             Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
+            Op::DropInto { .. } => ("DropInto", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),

@@ -35,10 +35,20 @@ async fn dropped(
     path: &str,
     to: &str,
 ) -> (Result<String, String>, Vec<DropState>) {
+    dropped_into(n, from, path, to, None).await
+}
+
+async fn dropped_into(
+    n: &khor_node::Node,
+    from: &str,
+    path: &str,
+    to: &str,
+    into: Option<&str>,
+) -> (Result<String, String>, Vec<DropState>) {
     let mut seen = Vec::new();
     let out = timeout(
         Duration::from_secs(120),
-        n.drop_file(from, path, to, |s| seen.push(s.clone())),
+        n.drop_file(from, path, to, into, |s| seen.push(s.clone())),
     )
     .await
     .expect("a drop must not hang");
@@ -194,4 +204,67 @@ async fn a_phone_s_picked_file_is_pulled_by_the_session_s_machine() {
     assert!(seen.last().is_some_and(|s| s.done), "progress was read to the end");
     assert!(names(&rp.0.join("khor-drop")).is_empty(), "nothing landed on the phone");
     serve.abort();
+}
+
+/// **「放到当前目录」** (item 60 part 5): the file lands in the directory
+/// the asker names on the session's machine, in place of its drop
+/// directory — pulled there from another machine, copied there from the
+/// session's own machine, left as it is when it already sits there.
+#[tokio::test(flavor = "multi_thread", worker_threads = 6)]
+async fn a_drop_into_the_shells_directory_lands_there() {
+    let p = pair("drop-into").await;
+    let (alpha_drop, beta_drop) = (p.ra.0.join("khor-drop"), p.rb.0.join("khor-drop"));
+    let work = p.ra.0.join("work dir");
+    std::fs::create_dir_all(&work).unwrap();
+    let into = work.display().to_string();
+
+    // beta's file into alpha's directory: alpha pulls it there.
+    let mine = p.rb.0.join("notes.txt");
+    std::fs::write(&mine, b"from beta\n").unwrap();
+    let mine = mine.display().to_string();
+    let (out, _) = dropped_into(&p.beta, "", &mine, "alpha", Some(&into)).await;
+    assert_eq!(Path::new(&out.expect("lands in the named directory")), work.join("notes.txt"));
+    assert_eq!(std::fs::read(work.join("notes.txt")).unwrap(), b"from beta\n");
+    let (out, _) = dropped_into(&p.beta, "", &mine, "alpha", Some(&into)).await;
+    assert_eq!(Path::new(&out.unwrap()), work.join("notes-2.txt"), "a taken name is suffixed");
+
+    // alpha's own file, ordered by beta into alpha's directory: copied.
+    let theirs = p.ra.0.join("far.txt");
+    std::fs::write(&theirs, b"from alpha\n").unwrap();
+    let (out, seen) = dropped_into(&p.beta, "alpha", &theirs.display().to_string(), "alpha", Some(&into)).await;
+    assert_eq!(Path::new(&out.expect("copied on alpha")), work.join("far.txt"));
+    assert_eq!(std::fs::read(work.join("far.txt")).unwrap(), b"from alpha\n");
+    assert!(theirs.exists(), "the original stays");
+    assert_eq!(seen.last().map(|s| s.done), Some(true));
+    // A file already in that directory: nothing moves.
+    let in_place = work.join("far.txt").display().to_string();
+    let (out, _) = dropped_into(&p.beta, "alpha", &in_place, "alpha", Some(&into)).await;
+    assert_eq!(out.unwrap(), in_place);
+
+    // This machine's own file into its own directory: copied here.
+    let here_dir = p.rb.0.join("here");
+    std::fs::create_dir_all(&here_dir).unwrap();
+    let (out, _) = dropped_into(&p.beta, "", &mine, "", Some(&here_dir.display().to_string())).await;
+    assert_eq!(Path::new(&out.unwrap()), here_dir.join("notes.txt"));
+
+    // A directory that is not there, or not absolute: refused, nothing made.
+    let gone = p.ra.0.join("gone").display().to_string();
+    let (out, _) = dropped_into(&p.beta, "", &mine, "alpha", Some(&gone)).await;
+    assert!(out.expect_err("no such directory").contains("gone"));
+    assert!(!p.ra.0.join("gone").exists(), "never made for the asker");
+    let (out, _) = dropped_into(&p.beta, "", &mine, "alpha", Some("work dir")).await;
+    assert!(out.is_err(), "a relative directory is refused");
+
+    // The CLI verb's --into.
+    let out = khor(&p.rb.0)
+        .args(["drop", "--on", "alpha", "--into"])
+        .arg(&into)
+        .arg(&mine)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "khor drop --into: {}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), work.join("notes-3.txt").display().to_string());
+
+    assert_eq!(names(&work), ["far.txt", "notes-2.txt", "notes-3.txt", "notes.txt"], "no part file left");
+    assert!(names(&alpha_drop).is_empty() && names(&beta_drop).is_empty(), "nothing in the drop directories");
 }

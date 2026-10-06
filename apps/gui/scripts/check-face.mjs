@@ -28044,7 +28044,10 @@ try {
     {
       const cdp = await page.context().newCDPSession(page);
       await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
-      const farRow = { ...termRow, id: "tui/face-far", title: "face-far", home: "peer", source: { device: "peer", age_ms: 1200 } };
+      // The far shell stands in /srv/w (its `cwd` mark): 「放到当前目录」's
+      // place (xii).
+      const farDoing = { command: null, running: false, started_ms: 0, ended_ms: null, exit: null, cwd: "/srv/w", title: null, full_screen: false, progress: null, progress_failed: false, notice: null, notice_ms: 0, pane_unmarked: false };
+      const farRow = { ...termRow, id: "tui/face-far", title: "face-far", home: "peer", source: { device: "peer", age_ms: 1200 }, doing: farDoing };
       await page.unroute("**/sessions");
       await page.route("**/sessions", json([termRow, farRow]));
       const pocket = { ...devs.find((d) => d.name === "peer"), id: "f".repeat(64), name: "pocket", shown: "pocket", hosts: false };
@@ -28208,6 +28211,47 @@ try {
           );
         }
       }
+      // xii. a file row's menu (a long press; a secondary click here):
+      //      放到终端 and, while the shell's directory is known, 放到当前
+      //      目录, which is one `term_drop` with `into` that directory.
+      /** The menu of `name`'s first file, then the item `pick` pressed. */
+      const fileMenu = async (name, pick) => {
+        drops.length = 0;
+        if ((await page.locator(`[data-files-machine="${name}"]`).count()) === 0) return `no machine ${name}`;
+        await page.locator(`[data-files-machine="${name}"]`).click();
+        const file = page.locator('[data-files-entry="file"]');
+        if (!(await until(3_000, async () => (await file.count()) > 0))) return `no listing for ${name}`;
+        await file.first().click({ button: "right" });
+        const items = page.locator("[data-row-menu] [data-menu-item]");
+        await until(3_000, async () => (await items.count()) > 0);
+        const offered = await items.evaluateAll((els) => els.map((e) => e.getAttribute("data-menu-item")));
+        if (pick && offered.includes(pick)) {
+          await page.locator(`[data-row-menu] [data-menu-item="${pick}"]`).click();
+          await until(3_000, async () => drops.length > 0);
+        } else await page.keyboard.press("Escape");
+        await wait(200);
+        for (let i = 0; i < 6 && (await page.locator("[data-files-machine]").count()) === 0; i++) {
+          await page.locator("[data-files-up]").click({ timeout: 3_000 }).catch(() => {});
+          await wait(200);
+        }
+        return { offered, drops: drops.slice() };
+      };
+      if (Array.isArray(machinesFar)) {
+        const into = await fileMenu("elder", "to-cwd");
+        console.log(`term xii · a file's menu on peer's session (cwd /srv/w): ${JSON.stringify(into)}`);
+        if (
+          JSON.stringify(into?.offered) !== '["to-term","to-cwd"]' ||
+          into.drops.length !== 1 ||
+          into.drops[0].from !== "elder" ||
+          into.drops[0].into !== "/srv/w" ||
+          JSON.stringify(into.drops[0].paths) !== '["/home/elder/x y.txt"]'
+        ) {
+          fail(
+            `term xii · the file row's menu on a shell standing in /srv/w gave ${JSON.stringify(into)} — wanted 放到终端 and 放到当前目录, ` +
+              "and the second one term_drop with into /srv/w (item 60 part 5)",
+          );
+        }
+      }
       await page.locator('[data-term-key="attach"]').filter({ visible: true }).first().click();
       const machinesHere = await panelFor("tui/face-term");
       console.log(`term vi · 📎 on a local row: ${JSON.stringify(machinesHere)}`);
@@ -28222,6 +28266,12 @@ try {
         console.log(`term vii · on this machine's session, its own file: ${JSON.stringify(own)}`);
         if (!Array.isArray(own) || own.length !== 1 || own[0].id !== "tui/face-term" || own[0].from !== null) {
           fail(`term vii · this machine's file pressed on its own session asked ${JSON.stringify(own)}, not one term_drop from null`);
+        }
+        // xii, a shell whose directory nobody knows: 放到终端 alone.
+        const bare = await fileMenu("gate", null);
+        console.log(`term xii · a file's menu on a shell with no cwd: ${JSON.stringify(bare)}`);
+        if (JSON.stringify(bare?.offered) !== '["to-term"]') {
+          fail(`term xii · with the shell's directory unknown the file's menu offered ${JSON.stringify(bare?.offered)}, not 放到终端 alone (progressive disclosure)`);
         }
       }
       await page.unroute("**/ls", meshLs);

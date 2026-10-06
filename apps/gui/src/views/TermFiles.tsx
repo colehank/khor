@@ -29,6 +29,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchDevices, fetchLs, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
+import { RowMenu } from "@/components/RowMenu";
 import { IconBack, IconChevronRight, IconFile, IconFiles } from "@/components/icons";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { gui } from "@/gen/catalog";
@@ -45,7 +46,11 @@ export type FilesRoad = {
       where the session's machine reads them, and pasted when they are
       there: the pane's own drop (item 60's road, `term_drop`), its
       progress on the pill's line and a failure in its corner. */
-  drop: (paths: string[], from: string | null) => void;
+  drop: (paths: string[], from: string | null, into?: string | null) => void;
+  /** The shell's current directory on the session's machine (its `cwd`
+      mark), where 「放到当前目录」 lands a file; `null` while unknown,
+      and then the menu does not offer it. */
+  cwd: string | null;
   /** Files picked on this device (照片与文件): staged where its node
       serves them, then the same drop from here. */
   dropFiles: (files: File[]) => void;
@@ -140,18 +145,31 @@ export function TermFiles({ road }: { road: FilesRoad }) {
         </button>
         {listing?.entries.map((e) => {
           const path = `${listing.path.replace(/\/$/, "")}/${e.name}`;
-          return (
+          const from = machine.me ? null : machine.name;
+          const row = (
             <button
               key={e.name}
               type="button"
               data-files-entry={e.dir ? "dir" : "file"}
-              onClick={() => (e.dir ? open(machine, path) : road.drop([path], machine.me ? null : machine.name))}
+              onClick={() => (e.dir ? open(machine, path) : road.drop([path], from))}
               className={ROW}
             >
               {e.dir ? <IconFiles className="size-kind-mark flex-none text-muted-foreground" /> : <FileKindIcon name={e.name} className="size-kind-mark flex-none" />}
               <span className="min-w-0 flex-1 truncate">{e.name}</span>
               {e.dir && <IconChevronRight className="size-4 text-tertiary" />}
             </button>
+          );
+          // A file's menu (long press, or a secondary click): where it
+          // lands — the press's own ~/khor-drop/, or the shell's current
+          // directory, offered only while that is known (part 5).
+          if (e.dir) return row;
+          const acts = [{ key: "to-term", label: gui.files_to_term, run: () => road.drop([path], from) }];
+          const cwd = road.cwd;
+          if (cwd) acts.push({ key: "to-cwd", label: gui.files_to_cwd, run: () => road.drop([path], from, cwd) });
+          return (
+            <RowMenu key={e.name} items={acts}>
+              {row}
+            </RowMenu>
           );
         })}
       </>

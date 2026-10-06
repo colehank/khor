@@ -700,6 +700,20 @@ pub enum Request {
         from: String,
         path: String,
     },
+    /// **[`Request::DropFile`] into a directory named by the asker**
+    /// (item 60 part 5, 「放到当前目录」): the shell's current directory
+    /// on the answering machine, absolute there, in place of its drop
+    /// directory. A file already on the answering machine (`from` is its
+    /// own id) is copied there, under the same naming. New words rather
+    /// than a tail field on `DropFile`, which would lengthen every plain
+    /// drop under an older peer; an older khor refuses this one by name,
+    /// which carries `DropFile`, so the asker says `msg::drop_predates()`.
+    DropFileInto {
+        token: String,
+        from: String,
+        path: String,
+        dir: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1143,6 +1157,7 @@ impl Request {
                 // A drop names its job by token: asked twice, it answers
                 // the one job's progress (`crate::drops`).
                 | Request::DropFile { .. }
+                | Request::DropFileInto { .. }
         )
     }
 
@@ -1575,6 +1590,15 @@ mod tests {
                     path: String::new(),
                 },
                 &b"DropFile"[..],
+            ),
+            (
+                Request::DropFileInto {
+                    token: String::new(),
+                    from: String::new(),
+                    path: String::new(),
+                    dir: String::new(),
+                },
+                &b"DropFileInto"[..],
             ),
         ] {
             let bytes = encode(&op).unwrap();

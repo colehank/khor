@@ -959,11 +959,16 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> 
 /// the drop is over, landed or not, and goes then. Staged for a session
 /// on this machine, it is not pasted where it waits but moved into this
 /// machine's `~/khor-drop`, where a picked file lands on any machine.
-pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>) -> Result<(), String> {
+///
+/// **`into`, the shell's current directory** (item 60 part 5, 「放到当前
+/// 目录」): the files land there on the session's machine in place of
+/// its `~/khor-drop`, and a file already on that machine is copied
+/// there.
+pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>) -> Result<(), String> {
     let n = Node::open(root.to_path_buf())?;
     let to = n.far_machine(&SessionId(id.to_owned()))?.unwrap_or_default();
     let from = from.unwrap_or_default();
-    let here = if from.is_empty() && to.is_empty() {
+    let here = if from.is_empty() && to.is_empty() && into.is_none() {
         paths
             .iter()
             .map(|p| match staged_dir(root, p) {
@@ -972,7 +977,7 @@ pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>) ->
             })
             .collect::<Result<Vec<_>, _>>()
     } else {
-        drop_blocking(root, id, from, &to, paths)
+        drop_blocking(root, id, from, &to, into, paths)
     };
     for p in paths {
         if let Some(dir) = staged_dir(root, p) {
@@ -1094,8 +1099,9 @@ pub fn term_drop_progress(id: &str) -> Option<f32> {
 /// The files of one drop put on the session's machine, one after
 /// another, answering where each landed over there. Its own thread and
 /// runtime, for [`reach_blocking`]'s reason.
-fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, paths: &[String]) -> Result<Vec<String>, String> {
+fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, into: Option<&str>, paths: &[String]) -> Result<Vec<String>, String> {
     let (root, id, from, to, paths) = (root.to_path_buf(), id.to_owned(), from.to_owned(), to.to_owned(), paths.to_vec());
+    let into = into.map(str::to_owned);
     plock(dropping()).insert(id.clone(), 0.0);
     let gone = id.clone();
     let out = std::thread::spawn(move || -> Result<Vec<String>, String> {
@@ -1107,7 +1113,7 @@ fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, paths: &[String]) 
         let count = paths.len().max(1) as f32;
         let mut landed = Vec::with_capacity(paths.len());
         for (i, p) in paths.iter().enumerate() {
-            let at = rt.block_on(n.drop_file(&from, p, &to, |s| {
+            let at = rt.block_on(n.drop_file(&from, p, &to, into.as_deref(), |s| {
                 let part = if s.total > 0 { s.moved as f32 / s.total as f32 } else { 0.0 };
                 plock(dropping()).insert(id.clone(), (i as f32 + part.min(1.0)) / count);
             }))?;

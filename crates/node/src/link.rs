@@ -2007,7 +2007,17 @@ impl Node {
                 from,
                 path,
                 to,
-            } => match self.drop_step_with(ep, &token, &from, &path, &to).await {
+            } => match self.drop_step_with(ep, &token, &from, &path, &to, None).await {
+                Ok(state) => ipc::Reply::DropFile { state },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::DropInto {
+                token,
+                from,
+                path,
+                to,
+                dir,
+            } => match self.drop_step_with(ep, &token, &from, &path, &to, Some(&dir)).await {
                 Ok(state) => ipc::Reply::DropFile { state },
                 Err(why) => ipc::Reply::Refused { why },
             },
@@ -3566,7 +3576,21 @@ impl Node {
                     .get(&from)
                     .map(|d| d.name)
                     .ok_or_else(|| msg::machine_left_table(&from))?;
-                self.drop_here(ep, &token, &channel, &path).await.map(drop_answer)
+                self.drop_here(ep, &token, &channel, &path, None).await.map(drop_answer)
+            }
+            Request::DropFileInto { token, from, path, dir } => {
+                // Into the asker's directory: a file already here is
+                // copied there (item 60 part 5).
+                if from == self.device_str() {
+                    return self.copy_here(&token, &path, &dir).await.map(drop_answer);
+                }
+                let channel = self
+                    .devices_loaded()?
+                    .doc
+                    .get(&from)
+                    .map(|d| d.name)
+                    .ok_or_else(|| msg::machine_left_table(&from))?;
+                self.drop_here(ep, &token, &channel, &path, Some(&dir)).await.map(drop_answer)
             }
             Request::FetchPath { path, offset } => {
                 // Off the reactor with Ls, for Ls's reason.
@@ -6980,19 +7004,34 @@ impl Node {
     /// drop directory, pulled there by `to` itself — this machine only
     /// orders it and asks after it, every [`DROP_ASK_EVERY`], until it
     /// has landed or failed.
+    ///
+    /// **`into`, a directory absolute on `to`** (item 60 part 5, 「放到当
+    /// 前目录」, the shell's current directory): the file lands there in
+    /// place of the drop directory, under the same naming, and a file
+    /// already on `to` is copied there — unless it already sits in it.
     pub async fn drop_file(
         &self,
         from: &str,
         path: &str,
         to: &str,
+        into: Option<&str>,
         mut on: impl FnMut(&crate::drops::DropState),
     ) -> Result<String, String> {
         let token = fresh_hex()?;
-        let op = || ipc::Op::DropOn {
-            token: token.clone(),
-            from: from.to_owned(),
-            path: path.to_owned(),
-            to: to.to_owned(),
+        let op = || match into {
+            None => ipc::Op::DropOn {
+                token: token.clone(),
+                from: from.to_owned(),
+                path: path.to_owned(),
+                to: to.to_owned(),
+            },
+            Some(dir) => ipc::Op::DropInto {
+                token: token.clone(),
+                from: from.to_owned(),
+                path: path.to_owned(),
+                to: to.to_owned(),
+                dir: dir.to_owned(),
+            },
         };
         let from_serve = |reply: Result<ipc::Reply, String>| match reply? {
             ipc::Reply::DropFile { state } => Ok(state),
@@ -7009,7 +7048,7 @@ impl Node {
                 let e = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
                     .await
                     .map_err(|e| e.to_string())?;
-                let first = self.drop_step_with(&e, &token, from, path, to).await;
+                let first = self.drop_step_with(&e, &token, from, path, to, into).await;
                 ep = Some(e);
                 first
             }
@@ -7026,7 +7065,7 @@ impl Node {
             }
             tokio::time::sleep(DROP_ASK_EVERY).await;
             answer = match &ep {
-                Some(e) => self.drop_step_with(e, &token, from, path, to).await,
+                Some(e) => self.drop_step_with(e, &token, from, path, to, into).await,
                 None => match self.via_serve(op()).await {
                     Some(reply) => from_serve(reply),
                     None => Err(msg::drop_serve_gone().into()),
@@ -7048,19 +7087,31 @@ impl Node {
         from: &str,
         path: &str,
         to: &str,
+        into: Option<&str>,
     ) -> Result<crate::drops::DropState, String> {
         let (src_channel, src) = self.resolve_or_here(from)?;
         let (dst_channel, dst) = self.resolve_or_here(to)?;
-        if src == dst {
+        if src == dst && into.is_none() {
             return Ok(crate::drops::DropState::there(path));
         }
         if dst == self.device() {
-            return self.drop_here(ep, token, &src_channel, path).await;
+            return match into {
+                Some(dir) if src == dst => self.copy_here(token, path, dir).await,
+                _ => self.drop_here(ep, token, &src_channel, path, into).await,
+            };
         }
-        let req = Request::DropFile {
-            token: token.to_owned(),
-            from: src.hex(),
-            path: path.to_owned(),
+        let req = match into {
+            None => Request::DropFile {
+                token: token.to_owned(),
+                from: src.hex(),
+                path: path.to_owned(),
+            },
+            Some(dir) => Request::DropFileInto {
+                token: token.to_owned(),
+                from: src.hex(),
+                path: path.to_owned(),
+                dir: dir.to_owned(),
+            },
         };
         match self.ask(ep, &dst_channel, &req).await? {
             Response::DropFile {
@@ -7091,27 +7142,53 @@ impl Node {
         token: &str,
         channel: &str,
         path: &str,
+        into: Option<&str>,
     ) -> Result<crate::drops::DropState, String> {
         if !crate::once::valid(token) {
             return Err(msg::create_token_bad().into());
         }
+        let dir = match into {
+            Some(dir) => crate::drops::named_dir(dir)?,
+            None => self.drop_dir(),
+        };
         let (job, fresh) = crate::drops::job(token);
         if fresh {
             match self.me() {
                 Some(node) => {
                     let (ep, channel, path, job) = (ep.clone(), channel.to_owned(), path.to_owned(), job.clone());
-                    tokio::spawn(async move { node.run_drop(&ep, &channel, &path, &job).await });
+                    tokio::spawn(async move { node.run_drop(&ep, &channel, &path, &dir, &job).await });
                 }
-                None => self.run_drop(ep, channel, path, &job).await,
+                None => self.run_drop(ep, channel, path, &dir, &job).await,
             }
         }
         job.state()
     }
 
-    /// One drop's pull, start to end, told to its job.
-    async fn run_drop(&self, ep: &iroh::Endpoint, channel: &str, path: &str, job: &crate::drops::Job) {
+    /// A drop into `dir` of a file already on this machine (item 60 part
+    /// 5): copied there under the drop's naming, as the job this token
+    /// names, on a blocking thread — the file sits in `dir` already:
+    /// nothing moves.
+    async fn copy_here(&self, token: &str, path: &str, dir: &str) -> Result<crate::drops::DropState, String> {
+        if !crate::once::valid(token) {
+            return Err(msg::create_token_bad().into());
+        }
+        let dir = crate::drops::named_dir(dir)?;
+        let (job, fresh) = crate::drops::job(token);
+        if fresh {
+            let (path, held) = (path.to_owned(), job.clone());
+            let copied = tokio::task::spawn_blocking(move || crate::drops::copy_into(std::path::Path::new(&path), &dir, &held))
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r);
+            job.finish(copied.map(|p| p.display().to_string()));
+        }
+        job.state()
+    }
+
+    /// One drop's pull, start to end, into `dir`, told to its job.
+    async fn run_drop(&self, ep: &iroh::Endpoint, channel: &str, path: &str, dir: &std::path::Path, job: &crate::drops::Job) {
         let landed = async {
-            let fell = crate::drops::landing(&self.drop_dir(), &crate::drops::name_of(path)?)?;
+            let fell = crate::drops::landing(dir, &crate::drops::name_of(path)?)?;
             let part = fell.part.clone();
             let out = self.pull_into(ep, channel, path, fell, Some(job)).await;
             if out.is_err() {

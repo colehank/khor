@@ -1052,9 +1052,11 @@ fn term_key(id: String, keys: String) -> Result<(), String> {
 ///
 /// `from` is the machine the files are on when they came from a listing
 /// of another machine's disk (item 60); absent, they are this machine's.
+/// `into` is the shell's current directory for 「放到当前目录」 (part 5);
+/// absent, they land in that machine's `~/khor-drop`.
 #[tauri::command]
-async fn term_drop(id: String, paths: Vec<String>, from: Option<String>) -> Result<(), String> {
-    off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref())).await
+async fn term_drop(id: String, paths: Vec<String>, from: Option<String>, into: Option<String>) -> Result<(), String> {
+    off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref(), into.as_deref())).await
 }
 
 /// How far a terminal's drop has got, for its pill's line (item 60):
