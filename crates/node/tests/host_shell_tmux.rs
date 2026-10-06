@@ -21,6 +21,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use khor_core::{DeviceId, SessionId};
+use khor_node::adaptor::{Discovery, Procs, tmux::Tmux};
 use khor_node::host::{ClientOp, write_frame};
 use khor_node::live::LiveKind;
 
@@ -193,6 +194,33 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
     assert!(front.tty.starts_with("/dev/"), "the terminal as tmux names it: {}", front.tty);
     assert_eq!(tmux(&sock, &["list-clients", "-F", "#{client_tty}"]).trim(), front.tty, "the client on the shell's terminal");
 
+    // The row side (SESS-BRIEF 1b): the discovery watching that server
+    // names the session's row as its own sweep does; one watching
+    // another server names none.
+    let shell = khor_node::host::read_host_file(&dir).unwrap().child_pid;
+    let watched = Tmux::on_socket(&sock);
+    let swept = watched
+        .sweep(&Procs::snapshot())
+        .rows
+        .iter()
+        .find(|m| m.found.sighting.title == "mine")
+        .expect("the sweep lists the session")
+        .found
+        .id();
+    let vendors = root.join("vendors");
+    std::fs::create_dir_all(&vendors).unwrap();
+    assert_eq!(
+        Discovery::at(&vendors).with_tmux(watched).attached(shell),
+        Some(swept),
+        "the session's row, as the sweep names it"
+    );
+    assert_eq!(
+        Discovery::at(&vendors).with_tmux(Tmux::on_socket(&format!("{sock}-other"))).attached(shell),
+        None,
+        "a session id means nothing on another server"
+    );
+    assert_eq!(Discovery::at(&vendors).attached(shell), None, "no server watched, nothing asked");
+
     tmux(&sock, &["send-keys", "-t", "mine", "-l", "i=1; while [ $i -le 200 ]; do echo row-$i; i=$((i+1)); done"]);
     tmux(&sock, &["send-keys", "-t", "mine", "Enter"]);
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -222,6 +250,11 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
         let _ = read_for(&mut face, Duration::from_millis(100));
     }
     assert!(k.tmux_history(&id, None).is_err(), "no history once the client left");
+    assert_eq!(
+        Discovery::at(&vendors).with_tmux(Tmux::on_socket(&sock)).attached(shell),
+        None,
+        "and no session once it left"
+    );
     assert_eq!(k.tmux_wheel(&id, 3), Ok(false), "the wheel is the face's again");
 
     tmux(&sock, &["kill-server"]);

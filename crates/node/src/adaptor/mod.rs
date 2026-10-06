@@ -632,17 +632,22 @@ impl Discovery {
     /// attached to — only on the server this discovery watches, since a
     /// session id (`$3`) means nothing on another one.
     ///
-    /// The seam the row side is written against. The lookup is the
-    /// terminal lane's `adaptor::tmux::client_in_front` (TERM-BRIEF item
-    /// 58, redesign-term c8d2804b, not on this branch yet): its
-    /// `session_id` matched against the watched server's sessions by
-    /// `tmux_target_of`, after checking `.server()` is that server.
-    /// Until it is wired, only the fixed answers above are given.
+    /// The lookup is [`tmux::client_in_front`] (TERM-BRIEF item 58): the
+    /// client's server must be the watched one, and its session's row id
+    /// is made as the sweep makes it ([`tmux::id_of`], from the session's
+    /// creation time). Fixed answers ([`Discovery::with_attached`]) come
+    /// first; with no server watched, nothing is asked.
     pub fn attached(&self, shell: u32) -> Option<SessionId> {
-        self.attached
-            .iter()
-            .find(|(pid, _)| *pid == shell)
-            .map(|(_, row)| row.clone())
+        if let Some((_, row)) = self.attached.iter().find(|(pid, _)| *pid == shell) {
+            return Some(row.clone());
+        }
+        let watched = self.tmux.as_ref()?;
+        let client = tmux::client_in_front(shell)?;
+        if !watched.same_server(&client.server()) {
+            return None;
+        }
+        let created = watched.session_created(&client.session_id)?;
+        Some(tmux::id_of(&client.session_id, created))
     }
     /// Adaptors reading the vendor directories under `home`.
     ///

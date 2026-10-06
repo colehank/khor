@@ -230,6 +230,18 @@ impl Tmux {
         }
     }
 
+    /// Whether `other` names the same server: the same `-L` name and the
+    /// same `-S` path (none of either is the default server).
+    pub fn same_server(&self, other: &Tmux) -> bool {
+        self.socket == other.socket && self.path == other.path
+    }
+
+    /// When the session `id` (`$3`) was created, as `#{session_created}`
+    /// says: what its row id is made from ([`id_of`]).
+    pub fn session_created(&self, id: &str) -> Option<i64> {
+        self.ask(&["display-message", "-p", "-t", id, "#{session_created}"])?.trim().parse().ok()
+    }
+
     /// The server a client's own socket arguments name (`-L name`,
     /// `-S path`, the last of each winning as tmux's own parse does);
     /// none is the default server.
