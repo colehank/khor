@@ -1058,7 +1058,6 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
             let tint = color(if g.sel { &dr.sel_tint } else { &dr.tint });
             let _: () = msg_send![content, setBackgroundColor: &*tint];
             let _: () = msg_send![&*view, addSubview: &*fx];
-            unveil(&fx);
             let content_layer: *mut AnyObject = msg_send![content, layer];
             rim_on(content_layer, g, &dr.rim);
         }
@@ -1134,6 +1133,18 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         if !parent.is_null() {
             let _: () = msg_send![parent, addSubview: &*view];
         }
+        // The material builds its layers once it is in a window: its veil
+        // is taken off after that (measured: taken before, it stayed).
+        let _: () = msg_send![&*view, layoutIfNeeded];
+        let subs: Retained<AnyObject> = msg_send![&*view, subviews];
+        let n: usize = msg_send![&*subs, count];
+        for i in 0..n {
+            let sub: *mut AnyObject = msg_send![&*subs, objectAtIndex: i];
+            let fx: bool = msg_send![sub, isKindOfClass: class!(UIVisualEffectView)];
+            if fx {
+                unveil(&*sub);
+            }
+        }
         DECKS.with(|d| {
             d.borrow_mut().insert(tab.to_owned(), Deck { view, h: dr.h, pill });
         });
@@ -1152,6 +1163,8 @@ unsafe fn rounded(x: f64, y: f64, w: f64, h: f64, r: f64) -> *mut std::ffi::c_vo
 /// Takes the material's own veil off a glass: the effect view's overlay
 /// subviews (`_UIVisualEffectSubview`) hidden, its backdrop — the blur and
 /// the saturation — kept. A future UIKit without them is left as it is.
+/// ⚠️ Unmeasured: build 2 hid them before the deck was in a window and
+/// the veil stayed (the pill over red read 213,124,123, the DOM 236,32,31).
 unsafe fn unveil(fx: &AnyObject) {
     unsafe {
         let subs: Retained<AnyObject> = msg_send![fx, subviews];
