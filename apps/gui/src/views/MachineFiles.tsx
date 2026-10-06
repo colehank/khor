@@ -21,7 +21,7 @@
  * bottom — on the narrow face the whole window (the machine's head steps
  * aside, `useFullScreen`), on the wide face the column beside the listing.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { EmptyState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
@@ -37,30 +37,7 @@ export function MachineFiles({
   here,
   onOpenFile,
   start = null,
-  startDir = null,
-  fileActs,
-  onTop,
-  topLabel,
-  onRead,
-  bare = false,
 }: {
-  /** **Inside the session's 附栏** (UX-37 §6): a file opens as the bare
-      file page (‹ · name · content, no deck) and takes nothing of the
-      screen — the sheet is the screen it is in. */
-  bare?: boolean;
-  /** ‹ at the root goes on to here (UX-37 §1: the 附栏's 工作区 climbs
-      the shell's directory to the root, then to every workspace). */
-  onTop?: () => void;
-  /** What ‹ at the root goes to, for the row's name. */
-  topLabel?: string;
-  /** A file was opened to be read here (the 附栏 remembers it as the
-      session's, UX-37 §1). */
-  onRead?: (path: string) => void;
-  /** Acts for the open file's 「…」, by path (`FilePage` `moreActs`). */
-  fileActs?: (path: string) => { key: string; label: string; run: () => void }[];
-  /** The directory the listing opens at (UX-17: a session's 目录 sheet
-      opens where the session is); the machine's home without it. */
-  startDir?: string | null;
   machine: string;
   here: boolean;
   /** A file to open, from outside the page (a conversation's
@@ -76,7 +53,7 @@ export function MachineFiles({
 }) {
   const narrow = useNarrow();
   // `""` is the machine's home, the listing's own contract.
-  const [at, setAt] = useState(() => (start ? start.path.slice(0, start.path.lastIndexOf("/")) || "/" : (startDir ?? "")));
+  const [at, setAt] = useState(() => (start ? start.path.slice(0, start.path.lastIndexOf("/")) || "/" : ""));
   const [file, setFile] = useState<string | null>(start?.path ?? null);
   /** Bumped to read the listing again after the file page renamed or
       deleted what it showed. */
@@ -94,12 +71,7 @@ export function MachineFiles({
     onOpenFile?.(file !== null ? () => setFile(null) : null);
     return () => onOpenFile?.(null);
   }, [narrow, file, onOpenFile]);
-  useFullScreen(narrow && file !== null && !bare);
-  const read = useRef(onRead);
-  read.current = onRead;
-  useEffect(() => {
-    if (file !== null) read.current?.(file);
-  }, [file]);
+  useFullScreen(narrow && file !== null);
 
   const listing = (
     <FilesPane
@@ -111,8 +83,6 @@ export function MachineFiles({
       onFile={(path) => setFile(path)}
       open={file}
       here={here}
-      onTop={onTop}
-      topLabel={topLabel}
     />
   );
   const view = file !== null && (
@@ -121,8 +91,6 @@ export function MachineFiles({
       machine={machine}
       path={file}
       here={here}
-      moreActs={fileActs?.(file)}
-      bare={bare}
       onBack={() => setFile(null)}
       onGone={() => {
         setFile(null);

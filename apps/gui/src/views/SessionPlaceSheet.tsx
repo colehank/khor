@@ -2,21 +2,29 @@
  * **The phone's pill opens the session's 附栏 as a sheet** (UX-30 §6; it
  * was UX-17's 目录 · 日志 sheet). The same five seats the wide face docks
  * beside the terminal (`SideBody`), risen from the bottom: 最近 · 工作区
- * · 浏览器 · 机器 · 额度; 目录 is the 工作区 seat. The seat and the day's
- * expansion are the session's own memory (`use-session-side`); the day
- * is 最近's first row (`DayToday`, UX-37 §5).
+ * · 浏览器 · 机器 · 额度, chosen from the head's title (`SeatTitle`); 目录
+ * is the 工作区 seat. The seat is the session's own memory
+ * (`use-session-side`); the day is 最近's first row (`DayToday`).
  *
- * **Two detents, the seats at the foot** (UX-37 §3–4, the owner
- * 2026-10-06, agreed on `audit/session-sheet-demo.html`): the pill opens
+ * **One sheet of paper** (UX-39 §1, the owner 2026-10-06 21:10: 「展开
+ * 了就是 app 的颜色，不要额外颜色」): the app's own ground, a top rim and
+ * the sheet's corners, the grabber inside the paper, and the page behind
+ * greyed by `--sheet-scrim` (darker on light, lighter on dark — a black
+ * terminal reads as grey). ⚠️ 墓碑 (UX-37 §2 → UX-39 §1): `popover` as
+ * the sheet's surface, `bg-black/50` as its scrim.
+ *
+ * **Two detents** (UX-37 §3, the owner 2026-10-06, agreed on
+ * `audit/session-sheet-demo.html`): the pill opens
  * it at half the screen, so the terminal keeps its upper half; the
  * grabber, a page's head, or the body while nothing under the finger has
  * scrolled drags it to nearly the whole screen or back; let go under
- * half it goes away, as a tap on the scrim and Esc do. The five seats
- * are one flat row at its foot on the screen's foot, wearing the safe
- * area, and the pages scroll under it (`--nav-room`); the session's deck
- * steps away while it is up (`SessionScreen`'s `away`). The heights are
- * tokens (`--place-sheet-half`, `--place-sheet-full`).
+ * half it goes away, as a tap on the scrim and Esc do. The pages keep
+ * the safe area at their foot (`--nav-room`); the session's deck steps
+ * away while it is up (`SessionScreen`'s `away`, UX-37 §4). The heights
+ * are tokens (`--place-sheet-half`, `--place-sheet-full`).
  *
+ * ⚠️ 墓碑 (UX-37 §4 → UX-39 §2): the five seats as one flat row at the
+ * sheet's foot, on the screen's foot, wearing the safe area.
  * ⚠️ 墓碑 (UX-30 → UX-37): the sheet was the form dialog's sheet (`ui/
  * dialog` `form`) at 80 % of the screen, padded by the dialog's own
  * inset, the capsule of seats at its top.
@@ -175,7 +183,7 @@ export function SessionPlaceSheet({
   onOpenChange: (open: boolean) => void;
   seat: SideSeat;
   onSeat: (seat: SideSeat) => void;
-  who?: SideWho;
+  who: SideWho;
   /** The seat's page, composed by the shell (`App`'s `sideSeat`). */
   children?: ReactNode;
 }) {
@@ -187,14 +195,14 @@ export function SessionPlaceSheet({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        {/* The page behind turns grey (UX-39): a scrim that shows on both
-            grounds, the token's. */}
+        {/* The page behind turns grey (UX-39 §1): a scrim that shows on
+            both grounds, the token's. */}
         <DialogOverlay className="bg-(--sheet-scrim)" />
         <DialogPrimitive.Content
           ref={setEl}
           data-place-sheet
           data-detent={detent}
-          // The seats row and the page are the sheet's whole content; a
+          // The head and the page are the sheet's whole content; a
           // description would be the decorative copy `ui/dialog` opts out of.
           aria-describedby={undefined}
           // **The focus goes to the sheet itself**, not to its first
@@ -218,12 +226,12 @@ export function SessionPlaceSheet({
             ref={boxRef}
             data-place-body
             // The pages read the sheet's ground as theirs (`--side-ground`),
-            // and their scrollers keep the seats row's room at their foot
+            // and their scrollers keep the safe area at their foot
             // (`data-nav-shown`, `--nav-room` in `app.css`).
             data-nav-shown
             className="relative flex min-h-0 flex-1 flex-col [--side-ground:var(--background)]"
           >
-            <SideBody seat={seat} onSeat={onSeat} who={who} foot>
+            <SideBody seat={seat} onSeat={onSeat} who={who}>
               {children}
             </SideBody>
           </div>

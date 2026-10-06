@@ -32,7 +32,7 @@ import {
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
-import { SeatPick, SeatTitle } from "@/components/SeatTitle";
+import { SeatPick } from "@/components/SeatTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
@@ -98,7 +98,9 @@ export function MachineCard({
       place R0 puts them wide (第十七轮 §3). */
   actions?: ReactNode;
 }) {
-  // Inside the 附栏 the head draws no ‹ (UX-39: 「都不可返回」).
+  // **Inside the 附栏 the first line is the machine's name**, no ‹ and
+  // no face (UX-39 §3, the owner 2026-10-06 21:05: 「都不可返回」); the
+  // 附栏's head above says 机器 with the seat's own icon.
   const inSide = useContext(SeatPick) !== null;
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
@@ -128,19 +130,13 @@ export function MachineCard({
           {/* The canvas's machine head (the redesign, 2026-10-02): the way
               back as a glass circle, the machine's own face, its name
               over one line of facts, and its verbs in a glass capsule. */}
-          {!inSide && <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
+          <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
-          </GlassCircle>}
-          {/* Inside the 附栏 the seat's own icon stands before the name
-              (UX-39: 「icon 都用自己的 icon」); the face is the card's. */}
-          {row && !inSide && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
+          </GlassCircle>
+          {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
           <span data-head-name className="flex min-w-0 flex-1 flex-col">
-            <SeatTitle>{row?.shown ?? ""}</SeatTitle>
-            {row && inSide ? (
-              <span className="min-w-0 truncate text-callout text-muted-foreground">{row.shown}</span>
-            ) : (
-              row && <HeadModel row={row} yields />
-            )}
+            <span className="min-w-0 truncate text-title-md font-title">{row?.shown ?? ""}</span>
+            {row && <HeadModel row={row} yields />}
           </span>
           {actions}
         </header>

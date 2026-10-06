@@ -10,17 +10,17 @@
  * a page in the column's browser. The main area is the session, always;
  * the one way there is a double-click, or the row menu's 「在主区打开」.
  *
- * **It lands on this session's slice; ‹ goes to the whole** (UX-37 §1):
- * the slice is what was opened from this session — from its terminal's
- * paths and URLs, or from this 附栏 while the session was in front — as
- * the record says (`session` on a recent, `use-side-recent`); the whole is
- * every row, and a row the record holds no session for is only there.
- * The slice starts with the day (`today`, §5).
+ * **This session's slice, and only it** (UX-37 §1, UX-39 §3): what was
+ * opened from this session — from its terminal's paths and URLs, or from
+ * this 附栏 while the session was in front — as the record says
+ * (`session` on a recent, `use-side-recent`). It starts with the day
+ * (`today`, 过去24小时, UX-39 §4). A page opened from a row wears ‹ back
+ * here (`App`'s `sideFrom`). ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ from the
+ * slice to the whole, 全部最近.
  */
 import type { ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
-import { SeatHead } from "@/components/SeatHead";
 import { SideList, type SideRow } from "@/components/SideList";
 import { fileKind, pageKind, workspaceKind } from "@/components/SessionFace";
 import { gui } from "@/gen/catalog";
@@ -57,7 +57,6 @@ function asideOf(it: RecentItem): string {
 export function SideRecent({
   items,
   slice,
-  onAll: _onAll,
   today,
   faceOf,
   onOpen,
@@ -65,18 +64,16 @@ export function SideRecent({
 }: {
   /** `null` until the first answer. */
   items: RecentItem[] | null;
-  /** The session whose slice this is; `null` is the whole. */
-  slice: string | null;
-  /** ‹: from the slice to the whole. */
-  onAll: () => void;
-  /** The slice's first row, the day (`DayRow`, UX-37 §5). */
+  /** The session whose slice this is. */
+  slice: string;
+  /** The first row, the day (`DayToday`, UX-39 §4). */
   today?: ReactNode;
   /** The machine's face, by device id (the row's base, UX-32). */
   faceOf: (device: string) => Avatar | null;
   onOpen: (it: RecentItem) => void;
   onOpenMain: (it: RecentItem) => void;
 }) {
-  const shown = slice === null ? items : (items?.filter((it) => it.session === slice) ?? null);
+  const shown = items?.filter((it) => it.session === slice) ?? null;
   const rows: SideRow[] = (shown ?? []).map((it) => ({
     id: it.key,
     group: GROUP,
@@ -108,20 +105,15 @@ export function SideRecent({
         if (it) onOpenMain(it);
       }}
     >
-      {/* **本会话, and only the list** (UX-39, the owner 2026-10-06
-          20:30): no road to 「全部最近」 (⚠️ 墓碑: ‹ to the whole, UX-37
-          §1) and no 今天 row (⚠️ 墓碑: UX-37 §5 — the day is the pill's
-          own line, UX-36). */}
-      <SeatHead title={gui.group_recent} />
+      {/* No head of its own: the 附栏's one head says 最近 (UX-39 §2). */}
       <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
-        {/* 今天 first (UX-39): the day's line, not a seat and not a pill's. */}
         {today}
         <SideList
           rows={rows}
           loading={items === null}
           label={() => gui.group_recent}
-          empty={slice === null ? gui.recent_none : gui.side_recent_here_none}
-          mark={{ "data-list": "recent", "data-recent-slice": slice === null ? "all" : "here" }}
+          empty={gui.side_recent_here_none}
+          mark={{ "data-list": "recent", "data-recent-slice": "here" }}
         />
       </div>
     </div>

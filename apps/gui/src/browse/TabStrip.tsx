@@ -54,7 +54,6 @@ import { PaneBar } from "@/components/PaneBar";
 import { RegionLead } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SideList, type SideRow } from "@/components/SideList";
 import { sessionKind } from "@/components/SessionFace";
@@ -170,24 +169,17 @@ export type TabFace = {
    * the one caller (`App`), and the words are the caller's.
    */
   again?: { hint: string; expanded?: boolean; controls?: string; toggle?: () => void };
-  /** **The pill's third seat, 「和来源对齐」** (UX-33, the owner 2026-10-06):
-      on every pill, in front or not — a session's ↻ re-attach, a page's
-      ↻ reload (× while it loads), a file's ↻ re-read when clean and ✓
-      save when changed. ⚠️ 墓碑: the × cell (closing is the sheet's, ⌘W's
-      and the menu's now). Absent only on a tab nobody has listed yet. */
+  /** **The tab's act, 「和来源对齐」** (UX-33, the owner 2026-10-06): a
+      session's ↻ re-attach, a page's ↻ reload (× while it loads), a
+      file's ↻ re-read when clean and ✓ save when changed. On the phone's
+      band it is the pill's third seat, on every pill; on the wide strip
+      no pill wears it (UX-39 §7) — the front tab's stands after the
+      capsule where the strip asks for it (`frontAct`). Absent only on a
+      tab nobody has listed yet. */
   act?: { kind: "reload" | "stop" | "save"; label: string; onPress: () => void };
   /** **The pill reloads**: a 2-pt line runs along its own bottom edge
       while a join, a load or a read is under way (UX-33 §2; UX-31's slot). */
   loading?: boolean;
-  /** **A session's day in the pill's slot** (UX-36): the 24 hours
-      flattened (`DayLine`), along the pill's bottom edge at rest, given
-      up to `loading`'s line while a reload runs. A page and a file have
-      none. */
-  log?: ReactNode;
-  /** **The day in full, opened from the pill's line** (UX-36 §1): on the
-      tab in front, a panel hanging from the pill while `open` — opened by
-      the tab's menu (「今天」), folded by a press outside or Esc. */
-  day?: { open: boolean; onOpenChange: (open: boolean) => void; panel: ReactNode };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -648,7 +640,7 @@ export function TabStrip({
         {faces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
-          const tab = (
+          return (
             <div
               key={f.id}
               data-tab={f.id}
@@ -869,17 +861,13 @@ export function TabStrip({
                 </TooltipContent>
               )}
               </Tooltip>
-              {/* **The third seat** (UX-33): what aligns this tab with its
-                  source — on every pill, so a stuck session three tabs
-                  over is re-attached where it stands, a changed file saved
-                  without being opened. The pill's ground colour comes
-                  through it; the save face wears the brand ink. ⚠️ 墓碑:
-                  the ×'s cell (docs/SHELL.md 第十三轮 第 6 条) and the
-                  front tab's 预览 eye and 编辑/保存 (UX-14's pill). */}
-              {/* **× on every wide pill, always** (UX-39, the owner
+              {/* **× on every wide pill, always** (UX-39 §7, the owner
                   2026-10-06 22:45–22:50: 「桌面版的看不见 ×」, 「不悬浮就显
                   示 ×」): in the seat the act had; ⌘W, the menu and the
-                  sheet still close. The phone's band keeps no ×. */}
+                  sheet still close. The phone's band keeps no ×.
+                  ⚠️ 墓碑 (UX-33 §1 → UX-39 §7): the third seat on every
+                  wide pill; the wide face's one act is the verbs seat's
+                  (or `frontAct`'s, after the capsule). */}
               {!below && (
                 <button
                   type="button"
@@ -898,6 +886,10 @@ export function TabStrip({
                   <IconClose className="size-affordance" />
                 </button>
               )}
+              {/* **The third seat, on the phone's band** (UX-33): what
+                  aligns this tab with its source — a session's ↻, a
+                  page's ↻ / ×, a file's ↻ / ✓; the save face wears the
+                  brand ink. */}
               {f.act && below && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -936,40 +928,7 @@ export function TabStrip({
                   <span className="block h-full w-[55%] animate-tab-load rounded-full bg-brand-strong" />
                 </span>
               )}
-              {/* **A session's day in the same slot** (UX-36): the line at
-                  rest, the reload's while one runs. */}
-              {!f.loading && f.log && (
-                <span data-tab-log className="pointer-events-none absolute inset-x-3 bottom-0.5 flex">
-                  {f.log}
-                </span>
-              )}
             </div>
-          );
-          // **The day in full hangs from the pill's line** (UX-36 §1),
-          // anchored on the pill so it opens under it. Every session tab
-          // is wrapped, so the front one changing does not remount a tab.
-          if (!f.day) return tab;
-          return (
-            <Popover key={f.id} open={on && f.day.open} onOpenChange={f.day.onOpenChange}>
-              <PopoverAnchor asChild>{tab}</PopoverAnchor>
-              <PopoverContent
-                data-day-pop
-                align="start"
-                side={below ? "top" : "bottom"}
-                // The terminal keeps the focus: the panel is read, not
-                // typed into, and a terminal taking the focus back (a
-                // reload, a click into it) is not a reason to fold it —
-                // a press outside or Esc is.
-                onOpenAutoFocus={(e) => e.preventDefault()}
-                onFocusOutside={(e) => e.preventDefault()}
-                // `!p-0`: the popover's own `px-row py-in` are custom spacings
-                // `cn()` cannot see as padding, so a plain `p-0` loses to
-                // them by the stylesheet's order.
-                className="w-(--session-side-w) max-w-[calc(100vw-2*var(--page-inset))] !p-0 [--side-ground:var(--popover)]"
-              >
-                {f.day.panel}
-              </PopoverContent>
-            </Popover>
           );
         })}
         {onNew && (

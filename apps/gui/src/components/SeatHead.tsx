@@ -1,19 +1,20 @@
 /**
- * **A 附栏 seat's head** (UX-37 §1): every seat lands on this session's
- * slice, and ‹ goes to the whole. The slice's head is ‹ · its title; the
- * whole's is its title alone (a row in it lands back on a slice). The
- * same strip the narrow detail pages draw where there is no window row
- * to seat a head in (`MachineCard`'s, 额度's): the way back as a glass
- * circle, then the name — so a seat's own head and a card's read as one
- * kind of thing inside the sheet.
+ * **A page's head inside the 附栏** (UX-39 §2–3): the 附栏's one head
+ * (`SideBody`) says whose it is and which seat; a seat's page draws a
+ * head of its own only to carry a way back inside the seat — a file
+ * opened from the tree back to the tree, a page opened from a row of 最近
+ * back to 最近, a page of 浏览器 back to its list — or acts that belong
+ * to the page (the file page's ✓, preview, 「…」). Then it is a plain
+ * line under the 附栏's head: ‹ as a glass circle, the page's name. With
+ * neither it draws nothing; the seat's noun is already said above.
+ *
+ * ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): the slice's head as ‹ to the whole and
+ * the whole's as its title alone (「这个会话碰过的」 / 「全部最近」).
  */
 import type { ReactNode } from "react";
 
-import { useContext } from "react";
-
 import { GlassCircle } from "@/components/Glass";
 import { IconBack } from "@/components/icons";
-import { SeatPick, SeatTitle } from "@/components/SeatTitle";
 import { cn } from "@/lib/utils";
 
 export function SeatHead({
@@ -23,22 +24,14 @@ export function SeatHead({
   children,
 }: {
   title: ReactNode;
-  /** To the whole; absent on the whole itself. */
+  /** To the list this page was opened from. */
   back?: () => void;
-  /** What ‹ goes to, for the ear: the whole's name. */
+  /** What ‹ goes to, for the ear: that list's name. */
   backLabel?: string;
   /** Anything that belongs at the head's right end. */
   children?: ReactNode;
 }) {
-  // **Inside the 附栏 nothing goes back** (UX-39, the owner 2026-10-06
-  // 21:05: 「都不可返回，全都和 额度 一样」): a seat is one page under its
-  // title; ‹ is drawn only where the head stands on its own screen.
-  const inSide = useContext(SeatPick) !== null;
-  // The 附栏's one head is `SideBody`'s (UX-39): a seat's own head draws
-  // nothing here unless it carries a way back inside the seat (a file
-  // page to its tree, a page opened from 最近 back to 最近) or acts, and
-  // then as a plain line under the head.
-  if (inSide && !back && !children) return null;
+  if (!back && !children) return null;
   return (
     <header
       data-seat-head
@@ -49,15 +42,9 @@ export function SeatHead({
           <IconBack />
         </GlassCircle>
       )}
-      {inSide ? (
-        <span data-seat-title className="min-w-0 flex-1 truncate text-body font-label">
-          {title}
-        </span>
-      ) : (
-        <SeatTitle className="flex-1">
-          <span data-seat-title>{title}</span>
-        </SeatTitle>
-      )}
+      <span data-seat-title className="min-w-0 flex-1 truncate text-body font-label">
+        {title}
+      </span>
       {children}
     </header>
   );
