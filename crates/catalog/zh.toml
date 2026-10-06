@@ -3839,6 +3839,20 @@ day-hide = "点击收起近 24 小时状态"
 # empty row can stand under the tabs. 「没有记录」 is `day-unwatched-why`'s
 # own phrase for the same fact.
 day-none = "近 24 小时没有记录"
+# **The session's 附栏** (UX-30): the narrow face docked beside a terminal
+# on the wide face, and the phone's pill sheet. The front tab's press opens
+# and closes it (side-show / side-hide are its hover); side-seam names the
+# drag edge for a screen reader; the first seat, 最近, is `group-recent`, the
+# one mixed newest-first list.
+session-side = "附栏"
+side-show = "打开附栏"
+side-hide = "收起附栏"
+side-seam = "调整附栏宽度"
+# The one way from the column to the main area (UX-30 §4): a file's
+# 「…」 act, beside the double-click.
+open-in-main = "在主区打开"
+# 最近 with nothing in it: no page visited, no workspace, no file open.
+recent-none = "还没有去过哪里"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.

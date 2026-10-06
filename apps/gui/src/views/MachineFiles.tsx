@@ -38,7 +38,10 @@ export function MachineFiles({
   onOpenFile,
   start = null,
   startDir = null,
+  fileActs,
 }: {
+  /** Acts for the open file's 「…」, by path (`FilePage` `moreActs`). */
+  fileActs?: (path: string) => { key: string; label: string; run: () => void }[];
   /** The directory the listing opens at (UX-17: a session's 目录 sheet
       opens where the session is); the machine's home without it. */
   startDir?: string | null;
@@ -95,6 +98,7 @@ export function MachineFiles({
       machine={machine}
       path={file}
       here={here}
+      moreActs={fileActs?.(file)}
       onBack={() => setFile(null)}
       onGone={() => {
         setFile(null);

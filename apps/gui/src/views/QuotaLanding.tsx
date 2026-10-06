@@ -25,7 +25,7 @@
 // Registration happens here too, and the form says the two things a
 // person cannot guess: the key stays on this machine, and the two
 // vendors' usage is an **admin** key's to read.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 
 import {
   fetchQuotaBoard,
@@ -938,6 +938,7 @@ export function QuotaLanding({
   screen = "list",
   onOpen,
   onBack,
+  landOn = null,
   stale = false,
   devices,
 }: {
@@ -982,6 +983,10 @@ export function QuotaLanding({
   screen?: "list" | "detail";
   onOpen?: () => void;
   onBack?: () => void;
+  /** Lands on the first account of this provider once the rows are in
+      (UX-30 §2: the session's 附栏 opens 额度 on the session's agent's
+      quota) — once, and only while nothing is picked yet. */
+  landOn?: string | null;
 }) {
   // **Both outlive a remount.** The narrow face keys its screen box on
   // `screen` (`App`, for the entrance slide), so opening a row mounts
@@ -1089,6 +1094,19 @@ export function QuotaLanding({
         a.mine && a.kind === "sub" ? Date.now() - a.reading.at_ms : a.mine ? null : a.age_ms,
     })),
   ];
+  // The seat's landing (`landOn`): the first account of that provider,
+  // opened once the board has answered, only while nothing is picked.
+  const landed = useRef(false);
+  useEffect(() => {
+    if (landOn === null || landed.current || board === null) return;
+    landed.current = true;
+    if (picked !== null) return;
+    const r = rows.find((x) => x.provider === landOn);
+    if (!r) return;
+    setPicked(r.id);
+    onOpen?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [landOn, board]);
   const shown = visibleQuota(rows, query, words);
   // **Grouped by re-ordering, not by nesting.** The rows stay one flat
   // list and a heading is drawn where the group changes between

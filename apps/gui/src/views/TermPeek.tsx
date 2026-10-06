@@ -33,7 +33,7 @@ function Table({ head, rows }: { head: string[]; rows: string[][] }) {
       <thead className="sticky top-0 bg-background">
         <tr>
           {head.map((h, k) => (
-            <th key={k} className="border-b border-border p-0 text-left font-semibold whitespace-nowrap">
+            <th key={k} className="border-b border-border p-0 text-left font-title whitespace-nowrap">
               <button
                 type="button"
                 data-term-peek-col={k}

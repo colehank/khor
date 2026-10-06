@@ -243,13 +243,13 @@ export function daySwitch(
 const DAY_MS = 24 * 60 * 60_000;
 
 /** A clock reading, `HH:MM`. */
-function clock(ms: number): string {
+export function clock(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 /** One run placed on the day: where it starts and ends, as of `now`. */
-type Stretch = {
+export type Stretch = {
   i: number;
   run: DayRun;
   /** The word it says; `null` for 那时没有这一行, which says nothing. */
@@ -259,13 +259,13 @@ type Stretch = {
   width: string;
 };
 
-function labelOf(mark: DayRun["mark"]): string | null {
+export function labelOf(mark: DayRun["mark"]): string | null {
   if (mark === "absent") return null;
   return mark === "unwatched" ? gui.day_unwatched : word(mark.word);
 }
 
 /** The runs as stretches of the day ending `now`, oldest first. */
-function lay(runs: DayRun[], total: number, now: number): Stretch[] {
+export function lay(runs: DayRun[], total: number, now: number): Stretch[] {
   let before = 0;
   return runs.map((run, i) => {
     const from = now - (1 - before / total) * DAY_MS;
@@ -278,7 +278,7 @@ function lay(runs: DayRun[], total: number, now: number): Stretch[] {
 /** What a stretch says in one line — the readout, and the name a screen
     reader gives the stretch. The ` · ` and the `–` are punctuation; every
     word either side is the catalog's. */
-function sentence(s: Stretch): string {
+export function sentence(s: Stretch): string {
   return `${clock(s.from)}–${clock(s.to)} · ${s.label} · ${stretch(s.to - s.from)}`;
 }
 

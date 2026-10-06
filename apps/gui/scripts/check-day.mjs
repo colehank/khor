@@ -313,47 +313,71 @@ try {
     const enGui = table("en_gui");
     zh.unwatched = zhGui.day_unwatched;
     en.unwatched = enGui.day_unwatched;
-    const hint = Object.fromEntries(
-      ["show", "hide", "none"].map((k) => [k, [zhGui[`day_${k}`], enGui[`day_${k}`]].filter(Boolean)]),
-    );
+    // The front tab's hover is the column's (UX-30: 打开附栏 / 收起附栏);
+    // `none` is what the expanded ruler says of a day with no record.
+    const hint = {
+      show: [zhGui.side_show, enGui.side_show].filter(Boolean),
+      hide: [zhGui.side_hide, enGui.side_hide].filter(Boolean),
+      none: [zhGui.day_none, enGui.day_none].filter(Boolean),
+    };
     return { zh, en, hint };
   })();
   const HINT = catalogWords.hint;
   if (Object.values(HINT).some((w) => w.length !== 2)) {
-    fail(`probe dead: ⓪ could not read day_show / day_hide / day_none out of src/gen/catalog.ts (${JSON.stringify(HINT)})`);
+    fail(`probe dead: ⓪ could not read side_show / side_hide / day_none out of src/gen/catalog.ts (${JSON.stringify(HINT)})`);
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // ── 0) hidden until the front tab is pressed (2026-09-29) ─────────
+  // ── 0) the day is the column's ruler (UX-30, 2026-10-06) ──────────
   //
-  // 「把这个状态bar设置为，点击标签后显示吧。悬停的时候加一个提示，点击查看
-  // 近24小时状态。」 And the same morning, a blank band under the tabs: the
-  // strip's no-data branch held its 12 px row open while the day loaded,
-  // and for good on a session with no record. Read on the glass:
+  // ⚠️ 墓碑 (2026-09-29 → 10-06): 「把这个状态bar设置为，点击标签后显示吧」
+  // — the front tab's press brought the band down under the tabs,
+  // floating over the session, one switch for the face. The press opens
+  // the session's 附栏 now (`views/SessionSide`), and the day lives there
+  // as the ruler under the capsule (`views/DayRuler`): a two-point heat
+  // line, always present; a tap expands it in place into the full day —
+  // the band with its readouts, and the stretches as lines — over the
+  // seat's content; a tap folds it. Open, width, seat and the ruler's
+  // expansion are one memory per session (`use-session-side`). Read on
+  // the glass:
   //
-  //   a. a fresh profile draws no day row and keeps no room for one — the
-  //      session starts where the pane does;
-  //   b. the front tab's hover says what a press will do (「点击查看…」
-  //      hidden, 「点击收起…」 shown), and a press does it — on the face at
-  //      once, on the name once the double-click window has passed, and
-  //      by Enter / Space; the tab says `aria-expanded` and names the row
-  //      it opens (`aria-controls`);
-  //   c. a double-click on the name renames and never toggles, not for
-  //      one frame — sampled on every animation frame across the gesture,
-  //      hidden and shown;
-  //   d. the choice survives a reload;
-  //   e. a day with no record (`day_fixture`'s quiet row): the hint says
-  //      so, a press opens nothing, no row stands under the tabs;
-  //   f. while the day is on its way and the strip is asked for, a
-  //      skeleton in the band's own geometry, never a blank row (a
-  //      context whose day route is held);
-  //   g. narrow — the front tab in the session bar at the foot is the switch (in ⑥e,
-  //      where the phone's page is).
+  //   a. a fresh profile draws no column and no day row, and keeps no
+  //      room for either — the session starts where the pane does;
+  //   b. the front tab's hover says what a press will do (打开附栏 hidden,
+  //      收起附栏 shown), and a press does it — on the face at once, on
+  //      the name once the double-click window has passed, and by Enter /
+  //      Space; the tab says `aria-expanded` and names the column
+  //      (`aria-controls`). The column holds the ruler two points tall
+  //      directly under its capsule, inked by the day's own stretches;
+  //      the session gives up exactly the column's width. A tap on the
+  //      ruler expands the day over the seat's page — the page does not
+  //      move — and a tap folds it;
+  //   c. a double-click on the name renames and never toggles the column,
+  //      not for one frame — sampled on every animation frame across the
+  //      gesture, closed and open;
+  //   d. the column and the expanded ruler outlive a reload;
+  //   e. a day with no record (`day_fixture`'s quiet row): the ruler is
+  //      still drawn (a line of 不知道), the expanded view says 「没有记录」
+  //      and holds no band; another session's memory is untouched;
+  //   f. while the day is on its way, the ruler is a line of `fill` and
+  //      the expanded view holds the band's skeleton in the band's own
+  //      geometry, never a blank (a context whose day route is held);
+  //   g. narrow — the phone's pill sheet is the same seats and ruler (in
+  //      ⑥e, where the phone's page is).
   const dayRows = (p) => p.locator("[data-detail-day]").count();
   const waitRows = async (p, want, ms = 1_500) => {
     const end = Date.now() + ms;
     while (Date.now() < end) {
       if (((await dayRows(p)) > 0) === want) return true;
+      await sleep(40);
+    }
+    return false;
+  };
+  const columns = (p) => p.locator("[data-session-side]").count();
+  const waitColumn = async (p, want, ms = 1_500) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      if (((await columns(p)) > 0) === want) return true;
       await sleep(40);
     }
     return false;
@@ -390,17 +414,24 @@ try {
     await p.mouse.click(b.x + 6, b.y + b.height / 2);
     return true;
   };
-  /** Whether a day row stood in the pane, on every animation frame for
-      `ms` — the only way to see a band that opened and shut inside one
+  /** Taps the column's ruler. */
+  const tapRuler = async (p) => {
+    const r = p.locator("[data-session-side] [data-day-ruler]");
+    if ((await r.count()) !== 1) return false;
+    await r.click();
+    return true;
+  };
+  /** Whether the column stood in the pane, on every animation frame for
+      `ms` — the only way to see a column that opened and shut inside one
       gesture. */
-  const watchRow = (p, ms) =>
+  const watchColumn = (p, ms) =>
     p.evaluate(
       (ms) =>
         new Promise((done) => {
           const seen = [];
           const end = performance.now() + ms;
           const tick = () => {
-            seen.push(!!document.querySelector("[data-detail-day]"));
+            seen.push(!!document.querySelector("[data-session-side]"));
             if (performance.now() < end) requestAnimationFrame(tick);
             else done(seen);
           };
@@ -412,19 +443,41 @@ try {
     frontOpen(p, id).evaluate((b) => ({
       expanded: b.getAttribute("aria-expanded"),
       controls: b.getAttribute("aria-controls"),
-      row: document.querySelector("[data-detail-day]")?.id ?? null,
+      column: document.querySelector("[data-session-side]")?.id ?? null,
     }));
   const openTab = async (id) => {
     await page.locator(`[data-row="${id}"] [data-row-open]`).click();
     return until(`${id} in front`, 10_000, async () => (await frontOpen(page, id).count()) === 1);
   };
+  /** The column's geometry against the session beside it and its own
+      capsule: the ruler's line, the page under it, the session's box. */
+  const columnGeo = (p) =>
+    p.evaluate(() => {
+      const col = document.querySelector("[data-session-side]");
+      const seats = col?.querySelector("[data-col-seats]");
+      const line = col?.querySelector("[data-day-ruler-line]");
+      const pageEl = col?.querySelector("[data-side-page]");
+      const session = document.querySelector("[data-detail-row] > :first-child");
+      if (!col || !seats || !line || !pageEl || !session) return null;
+      const r = (el) => el.getBoundingClientRect();
+      const c = r(col), s = r(seats), l = r(line), g = r(pageEl), t = r(session);
+      return {
+        column: { left: c.left, right: c.right, w: c.width },
+        line: { top: l.top, h: l.height, left: l.left, right: l.right },
+        seatsBottom: s.bottom,
+        page: { top: g.top },
+        session: { left: t.left, right: t.right, w: t.width },
+        marks: col.querySelectorAll("[data-day-ruler-mark]").length,
+        inked: [...col.querySelectorAll("[data-day-ruler-mark]")].map((m) => [m.dataset.dayRulerMark, getComputedStyle(m).backgroundColor]),
+      };
+    });
 
   const first = fixtureRows[0];
   if (first && (await openTab(first))) {
     // Long enough for the first answer to have landed: what is asserted
     // next is the resting state, not the loading one (f has that).
     await sleep(1_500);
-    // a. nothing under the tabs, and no room kept
+    // a. nothing under the tabs, no column, and no room kept
     const rest = await page.evaluate(() => {
       const pane = document.querySelector("[data-detail-pane]");
       const kid = pane?.firstElementChild ?? null;
@@ -432,85 +485,111 @@ try {
       return {
         rows: document.querySelectorAll("[data-detail-day]").length,
         bands: document.querySelectorAll("[data-day-strip], [data-day-skeleton]").length,
+        columns: document.querySelectorAll("[data-session-side]").length,
         first: kid ? `${kid.tagName.toLowerCase()}${[...kid.attributes].map((a) => `[${a.name}]`).join("")}` : null,
         kept: pane && kid ? +(r(kid).top - r(pane).top).toFixed(2) : null,
+        sessionRight: pane ? +(r(pane).right - r(document.querySelector("[data-detail-row] > :first-child") ?? pane).right).toFixed(2) : null,
       };
     });
     console.log(`⓪a fresh profile: ${JSON.stringify(rest)}`);
-    if (rest.rows !== 0 || rest.bands !== 0) {
-      fail(`⓪a a fresh profile draws ${rest.rows} day row(s) and ${rest.bands} band(s) under the tabs — the day is hidden until the front tab is pressed`);
+    if (rest.rows !== 0 || rest.bands !== 0 || rest.columns !== 0) {
+      fail(`⓪a a fresh profile draws ${rest.rows} day row(s), ${rest.bands} band(s) and ${rest.columns} column(s) — the column opens on the front tab's press, and the day lives in it`);
     }
     if (rest.first === null) fail("probe dead: ⓪a the open session's pane has nothing in it to measure");
-    else if (rest.kept !== 0) fail(`⓪a the session starts ${rest.kept}px below the pane's top (first child ${rest.first}) — no room is kept for a hidden day`);
+    else if (rest.kept !== 0) fail(`⓪a the session starts ${rest.kept}px below the pane's top (first child ${rest.first}) — no room is kept for a hidden column`);
+    if (rest.sessionRight !== 0) fail(`⓪a the session ends ${rest.sessionRight}px short of the pane's right edge with no column open — no room is kept for one`);
 
     // b. the hover says it, a press does it
     const before = await hintOf(page, first);
-    if (!HINT.show.includes(before)) fail(`⓪b the front tab's hover reads ${JSON.stringify(before)} while the day is hidden — want ${HINT.show.join(" / ")}`);
+    if (!HINT.show.includes(before)) fail(`⓪b the front tab's hover reads ${JSON.stringify(before)} while the column is closed — want ${HINT.show.join(" / ")}`);
     const shut = await ariaOf(page, first);
-    if (shut.expanded !== "false") fail(`⓪b the front tab says aria-expanded=${shut.expanded} while the day is hidden`);
-    /** The session under the day: the pane's last child, whatever it
-        is — the band is read against it, not against a kind of pane. */
-    const sessionBox = () =>
-      page.evaluate(() => {
-        const s = document.querySelector("[data-detail-pane]")?.lastElementChild;
-        if (!s || s.matches("[data-detail-day]") || s.querySelector("[data-detail-day]")) return null;
-        const r = s.getBoundingClientRect();
-        return { top: r.top, h: r.height };
-      });
-    const under = await sessionBox();
+    if (shut.expanded !== "false") fail(`⓪b the front tab says aria-expanded=${shut.expanded} while the column is closed`);
+    const paneRight = await page.evaluate(() => document.querySelector("[data-detail-pane]")?.getBoundingClientRect().right ?? null);
     await pressFace(page, first);
-    if (!(await waitRows(page, true, 600))) fail("⓪b pressing the front tab's face drew no day row within 600ms");
+    if (!(await waitColumn(page, true, 600))) fail("⓪b pressing the front tab's face opened no column within 600ms");
     else {
-      const band = await until("the band after the press", 10_000, async () => (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1);
-      if (!band) fail("⓪b the row came down and never held a band");
-      // It floats: the session neither moves nor shrinks (2026-09-29 —
-      // as a row it pushed the session 12 px down, and under a terminal
-      // that push was a resize tmux redrew the screen for) …
-      const over = await sessionBox();
-      if (!under || !over) fail(`probe dead: ⓪b no session under the day to measure (${JSON.stringify({ under, over })})`);
-      else if (Math.abs(over.top - under.top) > 0.5 || Math.abs(over.h - under.h) > 0.5) {
-        fail(
-          `⓪b showing the day moved the session from ${under.top}+${under.h} to ${over.top}+${over.h} — ` +
-            "it floats over the session and takes none of its room",
-        );
-      }
-      // … and off a stretch, the row is the session's: a press in the
-      // inset before the first pill lands on whatever is beneath.
-      const through = await page.evaluate(() => {
-        const row = document.querySelector("[data-detail-day]");
-        if (!row) return null;
-        const r = row.getBoundingClientRect();
-        const hit = document.elementFromPoint(r.left + 2, r.top + r.height / 2);
-        return hit ? { day: !!hit.closest("[data-detail-day]"), what: hit.tagName.toLowerCase() } : null;
+      let geo = null;
+      await until("the column's ruler after the press", 10_000, async () => {
+        const g = await columnGeo(page);
+        if (g && g.marks > 0) geo = g;
+        return geo !== null;
       });
-      if (!through) fail("probe dead: ⓪b nothing under the day's row to hit");
-      else if (through.day) fail("⓪b a press on the day's row off every stretch lands on the row — it should pass through to the session");
+      if (!geo) fail("⓪b the column opened and never held a ruler with the day's stretches");
+      else {
+        const rulerH = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--day-ruler-h")) || 0);
+        if (!(rulerH > 0)) fail("probe dead: ⓪b --day-ruler-h did not resolve");
+        else if (Math.abs(geo.line.h - rulerH) > 0.5) fail(`⓪b the ruler's line is ${geo.line.h}px tall, --day-ruler-h is ${rulerH}`);
+        // Directly under the capsule: within the head's own padding, and
+        // the line is as wide as the column's inset allows.
+        if (geo.line.top - geo.seatsBottom > 12 || geo.line.top < geo.seatsBottom) {
+          fail(`⓪b the ruler stands ${(geo.line.top - geo.seatsBottom).toFixed(1)}px under the capsule — directly under it`);
+        }
+        // The session gives up exactly the column's width.
+        if (Math.abs(geo.session.right - geo.column.left) > 0.5 || (paneRight !== null && Math.abs(geo.column.right - paneRight) > 0.5)) {
+          fail(`⓪b the session ends at ${geo.session.right} and the column starts at ${geo.column.left} (ends ${geo.column.right}, pane ${paneRight}) — the column takes its width from the session`);
+        }
+        // Inked by the day's own words: a mark's colour is its word's
+        // token, resolved in the browser, never a colour written here.
+        const wrong = await page.evaluate((inked) => {
+          const swatch = document.createElement("span");
+          document.body.appendChild(swatch);
+          const resolve = (v) => {
+            swatch.style.backgroundColor = v;
+            return getComputedStyle(swatch).backgroundColor;
+          };
+          const out = inked
+            .filter(([m]) => m !== "absent")
+            .map(([m, bg]) => [m, bg, resolve(m === "unwatched" ? "var(--day-unwatched)" : `var(--state-${m})`)])
+            .filter(([, bg, want]) => bg !== want);
+          swatch.remove();
+          return out;
+        }, geo.inked);
+        if (geo.inked.filter(([m]) => m !== "absent").length === 0) fail("probe dead: ⓪b the ruler has no inked stretch to read");
+        if (wrong.length) fail(`⓪b ruler marks in the wrong ink: ${JSON.stringify(wrong)} — each stretch wears its word's token`);
+        console.log(`⓪b column ${JSON.stringify(geo.column)}, ruler ${JSON.stringify(geo.line)}, ${geo.marks} marks`);
+        // A tap expands the day over the seat's page, which does not move.
+        if (!(await tapRuler(page))) fail("probe dead: ⓪b no ruler to tap");
+        if (!(await waitRows(page, true, 600))) fail("⓪b tapping the ruler drew no day row within 600ms");
+        else {
+          const band = await until("the band after the tap", 10_000, async () => (await page.locator("[data-session-side] [data-detail-day] [data-day-strip]").count()) === 1);
+          if (!band) fail("⓪b the day came down in the column and never held a band");
+          const over = await columnGeo(page);
+          if (!over) fail("probe dead: ⓪b the column vanished under the tap");
+          else if (Math.abs(over.page.top - geo.page.top) > 0.5) fail(`⓪b expanding the ruler moved the seat's page from ${geo.page.top} to ${over.page.top} — it floats over the page and takes none of its room`);
+          const ruler = await page.locator("[data-session-side] [data-day-ruler]").evaluate((b) => ({ expanded: b.getAttribute("aria-expanded"), controls: b.getAttribute("aria-controls"), row: document.querySelector("[data-detail-day]")?.id ?? null }));
+          if (ruler.expanded !== "true" || !ruler.controls || ruler.controls !== ruler.row) fail(`⓪b the expanded ruler says ${JSON.stringify(ruler)} — aria-expanded=true and aria-controls naming the row`);
+          await tapRuler(page);
+          if (!(await waitRows(page, false, 600))) fail("⓪b tapping the ruler again did not fold the day");
+          await tapRuler(page);
+          await waitRows(page, true, 600);
+        }
+      }
       const open = await ariaOf(page, first);
-      if (open.expanded !== "true" || !open.controls || open.controls !== open.row) {
-        fail(`⓪b the open front tab says ${JSON.stringify(open)} — aria-expanded=true and aria-controls naming the row`);
+      if (open.expanded !== "true" || !open.controls || open.controls !== open.column) {
+        fail(`⓪b the open front tab says ${JSON.stringify(open)} — aria-expanded=true and aria-controls naming the column`);
       }
       const after = await hintOf(page, first);
-      if (!HINT.hide.includes(after)) fail(`⓪b the front tab's hover reads ${JSON.stringify(after)} while the day is shown — want ${HINT.hide.join(" / ")}`);
+      if (!HINT.hide.includes(after)) fail(`⓪b the front tab's hover reads ${JSON.stringify(after)} while the column is open — want ${HINT.hide.join(" / ")}`);
       console.log(`⓪b hover: 「${before}」 → 「${after}」`);
     }
     // …on the name: after the double-click window, and only once
     await page.locator(`[data-tab="${first}"] [data-session-title]`).click();
-    if (!(await waitRows(page, false, 1_500))) fail("⓪b a click on the front tab's name did not hide the day within 1.5s");
+    if (!(await waitColumn(page, false, 1_500))) fail("⓪b a click on the front tab's name did not close the column within 1.5s");
     // …and by keys, on the focused tab
     await frontOpen(page, first).focus();
     await page.keyboard.press("Enter");
-    if (!(await waitRows(page, true, 600))) fail("⓪b Enter on the focused front tab did not show the day");
+    if (!(await waitColumn(page, true, 600))) fail("⓪b Enter on the focused front tab did not open the column");
     await page.keyboard.press(" ");
-    if (!(await waitRows(page, false, 600))) fail("⓪b Space on the focused front tab did not hide the day");
+    if (!(await waitColumn(page, false, 600))) fail("⓪b Space on the focused front tab did not close the column");
 
-    // c. a double-click renames, and the band holds still — both ways
+    // c. a double-click renames, and the column holds still — both ways
     for (const shown of [false, true]) {
       if (shown) {
         await pressFace(page, first);
-        await waitRows(page, true, 600);
+        await waitColumn(page, true, 600);
       }
       await page.mouse.move(700, 600);
-      const watching = watchRow(page, 1_000);
+      const watching = watchColumn(page, 1_000);
       await page.locator(`[data-tab="${first}"] [data-session-title]`).dblclick();
       const frames = await watching;
       const editor = await page.locator(`[data-tab="${first}"] [data-title-input]`).count();
@@ -519,27 +598,29 @@ try {
       if (frames.length < 10) fail(`probe dead: ⓪c sampled ${frames.length} frame(s) across the double-click`);
       else if (flips !== 0 || frames[0] !== shown) {
         fail(
-          `⓪c a double-click on the name ${shown ? "with the day shown" : "with the day hidden"} moved the band: ` +
-            `${frames.filter(Boolean).length} of ${frames.length} frames had a row, ${flips} flip(s) — it renames, it does not toggle`,
+          `⓪c a double-click on the name ${shown ? "with the column open" : "with the column closed"} moved the column: ` +
+            `${frames.filter(Boolean).length} of ${frames.length} frames had one, ${flips} flip(s) — it renames, it does not toggle`,
         );
       }
-      console.log(`⓪c double-click, day ${shown ? "shown" : "hidden"}: ${frames.length} frames, ${flips} flips, editor ${editor}`);
+      console.log(`⓪c double-click, column ${shown ? "open" : "closed"}: ${frames.length} frames, ${flips} flips, editor ${editor}`);
       await page.keyboard.press("Escape");
       await sleep(200);
     }
 
-    // d. it outlives a reload (the day is shown now, from c)
+    // d. it outlives a reload (the column is open now, from c, and the
+    //    ruler was expanded in b)
     await page.reload({ waitUntil: "load" });
-    const kept = await until("the day, shown again after a reload with nobody pressing", 20_000, async () =>
-      (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1,
+    const kept = await until("the column and its day, back after a reload with nobody pressing", 20_000, async () =>
+      (await page.locator("[data-session-side] [data-detail-day] [data-day-strip]").count()) === 1,
     );
-    if (!kept) fail("⓪d the day was shown before the reload and is not after it — the choice is remembered");
+    if (!kept) fail("⓪d the column was open with its day expanded before the reload and is not after it — the choice is remembered per session");
   } else {
     fail("probe dead: ⓪ had no fixture row to open");
   }
 
-  // e. a day with no record: said, not drawn — in both shapes it
-  //    arrives in (the route above), with the day asked for (from d)
+  // e. a day with no record: the ruler is drawn as what it is, the
+  //    expanded view says so — in both shapes it arrives in (the route
+  //    above)
   for (const shape of ["unwatched", "missing"]) {
   if (shape !== emptyAs) {
     emptyAs = shape;
@@ -550,40 +631,54 @@ try {
   }
   for (const id of fixtureQuiet) {
     if (!(await openTab(id))) continue;
+    if ((await columns(page)) !== 0) fail(`⓪e ${id} (${shape}) opened with a column — another session's memory leaked into it`);
+    await pressFace(page, id);
+    if (!(await waitColumn(page, true, 1_000))) {
+      fail(`⓪e pressing ${id}'s front tab (${shape}) opened no column`);
+      continue;
+    }
+    // The ruler is always present: a line, inked only by 不知道 here.
+    let geo = null;
+    await until(`${id}'s ruler`, 10_000, async () => {
+      const g = await columnGeo(page);
+      if (g && g.marks > 0) geo = g;
+      return geo !== null;
+    });
+    if (!geo) fail(`⓪e ${id} (${shape}) has no record and its column draws no ruler — the ruler is always present`);
+    else if (geo.inked.some(([m]) => m !== "unwatched" && m !== "absent")) fail(`⓪e ${id} (${shape}) has no record and its ruler wears a word: ${JSON.stringify(geo.inked)}`);
+    await tapRuler(page);
     let said = null;
     const end = Date.now() + 10_000;
     while (Date.now() < end) {
-      said = await hintOf(page, id);
-      if (HINT.none.includes(said)) break;
+      said = await page.locator("[data-session-side] [data-detail-day] [data-day-none]").textContent().catch(() => null);
+      if (said && HINT.none.includes(said.trim())) break;
       await sleep(300);
     }
-    if (!HINT.none.includes(said)) fail(`⓪e ${id} (${shape}) has no record and its front tab's hover reads ${JSON.stringify(said)} — want ${HINT.none.join(" / ")}`);
-    const rows = await dayRows(page);
-    if (rows !== 0) fail(`⓪e ${id} (${shape}) has no record and ${rows} day row(s) stand under its tab — an empty row is the blank band`);
-    const aria = await ariaOf(page, id);
-    if (aria.expanded !== null) fail(`⓪e ${id}'s front tab says aria-expanded=${aria.expanded} with no record — a press opens nothing, so it is not a switch`);
+    if (!said || !HINT.none.includes(said.trim())) fail(`⓪e ${id} (${shape}) has no record and its expanded ruler says ${JSON.stringify(said)} — want ${HINT.none.join(" / ")}`);
+    const bands = await page.locator("[data-session-side] [data-day-strip]").count();
+    if (bands !== 0) fail(`⓪e ${id} (${shape}) has no record and ${bands} band(s) stand in its expanded ruler — an empty band is the blank band`);
+    console.log(`⓪e ${id} (${shape}): ruler ${JSON.stringify(geo?.inked)}, expanded → 「${said?.trim()}」, ${bands} bands`);
+    await tapRuler(page);
     await pressFace(page, id);
-    await page.locator(`[data-tab="${id}"] [data-session-title]`).click();
-    const opened = await waitRows(page, true, 800);
-    if (opened) fail(`⓪e pressing ${id}'s front tab (${shape}) drew a day row — there is no day to draw`);
-    console.log(`⓪e ${id} (${shape}): 「${said}」, ${rows} rows, pressed → ${opened ? "a row" : "nothing"}`);
+    await waitColumn(page, false, 1_000);
   }
   }
-  // …and the press on an empty day did not turn the switch off: the next
-  // session with a record still opens with its day.
+  // …and the quiet sessions' memories are their own: the first session
+  // still opens with its column and its day.
   if (first && (await openTab(first))) {
-    const still = await until("the day, still asked for after pressing an empty one", 10_000, async () =>
-      (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1,
+    const still = await until("the first session's column, still open after the quiet ones", 10_000, async () =>
+      (await page.locator("[data-session-side] [data-detail-day] [data-day-strip]").count()) === 1,
     );
-    if (!still) fail("⓪e pressing the tab of a day with no record switched the day off for the sessions that have one");
+    if (!still) fail("⓪e opening the sessions with no record changed the first session's memory — one memory per session");
   }
 
-  // f. on its way: a skeleton, in the band's own geometry
+  // f. on its way: a line of fill, and a skeleton in the band's own
+  //    geometry in the expanded view
   {
     const slow = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await slow.addInitScript((id) => {
       try {
-        localStorage.setItem("khor.sessions.day", "1");
+        localStorage.setItem(`khor.session-side.${id}`, JSON.stringify({ open: true, w: null, seat: "recent", day: true }));
         localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
       } catch {
         /* then nothing is asked for, and the probe below says so */
@@ -603,9 +698,11 @@ try {
       const end = Date.now() + 15_000;
       while (Date.now() < end) {
         const got = await sp.evaluate(() => {
-          const row = document.querySelector("[data-detail-day]");
+          const col = document.querySelector("[data-session-side]");
+          const row = col?.querySelector("[data-detail-day]");
           const sk = row?.querySelector("[data-day-skeleton]");
           const pill = sk?.querySelector("[data-skeleton]");
+          const line = col?.querySelector("[data-day-ruler-skeleton]");
           if (!row) return null;
           const probe = document.createElement("span");
           probe.style.backgroundColor = "var(--fill)";
@@ -614,14 +711,21 @@ try {
           probe.remove();
           const r = row.getBoundingClientRect();
           const cs = getComputedStyle(row.firstElementChild ?? row);
+          const rs = getComputedStyle(row);
           const p = pill?.getBoundingClientRect();
           const ps = pill ? getComputedStyle(pill) : null;
           return {
             band: !!row.querySelector("[data-day-strip]"),
             skeleton: !!sk,
             busy: sk?.getAttribute("aria-busy") ?? null,
+            line: line ? getComputedStyle(line).backgroundColor : null,
             row: { left: r.left, right: r.right, top: r.top, h: r.height },
-            pad: { l: parseFloat(cs.paddingLeft) || 0, r: parseFloat(cs.paddingRight) || 0 },
+            // The row's own inset (the capsule's, `DayRuler`) and the
+            // skeleton row's.
+            pad: {
+              l: (parseFloat(rs.paddingLeft) || 0) + (parseFloat(cs.paddingLeft) || 0),
+              r: (parseFloat(rs.paddingRight) || 0) + (parseFloat(cs.paddingRight) || 0),
+            },
             pill: p && { left: p.left, right: p.right, top: p.top, h: p.height, bg: ps.backgroundColor, corner: parseFloat(ps.borderTopLeftRadius) || 0 },
             fill,
           };
@@ -631,12 +735,13 @@ try {
       }
       return null;
     })();
-    if (!skeleton) fail("⓪f with the day asked for and its answer held back, no row came down at all — the strip is shown and the day is on its way: a skeleton, not nothing");
+    if (!skeleton) fail("⓪f with the column open and its answer held back, no day row came down in the column at all — the ruler is expanded and the day is on its way: a skeleton, not nothing");
     else if (skeleton.band) fail("probe dead: ⓪f a band was drawn while its day route was held — the hold did not hold");
-    else if (!skeleton.skeleton || !skeleton.pill) fail(`⓪f the row under the tabs while the day loads holds no skeleton (${JSON.stringify(skeleton)}) — a blank row is the band the owner reported`);
+    else if (!skeleton.skeleton || !skeleton.pill) fail(`⓪f the expanded ruler while the day loads holds no skeleton (${JSON.stringify(skeleton)}) — a blank row is the blank band`);
     else {
       const k = skeleton;
       if (k.busy !== "true") fail(`⓪f the skeleton says aria-busy=${k.busy}`);
+      if (k.line !== k.fill) fail(`⓪f the ruler's line while the day loads is ${k.line}, not \`fill\` (${k.fill}) — the app's skeleton language`);
       if (k.pill.bg !== k.fill) fail(`⓪f the skeleton is painted ${k.pill.bg}, not \`fill\` (${k.fill}) — the app's skeleton language`);
       const full = Math.abs(k.pill.left - (k.row.left + k.pad.l)) < 0.5 && Math.abs(k.pill.right - (k.row.right - k.pad.r)) < 0.5;
       if (!full) fail(`⓪f the skeleton spans ${k.pill.left.toFixed(1)}..${k.pill.right.toFixed(1)} in a row whose axis is ${(k.row.left + k.pad.l).toFixed(1)}..${(k.row.right - k.pad.r).toFixed(1)} — one pill the whole axis`);
@@ -646,7 +751,7 @@ try {
         const end = Date.now() + 15_000;
         while (Date.now() < end) {
           const got = await sp.evaluate(() => {
-            const row = document.querySelector("[data-detail-day]");
+            const row = document.querySelector("[data-session-side] [data-detail-day]");
             const ink = row?.querySelector("[data-day-strip] [data-day-mark] > *");
             if (!row || !ink) return null;
             const r = row.getBoundingClientRect();
@@ -661,8 +766,10 @@ try {
       if (!landed) fail("⓪f the day's answer was let through and no band replaced the skeleton");
       else {
         if (landed.skeleton) fail("⓪f the band arrived and the skeleton is still in the row");
-        if (Math.abs(landed.row.h - k.row.h) > 0.5 || Math.abs(landed.row.top - k.row.top) > 0.5) {
-          fail(`⓪f the skeleton's row is ${k.row.h} tall at ${k.row.top}, the band's is ${landed.row.h} at ${landed.row.top} — the session jumps when the day lands`);
+        // The panel grows with the day's lines; what holds still is where
+        // it hangs from (the ruler's row) — the page under it never moved.
+        if (Math.abs(landed.row.top - k.row.top) > 0.5) {
+          fail(`⓪f the skeleton's row is at ${k.row.top}, the band's at ${landed.row.top} — the panel hangs from the ruler either way`);
         }
         if (Math.abs(landed.ink.h - k.pill.h) > 0.5 || Math.abs(landed.ink.top - k.pill.top) > 0.5) {
           fail(`⓪f the skeleton's pill is ${k.pill.h} tall at ${k.pill.top}, the band's pills ${landed.ink.h} at ${landed.ink.top} — the band's own geometry`);
@@ -677,12 +784,18 @@ try {
 
   const openRow = async (id) => {
     await page.locator(`[data-row="${id}"] [data-row-open]`).click();
+    if (!(await until(`${id} in front`, 10_000, async () => (await frontOpen(page, id).count()) === 1))) return false;
+    // The day is the column's ruler (UX-30), one memory per session: a
+    // session not opened in this profile yet has no column, so open it
+    // and expand the ruler the way a person would.
+    if ((await columns(page)) === 0) {
+      await pressFace(page, id);
+      await waitColumn(page, true, 1_500);
+    }
+    if ((await dayRows(page)) === 0) await tapRuler(page);
     return until(`the band for ${id}`, 25_000, async () => {
-      // **The pane, not a header** (第十四轮 第 1 条): the wide face
-      // draws no header over an open session any more, and the band is
-      // the first thing in the pane instead.
       const on = await page.locator("[data-detail-pane]").count();
-      return on > 0 && (await page.locator("[data-detail-day] [data-day-strip]").count()) === 1;
+      return on > 0 && (await page.locator("[data-session-side] [data-detail-day] [data-day-strip]").count()) === 1;
     });
   };
   const readBand = () =>
@@ -712,14 +825,23 @@ try {
       });
 
       const px = (n) => Math.round(n * 100) / 100;
-      const pane = document.querySelector("[data-detail-pane]");
-      const strip = document.querySelector("[data-detail-day] [data-day-strip]");
+      // The band's pane is the column, and its top is the ruler's row —
+      // the panel hangs from it (UX-30; it was the detail pane and the
+      // tab strip's bottom).
+      const pane = document.querySelector("[data-session-side]");
+      const rulerRow = pane?.querySelector("[data-day-ruler-row]");
+      const strip = document.querySelector("[data-session-side] [data-detail-day] [data-day-strip]");
       const h = pane && pane.getBoundingClientRect();
+      const rr = rulerRow && rulerRow.getBoundingClientRect();
       const st = strip && strip.getBoundingClientRect();
+      const gap = pane ? parseFloat(getComputedStyle(pane).getPropertyValue("--nav-gap")) || 0 : 0;
+      const inset = pane ? parseFloat(getComputedStyle(pane).getPropertyValue("--gap-in")) || 0 : 0;
       const box = {
-        paneL: h ? px(h.left) : null,
-        paneR: h ? px(h.right) : null,
-        paneT: h ? px(h.top) : null,
+        // Inside the column's own border (`clientLeft`), the capsule's
+        // inset in, the strip's own inset back out.
+        paneL: h ? px(h.left + pane.clientLeft + gap - inset) : null,
+        paneR: h ? px(h.right - (pane.offsetWidth - pane.clientWidth - pane.clientLeft) - gap + inset) : null,
+        paneT: rr ? px(rr.bottom) : null,
         stripT: st ? px(st.top) : null,
         stripL: st ? px(st.left) : null,
         stripR: st ? px(st.right) : null,
@@ -961,12 +1083,12 @@ try {
       continue;
     }
     if (b.stripL !== b.paneL || b.stripR !== b.paneR) {
-      fail(`③ ${b.id} band spans ${b.stripL}..${b.stripR}, its pane spans ${b.paneL}..${b.paneR}`);
+      fail(`③ ${b.id} band spans ${b.stripL}..${b.stripR}, the column's axis (the ruler's) spans ${b.paneL}..${b.paneR}`);
     }
     if (b.stripT !== b.paneT) {
       fail(
-        `③ ${b.id} band starts ${+(b.stripT - b.paneT).toFixed(2)} below the top of its pane — ` +
-          "「标签页下就是状态bar然后就是内容」: nothing stands between the tab strip and the band",
+        `③ ${b.id} band starts ${+(b.stripT - b.paneT).toFixed(2)} below the ruler's row — ` +
+          "the expanded day hangs directly from the ruler (UX-30 §5): nothing stands between them",
       );
     }
   }
@@ -1341,39 +1463,55 @@ try {
       fail(`probe dead: ⑥e the narrow face never listed ${rowWithBlocked}`);
     } else {
       await phone.locator(`[data-row="${rowWithBlocked}"] [data-row-open]`).tap();
-      // ⓪g **The front tab is the switch on the phone too**: since
-      // 2026-10-02 the narrow session page has the strip, in the bar at
-      // its foot (`components/SessionBar`), and its front tab does what
-      // the wide one does — hidden at first here too (a fresh profile),
-      // one tap opens it, one more (at the end of ⑥) puts it away. ⚠️
-      // 墓碑: until then the phone had no tabs and the name and face in
-      // the window's first row stood in (`[data-detail-header]
-      // [data-day-toggle]`).
-      const toggle = phone.locator('[data-session-bar] [data-tab][data-on="true"] [data-tab-open]');
+      // ⓪g **The pill opens the sheet on the phone** (UX-30 §6): the
+      // narrow session page's deck pill (`components/SessionBar`) opens
+      // the session's 附栏 as a bottom sheet — the same seats and ruler
+      // the wide face docks beside the terminal — hidden at first (a
+      // fresh profile); the ruler's tap expands the day inside the sheet,
+      // one more folds it; Escape puts the sheet away (at the end of ⑥).
+      // ⚠️ 墓碑: the front tab's press showed the band at the foot
+      // (2026-10-02); before that the name and face in the window's first
+      // row stood in (`[data-detail-header] [data-day-toggle]`).
+      const pill = phone.locator("[data-session-deck] button[data-deck-title]");
       const seated = await (async () => {
         const end = Date.now() + 10_000;
         while (Date.now() < end) {
-          if ((await toggle.count()) === 1) return true;
+          if ((await pill.count()) === 1) return true;
           await sleep(100);
         }
         return false;
       })();
       await sleep(1_000);
-      const headTap = async () => {
-        const b = await toggle.boundingBox();
-        if (b) await phone.touchscreen.tap(b.x + 10, b.y + b.height / 2);
+      const sheetUp = (want) => {
+        const end = Date.now() + 2_000;
+        return (async () => {
+          while (Date.now() < end) {
+            if (((await phone.locator("[data-place-sheet]").count()) > 0) === want) return true;
+            await sleep(40);
+          }
+          return false;
+        })();
+      };
+      const rulerTap = async () => {
+        const b = await phone.locator("[data-place-sheet] [data-day-ruler]").boundingBox();
+        if (b) await phone.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
       };
       if (!seated) {
-        fail("⓪g the narrow session bar has no front tab to press — the front tab is the day's switch on the phone too");
+        fail("⓪g the narrow session deck has no pill to tap — the pill opens the session's 附栏 on the phone");
       } else {
         if ((await dayRows(phone)) !== 0) fail("⓪g a fresh phone draws a day row before anybody asked for it");
-        const was = await toggle.getAttribute("aria-expanded");
-        if (was !== "false") fail(`⓪g the narrow front tab says aria-expanded=${was} while the day is hidden`);
-        await headTap();
-        if (!(await waitRows(phone, true, 1_000))) fail("⓪g a tap on the narrow front tab drew no day row");
-        const now = await toggle.getAttribute("aria-expanded");
-        if (now !== "true") fail(`⓪g the narrow front tab says aria-expanded=${now} with the day shown`);
-        console.log(`⓪g narrow front tab: aria-expanded ${was} → tap → ${now}`);
+        const b = await pill.boundingBox();
+        await phone.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+        if (!(await sheetUp(true))) fail("⓪g a tap on the pill opened no sheet");
+        await sleep(600);
+        const ruler = await phone.locator("[data-place-sheet] [data-day-ruler-line]").boundingBox();
+        if (!ruler) fail("⓪g the sheet holds no ruler under its capsule");
+        else if (Math.abs(ruler.height - 2) > 0.5) fail(`⓪g the sheet's ruler is ${ruler.height}px tall — two points`);
+        await rulerTap();
+        if (!(await waitRows(phone, true, 1_000))) fail("⓪g a tap on the sheet's ruler drew no day row");
+        const now = await phone.locator("[data-place-sheet] [data-day-ruler]").getAttribute("aria-expanded");
+        if (now !== "true") fail(`⓪g the sheet's ruler says aria-expanded=${now} with the day shown`);
+        console.log(`⓪g narrow: pill → sheet, ruler ${JSON.stringify(ruler)} → tap → ${now}`);
       }
       const end = Date.now() + 25_000;
       let pruns = [];
@@ -1417,10 +1555,12 @@ try {
         }
       }
       if (seated) {
-        // ⓪g …and one more tap puts it away.
+        // ⓪g …and one more tap folds it; Escape puts the sheet away.
         await sleep(500);
-        await headTap();
-        if (!(await waitRows(phone, false, 1_000))) fail("⓪g a second tap on the narrow front tab left the day row up");
+        await rulerTap();
+        if (!(await waitRows(phone, false, 1_000))) fail("⓪g a second tap on the sheet's ruler left the day row up");
+        await phone.keyboard.press("Escape");
+        if (!(await sheetUp(false))) fail("⓪g Escape did not put the sheet away");
       }
     }
     if (phoneThrew.length) fail(`⑥ the narrow page threw: ${phoneThrew.join(" | ")}`);
@@ -1452,9 +1592,9 @@ try {
     try {
       localStorage.setItem("khor.list-width", '{"w":462,"collapsed":true}');
       localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
-      // …with the day asked for last time (⓪ d): a returning browser
-      // that had it open expects it open.
-      localStorage.setItem("khor.sessions.day", "1");
+      // …with the column open and its ruler expanded last time (⓪ d): a
+      // returning browser that had them open expects them open.
+      localStorage.setItem(`khor.session-side.${id}`, JSON.stringify({ open: true, w: null, seat: "recent", day: true }));
     } catch {
       /* a profile that refuses storage is simply the blank case again */
     }
@@ -1539,7 +1679,7 @@ try {
     };
     try {
       localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
-      localStorage.setItem("khor.sessions.day", "1");
+      localStorage.setItem(`khor.session-side.${id}`, JSON.stringify({ open: true, w: null, seat: "recent", day: true }));
     } catch {
       /* then nothing is open, and the probe below says so */
     }

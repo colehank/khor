@@ -1,94 +1,50 @@
 /**
- * **The terminal pill opens where the session is** (UX-17, the owner
- * 2026-10-05: the pill's tap opened the 24-hour view and then nothing).
- * One sheet, two tabs:
+ * **The phone's pill opens the session's 附栏 as a sheet** (UX-30 §6; it
+ * was UX-17's 目录 · 日志 sheet). The same five seats and the ruler the
+ * wide face docks beside the terminal (`SideBody`), risen from the
+ * bottom: 最近 · 工作区 · 浏览器 · 机器 · 额度, the day's heat line under
+ * them; 目录 is the 工作区 seat. The seat and the ruler's expansion are
+ * the session's own memory (`use-session-side`), shared with the column.
  *
- *   目录  the session's directory — where the shell is now (OSC 7, the
- *        terminal's marks), else where the session started (`place`) —
- *        as the machine's files: the listing, and a file opened from it
- *        is the file page (`MachineFiles`, the machine page's own);
- *   日志  the session's 24 hours (`DayStrip`), unchanged.
- *
- * 目录 first; the last tab is kept per session. Phone and a Mac window
- * dragged narrow (the deck's pill); the wide face keeps its own road (the
- * front tab drops the day).
+ * ⚠️ 墓碑 (UX-17 → UX-30): a 目录 / 日志 segment with its own `keptTab`
+ * store per session; the seat replaces the tab.
  */
-import { useState } from "react";
+import type { ReactNode } from "react";
 
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { SegmentedControl } from "@/components/ui/segmented-control";
-import { cli, gui } from "@/gen/catalog";
-import { DayStrip, type Day } from "@/views/DayStrip";
-import { MachineFiles } from "@/views/MachineFiles";
-
-type Tab = "dir" | "log";
-
-const KEPT = "khor.session-sheet.";
-
-function keptTab(session: string): Tab {
-  try {
-    return window.localStorage.getItem(KEPT + session) === "log" ? "log" : "dir";
-  } catch {
-    return "dir";
-  }
-}
-
-function keepTab(session: string, tab: Tab) {
-  try {
-    window.localStorage.setItem(KEPT + session, tab);
-  } catch {
-    // A private window keeps nothing; the sheet opens on 目录 next time.
-  }
-}
+import { gui } from "@/gen/catalog";
+import type { SideSeat } from "@/hooks/use-session-side";
+import { SideBody } from "@/views/SessionSide";
 
 export function SessionPlaceSheet({
   open,
   onOpenChange,
-  session,
-  machine,
-  here,
-  dir,
-  day,
+  seat,
+  onSeat,
+  ruler,
+  boxRef,
+  children,
 }: {
   open: boolean;
+  /** The box the day's axis is measured in (`useStripWidth`), as the
+      column's (`SessionSide` `boxRef`). */
+  boxRef?: (el: HTMLDivElement | null) => void;
   onOpenChange: (open: boolean) => void;
-  session: string;
-  /** The machine the session lives on, by name (`SessionRow.home`). */
-  machine: string;
-  here: boolean;
-  /** Where the session is: its shell's directory, else its place; `null`
-      when neither is known, and the listing starts at the machine's home. */
-  dir: string | null;
-  day: Day;
+  seat: SideSeat;
+  onSeat: (seat: SideSeat) => void;
+  ruler?: ReactNode;
+  /** The seat's page, composed by the shell (`App`'s `sideSeat`). */
+  children?: ReactNode;
 }) {
-  const [tab, setTab] = useState<Tab>(() => keptTab(session));
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent form data-place-sheet className="flex h-[80dvh] flex-col !gap-0 overflow-hidden">
-        <DialogTitle className="sr-only">{gui.new_session_dir}</DialogTitle>
-        <SegmentedControl<Tab>
-          label={gui.new_session_dir}
-          value={tab}
-          onChange={(t) => {
-            setTab(t);
-            keepTab(session, t);
-          }}
-          mark={{ "data-place-tabs": true }}
-          className="mx-auto mb-in flex-none"
-          options={[
-            { key: "dir", label: gui.new_session_dir, mark: { "data-place-tab": "dir" } },
-            { key: "log", label: cli.day_view_heat, mark: { "data-place-tab": "log" } },
-          ]}
-        />
-        {tab === "dir" ? (
-          <div data-place-dir className="relative flex min-h-0 flex-1 flex-col">
-            <MachineFiles key={`${machine} ${dir ?? ""}`} machine={machine} here={here} startDir={dir} />
-          </div>
-        ) : (
-          <div data-place-log className="min-h-0 flex-1 overflow-y-auto">
-            <DayStrip runs={day} />
-          </div>
-        )}
+        <DialogTitle className="sr-only">{gui.session_side}</DialogTitle>
+        <div ref={boxRef} data-place-body className="flex min-h-0 flex-1 flex-col [--side-ground:var(--popover)]">
+          <SideBody seat={seat} onSeat={onSeat} ruler={ruler}>
+            {children}
+          </SideBody>
+        </div>
       </DialogContent>
     </Dialog>
   );

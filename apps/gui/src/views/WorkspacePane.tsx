@@ -2391,7 +2391,7 @@ const tabsKey = (machine: string, root: string) => `khor.ws-tabs.${machine}:${ro
     (工作区批⑦), and a tab from somewhere else is one the tree cannot
     explain. Storage refusing reads as「nothing was open」, which is the
     shape a workspace opens in anyway. */
-function storedTabs(machine: string, root: string): string[] {
+export function storedTabs(machine: string, root: string): string[] {
   try {
     const raw = window.localStorage.getItem(tabsKey(machine, root));
     const list: unknown = raw === null ? [] : JSON.parse(raw);

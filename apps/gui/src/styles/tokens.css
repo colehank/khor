@@ -2282,6 +2282,9 @@
   --spacing-composer: var(--composer-h);
   --spacing-composer-item: var(--composer-item);
   --radius-composer: calc(var(--composer-h) / 2);
+  /* the deck pill's corner: a one-row capsule's, kept by a pill grown by
+     its strip (UX-31/33) */
+  --radius-glass-btn: calc(var(--glass-btn) / 2);
   --radius-menu: var(--menu-r);
   --radius-menu-item: calc(var(--menu-r) - var(--menu-inset));
   --spacing-menu-item: var(--menu-item);
@@ -2300,6 +2303,7 @@
   --spacing-deck-strip: var(--deck-strip);
   --spacing-dial-seat: var(--dial-seat);
   --spacing-progress-h: var(--progress-h);
+  --spacing-day-ruler-h: var(--day-ruler-h);
   --spacing-dial-seat-me: var(--dial-seat-me);
   --spacing-list-head: var(--list-head);
   --spacing-glass-tabs: var(--glass-tabs);
@@ -2761,6 +2765,16 @@
   /* The progress line along a tab pill's bottom edge while the tab
      reloads (UX-31 §3, UX-33 §2): Safari's run, two points. */
   --progress-h: 2px;
+  /* **The session's 附栏** (UX-30): the narrow face docked beside a
+     terminal, at a phone's width — 390 is the iPhone's logical width,
+     320 the narrowest phone the narrow face is laid out for, and the
+     column may not be dragged under it. The ceiling is half the main
+     pane, measured at the drag (the two-column answer, `use-list-width`). */
+  --session-side-w: 390px;
+  --session-side-min: 320px;
+  /* The column's ruler (UX-30 §5): the session's 24 hours flattened to a
+     heat line directly under the capsule, two points. */
+  --day-ruler-h: 2px;
   /* The session tabs' glass capsule and the pills in it, and a tab's
      face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */
   /* **The conversation's input, one glass capsule** (the redesign,

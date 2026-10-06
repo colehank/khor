@@ -17,7 +17,7 @@ import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
 import { YIELD_MS } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import { ChatView } from "@/views/ChatView";
-import { DAY_ROW_ID, DayStrip, daySwitch, dayHasRecord, type Day } from "@/views/DayStrip";
+import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
 
 /** **The terminal arrives when a terminal does** (UX-6, the phone's first
@@ -222,9 +222,16 @@ export function DetailPane({
   empty,
   tabs,
   openIds,
+  side,
 }: {
   row: SessionRow | null;
   narrow: boolean;
+  /** **The session's 附栏** (UX-30): the narrow face docked at the pane's
+      right edge, beside the session — a terminal or a conversation —
+      which gives up the column's width (a terminal refits as the seam
+      moves). Composed by the shell (`views/SessionSide`); absent on the
+      narrow face, where the phone's sheet is the same object. */
+  side?: ReactNode;
   onBack: () => void;
   /** This session's last day (`DayStrip`), drawn as a band under the
       tabs — the one place it is shown (2026-09-02:「session的状态bar不要
@@ -293,11 +300,6 @@ export function DetailPane({
       face it is the front tab's (`App`), and on the narrow one the head
       below is that tab's stand-in and wears it. One answer for both. */
   const sw = day === undefined ? null : daySwitch(day, shown, () => setDayShown(!shown));
-  /** Whether the band's row stands under the tabs: asked for, and either
-      on its way (the skeleton) or a day with a record. Never an empty
-      row — that was the blank band (`DayStrip`'s 「Hidden until asked
-      for」). */
-  const drawn = row !== null && day !== undefined && shown && (day === null || dayHasRecord(day));
   /** A tap on the narrow head's face or name — the name's double-click
       still renames (`useSinglePress`). */
   const pressHead = useSinglePress(() => sw?.toggle?.());
@@ -325,7 +327,7 @@ export function DetailPane({
       data-detail-pane
       className={cn(
         "flex h-full min-w-0 flex-col [--day-under:var(--card)]",
-        drawn && !inBar ? "[--day-over:calc(2*var(--gap-xxs)+var(--spacing))]" : "[--day-over:calc(0*var(--spacing))]",
+        "[--day-over:calc(0*var(--spacing))]",
       )}
     >
       {/* **`min-h`, not `h`.** The bar's look is still `--ctl-lg`; what
@@ -496,18 +498,15 @@ export function DetailPane({
           scrolls under it — so the band reads over a terminal's first
           line without a hard cut. Only the stretches take a press: a
           gap between them, and the fade, are the session's. */}
-      {drawn && !inBar && (
-        <div className="relative z-30 h-0 flex-none">
-          <div
-            data-detail-day
-            id={DAY_ROW_ID}
-            className="pointer-events-none absolute inset-x-0 top-0 bg-linear-to-b from-(--day-under) from-65% to-transparent"
-          >
-            <DayStrip runs={day ?? null} />
-          </div>
-        </div>
-      )}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* ⚠️ 墓碑 (UX-30, 2026-10-06): on the wide face the band hung here,
+          under the tabs, from the front tab's press. That press opens the
+          session's 附栏 now, and the day is the column's ruler
+          (`DayRuler`); the narrow face keeps its foot band below until
+          the phone's sheet becomes the same column. */}
+      {/* The session and, beside it, its 附栏 (UX-30): a row, the session
+          taking what the column leaves. */}
+      <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
       {terminalShown ? null : row && row.kind === "chat" ? (
         // A machine's conversation — the stream `khor log` prints,
         // with the composer `tell` fills. Keyed so switching machines
@@ -616,21 +615,16 @@ export function DetailPane({
         );
       })}
       </div>
+      {side}
+      </div>
       {/* **In the bar's screen the day hangs at the foot** (2026-10-02):
           the tab that opens it is under the session there, so the band
           floats over the session's last lines, fading upward out of the
           paper — the same seat of no height, on the other edge. */}
-      {drawn && inBar && (
-        <div className="relative z-30 h-0 flex-none">
-          <div
-            data-detail-day
-            id={DAY_ROW_ID}
-            className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-(--day-under) from-65% to-transparent"
-          >
-            <DayStrip runs={day ?? null} />
-          </div>
-        </div>
-      )}
+      {/* ⚠️ 墓碑 (UX-30): in the bar's screen the day hung at the foot,
+          over the session's last lines, from the pill's press
+          (2026-10-02). The pill opens the session's sheet now, and the
+          day is its ruler (`DayRuler`, `SessionPlaceSheet`). */}
     </section>
   );
 }

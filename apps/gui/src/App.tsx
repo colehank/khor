@@ -73,7 +73,7 @@ import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { lasted } from "@/words";
-import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
+import { setSessionSide, useSessionSide } from "@/hooks/use-session-side";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
@@ -100,9 +100,13 @@ import { draftCount, watchDrafts } from "@/lib/drafts";
 import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
-import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
-import { DetailPane, isTerminal } from "@/views/DetailPane";
+import { type Day } from "@/views/DayStrip";
+import { DetailPane } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
+import { SIDE_ID, SessionSide } from "@/views/SessionSide";
+import { DayRuler } from "@/views/DayRuler";
+import { SideRecent } from "@/views/SideRecent";
+import { useSideRecent, type RecentItem } from "@/hooks/use-side-recent";
 import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
@@ -600,6 +604,7 @@ export default function App() {
   // `.khor/tabs.json` has two writers now, and `khor tabs open` in a
   // terminal has to show up in the column without anybody reloading.
   const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser");
+  const browsing = { kind: PAGES, tabs: pageTabs };
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">(() => place.screen ?? "list");
   const [stale, setStale] = useState(false);
@@ -1659,9 +1664,10 @@ export default function App() {
   /** One session's day as the pane holds it (`DayStrip` `Day`): `null`
       until the first answer, then its runs. */
   const dayOf = (id: string): Day => (days === null ? null : (days[id] ?? []));
-  // Whether the day is asked for under the tabs (`use-day-shown`): the
-  // front tab is the switch, and says so on hover.
-  const dayShown = useDayShown();
+  /** **The front tab's press opens the session's 附栏** (UX-30: the
+      phone's pill gesture, docked). One memory per session
+      (`use-session-side`): open, width, seat. */
+  const side = useSessionSide(selected);
   // The open sessions as the strip paints them: each tab wears its
   // row's title and the row's own identity assembly (`SessionFace` —
   // face, state halo, kind mark), the same facts in the same clothes. A
@@ -1671,16 +1677,16 @@ export default function App() {
     () =>
       openTabs.map((id) => {
         const r = rows.find((row) => row.id === id);
-        // **Pressed again, the tab in front shows or hides its day**
-        // (2026-09-29:「点击标签后显示吧。悬停的时候加一个提示」). Read
-        // by the strip only on the tab in front; the words and whether
-        // there is anything to open are the day's (`daySwitch`).
-        const sw = daySwitch(days === null ? null : (days[id] ?? []), dayShown, () => setDayShown(!dayShown));
+        // **Pressed again, the tab in front opens or closes its 附栏**
+        // (UX-30; ⚠️ 墓碑 2026-09-29 → 10-06: it showed or hid the day —
+        // 「点击标签后显示吧」 — which is the column's ruler now). Read by
+        // the strip only on the tab in front, so the front tab's memory
+        // is the one consulted.
         const again = {
-          hint: sw.hint,
-          expanded: sw.expanded,
-          controls: sw.expanded ? DAY_ROW_ID : undefined,
-          toggle: sw.toggle,
+          hint: side.open ? gui.side_hide : gui.side_show,
+          expanded: side.open,
+          controls: side.open ? SIDE_ID : undefined,
+          toggle: () => setSessionSide(id, { open: !side.open }),
         };
         return r
           ? {
@@ -1727,7 +1733,7 @@ export default function App() {
           : { id, label: id, face: null, path: "", again };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [openTabs, rows, days, dayShown, actsVersion],
+    [openTabs, rows, side, actsVersion],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
@@ -1774,14 +1780,37 @@ export default function App() {
     setWsTree(true);
     setScreen("detail");
   };
+  /** **Where the column's 工作区 seat stands** (UX-30 §2, §4): the
+      session's directory (OSC 7, else its place) when the column opens
+      on it; a directory or a file a session printed, opened in place. */
+  const [sideFiles, setSideFiles] = useState<{ session: string; machine: string; dir: string | null; start: { path: string; at: number } | null } | null>(null);
+  const sideFilesRef = useRef(sideFiles);
+  sideFilesRef.current = sideFiles;
   // A terminal's 「open enclosing folder」 (roadmap 2.5): that machine's
   // files at that path.
   const openDirRef = useRef<(machine: string, path: string) => void>(() => {});
-  openDirRef.current = (machine, path) => {
+  /** The main area's road for a directory. */
+  const openDirMain = (machine: string, path: string) => {
     const d = devices.find((x) => x.name === machine);
     if (!d) return;
     setLanding("workspaces");
     openWorkspace({ device: d.id, machine, path } as WorkspaceRow);
+  };
+  /** **Whether a thing a session printed opens in its 附栏** (UX-30 §4):
+      on the wide face, with a session in front, paths, URLs and
+      directories open inside the column — the main area is the session,
+      always. Elsewhere (the phone, another landing) the old roads stand. */
+  const inColumn = () => !narrow && landing === "sessions" && selectedRow !== null;
+  /** The column's 工作区 seat, pointed somewhere (and the column opened
+      on it): a directory, or a file to open in place. */
+  const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) => {
+    if (!selectedRow) return;
+    setSideFiles({ session: selectedRow.id, machine, dir, start });
+    setSessionSide(selectedRow.id, { open: true, seat: "workspace" });
+  };
+  openDirRef.current = (machine, path) => {
+    if (inColumn()) return sideShow(machine || (devices.find((x) => x.me)?.name ?? ""), path, null);
+    openDirMain(machine, path);
   };
   useEffect(() => {
     const asked = (e: Event) => {
@@ -1797,11 +1826,13 @@ export default function App() {
   // conversation's road); a URL is a browsing tab out through that
   // terminal's machine.
   const openPathRef = useRef<(machine: string, path: string, dir: boolean, line: number | null) => void>(() => {});
-  openPathRef.current = (machine, path, dir, line) => {
+  /** The main area's road for a file: the workspace that holds it, at
+      its line. */
+  const openPathMain = (machine: string, path: string, dir: boolean, line: number | null) => {
     const d = machine === "" ? devices.find((x) => x.me) : devices.find((x) => x.name === machine);
     if (!d) return;
     const name = machine || d.name;
-    if (dir) return openDirRef.current(name, path);
+    if (dir) return openDirMain(name, path);
     void fetchWorkspaces()
       .catch(() => [] as WorkspaceRow[])
       .then((list) => {
@@ -1817,17 +1848,33 @@ export default function App() {
         setScreen("detail");
       });
   };
+  openPathRef.current = (machine, path, dir, line) => {
+    if (inColumn()) {
+      const name = machine || (devices.find((x) => x.me)?.name ?? "");
+      if (dir) return sideShow(name, path, null);
+      return sideShow(name, path.slice(0, path.lastIndexOf("/")) || "/", { path, at: Date.now() });
+    }
+    openPathMain(machine, path, dir, line);
+  };
   const openUrlRef = useRef<(machine: string, url: string) => void>(() => {});
-  openUrlRef.current = (machine, url) => {
+  /** A page, as a browsing tab out through that machine; in the column's
+      browser with a session in front, else on the browser landing. */
+  const openUrlMain = (machine: string, url: string, column: boolean) => {
     const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
     void openTab("page", d?.id ?? "", url)
       .then(() => {
+        if (column && selectedRow) {
+          setSideBrowse("detail");
+          setSessionSide(selectedRow.id, { open: true, seat: "browser" });
+          return;
+        }
         setMorePage(null);
         setLanding("browser");
         setScreen("detail");
       })
       .catch(() => {});
   };
+  openUrlRef.current = (machine, url) => openUrlMain(machine, url, inColumn());
   useEffect(() => {
     const path = (e: Event) => {
       const { machine, path: p, dir, line } = (e as CustomEvent<{ machine: string; path: string; dir: boolean; line: number | null }>).detail;
@@ -2077,6 +2124,160 @@ export default function App() {
     }, onPage);
   };
 
+  /** **Where the session is**, for the column's 工作区 seat (UX-30 §2:
+      the OSC 7 cwd, else where the session started) — read off the
+      terminal on screen, as the pill's tap reads it (`placeSheet`), when
+      the column opens on it or the session changes. */
+  useEffect(() => {
+    if (narrow || !side.open || !selectedRow) return;
+    // Pointed once per session (and the column's opening): a file opened
+    // in place since (`sideShow`) is not thrown away by a re-render.
+    if (sideFilesRef.current?.session === selectedRow.id) return;
+    const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
+      | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
+      | null;
+    setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir: box?.__marks?.cwd() ?? selectedRow.place ?? null, start: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narrow, side.open, selectedRow?.id]);
+  /** The column's own stacks (UX-30 §1: each seat its stack): the
+      browser's and 额度's list ⇄ detail, 机器's machine and screen. */
+  const [sideBrowse, setSideBrowse] = useState<"list" | "detail">("detail");
+  const [sideQuota, setSideQuota] = useState<"list" | "detail">("list");
+  const [sideMachine, setSideMachine] = useState<{ device: string | null; screen: "list" | "detail" }>({ device: null, screen: "detail" });
+  /** **The terminal pill opens the session's 附栏 as a sheet** (UX-17 →
+      UX-30 §6): the same seats and ruler, risen from the bottom. The
+      sheet's lifetime is this state; the seat is the session's memory. */
+  const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
+  /** The ruler, for the column and the phone's sheet alike (UX-30 §5). */
+  const sideRuler = (row: SessionRow) => (
+    <DayRuler runs={dayOf(row.id)} open={side.day} onToggle={() => setSessionSide(row.id, { day: !side.day })} />
+  );
+  const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
+  const recent = useSideRecent(sideOn && side.seat === "recent");
+  /** 最近's rows open in place (§4): a page in the column's browser, a
+      workspace as the column's listing, a file as its file page. */
+  const openRecent = (it: RecentItem) => {
+    if (it.kind === "page") return openUrlMain(it.machine, it.url, true);
+    if (it.kind === "workspace") return sideShow(it.machine, it.path, null);
+    sideShow(it.machine, it.path.slice(0, it.path.lastIndexOf("/")) || "/", { path: it.path, at: Date.now() });
+  };
+  /** …and a double-click (or 「在主区打开」) takes the same thing to the
+      main area, by the roads the landings use. */
+  const openRecentMain = (it: RecentItem) => {
+    if (it.kind === "page") return openUrlMain(it.machine, it.url, false);
+    if (it.kind === "workspace") return openDirMain(it.machine, it.path);
+    openPathMain(it.machine, it.path, false, null);
+  };
+  /** The column's seat, composed here because the narrow pages read the
+      shell's own state (`SessionSide` is the box and the capsule). */
+  const sideSeat = (): ReactNode => {
+    if (!selectedRow) return null;
+    const faceOf = (id: string) => devices.find((d) => d.id === id)?.face ?? null;
+    switch (side.seat) {
+      case "recent":
+        return <SideRecent items={recent} faceOf={faceOf} onOpen={openRecent} onOpenMain={openRecentMain} />;
+      case "workspace": {
+        const f = sideFiles?.session === selectedRow.id ? sideFiles : { machine: selectedRow.home, dir: selectedRow.place ?? null, start: null };
+        const here = devices.find((d) => d.name === f.machine)?.me ?? !selectedRow.source;
+        return (
+          <MachineFiles
+            key={`${f.machine} ${f.dir ?? ""}`}
+            machine={f.machine}
+            here={here}
+            startDir={f.dir}
+            start={f.start}
+            fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
+          />
+        );
+      }
+      case "browser":
+        return (
+          <BrowseLanding
+            key={browsing.kind.kind}
+            kind={browsing.kind}
+            devices={devices}
+            tabs={browsing.tabs}
+            narrow
+            pane={null}
+            caption={stale ? gui.backend_unreachable : undefined}
+            screen={sideBrowse}
+            onOpen={() => setSideBrowse("detail")}
+            onBack={() => setSideBrowse("list")}
+          />
+        );
+      case "machine": {
+        // Lands on the session's machine; ‹ is the machines' list, from
+        // which any machine's card opens here.
+        const landed = sideMachine.device ?? devices.find((d) => d.name === selectedRow.home)?.id ?? null;
+        const row = devices.find((d) => d.id === landed) ?? null;
+        if (sideMachine.screen === "list" || row === null) {
+          return (
+            <div data-side-machines className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+              <DevicesList
+                rows={devices}
+                sessions={rows}
+                loading={!devicesRead}
+                query=""
+                onPin={onPinDevice}
+                onForget={onForgetDevice}
+                forgetRefused={forgetRefused}
+                onPause={onPauseDevice}
+                pauseRefused={pauseRefused}
+                onOpen={(d) => setSideMachine({ device: d.id, screen: "detail" })}
+                selected={landed}
+                pinFailed={pinFailed}
+              />
+            </div>
+          );
+        }
+        return (
+          <MachineCard
+            row={row}
+            narrow
+            onBack={() => setSideMachine({ device: landed, screen: "list" })}
+            hooks={hooks}
+            hooksFailed={hooksFailed}
+            onInstallHooks={onInstallHooks}
+            onUninstallHooks={onUninstallHooks}
+          />
+        );
+      }
+      case "quota":
+        return (
+          <QuotaLanding
+            narrow
+            stale={stale}
+            devices={devices}
+            pane={null}
+            query={queries.quota}
+            onQuery={setQuery}
+            words={words.quota}
+            onToggleWord={toggleWord}
+            screen={sideQuota}
+            onOpen={() => setSideQuota("detail")}
+            onBack={() => setSideQuota("list")}
+            landOn={selectedRow.category}
+          />
+        );
+    }
+  };
+  const sessionSide =
+    !narrow && side.open && selectedRow ? (
+      <SessionSide
+        key={selectedRow.id}
+        session={selectedRow.id}
+        width={side.w}
+        seat={side.seat}
+        onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
+        onWidth={(w) => setSessionSide(selectedRow.id, { w })}
+        onClose={() => setSessionSide(selectedRow.id, { open: false })}
+        boxRef={setDetailBox}
+        ruler={sideRuler(selectedRow)}
+      >
+        {sideSeat()}
+      </SessionSide>
+    ) : undefined;
+
   const detail = sessions ? (
     // The conversation in this pane is painted inside the workspace it
     // is running in, as far as its paths are concerned (2026-09-18
@@ -2088,6 +2289,7 @@ export default function App() {
     <DetailPane
       row={selectedRow}
       narrow={narrow}
+      side={sessionSide}
       openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}
@@ -2402,11 +2604,13 @@ export default function App() {
       bar; the session bar at its foot. */
   const fullScreen =
     inSession || (narrow && browses && morePage === null && screen === "detail") || (narrow && fullClaims > 0);
-  /** **The terminal pill opens the session's directory** (UX-17): where
-      its shell is now (the terminal's OSC 7 marks), else where it
-      started. Read at the tap, off the terminal on screen. */
-  const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
-  const terminalPill = selectedRow !== null && isTerminal(selectedRow);
+  /** **The terminal pill opens the sheet** (UX-17): the 工作区 seat at
+      the shell's directory now (the terminal's OSC 7 marks), else where
+      it started — read at the tap, off the terminal on screen. */
+  // Every session's pill opens its 附栏 (UX-30 §6 — the column stands
+  // beside a terminal and a conversation alike); ⚠️ 墓碑 (UX-17): the
+  // terminal's alone, for its directory.
+  const terminalPill = selectedRow !== null;
   const sessionScreen = (
     <SessionScreen
       faces={tabFaces}
@@ -2417,7 +2621,11 @@ export default function App() {
               const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
                 | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
                 | null;
-              setPlaceSheet({ dir: box?.__marks?.cwd() ?? selectedRow?.place ?? null });
+              const dir = box?.__marks?.cwd() ?? selectedRow?.place ?? null;
+              // The sheet's 工作区 seat stands where the shell is at the
+              // tap (UX-17's rule, kept): pointed afresh each time.
+              if (selectedRow) setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null });
+              setPlaceSheet({ dir });
             }
           : undefined
       }
@@ -2449,12 +2657,13 @@ export default function App() {
           key={selectedRow.id}
           open
           onOpenChange={(o) => !o && setPlaceSheet(null)}
-          session={selectedRow.id}
-          machine={selectedRow.home}
-          here={devices.find((d) => d.name === selectedRow.home)?.me ?? !selectedRow.source}
-          dir={placeSheet.dir}
-          day={dayOf(selectedRow.id)}
-        />
+          seat={side.seat}
+          onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
+          ruler={sideRuler(selectedRow)}
+          boxRef={setDetailBox}
+        >
+          {sideSeat()}
+        </SessionPlaceSheet>
       )}
     </SessionScreen>
   );
@@ -2797,7 +3006,6 @@ export default function App() {
    * kind does not land, this abstraction has one customer and should
    * be inlined — that is the line for whoever reads this next.
    */
-  const browsing = { kind: PAGES, tabs: pageTabs };
   const browsingLanding = (
     <BrowseLanding
       // **Keyed by the kind, and that is load-bearing.** A kind carries
@@ -3081,7 +3289,8 @@ export default function App() {
           <div
             key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : screen}
             data-screen={morePage ? "more" : screen}
-            ref={setDetailBox}
+            // ⚠️ 墓碑 (UX-30): `ref={setDetailBox}` — the day's axis was this
+            // screen's; it is the pill sheet's now (`SessionPlaceSheet`).
             className="min-h-0 flex-1 overflow-hidden"
           >
             {/* A browsing landing is one screen either way — it has no
@@ -3269,7 +3478,10 @@ export default function App() {
                   (it was a row's item), and a flex item's default
                   min-height is its content — the file scroller would
                   grow to its whole file and never scroll. */}
-              <div ref={setDetailBox} className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {/* ⚠️ 墓碑 (UX-30): `ref={setDetailBox}` stood here — the day's
+                  axis was this pane's; it is the column's now
+                  (`SessionSide` `boxRef`). */}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                 {sessions && openTabs.length > 0 ? (
                   <VerbSeat.Provider value={verbSeat}>
                   <Tabs

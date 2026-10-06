@@ -421,7 +421,7 @@ export function SideList({
               {/* The name keeps its width (cut only past the whole line);
                   the aside has what is left, to nothing — all of it, so a
                   path cut to fit (`PathCut`) measures the room it has. */}
-              <span data-side-aside className="min-w-0 flex-1 truncate text-callout font-normal text-muted-foreground">
+              <span data-side-aside className="min-w-0 flex-1 truncate text-callout font-body text-muted-foreground">
                 {r.aside}
               </span>
             </span>
