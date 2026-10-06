@@ -17,7 +17,7 @@
 // once it worked (`onLanded` → the visit is recorded).
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { hidePage, movePage, onPageWord, openPage, pageIcon, showPage } from "@/api";
+import { hidePage, inApp, movePage, onPageWord, openPage, pageIcon, showPage } from "@/api";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { holdBorrow, holdPage } from "@/views/held";
@@ -327,6 +327,10 @@ export function BrowserPane({
           word: here ? gui.web_opened_here : gui.web_opened(machine),
         });
         onOpened(want);
+        // **In the app the page itself says it is loading** (UX-38 §2):
+        // the errand ends here, with the page pointed, and a load it began
+        // keeps the light (`use-loading`). The icon is not loading.
+        if (inApp) busy.current?.(false);
         // **The icon is the last errand, so it is the one that ends it**
         // — and it ends it however it goes: a site that answered「no
         // icon」answered. `finally` rather than a success branch, for the

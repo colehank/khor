@@ -26,7 +26,8 @@
 //! What the face is told comes from polling the views (every 400 ms):
 //! where each page is once a load ends (`page:went`), its title
 //! (`page:title`) and whether it is loading (`page:load`) — the desktop's
-//! three events. A link that asks for a new window opens in place: a
+//! three events; the loading is also observed, so it is told the moment
+//! it changes (`load_heard`, UX-38 §2). A link that asks for a new window opens in place: a
 //! `WKUIDelegate` would be a class of khor's own, and the desktop's answer
 //! (a new tab) is the face's to mint; on the phone the page follows it.
 //!
@@ -94,12 +95,23 @@ define_class!(
         #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
         fn observe_value(
             &self,
-            _key: *mut AnyObject,
+            key: *mut AnyObject,
             object: *mut AnyObject,
             _change: *mut AnyObject,
             _context: *mut std::ffi::c_void,
         ) {
-            scrolled(object);
+            // SAFETY: KVO hands the key path as an NSString.
+            let loading = !key.is_null() && unsafe { (*(key as *const NSString)).to_string() } == "loading";
+            if loading {
+                // Heard on the beat after: a load begun from inside this
+                // module (`open`, `step`) fires while the pages are held.
+                let view = object as usize;
+                if let Some(app) = APP.get() {
+                    let _ = app.run_on_main_thread(move || load_heard(view));
+                }
+            } else {
+                scrolled(object);
+            }
         }
     }
 );
@@ -141,6 +153,30 @@ fn failed(view: *mut AnyObject, error: *mut AnyObject) {
     let Some(tab) = tab else { return };
     let _ = app.emit_to("main", "page:load", PageWord { tab: tab.clone(), text: "finished".into() });
     let _ = app.emit_to("main", "page:fail", PageWord { tab, text });
+}
+
+/// **Whether the page is loading, as WebKit says it** (UX-38 §2): the
+/// view's `loading` observed, so a load is `started` and `finished` the
+/// moment it is — the deck's line runs exactly as long. ⚠️ 墓碑: only the
+/// 400 ms poll told it, so a load quicker than a beat said nothing and a
+/// new page's first load never said `started`; the face lit the line from
+/// its own errand instead, and coming back to a tab ran it for the whole
+/// ceiling with nothing loading (measured on the simulator: 30 s).
+fn load_heard(view: usize) {
+    let Some(app) = APP.get() else { return };
+    let word = PAGES.with(|pages| {
+        let mut pages = pages.try_borrow_mut().ok()?;
+        let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as usize == view)?;
+        let loading: bool = unsafe { msg_send![&*page.view, isLoading] };
+        if loading == page.loading {
+            return None;
+        }
+        page.loading = loading;
+        Some(PageWord { tab: tab.clone(), text: if loading { "started" } else { "finished" }.into() })
+    });
+    if let Some(w) = word {
+        let _ = app.emit_to("main", "page:load", w);
+    }
 }
 
 /// **Where the page is scrolled, as it moves** (round UX-4, the deck's
@@ -350,13 +386,15 @@ pub fn open(
         let _: () = msg_send![&*view, setHidden: !crate::page_is_wanted(tab)];
         let parent: *mut AnyObject = msg_send![face, superview];
         let _: () = msg_send![parent, addSubview: &*view];
-        load(&view, url);
         let scroll: Retained<AnyObject> = msg_send![&*view, scrollView];
         WATCH.with(|w| {
             let key = NSString::from_str("contentOffset");
             // 1: NSKeyValueObservingOptionNew.
             let _: () = msg_send![&*scroll, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
+            let key = NSString::from_str("loading");
+            let _: () = msg_send![&*view, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
         });
+        load(&view, url);
         PAGES.with(|pages| {
             pages.borrow_mut().insert(
                 tab.to_owned(),
@@ -366,7 +404,9 @@ pub fn open(
                     url: url.to_owned(),
                     told_url: url.to_owned(),
                     told_title: String::new(),
-                    loading: true,
+                    // Not yet: the load just begun is heard as `started`
+                    // (`load_heard`, after this insert).
+                    loading: false,
                     told_steps: None,
                     scroll,
                     told_y: 0.0,
@@ -401,12 +441,14 @@ pub fn hide(tab: &str, hidden: bool) {
     deck_follows(tab);
 }
 
-/// Stops watching a page's scroll view, before the page goes.
+/// Stops watching a page's scroll view and its loading, before the page goes.
 fn unwatch(page: &Page) {
     WATCH.with(|w| {
         let key = NSString::from_str("contentOffset");
+        let load = NSString::from_str("loading");
         unsafe {
             let _: () = msg_send![&*page.scroll, removeObserver: &**w, forKeyPath: &*key];
+            let _: () = msg_send![&*page.view, removeObserver: &**w, forKeyPath: &*load];
         }
     });
 }
