@@ -543,7 +543,29 @@ export function BrowseLanding({
       on it comes back as the DOM control it stands for. */
   const native = nativeDeckHere && narrow && tabs.ready && somewhere && !editing;
   const nativeTab = tabs.current.id;
-  const nativeKey = `${folded}|${ink}|${pageLoading}|${failed?.reason ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}`;
+  /** **The DOM deck's own layout is read again when it changes** (UX-38
+      §4): 取消 put the editor away while the keyboard was still up, the
+      deck was `display: none` under it (`app.css`, the deck steps aside
+      for the keyboard), the reading came back empty, and nothing read it
+      again when the keyboard went — the native deck was gone. Any change
+      of the deck's box is a reading now. */
+  const [laid, setLaid] = useState(0);
+  useEffect(() => {
+    if (!native) return;
+    const bar = document.querySelector<HTMLElement>("[data-session-bar]");
+    const deck = bar?.querySelector<HTMLElement>("[data-session-deck]");
+    if (!bar) return;
+    let first = true;
+    const ro = new ResizeObserver(() => {
+      // The observer's first call is the box as it already is.
+      if (first) first = false;
+      else setLaid((n) => n + 1);
+    });
+    ro.observe(bar);
+    if (deck) ro.observe(deck);
+    return () => ro.disconnect();
+  }, [native, nativeTab]);
+  const nativeKey = `${folded}|${ink}|${pageLoading}|${failed?.reason ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}|${laid}`;
   useEffect(() => {
     if (!nativeDeckHere || !narrow) return;
     if (!native) {
