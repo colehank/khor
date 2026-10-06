@@ -31,6 +31,7 @@ import { useNarrow } from "@/hooks/use-narrow";
 import { RowMenu } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
+import { pathDrag } from "@/lib/path-drag";
 import { cn } from "@/lib/utils";
 import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
 
@@ -283,6 +284,8 @@ export function FilesPane({
                   <button
                     type="button"
                     data-dir={e.name}
+                    // Dragged onto a terminal, the path (item 60).
+                    {...pathDrag(here ? null : machine, full)}
                     onClick={() => onPath(full)}
                     // Raised to the floor here rather than on the row
                     // around it: **this button is the target** — the row
@@ -356,6 +359,7 @@ export function FilesPane({
                   <RowMenu items={actions(full, false)}>
                   <button
                     type="button"
+                    {...pathDrag(here ? null : machine, full)}
                     onClick={() => onFile(full)}
                     // **The name wears the letter's ink** (工作区批⑦):
                     // 「颜色与字符表示」 is one decoration in two

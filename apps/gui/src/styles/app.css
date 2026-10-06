@@ -2391,7 +2391,7 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 [data-pill-slot]:has([data-pill-progress]) [data-pill-status] {
   display: none;
 }
-[data-pill-progress] > span {
+[data-pill-progress=""] > span {
   animation: pill-progress 1.4s var(--ease-move) infinite;
 }
 @keyframes pill-progress {

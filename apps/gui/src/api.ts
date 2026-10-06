@@ -1807,8 +1807,11 @@ export const notifyFinished = (title: string, body: string) => call<null>("notif
     quoting happens in the registry — shell syntax is not something a
     face should be assembling, and one wrong escape turns a filename
     into a command (`khor_gui_core::term::term_drop`). */
-export const termDrop = (id: string, paths: string[]) =>
-  call<null>("term_drop", { id, paths });
+export const termDrop = (id: string, paths: string[], from?: string | null) =>
+  call<null>("term_drop", { id, paths, from: from ?? null });
+/** How far this terminal's drop has got, 0 to 1, or `null` when none is
+    under way (item 60): what its pill's line draws. */
+export const termDropProgress = (id: string) => call<number | null>("term_drop_progress", { id });
 export const termResize = (id: string, cols: number, rows: number) =>
   call<null>("term_resize", { id, cols, rows });
 export const termLeave = (id: string) => call<null>("term_leave", { id });

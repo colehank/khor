@@ -201,6 +201,11 @@ usage = """
   ls <机器> [路径]       看那台机器的目录（不给路径=它的主目录）
   pull <机器> <文件> [目录]
                         把那台机器上的文件拉过来（默认落当前目录）
+  drop [-m 机器] <文件> [--to session | --on 机器]
+                        把文件放到 session 所在的机器上能读到的地方，打印
+                        它在那边的绝对路径。同一台机器不复制，原样打印；
+                        别的机器落在那边的 ~/khor-drop/，由那台机器直接去
+                        拉（重名加 -2、-3），超过 200 MB 不收
   git [status <机器> <仓库路径> | diff <机器> <文件>]
                         那台机器上的 git 仓库，只读。status 头一行是分支，
                         往下每行一个和 HEAD 不一样的文件（M 改过 /
@@ -2274,6 +2279,12 @@ chat-ended = "这段对话已结束"
 # version would send somebody to upgrade a machine that was telling
 # them their file had changed.
 write-predates = "那台机器上的 khor 版本较旧，无法保存"
+# ── dropping a file onto a terminal (item 60, `khor_node::drops`) ──
+# The cap is the owner's, for now; the number rides in {0} so the
+# sentence never disagrees with the code.
+drop-too-big = "文件超过 {0} MB，暂不支持放进会话：{1}"
+drop-predates = "那台机器上的 khor 版本较旧，无法接收放进来的文件"
+drop-serve-gone = "本机的 khor 服务中途退出，文件没有放完"
 # VS Code on a machine (工作区批5). **Says what is missing, not what to
 # do about it**: khor does not ship VS Code and telling somebody to go
 # install it is not khor's sentence to write — the button simply is not

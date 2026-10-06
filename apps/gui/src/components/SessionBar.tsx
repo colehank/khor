@@ -552,11 +552,16 @@ export function PillSlot({
 }
 
 /** The progress line itself: a view portals one into the `progress` seat
-    while its tab reloads; the screen draws one for `loading`. */
-export function PillProgress() {
+    while its tab reloads; the screen draws one for `loading`. With a
+    `share` (item 60, a drop landing) it stands filled that far, 0 to 1,
+    instead of running. */
+export function PillProgress({ share }: { share?: number } = {}) {
   return (
-    <span data-pill-progress aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-progress-h overflow-hidden">
-      <span className="block h-full w-full origin-left bg-brand-strong" />
+    <span data-pill-progress={share ?? ""} aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-progress-h overflow-hidden">
+      <span
+        className="block h-full w-full origin-left bg-brand-strong"
+        style={share === undefined ? undefined : { transform: `scaleX(${share})` }}
+      />
     </span>
   );
 }

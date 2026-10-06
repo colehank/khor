@@ -1745,6 +1745,7 @@ export default function App() {
                 },
               },
               loading: tabAct(id)?.busy ?? false,
+              share: tabAct(id)?.share,
             }
           : { id, label: id, face: null, path: "", again };
       }),

@@ -124,6 +124,13 @@ usage: khor <verb>
   pull <machine> <file> [directory]
                         pulls a file over from that machine (defaults
                         to the current directory)
+  drop [-m <machine>] <file> [--to <session> | --on <machine>]
+                        puts a file where the session's machine can
+                        read it and prints its absolute path there. On
+                        the same machine nothing is copied and the path
+                        is printed as is; another machine pulls it into
+                        its ~/khor-drop/ itself (a taken name gets -2,
+                        -3), and refuses files over 200 MB
   git [status <machine> <repo path> | diff <machine> <file>]
                         that machine's git repo, read-only. status's
                         first line is the branch; each line after is a
@@ -1351,6 +1358,9 @@ git-refused = "That machine declined this git request: {0}"
 git-history-satellite = "This machine is reached over ssh — khor can't read its git history"
 chat-ended = "This conversation has ended"
 write-predates = "That machine's khor is too old — it can't save the file back"
+drop-too-big = "The file is over {0} MB, too big to drop into a session for now: {1}"
+drop-predates = "That machine's khor is too old to take a dropped file"
+drop-serve-gone = "This machine's khor service stopped partway; the file was not dropped"
 no-vscode = "That machine has no VS Code"
 code-predates = "That machine's khor is too old — it can't open VS Code"
 cant-start-vscode = "Can't start VS Code for the web: {0}"

@@ -180,6 +180,9 @@ export type TabFace = {
   /** **The pill reloads**: a 2-pt line runs along its own bottom edge
       while a join, a load or a read is under way (UX-33 §2; UX-31's slot). */
   loading?: boolean;
+  /** **How far a drop onto this tab has landed** (item 60), 0 to 1: the
+      same line, filled this far rather than running. `loading` wins. */
+  share?: number;
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -925,10 +928,16 @@ export function TabStrip({
               {/* **Progress under the pill itself** (UX-33 §2): a 2-pt line
                   along this pill's bottom edge while it reloads, Safari's
                   manner; nothing when done. */}
-              {f.loading && (
+              {f.loading ? (
                 <span data-tab-progress aria-hidden="true" className="pointer-events-none absolute inset-x-3 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-fill">
                   <span className="block h-full w-[55%] animate-tab-load rounded-full bg-brand-strong" />
                 </span>
+              ) : (
+                f.share !== undefined && (
+                  <span data-tab-progress={f.share} aria-hidden="true" className="pointer-events-none absolute inset-x-3 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-fill">
+                    <span className="block h-full rounded-full bg-brand-strong" style={{ width: `${Math.round(f.share * 100)}%` }} />
+                  </span>
+                )
               )}
             </div>
           );

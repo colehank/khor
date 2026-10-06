@@ -185,6 +185,16 @@ impl PullNote {
     }
 }
 
+/// A drop's progress as [`Response::DropFile`] carries it.
+fn drop_answer(s: crate::drops::DropState) -> Response {
+    Response::DropFile {
+        moved: s.moved,
+        total: s.total,
+        dest: s.dest,
+        done: s.done,
+    }
+}
+
 /// What a [`Response::Versions`] carries: the documents whose versions
 /// differ, with the far version, and the readings that changed.
 type VersionsAnswer = (Vec<(String, String)>, Vec<(String, serde_bytes::ByteBuf)>);
@@ -673,6 +683,11 @@ pub fn dial_budget_seconds() -> u64 {
 /// 50 Mbit/s road at 300 ms, and well inside the 32 streams a far
 /// machine answers at once (`STREAMS_AT_ONCE`).
 const PULL_AHEAD: u64 = 8;
+
+/// How often a drop's asker asks how far it got (`Node::drop_file`):
+/// often enough for a progress line to move, and each ask is one small
+/// frame.
+pub const DROP_ASK_EVERY: Duration = Duration::from_millis(250);
 
 /// How long the direct roads get to themselves before the relay road is
 /// opened alongside them (`Node::dial_with`).
@@ -1987,6 +2002,15 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::DropOn {
+                token,
+                from,
+                path,
+                to,
+            } => match self.drop_step_with(ep, &token, &from, &path, &to).await {
+                Ok(state) => ipc::Reply::DropFile { state },
+                Err(why) => ipc::Reply::Refused { why },
+            },
         }
     }
 
@@ -3528,6 +3552,21 @@ impl Node {
                 let host = self.my_satellite_host(&sat)?;
                 let (at_ms, digest) = self.sat_write(&sat, &host, &path, &was, &bytes).await?;
                 Ok(Response::Wrote { at_ms, digest })
+            }
+            Request::DropFile { token, from, path } => {
+                // The machine that has the file, by the id the asker
+                // named; this one when it is this one — then nothing
+                // moves, as on the asker's side.
+                if from == self.device_str() {
+                    return Ok(drop_answer(crate::drops::DropState::there(&path)));
+                }
+                let channel = self
+                    .devices_loaded()?
+                    .doc
+                    .get(&from)
+                    .map(|d| d.name)
+                    .ok_or_else(|| msg::machine_left_table(&from))?;
+                self.drop_here(ep, &token, &channel, &path).await.map(drop_answer)
             }
             Request::FetchPath { path, offset } => {
                 // Off the reactor with Ls, for Ls's reason.
@@ -6670,9 +6709,25 @@ impl Node {
         path: &str,
         dir: &std::path::Path,
     ) -> Result<(u64, std::path::PathBuf), String> {
+        let fell = crate::files::landing(path, dir)?;
+        self.pull_into(ep, machine, path, fell, None).await
+    }
+
+    /// The pull into a landing already chosen. `job`, when given, is a
+    /// drop's (`crate::drops`): it is told the bytes as they land, the
+    /// size is held to [`crate::drops::CAP`] from the first slice, and
+    /// a pull that stops for any reason leaves no part file behind —
+    /// a drop is asked again by dropping again, not carried on.
+    async fn pull_into(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        path: &str,
+        fell: crate::files::Landing,
+        job: Option<&crate::drops::Job>,
+    ) -> Result<(u64, std::path::PathBuf), String> {
         use std::io::Write;
         let (channel, home) = self.resolve(machine)?;
-        let fell = crate::files::landing(path, dir)?;
         if home == self.device() {
             let (path, part) = (path.to_owned(), fell.part.clone());
             let moved = tokio::task::spawn_blocking(move || -> Result<u64, String> {
@@ -6724,7 +6779,15 @@ impl Node {
                     tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &part))
                         .await
                         .map_err(|e| e.to_string())
-                        .and_then(|r| r);
+                        .and_then(|r| r)
+                        // scp says no size before it lands, so a drop's cap
+                        // is held after.
+                        .and_then(|moved| match job {
+                            Some(_) if moved > crate::drops::CAP => {
+                                Err(msg::drop_too_big(crate::drops::CAP >> 20, path))
+                            }
+                            _ => Ok(moved),
+                        });
                 return match moved {
                     Ok(moved) => {
                         std::fs::rename(&fell.part, &fell.dest).map_err(|e| e.to_string())?;
@@ -6830,6 +6893,15 @@ impl Node {
                     }) => {
                         match contract {
                             None => {
+                                if let Some(job) = job {
+                                    if total > crate::drops::CAP {
+                                        break 'pull Err(Stop::Spoiled(msg::drop_too_big(
+                                            crate::drops::CAP >> 20,
+                                            path,
+                                        )));
+                                    }
+                                    job.total.store(total, std::sync::atomic::Ordering::Relaxed);
+                                }
                                 contract = Some((total, at_ms));
                                 let _ = PullNote {
                                     machine: dial_to.id.clone(),
@@ -6861,6 +6933,9 @@ impl Node {
                             break 'pull Err(Stop::Spoiled(e.to_string()));
                         }
                         offset += bytes.len() as u64;
+                        if let Some(job) = job {
+                            job.moved.store(offset, std::sync::atomic::Ordering::Relaxed);
+                        }
                         if offset >= total {
                             break 'pull Ok(offset);
                         }
@@ -6880,13 +6955,175 @@ impl Node {
                 let _ = std::fs::remove_file(&note_path);
                 Ok((total - resumed_from.min(total), fell.dest))
             }
-            Err(Stop::Unreached(why)) => Err(why),
-            Err(Stop::Spoiled(why)) => {
+            Err(Stop::Unreached(why)) if job.is_none() => Err(why),
+            Err(Stop::Unreached(why) | Stop::Spoiled(why)) => {
                 let _ = std::fs::remove_file(&fell.part);
                 let _ = std::fs::remove_file(&note_path);
                 Err(why)
             }
         }
+    }
+
+    /// Where a file dropped onto a terminal lands on this machine
+    /// (`crate::drops::dir_for`).
+    pub fn drop_dir(&self) -> std::path::PathBuf {
+        crate::drops::dir_for(self.root())
+    }
+
+    /// **Puts a file where a session's machine can read it** (item 60,
+    /// `crate::drops`) and answers its absolute path there. `from` is
+    /// the machine that has the file and `to` the session's machine,
+    /// each by name, the empty name meaning this machine; `path` is
+    /// absolute on `from`. `on` is told how far it got after every ask.
+    ///
+    /// The same machine moves nothing. Otherwise the file lands in `to`'s
+    /// drop directory, pulled there by `to` itself — this machine only
+    /// orders it and asks after it, every [`DROP_ASK_EVERY`], until it
+    /// has landed or failed.
+    pub async fn drop_file(
+        &self,
+        from: &str,
+        path: &str,
+        to: &str,
+        mut on: impl FnMut(&crate::drops::DropState),
+    ) -> Result<String, String> {
+        let token = fresh_hex()?;
+        let op = || ipc::Op::DropOn {
+            token: token.clone(),
+            from: from.to_owned(),
+            path: path.to_owned(),
+            to: to.to_owned(),
+        };
+        let from_serve = |reply: Result<ipc::Reply, String>| match reply? {
+            ipc::Reply::DropFile { state } => Ok(state),
+            ipc::Reply::Refused { why } => Err(why),
+            other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+        };
+        // Through the resident when there is one: it holds the key's one
+        // endpoint, and a pull this machine runs must outlive this call.
+        // Else on an endpoint of this call's, kept for the whole drop.
+        let mut ep = None;
+        let mut answer = match self.via_serve(op()).await {
+            Some(reply) => from_serve(reply),
+            None => {
+                let e = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let first = self.drop_step_with(&e, &token, from, path, to).await;
+                ep = Some(e);
+                first
+            }
+        };
+        let outcome = loop {
+            match answer {
+                Ok(state) => {
+                    on(&state);
+                    if state.done {
+                        break Ok(state.dest);
+                    }
+                }
+                Err(why) => break Err(why),
+            }
+            tokio::time::sleep(DROP_ASK_EVERY).await;
+            answer = match &ep {
+                Some(e) => self.drop_step_with(e, &token, from, path, to).await,
+                None => match self.via_serve(op()).await {
+                    Some(reply) => from_serve(reply),
+                    None => Err(msg::drop_serve_gone().into()),
+                },
+            };
+        };
+        if let Some(ep) = ep {
+            ep.close().await;
+        }
+        outcome
+    }
+
+    /// One ask of a drop on an endpoint the caller owns: started by the
+    /// first, read by every later one with the same token.
+    async fn drop_step_with(
+        &self,
+        ep: &iroh::Endpoint,
+        token: &str,
+        from: &str,
+        path: &str,
+        to: &str,
+    ) -> Result<crate::drops::DropState, String> {
+        let (src_channel, src) = self.resolve_or_here(from)?;
+        let (dst_channel, dst) = self.resolve_or_here(to)?;
+        if src == dst {
+            return Ok(crate::drops::DropState::there(path));
+        }
+        if dst == self.device() {
+            return self.drop_here(ep, token, &src_channel, path).await;
+        }
+        let req = Request::DropFile {
+            token: token.to_owned(),
+            from: src.hex(),
+            path: path.to_owned(),
+        };
+        match self.ask(ep, &dst_channel, &req).await? {
+            Response::DropFile {
+                moved,
+                total,
+                dest,
+                done,
+            } => Ok(crate::drops::DropState {
+                moved,
+                total,
+                dest,
+                done,
+            }),
+            Response::Refused { why } if why.contains("DropFile") => Err(msg::drop_predates().into()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// A drop that lands **here**: the job this token names, started on
+    /// the first ask — a pull off `channel` into this machine's drop
+    /// directory, on a task of its own in a resident so it outlives the
+    /// ask (a one-shot runs it inside the first ask, which then answers
+    /// the end).
+    async fn drop_here(
+        &self,
+        ep: &iroh::Endpoint,
+        token: &str,
+        channel: &str,
+        path: &str,
+    ) -> Result<crate::drops::DropState, String> {
+        if !crate::once::valid(token) {
+            return Err(msg::create_token_bad().into());
+        }
+        let (job, fresh) = crate::drops::job(token);
+        if fresh {
+            match self.me() {
+                Some(node) => {
+                    let (ep, channel, path, job) = (ep.clone(), channel.to_owned(), path.to_owned(), job.clone());
+                    tokio::spawn(async move { node.run_drop(&ep, &channel, &path, &job).await });
+                }
+                None => self.run_drop(ep, channel, path, &job).await,
+            }
+        }
+        job.state()
+    }
+
+    /// One drop's pull, start to end, told to its job.
+    async fn run_drop(&self, ep: &iroh::Endpoint, channel: &str, path: &str, job: &crate::drops::Job) {
+        let landed = async {
+            let fell = crate::drops::landing(&self.drop_dir(), &crate::drops::name_of(path)?)?;
+            let part = fell.part.clone();
+            let out = self.pull_into(ep, channel, path, fell, Some(job)).await;
+            if out.is_err() {
+                // Whatever stopped it, before the slices or during them:
+                // the part file reserved for it goes too.
+                let _ = std::fs::remove_file(PullNote::path_of(&part));
+                let _ = std::fs::remove_file(&part);
+            }
+            out
+        }
+        .await;
+        job.finish(landed.map(|(_, dest)| dest.display().to_string()));
     }
 
     /// The offer behind `transfer/<msg_id>`, driving the sync axis once

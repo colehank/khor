@@ -15,6 +15,10 @@ export type TabAct = {
   kind: TabActKind;
   /** The act is under way (a join, a load): the pill's line runs. */
   busy?: boolean;
+  /** Something with a known size is landing for this tab (item 60, a
+      file dropped on a terminal): the pill's line is filled this far,
+      0 to 1, while `busy` is not. */
+  share?: number;
   run: () => void;
 };
 

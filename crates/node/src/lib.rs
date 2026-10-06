@@ -21,6 +21,7 @@ pub mod config;
 pub mod cwd;
 pub mod day;
 pub mod doctor;
+pub mod drops;
 pub mod face;
 pub mod favicon;
 pub mod files;

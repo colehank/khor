@@ -5593,8 +5593,8 @@ for line in sys.stdin:
   //      **The path is the whole point, and it is the one thing that
   //      cannot be worked out on this side.** beta knows the file as
   //      `<scratch>/drop-me.txt`; typing that into a shell running on
-  //      alpha names nothing. So the drop sends the file, has alpha
-  //      take it in, and pastes the path alpha answered with — which
+  //      alpha names nothing. So the drop has alpha pull the file (item
+  //      60's road), and pastes the path alpha answered with — which
   //      is checked here against alpha's actual disk, not against a
   //      path this script also computed.
   //
@@ -5613,7 +5613,9 @@ for line in sys.stdin:
   const dropSrc = join(SCRATCH, "drop-me.txt");
   const dropBody = `farbox-24o-${process.pid}`;
   writeFileSync(dropSrc, dropBody);
-  const farFiles = join(A, ".khor/chat/alpha/files");
+  // Item 60: alpha pulls it into its drop directory, `<home>/khor-drop`
+  // for a scratch home (`khor_node::drops::dir_for`), under its own name.
+  const farFiles = join(A, "khor-drop");
   await page.evaluate(
     async ([port, id, paths]) => {
       const r = await fetch(`http://127.0.0.1:${port}/term_drop`, {
@@ -5629,7 +5631,7 @@ for line in sys.stdin:
   //      says the far machine pulled rather than that this one asked.
   const landedName = await until("the file itself on alpha", 60_000, () => {
     const here = existsSync(farFiles) ? readdirSync(farFiles) : [];
-    return here.find((f) => f.endsWith("-drop-me.txt") && !f.startsWith("."));
+    return here.find((f) => f === "drop-me.txt");
   });
   const landedPath = join(farFiles, landedName);
   if (readFileSync(landedPath, "utf8") !== dropBody) {
