@@ -71,7 +71,12 @@ _khor_precmd() {
   _khor_cwd
   _khor_osc "133;A"
   # The input starts where the prompt ends; themes rebuild PS1 each time.
-  [[ $PS1 == *"133;B"* ]] || PS1="$PS1%{$(_khor_osc '133;B')%}"
+  # Prompt expansion reads `%`, and inside tmux the wrap names the pane
+  # (`KhorPane=%0`): written `%%` it arrives as itself.
+  if [[ $PS1 != *"133;B"* ]]; then
+    local b=$(_khor_osc '133;B')
+    PS1="$PS1%{${b//\%/%%}%}"
+  fi
   # tmux's own prompt mark goes in the prompt itself: one printed here
   # lands on a line the prompt's drawing then clears, and tmux keeps the
   # mark on the line (Kitty's zsh integration marks inside PS1 too).

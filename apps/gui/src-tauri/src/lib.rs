@@ -1052,9 +1052,11 @@ fn term_key(id: String, keys: String) -> Result<(), String> {
 ///
 /// `from` is the machine the files are on when they came from a listing
 /// of another machine's disk (item 60); absent, they are this machine's.
+/// `into` is the shell's current directory for 「放到当前目录」 (part 5);
+/// absent, they land in that machine's `~/khor-drop`.
 #[tauri::command]
-async fn term_drop(id: String, paths: Vec<String>, from: Option<String>) -> Result<(), String> {
-    off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref())).await
+async fn term_drop(id: String, paths: Vec<String>, from: Option<String>, into: Option<String>) -> Result<(), String> {
+    off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref(), into.as_deref())).await
 }
 
 /// How far a terminal's drop has got, for its pill's line (item 60):
@@ -2987,6 +2989,30 @@ async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// A file picked on the phone, as bytes (item 60 part 3): the raw request
+/// body, its name in a header. Staged where this machine's node serves
+/// it by path, for the terminal's `term_drop`; answers the path here.
+#[tauri::command]
+async fn term_drop_stage(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("term_drop_stage takes the file's bytes as its body".to_owned());
+    };
+    let Some(name) = request
+        .headers()
+        .get("x-khor-name")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| khor_gui_core::percent_decoded(v).unwrap_or_else(|| v.to_owned()))
+    else {
+        return Err("term_drop_stage needs the x-khor-name header".to_owned());
+    };
+    let bytes = bytes.clone();
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::term::term_drop_stage(&Node::root_from_env(), &name, &mut bytes.as_slice())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Files this machine already has (a drop, a picker's paths), put where
 /// the agent conversation's machine keeps files (round CHAT).
 #[tauri::command]
@@ -4314,6 +4340,7 @@ pub fn run() {
             pick_and_send,
             chat_put,
             chat_put_paths,
+            term_drop_stage,
             agents,
             agents_known,
             agents_known_taken,

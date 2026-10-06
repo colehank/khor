@@ -159,6 +159,46 @@ pub fn name_of(path: &str) -> Result<String, String> {
         .ok_or_else(|| khor_catalog::msg::not_a_file_path(path))
 }
 
+/// The directory a drop was asked into (item 60 part 5): absolute, and
+/// a directory that is there — never made for the asker.
+pub fn named_dir(dir: &str) -> Result<PathBuf, String> {
+    let p = Path::new(dir);
+    if !p.is_absolute() {
+        return Err(khor_catalog::msg::path_not_absolute(dir));
+    }
+    if !p.is_dir() {
+        return Err(khor_catalog::msg::no_such_dir(dir));
+    }
+    Ok(p.to_path_buf())
+}
+
+/// **A file on this machine copied into `dir`** (item 60 part 5): under
+/// the drop's naming and cap, through a part file that a failed copy
+/// does not leave behind. A file already in `dir` stays as it is and is
+/// the answer.
+pub fn copy_into(src: &Path, dir: &Path, job: &Job) -> Result<PathBuf, String> {
+    let same = |a: &Path, b: &Path| a.canonicalize().ok().zip(b.canonicalize().ok()).is_some_and(|(a, b)| a == b);
+    if src.parent().is_some_and(|p| same(p, dir)) {
+        return Ok(src.to_path_buf());
+    }
+    let size = std::fs::metadata(src).map_err(|e| e.to_string())?.len();
+    let name = name_of(&src.display().to_string())?;
+    if size > CAP {
+        return Err(khor_catalog::msg::drop_too_big(CAP >> 20, &name));
+    }
+    job.total.store(size, Ordering::Relaxed);
+    let at = landing(dir, &name)?;
+    let copied = std::fs::copy(src, &at.part)
+        .map_err(|e| e.to_string())
+        .and_then(|_| std::fs::rename(&at.part, &at.dest).map_err(|e| e.to_string()));
+    if let Err(why) = copied {
+        let _ = std::fs::remove_file(&at.part);
+        return Err(why);
+    }
+    job.moved.store(size, Ordering::Relaxed);
+    Ok(at.dest)
+}
+
 /// `~/khor-drop` for the machine's own store; `<root>/khor-drop` for any
 /// other (a scratch home, a test's), so no test and no scratch node ever
 /// writes into the person's own.

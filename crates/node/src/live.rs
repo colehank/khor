@@ -1942,7 +1942,17 @@ impl LiveKind {
                     // row says what tmux says that pane runs and where it
                     // stands, as an unattached tmux row does. A pane that
                     // marked has a directory (`OSC 7` at every prompt).
-                    let pane = self.dir_of(&out[k].id).and_then(|d| crate::commands::read_pane(&d));
+                    let saved = self.dir_of(&out[k].id).and_then(|d| crate::commands::read_saved(&d));
+                    let pane = saved.as_ref().and_then(|s| s.pane.clone());
+                    // The pane in front never marked (item 65): the face
+                    // says why its history is empty, as for a khor
+                    // shell's tmux client. Unknown is not unmarked.
+                    let pane_unmarked = pane.as_ref().is_some_and(|p| {
+                        saved
+                            .as_ref()
+                            .and_then(|s| s.marked_panes.as_ref())
+                            .is_some_and(|m| !m.contains(p))
+                    });
                     let r = &mut out[k];
                     let marked = r.doing.as_ref().is_some_and(|d| d.running || d.command.is_some() || d.cwd.is_some());
                     if !marked {
@@ -1957,6 +1967,7 @@ impl LiveKind {
                             command: running,
                             cwd,
                             title,
+                            pane_unmarked,
                             ..Default::default()
                         });
                     }
@@ -2024,10 +2035,20 @@ impl LiveKind {
                     // commands in the history, and the face says why.
                     // Unknown (no pane named, a host older than the list)
                     // is not unmarked.
-                    let marked = self
-                        .dir_of(&out[k].id)
-                        .and_then(|d| crate::commands::read_marked_panes(&d));
-                    let pane_unmarked = pane.is_some_and(|p| marked.is_some_and(|m| !m.contains(&p)));
+                    let saved = self.dir_of(&out[k].id).and_then(|d| crate::commands::read_saved(&d));
+                    let marked = saved.as_ref().and_then(|s| s.marked_panes.as_ref());
+                    let pane_unmarked = pane.as_ref().is_some_and(|p| marked.is_some_and(|m| !m.contains(p)));
+                    // **A pane that marks says its own reading** (item
+                    // 64): the command as typed, how it ended, where it
+                    // stands. Its ledger saying a command runs while tmux
+                    // sees the pane at its prompt is an end lost out of
+                    // sight (tmux drops a hidden pane's marks): tmux's
+                    // reading then, as for a pane that never marked.
+                    let own_pane = pane
+                        .as_ref()
+                        .and_then(|p| saved.and_then(|mut s| s.panes.remove(p)))
+                        .filter(|d| d.running || d.command.is_some() || d.cwd.is_some())
+                        .filter(|d| !d.running || running.is_some());
                     // The shell's own marks saw it start the client and
                     // nothing since: its command is `tmux`, and its last
                     // line is the client's status bar. What it shows is
@@ -2035,15 +2056,24 @@ impl LiveKind {
                     // notice stay the shell's.
                     let r = &mut out[k];
                     let own = r.doing.take().unwrap_or_default();
+                    let front = match own_pane {
+                        Some(d) => khor_core::Doing {
+                            cwd: d.cwd.or(cwd).or(own.cwd),
+                            ..d
+                        },
+                        None => khor_core::Doing {
+                            running: running.is_some(),
+                            command: running,
+                            cwd: cwd.or(own.cwd),
+                            ..Default::default()
+                        },
+                    };
                     r.doing = Some(khor_core::Doing {
-                        running: running.is_some(),
-                        command: running,
-                        cwd: cwd.or(own.cwd),
                         title: own.title,
                         notice: own.notice,
                         notice_ms: own.notice_ms,
                         pane_unmarked,
-                        ..Default::default()
+                        ..front
                     });
                     r.state = StateStamp {
                         state: word,
@@ -4115,7 +4145,7 @@ mod tests {
         assert!(!last.contains('◖'), "the prompt's glyphs: {last:?}");
         assert_eq!(last, tilde(&here));
         let saved = |doing: khor_core::Doing| {
-            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, recent: Vec::new(), pane: None, marked_panes: None })
+            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, ..Default::default() })
         };
         saved(khor_core::Doing { cwd: Some("/w/proj".into()), ..Default::default() });
         assert_eq!(row().last.as_deref(), Some("/w/proj"));
@@ -4149,17 +4179,19 @@ mod tests {
         let row = sid(T_ID);
         k.register(&row, "shell", "work", None, None).unwrap();
         let dir = k.dir_of(&row).unwrap();
-        let ledger = |doing: khor_core::Doing, pane: &str| {
+        let ledger_marked = |doing: khor_core::Doing, pane: &str, marked: Option<&[&str]>| {
             crate::commands::write_saved(
                 &dir,
                 &crate::commands::Saved {
                     doing,
                     recent: Vec::new(),
                     pane: Some(pane.into()),
-                    marked_panes: None,
+                    marked_panes: marked.map(|m| m.iter().map(|p| p.to_string()).collect()),
+                    ..Default::default()
                 },
             )
         };
+        let ledger = |doing: khor_core::Doing, pane: &str| ledger_marked(doing, pane, None);
         let doing = || {
             let rows = k.rows_listed(|_| 0, |s| s == T_ID);
             let r = rows.iter().find(|r| r.id == row).expect("the tmux row");
@@ -4177,9 +4209,21 @@ mod tests {
             cwd: Some("/w/m".into()),
             ..Default::default()
         };
-        ledger(marked, "%2");
+        ledger(marked.clone(), "%2");
         let d = doing();
         assert_eq!((d.command.as_deref(), d.cwd.as_deref()), (Some("make"), Some("/w/m")));
+        assert!(!d.pane_unmarked, "a host older than the list: unknown");
+
+        // Item 65: the pane in front marks nothing while another does:
+        // the row says so, as a khor shell's tmux client does.
+        ledger_marked(khor_core::Doing::default(), "%1", Some(&["%2"]));
+        let d = doing();
+        assert!(d.pane_unmarked, "%1 never marked");
+        assert_eq!((d.command.as_deref(), d.cwd.as_deref()), (None, Some("/w/one")), "tmux's reading still");
+        ledger_marked(khor_core::Doing::default(), "%1", Some(&[]));
+        assert!(doing().pane_unmarked, "no pane marked yet");
+        ledger_marked(marked, "%2", Some(&["%2"]));
+        assert!(!doing().pane_unmarked, "the pane in front marks");
     }
 
     #[test]
@@ -4575,6 +4619,7 @@ mod tests {
                 recent: Vec::new(),
                 pane: None,
                 marked_panes: None,
+                ..Default::default()
             },
         );
 
@@ -4608,7 +4653,7 @@ mod tests {
             "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%11\x1fwork\n",
             "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fvim\x1f/w/two\x1f%12\x1fwork\n",
         );
-        let row_with = |tag: &str, front: Option<&str>, marked: Option<&[&str]>| {
+        let row_reading = |tag: &str, front: Option<&str>, marked: Option<&[&str]>, own: Option<(&str, khor_core::Doing)>| {
             let root = tmp(&format!("seat-shell-tmux-front-{tag}"));
             let tmux = crate::adaptor::tmux::fake_tmux(&format!("front-{tag}"), panes);
             let host = FakeHost::up();
@@ -4642,6 +4687,7 @@ mod tests {
                     recent: Vec::new(),
                     pane: None,
                     marked_panes: marked.map(|m| m.iter().map(|p| p.to_string()).collect()),
+                    panes: own.into_iter().map(|(p, d)| (p.to_owned(), d)).collect(),
                 },
             );
             fs::write(dir.join("last.txt"), "work | 0:zsh | 12:00").unwrap();
@@ -4652,6 +4698,7 @@ mod tests {
             assert_eq!(rows[0].last, None, "{tag}: not the client's status bar");
             rows[0].doing.clone().unwrap()
         };
+        let row_with = |tag: &str, front: Option<&str>, marked: Option<&[&str]>| row_reading(tag, front, marked, None);
 
         let doing = row_with("busy", Some("%12"), None);
         assert_eq!(doing.command.as_deref(), Some("vim"), "the front pane's program, not tmux");
@@ -4672,6 +4719,46 @@ mod tests {
         assert!(row_with("unmarked", Some("%12"), Some(&["%11"])).pane_unmarked, "vim's pane never marked");
         assert!(row_with("none-yet", Some("%12"), Some(&[])).pane_unmarked);
         assert!(!row_with("marked", Some("%11"), Some(&["%11"])).pane_unmarked, "the front pane marks");
+
+        // Item 64: a front pane that marks says its own reading, the
+        // command as typed and how it ended, not tmux's.
+        let ran = khor_core::Doing {
+            command: Some("make -j8 test".into()),
+            started_ms: 4,
+            ended_ms: Some(9),
+            exit: Some(2),
+            cwd: Some("/w/three".into()),
+            ..Default::default()
+        };
+        let doing = row_reading("own", Some("%11"), Some(&["%11"]), Some(("%11", ran.clone())));
+        assert_eq!(doing.command.as_deref(), Some("make -j8 test"));
+        assert!(!doing.running);
+        assert_eq!((doing.ended_ms, doing.exit), (Some(9), Some(2)), "how it ended");
+        assert_eq!(doing.cwd.as_deref(), Some("/w/three"), "where the pane said it stands");
+        assert!(!doing.pane_unmarked);
+
+        let editing = khor_core::Doing {
+            command: Some("vim notes.md".into()),
+            running: true,
+            started_ms: 7,
+            cwd: Some("/w/two".into()),
+            ..Default::default()
+        };
+        let doing = row_reading("own-running", Some("%12"), Some(&["%11", "%12"]), Some(("%12", editing.clone())));
+        assert_eq!(doing.command.as_deref(), Some("vim notes.md"), "as typed, not tmux's `vim`");
+        assert!(doing.running);
+        assert_eq!(doing.started_ms, 7);
+
+        // The ledger says a command runs while tmux sees the pane at its
+        // prompt: the end was lost out of sight, so tmux's reading.
+        let doing = row_reading("lost-end", Some("%11"), Some(&["%11"]), Some(("%11", editing)));
+        assert_eq!(doing.command, None, "tmux sees zsh at its prompt");
+        assert!(!doing.running);
+        assert_eq!(doing.cwd.as_deref(), Some("/w/one"));
+
+        // Another pane's reading is not the front pane's.
+        let doing = row_reading("other", Some("%12"), Some(&["%11", "%12"]), Some(("%11", ran)));
+        assert_eq!(doing.command.as_deref(), Some("vim"), "tmux's reading of %12");
     }
 
     /// **khor's own terminal.** A shell khor hosts wears the claude

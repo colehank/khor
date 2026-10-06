@@ -150,9 +150,48 @@ fn a_tmux_typed_in_a_khor_shell_keeps_each_panes_commands_apart() {
         (d.command.as_deref(), d.running, d.cwd.as_deref()),
         (Some("exit"), true, Some("/s3/w/start")),
         "the shell's own context, back at its prompt where it typed exit"
-    );    // Step 2: which panes send marks; `zsh -f` in %2 sent none.
+    );
+    // Item 63: every mark through tmux names its pane whole (khor.zsh
+    // writes `%%` into the prompt, so prompt expansion no longer eats
+    // `%0` and the BEL after it), and the input mark B arrives named by
+    // each marking pane.
+    let tag = b"]633;P;KhorPane=";
+    let named = |at: usize| {
+        let rest = &bytes[at + tag.len()..];
+        let digits = rest.iter().skip(1).take_while(|b| b.is_ascii_digit()).count();
+        rest.first() == Some(&b'%') && digits > 0 && rest.get(1 + digits) == Some(&0x07)
+    };
+    let wraps: Vec<usize> = (0..bytes.len().saturating_sub(tag.len()))
+        .filter(|&i| bytes[i..].starts_with(tag))
+        .collect();
+    let torn = wraps.iter().filter(|&&i| !named(i)).count();
+    assert_eq!(torn, 0, "{torn} of {} pane tags torn", wraps.len());
+    for pane in ["%0", "%1"] {
+        let b = [format!("KhorPane={pane}").as_bytes(), b"\x07\x1b]133;B"].concat();
+        assert!(
+            bytes.windows(b.len()).any(|w| w == b.as_slice()),
+            "pane {pane}'s input mark arrived"
+        );
+    }
+    // Step 2: which panes send marks; `zsh -f` in %2 sent none.
     assert_eq!(
         ledger.saved().marked_panes,
         Some(vec!["%0".to_owned(), "%1".to_owned()])
+    );
+    // Item 64: each marking pane's own reading, for the row to say while
+    // that pane is in front.
+    let panes: Vec<(String, Option<String>, bool, Option<i32>, Option<String>)> = ledger
+        .saved()
+        .panes
+        .into_iter()
+        .map(|(p, d)| (p, d.command, d.running, d.exit, d.cwd))
+        .collect();
+    let some = |s: &str| Some(s.to_owned());
+    assert_eq!(
+        panes,
+        [
+            ("%0".to_owned(), some("echo one-c"), false, Some(0), some("/s3/w/three")),
+            ("%1".to_owned(), some("sleep 2; echo two-b"), false, Some(0), some("/s3/w/two")),
+        ]
     );
 }

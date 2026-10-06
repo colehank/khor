@@ -954,21 +954,133 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> 
 /// `Node::drop_file` — nothing moves when the files are already on the
 /// session's machine; otherwise that machine pulls them into its
 /// `~/khor-drop` itself, and [`term_drop_progress`] reads how far it got.
-pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>) -> Result<(), String> {
+///
+/// **A file a face staged** ([`term_drop_stage`]) is read by nobody once
+/// the drop is over, landed or not, and goes then. Staged for a session
+/// on this machine, it is not pasted where it waits but moved into this
+/// machine's `~/khor-drop`, where a picked file lands on any machine.
+///
+/// **`into`, the shell's current directory** (item 60 part 5, 「放到当前
+/// 目录」): the files land there on the session's machine in place of
+/// its `~/khor-drop`, and a file already on that machine is copied
+/// there.
+pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>) -> Result<(), String> {
     let n = Node::open(root.to_path_buf())?;
     let to = n.far_machine(&SessionId(id.to_owned()))?.unwrap_or_default();
     let from = from.unwrap_or_default();
-    let here = if from.is_empty() && to.is_empty() {
-        paths.to_vec()
+    let here = if from.is_empty() && to.is_empty() && into.is_none() {
+        paths
+            .iter()
+            .map(|p| match staged_dir(root, p) {
+                Some(_) => land_staged(root, p),
+                None => Ok(p.clone()),
+            })
+            .collect::<Result<Vec<_>, _>>()
     } else {
-        drop_blocking(root, id, from, &to, paths)?
+        drop_blocking(root, id, from, &to, into, paths)
     };
+    for p in paths {
+        if let Some(dir) = staged_dir(root, p) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+    let here = here?;
     let text = here
         .iter()
         .map(|p| shell_quote(p))
         .collect::<Vec<_>>()
         .join(" ");
     term_paste(id, &text)
+}
+
+/// Where a face's picked files wait to be dropped ([`term_drop_stage`]):
+/// under this machine's store, which its node serves by path like any
+/// other file (`FetchPath`) — the session's machine pulls from here.
+fn stage_root(root: &Path) -> std::path::PathBuf {
+    root.join(".khor").join("uploads").join("drop")
+}
+
+/// How long a staged file is kept for a drop that never came (a face
+/// that staged one file of three and then failed on the next).
+const STAGED_FOR: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// The staging directory `path` sits in, when it is a file
+/// [`term_drop_stage`] made: exactly `<stage root>/<dir>/<name>`, with
+/// no `..` to climb out by, since that directory is deleted.
+fn staged_dir(root: &Path, path: &str) -> Option<std::path::PathBuf> {
+    let p = Path::new(path);
+    use std::path::Component;
+    if p.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)) {
+        return None;
+    }
+    let dir = p.parent()?;
+    (dir.parent()? == stage_root(root)).then(|| dir.to_path_buf())
+}
+
+/// **A file picked in a face, put where this machine's node serves it**
+/// (item 60 part 3): the phone's photo or file arrives as bytes (a web
+/// view has no path to name), and a drop needs a path. Written under
+/// [`stage_root`] in a directory of its own, under its own name — the
+/// name the session's machine lands it under. Capped at the drop's cap
+/// as it is written, and a refused or broken write leaves nothing.
+/// Answers the path, for [`term_drop`].
+pub fn term_drop_stage(root: &Path, name: &str, body: &mut dyn std::io::Read) -> Result<String, String> {
+    use std::io::Write;
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let base = stage_root(root);
+    // Whatever a drop never came for, from an hour ago and more.
+    if let Ok(rd) = std::fs::read_dir(&base) {
+        for e in rd.flatten() {
+            let old = e
+                .metadata()
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age > STAGED_FOR);
+            if old {
+                let _ = std::fs::remove_dir_all(e.path());
+            }
+        }
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let dir = base.join(format!("{stamp}-{}-{}", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let name = khor_node::transfer::safe_name(name);
+    let path = dir.join(&name);
+    let written = (|| -> Result<(), String> {
+        let mut f = std::fs::File::create(&path).map_err(|e| e.to_string())?;
+        let mut taken: u64 = 0;
+        let mut buf = vec![0u8; 1 << 16];
+        loop {
+            let n = body.read(&mut buf).map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Ok(());
+            }
+            taken += n as u64;
+            if taken > khor_node::drops::CAP {
+                return Err(khor_catalog::msg::drop_too_big(khor_node::drops::CAP >> 20, &name));
+            }
+            f.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        }
+    })();
+    if let Err(why) = written {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(why);
+    }
+    Ok(path.display().to_string())
+}
+
+/// A staged file for a session on this machine: moved into its
+/// `~/khor-drop` under the drop's naming (a taken name suffixed).
+fn land_staged(root: &Path, staged: &str) -> Result<String, String> {
+    let name = khor_node::drops::name_of(staged)?;
+    let at = khor_node::drops::landing(&khor_node::drops::dir_for(root), &name)?;
+    let moved = std::fs::rename(staged, &at.dest).map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&at.part);
+    moved.map(|()| at.dest.display().to_string())
 }
 
 /// Each terminal's drop under way, as the share of it landed (0 to 1).
@@ -987,8 +1099,9 @@ pub fn term_drop_progress(id: &str) -> Option<f32> {
 /// The files of one drop put on the session's machine, one after
 /// another, answering where each landed over there. Its own thread and
 /// runtime, for [`reach_blocking`]'s reason.
-fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, paths: &[String]) -> Result<Vec<String>, String> {
+fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, into: Option<&str>, paths: &[String]) -> Result<Vec<String>, String> {
     let (root, id, from, to, paths) = (root.to_path_buf(), id.to_owned(), from.to_owned(), to.to_owned(), paths.to_vec());
+    let into = into.map(str::to_owned);
     plock(dropping()).insert(id.clone(), 0.0);
     let gone = id.clone();
     let out = std::thread::spawn(move || -> Result<Vec<String>, String> {
@@ -1000,7 +1113,7 @@ fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, paths: &[String]) 
         let count = paths.len().max(1) as f32;
         let mut landed = Vec::with_capacity(paths.len());
         for (i, p) in paths.iter().enumerate() {
-            let at = rt.block_on(n.drop_file(&from, p, &to, |s| {
+            let at = rt.block_on(n.drop_file(&from, p, &to, into.as_deref(), |s| {
                 let part = if s.total > 0 { s.moved as f32 / s.total as f32 } else { 0.0 };
                 plock(dropping()).insert(id.clone(), (i as f32 + part.min(1.0)) / count);
             }))?;
@@ -1715,5 +1828,88 @@ mod burst_tests {
             "the face ends on the screen the program drew"
         );
         assert!(screen.screen().contents().contains("DONE"));
+    }
+}
+
+#[cfg(test)]
+mod stage_tests {
+    use super::*;
+    use std::io::Read;
+
+    fn fresh(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("khor-stage-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    /// **A picked file waits under its own name in a directory of its
+    /// own** (item 60 part 3): the name the session's machine lands it
+    /// under, and the directory a drop deletes when it is over.
+    #[test]
+    fn a_staged_file_keeps_its_name_in_a_directory_of_its_own() {
+        let root = fresh("name");
+        let a = term_drop_stage(&root, "IMG 0001.HEIC", &mut &b"photo"[..]).unwrap();
+        let b = term_drop_stage(&root, "IMG 0001.HEIC", &mut &b"other"[..]).unwrap();
+        assert_ne!(a, b, "the same name twice is two files");
+        for (p, bytes) in [(&a, "photo"), (&b, "other")] {
+            let p = Path::new(p);
+            assert_eq!(p.file_name().unwrap(), "IMG 0001.HEIC");
+            assert_eq!(p.parent().unwrap().parent().unwrap(), stage_root(&root));
+            assert_eq!(std::fs::read_to_string(p).unwrap(), bytes);
+        }
+        // A name is not a path.
+        let c = term_drop_stage(&root, "../../.ssh/x", &mut &b"z"[..]).unwrap();
+        assert_eq!(Path::new(&c).file_name().unwrap(), "sshx");
+        assert!(staged_dir(&root, &c).is_some());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Only a file the stage made is taken for one: never a path that
+    /// climbs out of it, nor one beside it, whose directory a drop
+    /// would otherwise delete.
+    #[test]
+    fn only_a_staged_file_is_taken_for_one() {
+        let root = fresh("which");
+        let a = term_drop_stage(&root, "a.txt", &mut &b"a"[..]).unwrap();
+        assert_eq!(staged_dir(&root, &a).as_deref(), Path::new(&a).parent());
+        let base = stage_root(&root);
+        let climbs = format!("{}/x/../../../a.txt", base.display());
+        assert_eq!(staged_dir(&root, &climbs), None);
+        assert_eq!(staged_dir(&root, &base.join("a.txt").display().to_string()), None);
+        assert_eq!(staged_dir(&root, &root.join("x/a.txt").display().to_string()), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Over the drop's cap: refused with the cap in the sentence, and
+    /// nothing of it left behind.
+    #[test]
+    fn over_the_cap_is_refused_and_leaves_nothing() {
+        let root = fresh("cap");
+        let why = term_drop_stage(&root, "big.mov", &mut std::io::repeat(7).take(khor_node::drops::CAP + 1)).unwrap_err();
+        assert!(why.contains(&(khor_node::drops::CAP >> 20).to_string()), "{why}");
+        assert_eq!(std::fs::read_dir(stage_root(&root)).unwrap().count(), 0, "no staged file, no directory");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// For a session on this machine a staged file is moved into its
+    /// drop directory, a taken name suffixed as any drop's is.
+    #[test]
+    fn a_staged_file_for_a_session_here_lands_in_the_drop_directory() {
+        let root = fresh("here");
+        let a = term_drop_stage(&root, "a b.png", &mut &b"one"[..]).unwrap();
+        let b = term_drop_stage(&root, "a b.png", &mut &b"two"[..]).unwrap();
+        let drop_dir = khor_node::drops::dir_for(&root);
+        assert_eq!(land_staged(&root, &a).unwrap(), drop_dir.join("a b.png").display().to_string());
+        assert_eq!(land_staged(&root, &b).unwrap(), drop_dir.join("a b-2.png").display().to_string());
+        let mut names: Vec<_> = std::fs::read_dir(&drop_dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["a b-2.png", "a b.png"], "no part file left");
+        assert_eq!(std::fs::read(drop_dir.join("a b-2.png")).unwrap(), b"two");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -23,7 +23,8 @@
 // the program's cursor-key mode and the latches change it, is
 // `lib/term-keys`. Paste reads the clipboard and hands the text to xterm's
 // own paste (`Terminal.paste`), which brackets it when the program asked
-// for that (DECSET 2004) — the same path ⌘V takes on a Mac.
+// for that (DECSET 2004) — the same path ⌘V takes on a Mac; a picture
+// with no text goes down the drop's road instead (`lib/term-paste`).
 //
 // **Ctrl and Alt are latches.** Pressed, one waits for the next key — from
 // this row, the sheet or the soft keyboard (`TerminalPane` applies them to
@@ -40,20 +41,22 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, typ
 import { createPortal } from "react-dom";
 import type { Terminal } from "@xterm/xterm";
 
-import { IconChevronDown, IconChevronRight, IconChevronUp, IconGrip, IconKeyboard, IconKeyRow, IconMore } from "@/components/icons";
+import { IconAttach, IconChevronDown, IconChevronRight, IconChevronUp, IconGrip, IconKeyboard, IconKeyRow, IconMore } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
 import { GROUPS, KEYS, KEY_BY_NAME, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
-import { keyPanelGone, swapToKeyboard, toggleKeyPanel, useKeyPanel } from "@/lib/key-panel";
+import { keyPanelGone, swapToKeyboard, toggleKeyPanel, useKeyPanel, useKeyPanelKind } from "@/lib/key-panel";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { useHeldKey } from "@/lib/key-repeat";
+import { pasteInto } from "@/lib/term-paste";
 import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { cn } from "@/lib/utils";
 import { CursorKey } from "@/views/CursorPad";
+import { TermFiles, type FilesRoad } from "@/views/TermFiles";
 
 const NO_MODS: Mods = { ctrl: false, alt: false };
 
@@ -74,20 +77,19 @@ const heldOf = (k: KeyDef, mods: Mods) => (k.name === "ctrl" && mods.ctrl) || (k
     anything else is sent under the latches, which let go first —
     `TerminalPane` reads them for whatever xterm hands out, and these
     bytes are already in their modified form. */
-function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void) {
+function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void, images: (files: File[]) => void) {
   if (k.name === "ctrl" || k.name === "alt") {
     onMods({ ...mods, [k.name]: !mods[k.name] });
     return;
   }
+  if (k.name === "attach") {
+    // 📎 (UX-41): the files panel where the keyboard is.
+    if (t.textarea) toggleKeyPanel(t.textarea, "files");
+    return;
+  }
   if (k.name === "paste") {
-    // The clipboard can refuse (no permission, a WebKit paste callout
-    // dismissed); then nothing is typed, which is the true answer.
-    void navigator.clipboard
-      ?.readText()
-      .then((text) => {
-        if (text) t.paste(text);
-      })
-      .catch(() => {});
+    // A picture with no text goes down the drop's road (`lib/term-paste`).
+    pasteInto(t, images);
     return;
   }
   const bytes = k.send?.(t, mods);
@@ -118,7 +120,7 @@ function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: 
       {...hold}
       className={cn(CAP_BOX, k.repeats && "select-none [-webkit-touch-callout:none]", className)}
     >
-      <span className={capFace(held)}>{k.cap}</span>
+      <span className={capFace(held)}>{k.name === "attach" ? <IconAttach className="size-5" /> : k.cap}</span>
     </button>
   );
 }
@@ -127,9 +129,12 @@ export function TermKeys({
   term,
   mods,
   onMods,
+  files,
 }: {
   /** The terminal the keys go into. Null until it has opened. */
   term: RefObject<Terminal | null>;
+  /** What 📎's panel puts files in through (`TermFiles`). */
+  files: FilesRoad;
   /** The latches — held by `TerminalPane`, because a key from the soft
       keyboard has to be able to take them too. */
   mods: Mods;
@@ -140,7 +145,7 @@ export function TermKeys({
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
     // A repeat after the first key: the latches have let go already.
-    if (t) pressKey(k, t, under, under === mods ? onMods : () => {});
+    if (t) pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles);
   };
   return (
     <div
@@ -158,7 +163,7 @@ export function TermKeys({
         ))}
       </div>
       <CursorKey term={term} mods={mods} onMods={onMods} />
-      <KeyPanel term={term} mods={mods} onMods={onMods} />
+      <KeyPanel term={term} mods={mods} onMods={onMods} files={files} />
     </div>
   );
 }
@@ -177,13 +182,26 @@ export function TermKeys({
  * ⚠️ 墓碑 (2026-10-03): a bottom sheet (`KeySheet`), which took the focus
  * — the keyboard dropped under it, and its drop closed the sheet.
  */
-function KeyPanel({ term, mods, onMods }: { term: RefObject<Terminal | null>; mods: Mods; onMods: (m: Mods) => void }) {
-  const up = useKeyPanel();
+function KeyPanel({
+  term,
+  mods,
+  onMods,
+  files,
+}: {
+  term: RefObject<Terminal | null>;
+  mods: Mods;
+  onMods: (m: Mods) => void;
+  files: FilesRoad;
+}) {
+  const raised = useKeyPanel();
+  const kind = useKeyPanelKind();
+  /** 「…」 is on only while the keys are the panel up (📎 has the files). */
+  const up = raised && kind === "keys";
   const [editing, setEditing] = useState(false);
   const field = () => term.current?.textarea ?? null;
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
-    if (t) pressKey(k, t, under, under === mods ? onMods : () => {});
+    if (t) pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles);
   };
   // The row gone (collapsed, the page left) takes the panel with it.
   useEffect(() => () => keyPanelGone(), []);
@@ -201,7 +219,7 @@ function KeyPanel({ term, mods, onMods }: { term: RefObject<Terminal | null>; mo
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => {
           const el = field();
-          if (el) toggleKeyPanel(el);
+          if (el) toggleKeyPanel(el, "keys");
         }}
         className={CAP_BOX}
       >
@@ -209,7 +227,7 @@ function KeyPanel({ term, mods, onMods }: { term: RefObject<Terminal | null>; mo
           <IconMore className="size-5" />
         </span>
       </button>
-      {up &&
+      {raised &&
         createPortal(
           <div
             data-key-panel
@@ -224,7 +242,9 @@ function KeyPanel({ term, mods, onMods }: { term: RefObject<Terminal | null>; mo
             // home indicator's room is its own, as a keyboard's is.
             className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--kb)] flex-col border-t bg-background font-sans text-foreground"
           >
-            {editing ? (
+            {kind === "files" ? (
+              <TermFiles road={files} />
+            ) : editing ? (
               <>
                 <div className="flex flex-none items-center gap-row px-row">
                   <span className="min-w-0 flex-1 text-body font-label">{gui.term_key_row}</span>

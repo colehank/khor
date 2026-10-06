@@ -142,26 +142,63 @@ extern "C-unwind" fn build_menu(this: &AnyObject, _cmd: Sel, builder: *mut AnyOb
     }
 }
 
-/// The chosen item, told to the page: `window.__khorEditMenu(id, text)`,
-/// with the pasteboard's text for 粘贴.
+/// The chosen item, told to the page: `window.__khorEditMenu(id, text,
+/// image)`, with the pasteboard's text for 粘贴, else its picture.
 fn pick(web: usize, id: &str) {
     // SAFETY: on the main thread (a menu action); `web` is the web view
     // the menu was built over, alive while its menu is on screen.
     unsafe {
-        let text = if id == "paste" {
-            let board: *mut AnyObject = msg_send![class!(UIPasteboard), generalPasteboard];
-            let s: *mut NSString = msg_send![board, string];
-            s.as_ref().map(|s| s.to_string())
+        let board: *mut AnyObject = if id == "paste" {
+            msg_send![class!(UIPasteboard), generalPasteboard]
         } else {
-            None
+            std::ptr::null_mut()
+        };
+        let text = board.as_ref().and_then(|b| {
+            let s: *mut NSString = msg_send![b, string];
+            s.as_ref().map(|s| s.to_string())
+        });
+        // No text: the first picture it holds, as its own bytes (item 60
+        // part 4; the page drops it). Text wins, as in iTerm2.
+        let image = match (&text, board.as_ref()) {
+            (None, Some(b)) => pasted_image(b),
+            _ => None,
         };
         let js = format!(
-            "window.__khorEditMenu && window.__khorEditMenu({}, {})",
+            "window.__khorEditMenu && window.__khorEditMenu({}, {}, {})",
             serde_json::to_string(id).unwrap_or_default(),
             serde_json::to_string(&text).unwrap_or_else(|_| "null".into()),
+            serde_json::to_string(&image).unwrap_or_else(|_| "null".into()),
         );
         let js = NSString::from_str(&js);
         let done: Option<&block2::Block<dyn Fn(*mut AnyObject, *mut AnyObject)>> = None;
         let _: () = msg_send![web as *mut AnyObject, evaluateJavaScript: &*js, completionHandler: done];
     }
+}
+
+/// The picture types 粘贴 takes off the pasteboard, as uniform type
+/// identifiers, with the type the page knows each by.
+const PICTURES: [(&str, &str); 4] = [
+    ("public.png", "image/png"),
+    ("public.jpeg", "image/jpeg"),
+    ("public.heic", "image/heic"),
+    ("com.compuserve.gif", "image/gif"),
+];
+
+/// The pasteboard's first picture as `{type, data}`, its bytes in base64
+/// (`NSData`'s own encoder), for `lib/term-paste`'s `pastedImage`.
+///
+/// # Safety
+/// Main thread; `board` is the general pasteboard.
+unsafe fn pasted_image(board: &AnyObject) -> Option<serde_json::Value> {
+    for (uti, mime) in PICTURES {
+        let uti = NSString::from_str(uti);
+        let data: *mut AnyObject = unsafe { msg_send![board, dataForPasteboardType: &*uti] };
+        let Some(data) = (unsafe { data.as_ref() }) else {
+            continue;
+        };
+        let b64: *mut NSString = unsafe { msg_send![data, base64EncodedStringWithOptions: 0usize] };
+        let b64 = unsafe { b64.as_ref() }?.to_string();
+        return Some(serde_json::json!({ "type": mime, "data": b64 }));
+    }
+    None
 }

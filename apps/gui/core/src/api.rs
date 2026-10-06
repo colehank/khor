@@ -714,7 +714,8 @@ pub fn answer(
                 })
                 .unwrap_or_default();
             let from = args.get("from").and_then(|v| v.as_str());
-            crate::term::term_drop(root, &arg("id")?, &paths, from)?;
+            let into = args.get("into").and_then(|v| v.as_str());
+            crate::term::term_drop(root, &arg("id")?, &paths, from, into)?;
             Ok("null".to_owned())
         }
         "term_drop_progress" => to_json(&crate::term::term_drop_progress(&arg("id")?)),

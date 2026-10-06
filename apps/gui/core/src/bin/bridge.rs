@@ -99,11 +99,17 @@ fn main() {
         // is not UTF-8 and must never pass through a String. Same
         // shared body as the web face's `/api/upload`, so the two
         // faces cannot come to enforce different rules.
-        if cmd == "upload" || cmd == "chat_put" {
+        if cmd == "upload" || cmd == "chat_put" || cmd == "term_drop_stage" {
             // `chat_put`: the bytes of a file for an agent conversation,
             // put on the machine it runs on (round CHAT); `upload`: a
-            // `khor send` to a machine. One body route for both.
-            let outcome = if cmd == "chat_put" {
+            // `khor send` to a machine; `term_drop_stage`: a picked file
+            // waiting here for a terminal's drop (item 60 part 3). One
+            // body route for all three.
+            let outcome = if cmd == "term_drop_stage" {
+                khor_gui_core::drop_stage_args(&query)
+                    .ok_or_else(|| "term_drop_stage needs a name query arg".to_owned())
+                    .and_then(|name| khor_gui_core::term::term_drop_stage(&root, &name, req.as_reader()))
+            } else if cmd == "chat_put" {
                 khor_gui_core::chat_put_args(&query)
                     .ok_or_else(|| "chat_put needs id and name query args".to_owned())
                     .and_then(|(id, name)| {

@@ -124,13 +124,15 @@ usage: khor <verb>
   pull <machine> <file> [directory]
                         pulls a file over from that machine (defaults
                         to the current directory)
-  drop [-m <machine>] <file> [--to <session> | --on <machine>]
+  drop [-m <machine>] <file> [--to <session> | --on <machine>] [--into <dir>]
                         puts a file where the session's machine can
                         read it and prints its absolute path there. On
                         the same machine nothing is copied and the path
                         is printed as is; another machine pulls it into
                         its ~/khor-drop/ itself (a taken name gets -2,
-                        -3), and refuses files over 200 MB
+                        -3), and refuses files over 200 MB. --into lands
+                        it in that directory over there instead, copied
+                        there on the same machine too
   git [status <machine> <repo path> | diff <machine> <file>]
                         that machine's git repo, read-only. status's
                         first line is the branch; each line after is a
@@ -1933,6 +1935,13 @@ keys-group-function = "Function Keys"
 keys-edit-row = "Edit this row"
 term-key-row = "Terminal key row"
 key-keyboard = "Keyboard"
+key-attach-name = "Put files in the terminal"
+files-device = "Photos and files"
+files-land = "Lands in ~/khor-drop/ on the session's machine; the path goes in at the cursor"
+files-session = "This session"
+files-to-term = "Put in Terminal"
+files-to-cwd = "Put in Current Directory"
+drops-row = "Dropped In"
 term-reload = "Reload Terminal"
 page-back = "Previous page"
 page-forward = "Next page"

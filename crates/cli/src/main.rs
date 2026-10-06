@@ -1353,9 +1353,11 @@ fn pull(rest: &[String]) -> Result<(), String> {
 /// session, `--on` a machine outright; neither means this machine. The
 /// same machine moves nothing and prints the path as it is; another
 /// lands it in that machine's `~/khor-drop`, pulled there by that
-/// machine itself.
+/// machine itself. `--into` lands it in that directory over there
+/// instead (item 60 part 5), copied there on the same machine too.
 fn drop_verb(rest: &[String]) -> Result<(), String> {
     let (mut from, mut file, mut to, mut session) = (String::new(), None, String::new(), None);
+    let mut into = None;
     let mut rest = rest;
     while let Some((word, tail)) = rest.split_first() {
         match (word.as_str(), tail) {
@@ -1369,6 +1371,10 @@ fn drop_verb(rest: &[String]) -> Result<(), String> {
             }
             ("--to", [id, tail @ ..]) => {
                 session = Some(id.clone());
+                rest = tail;
+            }
+            ("--into", [dir, tail @ ..]) => {
+                into = Some(dir.clone());
                 rest = tail;
             }
             (path, tail) if file.is_none() && !path.starts_with('-') => {
@@ -1388,7 +1394,7 @@ fn drop_verb(rest: &[String]) -> Result<(), String> {
         }
         to = n.far_machine(&sid)?.unwrap_or_default();
     }
-    let dest = rt()?.block_on(n.drop_file(&from, &file, &to, |_| {}))?;
+    let dest = rt()?.block_on(n.drop_file(&from, &file, &to, into.as_deref(), |_| {}))?;
     println!("{dest}");
     Ok(())
 }

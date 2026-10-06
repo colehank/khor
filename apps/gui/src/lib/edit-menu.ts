@@ -3,12 +3,16 @@
 // 共享); the native side can (`src-tauri/src/edit_menu.rs`, the web view's
 // `buildMenu(with:)`). So the page says, while a selection is up, which
 // items the next menu carries, and the native side calls back here with
-// the one chosen — 粘贴 with the pasteboard's text, read natively, since
-// a page reading the clipboard outside a gesture gets iOS's own paste
-// prompt instead.
+// the one chosen — 粘贴 with the pasteboard's text (else its picture),
+// read natively, since a page reading the clipboard outside a gesture
+// gets iOS's own paste prompt instead.
 import { editMenu } from "@/api";
 
-export type EditItem = { id: string; title: string; run: (text?: string) => void };
+/** A picture iOS's pasteboard held for 粘贴 when it held no text: its
+    type and its bytes in base64 (item 60 part 4). */
+export type EditImage = { type: string; data: string };
+
+export type EditItem = { id: string; title: string; run: (text?: string, image?: EditImage) => void };
 
 let offered: EditItem[] = [];
 
@@ -21,8 +25,8 @@ export function offerEditMenu(items: EditItem[]) {
 
 declare global {
   interface Window {
-    __khorEditMenu?: (id: string, text?: string) => void;
+    __khorEditMenu?: (id: string, text?: string, image?: EditImage) => void;
   }
 }
 
-window.__khorEditMenu = (id, text) => offered.find((it) => it.id === id)?.run(text);
+window.__khorEditMenu = (id, text, image) => offered.find((it) => it.id === id)?.run(text, image ?? undefined);
