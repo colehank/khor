@@ -837,8 +837,10 @@ try {
       const gap = pane ? parseFloat(getComputedStyle(pane).getPropertyValue("--nav-gap")) || 0 : 0;
       const inset = pane ? parseFloat(getComputedStyle(pane).getPropertyValue("--gap-in")) || 0 : 0;
       const box = {
-        paneL: h ? px(h.left + gap - inset) : null,
-        paneR: h ? px(h.right - gap + inset) : null,
+        // Inside the column's own border (`clientLeft`), the capsule's
+        // inset in, the strip's own inset back out.
+        paneL: h ? px(h.left + pane.clientLeft + gap - inset) : null,
+        paneR: h ? px(h.right - (pane.offsetWidth - pane.clientWidth - pane.clientLeft) - gap + inset) : null,
         paneT: rr ? px(rr.bottom) : null,
         stripT: st ? px(st.top) : null,
         stripL: st ? px(st.left) : null,
@@ -1461,39 +1463,55 @@ try {
       fail(`probe dead: ⑥e the narrow face never listed ${rowWithBlocked}`);
     } else {
       await phone.locator(`[data-row="${rowWithBlocked}"] [data-row-open]`).tap();
-      // ⓪g **The front tab is the switch on the phone too**: since
-      // 2026-10-02 the narrow session page has the strip, in the bar at
-      // its foot (`components/SessionBar`), and its front tab does what
-      // the wide one does — hidden at first here too (a fresh profile),
-      // one tap opens it, one more (at the end of ⑥) puts it away. ⚠️
-      // 墓碑: until then the phone had no tabs and the name and face in
-      // the window's first row stood in (`[data-detail-header]
-      // [data-day-toggle]`).
-      const toggle = phone.locator('[data-session-bar] [data-tab][data-on="true"] [data-tab-open]');
+      // ⓪g **The pill opens the sheet on the phone** (UX-30 §6): the
+      // narrow session page's deck pill (`components/SessionBar`) opens
+      // the session's 附栏 as a bottom sheet — the same seats and ruler
+      // the wide face docks beside the terminal — hidden at first (a
+      // fresh profile); the ruler's tap expands the day inside the sheet,
+      // one more folds it; Escape puts the sheet away (at the end of ⑥).
+      // ⚠️ 墓碑: the front tab's press showed the band at the foot
+      // (2026-10-02); before that the name and face in the window's first
+      // row stood in (`[data-detail-header] [data-day-toggle]`).
+      const pill = phone.locator("[data-session-deck] button[data-deck-title]");
       const seated = await (async () => {
         const end = Date.now() + 10_000;
         while (Date.now() < end) {
-          if ((await toggle.count()) === 1) return true;
+          if ((await pill.count()) === 1) return true;
           await sleep(100);
         }
         return false;
       })();
       await sleep(1_000);
-      const headTap = async () => {
-        const b = await toggle.boundingBox();
-        if (b) await phone.touchscreen.tap(b.x + 10, b.y + b.height / 2);
+      const sheetUp = (want) => {
+        const end = Date.now() + 2_000;
+        return (async () => {
+          while (Date.now() < end) {
+            if (((await phone.locator("[data-place-sheet]").count()) > 0) === want) return true;
+            await sleep(40);
+          }
+          return false;
+        })();
+      };
+      const rulerTap = async () => {
+        const b = await phone.locator("[data-place-sheet] [data-day-ruler]").boundingBox();
+        if (b) await phone.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
       };
       if (!seated) {
-        fail("⓪g the narrow session bar has no front tab to press — the front tab is the day's switch on the phone too");
+        fail("⓪g the narrow session deck has no pill to tap — the pill opens the session's 附栏 on the phone");
       } else {
         if ((await dayRows(phone)) !== 0) fail("⓪g a fresh phone draws a day row before anybody asked for it");
-        const was = await toggle.getAttribute("aria-expanded");
-        if (was !== "false") fail(`⓪g the narrow front tab says aria-expanded=${was} while the day is hidden`);
-        await headTap();
-        if (!(await waitRows(phone, true, 1_000))) fail("⓪g a tap on the narrow front tab drew no day row");
-        const now = await toggle.getAttribute("aria-expanded");
-        if (now !== "true") fail(`⓪g the narrow front tab says aria-expanded=${now} with the day shown`);
-        console.log(`⓪g narrow front tab: aria-expanded ${was} → tap → ${now}`);
+        const b = await pill.boundingBox();
+        await phone.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
+        if (!(await sheetUp(true))) fail("⓪g a tap on the pill opened no sheet");
+        await sleep(600);
+        const ruler = await phone.locator("[data-place-sheet] [data-day-ruler-line]").boundingBox();
+        if (!ruler) fail("⓪g the sheet holds no ruler under its capsule");
+        else if (Math.abs(ruler.height - 2) > 0.5) fail(`⓪g the sheet's ruler is ${ruler.height}px tall — two points`);
+        await rulerTap();
+        if (!(await waitRows(phone, true, 1_000))) fail("⓪g a tap on the sheet's ruler drew no day row");
+        const now = await phone.locator("[data-place-sheet] [data-day-ruler]").getAttribute("aria-expanded");
+        if (now !== "true") fail(`⓪g the sheet's ruler says aria-expanded=${now} with the day shown`);
+        console.log(`⓪g narrow: pill → sheet, ruler ${JSON.stringify(ruler)} → tap → ${now}`);
       }
       const end = Date.now() + 25_000;
       let pruns = [];
@@ -1537,10 +1555,12 @@ try {
         }
       }
       if (seated) {
-        // ⓪g …and one more tap puts it away.
+        // ⓪g …and one more tap folds it; Escape puts the sheet away.
         await sleep(500);
-        await headTap();
-        if (!(await waitRows(phone, false, 1_000))) fail("⓪g a second tap on the narrow front tab left the day row up");
+        await rulerTap();
+        if (!(await waitRows(phone, false, 1_000))) fail("⓪g a second tap on the sheet's ruler left the day row up");
+        await phone.keyboard.press("Escape");
+        if (!(await sheetUp(false))) fail("⓪g Escape did not put the sheet away");
       }
     }
     if (phoneThrew.length) fail(`⑥ the narrow page threw: ${phoneThrew.join(" | ")}`);

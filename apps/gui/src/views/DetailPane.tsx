@@ -17,7 +17,7 @@ import { setDayShown, useDayShown } from "@/hooks/use-day-shown";
 import { YIELD_MS } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import { ChatView } from "@/views/ChatView";
-import { DAY_ROW_ID, DayStrip, daySwitch, dayHasRecord, type Day } from "@/views/DayStrip";
+import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
 
 /** **The terminal arrives when a terminal does** (UX-6, the phone's first
@@ -300,11 +300,6 @@ export function DetailPane({
       face it is the front tab's (`App`), and on the narrow one the head
       below is that tab's stand-in and wears it. One answer for both. */
   const sw = day === undefined ? null : daySwitch(day, shown, () => setDayShown(!shown));
-  /** Whether the band's row stands under the tabs: asked for, and either
-      on its way (the skeleton) or a day with a record. Never an empty
-      row — that was the blank band (`DayStrip`'s 「Hidden until asked
-      for」). */
-  const drawn = row !== null && day !== undefined && shown && (day === null || dayHasRecord(day));
   /** A tap on the narrow head's face or name — the name's double-click
       still renames (`useSinglePress`). */
   const pressHead = useSinglePress(() => sw?.toggle?.());
@@ -626,17 +621,10 @@ export function DetailPane({
           the tab that opens it is under the session there, so the band
           floats over the session's last lines, fading upward out of the
           paper — the same seat of no height, on the other edge. */}
-      {drawn && inBar && (
-        <div className="relative z-30 h-0 flex-none">
-          <div
-            data-detail-day
-            id={DAY_ROW_ID}
-            className="pointer-events-none absolute inset-x-0 bottom-0 bg-linear-to-t from-(--day-under) from-65% to-transparent"
-          >
-            <DayStrip runs={day ?? null} />
-          </div>
-        </div>
-      )}
+      {/* ⚠️ 墓碑 (UX-30): in the bar's screen the day hung at the foot,
+          over the session's last lines, from the pill's press
+          (2026-10-02). The pill opens the session's sheet now, and the
+          day is its ruler (`DayRuler`, `SessionPlaceSheet`). */}
     </section>
   );
 }

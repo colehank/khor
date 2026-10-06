@@ -30196,11 +30196,11 @@ try {
       }
     }
 
-    // ── p. the terminal pill opens the session's directory (UX-17): one
-    //       sheet, 目录 first — the listing at the shell's directory (OSC
-    //       7), else where the session started — and 日志, the 24 hours;
-    //       the last tab kept per session. A conversation's title is not a
-    //       button: it opens nothing. ──
+    // ── p. the terminal pill opens the session's 附栏 as a sheet (UX-17
+    //       → UX-30 §6): the five seats and the ruler, 最近 first; 工作区
+    //       is the listing at the shell's directory (OSC 7), else where
+    //       the session started; the seat is kept per session. Every
+    //       session's pill opens it, a conversation's too. ──
     {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await wait(300);
@@ -30214,9 +30214,10 @@ try {
           await wait(600);
           return page.evaluate(() => ({
             sheet: document.querySelectorAll("[data-place-sheet]").length,
-            on: document.querySelector('[data-place-tab][aria-checked="true"], [data-place-tab][data-state="on"], [data-place-tab][aria-pressed="true"]')?.getAttribute("data-place-tab") ?? null,
-            dir: document.querySelectorAll("[data-place-sheet] [data-place-dir]").length,
-            log: document.querySelectorAll("[data-place-sheet] [data-place-log]").length,
+            seats: [...document.querySelectorAll("[data-place-sheet] [data-col-seat]")].map((e) => e.dataset.colSeat).join(" "),
+            on: document.querySelector('[data-place-sheet] [data-col-seat][data-on="true"]')?.getAttribute("data-col-seat") ?? null,
+            ruler: document.querySelectorAll("[data-place-sheet] [data-day-ruler]").length,
+            page: document.querySelectorAll("[data-place-sheet] [data-side-page]").length,
           }));
         };
         const shut = async () => {
@@ -30224,24 +30225,25 @@ try {
           await until(2_000, async () => (await count("[data-place-sheet]")) === 0);
         };
         const first = await sheet();
+        await press('[data-place-sheet] [data-col-seat="workspace"]');
+        await wait(600);
         const lsFirst = askedLs.map((a) => a.path);
-        await press('[data-place-tab="log"]');
-        await wait(300);
-        const log = await page.evaluate(() => document.querySelectorAll("[data-place-sheet] [data-place-log]").length);
         await shut();
         const kept = await sheet();
-        await press('[data-place-tab="dir"]');
         await shut();
         await program("\x1b]7;file://gate/tmp/elsewhere\x07");
         const moved = await sheet();
+        await wait(300);
         const lsMoved = askedLs.map((a) => a.path);
         await shut();
-        console.log(`bar p · first ${shown(first)} listed ${shown(lsFirst)}; 日志 ${log}; reopened ${shown(kept)}; after OSC 7 ${shown(moved)} listed ${shown(lsMoved)}`);
-        if (first.sheet !== 1 || first.on !== "dir" || first.dir !== 1) fail(`bar p · the pill opened ${shown(first)} — one sheet, 目录 first`);
-        if (!lsFirst.includes("/home/gate/work")) fail(`bar p · 目录 listed ${shown(lsFirst)} — where the session started (/home/gate/work), no OSC 7 yet`);
-        if (log !== 1) fail("bar p · 日志 drew no 24-hour view");
-        if (kept.on !== "log" || kept.log !== 1) fail(`bar p · reopened, the sheet is on ${shown(kept.on)} — the last tab is kept per session`);
-        if (!lsMoved.includes("/tmp/elsewhere")) fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 目录 listed ${shown(lsMoved)}`);
+        console.log(`bar p · first ${shown(first)}; 工作区 listed ${shown(lsFirst)}; reopened ${shown(kept)}; after OSC 7 ${shown(moved)} listed ${shown(lsMoved)}`);
+        if (first.sheet !== 1 || first.seats !== "recent workspace browser machine quota" || first.ruler !== 1 || first.page !== 1) {
+          fail(`bar p · the pill opened ${shown(first)} — one sheet, the five seats and the ruler (UX-30 §6)`);
+        }
+        if (first.on !== "recent") fail(`bar p · a fresh session's sheet lands on ${shown(first.on)} — 最近 is the landing`);
+        if (!lsFirst.includes("/home/gate/work")) fail(`bar p · 工作区 listed ${shown(lsFirst)} — where the session started (/home/gate/work), no OSC 7 yet`);
+        if (kept.on !== "workspace") fail(`bar p · reopened, the sheet is on ${shown(kept.on)} — the seat is kept per session`);
+        if (!lsMoved.includes("/tmp/elsewhere")) fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 工作区 listed ${shown(lsMoved)}`);
       }
       // ── q. a cold start opens the seat, never a pushed page (UX-14 §7):
       //       the place left was a workspace open on the workspaces
@@ -30265,8 +30267,11 @@ try {
       if (!(await openRow(chatRow.id))) {
         fail("probe dead: bar p · the conversation never opened");
       } else {
+        // A conversation's pill opens its 附栏 too (UX-30 §6; ⚠️ 墓碑
+        // UX-17: it was not a button, the sheet being the terminal's
+        // directory).
         const btn = await count("[data-session-deck] button[data-deck-title]");
-        if (btn !== 0) fail(`bar p · a conversation's pill title is a button (${btn}) — it opens nothing, so it is not drawn as one`);
+        if (btn !== 1) fail(`bar p · a conversation's pill title is not a button (${btn}) — every session's pill opens its 附栏`);
       }
     }
 

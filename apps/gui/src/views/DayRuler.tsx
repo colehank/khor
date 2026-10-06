@@ -76,8 +76,10 @@ export function DayRuler({ runs, open, onToggle }: { runs: Day; open: boolean; o
           // The band's axis is the ruler's: the strip keeps its own `gap-in`
           // inset, so the panel adds the rest of the capsule's `nav-gap`.
           className={cn(
-            "absolute inset-x-0 top-full z-30 flex max-h-[60dvh] flex-col overflow-y-auto border-b bg-card px-[calc(var(--nav-gap)-var(--gap-in))] pb-in",
-            "[--day-under:var(--card)]",
+            // On the ground it hangs over: the column's `card`, the
+            // phone sheet's `popover` (`--side-ground`, set by each).
+            "absolute inset-x-0 top-full z-30 flex max-h-[60dvh] flex-col overflow-y-auto border-b bg-(--side-ground) px-[calc(var(--nav-gap)-var(--gap-in))] pb-in",
+            "[--day-under:var(--side-ground)]",
           )}
         >
           <DayStrip runs={runs} />

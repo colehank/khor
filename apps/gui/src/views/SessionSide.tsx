@@ -114,13 +114,10 @@ export function SessionSide({
   children?: ReactNode;
 }) {
   const box = useRef<HTMLDivElement | null>(null);
-  const capsule = useRef<HTMLElement>(null);
   const setBox = (el: HTMLDivElement | null) => {
     box.current = el;
     boxRef?.(el);
   };
-  // The chosen seat slides to the one pressed (F7.2, `lib/travel`).
-  useTravel("side", () => capsule.current, seat);
 
   // The drag paints through the box's own style each move — a poll-driven
   // re-render mid-drag would repaint a stale width over the live one —
@@ -205,7 +202,7 @@ export function SessionSide({
       data-session-side={session}
       data-col-seat-on={seat}
       aria-label={gui.session_side}
-      className="relative flex h-full min-h-0 flex-none flex-col border-l bg-card"
+      className="relative flex h-full min-h-0 flex-none flex-col border-l bg-card [--side-ground:var(--card)]"
       style={{ width: width === null ? "var(--session-side-w)" : `${width}px` }}
     >
       {/* The seam: a hit margin overhanging the border, taking no room. */}
@@ -222,6 +219,34 @@ export function SessionSide({
         onKeyDown={onKeyDown}
         className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize outline-none transition-colors hover:bg-border focus-visible:bg-ring"
       />
+      <SideBody seat={seat} onSeat={onSeat} ruler={ruler}>
+        {children}
+      </SideBody>
+    </NarrowBox>
+  );
+}
+
+/**
+ * The column's inside — the capsule, the ruler, the seat's page — which
+ * is also the phone's pill sheet (UX-30 §6: both faces share the
+ * components; `SessionPlaceSheet` mounts this in a bottom sheet).
+ */
+export function SideBody({
+  seat,
+  onSeat,
+  ruler,
+  children,
+}: {
+  seat: SideSeat;
+  onSeat: (seat: SideSeat) => void;
+  ruler?: ReactNode;
+  children?: ReactNode;
+}) {
+  const capsule = useRef<HTMLElement>(null);
+  // The chosen seat slides to the one pressed (F7.2, `lib/travel`).
+  useTravel("side", () => capsule.current, seat);
+  return (
+    <>
       {/* **The phone's five seats, at the top of the box** (UX-30 §2):
           one glass capsule across the column, the width the phone's bar
           keeps off its edges. */}
@@ -260,6 +285,6 @@ export function SessionSide({
       <SideSeatsProvider value={null}>
         <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
       </SideSeatsProvider>
-    </NarrowBox>
+    </>
   );
 }

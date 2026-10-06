@@ -101,7 +101,7 @@ import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
 import { type Day } from "@/views/DayStrip";
-import { DetailPane, isTerminal } from "@/views/DetailPane";
+import { DetailPane } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
 import { SIDE_ID, SessionSide } from "@/views/SessionSide";
 import { DayRuler } from "@/views/DayRuler";
@@ -2144,7 +2144,15 @@ export default function App() {
   const [sideBrowse, setSideBrowse] = useState<"list" | "detail">("detail");
   const [sideQuota, setSideQuota] = useState<"list" | "detail">("list");
   const [sideMachine, setSideMachine] = useState<{ device: string | null; screen: "list" | "detail" }>({ device: null, screen: "detail" });
-  const sideOn = !narrow && side.open && selectedRow !== null && sessions;
+  /** **The terminal pill opens the session's 附栏 as a sheet** (UX-17 →
+      UX-30 §6): the same seats and ruler, risen from the bottom. The
+      sheet's lifetime is this state; the seat is the session's memory. */
+  const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
+  /** The ruler, for the column and the phone's sheet alike (UX-30 §5). */
+  const sideRuler = (row: SessionRow) => (
+    <DayRuler runs={dayOf(row.id)} open={side.day} onToggle={() => setSessionSide(row.id, { day: !side.day })} />
+  );
+  const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
   const recent = useSideRecent(sideOn && side.seat === "recent");
   /** 最近's rows open in place (§4): a page in the column's browser, a
       workspace as the column's listing, a file as its file page. */
@@ -2264,7 +2272,7 @@ export default function App() {
         onWidth={(w) => setSessionSide(selectedRow.id, { w })}
         onClose={() => setSessionSide(selectedRow.id, { open: false })}
         boxRef={setDetailBox}
-        ruler={<DayRuler runs={dayOf(selectedRow.id)} open={side.day} onToggle={() => setSessionSide(selectedRow.id, { day: !side.day })} />}
+        ruler={sideRuler(selectedRow)}
       >
         {sideSeat()}
       </SessionSide>
@@ -2596,11 +2604,13 @@ export default function App() {
       bar; the session bar at its foot. */
   const fullScreen =
     inSession || (narrow && browses && morePage === null && screen === "detail") || (narrow && fullClaims > 0);
-  /** **The terminal pill opens the session's directory** (UX-17): where
-      its shell is now (the terminal's OSC 7 marks), else where it
-      started. Read at the tap, off the terminal on screen. */
-  const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
-  const terminalPill = selectedRow !== null && isTerminal(selectedRow);
+  /** **The terminal pill opens the sheet** (UX-17): the 工作区 seat at
+      the shell's directory now (the terminal's OSC 7 marks), else where
+      it started — read at the tap, off the terminal on screen. */
+  // Every session's pill opens its 附栏 (UX-30 §6 — the column stands
+  // beside a terminal and a conversation alike); ⚠️ 墓碑 (UX-17): the
+  // terminal's alone, for its directory.
+  const terminalPill = selectedRow !== null;
   const sessionScreen = (
     <SessionScreen
       faces={tabFaces}
@@ -2611,7 +2621,11 @@ export default function App() {
               const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
                 | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
                 | null;
-              setPlaceSheet({ dir: box?.__marks?.cwd() ?? selectedRow?.place ?? null });
+              const dir = box?.__marks?.cwd() ?? selectedRow?.place ?? null;
+              // The sheet's 工作区 seat stands where the shell is at the
+              // tap (UX-17's rule, kept): pointed afresh each time.
+              if (selectedRow) setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null });
+              setPlaceSheet({ dir });
             }
           : undefined
       }
@@ -2643,12 +2657,13 @@ export default function App() {
           key={selectedRow.id}
           open
           onOpenChange={(o) => !o && setPlaceSheet(null)}
-          session={selectedRow.id}
-          machine={selectedRow.home}
-          here={devices.find((d) => d.name === selectedRow.home)?.me ?? !selectedRow.source}
-          dir={placeSheet.dir}
-          day={dayOf(selectedRow.id)}
-        />
+          seat={side.seat}
+          onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
+          ruler={sideRuler(selectedRow)}
+          boxRef={setDetailBox}
+        >
+          {sideSeat()}
+        </SessionPlaceSheet>
       )}
     </SessionScreen>
   );
@@ -3274,7 +3289,8 @@ export default function App() {
           <div
             key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : screen}
             data-screen={morePage ? "more" : screen}
-            ref={setDetailBox}
+            // ⚠️ 墓碑 (UX-30): `ref={setDetailBox}` — the day's axis was this
+            // screen's; it is the pill sheet's now (`SessionPlaceSheet`).
             className="min-h-0 flex-1 overflow-hidden"
           >
             {/* A browsing landing is one screen either way — it has no
