@@ -227,15 +227,11 @@ export function SessionSide({
 export function SideBody({
   seat,
   onSeat,
-  today,
   foot = false,
   children,
 }: {
   seat: SideSeat;
   onSeat: (seat: SideSeat) => void;
-  /** The phone sheet's 「今天」 row (`DayToday`): where the day opens on
-      the phone, whose pill's tap is the sheet's (UX-36 §1). */
-  today?: ReactNode;
   /** **The seats at the foot** (UX-37 §4, the phone's sheet): one flat
       row on the screen's foot wearing the safe area, the page scrolling
       under it. Without it the capsule stands at the box's top (the wide
@@ -276,7 +272,6 @@ export function SideBody({
   if (foot) {
     return (
       <>
-        {today}
         {page}
         {/* ⚠️ 墓碑 (UX-30 §6 → UX-37 §4): on the phone the capsule stood
             at the sheet's top, and the deck stayed under the sheet. */}
@@ -308,7 +303,6 @@ export function SideBody({
           {seats}
         </nav>
       </div>
-      {today}
       {page}
     </>
   );

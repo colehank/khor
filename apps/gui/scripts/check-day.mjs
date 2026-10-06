@@ -1528,13 +1528,43 @@ try {
         await phone.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2);
         if (!(await sheetUp(true))) fail("⓪g a tap on the pill opened no sheet");
         await sleep(600);
-        const inSheet = await phone.locator("[data-place-sheet] [data-day-ruler], [data-place-sheet] [data-day-ruler-line]").count();
+        // The day's bar in 今天's row is the row's own (UX-37 §5); a ruler
+        // anywhere else in the sheet is UX-36's tombstone come back.
+        const inSheet = await phone.locator("[data-place-sheet] [data-day-ruler], [data-place-sheet] [data-day-ruler-line]:not([data-day-today] *)").count();
         if (inSheet !== 0) fail(`⓪g the sheet still draws ${inSheet} ruler(s) — the day hangs under the pill (UX-36)`);
+        // **今天 is 最近's first row** (UX-37 §5): above the rows, inside
+        // the seat's scroller, a bar at the band's height and the two
+        // totals; a tap opens the day in place, the rows moving down.
+        const today = await phone.evaluate(() => {
+          const row = document.querySelector("[data-place-sheet] [data-side-recent] [data-day-today-row]");
+          const list = document.querySelector("[data-place-sheet] [data-side-recent] [data-side-list]");
+          const bar = row?.querySelector("[data-day-ruler-line]")?.getBoundingClientRect();
+          const band = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--day-strip"));
+          return {
+            row: !!row,
+            first: !!row && !!list && row.getBoundingClientRect().bottom <= list.getBoundingClientRect().top + 0.5,
+            bar: bar ? Math.round(bar.height * 10) / 10 : null,
+            band,
+            totals: row?.querySelector("[data-day-totals]")?.textContent ?? null,
+            listTop: list ? Math.round(list.getBoundingClientRect().top) : null,
+          };
+        });
+        const totalsAt = Date.now() + 5_000;
+        while (today.totals === null && Date.now() < totalsAt) {
+          await sleep(200);
+          today.totals = await phone.locator("[data-place-sheet] [data-day-totals]").textContent().catch(() => null);
+        }
+        console.log(`⓪g narrow: 今天 in 最近 ${JSON.stringify(today)}`);
+        if (!today.row || !today.first) fail(`⓪g 今天 is not 最近's first row in the sheet (${JSON.stringify(today)}) — UX-37 §5`);
+        if (today.bar !== today.band) fail(`⓪g 今天's bar is ${today.bar} tall — the band's ${today.band} (UX-37 §5)`);
+        if (!/忙碌 .+ · 空闲 .+/.test(today.totals ?? "")) fail(`⓪g 今天's row says ${JSON.stringify(today.totals)} — 忙碌 · 空闲, counted at the minute (UX-37 §5)`);
         await rulerTap();
         if (!(await waitRows(phone, true, 1_000))) fail("⓪g a tap on the sheet's 「今天」 drew no day row");
         const now = await phone.locator("[data-place-sheet] [data-day-today]").getAttribute("aria-expanded");
         if (now !== "true") fail(`⓪g the sheet's 「今天」 says aria-expanded=${now} with the day shown`);
-        console.log(`⓪g narrow: pill line ${JSON.stringify(ruler)}; pill → sheet → 今天 → ${now}`);
+        const pushed = await phone.evaluate(() => Math.round(document.querySelector("[data-place-sheet] [data-side-recent] [data-side-list]")?.getBoundingClientRect().top ?? 0));
+        if (today.listTop !== null && pushed <= today.listTop) fail(`⓪g the day opened over 最近's rows (${today.listTop} → ${pushed}) — in place, the rows move down (UX-37 §5)`);
+        console.log(`⓪g narrow: pill line ${JSON.stringify(ruler)}; pill → sheet → 今天 → ${now}; rows ${today.listTop} → ${pushed}`);
       }
       const end = Date.now() + 25_000;
       let pruns = [];

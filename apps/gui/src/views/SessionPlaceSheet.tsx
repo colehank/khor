@@ -3,7 +3,8 @@
  * was UX-17's 目录 · 日志 sheet). The same five seats the wide face docks
  * beside the terminal (`SideBody`), risen from the bottom: 最近 · 工作区
  * · 浏览器 · 机器 · 额度; 目录 is the 工作区 seat. The seat and the day's
- * expansion are the session's own memory (`use-session-side`).
+ * expansion are the session's own memory (`use-session-side`); the day
+ * is 最近's first row (`DayToday`, UX-37 §5).
  *
  * **Two detents, the seats at the foot** (UX-37 §3–4, the owner
  * 2026-10-06, agreed on `audit/session-sheet-demo.html`): the pill opens
@@ -164,7 +165,6 @@ export function SessionPlaceSheet({
   onOpenChange,
   seat,
   onSeat,
-  today,
   boxRef,
   children,
 }: {
@@ -174,8 +174,6 @@ export function SessionPlaceSheet({
   onOpenChange: (open: boolean) => void;
   seat: SideSeat;
   onSeat: (seat: SideSeat) => void;
-  /** The 「今天」 row (`DayToday`). */
-  today?: ReactNode;
   /** The seat's page, composed by the shell (`App`'s `sideSeat`). */
   children?: ReactNode;
 }) {
@@ -195,6 +193,16 @@ export function SessionPlaceSheet({
           // The seats row and the page are the sheet's whole content; a
           // description would be the decorative copy `ui/dialog` opts out of.
           aria-describedby={undefined}
+          // **The focus goes to the sheet itself**, not to its first
+          // control: the seat's page mounts its rows after the sheet does,
+          // and a first control that was replaced left the focus on the
+          // terminal under the sheet, which took Esc for the shell (a
+          // keyboard's Esc, and the soft keyboard's lowering, are the
+          // sheet's while it is up).
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            el?.focus({ preventScroll: true });
+          }}
           className="fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden rounded-t-(--menu-r) bg-popover shadow-(--shadow-float) outline-none"
         >
           <DialogPrimitive.Title className="sr-only">{gui.session_side}</DialogPrimitive.Title>
@@ -211,7 +219,7 @@ export function SessionPlaceSheet({
             data-nav-shown
             className="relative flex min-h-0 flex-1 flex-col [--side-ground:var(--popover)]"
           >
-            <SideBody seat={seat} onSeat={onSeat} today={today} foot>
+            <SideBody seat={seat} onSeat={onSeat} foot>
               {children}
             </SideBody>
           </div>

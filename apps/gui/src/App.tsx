@@ -109,6 +109,7 @@ import { SIDE_ID, SessionSide } from "@/views/SessionSide";
 import { DayLine, DayPanel, DayToday } from "@/views/DayLine";
 import { SideRecent } from "@/views/SideRecent";
 import { useSideRecent, type RecentItem } from "@/hooks/use-side-recent";
+import { useDayTotals } from "@/hooks/use-day-totals";
 import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
@@ -2227,11 +2228,13 @@ export default function App() {
       UX-30 §6): the same seats, risen from the bottom. The
       sheet's lifetime is this state; the seat is the session's memory. */
   const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
-  /** **The phone sheet's 「今天」 row** (UX-36 §1): the pill's tap is the
-      sheet, so the day in full opens from here. ⚠️ 墓碑 (UX-30 §5): the
-      ruler, under the column's capsule and the sheet's. */
+  /** **今天, 最近's first row on the phone** (UX-37 §5): the pill's tap
+      is the sheet, so the day in full opens from here. ⚠️ 墓碑 (UX-36
+      §1): a 「今天」 row under the sheet's capsule. ⚠️ 墓碑 (UX-30 §5):
+      the ruler, under the column's capsule and the sheet's. */
+  const dayTotals = useDayTotals(selectedRow?.id ?? null, narrow && placeSheet !== null && side.seat === "recent");
   const sheetToday = (row: SessionRow) => (
-    <DayToday runs={dayOf(row.id)} open={side.day} onToggle={() => setSessionSide(row.id, { day: !side.day })} />
+    <DayToday runs={dayOf(row.id)} totals={dayTotals} open={side.day} onToggle={() => setSessionSide(row.id, { day: !side.day })} />
   );
   const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
   const recent = useSideRecent(sideOn && side.seat === "recent");
@@ -2264,6 +2267,7 @@ export default function App() {
             items={recent}
             slice={sideRecentAll ? null : selectedRow.id}
             onAll={() => setSideRecentAll(true)}
+            today={narrow ? sheetToday(selectedRow) : undefined}
             faceOf={faceOf}
             onOpen={openRecent}
             onOpenMain={openRecentMain}
@@ -2785,7 +2789,6 @@ export default function App() {
           onOpenChange={(o) => !o && setPlaceSheet(null)}
           seat={side.seat}
           onSeat={enterSeat}
-          today={sheetToday(selectedRow)}
           boxRef={setDetailBox}
         >
           {sideSeat()}

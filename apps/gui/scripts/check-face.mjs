@@ -30428,7 +30428,8 @@ try {
             sheet: document.querySelectorAll("[data-place-sheet]").length,
             seats: [...document.querySelectorAll("[data-place-sheet] [data-col-seat]")].map((e) => e.dataset.colSeat).join(" "),
             on: document.querySelector('[data-place-sheet] [data-col-seat][data-on="true"]')?.getAttribute("data-col-seat") ?? null,
-            ruler: document.querySelectorAll("[data-place-sheet] [data-day-ruler], [data-place-sheet] [data-day-ruler-line]").length,
+            // 今天's own bar (UX-37 §5) is the row's, not a ruler.
+            ruler: document.querySelectorAll("[data-place-sheet] [data-day-ruler], [data-place-sheet] [data-day-ruler-line]:not([data-day-today] *)").length,
             today: document.querySelectorAll("[data-place-sheet] [data-day-today]").length,
             page: document.querySelectorAll("[data-place-sheet] [data-side-page]").length,
           }));

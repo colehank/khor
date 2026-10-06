@@ -15,8 +15,8 @@
  * readouts and popovers (`DayStrip`, unchanged) and under it the day's
  * stretches as lines, newest first. The wide face opens it from the
  * pill's line through the pill's menu 「今天」 (the pill's own press is
- * the 附栏's); the phone from the 「今天」 row at the top of the pill's
- * sheet (`DayToday`; the pill's tap is the sheet's). The expansion is
+ * the 附栏's); the phone from 最近's first row in the pill's sheet
+ * (`DayToday`, UX-37 §5; the pill's tap is the sheet's). The expansion is
  * the session's memory (`use-session-side`'s `day`).
  *
  * ⚠️ 墓碑 (UX-30 §5 → UX-36): the line was the column's ruler, a button
@@ -26,7 +26,9 @@
  */
 import { cli, gui } from "@/gen/catalog";
 import { IconChevronDown, IconChevronUp } from "@/components/icons";
+import type { DayTotals } from "@/hooks/use-day-totals";
 import { cn } from "@/lib/utils";
+import { count, stretch } from "@/words";
 import { DAY_ROW_ID, DayStrip, dayHasRecord, lay, sentence, type Day, type Stretch } from "@/views/DayStrip";
 
 /** A stretch's ink, the strip's own derivation (`DayStrip`'s `Ink`). */
@@ -42,14 +44,14 @@ function laidOf(runs: Day) {
 
 /** The day flattened, as wide as the box it is put in. Nothing to press:
     the pill it hangs under is the press. */
-export function DayLine({ runs, className }: { runs: Day; className?: string }) {
+export function DayLine({ runs, band = false, className }: { runs: Day; /** At the band's height (`--day-strip`): 今天's row, UX-37 §5. */ band?: boolean; className?: string }) {
   const laid = laidOf(runs);
   return (
     <span
       data-day-ruler-line
       aria-label={cli.day_title}
       aria-busy={runs === null ? "true" : undefined}
-      className={cn("pointer-events-none flex h-day-ruler-h w-full overflow-hidden rounded-full", className)}
+      className={cn("pointer-events-none flex w-full overflow-hidden rounded-full", band ? "h-(--day-strip)" : "h-day-ruler-h", className)}
     >
       {laid === null ? (
         <span data-day-ruler-skeleton className="h-full w-full bg-fill" />
@@ -101,32 +103,50 @@ export function DayPanel({ runs, className }: { runs: Day; className?: string })
   );
 }
 
-/** **The phone sheet's 「今天」 row** (UX-36 §1): the pill's tap opens the
-    sheet, so the day opens from here — a row at the sheet's top, and the
-    day in full hanging from it over the seat's page (the page does not
-    move by a pixel, the band's own rule, 2026-09-29). A tap folds it. */
-export function DayToday({ runs, open, onToggle }: { runs: Day; open: boolean; onToggle: () => void }) {
+/** **今天 is 最近's first row on the phone** (UX-37 §5; UX-36 §1 put a
+    「今天」 row under the sheet's capsule): the day's heat bar at the
+    band's height with its two numbers, 忙碌 · 空闲 (`use-day-totals`,
+    counted at the record's minute), and a tap expands the day in full in
+    place, under the row; a tap folds it. The pill's own day line is
+    unchanged. */
+export function DayToday({
+  runs,
+  totals,
+  open,
+  onToggle,
+}: {
+  runs: Day;
+  totals: DayTotals | null;
+  open: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <div data-day-today-row className="relative flex-none">
+    <div data-day-today-row className="flex-none border-b">
       <button
         type="button"
         data-day-today
         aria-expanded={open}
         aria-controls={open ? DAY_ROW_ID : undefined}
         onClick={onToggle}
-        className="flex min-h-touch w-full items-center gap-in px-nav-gap text-left text-body text-foreground"
+        className="flex w-full flex-col gap-in px-(--page-inset) py-in text-left"
       >
-        <span className="min-w-0 flex-1 truncate">{gui.today}</span>
-        {open ? <IconChevronUp className="size-affordance flex-none text-tertiary" /> : <IconChevronDown className="size-affordance flex-none text-tertiary" />}
+        <span className="flex w-full items-baseline gap-in text-callout text-muted-foreground">
+          <span className="min-w-0 flex-1 truncate text-foreground">{gui.today}</span>
+          {totals && (
+            <span data-day-totals className="flex-none tabular-nums">
+              {gui.day_busy_idle(totalOf(totals.busy), totalOf(totals.idle))}
+            </span>
+          )}
+          {open ? <IconChevronUp className="size-affordance flex-none self-center text-tertiary" /> : <IconChevronDown className="size-affordance flex-none self-center text-tertiary" />}
+        </span>
+        <DayLine runs={runs} band />
       </button>
-      {open && (
-        <DayPanel
-          runs={runs}
-          // The band's axis is the capsule's: the strip keeps its own
-          // `gap-in` inset, so the panel adds the rest of `nav-gap`.
-          className="absolute inset-x-0 top-full z-30 max-h-[60dvh] overflow-y-auto border-b bg-(--side-ground) px-[calc(var(--nav-gap)-var(--gap-in))] pb-in"
-        />
-      )}
+      {open && <DayPanel runs={runs} className="px-[calc(var(--page-inset)-var(--gap-in))] pb-in" />}
     </div>
   );
+}
+
+/** A total, never under a minute unless it is none. */
+function totalOf(ms: number): string {
+  return ms > 0 ? stretch(ms) : count.minutes(0);
 }
