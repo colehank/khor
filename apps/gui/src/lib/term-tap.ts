@@ -1,15 +1,16 @@
 // **When a tap in the terminal raises the keyboard** (roadmap 2.2, Appearance
 // → Terminal → keyboard wake; it replaces item 5's on/off switch).
 //
-// - `auto` (the default): a tap on the line being typed — from where the
-//   shell's input starts (`OSC 133 ; B`) to the cursor, or the cursor's row
-//   while a program runs or when the shell marks nothing — raises it; a
-//   tap anywhere else never does, and puts it away when it is up. The
-//   input region is the one the field's marks define (FinalTerm's B, the
-//   prompt line Kitty lets a click move the cursor in with
-//   `click_events=1`, which fish 4 announces); a phone also has to decide
-//   the keyboard there.
-// - `screen`: any tap raises it (item 5's "on").
+// - `auto` (the default): a tap on the input area (`term-marks`' `inInput`:
+//   the shell's input from `OSC 133 ; B`, a program's input box ± 2 rows,
+//   a bare cursor row ± 1) raises it; a tap anywhere else on the terminal
+//   puts it away — and khor's key panel (UX-31) — when it is up, and does
+//   nothing when it is down (item 49). The input region is the one the
+//   field's marks define (FinalTerm's B, the prompt line Kitty lets a
+//   click move the cursor in with `click_events=1`, which fish 4
+//   announces); a phone also has to decide the keyboard there.
+//   ⚠️ Tombstone (10-05, item 28): 「点别处不动」, a tap never lowered.
+// - `screen`: any tap raises it (item 5's "on"); a tap never lowers.
 // - `button`: only the bar's keyboard switch moves it (item 5's "off").
 //
 // Only under a finger: a Mac's click focuses the terminal either way. This
@@ -45,6 +46,15 @@ export function termWake(): Wake {
   } catch {
     return "auto";
   }
+}
+
+/** **What a tap on the terminal asks of the keyboard** (item 49), given
+    the mode and whether it landed on the input area; the caller raises
+    only what is down and lowers only what is up. */
+export function tapAsks(wake: Wake, onInput: boolean): "raise" | "lower" | null {
+  if (wake === "screen") return "raise";
+  if (wake === "auto") return onInput ? "raise" : "lower";
+  return null;
 }
 
 export function setTermWake(wake: Wake) {

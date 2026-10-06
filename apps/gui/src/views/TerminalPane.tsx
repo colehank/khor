@@ -96,7 +96,7 @@ import { termBell } from "@/lib/term-bell";
 import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
-import { termWake, useTermWake } from "@/lib/term-tap";
+import { tapAsks, termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { dropsComposition } from "@/lib/term-compose-drop";
 import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
@@ -550,8 +550,10 @@ function settledCursor(
  * judged at its end, which is a gesture iOS will show a keyboard for:
  * `screen` raises it anywhere; `auto` raises it on the input area
  * (`inInput`, judged against the cursor of the last whole frame) and
- * nowhere else; `button` leaves it to the bar's switch. A tap never
- * lowers it (item 28; `swipeLowers` does). xterm's own mousedown focuses a
+ * lowers it — or the key panel — anywhere else on the screen (item 49,
+ * `lib/term-tap`'s `tapAsks`); `button` leaves it to the bar's switch.
+ * Only a touch on the screen itself counts: the floats over it (回到底部,
+ * a question's buttons) are their own presses. xterm's own mousedown focuses a
  * field that is already focused, and a program that took the mouse still
  * gets the click as before. **If the focus leaves for nowhere** — the system put
  * the keyboard away, or a tap blurred the field — it comes back without a
@@ -575,7 +577,7 @@ function tapsAskFirst(
   let still = false;
   let downAt = 0;
   const began = (e: TouchEvent) => {
-    still = e.touches.length === 1;
+    still = e.touches.length === 1 && !!(e.target as Element | null)?.closest?.("[data-term-scroller]");
     downAt = performance.now();
     startX = e.touches[0]?.clientX ?? 0;
     startY = e.touches[0]?.clientY ?? 0;
@@ -595,10 +597,13 @@ function tapsAskFirst(
         still = false;
         return;
       }
-      // **A tap raises, never lowers** (item 28): the keyboard goes away
-      // by the swipe (`swipeLowers`) or the system's own key.
-      const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col, cursor()));
-      if (here && !keyboardUp(field)) raiseKeyboard(field);
+      // ⚠️ Tombstone (item 28 → item 49): 「点别处不动」, a tap never lowered.
+      const asks = tapAsks(wake, wake === "auto" && !!at && inInput(term, marks, at.row, at.col, cursor()));
+      if (asks === "raise" && !keyboardUp(field)) raiseKeyboard(field);
+      if (asks === "lower") {
+        if (keyboardUp(field)) lowerKeyboard(field);
+        lowerKeyPanel();
+      }
     }
     still = false;
   };
