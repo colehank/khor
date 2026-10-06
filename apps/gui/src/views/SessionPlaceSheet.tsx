@@ -202,6 +202,12 @@ export function SessionPlaceSheet({
           ref={setEl}
           data-place-sheet
           data-detent={detent}
+          // **A find row's box or a page's address field focused** (UX-40
+          // §2): the sheet rises whole, as Maps' does, so the keyboard does
+          // not sit on the answers.
+          onFocusCapture={(e) => {
+            if ((e.target as HTMLElement).closest("[data-side-find], [data-page-address]")) setDetent("full");
+          }}
           // The head and the page are the sheet's whole content; a
           // description would be the decorative copy `ui/dialog` opts out of.
           aria-describedby={undefined}
