@@ -1382,21 +1382,30 @@ impl LiveKind {
         // with a row of its own (a bridge, an imported row) keeps it.
         let mut taken: Vec<usize> = Vec::new();
         for k in 0..hosts.len() {
-            if hosts[k].tmux.is_some() {
+            // Asked only of a khor shell with a tmux client somewhere in
+            // it: the lookup runs `ps` and asks tmux, and a list poll
+            // must not pay that for every shell.
+            let Some(child) = hosts[k].own.and_then(|i| registered[i].host_child) else {
+                continue;
+            };
+            if hosts[k].tmux.is_some()
+                || !hosts[k]
+                    .holds
+                    .iter()
+                    .any(|&p| procs.get(p).is_some_and(|x| x.name == "tmux"))
+            {
                 continue;
             }
-            for m in 0..hosts.len() {
-                let shows = hosts[m].tmux.is_some()
-                    && hosts[m].own.is_none()
-                    && sweep
-                        .attached
-                        .iter()
-                        .any(|(client, session)| *session == hosts[m].id && hosts[k].holds.contains(client));
-                if shows {
-                    let held = hosts[m].holds.clone();
-                    hosts[k].holds.extend(held);
-                    taken.push(m);
-                }
+            let Some(session) = self.discovery.attached(child) else {
+                continue;
+            };
+            if let Some(m) = hosts
+                .iter()
+                .position(|h| h.tmux.is_some() && h.own.is_none() && h.id == session)
+            {
+                let held = hosts[m].holds.clone();
+                hosts[k].holds.extend(held);
+                taken.push(m);
             }
         }
         let mut m = 0;
@@ -4196,7 +4205,7 @@ mod tests {
             Discovery::at(&fixture_vendors())
                 .with_procs(Procs::of([shell, client, pane, claude]))
                 .with_tmux(Tmux::at_binary(&tmux))
-                .with_attached(vec![(5002, sid(T_ID))]),
+                .with_attached(vec![(5001, sid(T_ID))]),
         ));
         k.register(
             &term,

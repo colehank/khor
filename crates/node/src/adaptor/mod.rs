@@ -216,8 +216,6 @@ pub struct Findings {
     /// would be a second moment, and a process that started between the
     /// two would be alive in one answer and absent from the other.
     pub procs: Procs,
-    /// [`Discovery::attached`], from the same moment.
-    pub attached: Vec<(u32, SessionId)>,
 }
 
 impl Findings {
@@ -621,21 +619,30 @@ impl Discovery {
         self
     }
 
-    /// Answers [`Discovery::attached`] with these instead.
+    /// Answers [`Discovery::attached`] with these instead: a shell's
+    /// pid and the session row its terminal's tmux client shows.
     pub fn with_attached(mut self, attached: Vec<(u32, SessionId)>) -> Discovery {
         self.attached = attached;
         self
     }
 
-    /// **Which tmux session each tmux client is showing**: a client's
-    /// pid and the row id of the session it is attached to, on the
-    /// server this discovery watches (SESS-BRIEF 1b).
+    /// **The tmux session a shell's terminal is showing** (SESS-BRIEF
+    /// 1b): `shell` is a khor host's child, and the answer is the row id
+    /// of the session the tmux client in front of its terminal is
+    /// attached to — only on the server this discovery watches, since a
+    /// session id (`$3`) means nothing on another one.
     ///
-    /// The seam the row side is written against. The lookup itself is
-    /// the terminal lane's (TERM-BRIEF item 58, a `tmux list-clients`
-    /// read); until it lands, only the fixed answers above are given.
-    pub fn attached(&self, _procs: &Procs) -> Vec<(u32, SessionId)> {
-        self.attached.clone()
+    /// The seam the row side is written against. The lookup is the
+    /// terminal lane's `adaptor::tmux::client_in_front` (TERM-BRIEF item
+    /// 58, redesign-term c8d2804b, not on this branch yet): its
+    /// `session_id` matched against the watched server's sessions by
+    /// `tmux_target_of`, after checking `.server()` is that server.
+    /// Until it is wired, only the fixed answers above are given.
+    pub fn attached(&self, shell: u32) -> Option<SessionId> {
+        self.attached
+            .iter()
+            .find(|(pid, _)| *pid == shell)
+            .map(|(_, row)| row.clone())
     }
     /// Adaptors reading the vendor directories under `home`.
     ///
@@ -737,7 +744,6 @@ impl Discovery {
             all.multiplexed = listing.rows;
             all.unmapped += listing.unmapped;
         }
-        all.attached = self.attached(procs);
         all
     }
 }
