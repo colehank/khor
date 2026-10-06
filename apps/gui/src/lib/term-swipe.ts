@@ -136,6 +136,13 @@ export function swipeLowers(
 const READ_AGAIN_MS = 300;
 /** The end speed is the finger's over this much of the touch's end. */
 const END_MS = 50;
+/** **A flick's end speed**, px/ms (item 61 b): a drag that lifts at
+    least this fast folds or unfolds the deck however short it was, since
+    the content goes on without the finger. Measured on the simulator
+    (deck-61.md): drags lifting at 0.22–1.1 px/ms were carried on 120–450
+    px by iOS's momentum, all but two of fifteen; under 0.2 about half
+    were, and none faster than 0.1. A real flick lifts faster still. */
+export const FLICK = 0.2;
 
 /** One point of the finger's path. */
 type Mark = { t: number; x: number; y: number };
@@ -170,7 +177,9 @@ export function endSpeed(path: Mark[]): number {
  * that began with the keyboard up lowers it (`swipeLowers`) and folds
  * nothing — the deck folds on a later drag. The scroll rule stays beside
  * this one (reaching the bottom unfolds; a Mac's wheel folds a narrow
- * window); the two agree on direction.
+ * window); the two agree on direction. A flick short of either
+ * distance tells the same at its lift when it ends at `FLICK` or faster
+ * (item 61 b): the content goes on without the finger.
  *
  * Each touch that left the dead zone is read for the doctor's terminal
  * row (item 61 a,
@@ -277,21 +286,41 @@ export function swipeFolds(
   const end = (e: TouchEvent) => {
     if (e.touches.length > 0 || !path.length) return;
     if (e.type === "touchend") mark(e.changedTouches);
-    one = false;
     const went = path;
     path = [];
+    const last = went[went.length - 1];
+    const speed = endSpeed(went);
+    // **A flick folds** (item 61 b, the owner: not every swipe folded, a
+    // held one did): a quick flick moves the finger less than
+    // `FOLD_AT` while the content travels far on momentum, which only a
+    // slow, held drag covered. At the lift, a drag past the dead zone
+    // that went the fold way (or back) and ends at `FLICK` or faster
+    // tells the deck what the distance would have; the same rules keep a
+    // press, the keyboard, the bar and a second finger out.
+    if (one && away) {
+      const dx = Math.abs(last.x - ax);
+      const dy = last.y - ay;
+      const flick = said !== true && dy > dx && speed >= FLICK ? true : said !== false && -dy > dx && -speed >= FLICK ? false : null;
+      if (flick !== null) {
+        said = flick;
+        told.push(flick);
+        tell(flick);
+      }
+    }
+    one = false;
     if (!left || !seams.judged) return;
     const first = went[0];
-    const last = went[went.length - 1];
     const dy = last.y - first.y;
     const dx = Math.abs(last.x - first.x);
-    // Judged to the end and told nothing: what the travel lacked.
+    // Judged to the end and told nothing: what the travel and the lift
+    // lacked.
+    const lift = `, end under ${FLICK}`;
     const short =
-      dy > dx ? `down ${Math.round(dy)} of ${FOLD_AT}` : -dy > dx ? `up ${Math.round(-dy)} of ${UNFOLD_BY}` : "more across than along";
+      dy > dx ? `down ${Math.round(dy)} of ${FOLD_AT}${lift}` : -dy > dx ? `up ${Math.round(-dy)} of ${UNFOLD_BY}${lift}` : "more across than along";
     const verdict = told.length ? `told ${told.map((f) => (f ? "fold" : "unfold")).join(", ")}` : `nothing: ${why || short}`;
     const line =
       `swipe ${dy >= 0 ? "down" : "up"} ${Math.round(Math.abs(dy))} px, across ${Math.round(dx)}, ` +
-      `in ${Math.round(last.t - first.t)} ms, end ${endSpeed(went).toFixed(2)} px/ms, ` +
+      `in ${Math.round(last.t - first.t)} ms, end ${speed.toFixed(2)} px/ms, ` +
       `${e.type === "touchcancel" ? "cancelled" : "lifted"}; ${verdict}`;
     const deck = (f: boolean) => (f ? "folded" : "open");
     const was = deckWas;
