@@ -56,7 +56,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchPageIcons, onPageWord, openLink, openTab, pageDeck, pageGround, pageStep, recentVisit, reveal, type DeviceRow } from "@/api";
 import { revealHere } from "@/views/chat-files";
-import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
+import { lastPageMachine, MachineChips, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
 import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
 import { pageFail, type PageFail } from "@/browse/page-fail";
 import { pageDownload, type PageSaid } from "@/browse/page-download";
@@ -156,6 +156,7 @@ export function BrowseLanding({
   onOpen,
   onBack,
   bare,
+  homeOf,
 }: {
   /**
    * **Drawn inside the session's 附栏** (UX-37 §6, UX-39 §3, UX-40,
@@ -170,6 +171,9 @@ export function BrowseLanding({
    * null`, 全部网页).
    */
   bare?: { here: string };
+  /** A session's machine, by name: the first of the address editor's
+      machine chips (UX-42 row 13). */
+  homeOf?: (session: string) => string | null;
   /** Narrow only: which of the pair is up — the tabs or the page — and
       the shell's two moves between them. */
   screen?: "list" | "detail";
@@ -656,6 +660,10 @@ export function BrowseLanding({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [native, nativeTab]);
+  const pickMachine = (d: DeviceRow) => {
+    rememberPageMachine(d.id);
+    tabs.goTo(d.id, tabs.current.path, tabs.current.title);
+  };
   const pillEditor = (
     <PageField
       key={tabs.current.id}
@@ -683,11 +691,14 @@ export function BrowseLanding({
           tabs.goTo(machine.id, place);
         }
       }}
-      onMachine={(d) => {
-        rememberPageMachine(d.id);
-        tabs.goTo(d.id, tabs.current.path, tabs.current.title);
-      }}
+      onMachine={pickMachine}
     />
+  );
+  /** The machines over the deck while the address is edited (UX-42 row
+      13), the session's own first: the 附栏's, or the one the tab was
+      opened from. */
+  const pillChips = (
+    <MachineChips devices={devices} machine={machine} first={homeOf?.(bare?.here ?? tabs.current.session ?? "") ?? null} onPick={pickMachine} />
   );
 
   const content =
@@ -900,6 +911,7 @@ export function BrowseLanding({
         onTitle={() => setEditing(true)}
         caption={failedWord || saidWord || caption}
         editor={tabs.ready && editing ? pillEditor : undefined}
+        editorAbove={pillChips}
         nativeDeck={native}
         // The page is a native view the capsule cannot float over: it
         // keeps its own room under the page (UX-29); on the phone the

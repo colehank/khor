@@ -30970,7 +30970,10 @@ try {
               ? {
                   editing: bar.querySelectorAll("[data-deck-pill][data-deck-editing] [data-page-field]").length,
                   ownGlass: bar.querySelectorAll("[data-deck-editing] [data-page-field].glass").length,
-                  machine: bar.querySelector("[data-deck-editing] [data-page-machine-face]")?.getAttribute("aria-label") ?? null,
+                  // UX-42 row 13: the machine is the selected chip over the
+                  // deck; the face has left the field.
+                  machine: bar.querySelector("[data-deck-editor-above] [data-page-chip][data-on]")?.getAttribute("data-page-chip") ?? null,
+                  faces: bar.querySelectorAll("[data-deck-editing] [data-page-machine-face]").length,
                   under: bar.querySelector("[data-session-bar-under]")?.children.length ?? -1,
                   cancel: bar.querySelectorAll("[data-deck-edit-cancel]").length,
                   tabs: bar.querySelectorAll("[data-deck-tabs]").length,
@@ -30982,6 +30985,60 @@ try {
         await until(4_000, async () => (await read())?.editing === 1);
         await wait(400);
         const fresh = await read();
+        // UX-42 row 13: the field has the deck's width but 取消's, and the
+        // machines stand as one row of chips over the deck; a tap on one
+        // picks it and the caret stays in the address.
+        const room = await page.evaluate(() => {
+          const bar = document.querySelector("[data-session-bar]");
+          const box = (el) => el && el.getBoundingClientRect();
+          const deck = box(bar?.querySelector("[data-session-deck]"));
+          const pill = box(bar?.querySelector("[data-deck-pill][data-deck-editing]"));
+          const field = box(bar?.querySelector("[data-deck-editing] [data-page-address]"));
+          const cancel = box(bar?.querySelector("[data-deck-edit-cancel]"));
+          const chips = [...(bar?.querySelectorAll("[data-deck-editor-above] [data-page-chips] [data-page-chip]") ?? [])].map(box);
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;width:var(--gap-row);height:var(--gap-in)";
+          document.body.appendChild(probe);
+          const [row, gap] = [probe.getBoundingClientRect().width, probe.getBoundingClientRect().height];
+          probe.remove();
+          return deck && pill && field && cancel
+            ? {
+                deck: [deck.left, deck.right, deck.top],
+                pill: [pill.left, pill.right],
+                field: field.width,
+                // The deck's inner width less 取消 and its gap, less the
+                // field's own two paddings.
+                want: deck.width - 2 * row - cancel.width - gap - 2 * row,
+                padLeft: pill.left - deck.left,
+                row,
+                chips: chips.length,
+                above: chips.every((c) => c.bottom <= deck.top + 0.5),
+                oneRow: new Set(chips.map((c) => Math.round(c.top))).size,
+              }
+            : null;
+        });
+        console.log(`bar o · the editor's room ${shown(room)}`);
+        if (!room) fail("probe dead: bar o · the editor's field, pill, deck or 取消 not found");
+        else {
+          if (room.field < room.want - 1) fail(`bar o · the address field is ${room.field.toFixed(1)} wide — the deck's width but 取消's, ${room.want.toFixed(1)} (UX-42 row 13)`);
+          if (Math.abs(room.padLeft - room.row) > 0.5) fail(`bar o · the editing pill starts ${room.padLeft.toFixed(1)} into the deck — at its padding, nothing before it`);
+          if (room.chips < 2 || !room.above || room.oneRow !== 1) fail(`bar o · the machine chips read ${shown(room)} — every machine, one row, over the deck (UX-42 row 13)`);
+        }
+        if (room?.chips >= 2) {
+          const other = await page.evaluate(() => document.querySelector("[data-deck-editor-above] [data-page-chip]:not([data-on])")?.getAttribute("data-page-chip") ?? null);
+          await press(`[data-deck-editor-above] [data-page-chip="${other}"]`);
+          await wait(400);
+          const picked = await page.evaluate(() => ({
+            on: document.querySelector("[data-deck-editor-above] [data-page-chip][data-on]")?.getAttribute("data-page-chip") ?? null,
+            caret: document.activeElement?.hasAttribute("data-page-address") ?? false,
+            editing: document.querySelectorAll("[data-deck-editing]").length,
+          }));
+          console.log(`bar o · the chip ${other} tapped ${shown(picked)}`);
+          if (picked.on !== other || !picked.caret || picked.editing !== 1) fail(`bar o · a tap on the chip ${other} left ${shown(picked)} — that machine picked, the caret still in the address`);
+          // Back to the last one used, for the steps below.
+          await press('[data-deck-editor-above] [data-page-chip="peer"]');
+          await wait(400);
+        }
         if (fresh) await press("[data-deck-edit-cancel]");
         await wait(300);
         const put = await read();
@@ -30992,7 +31049,8 @@ try {
         if (!fresh || fresh.editing !== 1 || fresh.ownGlass !== 0 || fresh.under !== 0 || fresh.cancel !== 1 || fresh.tabs !== 0 || fresh.steps !== 0) {
           fail(`bar o · a fresh browser tab's deck reads ${shown(fresh)} — the pill is the editor (no glass of its own), nothing under the deck, 取消 in the tabs circle's place, no ← → (UX-18)`);
         }
-        if (fresh && fresh.machine !== "peer") fail(`bar o · a fresh tab's machine is ${shown(fresh.machine)} — the last one used (peer)`);
+        if (fresh && fresh.machine !== "peer") fail(`bar o · a fresh tab's machine is ${shown(fresh.machine)} — the last one used (peer), the selected chip`);
+        if (fresh && fresh.faces !== 0) fail(`bar o · the editor's field wears ${fresh.faces} machine face(s) — the face makes way for the address (UX-42 row 13)`);
         if (!put || put.editing !== 0 || put.cancel !== 0 || put.tabs !== 1 || !put.title) fail(`bar o · 取消 left ${shown(put)} — the pill with the tab's title, the tabs circle back`);
         if (!again || again.editing !== 1) fail(`bar o · a tap on the pill's title left ${shown(again)} — the pill turns into the editor`);
       }
@@ -32009,10 +32067,12 @@ try {
       dir: [{ device: pin.device, name: "peer", place: pin.path, at_ms: now - 600_000, session: "tui/side-1" }],
       file: [{ device: pin.device, name: "peer", place: `${pin.path}/notes.md`, at_ms: now - 3_600_000, session: "tui/side-1" }],
     };
+    // side-2's day has no record (not a stretch wearing a word): its
+    // 最近 draws no 过去24小时 (UX-42, read in d).
     const days = Object.fromEntries(
       sideRows.map((r) => [
         r.id,
-        [
+        r.id === "tui/side-2" ? [{ cells: 90, mark: "absent" }, { cells: 10, mark: "unwatched" }] : [
           { cells: 20, mark: "absent" },
           { cells: 30, mark: { word: "idle" } },
           { cells: 10, mark: "unwatched" },
@@ -32315,6 +32375,16 @@ try {
       await openSession("tui/side-2");
       await press(front("tui/side-2"));
       await until(2_000, async () => (await count(col)) === 1);
+      // c, again: a day with no record draws no 过去24小时, and 最近
+      // starts at its list (UX-42, progressive disclosure).
+      await wait(600);
+      const quiet = await page.evaluate((c) => {
+        const scroller = document.querySelector(`${c} [data-side-recent] [data-nav-clear]`);
+        return scroller ? { days: scroller.querySelectorAll("[data-day-today-row]").length, first: scroller.firstElementChild?.getAttribute("data-list") ?? null } : null;
+      }, col);
+      console.log(`side c · 最近 of a day with no record ${JSON.stringify(quiet)}`);
+      if (!quiet) fail("probe dead: side c · side-2's column did not land on 最近");
+      else if (quiet.days !== 0 || quiet.first !== "recent") fail(`side c · a day with no record: 最近 draws ${quiet.days} 过去24小时 and starts at ${quiet.first} — no row, the list first (UX-42)`);
       await pick("workspace");
       await wait(500);
       const outside = await page.evaluate((c) => document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null, col);

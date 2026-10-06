@@ -139,6 +139,7 @@ export function SessionScreen({
   onUnfold,
   loading = false,
   editor,
+  editorAbove,
   onEditCancel,
   nativeDeck = false,
   foldOver = true,
@@ -181,6 +182,9 @@ export function SessionScreen({
       reload with them — and 取消 stands where the tabs circle was until
       the editor is put away. */
   editor?: ReactNode;
+  /** A row over the deck while the editor is up — the browser's machine
+      chips (UX-42 row 13), the choices Safari stands over the keyboard. */
+  editorAbove?: ReactNode;
   onEditCancel?: () => void;
   /** **The deck folds to a strip while the content is read** (round UX-3
       §3; UX-13 for every content page, `lib/deck-fold`): ‹, the pill and
@@ -420,6 +424,11 @@ export function SessionScreen({
                 <span className="block h-full animate-pulse bg-brand-strong" />
               </span>
             </button>
+          </div>
+        )}
+        {editor && editorAbove && (
+          <div data-deck-editor-above className="flex-none pt-in">
+            {editorAbove}
           </div>
         )}
         <div

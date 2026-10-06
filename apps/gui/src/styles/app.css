@@ -316,6 +316,15 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
+/* The browser's machine chips over the keyboard (UX-42 row 13) scroll
+   sideways the same way. */
+[data-page-chips] {
+  scrollbar-width: none;
+}
+[data-page-chips]::-webkit-scrollbar {
+  display: none;
+}
+
 /* **Chrome never pans the screen** (the owner, 2026-10-05, iPhone build
    5: 「只要在输入框往上滑，就会抖动」). A drag that starts on something that
    cannot scroll that way was handed to the webview's own scroll view,

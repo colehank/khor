@@ -106,7 +106,7 @@ define_class!(
             &self,
             key: *mut AnyObject,
             object: *mut AnyObject,
-            _change: *mut AnyObject,
+            change: *mut AnyObject,
             _context: *mut std::ffi::c_void,
         ) {
             // SAFETY: KVO hands the key path as an NSString.
@@ -114,9 +114,13 @@ define_class!(
             if loading {
                 // Heard on the beat after: a load begun from inside this
                 // module (`open`, `step`) fires while the pages are held.
+                // So the value is the change's own, taken now: read again
+                // on that beat, a load quicker than it is `false` twice
+                // and says nothing (UX-42, audit row 6).
                 let view = object as usize;
+                let now = new_bool(change);
                 if let Some(app) = APP.get() {
-                    let _ = app.run_on_main_thread(move || load_heard(view));
+                    let _ = app.run_on_main_thread(move || load_heard(view, now));
                 }
             } else {
                 scrolled(object);
@@ -547,12 +551,17 @@ fn failed(view: *mut AnyObject, error: *mut AnyObject) {
 /// new page's first load never said `started`; the face lit the line from
 /// its own errand instead, and coming back to a tab ran it for the whole
 /// ceiling with nothing loading (measured on the simulator: 30 s).
-fn load_heard(view: usize) {
+///
+/// `now` is the value the change carried (`NSKeyValueChangeNewKey`), so a
+/// load that began and ended inside one beat is still `started` then
+/// `finished`, and the face's hold (`use-loading`'s `SETTLE_MS`) shows
+/// its line briefly; `None` (no value in the change) reads the view.
+fn load_heard(view: usize, now: Option<bool>) {
     let Some(app) = APP.get() else { return };
     let word = PAGES.with(|pages| {
         let mut pages = pages.try_borrow_mut().ok()?;
         let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as usize == view)?;
-        let loading: bool = unsafe { msg_send![&*page.view, isLoading] };
+        let loading: bool = now.unwrap_or_else(|| unsafe { msg_send![&*page.view, isLoading] });
         if loading == page.loading {
             return None;
         }
@@ -561,6 +570,29 @@ fn load_heard(view: usize) {
     });
     if let Some(w) = word {
         let _ = app.emit_to("main", "page:load", w);
+    }
+}
+
+unsafe extern "C" {
+    /// Foundation's key for a KVO change's new value.
+    static NSKeyValueChangeNewKey: *const AnyObject;
+}
+
+/// A KVO change's new value, as a bool (`isLoading` arrives boxed in an
+/// `NSNumber`).
+fn new_bool(change: *mut AnyObject) -> Option<bool> {
+    if change.is_null() {
+        return None;
+    }
+    // SAFETY: KVO hands the change as an NSDictionary, and the new value
+    // of a BOOL property is an NSNumber (or NSNull, never for this one).
+    unsafe {
+        let v: *mut AnyObject = msg_send![change, objectForKey: NSKeyValueChangeNewKey];
+        if v.is_null() {
+            return None;
+        }
+        let number: bool = msg_send![v, isKindOfClass: class!(NSNumber)];
+        number.then(|| msg_send![v, boolValue])
     }
 }
 
@@ -629,6 +661,24 @@ unsafe extern "C" {
     ) -> *mut AnyObject;
 }
 
+/// **A single image is centred and fitted, as Safari shows it** (UX-42,
+/// audit row 18): WebKit's own image document on the phone lays the
+/// picture at its natural size from the top left. Only that document —
+/// an `image/*` response whose body is the one `<img>` — is touched; the
+/// page's own ground is kept, and a pinch still zooms it.
+const FIT_IMAGE: &str = "(function () { \
+if (!/^image\\//.test(document.contentType)) return; \
+var b = document.body; \
+if (!b || b.children.length !== 1 || b.firstElementChild.tagName !== 'IMG') return; \
+var at = document.head || document.documentElement; \
+var m = document.createElement('meta'); m.name = 'viewport'; \
+m.content = 'width=device-width, initial-scale=1'; at.appendChild(m); \
+var s = document.createElement('style'); \
+s.textContent = 'html, body { height: 100%; margin: 0; } \
+body { display: flex; align-items: center; justify-content: center; } \
+img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }'; \
+at.appendChild(s); })();";
+
 /// What to build a page with.
 pub struct Wiring {
     /// `host:port` of the borrow's local proxy; `None` goes direct.
@@ -666,6 +716,17 @@ unsafe fn add_script(controller: *mut AnyObject, source: &str) {
     // 0: WKUserScriptInjectionTimeAtDocumentStart; every frame.
     let script: Retained<AnyObject> = unsafe {
         msg_send![a, initWithSource: &*src, injectionTime: 0isize, forMainFrameOnly: false]
+    };
+    let _: () = unsafe { msg_send![controller, addUserScript: &*script] };
+}
+
+/// A script run once the document is parsed, in the main frame only.
+unsafe fn add_end_script(controller: *mut AnyObject, source: &str) {
+    let src = NSString::from_str(source);
+    let a: Allocated<AnyObject> = unsafe { msg_send![class!(WKUserScript), alloc] };
+    // 1: WKUserScriptInjectionTimeAtDocumentEnd.
+    let script: Retained<AnyObject> = unsafe {
+        msg_send![a, initWithSource: &*src, injectionTime: 1isize, forMainFrameOnly: true]
     };
     let _: () = unsafe { msg_send![controller, addUserScript: &*script] };
 }
@@ -760,6 +821,7 @@ pub fn open(
             // The proxy and the shim ride together (`open_page`).
             add_script(controller, khor_gui_core::web::PAGE_SHIM);
         }
+        add_end_script(controller, FIT_IMAGE);
         let a: Allocated<AnyObject> = msg_send![class!(WKWebView), alloc];
         let view: Retained<AnyObject> = msg_send![a, initWithFrame: rect, configuration: &*cfg];
         if let Some(agent) = &wiring.agent {

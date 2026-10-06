@@ -228,8 +228,11 @@ export function PageField({
             </DropdownMenuTrigger>
           )
         ) : (
-          <label data-page-field className={cn(shell, "gap-in ps-1 pe-row")}>
-            {fixed || only ? (
+          <label data-page-field className={cn(shell, "gap-in", inPill ? "ps-row pe-row" : "ps-1 pe-row")}>
+            {/* In the pill the face makes way for the address (UX-42 row
+                13): the machine is chosen from the chips over the deck
+                (`MachineChips`). */}
+            {inPill ? null : fixed || only ? (
               <span data-page-machine-face className="grid size-glass-item-h flex-none place-items-center">
                 <MachineAvatar face={machine.face} className="size-tab-face" />
               </span>
@@ -322,6 +325,58 @@ export function PageField({
         )}
         {menu}
       </DropdownMenu>
+    </div>
+  );
+}
+
+/**
+ * **The machines as one row of chips over the deck while the address is
+ * edited** (UX-42 row 13, the lead 2026-10-07): the face left the field so
+ * the address has the deck's width, and the choice stands where Safari
+ * puts its choices, over the keyboard — each machine its face and short
+ * name, the page's own selected, the session's machine first. One tap
+ * picks it and the caret stays in the field; a long list scrolls
+ * sideways. Not drawn when there is only one machine to go through.
+ */
+export function MachineChips({
+  devices,
+  machine,
+  first,
+  onPick,
+}: {
+  devices: DeviceRow[];
+  machine: DeviceRow | null;
+  /** The session's machine, by name: the first chip. */
+  first?: string | null;
+  onPick: (machine: DeviceRow) => void;
+}) {
+  const all = reachable(devices);
+  if (all.length <= 1) return null;
+  const ordered = [...all.filter((d) => d.name === first), ...all.filter((d) => d.name !== first)];
+  return (
+    <div data-page-chips role="group" aria-label={gui.page_machine} className="flex gap-in overflow-x-auto px-row">
+      {ordered.map((d) => {
+        const on = machine?.id === d.id;
+        return (
+          <button
+            key={d.id}
+            type="button"
+            data-page-chip={d.name}
+            data-on={on || undefined}
+            aria-pressed={on}
+            // The caret stays in the address.
+            onPointerDown={(e) => e.preventDefault()}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              if (!on) onPick(d);
+            }}
+            className={cn("glass flex h-glass-btn flex-none items-center gap-in rounded-full ps-1 pe-row text-callout", on && "glass-sel")}
+          >
+            <MachineAvatar face={d.face} className="size-tab-face flex-none" />
+            <span className="whitespace-nowrap">{d.shown}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
