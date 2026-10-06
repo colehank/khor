@@ -11860,6 +11860,8 @@ try {
       elder.rtt_ms = null;
       elder.hop = "quiet";
       elder.heard_ms = Date.now() - 20 * 3600_000;
+      // Unreachable, not idle (round NET-13): the last attempt failed.
+      elder.down_ms = 5_000;
     }
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.reload({ waitUntil: "load" });
@@ -11900,7 +11902,7 @@ try {
     if (Object.values(rows).some((r) => r.road !== 0)) fail("UX-15 · a machine row still prints how it is reached — 连接方式 is the machine page's");
     for (const [d, k] of [[peer, keep[0]], [elder, keep[1]]]) {
       if (!d || !k) continue;
-      for (const f of ["rtt_ms", "hop", "heard_ms"]) if (!(f in k)) delete d[f];
+      for (const f of ["rtt_ms", "hop", "heard_ms", "down_ms"]) if (!(f in k)) delete d[f];
       Object.assign(d, k);
     }
     if (peer?.vitals?.vitals) peer.vitals.vitals.cpu_pct = keep[2];
@@ -25564,6 +25566,96 @@ try {
   await page.unroute("**/rename_account");
   await page.reload({ waitUntil: "load" });
   await wait(900);
+
+  // g. NET-13 (the owner, 2026-10-06: rows greyed as unreachable that
+  //    opened at a click): an idle wire is not an unreachable machine.
+  //    elder with no live wire and nothing failed (`down_ms` null) is
+  //    idle: its session row (`tui/ws-5`) is drawn as any other, no
+  //    caption, undimmed, and its machine row's light is its last
+  //    reading's band at half ink beside that reading. With `down_ms`
+  //    it is unreachable: the row dimmed and 「无法获取 · …」, the light
+  //    grey beside 无法获取. Red first: before the fix, the idle half
+  //    read exactly like the unreachable one.
+  {
+    const elder = devs.find((d) => d.name === "elder");
+    const keep = elder && { ...elder };
+    const rail = (k) => `[data-rail-item][data-landing="${k}"]`;
+    const press = async (sel) => {
+      const l = page.locator(sel).filter({ visible: true });
+      if ((await l.count()) === 0) return false;
+      await l.first().click();
+      await wait(450);
+      return true;
+    };
+    /** A landing with its list out, through another one, so the press
+        never folds the list of the landing already open. */
+    const landOn = async (k) => {
+      await press(rail(k === "devices" ? "sessions" : "devices"));
+      await press(rail(k));
+      if (await page.evaluate(() => (document.querySelector("[data-list]")?.getBoundingClientRect().width ?? 0) < 8)) await press(rail(k));
+    };
+    const read = async () => {
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await landOn("sessions");
+      await until(5_000, async () => (await page.locator('[data-side-row="tui/ws-5"]').count()) > 0);
+      const session = await page.evaluate(() => {
+        const row = document.querySelector('[data-side-row="tui/ws-5"]');
+        return row && { far: row.querySelector("[data-row-far]")?.textContent?.trim() ?? null, opacity: +getComputedStyle(row).opacity };
+      });
+      await landOn("devices");
+      await until(5_000, async () => (await page.locator('[data-side-row][data-device="elder"]').count()) > 0);
+      await wait(300);
+      const machine = await page.evaluate(() => {
+        const row = document.querySelector('[data-side-row][data-device="elder"]');
+        const light = row?.querySelector("[data-row-latency]");
+        const dot = light?.querySelector("span[aria-hidden]");
+        return (
+          row && {
+            light: light?.getAttribute("data-row-latency") ?? null,
+            band: light?.getAttribute("data-lat") ?? null,
+            dot: dot ? +getComputedStyle(dot).opacity : null,
+            top: row.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
+            bottom: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
+            opacity: +getComputedStyle(row).opacity,
+          }
+        );
+      });
+      return { session, machine };
+    };
+    if (!elder) {
+      fail("probe dead: entity g · no elder in the device table");
+    } else {
+      Object.assign(elder, { hop: "quiet", rtt_ms: null, relay: null, heard_ms: Date.now() - 3 * 60_000, down_ms: null, last_rtt_ms: 23 });
+      const idle = await read();
+      Object.assign(elder, { down_ms: 5_000 });
+      const down = await read();
+      console.log(`entity g · NET-13 idle: ${JSON.stringify(idle)}; down: ${JSON.stringify(down)}`);
+      const [is, im, ds, dm] = [idle.session, idle.machine, down.session, down.machine];
+      if (!is || !im || !ds || !dm) fail(`probe dead: entity g · a row to read is missing (${JSON.stringify({ idle, down })})`);
+      else {
+        if (is.far !== null || is.opacity < 0.99) {
+          fail(`entity g · an idle machine's session row reads ${JSON.stringify(is)} — drawn as any other: no 「无法获取」, undimmed (NET-13)`);
+        }
+        if (im.light !== "idle" || im.band !== "fast" || im.top !== "23 ms" || !(im.dot > 0.4 && im.dot < 0.6) || im.opacity < 0.99) {
+          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — its last reading 「23 ms」 in its band at half ink, undimmed (NET-13)`);
+        }
+        if (!(ds.far ?? "").includes("无法获取") || !(ds.opacity < 0.7)) {
+          fail(`entity g · an unreachable machine's session row reads ${JSON.stringify(ds)} — dimmed, 「无法获取 · …」 (NET-13)`);
+        }
+        if (dm.light !== "off" || dm.band !== "none" || dm.top !== "无法获取" || !(dm.opacity < 0.7)) {
+          fail(`entity g · an unreachable machine's row reads ${JSON.stringify(dm)} — the grey light beside 无法获取, dimmed (NET-13)`);
+        }
+        if (!(im.bottom ?? "").includes("3 分钟") || !(dm.bottom ?? "").includes("3 分钟")) {
+          fail(`entity g · when it was last heard is not under either light (${JSON.stringify([im.bottom, dm.bottom])})`);
+        }
+      }
+      for (const f of Object.keys(elder)) if (!(f in keep)) delete elder[f];
+      Object.assign(elder, keep);
+    }
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
   }
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 

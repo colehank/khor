@@ -11,7 +11,7 @@
 import type { DeviceRow } from "@/api";
 
 /** How a link is drawn: a road that carries bytes straight, one that
-    goes by a relay, or no road to show (未连接, serve 未运行, 说不出). */
+    goes by a relay, or no road to show (未连, 不通, serve 未运行). */
 export type Road = "direct" | "relay" | "none";
 
 /** A relay some links go by: a node of its own on the map. */
@@ -48,19 +48,29 @@ export type Topology = {
   segments: Segment[];
 };
 
+/** Whether a machine is unreachable (`DeviceRow.down_ms`, round NET-13):
+    set only while the resident's last attempt to reach it failed and
+    nothing was heard since. An older resident sends no field at all,
+    which is never down. */
+export function isDown(downMs: number | null | undefined): boolean {
+  return typeof downMs === "number";
+}
+
 export const roadOf = (row: Pick<DeviceRow, "hop">): Road =>
   row.hop === "direct" ? "direct" : row.hop === "relay" ? "relay" : "none";
 
-/** A machine this one has no road to right now: grey on the map, with
-    when it was last seen. A satellite speaks through its sponsor and is
-    as reachable as that machine is. */
+/** A machine this one cannot reach: grey on the map, with when it was
+    last seen. **No road is not enough** (round NET-13): an idle wire
+    closed and the next open dials it fine; unreachable is the resident's
+    last attempt failing (`down_ms`). A satellite speaks through its
+    sponsor and is as reachable as that machine is. */
 export function unreachable(row: DeviceRow, rows: readonly DeviceRow[]): boolean {
   if (row.me) return false;
   if (row.sponsor) {
     const sponsor = rows.find((r) => r.name === row.sponsor);
-    return !sponsor || (!sponsor.me && roadOf(sponsor) === "none");
+    return !sponsor || (!sponsor.me && roadOf(sponsor) === "none" && isDown(sponsor.down_ms));
   }
-  return roadOf(row) === "none";
+  return roadOf(row) === "none" && isDown(row.down_ms);
 }
 
 /** How long ago an unreachable machine was last seen, in ms: the wire's
@@ -136,7 +146,7 @@ export function topology(
       segments.push({ id: row.id, from: `relay:${row.relay}`, to: row.id, road, word: latency });
       continue;
     }
-    const said = row.hop ? way(row.hop) : null;
+    const said = row.hop ? way(row.hop === "quiet" && isDown(row.down_ms) ? "down" : row.hop) : null;
     segments.push({
       id: row.id,
       from: me.id,

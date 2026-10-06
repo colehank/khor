@@ -428,6 +428,20 @@ pub struct DeviceRow {
     /// word is 本机.
     #[ts(type = "number | null")]
     pub rtt_ms: Option<u32>,
+    /// **How long ago the attempt that failed was, while that machine is
+    /// unreachable** (round NET-13, `khor_core::Link::down_ms`). `hop`
+    /// `quiet` alone is idle — no live wire, nothing known to be wrong,
+    /// and the next open dials it fine; only with this set is the
+    /// machine unreachable, the row dimmed and 「无法获取」 said. `None`
+    /// otherwise, from an older resident, and for this machine.
+    #[ts(type = "number | null")]
+    pub down_ms: Option<u64>,
+    /// The last round trip measured to that machine, kept after its wire
+    /// goes (`khor_core::Link::last_rtt_ms`): what an idle machine is
+    /// drawn by, at half ink. `None` when never measured since the
+    /// resident started, and for this machine.
+    #[ts(type = "number | null")]
+    pub last_rtt_ms: Option<u32>,
     /// **Which relay, when `hop` is 中继** (round NET-8 addendum, UX-16's
     /// map): its host, and port when not the scheme's own
     /// (`relay.khor.cloud`, `101.200.80.77:3340`). `None` on a direct
@@ -1195,6 +1209,14 @@ fn rows_of_devices(
                 .then(|| links.iter().find(|(id, _)| *id == d.id))
                 .flatten()
                 .and_then(|(_, l)| l.relay.clone()),
+            down_ms: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .and_then(|(_, l)| l.down_ms),
+            last_rtt_ms: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .and_then(|(_, l)| l.last_rtt_ms),
             // This machine's from its live wires, first-hand, the same
             // readings `rtt_ms` and `relay` are; another machine's as it
             // wrote them into the table (round NET-12).
@@ -1240,13 +1262,16 @@ fn own_roads(links: &[(String, khor_node::Link)]) -> Vec<khor_node::Road> {
     use khor_node::{Hop, RoadKind};
     links
         .iter()
-        .map(|(to, l)| {
-            let road = match l.hop {
-                Hop::Direct => RoadKind::Direct,
-                Hop::Relay => RoadKind::Relay,
-                _ => RoadKind::None,
+        .filter_map(|(to, l)| {
+            // `none` is unreachable (round NET-13); an idle wire is no road
+            // at all, as the table would hold none for it.
+            let road = match (l.hop, l.down_ms) {
+                (Hop::Direct, _) => RoadKind::Direct,
+                (Hop::Relay, _) => RoadKind::Relay,
+                (_, Some(_)) => RoadKind::None,
+                _ => return None,
             };
-            khor_node::Road {
+            Some(khor_node::Road {
                 to: to.clone(),
                 road,
                 relay: if road == RoadKind::Relay { l.relay.clone() } else { None },
@@ -1255,7 +1280,7 @@ fn own_roads(links: &[(String, khor_node::Link)]) -> Vec<khor_node::Road> {
                 } else {
                     l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16)
                 },
-            }
+            })
         })
         .collect()
 }

@@ -255,6 +255,16 @@ pub(crate) struct Wires {
     /// Machines a relay said left it, and when (`Wires::departed`):
     /// until one is heard from again, a dial to it is given a short time.
     gone: Mutex<HashMap<String, Instant>>,
+    /// **Machines unreachable now, and when the attempt that said so
+    /// failed** (round NET-13): set by a dial that failed
+    /// ([`Self::failed`]) and by a request unanswered on its wire
+    /// ([`Self::retire`] with [`Retired::Unanswered`]) — the attempts the
+    /// pump and a person's ask already make, no probe of its own —
+    /// and cleared by anything heard from that machine. A wire that
+    /// closes for any other reason (silent, closed, a network change, a
+    /// relay's word that it left, let go on purpose) sets nothing: no
+    /// attempt failed, so the machine is idle, not unreachable.
+    down: Mutex<HashMap<String, Instant>>,
     pub(crate) counts: Counts,
 }
 
@@ -298,6 +308,7 @@ pub(crate) struct Counts {
     pub(crate) read_direct: AtomicU64,
     pub(crate) read_relay: AtomicU64,
     pub(crate) read_idle: AtomicU64,
+    pub(crate) read_down: AtomicU64,
     pub(crate) network_changes: AtomicU64,
     pub(crate) ops_late: AtomicU64,
     pub(crate) pump_rounds: AtomicU64,
@@ -324,6 +335,7 @@ impl Counts {
             sent_bytes: 0,
             received_bytes: 0,
             rounds: self.pump_rounds.load(Relaxed),
+            read_down: self.read_down.load(Relaxed),
         }
     }
 
@@ -398,6 +410,11 @@ pub(crate) struct Reading {
     pub(crate) rtt: Option<Duration>,
     /// The relay the live wire goes through, by name; `None` when direct.
     pub(crate) relay: Option<String>,
+    /// Without a live wire: how long since the attempt that found the
+    /// machine unreachable ([`Wires::down`]); `None` when none did.
+    pub(crate) down: Option<Duration>,
+    /// The last round trip measured on any wire to it, live or gone.
+    pub(crate) last_rtt: Option<Duration>,
 }
 
 impl Wires {
@@ -459,6 +476,7 @@ impl Wires {
         slot.retry_at = Some(Instant::now() + backoff(slot.failures));
         self.counts.dial_failed.fetch_add(1, Relaxed);
         drop(slots);
+        self.went_down(id);
         // A connection that machine opened here and that has missed a
         // keepalive may be what steered this dial wrong (`Self::serving`):
         // it goes, and the next dial sprays every road again.
@@ -501,6 +519,8 @@ impl Wires {
             slot.rx = heard_count(conn);
             slot.heard = Some(Instant::now());
         }
+        drop(slots);
+        self.back(id);
     }
 
     /// Retires `conn` if it is still the wire this key holds: closed,
@@ -524,6 +544,9 @@ impl Wires {
         }
         self.counts.retired(why);
         drop(slots);
+        if why == Retired::Unanswered {
+            self.went_down(id);
+        }
         if matches!(why, Retired::Unanswered | Retired::Silent) {
             self.let_go_served_by(id, why);
         }
@@ -703,9 +726,19 @@ impl Wires {
             .is_some_and(|at| at.elapsed() < LEFT_ALONE_FOR)
     }
 
-    /// Heard from: whatever a relay said about it is old news.
+    /// Heard from: whatever a relay said about it is old news, and so is
+    /// an attempt that failed to reach it.
     fn back(&self, id: &str) {
         self.gone.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
+        self.down.lock().unwrap_or_else(|p| p.into_inner()).remove(id);
+    }
+
+    /// An attempt to reach this machine failed just now.
+    fn went_down(&self, id: &str) {
+        self.down
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(id.to_owned(), Instant::now());
     }
 
     fn let_go_served_by(&self, id: &str, why: Retired) {
@@ -756,6 +789,7 @@ impl Wires {
         };
         let mut retired = 0;
         let mut dead: Vec<String> = Vec::new();
+        let mut heard: Vec<String> = Vec::new();
         {
             let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
             served.retain_mut(|w| {
@@ -766,6 +800,7 @@ impl Wires {
                 if rx != w.rx {
                     w.rx = rx;
                     w.heard = now;
+                    heard.push(w.id.clone());
                 }
                 let rtt = rtt_of(&conn);
                 if !rtt.is_zero() {
@@ -797,6 +832,7 @@ impl Wires {
             if rx != slot.rx {
                 slot.rx = rx;
                 slot.heard = Some(now);
+                heard.push(id.clone());
             }
             let rtt = rtt_of(&conn);
             if !rtt.is_zero() {
@@ -830,6 +866,9 @@ impl Wires {
             settle(slot, road_now(&conn));
         }
         drop(slots);
+        for id in heard {
+            self.back(&id);
+        }
         for id in dead {
             self.let_go_served_by(&id, Retired::Silent);
         }
@@ -846,10 +885,14 @@ impl Wires {
         let mut rtt = None;
         let mut relay = None;
         let mut heard: Option<Instant> = None;
+        let mut last_rtt: Option<Duration> = None;
         for proto in [Proto::Main, Proto::Tunnel] {
             let Some(slot) = slots.get(&(id.to_owned(), proto)) else {
                 continue;
             };
+            if !slot.rtt.is_zero() {
+                last_rtt = Some(last_rtt.map_or(slot.rtt, |was| was.max(slot.rtt)));
+            }
             if road.is_none()
                 && let Some(conn) = slot.conn.as_ref().filter(|c| c.close_reason().is_none())
             {
@@ -861,11 +904,21 @@ impl Wires {
                 heard = Some(heard.map_or(h, |was| was.max(h)));
             }
         }
+        drop(slots);
+        // A live wire is the machine reached, whatever an attempt on the
+        // other protocol said.
+        let down = road
+            .is_none()
+            .then(|| self.down.lock().unwrap_or_else(|p| p.into_inner()).get(id).copied())
+            .flatten()
+            .map(|at| now.saturating_duration_since(at));
         Reading {
             road,
             heard: heard.map(|h| now.saturating_duration_since(h)),
             rtt,
             relay,
+            down,
+            last_rtt: rtt.or(last_rtt),
         }
     }
 
@@ -979,5 +1032,24 @@ mod tests {
     fn backoff_doubles_from_five_seconds_to_five_minutes() {
         let secs: Vec<u64> = (1..=9).map(|n| backoff(n).as_secs()).collect();
         assert_eq!(secs, vec![5, 10, 20, 40, 80, 160, 300, 300, 300]);
+    }
+
+    /// **Unreachable is an attempt that failed, until anything is heard**
+    /// (round NET-13): a dial's failure says it, letting a machine go
+    /// does not, and hearing from it clears it.
+    #[test]
+    fn a_failed_dial_is_down_until_heard_and_letting_go_is_not() {
+        let w = Wires::default();
+        assert_eq!(w.link("m").down, None, "never dialled: idle");
+        w.retire_peer("m", Retired::Paused);
+        w.clear(Retired::Suspended);
+        w.departed("m");
+        assert_eq!(w.link("m").down, None, "let go of, or gone from its relay: idle");
+        w.failed("m", Proto::Tunnel, "no".into());
+        assert!(w.link("m").down.is_some(), "a failed dial on either wire");
+        w.network_changed();
+        assert!(w.link("m").down.is_some(), "a new network forgives the wait, not the fact");
+        w.back("m");
+        assert_eq!(w.link("m").down, None, "heard from");
     }
 }

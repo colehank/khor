@@ -170,7 +170,8 @@ impl State {
 /// talks to (`khor_node`'s wires), and the word is **the path that
 /// connection has selected**, settled over two samples a second apart so
 /// a path being re-chosen does not flicker the row. No wire, or a wire
-/// that went silent and was retired, is [`Hop::Idle`] — not connected.
+/// that went silent and was retired, is [`Hop::Idle`] — not connected,
+/// which is not unreachable ([`Link::down_ms`]).
 ///
 /// ⚠️ 墓碑 (2026-10-03, round NET): this used to read iroh's
 /// `remote_info`, counting every address it still marked open. That map
@@ -183,7 +184,11 @@ impl State {
 ///
 /// # Every variant is a fact
 ///
-/// - [`Hop::Idle`] is *khor holds no live wire to that machine*.
+/// - [`Hop::Idle`] is *khor holds no live wire to that machine*. That is
+///   not *unreachable*: a wire closes when it idles, and the next open
+///   dials it fine. Unreachable is [`Link::down_ms`] beside it — the
+///   resident's last attempt to reach that machine failed and nothing
+///   has been heard from it since (round NET-13).
 /// - [`Hop::NoServe`] is *nobody on this machine is holding the
 ///   endpoint*, so there was no one to ask. Fixable, and the fix is a
 ///   command — which is why it is not folded into not connected.
@@ -298,6 +303,30 @@ pub struct Link {
     /// wire and without a live one.
     #[serde(default)]
     pub relay: Option<String>,
+    /// **How long ago the attempt that failed was, while that machine is
+    /// unreachable** (round NET-13: the owner saw rows greyed as
+    /// unreachable that opened at a click): the resident's last dial to it failed,
+    /// or a request on its wire went unanswered, and nothing has been
+    /// heard from it since. `None` otherwise — a live wire, a wire that
+    /// closed idle, a machine not dialled since the resident started —
+    /// and from an older resident, which never says it: a face reads
+    /// `None` as *not known to be unreachable*. Tail field.
+    #[serde(default)]
+    pub down_ms: Option<u64>,
+    /// **The last round trip measured to that machine on any wire**,
+    /// whole milliseconds, kept after the wire goes: what a face draws a
+    /// machine with no live wire by, at half ink (round NET-13). `None`
+    /// when no wire to it was ever measured since the resident started.
+    /// Tail field.
+    #[serde(default)]
+    pub last_rtt_ms: Option<u32>,
+}
+
+impl Link {
+    /// The catalog key of the word for a machine whose
+    /// [`Link::down_ms`] is set (`[hop]` `down`): not a road, so not a
+    /// [`Hop`], but looked up in the same table as one.
+    pub const DOWN_KEY: &'static str = "down";
 }
 
 /// **How the resident's wires have fared since it started** — the
@@ -346,6 +375,11 @@ pub struct WireCounts {
     /// 30 s without). Tail field.
     #[serde(default)]
     pub rounds: u64,
+    /// Readings handed out while that machine was unreachable
+    /// ([`Link::down_ms`], round NET-13); `read_idle` counts only the
+    /// idle ones since. Tail field.
+    #[serde(default)]
+    pub read_down: u64,
 }
 
 /// **This machine's connections, as a page shows them** (round NET-2,

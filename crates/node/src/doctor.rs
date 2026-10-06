@@ -683,7 +683,10 @@ async fn check_roads(node: &Node) -> (Health, String, Option<String>) {
         said.push_str(&cli::doctor_wires_reads(
             c.read_direct,
             c.read_relay,
+            // Idle and unreachable apart (round NET-13): a wire that
+            // closed idle is not a machine that failed to answer.
             c.read_idle,
+            c.read_down,
             c.network_changes,
             c.ops_late,
         ));
@@ -742,12 +745,12 @@ async fn check_peers(node: &Node) -> (Health, String, Option<String>) {
     for d in &others {
         let road = match &roads {
             Some(roads) => khor_catalog::hop::word(
-                roads
-                    .iter()
-                    .find(|(id, _)| id == &d.id)
-                    .map(|(_, l)| l.hop)
-                    .unwrap_or(khor_core::Hop::Idle)
-                    .key(),
+                match roads.iter().find(|(id, _)| id == &d.id).map(|(_, l)| l) {
+                    // No live wire is 不通 only when the last attempt failed.
+                    Some(l) if l.hop == khor_core::Hop::Idle && l.down_ms.is_some() => khor_core::Link::DOWN_KEY,
+                    Some(l) => l.hop.key(),
+                    None => khor_core::Hop::Idle.key(),
+                },
             ),
             None => cli::doctor_road_unread(),
         };

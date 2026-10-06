@@ -39,7 +39,10 @@ unknown = "未识别"
 # 「悄悄退回中继」需要一个词才看得见。
 #
 # 读的是常驻手里那条长连接选中的路,两次采样一致才换词;没有连接、或连接
-# 静默被收回,就是「未连接」。「serve 未运行」有解(去起 serve),所以单列。
+# 静默被收回,就是「未连」——连接闲着会关,下次打开照样拨得通,所以它不是
+# 「不通」。「不通」只在常驻最近一次去够它失败(拨号失败、请求没人应)、
+# 之后又没听到它任何动静时才说(NET-13,khor_core::Link::down_ms)。
+# 「serve 未运行」有解(去起 serve),所以单列。
 # (2026-10-03 NET 轮去掉了「未知」:它曾代表五件不相干的事——iroh 地址簿
 # 里没有、状态查询失败、答得晚、少一行、手机换了新端点——没有一件是
 # 「路不知道」。现在各说各的:未连接,或者保留上一次的读数。)
@@ -50,7 +53,8 @@ unknown = "未识别"
 [hop]
 direct = "直连"
 relay = "中继"
-quiet = "未连接"
+quiet = "未连"
+down = "不通"
 # 本机没有常驻,压根没人能读这个数——和「未连接」分开,因为它有解:去起 serve。
 no-serve = "serve 未运行"
 
@@ -559,7 +563,7 @@ doctor-roads-unanswered = "serve 没有回答（可能比这一版旧）"
 doctor-road-unread = "连接未读"
 doctor-wires = "长连接：拨号 {0} 次（失败 {1}），答得晚 {2}，读取重试 {3}"
 doctor-wires-retired = "收回 静默 {0}、无响应 {1}、已关闭 {2}、换网 {3}、换端点 {4}"
-doctor-wires-reads = "读数 直连 {0}、中继 {1}、未连接 {2}；网络变化 {3}；状态查询超时 {4}"
+doctor-wires-reads = "读数 直连 {0}、中继 {1}、未连 {2}、不通 {3}；网络变化 {4}；状态查询超时 {5}"
 doctor-wires-peer = "{0}：拨号失败 {1}、无响应 {2}"
 doctor-hooks-ok = "claude 的钩子均已安装"
 doctor-hooks-part = "{0} 个事件的钩子未安装，或指向另一个 khor"
@@ -1266,7 +1270,6 @@ relay-stats-no-device = "还没有设备连过"
 
 # Round NET-12: `khor devices --roads`.
 roads-ms = "{0} 毫秒"
-roads-none = "不通"
 roads-unreported = "没有报告路（旧版 khor，或还没报）"
 
 [msg]

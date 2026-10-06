@@ -39,6 +39,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cli, gui, msg } from "@/gen/catalog";
 import { fontOf, measurer } from "@/components/PathCut";
 import { tickSet } from "@/lib/ruler";
+import { isDown } from "@/lib/topology";
 import { useKept } from "@/lib/kept";
 import { useTravel } from "@/lib/travel";
 import { cn } from "@/lib/utils";
@@ -277,7 +278,7 @@ function Body({
   // machine seen before draws its last content on the first frame and
   // never this — the fast gate's second claim.
   // **A machine known to be out of reach is said so at once** (P6,
-  // 2026-10-03): the device table already says 「未连接」, so the page
+  // 2026-10-03): the device table already says 「不通」, so the page
   // does not wait out the node's deadline behind skeletons. The asking
   // goes on quietly underneath (`useLoad` retries), and the first answer
   // that lands replaces the sentence.
@@ -428,8 +429,11 @@ function Body({
  */
 /** This machine cannot be reached now (`hop` 「quiet」): what the page
     shows of it is its last reading, said so (P5, P6). */
+/** Out of reach: no live wire **and** the resident's last attempt to
+    reach it failed (round NET-13, `down_ms`). An idle wire alone is not:
+    it closed while nothing was asked, and the next ask dials it fine. */
 function isFar(row: DeviceRow): boolean {
-  return !row.me && row.hop === "quiet";
+  return !row.me && row.hop === "quiet" && isDown(row.down_ms);
 }
 
 function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {

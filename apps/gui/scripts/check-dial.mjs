@@ -212,7 +212,11 @@ const check = (ok, m) => {
   const b = row("b", { hop: "direct", rtt_ms: 9, roads: [{ to: "a", road: "direct", relay: null, ms: 2 }, { to: "me", road: "direct", relay: null, ms: 9 }] });
   const old = row("old", { hop: "quiet", rtt_ms: null, roads: [] });
   const sat = row("sat", { sponsor: "b", hop: null, rtt_ms: null });
-  const rows = [me, a, b, old, sat];
+  // Round NET-13: idle (no live wire, nothing failed) by its last reading;
+  // down (the resident's last attempt failed) on the rim.
+  const idle = row("idle", { hop: "quiet", rtt_ms: null, last_rtt_ms: 38, down_ms: null });
+  const gone = row("gone", { hop: "quiet", rtt_ms: null, last_rtt_ms: 38, down_ms: 4000 });
+  const rows = [me, a, b, old, sat, idle, gone];
   const fh = dial.firstHand(a, rows);
   check(fh.road === "relay" && fh.ms === 41 && fh.relay === "pk.relay", `this machine's road to a reads ${JSON.stringify(fh)}`);
   const fromMe = dial.linkOf(me, a, rows);
@@ -224,7 +228,12 @@ const check = (ok, m) => {
   check(cell && cell.ms === 2, `the cell b reports about a reads ${JSON.stringify(cell)}, not b's book`);
   check(dial.cellOf(old, a, rows) === null, "an older peer's silence is not 未知 (null)");
   check(dial.linkOf(old, a, rows) === null, "a pair nobody reported is drawn");
-  check(dial.cellOf(me, old, rows).road === "none", "this machine's no-road to an older peer is not 不通");
+  check(dial.cellOf(me, old, rows).road === "idle", "this machine's no-road to an older peer, never failed, is not idle");
+  const fi = dial.firstHand(idle, rows);
+  check(fi.road === "idle" && fi.ms === 38, `an idle machine reads ${JSON.stringify(fi)}, not its last reading`);
+  check(dial.radiusOf(fi, 100, 200) < 200, "an idle machine with a last reading sits on the 不通 rim");
+  const fg = dial.firstHand(gone, rows);
+  check(fg.road === "none" && dial.radiusOf(fg, 100, 200) === 200, `a machine whose last attempt failed reads ${JSON.stringify(fg)}, off the rim`);
   check(dial.cellOf(a, a, rows) === null && dial.linkOf(a, a, rows) === null, "a machine has a road to itself");
   const s = dial.firstHand(sat, rows);
   check(s.road === "direct" && s.ms === 9, `a satellite's road is ${JSON.stringify(s)}, not its sponsor's`);

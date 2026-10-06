@@ -126,17 +126,19 @@ function seatSizes(): { seat: number; me: number; halo: number; touch: number } 
   return { seat: px("--dial-seat", 40), me: px("--dial-seat-me", 72), halo: px("--dial-halo", 22), touch: px("--touch", 44) };
 }
 
-/** A road's word for a card or a cell: 直连 / 中继 · <name> / 不通, with
-    the ms; `null` (an older peer's silence) is 未知. */
+/** A road's word for a card or a cell: 直连 / 中继 · <name> / 未连 /
+    不通, with the ms (an idle edge's is its last reading); `null` (an
+    older peer's silence) is 未知. */
 function roadWord(l: Link | null): string {
   if (l === null) return gui.filter_unknown;
   if (l.road === "none") return gui.dial_key_none;
-  const way = l.road === "direct" ? hop.direct : l.relay ? gui.dial_via(l.relay) : hop.relay;
+  const way = wayWord(l);
   return l.ms === null ? way : `${way} · ${gui.row_rtt(l.ms)}`;
 }
 
 /** The way alone, for the card's head. */
 function wayWord(l: Link): string {
+  if (l.road === "idle") return hop.quiet;
   return l.road === "direct" ? hop.direct : l.relay ? gui.dial_via(l.relay) : hop.relay;
 }
 
@@ -439,7 +441,15 @@ export function MyKhorPage({
             narrow ? "end-pane bottom-[calc(var(--glass-btn)+3*var(--gap-in)+var(--safe-bottom))]" : "bottom-pane",
           )}
         >
-          <span data-dial-count>{gui.dial_count(devices.length, devices.filter((d) => d.me || band(firstHand(d, devices).ms) !== "none").length)}</span>
+          <span data-dial-count>
+            {gui.dial_count(
+              devices.length,
+              devices.filter((d) => {
+                const l = firstHand(d, devices);
+                return d.me || (l.road !== "idle" && band(l.ms) !== "none");
+              }).length,
+            )}
+          </span>
           {(["fast", "mid", "slow", "none"] as const).map((b) => (
             <span key={b} className="inline-flex items-center gap-xxs">
               <Light band={b} />
@@ -782,16 +792,20 @@ function Dial({
     const hit = Math.max(half, seat.touch / 2);
     const x = isMe ? f.cx : p!.x;
     const y = isMe ? f.cy : p!.y;
-    const off = !isMe && p!.band === "none";
+    // 不通 is the rim and a grey face; an idle seat (round NET-13) sits by
+    // its last reading, its light at half ink, its face as any other.
+    const idle = !isMe && p!.link.road === "idle";
+    const off = !isMe && !idle && p!.band === "none";
     const lab = isMe ? { x: 0, y: half + 8, side: "c" as const, vert: "b" as const } : labelOffset(p!.ang, half + 8, narrow);
     const model = row.vitals?.vitals.model?.name ?? null;
-    const seen = off ? lastSeenMs(row) : null;
+    const seen = off || idle ? lastSeenMs(row) : null;
     return (
       <div
         key={row.id}
         data-dial-seat={row.id}
         data-me={isMe || undefined}
         data-off={off || undefined}
+        data-idle={idle || undefined}
         data-on={lit === row.id || undefined}
         data-lat={isMe ? undefined : p!.band}
         data-angle={isMe ? undefined : p!.ang.toFixed(3)}
@@ -850,8 +864,8 @@ function Dial({
               gui.machine_here
             ) : (
               <>
-                <Light band={p!.band} />
-                {off ? (seen === null ? gui.day_unreachable : gui.card_age(span(seen))) : (model ?? "")}
+                <Light band={p!.band} half={idle} />
+                {off ? (seen === null ? gui.day_unreachable : gui.card_age(span(seen))) : idle ? (seen === null ? hop.quiet : gui.card_age(span(seen))) : (model ?? "")}
               </>
             )}
           </span>
@@ -936,6 +950,7 @@ function Dial({
                       <text
                         data-dial-ms={key}
                         data-dial-word
+                        data-idle={link.road === "idle" || undefined}
                         data-lit={on || undefined}
                         x={mx}
                         y={my + 4}
@@ -960,8 +975,16 @@ function Dial({
 }
 
 /** A 7 pt light in a band's ink — beside a number or a word, never alone. */
-function Light({ band: b }: { band: Band }) {
-  return <i data-dial-light={b} aria-hidden="true" className="inline-block size-1.5 flex-none rounded-full" style={{ background: BAND_INK[b] }} />;
+function Light({ band: b, half = false }: { band: Band; half?: boolean }) {
+  return (
+    <i
+      data-dial-light={b}
+      data-half={half || undefined}
+      aria-hidden="true"
+      className={cn("inline-block size-1.5 flex-none rounded-full", half && "opacity-50")}
+      style={{ background: BAND_INK[b] }}
+    />
+  );
 }
 
 /* ── the card ─────────────────────────────────────────────────── */
@@ -1105,7 +1128,8 @@ function MachineCard({
 }) {
   const link = firstHand(row, rows);
   const b = band(link.road === "none" ? null : link.ms);
-  const off = b === "none";
+  const idle = link.road === "idle";
+  const off = !idle && b === "none";
   const seen = lastSeenMs(row);
   const mine = sessions.filter((s) => s.home === row.name);
   const busy = mine.filter((s) => s.word === "busy").length;
@@ -1122,7 +1146,7 @@ function MachineCard({
             <span data-dial-last-answer>{seen === null ? gui.day_unreachable : gui.dial_last_answer(span(seen))}</span>
           ) : (
             <>
-              <Light band={b} />
+              <Light band={b} half={idle} />
               <span data-dial-card-road>{link.ms === null ? wayWord(link) : `${gui.row_rtt(link.ms)} · ${wayWord(link)}`}</span>
             </>
           )
@@ -1290,6 +1314,7 @@ function Matrix({
                     key={b.id}
                     data-matrix-cell={`${a.id}>${b.id}`}
                     data-lat={bd ?? undefined}
+                    data-idle={l?.road === "idle" || undefined}
                     data-unknown={l === null || undefined}
                     title={`${a.shown} → ${b.shown} · ${roadWord(l)}（${gui.dial_reported_by(a.shown)}）`}
                     className="flex h-touch min-w-0 flex-col items-center justify-center rounded-sm bg-fill text-callout leading-tight tabular-nums"
@@ -1305,7 +1330,9 @@ function Matrix({
                     ) : (
                       <>
                         <span>{l.ms === null ? "" : gui.row_rtt(l.ms)}</span>
-                        <small className="max-w-full truncate text-caption opacity-75">{l.road === "direct" ? hop.direct : (l.relay ?? hop.relay)}</small>
+                        <small className="max-w-full truncate text-caption opacity-75">
+                          {l.road === "idle" ? hop.quiet : l.road === "direct" ? hop.direct : (l.relay ?? hop.relay)}
+                        </small>
                       </>
                     )}
                   </div>

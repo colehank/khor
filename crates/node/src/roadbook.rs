@@ -13,6 +13,11 @@
 //! - **A change of kind is written once it has held [`SETTLE`]**: a
 //!   direct/relay flap inside that window writes nothing. A machine that
 //!   falls unreachable writes `none` once.
+//! - **`none` is unreachable, not idle** (round NET-13): the resident's
+//!   last attempt to reach that machine failed and nothing was heard
+//!   since (`Link::down_ms`). A wire that closed idle — nothing asked of
+//!   it for a while — writes nothing at all, and a change it interrupted
+//!   starts settling again from the next live reading.
 //! - **The round trip is written only when it moved by more than a
 //!   quarter** of the last written value (38 → 41 no, 38 → 50 yes), and
 //!   by at least [`MS_LEAST`], and then at most once per [`MS_FLOOR`] for
@@ -118,6 +123,12 @@ impl RoadBook {
         None
     }
 
+    /// No live wire to `to` and nothing failed: no road to write, and a
+    /// change that was settling starts over from the next reading.
+    pub(crate) fn idle(&mut self, to: &str) {
+        self.waiting.remove(to);
+    }
+
     /// Whether `seen`'s kind has now held for `hold`.
     fn settle(&mut self, to: &str, seen: &Seen, now: Instant, hold: Duration) -> bool {
         match self.waiting.get(to) {
@@ -168,7 +179,11 @@ impl crate::Node {
                 let road = match r.road {
                     Some(khor_net::path::PathKind::Direct) => RoadKind::Direct,
                     Some(khor_net::path::PathKind::Relay) => RoadKind::Relay,
-                    _ => RoadKind::None,
+                    _ if r.down.is_some() => RoadKind::None,
+                    _ => {
+                        book.idle(&d.id);
+                        continue;
+                    }
                 };
                 let seen = Seen {
                     road,
@@ -287,6 +302,22 @@ mod tests {
         lone.start_from(&[], t0);
         lone.note("gone", seen(RoadKind::None, None), s(0));
         assert!(lone.note("gone", seen(RoadKind::None, None), s(120)).is_some(), "none, once it held two minutes");
+    }
+
+    /// An idle wire is no road (round NET-13): the beat notes nothing for
+    /// it, and a change it interrupted settles again from scratch.
+    #[test]
+    fn idle_writes_nothing_and_restarts_a_settling_change() {
+        let t0 = Instant::now();
+        let s = |n: u64| t0 + Duration::from_secs(n);
+        let mut b = RoadBook::default();
+        b.start_from(&[Road { to: "a".into(), road: RoadKind::Direct, relay: None, ms: Some(20) }], t0);
+        assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(1)), None);
+        // The wire closes idle for a minute: nothing is noted, so nothing
+        // can be written — and the relay reading 60 s ago held nothing.
+        b.idle("a");
+        assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(61)), None, "settles from the new reading");
+        assert!(b.note("a", seen(RoadKind::Relay, Some(90)), s(73)).is_some(), "and is written once it held");
     }
 
     #[test]
