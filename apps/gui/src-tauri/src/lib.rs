@@ -1578,6 +1578,46 @@ async fn open_page(
         );
         tauri::webview::NewWindowResponse::Deny
     });
+    // **A download is never silent** (UX-42 §16): what the page cannot
+    // show goes to Downloads under the site's name (wry picks the place
+    // and numbers a name already taken), and the caption says where —
+    // `page:download`, `started|name` then `saved|path` or `failed|name`.
+    // ⚠️ 墓碑: with no handler wry cancelled it, and nothing was said.
+    let fetched = window.app_handle().clone();
+    let (d_tab, d_face) = (tab.clone(), face.clone());
+    let builder = builder.on_download(move |_view, event| {
+        let tell = |text: String| {
+            let _ = fetched.emit_to(d_face.clone(), "page:download", PageWord { tab: d_tab.clone(), text });
+        };
+        match event {
+            tauri::webview::DownloadEvent::Requested { url, destination } => {
+                let name = destination.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                if let Ok(mut m) = page_downloads().lock() {
+                    m.push((url.to_string(), destination.clone()));
+                }
+                // The navigation that became a download ends no load: the
+                // light goes out here.
+                let _ = fetched.emit_to(d_face.clone(), "page:load", PageWord { tab: d_tab.clone(), text: "finished".into() });
+                tell(format!("started|{name}"));
+            }
+            tauri::webview::DownloadEvent::Finished { url, success, .. } => {
+                // wry does not say where (`path` is always empty on macOS):
+                // the place given at `Requested`, by its address.
+                let at = page_downloads().lock().ok().and_then(|mut m| {
+                    let i = m.iter().position(|(u, _)| u == url.as_str())?;
+                    Some(m.remove(i).1)
+                });
+                let Some(at) = at else { return true };
+                if success {
+                    tell(format!("saved|{}", at.display()));
+                } else {
+                    tell(format!("failed|{}", at.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+                }
+            }
+            _ => {}
+        }
+        true
+    });
 
     let made = window
         .add_child(
@@ -1596,6 +1636,14 @@ async fn open_page(
         m.insert(label, (machine, going_to));
     }
     Ok(borrow)
+}
+
+/// Each page's running download: its address and where its file goes
+/// (`open_page`'s `on_download`).
+#[cfg(desktop)]
+fn page_downloads() -> &'static std::sync::Mutex<Vec<(String, std::path::PathBuf)>> {
+    static DOWNS: std::sync::OnceLock<std::sync::Mutex<Vec<(String, std::path::PathBuf)>>> = std::sync::OnceLock::new();
+    DOWNS.get_or_init(Default::default)
 }
 
 /// Keeps a page over its tab body as the layout moves under it. Called by

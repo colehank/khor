@@ -1498,7 +1498,7 @@ export const pageDeck = (tab: string, drawing: import("@/lib/native-deck").DeckD
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground",
+  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground" | "page:download",
   tab: string,
   said: (text: string) => void,
 ): () => void {

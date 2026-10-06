@@ -34,8 +34,10 @@
 //! such link and `window.open` navigate this page instead.
 //!
 //! A load that fails is heard by a navigation delegate of khor's own
-//! (`PageFail`, UX-22): it implements only the two failure methods, so
-//! every other decision is WebKit's default, as it was with none.
+//! (`PageFail`, UX-22): the two failure methods, and the two policy
+//! methods that turn what a page cannot show into a download (UX-42 §16)
+//! — every other navigation is allowed, as it was with none. It is the
+//! downloads' delegate too, and offers each file in the share sheet.
 //!
 //! Main thread only: every function here runs inside `with_webview` or
 //! `run_on_main_thread`.
@@ -141,8 +143,208 @@ define_class!(
         fn failed_late(&self, view: *mut AnyObject, _nav: *mut AnyObject, error: *mut AnyObject) {
             failed(view, error);
         }
+
+        // **A download is never silent** (UX-42 §16): what the page
+        // cannot show, an attachment, and a link with `download` become a
+        // download, and its file is offered in the share sheet. ⚠️ 墓碑:
+        // with no policy methods WebKit showed what it could and dropped
+        // the rest without a word.
+        #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
+        fn decide_action(&self, _view: *mut AnyObject, action: *mut AnyObject, done: &block2::Block<dyn Fn(isize)>) {
+            // SAFETY: a live WKNavigationAction; `shouldPerformDownload` is iOS 14.5's.
+            let download = unsafe {
+                let can: bool = msg_send![action, respondsToSelector: objc2::sel!(shouldPerformDownload)];
+                can && { let d: bool = msg_send![action, shouldPerformDownload]; d }
+            };
+            // 2: WKNavigationActionPolicyDownload; 1: allow, as with no method.
+            done.call((if download { 2 } else { 1 },));
+        }
+
+        #[unsafe(method(webView:decidePolicyForNavigationResponse:decisionHandler:))]
+        fn decide_response(&self, _view: *mut AnyObject, response: *mut AnyObject, done: &block2::Block<dyn Fn(isize)>) {
+            // 2: WKNavigationResponsePolicyDownload; 1: allow.
+            done.call((if unsafe { downloads(response) } { 2 } else { 1 },));
+        }
+
+        #[unsafe(method(webView:navigationAction:didBecomeDownload:))]
+        fn action_download(&self, _view: *mut AnyObject, _action: *mut AnyObject, download: *mut AnyObject) {
+            // SAFETY: a live WKDownload; this object outlives it (`FAIL`).
+            unsafe { let _: () = msg_send![download, setDelegate: self]; }
+        }
+
+        #[unsafe(method(webView:navigationResponse:didBecomeDownload:))]
+        fn response_download(&self, _view: *mut AnyObject, _response: *mut AnyObject, download: *mut AnyObject) {
+            // SAFETY: as above.
+            unsafe { let _: () = msg_send![download, setDelegate: self]; }
+        }
+
+        // SAFETY: the signatures are WKDownloadDelegate's.
+        #[unsafe(method(download:decideDestinationUsingResponse:suggestedFilename:completionHandler:))]
+        fn download_to(&self, download: *mut AnyObject, _response: *mut AnyObject, name: *mut AnyObject, done: &block2::Block<dyn Fn(*mut AnyObject)>) {
+            // SAFETY: WebKit hands an NSString.
+            let name = if name.is_null() { String::new() } else { unsafe { (*(name as *const NSString)).to_string() } };
+            match download_place(download, &name) {
+                Some(path) => {
+                    let text = NSString::from_str(&path.to_string_lossy());
+                    // SAFETY: a file URL for a path that does not exist yet.
+                    let url: Retained<AnyObject> = unsafe { msg_send![class!(NSURL), fileURLWithPath: &*text, isDirectory: false] };
+                    done.call((Retained::as_ptr(&url) as *mut AnyObject,));
+                }
+                None => done.call((std::ptr::null_mut(),)),
+            }
+        }
+
+        #[unsafe(method(downloadDidFinish:))]
+        fn download_done(&self, download: *mut AnyObject) {
+            download_over(download, true);
+        }
+
+        #[unsafe(method(download:didFailWithError:resumeData:))]
+        fn download_failed(&self, download: *mut AnyObject, _error: *mut AnyObject, _resume: *mut AnyObject) {
+            download_over(download, false);
+        }
     }
 );
+
+/// Whether a response is a download rather than a page: the main frame's,
+/// of a type WebKit cannot show, or sent as an attachment — Safari's rule.
+///
+/// # Safety
+/// `response` is a live `WKNavigationResponse`.
+unsafe fn downloads(response: *mut AnyObject) -> bool {
+    if objc2::runtime::AnyClass::get(c"WKDownload").is_none() {
+        return false;
+    }
+    let main: bool = unsafe { msg_send![response, isForMainFrame] };
+    if !main {
+        return false;
+    }
+    let show: bool = unsafe { msg_send![response, canShowMIMEType] };
+    if !show {
+        return true;
+    }
+    let r: *mut AnyObject = unsafe { msg_send![response, response] };
+    let http = !r.is_null() && unsafe { msg_send![r, isKindOfClass: class!(NSHTTPURLResponse)] };
+    if !http {
+        return false;
+    }
+    let key = NSString::from_str("Content-Disposition");
+    let v: Option<Retained<NSString>> = unsafe { msg_send![r, valueForHTTPHeaderField: &*key] };
+    v.is_some_and(|v| v.to_string().trim_start().to_ascii_lowercase().starts_with("attachment"))
+}
+
+thread_local! {
+    /// Each running download: its tab and where its file is going.
+    static DOWNS: RefCell<HashMap<usize, (String, std::path::PathBuf)>> = RefCell::new(HashMap::new());
+}
+
+/// The tab whose page `view` is.
+fn tab_of(view: *mut AnyObject) -> Option<String> {
+    PAGES.with(|pages| {
+        let pages = pages.try_borrow().ok()?;
+        pages.iter().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view).map(|(t, _)| t.clone())
+    })
+}
+
+fn tell_download(tab: &str, text: String) {
+    if let Some(app) = APP.get() {
+        let _ = app.emit_to("main", "page:download", PageWord { tab: tab.to_owned(), text });
+    }
+}
+
+/// Where a download's file goes: a folder of its own under the app's
+/// temporary directory, under the name the site suggests (its last
+/// component only). Told as `started|name`.
+fn download_place(download: *mut AnyObject, suggested: &str) -> Option<std::path::PathBuf> {
+    // SAFETY: a live WKDownload; `webView` is weak and may be gone.
+    let view: *mut AnyObject = unsafe { msg_send![download, webView] };
+    let tab = tab_of(view)?;
+    let name = std::path::Path::new(suggested).file_name().and_then(|n| n.to_str()).filter(|n| !n.is_empty()).unwrap_or("download").to_owned();
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let dir = std::env::temp_dir().join("khor-downloads").join(N.fetch_add(1, Ordering::Relaxed).to_string());
+    let _ = std::fs::remove_dir_all(&dir);
+    if std::fs::create_dir_all(&dir).is_err() {
+        tell_download(&tab, format!("failed|{name}"));
+        return None;
+    }
+    let path = dir.join(&name);
+    tell_download(&tab, format!("started|{name}"));
+    DOWNS.with(|d| d.borrow_mut().insert(download as usize, (tab, path.clone())));
+    Some(path)
+}
+
+/// A download ended: its file is offered in the share sheet (「存储到
+/// "文件"」 is there, as Safari's downloads land), and the folder goes
+/// once the sheet is done; a failure, or no screen to offer it on, is
+/// said on the page's line.
+fn download_over(download: *mut AnyObject, ok: bool) {
+    let Some((tab, path)) = DOWNS.with(|d| d.borrow_mut().remove(&(download as usize))) else { return };
+    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let dir = path.parent().map(std::path::Path::to_path_buf);
+    let shown = ok && {
+        let view = PAGES.with(|p| p.borrow().get(&tab).map(|p| p.view.clone()));
+        // SAFETY: main thread; a live view.
+        view.is_some_and(|v| unsafe { share(&v, &path, dir.clone()) })
+    };
+    if shown {
+        tell_download(&tab, format!("offered|{name}"));
+    } else {
+        if let Some(dir) = dir {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+        tell_download(&tab, format!("failed|{name}"));
+    }
+}
+
+/// The view controller in front, over `view`'s window.
+///
+/// # Safety
+/// Main thread; `view` is a live UIView.
+unsafe fn front_controller(view: *mut AnyObject) -> *mut AnyObject {
+    let window: *mut AnyObject = unsafe { msg_send![view, window] };
+    let mut top: *mut AnyObject = if window.is_null() { std::ptr::null_mut() } else { unsafe { msg_send![window, rootViewController] } };
+    while !top.is_null() {
+        let next: *mut AnyObject = unsafe { msg_send![top, presentedViewController] };
+        if next.is_null() {
+            break;
+        }
+        top = next;
+    }
+    top
+}
+
+/// The share sheet with the file at `path`; `false` where there is
+/// nothing to show it on.
+///
+/// # Safety
+/// Main thread; `view` is a live page view.
+unsafe fn share(view: &AnyObject, path: &std::path::Path, dir: Option<std::path::PathBuf>) -> bool {
+    let at = view as *const AnyObject as *mut AnyObject;
+    let top = unsafe { front_controller(at) };
+    if top.is_null() {
+        return false;
+    }
+    unsafe {
+        let text = NSString::from_str(&path.to_string_lossy());
+        let url: Retained<AnyObject> = msg_send![class!(NSURL), fileURLWithPath: &*text, isDirectory: false];
+        let items: Retained<AnyObject> = msg_send![class!(NSArray), arrayWithObject: &*url];
+        let a: Allocated<AnyObject> = msg_send![class!(UIActivityViewController), alloc];
+        let sheet: Retained<AnyObject> = msg_send![a, initWithActivityItems: &*items, applicationActivities: std::ptr::null::<AnyObject>()];
+        // Where it is anchored on a wide screen (nil on an iPhone).
+        let pop: *mut AnyObject = msg_send![&*sheet, popoverPresentationController];
+        if !pop.is_null() {
+            let _: () = msg_send![pop, setSourceView: at];
+        }
+        let gone = block2::RcBlock::new(move |_kind: *mut AnyObject, _done: objc2::runtime::Bool, _items: *mut AnyObject, _err: *mut AnyObject| {
+            if let Some(dir) = &dir {
+                let _ = std::fs::remove_dir_all(dir);
+            }
+        });
+        let _: () = msg_send![&*sheet, setCompletionWithItemsHandler: &*gone];
+        let _: () = msg_send![top, presentViewController: &*sheet, animated: true, completion: std::ptr::null::<AnyObject>()];
+    }
+    true
+}
 
 define_class!(
     // SAFETY: NSObject has no subclassing requirements, and this class
@@ -203,15 +405,7 @@ fn ask(
     // SAFETY: WebKit calls this on the main thread with a live view; every
     // selector is documented UIKit.
     unsafe {
-        let window: *mut AnyObject = msg_send![view, window];
-        let mut top: *mut AnyObject = if window.is_null() { std::ptr::null_mut() } else { msg_send![window, rootViewController] };
-        while !top.is_null() {
-            let next: *mut AnyObject = msg_send![top, presentedViewController];
-            if next.is_null() {
-                break;
-            }
-            top = next;
-        }
+        let top = front_controller(view);
         if top.is_null() {
             if let Some(a) = answer.borrow_mut().take() {
                 a(false, None);
@@ -279,11 +473,7 @@ fn popped(view: *mut AnyObject, action: *mut AnyObject) {
     if url.is_empty() || url == "about:blank" {
         return;
     }
-    let tab = PAGES.with(|pages| {
-        let pages = pages.try_borrow().ok()?;
-        pages.iter().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view).map(|(t, _)| t.clone())
-    });
-    if let Some(tab) = tab {
+    if let Some(tab) = tab_of(view) {
         let _ = app.emit_to("main", "page:popup", PageWord { tab, text: url });
     }
 }

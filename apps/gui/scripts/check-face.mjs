@@ -31442,6 +31442,26 @@ try {
         if (words[k]?.reason !== words.want[k] || words[k]?.url !== "https://nowhere.example/") fail(`bar t · a ${k} failure reads ${shown(words[k])} — the catalog's ${shown(words.want[k])} and the address`);
       }
       if (!words.other?.reason?.startsWith("The requested URL")) fail(`bar t · an unsorted failure reads ${shown(words.other)} — the system's own sentence, never silence`);
+      // A page's download is never silent (UX-42 §16): each word the app
+      // tells reads as the catalog's sentence, and the phone's offered
+      // sheet says nothing more.
+      const down = await page.evaluate(async () => {
+        const { pageDownload } = await import("/src/browse/page-download.ts");
+        const { gui } = await import("/src/gen/catalog.ts");
+        return {
+          started: pageDownload("started|a|b.pdf"),
+          saved: pageDownload("saved|/Users/x/Downloads/b.pdf"),
+          failed: pageDownload("failed|b.pdf"),
+          offered: pageDownload("offered|b.pdf"),
+          want: { started: gui.page_downloading("a|b.pdf"), saved: gui.took_file("/Users/x/Downloads/b.pdf"), failed: gui.page_download_failed("b.pdf") },
+        };
+      });
+      console.log(`bar t · download words ${shown(down)}`);
+      for (const k of ["started", "saved", "failed"]) {
+        if (down[k]?.text !== down.want[k]) fail(`bar t · a ${k} download reads ${shown(down[k])} — the catalog's ${shown(down.want[k])} (src/browse/page-download.ts)`);
+      }
+      if (down.saved?.reveal !== "/Users/x/Downloads/b.pdf") fail(`bar t · a saved download offers no place to show: ${shown(down.saved)}`);
+      if (down.offered !== null) fail(`bar t · the phone's share sheet is the offer; the line says nothing more, read ${shown(down.offered)}`);
     }
 
     // ── u. the deck pill is a band (UX-33 §3): at rest one tab, a drag

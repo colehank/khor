@@ -2226,6 +2226,10 @@ page-fail-offline = "No network"
 page-fail-tls = "Secure connection failed"
 page-fail-blocked = "Blocked from loading"
 page-fail-route = "The borrowed network can't reach this address"
+# A page's download (UX-42 §16) is never silent: the phone offers the file in the share sheet;
+# the Mac saves it to Downloads and the caption says where (took-file) with 「Show in Finder」.
+page-downloading = "Downloading {0}…"
+page-download-failed = "Couldn't download {0}"
 open-in-browser = "Open in system browser"
 # ⚠️ Tombstone: pick-exit, retired 2026-09-22 with the fresh tab's button (docs/SHELL.md 第七轮).
 term-over = "This terminal ended"
