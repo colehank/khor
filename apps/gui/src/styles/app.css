@@ -749,31 +749,28 @@ aside[data-side] {
 /* **The session's 附栏 on the phone** (UX-37 §3–4, `SessionPlaceSheet`):
    the whole width, standing on the bottom edge at one of two detents,
    rising in like the form sheet; the drag paints its height inline and
-   the release lets it glide to the detent. The seats row at its foot is
-   flat glass over the pages, which keep its room at their scrollers'
-   foot (`[data-nav-shown]` above). */
+   the release lets it glide to the detent. The pages keep the safe area
+   at their scrollers' foot (`[data-nav-shown]` above). ⚠️ 墓碑 (UX-37 §4
+   → UX-39 §2): the seats row of flat glass at its foot. */
 [data-place-sheet] {
-  /* **The sheet is the card** (UX-37 §2): a page inside wears no ground
-     of its own — a list's `side`, a page's `card`, the landing's
-     `background` all read the sheet's surface here. */
-  --background: var(--popover);
-  --card: var(--popover);
-  --side: var(--popover);
+  /* **The sheet wears the app's own ground** (UX-39 §1, the owner 2026-10-06
+     21:10: 「展开了就是 app 的颜色，不要额外颜色」): no surface colour of
+     its own, and every page inside reads the same ground — a list's
+     `side` and a page's `card` are the background here. ⚠️ 墓碑 (UX-37
+     §2): `popover` as the sheet's surface. */
+  --card: var(--background);
+  --side: var(--background);
+  --popover: var(--background);
   height: calc(var(--place-sheet-half) * 100dvh);
   transition: height var(--dur-240) var(--ease-out);
   animation: sheet-up var(--dur-240) var(--ease-out);
-  --nav-room: calc(var(--nav-h) + var(--safe-bottom) + var(--gap-in));
+  --nav-room: var(--safe-bottom);
 }
 [data-place-sheet][data-detent="full"] {
   height: calc(var(--place-sheet-full) * 100dvh);
 }
 [data-place-sheet][data-sheet-pulling] {
   transition: none;
-}
-[data-side-foot] {
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
 }
 @media (prefers-reduced-motion: reduce) {
   [data-place-sheet] {
@@ -2392,11 +2389,6 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
    The run is a sweep from the left, over and over until the load ends;
    under reduced motion the line simply stands. */
 [data-pill-slot]:has([data-pill-progress]) [data-pill-status] {
-  display: none;
-}
-/* A session's day (UX-36) gives the slot to a running reload the same
-   way, and is back when the run ends. */
-[data-pill-slot]:has([data-pill-progress]) [data-pill-log] {
   display: none;
 }
 [data-pill-progress] > span {

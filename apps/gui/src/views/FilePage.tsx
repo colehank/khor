@@ -412,7 +412,7 @@ export function FilePage({
   /** **Inside the session's 附栏** (UX-37 §6): the page wears no deck —
       ‹ · the name · the content, the name's head carrying what is the
       page's own (✓ while it differs, the preview switch, 「…」 with
-      在主区打开); the 附栏's seats row stands at its foot. */
+      在主区打开); the 附栏's one head stands above it (UX-39 §2). */
   bare?: boolean;
   /** Acts the page's host adds at the head of 「…」 (UX-30 §4: the
       session's 附栏 offers 「在主区打开」, the one way out of the column). */

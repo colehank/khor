@@ -2012,17 +2012,13 @@ side-hide = "Close the side panel"
 side-seam = "Resize the side panel"
 open-in-main = "Open in the main area"
 recent-none = "Nowhere yet"
-# The 附栏's seats land on this session's slice and ‹ goes to the whole
-# (UX-37 §1): the slice's title, the whole's, and the slice with nothing
-# in it yet.
-side-recent-here = "Touched here"
-side-recent-all = "All recent"
-side-recent-here-none = "Nothing touched from this session yet"
-side-pages-here = "Opened here"
-side-pages-all = "All pages"
-side-pages-here-none = "No pages opened from this session yet"
-# 今天's row in 最近 (UX-37 §5): the day's two totals beside its bar.
+# The 附栏's 最近 and 浏览器 are this session's slice (UX-37 §1, UX-39
+# §3): the slice with nothing in it yet.
+side-recent-here-none = "Nothing opened yet"
+side-pages-here-none = "No pages opened yet"
+# 过去24小时, 最近's first row (UX-39 §4): the day's two totals over its band.
 day-busy-idle = "Busy {0} · idle {1}"
+day-last-24h = "Last 24h"
 new-item = "New"
 
 no-matches = "No matches"

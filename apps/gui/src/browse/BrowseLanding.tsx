@@ -156,14 +156,19 @@ export function BrowseLanding({
   bare,
 }: {
   /**
-   * **Drawn inside the session's 附栏** (UX-37 §1, §6, narrow only): the
-   * list lands on the tabs opened from `here` (a session's id; `null` is
-   * every tab), under a seat head — ‹ to every tab from the slice — and
-   * a page wears no deck: ‹ · its host · the page. No landing head (＋,
-   * search) and no native deck: the session's deck stands down while the
-   * sheet is up, and the 附栏's seats row is at the page's foot.
+   * **Drawn inside the session's 附栏** (UX-37 §6, UX-39 §3, narrow only):
+   * the list is the tabs opened from `here` (a session's id) under the
+   * 附栏's one head, and a page wears no deck: ‹ to that list · its host ·
+   * the page. No landing head (＋, search), no native deck (the session's
+   * deck is away while the sheet is up). ⚠️ 墓碑 (UX-37 §1 → UX-39 §3):
+   * ‹ from the slice to every tab (`here: null`, 全部网页).
    */
-  bare?: { here: string | null; onAll: () => void };
+  bare?: {
+    here: string;
+    /** Where the page's ‹ goes, said: the list (浏览器) unless the page
+        was opened from a row of 最近 (UX-39 §3). */
+    backLabel?: string;
+  };
   /** Narrow only: which of the pair is up — the tabs or the page — and
       the shell's two moves between them. */
   screen?: "list" | "detail";
@@ -806,29 +811,26 @@ export function BrowseLanding({
           <SeatHead
             title={pillHost(tabs.current.path) || tabLabel(kind, tabs.current.path, deviceOf(tabs.current.device))}
             back={() => onBack?.()}
-            backLabel={bare.here === null ? gui.side_pages_all : gui.side_pages_here}
+            backLabel={bare.backLabel ?? gui.browser_tab}
           />
-          {/* The page's box stops at the seats row (`data-nav-clear`):
-              the native page is framed to it and must not cover them. */}
+          {/* The page's box (`data-nav-clear`): the native page is framed
+              to it, under the head. */}
           <div data-nav-clear className="min-h-0 flex-1 overflow-hidden">
             {body}
           </div>
         </section>
       );
     }
-    const mine = bare.here === null ? null : new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id));
+    const mine = new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id));
     return (
-      <section data-browse-tabs data-browse-bare={bare.here === null ? "all" : "here"} className="flex h-full min-h-0 flex-col">
-        {bare.here === null ? (
-          <SeatHead title={gui.side_pages_all} />
-        ) : (
-          <SeatHead title={gui.side_pages_here} back={bare.onAll} backLabel={gui.side_pages_all} />
-        )}
+      <section data-browse-tabs data-browse-bare="here" className="flex h-full min-h-0 flex-col">
+        {/* The 附栏's head is the seat's title (`SideBody`); this list has
+            none of its own. ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ to 全部网页. */}
         <div data-tab-switcher data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
           <SideList
-            rows={mine === null ? side : side.filter((r) => mine.has(r.id))}
+            rows={side.filter((r) => mine.has(r.id))}
             label={groupLabel}
-            empty={<span data-page-none>{mine === null ? gui.page_none : gui.side_pages_here_none}</span>}
+            empty={<span data-page-none>{gui.side_pages_here_none}</span>}
             none={gui.no_matches}
           />
         </div>

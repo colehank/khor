@@ -147,8 +147,8 @@ export function SessionScreen({
   away = false,
   children,
 }: {
-  /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4):
-      the sheet's own seats row stands on the screen's foot where the deck
+  /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4,
+      UX-39 §1): the sheet stands on the screen's foot where the deck
       was. Hidden in place, not taken out: the content keeps its height,
       so the terminal under the sheet's half does not refit. */
   away?: boolean;
@@ -365,6 +365,8 @@ export function SessionScreen({
         data-folded={folded || undefined}
         data-native-deck={nativeDeck || undefined}
         data-deck-away={away || undefined}
+        // The deck steps away while the sheet is up (UX-37 §4; the owner
+        // 2026-10-06 21:05 again: 「展开了不要有下面的药丸这一行」).
         className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible")}
       >
         {folded && (
@@ -451,7 +453,7 @@ export function SessionScreen({
                 )}
                 <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
               </div>
-              <PillSlot loading={loading} seat={setProgress} log={face?.log}>
+              <PillSlot loading={loading} seat={setProgress}>
                 {status}
               </PillSlot>
             </div>
@@ -523,32 +525,23 @@ const SAMPLE_MS = 250;
  * while it reloads (`BarSeat at="progress"`: a terminal's join). The
  * wide strip's pills draw the same line from the same fact (UX-33 §2).
  *
- * **A session's slot holds its day at rest** (UX-36, the owner
- * 2026-10-06): `log`, the 24 hours flattened (`DayLine`), along the
- * bottom edge of the pill's first row — so a status strip hangs below
- * it — and a reload's line replaces it while it runs (`app.css`). A page
- * and a file have none.
+ * ⚠️ 墓碑 (UX-36 → UX-39 §4, the owner 2026-10-06 22:10): a session's
+ * slot held its day at rest, the 24 hours flattened along the pill's
+ * foot. No pill draws a day now; it is 最近's first row.
  */
 export function PillSlot({
   loading = false,
   seat,
-  log,
   children,
 }: {
   loading?: boolean;
   seat: (el: HTMLElement | null) => void;
-  log?: ReactNode;
   children?: ReactNode;
 }) {
   return (
     <div data-pill-slot className="flex min-w-0 flex-col">
       <span ref={seat} data-pill-progress-seat className="contents" />
       {loading && <PillProgress />}
-      {log && (
-        <span data-pill-log className="pointer-events-none absolute inset-x-0 top-[calc(var(--glass-btn)-var(--day-ruler-h))] flex">
-          {log}
-        </span>
-      )}
       {children && (
         <div data-pill-status className="flex min-w-0 items-center">
           {children}

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
@@ -32,6 +32,7 @@ import {
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
+import { SeatPick } from "@/components/SeatTitle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
@@ -97,6 +98,10 @@ export function MachineCard({
       place R0 puts them wide (第十七轮 §3). */
   actions?: ReactNode;
 }) {
+  // **Inside the 附栏 the first line is the machine's name**, no ‹ and
+  // no face (UX-39 §3, the owner 2026-10-06 21:05: 「都不可返回」); the
+  // 附栏's head above says 机器 with the seat's own icon.
+  const inSide = useContext(SeatPick) !== null;
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
       {/* **A strip only where something has to live in it.** Back exists
@@ -116,6 +121,11 @@ export function MachineCard({
         // it was a second bar under L0's magnifier.
         <NarrowHead>
         {(seated) => (
+        inSide ? (
+          <div data-head-name className="flex min-h-ctl-lg flex-none items-center border-b px-(--page-inset) text-body font-label">
+            <span className="min-w-0 truncate">{row?.shown ?? ""}</span>
+          </div>
+        ) : (
         <header className={seated ? "flex min-w-0 flex-1 items-center gap-row self-stretch" : "flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"}>
           {/* The canvas's machine head (the redesign, 2026-10-02): the way
               back as a glass circle, the machine's own face, its name
@@ -130,6 +140,7 @@ export function MachineCard({
           </span>
           {actions}
         </header>
+        )
         )}
         </NarrowHead>
       )}

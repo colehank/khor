@@ -1,11 +1,15 @@
 /**
- * **A 附栏 seat's head** (UX-37 §1): every seat lands on this session's
- * slice, and ‹ goes to the whole. The slice's head is ‹ · its title; the
- * whole's is its title alone (a row in it lands back on a slice). The
- * same strip the narrow detail pages draw where there is no window row
- * to seat a head in (`MachineCard`'s, 额度's): the way back as a glass
- * circle, then the name — so a seat's own head and a card's read as one
- * kind of thing inside the sheet.
+ * **A page's head inside the 附栏** (UX-39 §2–3): the 附栏's one head
+ * (`SideBody`) says whose it is and which seat; a seat's page draws a
+ * head of its own only to carry a way back inside the seat — a file
+ * opened from the tree back to the tree, a page opened from a row of 最近
+ * back to 最近, a page of 浏览器 back to its list — or acts that belong
+ * to the page (the file page's ✓, preview, 「…」). Then it is a plain
+ * line under the 附栏's head: ‹ as a glass circle, the page's name. With
+ * neither it draws nothing; the seat's noun is already said above.
+ *
+ * ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): the slice's head as ‹ to the whole and
+ * the whole's as its title alone (「这个会话碰过的」 / 「全部最近」).
  */
 import type { ReactNode } from "react";
 
@@ -20,13 +24,14 @@ export function SeatHead({
   children,
 }: {
   title: ReactNode;
-  /** To the whole; absent on the whole itself. */
+  /** To the list this page was opened from. */
   back?: () => void;
-  /** What ‹ goes to, for the ear: the whole's name. */
+  /** What ‹ goes to, for the ear: that list's name. */
   backLabel?: string;
   /** Anything that belongs at the head's right end. */
   children?: ReactNode;
 }) {
+  if (!back && !children) return null;
   return (
     <header
       data-seat-head
@@ -37,7 +42,7 @@ export function SeatHead({
           <IconBack />
         </GlassCircle>
       )}
-      <span data-seat-title className="min-w-0 flex-1 truncate text-title-md font-title">
+      <span data-seat-title className="min-w-0 flex-1 truncate text-body font-label">
         {title}
       </span>
       {children}

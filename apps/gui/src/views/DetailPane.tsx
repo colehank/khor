@@ -222,16 +222,9 @@ export function DetailPane({
   empty,
   tabs,
   openIds,
-  side,
 }: {
   row: SessionRow | null;
   narrow: boolean;
-  /** **The session's 附栏** (UX-30): the narrow face docked at the pane's
-      right edge, beside the session — a terminal or a conversation —
-      which gives up the column's width (a terminal refits as the seam
-      moves). Composed by the shell (`views/SessionSide`); absent on the
-      narrow face, where the phone's sheet is the same object. */
-  side?: ReactNode;
   onBack: () => void;
   /** This session's last day (`DayStrip`), drawn as a band under the
       tabs — the one place it is shown (2026-09-02:「session的状态bar不要
@@ -615,7 +608,9 @@ export function DetailPane({
         );
       })}
       </div>
-      {side}
+      {/* ⚠️ 墓碑 (UX-30 → UX-39 §6): the 附栏's column stood here, at the
+          pane's right edge under the tab strip; it stands beside the strip
+          now, from the window's first row (`App`). */}
       </div>
       {/* **In the bar's screen the day hangs at the foot** (2026-10-02):
           the tab that opens it is under the session there, so the band

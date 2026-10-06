@@ -54,7 +54,6 @@ import { PaneBar } from "@/components/PaneBar";
 import { RegionLead } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SideList, type SideRow } from "@/components/SideList";
 import { sessionKind } from "@/components/SessionFace";
@@ -170,24 +169,17 @@ export type TabFace = {
    * the one caller (`App`), and the words are the caller's.
    */
   again?: { hint: string; expanded?: boolean; controls?: string; toggle?: () => void };
-  /** **The pill's third seat, 「和来源对齐」** (UX-33, the owner 2026-10-06):
-      on every pill, in front or not — a session's ↻ re-attach, a page's
-      ↻ reload (× while it loads), a file's ↻ re-read when clean and ✓
-      save when changed. ⚠️ 墓碑: the × cell (closing is the sheet's, ⌘W's
-      and the menu's now). Absent only on a tab nobody has listed yet. */
+  /** **The tab's act, 「和来源对齐」** (UX-33, the owner 2026-10-06): a
+      session's ↻ re-attach, a page's ↻ reload (× while it loads), a
+      file's ↻ re-read when clean and ✓ save when changed. On the phone's
+      band it is the pill's third seat, on every pill; on the wide strip
+      no pill wears it (UX-39 §7) — the front tab's stands after the
+      capsule where the strip asks for it (`frontAct`). Absent only on a
+      tab nobody has listed yet. */
   act?: { kind: "reload" | "stop" | "save"; label: string; onPress: () => void };
   /** **The pill reloads**: a 2-pt line runs along its own bottom edge
       while a join, a load or a read is under way (UX-33 §2; UX-31's slot). */
   loading?: boolean;
-  /** **A session's day in the pill's slot** (UX-36): the 24 hours
-      flattened (`DayLine`), along the pill's bottom edge at rest, given
-      up to `loading`'s line while a reload runs. A page and a file have
-      none. */
-  log?: ReactNode;
-  /** **The day in full, opened from the pill's line** (UX-36 §1): on the
-      tab in front, a panel hanging from the pill while `open` — opened by
-      the tab's menu (「今天」), folded by a press outside or Esc. */
-  day?: { open: boolean; onOpenChange: (open: boolean) => void; panel: ReactNode };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -328,7 +320,7 @@ export function TabStrip({
   onFocus,
   // Closing left the pill with UX-33 (the sheet, ⌘W and the menu close);
   // the strip still takes the handler so every caller stays one shape.
-  onClose: _onClose,
+  onClose,
   onNew,
   onSwitch,
   switching = false,
@@ -336,7 +328,17 @@ export function TabStrip({
   tail,
   at = "top",
   glass = false,
+  frontAct = false,
 }: {
+  /** **The front tab's act at the capsule's end, and none on the pills**
+      (UX-39, the owner 2026-10-06 22:35: a ↻ on every pill and one more
+      at the strip's end was 「有点奇怪」). On the wide face a tab is a
+      tab; the one act stands at the end, Safari's arrangement. The
+      session strip leaves this off (the terminal's own ↻ already stands
+      in the verbs seat) and so does the browser (the address field has
+      its ↻); the workspace strip takes it for the file's ↻ / ✓. ⚠️ 墓碑
+      (UX-33 §1): the third seat on every wide pill. */
+  frontAct?: boolean;
   /** **The glass look** (the redesign, 2026-10-02): the tabs are pills in
       one glass capsule — the one in front a `fill-strong` pill with its
       ×, the rest ink — and the count sits at the capsule's end after a
@@ -596,9 +598,12 @@ export function TabStrip({
           // At a session's foot the capsule takes the row between the way
           // back and the keyboard; over the wide face's content it is as
           // long as its tabs (the canvas).
-          glass
-            ? cn("glass h-glass-tabs items-center self-center rounded-full px-glass-pad", below ? "flex-1" : "flex-initial")
-            : "flex-1 self-stretch",
+          // **The capsule spans the row** (UX-39, the owner 2026-10-06
+          // 22:55: 「全挤在左边了」): Safari's tab bar — the tabs share the
+          // whole width between the row's start and the act circle, the
+          // front one as wide as its name (up to half), the rest equal.
+          // ⚠️ 墓碑 (UX-25): the capsule as long as its tabs, at the left.
+          glass ? "glass h-glass-tabs flex-1 items-center self-center rounded-full px-glass-pad" : "flex-1 self-stretch",
         )}
       >
       {!glass && cut.left && (
@@ -620,7 +625,7 @@ export function TabStrip({
         data-tab-strip
         // `items-center`: 「+」 on the row's centreline with the tabs'
         // labels; the tabs themselves stretch to the floor (their foot).
-        className={cn("flex min-w-0 items-center overflow-x-auto", glass ? "gap-0.5 self-stretch" : "flex-1 gap-1", glass && below && "flex-1")}
+        className={cn("flex min-w-0 items-center overflow-x-auto", glass ? "flex-1 gap-0.5 self-stretch" : "flex-1 gap-1")}
         // **In the glass capsule a scrolled edge fades** (the audit fix plan
         // F3.3; W09, N19): a mask over the 12 at each end that has a tab
         // cut off behind it, instead of a glyph cut in half.
@@ -635,7 +640,7 @@ export function TabStrip({
         {faces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
-          const tab = (
+          return (
             <div
               key={f.id}
               data-tab={f.id}
@@ -707,8 +712,12 @@ export function TabStrip({
                 // tab, the front one too, so a choice moved no width.
                 glass
                   ? on
-                    ? "min-w-tab-min max-w-tab-on flex-none glass-sel text-foreground"
-                    : "min-w-tab-min max-w-tab shrink grow basis-0 text-muted-foreground hover:bg-fill"
+                    ? // The front pill starts from its whole name and grows
+                      // with the rest, so it is never the narrowest and a
+                      // long name is read whole (up to half the capsule
+                      // when it has neighbours).
+                      cn("min-w-tab-min shrink-0 grow basis-auto glass-sel text-foreground", faces.length > 1 && "max-w-[50%]")
+                    : "min-w-tab-min shrink grow basis-0 text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
                     : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
@@ -852,14 +861,36 @@ export function TabStrip({
                 </TooltipContent>
               )}
               </Tooltip>
-              {/* **The third seat** (UX-33): what aligns this tab with its
-                  source — on every pill, so a stuck session three tabs
-                  over is re-attached where it stands, a changed file saved
-                  without being opened. The pill's ground colour comes
-                  through it; the save face wears the brand ink. ⚠️ 墓碑:
-                  the ×'s cell (docs/SHELL.md 第十三轮 第 6 条) and the
-                  front tab's 预览 eye and 编辑/保存 (UX-14's pill). */}
-              {f.act && (
+              {/* **× on every wide pill, always** (UX-39 §7, the owner
+                  2026-10-06 22:45–22:50: 「桌面版的看不见 ×」, 「不悬浮就显
+                  示 ×」): in the seat the act had; ⌘W, the menu and the
+                  sheet still close. The phone's band keeps no ×.
+                  ⚠️ 墓碑 (UX-33 §1 → UX-39 §7): the third seat on every
+                  wide pill; the wide face's one act is the verbs seat's
+                  (or `frontAct`'s, after the capsule). */}
+              {!below && (
+                <button
+                  type="button"
+                  data-tab-close
+                  aria-label={gui.close}
+                  className={cn(
+                    "flex h-full w-tab-close flex-none items-center justify-center hover:bg-muted hover:text-foreground",
+                    on ? "text-muted-foreground" : "text-tertiary",
+                    glass ? "rounded-full" : "rounded-sm",
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose(f.id);
+                  }}
+                >
+                  <IconClose className="size-affordance" />
+                </button>
+              )}
+              {/* **The third seat, on the phone's band** (UX-33): what
+                  aligns this tab with its source — a session's ↻, a
+                  page's ↻ / ×, a file's ↻ / ✓; the save face wears the
+                  brand ink. */}
+              {f.act && below && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -897,40 +928,7 @@ export function TabStrip({
                   <span className="block h-full w-[55%] animate-tab-load rounded-full bg-brand-strong" />
                 </span>
               )}
-              {/* **A session's day in the same slot** (UX-36): the line at
-                  rest, the reload's while one runs. */}
-              {!f.loading && f.log && (
-                <span data-tab-log className="pointer-events-none absolute inset-x-3 bottom-0.5 flex">
-                  {f.log}
-                </span>
-              )}
             </div>
-          );
-          // **The day in full hangs from the pill's line** (UX-36 §1),
-          // anchored on the pill so it opens under it. Every session tab
-          // is wrapped, so the front one changing does not remount a tab.
-          if (!f.day) return tab;
-          return (
-            <Popover key={f.id} open={on && f.day.open} onOpenChange={f.day.onOpenChange}>
-              <PopoverAnchor asChild>{tab}</PopoverAnchor>
-              <PopoverContent
-                data-day-pop
-                align="start"
-                side={below ? "top" : "bottom"}
-                // The terminal keeps the focus: the panel is read, not
-                // typed into, and a terminal taking the focus back (a
-                // reload, a click into it) is not a reason to fold it —
-                // a press outside or Esc is.
-                onOpenAutoFocus={(e) => e.preventDefault()}
-                onFocusOutside={(e) => e.preventDefault()}
-                // `!p-0`: the popover's own `px-row py-in` are custom spacings
-                // `cn()` cannot see as padding, so a plain `p-0` loses to
-                // them by the stylesheet's order.
-                className="w-(--session-side-w) max-w-[calc(100vw-2*var(--page-inset))] !p-0 [--side-ground:var(--popover)]"
-              >
-                {f.day.panel}
-              </PopoverContent>
-            </Popover>
           );
         })}
         {onNew && (
@@ -958,6 +956,27 @@ export function TabStrip({
         </>
       )}
       </div>
+      {/* The front tab's one act, after the capsule (`frontAct`). */}
+      {frontAct && !below && (() => {
+        const f = faces.find((x) => x.id === active);
+        if (!f?.act) return null;
+        return (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <GlassCircle
+                data-tab-act={f.act.kind}
+                data-tab-front-act
+                aria-label={f.act.label}
+                className={f.act.kind === "save" ? "text-brand-strong" : undefined}
+                onClick={() => f.act?.onPress()}
+              >
+                {f.act.kind === "save" ? <IconCheck /> : f.act.kind === "stop" ? <IconClose /> : <IconReload className={cn(f.loading && "animate-spin motion-reduce:animate-none")} />}
+              </GlassCircle>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{f.act.label}</TooltipContent>
+          </Tooltip>
+        );
+      })()}
       {/* Pinned against the scrolling row, in the order a hand reaches
           them: the way to see the ones that scrolled off, then the way
           to add another.

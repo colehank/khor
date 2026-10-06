@@ -14,6 +14,7 @@ import {
   recentVisit,
   syncNow,
   fetchWorkspaces,
+  widenWindow,
   inApp,
   installHooks,
   launchOn,
@@ -104,9 +105,8 @@ import { cn } from "@/lib/utils";
 import { type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
-import { SeatHead } from "@/components/SeatHead";
 import { SIDE_ID, SessionSide } from "@/views/SessionSide";
-import { DayLine, DayPanel, DayToday } from "@/views/DayLine";
+import { DayToday } from "@/views/DayToday";
 import { SideRecent } from "@/views/SideRecent";
 import { useSideRecent, type RecentItem } from "@/hooks/use-side-recent";
 import { useDayTotals } from "@/hooks/use-day-totals";
@@ -114,6 +114,7 @@ import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHo
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
+import { SideWorkspace } from "@/views/SideWorkspace";
 import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspacesNow } from "@/views/WorkspacesNow";
 import { LockScreen } from "@/views/LockScreen";
@@ -606,7 +607,12 @@ export default function App() {
   // **Watched while its landing is open** (`useBrowseTabs`'s `WATCH_MS`):
   // `.khor/tabs.json` has two writers now, and `khor tabs open` in a
   // terminal has to show up in the column without anybody reloading.
-  const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser");
+  // …and while the 附栏 is on its 浏览器 seat (UX-39 walk: the seat drew
+  // the tabs as they were when the landing was last open, and a page a
+  // terminal opened into it was not among them). Set below, where the
+  // 附栏's state is.
+  const [sideBrowsing, setSideBrowsing] = useState(false);
+  const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser" || sideBrowsing);
   const browsing = { kind: PAGES, tabs: pageTabs };
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">(() => place.screen ?? "list");
@@ -1682,7 +1688,7 @@ export default function App() {
         const r = rows.find((row) => row.id === id);
         // **Pressed again, the tab in front opens or closes its 附栏**
         // (UX-30; ⚠️ 墓碑 2026-09-29 → 10-06: it showed or hid the day —
-        // 「点击标签后显示吧」 — which hangs under the pill now, UX-36). Read by
+        // 「点击标签后显示吧」 — which is 最近's first row now, UX-39 §4). Read by
         // the strip only on the tab in front, so the front tab's memory
         // is the one consulted.
         const again = {
@@ -1694,31 +1700,10 @@ export default function App() {
             setSessionSide(id, { open: !side.open });
           },
         };
-        // **The session's day hangs under its pill** (UX-36): the line in
-        // the pill's slot, and the day in full hanging from it — opened
-        // by the menu's 「今天」, the pill's press being the 附栏's.
-        const front = id === selected;
-        const log = <DayLine runs={dayOf(id)} />;
-        const day = {
-          open: front && side.day,
-          onOpenChange: (open: boolean) => setSessionSide(id, { day: open }),
-          // The box the band's axis is measured in (`useStripWidth`).
-          panel: (
-            <div ref={setDetailBox}>
-              <DayPanel runs={dayOf(id)} className="max-h-[60dvh] overflow-y-auto px-[calc(var(--nav-gap)-var(--gap-in))] pb-in" />
-            </div>
-          ),
-        };
-        // It opens; a press outside or Esc folds (the menu's own press is
-        // one outside the open panel, so a toggle here would reopen it).
-        const today = {
-          key: "today",
-          label: gui.today,
-          run: () => {
-            sessionTabs.focus(id);
-            setSessionSide(id, { day: true });
-          },
-        };
+        // ⚠️ 墓碑 (UX-36 → UX-39 §4, the owner 2026-10-06 22:10: 「药丸下面就
+        // 不绘制 session 的日志了，日志在最近里面，放在最上面」): the day's
+        // line in the pill's slot, the day in full hanging from it, and the
+        // menu's 「今天」. The day is 最近's first row now, on both faces.
         return r
           ? {
               id,
@@ -1737,12 +1722,9 @@ export default function App() {
               // and 关闭 (UX-33: the pill has no ×; the menu, ⌘W and the
               // tabs sheet close).
               menu: [
-                today,
                 ...(r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : []),
                 { key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) },
               ],
-              log,
-              day,
               session: { word: r.word, kind: r.kind, category: r.category },
               // A session tab's name is the row's title, which is a
               // name somebody gave it — so double-click renames it
@@ -1764,7 +1746,7 @@ export default function App() {
               },
               loading: tabAct(id)?.busy ?? false,
             }
-          : { id, label: id, face: null, path: "", again, log };
+          : { id, label: id, face: null, path: "", again };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [openTabs, rows, side, actsVersion, days, selected],
@@ -1841,6 +1823,15 @@ export default function App() {
   const inColumn = () => landing === "sessions" && selectedRow !== null && (!narrow || inSession);
   /** The 附栏 turned to a seat: the column opened on it, or on the phone
       the sheet risen on it (a sheet already up keeps its detent). */
+  /** **Opened from 最近** (UX-39, the owner 2026-10-06 22:25: 「Recent 里
+      点开了一个文件或什么，返回应该是返回到 Recent」): the page a row of
+      最近 opens wears ‹ back to 最近; a seat entered by the menu does not. */
+  const [sideFrom, setSideFrom] = useState<"recent" | null>(null);
+  const backToRecent = () => {
+    setSideFrom(null);
+    setSideBrowse({ page: false });
+    sideTo("recent");
+  };
   const sideTo = (seat: PlaceSeat) => {
     if (!selectedRow) return;
     if (!narrow) return setSessionSide(selectedRow.id, { open: true, seat });
@@ -1853,7 +1844,6 @@ export default function App() {
   const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) => {
     if (!selectedRow) return;
     setSideFiles({ session: selectedRow.id, machine, dir, start });
-    setSideWsAll(false);
     sideTo("workspace");
   };
   /** **The session a thing was opened from** (UX-37 §1): the one in
@@ -1923,9 +1913,13 @@ export default function App() {
   const openUrlMain = (machine: string, url: string, column: boolean) => {
     const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
     void openTab("page", d?.id ?? "", url, fromSession())
-      .then(() => {
+      .then((id) => {
         if (column && selectedRow) {
-          setSideBrowse({ list: "here", page: true });
+          // In front at once, and in the list: the 附栏's page is the tab
+          // just opened, not the one in front before (the landing's beat
+          // would have caught up a beat late, the 附栏 had none).
+          pageTabs.focus(id);
+          setSideBrowse({ page: true });
           sideTo("browser");
           return;
         }
@@ -2200,28 +2194,54 @@ export default function App() {
     setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir: box?.__marks?.cwd() ?? selectedRow.place ?? null, start: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow, side.open, selectedRow?.id]);
-  /** The column's own stacks (UX-30 §1: each seat its stack): the
-      browser's and 额度's list ⇄ detail, 机器's machine and screen. */
-  // **Every seat lands on this session's slice, and ‹ goes to the
-  // whole** (UX-37 §1): 最近 and 浏览器 on what this session opened, 工作区
-  // on the shell's directory, 机器 on its machine, 额度 on its account.
-  // ⚠️ 墓碑 (UX-30 §1): each seat kept its own stack across visits; a
-  // seat pressed now starts on its slice again (`enterSeat`).
-  const [sideBrowse, setSideBrowse] = useState<{ list: "here" | "all"; page: boolean }>({ list: "here", page: false });
+  // **One page per seat, on this session's slice, and nothing goes back
+  // to a whole** (UX-39 §3, the owner 2026-10-06 21:05: 「都不可返回，全
+  // 都和 额度 一样」): 最近 and 浏览器 on what this session opened, 工作区
+  // on the tree of the workspace holding the shell's directory, 机器 on
+  // its machine, 额度 on its account. The only ‹ inside a seat is a page's
+  // back to the list it was opened from. ⚠️ 墓碑 (UX-37 §1 → UX-39 §3):
+  // ‹ from each slice to the whole — 全部最近, 全部网页, the workspaces
+  // list, the machines list, every account. ⚠️ 墓碑 (UX-30 §1): each
+  // seat kept its own stack across visits.
+  const [sideBrowse, setSideBrowse] = useState<{ page: boolean }>({ page: false });
   const [sideQuota, setSideQuota] = useState<"list" | "detail">("list");
-  const [sideMachine, setSideMachine] = useState<{ device: string | null; screen: "list" | "detail" }>({ device: null, screen: "detail" });
-  const [sideRecentAll, setSideRecentAll] = useState(false);
-  const [sideWsAll, setSideWsAll] = useState(false);
+  /** Where the 工作区 seat points: the directory a seat press, a tapped
+      path or a row of 最近 asked for, else the session's own. */
+  const sideWs = selectedRow
+    ? sideFiles?.session === selectedRow.id
+      ? sideFiles
+      : { session: selectedRow.id, machine: selectedRow.home, dir: selectedRow.place ?? null, start: null }
+    : null;
+  /** **The workspace that holds that directory: the tree's ceiling**
+      (UX-39 §5) — on a seat press the shell's directory, so the session's
+      workspace; outside every workspace, the directory itself. Read from
+      the local table once per directory; `root` is `null` when no
+      workspace holds it. */
+  const sideWsKey = sideWs ? `${sideWs.machine}\n${sideWs.dir ?? ""}` : null;
+  const [sideRoot, setSideRoot] = useState<{ key: string; root: string | null } | null>(null);
+  useEffect(() => {
+    if (sideWsKey === null || !sideWs?.dir) return;
+    const dir = sideWs.dir;
+    const dev = devices.find((d) => d.name === sideWs.machine)?.id ?? "";
+    let live = true;
+    void fetchWorkspaces().then(
+      (list) => live && setSideRoot({ key: sideWsKey, root: holding(list, dev, `${dir.replace(/\/$/, "")}/`)?.path ?? null }),
+      () => live && setSideRoot({ key: sideWsKey, root: null }),
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideWsKey, devices.length]);
   /** Bumped as a seat is entered: the seat's page mounts afresh, so a
       page that lands by itself (额度's account) lands again. */
   const [sideEntry, setSideEntry] = useState(0);
-  /** Every seat back on its slice — the pill's tap, a seat pressed. */
+  /** Every seat back on its slice — the pill's tap, a seat pressed —
+      and nothing opened from 最近 any more. */
   const toSlices = () => {
-    setSideBrowse({ list: "here", page: false });
+    setSideFrom(null);
+    setSideBrowse({ page: false });
     setSideQuota("list");
-    setSideMachine({ device: null, screen: "detail" });
-    setSideRecentAll(false);
-    setSideWsAll(false);
     setSideEntry((n) => n + 1);
   };
   /** A seat pressed: on its slice, the 工作区 at the shell's directory
@@ -2241,19 +2261,22 @@ export default function App() {
       UX-30 §6): the same seats, risen from the bottom. The
       sheet's lifetime is this state; the seat is the session's memory. */
   const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
-  /** **今天, 最近's first row on the phone** (UX-37 §5): the pill's tap
-      is the sheet, so the day in full opens from here. ⚠️ 墓碑 (UX-36
-      §1): a 「今天」 row under the sheet's capsule. ⚠️ 墓碑 (UX-30 §5):
-      the ruler, under the column's capsule and the sheet's. */
-  const dayTotals = useDayTotals(selectedRow?.id ?? null, narrow && placeSheet !== null && side.seat === "recent");
-  const sheetToday = (row: SessionRow) => (
-    <DayToday runs={dayOf(row.id)} totals={dayTotals} open={side.day} onToggle={() => setSessionSide(row.id, { day: !side.day })} />
-  );
+  /** **过去24小时, 最近's first row, on both faces, and it does not
+      expand** (UX-39 §4, the owner 2026-10-06 20:30 and 22:10): the day's
+      band and its two totals; hover or a press on a stretch says that
+      stretch. ⚠️ 墓碑 (UX-37 §5 → UX-39 §4): 今天, the phone's only, a tap
+      expanding the day in full. ⚠️ 墓碑 (UX-36 §1): a 「今天」 row under
+      the sheet's capsule. ⚠️ 墓碑 (UX-30 §5): the ruler, under the
+      column's capsule and the sheet's. */
+  const dayTotals = useDayTotals(selectedRow?.id ?? null, (narrow ? placeSheet !== null : side.open) && side.seat === "recent");
+  const sheetToday = (row: SessionRow) => <DayToday runs={dayOf(row.id)} totals={dayTotals} />;
   const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
+  useEffect(() => setSideBrowsing(sideOn && side.seat === "browser"), [sideOn, side.seat]);
   const recent = useSideRecent(sideOn && side.seat === "recent");
   /** 最近's rows open in place (§4): a page in the column's browser, a
       workspace as the column's listing, a file as its file page. */
   const openRecent = (it: RecentItem) => {
+    setSideFrom("recent");
     if (it.kind === "page") return openUrlMain(it.machine, it.url, true);
     if (it.kind === "workspace") {
       touched("dir", it.machine, it.path);
@@ -2278,52 +2301,36 @@ export default function App() {
         return (
           <SideRecent
             items={recent}
-            slice={sideRecentAll ? null : selectedRow.id}
-            onAll={() => setSideRecentAll(true)}
-            today={narrow ? sheetToday(selectedRow) : undefined}
+            slice={selectedRow.id}
+            today={sheetToday(selectedRow)}
             faceOf={faceOf}
             onOpen={openRecent}
             onOpenMain={openRecentMain}
           />
         );
       case "workspace": {
-        // ‹ climbs the shell's directory to the root, then to every
-        // workspace; a workspace pressed there is the listing again.
-        if (sideWsAll) {
-          return (
-            <div data-side-workspaces className="flex min-h-0 flex-1 flex-col">
-              <SeatHead title={gui.workspaces_tab} />
-              <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
-                <WorkspacesList
-                  devices={devices}
-                  query=""
-                  words={[]}
-                  selected={null}
-                  treeOpen={false}
-                  onOpen={(w) => {
-                    touched("dir", w.machine || w.device, w.path);
-                    sideShow(w.machine || w.device, w.path, null);
-                  }}
-                />
-              </div>
-            </div>
-          );
-        }
-        const f = sideFiles?.session === selectedRow.id ? sideFiles : { machine: selectedRow.home, dir: selectedRow.place ?? null, start: null };
+        const f = sideWs!;
         const here = devices.find((d) => d.name === f.machine)?.me ?? !selectedRow.source;
+        // **The workspace's own tree, and nothing above it** (UX-39 §5, the
+        // owner 2026-10-06 22:00): the ceiling is the workspace holding the
+        // directory, else that directory; nothing is drawn until the table
+        // has said which, so the tree mounts once. ⚠️ 墓碑 (UX-37 §1):
+        // `MachineFiles` climbing to the root and on to every workspace.
+        if (f.dir && sideRoot?.key !== sideWsKey) return null;
+        const root = (f.dir ? sideRoot?.root : null) ?? f.dir ?? "/";
         return (
-          <MachineFiles
-            key={`${sideEntry} ${f.machine} ${f.dir ?? ""}`}
-            machine={f.machine}
-            here={here}
-            startDir={f.dir}
-            start={f.start}
-            onTop={() => setSideWsAll(true)}
-            topLabel={gui.workspaces_tab}
-            onRead={(path) => touched("file", f.machine, path)}
-            bare
-            fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
-          />
+          <div data-side-files className="flex min-h-0 flex-1 flex-col">
+            <SideWorkspace
+              key={`${sideEntry} ${f.machine} ${root}`}
+              machine={f.machine}
+              here={here}
+              root={root}
+              start={f.start}
+              onLeave={sideFrom === "recent" ? backToRecent : undefined}
+              onRead={(path) => touched("file", f.machine, path)}
+              fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
+            />
+          </div>
         );
       }
       case "browser":
@@ -2337,44 +2344,20 @@ export default function App() {
             pane={null}
             caption={stale ? gui.backend_unreachable : undefined}
             screen={sideBrowse.page ? "detail" : "list"}
-            onOpen={() => setSideBrowse((b) => ({ ...b, page: true }))}
-            onBack={() => setSideBrowse((b) => ({ ...b, page: false }))}
-            bare={{ here: sideBrowse.list === "here" ? selectedRow.id : null, onAll: () => setSideBrowse({ list: "all", page: false }) }}
+            onOpen={() => setSideBrowse({ page: true })}
+            onBack={sideFrom === "recent" ? backToRecent : () => setSideBrowse({ page: false })}
+            bare={{ here: selectedRow.id, backLabel: sideFrom === "recent" ? gui.group_recent : undefined }}
           />
         );
       case "machine": {
-        // Lands on the session's machine; ‹ is the machines' list, from
-        // which any machine's card opens here.
-        const landed = sideMachine.device ?? devices.find((d) => d.name === selectedRow.home)?.id ?? null;
-        const row = devices.find((d) => d.id === landed) ?? null;
-        if (sideMachine.screen === "list" || row === null) {
-          return (
-            <div data-side-machines className="flex min-h-0 flex-1 flex-col">
-              <SeatHead title={gui.devices_tab} />
-              <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
-                <DevicesList
-                  rows={devices}
-                  sessions={rows}
-                  loading={!devicesRead}
-                  query=""
-                  onPin={onPinDevice}
-                  onForget={onForgetDevice}
-                  forgetRefused={forgetRefused}
-                  onPause={onPauseDevice}
-                  pauseRefused={pauseRefused}
-                  onOpen={(d) => setSideMachine({ device: d.id, screen: "detail" })}
-                  selected={landed}
-                  pinFailed={pinFailed}
-                />
-              </div>
-            </div>
-          );
-        }
+        // The session's machine: its name, then its card (UX-39 §3).
+        const row = devices.find((d) => d.name === selectedRow.home) ?? null;
+        if (row === null) return null;
         return (
           <MachineCard
             row={row}
             narrow
-            onBack={() => setSideMachine({ device: landed, screen: "list" })}
+            onBack={() => {}}
             hooks={hooks}
             hooksFailed={hooksFailed}
             onInstallHooks={onInstallHooks}
@@ -2405,8 +2388,48 @@ export default function App() {
         );
     }
   };
+  /**
+   * **The column extends the window to the right; it does not take the
+   * session's width** (UX-39, the owner 2026-10-06 23:15: 「保留 app 宽度，
+   * 拓展到右侧的，就像现在在工作区点 chat 一样」 — `WorkspacePane`'s
+   * `showSessions`, rulings 2026-09-16 and 51). The window grows first and
+   * the column arrives into the room it made; shut, the column goes and
+   * the window gives back exactly what it took (the width at the press,
+   * not a re-measure — the seam is draggable). Where the window cannot
+   * grow (the screen's edge, the web face) the column takes its room off
+   * the session, as before.
+   */
+  const sideWanted = !narrow && side.open && selectedRow !== null;
+  const [sideShown, setSideShown] = useState(false);
+  const sideGrew = useRef(0);
+  useEffect(() => {
+    if (sideWanted === sideShown) return;
+    if (!sideWanted) {
+      setSideShown(false);
+      if (sideGrew.current > 0) {
+        void widenWindow(-sideGrew.current);
+        sideGrew.current = 0;
+      }
+      return;
+    }
+    let live = true;
+    const fallback = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--session-side-w")) || 0;
+    const w = Math.round(side.w ?? fallback);
+    sideGrew.current = w;
+    void widenWindow(w).then(
+      () => live && setSideShown(true),
+      () => {
+        sideGrew.current = 0;
+        if (live) setSideShown(true);
+      },
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideWanted, sideShown]);
   const sessionSide =
-    !narrow && side.open && selectedRow ? (
+    sideShown && !narrow && side.open && selectedRow ? (
       <SessionSide
         key={selectedRow.id}
         session={selectedRow.id}
@@ -2415,6 +2438,8 @@ export default function App() {
         onSeat={enterSeat}
         onWidth={(w) => setSessionSide(selectedRow.id, { w })}
         onClose={() => setSessionSide(selectedRow.id, { open: false })}
+        boxRef={setDetailBox}
+        who={{ face: selectedRow.face, title: termName(selectedRow), word: selectedRow.word, kind: selectedRow.kind, category: selectedRow.category }}
       >
         {sideSeat()}
       </SessionSide>
@@ -2431,7 +2456,6 @@ export default function App() {
     <DetailPane
       row={selectedRow}
       narrow={narrow}
-      side={sessionSide}
       openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}
@@ -2804,6 +2828,7 @@ export default function App() {
           seat={side.seat}
           onSeat={enterSeat}
           boxRef={setDetailBox}
+          who={{ face: selectedRow.face, title: termName(selectedRow), word: selectedRow.word, kind: selectedRow.kind, category: selectedRow.category }}
         >
           {sideSeat()}
         </SessionPlaceSheet>
@@ -3624,6 +3649,12 @@ export default function App() {
               {/* ⚠️ 墓碑 (UX-30): `ref={setDetailBox}` stood here — the day's
                   axis was this pane's; it is the column's now
                   (`SessionSide` `boxRef`). */}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-row">
+              {/* **The column stands beside the strip too** (UX-39, the
+                  owner 2026-10-06 21:45: 「桌面都要顶部对齐」): its head is
+                  on the window's first row, level with the tabs' capsule,
+                  not under it. ⚠️ 墓碑 (UX-30): the column inside
+                  `DetailPane`, below the strip. */}
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                 {sessions && openTabs.length > 0 ? (
                   <VerbSeat.Provider value={verbSeat}>
@@ -3679,6 +3710,8 @@ export default function App() {
                     {detail}
                   </Region>
                 )}
+              </div>
+              {sessionSide}
               </div>
             </>
           )}

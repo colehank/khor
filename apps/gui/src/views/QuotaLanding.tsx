@@ -25,7 +25,7 @@
 // Registration happens here too, and the form says the two things a
 // person cannot guess: the key stays on this machine, and the two
 // vendors' usage is an **admin** key's to read.
-import { useEffect, useRef, useMemo, useState } from "react";
+import { useContext, useEffect, useRef, useMemo, useState } from "react";
 
 import {
   fetchQuotaBoard,
@@ -51,7 +51,7 @@ import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { PageAvatar, PageSubtitle, Region } from "@/components/Region";
 import { FlushInk } from "@/hooks/use-flush-ink";
 import { NarrowHead } from "@/components/SideHead";
-import { SeatHead } from "@/components/SeatHead";
+import { SeatPick } from "@/components/SeatTitle";
 import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { type RowAction } from "@/components/RowMenu";
@@ -996,6 +996,8 @@ export function QuotaLanding({
       quota) — once, and only while nothing is picked yet. */
   landOn?: string | null;
 }) {
+  // Inside the 附栏 the account's page has no ‹ (UX-39 §3: 「都不可返回」).
+  const inSide = useContext(SeatPick) !== null;
   // **Both outlive a remount.** The narrow face keys its screen box on
   // `screen` (`App`, for the entrance slide), so opening a row mounts
   // this landing afresh: with the board back at null the dead-end guard
@@ -1994,7 +1996,7 @@ export function QuotaLanding({
         // the screen's head) was drawn only once the board had been read.
         narrow ? (
           board === null && !error ? (
-            <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bare ? <SeatHead title={gui.accounts_tab} /> : bar}>
+            <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bare ? null : bar}>
               {list}
             </ListPane>
           ) : (
@@ -2031,6 +2033,19 @@ export function QuotaLanding({
           <div className="flex min-h-0 flex-1 flex-col">
             {/* In the window's first row, not a second bar under it
                 (`NarrowHead`, 2026-09-28). */}
+            {inSide ? (
+              // **Inside the 附栏 the first line is the account's name**
+              // (UX-39 §3), the reading's caption at its end; no ‹ and no
+              // mark — the 附栏's head above says 额度 with the seat's
+              // icon. ⚠️ 墓碑 (lab draft 78801891): the seat's picker
+              // drawn a second time here, saying 额度 for the name.
+              <div data-head-name className="flex min-h-ctl-lg flex-none items-baseline gap-in border-b px-(--page-inset) py-in">
+                <span className="min-w-0 flex-1 truncate text-body font-label">{current.name}</span>
+                <span data-region-caption className="flex-none text-callout text-muted-foreground tabular-nums">
+                  {caption}
+                </span>
+              </div>
+            ) : (
             <NarrowHead>
             {(seated) => (
             <header
@@ -2064,13 +2079,14 @@ export function QuotaLanding({
             </header>
             )}
             </NarrowHead>
+            )}
             <div className="min-h-0 flex-1 overflow-y-auto">
               {detail}
               {subDetail}
             </div>
           </div>
         ) : (
-          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bare ? <SeatHead title={gui.accounts_tab} /> : bar}>
+          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bare ? null : bar}>
             {list}
           </ListPane>
         )

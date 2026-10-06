@@ -5,8 +5,8 @@
 // shadow + `radius-lg`, a hairline around it) instead of stock's
 // `rounded-md shadow-md`; motion rides our tokens; and the parts this app
 // has no use for yet (a close button) are left out rather than vendored
-// unused. The anchor apart from the trigger came with UX-36: the day
-// hangs from a session's pill, which its menu opens, not a press on it.
+// unused (the anchor apart from the trigger went with UX-36's day
+// hanging from the pill, UX-39 §4).
 //
 // **Non-modal, and that is Radix's default rather than a choice made
 // here**: nothing behind it is inert, focus is not trapped, a press
@@ -50,8 +50,5 @@ function PopoverContent({
   );
 }
 
-function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />;
-}
 
-export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent };
+export { Popover, PopoverTrigger, PopoverContent };
