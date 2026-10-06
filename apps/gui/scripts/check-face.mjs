@@ -30595,9 +30595,19 @@ try {
           await press("[data-place-sheet] [data-side-page] [data-seat-back]");
           await wait(400);
           whole.browser.push(await page.evaluate(() => document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null));
-          // A tab in the whole opens its page in place, without a deck (§6).
+          // A tab in the whole opens its page in place, without a deck (§6),
+          // and the page is framed in the sheet, not taken for covered by
+          // it (bug A: the sheet is a dialog, and the page inside it hid).
+          await page.evaluate(() => {
+            window.__placed = [];
+            document.addEventListener("khor:page-place", (e) => window.__placed.push(e.detail));
+          });
           if (await press("[data-place-sheet] [data-browse-bare] [data-side-row] [data-side-open]")) {
             await wait(500);
+            const placed = await page.evaluate(() => window.__placed.at(-1) ?? null);
+            const body = await page.evaluate(() => document.querySelector('[data-place-sheet] [data-browse-bare="page"] [data-nav-clear]')?.getBoundingClientRect().top ?? null);
+            console.log(`bar p · UX-37 bug A the page in the sheet placed ${shown(placed)}, its box at ${body}`);
+            if (!placed || placed.covered || placed.h < 24) fail(`bar p · the page opened in the sheet was placed ${shown(placed)} — framed to the sheet's body, not taken for covered by the sheet it is in (UX-37 bug A)`);
             whole.browser.push(
               await page.evaluate(() => {
                 const pg = document.querySelector('[data-place-sheet] [data-browse-bare="page"]');

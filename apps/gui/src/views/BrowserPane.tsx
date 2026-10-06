@@ -195,6 +195,11 @@ export function BrowserPane({
     let top = r.top;
     let covered = false;
     for (const o of document.querySelectorAll(OVERLAYS)) {
+      // **An overlay the page is inside is its ground, not over it**
+      // (UX-37 bug A, the 附栏's browser seat on the phone): the sheet
+      // is a dialog, and the page framed to the sheet's body was taken
+      // for covered and put away — the seat could not open a page.
+      if (o.contains(el)) continue;
       const b = o.getBoundingClientRect();
       if (b.width === 0 || b.height === 0) continue;
       const misses = b.bottom <= r.top || b.top >= r.bottom || b.right <= r.left || b.left >= r.right;
