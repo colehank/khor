@@ -31,6 +31,8 @@ fn an_older_residents_link_decodes_without_a_relay() {
             heard_ms: Some(1200),
             rtt_ms: Some(41),
             relay: None,
+            down_ms: None,
+            last_rtt_ms: None,
         }
     );
     // …and a link that names its relay round-trips with it.
@@ -40,4 +42,36 @@ fn an_older_residents_link_decodes_without_a_relay() {
     };
     let back: Link = khor_node::proto::decode(&khor_node::proto::encode(&now).unwrap()).unwrap();
     assert_eq!(back, now);
+}
+
+/// The shape a resident older than `Link.down_ms` encodes (round NET-13).
+#[derive(serde::Serialize)]
+struct BeforeDown {
+    hop: Hop,
+    heard_ms: Option<u64>,
+    rtt_ms: Option<u32>,
+    relay: Option<String>,
+}
+
+/// **An older resident never says a machine is unreachable**: its idle
+/// link decodes with no `down_ms`, which a face reads as idle, not as
+/// 不通 — and a link that says it round-trips with it.
+#[test]
+fn an_older_residents_idle_link_is_not_down() {
+    let old = khor_node::proto::encode(&BeforeDown {
+        hop: Hop::Idle,
+        heard_ms: Some(90_000),
+        rtt_ms: None,
+        relay: None,
+    })
+    .unwrap();
+    let read: Link = khor_node::proto::decode(&old).unwrap();
+    assert_eq!((read.hop, read.down_ms, read.last_rtt_ms), (Hop::Idle, None, None));
+    let down = Link {
+        down_ms: Some(4_000),
+        last_rtt_ms: Some(38),
+        ..read
+    };
+    let back: Link = khor_node::proto::decode(&khor_node::proto::encode(&down).unwrap()).unwrap();
+    assert_eq!(back, down);
 }

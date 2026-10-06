@@ -7515,6 +7515,8 @@ impl Node {
                             heard_ms: None,
                             rtt_ms: None,
                             relay: None,
+                            down_ms: None,
+                            last_rtt_ms: None,
                         },
                     )
                 })
@@ -7543,17 +7545,29 @@ impl Node {
                         khor_core::Hop::Relay
                     }
                     _ => {
-                        self.wires.counts.read_idle.fetch_add(1, Relaxed);
+                        if r.down.is_some() {
+                            self.wires.counts.read_down.fetch_add(1, Relaxed);
+                        } else {
+                            self.wires.counts.read_idle.fetch_add(1, Relaxed);
+                        }
                         khor_core::Hop::Idle
                     }
                 };
-                let heard_ms = r
-                    .heard
-                    .map(|h| u64::try_from(h.as_millis()).unwrap_or(u64::MAX));
+                let ms = |d: Duration| u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
                 // Whole milliseconds, never 0 for a wire that has one: a
                 // loopback wire's 0.3 ms reads as 1 ms, not as nothing.
-                let rtt_ms = r.rtt.map(|t| (t.as_micros().div_ceil(1000)).min(u128::from(u32::MAX)) as u32);
-                (d.id, khor_core::Link { hop, heard_ms, rtt_ms, relay: r.relay })
+                let whole = |t: Duration| (t.as_micros().div_ceil(1000)).min(u128::from(u32::MAX)) as u32;
+                (
+                    d.id,
+                    khor_core::Link {
+                        hop,
+                        heard_ms: r.heard.map(ms),
+                        rtt_ms: r.rtt.map(whole),
+                        relay: r.relay,
+                        down_ms: r.down.map(ms),
+                        last_rtt_ms: r.last_rtt.map(whole),
+                    },
+                )
             })
             .collect()
     }
@@ -8788,6 +8802,8 @@ mod last_links {
                             // about a wire that may be gone: not repeated.
                             rtt_ms: None,
                             relay: None,
+                            down_ms: l.down_ms.map(|d| d.saturating_add(since)),
+                            last_rtt_ms: l.last_rtt_ms.or(l.rtt_ms),
                         },
                     )
                 })
