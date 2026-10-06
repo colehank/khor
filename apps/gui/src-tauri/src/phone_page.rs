@@ -80,6 +80,8 @@ thread_local! {
     static WATCH: Retained<ScrollWatch> = unsafe { msg_send![ScrollWatch::class(), new] };
     /// Every page's navigation delegate (WebKit holds it weakly).
     static FAIL: Retained<PageFail> = unsafe { msg_send![PageFail::class(), new] };
+    /// Every page's UI delegate, for its alerts (also held weakly).
+    static ASK: Retained<PageAsk> = unsafe { msg_send![PageAsk::class(), new] };
 }
 
 /// The app, for the scroll observer, which is called by UIKit with
@@ -139,6 +141,116 @@ define_class!(
         }
     }
 );
+
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements, and this class
+    // has no ivars and no `Drop`.
+    #[unsafe(super(NSObject))]
+    #[name = "KhorPageAsk"]
+    struct PageAsk;
+
+    impl PageAsk {
+        // SAFETY: the signatures are WKUIDelegate's.
+        #[unsafe(method(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:))]
+        fn alert(&self, view: *mut AnyObject, message: *mut AnyObject, _frame: *mut AnyObject, done: &block2::Block<dyn Fn()>) {
+            let done = done.copy();
+            ask(view, message, None, false, move |_, _| done.call(()));
+        }
+
+        #[unsafe(method(webView:runJavaScriptConfirmPanelWithMessage:initiatedByFrame:completionHandler:))]
+        fn confirm(&self, view: *mut AnyObject, message: *mut AnyObject, _frame: *mut AnyObject, done: &block2::Block<dyn Fn(objc2::runtime::Bool)>) {
+            let done = done.copy();
+            ask(view, message, None, true, move |ok, _| done.call((objc2::runtime::Bool::new(ok),)));
+        }
+
+        #[unsafe(method(webView:runJavaScriptTextInputPanelWithPrompt:defaultText:initiatedByFrame:completionHandler:))]
+        fn prompt(&self, view: *mut AnyObject, prompt: *mut AnyObject, text: *mut AnyObject, _frame: *mut AnyObject, done: &block2::Block<dyn Fn(*mut AnyObject)>) {
+            let done = done.copy();
+            ask(view, prompt, Some(text), true, move |ok, said: Option<Retained<AnyObject>>| {
+                let said = if ok { said.as_deref().map_or(std::ptr::null_mut(), |s| s as *const AnyObject as *mut AnyObject) } else { std::ptr::null_mut() };
+                done.call((said,));
+            });
+        }
+    }
+);
+
+/// **A page's own alert, confirm and prompt are asked** (UX-38 audit:
+/// with no UI delegate WebKit answered them itself — an alert never
+/// showed, a confirm said false, a prompt null — and the page went on as
+/// if the person had refused). The system's alert, over the page, as
+/// Safari asks; the answer goes back exactly once, also when there is
+/// nothing to show it on.
+fn ask(
+    view: *mut AnyObject,
+    message: *mut AnyObject,
+    field: Option<*mut AnyObject>,
+    cancel: bool,
+    answer: impl FnOnce(bool, Option<Retained<AnyObject>>) + 'static,
+) {
+    let answer = std::rc::Rc::new(RefCell::new(Some(answer)));
+    // SAFETY: WebKit calls this on the main thread with a live view; every
+    // selector is documented UIKit.
+    unsafe {
+        let window: *mut AnyObject = msg_send![view, window];
+        let mut top: *mut AnyObject = if window.is_null() { std::ptr::null_mut() } else { msg_send![window, rootViewController] };
+        while !top.is_null() {
+            let next: *mut AnyObject = msg_send![top, presentedViewController];
+            if next.is_null() {
+                break;
+            }
+            top = next;
+        }
+        if top.is_null() {
+            if let Some(a) = answer.borrow_mut().take() {
+                a(false, None);
+            }
+            return;
+        }
+        // 1: UIAlertControllerStyleAlert.
+        let alert: Retained<AnyObject> = msg_send![class!(UIAlertController), alertControllerWithTitle: std::ptr::null::<AnyObject>(), message: message, preferredStyle: 1isize];
+        if let Some(text) = field {
+            let text = if text.is_null() { None } else { Some(Retained::retain(text).unwrap()) };
+            let fill = block2::RcBlock::new(move |f: *mut AnyObject| {
+                if let Some(t) = &text {
+                    let _: () = msg_send![f, setText: &**t];
+                }
+            });
+            let _: () = msg_send![&*alert, addTextFieldWithConfigurationHandler: &*fill];
+        }
+        let weak: *mut AnyObject = Retained::as_ptr(&alert) as *mut AnyObject;
+        let act = |title: String, style: isize, ok: bool| {
+            let answer = answer.clone();
+            let handler = block2::RcBlock::new(move |_a: *mut AnyObject| {
+                let said = if ok {
+                    let fields: *mut AnyObject = msg_send![weak, textFields];
+                    let first: *mut AnyObject = if fields.is_null() { std::ptr::null_mut() } else { msg_send![fields, firstObject] };
+                    if first.is_null() {
+                        None
+                    } else {
+                        let t: Option<Retained<AnyObject>> = msg_send![first, text];
+                        t
+                    }
+                } else {
+                    None
+                };
+                if let Some(a) = answer.borrow_mut().take() {
+                    a(ok, said);
+                }
+            });
+            let title = NSString::from_str(&title);
+            let action: Retained<AnyObject> = msg_send![class!(UIAlertAction), actionWithTitle: &*title, style: style, handler: &*handler];
+            action
+        };
+        if cancel {
+            // 1: UIAlertActionStyleCancel.
+            let no = act(khor_catalog::msg::page_ask_cancel().into(), 1, false);
+            let _: () = msg_send![&*alert, addAction: &*no];
+        }
+        let yes = act(khor_catalog::msg::page_ask_ok().into(), 0, true);
+        let _: () = msg_send![&*alert, addAction: &*yes];
+        let _: () = msg_send![top, presentViewController: &*alert, animated: true, completion: std::ptr::null::<AnyObject>()];
+    }
+}
 
 /// **A load that failed says why** (UX-22): `page:fail` with the error
 /// (`page_fail::word`), and the light out at once rather than at the next
@@ -414,6 +526,9 @@ pub fn open(
         let _: () = msg_send![&*view, setAllowsBackForwardNavigationGestures: true];
         FAIL.with(|f| {
             let _: () = msg_send![&*view, setNavigationDelegate: &**f];
+        });
+        ASK.with(|a| {
+            let _: () = msg_send![&*view, setUIDelegate: &**a];
         });
         // Attached hidden when the face stopped wanting it during the
         // dial (`page_wanted`); `show_page` brings it back.
