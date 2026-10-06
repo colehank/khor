@@ -100,7 +100,7 @@ export function seatControl(screen: HTMLElement, seat: number): HTMLElement | nu
 
 /** An inline SVG as a PNG at the screen's scale, its `currentColor` the
     element's own colour. */
-async function svgPng(svg: SVGSVGElement, w: number, h: number, color: string): Promise<string | null> {
+async function svgPng(svg: SVGSVGElement, w: number, h: number, color: string, alpha = 1): Promise<string | null> {
   const copy = svg.cloneNode(true) as SVGSVGElement;
   copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   copy.setAttribute("width", String(w));
@@ -120,6 +120,7 @@ async function svgPng(svg: SVGSVGElement, w: number, h: number, color: string): 
   c.height = Math.round(h * k);
   const g = c.getContext("2d");
   if (!g) return null;
+  g.globalAlpha = alpha;
   g.drawImage(img, 0, 0, c.width, c.height);
   return c.toDataURL("image/png").slice("data:image/png;base64,".length);
 }
@@ -406,7 +407,11 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
     if (!shown(svg) || svg.closest("[data-face], [data-tabs-glyph], [data-side-face]")) continue;
     const b = svg.getBoundingClientRect();
     const color = getComputedStyle(svg).color;
-    const png = await svgPng(svg, b.width, b.height, color);
+    // At the opacity the DOM shows it: a step with nowhere to go is
+    // dimmed there (UX-38 audit: the native ← was full ink on a first page).
+    let alpha = 1;
+    for (let at: Element | null = svg; at && bar.contains(at); at = at.parentElement) alpha *= Number(getComputedStyle(at).opacity) || 0;
+    const png = await svgPng(svg, b.width, b.height, color, alpha);
     if (png) images.push({ ...rel(b, o), png });
   }
   // A face standing outside a seat, cropped as the DOM crops it.

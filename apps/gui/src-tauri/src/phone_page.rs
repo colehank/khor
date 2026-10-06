@@ -340,7 +340,19 @@ fn scrolled(view: *mut AnyObject) {
             if Retained::as_ptr(&page.scroll) as *mut AnyObject != view {
                 continue;
             }
+            // **Only a scroll somebody made** (UX-38 audit): the page's
+            // inset set under the deck moves the offset too, and a fresh
+            // page arrived with its deck folded (seen on the simulator).
+            let moved: bool = unsafe {
+                let t: bool = msg_send![&*page.scroll, isTracking];
+                let d: bool = msg_send![&*page.scroll, isDecelerating];
+                t || d
+            };
             let at: NSPoint = unsafe { msg_send![&*page.scroll, contentOffset] };
+            if !moved {
+                page.told_y = at.y;
+                return;
+            }
             let dy = at.y - page.told_y;
             if dy.abs() < 1.0 {
                 return;
