@@ -1371,6 +1371,39 @@ impl LiveKind {
                 panes: held.panes,
             });
         }
+        // **A khor shell with `tmux` typed in it holds the session that
+        // client shows** (SESS-BRIEF 1b). The client descends from the
+        // shell, but what it shows lives under the tmux server, so the
+        // descent stopped at the client: the shell said 「正在运行 tmux」
+        // and the claude in the pane was another row's. The session's
+        // processes are the shell's now, so the shell wears what its
+        // panes hold — an agent's form, as a shell running claude
+        // directly does — and the session is no second row. A session
+        // with a row of its own (a bridge, an imported row) keeps it.
+        let mut taken: Vec<usize> = Vec::new();
+        for k in 0..hosts.len() {
+            if hosts[k].tmux.is_some() {
+                continue;
+            }
+            for m in 0..hosts.len() {
+                let shows = hosts[m].tmux.is_some()
+                    && hosts[m].own.is_none()
+                    && sweep
+                        .attached
+                        .iter()
+                        .any(|(client, session)| *session == hosts[m].id && hosts[k].holds.contains(client));
+                if shows {
+                    let held = hosts[m].holds.clone();
+                    hosts[k].holds.extend(held);
+                    taken.push(m);
+                }
+            }
+        }
+        let mut m = 0;
+        hosts.retain(|_| {
+            m += 1;
+            !taken.contains(&(m - 1))
+        });
         // **An agent nobody registered, gone from a host that is still
         // there.** Nothing else remembers it — its status file and its
         // process went with it — so its note stands it back up as a row,
@@ -1815,6 +1848,20 @@ impl LiveKind {
                     r.dead = false;
                     r.unbacked = false;
                     r.last = agent.last;
+                    // The shell's own reading is 「正在运行 claude」 (or
+                    // tmux), and the face draws a command before the
+                    // preview: a row whose session is an agent says the
+                    // agent's sentence (SESS-BRIEF 1). Where it stands and
+                    // what it is called stay.
+                    if let Some(d) = r.doing.as_mut() {
+                        *d = khor_core::Doing {
+                            cwd: d.cwd.take(),
+                            title: d.title.take(),
+                            notice: d.notice.take(),
+                            notice_ms: d.notice_ms,
+                            ..Default::default()
+                        };
+                    }
                     r.term = true;
                     r.mux = mux;
                 }
@@ -4122,6 +4169,74 @@ mod tests {
             Some(khor_core::category::SHELL)
         );
         assert!(!rows[0].dead);
+    }
+
+    /// **A khor shell with `tmux` typed in it** (SESS-BRIEF 1b): the
+    /// client descends from the shell, the claude in the session's pane
+    /// from the tmux server. The shell wears that claude, as it would
+    /// a claude started in it directly; its 「正在运行 tmux」 gives way to
+    /// the agent's preview; and neither the claude nor the session is a
+    /// second row.
+    #[test]
+    fn a_khor_shell_attached_to_tmux_wears_the_agent_in_that_session() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let root = tmp("seat-shell-tmux");
+        let tmux = crate::adaptor::tmux::fake_tmux(
+            "seat-shell-tmux",
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%11\x1fwork\n",
+        );
+        let host = FakeHost::up();
+        let shell = proc_under(5001, "zsh", host.pid());
+        let client = proc_under(5002, "tmux", 5001);
+        let pane = proc_under(3001, "zsh", 1);
+        let claude = proc_under(4001, "claude", 3001);
+        let term = sid("shell/a1b2c3d4e5f6");
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&fixture_vendors())
+                .with_procs(Procs::of([shell, client, pane, claude]))
+                .with_tmux(Tmux::at_binary(&tmux))
+                .with_attached(vec![(5002, sid(T_ID))]),
+        ));
+        k.register(
+            &term,
+            "shell",
+            "zsh",
+            Some(host.pid()),
+            Some(khor_core::category::SHELL),
+        )
+        .unwrap();
+        let dir = k.dir_of(&term).unwrap();
+        host.serve(&dir, 5001);
+        crate::commands::write_saved(
+            &dir,
+            &crate::commands::Saved {
+                doing: khor_core::Doing {
+                    command: Some("tmux".into()),
+                    running: true,
+                    started_ms: 1,
+                    cwd: Some("/w/one".into()),
+                    ..Default::default()
+                },
+                recent: Vec::new(),
+                pane: None,
+            },
+        );
+
+        let rows = k.rows(|_| 0);
+        let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+        assert_eq!(ids, vec![term.0.as_str()], "one row: the shell");
+        let row = &rows[0];
+        assert_eq!(row.kind.0, khor_core::kind::TUI, "wearing the agent");
+        assert_eq!(row.category.as_deref(), Some("claude"));
+        let doing = row.doing.as_ref().unwrap();
+        assert_eq!(doing.command, None, "not 「正在运行 tmux」");
+        assert_eq!(doing.cwd.as_deref(), Some("/w/one"), "and still where it stands");
+        assert_eq!(
+            k.worn_by(&term, |_| false).map(|s| s.0),
+            Some(AGENT.to_owned()),
+            "a press on it acts on that claude"
+        );
     }
 
     /// **khor's own terminal.** A shell khor hosts wears the claude

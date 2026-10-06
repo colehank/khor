@@ -216,6 +216,8 @@ pub struct Findings {
     /// would be a second moment, and a process that started between the
     /// two would be alive in one answer and absent from the other.
     pub procs: Procs,
+    /// [`Discovery::attached`], from the same moment.
+    pub attached: Vec<(u32, SessionId)>,
 }
 
 impl Findings {
@@ -589,6 +591,8 @@ pub struct Discovery {
     /// production; a test that pins it here has a closed world, since
     /// the root is already a parameter.
     procs: Option<Procs>,
+    /// Fixed answers for [`Discovery::attached`], for tests.
+    attached: Vec<(u32, SessionId)>,
 }
 
 impl Discovery {
@@ -600,6 +604,7 @@ impl Discovery {
             adaptors: Vec::new(),
             tmux: None,
             procs: None,
+            attached: Vec::new(),
         }
     }
 
@@ -614,6 +619,23 @@ impl Discovery {
     pub fn with_tmux(mut self, tmux: tmux::Tmux) -> Discovery {
         self.tmux = Some(tmux);
         self
+    }
+
+    /// Answers [`Discovery::attached`] with these instead.
+    pub fn with_attached(mut self, attached: Vec<(u32, SessionId)>) -> Discovery {
+        self.attached = attached;
+        self
+    }
+
+    /// **Which tmux session each tmux client is showing**: a client's
+    /// pid and the row id of the session it is attached to, on the
+    /// server this discovery watches (SESS-BRIEF 1b).
+    ///
+    /// The seam the row side is written against. The lookup itself is
+    /// the terminal lane's (TERM-BRIEF item 58, a `tmux list-clients`
+    /// read); until it lands, only the fixed answers above are given.
+    pub fn attached(&self, _procs: &Procs) -> Vec<(u32, SessionId)> {
+        self.attached.clone()
     }
     /// Adaptors reading the vendor directories under `home`.
     ///
@@ -638,6 +660,7 @@ impl Discovery {
             ],
             tmux: None,
             procs: None,
+            attached: Vec::new(),
         }
     }
 
@@ -714,6 +737,7 @@ impl Discovery {
             all.multiplexed = listing.rows;
             all.unmapped += listing.unmapped;
         }
+        all.attached = self.attached(procs);
         all
     }
 }
