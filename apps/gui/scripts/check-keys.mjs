@@ -5,7 +5,9 @@
 // the keys through the pane's own encoder.
 //
 // Asserted:
-// - nothing asked: every key is left to xterm (Shift+Enter is a CR);
+// - nothing asked: every key is left to xterm, except Shift+Enter, which
+//   is `ESC CR` (item 59: Meta+Enter, a newline in Claude Code, codex and
+//   zsh, and what tmux with `extended-keys off` passes through);
 // - xterm's modifyOtherKeys (`CSI > 4 ; 2 m`, what tmux asks of an outer
 //   terminal with `extkeys`, measured from tmux 3.7b): Shift+Enter is
 //   `CSI 27 ; 2 ; 13 ~`, Ctrl and Alt combinations too; level 1 leaves the
@@ -86,7 +88,7 @@ async function after(stream, keys) {
 
 const E = "\x1b";
 const cases = [
-  ["nothing asked", "", [[SHIFT_ENTER, null], [ENTER, null], [CTRL_A, null]]],
+  ["nothing asked", "", [[SHIFT_ENTER, `${E}\r`], [ENTER, null], [CTRL_ENTER, null], [CTRL_A, null], [CMD_ENTER, null]]],
   [
     "modifyOtherKeys 2 (tmux with extkeys)",
     `${E}[>4;2m`,
@@ -110,9 +112,9 @@ const cases = [
       [CTRL_SHIFT_A, `${E}[27;6;65~`],
     ],
   ],
-  ["modifyOtherKeys reset", `${E}[>4;2m${E}[>4m`, [[SHIFT_ENTER, null]]],
-  ["modifyOtherKeys, then RIS", `${E}[>4;2m${E}c`, [[SHIFT_ENTER, null]]],
-  ["modifyCursorKeys is not it", `${E}[>2;1m`, [[SHIFT_ENTER, null]]],
+  ["modifyOtherKeys reset", `${E}[>4;2m${E}[>4m`, [[SHIFT_ENTER, `${E}\r`]]],
+  ["modifyOtherKeys, then RIS", `${E}[>4;2m${E}c`, [[SHIFT_ENTER, `${E}\r`]]],
+  ["modifyCursorKeys is not it", `${E}[>2;1m`, [[SHIFT_ENTER, `${E}\r`]]],
   ["kitty flags", `${E}[>1u`, [[SHIFT_ENTER, `${E}[13;2u`], [ENTER, null]]],
   ["kitty flags and modifyOtherKeys: kitty wins", `${E}[>4;2m${E}[>1u`, [[SHIFT_ENTER, `${E}[13;2u`]]],
   ["kitty popped, modifyOtherKeys left", `${E}[>4;2m${E}[>1u${E}[<u`, [[SHIFT_ENTER, `${E}[27;2;13~`]]],
@@ -121,10 +123,8 @@ const cases = [
 let checked = 0;
 for (const [name, stream, expect] of cases) {
   const { sent, cap } = await after(stream, expect.map(([ev]) => ev));
-  // The 换行 cap: what this state's Shift+Enter sends, or the CR xterm
-  // would send for it.
-  const shiftEnter = sent[expect.findIndex(([ev]) => ev === SHIFT_ENTER)];
-  const wantCap = shiftEnter ?? (expect.some(([ev]) => ev === SHIFT_ENTER) ? "\r" : undefined);
+  // The 换行 cap: what this state's Shift+Enter sends.
+  const wantCap = expect.find(([ev]) => ev === SHIFT_ENTER)?.[1];
   if (wantCap !== undefined) {
     checked++;
     if (cap !== wantCap) fail(`${name}: the 换行 cap sent ${show(cap ?? null)}, want ${show(wantCap)}`);
