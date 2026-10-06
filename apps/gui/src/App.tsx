@@ -14,6 +14,7 @@ import {
   recentVisit,
   syncNow,
   fetchWorkspaces,
+  widenWindow,
   inApp,
   installHooks,
   launchOn,
@@ -2387,8 +2388,48 @@ export default function App() {
         );
     }
   };
+  /**
+   * **The column extends the window to the right; it does not take the
+   * session's width** (UX-39, the owner 2026-10-06 23:15: 「保留 app 宽度，
+   * 拓展到右侧的，就像现在在工作区点 chat 一样」 — `WorkspacePane`'s
+   * `showSessions`, rulings 2026-09-16 and 51). The window grows first and
+   * the column arrives into the room it made; shut, the column goes and
+   * the window gives back exactly what it took (the width at the press,
+   * not a re-measure — the seam is draggable). Where the window cannot
+   * grow (the screen's edge, the web face) the column takes its room off
+   * the session, as before.
+   */
+  const sideWanted = !narrow && side.open && selectedRow !== null;
+  const [sideShown, setSideShown] = useState(false);
+  const sideGrew = useRef(0);
+  useEffect(() => {
+    if (sideWanted === sideShown) return;
+    if (!sideWanted) {
+      setSideShown(false);
+      if (sideGrew.current > 0) {
+        void widenWindow(-sideGrew.current);
+        sideGrew.current = 0;
+      }
+      return;
+    }
+    let live = true;
+    const fallback = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--session-side-w")) || 0;
+    const w = Math.round(side.w ?? fallback);
+    sideGrew.current = w;
+    void widenWindow(w).then(
+      () => live && setSideShown(true),
+      () => {
+        sideGrew.current = 0;
+        if (live) setSideShown(true);
+      },
+    );
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideWanted, sideShown]);
   const sessionSide =
-    !narrow && side.open && selectedRow ? (
+    sideShown && !narrow && side.open && selectedRow ? (
       <SessionSide
         key={selectedRow.id}
         session={selectedRow.id}
