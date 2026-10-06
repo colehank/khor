@@ -14535,6 +14535,10 @@ try {
         // the tooltip (`DayStrip` no longer draws a surface of its own).
         "src/components/ui/tooltip.tsx": "a tooltip is `radius-sm` (components/Tooltip)",
         "src/views/FileView.tsx": "the peek is a band across the whole column over the code — no corner to round",
+        // The phone's session sheet (UX-37) is a bottom sheet: it wears the
+        // sheet corners every narrow dialog gets from app.css — `--menu-r`
+        // on the top two only, square at the foot — not a floating card's.
+        "src/views/SessionPlaceSheet.tsx": "a bottom sheet rounds its top two corners by `--menu-r`, as app.css gives every narrow dialog",
       };
       const POPOVER_EXCEPT = {
         "src/components/DeleteDialog.tsx":
