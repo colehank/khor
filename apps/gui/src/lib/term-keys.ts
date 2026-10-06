@@ -25,8 +25,41 @@ import type { Terminal } from "@xterm/xterm";
 import { gui } from "@/gen/catalog";
 import { kittyNamed, kittyTyped, shiftEnter } from "@/lib/term-kitty";
 
-/** The latched modifiers the next key goes out with. */
-export type Mods = { ctrl: boolean; alt: boolean };
+/** The latched modifiers the next key goes out with, and which of them
+    are locked (item 69): a locked one stays after the key. */
+export type Mods = { ctrl: boolean; alt: boolean; lock?: { ctrl?: boolean; alt?: boolean } };
+
+/** How soon a second press on Ctrl or Alt locks it (iOS's double tap). */
+export const LOCK_TAP_MS = 350;
+
+/** The last press on a latch, for the double tap. */
+let lastLatch: { name: "ctrl" | "alt" | null; at: number } = { name: null, at: -Infinity };
+
+/** **A press on Ctrl or Alt** (item 69, Blink's rule): from rest it waits
+    for one key; pressed again at once (within `LOCK_TAP_MS`) it locks,
+    and stays for every key until pressed again; pressed again later while
+    waiting, or while locked, it lets go with nothing sent. */
+export function pressLatch(m: Mods, name: "ctrl" | "alt", now: number): Mods {
+  const again = lastLatch.name === name && now - lastLatch.at < LOCK_TAP_MS;
+  lastLatch = { name, at: now };
+  const lock = { ...m.lock };
+  if (m[name] && !lock[name] && again) {
+    lock[name] = true;
+    return { ...m, lock };
+  }
+  if (m[name]) {
+    lock[name] = false;
+    lastLatch = { name: null, at: -Infinity };
+    return { ...m, [name]: false, lock };
+  }
+  return { ...m, [name]: true, lock };
+}
+
+/** The latches once a key went out under them: a waiting one lets go, a
+    locked one stays (item 69). */
+export function afterKey(m: Mods): Mods {
+  return { ctrl: !!m.lock?.ctrl, alt: !!m.lock?.alt, lock: m.lock };
+}
 
 /** The control form of one typed character, or `null` where Ctrl does
     not change it. The table every terminal agrees on: `@`–`_` and the

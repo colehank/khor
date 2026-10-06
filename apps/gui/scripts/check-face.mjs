@@ -29670,6 +29670,34 @@ try {
       if (ctrlLeft !== "\x1b[1;5D" || ctrlAfter !== "false") {
         fail(`bar f · Ctrl then the cursor pad 52 left sent ${shown(ctrlLeft)} (want one ⌃←), the latch said ${ctrlAfter} (want false)`);
       }
+      // **Ctrl locks on a double press** (item 69): it stays for every key
+      // from the soft keyboard, wears the locked look, and a press lets go.
+      await key("ctrl");
+      await key("ctrl");
+      const ctrlCap = page.locator('[data-session-bar] [data-term-key="ctrl"]').first();
+      const lockedLook = await ctrlCap.evaluate((b) => ({ locked: b.dataset.locked ?? null, ink: getComputedStyle(b.firstElementChild).color }));
+      const twoKeys = await sends(async () => {
+        await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.textarea.focus());
+        await page.keyboard.press("c");
+        await page.keyboard.press("d");
+      });
+      const stillOn = await ctrlCap.getAttribute("aria-pressed");
+      await key("ctrl");
+      const letGo = await ctrlCap.evaluate((b) => ({ pressed: b.getAttribute("aria-pressed"), locked: b.dataset.locked ?? null }));
+      const railOn = await page.evaluate(() => {
+        const p = document.createElement("span");
+        p.style.color = "var(--rail-on-ink)";
+        document.body.append(p);
+        const c = getComputedStyle(p).color;
+        p.remove();
+        return c;
+      });
+      if (twoKeys !== "\x03\x04" || stillOn !== "true" || lockedLook.locked !== "true" || lockedLook.ink !== railOn || letGo.pressed !== "false" || letGo.locked !== null) {
+        fail(
+          `bar f · Ctrl pressed twice then c, d sent ${shown(twoKeys)} (want "\\u0003\\u0004"), locked ${lockedLook.locked} in ${lockedLook.ink} (want true in ${railOn}), ` +
+            `pressed after the keys ${stillOn} (want true), after one more press ${letGo.pressed}/${letGo.locked} (want false/null)`,
+        );
+      }
       // Application cursor keys (DECCKM), as an editor sets them.
       await program("\x1b[?1h");
       const appUp = await sends(() => cursor(0, -30));
@@ -29685,7 +29713,7 @@ try {
       const bracketed = await sends(() => key("paste"));
       if (bracketed !== "\x1b[200~echo pasted\x1b[201~") fail(`bar f · paste under bracketed paste sent ${shown(bracketed)}`);
       await program("\x1b[?2004l");
-      console.log("bar f · keys: Esc Tab ⇧Tab ←↑↓→ / - | : Ctrl+c ⌃↑ DECCKM↑ paste ×2 — checked");
+      console.log("bar f · keys: Esc Tab ⇧Tab ←↑↓→ / - | : Ctrl+c ⌃↑ Ctrl locked+c+d DECCKM↑ paste ×2 — checked");
       }
 
       // ── g. a finger's drag over a program that took the mouse ──

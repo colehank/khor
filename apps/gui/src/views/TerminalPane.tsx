@@ -106,7 +106,7 @@ import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
 import { promptMarks } from "@/lib/term-prompt-sp";
 import { kittyFlags, kittyKey, kittyNamed, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
-import { typed, type Mods } from "@/lib/term-keys";
+import { afterKey, typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
@@ -2326,7 +2326,7 @@ export function TerminalPane({
       if (!reply && !MOUSE_REPORT.test(d)) blink.typed();
       if ((m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
         out = d.length === 1 ? (kittyTyped(term, d, m.ctrl, m.alt) ?? typed(d, m)) : d;
-        latch({ ctrl: false, alt: false });
+        latch(afterKey(m));
       }
       send(out);
       // An answer is not typing; a key is, and a history replay's keys

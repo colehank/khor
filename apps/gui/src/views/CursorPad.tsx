@@ -20,12 +20,11 @@ import type { Terminal } from "@xterm/xterm";
 import { IconArrow, IconMove } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { PAD_HOLD_MS, beatMs, felt, letGo } from "@/lib/key-repeat";
-import { cursorKey, type Mods } from "@/lib/term-keys";
+import { afterKey, cursorKey, type Mods } from "@/lib/term-keys";
 import { cn } from "@/lib/utils";
 
 type Way = "left" | "right" | "up" | "down";
 const LETTER: Record<Way, "A" | "B" | "C" | "D"> = { up: "A", down: "B", right: "C", left: "D" };
-const NO_MODS: Mods = { ctrl: false, alt: false };
 
 /** One gesture on the pad, from the finger's landing. */
 type Gesture = {
@@ -141,7 +140,7 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
     setWay(w);
     if (!s.freed && (s.mods.ctrl || s.mods.alt)) {
       s.freed = true;
-      onMods(NO_MODS);
+      onMods(afterKey(s.mods));
     }
     t.input(cursorKey(t, LETTER[w], s.mods), true);
   };
