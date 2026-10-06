@@ -683,6 +683,23 @@ pub enum Request {
         addrs: Vec<String>,
         roster: serde_bytes::ByteBuf,
     },
+    /// **Pull this file into your drop directory** (item 60,
+    /// `crate::drops`): `from` is the id of the machine that has it,
+    /// `path` absolute there. The answering machine pulls it directly
+    /// (`FetchPath`), as a job named by `token`; asked again with the
+    /// same token it answers how far that job got, so asking twice never
+    /// pulls twice. Answered as [`Response::DropFile`], or refused with
+    /// the job's failure.
+    ///
+    /// **A new variant**: a khor that predates it refuses the frame by
+    /// this name, which the asker says as `msg::drop_predates()` — a
+    /// refusal a person reads, never a path pasted for a file that is
+    /// not there.
+    DropFile {
+        token: String,
+        from: String,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1013,6 +1030,15 @@ pub enum Response {
     /// [`Request::Vouch`] taken: the asker's row and the roster are in
     /// the answerer's table.
     Vouched,
+    /// [`Request::DropFile`]'s job so far: bytes landed of `total` (0
+    /// until the source has said), and once `done`, the absolute path
+    /// the file landed at on the answering machine.
+    DropFile {
+        moved: u64,
+        total: u64,
+        dest: String,
+        done: bool,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1114,6 +1140,9 @@ impl Request {
                 | Request::OpenOnce { .. }
                 | Request::OpenAgentOnce { .. }
                 | Request::WorkspaceFacts
+                // A drop names its job by token: asked twice, it answers
+                // the one job's progress (`crate::drops`).
+                | Request::DropFile { .. }
         )
     }
 
@@ -1539,6 +1568,14 @@ mod tests {
                 &b"Stat"[..],
             ),
             (Request::Watch { dirs: Vec::new() }, &b"Watch"[..]),
+            (
+                Request::DropFile {
+                    token: String::new(),
+                    from: String::new(),
+                    path: String::new(),
+                },
+                &b"DropFile"[..],
+            ),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

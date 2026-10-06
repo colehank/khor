@@ -333,6 +333,16 @@ pub enum Op {
         session: String,
         since: Option<crate::adaptor::tmux::HistoryAnchor>,
     },
+    /// One step of a drop (item 60, `crate::drops`): the file `path` on
+    /// machine `from` put where machine `to` reads it, as the job named
+    /// by `token` — started by the first ask, read by every later one.
+    /// Answered with [`Reply::DropFile`]. Tail-appended.
+    DropOn {
+        token: String,
+        from: String,
+        path: String,
+        to: String,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -430,6 +440,7 @@ impl Op {
             Op::FaceHere { .. } => ("FaceHere", DEADLINE_LOCAL),
             Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
+            Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -635,6 +646,8 @@ pub enum Reply {
     PaneHistory {
         history: crate::adaptor::tmux::PaneHistory,
     },
+    /// Tail-appended with [`Op::DropOn`].
+    DropFile { state: crate::drops::DropState },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

@@ -231,6 +231,13 @@ const VERBS: &[Verb] = &[
         run: pull,
         reach: Reach::Act,
     },
+    // Lands a file where a session's machine reads it (item 60): an act
+    // for `pull`'s reason, on whichever machine that is.
+    Verb {
+        word: "drop",
+        run: drop_verb,
+        reach: Reach::Act,
+    },
     // Reads a checkout on any machine; writes nothing there and nothing
     // here, which is why it is a read and not an act like `agents`.
     Verb {
@@ -1334,6 +1341,55 @@ fn pull(rest: &[String]) -> Result<(), String> {
     };
     let (moved, dest) = rt()?.block_on(node()?.pull_path(machine, path, &dir))?;
     println!("{}", cli::pulled_to(moved, dest.display()));
+    Ok(())
+}
+
+/// Puts a file where a session's machine can read it and prints its
+/// absolute path there — what dropping a file onto a terminal does,
+/// without the terminal (item 60, `khor_node::drops`).
+///
+/// `-m` names the machine that has the file (this one when left out,
+/// and then a relative path is this terminal's). `--to` names the
+/// session, `--on` a machine outright; neither means this machine. The
+/// same machine moves nothing and prints the path as it is; another
+/// lands it in that machine's `~/khor-drop`, pulled there by that
+/// machine itself.
+fn drop_verb(rest: &[String]) -> Result<(), String> {
+    let (mut from, mut file, mut to, mut session) = (String::new(), None, String::new(), None);
+    let mut rest = rest;
+    while let Some((word, tail)) = rest.split_first() {
+        match (word.as_str(), tail) {
+            ("-m" | "--machine", [machine, tail @ ..]) => {
+                from = machine.clone();
+                rest = tail;
+            }
+            ("--on", [machine, tail @ ..]) => {
+                to = machine.clone();
+                rest = tail;
+            }
+            ("--to", [id, tail @ ..]) => {
+                session = Some(id.clone());
+                rest = tail;
+            }
+            (path, tail) if file.is_none() && !path.starts_with('-') => {
+                file = Some(path.to_owned());
+                rest = tail;
+            }
+            _ => return Err(usage_text().into()),
+        }
+    }
+    let file = file.ok_or_else(|| String::from(usage_text()))?;
+    let file = if from.is_empty() { here(&file)? } else { file };
+    let n = node()?;
+    if let Some(id) = session {
+        let sid = SessionId(id);
+        if !n.sessions()?.iter().any(|v| v.session.id == sid) {
+            return Err(msg::no_such_session(&sid.0));
+        }
+        to = n.far_machine(&sid)?.unwrap_or_default();
+    }
+    let dest = rt()?.block_on(n.drop_file(&from, &file, &to, |_| {}))?;
+    println!("{dest}");
     Ok(())
 }
 
