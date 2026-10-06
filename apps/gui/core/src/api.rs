@@ -713,9 +713,11 @@ pub fn answer(
                         .collect()
                 })
                 .unwrap_or_default();
-            crate::term::term_drop(root, &arg("id")?, &paths)?;
+            let from = args.get("from").and_then(|v| v.as_str());
+            crate::term::term_drop(root, &arg("id")?, &paths, from)?;
             Ok("null".to_owned())
         }
+        "term_drop_progress" => to_json(&crate::term::term_drop_progress(&arg("id")?)),
         "term_resize" => {
             crate::term::term_resize(&arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
             Ok("null".to_owned())

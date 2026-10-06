@@ -33,6 +33,7 @@ import { IconChevronRight } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
+import { pathDrag } from "@/lib/path-drag";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
 import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
@@ -655,6 +656,8 @@ export function FileTree({
                   <RowMenu items={menu(r.full, true)}>
                     <button
                       type="button"
+                      // Dragged onto a terminal, the path (item 60).
+                      {...pathDrag(here ? null : machine, r.full)}
                       data-dir={r.name}
                       data-on={on}
                       // The row the head's ＋ reads its place off (`picked`).
@@ -738,6 +741,7 @@ export function FileTree({
                       // it**, so an answer that has not arrived is the
                       // default rather than a second copy of it.
                       data-picked={picked?.full === r.full ? "" : undefined}
+                      {...pathDrag(here ? null : machine, r.full)}
                       onClick={() => {
                         setPicked({ full: r.full, dir: false });
                         onOpen(r.full, clickPins);

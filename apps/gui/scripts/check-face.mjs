@@ -27871,6 +27871,117 @@ try {
         );
       }
     }
+    // **A file dropped on the terminal (item 60)**, as the app takes it:
+    // tauri's window-wide drop event, synthesized through the dev build's
+    // seam for it (`lib/window-drop`, `khor:window-drop`), and an HTML
+    // drag of a row out of khor's own listings (`lib/path-drag`). The
+    // bridge's `term_drop` is counted and answered here.
+    //
+    //   i. two terminals open, one kept hidden in the same box: one drop
+    //      on the box is one `term_drop`, the tab on screen's;
+    //  ii. a drop outside the box is none;
+    // iii. while the drop runs the pill's line stands filled by
+    //      `term_drop_progress`, and is gone when it ends;
+    //  iv. a refused drop says the refusal in the pane's corner;
+    //   v. a row dragged from a listing drops its path with its machine.
+    //
+    // Red on the code before item 60: i (each kept tab took the drop).
+    const dropRows = [termRow, { ...termRow, id: "tui/face-term-2", title: "face-term-2" }];
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", json(dropRows));
+    const drops = [];
+    let dropAnswer = () => ({ status: 200, body: "null" });
+    let dropHold = null;
+    let share = null;
+    await page.route("**/term_drop", async (r) => {
+      drops.push(JSON.parse(r.request().postData() || "{}"));
+      if (dropHold) await dropHold;
+      const a = dropAnswer();
+      await r.fulfill({ status: a.status, contentType: "application/json", body: a.body }).catch(() => {});
+    });
+    await page.route("**/term_drop_progress", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(share) }));
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await wait(200);
+    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    const fireDrop = (paths, [x, y]) =>
+      page.evaluate(([paths, x, y]) => window.dispatchEvent(new CustomEvent("khor:window-drop", { detail: { paths, x, y } })), [paths, x, y]);
+    const openRow = async (rowId) => {
+      const o = page.locator(`[data-list] [data-row="${rowId}"] [data-row-open]`).first();
+      await until(3_000, async () => (await o.count()) > 0);
+      await o.click();
+      await until(5_000, async () =>
+        page.evaluate((id) => !!document.querySelector(`[data-kept-terminal="${id}"] [data-terminal]`)?.__xterm, rowId),
+      );
+    };
+    await openRow("tui/face-term-2");
+    await openRow("tui/face-term");
+    await wait(600);
+    const kept = await page.locator("[data-kept-terminal] [data-terminal]").count();
+    const box = await page.locator('[data-kept-terminal="tui/face-term"] [data-terminal]').boundingBox();
+    if (kept < 2 || !box) {
+      fail(`probe dead: term i · wanted two kept terminals and the shown one's box, got ${kept} and ${JSON.stringify(box)}`);
+    } else {
+      const mid = [box.x + box.width / 2, box.y + box.height / 2];
+      // i.
+      await fireDrop(["/tmp/a b.txt", "/tmp/c.txt"], mid);
+      await until(3_000, async () => drops.length > 0);
+      await wait(500);
+      console.log(`term i · one drop on the shown terminal: term_drop ${JSON.stringify(drops)}`);
+      if (drops.length !== 1 || drops[0].id !== "tui/face-term" || JSON.stringify(drops[0].paths) !== '["/tmp/a b.txt","/tmp/c.txt"]' || drops[0].from !== null) {
+        fail(
+          `term i · one Finder drop on the shown terminal asked term_drop ${JSON.stringify(drops)}, not once for tui/face-term ` +
+            "with both paths — a kept tab hidden in the same box must not take it too (item 60)",
+        );
+      }
+      // ii.
+      drops.length = 0;
+      await fireDrop(["/tmp/d.txt"], [box.x + box.width + 40, box.y - 40]);
+      await wait(600);
+      console.log(`term ii · a drop outside the box: term_drop ${drops.length}`);
+      if (drops.length !== 0) fail(`term ii · a drop outside the terminal's box asked term_drop ${drops.length} times, not 0`);
+      // iii.
+      let release;
+      dropHold = new Promise((r) => (release = r));
+      share = 0.4;
+      await fireDrop(["/tmp/e.txt"], mid);
+      const line = page.locator('[data-tab-progress="0.4"], [data-pill-progress="0.4"]');
+      const shown = await until(3_000, async () => (await line.count()) > 0);
+      console.log(`term iii · the pill's line while the drop runs: ${shown ? "filled to 0.4" : "absent"}`);
+      if (!shown) fail("term iii · no pill line filled by term_drop_progress while a drop ran (item 60: progress on the tab pill's line)");
+      share = null;
+      release();
+      dropHold = null;
+      const gone = await until(3_000, async () => (await page.locator("[data-tab-progress], [data-pill-progress]").count()) === 0);
+      if (!gone) fail("term iii · the pill's line stayed after the drop ended");
+      // iv.
+      dropAnswer = () => ({ status: 500, body: JSON.stringify("refused by the gate") });
+      await fireDrop(["/tmp/f.txt"], mid);
+      const why = page.locator('[data-kept-terminal="tui/face-term"] [data-term-drop-why]');
+      await until(3_000, async () => (await why.count()) > 0);
+      const said = (await why.count()) ? await why.innerText() : null;
+      console.log(`term iv · a refused drop says: ${JSON.stringify(said)}`);
+      if (!said?.includes("refused by the gate")) fail(`term iv · a refused drop said ${JSON.stringify(said)} in the pane, not the refusal`);
+      dropAnswer = () => ({ status: 200, body: "null" });
+      // v.
+      drops.length = 0;
+      await page.evaluate(([x, y]) => {
+        const el = document.elementFromPoint(x, y)?.closest("[data-terminal]");
+        const dt = new DataTransfer();
+        dt.setData("application/x-khor-path", JSON.stringify({ machine: "far", path: "/srv/x y.txt" }));
+        el?.dispatchEvent(new DragEvent("dragover", { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        el?.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y }));
+      }, mid);
+      await until(3_000, async () => drops.length > 0);
+      console.log(`term v · a listing's row dropped: term_drop ${JSON.stringify(drops)}`);
+      if (drops.length !== 1 || drops[0].from !== "far" || JSON.stringify(drops[0].paths) !== '["/srv/x y.txt"]') {
+        fail(`term v · a row dragged from far's listing asked term_drop ${JSON.stringify(drops)}, not once with from "far"`);
+      }
+    }
+    await page.unroute("**/term_drop");
+    await page.unroute("**/term_drop_progress");
     await page.unroute("**/term_open");
     await page.unroute("**/term_attach");
     await page.unroute("**/term_stream");

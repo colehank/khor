@@ -834,8 +834,9 @@ fn term_paste(id: &str, text: &str) -> Result<(), String> {
 
 /// One path, written so a POSIX shell reads back exactly that path.
 ///
-/// **Single quotes and nothing else.** Inside them every byte is
-/// literal — spaces, `$`, backticks, `*`, newlines, semicolons — so
+/// **Single quotes when it needs any** (a plain path goes in bare, the
+/// list below being only what is *allowed* bare). Inside them every
+/// byte is literal — spaces, `$`, backticks, `*`, newlines, semicolons — so
 /// there is one rule instead of a list of characters somebody has to
 /// remember to keep in step with the shell. The single quote is the one
 /// character a single-quoted string cannot hold, and it is closed,
@@ -845,6 +846,18 @@ fn term_paste(id: &str, text: &str) -> Result<(), String> {
 /// offer: an unquoted path with a space in it is two arguments, and one
 /// with a newline is a second command.
 pub fn shell_quote(path: &str) -> String {
+    // **Bare when every character is one no shell reads** (item 60,
+    // iTerm's manner): letters and digits in any script, and a short
+    // list that sh, bash, zsh and fish all take as themselves — `=`
+    // only past the first character, where zsh's `=cmd` cannot start.
+    let plain = !path.is_empty()
+        && !path.starts_with('=')
+        && path
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '+' | ',' | '@' | '%' | ':' | '='));
+    if plain {
+        return path.to_owned();
+    }
     let mut out = String::with_capacity(path.len() + 2);
     out.push('\'');
     for c in path.chars() {
@@ -935,12 +948,20 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> 
 /// file the far shell has no way to open, and pasting it would produce
 /// a command that looks right and fails. So the files travel first, and
 /// what gets pasted is where they came to rest over there.
-pub fn term_drop(root: &Path, id: &str, paths: &[String]) -> Result<(), String> {
+///
+/// `from` names the machine the files are on, `None` being this one: a
+/// drag from a listing of another machine's disk (item 60). The road is
+/// `Node::drop_file` — nothing moves when the files are already on the
+/// session's machine; otherwise that machine pulls them into its
+/// `~/khor-drop` itself, and [`term_drop_progress`] reads how far it got.
+pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>) -> Result<(), String> {
     let n = Node::open(root.to_path_buf())?;
-    let sid = SessionId(id.to_owned());
-    let here = match n.far_machine(&sid)? {
-        Some(machine) => deliver_blocking(root, &machine, paths)?,
-        None => paths.to_vec(),
+    let to = n.far_machine(&SessionId(id.to_owned()))?.unwrap_or_default();
+    let from = from.unwrap_or_default();
+    let here = if from.is_empty() && to.is_empty() {
+        paths.to_vec()
+    } else {
+        drop_blocking(root, id, from, &to, paths)?
     };
     let text = here
         .iter()
@@ -948,6 +969,49 @@ pub fn term_drop(root: &Path, id: &str, paths: &[String]) -> Result<(), String> 
         .collect::<Vec<_>>()
         .join(" ");
     term_paste(id, &text)
+}
+
+/// Each terminal's drop under way, as the share of it landed (0 to 1).
+fn dropping() -> &'static Mutex<HashMap<String, f32>> {
+    static DROPPING: OnceLock<Mutex<HashMap<String, f32>>> = OnceLock::new();
+    DROPPING.get_or_init(Default::default)
+}
+
+/// **How far this terminal's drop has got** (item 60), for its pill's
+/// line: the share landed, whole files and the bytes of the one under
+/// way, or `None` when nothing is being dropped.
+pub fn term_drop_progress(id: &str) -> Option<f32> {
+    plock(dropping()).get(id).copied()
+}
+
+/// The files of one drop put on the session's machine, one after
+/// another, answering where each landed over there. Its own thread and
+/// runtime, for [`reach_blocking`]'s reason.
+fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, paths: &[String]) -> Result<Vec<String>, String> {
+    let (root, id, from, to, paths) = (root.to_path_buf(), id.to_owned(), from.to_owned(), to.to_owned(), paths.to_vec());
+    plock(dropping()).insert(id.clone(), 0.0);
+    let gone = id.clone();
+    let out = std::thread::spawn(move || -> Result<Vec<String>, String> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(khor_catalog::msg::runtime_wont_start)?;
+        let n = Node::open(root)?;
+        let count = paths.len().max(1) as f32;
+        let mut landed = Vec::with_capacity(paths.len());
+        for (i, p) in paths.iter().enumerate() {
+            let at = rt.block_on(n.drop_file(&from, p, &to, |s| {
+                let part = if s.total > 0 { s.moved as f32 / s.total as f32 } else { 0.0 };
+                plock(dropping()).insert(id.clone(), (i as f32 + part.min(1.0)) / count);
+            }))?;
+            landed.push(at);
+        }
+        Ok(landed)
+    })
+    .join()
+    .map_err(|_| khor_catalog::msg::deliver_thread_died().to_owned());
+    plock(dropping()).remove(&gone);
+    out?
 }
 
 /// **⌘K, kept where the bytes are** (audit/term-attach.md): this
@@ -1512,6 +1576,19 @@ mod quoting_tests {
             "",
         ] {
             survives_a_real_shell(path);
+        }
+    }
+
+    /// **Bare when nothing in it needs quoting** (item 60, iTerm's
+    /// manner): a plain path pastes as itself, quotes only where a space
+    /// or a character the shell reads would change it.
+    #[test]
+    fn a_plain_path_goes_in_bare() {
+        for path in ["/tmp/plain.txt", "/Users/a/khor-drop/b-2.tar.gz", "/tmp/中文.txt", "a@b:c,d+e=f%"] {
+            assert_eq!(shell_quote(path), path);
+        }
+        for path in ["/tmp/a b", "~/x", "/tmp/a#b", "/tmp/a!b", "/tmp/[x]", "/tmp/a{b}", "=ls", ""] {
+            assert!(shell_quote(path).starts_with('\''), "{path:?} is quoted");
         }
     }
 

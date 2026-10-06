@@ -54,7 +54,7 @@
 //     「不要显示水印」): the title a program sets (OSC 0/2) was shown in
 //     the top right corner, muted on a wash — 「zgh@Mac-mini:/Volumes/…」
 //     over the output. It is not drawn any more, and not kept.
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { ImageAddon } from "@xterm/addon-image";
@@ -63,10 +63,12 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termDropProgress, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { offerTabAct } from "@/lib/tab-acts";
+import { carriesPath, droppedPath } from "@/lib/path-drag";
+import { onWindowDrop } from "@/lib/window-drop";
 import { peekOf, type Peek } from "@/lib/term-peek";
 import { predictEcho, type Predict } from "@/lib/term-predict";
 import { termPredict } from "@/lib/term-predict-setting";
@@ -131,6 +133,9 @@ const ANSI16 = [
     keystroke asks again immediately (`pollNow`), so echo latency is
     the round trip, not this number. */
 const LIVE_MS = 50;
+/** How often a drop under way is asked how far it got (item 60): the
+    node asks the far machine at 250 ms, so faster would only re-read. */
+const DROP_LOOK_MS = 250;
 /** How long one pushed wait is held open with nothing new (`termWait`).
     Short enough that a pane torn down mid-wait frees its question soon,
     and well under `CATCH_UP_MS`: a wait that ran its whole length is a
@@ -1270,9 +1275,18 @@ export function TerminalPane({
   // **The tab pill's third seat is this terminal's re-attach** (UX-33):
   // offered by id while the pane is mounted, with whether it is joining
   // (the pill's line runs then).
+  // **A drop under way runs it too, filled to how far it got** (item
+  // 60): `null` when nothing is being dropped.
+  const [dropShare, setDropShare] = useState<number | null>(null);
   useEffect(
-    () => offerTabAct(id, { kind: "reload", busy: joining, run: () => void reopenRef.current?.() }),
-    [id, joining],
+    () =>
+      offerTabAct(id, {
+        kind: "reload",
+        busy: joining,
+        share: dropShare ?? undefined,
+        run: () => void reopenRef.current?.(),
+      }),
+    [id, joining, dropShare],
   );
   // Why the terminal never opened, in khor's own words. **Not the same
   // fact as `gone`**: `gone` means the host this pane was watching
@@ -2830,55 +2844,62 @@ export function TerminalPane({
     };
   }, []);
 
-  // Files dropped on this pane land as shell-quoted paths at the cursor
-  // (iTerm2's behaviour, 批④; `term_drop` quotes and pastes, and for a
-  // remote session transfers the files first and pastes where they
-  // landed).
+  // Files dropped on this pane land as paths at the cursor, quoted when
+  // they need it (iTerm2's behaviour, 批④, item 60): `term_drop` pastes,
+  // bracketed when the program asked, and for a session on another
+  // machine has that machine pull the files first and pastes where they
+  // landed — its progress on the pill's line (`dropShare`), a failure in
+  // this pane's corner (`dropWhy`).
   //
-  // **Only in the app, and that is not a shortcut.** tauri intercepts
-  // OS drops before the webview sees them, so the real paths arrive on
-  // a tauri event and the HTML5 `drop` never fires with anything useful
-  // — in the browser a dropped file is a `File` object with no path at
-  // all. The position is checked against this pane's own box: the event
-  // is the window's, not this element's.
-  useLayoutEffect(() => {
-    if (!inApp) return;
-    let drop: (() => void) | undefined;
-    let stopped = false;
-    void (async () => {
-      try {
-        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
-        const un = await getCurrentWebview().onDragDropEvent((e) => {
-          if (e.payload.type !== "drop") return;
-          const box = boxRef.current?.getBoundingClientRect();
-          // The event's position is in physical pixels (tauri's
-          // `PhysicalPosition`); the box is in CSS pixels.
-          const at = e.payload.position && { x: e.payload.position.x / devicePixelRatio, y: e.payload.position.y / devicePixelRatio };
-          if (!box || !at) return;
-          const inside =
-            at.x >= box.left && at.x <= box.right && at.y >= box.top && at.y <= box.bottom;
-          if (!inside || e.payload.paths.length === 0) return;
-          // A cross-machine drop takes as long as the files take; what
-          // narrates the wait is the transfer's own row in the corner
-          // strip (`use-status-bar`).
-          setDropWhy(null);
-          termDrop(id, e.payload.paths)
-            .then(() => pollNow.current())
-            .catch((err: unknown) => {
-              setDropWhy(String((err as { message?: string })?.message ?? err));
-            });
+  // **Only the tab on screen takes a drop.** The kept tabs stand hidden
+  // at the same size in the same place (`DetailPane`), so a test of the
+  // box alone handed one Finder drop to every one of them.
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const dropping = useRef(false);
+  const drop = useCallback(
+    (paths: string[], from: string | null) => {
+      if (paths.length === 0 || dropping.current) return;
+      dropping.current = true;
+      setDropWhy(null);
+      // How far it got, read while it runs: memory in the registry, so
+      // the ask is cheap at the pill's own pace.
+      const watch = window.setInterval(() => {
+        termDropProgress(id).then(
+          (p) => setDropShare(p),
+          () => {},
+        );
+      }, DROP_LOOK_MS);
+      termDrop(id, paths, from)
+        .then(() => pollNow.current())
+        .catch((err: unknown) => {
+          setDropWhy(String((err as { message?: string })?.message ?? err));
+        })
+        .finally(() => {
+          window.clearInterval(watch);
+          dropping.current = false;
+          setDropShare(null);
         });
-        if (stopped) un();
-        else drop = un;
-      } catch {
-        // No tauri here. Nothing to listen to and nothing to say.
-      }
-    })();
-    return () => {
-      stopped = true;
-      drop?.();
-    };
-  }, [id]);
+    },
+    [id],
+  );
+  const dropRef = useRef(drop);
+  dropRef.current = drop;
+
+  // **The OS drop is tauri's** (`lib/window-drop`): the real paths
+  // arrive on a window-wide event, so the point is checked against this
+  // pane's own box. (A row dragged out of khor's own listings is an HTML
+  // drag, on the box below.)
+  useLayoutEffect(
+    () =>
+      onWindowDrop(({ paths, x, y }) => {
+        if (!activeRef.current) return;
+        const box = boxRef.current?.getBoundingClientRect();
+        if (!box || x < box.left || x > box.right || y < box.top || y > box.bottom) return;
+        dropRef.current(paths, null);
+      }),
+    [id],
+  );
 
   // The search bar's three verbs. Typing looks incrementally (the
   // match under the caret grows with the word instead of jumping to
@@ -2987,6 +3008,19 @@ export function TerminalPane({
       data-terminal
       data-term-bell={rang}
       ref={boxRef}
+      // **A row out of khor's own listings** (item 60, `lib/path-drag`):
+      // its machine and path, put where this session's machine reads it.
+      onDragOver={(e) => {
+        if (!carriesPath(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(e) => {
+        const dragged = droppedPath(e);
+        if (!dragged) return;
+        e.preventDefault();
+        drop([dragged.path], dragged.machine);
+      }}
       // The terminal owns its own two colours; they follow the theme so
       // a plain shell is the app's paper, not a black box. **The paper is
       // the board's** (2026-09-30, 板是纸底是框): this was `--background`,
@@ -3294,6 +3328,13 @@ export function TerminalPane({
     {active && joining && (
       <BarSeat at="progress">
         <PillProgress />
+      </BarSeat>
+    )}
+    {/* A drop (item 60) fills the same line by how far its files got;
+        the join's own run wins while both are under way. */}
+    {active && !joining && dropShare !== null && (
+      <BarSeat at="progress">
+        <PillProgress share={dropShare} />
       </BarSeat>
     )}
     {coarse && active && (

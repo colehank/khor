@@ -1046,14 +1046,22 @@ fn term_key(id: String, keys: String) -> Result<(), String> {
 /// about the shell's syntax, and one wrong escape is a command.
 ///
 /// The root rides along because the terminal may not be on this
-/// machine: a drop onto a far session sends the files there first and
-/// pastes where they landed, and finding that out is a node's job.
-/// The command's own arguments are unchanged, so nothing above this
-/// line — the frontend, the bridge's table — learns there is a network
-/// under it.
+/// machine: a drop onto a far session has that machine pull the files
+/// first and pastes where they landed, and finding that out is a node's
+/// job — the frontend never learns there is a network under it.
+///
+/// `from` is the machine the files are on when they came from a listing
+/// of another machine's disk (item 60); absent, they are this machine's.
 #[tauri::command]
-async fn term_drop(id: String, paths: Vec<String>) -> Result<(), String> {
-    off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths)).await
+async fn term_drop(id: String, paths: Vec<String>, from: Option<String>) -> Result<(), String> {
+    off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref())).await
+}
+
+/// How far a terminal's drop has got, for its pill's line (item 60):
+/// memory.
+#[tauri::command]
+fn term_drop_progress(id: String) -> Option<f32> {
+    khor_gui_core::term::term_drop_progress(&id)
 }
 
 #[tauri::command]
@@ -4278,6 +4286,7 @@ pub fn run() {
             notify_finished,
             term_key,
             term_drop,
+            term_drop_progress,
             term_resize,
             term_leave,
             recents,
