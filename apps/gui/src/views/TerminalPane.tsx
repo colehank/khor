@@ -95,6 +95,7 @@ import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
 import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { termBell } from "@/lib/term-bell";
+import { searchable, useFindHow, type FindHow } from "@/lib/term-find";
 import { covers, pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
@@ -106,7 +107,7 @@ import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
 import { promptMarks } from "@/lib/term-prompt-sp";
 import { kittyFlags, kittyKey, kittyNamed, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
-import { typed, type Mods } from "@/lib/term-keys";
+import { afterKey, typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
@@ -1349,6 +1350,8 @@ export function TerminalPane({
   const lastQuery = useRef("");
   const findAgain = useRef<(dir: 1 | -1) => void>(() => {});
   const [hits, setHits] = useState<{ at: number; of: number } | null>(null);
+  /** Regex and case (item 70, `lib/term-find`), this device's. */
+  const [how, setHow] = useFindHow();
   // The bell's flash, and the timer that ends it.
   const [rang, setRang] = useState(false);
   // **What is being composed, under a finger** (item 18 B): shown in a
@@ -1851,7 +1854,8 @@ export function TerminalPane({
       if (picture(row, col)) return true;
       const url = urlAt(term, row, col);
       if (url) {
-        follow(url, machine);
+        if (/^file:/i.test(url)) fileLink(url);
+        else follow(url, machine);
         return true;
       }
       void pathsOn(term, here, cwdAt, row).then((found) => {
@@ -2333,7 +2337,7 @@ export function TerminalPane({
       if (!reply && !MOUSE_REPORT.test(d)) blink.typed();
       if ((m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
         out = d.length === 1 ? (kittyTyped(term, d, m.ctrl, m.alt) ?? typed(d, m)) : d;
-        latch({ ctrl: false, alt: false });
+        latch(afterKey(m));
       }
       send(out);
       // An answer is not typing; a key is, and a history replay's keys
@@ -2481,7 +2485,7 @@ export function TerminalPane({
           },
         });
       const url = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(p.text) ? p.text : urlAt(term, p.from.row, p.from.col);
-      if (url) open(() => follow(url, machine));
+      if (url) open(() => (/^file:/i.test(url) ? fileLink(url) : follow(url, machine)));
       items.push({
         id: "paste",
         title: menu.paste,
@@ -2953,31 +2957,41 @@ export function TerminalPane({
       searchSelects.current = false;
     }
   };
-  const look = (q: string) => {
+  const look = (q: string, by = how) => {
     setQuery(q);
     const s = searchRef.current;
     if (!s) return;
-    if (!q) {
+    if (!q || !searchable(q, by)) {
       s.clearDecorations();
-      setHits(null);
+      setHits(q ? { at: -1, of: 0 } : null);
       return;
     }
-    quietly(() => s.findNext(q, { incremental: true, decorations: found() }));
+    quietly(() => s.findNext(q, { ...by, incremental: true, decorations: found() }));
   };
   const step = (dir: 1 | -1) => {
     const s = searchRef.current;
-    if (!s || !query) return;
-    quietly(() => (dir > 0 ? s.findNext(query, { decorations: found() }) : s.findPrevious(query, { decorations: found() })));
+    if (!s || !query || !searchable(query, how)) return;
+    quietly(() => (dir > 0 ? s.findNext(query, { ...how, decorations: found() }) : s.findPrevious(query, { ...how, decorations: found() })));
+  };
+  /** A toggle pressed: remembered, and the word looked for again. The
+      addon recounts only for a new word: its `findNext` keeps the new
+      options before it asks whether they changed (addon-search 0.16,
+      `SearchState.shouldUpdateHighlighting`), so the word is dropped
+      from its cache first. */
+  const toggle = (next: FindHow) => {
+    setHow(next);
+    searchRef.current?.clearDecorations();
+    look(query, next);
   };
   findAgain.current = (dir) => {
     const q = query || lastQuery.current;
     const s = searchRef.current;
-    if (!q || !s) return;
+    if (!q || !s || !searchable(q, how)) return;
     if (!finding) {
       setFinding(true);
       setQuery(q);
     }
-    quietly(() => (dir > 0 ? s.findNext(q, { decorations: found() }) : s.findPrevious(q, { decorations: found() })));
+    quietly(() => (dir > 0 ? s.findNext(q, { ...how, decorations: found() }) : s.findPrevious(q, { ...how, decorations: found() })));
   };
   const stopFinding = () => {
     if (query) lastQuery.current = query;
@@ -3031,6 +3045,29 @@ export function TerminalPane({
           <span data-term-find-hits className="min-w-12 text-right text-caption tabular-nums text-muted-foreground">
             {hitsText}
           </span>
+          {/* Case and regex (item 70): VS Code's two marks, on when
+              pressed in (`GlassItem`'s on look). */}
+          <GlassItem
+            data-term-find-case
+            // The field keeps the caret: typing goes on after a press.
+            onMouseDown={(e) => e.preventDefault()}
+            aria-label={gui.match_case}
+            aria-pressed={how.caseSensitive}
+            on={how.caseSensitive}
+            onClick={() => toggle({ ...how, caseSensitive: !how.caseSensitive })}
+          >
+            <span aria-hidden className="text-caption font-label">Aa</span>
+          </GlassItem>
+          <GlassItem
+            data-term-find-regex
+            onMouseDown={(e) => e.preventDefault()}
+            aria-label={gui.match_regex}
+            aria-pressed={how.regex}
+            on={how.regex}
+            onClick={() => toggle({ ...how, regex: !how.regex })}
+          >
+            <span aria-hidden className="font-mono text-caption">.*</span>
+          </GlassItem>
           <GlassItem data-term-find-prev aria-label={gui.match_prev} onClick={() => step(-1)}>
             <IconChevronUp className="size-affordance" />
           </GlassItem>

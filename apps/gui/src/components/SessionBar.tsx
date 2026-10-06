@@ -69,6 +69,7 @@ import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef,
 import { createPortal } from "react-dom";
 
 import { TabAvatar, type TabFace } from "@/browse/TabStrip";
+import { BellMark } from "@/components/BellMark";
 import { IconBack, IconClose, IconPlus } from "@/components/icons";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -722,6 +723,7 @@ export function DeckBand({
       <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
         <TabAvatar f={f} bare="size-tab-face" seat="tab" />
       </span>
+      {f.rang && <BellMark />}
       {role === "cur" && onTitle ? (
         <button
           type="button"

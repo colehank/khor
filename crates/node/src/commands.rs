@@ -75,6 +75,11 @@ use crate::modes::Modes;
 pub const RECENT: usize = 50;
 /// How long a string mark may be before it is dropped unread.
 const MARK_MAX: usize = 8 * 1024;
+
+/// The least time between two bells the ledger records: a stream of BELs
+/// (a held tab completion, `yes $'\a'`) is one bell a second, not a
+/// rewrite of the row each.
+const BELL_EVERY_MS: u64 = 1000;
 /// How much typed text between `B` and `C` is kept for a command line
 /// when the shell names none.
 const TYPED_MAX: usize = 4 * 1024;
@@ -184,6 +189,8 @@ pub struct Ledger {
     progress: Option<u8>,
     progress_failed: bool,
     notice: Option<(String, u64)>,
+    /// When the bell last rang.
+    bell: u64,
     next: u64,
     offset: u64,
     /// Any mark seen at all: the shell has an integration.
@@ -235,6 +242,8 @@ impl Ledger {
             Scan::Ground => {
                 if b == 0x1b {
                     self.scan = Scan::Esc;
+                } else if b == 0x07 {
+                    self.ring(now);
                 } else if self.phase == Phase::Input && !self.through_tmux() {
                     self.typed_byte(b);
                 }
@@ -611,6 +620,15 @@ impl Ledger {
         self.changed = true;
     }
 
+    /// The bell (BEL outside any sequence; a BEL ending an OSC is that
+    /// string's end, not a bell).
+    fn ring(&mut self, now: u64) {
+        if self.bell == 0 || now.saturating_sub(self.bell) >= BELL_EVERY_MS {
+            self.bell = now;
+            self.changed = true;
+        }
+    }
+
     fn set_cwd(&mut self, cwd: String) {
         if self.cwd.as_deref() != Some(cwd.as_str()) {
             self.cwd = Some(cwd);
@@ -665,6 +683,7 @@ impl Ledger {
             progress_failed: self.progress_failed,
             notice: self.notice.as_ref().map(|(t, _)| t.clone()),
             notice_ms: self.notice.as_ref().map_or(0, |(_, at)| *at),
+            bell_ms: self.bell,
             ..self.reading(self.pane.as_deref(), self.running.as_ref(), self.cwd.as_ref())
         }
     }
@@ -1117,6 +1136,23 @@ mod tests {
         assert_eq!(l.doing().notice.as_deref(), Some("make: all tests passed"));
         l.feed(b"\x1b]133;D;0\x07", 6);
         assert_eq!(l.doing().progress, None, "a finished command's progress is over");
+    }
+
+    /// **The bell is recorded with its time** (item 67): a BEL in the
+    /// text rings, one ending an OSC does not, and a stream of them is
+    /// one a second.
+    #[test]
+    fn the_bell_is_recorded_once_a_second() {
+        let mut l = fed(b"\x1b]0;title\x07$ ");
+        assert_eq!(l.doing().bell_ms, 0, "an OSC's BEL is not a bell");
+        l.feed(b"\x07", 5000);
+        assert_eq!(l.doing().bell_ms, 5000);
+        assert!(l.take_changes(), "a bell changes the row");
+        l.feed(b"\x07\x07", 5400);
+        assert_eq!(l.doing().bell_ms, 5000, "within the second, the same bell");
+        assert!(!l.take_changes());
+        l.feed(b"\x07", 6100);
+        assert_eq!(l.doing().bell_ms, 6100);
     }
 
     #[test]

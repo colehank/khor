@@ -27761,6 +27761,80 @@ try {
       break term;
     }
     await wait(400);
+    // **Find has case and regex** (item 70): the two toggles narrow the
+    // matches as xterm's search addon counts them, an unfinished pattern
+    // is no matches rather than an error, and the choice is this device's.
+    {
+      await page.evaluate(() => window.localStorage.removeItem("khor.term-find"));
+      await page.evaluate(
+        () => new Promise((r) => document.querySelector("[data-terminal]").__xterm.write("Alpha alpha ALPHA a1 a22 a333\r\n", r)),
+      );
+      await page.evaluate(() => document.querySelector("[data-terminal]").__find());
+      const input = page.locator("[data-term-find-input]");
+      if (!(await until(3_000, async () => (await input.count()) > 0))) fail("probe dead: term find · the find bar did not open");
+      else {
+        const hits = async () => {
+          await wait(250);
+          return (await page.locator("[data-term-find-hits]").innerText()).trim();
+        };
+        const said = {};
+        await input.fill("alpha");
+        said.plain = await hits();
+        await page.locator("[data-term-find-case]").click();
+        said.caseOn = await hits();
+        await input.fill("a\\d+");
+        said.literal = await hits();
+        await page.locator("[data-term-find-regex]").click();
+        said.regex = await hits();
+        await input.fill("a(");
+        said.unfinished = await hits();
+        said.kept = await page.evaluate(() => window.localStorage.getItem("khor.term-find"));
+        said.pressed = await page.locator("[data-term-find-regex]").getAttribute("aria-pressed");
+        said.focus = await page.evaluate(() => document.activeElement?.hasAttribute("data-term-find-input") ?? false);
+        console.log(`term find · ${JSON.stringify(said)}`);
+        if (!/\/ 3$/.test(said.plain)) fail(`term find · "alpha" in any case counted ${said.plain}, want 3`);
+        if (!/\/ 1$/.test(said.caseOn)) fail(`term find · "alpha" with 区分大小写 counted ${said.caseOn}, want 1`);
+        if (/\/ \d+$/.test(said.literal)) fail(`term find · "a\\d+" as text counted ${said.literal}, want none`);
+        if (!/\/ 3$/.test(said.regex)) fail(`term find · "a\\d+" as a pattern counted ${said.regex}, want 3`);
+        if (said.unfinished !== "没有匹配项") fail(`term find · an unfinished pattern "a(" said ${said.unfinished}, want 没有匹配项`);
+        if (said.kept !== '{"regex":true,"caseSensitive":true}') fail(`term find · the toggles were kept as ${said.kept}`);
+        if (said.pressed !== "true") fail("term find · the regex toggle does not say it is pressed");
+        if (!said.focus) fail("term find · a toggle took the caret from the field");
+        await page.locator("[data-term-find-case]").click();
+        await page.locator("[data-term-find-regex]").click();
+        await page.locator("[data-term-find-close]").click();
+        await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.clear());
+      }
+    }
+    // **A bell rung off screen marks its row** (item 67): a second
+    // session, never opened, rings (its `doing.bell_ms` moves on) and its
+    // row wears the badge's dot; the session on screen rings too and
+    // wears nothing. A bell already there at first sight is not news.
+    {
+      const doing = (bell) => ({ command: null, running: false, started_ms: 0, ended_ms: null, exit: null, cwd: null, title: null, full_screen: false, progress: null, progress_failed: false, notice: null, notice_ms: 0, pane_unmarked: false, bell_ms: bell });
+      const other = { ...termRow, id: "tui/face-bell", title: "face-bell" };
+      let bells = { "tui/face-term": 5, "tui/face-bell": 5 };
+      const rowsNow = () => [termRow, other].map((r) => ({ ...r, doing: doing(bells[r.id]) }));
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(rowsNow()) }));
+      const marked = (id) => page.locator(`[data-side-row="${id}"] [data-bell-rang]`).count();
+      const listed = await until(6_000, async () => (await page.locator('[data-side-row="tui/face-bell"]').count()) > 0);
+      await wait(2_500);
+      const before = { other: await marked("tui/face-bell"), shown: await marked("tui/face-term") };
+      bells = { "tui/face-term": Date.now(), "tui/face-bell": Date.now() };
+      const rang = await until(6_000, async () => (await marked("tui/face-bell")) > 0);
+      const after = { other: await marked("tui/face-bell"), shown: await marked("tui/face-term"), tab: await page.locator("[data-tab-bar] [data-bell-rang]").count() };
+      console.log(`term bell · listed ${listed}; at first sight ${JSON.stringify(before)}; after both rang ${JSON.stringify(after)}`);
+      if (!listed) fail("probe dead: term bell · the second row was never listed");
+      else {
+        if (before.other || before.shown) fail(`term bell · a bell from before the face looked marked a row ${JSON.stringify(before)}`);
+        if (!rang) fail("term bell · a session that rang off screen wears no mark on its row");
+        if (after.shown || after.tab) fail(`term bell · the session on screen was marked for its own bell ${JSON.stringify(after)}`);
+      }
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json([termRow]));
+      await until(6_000, async () => (await page.locator('[data-side-row="tui/face-bell"]').count()) === 0);
+    }
     // One press, replayed: `steps` are [type, init] for key events,
     // ["input", data] for the text the input method commits, and
     // ["pause"] for the time between two presses — xterm's 229 road
@@ -30009,6 +30083,34 @@ try {
       if (ctrlLeft !== "\x1b[1;5D" || ctrlAfter !== "false") {
         fail(`bar f · Ctrl then the cursor pad 52 left sent ${shown(ctrlLeft)} (want one ⌃←), the latch said ${ctrlAfter} (want false)`);
       }
+      // **Ctrl locks on a double press** (item 69): it stays for every key
+      // from the soft keyboard, wears the locked look, and a press lets go.
+      await key("ctrl");
+      await key("ctrl");
+      const ctrlCap = page.locator('[data-session-bar] [data-term-key="ctrl"]').first();
+      const lockedLook = await ctrlCap.evaluate((b) => ({ locked: b.dataset.locked ?? null, ink: getComputedStyle(b.firstElementChild).color }));
+      const twoKeys = await sends(async () => {
+        await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.textarea.focus());
+        await page.keyboard.press("c");
+        await page.keyboard.press("d");
+      });
+      const stillOn = await ctrlCap.getAttribute("aria-pressed");
+      await key("ctrl");
+      const letGo = await ctrlCap.evaluate((b) => ({ pressed: b.getAttribute("aria-pressed"), locked: b.dataset.locked ?? null }));
+      const railOn = await page.evaluate(() => {
+        const p = document.createElement("span");
+        p.style.color = "var(--rail-on-ink)";
+        document.body.append(p);
+        const c = getComputedStyle(p).color;
+        p.remove();
+        return c;
+      });
+      if (twoKeys !== "\x03\x04" || stillOn !== "true" || lockedLook.locked !== "true" || lockedLook.ink !== railOn || letGo.pressed !== "false" || letGo.locked !== null) {
+        fail(
+          `bar f · Ctrl pressed twice then c, d sent ${shown(twoKeys)} (want "\\u0003\\u0004"), locked ${lockedLook.locked} in ${lockedLook.ink} (want true in ${railOn}), ` +
+            `pressed after the keys ${stillOn} (want true), after one more press ${letGo.pressed}/${letGo.locked} (want false/null)`,
+        );
+      }
       // Application cursor keys (DECCKM), as an editor sets them.
       await program("\x1b[?1h");
       const appUp = await sends(() => cursor(0, -30));
@@ -30030,7 +30132,7 @@ try {
       const bracketed = await sends(() => key("paste"));
       if (bracketed !== "\x1b[200~echo pasted\x1b[201~") fail(`bar f · paste under bracketed paste sent ${shown(bracketed)}`);
       await program("\x1b[?2004l");
-      console.log("bar f · keys: Esc Tab ⇧Tab ←↑↓→ / - | : Ctrl+c ⌃↑ DECCKM↑ paste ×2 — checked");
+      console.log("bar f · keys: Esc Tab ⇧Tab ←↑↓→ / - | : Ctrl+c ⌃↑ Ctrl locked+c+d DECCKM↑ paste ×2 — checked");
       }
 
       // ── g. a finger's drag over a program that took the mouse ──

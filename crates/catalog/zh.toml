@@ -2516,6 +2516,9 @@ term-picture = "图片"
 # (roadmap 4.2).
 term-bell = "响铃"
 term-bell-note = "终端响铃时，Mac 上闪一下边框，手机上轻震一下"
+# The mark on a tab and a list row whose terminal rang its bell while it
+# was off screen (item 67): what VoiceOver reads for the dot.
+bell-rang = "响过铃"
 term-predict = "预测输入"
 term-predict-note = "远端回显慢时，按下的字先带下划线显示，等远端确认"
 # Appearance → Terminal (item 21): the one ~/.zshrc line that makes shells
@@ -4628,6 +4631,10 @@ search-terminal = "搜索终端"
 # and ⇧⏎ do the same from inside the field.
 match-prev = "上一个"
 match-next = "下一个"
+# The find bar's two toggles (item 70), named for what they turn on,
+# the words Terminal.app's and VS Code's find bars use.
+match-case = "区分大小写"
+match-regex = "使用正则表达式"
 
 # ── 额度详情页下半张:花掉的 token ──────────────────────────────
 #

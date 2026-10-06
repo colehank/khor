@@ -6,6 +6,9 @@
 // recorded streams in `scripts/fixtures/snapshot/` (`<name>.raw` is the
 // program's bytes, `<name>.snap` the host's snapshot of them, written by
 // `cargo test -p khor-node --lib writes_snapshot_fixtures -- --ignored`).
+// Each cell's OSC 8 link is compared too (item 66: the snapshot carries
+// the links the host kept beside its model), read from xterm's own link
+// service as its link provider reads them.
 import { build } from "esbuild";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -34,16 +37,23 @@ async function shows(bytes) {
   await new Promise((r) => t.write(bytes, r));
   return t;
 }
-/** A line as text plus each cell's look. */
+/** The OSC 8 target of a cell, or "". */
+function linkOf(t, c) {
+  const id = c.hasExtendedAttrs?.() ? c.extended?.urlId : 0;
+  return id ? (t._core._oscLinkService.getLinkData(id)?.uri ?? "?") : "";
+}
+/** A line as text plus each cell's look, and each cell's link. */
 function line(t, i) {
   const l = t.buffer.active.getLine(i);
   if (!l) return null;
   const cells = [];
+  const links = [];
   for (let x = 0; x < l.length; x++) {
     const c = l.getCell(x);
     cells.push([c.getChars(), c.getWidth(), c.getFgColorMode(), c.getFgColor(), c.getBgColorMode(), c.getBgColor(), c.isBold(), c.isDim(), c.isItalic(), c.isUnderline(), c.isInverse()].join(","));
+    links.push(linkOf(t, c));
   }
-  return { text: l.translateToString(true), cells: cells.join("|"), wrapped: l.isWrapped };
+  return { text: l.translateToString(true), cells: cells.join("|"), links: links.join("|"), wrapped: l.isWrapped };
 }
 
 const dir = `${gui}/scripts/fixtures/snapshot`;
@@ -61,6 +71,7 @@ for (const name of names) {
   if (A.length !== B.length) fail(`${name}: ${B.length} lines, the stream's ${A.length}`);
   const n = Math.min(A.length, B.length);
   let wrongCells = 0;
+  let linked = 0;
   for (let i = 0; i < n; i++) {
     const x = line(a, i);
     const y = line(b, i);
@@ -71,11 +82,17 @@ for (const name of names) {
     } else if (x.cells !== y.cells) {
       wrongCells++;
       if (wrongCells <= 3) fail(`${name}: line ${i}'s cells differ in look (${JSON.stringify(x.text)})`);
-    } else same.push(i);
+    } else if (x.links !== y.links) {
+      fail(`${name}: line ${i}'s links differ (${JSON.stringify(x.text)}): ${JSON.stringify(y.links.replace(/\|+/g, "|"))}, the stream's ${JSON.stringify(x.links.replace(/\|+/g, "|"))}`);
+    } else {
+      same.push(i);
+      if (y.links.replace(/\|/g, "")) linked++;
+    }
   }
+  if (name === "links" && linked < 40) fail(`${name}: only ${linked} lines carry links`);
   const modes = (t) => `${t.modes.mouseTrackingMode}/${t.modes.bracketedPasteMode}/${t.modes.applicationCursorKeysMode}`;
   if (modes(a) !== modes(b)) fail(`${name}: the modes are ${modes(b)}, the stream's ${modes(a)}`);
-  console.log(`snapshot gate: ${name}: ${A.length} lines, ${same.length} identical, buffer ${B.type}, cursor ${B.cursorX},${B.cursorY}, ${snap.length} B for ${raw.length} B`);
+  console.log(`snapshot gate: ${name}: ${A.length} lines, ${same.length} identical (${linked} with links), buffer ${B.type}, cursor ${B.cursorX},${B.cursorY}, ${snap.length} B for ${raw.length} B`);
   a.dispose();
   b.dispose();
 }

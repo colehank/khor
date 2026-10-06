@@ -2016,6 +2016,7 @@ impl LiveKind {
                             title: d.title.take(),
                             notice: d.notice.take(),
                             notice_ms: d.notice_ms,
+                            bell_ms: d.bell_ms,
                             ..Default::default()
                         };
                     }
@@ -2073,6 +2074,7 @@ impl LiveKind {
                         notice: own.notice,
                         notice_ms: own.notice_ms,
                         pane_unmarked,
+                        bell_ms: own.bell_ms,
                         ..front
                     });
                     r.state = StateStamp {

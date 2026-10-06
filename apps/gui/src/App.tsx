@@ -2,6 +2,7 @@ import { startTransition, useCallback, useEffect, useMemo, useRef, useState, typ
 
 import { hereActs, ProgressLine, termName } from "@/components/DoingLine";
 import { tabAct, useTabActs } from "@/lib/tab-acts";
+import { rungOffScreen } from "@/lib/bell-marks";
 import { FinishedWatch, type Finished } from "@/lib/finished";
 import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
@@ -1684,6 +1685,16 @@ export default function App() {
   // face, state halo, kind mark), the same facts in the same clothes. A
   // tab whose row has not been listed yet (just opened) wears its id.
   const actsVersion = useTabActs();
+  // **A bell rung off screen** (the terminal audit, item 67,
+  // `lib/bell-marks`): the sessions whose bell rang while they were not
+  // in front wear the mark on their tab and row until they are.
+  const bellSeen = useRef(new Map<string, number>());
+  const rung = useMemo(
+    () => rungOffScreen(rows, bellSeen.current, onScreen.current),
+    // `onScreen` reads these.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, selected, landing, screen, narrow, hidden],
+  );
   const tabFaces: TabFace[] = useMemo(
     () =>
       openTabs.map((id) => {
@@ -1751,11 +1762,12 @@ export default function App() {
               },
               loading: tabAct(id)?.busy ?? false,
               share: tabAct(id)?.share,
+              rang: rung.has(id),
             }
           : { id, label: id, face: null, path: "", again };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [openTabs, rows, side, actsVersion, days, selected],
+    [openTabs, rows, side, actsVersion, days, selected, rung],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
@@ -2047,6 +2059,7 @@ export default function App() {
             onClose={onCloseSession}
             pinFailed={pinFailed}
             closeRefused={closeRefused}
+            rung={rung}
           />
         ) : landing === "workspaces" ? (
           <WorkspacesList

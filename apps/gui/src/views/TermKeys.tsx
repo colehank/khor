@@ -29,9 +29,12 @@
 // **Ctrl and Alt are latches.** Pressed, one waits for the next key — from
 // this row, the sheet or the soft keyboard (`TerminalPane` applies them to
 // what xterm hands out) — sends that key's modified form, and lets go.
-// Pressed again while waiting, it lets go with nothing sent. It shows that
-// it is waiting as a grey cap (a held key, the app's 「on」 grey — never
-// the brand) and says so (`aria-pressed`).
+// Pressed again while waiting, it lets go with nothing sent. **Pressed
+// twice at once, it locks** (item 69, Blink's rule): it stays for every
+// key until pressed again (`lib/term-keys` `pressLatch`). Waiting, the cap
+// is the selected row's grey block in full ink; locked, the same block in
+// the rail's open ink (`rail-on-ink`) — two states, two looks, no new
+// colour, never the brand. Both say so (`aria-pressed`, `data-locked`).
 //
 // **A key never takes the focus.** Pressing a cap must not move the caret
 // out of the terminal, or the keyboard would drop on every press — so a
@@ -47,7 +50,7 @@ import { Switch } from "@/components/settings/Switch";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
-import { GROUPS, KEYS, KEY_BY_NAME, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
+import { afterKey, GROUPS, KEYS, KEY_BY_NAME, pressLatch, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
 import { keyPanelGone, swapToKeyboard, toggleKeyPanel, useKeyPanel, useKeyPanelKind } from "@/lib/key-panel";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { useHeldKey } from "@/lib/key-repeat";
@@ -58,20 +61,19 @@ import { cn } from "@/lib/utils";
 import { CursorKey } from "@/views/CursorPad";
 import { TermFiles, type FilesRoad } from "@/views/TermFiles";
 
-const NO_MODS: Mods = { ctrl: false, alt: false };
-
 /** A cap's two looks: its box is the finger's floor, the cap drawn inside
     it (`p-xxs` round a `radius-xs` cap, the key cap's corner); held, it
     wears the app's 「on」 grey. */
 const CAP_BOX = "flex h-key-cap min-w-key-cap-w flex-none items-stretch outline-none focus-visible:[&>span]:ring-2 focus-visible:[&>span]:ring-ring";
-const capFace = (held: boolean) =>
+const capFace = (held: boolean, locked = false) =>
   cn(
     "flex flex-1 items-center justify-center rounded-lg px-2.5 text-callout font-label",
-    held ? "bg-fill-strong text-[var(--rail-on-ink)]" : "bg-fill text-foreground",
+    locked ? "bg-fill-strong text-[var(--rail-on-ink)]" : held ? "bg-fill-strong text-foreground" : "bg-fill text-foreground",
   );
 
-/** Whether a latch key is the one waiting. */
+/** Whether a latch key is the one waiting, and whether it is locked. */
 const heldOf = (k: KeyDef, mods: Mods) => (k.name === "ctrl" && mods.ctrl) || (k.name === "alt" && mods.alt);
+const lockedOf = (k: KeyDef, mods: Mods) => (k.name === "ctrl" || k.name === "alt") && !!mods.lock?.[k.name] && heldOf(k, mods);
 
 /** What pressing a key does: a latch flips, paste reads the clipboard,
     anything else is sent under the latches, which let go first —
@@ -79,7 +81,7 @@ const heldOf = (k: KeyDef, mods: Mods) => (k.name === "ctrl" && mods.ctrl) || (k
     bytes are already in their modified form. */
 function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void, images: (files: File[]) => void) {
   if (k.name === "ctrl" || k.name === "alt") {
-    onMods({ ...mods, [k.name]: !mods[k.name] });
+    onMods(pressLatch(mods, k.name, performance.now()));
     return;
   }
   if (k.name === "attach") {
@@ -94,7 +96,7 @@ function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void,
   }
   const bytes = k.send?.(t, mods);
   if (!bytes) return;
-  if (mods.ctrl || mods.alt) onMods(NO_MODS);
+  if (mods.ctrl || mods.alt) onMods(afterKey(mods));
   t.input(bytes, true);
 }
 
@@ -103,6 +105,7 @@ function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void,
 function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: (under: Mods) => void; className?: string }) {
   const latch = k.name === "ctrl" || k.name === "alt";
   const held = heldOf(k, mods);
+  const locked = lockedOf(k, mods);
   const under = useRef(mods);
   const hold = useHeldKey((first) => {
     if (first) under.current = mods;
@@ -113,6 +116,7 @@ function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: 
       type="button"
       data-term-key={k.name}
       data-on={latch ? held : undefined}
+      data-locked={locked || undefined}
       aria-pressed={latch ? held : undefined}
       aria-label={k.label}
       // The caret stays in the terminal (the file head).
@@ -120,7 +124,7 @@ function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: 
       {...hold}
       className={cn(CAP_BOX, k.repeats && "select-none [-webkit-touch-callout:none]", className)}
     >
-      <span className={capFace(held)}>{k.name === "attach" ? <IconAttach className="size-5" /> : k.cap}</span>
+      <span className={capFace(held, locked)}>{k.name === "attach" ? <IconAttach className="size-5" /> : k.cap}</span>
     </button>
   );
 }
@@ -223,7 +227,7 @@ function KeyPanel({
         }}
         className={CAP_BOX}
       >
-        <span className={capFace(up)}>
+        <span className={capFace(up, up)}>
           <IconMore className="size-5" />
         </span>
       </button>

@@ -2698,6 +2698,14 @@ pub struct Doing {
     /// Wire: appended at the tail with a serde default.
     #[serde(default)]
     pub pane_unmarked: bool,
+    /// When the terminal last rang its bell (BEL), ms since the epoch; 0
+    /// when it never has. The face marks a session whose bell rang while
+    /// it was off screen (the terminal audit, item 67).
+    ///
+    /// Wire: appended at the tail with a serde default.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub bell_ms: u64,
 }
 
 #[cfg(test)]
