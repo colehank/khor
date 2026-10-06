@@ -28140,7 +28140,7 @@ try {
         const pick = (name, size) =>
           page.evaluate(
             ([name, size]) => {
-              const input = document.querySelector('[data-files-pick="photos"] input[type="file"]');
+              const input = document.querySelector('[data-files-pick="device"] input[type="file"]');
               if (!input) return false;
               const dt = new DataTransfer();
               dt.items.add(new File([new Uint8Array(size)], name, { type: "image/png" }));

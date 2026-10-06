@@ -3656,8 +3656,7 @@ key-keyboard = "键盘"
 # The key row's 📎 (UX-41, item 60 part 3): a panel in the keyboard's place
 # that puts files into the terminal as paths.
 key-attach-name = "放文件进终端"
-files-photos = "照片"
-files-files = "文件"
+files-device = "照片与文件"
 files-land = "放到会话所在机器的 ~/khor-drop/，路径粘贴到光标处"
 # The files panel's machine list: the mark on the session's own machine,
 # listed first (the owner, 2026-10-07).

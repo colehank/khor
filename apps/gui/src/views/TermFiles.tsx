@@ -46,7 +46,7 @@ export type FilesRoad = {
       there: the pane's own drop (item 60's road, `term_drop`), its
       progress on the pill's line and a failure in its corner. */
   drop: (paths: string[], from: string | null) => void;
-  /** Files picked on this device (照片, 文件): staged where its node
+  /** Files picked on this device (照片与文件): staged where its node
       serves them, then the same drop from here. */
   dropFiles: (files: File[]) => void;
 };
@@ -60,8 +60,7 @@ export function machinesFor(devices: DeviceRow[], machine: string | null): Devic
 }
 
 export function TermFiles({ road }: { road: FilesRoad }) {
-  const photos = useRef<HTMLInputElement>(null);
-  const files = useRef<HTMLInputElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
   useEffect(() => {
     void fetchDevices()
@@ -77,38 +76,32 @@ export function TermFiles({ road }: { road: FilesRoad }) {
   };
   const up = (path: string) => path.replace(/\/[^/]+\/?$/, "") || "/";
 
+  // **One picker** (the owner 2026-10-07, on the iPhone: 照片 and 文件
+  // opened the same system menu — choose a photo, take one, choose a
+  // file): every kind, several at once. ⚠️ 墓碑: two buttons, 照片 with
+  // an image filter and 文件 without.
   const pickers = (
-    <div data-files-pickers className="grid grid-cols-2 gap-in">
-      {(
-        [
-          ["photos", gui.files_photos, photos, "image/*,video/*"],
-          ["files", gui.files_files, files, undefined],
-        ] as const
-      ).map(([key, label, ref, accept]) => (
-        <button
-          key={key}
-          type="button"
-          data-files-pick={key}
-          onClick={() => ref.current?.click()}
-          className="flex h-20 flex-col items-center justify-center gap-xxs rounded-lg bg-fill text-callout font-label"
-        >
-          {key === "photos" ? <FileKindIcon name="x.png" className="size-6" /> : <IconFile className="size-6" />}
-          {label}
-          <input
-            ref={ref}
-            type="file"
-            multiple
-            accept={accept}
-            hidden
-            onChange={(e) => {
-              road.dropFiles([...(e.target.files ?? [])]);
-              // The same file picked again is a change again.
-              e.target.value = "";
-            }}
-          />
-        </button>
-      ))}
-    </div>
+    <button
+      type="button"
+      data-files-pick="device"
+      onClick={() => picker.current?.click()}
+      className="flex h-16 w-full flex-none items-center justify-center gap-in rounded-lg bg-fill text-callout font-label"
+    >
+      <FileKindIcon name="x.png" className="size-6" />
+      <IconFile className="size-6" />
+      {gui.files_device}
+      <input
+        ref={picker}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => {
+          road.dropFiles([...(e.target.files ?? [])]);
+          // The same file picked again is a change again.
+          e.target.value = "";
+        }}
+      />
+    </button>
   );
 
   let mesh: ReactNode;
