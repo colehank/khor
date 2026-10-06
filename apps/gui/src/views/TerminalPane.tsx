@@ -675,15 +675,27 @@ function pressSelects(
     const ch = term.buffer.active.getLine(row)?.getCell(col)?.getChars() ?? "";
     return ch === "" || (term.options.wordSeparator ?? WORD_SEPARATOR).includes(ch);
   };
+  // A word runs on over a row's end the grid wrapped (the terminal
+  // audit, item 53: a long press on a wrapped path's second row took only
+  // that row's half). Cells are counted row by row, `cols` to a row.
   const selectWord = (at: { col: number; row: number }) => {
-    let from = at.col;
-    let to = at.col;
-    if (!blank(at.row, at.col)) {
-      while (from > 0 && !blank(at.row, from - 1)) from -= 1;
-      while (to < term.cols - 1 && !blank(at.row, to + 1)) to += 1;
+    const cols = term.cols;
+    const wraps = (row: number) => !!term.buffer.active.getLine(row)?.isWrapped;
+    const word = (i: number) => !blank(Math.floor(i / cols), i % cols);
+    let from = at.row * cols + at.col;
+    let to = from;
+    if (word(from)) {
+      while (from % cols > 0 || wraps(from / cols)) {
+        if (!word(from - 1)) break;
+        from -= 1;
+      }
+      while ((to + 1) % cols > 0 || wraps((to + 1) / cols)) {
+        if (!word(to + 1)) break;
+        to += 1;
+      }
     }
-    term.select(from, at.row, to - from + 1);
-    anchor = { col: from, row: at.row };
+    term.select(from % cols, Math.floor(from / cols), to - from + 1);
+    anchor = { col: from % cols, row: Math.floor(from / cols) };
   };
   const extend = (to: { col: number; row: number }) => {
     if (!anchor) return;
