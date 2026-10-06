@@ -53,17 +53,39 @@ export function notesFirstTouch(o: {
       before and after it, so a drag that did not make khor's client
       tmux's `latest` is visible. */
   reread?: () => Promise<void>;
+  /** The pane's attach as the finger lands (item 51): joined or not, and
+      which try of the open this is (a host that did not answer is asked
+      again, item 36). */
+  joining?: () => { joined: boolean; tries: number };
   note: (line: string) => void;
 }): { attached: (bytes: number) => void; stop: () => void } {
   const { id, term, box, scroller } = o;
-  let armed = false;
+  // **Armed from the pane's birth** (item 51): a touch before the attach
+  // has landed is the first candidate for a drag that did nothing, and
+  // was not written at all. The attach arms it again for its own.
+  let armed = true;
   let attachedAt = 0;
-  let touch: { at: number; x: number; y: number; top: number; moved: number; wheels: number; reports: number; scroller: string; keys: string } | null = null;
+  const bornAt = performance.now();
+  let touch: { at: number; x: number; y: number; top: number; moved: number; wheels: number; reports: number; scroller: string; keys: string; state: string } | null = null;
   const say = (what: string) => o.note(`term ${id}: ${what}`);
   /** Says the attach early, before a touch is judged against it. */
   let unwait: (() => void) | null = null;
   /** Gives up waiting without a word (the pane went). */
   let drop: (() => void) | null = null;
+  /** What the finger landed on (item 51): the attach, xterm's modes and
+      the scroller's range then, and the page's height against the
+      window's (a page laid out at a stale height has no range). */
+  const landing = () => {
+    const j = o.joining?.();
+    const vv = window.visualViewport;
+    return (
+      (box.querySelector("[data-term-opening]") ? "cover, " : "") +
+      (j ? `${j.joined ? "joined" : "not joined"} try ${j.tries}, ` : "") +
+      `${term.buffer.active.type} mouse ${term.modes.mouseTrackingMode}, ` +
+      `range ${Math.round(scroller.scrollHeight - scroller.clientHeight)} at ${Math.round(scroller.scrollTop)} of ${scroller.clientHeight}, ` +
+      `view ${Math.round(vv?.height ?? 0)}/${window.innerHeight}`
+    );
+  };
   const start = (e: TouchEvent) => {
     if (!armed || touch || e.touches.length !== 1) return;
     unwait?.();
@@ -79,7 +101,12 @@ export function notesFirstTouch(o: {
       // Decided as the finger lands, the way the pane's own rules are.
       scroller: o.history() ? "history view" : programScrolls(term) ? "wheel to the program" : "native",
       keys: keys(),
+      state: landing(),
     };
+    // **The lift is heard where the finger landed, too** (item 51): the
+    // opening cover goes while a finger is on it, and a touch whose
+    // target has left the page ends there, never reaching the window.
+    for (const k of ["touchend", "touchcancel"]) e.target?.addEventListener(k, end, { once: true, passive: true });
   };
   const move = (e: TouchEvent) => {
     if (!touch || e.touches.length !== 1) return;
@@ -98,8 +125,9 @@ export function notesFirstTouch(o: {
     if (!t) return;
     touch = null;
     armed = false;
-    const after = Math.round(t.at - attachedAt);
-    const head = `first touch after ${after} ms`;
+    const head = attachedAt
+      ? `first touch after ${Math.round(t.at - attachedAt)} ms`
+      : `first touch before the attach, ${Math.round(t.at - bornAt)} ms into the pane`;
     // How the touch ended and how far it went (item 45, the owner's
     // phone: a drag the face judged a tap sent tmux nothing — iOS ends a
     // touch it takes for its own gesture with `touchcancel`).
@@ -107,6 +135,10 @@ export function notesFirstTouch(o: {
     // The keyboard before the touch and once it has settled after it
     // (item 49: a swipe down or a tap off the input area lowers it).
     const keyboard = () => `keyboard ${t.keys} → ${keys()}`;
+    // The scroller changing hands under the finger (item 51: the history
+    // view's first read, landing mid-drag, stopped the pan dead).
+    const now = o.history() ? "history view" : programScrolls(term) ? "wheel to the program" : "native";
+    const handed = now !== t.scroller ? ` (${now} by the lift)` : "";
     if (t.moved >= DRAG_PX) {
       const what =
         (t.scroller === "wheel to the program"
@@ -115,19 +147,19 @@ export function notesFirstTouch(o: {
       const before = o.pane?.();
       const line = (after: typeof before) =>
         say(
-          `${head}: drag, ${t.scroller}: ${what}` +
+          `${head}: drag, ${t.scroller}${handed}: ${what}` +
             (before ? `; pane ${before.pane} mouse ${before.mouse ? "held" : "free"}` : "") +
             (before && after ? `, window ${before.window || "?"} → ${after.window || "?"}` : "") +
-            `, ${keyboard()}`,
+            `, ${keyboard()}; at the touch: ${t.state}`,
         );
       // Under tmux (item 45): the window's size after the drag, read
       // once tmux has had time to answer the drag's reports.
       if (before && o.reread) window.setTimeout(() => void o.reread!().finally(() => line(o.pane?.() ?? null)), WINDOW_MS);
       else window.setTimeout(() => line(null), KEYBOARD_MS);
     } else if (performance.now() - t.at >= PRESS_MS) {
-      say(`${head}: press, selection ${term.hasSelection() ? "made" : "none"}, ${went}`);
+      say(`${head}: press, selection ${term.hasSelection() ? "made" : "none"}, ${went}; at the touch: ${t.state}`);
     } else {
-      window.setTimeout(() => say(`${head}: tap, ${keyboard()}, ${went}, ${t.wheels} wheels`), KEYBOARD_MS);
+      window.setTimeout(() => say(`${head}: tap, ${keyboard()}, ${went}, ${t.wheels} wheels; at the touch: ${t.state}`), KEYBOARD_MS);
     }
   };
   box.addEventListener("touchstart", start, { capture: true, passive: true });
@@ -146,8 +178,9 @@ export function notesFirstTouch(o: {
       };
       const now = (how: string) => {
         const b = term.buffer.active;
+        const j = o.joining?.();
         say(
-          `attach ${how}; ${b.type} buffer, mouse ${term.modes.mouseTrackingMode}; ` +
+          `attach ${how}${j ? `, try ${j.tries}` : ""}; ${b.type} buffer, mouse ${term.modes.mouseTrackingMode}; ` +
             `${term.cols}x${term.rows}, ${cell(term)}; ` +
             (o.tmuxRow ? `tmux row, ${paneSaid()}, history view ${o.history() ? "on" : "off"}` : "row"),
         );

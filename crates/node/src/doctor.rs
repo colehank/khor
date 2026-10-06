@@ -385,7 +385,16 @@ async fn check_terminal(root: PathBuf) -> (Health, String, Option<String>) {
         // attach, before it when the open was slow.
         let fit = after(": fit at ").or_else(|| lines[..at].iter().rev().find(|l| l.contains(": fit at ") && mine(l)).copied());
         let touch = after(" first touch ");
-        said.push(std::iter::once(*line).chain(fit).chain(touch).collect::<Vec<_>>().join(" · "));
+        // A touch before the attach had landed (item 51) is noted at its
+        // lift, which can come before the attach's own line: looked for
+        // back to this terminal's previous attach.
+        let early = lines[..at]
+            .iter()
+            .rev()
+            .take_while(|l| !(l.contains(" attach ") && mine(l)))
+            .find(|l| l.contains(" first touch before the attach") && mine(l))
+            .copied();
+        said.push(std::iter::once(*line).chain(fit).chain(early).chain(touch).collect::<Vec<_>>().join(" · "));
         if said.len() == TERMINAL_ENTRIES {
             break;
         }
@@ -1172,6 +1181,16 @@ mod face_note_tests {
         assert!(rows[0].contains("term a: attach 30B") && rows[0].contains("term a: fit at 9 ms") && rows[0].contains("term a: first touch tap after 500"), "{said}");
         assert!(rows[1].contains("term b: attach 20B") && rows[1].contains("term b: first touch tap after 300"), "{said}");
         assert!(!said.contains("term a: attach 10B") && !said.contains("drag after 2000"), "{said}");
+        // A touch before the attach, noted before it (item 51), is its
+        // terminal's too; one before an earlier attach is not.
+        note_face(&root, "term d: first touch before the attach, 90 ms into the pane: drag").unwrap();
+        note_face(&root, "term d: attach 1B").unwrap();
+        note_face(&root, "term e: first touch before the attach, 10 ms into the pane: tap").unwrap();
+        note_face(&root, "term e: attach 1B").unwrap();
+        note_face(&root, "term e: attach 2B").unwrap();
+        let said = row().1;
+        assert!(said.lines().any(|l| l.contains("term d: attach 1B") && l.contains("term d: first touch before the attach, 90 ms")), "{said}");
+        assert!(!said.contains("term e: first touch before"), "{said}");
         for i in 0..8 {
             note_face(&root, &format!("term t{i}: attach 1B")).unwrap();
         }

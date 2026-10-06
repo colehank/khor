@@ -1,4 +1,4 @@
-// The scroller gate (items 29, 30, 36, 49 and 50): the terminal's history on the page's
+// The scroller gate (items 29, 30, 36, 49, 50 and 52): the terminal's history on the page's
 // own scroller (`src/lib/term-scroller.ts`), driven in headless Chrome
 // against a real xterm, in the same DOM the pane builds.
 //
@@ -29,6 +29,11 @@
 //       at the bottom and lowered the keyboard settles back to the bottom
 //       once the keyboard has gone; one from up in the history, or
 //       followed by a new touch, does not.
+//   52. **「新输出」 means lines** (`src/lib/term-gain.ts`): up in the
+//       history, a prompt redrawn in place, the same after a resize, a
+//       cursor toggled, a cleared screen and tmux's status line ticking
+//       gain nothing; three lines printed do, and so do lines printed
+//       where the history is full and trims its top.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -48,7 +53,8 @@ const bundle = await build({
       import { FitAddon } from "@xterm/addon-fit";
       import * as scroller from "./src/lib/term-scroller.ts";
       import { swipeFolds, swipeLowers } from "./src/lib/term-swipe.ts";
-      window.lab = { Terminal, FitAddon, scroller, swipeFolds, swipeLowers };
+      import { countsGain } from "./src/lib/term-gain.ts";
+      window.lab = { Terminal, FitAddon, scroller, swipeFolds, swipeLowers, countsGain };
     `,
     resolveDir: gui,
     loader: "ts",
@@ -377,6 +383,54 @@ for (const [k, v] of Object.entries(foldWant)) {
   if (fold[k] !== v) fail(`50 ${k}: the finger told the deck ${JSON.stringify(fold[k])}, want ${JSON.stringify(v)}`);
 }
 
+// ── 52 ──
+await fresh();
+const gained = await page.evaluate(async () => {
+  const write = (s) => new Promise((r) => window.t.write(s, r));
+  const out = {};
+  const run = async (rows) => {
+    let s = "";
+    for (let i = 1; i <= rows; i++) s += `line ${i}\r\n`;
+    await write(s + "~ % ");
+    window.t.scrollLines(-30);
+    const g = window.lab.countsGain(window.t);
+    g.mark();
+    return g;
+  };
+  let g = await run(200);
+  const step = async (name, bytes, then) => {
+    await write(bytes);
+    if (then) await then();
+    out[name] = g.grew();
+  };
+  await step("redraw", "\r\x1b[A\x1b[0m\x1b[J\r\n~ % ");
+  await step("resize", "\r\r\x1b[2A\x1b[J~ line one\r\n% ", async () => {
+    window.t.resize(window.t.cols, window.t.rows - 3);
+    await write("\r\r\x1b[2A\x1b[J~ line one\r\n% ");
+  });
+  await step("cursor", "\x1b[?25l\x1b[?25h\x1b[?2004h");
+  await step("title", "\x1b]2;t8-1\x07");
+  await step("lines", "one\r\ntwo\r\nthree\r\n~ % ");
+  // A cleared screen (^L) is counted from again: what is printed after
+  // it, under the old extent, says 回到底部 — the safe side.
+  g.mark();
+  await step("cleared", "\x1b[H\x1b[2J~ % ");
+  g.stop();
+  window.t.resize(window.t.cols, window.t.rows + 3);
+  // The history at its limit: every new line trims one off the top.
+  window.t.options.scrollback = 50;
+  g = await run(200);
+  await step("redraw at the limit", "\r\x1b[0m\x1b[J~ % ");
+  await step("lines at the limit", "one\r\ntwo\r\n~ % ");
+  g.stop();
+  return out;
+});
+console.log(`scroller gate: 52 gained: ${JSON.stringify(gained)}`);
+const gainWant = { redraw: false, resize: false, cursor: false, title: false, lines: true, cleared: false, "redraw at the limit": false, "lines at the limit": true };
+for (const [k, v] of Object.entries(gainWant)) {
+  if (gained[k] !== v) fail(`52 ${k}: counted ${JSON.stringify(gained[k])} as lines below, want ${v}`);
+}
+
 await browser.close();
 if (bad) process.exit(1);
-console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, any swipe down lowers the keyboard, and the finger folds the deck");
+console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, any swipe down lowers the keyboard, the finger folds the deck, and 新输出 counts lines, not writes");

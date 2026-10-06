@@ -18,8 +18,14 @@ import { fetchLs } from "@/api";
 /** What a path link opens. */
 export type PathTarget = { path: string; dir: boolean; line: number | null; col: number | null };
 
-/** A run of path characters, with an optional line mark after it. */
-const CANDIDATE = /(?:~\/|\.{0,2}\/)?[\w.@+~-]+(?:\/[\w.@+~-]+)*\/?(?::(\d+)(?::(\d+))?|\((\d+),(\d+)\))?/g;
+/** A run of path characters, with an optional line mark after it. Any
+    letter or digit, not only ASCII's (the terminal audit, item 53: a
+    `报告/图.png` was no link). */
+const CANDIDATE = /(?:~\/|\.{0,2}\/)?[\p{L}\p{N}\p{M}_.@+~-]+(?:\/[\p{L}\p{N}\p{M}_.@+~-]+)*\/?(?::(\d+)(?::(\d+))?|\((\d+),(\d+)\))?/gu;
+/** A quoted path, spaces and all: `ls` quotes such names (`'my file.txt'`),
+    and so do most tools' messages. Only taken when it holds a slash or a
+    dot, and only kept when the machine has it, like every candidate. */
+const QUOTED = /(["'])([^"'\n]*[ ][^"'\n]*)\1/g;
 /** Python's traceback line: `File "…", line 12`. */
 const PY_LINE = /^",\s+line\s+(\d+)/;
 
@@ -80,23 +86,57 @@ async function exists(machine: string, abs: string): Promise<{ dir: boolean } | 
   return dir === undefined ? null : { dir };
 }
 
-/** The string index of each cell's first character, and back. */
-function cells(line: IBufferLine, cols: number): { text: string; at: number[] } {
+/** A cell of the buffer: column and buffer line, both 0-based. */
+type Cell = { x: number; y: number };
+
+/** The most rows one wrapped line is read across. */
+const WRAPPED_MOST = 16;
+
+/**
+ * **A line as the program wrote it, not as the grid wrapped it** (the
+ * terminal audit, item 53): on a phone's 44 columns a compiler's path or
+ * a URL runs on over the row's end, and read row by row it was two
+ * halves that neither existed nor opened. The rows xterm marks as
+ * wrapped (`isWrapped`) are joined, with the cell each string index came
+ * from, so a link can span rows (VS Code's and the web-links addon's
+ * rule).
+ */
+function logical(term: Terminal, y: number): { text: string; at: Cell[]; first: number } {
+  const b = term.buffer.active;
+  let first = y;
+  while (first > 0 && y - first < WRAPPED_MOST && b.getLine(first)?.isWrapped) first--;
   let text = "";
-  const at: number[] = [];
-  for (let x = 0; x < cols; x++) {
-    const c = line.getCell(x);
-    if (!c) break;
-    const ch = c.getChars();
-    if (c.getWidth() === 0) continue;
-    at[text.length] = x;
-    text += ch || " ";
+  const at: Cell[] = [];
+  for (let row = first; row < first + WRAPPED_MOST; row++) {
+    const line: IBufferLine | undefined = b.getLine(row);
+    if (!line || (row > first && !line.isWrapped)) break;
+    for (let x = 0; x < term.cols; x++) {
+      const c = line.getCell(x);
+      if (!c) break;
+      if (c.getWidth() === 0) continue;
+      at[text.length] = { x, y: row };
+      text += c.getChars() || " ";
+    }
   }
-  return { text: text.replace(/\s+$/, ""), at };
+  return { text: text.replace(/\s+$/, ""), at, first };
 }
 
-/** One path found on a line: its cells (1-based, inclusive) and target. */
-export type FoundPath = { x0: number; x1: number; text: string; target: PathTarget };
+/** The cell string index `i` was read from (a character of two code
+    units has its cell at the first). */
+function cellOf(at: Cell[], i: number): Cell | undefined {
+  while (i > 0 && !at[i]) i--;
+  return at[i];
+}
+
+/** One path found on a line: its first and last cells (`x` 1-based,
+    `y` the 0-based buffer line) and what it opens. */
+export type FoundPath = { from: Cell; to: Cell; text: string; target: PathTarget };
+
+/** Whether cell (`col` 0-based) of buffer line `row` is inside `f`. */
+export function covers(f: { from: Cell; to: Cell }, row: number, col: number): boolean {
+  const at = row * 1e5 + col + 1;
+  return at >= f.from.y * 1e5 + f.from.x && at <= f.to.y * 1e5 + f.to.x;
+}
 
 /** The paths on buffer line `y` (0-based) that the machine has. */
 export async function pathsOn(
@@ -105,21 +145,28 @@ export async function pathsOn(
   cwdAt: (line: number) => string | undefined,
   y: number,
 ): Promise<FoundPath[]> {
-  const line = term.buffer.active.getLine(y);
-  if (!line) return [];
-  const { text, at } = cells(line, term.cols);
-  const cwd = cwdAt(y);
+  if (!term.buffer.active.getLine(y)) return [];
+  const { text, at, first } = logical(term, y);
+  const cwd = cwdAt(first);
   const found: Promise<FoundPath | null>[] = [];
+  const candidates: { start: number; whole: string; written: string; lineNo?: string; colNo?: string }[] = [];
   CANDIDATE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = CANDIDATE.exec(text)) !== null) {
     const whole = m[0];
     if (whole.length < 2) continue;
-    const start = m.index;
     const mark = whole.search(/(:\d+(:\d+)?|\(\d+,\d+\))$/);
-    const written = mark > 0 ? whole.slice(0, mark) : whole;
-    let lineNo = m[1] ?? m[3];
-    const colNo = m[2] ?? m[4];
+    candidates.push({ start: m.index, whole, written: mark > 0 ? whole.slice(0, mark) : whole, lineNo: m[1] ?? m[3], colNo: m[2] ?? m[4] });
+  }
+  QUOTED.lastIndex = 0;
+  while ((m = QUOTED.exec(text)) !== null) {
+    const inner = m[2];
+    if (!/[/.]/.test(inner)) continue;
+    candidates.push({ start: m.index + 1, whole: inner, written: inner });
+  }
+  for (const c of candidates) {
+    const { start, whole, written, colNo } = c;
+    let lineNo = c.lineNo;
     const py = PY_LINE.exec(text.slice(start + whole.length));
     if (py) lineNo = py[1];
     found.push(
@@ -136,9 +183,12 @@ export async function pathsOn(
         const is = await exists(machine, abs);
         if (!is) return null;
         const last = start + whole.length - 1;
+        const from = cellOf(at, start);
+        const to = cellOf(at, last);
+        if (!from || !to) return null;
         return {
-          x0: (at[start] ?? start) + 1,
-          x1: (at[last] ?? last) + 1,
+          from: { x: from.x + 1, y: from.y },
+          to: { x: to.x + 1, y: to.y },
           text: whole,
           target: { path: tidy(abs), dir: is.dir, line: lineNo ? Number(lineNo) : null, col: colNo ? Number(colNo) : null },
         };
@@ -164,7 +214,7 @@ export function pathLinks(
     provideLinks(y, done) {
       void pathsOn(term, machine, cwdAt, y - 1).then((found) => {
         const links: ILink[] = found.map((f) => ({
-          range: { start: { x: f.x0, y }, end: { x: f.x1, y } },
+          range: { start: { x: f.from.x, y: f.from.y + 1 }, end: { x: f.to.x, y: f.to.y + 1 } },
           text: f.text,
           decorations: { underline: true, pointerCursor: true },
           activate: (ev: MouseEvent) => {
@@ -177,16 +227,15 @@ export function pathLinks(
   };
 }
 
-/** A URL under a cell of buffer line `y`, for a finger's tap. */
+/** A URL under a cell of buffer line `y`, for a finger's tap; one the
+    grid wrapped onto the next rows is read whole (`logical`). */
 export function urlAt(term: Terminal, y: number, x: number): string | null {
-  const line = term.buffer.active.getLine(y);
-  if (!line) return null;
-  const { text, at } = cells(line, term.cols);
+  if (!term.buffer.active.getLine(y)) return null;
+  const { text, at } = logical(term, y);
   for (const m of text.matchAll(/https?:\/\/[^\s"'<>`]+[^\s"'<>`.,;:!?)\]]/g)) {
-    const a = at[m.index] ?? m.index;
-    const last = m.index + m[0].length - 1;
-    const b = at[last] ?? last;
-    if (x >= a && x <= b) return m[0];
+    const from = cellOf(at, m.index);
+    const to = cellOf(at, m.index + m[0].length - 1);
+    if (from && to && covers({ from: { x: from.x + 1, y: from.y }, to: { x: to.x + 1, y: to.y } }, y, x)) return m[0];
   }
   return null;
 }
