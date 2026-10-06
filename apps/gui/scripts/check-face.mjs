@@ -29084,9 +29084,11 @@ try {
       if (closed.circle !== "1" || closed.name !== "one.rs") fail(`ws c · × on the other file left ${JSON.stringify(closed)} — one file, the front one kept`);
     }
     await page.setViewportSize({ width: 1400, height: 900 });
-    // ── d. the file pill's third seat (UX-33): ↻ while the file is as on
-    //       the disk, ✓ while something is typed in it; every pill has its
-    //       three seats and no ×; 预览 is the first row's circle. ──
+    // ── d. the strip's front act (UX-39 §7): ↻ while the front file is
+    //       as on the disk, ✓ while something is typed in it, in the one
+    //       circle after the capsule; every wide pill is face · name · ×
+    //       and carries no act of its own; 预览 is the first row's circle.
+    //       ⚠️ 墓碑 (UX-33 → UX-39 §7): the third seat on every pill, no ×. ──
     {
       await wait(400);
       await open("workspaces");
@@ -29105,23 +29107,30 @@ try {
             close: t.querySelectorAll("[data-tab-close]").length,
           })),
         );
+      const frontAct = () =>
+        page.evaluate(() => {
+          const all = [...document.querySelectorAll("[data-ws-tab-strip] [data-tab-front-act]")];
+          return { n: all.length, act: all[0]?.getAttribute("data-tab-act") ?? null };
+        });
       const clean = await seats();
+      const cleanAct = await frontAct();
       const wroteD = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ at_ms: Date.now(), digest: "4".repeat(64) }) });
       await page.route("**/write_text", wroteD);
       await toEdit();
       await page.locator("[data-edit]").click();
       await page.keyboard.type("Z");
       await wait(300);
-      const typed = await seats();
-      const front = page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="save"]');
+      const typedAct = await frontAct();
+      const front = page.locator('[data-ws-tab-strip] [data-tab-front-act][data-tab-act="save"]');
       if ((await front.count()) === 1) await front.click();
-      const saved = await until(4_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="reload"]').count()) === 1);
+      const saved = await until(4_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab-front-act][data-tab-act="reload"]').count()) === 1);
       const eye = await page.locator("[data-ws-file-tail] [data-file-face-toggle]").count();
-      console.log(`ws d · clean ${JSON.stringify(clean)}; typed ${JSON.stringify(typed)}; ✓ pressed → ↻ ${saved}; 预览 circles on the first row ${eye}`);
-      if (clean.some((t) => !t.face || !t.name || !t.act || t.close)) fail(`ws d · a file pill lacks a seat or keeps a ×: ${JSON.stringify(clean)} — 头像 · 名称 · 对齐位 on every pill (UX-33; src/browse/TabStrip.tsx)`);
-      if (clean.find((t) => t.on)?.act !== "reload") fail(`ws d · the clean front file's seat is ${JSON.stringify(clean.find((t) => t.on)?.act)} — ↻ read again`);
-      if (typed.find((t) => t.on)?.act !== "save") fail(`ws d · with a letter typed the front file's seat is ${JSON.stringify(typed.find((t) => t.on)?.act)} — ✓ save (UX-33)`);
-      if (!saved) fail("ws d · ✓ pressed did not save: the seat never went back to ↻");
+      console.log(`ws d · pills ${JSON.stringify(clean)}; front act clean ${JSON.stringify(cleanAct)}, typed ${JSON.stringify(typedAct)}; ✓ pressed → ↻ ${saved}; 预览 circles on the first row ${eye}`);
+      if (clean.length === 0) fail("probe dead: ws d — no file pill on the workspace strip");
+      if (clean.some((t) => !t.face || !t.name || t.act !== null || t.close !== 1)) fail(`ws d · a wide file pill is not face · name · ×: ${JSON.stringify(clean)} — no act on a pill, one × on every pill (UX-39 §7; src/browse/TabStrip.tsx)`);
+      if (cleanAct.n !== 1 || cleanAct.act !== "reload") fail(`ws d · the clean front file's act is ${JSON.stringify(cleanAct)} — one circle after the capsule, ↻ read again (UX-39 §7)`);
+      if (typedAct.n !== 1 || typedAct.act !== "save") fail(`ws d · with a letter typed the front act is ${JSON.stringify(typedAct)} — ✓ save, in the same circle`);
+      if (!saved) fail("ws d · ✓ pressed did not save: the front act never went back to ↻");
       await page.unroute("**/write_text", wroteD);
       await page.setViewportSize({ width: 1400, height: 900 });
     }
