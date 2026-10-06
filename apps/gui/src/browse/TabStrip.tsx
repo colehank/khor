@@ -54,6 +54,7 @@ import { PaneBar } from "@/components/PaneBar";
 import { RegionLead } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SideList, type SideRow } from "@/components/SideList";
 import { sessionKind } from "@/components/SessionFace";
@@ -178,6 +179,15 @@ export type TabFace = {
   /** **The pill reloads**: a 2-pt line runs along its own bottom edge
       while a join, a load or a read is under way (UX-33 §2; UX-31's slot). */
   loading?: boolean;
+  /** **A session's day in the pill's slot** (UX-36): the 24 hours
+      flattened (`DayLine`), along the pill's bottom edge at rest, given
+      up to `loading`'s line while a reload runs. A page and a file have
+      none. */
+  log?: ReactNode;
+  /** **The day in full, opened from the pill's line** (UX-36 §1): on the
+      tab in front, a panel hanging from the pill while `open` — opened by
+      the tab's menu (「今天」), folded by a press outside or Esc. */
+  day?: { open: boolean; onOpenChange: (open: boolean) => void; panel: ReactNode };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -625,7 +635,7 @@ export function TabStrip({
         {faces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
-          return (
+          const tab = (
             <div
               key={f.id}
               data-tab={f.id}
@@ -887,7 +897,40 @@ export function TabStrip({
                   <span className="block h-full w-[55%] animate-tab-load rounded-full bg-brand-strong" />
                 </span>
               )}
+              {/* **A session's day in the same slot** (UX-36): the line at
+                  rest, the reload's while one runs. */}
+              {!f.loading && f.log && (
+                <span data-tab-log className="pointer-events-none absolute inset-x-3 bottom-0.5 flex">
+                  {f.log}
+                </span>
+              )}
             </div>
+          );
+          // **The day in full hangs from the pill's line** (UX-36 §1),
+          // anchored on the pill so it opens under it. Every session tab
+          // is wrapped, so the front one changing does not remount a tab.
+          if (!f.day) return tab;
+          return (
+            <Popover key={f.id} open={on && f.day.open} onOpenChange={f.day.onOpenChange}>
+              <PopoverAnchor asChild>{tab}</PopoverAnchor>
+              <PopoverContent
+                data-day-pop
+                align="start"
+                side={below ? "top" : "bottom"}
+                // The terminal keeps the focus: the panel is read, not
+                // typed into, and a terminal taking the focus back (a
+                // reload, a click into it) is not a reason to fold it —
+                // a press outside or Esc is.
+                onOpenAutoFocus={(e) => e.preventDefault()}
+                onFocusOutside={(e) => e.preventDefault()}
+                // `!p-0`: the popover's own `px-row py-in` are custom spacings
+                // `cn()` cannot see as padding, so a plain `p-0` loses to
+                // them by the stylesheet's order.
+                className="w-(--session-side-w) max-w-[calc(100vw-2*var(--page-inset))] !p-0 [--side-ground:var(--popover)]"
+              >
+                {f.day.panel}
+              </PopoverContent>
+            </Popover>
           );
         })}
         {onNew && (

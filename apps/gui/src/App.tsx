@@ -104,7 +104,7 @@ import { type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
 import { SIDE_ID, SessionSide } from "@/views/SessionSide";
-import { DayRuler } from "@/views/DayRuler";
+import { DayLine, DayPanel, DayToday } from "@/views/DayLine";
 import { SideRecent } from "@/views/SideRecent";
 import { useSideRecent, type RecentItem } from "@/hooks/use-side-recent";
 import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
@@ -1679,7 +1679,7 @@ export default function App() {
         const r = rows.find((row) => row.id === id);
         // **Pressed again, the tab in front opens or closes its 附栏**
         // (UX-30; ⚠️ 墓碑 2026-09-29 → 10-06: it showed or hid the day —
-        // 「点击标签后显示吧」 — which is the column's ruler now). Read by
+        // 「点击标签后显示吧」 — which hangs under the pill now, UX-36). Read by
         // the strip only on the tab in front, so the front tab's memory
         // is the one consulted.
         const again = {
@@ -1687,6 +1687,31 @@ export default function App() {
           expanded: side.open,
           controls: side.open ? SIDE_ID : undefined,
           toggle: () => setSessionSide(id, { open: !side.open }),
+        };
+        // **The session's day hangs under its pill** (UX-36): the line in
+        // the pill's slot, and the day in full hanging from it — opened
+        // by the menu's 「今天」, the pill's press being the 附栏's.
+        const front = id === selected;
+        const log = <DayLine runs={dayOf(id)} />;
+        const day = {
+          open: front && side.day,
+          onOpenChange: (open: boolean) => setSessionSide(id, { day: open }),
+          // The box the band's axis is measured in (`useStripWidth`).
+          panel: (
+            <div ref={setDetailBox}>
+              <DayPanel runs={dayOf(id)} className="max-h-[60dvh] overflow-y-auto px-[calc(var(--nav-gap)-var(--gap-in))] pb-in" />
+            </div>
+          ),
+        };
+        // It opens; a press outside or Esc folds (the menu's own press is
+        // one outside the open panel, so a toggle here would reopen it).
+        const today = {
+          key: "today",
+          label: gui.today,
+          run: () => {
+            sessionTabs.focus(id);
+            setSessionSide(id, { day: true });
+          },
         };
         return r
           ? {
@@ -1706,9 +1731,12 @@ export default function App() {
               // and 关闭 (UX-33: the pill has no ×; the menu, ⌘W and the
               // tabs sheet close).
               menu: [
+                today,
                 ...(r.doing?.cwd ? hereActs(r.home, r.doing.cwd) : []),
                 { key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) },
               ],
+              log,
+              day,
               session: { word: r.word, kind: r.kind, category: r.category },
               // A session tab's name is the row's title, which is a
               // name somebody gave it — so double-click renames it
@@ -1730,10 +1758,10 @@ export default function App() {
               },
               loading: tabAct(id)?.busy ?? false,
             }
-          : { id, label: id, face: null, path: "", again };
+          : { id, label: id, face: null, path: "", again, log };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [openTabs, rows, side, actsVersion],
+    [openTabs, rows, side, actsVersion, days, selected],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
@@ -2145,12 +2173,14 @@ export default function App() {
   const [sideQuota, setSideQuota] = useState<"list" | "detail">("list");
   const [sideMachine, setSideMachine] = useState<{ device: string | null; screen: "list" | "detail" }>({ device: null, screen: "detail" });
   /** **The terminal pill opens the session's 附栏 as a sheet** (UX-17 →
-      UX-30 §6): the same seats and ruler, risen from the bottom. The
+      UX-30 §6): the same seats, risen from the bottom. The
       sheet's lifetime is this state; the seat is the session's memory. */
   const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
-  /** The ruler, for the column and the phone's sheet alike (UX-30 §5). */
-  const sideRuler = (row: SessionRow) => (
-    <DayRuler runs={dayOf(row.id)} open={side.day} onToggle={() => setSessionSide(row.id, { day: !side.day })} />
+  /** **The phone sheet's 「今天」 row** (UX-36 §1): the pill's tap is the
+      sheet, so the day in full opens from here. ⚠️ 墓碑 (UX-30 §5): the
+      ruler, under the column's capsule and the sheet's. */
+  const sheetToday = (row: SessionRow) => (
+    <DayToday runs={dayOf(row.id)} open={side.day} onToggle={() => setSessionSide(row.id, { day: !side.day })} />
   );
   const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
   const recent = useSideRecent(sideOn && side.seat === "recent");
@@ -2271,8 +2301,6 @@ export default function App() {
         onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
         onWidth={(w) => setSessionSide(selectedRow.id, { w })}
         onClose={() => setSessionSide(selectedRow.id, { open: false })}
-        boxRef={setDetailBox}
-        ruler={sideRuler(selectedRow)}
       >
         {sideSeat()}
       </SessionSide>
@@ -2659,7 +2687,7 @@ export default function App() {
           onOpenChange={(o) => !o && setPlaceSheet(null)}
           seat={side.seat}
           onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
-          ruler={sideRuler(selectedRow)}
+          today={sheetToday(selectedRow)}
           boxRef={setDetailBox}
         >
           {sideSeat()}

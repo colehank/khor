@@ -2772,8 +2772,9 @@
      pane, measured at the drag (the two-column answer, `use-list-width`). */
   --session-side-w: 390px;
   --session-side-min: 320px;
-  /* The column's ruler (UX-30 §5): the session's 24 hours flattened to a
-     heat line directly under the capsule, two points. */
+  /* The session's day line (UX-36; UX-30 §5's ruler under the column's
+     capsule before): the 24 hours flattened to a heat line along the
+     session pill's foot, two points. */
   --day-ruler-h: 2px;
   /* The session tabs' glass capsule and the pills in it, and a tab's
      face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */

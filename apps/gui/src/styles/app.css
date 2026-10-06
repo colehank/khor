@@ -2348,6 +2348,11 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 [data-pill-slot]:has([data-pill-progress]) [data-pill-status] {
   display: none;
 }
+/* A session's day (UX-36) gives the slot to a running reload the same
+   way, and is back when the run ends. */
+[data-pill-slot]:has([data-pill-progress]) [data-pill-log] {
+  display: none;
+}
 [data-pill-progress] > span {
   animation: pill-progress 1.4s var(--ease-move) infinite;
 }

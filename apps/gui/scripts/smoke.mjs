@@ -2324,16 +2324,12 @@ for line in sys.stdin:
   // `aria-expanded`) and a press would open nothing. So each round
   // presses the tab the moment it becomes one, and then waits on the band.
   await page.locator('[data-row="tui/cafe1"] [data-row-open]').click();
-  await until("a word from alpha's own day on beta's band for tui/cafe1", 60_000, async () => {
-    const shut = page.locator('[data-session-tabs] [data-tab="tui/cafe1"] [data-tab-open][aria-expanded="false"]');
-    if ((await shut.count()) === 1) {
-      const b = await shut.boundingBox();
-      // The face, not the name: a press on the name waits out the
-      // double-click that would rename it.
-      if (b) await page.mouse.click(b.x + 6, b.y + b.height / 2);
-    }
-    return (await page.locator('[data-detail-day] [data-day-mark]:not([data-day-mark="unwatched"])').count()) >= 1;
-  });
+  // ⚠️ 墓碑 (UX-36): the front tab was pressed for the band; the day is a
+  // line under the session's pill now, always drawn, so nothing is
+  // pressed — the line is read.
+  await until("a word from alpha's own day on beta's pill line for tui/cafe1", 60_000, async () =>
+    (await page.locator('[data-session-tabs] [data-tab="tui/cafe1"] [data-tab-log] [data-day-ruler-mark]:not([data-day-ruler-mark="unwatched"]):not([data-day-ruler-mark="absent"])').count()) >= 1,
+  );
   // 16-0) open sessions are tabs. Opening a second row adds a tab and
   //       brings it to the front; closing that tab leaves its row on
   //       the list and its session alive (a view left, nothing ended),
