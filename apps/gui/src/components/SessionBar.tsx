@@ -274,6 +274,9 @@ export function SessionScreen({
         return;
       }
       const next = foldStep(memo, now.away, now.away > was.away, 1);
+      // **Under a finger a terminal folds by the finger** (item 50,
+      // `DECK_FOLD` below): its scroller's travel only brings the deck back.
+      if (next === true && t.matches("[data-term-scroller]") && window.matchMedia("(pointer: coarse)").matches) return;
       if (!hold.current.allows() && next === true) return;
       // **An unfold holds the deck through the refit** (UX-29): the deck
       // coming back shrinks the content, a terminal refits its grid, and

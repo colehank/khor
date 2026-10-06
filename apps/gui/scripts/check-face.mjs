@@ -29362,6 +29362,8 @@ try {
         await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       };
       const upDrag = await sends(() => drag(-160));
+      // The up drag's last notches settle before the down drag is counted.
+      await wait(600);
       const deckFolded = () => page.evaluate(() => document.querySelector("[data-session-screen]")?.hasAttribute("data-deck-folded") ?? null);
       const foldedBefore = await deckFolded();
       const downDrag = await sends(() => drag(160));
@@ -29872,8 +29874,9 @@ try {
 
     // ── m. the deck folds on the terminal, and the grid resizes with it
     //       as it does with the keyboard (UX-13; item 44, the owner
-    //       2026-10-06 withdrawing 「网格不重排」). 300 lines, then the
-    //       scroller moved up into the history: the strip replaces the
+    //       2026-10-06 withdrawing 「网格不重排」). 300 lines; a scroll
+    //       alone folds nothing under a finger, a finger's drag down does
+    //       (item 50): the strip replaces the
     //       deck, the box grew by what the fold freed (the deck less the
     //       strip) while the bar shrank by it, the grid gained the rows
     //       that fit, and the pty was told once. Back at the bottom it
@@ -29934,9 +29937,26 @@ try {
         }, fromBottom);
       const rest = await state();
       resized.length = 0;
-      await scrollTo(100);
-      await wait(150);
+      // **The finger folds** (item 50): a drag down the screen, which also
+      // scrolls the buffer up into the history. A scroll alone, under a
+      // finger, no longer folds a terminal.
+      const fingerDown = async (dy) => {
+        const b = await rect("[data-terminal]");
+        const x = Math.round(b.left + b.width / 2);
+        const y0 = Math.round(b.top + 60);
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
+        for (let i = 1; i <= 8; i += 1) {
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y0 + Math.round((dy * i) / 8) }] });
+        }
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      };
       await scrollTo(400);
+      await wait(400);
+      const scrolledOnly = await state();
+      if (scrolledOnly.strip !== 0) fail(`bar m · a scroll 400 px up with no finger moving folded the deck (${shown(scrolledOnly)}) — under a finger the finger folds a terminal, not its scroller (item 50)`);
+      await scrollTo(0);
+      await wait(400);
+      await fingerDown(200);
       await until(2_000, async () => (await state()).strip === 1);
       await wait(300);
       const up = await state();
@@ -29996,9 +30016,7 @@ try {
       await page.evaluate(() => window.__keyboard(300));
       await until(2_000, async () => page.evaluate(() => document.documentElement.hasAttribute("data-keyboard")));
       await wait(400);
-      await scrollTo(100);
-      await wait(150);
-      await scrollTo(400);
+      await fingerDown(200);
       await wait(600);
       const typing = await state();
       await page.evaluate(() => window.__keyboard(0));
@@ -30007,7 +30025,7 @@ try {
       await wait(700);
       await scrollTo(0);
       await until(2_000, async () => (await state()).strip === 0);
-      if (typing.strip !== 0) fail(`bar m · with the keyboard up a scroll into the history folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
+      if (typing.strip !== 0) fail(`bar m · with the keyboard up a drag down folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
     }
 
     // ── n. a conversation folds the same way, and keeps its deck over
