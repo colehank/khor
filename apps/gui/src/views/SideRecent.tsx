@@ -18,9 +18,10 @@
  * here (`App`'s `sideFrom`). ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ from the
  * slice to the whole, 全部最近.
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
+import { SideFind } from "@/components/SideFind";
 import { SideList, type SideRow } from "@/components/SideList";
 import { fileKind, pageKind, workspaceKind } from "@/components/SessionFace";
 import { gui } from "@/gen/catalog";
@@ -73,6 +74,7 @@ export function SideRecent({
   onOpen: (it: RecentItem) => void;
   onOpenMain: (it: RecentItem) => void;
 }) {
+  const [query, setQuery] = useState("");
   const shown = items?.filter((it) => it.session === slice) ?? null;
   const rows: SideRow[] = (shown ?? []).map((it) => ({
     id: it.key,
@@ -105,11 +107,14 @@ export function SideRecent({
         if (it) onOpenMain(it);
       }}
     >
-      {/* No head of its own: the 附栏's one head says 最近 (UX-39 §2). */}
+      {/* No head of its own: the 附栏's one head says 最近 (UX-39 §2).
+          The find row, with no ＋: nothing is made here (UX-40). */}
+      <SideFind label={gui.search_recent} query={query} onQuery={setQuery} />
       <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
-        {today}
+        {query.trim() === "" && today}
         <SideList
           rows={rows}
+          query={query}
           loading={items === null}
           label={() => gui.group_recent}
           empty={gui.side_recent_here_none}

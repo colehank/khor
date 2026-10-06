@@ -14,15 +14,20 @@
  * ⚠️ 墓碑 (UX-37 §1): `MachineFiles` here, climbing to the root and on to
  * every workspace.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { fetchGitStatus } from "@/api";
+import { fetchGitStatus, searchIn, type Found } from "@/api";
+import { GlassCircle } from "@/components/Glass";
+import { IconPlus } from "@/components/icons";
+import { SideFind } from "@/components/SideFind";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SeatHead } from "@/components/SeatHead";
 import { gui } from "@/gen/catalog";
 import type { GitStatus } from "@/gen/bindings/GitStatus";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { FilePage } from "@/views/FilePage";
 import { FileTree } from "@/views/FileTree";
+import { Hits } from "@/views/WorkspacePane";
 import type { Draft } from "@/views/FileView";
 
 /** Absolute path → git's letter, folded so a directory carries the
@@ -87,6 +92,71 @@ export function SideWorkspace({
     };
   }, [machine, root, gitAt]);
   const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
+  // **Find and make** (UX-40): the landing tree's own box and ＋ — names
+  // and lines under the workspace, asked 300 ms after the typing stops,
+  // a late answer to an old question thrown away (`WorkspacePane`'s hunt).
+  const [hunt, setHunt] = useState("");
+  const [found, setFound] = useState<Found | null>(null);
+  const [huntError, setHuntError] = useState<string | null>(null);
+  const huntAsked = useRef(0);
+  useEffect(() => {
+    const q = hunt.trim();
+    if (q === "") {
+      huntAsked.current += 1;
+      setFound(null);
+      setHuntError(null);
+      return;
+    }
+    const mine = (huntAsked.current += 1);
+    const wait = window.setTimeout(() => {
+      searchIn(machine, root, q)
+        .then((f) => {
+          if (huntAsked.current !== mine) return;
+          setFound(f);
+          setHuntError(null);
+        })
+        .catch((e: unknown) => {
+          if (huntAsked.current !== mine) return;
+          setFound(null);
+          setHuntError(String(e instanceof Error ? e.message : e));
+        });
+    }, 300);
+    return () => window.clearTimeout(wait);
+  }, [hunt, machine, root]);
+  const [make, setMake] = useState<{ kind: "file" | "dir"; at: number } | null>(null);
+  const madeFromMenu = useRef<"file" | "dir" | null>(null);
+  const plus = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <GlassCircle aria-label={gui.new_item} data-side-new>
+          <IconPlus />
+        </GlassCircle>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        onCloseAutoFocus={(e) => {
+          const kind = madeFromMenu.current;
+          if (kind === null) return;
+          madeFromMenu.current = null;
+          e.preventDefault();
+          setHunt("");
+          setMake({ kind, at: Date.now() });
+        }}
+      >
+        {(["file", "dir"] as const).map((kind) => (
+          <DropdownMenuItem
+            key={kind}
+            data-side-new-item={kind}
+            onSelect={() => {
+              madeFromMenu.current = kind;
+            }}
+          >
+            {kind === "file" ? gui.file_new : gui.dir_new}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
   useEffect(() => {
     if (file !== null) onRead?.(file);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,6 +167,10 @@ export function SideWorkspace({
           it was scrolled. */}
       <div className={file !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={gui.group_recent} />}
+        <SideFind label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />
+        {hunt.trim() !== "" ? (
+          <Hits found={found} error={huntError} query={hunt.trim()} dir={root} onOpen={(path) => setFile(path)} />
+        ) : (
         <FileTree
           key={`${machine} ${root}`}
           machine={machine}
@@ -114,7 +188,10 @@ export function SideWorkspace({
             setGitAt((n) => n + 1);
           }}
           onMade={() => setGitAt((n) => n + 1)}
+          make={make}
+          onMakeSeen={() => setMake(null)}
         />
+        )}
       </div>
       {file !== null && (
         <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
@@ -124,7 +201,7 @@ export function SideWorkspace({
             path={file}
             here={here}
             git
-            bare
+            docked
             draft={drafts.get(file)}
             onDraft={(d) =>
               setDrafts((was) => {

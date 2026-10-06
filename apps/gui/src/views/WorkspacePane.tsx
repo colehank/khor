@@ -2249,7 +2249,7 @@ const HUNT_WAIT = 300;
  * one screen wide on a phone and a third of one on a desktop, and a
  * result list under a tree would be a scroller inside a scroller.
  */
-function Hits({
+export function Hits({
   found,
   error,
   query,

@@ -408,7 +408,12 @@ export function FilePage({
   tabs,
   moreActs,
   bare = false,
+  docked = false,
 }: {
+  /** **Inside the session's 附栏, with the main area's deck** (UX-40,
+      the owner 2026-10-07 02:10): the same deck at the sheet's foot,
+      never folded (the sheet is small already). Wins over `bare`. */
+  docked?: boolean;
   /** **Inside the session's 附栏** (UX-37 §6): the page wears no deck —
       ‹ · the name · the content, the name's head carrying what is the
       page's own (✓ while it differs, the preview switch, 「…」 with
@@ -619,7 +624,7 @@ export function FilePage({
         ref={box}
         data-nav-clear={bare || undefined}
         className="flex min-h-0 flex-1 flex-col"
-        onScrollCapture={bare ? undefined : scrolled}
+        onScrollCapture={bare || docked ? undefined : scrolled}
         onFocusCapture={hold}
       >
         {rev !== null ? (
