@@ -149,6 +149,17 @@ define_class!(
         // download, and its file is offered in the share sheet. ⚠️ 墓碑:
         // with no policy methods WebKit showed what it could and dropped
         // the rest without a word.
+        // A certificate passed for this run (UX-42 §14, `page_trust`).
+        #[unsafe(method(webView:didReceiveAuthenticationChallenge:completionHandler:))]
+        fn challenged(&self, view: *mut AnyObject, challenge: *mut AnyObject, done: &block2::Block<dyn Fn(isize, *mut AnyObject)>) {
+            let exit = PAGES.with(|pages| {
+                let pages = pages.try_borrow().ok()?;
+                pages.values().find(|p| Retained::as_ptr(&p.view) as *mut AnyObject == view).map(|p| p.exit.clone())
+            });
+            // SAFETY: WebKit hands a live challenge and its handler.
+            unsafe { crate::page_trust::answer(exit.as_deref(), challenge, done) };
+        }
+
         #[unsafe(method(webView:decidePolicyForNavigationAction:decisionHandler:))]
         fn decide_action(&self, _view: *mut AnyObject, action: *mut AnyObject, done: &block2::Block<dyn Fn(isize)>) {
             // SAFETY: a live WKNavigationAction; `shouldPerformDownload` is iOS 14.5's.
@@ -489,9 +500,11 @@ fn failed(view: *mut AnyObject, error: *mut AnyObject) {
         let mut pages = pages.try_borrow_mut().ok()?;
         let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view)?;
         page.loading = false;
-        Some((tab.clone(), page.proxy.clone()))
+        Some((tab.clone(), page.proxy.clone(), page.exit.clone()))
     });
-    let Some((tab, proxy)) = found else { return };
+    let Some((tab, proxy, exit)) = found else { return };
+    // SAFETY: a live NSError.
+    unsafe { crate::page_trust::offered(&tab, &exit, error) };
     let mut parts = text.splitn(4, '|');
     let (code, domain, _, url) = (parts.next(), parts.next(), parts.next(), parts.next().unwrap_or_default().to_owned());
     // **A loopback address the page went to on its own** (a link, a
@@ -836,6 +849,7 @@ fn unwatch(page: &Page) {
 
 pub fn close(tab: &str) {
     deck(tab, None);
+    crate::page_trust::forget(tab);
     PAGES.with(|pages| {
         if let Some(page) = pages.borrow_mut().remove(tab) {
             unwatch(&page);
@@ -889,6 +903,14 @@ pub fn step(tab: &str, way: &str) {
                     // failed load leaves the view on the page before it.
                     "retry" => {
                         load(&page.view, &page.url);
+                        None
+                    }
+                    // 「仍然访问」 (UX-42 §14): the certificate passed
+                    // for its host for this run, and the address again.
+                    "pass" => {
+                        if let Some(url) = crate::page_trust::pass(tab) {
+                            load(&page.view, &url);
+                        }
                         None
                     }
                     // The pill's × while a page loads (UX-33).

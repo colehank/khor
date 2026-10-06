@@ -1982,6 +1982,15 @@ fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), Stri
             }
             view.reload().map_err(|e| e.to_string())
         }
+        // 「仍然访问」 (UX-42 §14): the certificate the failed load was
+        // shown, passed for its host for this run, and the address again.
+        "pass" => {
+            #[cfg(target_os = "macos")]
+            if let Some(url) = page_trust::pass(&tab).and_then(|u| u.parse::<tauri::Url>().ok()) {
+                return view.navigate(url).map_err(|e| e.to_string());
+            }
+            Ok(())
+        }
         // Refused by name, the `load` rule: a word this build does not
         // know, read as one of the three, would look like a working
         // button doing somebody else's job.
@@ -2001,7 +2010,10 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     let label = page_label(&tab);
     forget_page(&tab);
     #[cfg(target_os = "macos")]
-    page_fail::forget(&tab);
+    {
+        page_fail::forget(&tab);
+        page_trust::forget(&tab);
+    }
     if let Ok(mut m) = page_exits().lock() {
         m.remove(&label);
     }
@@ -4535,6 +4547,8 @@ mod menu;
 mod edit_menu;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod page_fail;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod page_trust;
 #[cfg(target_os = "ios")]
 mod phone_page;
 #[cfg(desktop)]

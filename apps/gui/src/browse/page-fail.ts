@@ -9,7 +9,13 @@
  */
 import { gui } from "@/gen/catalog";
 
-export type PageFail = { reason: string; url: string };
+/** `pass`: a certificate a person may pass for this host for this run
+    (「仍然访问」, UX-42 §14) — the button stands where 重试 does. */
+export type PageFail = { reason: string; url: string; pass?: boolean };
+
+/** NSURLErrorServerCertificate…: untrusted, expired, unknown root, not yet
+    valid. Kept in step with the app's `page_trust::passable`. */
+const PASSABLE = [-1201, -1202, -1203, -1204];
 
 /** NSURLErrorDomain's codes, by what a person can do about them. */
 const REASONS: [number[], () => string][] = [
@@ -40,6 +46,7 @@ export function pageFail(text: string): PageFail | null {
   // word for the same refusal of a CONNECT (CFNetwork 310, an https page).
   if (domain === "khor" || (domain === "kCFErrorDomainCFNetwork" && n === 310)) return { reason: gui.page_fail_route, url };
   if (domain === "NSURLErrorDomain") {
+    if (PASSABLE.includes(n)) return { reason: gui.page_fail_cert, url, pass: true };
     const hit = REASONS.find(([codes]) => codes.includes(n));
     if (hit) return { reason: hit[1](), url };
   }

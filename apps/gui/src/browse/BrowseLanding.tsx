@@ -537,16 +537,20 @@ export function BrowseLanding({
             「打不开：…」 there). */}
         {narrow ? failed.reason : gui.page_failed(failed.reason)}
       </span>
+      {/* An untrusted certificate is passed, not retried (UX-42 §14):
+          the same seat, so the phone's native deck draws and presses it
+          as 重试 (`native-deck` SEATS). */}
       <button
         type="button"
         data-page-retry
+        data-page-pass={failed.pass ? "" : undefined}
         onClick={() => {
           setFailed(null);
-          void pageStep(tabs.current.id, "retry").catch(() => {});
+          void pageStep(tabs.current.id, failed.pass ? "pass" : "retry").catch(() => {});
         }}
         className="grid min-h-touch flex-none place-items-center px-in text-caption font-label text-brand-strong"
       >
-        {gui.region_retry}
+        {failed.pass ? gui.page_pass : gui.region_retry}
       </button>
     </span>
   );

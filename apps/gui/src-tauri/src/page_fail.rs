@@ -158,8 +158,27 @@ mod mac {
                 for s in [sel!(webView:didFailProvisionalNavigation:withError:), sel!(webView:didFailNavigation:withError:)] {
                     objc2::ffi::class_addMethod(cls, s, imp, c"v@:@@@".as_ptr());
                 }
+                // A certificate passed for this run (UX-42 §14,
+                // `page_trust`); wry has no such method either.
+                let imp: Imp = std::mem::transmute::<
+                    unsafe extern "C-unwind" fn(*mut AnyObject, Sel, *mut AnyObject, *mut AnyObject, *mut block2::Block<dyn Fn(isize, *mut AnyObject)>),
+                    Imp,
+                >(challenged);
+                objc2::ffi::class_addMethod(cls, sel!(webView:didReceiveAuthenticationChallenge:completionHandler:), imp, c"v@:@@@?".as_ptr());
             }
         });
+    }
+
+    /// The exit machine `tab`'s page goes through (`""`: direct).
+    fn exit_of(tab: &str) -> String {
+        crate::page_exits().lock().ok().and_then(|m| m.get(&crate::page_label(tab)).map(|(e, _)| e.clone())).unwrap_or_default()
+    }
+
+    unsafe extern "C-unwind" fn challenged(_this: *mut AnyObject, _cmd: Sel, view: *mut AnyObject, challenge: *mut AnyObject, done: *mut block2::Block<dyn Fn(isize, *mut AnyObject)>) {
+        let tab = book().lock().ok().and_then(|b| b.views.get(&(view as usize)).map(|(_, t)| t.clone()));
+        let exit = tab.as_deref().map(exit_of);
+        // SAFETY: WebKit hands a live challenge and its handler.
+        unsafe { crate::page_trust::answer(exit.as_deref(), challenge, &*done) };
     }
 
     unsafe extern "C-unwind" fn failed(_this: *mut AnyObject, _cmd: Sel, view: *mut AnyObject, _nav: *mut AnyObject, error: *mut AnyObject) {
@@ -173,6 +192,8 @@ mod mac {
         }) else {
             return;
         };
+        // SAFETY: a live NSError.
+        unsafe { crate::page_trust::offered(&tab, &exit_of(&tab), error) };
         // The load is over: the light goes out, then the word.
         let _ = app.emit_to(face.clone(), "page:load", PageWord { tab: tab.clone(), text: "finished".into() });
         let _ = app.emit_to(face, "page:fail", PageWord { tab, text });

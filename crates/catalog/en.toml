@@ -2228,6 +2228,9 @@ page-fail-blocked = "Blocked from loading"
 page-fail-route = "The borrowed network can't reach this address"
 # A page's download (UX-42 §16) is never silent: the phone offers the file in the share sheet;
 # the Mac saves it to Downloads and the caption says where (took-file) with 「Show in Finder」.
+# An untrusted certificate (UX-42 §14): 「Visit Anyway」 passes this one certificate for this host on this machine until khor quits; never stored.
+page-fail-cert = "Certificate not trusted"
+page-pass = "Visit Anyway"
 page-downloading = "Downloading {0}…"
 page-download-failed = "Couldn't download {0}"
 open-in-browser = "Open in system browser"

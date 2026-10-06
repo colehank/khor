@@ -1472,11 +1472,12 @@ export const showPage = (tab: string) =>
   onWebFace ? Promise.resolve(null) : call<null>("show_page", { tab });
 
 /** Back, forward, reload, and 重试 — the address the last load failed
-    to reach, again (UX-22; a reload would load the page still there).
-    **The two arrows cannot know whether there is anywhere to go** —
+    to reach, again (UX-22; a reload would load the page still there);
+    `pass`: 「仍然访问」, the certificate it was shown passed for this run
+    (UX-42 §14). **The two arrows cannot know whether there is anywhere to go** —
     tauri has no `can_go_back` — so they stay lit and a press with no
     history behind it quietly does nothing. */
-export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry" | "stop") =>
+export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry" | "stop" | "pass") =>
   onWebFace ? Promise.resolve(null) : call<null>("page_step", { tab, way });
 
 /** **The browser's deck, drawn natively over an iPhone's page** (UX-13,
