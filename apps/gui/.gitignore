@@ -1,4 +1,5 @@
 node_modules/
+node_modules
 dist/
 src/gen/
 # tauri-build writes `schemas` on every build; `apple` is the Xcode
