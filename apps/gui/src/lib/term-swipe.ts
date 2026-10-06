@@ -15,6 +15,14 @@
 // selection (`pressSelects`) — and a drag after it never lowers: the
 // grid refitting under a selection's finger would move what it selects.
 //
+// **At the bottom before, at the bottom after** (item 50's rest, the lead
+// 2026-10-06, from term-49's walk): the swipe scrolls the history a row
+// or two before the keyboard goes, and the view then stayed that far up —
+// the prompt just under the screen and the ↓ 新输出 float on its row, so
+// the next tap on the prompt pressed the float. A touch that began at the
+// bottom and lowered the keyboard puts the view back at the bottom once
+// the finger is up and the keyboard has gone (`atRest` / `toRest`).
+//
 // Native listeners on the terminal's own scroller, so a touch on the key
 // row, the deck or the key panel (portals into the bar, `BarSeat`) never
 // reaches it; a drag the program takes as its wheel counts as well: under
@@ -29,17 +37,43 @@ const SLOP = 10;
 /** Held this long inside the dead zone, a touch is a press (the pane's
     `LONG_PRESS_MS`). */
 const PRESS_MS = 450;
+/** How often, and how long at most, the settle waits for the keyboard
+    to have gone. */
+const SETTLE_POLL_MS = 50;
+const SETTLE_MAX_MS = 1500;
+/** After the keyboard has gone, the grid's refit. */
+const REFIT_MS = 150;
 
 export function swipeLowers(
   scroller: HTMLElement,
   field: HTMLElement | null,
   /** The gates' seams, and the key panel's (UX-31): what is up and how
-      it goes down. */
-  seams: { up?: () => boolean; lower?: () => void } = {},
+      it goes down; whether the view is at the bottom, and putting it
+      back there. */
+  seams: { up?: () => boolean; lower?: () => void; atRest?: () => boolean; toRest?: () => void } = {},
 ): () => void {
   if (!field) return () => {};
   const up = seams.up ?? (() => keyboardUp(field));
   const lower = seams.lower ?? (() => lowerKeyboard(field));
+  /** This touch began at the bottom. */
+  let rested = false;
+  /** …and lowered the keyboard: the lift settles it back. */
+  let settles = false;
+  let waiting = 0;
+  const settle = () => {
+    const from = performance.now();
+    const poll = () => {
+      if (up() && performance.now() - from < SETTLE_MAX_MS) {
+        waiting = window.setTimeout(poll, SETTLE_POLL_MS);
+        return;
+      }
+      waiting = window.setTimeout(() => {
+        waiting = 0;
+        seams.toRest?.();
+      }, REFIT_MS);
+    };
+    poll();
+  };
   let x0 = 0;
   let y0 = 0;
   let t0 = 0;
@@ -51,6 +85,11 @@ export function swipeLowers(
   const start = (e: TouchEvent) => {
     one = e.touches.length === 1 && !(e.target as Element | null)?.closest?.("[data-session-bar]");
     away = false;
+    // A new touch is the person's again: no settle under it.
+    window.clearTimeout(waiting);
+    waiting = 0;
+    settles = false;
+    rested = one && (seams.atRest?.() ?? false);
     x0 = e.touches[0]?.clientX ?? 0;
     y0 = e.touches[0]?.clientY ?? 0;
     t0 = performance.now();
@@ -71,16 +110,20 @@ export function swipeLowers(
     }
     if (dy <= Math.abs(dx) || !up()) return;
     one = false;
+    settles = rested;
     lower();
   };
   const end = () => {
     one = false;
+    if (settles) settle();
+    settles = false;
   };
   scroller.addEventListener("touchstart", start, { passive: true });
   scroller.addEventListener("touchmove", move, { passive: true });
   scroller.addEventListener("touchend", end, { passive: true });
   scroller.addEventListener("touchcancel", end, { passive: true });
   return () => {
+    window.clearTimeout(waiting);
     scroller.removeEventListener("touchstart", start);
     scroller.removeEventListener("touchmove", move);
     scroller.removeEventListener("touchend", end);
