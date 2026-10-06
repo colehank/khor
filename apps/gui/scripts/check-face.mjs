@@ -30595,6 +30595,16 @@ try {
           await press("[data-place-sheet] [data-side-page] [data-seat-back]");
           await wait(400);
           whole.browser.push(await page.evaluate(() => document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null));
+          // A tab in the whole opens its page in place, without a deck (§6).
+          if (await press("[data-place-sheet] [data-browse-bare] [data-side-row] [data-side-open]")) {
+            await wait(500);
+            whole.browser.push(
+              await page.evaluate(() => {
+                const pg = document.querySelector('[data-place-sheet] [data-browse-bare="page"]');
+                return pg ? `page head ${pg.querySelectorAll("[data-seat-head]").length} deck ${document.querySelectorAll("[data-place-sheet] [data-session-deck]").length}` : null;
+              }),
+            );
+          }
           await press('[data-place-sheet] [data-col-seat="machine"]');
           await wait(500);
           await press("[data-place-sheet] [data-side-page] [data-back]");
@@ -30609,7 +30619,8 @@ try {
           }
           whole.workspace = { climbs, list: await count("[data-place-sheet] [data-side-workspaces]") };
           console.log(`bar p · UX-37 §1 the wholes ${shown(whole)}`);
-          if (shown(whole.browser) !== shown(["here", "all"])) fail(`bar p · the browser seat read ${shown(whole.browser)} — this session's pages, ‹ every tab`);
+          if (shown(whole.browser.slice(0, 2)) !== shown(["here", "all"])) fail(`bar p · the browser seat read ${shown(whole.browser)} — this session's pages, ‹ every tab`);
+          if (whole.browser.length > 2 && whole.browser[2] !== "page head 1 deck 0") fail(`bar p · a page opened in the sheet reads ${whole.browser[2]} — ‹ · host · the page, no deck (UX-37 §6)`);
           if (whole.machine !== 1) fail("bar p · ‹ on the machine's card did not reach the machines (UX-37 §1)");
           // /home/gate/work → /home/gate → /home → / → the workspaces.
           if (whole.workspace.list !== 1 || whole.workspace.climbs !== 4) fail(`bar p · 工作区's ‹ read ${shown(whole.workspace)} — up to the root, then the workspaces (UX-37 §1)`);
@@ -30631,7 +30642,24 @@ try {
           console.log(`bar p · UX-37 §1 a file read in the 附栏 (${named}) wrote ${shown(read)}`);
           if (named === null) fail("probe dead: bar p · the 工作区 seat listed no file to read");
           else if (read?.session !== me || !String(read?.place ?? "").endsWith(named)) fail(`bar p · reading ${named} in the 附栏 wrote ${shown(read)} — a visit from session ${me} (UX-37 §1)`);
-          if (await count("[data-place-sheet] [data-files-page]")) await press("[data-place-sheet] [data-files-page] [data-back]");
+          // ── UX-37 §6: the file page in the sheet wears no deck: ‹ · its
+          //    name · the content, 「…」 in the head. ──
+          const filePage = await page.evaluate(() => {
+            const fp = document.querySelector("[data-place-sheet] [data-file-page]");
+            return fp
+              ? {
+                  head: fp.querySelectorAll(":scope > [data-seat-head]").length,
+                  title: fp.querySelector("[data-seat-title]")?.textContent ?? null,
+                  more: fp.querySelectorAll("[data-seat-head] [data-file-more]").length,
+                  deck: fp.querySelectorAll("[data-file-deck], [data-session-deck]").length,
+                }
+              : null;
+          });
+          console.log(`bar p · UX-37 §6 the file page in the sheet ${shown(filePage)}`);
+          if (!filePage || filePage.head !== 1 || filePage.title !== named || filePage.more !== 1 || filePage.deck !== 0) {
+            fail(`bar p · the file page in the sheet reads ${shown(filePage)} — ‹ · ${named} · the content, 「…」 in its head, no deck (UX-37 §6)`);
+          }
+          if (await count("[data-place-sheet] [data-files-page]")) await press("[data-place-sheet] [data-file-page] [data-seat-back]");
         }
         await press('[data-place-sheet] [data-col-seat="workspace"]');
         await wait(600);

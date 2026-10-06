@@ -42,7 +42,12 @@ export function MachineFiles({
   onTop,
   topLabel,
   onRead,
+  bare = false,
 }: {
+  /** **Inside the session's 附栏** (UX-37 §6): a file opens as the bare
+      file page (‹ · name · content, no deck) and takes nothing of the
+      screen — the sheet is the screen it is in. */
+  bare?: boolean;
   /** ‹ at the root goes on to here (UX-37 §1: the 附栏's 工作区 climbs
       the shell's directory to the root, then to every workspace). */
   onTop?: () => void;
@@ -89,7 +94,7 @@ export function MachineFiles({
     onOpenFile?.(file !== null ? () => setFile(null) : null);
     return () => onOpenFile?.(null);
   }, [narrow, file, onOpenFile]);
-  useFullScreen(narrow && file !== null);
+  useFullScreen(narrow && file !== null && !bare);
   const read = useRef(onRead);
   read.current = onRead;
   useEffect(() => {
@@ -117,6 +122,7 @@ export function MachineFiles({
       path={file}
       here={here}
       moreActs={fileActs?.(file)}
+      bare={bare}
       onBack={() => setFile(null)}
       onGone={() => {
         setFile(null);

@@ -2308,6 +2308,7 @@ export default function App() {
             onTop={() => setSideWsAll(true)}
             topLabel={gui.workspaces_tab}
             onRead={(path) => touched("file", f.machine, path)}
+            bare
             fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
           />
         );
