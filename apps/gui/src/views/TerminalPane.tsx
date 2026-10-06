@@ -93,7 +93,7 @@ import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
 import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { termBell } from "@/lib/term-bell";
-import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
+import { covers, pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
 import { tapAsks, termWake, useTermWake } from "@/lib/term-tap";
@@ -629,6 +629,9 @@ function tapsAskFirst(
   };
 }
 
+/** xterm's own default `wordSeparator` (a double-click's word). */
+const WORD_SEPARATOR = " ()[]{}',\"`";
+
 /** A finger held this long without moving starts a selection. */
 const LONG_PRESS_MS = 450;
 /** …and this much travel before then makes it a drag instead. */
@@ -664,19 +667,35 @@ function pressSelects(
   let y0 = 0;
   let selecting = false;
   let anchor: { col: number; row: number } | null = null;
+  // **A word is what a double-click takes on the Mac** (the terminal
+  // audit, item 53): xterm's `wordSeparator`, so `(src/a.rs:12),` gives
+  // `src/a.rs:12` under a finger as under a mouse; it was split on
+  // spaces only, brackets and quotes taken along.
   const blank = (row: number, col: number) => {
     const ch = term.buffer.active.getLine(row)?.getCell(col)?.getChars() ?? "";
-    return ch === "" || ch === " ";
+    return ch === "" || (term.options.wordSeparator ?? WORD_SEPARATOR).includes(ch);
   };
+  // A word runs on over a row's end the grid wrapped (the terminal
+  // audit, item 53: a long press on a wrapped path's second row took only
+  // that row's half). Cells are counted row by row, `cols` to a row.
   const selectWord = (at: { col: number; row: number }) => {
-    let from = at.col;
-    let to = at.col;
-    if (!blank(at.row, at.col)) {
-      while (from > 0 && !blank(at.row, from - 1)) from -= 1;
-      while (to < term.cols - 1 && !blank(at.row, to + 1)) to += 1;
+    const cols = term.cols;
+    const wraps = (row: number) => !!term.buffer.active.getLine(row)?.isWrapped;
+    const word = (i: number) => !blank(Math.floor(i / cols), i % cols);
+    let from = at.row * cols + at.col;
+    let to = from;
+    if (word(from)) {
+      while (from % cols > 0 || wraps(from / cols)) {
+        if (!word(from - 1)) break;
+        from -= 1;
+      }
+      while ((to + 1) % cols > 0 || wraps((to + 1) / cols)) {
+        if (!word(to + 1)) break;
+        to += 1;
+      }
     }
-    term.select(from, at.row, to - from + 1);
-    anchor = { col: from, row: at.row };
+    term.select(from % cols, Math.floor(from / cols), to - from + 1);
+    anchor = { col: from % cols, row: Math.floor(from / cols) };
   };
   const extend = (to: { col: number; row: number }) => {
     if (!anchor) return;
@@ -720,7 +739,9 @@ function pressSelects(
     // No synthesized mousedown after it: that would clear the selection.
     e.preventDefault();
     e.stopImmediatePropagation();
-    const text = term.getSelection();
+    // Trimmed as copy-on-select trims it: the lift wrote the raw rows'
+    // padding over the copy just made.
+    const text = copyable(term.getSelection());
     if (text) navigator.clipboard?.writeText(text).catch(() => {});
   };
   box.addEventListener("touchstart", start, { capture: true, passive: true });
@@ -1898,7 +1919,11 @@ export function TerminalPane({
     // **Paths and URLs open khor's own views** (roadmap 3.1, 3.2): under
     // a mouse a ⌘-click on an underlined path; under a finger a tap.
     const here = machine ?? "";
-    const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd();
+    // After an attach the face has no marks and no OSC 7 of its own until
+    // the next prompt (the host's snapshot carries neither, item 46), and
+    // a relative path printed before it was no link (the terminal audit,
+    // item 53); the host's ledger still knows where the shell stands.
+    const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd() ?? doingRef.current?.cwd ?? undefined;
     const openPath = (t: { path: string; dir: boolean; line: number | null }) =>
       askOpenPath(here, t.path, t.dir, t.line);
     fileLink = (uri) => {
@@ -1918,7 +1943,7 @@ export function TerminalPane({
         return true;
       }
       void pathsOn(term, here, cwdAt, row).then((found) => {
-        const hit = found.find((f) => col + 1 >= f.x0 && col + 1 <= f.x1);
+        const hit = found.find((f) => covers(f, row, col));
         if (hit) openPath(hit.target);
       });
       return false;
