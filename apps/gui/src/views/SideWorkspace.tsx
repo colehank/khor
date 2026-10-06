@@ -8,11 +8,17 @@
  * the second). The ceiling is the workspace that holds the session's
  * directory (`holding`), or that directory itself when no workspace
  * does; git's letters come from one status read, folded up the tree the
- * way the landing folds them. A file opens in place as the bare file
- * page (UX-37 §6) and ‹ there is the way back to the tree.
+ * way the landing folds them. A file opens in place as the file page
+ * with the main area's deck (`FilePage docked`, UX-40 §4), and ‹ there is
+ * the way back to the tree — or to 最近, for the file a row of 最近 opened.
  *
- * ⚠️ 墓碑 (UX-37 §1): `MachineFiles` here, climbing to the root and on to
- * every workspace.
+ * **Find and make** (UX-40 §1): the find row under the 附栏's head is the
+ * landing tree's own box and ＋ — names and lines under the workspace
+ * (`Hits`), 新建文件 / 新建目录 into the tree (`FileTree`'s `make`).
+ *
+ * ⚠️ 墓碑 (UX-37 §6 → UX-40 §4): the bare file page, ‹ and the name in a
+ * head at its top. ⚠️ 墓碑 (UX-37 §1): `MachineFiles` here, climbing to
+ * the root and on to every workspace.
  */
 import { useEffect, useRef, useState } from "react";
 
@@ -76,6 +82,8 @@ export function SideWorkspace({
   fileActs?: (path: string) => { key: string; label: string; run: () => void }[];
 }) {
   const [file, setFile] = useState<string | null>(start?.path ?? null);
+  /** A line hit's line, for the file it opened (`FilePage`'s `goLine`). */
+  const [goLine, setGoLine] = useState<{ path: string; line: number; at: number } | null>(null);
   useEffect(() => {
     if (start !== null) setFile(start.path);
   }, [start]);
@@ -92,9 +100,8 @@ export function SideWorkspace({
     };
   }, [machine, root, gitAt]);
   const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
-  // **Find and make** (UX-40): the landing tree's own box and ＋ — names
-  // and lines under the workspace, asked 300 ms after the typing stops,
-  // a late answer to an old question thrown away (`WorkspacePane`'s hunt).
+  // The hunt: asked 300 ms after the typing stops, a late answer to an
+  // old question thrown away (`WorkspacePane`'s, the same rule).
   const [hunt, setHunt] = useState("");
   const [found, setFound] = useState<Found | null>(null);
   const [huntError, setHuntError] = useState<string | null>(null);
@@ -123,6 +130,9 @@ export function SideWorkspace({
     }, 300);
     return () => window.clearTimeout(wait);
   }, [hunt, machine, root]);
+  /** ＋'s choice, handed to the tree once the menu has given the focus
+      back (the name box takes it next), the box cleared so the tree is
+      there to take it. */
   const [make, setMake] = useState<{ kind: "file" | "dir"; at: number } | null>(null);
   const madeFromMenu = useRef<"file" | "dir" | null>(null);
   const plus = (
@@ -169,28 +179,37 @@ export function SideWorkspace({
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={gui.group_recent} />}
         <SideFind label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />
         {hunt.trim() !== "" ? (
-          <Hits found={found} error={huntError} query={hunt.trim()} dir={root} onOpen={(path) => setFile(path)} />
+          <Hits
+            found={found}
+            error={huntError}
+            query={hunt.trim()}
+            dir={root}
+            onOpen={(path, line) => {
+              setFile(path);
+              setGoLine(line === null ? null : { path, line, at: Date.now() });
+            }}
+          />
         ) : (
-        <FileTree
-          key={`${machine} ${root}`}
-          machine={machine}
-          root={root}
-          here={here}
-          marks={folded(root, git)}
-          open={file}
-          onOpen={(path) => setFile(path)}
-          onGone={(path) => {
-            if (file === path) setFile(null);
-            setGitAt((n) => n + 1);
-          }}
-          onMoved={(from, to) => {
-            if (file === from) setFile(to);
-            setGitAt((n) => n + 1);
-          }}
-          onMade={() => setGitAt((n) => n + 1)}
-          make={make}
-          onMakeSeen={() => setMake(null)}
-        />
+          <FileTree
+            key={`${machine} ${root}`}
+            machine={machine}
+            root={root}
+            here={here}
+            marks={folded(root, git)}
+            open={file}
+            onOpen={(path) => setFile(path)}
+            onGone={(path) => {
+              if (file === path) setFile(null);
+              setGitAt((n) => n + 1);
+            }}
+            onMoved={(from, to) => {
+              if (file === from) setFile(to);
+              setGitAt((n) => n + 1);
+            }}
+            onMade={() => setGitAt((n) => n + 1)}
+            make={make}
+            onMakeSeen={() => setMake(null)}
+          />
         )}
       </div>
       {file !== null && (
@@ -202,6 +221,7 @@ export function SideWorkspace({
             here={here}
             git
             docked
+            goLine={goLine?.path === file ? goLine : null}
             draft={drafts.get(file)}
             onDraft={(d) =>
               setDrafts((was) => {

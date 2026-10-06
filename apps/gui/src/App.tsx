@@ -2349,7 +2349,7 @@ export default function App() {
             screen={sideBrowse.page ? "detail" : "list"}
             onOpen={() => setSideBrowse({ page: true })}
             onBack={sideFrom === "recent" ? backToRecent : () => setSideBrowse({ page: false })}
-            bare={{ here: selectedRow.id, backLabel: sideFrom === "recent" ? gui.group_recent : undefined }}
+            bare={{ here: selectedRow.id }}
           />
         );
       case "machine": {

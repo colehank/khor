@@ -4,7 +4,8 @@
  * sits top-left; what is not content floats at the bottom).
  *
  * The phone's file — out of a workspace's tree or a machine's files —
- * and a machine's in-place file on every platform. Nothing at the top:
+ * a machine's in-place file on every platform, and a file opened in the
+ * session's 附栏 on both faces (`docked`, UX-40 §4). Nothing at the top:
  * the file starts under the status bar. At the bottom the content pages'
  * deck (UX-14, the owner 2026-10-05): ‹ · a pill with the name, the
  * preview eye where the file renders, and ✓ while the buffer differs from
@@ -34,7 +35,6 @@ import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
 import { IconBack, IconBranch, IconCheck, IconEye, IconMore, IconReload, IconShare } from "@/components/icons";
 import { RemoveDialog } from "@/components/RemoveDialog";
-import { SeatHead } from "@/components/SeatHead";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -407,18 +407,17 @@ export function FilePage({
   history = false,
   tabs,
   moreActs,
-  bare = false,
   docked = false,
 }: {
-  /** **Inside the session's 附栏, with the main area's deck** (UX-40,
-      the owner 2026-10-07 02:10): the same deck at the sheet's foot,
-      never folded (the sheet is small already). Wins over `bare`. */
+  /** **Inside the session's 附栏, with the main area's deck** (UX-40 §4,
+      the owner 2026-10-07 02:10: 「打开一个文件或地址，是不是得和主区一样，
+      下方有一个自己的甲板，而不是在左上角点返回和显示标题」): the same
+      deck at the sheet's foot (the Mac column's too), never folded — the
+      sheet is small already. The 附栏's one head stays above the file;
+      nothing else at its top. ⚠️ 墓碑 (UX-37 §6 → UX-40): `bare`, the
+      page with no deck — ‹ · the name · ✓ · the preview switch · 「…」 in
+      a head at the page's top (`SeatHead`). */
   docked?: boolean;
-  /** **Inside the session's 附栏** (UX-37 §6): the page wears no deck —
-      ‹ · the name · the content, the name's head carrying what is the
-      page's own (✓ while it differs, the preview switch, 「…」 with
-      在主区打开); the 附栏's one head stands above it (UX-39 §2). */
-  bare?: boolean;
   /** Acts the page's host adds at the head of 「…」 (UX-30 §4: the
       session's 附栏 offers 「在主区打开」, the one way out of the column). */
   moreActs?: { key: string; label: string; run: () => void }[];
@@ -599,32 +598,10 @@ export function FilePage({
       className="relative flex min-h-0 flex-1 flex-col bg-card"
       style={fileSizeStyle(verbs.size.step)}
     >
-      {bare && (
-        <SeatHead title={name} back={rev === null ? onBack : () => setRev(null)} backLabel={rev === null ? gui.back : gui.file_rev_back}>
-          {rev === null && dirty && can && (
-            <GlassItem aria-label={gui.watch_save} data-file-save data-tab-act="save" onClick={save} className="text-brand-strong">
-              <IconCheck />
-            </GlassItem>
-          )}
-          {rev === null && previewable && (
-            <GlassCircle
-              aria-label={gui.file_face_preview}
-              aria-pressed={face === "preview"}
-              data-file-face-toggle={face}
-              onClick={turn}
-              className={cn(face === "preview" && "glass-sel text-[var(--rail-on-ink)]")}
-            >
-              <IconEye />
-            </GlassCircle>
-          )}
-          {rev === null && verbs.moreCircle}
-        </SeatHead>
-      )}
       <div
         ref={box}
-        data-nav-clear={bare || undefined}
         className="flex min-h-0 flex-1 flex-col"
-        onScrollCapture={bare || docked ? undefined : scrolled}
+        onScrollCapture={docked ? undefined : scrolled}
         onFocusCapture={hold}
       >
         {rev !== null ? (
@@ -651,7 +628,6 @@ export function FilePage({
           preview eye where the file renders; ✓ while it differs from the
           disk) · 分享 · 「…」. Nothing at the top of the page. Folded, the
           strip with the name; a tap brings the deck back. */}
-      {!bare && (
       <div
         ref={deck}
         data-file-deck
@@ -749,7 +725,6 @@ export function FilePage({
           </div>
         )}
       </div>
-      )}
       {tabs && (
         <TabSheet
           open={sheet}

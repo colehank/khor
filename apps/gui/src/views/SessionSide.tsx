@@ -235,7 +235,8 @@ export function SideBody({
   // — its face and title, the subject the 附栏 belongs to — and the
   // seat's icon · noun · ⌄ at the right (`SeatTitle`, a native picker),
   // the two gaps one token (`gap-in`). The seats' own heads step back
-  // inside (`SeatHead` draws only a way back there). ⚠️ 墓碑: the glass
+  // inside (`SeatHead` draws only the tree's way back to 最近; a page wears
+  // the main area's deck at its foot, UX-40 §4). ⚠️ 墓碑: the glass
   // capsule at the column's top (UX-30 §2), the flat row at the sheet's
   // foot (UX-37 §4), the page's own title at the left (「这个会话碰过
   // 的」, the machine's name).

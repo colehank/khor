@@ -108,7 +108,8 @@ export function SideRecent({
       }}
     >
       {/* No head of its own: the 附栏's one head says 最近 (UX-39 §2).
-          The find row, with no ＋: nothing is made here (UX-40). */}
+          The find row, with no ＋: nothing is made here (UX-40 §1); while
+          it holds words, 过去24小时 steps aside and the rows narrow. */}
       <SideFind label={gui.search_recent} query={query} onQuery={setQuery} />
       <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
         {query.trim() === "" && today}

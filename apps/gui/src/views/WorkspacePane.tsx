@@ -2248,6 +2248,12 @@ const HUNT_WAIT = 300;
  * It replaces the tree rather than standing beside it: the column is
  * one screen wide on a phone and a third of one on a desktop, and a
  * result list under a tree would be a scroller inside a scroller.
+ *
+ * **On the tree's lines** (UX-40 §5): a name's kind icon and name stand
+ * where the tree's first level draws them (`--tree-inset`, the tree's own
+ * icon box), and a line hit and the sentences stand on the page's left
+ * line (`--page-inset`) — the box above starts there too. ⚠️ 墓碑: 12 in
+ * from the column's edge, 8 short of the list's line.
  */
 export function Hits({
   found,
@@ -2273,12 +2279,12 @@ export function Hits({
       {error !== null && (
         // The machine's own sentence, at the size of something meant to
         // be read — `FileTree`'s rule for a branch that refused.
-        <div data-hits-refused className="p-4 text-body">
+        <div data-hits-refused className="px-(--page-inset) py-4 text-body">
           {error}
         </div>
       )}
       {found !== null && found.names.length === 0 && found.lines.length === 0 && (
-        <div data-hits-none className="p-4 text-callout text-muted-foreground">
+        <div data-hits-none className="px-(--page-inset) py-4 text-callout text-muted-foreground">
           {gui.search_none}
         </div>
       )}
@@ -2288,9 +2294,12 @@ export function Hits({
           type="button"
           data-hit-name={path}
           onClick={() => onOpen(path, null)}
-          className="flex min-h-[var(--tree-row)] w-full items-center gap-2 px-3 text-left text-callout hover:bg-muted/50"
+          className="flex min-h-[var(--tree-row)] w-full items-center gap-2 ps-(--tree-inset) pe-(--page-inset) text-left text-callout hover:bg-muted/50"
         >
-          <FileKindIcon name={basename(path)} className="size-[var(--tree-slot)] flex-none p-1" />
+          <FileKindIcon
+            name={basename(path)}
+            className="h-[var(--tree-slot)] w-[var(--tree-slot)] flex-none items-center ps-[calc(var(--tree-slot)/2-var(--affordance)/2+var(--tree-icon-nudge))] [&>svg]:!size-4"
+          />
           <span className="min-w-0 flex-1 truncate">{marked(short(path), query)}</span>
         </button>
       ))}
@@ -2300,7 +2309,7 @@ export function Hits({
           type="button"
           data-hit-line={`${short(hit.path)}:${hit.line}`}
           onClick={() => onOpen(hit.path, hit.line)}
-          className="flex min-h-[var(--tree-row)] w-full flex-col justify-center gap-0.5 px-3 py-1 text-left hover:bg-muted/50"
+          className="flex min-h-[var(--tree-row)] w-full flex-col justify-center gap-0.5 px-(--page-inset) py-1 text-left hover:bg-muted/50"
         >
           {/* 「显示 `path:line` 与那一行文字」 — where it is above what
               it says, because the second line is what a person reads to
@@ -2314,7 +2323,7 @@ export function Hits({
         </button>
       ))}
       {found?.more === true && (
-        <div data-hits-more className="px-3 py-2 text-caption text-muted-foreground">
+        <div data-hits-more className="px-(--page-inset) py-2 text-caption text-muted-foreground">
           {cli.search_more}
         </div>
       )}

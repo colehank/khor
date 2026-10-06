@@ -156,19 +156,18 @@ export function BrowseLanding({
   bare,
 }: {
   /**
-   * **Drawn inside the session's 附栏** (UX-37 §6, UX-39 §3, narrow only):
-   * the list is the tabs opened from `here` (a session's id) under the
-   * 附栏's one head, and a page wears no deck: ‹ to that list · its host ·
-   * the page. No landing head (＋, search), no native deck (the session's
-   * deck is away while the sheet is up). ⚠️ 墓碑 (UX-37 §1 → UX-39 §3):
-   * ‹ from the slice to every tab (`here: null`, 全部网页).
+   * **Drawn inside the session's 附栏** (UX-37 §6, UX-39 §3, UX-40,
+   * narrow only): the list is the tabs opened from `here` (a session's
+   * id) under the 附栏's one head and its find row — this session's pages,
+   * ＋ a new page that is this session's (UX-40 §1). A page wears the main
+   * area's narrow deck at the 附栏's foot: ‹ · ← → host ↻ · the tabs
+   * circle with this session's pages, never folded, no native deck (the
+   * session's deck is away while the sheet is up; UX-40 §4). ⚠️ 墓碑
+   * (UX-37 §6 → UX-40 §4): ‹ and the host in a head at the page's top.
+   * ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ from the slice to every tab (`here:
+   * null`, 全部网页).
    */
-  bare?: {
-    here: string;
-    /** Where the page's ‹ goes, said: the list (浏览器) unless the page
-        was opened from a row of 最近 (UX-39 §3). */
-    backLabel?: string;
-  };
+  bare?: { here: string };
   /** Narrow only: which of the pair is up — the tabs or the page — and
       the shell's two moves between them. */
   screen?: "list" | "detail";
@@ -801,41 +800,36 @@ export function BrowseLanding({
     had.current = false;
     if (narrow && screen === "detail") onBack?.();
   }, [count, tabs.empty, narrow, screen, onBack]);
-  if (narrow && bare) {
-    // ⚠️ 墓碑 (UX-30 → UX-37 §6): the 附栏's page was the browser
-    // landing's own screen, the session deck at its foot over the
-    // sheet's.
-    // **A page in the 附栏 wears the main area's deck** (UX-40, the owner
-    // 2026-10-07 02:10: 「打开一个文件或地址，是不是得和主区一样，下方有一个
-    // 自己的甲板」): it falls through to the narrow screen below, its
-    // tabs this session's, never folded. ⚠️ 墓碑 (UX-37 §6 → UX-40): ‹ and
-    // the host in a head at the top, no reload, no address, no progress.
-    const mine = new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id));
-    if (!(screen === "detail" && !tabs.empty)) return (
+  /** In the 附栏: this session's pages (`bare.here`), and a new page is
+      this session's, its address field up at once (UX-40 §1). */
+  const mine = bare ? new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id)) : null;
+  const newHere = () => {
+    if (!bare) {
+      tabs.add();
+      opened();
+      return;
+    }
+    void openTab(kind.kind, machine?.id ?? "", "", bare.here)
+      .then((id) => {
+        setQuery("");
+        tabs.focus(id);
+        setEditing(true);
+        opened();
+      })
+      .catch(() => {});
+  };
+  if (narrow && mine && !(screen === "detail" && !tabs.empty)) {
+    return (
       <section data-browse-tabs data-browse-bare="here" className="flex h-full min-h-0 flex-col">
         {/* The 附栏's head is the seat's title (`SideBody`); this list has
-            none of its own. ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ to 全部网页.
-            The find row (UX-40): this session's pages, and ＋ a new page
-            that is this session's, its address field up at once. */}
+            none of its own, only the find row (UX-40 §1). ⚠️ 墓碑 (UX-37
+            §1 → UX-39 §3): ‹ to 全部网页. */}
         <SideFind
           label={gui.search_tabs}
           query={query}
           onQuery={setQuery}
           plus={
-            <GlassCircle
-              aria-label={gui.new_tab}
-              data-side-new
-              onClick={() => {
-                void openTab(kind.kind, machine?.id ?? "", "", bare.here)
-                  .then((id) => {
-                    setQuery("");
-                    tabs.focus(id);
-                    setEditing(true);
-                    opened();
-                  })
-                  .catch(() => {});
-              }}
-            >
+            <GlassCircle aria-label={gui.new_tab} data-side-new onClick={newHere}>
               <IconPlus />
             </GlassCircle>
           }
@@ -853,26 +847,12 @@ export function BrowseLanding({
     );
   }
   if (narrow) {
-    /** In the 附栏 (UX-40): this session's pages only, a new one is this
-        session's, and the deck never folds — the sheet is small already. */
-    const mineIds = bare ? new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id)) : null;
-    const newHere = () => {
-      if (!bare) {
-        tabs.add();
-        opened();
-        return;
-      }
-      void openTab(kind.kind, machine?.id ?? "", "", bare.here)
-        .then((id) => {
-          tabs.focus(id);
-          setEditing(true);
-          opened();
-        })
-        .catch(() => {});
-    };
+    // **A page in the 附栏 wears the main area's deck** (UX-40 §4, the
+    // owner 2026-10-07 02:10): the narrow screen below, its tabs this
+    // session's, never folded — the sheet is small already.
     return screen === "detail" && !tabs.empty ? (
       <SessionScreen
-        faces={mineIds ? faces.filter((f) => mineIds.has(f.id)) : faces}
+        faces={mine ? faces.filter((f) => mine.has(f.id)) : faces}
         active={tabs.current.id}
         onFocus={(id) => tabs.focus(id)}
         onClose={(id) => {
