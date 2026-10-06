@@ -126,7 +126,10 @@ function useFileVerbs({
   onRevision,
   previewing,
   shareInMore = false,
+  moreActs = [],
 }: {
+  /** The page's own additions at the head of 「…」 (`FilePage` `moreActs`). */
+  moreActs?: { key: string; label: string; run: () => void }[];
   /** The file page's face (UX-14): 字号 and 预览背景 are offered only
       while the file is shown rendered. Left out (the Mac's workspace
       strip), they are offered as before. */
@@ -173,6 +176,7 @@ function useFileVerbs({
   const previewKind = rendererOf(path) !== null || kind === "image" || kind === "svg" || kind === "pdf";
   const textKind = kind === "text";
   const menu: { key: string; label: string; run: () => void; destructive?: boolean }[] = [
+    ...moreActs,
     ...(shareInMore && finder
       ? [
           { key: "open-other", label: gui.file_open_other, run: () => void local().then((p) => launchOn("", p)).catch(fail) },
@@ -401,7 +405,11 @@ export function FilePage({
   code = null,
   history = false,
   tabs,
+  moreActs,
 }: {
+  /** Acts the page's host adds at the head of 「…」 (UX-30 §4: the
+      session's 附栏 offers 「在主区打开」, the one way out of the column). */
+  moreActs?: { key: string; label: string; run: () => void }[];
   /** The file is in a checkout: git 历史 is offered (round UX-4). */
   history?: boolean;
   /** **The workspace's open files, as the session page's tabs** (UX-25,
@@ -469,6 +477,7 @@ export function FilePage({
     previewing: previewable ? face === "preview" : false,
     // The phone's deck: 分享 inside 「…」 (UX-33 §4).
     shareInMore: true,
+    moreActs,
   });
   /** A re-read asked for from the pill's ↻ (UX-33), added to the one asked
       from outside. */

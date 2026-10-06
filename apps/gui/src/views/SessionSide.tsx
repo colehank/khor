@@ -24,6 +24,7 @@ import { useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as R
 
 import { IconBrowser, IconDevices, IconFiles, IconQuota, IconRecent } from "@/components/icons";
 import { NAV_SEAT } from "@/components/FloatNav";
+import { SideSeatsProvider } from "@/components/SideHead";
 import { gui } from "@/gen/catalog";
 import { NarrowBox } from "@/hooks/use-narrow";
 import { SIDE_SEATS, type SideSeat } from "@/hooks/use-session-side";
@@ -253,7 +254,12 @@ export function SessionSide({
           because the pages float their own navigation against the
           nearest placed ancestor, which must be this box and not the
           window. */}
-      <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
+      {/* No window row to seat a head in (`NarrowHead`): the pages draw
+          their own `‹ title` bar in place, as the workspace column's
+          session bar does. */}
+      <SideSeatsProvider value={null}>
+        <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
+      </SideSeatsProvider>
     </NarrowBox>
   );
 }

@@ -3848,6 +3848,11 @@ session-side = "附栏"
 side-show = "打开附栏"
 side-hide = "收起附栏"
 side-seam = "调整附栏宽度"
+# The one way from the column to the main area (UX-30 §4): a file's
+# 「…」 act, beside the double-click.
+open-in-main = "在主区打开"
+# 最近 with nothing in it: no page visited, no workspace, no file open.
+recent-none = "还没有去过哪里"
 new-item = "新建"
 # Filtered down to nothing is not "there are none" — the two states get
 # different words, or the empty list tells a lie.

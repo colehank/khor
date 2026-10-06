@@ -105,6 +105,8 @@ import { DetailPane, isTerminal } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
 import { SIDE_ID, SessionSide } from "@/views/SessionSide";
 import { DayRuler } from "@/views/DayRuler";
+import { SideRecent } from "@/views/SideRecent";
+import { useSideRecent, type RecentItem } from "@/hooks/use-side-recent";
 import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
@@ -602,6 +604,7 @@ export default function App() {
   // `.khor/tabs.json` has two writers now, and `khor tabs open` in a
   // terminal has to show up in the column without anybody reloading.
   const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser");
+  const browsing = { kind: PAGES, tabs: pageTabs };
   // Narrow face only: which single screen is up. Wide ignores it.
   const [screen, setScreen] = useState<"list" | "detail">(() => place.screen ?? "list");
   const [stale, setStale] = useState(false);
@@ -1777,14 +1780,37 @@ export default function App() {
     setWsTree(true);
     setScreen("detail");
   };
+  /** **Where the column's 工作区 seat stands** (UX-30 §2, §4): the
+      session's directory (OSC 7, else its place) when the column opens
+      on it; a directory or a file a session printed, opened in place. */
+  const [sideFiles, setSideFiles] = useState<{ session: string; machine: string; dir: string | null; start: { path: string; at: number } | null } | null>(null);
+  const sideFilesRef = useRef(sideFiles);
+  sideFilesRef.current = sideFiles;
   // A terminal's 「open enclosing folder」 (roadmap 2.5): that machine's
   // files at that path.
   const openDirRef = useRef<(machine: string, path: string) => void>(() => {});
-  openDirRef.current = (machine, path) => {
+  /** The main area's road for a directory. */
+  const openDirMain = (machine: string, path: string) => {
     const d = devices.find((x) => x.name === machine);
     if (!d) return;
     setLanding("workspaces");
     openWorkspace({ device: d.id, machine, path } as WorkspaceRow);
+  };
+  /** **Whether a thing a session printed opens in its 附栏** (UX-30 §4):
+      on the wide face, with a session in front, paths, URLs and
+      directories open inside the column — the main area is the session,
+      always. Elsewhere (the phone, another landing) the old roads stand. */
+  const inColumn = () => !narrow && landing === "sessions" && selectedRow !== null;
+  /** The column's 工作区 seat, pointed somewhere (and the column opened
+      on it): a directory, or a file to open in place. */
+  const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) => {
+    if (!selectedRow) return;
+    setSideFiles({ session: selectedRow.id, machine, dir, start });
+    setSessionSide(selectedRow.id, { open: true, seat: "workspace" });
+  };
+  openDirRef.current = (machine, path) => {
+    if (inColumn()) return sideShow(machine || (devices.find((x) => x.me)?.name ?? ""), path, null);
+    openDirMain(machine, path);
   };
   useEffect(() => {
     const asked = (e: Event) => {
@@ -1800,11 +1826,13 @@ export default function App() {
   // conversation's road); a URL is a browsing tab out through that
   // terminal's machine.
   const openPathRef = useRef<(machine: string, path: string, dir: boolean, line: number | null) => void>(() => {});
-  openPathRef.current = (machine, path, dir, line) => {
+  /** The main area's road for a file: the workspace that holds it, at
+      its line. */
+  const openPathMain = (machine: string, path: string, dir: boolean, line: number | null) => {
     const d = machine === "" ? devices.find((x) => x.me) : devices.find((x) => x.name === machine);
     if (!d) return;
     const name = machine || d.name;
-    if (dir) return openDirRef.current(name, path);
+    if (dir) return openDirMain(name, path);
     void fetchWorkspaces()
       .catch(() => [] as WorkspaceRow[])
       .then((list) => {
@@ -1820,17 +1848,33 @@ export default function App() {
         setScreen("detail");
       });
   };
+  openPathRef.current = (machine, path, dir, line) => {
+    if (inColumn()) {
+      const name = machine || (devices.find((x) => x.me)?.name ?? "");
+      if (dir) return sideShow(name, path, null);
+      return sideShow(name, path.slice(0, path.lastIndexOf("/")) || "/", { path, at: Date.now() });
+    }
+    openPathMain(machine, path, dir, line);
+  };
   const openUrlRef = useRef<(machine: string, url: string) => void>(() => {});
-  openUrlRef.current = (machine, url) => {
+  /** A page, as a browsing tab out through that machine; in the column's
+      browser with a session in front, else on the browser landing. */
+  const openUrlMain = (machine: string, url: string, column: boolean) => {
     const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
     void openTab("page", d?.id ?? "", url)
       .then(() => {
+        if (column && selectedRow) {
+          setSideBrowse("detail");
+          setSessionSide(selectedRow.id, { open: true, seat: "browser" });
+          return;
+        }
         setMorePage(null);
         setLanding("browser");
         setScreen("detail");
       })
       .catch(() => {});
   };
+  openUrlRef.current = (machine, url) => openUrlMain(machine, url, inColumn());
   useEffect(() => {
     const path = (e: Event) => {
       const { machine, path: p, dir, line } = (e as CustomEvent<{ machine: string; path: string; dir: boolean; line: number | null }>).detail;
@@ -2084,27 +2128,129 @@ export default function App() {
       the OSC 7 cwd, else where the session started) — read off the
       terminal on screen, as the pill's tap reads it (`placeSheet`), when
       the column opens on it or the session changes. */
-  const [sideDir, setSideDir] = useState<{ session: string; dir: string | null } | null>(null);
   useEffect(() => {
     if (narrow || !side.open || !selectedRow) return;
+    // Pointed once per session (and the column's opening): a file opened
+    // in place since (`sideShow`) is not thrown away by a re-render.
+    if (sideFilesRef.current?.session === selectedRow.id) return;
     const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
       | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
       | null;
-    setSideDir({ session: selectedRow.id, dir: box?.__marks?.cwd() ?? selectedRow.place ?? null });
+    setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir: box?.__marks?.cwd() ?? selectedRow.place ?? null, start: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow, side.open, selectedRow?.id]);
+  /** The column's own stacks (UX-30 §1: each seat its stack): the
+      browser's and 额度's list ⇄ detail, 机器's machine and screen. */
+  const [sideBrowse, setSideBrowse] = useState<"list" | "detail">("detail");
+  const [sideQuota, setSideQuota] = useState<"list" | "detail">("list");
+  const [sideMachine, setSideMachine] = useState<{ device: string | null; screen: "list" | "detail" }>({ device: null, screen: "detail" });
+  const sideOn = !narrow && side.open && selectedRow !== null && sessions;
+  const recent = useSideRecent(sideOn && side.seat === "recent");
+  /** 最近's rows open in place (§4): a page in the column's browser, a
+      workspace as the column's listing, a file as its file page. */
+  const openRecent = (it: RecentItem) => {
+    if (it.kind === "page") return openUrlMain(it.machine, it.url, true);
+    if (it.kind === "workspace") return sideShow(it.machine, it.path, null);
+    sideShow(it.machine, it.path.slice(0, it.path.lastIndexOf("/")) || "/", { path: it.path, at: Date.now() });
+  };
+  /** …and a double-click (or 「在主区打开」) takes the same thing to the
+      main area, by the roads the landings use. */
+  const openRecentMain = (it: RecentItem) => {
+    if (it.kind === "page") return openUrlMain(it.machine, it.url, false);
+    if (it.kind === "workspace") return openDirMain(it.machine, it.path);
+    openPathMain(it.machine, it.path, false, null);
+  };
   /** The column's seat, composed here because the narrow pages read the
       shell's own state (`SessionSide` is the box and the capsule). */
   const sideSeat = (): ReactNode => {
     if (!selectedRow) return null;
-    const here = devices.find((d) => d.name === selectedRow.home)?.me ?? !selectedRow.source;
+    const faceOf = (id: string) => devices.find((d) => d.id === id)?.face ?? null;
     switch (side.seat) {
+      case "recent":
+        return <SideRecent items={recent} faceOf={faceOf} onOpen={openRecent} onOpenMain={openRecentMain} />;
       case "workspace": {
-        const dir = sideDir?.session === selectedRow.id ? sideDir.dir : (selectedRow.place ?? null);
-        return <MachineFiles key={`${selectedRow.home} ${dir ?? ""}`} machine={selectedRow.home} here={here} startDir={dir} />;
+        const f = sideFiles?.session === selectedRow.id ? sideFiles : { machine: selectedRow.home, dir: selectedRow.place ?? null, start: null };
+        const here = devices.find((d) => d.name === f.machine)?.me ?? !selectedRow.source;
+        return (
+          <MachineFiles
+            key={`${f.machine} ${f.dir ?? ""}`}
+            machine={f.machine}
+            here={here}
+            startDir={f.dir}
+            start={f.start}
+            fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
+          />
+        );
       }
-      default:
-        return null;
+      case "browser":
+        return (
+          <BrowseLanding
+            key={browsing.kind.kind}
+            kind={browsing.kind}
+            devices={devices}
+            tabs={browsing.tabs}
+            narrow
+            pane={null}
+            caption={stale ? gui.backend_unreachable : undefined}
+            screen={sideBrowse}
+            onOpen={() => setSideBrowse("detail")}
+            onBack={() => setSideBrowse("list")}
+          />
+        );
+      case "machine": {
+        // Lands on the session's machine; ‹ is the machines' list, from
+        // which any machine's card opens here.
+        const landed = sideMachine.device ?? devices.find((d) => d.name === selectedRow.home)?.id ?? null;
+        const row = devices.find((d) => d.id === landed) ?? null;
+        if (sideMachine.screen === "list" || row === null) {
+          return (
+            <div data-side-machines className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+              <DevicesList
+                rows={devices}
+                sessions={rows}
+                loading={!devicesRead}
+                query=""
+                onPin={onPinDevice}
+                onForget={onForgetDevice}
+                forgetRefused={forgetRefused}
+                onPause={onPauseDevice}
+                pauseRefused={pauseRefused}
+                onOpen={(d) => setSideMachine({ device: d.id, screen: "detail" })}
+                selected={landed}
+                pinFailed={pinFailed}
+              />
+            </div>
+          );
+        }
+        return (
+          <MachineCard
+            row={row}
+            narrow
+            onBack={() => setSideMachine({ device: landed, screen: "list" })}
+            hooks={hooks}
+            hooksFailed={hooksFailed}
+            onInstallHooks={onInstallHooks}
+            onUninstallHooks={onUninstallHooks}
+          />
+        );
+      }
+      case "quota":
+        return (
+          <QuotaLanding
+            narrow
+            stale={stale}
+            devices={devices}
+            pane={null}
+            query={queries.quota}
+            onQuery={setQuery}
+            words={words.quota}
+            onToggleWord={toggleWord}
+            screen={sideQuota}
+            onOpen={() => setSideQuota("detail")}
+            onBack={() => setSideQuota("list")}
+            landOn={selectedRow.category}
+          />
+        );
     }
   };
   const sessionSide =
@@ -2845,7 +2991,6 @@ export default function App() {
    * kind does not land, this abstraction has one customer and should
    * be inlined — that is the line for whoever reads this next.
    */
-  const browsing = { kind: PAGES, tabs: pageTabs };
   const browsingLanding = (
     <BrowseLanding
       // **Keyed by the kind, and that is load-bearing.** A kind carries

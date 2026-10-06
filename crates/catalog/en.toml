@@ -2007,6 +2007,8 @@ session-side = "Side panel"
 side-show = "Open the side panel"
 side-hide = "Close the side panel"
 side-seam = "Resize the side panel"
+open-in-main = "Open in the main area"
+recent-none = "Nowhere yet"
 new-item = "New"
 
 no-matches = "No matches"
