@@ -1202,12 +1202,57 @@ impl LiveKind {
         }
         let sweep = self.discovery.sweep();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
+        // Vendor leaves learned this poll, for the preview post-pass:
+        // `registered` was read before they were written.
+        let mut learned: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        // What each live hosted agent row's host holds, taken once: one
+        // subtree walk per such row per poll, on the table the sweep took.
+        let hosted_holds: Vec<(usize, Vec<u32>)> = registered
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.row.kind.0 == khor_core::kind::TUI && !r.row.dead)
+            .filter_map(|(i, r)| Some((i, sweep.procs.subtree(&[r.host_child?]))))
+            .collect();
         for found in sweep.rows {
-            let id = found.id();
+            let found_id = found.id();
             let kind = found.kind;
+            let category = found.category;
             let sighting = found.sighting;
             let pids = sighting.pids.clone();
-            if let Some(seat) = out.iter().position(|r| r.id == id) {
+            // **A hosted agent row is the sighting whose pid runs under
+            // its host** (SESS-BRIEF 2b). `khor run --tui claude` and
+            // `--tui codex` mint their own id, and nothing names the
+            // vendor's session to them: codex cannot be told one at
+            // start, and no hook of khor's is in the owner's Claude
+            // settings. The sweep joined the process to its transcript;
+            // the process descends from the row's host, so the row is
+            // that session — it records the leaf once (the preview reads
+            // the transcript through it) and wears the sighting instead
+            // of the sighting standing as a second row.
+            let by_id = out.iter().position(|r| r.id == found_id);
+            let hosted = by_id.is_none().then(|| {
+                hosted_holds
+                    .iter()
+                    .find(|(_, holds)| holds.iter().any(|p| pids.contains(p)))
+                    .map(|&(i, _)| i)
+            });
+            if let Some(Some(seat)) = hosted
+                && registered[seat].vendor_leaf.is_none()
+            {
+                let leaf = clean_leaf(&sighting.vendor_session_id);
+                let row = &registered[seat].row;
+                let _ = self.learn_vendor_leaf(&row.id, &leaf);
+                if row.category.is_none() {
+                    let _ = self.learn_category(&row.id, Some(category));
+                }
+                learned.insert(row.id.0.clone(), leaf);
+            }
+            let id = match hosted.flatten() {
+                Some(seat) => out[seat].id.clone(),
+                None => found_id,
+            };
+            if let Some(seat) = by_id.or(hosted.flatten()) {
                 for &p in &pids {
                     seat_of_pid.insert(p, seat);
                 }
@@ -1729,10 +1774,11 @@ impl LiveKind {
         // file), else the id's leaf, which for discovered rows is the
         // vendor's id already. Cached by (path, mtime) inside
         // `last_said`, so a list poll costs stats, not reads.
-        let vendor_leaves: std::collections::BTreeMap<String, String> = registered
+        let mut vendor_leaves: std::collections::BTreeMap<String, String> = registered
             .iter()
             .filter_map(|r| r.vendor_leaf.clone().map(|v| (r.row.id.0.clone(), v)))
             .collect();
+        vendor_leaves.extend(learned);
         let claude = crate::adaptor::claude::Claude::at(
             crate::adaptor::vendor_home(&self.root).join(".claude"),
         );
@@ -3653,6 +3699,101 @@ mod tests {
         fs::write(k.dir_of(&id).unwrap().join("last.txt"), "› Ask Codex to do anything").unwrap();
         let rows = k.rows(|_| 0);
         assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last.as_deref(), Some("All 40 pass."));
+    }
+
+    /// **A hosted agent row learns its vendor's session from the sweep,
+    /// not from hooks** (SESS-BRIEF 2b). `khor run --tui claude` mints
+    /// its own id and no hook on the owner's Mac ever names the
+    /// session, so the row could find no transcript, and the claude the
+    /// sweep joined by pid was a second row. The pid sits under the
+    /// row's host: the row records the leaf (and the vendor, where it
+    /// was unfiled), wears the sighting, and says the transcript's
+    /// newest sentence — on this poll and on the next.
+    #[test]
+    fn a_hosted_claude_row_learns_its_session_from_the_pid_under_its_host() {
+        use crate::adaptor::{Discovery, Procs};
+
+        let root = tmp("hosted-learns-claude");
+        let uuid = "11111111-1111-4111-8111-111111111111";
+        let proj = root.join(".claude/projects/-w-one");
+        fs::create_dir_all(&proj).unwrap();
+        fs::write(
+            proj.join(format!("{uuid}.jsonl")),
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"From the transcript."}]}}"#.to_owned() + "\n",
+        )
+        .unwrap();
+        let host = FakeHost::up();
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&fixture_vendors())
+                .with_procs(Procs::of([proc_under(4001, "claude", host.pid())])),
+        ));
+        let id = sid("tui/khormint01");
+        k.register(&id, "tui", "claude", Some(host.pid()), None).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        host.serve(&dir, 4001);
+        fs::write(dir.join("last.txt"), "⏵⏵ auto mode on").unwrap();
+
+        for poll in ["first", "second"] {
+            let rows = k.rows(|_| 0);
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(ids, vec![id.0.as_str()], "{poll} poll: one row, the hosted one");
+            let row = &rows[0];
+            assert_eq!(row.category.as_deref(), Some("claude"), "{poll} poll");
+            assert_eq!(row.state.state, State::Blocked, "{poll} poll: claude's own word");
+            assert_eq!(row.last.as_deref(), Some("From the transcript."), "{poll} poll");
+        }
+        assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)), "the leaf is on record");
+        assert_eq!(
+            read_meta(&dir).unwrap().category.as_deref(),
+            Some("claude"),
+            "and the vendor, where the row was unfiled"
+        );
+    }
+
+    /// The same for codex (SESS-BRIEF 2b), which cannot be told a
+    /// session id at start at all: `khor run --tui codex` reaches its
+    /// rollout only through the process the sweep joined to it.
+    #[test]
+    fn a_hosted_codex_row_learns_its_rollout_from_the_pid_under_its_host() {
+        use crate::adaptor::{Discovery, Proc, Procs};
+
+        let root = tmp("hosted-learns-codex");
+        let uuid = "019fd755-e464-7aaa-8aaa-aaaaaaaaaaaa";
+        let day = root.join(".codex/sessions/2026/08/06");
+        fs::create_dir_all(&day).unwrap();
+        let lines = [
+            r#"{"type":"session_meta","payload":{"id":"x","cwd":"/w/alpha"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"agent_message","message":"Done, all green."}}"#,
+        ];
+        fs::write(
+            day.join(format!("rollout-2026-08-06T21-49-18-{uuid}.jsonl")),
+            lines.join("\n") + "\n",
+        )
+        .unwrap();
+        let host = FakeHost::up();
+        let codex = Proc {
+            name: "codex".into(),
+            started_ms: 1_786_024_158_000,
+            cwd: Some(PathBuf::from("/w/alpha")),
+            ppid: Some(host.pid()),
+        };
+        let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/codex");
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&vendors).with_procs(Procs::of([(700, codex)])),
+        ));
+        let id = sid("tui/khormint02");
+        k.register(&id, "tui", "codex", Some(host.pid()), Some("codex")).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        host.serve(&dir, 700);
+        fs::write(dir.join("last.txt"), "› Ask Codex to do anything").unwrap();
+
+        for poll in ["first", "second"] {
+            let rows = k.rows(|_| 0);
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(ids, vec![id.0.as_str()], "{poll} poll: one row, the hosted one");
+            assert_eq!(rows[0].last.as_deref(), Some("Done, all green."), "{poll} poll");
+        }
+        assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)));
     }
 
     /// The same rule against the **registry**: `khor run` started inside
