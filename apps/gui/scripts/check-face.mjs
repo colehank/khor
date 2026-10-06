@@ -29592,8 +29592,8 @@ try {
       await wait(400);
       const back = await read();
       const swapSizes = resized.length - sizes;
-      // The keyboard lowered the one way it is (the swipe, item 42): the
-      // field stops asking, the stand-in goes.
+      // The keyboard lowered (a swipe down or a tap off the input area,
+      // item 49): the field stops asking, the stand-in goes.
       await page.evaluate(() => {
         const f = document.querySelector("[data-terminal]").__xterm.textarea;
         f.setAttribute("inputmode", "none");
@@ -29641,13 +29641,13 @@ try {
       await wait(400);
       const raised = await read();
       const raiseSizes = resized.length - beforeRaise;
-      // A drag down the screen that reaches the panel's top edge lowers
-      // it, as it lowers the keyboard (item 42).
+      // Any drag down the screen lowers it, as it lowers the keyboard
+      // (item 49): 20 px high on the screen, far above the panel's edge.
       const screenBox = await rect("[data-terminal]");
       {
         const x = Math.round(screenBox.left + screenBox.width / 2);
         const y0 = Math.round(screenBox.top + 40);
-        const y1 = (raised.panel?.top ?? vh - 300) + 30;
+        const y1 = y0 + 20;
         await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
         for (let i = 1; i <= 8; i += 1) {
           await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: Math.round(y0 + ((y1 - y0) * i) / 8) }] });
@@ -29657,13 +29657,13 @@ try {
       await until(2_000, async () => (await read()).rows === rest.rows);
       await wait(400);
       const lowered = await read();
-      console.log(`bar u · keyboard down, 「…」: ${JSON.stringify(raised)} (${raiseSizes} resize); dragged down to the panel: ${JSON.stringify(lowered)}`);
+      console.log(`bar u · keyboard down, 「…」: ${JSON.stringify(raised)} (${raiseSizes} resize); dragged down 20 px: ${JSON.stringify(lowered)}`);
       if (!raised.stamped || !raised.panel || Math.abs(raised.panel.height - 300) > 1 || Math.abs(raised.root - (vh - 300)) > 1 || raised.rows !== typing.rows || raised.more !== "true") {
         fail(`bar u · with the keyboard down 「…」 reads ${JSON.stringify(raised)} — the panel at the last keyboard's 300, the shell shrunk once as for a keyboard`);
       }
       if (raiseSizes !== 1) fail(`bar u · raising the panel from the foot told the pty ${raiseSizes} size(s), one keyboard's worth is one`);
       if (lowered.stamped || lowered.panel || lowered.rows !== rest.rows || lowered.more !== null && lowered.more !== "false") {
-        fail(`bar u · the drag down reaching the panel reads ${JSON.stringify(lowered)} — the panel gone as a keyboard goes, the shell at rest`);
+        fail(`bar u · a 20 px drag down reads ${JSON.stringify(lowered)} — the panel gone as a keyboard goes, the shell at rest (item 49)`);
       }
       // Back to the row collapsed, for the steps after.
       if ((await read()).keys === 1) await press("[data-session-deck] [data-key-row-switch]");

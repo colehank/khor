@@ -1,4 +1,4 @@
-// The scroller gate (items 29, 30, 36 and 42): the terminal's history on the page's
+// The scroller gate (items 29, 30, 36 and 49): the terminal's history on the page's
 // own scroller (`src/lib/term-scroller.ts`), driven in headless Chrome
 // against a real xterm, in the same DOM the pane builds.
 //
@@ -17,11 +17,11 @@
 //       300 px of travel at 16 px rows is 18 notches (it was 5: a wheel per
 //       touch move, folded by xterm), the place goes back to the middle
 //       once it rests, and nothing is handed on while it does.
-//   42. **The swipe that lowers the keyboard is the finger reaching the
-//       keyboard's top edge** (`src/lib/term-swipe.ts`): a drag more down
-//       than across lowers it the moment it crosses the edge, however slow
-//       or paused, once; one that stops short, goes more across, starts on
-//       the bar, or finds no keyboard up lowers nothing.
+//   49. **Any downward swipe lowers the keyboard** (`src/lib/term-swipe.ts`;
+//       item 42's keyboard edge is gone): 20 px down anywhere lowers it,
+//       however slow or paused, once; one inside the 10 px dead zone, more
+//       across than down, upward, held as a press first, from the bar, or
+//       with no keyboard up lowers nothing.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -197,14 +197,14 @@ if (wheel.range < 10000) fail(`36: the program's scroller has no range of its ow
 if (wheel.atLift !== want) fail(`36: 300 px of travel handed ${wheel.atLift} notches, want ${want}`);
 if (wheel.settled !== wheel.atLift) fail(`36: setting the place back handed ${wheel.settled - wheel.atLift} more notches`);
 
-// ── 42 ──
+// ── 49 ──
 const swipe = await page.evaluate(async () => {
   const scroller = document.querySelector("#scroller");
   const field = document.createElement("textarea");
   document.body.appendChild(field);
   let up = true;
   let lowered = 0;
-  const stop = window.lab.swipeLowers(scroller, field, { up: () => up, edge: () => 500, lower: () => lowered++ });
+  const stop = window.lab.swipeLowers(scroller, field, { up: () => up, lower: () => lowered++ });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const touch = (type, x, y, target = scroller) => {
     const t = new Touch({ identifier: 1, target, clientX: x, clientY: y });
@@ -225,16 +225,19 @@ const swipe = await page.evaluate(async () => {
     await drag(points, target);
     out[name] = lowered - was;
   };
-  // Slow, paused, and short of the edge: nothing.
-  await count("short", [[200, 300], [200, 330, 300], [200, 360, 600], [200, 480]]);
-  // Slow and paused (300 px in 1.8 s: 0.17 px/ms, under item 28's 0.3
-  // average that failed the owner), across the edge: lowered once, and
-  // only once.
-  await count("slow", [[200, 300], [200, 330, 300], [200, 360, 1500], [200, 505], [200, 560], [200, 600]]);
-  // More across than down, past the edge's height: nothing.
-  await count("across", [[20, 300], [120, 350], [380, 520]]);
+  // 20 px down, high on the screen, nowhere near a keyboard: lowered.
+  await count("short", [[200, 100], [200, 110], [200, 120]]);
+  // Slow (12 px in 300 ms), paused, then on down: lowered once, and only
+  // once.
+  await count("slow", [[200, 300], [200, 306, 150], [200, 312, 150], [200, 330, 600], [200, 480], [200, 600]]);
+  // Inside the dead zone (8 px down): a tap, nothing.
+  await count("dead", [[200, 300], [200, 304], [200, 308]]);
+  // More across than down: nothing.
+  await count("across", [[20, 300], [120, 350], [380, 420]]);
   // Upward: nothing.
   await count("upward", [[200, 580], [200, 400]]);
+  // Held still past the press (a selection), then down: nothing.
+  await count("press", [[200, 300], [200, 302, 500], [200, 340], [200, 400]]);
   // No keyboard up: nothing.
   up = false;
   await count("down", [[200, 300], [200, 520]]);
@@ -250,12 +253,13 @@ const swipe = await page.evaluate(async () => {
   field.remove();
   return out;
 });
-console.log(`scroller gate: 42 swipe: ${JSON.stringify(swipe)}`);
-if (swipe.slow !== 1) fail(`42: a slow, paused drag across the keyboard's edge lowered it ${swipe.slow} times, want 1`);
-for (const k of ["short", "across", "upward", "down", "bar", "stopped"]) {
-  if (swipe[k] !== 0) fail(`42 ${k}: lowered the keyboard ${swipe[k]} times, want 0`);
+console.log(`scroller gate: 49 swipe: ${JSON.stringify(swipe)}`);
+if (swipe.short !== 1) fail(`49: a 20 px drag down lowered the keyboard ${swipe.short} times, want 1`);
+if (swipe.slow !== 1) fail(`49: a slow, paused drag down lowered the keyboard ${swipe.slow} times, want 1`);
+for (const k of ["dead", "across", "upward", "press", "down", "bar", "stopped"]) {
+  if (swipe[k] !== 0) fail(`49 ${k}: lowered the keyboard ${swipe[k]} times, want 0`);
 }
 
 await browser.close();
 if (bad) process.exit(1);
-console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, and the swipe lowers the keyboard at its edge");
+console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, and any swipe down lowers the keyboard");

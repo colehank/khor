@@ -119,18 +119,13 @@ export function swapToKeyboard(field: HTMLElement) {
   swapping = window.setTimeout(release, KEYBOARD_WAIT_MS);
 }
 
-/** **The panel's top edge** in client px while it is up (the swipe that
-    lowers it is the finger reaching it, as the keyboard's is — item 42),
-    else null: the panel starts where the held foot begins. */
-export function keyPanelEdge(): number | null {
-  const held = footHeld();
-  if (!up || held === null) return null;
-  const panel = document.querySelector("[data-key-panel]");
-  return panel ? panel.getBoundingClientRect().top : document.documentElement.clientHeight - held;
-}
+// ⚠️ Tombstone (item 42 → item 49): `keyPanelEdge`, the panel's top edge
+// the lowering swipe had to reach; any downward swipe lowers it now, as
+// it lowers the keyboard (`lib/term-swipe`).
 
-/** The swipe's lowering: the panel goes to the foot, never back to a
-    keyboard — a drag down is a person wanting the screen. */
+/** The swipe's lowering, and a tap off the input area's in 自动 (item
+    49): the panel goes to the foot, never back to a keyboard — a person
+    wanting the screen. */
 export function lowerKeyPanel() {
   if (up) release();
 }

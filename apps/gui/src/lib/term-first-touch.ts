@@ -14,6 +14,9 @@ import { keyboardShown } from "@/lib/viewport";
 
 /** A mouse report as xterm encodes it (SGR or the older X10 form). */
 const REPORT = /^\x1b\[(<|M)/;
+/** The system keyboard, as the screen says. */
+const keys = () => (keyboardShown() ? "up" : "down");
+
 /** Travel past which a touch is a drag. */
 const DRAG_PX = 10;
 /** Held this long without travel, a touch is a press. */
@@ -55,7 +58,7 @@ export function notesFirstTouch(o: {
   const { id, term, box, scroller } = o;
   let armed = false;
   let attachedAt = 0;
-  let touch: { at: number; x: number; y: number; top: number; moved: number; wheels: number; reports: number; scroller: string } | null = null;
+  let touch: { at: number; x: number; y: number; top: number; moved: number; wheels: number; reports: number; scroller: string; keys: string } | null = null;
   const say = (what: string) => o.note(`term ${id}: ${what}`);
   /** Says the attach early, before a touch is judged against it. */
   let unwait: (() => void) | null = null;
@@ -75,6 +78,7 @@ export function notesFirstTouch(o: {
       reports: 0,
       // Decided as the finger lands, the way the pane's own rules are.
       scroller: o.history() ? "history view" : programScrolls(term) ? "wheel to the program" : "native",
+      keys: keys(),
     };
   };
   const move = (e: TouchEvent) => {
@@ -100,6 +104,9 @@ export function notesFirstTouch(o: {
     // phone: a drag the face judged a tap sent tmux nothing — iOS ends a
     // touch it takes for its own gesture with `touchcancel`).
     const went = `${e.type === "touchcancel" ? "cancelled" : "lifted"} after ${Math.round(performance.now() - t.at)} ms, moved ${Math.round(t.moved)} px`;
+    // The keyboard before the touch and once it has settled after it
+    // (item 49: a swipe down or a tap off the input area lowers it).
+    const keyboard = () => `keyboard ${t.keys} → ${keys()}`;
     if (t.moved >= DRAG_PX) {
       const what =
         (t.scroller === "wheel to the program"
@@ -110,16 +117,17 @@ export function notesFirstTouch(o: {
         say(
           `${head}: drag, ${t.scroller}: ${what}` +
             (before ? `; pane ${before.pane} mouse ${before.mouse ? "held" : "free"}` : "") +
-            (before && after ? `, window ${before.window || "?"} → ${after.window || "?"}` : ""),
+            (before && after ? `, window ${before.window || "?"} → ${after.window || "?"}` : "") +
+            `, ${keyboard()}`,
         );
       // Under tmux (item 45): the window's size after the drag, read
       // once tmux has had time to answer the drag's reports.
       if (before && o.reread) window.setTimeout(() => void o.reread!().finally(() => line(o.pane?.() ?? null)), WINDOW_MS);
-      else line(null);
+      else window.setTimeout(() => line(null), KEYBOARD_MS);
     } else if (performance.now() - t.at >= PRESS_MS) {
       say(`${head}: press, selection ${term.hasSelection() ? "made" : "none"}, ${went}`);
     } else {
-      window.setTimeout(() => say(`${head}: tap, keyboard ${keyboardShown() ? "up" : "down"}, ${went}, ${t.wheels} wheels`), KEYBOARD_MS);
+      window.setTimeout(() => say(`${head}: tap, ${keyboard()}, ${went}, ${t.wheels} wheels`), KEYBOARD_MS);
     }
   };
   box.addEventListener("touchstart", start, { capture: true, passive: true });

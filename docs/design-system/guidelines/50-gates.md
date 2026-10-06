@@ -68,7 +68,7 @@
 | `npm run snapshot` | `check-snapshot.mjs`,主机留的屏幕快照(`crates/node/src/host.rs` `Model::snapshot`,item 46,`khor-host/3`)喂给真 xterm 之后,和把原始字节喂给另一个 xterm 一模一样:每行文字、每格颜色与属性、折行标记、光标、主屏/备用屏、鼠标与粘贴模式;素材在 `scripts/fixtures/snapshot/`(`<名>.raw` 程序的字节,`<名>.snap` 主机的快照,由 `cargo test -p khor-node --lib writes_snapshot_fixtures -- --ignored` 写出) | 不拿 |
 | `npm run peek` | `check-peek.mjs`,一块输出算不算「数据」(`src/lib/term-peek.ts`,roadmap 3.4):真的表格、JSON 读成数据,真的普通输出读成文字。静态,也在 `npm run test` 里 | 不拿 |
 | `npm run atlas` | `check-atlas.mjs`,xterm WebGL 的字形图集(item 24):先证明探针看得见故障(不带模块时一个终端清图集会改掉另一个的画面),再量一个终端清图集不动邻居、晚到的字体画出来的 CJK 和新开的终端一致、丢了 WebGL 上下文立刻换 DOM 渲染、回来画得一样(真 xterm,系统 Chrome 带 WebGL) | 不拿 |
-| `npm run scroller` | `check-scroller.mjs`,终端历史走页面自己的滚动(`src/lib/term-scroller.ts`,items 29、30、36、42):框像键盘升起那样一步步变矮之后还在底部;Ink 式的 40 行画面以 10 Hz 重画时手指往上拖,抬手前滚动位置只有手指动过,抬手后只放一次;程序拿着鼠标时 300 px 的拖动是 18 格滚轮;收键盘的下滑(`src/lib/term-swipe.ts`)是手指碰到键盘上沿那一下——再慢、中途停过也收,只收一次;没到上沿、横多于竖、往上、键盘没起、从吧台起手的都不收(真 xterm,系统 Chrome) | 不拿 |
+| `npm run scroller` | `check-scroller.mjs`,终端历史走页面自己的滚动(`src/lib/term-scroller.ts`,items 29、30、36、49):框像键盘升起那样一步步变矮之后还在底部;Ink 式的 40 行画面以 10 Hz 重画时手指往上拖,抬手前滚动位置只有手指动过,抬手后只放一次;程序拿着鼠标时 300 px 的拖动是 18 格滚轮;收键盘的下滑(`src/lib/term-swipe.ts`,item 49)是任何往下的一划——出了 10 px 死区、竖多于横就收,屏幕高处 20 px 也收,再慢、中途停过也收,只收一次;死区以内、横多于竖、往上、先按住成了选择、键盘没起、从吧台起手的都不收(真 xterm,系统 Chrome) | 不拿 |
 | `npm run softdel` | `check-soft-delete.mjs`,iOS 系统键盘的删除键按住会一直删(`src/lib/term-soft-delete.ts`,item 35):把模拟器录下的事件(`scripts/fixtures/ios-delete.json`)重放进真 xterm,按住 40 下发 40 个 DEL、加速到删词发 ⌃W、拼音上屏不变、硬件键盘照旧、占位字符一个也不进终端;不带模块时按住只删一个(旧代码上红);以及 item 37:拼音拼到一半键盘收起(没有 compositionend)时组字被丢掉、一个字母也不进终端、下一个键干净(不带模块时下一个键会带出半截拼音)(系统 Chrome) | 不拿 |
 
 **最后那批「真连」的和上面几道之间有条分界,值得写下来**:有入口的前几道

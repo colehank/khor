@@ -110,7 +110,7 @@ import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { swipeLowers } from "@/lib/term-swipe";
-import { keyPanelEdge, keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
+import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
 
@@ -495,7 +495,9 @@ function cellAt(term: Terminal, x: number, y: number): { col: number; row: numbe
 /** How long the corner says a tmux history cannot be read (item 31). */
 const HISTORY_OUT_MS = 4000;
 
-/** Travel past which a touch is a drag, not a tap. */
+/** Travel past which a touch is a drag, not a tap — and the dead zone
+    past which a downward one lowers the keyboard (`lib/term-swipe`'s
+    `SLOP`, item 49). */
 const TAP_SLOP = 10;
 
 /** Output quiet this long, the cursor is where the program left it. */
@@ -2468,12 +2470,10 @@ export function TerminalPane({
     };
     const dragged = fingers ? () => {} : fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
-    // **The same swipe lowers khor's key panel** (UX-31; term-4's reading
-    // of item 42): the finger reaching the panel's top edge, which is
-    // where the shell ends while the foot is held.
+    // **The same swipe lowers khor's key panel** (UX-31, item 49): any
+    // downward swipe, as for the keyboard.
     const swipedPanel = swipeLowers(scrollerRef.current!, term.textarea ?? null, {
       up: keyPanelUp,
-      edge: keyPanelEdge,
       lower: lowerKeyPanel,
     });
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas, wheel: fingers ? notch : undefined });
