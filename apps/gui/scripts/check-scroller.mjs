@@ -1,4 +1,4 @@
-// The scroller gate (items 29, 30, 36, 49, 50 and 52): the terminal's history on the page's
+// The scroller gate (items 29, 30, 36, 49, 50, 52 and 61): the terminal's history on the page's
 // own scroller (`src/lib/term-scroller.ts`), driven in headless Chrome
 // against a real xterm, in the same DOM the pane builds.
 //
@@ -29,6 +29,11 @@
 //       at the bottom and lowered the keyboard settles back to the bottom
 //       once the keyboard has gone; one from up in the history, or
 //       followed by a new touch, does not.
+//   61 a. **Each swipe is read for the doctor** (`swipeFolds`' `judged`):
+//       which way and how far, the end speed, what it told the deck or
+//       which rule kept it out (short, more across than along, a press
+//       first, the keyboard up, from the bar, two fingers), and the deck
+//       before and after; a tap writes nothing.
 //   52. **「新输出」 means lines** (`src/lib/term-gain.ts`): up in the
 //       history, a prompt redrawn in place, the same after a resize, a
 //       cursor toggled, a cleared screen and tmux's status line ticking
@@ -381,6 +386,80 @@ console.log(`scroller gate: 50 fold: ${JSON.stringify(fold)}`);
 const foldWant = { down: "true", up: "false", short: "", turn: "true,false", across: "", press: "", keyboard: "", bar: "", stopped: "" };
 for (const [k, v] of Object.entries(foldWant)) {
   if (fold[k] !== v) fail(`50 ${k}: the finger told the deck ${JSON.stringify(fold[k])}, want ${JSON.stringify(v)}`);
+}
+
+// ── 61 a: each swipe's reading for the doctor ──
+const read61 = await page.evaluate(async () => {
+  const scroller = document.querySelector("#scroller");
+  let covered = false;
+  let deck = false;
+  const lines = [];
+  const stop = window.lab.swipeFolds(scroller, {
+    covered: () => covered,
+    tell: (f) => (deck = f),
+    folded: () => deck,
+    judged: (l) => lines.push(l),
+  });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const at = (id, x, y, target) => new Touch({ identifier: id, target, clientX: x, clientY: y });
+  const send = (type, touches, changed, target = scroller) =>
+    target.dispatchEvent(new TouchEvent(type, { touches, changedTouches: changed, bubbles: true, cancelable: true }));
+  const drag = async (points, target = scroller) => {
+    const [x, y] = points[0];
+    send("touchstart", [at(1, x, y, target)], [at(1, x, y, target)], target);
+    for (const [x, y, pause] of points.slice(1)) {
+      await wait(pause ?? 16);
+      send("touchmove", [at(1, x, y, target)], [at(1, x, y, target)], target);
+    }
+    const [lx, ly] = points[points.length - 1];
+    send("touchend", [], [at(1, lx, ly, target)], target);
+  };
+  const out = {};
+  const said = async (name, run) => {
+    lines.length = 0;
+    await run();
+    await wait(400);
+    out[name] = lines.join(" | ");
+  };
+  await said("tap", () => drag([[200, 200], [202, 203]]));
+  await said("short", () => drag([[200, 200], [200, 215], [200, 230]]));
+  await said("fold", () => drag([[200, 200], [200, 230], [200, 260], [200, 300]]));
+  await said("unfold", () => drag([[200, 400], [200, 385], [200, 370]]));
+  await said("across", () => drag([[20, 200], [120, 260], [300, 300]]));
+  await said("press", () => drag([[200, 200], [200, 202, 500], [200, 300]]));
+  covered = true;
+  await said("keyboard", () => drag([[200, 200], [200, 300]]));
+  covered = false;
+  const bar = document.createElement("div");
+  bar.setAttribute("data-session-bar", "");
+  scroller.appendChild(bar);
+  await said("bar", () => drag([[200, 200], [200, 300]], bar));
+  bar.remove();
+  await said("two", async () => {
+    send("touchstart", [at(1, 200, 200, scroller)], [at(1, 200, 200, scroller)]);
+    send("touchstart", [at(1, 200, 200, scroller), at(2, 260, 200, scroller)], [at(2, 260, 200, scroller)]);
+    await wait(16);
+    send("touchmove", [at(1, 200, 300, scroller), at(2, 260, 300, scroller)], [at(1, 200, 300, scroller)]);
+    send("touchend", [at(1, 200, 300, scroller)], [at(2, 260, 300, scroller)]);
+    send("touchend", [], [at(1, 200, 300, scroller)]);
+  });
+  stop();
+  return out;
+});
+console.log(`scroller gate: 61 a readings: ${JSON.stringify(read61, null, 1)}`);
+const read61Want = {
+  tap: /^$/,
+  short: /^swipe down 30 px, across 0, in \d+ ms, end [\d.]+ px\/ms, lifted; nothing: down 30 of 48; deck open → open$/,
+  fold: /^swipe down 100 px.*; told fold; deck open → folded$/,
+  unfold: /^swipe up 30 px.*; told unfold; deck folded → open$/,
+  across: /nothing: more across than along/,
+  press: /nothing: press first, \d+ ms; deck open → open$/,
+  keyboard: /nothing: keyboard or key panel up/,
+  bar: /nothing: from the bar/,
+  two: /^swipe down 100 px.*nothing: two fingers/,
+};
+for (const [k, re] of Object.entries(read61Want)) {
+  if (!re.test(read61[k] ?? "")) fail(`61 a ${k}: the reading was ${JSON.stringify(read61[k])}, want ${re}`);
 }
 
 // ── 52 ──

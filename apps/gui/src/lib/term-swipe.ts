@@ -131,6 +131,30 @@ export function swipeLowers(
   };
 }
 
+/** How long after the lift the deck is read again for the touch's line
+    (item 61): the bar has taken what it was told by then. */
+const READ_AGAIN_MS = 300;
+/** The end speed is the finger's over this much of the touch's end. */
+const END_MS = 50;
+
+/** One point of the finger's path. */
+type Mark = { t: number; x: number; y: number };
+
+/** The finger's speed down the screen over its last `END_MS`, px/ms
+    (negative up): from the newest mark at least that old to the lift. A
+    finger held still before the lift ends at 0. */
+export function endSpeed(path: Mark[]): number {
+  const last = path[path.length - 1];
+  if (!last || path.length < 2) return 0;
+  let from = path[0];
+  for (const m of path) {
+    if (last.t - m.t >= END_MS) from = m;
+    else break;
+  }
+  const dt = last.t - from.t;
+  return dt > 0 ? (last.y - from.y) / dt : 0;
+}
+
 /**
  * **The finger folds the deck, not the scroller** (item 50, the owner on
  * tmux + Claude Code, 2026-10-06: a drag down often did not fold). The
@@ -147,14 +171,27 @@ export function swipeLowers(
  * nothing — the deck folds on a later drag. The scroll rule stays beside
  * this one (reaching the bottom unfolds; a Mac's wheel folds a narrow
  * window); the two agree on direction.
+ *
+ * Each touch that left the dead zone is read for the doctor's terminal
+ * row (item 61 a,
+ * `judged`): which way and how far, how fast at the end, what it told
+ * the deck or which rule kept it out, and the deck before and after.
  */
 export function swipeFolds(
   scroller: HTMLElement,
-  /** The gates' seams: whether the foot is covered, and the telling. */
-  seams: { covered?: () => boolean; tell?: (fold: boolean) => void } = {},
+  /** The gates' seams: whether the foot is covered, and the telling;
+      whether the deck is folded, and where each touch's reading goes
+      (item 61). */
+  seams: {
+    covered?: () => boolean;
+    tell?: (fold: boolean) => void;
+    folded?: () => boolean;
+    judged?: (line: string) => void;
+  } = {},
 ): () => void {
   const covered = seams.covered ?? footCovered;
   const tell = seams.tell ?? ((fold: boolean) => tellDeck(scroller, fold));
+  const folded = seams.folded ?? (() => scroller.closest("[data-deck-folded]") !== null);
   let x0 = 0;
   let y0 = 0;
   let t0 = 0;
@@ -165,23 +202,58 @@ export function swipeFolds(
   let away = false;
   let said: boolean | null = null;
   let one = false;
+  /** **What each touch did, for the doctor's terminal row** (item 61 a:
+      the owner's flicks did not always fold, and nothing said why). The
+      first rule that took the touch out of judging, what it told, the
+      finger's path and the deck before and after. Only a touch that
+      left the dead zone is written: a tap is not a swipe. */
+  let why = "";
+  let told: boolean[] = [];
+  let path: Mark[] = [];
+  let deckWas = false;
+  let left = false;
+  const mark = (list: TouchList) => {
+    const t = list[0];
+    if (t) path.push({ t: performance.now(), x: t.clientX, y: t.clientY });
+  };
   const start = (e: TouchEvent) => {
-    one = e.touches.length === 1 && !covered() && !(e.target as Element | null)?.closest?.("[data-session-bar]");
+    // A second finger joins the touch already under way.
+    if (e.touches.length > 1 && path.length) {
+      one = false;
+      why ||= "two fingers";
+      return;
+    }
+    const bar = (e.target as Element | null)?.closest?.("[data-session-bar]");
+    const keys = covered();
+    one = e.touches.length === 1 && !keys && !bar;
+    why = e.touches.length !== 1 ? "two fingers" : bar ? "from the bar" : keys ? "keyboard or key panel up" : "";
     away = false;
+    left = false;
     said = null;
+    told = [];
+    path = [];
+    deckWas = folded();
     x0 = ax = e.touches[0]?.clientX ?? 0;
     y0 = ay = e.touches[0]?.clientY ?? 0;
     t0 = performance.now();
+    mark(e.touches);
   };
   const move = (e: TouchEvent) => {
-    if (e.touches.length !== 1) one = false;
-    if (!one) return;
+    if (!path.length) return;
+    mark(e.touches);
     const t = e.touches[0];
+    if (t && Math.hypot(t.clientX - x0, t.clientY - y0) > SLOP) left = true;
+    if (e.touches.length !== 1) {
+      one = false;
+      why ||= "two fingers";
+    }
+    if (!one) return;
     if (!away) {
       if (Math.hypot(t.clientX - x0, t.clientY - y0) <= SLOP) return;
       // A press first is a selection (`pressSelects`): nothing folds.
       if (performance.now() - t0 >= PRESS_MS) {
         one = false;
+        why = `press first, ${Math.round(performance.now() - t0)} ms`;
         return;
       }
       away = true;
@@ -199,10 +271,31 @@ export function swipeFolds(
     }
     ax = t.clientX;
     ay = t.clientY;
+    told.push(said);
     tell(said);
   };
-  const end = () => {
+  const end = (e: TouchEvent) => {
+    if (e.touches.length > 0 || !path.length) return;
+    if (e.type === "touchend") mark(e.changedTouches);
     one = false;
+    const went = path;
+    path = [];
+    if (!left || !seams.judged) return;
+    const first = went[0];
+    const last = went[went.length - 1];
+    const dy = last.y - first.y;
+    const dx = Math.abs(last.x - first.x);
+    // Judged to the end and told nothing: what the travel lacked.
+    const short =
+      dy > dx ? `down ${Math.round(dy)} of ${FOLD_AT}` : -dy > dx ? `up ${Math.round(-dy)} of ${UNFOLD_BY}` : "more across than along";
+    const verdict = told.length ? `told ${told.map((f) => (f ? "fold" : "unfold")).join(", ")}` : `nothing: ${why || short}`;
+    const line =
+      `swipe ${dy >= 0 ? "down" : "up"} ${Math.round(Math.abs(dy))} px, across ${Math.round(dx)}, ` +
+      `in ${Math.round(last.t - first.t)} ms, end ${endSpeed(went).toFixed(2)} px/ms, ` +
+      `${e.type === "touchcancel" ? "cancelled" : "lifted"}; ${verdict}`;
+    const deck = (f: boolean) => (f ? "folded" : "open");
+    const was = deckWas;
+    window.setTimeout(() => seams.judged?.(`${line}; deck ${deck(was)} → ${deck(folded())}`), READ_AGAIN_MS);
   };
   scroller.addEventListener("touchstart", start, { passive: true });
   scroller.addEventListener("touchmove", move, { passive: true });

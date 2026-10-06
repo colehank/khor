@@ -2554,8 +2554,9 @@ export function TerminalPane({
     });
     // **The finger folds the deck** (item 50): a program holding the
     // mouse takes the drag as its wheel, and the scroller's events alone
-    // did not fold it.
-    const folds = swipeFolds(scrollerRef.current!);
+    // did not fold it. Each swipe's reading goes to the doctor's
+    // terminal row (item 61 a).
+    const folds = swipeFolds(scrollerRef.current!, { judged: (line) => void faceNote(`term ${id}: ${line}`).catch(() => {}) });
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas, wheel: fingers ? notch : undefined });
     // **A tmux row, or an agent inside a tmux pane** (item 33: the owner
     // opens Claude Code's own row, not the session's): both are khor's
