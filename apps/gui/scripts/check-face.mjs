@@ -1285,7 +1285,9 @@ try {
     const a = r.request().postDataJSON() ?? {};
     minted += 1;
     const id = `t-new-${minted}`;
-    tabRows.push({ id, device: a.device ?? "", url: a.url ?? "", title: "", pinned: false });
+    // The session it was opened from, kept as the node keeps it (UX-37
+    // §1): the 附栏's 浏览器 seat lists a session's own pages by it.
+    tabRows.push({ id, device: a.device ?? "", url: a.url ?? "", title: "", pinned: false, ...(a.session ? { session: a.session } : {}) });
     tabFront = id;
     return r.fulfill({ contentType: "application/json", body: JSON.stringify(id) });
   });
@@ -4695,7 +4697,9 @@ try {
           // A preview wears a ring before its name (the audit fix plan
           // F4.7), where it wore the app's one italic until 2026-10-02.
           slope: e.querySelector("[data-tab-preview]") ? "italic" : "normal",
-          dot: e.querySelector('[data-tab-act="save"]') !== null,
+          // The unsaved ✓ is the front tab's act after the capsule now
+          // (UX-39 §7, `frontAct`): read for the tab in front.
+          dot: e.getAttribute("data-on") === "true" && document.querySelector('[data-ws-tab-strip] [data-tab-front-act][data-tab-act="save"]') !== null,
         })),
       );
     /** Put the strip back to nothing, whatever the walk left on it. */
@@ -6489,11 +6493,12 @@ try {
       await page.keyboard.press("Control+End");
       await page.keyboard.type("\n## typed\n");
       const dotted = await until(3_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab-act="save"]').count()) === 1);
-      // The pill's ✓ saves and stays on the source (UX-33); 预览 on again
-      // renders what was typed. ⚠️ 墓碑: 保存 saved and went back by itself.
-      await press('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="save"]');
+      // The front tab's ✓ saves and stays on the source (UX-33; after the
+      // capsule since UX-39 §7); 预览 on again renders what was typed.
+      // ⚠️ 墓碑: 保存 saved and went back by itself.
+      await press('[data-ws-tab-strip] [data-tab-front-act][data-tab-act="save"]');
       const saved = await until(5_000, async () => wrote.length > 0);
-      await until(3_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab][data-on="true"] [data-tab-act="reload"]').count()) === 1);
+      await until(3_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab-front-act][data-tab-act="reload"]').count()) === 1);
       await press('[data-file-face-toggle="source"]');
       const read = await until(5_000, async () => (await page.locator("[data-file-preview] h2").count()) === 1);
       const after = await page.evaluate(() => ({
@@ -22890,9 +22895,10 @@ try {
               // clips it is `[data-tab-label]` (`EditableName`'s
               // `boxData`); a plain tab's is `[data-tab-name]`.
               const name = t?.querySelector("[data-tab-label], [data-tab-name]");
-              // The third seat (UX-33) stands where the ×'s cell stood, the
-              // same cell: name before it, `--tab-close` wide, inside the tab.
-              const close = t?.querySelector("[data-tab-act]");
+              // The × on every wide pill (UX-39 §7; UX-33's third seat stood
+              // here before): name before it, `--tab-close` wide, inside the
+              // tab, shown at rest. The phone's band keeps the third seat.
+              const close = t?.querySelector("[data-tab-close]") ?? t?.querySelector("[data-tab-act]");
               if (!t || !name || !close) return { id, when, missing: true };
               const r = (el) => el.getBoundingClientRect();
               return {
@@ -22924,7 +22930,7 @@ try {
     const judge = (where, reads) => {
       for (const c of reads) {
         if (c.missing) {
-          fail(`${where}: tab ${c.id} has no [data-tab-label]/[data-tab-name] or no [data-tab-act] — the third seat is a cell of the tab (UX-33)`);
+          fail(`${where}: tab ${c.id} has no [data-tab-label]/[data-tab-name] or no [data-tab-close] — the × is a cell of the tab (UX-39 §7)`);
           continue;
         }
         if (c.nameRight > c.cellLeft + 0.5) {
@@ -22934,6 +22940,7 @@ try {
         if (c.cellRight > c.tabRight + 0.5) fail(`${where}: on tab ${c.id} the ×'s cell runs past the tab (${c.cellRight} > ${c.tabRight})`);
         if (c.when === "hover" && !c.shown) fail(`${where}: under the pointer tab ${c.id} still hides its × — 悬停时画出来`);
         if (c.on && !c.shown) fail(`${where}: the open tab ${c.id} hides its × (${c.when}) — the tab in front always shows it`);
+        if (c.when === "rest" && !c.shown) fail(`${where}: tab ${c.id} hides its × at rest — × on every wide pill, always visible (UX-39 §7)`);
         // **A tab is one line, its title** (UX-20, the owner 2026-10-05:
         // 「✳ rsync 连接…」 over 「/Users/zgh」): the directory is the row's
         // left-bottom and the pill's 「目录」, never a tab.
@@ -22991,11 +22998,13 @@ try {
       fail(`the first rows do not drag the window (${onTheRow.join("+") || "nothing at all"}) — both blanks are 顶部空白 now`);
     }
 
-    // ── (e′) UX-19 (the owner, 2026-10-05): the wide first row is the
-    //        phone's five seats across the column — the capsule's left edge
-    //        on the title's below (no window buttons in this face), its
-    //        right edge on the search circle's, 更多 its fifth seat with
-    //        the phone's menu, no circle beside it. ──
+    // ── (e′) UX-39 §8 (the owner, 2026-10-06 23:00, overriding UX-19):
+    //        the wide first row is the four landings in the glass capsule,
+    //        its left edge on the title's below (no window buttons in this
+    //        face), and 更多 a glass circle of its own after it, on the
+    //        search circle's column below (measured: both at x 292–328),
+    //        with the phone's menu. ⚠️ 墓碑 (UX-19): 更多 as the capsule's
+    //        fifth seat, the capsule's right edge on the search circle's. ──
     {
       await page.setViewportSize({ width: 1400, height: 900 });
       await open("sessions");
@@ -23008,14 +23017,16 @@ try {
         const title = r("[data-side-head] [data-list-title]") ?? r("[data-side-head] [data-pane-bar]");
         const search = r("[data-side-head] [data-search-open]") ?? r("[data-side-head] [data-search-close]") ?? r("[data-side-head] [data-pane-bar]");
         const more = document.querySelector("[data-landing-strip] [data-rail-more]");
+        const circle = r("[data-landing-pair] > [data-rail-more]");
         return {
           has: { strip: !!strip, title: !!title, search: !!search },
           seats: document.querySelectorAll("[data-landing-strip] [data-rail-item]").length,
           moreInside: !!more,
           beside: [...(document.querySelector("[data-landing-pair]")?.children ?? [])].length,
           left: strip && title ? +(strip.left - title.left).toFixed(1) : null,
-          right: strip && search ? +(strip.right - search.right).toFixed(1) : null,
-          moreRight: more && search ? +(more.getBoundingClientRect().right - search.right).toFixed(1) : null,
+          moreLeft: circle && search ? +(circle.left - search.left).toFixed(1) : null,
+          moreRight: circle && search ? +(circle.right - search.right).toFixed(1) : null,
+          after: circle && strip ? +(circle.left - strip.right).toFixed(1) : null,
         };
       });
       // The report's shots (FACE_SHOTS): the web face (fullscreen is the
@@ -23061,14 +23072,16 @@ try {
       );
       await page.keyboard.press("Escape");
       await wait(200);
-      console.log(`UX-19 · wide first row: ${JSON.stringify(row)}; 更多's menu ${JSON.stringify(menu)}`);
-      if (row.seats !== 5 || !row.moreInside || row.beside !== 1) {
-        fail(`UX-19 · the wide first row holds ${row.seats} seat(s), 更多 inside ${row.moreInside}, ${row.beside} piece(s) in the row — five seats, 更多 the fifth, nothing beside`);
+      console.log(`UX-39 §8 · wide first row: ${JSON.stringify(row)}; 更多's menu ${JSON.stringify(menu)}`);
+      if (row.seats !== 4 || row.moreInside || row.beside !== 2) {
+        fail(`UX-39 §8 · the wide first row holds ${row.seats} seat(s) in the capsule, 更多 inside ${row.moreInside}, ${row.beside} piece(s) in the row — four in the capsule, 更多 a circle after it`);
       }
-      if (row.left === null || Math.abs(row.left) > 1 || row.right === null || Math.abs(row.right) > 1) {
-        fail(`UX-19 · the capsule runs ${row.left} past the title's left and ${row.right} past the search circle's right — both 0 (±1)`);
+      if (row.left === null || Math.abs(row.left) > 1) fail(`UX-39 §8 · the capsule starts ${row.left} off the title's left — 0 (±1)`);
+      if (row.moreLeft === null || Math.abs(row.moreLeft) > 1 || Math.abs(row.moreRight) > 1) {
+        fail(`UX-39 §8 · 更多's circle is ${row.moreLeft} / ${row.moreRight} off the search circle's column — the same x (±1)`);
       }
-      if (menu.join(",") !== "me,browser,settings,doctor") fail(`UX-19 · 更多's menu reads ${JSON.stringify(menu)} — 我的 khor, 浏览器, 设置, 诊断`);
+      if (row.after === null || row.after < 0) fail(`UX-39 §8 · 更多's circle starts ${row.after} after the capsule's end — after it, not over it`);
+      if (menu.join(",") !== "me,browser,settings,doctor") fail(`UX-39 §8 · 更多's menu reads ${JSON.stringify(menu)} — 我的 khor, 浏览器, 设置, 诊断`);
       // The settings window (`?face=settings`) is the settings page alone.
       // It shares this origin's storage, and a window that narrow puts the
       // list away — so what the walk left is put back after it.
@@ -29909,13 +29922,8 @@ try {
             slot: document.querySelectorAll("[data-deck-pill] [data-pill-slot]").length,
             progress: vis("[data-deck-pill] [data-pill-progress]"),
             status: vis("[data-deck-pill] [data-pill-status]"),
-            // UX-36: the session's day in the slot at rest.
-            log: vis("[data-deck-pill] [data-pill-log] [data-day-ruler-line]"),
-            logBox: (() => {
-              const l = r("[data-deck-pill] [data-pill-log] [data-day-ruler-line]");
-              const p = r("[data-deck-pill]");
-              return l && p ? { left: l.left - p.left, right: p.right - l.right, bottom: l.bottom, h: l.height } : null;
-            })(),
+            // UX-39 §4: no day under any pill (UX-36's line is over).
+            log: document.querySelectorAll("[data-deck-pill] [data-pill-log], [data-deck-pill] [data-day-ruler-line]").length,
             rowBottom: r("[data-deck-pill-row]")?.bottom ?? null,
             inPill: document.querySelectorAll('[data-deck-pill] [data-statusbar][data-at="pill"]').length,
             atFoot: document.querySelectorAll('[data-statusbar][data-at="foot"]').length,
@@ -29986,17 +29994,13 @@ try {
       const went = await until(10_000, async () => (await slot()).inPill === 0);
       const gone = await slot();
       console.log(`bar v · quiet ${JSON.stringify(quiet)}; saying ${JSON.stringify(saying)}; loading ${JSON.stringify(loading)}; after ${JSON.stringify(after)}; gone ${JSON.stringify(gone)}`);
-      // **The log hangs under the session pill, always** (UX-36): the line
-      // at rest along the first row's foot, as wide as the pill; above a
-      // status strip; given up to a reload's line while it runs; back after.
-      if (quiet.log !== 1 || !quiet.logBox || Math.abs(quiet.logBox.left) > 0.5 || Math.abs(quiet.logBox.right) > 0.5 || Math.abs(quiet.logBox.bottom - quiet.rowBottom) > 0.5) {
-        fail(`bar v · at rest the session pill's day line reads ${shown(quiet.log)} ${shown(quiet.logBox)} — one line along the pill's first row's foot, as wide as the pill (UX-36; SessionBar PillSlot log)`);
+      // **No day under the pill** (UX-39 §4, the owner 2026-10-06 22:10:
+      // 「药丸下面就不绘制 session 的日志了」): at rest, under a status
+      // strip, during a reload and after it. ⚠️ 墓碑 (UX-36): the line
+      // along the pill's first row's foot.
+      for (const [when, at] of [["at rest", quiet], ["with a status strip", saying], ["during the reload", loading], ["after the reload", after]]) {
+        if (at.log !== 0) fail(`bar v · ${when} the session pill draws ${at.log} day line(s) — no day under any pill (UX-39 §4)`);
       }
-      if (saying.log !== 1 || !saying.logBox || Math.abs(saying.logBox.bottom - saying.rowBottom) > 0.5) {
-        fail(`bar v · with a status strip the day line reads ${shown(saying.logBox)} against the row's foot ${saying.rowBottom} — the strip hangs below the line`);
-      }
-      if (loading.log !== 0) fail(`bar v · during the reload the day line is still drawn (${loading.log}) — progress takes the slot while it runs (UX-36 §2)`);
-      if (after.log !== 1) fail(`bar v · after the reload the day line is ${after.log} — the line is back when the run ends`);
       if (quiet.slot !== 1 || quiet.progress || quiet.status || quiet.atFoot || Math.abs(quiet.pill - quiet.btn) > 0.5) {
         fail(`bar v · at rest the pill reads ${JSON.stringify(quiet)} — one empty slot, the pill one row (${quiet.btn}), no strip at the foot`);
       }
@@ -30582,53 +30586,83 @@ try {
     }
 
     // ── p. the terminal pill opens the session's 附栏 as a sheet (UX-17
-    //       → UX-30 §6): the five seats and the ruler, 最近 first; 工作区
-    //       is the listing at the shell's directory (OSC 7), else where
-    //       the session started; the seat is kept per session. Every
-    //       session's pill opens it, a conversation's too. ──
+    //       → UX-30 §6 → UX-39): one sheet of paper — the app's ground, a
+    //       top rim, the page behind under `--sheet-scrim` — with one head
+    //       (the session's face and title, the seat's icon · noun · ⌄ as
+    //       a native picker); 最近 first, 过去24小时 its first row; one page
+    //       per seat, nothing back to a whole; 工作区 is the tree of the
+    //       workspace holding the shell's directory (OSC 7), else that
+    //       directory; the seat is kept per session. Every session's pill
+    //       opens it, a conversation's too. ──
     {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await wait(300);
       if (!(await openRow(terms[2].id)) || !(await xtermUp())) {
         fail("probe dead: bar p · a terminal never opened");
       } else {
+        const me = terms[2].id;
+        const sheetSel = "[data-place-sheet]";
         const sheet = async () => {
-          askedLs.length = 0;
           await press("[data-session-deck] button[data-deck-title]");
-          await until(3_000, async () => (await count("[data-place-sheet]")) === 1);
+          await until(3_000, async () => (await count(sheetSel)) === 1);
           await wait(600);
-          return page.evaluate(() => ({
-            sheet: document.querySelectorAll("[data-place-sheet]").length,
-            seats: [...document.querySelectorAll("[data-place-sheet] [data-col-seat]")].map((e) => e.dataset.colSeat).join(" "),
-            on: document.querySelector('[data-place-sheet] [data-col-seat][data-on="true"]')?.getAttribute("data-col-seat") ?? null,
-            // 今天's own bar (UX-37 §5) is the row's, not a ruler.
-            ruler: document.querySelectorAll("[data-place-sheet] [data-day-ruler], [data-place-sheet] [data-day-ruler-line]:not([data-day-today] *)").length,
-            today: document.querySelectorAll("[data-place-sheet] [data-day-today]").length,
-            page: document.querySelectorAll("[data-place-sheet] [data-side-page]").length,
-          }));
+          return page.evaluate(() => {
+            const s = document.querySelector("[data-place-sheet]");
+            const head = s?.querySelector("[data-side-head]");
+            const scroller = s?.querySelector("[data-side-recent] [data-nav-clear]");
+            return {
+              sheet: document.querySelectorAll("[data-place-sheet]").length,
+              who: head?.querySelector("[data-side-who]")?.textContent ?? null,
+              options: [...(head?.querySelectorAll("[data-seat-pick] select option") ?? [])].map((o) => o.value).join(" "),
+              on: head?.querySelector("[data-seat-pick] select")?.value ?? null,
+              // ⚠️ 墓碑 (UX-30 §2, UX-37 §4): the seats as a capsule or a row.
+              seatsRow: s?.querySelectorAll("[data-col-seats], [data-col-seat], [data-side-foot]").length ?? 0,
+              lines: s?.querySelectorAll("[data-day-ruler], [data-day-ruler-line]").length ?? 0,
+              first: scroller?.firstElementChild?.hasAttribute("data-day-today-row") ?? null,
+              page: s?.querySelectorAll("[data-side-page]").length ?? 0,
+            };
+          });
         };
         const shut = async () => {
           await page.keyboard.press("Escape");
-          await until(2_000, async () => (await count("[data-place-sheet]")) === 0);
+          await until(2_000, async () => (await count(sheetSel)) === 0);
         };
+        const pick = async (seat) => {
+          await page.selectOption(`${sheetSel} [data-side-head] [data-seat-pick] select`, seat);
+          await wait(700);
+        };
+        const seatNow = () => page.evaluate(() => document.querySelector("[data-place-sheet] [data-seat-pick] select")?.value ?? null);
+        const rootNow = () => page.evaluate(() => document.querySelector("[data-place-sheet] [data-side-workspace]")?.getAttribute("data-root") ?? null);
         const first = await sheet();
-        // ── UX-37 §3–4: the sheet opens at half the screen; the five
-        //    seats are one flat row on the screen's foot, inside the
-        //    sheet; the deck is away (hidden in place, so the terminal
-        //    keeps its height); the grabber drags it to full and back,
-        //    a release under half puts it away. ──
+        // ── UX-37 §3 and UX-39 §1: half the screen; the paper is the app's
+        //    ground with a rim on top, the grabber inside it, the page
+        //    behind under the scrim; the deck is away (hidden in place, so
+        //    the terminal keeps its height); the grabber drags it to full
+        //    and back, a release under half puts it away. ──
         const shape = await page.evaluate(() => {
           const sheet = document.querySelector("[data-place-sheet]");
-          const foot = document.querySelector("[data-place-sheet] [data-side-foot]");
           const bar = document.querySelector("[data-session-bar]");
+          const scrim = document.querySelector('[data-slot="dialog-overlay"]');
           const r = (e) => e?.getBoundingClientRect() ?? null;
+          const c = document.createElement("canvas").getContext("2d");
+          const norm = (v) => {
+            c.fillStyle = "#000";
+            c.fillStyle = v;
+            return String(c.fillStyle);
+          };
+          const root = getComputedStyle(document.documentElement);
+          const head = r(sheet?.querySelector("[data-side-head]"));
           return {
             vh: window.innerHeight,
             detent: sheet?.getAttribute("data-detent") ?? null,
             h: Math.round(r(sheet)?.height ?? 0),
-            footBottom: Math.round(r(foot)?.bottom ?? 0),
-            footSeats: document.querySelectorAll("[data-place-sheet] [data-side-foot] [data-col-seat]").length,
-            topCapsule: document.querySelectorAll("[data-place-sheet] [data-side-head]").length,
+            ground: sheet ? norm(getComputedStyle(sheet).backgroundColor) : null,
+            appGround: norm(root.getPropertyValue("--background").trim()),
+            rim: sheet ? parseFloat(getComputedStyle(sheet).borderTopWidth) : 0,
+            scrim: scrim ? norm(getComputedStyle(scrim).backgroundColor) : null,
+            scrimWant: norm(root.getPropertyValue("--sheet-scrim").trim()),
+            grabIn: !!sheet?.querySelector("[data-place-grab]"),
+            headTop: head && sheet ? Math.round(head.top - r(sheet).top) : null,
             deck: bar ? `${bar.hasAttribute("data-deck-away")} ${getComputedStyle(bar).visibility}` : null,
           };
         });
@@ -30654,12 +30688,19 @@ try {
           const bar = document.querySelector("[data-session-bar]");
           return bar ? `${bar.hasAttribute("data-deck-away")} ${getComputedStyle(bar).visibility}` : null;
         });
-        console.log(`bar p · UX-37 shape ${shown(shape)}; up ${shown(toFull)}; down ${shown(toHalf)}; a short pull ${shown(spring)}; a long pull ${shown(away)}; the deck after ${deckBack}`);
+        console.log(`bar p · first ${shown(first)}; shape ${shown(shape)}; up ${shown(toFull)}; down ${shown(toHalf)}; a short pull ${shown(spring)}; a long pull ${shown(away)}; the deck after ${deckBack}`);
+        if (first.sheet !== 1 || first.options !== "recent workspace browser machine quota" || first.seatsRow !== 0 || first.lines !== 0 || first.page !== 1) {
+          fail(`bar p · the pill opened ${shown(first)} — one sheet, one head whose picker offers the five seats, no row or capsule of seats, no day line (UX-39 §2, §4)`);
+        }
+        if (first.who !== terms[2].title) fail(`bar p · the sheet's head says ${shown(first.who)} at its left — the session's face and title (UX-39 §2)`);
+        if (first.on !== "recent") fail(`bar p · a fresh session's sheet lands on ${shown(first.on)} — 最近 is the landing`);
+        if (first.first !== true) fail("bar p · 最近's first row is not 过去24小时 (UX-39 §4)");
         const near = (h, share) => Math.abs(h - share * shape.vh) <= 2;
         if (shape.detent !== "half" || !near(shape.h, 0.5)) fail(`bar p · the pill opened the sheet at ${shown(shape)} — half the screen (UX-37 §3)`);
-        if (shape.footSeats !== 5 || shape.topCapsule !== 0 || Math.abs(shape.footBottom - shape.vh) > 1) {
-          fail(`bar p · the seats stand ${shown(shape)} — one row of five at the sheet's foot on the screen's foot, no capsule at the top (UX-37 §4)`);
-        }
+        if (shape.ground !== shape.appGround) fail(`bar p · the sheet's ground is ${shape.ground}, the app's ${shape.appGround} — one sheet of paper, no popover grey (UX-39 §1)`);
+        if (!(shape.rim > 0)) fail(`bar p · the sheet has no top rim (${shape.rim}) (UX-39 §1)`);
+        if (shape.scrim !== shape.scrimWant || shape.scrim === "rgba(0, 0, 0, 0)") fail(`bar p · the page behind is under ${shape.scrim}, --sheet-scrim is ${shape.scrimWant} (UX-39 §1)`);
+        if (!shape.grabIn) fail("bar p · the grabber is not inside the paper (UX-39 §1)");
         if (shape.deck !== "true hidden") fail(`bar p · with the sheet up the deck reads ${shape.deck} — it steps away (UX-37 §4)`);
         if (toFull?.detent !== "full" || !near(toFull.h, 0.92)) fail(`bar p · a pull up on the grabber left ${shown(toFull)} — the full detent (UX-37 §3)`);
         if (toHalf?.detent !== "half" || !near(toHalf.h, 0.5)) fail(`bar p · a pull down from full left ${shown(toHalf)} — back to half`);
@@ -30667,16 +30708,30 @@ try {
         if (away !== null) fail(`bar p · a pull most of the way down left ${shown(away)} — released under half it goes away`);
         if (deckBack !== "false visible") fail(`bar p · the sheet gone, the deck reads ${deckBack} — it comes back`);
         if (away !== null) await shut();
+        // ── UX-39 §1–3, per seat by the picker: no second ground in any
+        //    seat (the paper), rows edge to edge (UX-37 §2), the head's
+        //    noun the seat's under its own glyph, no ‹ (one page per seat),
+        //    机器's first line the machine's name; 额度 draws no landing
+        //    head (UX-37 bug B). ──
+        const t0 = Date.now();
+        const recents = {
+          page: [
+            { device: "a".repeat(64), name: "gate", place: "https://mine.example/", at_ms: t0 - 60_000, session: me },
+            { device: "a".repeat(64), name: "gate", place: "https://other.example/", at_ms: t0 - 90_000, session: null },
+          ],
+          file: [
+            { device: "a".repeat(64), name: "gate", place: "/home/gate/work/out.md", at_ms: t0 - 30_000, session: me },
+            { device: "a".repeat(64), name: "gate", place: "/home/gate/else.md", at_ms: t0 - 40_000, session: "tui/someone-else" },
+          ],
+          dir: [],
+        };
+        const recentsRoute = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(recents[r.request().postDataJSON()?.kind] ?? []) });
+        await page.route("**/recents", recentsRoute);
         await sheet();
-        // ── UX-37 §2: rows run edge to edge — a row's box is the sheet's
-        //    width, only its face and words keep the page inset — and no
-        //    seat's page wears a ground of its own (the sheet is the
-        //    card); 额度 draws no landing head (bug B: 「额度页面布局有问题，
-        //    有背景」). Every seat is looked at. ──
+        const nouns = { recent: "最近", workspace: "工作区", browser: "浏览器", machine: "机器", quota: "额度" };
         const grounds = {};
-        for (const s of ["recent", "workspace", "browser", "machine", "quota"]) {
-          await press(`[data-place-sheet] [data-col-seat="${s}"]`);
-          await wait(700);
+        for (const s of ["workspace", "browser", "machine", "quota", "recent"]) {
+          await pick(s);
           grounds[s] = await page.evaluate(() => {
             const sheet = document.querySelector("[data-place-sheet]");
             const pg = document.querySelector("[data-place-sheet] [data-side-page]");
@@ -30695,138 +30750,90 @@ try {
             const row = pg.querySelector("[data-side-row]")?.getBoundingClientRect() ?? null;
             const slot = pg.querySelector("[data-side-row] [data-side-face-slot]")?.getBoundingClientRect() ?? null;
             const inset = parseFloat(getComputedStyle(pg).getPropertyValue("--page-inset"));
+            const head = sheet.querySelector("[data-side-head]");
             return {
               odd,
               head: pg.querySelectorAll("[data-pane-bar]").length,
               row: row && { l: Math.round(row.left - box.left), r: Math.round(box.right - row.right), face: Math.round(slot.left - row.left), inset },
+              noun: head?.querySelector("[data-seat-noun]")?.textContent ?? null,
+              glyph: !!head?.querySelector("[data-seat-glyph] svg"),
+              backs: pg.querySelectorAll("[data-seat-back], [data-back]").length,
+              name: pg.querySelector("[data-head-name]")?.textContent?.trim() ?? null,
             };
           });
         }
-        console.log(`bar p · UX-37 §2 ${shown(grounds)}`);
+        console.log(`bar p · the seats ${shown(grounds)}`);
         for (const [s, g] of Object.entries(grounds)) {
           if (g === null) {
             fail(`probe dead: bar p · the ${s} seat drew no page in the sheet`);
             continue;
           }
-          if (g.odd.length) fail(`bar p · the ${s} seat's page wears a ground of its own: ${g.odd.slice(0, 3).join("; ")} — the sheet is the card (UX-37 §2)`);
+          if (g.odd.length) fail(`bar p · the ${s} seat's page wears a ground of its own: ${g.odd.slice(0, 3).join("; ")} — one sheet of paper (UX-39 §1)`);
           if (g.row && (g.row.l !== 0 || g.row.r !== 0 || g.row.face !== g.row.inset)) {
             fail(`bar p · the ${s} seat's row stands ${shown(g.row)} — its box reaches both edges, its face the page inset in (UX-37 §2)`);
           }
+          if (g.noun !== nouns[s] || !g.glyph) fail(`bar p · the ${s} seat's head says ${shown(g.noun)} with glyph ${g.glyph} — the seat's noun under its own icon (UX-39 §2)`);
+          if (g.backs !== 0) fail(`bar p · the ${s} seat, entered by the picker, draws ${g.backs} way(s) back — nothing back to a whole (UX-39 §3)`);
         }
+        if (grounds.machine && grounds.machine.name !== "gate") fail(`bar p · 机器's first line is ${shown(grounds.machine.name)} — the machine's name (UX-39 §3)`);
         if (grounds.quota?.head !== 0) fail(`bar p · the 额度 seat draws the landing's head (${grounds.quota?.head}) — the rows alone (UX-37 bug B)`);
-        // ── UX-37 §1: every seat lands on this session's slice, ‹ goes to
-        //    the whole, a seat pressed again lands on the slice. 最近's
-        //    slice is the records that say this session; the whole is
-        //    every row. 工作区's ‹ climbs to the root, then the
-        //    workspaces. ──
+        // ── UX-39 §3–4: 最近 is this session's slice alone, no ‹ to a
+        //    whole; a file opened from it wears ‹ back to 最近. ──
         {
-          const me = terms[2].id;
-          const t0 = Date.now();
-          const recents = {
-            page: [
-              { device: "a".repeat(64), name: "gate", place: "https://mine.example/", at_ms: t0 - 60_000, session: me },
-              { device: "a".repeat(64), name: "gate", place: "https://other.example/", at_ms: t0 - 90_000, session: null },
-            ],
-            file: [
-              { device: "a".repeat(64), name: "gate", place: "/home/gate/work/out.md", at_ms: t0 - 30_000, session: me },
-              { device: "a".repeat(64), name: "gate", place: "/home/gate/else.md", at_ms: t0 - 40_000, session: "tui/someone-else" },
-            ],
-            dir: [],
-          };
-          await page.route("**/recents", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(recents[r.request().postDataJSON()?.kind] ?? []) }));
           const rowsNow = () =>
             page.evaluate(() => ({
-              slice: document.querySelector("[data-place-sheet] [data-recent-slice]")?.getAttribute("data-recent-slice") ?? null,
               back: document.querySelectorAll("[data-place-sheet] [data-side-page] [data-seat-back]").length,
               rows: [...document.querySelectorAll("[data-place-sheet] [data-recent-row]")].map((e) => e.getAttribute("data-recent-row")).sort(),
             }));
-          await press('[data-place-sheet] [data-col-seat="recent"]');
           await until(3_000, async () => (await rowsNow()).rows.length > 0);
           const here = await rowsNow();
-          await press("[data-place-sheet] [data-side-page] [data-seat-back]");
-          await until(2_000, async () => (await rowsNow()).slice === "all");
-          const all = await rowsNow();
-          await press('[data-place-sheet] [data-col-seat="machine"]');
-          await wait(400);
-          await press('[data-place-sheet] [data-col-seat="recent"]');
-          await until(2_000, async () => (await rowsNow()).slice === "here");
-          const again = await rowsNow();
-          await page.unroute("**/recents");
-          console.log(`bar p · UX-37 §1 最近: slice ${shown(here)}; ‹ ${shown(all)}; re-entered ${shown(again)}`);
           const want = [`file ${"a".repeat(64)} /home/gate/work/out.md`, `page ${"a".repeat(64)} https://mine.example/`];
-          if (here.slice !== "here" || here.back !== 1 || shown(here.rows) !== shown(want)) {
-            fail(`bar p · 最近 landed on ${shown(here)} — this session's records alone, under ‹ (UX-37 §1)`);
-          }
-          if (all.slice !== "all" || all.back !== 0 || all.rows.length < 4) fail(`bar p · ‹ from 最近's slice reads ${shown(all)} — every row, no ‹`);
-          if (again.slice !== "here") fail(`bar p · 最近 pressed again reads ${shown(again)} — a seat lands on its slice`);
-          // The other seats' ‹: browser to every tab, machine to the list,
-          // the workspace up to the root and then the workspaces.
-          const whole = {};
-          await press('[data-place-sheet] [data-col-seat="browser"]');
-          await wait(500);
-          whole.browser = [await page.evaluate(() => document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null)];
-          await press("[data-place-sheet] [data-side-page] [data-seat-back]");
-          await wait(400);
-          whole.browser.push(await page.evaluate(() => document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null));
-          // A tab in the whole opens its page in place, without a deck (§6),
-          // and the page is framed in the sheet, not taken for covered by
-          // it (bug A: the sheet is a dialog, and the page inside it hid).
-          await page.evaluate(() => {
-            window.__placed = [];
-            document.addEventListener("khor:page-place", (e) => window.__placed.push(e.detail));
-          });
-          if (await press("[data-place-sheet] [data-browse-bare] [data-side-row] [data-side-open]")) {
-            await wait(500);
-            const placed = await page.evaluate(() => window.__placed.at(-1) ?? null);
-            const body = await page.evaluate(() => document.querySelector('[data-place-sheet] [data-browse-bare="page"] [data-nav-clear]')?.getBoundingClientRect().top ?? null);
-            console.log(`bar p · UX-37 bug A the page in the sheet placed ${shown(placed)}, its box at ${body}`);
-            if (!placed || placed.covered || placed.h < 24) fail(`bar p · the page opened in the sheet was placed ${shown(placed)} — framed to the sheet's body, not taken for covered by the sheet it is in (UX-37 bug A)`);
-            whole.browser.push(
-              await page.evaluate(() => {
-                const pg = document.querySelector('[data-place-sheet] [data-browse-bare="page"]');
-                return pg ? `page head ${pg.querySelectorAll("[data-seat-head]").length} deck ${document.querySelectorAll("[data-place-sheet] [data-session-deck]").length}` : null;
-              }),
-            );
-          }
-          await press('[data-place-sheet] [data-col-seat="machine"]');
-          await wait(500);
-          await press("[data-place-sheet] [data-side-page] [data-back]");
-          await wait(400);
-          whole.machine = await count("[data-place-sheet] [data-side-machines]");
-          await press('[data-place-sheet] [data-col-seat="workspace"]');
+          console.log(`bar p · 最近 ${shown(here)}`);
+          if (here.back !== 0 || shown(here.rows) !== shown(want)) fail(`bar p · 最近 reads ${shown(here)} — this session's records alone, no ‹ (UX-39 §3)`);
+          await press(`[data-place-sheet] [data-recent-row][data-recent-kind="file"] [data-side-open]`);
+          await wait(900);
+          const opened = await page.evaluate(() => ({
+            seat: document.querySelector("[data-place-sheet] [data-seat-pick] select")?.value ?? null,
+            file: document.querySelector("[data-place-sheet] [data-file-page] [data-seat-title]")?.textContent ?? null,
+            back: document.querySelectorAll("[data-place-sheet] [data-file-page] [data-seat-back]").length,
+          }));
+          await press("[data-place-sheet] [data-file-page] [data-seat-back]");
           await wait(600);
-          let climbs = 0;
-          for (; climbs < 8 && !(await count("[data-place-sheet] [data-side-workspaces]")); climbs++) {
-            if (!(await press("[data-place-sheet] [data-up]"))) break;
-            await wait(400);
-          }
-          whole.workspace = { climbs, list: await count("[data-place-sheet] [data-side-workspaces]") };
-          console.log(`bar p · UX-37 §1 the wholes ${shown(whole)}`);
-          if (shown(whole.browser.slice(0, 2)) !== shown(["here", "all"])) fail(`bar p · the browser seat read ${shown(whole.browser)} — this session's pages, ‹ every tab`);
-          if (whole.browser.length > 2 && whole.browser[2] !== "page head 1 deck 0") fail(`bar p · a page opened in the sheet reads ${whole.browser[2]} — ‹ · host · the page, no deck (UX-37 §6)`);
-          if (whole.machine !== 1) fail("bar p · ‹ on the machine's card did not reach the machines (UX-37 §1)");
-          // /home/gate/work → /home/gate → /home → / → the workspaces.
-          if (whole.workspace.list !== 1 || whole.workspace.climbs !== 4) fail(`bar p · 工作区's ‹ read ${shown(whole.workspace)} — up to the root, then the workspaces (UX-37 §1)`);
-          // A file read in the 附栏 is written down as this session's:
-          // the record is what the slice is made of.
+          const backTo = await seatNow();
+          console.log(`bar p · a file from 最近 ${shown(opened)}, its ‹ reached ${backTo}`);
+          if (opened.file !== "out.md" || opened.back !== 1) fail(`bar p · a file row of 最近 opened ${shown(opened)} — its page in place with ‹ (UX-39 §3)`);
+          if (backTo !== "recent") fail(`bar p · ‹ on a file opened from 最近 reached ${backTo} — back to 最近 (UX-39 §3)`);
+        }
+        // ── UX-39 §5: 工作区 is the tree; the session's directory holds no
+        //    workspace here, so it is the ceiling, with nothing above; a
+        //    file read from it is written down as this session's, opens as
+        //    the page without a deck (UX-37 §6), and its ‹ is the tree's. ──
+        {
           const visits = [];
           await page.route("**/recent_visit", (r) => {
             visits.push(r.request().postDataJSON() ?? {});
             return r.fulfill({ contentType: "application/json", body: "null" });
           });
-          await press('[data-place-sheet] [data-col-seat="workspace"]');
-          await wait(600);
-          const file = page.locator("[data-place-sheet] [data-files-list] button", { hasText: /\.[a-z]{2,4}$/ }).first();
-          const named = (await file.count()) ? ((await file.textContent()) ?? "").trim() : null;
+          await pick("workspace");
+          await wait(500);
+          const tree = await page.evaluate(() => ({
+            root: document.querySelector("[data-place-sheet] [data-side-workspace]")?.getAttribute("data-root") ?? null,
+            tree: document.querySelectorAll("[data-place-sheet] [data-side-workspace] [data-file-tree]").length,
+            up: document.querySelectorAll("[data-place-sheet] [data-up], [data-place-sheet] [data-seat-back]").length,
+          }));
+          console.log(`bar p · 工作区 ${shown(tree)}`);
+          if (tree.root !== "/home/gate/work" || tree.tree !== 1 || tree.up !== 0) {
+            fail(`bar p · 工作区 reads ${shown(tree)} — the tree, its ceiling where the session is (/home/gate/work, in no workspace), nothing above (UX-39 §5)`);
+          }
+          const file = page.locator("[data-place-sheet] [data-side-workspace] [data-file]").first();
+          const named = (await file.count()) ? ((await file.locator("[data-file-name]").first().textContent()) ?? "").trim() : null;
           if (named) await file.click();
           await until(2_000, async () => visits.some((v) => v.kind === "file"));
           await page.unroute("**/recent_visit");
           const read = visits.find((v) => v.kind === "file") ?? null;
-          console.log(`bar p · UX-37 §1 a file read in the 附栏 (${named}) wrote ${shown(read)}`);
-          if (named === null) fail("probe dead: bar p · the 工作区 seat listed no file to read");
+          console.log(`bar p · a file read in the 附栏 (${named}) wrote ${shown(read)}`);
+          if (named === null) fail("probe dead: bar p · the 工作区 tree listed no file to read");
           else if (read?.session !== me || !String(read?.place ?? "").endsWith(named)) fail(`bar p · reading ${named} in the 附栏 wrote ${shown(read)} — a visit from session ${me} (UX-37 §1)`);
-          // ── UX-37 §6: the file page in the sheet wears no deck: ‹ · its
-          //    name · the content, 「…」 in the head. ──
           const filePage = await page.evaluate(() => {
             const fp = document.querySelector("[data-place-sheet] [data-file-page]");
             return fp
@@ -30838,28 +30845,37 @@ try {
                 }
               : null;
           });
-          console.log(`bar p · UX-37 §6 the file page in the sheet ${shown(filePage)}`);
+          console.log(`bar p · the file page in the sheet ${shown(filePage)}`);
           if (!filePage || filePage.head !== 1 || filePage.title !== named || filePage.more !== 1 || filePage.deck !== 0) {
             fail(`bar p · the file page in the sheet reads ${shown(filePage)} — ‹ · ${named} · the content, 「…」 in its head, no deck (UX-37 §6)`);
           }
-          if (await count("[data-place-sheet] [data-files-page]")) await press("[data-place-sheet] [data-file-page] [data-seat-back]");
-          // ── UX-37 addendum A1: a path or a URL tapped in the terminal
-          //    opens in the half sheet — a file as the 工作区 seat's file
-          //    page, a directory as its listing, a URL as the 浏览器 seat's
-          //    page — and the terminal stays; the file page's ‹ is the
-          //    seat's own (back to the listing). ⚠️ 墓碑: a tap opened the
-          //    file in the main area. ──
+          await press("[data-place-sheet] [data-file-page] [data-seat-back]");
+          await wait(400);
+          if ((await count("[data-place-sheet] [data-files-page]")) !== 0 || (await seatNow()) !== "workspace") fail("bar p · ‹ on a file opened from the tree did not go back to the tree (UX-39 §3)");
+        }
+        // ── UX-37 addendum A1: a path or a URL tapped in the terminal opens
+        //    in the half sheet — a file as the 工作区 seat's file page (its
+        //    ‹ the tree's), a directory as that directory's tree, a URL as
+        //    the 浏览器 seat's page, framed in the sheet (bug A) without a
+        //    deck, its ‹ the seat's list of this session's pages. ──
+        {
           await shut();
+          await page.evaluate(() => {
+            window.__placed = [];
+            document.addEventListener("khor:page-place", (e) => window.__placed.push(e.detail));
+          });
           const tapped = async (kind, detail) => {
             await page.evaluate(([k, d]) => window.dispatchEvent(new CustomEvent(k, { detail: d })), [kind, detail]);
-            await until(3_000, async () => (await count("[data-place-sheet]")) === 1);
+            await until(3_000, async () => (await count(sheetSel)) === 1);
             await wait(800);
             return page.evaluate(() => ({
               sheet: document.querySelector("[data-place-sheet]")?.getAttribute("data-detent") ?? null,
-              seat: document.querySelector('[data-place-sheet] [data-col-seat][data-on="true"]')?.getAttribute("data-col-seat") ?? null,
+              seat: document.querySelector("[data-place-sheet] [data-seat-pick] select")?.value ?? null,
               file: document.querySelector("[data-place-sheet] [data-file-page] [data-seat-title]")?.textContent ?? null,
-              here: document.querySelector("[data-place-sheet] [data-files-here]")?.textContent ?? null,
+              root: document.querySelector("[data-place-sheet] [data-side-workspace]")?.getAttribute("data-root") ?? null,
               page: document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null,
+              pageHead: document.querySelectorAll('[data-place-sheet] [data-browse-bare="page"] [data-seat-head]').length,
+              deck: document.querySelectorAll("[data-place-sheet] [data-session-deck]").length,
               terminal: !!document.querySelector("[data-kept-terminal][data-active] [data-terminal]"),
               mainFile: document.querySelectorAll("[data-file-page]:not([data-place-sheet] *)").length,
             }));
@@ -30867,40 +30883,53 @@ try {
           const aFile = await tapped("khor:open-path", { machine: "gate", path: "/home/gate/work/notes.md", dir: false, line: null });
           await press("[data-place-sheet] [data-file-page] [data-seat-back]");
           await wait(500);
-          const fileBack = await page.evaluate(() => document.querySelector("[data-place-sheet] [data-files-here]")?.textContent ?? null);
+          const fileBack = { tree: await count("[data-place-sheet] [data-side-workspace] [data-file-tree]"), page: await count("[data-place-sheet] [data-files-page]") };
           await shut();
           const aDir = await tapped("khor:open-path", { machine: "gate", path: "/home/gate/work/src", dir: true, line: null });
           await shut();
-          const aUrl = await tapped("khor:open-url", { machine: "", url: "https://tapped.example/" });
+          // Printed by a terminal on another machine: the page goes out
+          // through it (a tab with a device, so its page is drawn).
+          const aUrl = await tapped("khor:open-url", { machine: "peer", url: "https://tapped.example/" });
+          // The page the URL opened (another pane may say where its own
+          // page is meanwhile).
+          await until(3_000, () => page.evaluate(() => window.__placed.some((p) => String(p.tab).startsWith("t-new-"))));
+          const placed = await page.evaluate(() => window.__placed.filter((p) => String(p.tab).startsWith("t-new-")).at(-1) ?? null);
+          const pageTitle = await page.evaluate(() => document.querySelector('[data-place-sheet] [data-browse-bare="page"] [data-seat-title]')?.textContent ?? null);
+          await press("[data-place-sheet] [data-browse-bare] [data-seat-back]");
+          await wait(500);
+          const urlBack = await page.evaluate(() => ({
+            list: document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null,
+            rows: document.querySelectorAll("[data-place-sheet] [data-browse-bare] [data-switch-tab]").length,
+            back: document.querySelectorAll("[data-place-sheet] [data-seat-back]").length,
+          }));
           await shut();
-          console.log(`bar p · UX-37 A1 a tapped file ${shown(aFile)}, its ‹ ${fileBack}; a directory ${shown(aDir)}; a URL ${shown(aUrl)}`);
+          console.log(`bar p · A1 a tapped file ${shown(aFile)}, its ‹ ${shown(fileBack)}; a directory ${shown(aDir)}; a URL ${shown(aUrl)} placed ${shown(placed)}, its ‹ ${shown(urlBack)}`);
           if (aFile.sheet !== "half" || aFile.seat !== "workspace" || aFile.file !== "notes.md" || !aFile.terminal || aFile.mainFile !== 0) {
             fail(`bar p · a tapped file opened ${shown(aFile)} — the 工作区 seat's file page in the half sheet over the terminal (UX-37 A1)`);
           }
-          if (fileBack !== "work") fail(`bar p · ‹ on the tapped file's page reached ${fileBack} — the seat's own listing, its directory (UX-37 A1)`);
-          if (aDir.seat !== "workspace" || aDir.here !== "src" || !aDir.terminal) fail(`bar p · a tapped directory opened ${shown(aDir)} — its listing in the 工作区 seat (UX-37 A1)`);
-          if (aUrl.seat !== "browser" || aUrl.page !== "page" || !aUrl.terminal) fail(`bar p · a tapped URL opened ${shown(aUrl)} — the 浏览器 seat's page in the sheet (UX-37 A1)`);
-          await sheet();
+          if (fileBack.tree !== 1 || fileBack.page !== 0) fail(`bar p · ‹ on the tapped file's page reached ${shown(fileBack)} — the seat's own tree`);
+          if (aDir.seat !== "workspace" || aDir.root !== "/home/gate/work/src" || !aDir.terminal) fail(`bar p · a tapped directory opened ${shown(aDir)} — its tree in the 工作区 seat, the directory the ceiling (UX-39 §5)`);
+          if (aUrl.seat !== "browser" || aUrl.page !== "page" || aUrl.pageHead !== 1 || aUrl.deck !== 0 || !aUrl.terminal) fail(`bar p · a tapped URL opened ${shown(aUrl)} — the 浏览器 seat's page in the sheet, ‹ · host · the page, no deck (UX-37 A1, §6)`);
+          if (!placed || placed.covered || placed.h < 24) fail(`bar p · the page opened in the sheet was placed ${shown(placed)} — framed to the sheet's body, not taken for covered by the sheet it is in (UX-37 bug A)`);
+          if (pageTitle !== "tapped.example") fail(`bar p · the sheet's page says ${shown(pageTitle)} — the tab the URL just opened (tapped.example), not the one in front before`);
+          if (urlBack.list !== "here" || urlBack.rows < 1 || urlBack.back !== 0) fail(`bar p · ‹ on the page reached ${shown(urlBack)} — the seat's list of this session's pages, and nothing back from it (UX-39 §3)`);
         }
-        await press('[data-place-sheet] [data-col-seat="workspace"]');
-        await wait(600);
-        const lsFirst = askedLs.map((a) => a.path);
-        await shut();
+        await page.unroute("**/recents", recentsRoute);
+        // ── the seat is kept per session; the pill points 工作区 at the
+        //    shell's directory afresh (OSC 7). ──
         const kept = await sheet();
+        await pick("workspace");
+        await shut();
+        const again = await sheet();
         await shut();
         await program("\x1b]7;file://gate/tmp/elsewhere\x07");
-        const moved = await sheet();
+        await sheet();
         await wait(300);
-        const lsMoved = askedLs.map((a) => a.path);
+        const movedRoot = await rootNow();
         await shut();
-        console.log(`bar p · first ${shown(first)}; 工作区 listed ${shown(lsFirst)}; reopened ${shown(kept)}; after OSC 7 ${shown(moved)} listed ${shown(lsMoved)}`);
-        if (first.sheet !== 1 || first.seats !== "recent workspace browser machine quota" || first.ruler !== 0 || first.today !== 1 || first.page !== 1) {
-          fail(`bar p · the pill opened ${shown(first)} — one sheet, the five seats, the 「今天」 row and no ruler (UX-30 §6, UX-36)`);
-        }
-        if (first.on !== "recent") fail(`bar p · a fresh session's sheet lands on ${shown(first.on)} — 最近 is the landing`);
-        if (!lsFirst.includes("/home/gate/work")) fail(`bar p · 工作区 listed ${shown(lsFirst)} — where the session started (/home/gate/work), no OSC 7 yet`);
-        if (kept.on !== "workspace") fail(`bar p · reopened, the sheet is on ${shown(kept.on)} — the seat is kept per session`);
-        if (!lsMoved.includes("/tmp/elsewhere")) fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 工作区 listed ${shown(lsMoved)}`);
+        console.log(`bar p · reopened ${shown(kept.on)} then ${shown(again.on)}; after OSC 7 the tree's ceiling ${movedRoot}`);
+        if (again.on !== "workspace") fail(`bar p · reopened, the sheet is on ${shown(again.on)} — the seat is kept per session`);
+        if (movedRoot !== "/tmp/elsewhere") fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 工作区's ceiling is ${movedRoot}`);
       }
       // ── q. a cold start opens the seat, never a pushed page (UX-14 §7):
       //       the place left was a workspace open on the workspaces
@@ -31197,27 +31226,40 @@ try {
   }
   if (process.env.FACE_ONLY === "bar") console.log("bar · FACE_ONLY=bar: the other sections are skipped");
 
-  // ── the session's 附栏 (UX-30, 2026-10-06) ────────────────────────
+  // ── the session's 附栏 (UX-30 → UX-39, 2026-10-06) ─────────────────
   //
   // A phone docked beside the terminal: the front tab's press opens a
-  // column at the phone's width running the narrow face's own pages;
-  // five seats at its top, the day as a ruler under them; everything
-  // opens in place, the main area stays the session. Measured:
+  // column at the phone's width running the narrow face's own pages,
+  // beside the tab strip from the window's first row; one head — the
+  // session's face and title, the seat's icon · noun · ⌄ as a native
+  // picker of the five seats; one page per seat, nothing back to a
+  // whole. Measured:
   //
   //   a. the press opens the column at `--session-side-w`, inside a
-  //      `[data-narrow]` box, with the five seats in order and 最近 on;
-  //      the session gives up exactly the column's width; the press
-  //      again closes it;
-  //   b. 最近 is one list, types mixed, newest first: a page, a workspace
-  //      and a file in the one list, each with its kind mark, the times
-  //      descending down the rows;
-  //   c. a row opens in place: the workspace row turns the column to its
-  //      listing, the landing stays 会话, the main area keeps the
-  //      session; a path the terminal printed opens the file page inside
-  //      the column (`khor:open-path`), whose 「…」 holds 在主区打开;
-  //   d. the ruler: two points under the capsule; a tap expands the day
-  //      over the seat's page (the page does not move), a tap folds it;
-  //   e. the width is remembered per session: dragged, another session
+  //      `[data-narrow]` box, from the window's top with its head level
+  //      with the strip's capsule (UX-39 §6); the session gives up
+  //      exactly the column's width; the press again closes it;
+  //   b. the head (UX-39 §2): the session's face and title at the left,
+  //      the seat's glyph · noun · chevron at the right, the two gaps
+  //      equal; the picker lists the five seats in order, 最近 chosen;
+  //      every seat entered by the picker says its own noun under its own
+  //      glyph, draws one picker and no ‹ (§3); 机器's first line is the
+  //      machine's name, 额度's the account's;
+  //   c. 最近 (§4): the first row is 过去24小时 with the day's band; a
+  //      press on a stretch opens that stretch's popover and the row does
+  //      not expand; then this session's slice only, types mixed, newest
+  //      first;
+  //   d. in place (§3, §5): a workspace row of 最近 opens the 工作区 tree
+  //      with ‹ back to 最近; the seat entered by the picker is the tree
+  //      of the workspace holding the session's directory, and no way
+  //      above it; outside every workspace the directory is the ceiling;
+  //      a path the terminal printed opens the file page inside the
+  //      column, whose 「…」 holds 在主区打开; a file opened from the tree
+  //      wears ‹ back to the tree;
+  //   e. no day line under any pill, no 「今天」 in the pill's menu (§4);
+  //      the wide tabs (§7): × on every pill, no act on any, the front
+  //      pill as wide as its whole name;
+  //   f. the width is remembered per session: dragged, another session
   //      shows no column, this one comes back at the dragged width.
   //
   // `FACE_ONLY=side` runs this section alone.
@@ -31232,7 +31274,7 @@ try {
       source: null,
       pinned: false,
       stale: false,
-      category: "shell",
+      category: "claude",
       group: "",
       face: null,
       hosted: true,
@@ -31241,19 +31283,31 @@ try {
       via: null,
       via_face: null,
       home: "peer",
-      place: "/home/peer/work",
+      place: `${pin.path}/sub`,
       mux: false,
     };
+    // The front one's name is longer than a third of the strip and
+    // shorter than half: cut if the strip shared it equally, whole in a
+    // pill that grows from it (UX-39 §7). The second is outside every
+    // workspace.
+    const longName = "side-1 · a name read whole";
     const sideRows = [
-      { ...base, id: "tui/side-1", title: "side-1" },
-      { ...base, id: "tui/side-2", title: "side-2" },
+      { ...base, id: "tui/side-1", title: longName },
+      { ...base, id: "tui/side-2", title: "side-2", category: "shell", place: "/home/peer/elsewhere" },
+      { ...base, id: "tui/side-3", title: "side-3", category: "shell" },
     ];
     const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     const now = Date.now();
-    const recents = [
-      { device: pin.device, name: "peer", place: "https://example.com/docs", at_ms: now - 120_000 },
-      { device: pin.device, name: "peer", place: "http://localhost:3000/", at_ms: now - 3_600_000 },
-    ];
+    // What this session opened (UX-37 §1's `session` origin), and one
+    // page it did not: the slice holds the first three, newest first.
+    const recentsBy = {
+      page: [
+        { device: pin.device, name: "peer", place: "https://example.com/docs", at_ms: now - 120_000, session: "tui/side-1" },
+        { device: pin.device, name: "peer", place: "http://localhost:3000/", at_ms: now - 60_000, session: null },
+      ],
+      dir: [{ device: pin.device, name: "peer", place: pin.path, at_ms: now - 600_000, session: "tui/side-1" }],
+      file: [{ device: pin.device, name: "peer", place: `${pin.path}/notes.md`, at_ms: now - 3_600_000, session: "tui/side-1" }],
+    };
     const days = Object.fromEntries(
       sideRows.map((r) => [
         r.id,
@@ -31267,34 +31321,19 @@ try {
         ],
       ]),
     );
-    const resized = [];
     await page.unroute("**/sessions");
     await page.route("**/sessions", json(sideRows));
     await page.route("**/term_open", json(null));
     await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
     await page.route("**/term_stream", json({ bytes: "", seq: 0, gone: false, reset: false }));
-    await page.route("**/term_resize", (r) => {
-      const b = JSON.parse(r.request().postData() || "{}");
-      resized.push([b.cols, b.rows]);
-      return r.fulfill({ contentType: "application/json", body: "null" });
-    });
+    await page.route("**/term_resize", json(null));
     await page.route("**/term_leave", json(null));
     await page.route("**/term_key", json(null));
-    // The page records; a `file` or `dir` ask (UX-37 §1) has none here.
-    const recentsRoute = (r) =>
-      r.fulfill({ contentType: "application/json", body: JSON.stringify((r.request().postDataJSON() ?? {}).kind === "page" ? recents : []) });
+    const recentsRoute = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(recentsBy[(r.request().postDataJSON() ?? {}).kind] ?? []) });
     await page.route("**/recents", recentsRoute);
     await page.route("**/day_strips", json(days));
     await page.route("**/page_icons", json({}));
-    // One open file in the pinned workspace's strip: the one file row
-    // 最近 can have (its files are the workspaces' open tabs).
-    await page.evaluate(
-      ({ machine, root }) => {
-        window.localStorage.clear();
-        window.localStorage.setItem(`khor.ws-tabs.${machine}:${root}`, JSON.stringify([`${root}/notes.md`]));
-      },
-      { machine: "peer", root: pin.path },
-    );
+    await page.evaluate(() => window.localStorage.clear());
     await page.setViewportSize({ width: 1400, height: 900 });
     await page.reload({ waitUntil: "load" });
     await wait(900);
@@ -31321,178 +31360,282 @@ try {
       await until(5_000, async () => (await count(front(id))) === 1);
       await wait(800);
     };
+    const col = "[data-session-side]";
+    const seatOn = () => page.evaluate((c) => document.querySelector(c)?.getAttribute("data-col-seat-on") ?? null, col);
+    const pick = async (seat) => {
+      await page.selectOption(`${col} [data-side-head] [data-seat-pick] select`, seat);
+      await wait(700);
+    };
 
-    // a. the press opens the column
+    // a. the press opens the column, beside the strip
+    await openSession("tui/side-1");
+    await openSession("tui/side-2");
+    await openSession("tui/side-3");
     await openSession("tui/side-1");
     const sessionSel = "[data-detail-row] > :first-child";
     const before = await rect(sessionSel);
-    const paneR = (await rect("[data-detail-pane]"))?.right ?? null;
-    if (!before || paneR === null) fail("probe dead: side a · no session pane to measure");
-    if ((await count("[data-session-side]")) !== 0) fail("side a · a fresh profile draws a column before the front tab is pressed");
+    if (!before) fail("probe dead: side a · no session pane to measure");
+    if ((await count(col)) !== 0) fail("side a · a fresh profile draws a column before the front tab is pressed");
     await press(front("tui/side-1"));
-    const opened = await until(3_000, async () => (await count("[data-session-side]")) === 1);
+    const opened = await until(3_000, async () => (await count(col)) === 1);
     if (!opened) fail("side a · pressing the front tab opened no column (UX-30 §1)");
     else {
       await wait(600);
-      const col = await rect("[data-session-side]");
+      const c = await rect(col);
       const w = await tokenPx("--session-side-w");
       const after = await rect(sessionSel);
-      const narrowBox = await page.evaluate(() => document.querySelector("[data-session-side]")?.hasAttribute("data-narrow") ?? false);
-      const seats = await page.evaluate(() => [...document.querySelectorAll("[data-col-seats] [data-col-seat]")].map((e) => [e.dataset.colSeat, e.dataset.on]));
-      console.log(`side a · column ${JSON.stringify(col)} (token ${w}), session ${before.width} → ${after?.width}, seats ${JSON.stringify(seats)}, resizes ${JSON.stringify(resized.slice(-2))}`);
-      if (Math.abs(col.width - w) > 0.5) fail(`side a · the column is ${col.width} wide, --session-side-w is ${w} — the phone's width`);
+      const narrowBox = await page.evaluate((s) => document.querySelector(s)?.hasAttribute("data-narrow") ?? false, col);
+      const head = await rect(`${col} [data-side-head]`);
+      const strip = await rect("[data-session-tabs] [data-tab-strip]");
+      const view = page.viewportSize();
+      console.log(`side a · column ${JSON.stringify(c)} (token ${w}), head ${JSON.stringify(head)}, strip ${JSON.stringify(strip)}, session ${before?.width} → ${after?.width}`);
+      if (Math.abs(c.width - w) > 0.5) fail(`side a · the column is ${c.width} wide, --session-side-w is ${w} — the phone's width`);
       if (!narrowBox) fail("side a · the column is not a [data-narrow] box — the narrow face mounted in a box (UX-30 §6)");
-      if (Math.abs(col.right - paneR) > 0.5 || !after || Math.abs(after.right - col.left) > 0.5) {
-        fail(`side a · the column spans ${col.left}..${col.right} in a pane ending ${paneR}, the session ends ${after?.right} — the session gives up exactly the column's width`);
+      if (Math.abs(c.right - view.width) > 0.5 || !after || Math.abs(after.right - c.left) > 0.5) {
+        fail(`side a · the column spans ${c.left}..${c.right} in a window ${view.width} wide, the session ends ${after?.right} — the session gives up exactly the column's width`);
       }
-      if (seats.map((x) => x[0]).join(" ") !== "recent workspace browser machine quota") fail(`side a · the seats are ${JSON.stringify(seats)} — 最近 · 工作区 · 浏览器 · 机器 · 额度 (UX-30 §2)`);
-      if (seats[0]?.[1] !== "true") fail("side a · 最近 is not the landing seat");
-      const tab = await page.evaluate((sel) => {
-        const b = document.querySelector(sel);
-        return { expanded: b?.getAttribute("aria-expanded"), controls: b?.getAttribute("aria-controls"), id: document.querySelector("[data-session-side]")?.id };
-      }, front("tui/side-1"));
+      if (c.top > 0.5) fail(`side a · the column starts at y ${c.top} — it stands beside the strip from the window's first row (UX-39 §6)`);
+      if (!head || !strip || Math.abs((head.top + head.bottom) / 2 - (strip.top + strip.bottom) / 2) > 1) {
+        fail(`side a · the column's head ${JSON.stringify(head)} is not level with the strip's row ${JSON.stringify(strip)} (UX-39 §6)`);
+      }
+      const tab = await page.evaluate(
+        ([sel, c]) => {
+          const b = document.querySelector(sel);
+          return { expanded: b?.getAttribute("aria-expanded"), controls: b?.getAttribute("aria-controls"), id: document.querySelector(c)?.id };
+        },
+        [front("tui/side-1"), col],
+      );
       if (tab.expanded !== "true" || tab.controls !== tab.id) fail(`side a · the front tab says ${JSON.stringify(tab)} — aria-expanded and aria-controls name the column`);
-      if (resized.length === 0 || resized[resized.length - 1][0] >= (resized[0]?.[0] ?? Infinity) + 1) {
-        // The terminal refit: fewer columns than before the column.
-      }
-      // closes
       await press(front("tui/side-1"));
-      if (!(await until(2_000, async () => (await count("[data-session-side]")) === 0))) fail("side a · pressing the front tab again did not close the column");
+      if (!(await until(2_000, async () => (await count(col)) === 0))) fail("side a · pressing the front tab again did not close the column");
       const back = await rect(sessionSel);
       if (!back || Math.abs(back.width - before.width) > 0.5) fail(`side a · closed, the session is ${back?.width} wide, it was ${before.width}`);
       await press(front("tui/side-1"));
-      await until(2_000, async () => (await count("[data-session-side]")) === 1);
+      await until(2_000, async () => (await count(col)) === 1);
       await wait(600);
     }
 
-    // b. 最近: mixed, newest first. The column lands on this session's
-    //    slice (UX-37 §1), which this fixture's records say nothing
-    //    about; ‹ is the whole, where they all are.
+    // b. the one head, the picker, one page per seat
     {
-      const slice = await page.evaluate(() => document.querySelector("[data-session-side] [data-recent-slice]")?.getAttribute("data-recent-slice") ?? null);
-      if (slice !== "here") fail(`side b · the column's 最近 landed on ${slice} — this session's slice (UX-37 §1)`);
-      await press("[data-session-side] [data-side-page] [data-seat-back]");
-      const rows = await until(5_000, async () => (await count("[data-session-side] [data-recent-row]")) >= 3);
-      const list = await page.evaluate(() =>
-        [...document.querySelectorAll("[data-session-side] [data-recent-row]")].map((e) => ({
-          kind: e.dataset.recentKind,
-          mark: e.querySelector("[data-kind-mark], [data-side-mark]")?.getAttribute("data-kind-mark") ?? e.querySelector("[data-side-face] [data-mark]")?.dataset.mark ?? null,
-          at: e.querySelector("[data-recent-at]")?.textContent ?? null,
-        })),
-      );
-      console.log(`side b · 最近 ${JSON.stringify(list)}`);
-      if (!rows) fail(`side b · 最近 lists ${list.length} row(s) — a page, a workspace and a file were given`);
-      else {
-        const kinds = new Set(list.map((r) => r.kind));
-        if (!kinds.has("page") || !kinds.has("workspace") || !kinds.has("file")) fail(`side b · 最近 holds ${[...kinds].join(", ")} — one list, types mixed (UX-30 §3)`);
-        // Newest first: the page from two minutes ago, then the workspace
-        // (the fixture's last change), then the hour-old page.
-        const pageFirst = list[0].kind === "page" && list[0].at !== null;
-        if (!pageFirst) fail(`side b · the first row is ${JSON.stringify(list[0])} — the page visited two minutes ago is newest`);
-        const fileRow = list.find((r) => r.kind === "file");
-        if (fileRow && fileRow.at !== null) fail(`side b · the file row wears a time ${fileRow.at} — a file tab has none (use-side-recent)`);
+      const head = await page.evaluate((c) => {
+        const h = document.querySelector(`${c} [data-side-head]`);
+        const r = (el) => el?.getBoundingClientRect() ?? null;
+        const who = h?.querySelector("[data-side-who]");
+        const face = who?.firstElementChild ?? null;
+        const title = face?.nextElementSibling ?? null;
+        const pick = h?.querySelector("[data-seat-pick]");
+        const glyph = pick?.querySelector("[data-seat-glyph]");
+        const noun = pick?.querySelector("[data-seat-noun]");
+        return {
+          title: title?.textContent ?? null,
+          faceGap: face && title ? +(r(title).left - r(face).right).toFixed(1) : null,
+          glyphGap: glyph && noun ? +(r(noun).left - r(glyph).right).toFixed(1) : null,
+          whoLeft: who && pick ? r(who).right <= r(pick).left + 0.5 : false,
+          noun: noun?.textContent ?? null,
+          glyph: !!glyph?.querySelector("svg"),
+          options: [...(pick?.querySelectorAll("select option") ?? [])].map((o) => o.value),
+          chosen: pick?.querySelector("select")?.value ?? null,
+        };
+      }, col);
+      console.log(`side b · head ${JSON.stringify(head)}`);
+      if (head.title !== longName) fail(`side b · the head's left says ${JSON.stringify(head.title)} — the session's title beside its face (UX-39 §2)`);
+      if (!head.whoLeft) fail("side b · the session is not at the head's left and the seat's picker at its right");
+      if (head.faceGap === null || head.glyphGap === null || Math.abs(head.faceGap - head.glyphGap) > 0.5) {
+        fail(`side b · face → title is ${head.faceGap}, glyph → noun is ${head.glyphGap} — the two gaps are one (UX-39 §2)`);
       }
+      if (head.options.join(" ") !== "recent workspace browser machine quota") fail(`side b · the picker offers ${JSON.stringify(head.options)} — 最近 · 工作区 · 浏览器 · 机器 · 额度`);
+      if (head.chosen !== "recent") fail(`side b · the column landed on ${head.chosen} — 最近 is the landing seat`);
+      const nouns = { recent: "最近", workspace: "工作区", browser: "浏览器", machine: "机器", quota: "额度" };
+      const glyphs = new Set();
+      for (const seat of ["workspace", "browser", "machine", "quota", "recent"]) {
+        await pick(seat);
+        const s = await page.evaluate((c) => {
+          const h = document.querySelector(`${c} [data-side-head]`);
+          return {
+            on: document.querySelector(c)?.getAttribute("data-col-seat-on"),
+            noun: h?.querySelector("[data-seat-noun]")?.textContent ?? null,
+            glyph: h?.querySelector("[data-seat-glyph]")?.innerHTML ?? "",
+            picks: document.querySelectorAll(`${c} [data-seat-pick]`).length,
+            backs: document.querySelectorAll(`${c} [data-seat-back], ${c} [data-side-page] [data-back]`).length,
+            name: document.querySelector(`${c} [data-side-page] [data-head-name] > :first-child`)?.textContent?.trim() ?? null,
+          };
+        }, col);
+        console.log(`side b · ${seat}: ${JSON.stringify({ ...s, glyph: s.glyph.length })}`);
+        glyphs.add(s.glyph);
+        if (s.on !== seat) fail(`side b · the picker's ${seat} turned the column to ${s.on}`);
+        if (s.noun !== nouns[seat]) fail(`side b · the ${seat} seat's head says ${JSON.stringify(s.noun)} — the seat's noun, ${nouns[seat]}, not the page's (UX-39 §2)`);
+        if (!s.glyph.includes("<svg")) fail(`side b · the ${seat} seat's head wears no glyph — every seat its own icon (UX-39 §2)`);
+        if (s.picks !== 1) fail(`side b · the ${seat} seat draws ${s.picks} picker(s) — the head's one`);
+        if (s.backs !== 0) fail(`side b · the ${seat} seat, entered by the picker, draws ${s.backs} way(s) back — one page per seat, nothing back to a whole (UX-39 §3)`);
+        if (seat === "machine" && s.name !== "peer") fail(`side b · 机器's first line is ${JSON.stringify(s.name)} — the machine's name (UX-39 §3)`);
+        if (seat === "quota" && s.name !== null && s.name !== "claude code") fail(`side b · 额度's first line is ${JSON.stringify(s.name)} — the account's name (UX-39 §3)`);
+      }
+      if (glyphs.size !== 5) fail(`side b · the five seats wear ${glyphs.size} distinct glyph(s) — each its own`);
     }
 
-    // c. in place
+    // c. 最近: 过去24小时 first, then this session's slice
+    {
+      const shape = await page.evaluate((c) => {
+        const scroller = document.querySelector(`${c} [data-side-recent] [data-nav-clear]`);
+        const first = scroller?.firstElementChild ?? null;
+        return {
+          first: first?.hasAttribute("data-day-today-row") ?? false,
+          says: first?.textContent ?? "",
+          band: !!first?.querySelector("[data-day-strip] [data-day-run]"),
+          expands: !!first && (first.hasAttribute("aria-expanded") || first.querySelector(":scope > button[aria-expanded]") !== null),
+          rows: [...document.querySelectorAll(`${c} [data-recent-row]`)].map((e) => ({ kind: e.dataset.recentKind, at: e.querySelector("[data-recent-at]")?.textContent ?? null })),
+        };
+      }, col);
+      console.log(`side c · 最近 ${JSON.stringify(shape)}`);
+      if (!shape.first) fail("side c · 最近's first row is not 过去24小时 (UX-39 §4)");
+      if (!shape.says.includes("过去24小时")) fail(`side c · the first row says ${JSON.stringify(shape.says)} — 过去24小时, not 今天`);
+      if (!shape.band) fail("side c · 过去24小时 draws no day band with stretches (DayStrip)");
+      if (shape.expands) fail("side c · 过去24小时 is a disclosure — the row does not expand (UX-39 §4)");
+      await press(`${col} [data-day-today-row] [data-day-strip] [data-day-run]:not([data-day-mark="absent"])`);
+      const popped = await until(2_000, async () => (await count("[data-day-detail]")) >= 1);
+      const grew = await count(`${col} [data-day-list], ${col} [data-day-line]`);
+      console.log(`side c · a press on a stretch: popover ${popped}, the row grew ${grew}`);
+      if (!popped) fail("side c · a press on a stretch of 过去24小时 opened no popover of that stretch (UX-39 §4)");
+      if (grew !== 0) fail("side c · a press on 过去24小时 expanded the day under the row — it does not expand");
+      await page.keyboard.press("Escape");
+      await wait(300);
+      const kinds = shape.rows.map((r) => r.kind).join(" ");
+      if (kinds !== "page workspace file") fail(`side c · 最近 lists ${kinds || "nothing"} — this session's page, workspace and file, newest first, and not the page it did not open (UX-37 §1)`);
+    }
+
+    // d. in place; the workspace's tree as the ceiling
     {
       const landing = () => page.evaluate(() => document.querySelector("[data-landing-strip] [data-on=true]")?.getAttribute("data-landing") ?? null);
-      await press('[data-session-side] [data-recent-row][data-recent-kind="workspace"] [data-side-open]');
+      await press(`${col} [data-recent-row][data-recent-kind="workspace"] [data-side-open]`);
       await wait(900);
-      const seat = await page.evaluate(() => document.querySelector("[data-session-side]")?.getAttribute("data-col-seat-on"));
-      const filesIn = await count("[data-session-side] [data-file-row], [data-session-side] [data-files] [data-side-row]");
-      console.log(`side c · workspace row → seat ${seat}, ${filesIn} file rows in the column, landing ${await landing()}, panes ${await count("[data-detail-pane]")}`);
-      if (seat !== "workspace") fail(`side c · a workspace row turned the column to ${seat} — it opens in place as the 工作区 listing`);
-      if ((await landing()) !== "sessions") fail(`side c · a workspace row left the sessions landing for ${await landing()} — the main area is the session, always (UX-30 §4)`);
-      if ((await count("[data-session-side] [data-ws-tree], [data-session-side] [data-files], [data-session-side] [data-machine-files]")) === 0 && filesIn === 0) {
-        fail("side c · the column's 工作区 seat shows no listing after the workspace row");
+      const fromRecent = {
+        seat: await seatOn(),
+        tree: await count(`${col} [data-side-workspace] [data-file-tree]`),
+        back: await count(`${col} [data-side-workspace] [data-seat-back]`),
+        landing: await landing(),
+      };
+      console.log(`side d · a workspace row of 最近 → ${JSON.stringify(fromRecent)}`);
+      if (fromRecent.seat !== "workspace" || fromRecent.tree !== 1) fail(`side d · a workspace row of 最近 opened ${JSON.stringify(fromRecent)} — the 工作区 tree, in place`);
+      if (fromRecent.landing !== "sessions") fail(`side d · a workspace row left the sessions landing for ${fromRecent.landing} — the main area is the session, always`);
+      if (fromRecent.back !== 1) fail("side d · the tree opened from 最近 wears no ‹ back to 最近 (UX-39 §3)");
+      else {
+        await press(`${col} [data-side-workspace] [data-seat-back]`);
+        if ((await seatOn()) !== "recent") fail(`side d · ‹ on the tree opened from 最近 went to ${await seatOn()} — back to 最近`);
       }
+      await pick("workspace");
+      await wait(500);
+      const ceiling = await page.evaluate((c) => ({
+        root: document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null,
+        up: document.querySelectorAll(`${c} [data-up], ${c} [data-seat-back]`).length,
+        tree: document.querySelectorAll(`${c} [data-side-workspace] [data-file-tree]`).length,
+      }), col);
+      console.log(`side d · 工作区 by the picker: ${JSON.stringify(ceiling)} (the session is at ${base.place})`);
+      if (ceiling.root !== pin.path) fail(`side d · the 工作区 seat's ceiling is ${ceiling.root} — the workspace holding the session's directory, ${pin.path} (UX-39 §5)`);
+      if (ceiling.up !== 0) fail(`side d · the 工作区 seat offers ${ceiling.up} way(s) above its ceiling — nothing above the workspace`);
+      if (ceiling.tree !== 1) fail("side d · the 工作区 seat is not the workspace's tree (FileTree)");
+      // A file from the tree: ‹ goes back to the tree.
+      await press(`${col} [data-side-workspace] [data-file-tree] [data-file]`);
+      await wait(900);
+      const page1 = await count(`${col} [data-files-page]`);
+      if (page1 !== 1) fail("side d · a file pressed in the tree did not open the file page in place");
+      else {
+        await press(`${col} [data-files-page] [data-seat-back]`);
+        if ((await count(`${col} [data-files-page]`)) !== 0) fail("side d · ‹ on a file opened from the tree did not go back to the tree (UX-39 §3)");
+      }
+      // A path the terminal printed: the file page inside the column.
       await page.evaluate((root) => window.dispatchEvent(new CustomEvent("khor:open-path", { detail: { machine: "peer", path: `${root}/notes.md`, dir: false, line: null } })), pin.path);
       await wait(1_200);
-      const fileIn = await count("[data-session-side] [data-file-more]");
-      console.log(`side c · open-path → file page in column ${fileIn}, landing ${await landing()}, main file pages ${await count("[data-main] [data-file-more]:not([data-session-side] [data-file-more])")}`);
-      if (fileIn !== 1) fail("side c · a path the terminal printed did not open the file page inside the column (UX-30 §4)");
-      if ((await landing()) !== "sessions") fail("side c · a printed path left the sessions landing — nothing jumps to the main area");
+      const fileIn = await count(`${col} [data-file-more]`);
+      console.log(`side d · open-path → file page in column ${fileIn}, landing ${await landing()}`);
+      if (fileIn !== 1) fail("side d · a path the terminal printed did not open the file page inside the column (UX-30 §4)");
+      if ((await landing()) !== "sessions") fail("side d · a printed path left the sessions landing — nothing jumps to the main area");
       if (fileIn === 1) {
-        await press("[data-session-side] [data-file-more]");
+        await press(`${col} [data-file-more]`);
         await wait(400);
         const items = await page.evaluate(() => [...document.querySelectorAll("[data-file-more-menu] [role=menuitem]")].map((e) => e.textContent?.trim()));
-        const word = await page.evaluate(() => (window).__catalog?.gui?.open_in_main ?? null);
-        console.log(`side c · 「…」 ${JSON.stringify(items)}`);
-        if (!items.some((t) => t === "在主区打开" || t === "Open in the main area")) fail(`side c · the file page's 「…」 holds ${JSON.stringify(items)} — 在主区打开 is the one way to the main area`);
-        void word;
+        if (!items.some((t) => t === "在主区打开" || t === "Open in the main area")) fail(`side d · the file page's 「…」 holds ${JSON.stringify(items)} — 在主区打开 is the one way to the main area`);
         await page.keyboard.press("Escape");
         await wait(300);
       }
+      // Outside every workspace the session's directory is the ceiling.
+      await openSession("tui/side-2");
+      await press(front("tui/side-2"));
+      await until(2_000, async () => (await count(col)) === 1);
+      await pick("workspace");
+      await wait(500);
+      const outside = await page.evaluate((c) => document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null, col);
+      console.log(`side d · outside every workspace the ceiling is ${outside}`);
+      if (outside !== "/home/peer/elsewhere") fail(`side d · outside every workspace the 工作区 ceiling is ${outside} — the session's directory`);
+      await press(front("tui/side-2"));
+      await openSession("tui/side-1");
     }
 
-    // d. the day hangs under the session's pill (UX-36, overriding UX-30
-    //    §5's ruler): the column holds no line; the front pill does, along
-    //    its bottom edge; its menu's 「今天」 hangs the day in full from it,
-    //    over the session (the column's page does not move), and Esc folds.
+    // e. no day line, the wide tabs
     {
-      const front = '[data-session-tabs] [data-tab][data-on="true"]';
-      const inColumn = await count("[data-session-side] [data-day-ruler-line], [data-session-side] [data-day-ruler]");
-      const pill = await rect(front);
-      const line = await rect(`${front} [data-tab-log] [data-day-ruler-line]`);
-      const h = await tokenPx("--day-ruler-h");
-      console.log(`side d · the front pill ${JSON.stringify(pill)} holds the line ${JSON.stringify(line)} (token ${h}); ${inColumn} in the column`);
-      if (inColumn !== 0) fail(`side d · the column still draws ${inColumn} ruler(s) — the day hangs under the session's pill (UX-36)`);
-      if (!line || !pill) fail("side d · no day line under the front session pill — always present (UX-36 §1; TabStrip data-tab-log)");
-      else {
-        if (Math.abs(line.height - h) > 0.5) fail(`side d · the pill's line is ${line.height} tall, --day-ruler-h is ${h}`);
-        if (line.left < pill.left || line.right > pill.right || line.bottom > pill.bottom || pill.bottom - line.bottom > 4) {
-          fail(`side d · the line ${JSON.stringify(line)} is not along the pill's bottom edge ${JSON.stringify(pill)}`);
-        }
-        const pageTop = (await rect("[data-session-side] [data-side-page]"))?.top;
-        await page.locator(`${front} [data-tab-open]`).click({ button: "right" });
-        await press('[data-menu-item="today"]');
-        const up = await until(3_000, async () => (await count("[data-day-pop] [data-detail-day] [data-day-strip]")) === 1);
-        if (!up) fail("side d · the pill's menu 「今天」 did not hang the day from the pill (UX-36 §1)");
-        const pageAfter = (await rect("[data-session-side] [data-side-page]"))?.top;
-        if (pageTop !== pageAfter) fail(`side d · opening the day moved the column's page from ${pageTop} to ${pageAfter} — it hangs over the content`);
-        const pop = await rect("[data-day-pop]");
-        console.log(`side d · the day hangs at ${JSON.stringify(pop)}`);
-        if (pop && Math.abs(pop.left - pill.left) > 1) fail(`side d · the day hangs at x ${pop.left}, the pill starts at ${pill.left} — it opens from the pill`);
-        if (pop && pop.top < pill.bottom) fail(`side d · the day's top ${pop.top} is above the pill's foot ${pill.bottom} — it hangs under the line`);
-        await page.keyboard.press("Escape");
-        if (!(await until(2_000, async () => (await count("[data-day-pop]")) === 0))) fail("side d · Esc did not fold the day");
-      }
+      const lines = await count("[data-pill-log], [data-tab-log], [data-day-ruler-line], [data-day-pop]");
+      if (lines !== 0) fail(`side e · ${lines} day line(s) or hanging day(s) are drawn — no day under any pill (UX-39 §4)`);
+      await page.locator(`${front("tui/side-1")}`).click({ button: "right" });
+      await wait(300);
+      const today = await count('[data-menu-item="today"]');
+      await page.keyboard.press("Escape");
+      await wait(200);
+      if (today !== 0) fail("side e · the pill's menu still offers 「今天」 (UX-39 §4)");
+      const tabs = await page.evaluate(() => {
+        const all = [...document.querySelectorAll("[data-session-tabs] [data-tab]")];
+        const on = document.querySelector('[data-session-tabs] [data-tab][data-on="true"] [data-tab-label]');
+        return {
+          tabs: all.length,
+          closes: all.filter((t) => t.querySelector("[data-tab-close]")).length,
+          shown: all.filter((t) => {
+            const x = t.querySelector("[data-tab-close]");
+            return x && getComputedStyle(x).visibility === "visible" && x.getBoundingClientRect().width > 0;
+          }).length,
+          acts: document.querySelectorAll("[data-session-tabs] [data-tab] [data-tab-act]").length,
+          name: on ? { scroll: on.scrollWidth, client: on.clientWidth } : null,
+          // What an equal share would have given it.
+          share: (document.querySelector("[data-session-tabs] [data-tab-strip]")?.getBoundingClientRect().width ?? 0) / Math.max(1, all.length),
+          pill: document.querySelector('[data-session-tabs] [data-tab][data-on="true"]')?.getBoundingClientRect().width ?? 0,
+        };
+      });
+      console.log(`side e · wide tabs ${JSON.stringify(tabs)}`);
+      if (tabs.tabs < 2 || tabs.closes !== tabs.tabs || tabs.shown !== tabs.tabs) fail(`side e · ${tabs.closes} of ${tabs.tabs} wide pills wear a ×, ${tabs.shown} shown — × on every pill, always (UX-39 §7)`);
+      if (tabs.acts !== 0) fail(`side e · ${tabs.acts} wide pill(s) wear an act — the one ↻ is the verbs seat's (UX-39 §7)`);
+      if (tabs.tabs < 3 || tabs.pill <= tabs.share) fail(`probe void: side e · the front pill is ${tabs.pill} of an equal share ${tabs.share} across ${tabs.tabs} tabs — the name does not outgrow a share`);
+      if (!tabs.name || tabs.name.scroll > tabs.name.client + 1) fail(`side e · the front pill's name needs ${tabs.name?.scroll} and has ${tabs.name?.client} — it grows from its whole name (UX-39 §7)`);
     }
 
-    // e. remembered per session
+    // f. remembered per session
     {
-      const seam = await rect("[data-session-side] [data-side-seam]");
-      const was = (await rect("[data-session-side]"))?.width ?? 0;
+      if ((await count(col)) !== 1) await press(front("tui/side-1"));
+      await until(2_000, async () => (await count(col)) === 1);
+      const seam = await rect(`${col} [data-side-seam]`);
+      const was = (await rect(col))?.width ?? 0;
       await page.mouse.move(seam.left + seam.width / 2, seam.top + 300);
       await page.mouse.down();
       await page.mouse.move(seam.left - 60, seam.top + 300, { steps: 5 });
       await page.mouse.move(seam.left - 100, seam.top + 300, { steps: 5 });
       await page.mouse.up();
       await wait(500);
-      const dragged = (await rect("[data-session-side]"))?.width ?? 0;
+      const dragged = (await rect(col))?.width ?? 0;
       const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem("khor.session-side.tui/side-1") ?? "null"));
-      console.log(`side e · dragged ${was} → ${dragged}, stored ${JSON.stringify(stored)}`);
-      // The pointer travelled from the seam's centre to 100 left of its
-      // box: that much, to the pixel the capture allows.
+      console.log(`side f · dragged ${was} → ${dragged}, stored ${JSON.stringify(stored)}`);
       const travel = seam.width / 2 + 100;
-      if (Math.abs(dragged - (was + travel)) > 2) fail(`side e · the seam dragged ${travel} left made the column ${dragged} from ${was}`);
-      if (!stored || Math.abs(stored.w - dragged) > 1) fail(`side e · the width is not remembered for the session (${JSON.stringify(stored)})`);
+      if (Math.abs(dragged - (was + travel)) > 2) fail(`side f · the seam dragged ${travel} left made the column ${dragged} from ${was}`);
+      if (!stored || Math.abs(stored.w - dragged) > 1) fail(`side f · the width is not remembered for the session (${JSON.stringify(stored)})`);
       await openSession("tui/side-2");
-      if ((await count("[data-session-side]")) !== 0) fail("side e · the other session opened with a column — one memory per session");
+      if ((await count(col)) !== 0) fail("side f · the other session opened with a column — one memory per session");
       await press(front("tui/side-1"));
       await wait(600);
-      const back = (await rect("[data-session-side]"))?.width ?? 0;
-      if (Math.abs(back - dragged) > 1) fail(`side e · back on the first session the column is ${back}, it was dragged to ${dragged}`);
-      // Under the floor the seam folds the column away.
-      const seam2 = await rect("[data-session-side] [data-side-seam]");
+      const back = (await rect(col))?.width ?? 0;
+      if (Math.abs(back - dragged) > 1) fail(`side f · back on the first session the column is ${back}, it was dragged to ${dragged}`);
+      const seam2 = await rect(`${col} [data-side-seam]`);
       await page.mouse.move(seam2.left + seam2.width / 2, seam2.top + 300);
       await page.mouse.down();
       await page.mouse.move(seam2.left + 300, seam2.top + 300, { steps: 8 });
       await page.mouse.move(seam2.left + 600, seam2.top + 300, { steps: 8 });
       await page.mouse.up();
       await wait(500);
-      if ((await count("[data-session-side]")) !== 0) fail("side e · dragging the seam under the floor did not fold the column away");
+      if ((await count(col)) !== 0) fail("side f · dragging the seam under the floor did not fold the column away");
     }
 
     await page.evaluate(() => window.localStorage.clear());

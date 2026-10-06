@@ -1,5 +1,5 @@
 /**
- * **The 附栏's 工作区 seat is the workspace's own tree** (UX-39, the owner
+ * **The 附栏's 工作区 seat is the workspace's own tree** (UX-39 §5, the owner
  * 2026-10-06 22:00: 「工作区就不能出工作区外了，顶级不可返回目录就是该
  * 工作区」, and 「是不是有两套绘制目录的方法」— yes, there were: the
  * machine page's listing (`FilesPane`, folder icons, no git, 2026-08-17)
@@ -55,7 +55,7 @@ export function SideWorkspace({
   fileActs,
   onLeave,
 }: {
-  /** Entered from 最近 (UX-39): the tree wears ‹ back there, and a file
+  /** Entered from 最近 (UX-39 §3): the tree wears ‹ back there, and a file
       opened that way leaves to it rather than to the tree. */
   onLeave?: () => void;
   machine: string;
@@ -92,7 +92,7 @@ export function SideWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
   return (
-    <div data-side-workspace className="relative flex min-h-0 flex-1 flex-col">
+    <div data-side-workspace data-root={root} className="relative flex min-h-0 flex-1 flex-col">
       {/* The tree stays mounted under an open file, so ‹ finds it where
           it was scrolled. */}
       <div className={file !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>

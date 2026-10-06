@@ -22,7 +22,9 @@ import { DayStrip, type Day } from "@/views/DayStrip";
 export function DayToday({ runs, totals }: { runs: Day; totals: DayTotals | null }) {
   const said = totals ? gui.day_busy_idle(totalOf(totals.busy), totalOf(totals.idle)) : null;
   return (
-    <div data-day-today-row data-day-today className="flex flex-none flex-col gap-in border-b px-(--page-inset) py-in">
+    // `data-detail-day`: the session's day, wherever it is drawn (the
+    // gates find the band by it).
+    <div data-day-today-row data-day-today data-detail-day className="flex flex-none flex-col gap-in border-b px-(--page-inset) py-in">
       <span className="flex w-full items-baseline gap-in text-callout text-muted-foreground">
         <span className="min-w-0 flex-1 truncate text-foreground">{gui.day_last_24h}</span>
         {said && (
