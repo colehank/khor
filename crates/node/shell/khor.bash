@@ -64,9 +64,16 @@ _khor_prompt_start() {
 
 _khor_prompt_end() {
   local s=$?
+  # Prompt decoding reads `\`, and inside tmux the wrap ends in one
+  # (ESC \, the passthrough's end): written `\\` it arrives as itself,
+  # not as a backslash that eats the `\]` after it.
   case "$PS1" in
     *"133;B"*) ;;
-    *) PS1="$PS1\[$(_khor_osc '133;B')\]" ;;
+    *)
+      local b
+      b=$(_khor_osc '133;B')
+      PS1="$PS1\[${b//\\/\\\\}\]"
+      ;;
   esac
   # tmux's own prompt mark, in the prompt itself (see khor.zsh).
   if [ -n "$TMUX" ]; then
