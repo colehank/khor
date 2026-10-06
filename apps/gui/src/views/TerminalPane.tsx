@@ -2533,6 +2533,7 @@ export function TerminalPane({
       tmuxRow: tmuxHistory !== null,
       pane: () => tmuxHistory?.pane() ?? null,
       reread: tmuxHistory?.reread,
+      joining: () => ({ joined, tries: generation }),
       note: (line) => void faceNote(line).catch(() => {}),
     });
     firstTouchRef.current = firstTouch;
