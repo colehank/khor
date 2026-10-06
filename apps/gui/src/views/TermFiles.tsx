@@ -11,6 +11,10 @@
  * - **网内机器**: a machine of the mesh, then its directories; a file
  *   pressed goes the same way — on the session's machine, the path as it
  *   is; on another, the session's machine pulls it (item 60's road).
+ *   **The session's machine comes first, marked as the session's** (the
+ *   owner, 2026-10-07 03:10): it is where a file goes in as itself. A
+ *   machine that hosts nothing (a phone) is not listed: its files are
+ *   the pickers' above.
  *
  * Nothing takes the focus: the terminal keeps it, as under the keys.
  *
@@ -42,7 +46,22 @@ function putIn(term: Terminal | null, paths: string[]) {
 
 const ROW = "flex min-h-touch w-full items-center gap-row border-t text-left text-body";
 
-export function TermFiles({ term }: { term: RefObject<Terminal | null> }) {
+/** What the panel needs of the terminal it puts files into. */
+export type FilesRoad = {
+  /** The session's machine by its table name (`DeviceRow.name`);
+      `null` for a session hosted on this one. */
+  machine: string | null;
+};
+
+/** The mesh's machines for the panel: the session's first, then the
+    rest as the table has them; a machine that hosts nothing left out. */
+export function machinesFor(devices: DeviceRow[], machine: string | null): DeviceRow[] {
+  const ours = (d: DeviceRow) => (machine === null ? d.me : d.name === machine);
+  const hosting = devices.filter((d) => d.hosts);
+  return [...hosting.filter(ours), ...hosting.filter((d) => !ours(d))];
+}
+
+export function TermFiles({ term, road }: { term: RefObject<Terminal | null>; road: FilesRoad }) {
   const photos = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
   /** Lab: what the road answers for a file copied to the session's machine. */
@@ -93,13 +112,24 @@ export function TermFiles({ term }: { term: RefObject<Terminal | null> }) {
 
   let mesh: ReactNode;
   if (at === null) {
-    mesh = (devices ?? []).map((d) => (
-      <button key={d.id} type="button" data-files-machine={d.name} onClick={() => open(d, "")} className={ROW}>
-        <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
-        <span className="min-w-0 flex-1 truncate">{d.shown}</span>
-        <IconChevronRight className="size-4 text-tertiary" />
-      </button>
-    ));
+    mesh = machinesFor(devices ?? [], road.machine).map((d, i) => {
+      const session = i === 0 && (road.machine === null ? d.me : d.name === road.machine);
+      return (
+        <button
+          key={d.id}
+          type="button"
+          data-files-machine={d.name}
+          data-files-session={session || undefined}
+          onClick={() => open(d, "")}
+          className={ROW}
+        >
+          <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
+          <span className="min-w-0 flex-1 truncate">{d.shown}</span>
+          {session && <span className="flex-none text-footnote text-muted-foreground">{gui.files_session}</span>}
+          <IconChevronRight className="size-4 text-tertiary" />
+        </button>
+      );
+    });
   } else {
     const { machine, listing } = at;
     mesh = (

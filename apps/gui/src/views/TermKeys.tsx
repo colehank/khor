@@ -54,7 +54,7 @@ import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { cn } from "@/lib/utils";
 import { CursorKey } from "@/views/CursorPad";
-import { TermFiles } from "@/views/TermFiles";
+import { TermFiles, type FilesRoad } from "@/views/TermFiles";
 
 const NO_MODS: Mods = { ctrl: false, alt: false };
 
@@ -133,9 +133,12 @@ export function TermKeys({
   term,
   mods,
   onMods,
+  files,
 }: {
   /** The terminal the keys go into. Null until it has opened. */
   term: RefObject<Terminal | null>;
+  /** What 📎's panel puts files in through (`TermFiles`). */
+  files: FilesRoad;
   /** The latches — held by `TerminalPane`, because a key from the soft
       keyboard has to be able to take them too. */
   mods: Mods;
@@ -164,7 +167,7 @@ export function TermKeys({
         ))}
       </div>
       <CursorKey term={term} mods={mods} onMods={onMods} />
-      <KeyPanel term={term} mods={mods} onMods={onMods} />
+      <KeyPanel term={term} mods={mods} onMods={onMods} files={files} />
     </div>
   );
 }
@@ -183,7 +186,17 @@ export function TermKeys({
  * ⚠️ 墓碑 (2026-10-03): a bottom sheet (`KeySheet`), which took the focus
  * — the keyboard dropped under it, and its drop closed the sheet.
  */
-function KeyPanel({ term, mods, onMods }: { term: RefObject<Terminal | null>; mods: Mods; onMods: (m: Mods) => void }) {
+function KeyPanel({
+  term,
+  mods,
+  onMods,
+  files,
+}: {
+  term: RefObject<Terminal | null>;
+  mods: Mods;
+  onMods: (m: Mods) => void;
+  files: FilesRoad;
+}) {
   const raised = useKeyPanel();
   const kind = useKeyPanelKind();
   /** 「…」 is on only while the keys are the panel up (📎 has the files). */
@@ -234,7 +247,7 @@ function KeyPanel({ term, mods, onMods }: { term: RefObject<Terminal | null>; mo
             className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--kb)] flex-col border-t bg-background font-sans text-foreground"
           >
             {kind === "files" ? (
-              <TermFiles term={term} />
+              <TermFiles term={term} road={files} />
             ) : editing ? (
               <>
                 <div className="flex flex-none items-center gap-row px-row">

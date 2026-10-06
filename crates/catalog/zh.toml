@@ -3659,6 +3659,9 @@ key-attach-name = "放文件进终端"
 files-photos = "照片"
 files-files = "文件"
 files-land = "放到会话所在机器的 ~/khor-drop/，路径粘贴到光标处"
+# The files panel's machine list: the mark on the session's own machine,
+# listed first (the owner, 2026-10-07).
+files-session = "会话所在"
 # The terminal's reload circle beside ‹: join the session again.
 term-reload = "刷新"
 # The browsing landing's three page controls. **They are not the rail's

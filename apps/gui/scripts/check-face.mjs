@@ -28027,6 +28027,80 @@ try {
         fail(`term v · a row dragged from far's listing asked term_drop ${JSON.stringify(drops)}, not once with from "far"`);
       }
     }
+    // **The files panel, under a finger (item 60 part 3)**: 📎 in the
+    // key row raises it where the keyboard stands (`views/TermFiles`).
+    //
+    //  vi. its machine list: the session's machine first, marked as the
+    //      session's — a far row's machine, a local row's this one — and
+    //      a machine that hosts nothing (a phone) not listed.
+    {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+      const farRow = { ...termRow, id: "tui/face-far", title: "face-far", home: "peer", source: { device: "peer", age_ms: 1200 } };
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json([termRow, farRow]));
+      const pocket = { ...devs.find((d) => d.name === "peer"), id: "f".repeat(64), name: "pocket", shown: "pocket", hosts: false };
+      const meshDevices = json([...devs, pocket]);
+      await page.route("**/devices", meshDevices);
+      await page.route("**/term_resize", json(null));
+      await page.route("**/term_leave", json(null));
+      await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      /** The row opened on the phone, 📎 pressed: the panel's machines. */
+      const panelFor = async (rowId) => {
+        await open("sessions");
+        const o = page.locator(`[data-list] [data-row="${rowId}"] [data-row-open]`).first();
+        if (!(await until(3_000, async () => (await o.count()) > 0))) return "no row";
+        await o.click();
+        // The key row stands under the deck once its circle is pressed.
+        const rowSwitch = page.locator("[data-key-row-switch]").filter({ visible: true }).first();
+        if (await until(5_000, async () => (await rowSwitch.count()) > 0)) {
+          if ((await rowSwitch.getAttribute("aria-expanded")) !== "true") await rowSwitch.click();
+        }
+        const attach = page.locator('[data-term-key="attach"]').filter({ visible: true }).first();
+        if (!(await until(5_000, async () => (await attach.count()) > 0))) {
+          return `no 📎 (keys ${await page.locator("[data-term-key]").count()}, terminal ${await page.locator("[data-terminal]").count()})`;
+        }
+        await attach.click();
+        if (!(await until(3_000, async () => (await page.locator("[data-files-machine]").count()) > 0))) {
+          return `no machines (panel ${await page.locator("[data-files-panel]").count()})`;
+        }
+        return page.evaluate(() =>
+          [...document.querySelectorAll("[data-files-machine]")].map((b) => ({
+            name: b.getAttribute("data-files-machine"),
+            session: b.hasAttribute("data-files-session"),
+          })),
+        );
+      };
+      const machinesFar = await panelFor("tui/face-far");
+      console.log(`term vi · 📎 on a far row (peer): ${JSON.stringify(machinesFar)}`);
+      if (!Array.isArray(machinesFar)) {
+        fail(`probe dead: term vi · the far row on a phone: ${machinesFar}`);
+      } else if (
+        machinesFar[0]?.name !== "peer" ||
+        !machinesFar[0].session ||
+        machinesFar.slice(1).some((m) => m.session) ||
+        machinesFar.some((m) => m.name === "pocket")
+      ) {
+        fail(
+          `term vi · the files panel on peer's session listed ${JSON.stringify(machinesFar)} — the session's machine first and ` +
+            "marked as the session's, no other marked, and no phone (item 60 part 3, the owner 2026-10-07)",
+        );
+      }
+      await page.locator('[data-term-key="attach"]').filter({ visible: true }).first().click();
+      const machinesHere = await panelFor("tui/face-term");
+      console.log(`term vi · 📎 on a local row: ${JSON.stringify(machinesHere)}`);
+      if (!Array.isArray(machinesHere)) {
+        fail(`probe dead: term vi · the local row on a phone: ${machinesHere}`);
+      } else if (machinesHere[0]?.name !== "gate" || !machinesHere[0].session || machinesHere.slice(1).some((m) => m.session)) {
+        fail(`term vi · the files panel on this machine's session listed ${JSON.stringify(machinesHere)} — this machine first and marked`);
+      }
+      await page.unroute("**/devices", meshDevices);
+      await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await page.setViewportSize({ width: 1400, height: 900 });
+    }
     await page.unroute("**/term_drop");
     await page.unroute("**/term_drop_progress");
     await page.unroute("**/term_open");
