@@ -187,7 +187,11 @@ export const KEYMAP: { act: Act; chords: Chord[]; web: boolean }[] = [
   { act: "toggle-list", chords: [{ code: "KeyS", mod: true, ctrl: true, mac: true }], web: false },
 ];
 
-const IS_MAC = /mac/i.test(navigator.platform || navigator.userAgent);
+// **An iPhone's keyboard is a Mac's** (the terminal audit, item 53): its
+// platform says "iPhone", so `mod` became Ctrl, and a hardware keyboard's
+// ⌃K, ⌃L, ⌃N, ⌃T, ⌃W were the app's (find, lock, new, tab, close)
+// instead of the shell's. iOS keeps ⌘ for the app, as Blink does.
+const IS_MAC = /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent);
 
 type Keyish = Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">;
 

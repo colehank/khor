@@ -108,6 +108,7 @@ import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
+import { countsGain } from "@/lib/term-gain";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
 import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
@@ -1408,6 +1409,9 @@ export function TerminalPane({
   // The search: whether the bar is up, what is in it, and where the
   // addon says the matches are (`of` is -1 past the highlight limit).
   const searchRef = useRef<SearchAddon | null>(null);
+  /** The search is selecting its match (`onSelectionChange` copies only
+      what the person selects). */
+  const searchSelects = useRef(false);
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState("");
   // The last word looked for, for ⌘G after the bar was put away.
@@ -1477,6 +1481,9 @@ export function TerminalPane({
     const mount = mountRef.current;
     if (!box || !mount) return;
     const font = fontOf(box);
+    /** Opens an OSC 8 `file://` link; set once the session's machine
+        and the path opener are known (below). */
+    let fileLink = (_uri: string) => {};
     const term = new Terminal({
       // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
@@ -1485,11 +1492,25 @@ export function TerminalPane({
       // `window.open`, around `open_link`'s whitelist; OscLinkProvider.ts
       // 114). The same gesture as a plain URL (⌘-click, iTerm2's), and
       // the same road (`follow`).
+      //
+      // A `file://` link (`ls --hyperlink`, ripgrep's and gcc's
+      // hyperlinks, delta) is a path on the session's machine: it opens
+      // where a printed path opens (`lib/term-links`). xterm dropped
+      // every scheme but http(s) without `allowNonHttpProtocols`; any
+      // other scheme still opens nothing (the terminal audit, item 53).
       linkHandler: {
+        allowNonHttpProtocols: true,
         activate: (ev, uri) => {
-          if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
+          if (!(ev.metaKey || ev.ctrlKey)) return;
+          if (/^https?:/i.test(uri)) follow(uri, machine);
+          else if (/^file:/i.test(uri)) fileLink(uri);
         },
       },
+      // **A secondary click does not select** (the terminal audit, item
+      // 53): xterm's Mac default selected the word under it, and with
+      // copy on select that word replaced the clipboard just before the
+      // menu's 粘贴 read it. iTerm2's menu leaves the selection alone.
+      rightClickSelectsWord: false,
       // **The size reports programs ask for** (T-1: CSI 14 t, 16 t, 18 t
       // went unanswered because `windowOptions` defaults to none;
       // yazi asks 16 t for its cell size). Reports only — nothing here
@@ -1586,6 +1607,9 @@ export function TerminalPane({
         return true;
       }
       if (payload === "") return true;
+      // A copy from history is not copied again: every attach replayed
+      // the old yanks onto the clipboard (the terminal audit, item 53).
+      if (replaying > 0) return true;
       try {
         const bytes = Uint8Array.from(atob(payload), (c) => c.charCodeAt(0));
         void navigator.clipboard?.writeText(new TextDecoder().decode(bytes)).catch(() => {});
@@ -1749,10 +1773,20 @@ export function TerminalPane({
     // xterm's own do, so a replayed question answers into nothing.
     const kitty = kittyProtocol(term, (bytes) => term.input(bytes, false));
     (box as HTMLDivElement & { __kitty?: () => number }).__kitty = () => kittyFlags(term);
+    let bellAt = -Infinity;
     const rung = term.onBell(() => {
       // The person's bell setting (roadmap 4.2): off is silent; under a
       // finger it is felt as well as seen.
       if (!termBell()) return;
+      // A bell from history rang again on every attach (the terminal
+      // audit, item 53).
+      if (replaying > 0) return;
+      // **One bell per flash** (the terminal audit, item 53): a stream of
+      // BELs (a tab completion held, `yes $'\a'`) was a stream of
+      // haptics. The bells inside one flash are that flash.
+      const now = performance.now();
+      if (now - bellAt < BELL_MS) return;
+      bellAt = now;
       if (window.matchMedia("(pointer: coarse)").matches) bellHaptic().catch(() => {});
       setRang(true);
       window.clearTimeout(bellTimer.current);
@@ -1761,7 +1795,14 @@ export function TerminalPane({
     // Copy on select. The clipboard can refuse (no permission, no
     // secure context on a LAN address) and then ⌘C still works — this
     // is the shortcut, not the only way.
+    //
+    // A search shows its match by selecting it (`addon-search`'s
+    // `_selectResult`): that selection is the find bar's, not the
+    // person's, and copying it put every match stepped through on the
+    // clipboard (the terminal audit, item 53). iTerm2's find leaves the
+    // clipboard alone.
     const selected = term.onSelectionChange(() => {
+      if (searchSelects.current) return;
       const s = copyable(term.getSelection());
       if (s) navigator.clipboard?.writeText(s).catch(() => {});
     });
@@ -1860,6 +1901,14 @@ export function TerminalPane({
     const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd();
     const openPath = (t: { path: string; dir: boolean; line: number | null }) =>
       askOpenPath(here, t.path, t.dir, t.line);
+    fileLink = (uri) => {
+      try {
+        const path = decodeURIComponent(new URL(uri).pathname);
+        if (path) openPath({ path, dir: path.endsWith("/"), line: null });
+      } catch {
+        /* not a URL: nothing to open */
+      }
+    };
     const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
     const tapped = (row: number, col: number) => {
       if (picture(row, col)) return true;
@@ -2532,6 +2581,7 @@ export function TerminalPane({
           historyUp = to;
           sync();
         },
+        gained: () => setFreshBelow(true),
         outOfReach: () => {
           setHistoryOut(true);
           window.clearTimeout(outShown);
@@ -2564,17 +2614,28 @@ export function TerminalPane({
     // fire, which is right: that screen has no history to be up in.
     // Up in a tmux pane's history (item 31) is up too: the pill takes
     // the person back down there, and says when output arrived meanwhile.
+    //
+    // **Output means lines** (item 52, `lib/term-gain`): an idle shell
+    // writes when the fold resizes it (a prompt redrawn in place, tmux's
+    // whole client) and tmux's clock ticks; none of that is 新输出. In a
+    // tmux pane's history the history's own reads say what arrived.
+    const gain = countsGain(term);
+    let wasBehind = false;
     const sync = () => {
       const b = term.buffer.active;
       const behind = b.viewportY < b.baseY || historyUp;
+      if (behind && !wasBehind) gain.mark();
+      wasBehind = behind;
       setBack(behind);
       if (!behind) setFreshBelow(false);
     };
     const scrolled = term.onScroll(sync);
     const wrote = term.onWriteParsed(() => {
       const b = term.buffer.active;
-      if (b.viewportY < b.baseY || historyUp) setFreshBelow(true);
-      else sync();
+      if (historyUp) return;
+      if (b.viewportY < b.baseY) {
+        if (gain.grew()) setFreshBelow(true);
+      } else sync();
     });
 
     // Coalesced to one fit per frame: dragging a window fires
@@ -2687,6 +2748,7 @@ export function TerminalPane({
       box.removeEventListener("contextmenu", rightClick);
       scrolled.dispose();
       wrote.dispose();
+      gain.stop();
       found.dispose();
       rung.dispose();
       selected.dispose();
@@ -2822,6 +2884,15 @@ export function TerminalPane({
   // match under the caret grows with the word instead of jumping to
   // the next one), ⏎/⇧⏎ and the two chevrons step, ⎋ and the close
   // put it away and hand the keys back to the terminal.
+  /** A search step, whose selection of the match is not a copy. */
+  const quietly = (f: () => void) => {
+    searchSelects.current = true;
+    try {
+      f();
+    } finally {
+      searchSelects.current = false;
+    }
+  };
   const look = (q: string) => {
     setQuery(q);
     const s = searchRef.current;
@@ -2831,13 +2902,12 @@ export function TerminalPane({
       setHits(null);
       return;
     }
-    s.findNext(q, { incremental: true, decorations: found() });
+    quietly(() => s.findNext(q, { incremental: true, decorations: found() }));
   };
   const step = (dir: 1 | -1) => {
     const s = searchRef.current;
     if (!s || !query) return;
-    if (dir > 0) s.findNext(query, { decorations: found() });
-    else s.findPrevious(query, { decorations: found() });
+    quietly(() => (dir > 0 ? s.findNext(query, { decorations: found() }) : s.findPrevious(query, { decorations: found() })));
   };
   findAgain.current = (dir) => {
     const q = query || lastQuery.current;
@@ -2847,8 +2917,7 @@ export function TerminalPane({
       setFinding(true);
       setQuery(q);
     }
-    if (dir > 0) s.findNext(q, { decorations: found() });
-    else s.findPrevious(q, { decorations: found() });
+    quietly(() => (dir > 0 ? s.findNext(q, { decorations: found() }) : s.findPrevious(q, { decorations: found() })));
   };
   const stopFinding = () => {
     if (query) lastQuery.current = query;

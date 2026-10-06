@@ -15,6 +15,7 @@
 import { Terminal } from "@xterm/xterm";
 import type { PaneAnchor } from "@/gen/bindings/PaneAnchor";
 import type { PaneHistory } from "@/gen/bindings/PaneHistory";
+import { countsGain } from "@/lib/term-gain";
 import { scrollsNatively } from "@/lib/term-scroller";
 
 /** Output quiet this long, tmux has pushed what it will into the history. */
@@ -97,6 +98,9 @@ export function holdsTmuxHistory(o: {
   outOfReach: () => void;
   /** The person went up into the history, or came back to the bottom. */
   moved: (up: boolean) => void;
+  /** Lines arrived below the person up in the history (item 52): a read
+      brought the pane's history or screen further, not a redraw. */
+  gained: () => void;
 }): {
   active: () => boolean;
   /** The history xterm while the person is up in it: what a long press
@@ -157,11 +161,18 @@ export function holdsTmuxHistory(o: {
     return on && !!b && b.viewportY < b.baseY;
   };
   let wasUp = false;
+  /** The history xterm's extent since the person went up (item 52). */
+  let gain: ReturnType<typeof countsGain> | null = null;
   const show = () => {
     const now = up();
     seat.style.visibility = now ? "visible" : "hidden";
     if (now !== wasUp) {
       wasUp = now;
+      // A copy still catching up (a read under way, or output since the
+      // last) is counted from that read: what it brings was there before
+      // the person went up.
+      if (now && (behind || reading)) gain?.defer();
+      else if (now) gain?.mark();
       o.moved(now);
     }
   };
@@ -190,6 +201,7 @@ export function holdsTmuxHistory(o: {
     // For the gates, as the live one is.
     (seat as HTMLElement & { __xterm?: Terminal }).__xterm = t;
     t.onScroll(show);
+    gain = countsGain(t);
     native = scrollsNatively(t, o.scroller, o.room, seat, { yields: () => !on });
     return t;
   };
@@ -202,6 +214,8 @@ export function holdsTmuxHistory(o: {
     give(false);
     native?.stop();
     native = null;
+    gain?.stop();
+    gain = null;
     history?.dispose();
     history = null;
     delete (seat as HTMLElement & { __xterm?: Terminal }).__xterm;
@@ -236,12 +250,16 @@ export function holdsTmuxHistory(o: {
     // the bottom as they were: it is mostly the same lines again.
     const b = history.buffer.active;
     const fromBottom = h.refill && up() ? b.baseY - b.viewportY : 0;
+    // A refill is the copy again, mostly the same lines: counted from
+    // after it, not as arrivals.
+    if (h.refill) gain?.defer();
     if (h.refill) history.reset();
     const t = history;
     t.write(historyBytes(h, t.rows), () => {
       if (fromBottom > 0) t.scrollToLine(Math.max(0, t.buffer.active.baseY - fromBottom));
       native?.sync();
       show();
+      if (up() && gain?.grew()) o.gained();
     });
   };
   /** Resolves false when the history could not be read. */
@@ -311,6 +329,8 @@ export function holdsTmuxHistory(o: {
     t?.write("\x1b[H\x1b[J", () => {
       if (history !== t) return;
       t.resize(live.cols, live.rows);
+      // The screen was cleared for the resize: the next read puts it back.
+      gain?.defer();
       if (up()) quietThen();
     });
   });
