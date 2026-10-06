@@ -93,3 +93,62 @@ fn bash_marks_ten_commands() {
 fn fish_marks_ten_commands() {
     read("fish", "for i in 1 2\necho $i; end", "sh -c 'exit 3'");
 }
+
+/// **A tmux the person typed in a khor shell** (SESS-BRIEF 3, step 1):
+/// recorded from a real pty — zsh with khor's integration typed `tmux`
+/// on a private server, two panes whose zsh loads the integration ran
+/// commands (one still running in `%1` while `%0` ran two more), a third
+/// pane ran `zsh -f`, and the server was killed. Each pane's commands
+/// are its own, with their pane, directory and status; the shell's own
+/// `tmux` ends when tmux does, not at the first pane's prompt.
+#[test]
+fn a_tmux_typed_in_a_khor_shell_keeps_each_panes_commands_apart() {
+    let bytes = std::fs::read(format!(
+        "{}/tests/fixtures/shell/zsh-tmux.bin",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let mut ledger = Ledger::default();
+    let mut done = Vec::new();
+    let mut tmux_ran = false;
+    for (i, chunk) in bytes.chunks(61).enumerate() {
+        ledger.feed(chunk, i as u64);
+        done.extend(ledger.take_finished());
+        let d = ledger.doing();
+        if d.command.as_deref().is_some_and(|c| c.starts_with("tmux ")) && d.running {
+            tmux_ran = true;
+        }
+    }
+    let got: Vec<(Option<&str>, &str, Option<i32>, &str)> = done
+        .iter()
+        .map(|c| {
+            (
+                c.pane.as_deref(),
+                c.text.as_deref().unwrap_or(""),
+                c.exit,
+                c.cwd.as_deref().unwrap_or(""),
+            )
+        })
+        .collect();
+    let tmux = "tmux -L k3 -f /dev/null new -s s3 -c /s3/w/one";
+    assert_eq!(
+        got,
+        [
+            (Some("%0"), "echo one-a", Some(0), "/s3/w/one"),
+            (Some("%0"), "(exit 2)", Some(2), "/s3/w/one"),
+            (Some("%1"), "echo two-a", Some(0), "/s3/w/two"),
+            (Some("%0"), "echo one-b", Some(0), "/s3/w/one"),
+            (Some("%0"), "cd ../three", Some(0), "/s3/w/one"),
+            (Some("%1"), "sleep 2; echo two-b", Some(0), "/s3/w/two"),
+            (Some("%0"), "echo one-c", Some(0), "/s3/w/three"),
+            (None, tmux, Some(1), "/s3/w/start"),
+        ]
+    );
+    assert!(tmux_ran, "the shell's row said tmux ran while it did");
+    let d = ledger.doing();
+    assert_eq!(
+        (d.command.as_deref(), d.running, d.cwd.as_deref()),
+        (Some("exit"), true, Some("/s3/w/start")),
+        "the shell's own context, back at its prompt where it typed exit"
+    );
+}

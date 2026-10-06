@@ -38,6 +38,17 @@
 //! Text typed at a prompt is never read here: the bytes between marks
 //! are tmux's redraw of the whole screen.
 //!
+//! # A tmux typed in a shell
+//!
+//! A shell's own PTY ([`Ledger::default`]) carries the same wrapped marks
+//! once the person types `tmux` in it and the panes' shells load khor's
+//! integration (the `~/.zshrc` line Settings shows). From the first
+//! `KhorPane` mark on, each pane's marks are read in that pane's context
+//! as above, and every mark not led by one is the shell's own, read in
+//! its own context: the shell's `tmux` runs until tmux exits. Which pane
+//! is in front is not read here (the person's titles are their own); the
+//! node asks tmux.
+//!
 //! Marks can arrive twice (two integrations, or a first prompt marked by
 //! both the deferred install and its hook): a second `A` with nothing in
 //! between, or a `C` while one is running, changes nothing.
@@ -173,12 +184,13 @@ pub struct Ledger {
     finished: Vec<Command>,
     /// Read off a tmux client (see the module head).
     tmux: bool,
-    /// The pane whose context is in the fields above.
+    /// The pane whose context is in the fields above; `None` for the
+    /// shell's own.
     pane: Option<String>,
     /// The pane tmux has in front, from its title.
     front: Option<String>,
-    /// The other panes' contexts, oldest first.
-    parked: Vec<(String, Parked)>,
+    /// The other contexts, oldest first (`None` is a shell's own).
+    parked: Vec<(Option<String>, Parked)>,
     /// A `KhorPane` named a pane for the string that follows it alone.
     lent: bool,
 }
@@ -211,7 +223,7 @@ impl Ledger {
             Scan::Ground => {
                 if b == 0x1b {
                     self.scan = Scan::Esc;
-                } else if self.phase == Phase::Input && !self.tmux {
+                } else if self.phase == Phase::Input && !self.through_tmux() {
                     self.typed_byte(b);
                 }
             }
@@ -309,21 +321,33 @@ impl Ledger {
         self.buf.clear();
     }
 
-    /// Back to the pane in front once a lent pane's mark is read.
+    /// Whether the context in the fields reads its marks through tmux.
+    fn through_tmux(&self) -> bool {
+        self.tmux || self.pane.is_some()
+    }
+
+    /// Back to the pane in front once a lent pane's mark is read, or to a
+    /// shell's own context.
     fn give_back(&mut self) {
-        if std::mem::take(&mut self.lent)
-            && let Some(front) = self.front.clone()
-        {
-            self.switch(&front);
+        if !std::mem::take(&mut self.lent) {
+            return;
+        }
+        if !self.tmux {
+            self.switch(None);
+        } else if let Some(front) = self.front.clone() {
+            self.switch(Some(&front));
         }
     }
 
     /// Puts `pane`'s context in the fields, parking the one there.
-    fn switch(&mut self, pane: &str) {
-        if self.pane.as_deref() == Some(pane) {
+    fn switch(&mut self, pane: Option<&str>) {
+        if self.pane.as_deref() == pane {
             return;
         }
-        if let Some(was) = self.pane.take() {
+        let was = self.pane.take();
+        // A tmux client's context before any pane is nobody's; a shell's
+        // is its own.
+        if was.is_some() || !self.tmux {
             let parked = Parked {
                 phase: std::mem::take(&mut self.phase),
                 named: self.named.take(),
@@ -338,7 +362,7 @@ impl Ledger {
         let back = self
             .parked
             .iter()
-            .position(|(p, _)| p == pane)
+            .position(|(p, _)| p.as_deref() == pane)
             .map(|i| self.parked.remove(i).1)
             .unwrap_or_default();
         self.phase = back.phase;
@@ -346,19 +370,18 @@ impl Ledger {
         self.running = back.running;
         self.cwd = back.cwd;
         self.typed.clear();
-        self.pane = Some(pane.to_owned());
+        self.pane = pane.map(str::to_owned);
         self.changed = true;
     }
 
     fn osc(&mut self, now: u64) {
         let text = String::from_utf8_lossy(&self.buf).into_owned();
         let (code, rest) = text.split_once(';').unwrap_or((text.as_str(), ""));
-        if self.tmux
-            && code == "633"
+        if code == "633"
             && let Some(pane) = rest.strip_prefix("P;KhorPane=").filter(|p| !p.is_empty())
         {
             self.give_back();
-            self.switch(pane);
+            self.switch(Some(pane));
             self.lent = true;
             return;
         }
@@ -450,7 +473,7 @@ impl Ledger {
                 {
                     if self.front.as_deref() != Some(pane) {
                         self.front = Some(pane.to_owned());
-                        self.switch(pane);
+                        self.switch(Some(pane));
                     }
                     t = title;
                 }
@@ -483,7 +506,7 @@ impl Ledger {
                     // Through tmux, a pane out of sight loses its marks
                     // (`allow-passthrough on`): a new command in it says
                     // the last one ended, when, unknown how.
-                    if !self.tmux {
+                    if !self.through_tmux() {
                         return;
                     }
                     self.end(None, now);
@@ -528,11 +551,12 @@ impl Ledger {
         if line.is_empty() {
             return;
         }
+        let through_tmux = self.through_tmux();
         match &mut self.running {
             // fish 4 says C first, then this; khor's scripts never do
             // inside tmux, where a command still running is one whose
             // end was lost out of sight.
-            Some(c) if !self.tmux => {
+            Some(c) if !through_tmux => {
                 c.text = Some(line);
                 self.changed = true;
             }
