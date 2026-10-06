@@ -2287,6 +2287,7 @@ export default function App() {
             onOpen={() => setSideQuota("detail")}
             onBack={() => setSideQuota("list")}
             landOn={selectedRow.category}
+            bare
           />
         );
     }

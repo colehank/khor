@@ -939,9 +939,16 @@ export function QuotaLanding({
   onOpen,
   onBack,
   landOn = null,
+  bare = false,
   stale = false,
   devices,
 }: {
+  /** **Drawn inside the session's 附栏** (UX-37 §2, the owner's 「额度页面
+      布局有问题，有背景」): the rows alone, edge to edge on the column's or
+      the sheet's own ground — no landing head over them (the title, the
+      filter, ＋ and the search are the 额度 landing's), and the account
+      opens as a card with no ground of its own, as the machine does. */
+  bare?: boolean;
   /** The shell cannot reach khor: what is on the board is the last
       answer, and R0's caption says so (components/RegionState). */
   stale?: boolean;
@@ -1984,7 +1991,7 @@ export function QuotaLanding({
         // the screen's head) was drawn only once the board had been read.
         narrow ? (
           board === null && !error ? (
-            <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bar}>
+            <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bare ? undefined : bar}>
               {list}
             </ListPane>
           ) : (
@@ -2060,7 +2067,7 @@ export function QuotaLanding({
             </div>
           </div>
         ) : (
-          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bar}>
+          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bare ? undefined : bar}>
             {list}
           </ListPane>
         )

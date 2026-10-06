@@ -743,6 +743,12 @@ aside[data-side] {
    flat glass over the pages, which keep its room at their scrollers'
    foot (`[data-nav-shown]` above). */
 [data-place-sheet] {
+  /* **The sheet is the card** (UX-37 §2): a page inside wears no ground
+     of its own — a list's `side`, a page's `card`, the landing's
+     `background` all read the sheet's surface here. */
+  --background: var(--popover);
+  --card: var(--popover);
+  --side: var(--popover);
   height: calc(var(--place-sheet-half) * 100dvh);
   transition: height var(--dur-240) var(--ease-out);
   animation: sheet-up var(--dur-240) var(--ease-out);

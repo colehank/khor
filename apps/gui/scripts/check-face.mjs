@@ -30494,6 +30494,52 @@ try {
         if (deckBack !== "false visible") fail(`bar p · the sheet gone, the deck reads ${deckBack} — it comes back`);
         if (away !== null) await shut();
         await sheet();
+        // ── UX-37 §2: rows run edge to edge — a row's box is the sheet's
+        //    width, only its face and words keep the page inset — and no
+        //    seat's page wears a ground of its own (the sheet is the
+        //    card); 额度 draws no landing head (bug B: 「额度页面布局有问题，
+        //    有背景」). Every seat is looked at. ──
+        const grounds = {};
+        for (const s of ["recent", "workspace", "browser", "machine", "quota"]) {
+          await press(`[data-place-sheet] [data-col-seat="${s}"]`);
+          await wait(700);
+          grounds[s] = await page.evaluate(() => {
+            const sheet = document.querySelector("[data-place-sheet]");
+            const pg = document.querySelector("[data-place-sheet] [data-side-page]");
+            if (!sheet || !pg) return null;
+            const own = getComputedStyle(sheet).backgroundColor;
+            const box = pg.getBoundingClientRect();
+            const odd = [];
+            for (const el of [pg, ...pg.querySelectorAll("*")]) {
+              const bg = getComputedStyle(el).backgroundColor;
+              if (bg === own || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") continue;
+              const r = el.getBoundingClientRect();
+              // A ground is a surface, not a control: most of the page's
+              // width and taller than a row.
+              if (r.width >= box.width * 0.6 && r.height >= 120) odd.push(`${el.tagName.toLowerCase()}${[...el.attributes].filter((a) => a.name.startsWith("data-")).map((a) => `[${a.name}]`).slice(0, 2).join("")} ${bg}`);
+            }
+            const row = pg.querySelector("[data-side-row]")?.getBoundingClientRect() ?? null;
+            const slot = pg.querySelector("[data-side-row] [data-side-face-slot]")?.getBoundingClientRect() ?? null;
+            const inset = parseFloat(getComputedStyle(pg).getPropertyValue("--page-inset"));
+            return {
+              odd,
+              head: pg.querySelectorAll("[data-pane-bar]").length,
+              row: row && { l: Math.round(row.left - box.left), r: Math.round(box.right - row.right), face: Math.round(slot.left - row.left), inset },
+            };
+          });
+        }
+        console.log(`bar p · UX-37 §2 ${shown(grounds)}`);
+        for (const [s, g] of Object.entries(grounds)) {
+          if (g === null) {
+            fail(`probe dead: bar p · the ${s} seat drew no page in the sheet`);
+            continue;
+          }
+          if (g.odd.length) fail(`bar p · the ${s} seat's page wears a ground of its own: ${g.odd.slice(0, 3).join("; ")} — the sheet is the card (UX-37 §2)`);
+          if (g.row && (g.row.l !== 0 || g.row.r !== 0 || g.row.face !== g.row.inset)) {
+            fail(`bar p · the ${s} seat's row stands ${shown(g.row)} — its box reaches both edges, its face the page inset in (UX-37 §2)`);
+          }
+        }
+        if (grounds.quota?.head !== 0) fail(`bar p · the 额度 seat draws the landing's head (${grounds.quota?.head}) — the rows alone (UX-37 bug B)`);
         await press('[data-place-sheet] [data-col-seat="workspace"]');
         await wait(600);
         const lsFirst = askedLs.map((a) => a.path);
