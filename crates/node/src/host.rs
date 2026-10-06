@@ -786,6 +786,30 @@ fn redraw_tmux_client(cmd: &[String], tty: Option<std::path::PathBuf>) {
     });
 }
 
+/// **The program on the terminal draws its screen again** (item 57):
+/// SIGWINCH to the pty's foreground process group, after the host's
+/// model lost its picture to a vt100 panic ([`Model::feed`]). Every
+/// full-screen program repaints on it — a tmux client has its server
+/// redraw it whole even at an unchanged size; vim, htop and claude
+/// redraw; a shell its prompt. A same-size `TIOCSWINSZ` signals nothing
+/// (the kernel compares the sizes first), so the signal is sent itself.
+#[cfg(unix)]
+fn repaint_foreground(leader: Option<i32>) {
+    if let Some(group) = leader.filter(|&p| p > 0) {
+        // SAFETY: a signal to a process group; no memory is touched.
+        unsafe {
+            libc::kill(-group, libc::SIGWINCH);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn repaint_foreground(_leader: Option<i32>) {}
+
+/// The least time between two repaints asked for after a panic: a
+/// program whose every repaint panics vt100 is not kept redrawing.
+const REPAINT_EVERY: Duration = Duration::from_secs(1);
+
 struct Shared {
     /// Lock order everywhere: ring, then clients — an attacher must
     /// snapshot and join atomically or it double-receives the bytes the
@@ -859,26 +883,71 @@ impl Model {
         self.keeps = self.asked;
     }
 
-    /// vt100 has corner-case panics on real streams (`khor_detect::Screen`
-    /// met one: a wide character at the last column). One bad frame must
+    /// vt100 has corner-case panics on real streams. One bad frame must
     /// not kill the host: the parser is replaced at its size, and the
-    /// program's next repaint restores the picture (the history is lost).
-    fn feed(&mut self, bytes: &[u8]) {
+    /// history is lost. Answers whether it was, so the caller asks the
+    /// program to draw again ([`repaint_foreground`]).
+    ///
+    /// The fresh parser stays on the screen the old one was on, with its
+    /// input modes (item 57): a program's repaint does not switch screens
+    /// again, and a model left on the normal screen was handed out under
+    /// the modes' `ESC [ ? 1049 h` as a blank alternate screen.
+    fn feed(&mut self, bytes: &[u8]) -> bool {
         use std::panic::{AssertUnwindSafe, catch_unwind};
         let (rows, cols) = self.parser.screen().size();
-        if catch_unwind(AssertUnwindSafe(|| self.parser.process(bytes))).is_err() {
+        let replaced = catch_unwind(AssertUnwindSafe(|| self.parser.process(bytes))).is_err();
+        if replaced {
+            let old = self.parser.screen();
+            let mut kept = Vec::new();
+            if old.alternate_screen() {
+                kept.extend_from_slice(b"\x1b[?1049h");
+            }
+            kept.extend_from_slice(&old.input_mode_formatted());
+            if old.hide_cursor() {
+                kept.extend_from_slice(b"\x1b[?25l");
+            }
             self.parser = vt100::Parser::new(rows, cols, self.keeps);
+            self.parser.process(&kept);
         }
         if self.asked > self.keeps {
             self.settle();
         }
+        replaced
     }
 
+    /// **A narrowing never splits a wide character** (item 57, measured):
+    /// vt100's resize cuts each row without clearing a wide character
+    /// that straddles the new last column, and the next erase or write
+    /// on that cell indexes past the row (`row.rs` `clear_wide`). A tmux
+    /// client redraws every row after a resize, so a CJK pane and a face
+    /// one column narrower panicked the model every time. The straddling
+    /// characters of the screen in view are erased first — they would be
+    /// cut anyway — and the cursor and attributes put back. The screen
+    /// out of view (the shell's under a full-screen program) cannot be
+    /// reached; [`Model::feed`] catches what that leaves.
     fn resize(&mut self, rows: u16, cols: u16) {
-        let (r, c) = self.parser.screen().size();
-        if (r, c) != (rows, cols) {
-            self.parser.screen_mut().set_size(rows, cols);
+        let screen = self.parser.screen();
+        let (r, c) = screen.size();
+        if (r, c) == (rows, cols) {
+            return;
         }
+        if cols < c && cols > 0 {
+            let mut scrub = Vec::new();
+            for row in 0..r {
+                if screen.cell(row, cols - 1).is_some_and(vt100::Cell::is_wide) {
+                    scrub.extend_from_slice(format!("\x1b[{};{}H\x1b[X", row + 1, cols).as_bytes());
+                }
+            }
+            if !scrub.is_empty() {
+                let (cy, cx) = screen.cursor_position();
+                let mut bytes = b"\x1b[0m".to_vec();
+                bytes.extend_from_slice(&scrub);
+                bytes.extend_from_slice(format!("\x1b[{};{}H", cy + 1, cx + 1).as_bytes());
+                bytes.extend_from_slice(&screen.attributes_formatted());
+                let _ = self.feed(&bytes);
+            }
+        }
+        self.parser.screen_mut().set_size(rows, cols);
     }
 
     /// **⌘K** ([`ClientOp::Forget`]), kept by the model as the ring keeps
@@ -1469,6 +1538,7 @@ fn host_serving(
             // 4 KiB strip or one screen read per 8 KiB of output —
             // cheap; the change gate keeps the disk out of the loop.
             let mut last_written: Option<String> = None;
+            let mut repainted: Option<std::time::Instant> = None;
             loop {
                 let n = match reader.read(&mut buf) {
                     Ok(0) | Err(_) => break,
@@ -1528,9 +1598,7 @@ fn host_serving(
                 }
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
-                if let Some(m) = shared.model.lock().unwrap().as_mut() {
-                    m.feed(&buf[..n]);
-                }
+                let lost = shared.model.lock().unwrap().as_mut().is_some_and(|m| m.feed(&buf[..n]));
                 let chunk: Arc<[u8]> = Arc::from(&buf[..n]);
                 let mut clients = shared.clients.lock().unwrap();
                 // Queued, never written here: the program must not wait
@@ -1538,6 +1606,14 @@ fn host_serving(
                 clients.retain(|c| c.feed(&chunk));
                 drop(clients);
                 drop(ring);
+                // **The model lost its picture: the program draws it
+                // again** (item 57), before a face joins and is handed
+                // the blank. The faces attached now saw the bytes
+                // themselves; to them the repaint is one more frame.
+                if lost && repainted.is_none_or(|t| t.elapsed() >= REPAINT_EVERY) {
+                    repainted = Some(std::time::Instant::now());
+                    repaint_foreground(master.lock().unwrap().process_group_leader());
+                }
                 // Never for a tmux client (`mux_client`): its bottom
                 // line is tmux's status bar, which is true of the
                 // screen and a lie about the session. Nor for a shell
@@ -2173,6 +2249,90 @@ mod last_line_tests {
         assert_eq!(history_of(&mut model), (MODEL_SCROLLBACK, "line 477".to_owned()), "the normal screen's history came through");
     }
 
+    /// A shell's history, then a full-screen program with CJK to its
+    /// right edge (40 wide characters fill 80 columns) and the cursor
+    /// parked in it, the way a tmux client leaves its screen.
+    fn tmux_with_cjk_to_the_edge() -> Vec<u8> {
+        let mut raw = Vec::new();
+        for i in 0..100 {
+            raw.extend_from_slice(format!("line {i}\r\n").as_bytes());
+        }
+        raw.extend_from_slice(b"\x1b[?1049h\x1b[?1h\x1b=\x1b[H\x1b[2J");
+        for r in 1..=6 {
+            raw.extend_from_slice(format!("\x1b[{r};1H{}", "\u{4e2d}".repeat(40)).as_bytes());
+        }
+        raw.extend_from_slice(b"\x1b[7;1HMARK\x1b[24;1H\x1b[42m[one] 0:sh*\x1b[0m\x1b[7;5H");
+        raw
+    }
+
+    /// A tmux client's redraw after a resize: every row from the top,
+    /// each erased to its end.
+    fn redraw(cols: usize) -> Vec<u8> {
+        let mut raw = b"\x1b[H".to_vec();
+        for r in 1..=6 {
+            raw.extend_from_slice(format!("\x1b[{r};1H{}\x1b[K", "\u{6587}".repeat(cols / 2)).as_bytes());
+        }
+        raw.extend_from_slice(b"\x1b[7;1HREDRAWN\x1b[K\x1b[7;8H");
+        raw
+    }
+
+    /// The model's snapshot as a face shows it.
+    fn face_of(model: &mut Model, modes: &[u8], rows: u16, cols: u16) -> vt100::Parser {
+        let snap = model.snapshot(modes);
+        let mut face = vt100::Parser::new(rows, cols, MODEL_SCROLLBACK);
+        face.process(&snap);
+        face
+    }
+
+    /// **A narrowing does not panic the model** (item 57, measured with
+    /// a real tmux client's bytes): vt100's resize leaves a wide character
+    /// cut at the new last column, and tmux's redraw erasing that cell
+    /// panicked the parser, so the model came back blank and lost the
+    /// shell's history. The resize erases what it would cut first.
+    #[test]
+    fn a_narrowing_over_wide_characters_keeps_the_screen_and_the_history() {
+        let raw = tmux_with_cjk_to_the_edge();
+        let mut modes = Modes::default();
+        modes.feed(&raw);
+        let mut model = Model::new(24, 80);
+        let _ = model.feed(&raw);
+        model.resize(24, 79);
+        let _ = model.feed(&redraw(79));
+        let face = face_of(&mut model, &modes.preamble(), 24, 79);
+        let s = face.screen();
+        assert!(s.alternate_screen(), "the face is on the program's screen");
+        assert_eq!(s.rows(0, 79).nth(6).unwrap().trim_end(), "REDRAWN", "the redraw is what the face is handed");
+        assert_eq!(s.rows(0, 79).next().unwrap().trim_end(), "\u{6587}".repeat(39), "the wide rows at the new width");
+        let _ = model.feed(b"\x1b[?1049l");
+        assert_eq!(history_of(&mut model).1, "line 0", "the shell's history under the program is kept");
+    }
+
+    /// **A model that panics keeps its screen for the repaint** (item
+    /// 57): whatever vt100 panics on, the fresh parser stays on the
+    /// alternate screen with the modes the program set, and says so, so
+    /// the host asks the program to draw again and the redraw lands
+    /// where the face will look. Left on the normal screen, a full
+    /// redraw went to the normal grid and the face, switched to the
+    /// alternate screen by the modes, was handed a blank.
+    #[test]
+    fn a_model_that_panics_keeps_its_screen_for_the_repaint() {
+        let raw = tmux_with_cjk_to_the_edge();
+        let mut modes = Modes::default();
+        modes.feed(&raw);
+        let mut model = Model::new(24, 80);
+        let _ = model.feed(&raw);
+        // vt100's own resize, without the model's care: the cut the
+        // panic comes from.
+        model.parser.screen_mut().set_size(24, 79);
+        let lost = model.feed(&redraw(79));
+        assert!(lost, "the model says it lost its picture");
+        assert!(model.parser.screen().alternate_screen(), "still on the program's screen");
+        assert!(model.parser.screen().application_cursor(), "the program's modes are kept");
+        let _ = model.feed(&redraw(79));
+        let face = face_of(&mut model, &modes.preamble(), 24, 79);
+        assert_eq!(face.screen().rows(0, 79).nth(6).unwrap().trim_end(), "REDRAWN", "the repaint is what the face is handed, not a blank");
+    }
+
     /// What one shell's model costs (item 56): the process's resident
     /// size before and after filling one model's history, `MODEL_COLS`
     /// wide and `MODEL_LINES` long — one measurement a process, since
@@ -2356,3 +2516,4 @@ mod handshake_tests {
         );
     }
 }
+
