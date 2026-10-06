@@ -30505,6 +30505,32 @@ try {
         if (back.title !== base.title || back.inView.join() !== "cur" || Math.abs(back.x - base.x) > 1) {
           fail(`bar u · a pull of a third of the band left ${shown(back)} — it springs back to ${shown(base)}`);
         }
+        // A tap anywhere on the current segment is the title's (UX-35 §1):
+        // on the face, and in the room after a short name — the owner's
+        // 「khor」 pill answered only on its four letters.
+        const spots = await page.evaluate(() => {
+          const band = document.querySelector("[data-session-deck] [data-deck-band]")?.getBoundingClientRect();
+          const face = document.querySelector('[data-session-deck] [data-band-seg="cur"] [data-deck-face]')?.getBoundingClientRect();
+          const name = document.querySelector("[data-session-deck] [data-deck-title]")?.getBoundingClientRect();
+          if (!band || !face || !name) return null;
+          const y = band.top + band.height / 2;
+          return { face: { x: face.left + face.width / 2, y }, after: name.right < band.right - 12 ? { x: band.right - 6, y } : null };
+        });
+        const tapOpens = async (at) => {
+          await page.mouse.click(at.x, at.y);
+          const up = await until(2_000, async () => (await count("[data-place-sheet]")) === 1);
+          if (up) {
+            await page.keyboard.press("Escape");
+            await until(2_000, async () => (await count("[data-place-sheet]")) === 0);
+          }
+          return up;
+        };
+        const onFace = spots ? await tapOpens(spots.face) : false;
+        const pastName = spots?.after ? await tapOpens(spots.after) : null;
+        console.log(`bar u · a tap on the face opens the sheet: ${onFace}; after the name: ${pastName ?? "no room after the name"}`);
+        if (!onFace || pastName === false) {
+          fail(`bar u · a tap on the band's face ${onFace} / after the name ${pastName} — anywhere on the current segment is the title's press (UX-35 §1; SessionBar DeckBand)`);
+        }
       }
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
