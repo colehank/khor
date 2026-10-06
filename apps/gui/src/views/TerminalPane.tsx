@@ -629,6 +629,9 @@ function tapsAskFirst(
   };
 }
 
+/** xterm's own default `wordSeparator` (a double-click's word). */
+const WORD_SEPARATOR = " ()[]{}',\"`";
+
 /** A finger held this long without moving starts a selection. */
 const LONG_PRESS_MS = 450;
 /** …and this much travel before then makes it a drag instead. */
@@ -664,9 +667,13 @@ function pressSelects(
   let y0 = 0;
   let selecting = false;
   let anchor: { col: number; row: number } | null = null;
+  // **A word is what a double-click takes on the Mac** (the terminal
+  // audit, item 53): xterm's `wordSeparator`, so `(src/a.rs:12),` gives
+  // `src/a.rs:12` under a finger as under a mouse; it was split on
+  // spaces only, brackets and quotes taken along.
   const blank = (row: number, col: number) => {
     const ch = term.buffer.active.getLine(row)?.getCell(col)?.getChars() ?? "";
-    return ch === "" || ch === " ";
+    return ch === "" || (term.options.wordSeparator ?? WORD_SEPARATOR).includes(ch);
   };
   const selectWord = (at: { col: number; row: number }) => {
     let from = at.col;
@@ -720,7 +727,9 @@ function pressSelects(
     // No synthesized mousedown after it: that would clear the selection.
     e.preventDefault();
     e.stopImmediatePropagation();
-    const text = term.getSelection();
+    // Trimmed as copy-on-select trims it: the lift wrote the raw rows'
+    // padding over the copy just made.
+    const text = copyable(term.getSelection());
     if (text) navigator.clipboard?.writeText(text).catch(() => {});
   };
   box.addEventListener("touchstart", start, { capture: true, passive: true });
