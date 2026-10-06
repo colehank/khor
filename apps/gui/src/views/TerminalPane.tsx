@@ -96,7 +96,7 @@ import { termBell } from "@/lib/term-bell";
 import { pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
-import { termWake, useTermWake } from "@/lib/term-tap";
+import { tapAsks, termWake, useTermWake } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { dropsComposition } from "@/lib/term-compose-drop";
 import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
@@ -109,8 +109,8 @@ import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { notesFirstTouch } from "@/lib/term-first-touch";
-import { swipeLowers } from "@/lib/term-swipe";
-import { keyPanelEdge, keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
+import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
+import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
 
@@ -495,7 +495,9 @@ function cellAt(term: Terminal, x: number, y: number): { col: number; row: numbe
 /** How long the corner says a tmux history cannot be read (item 31). */
 const HISTORY_OUT_MS = 4000;
 
-/** Travel past which a touch is a drag, not a tap. */
+/** Travel past which a touch is a drag, not a tap — and the dead zone
+    past which a downward one lowers the keyboard (`lib/term-swipe`'s
+    `SLOP`, item 49). */
 const TAP_SLOP = 10;
 
 /** Output quiet this long, the cursor is where the program left it. */
@@ -548,8 +550,10 @@ function settledCursor(
  * judged at its end, which is a gesture iOS will show a keyboard for:
  * `screen` raises it anywhere; `auto` raises it on the input area
  * (`inInput`, judged against the cursor of the last whole frame) and
- * nowhere else; `button` leaves it to the bar's switch. A tap never
- * lowers it (item 28; `swipeLowers` does). xterm's own mousedown focuses a
+ * lowers it — or the key panel — anywhere else on the screen (item 49,
+ * `lib/term-tap`'s `tapAsks`); `button` leaves it to the bar's switch.
+ * Only a touch on the screen itself counts: the floats over it (回到底部,
+ * a question's buttons) are their own presses. xterm's own mousedown focuses a
  * field that is already focused, and a program that took the mouse still
  * gets the click as before. **If the focus leaves for nowhere** — the system put
  * the keyboard away, or a tap blurred the field — it comes back without a
@@ -573,7 +577,7 @@ function tapsAskFirst(
   let still = false;
   let downAt = 0;
   const began = (e: TouchEvent) => {
-    still = e.touches.length === 1;
+    still = e.touches.length === 1 && !!(e.target as Element | null)?.closest?.("[data-term-scroller]");
     downAt = performance.now();
     startX = e.touches[0]?.clientX ?? 0;
     startY = e.touches[0]?.clientY ?? 0;
@@ -593,10 +597,13 @@ function tapsAskFirst(
         still = false;
         return;
       }
-      // **A tap raises, never lowers** (item 28): the keyboard goes away
-      // by the swipe (`swipeLowers`) or the system's own key.
-      const here = wake === "screen" || (wake === "auto" && !!at && inInput(term, marks, at.row, at.col, cursor()));
-      if (here && !keyboardUp(field)) raiseKeyboard(field);
+      // ⚠️ Tombstone (item 28 → item 49): 「点别处不动」, a tap never lowered.
+      const asks = tapAsks(wake, wake === "auto" && !!at && inInput(term, marks, at.row, at.col, cursor()));
+      if (asks === "raise" && !keyboardUp(field)) raiseKeyboard(field);
+      if (asks === "lower") {
+        if (keyboardUp(field)) lowerKeyboard(field);
+        lowerKeyPanel();
+      }
     }
     still = false;
   };
@@ -2468,14 +2475,16 @@ export function TerminalPane({
     };
     const dragged = fingers ? () => {} : fingerWheels(term, box, historyHas);
     const swiped = swipeLowers(scrollerRef.current!, term.textarea ?? null);
-    // **The same swipe lowers khor's key panel** (UX-31; term-4's reading
-    // of item 42): the finger reaching the panel's top edge, which is
-    // where the shell ends while the foot is held.
+    // **The same swipe lowers khor's key panel** (UX-31, item 49): any
+    // downward swipe, as for the keyboard.
     const swipedPanel = swipeLowers(scrollerRef.current!, term.textarea ?? null, {
       up: keyPanelUp,
-      edge: keyPanelEdge,
       lower: lowerKeyPanel,
     });
+    // **The finger folds the deck** (item 50): a program holding the
+    // mouse takes the drag as its wheel, and the scroller's events alone
+    // did not fold it.
+    const folds = swipeFolds(scrollerRef.current!);
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas, wheel: fingers ? notch : undefined });
     // **A tmux row, or an agent inside a tmux pane** (item 33: the owner
     // opens Claude Code's own row, not the session's): both are khor's
@@ -2635,6 +2644,7 @@ export function TerminalPane({
       scrollerRef.current?.removeEventListener("touchstart", landedAt, true);
       swiped();
       swipedPanel();
+      folds();
       tmuxHistory?.stop();
       tmuxHistoryRef.current = null;
       firstTouch.stop();

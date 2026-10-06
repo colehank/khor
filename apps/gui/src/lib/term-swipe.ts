@@ -1,54 +1,162 @@
-// **The swipe that lowers the keyboard is iOS's own: the finger reaches
-// the keyboard's top edge** (item 42; item 28 made the swipe the one rule
-// that lowers it). iOS's gesture for a scrolling view is
-// `keyboardDismissMode = .interactive`: a drag that reaches the keyboard
-// takes it down with the finger, at any speed, after any pause. A web
-// view cannot ask for it, and the rule judged at the lift — 48 pt down,
-// more down than across, an *average* speed over the whole touch of
-// 0.3 px/ms — failed a slow or paused drag, which had scrolled the
-// content instead (the owner: 「需要很用力滑才能收起」). Now: while the
-// keyboard is up, a drag that is more down than across lowers it the
-// moment the finger crosses the keyboard's top edge, as the visual
-// viewport places it (`lib/viewport`'s `keyboardEdge`). No speed, no
-// travel beyond reaching the edge.
+// **Any downward swipe lowers the keyboard** (item 49; item 28 made the
+// swipe the one rule that lowers it). While the keyboard is up, a
+// one-finger touch that leaves the tap's dead zone (`SLOP`, the pane's
+// `TAP_SLOP`) more down than across lowers it at once — no speed, no
+// edge, no travel beyond the dead zone. The content may scroll under the
+// same drag; the owner accepted that.
+//
+// ⚠️ Tombstone (item 42, then item 28): the keyboard went down only when
+// the finger crossed its top edge (`lib/viewport`'s `keyboardEdge`), and
+// before that only for 48 pt at an average of 0.3 px/ms judged at the
+// lift. Both were too hard on the iPhone (the owner, 2026-10-06 10:50,
+// on the build carrying item 42: still 「需要很用力滑」).
+//
+// A touch held in the dead zone for `PRESS_MS` is a press — the pane's
+// selection (`pressSelects`) — and a drag after it never lowers: the
+// grid refitting under a selection's finger would move what it selects.
 //
 // Native listeners on the terminal's own scroller, so a touch on the key
-// row or the deck (a portal into the bar, `BarSeat`) never reaches it; a
-// drag the program takes as its wheel counts as well: under tmux's mouse
-// the swipe lowers too.
+// row, the deck or the key panel (portals into the bar, `BarSeat`) never
+// reaches it; a drag the program takes as its wheel counts as well: under
+// tmux's mouse the swipe lowers too.
+import { FOLD_AT, tellDeck, UNFOLD_BY } from "@/lib/deck-fold";
 import { keyboardUp, lowerKeyboard } from "@/lib/soft-keyboard";
-import { keyboardEdge } from "@/lib/viewport";
+import { footCovered } from "@/lib/viewport";
+
+/** The tap's dead zone, px (the pane's `TAP_SLOP`): past it a touch is a
+    drag. */
+const SLOP = 10;
+/** Held this long inside the dead zone, a touch is a press (the pane's
+    `LONG_PRESS_MS`). */
+const PRESS_MS = 450;
 
 export function swipeLowers(
   scroller: HTMLElement,
   field: HTMLElement | null,
-  /** The gates' seams: what the keyboard's state, edge and lowering are. */
-  seams: { up?: () => boolean; edge?: () => number | null; lower?: () => void } = {},
+  /** The gates' seams, and the key panel's (UX-31): what is up and how
+      it goes down. */
+  seams: { up?: () => boolean; lower?: () => void } = {},
 ): () => void {
   if (!field) return () => {};
   const up = seams.up ?? (() => keyboardUp(field));
-  const edge = seams.edge ?? keyboardEdge;
   const lower = seams.lower ?? (() => lowerKeyboard(field));
   let x0 = 0;
   let y0 = 0;
-  /** This touch is still being judged: one finger, not from the bar, the
-      keyboard not yet lowered by it. */
+  let t0 = 0;
+  /** The touch has left the dead zone. */
+  let away = false;
+  /** This touch is still being judged: one finger, not from the bar, not
+      a press, the keyboard not yet lowered by it. */
   let one = false;
   const start = (e: TouchEvent) => {
     one = e.touches.length === 1 && !(e.target as Element | null)?.closest?.("[data-session-bar]");
+    away = false;
     x0 = e.touches[0]?.clientX ?? 0;
     y0 = e.touches[0]?.clientY ?? 0;
+    t0 = performance.now();
   };
   const move = (e: TouchEvent) => {
     if (e.touches.length !== 1) one = false;
     if (!one) return;
     const t = e.touches[0];
+    const dx = t.clientX - x0;
     const dy = t.clientY - y0;
-    if (dy <= 0 || dy <= Math.abs(t.clientX - x0)) return;
-    const top = edge();
-    if (top === null || t.clientY < top || !up()) return;
+    if (!away) {
+      if (Math.hypot(dx, dy) <= SLOP) return;
+      if (performance.now() - t0 >= PRESS_MS) {
+        one = false;
+        return;
+      }
+      away = true;
+    }
+    if (dy <= Math.abs(dx) || !up()) return;
     one = false;
     lower();
+  };
+  const end = () => {
+    one = false;
+  };
+  scroller.addEventListener("touchstart", start, { passive: true });
+  scroller.addEventListener("touchmove", move, { passive: true });
+  scroller.addEventListener("touchend", end, { passive: true });
+  scroller.addEventListener("touchcancel", end, { passive: true });
+  return () => {
+    scroller.removeEventListener("touchstart", start);
+    scroller.removeEventListener("touchmove", move);
+    scroller.removeEventListener("touchend", end);
+    scroller.removeEventListener("touchcancel", end);
+  };
+}
+
+/**
+ * **The finger folds the deck, not the scroller** (item 50, the owner on
+ * tmux + Claude Code, 2026-10-06: a drag down often did not fold). The
+ * deck's rule (UX-13, `SessionBar`) reads the content scroller's `scroll`
+ * events; over a program that holds the mouse the drag is the program's
+ * wheel (item 36) and the scroller's travel says nothing about reading
+ * away from rest. So the pane measures the finger: with the keyboard and
+ * the key panel down when the touch began, a one-finger drag more down
+ * than across past `FOLD_AT` folds the deck, one more up than across past
+ * `UNFOLD_BY` unfolds it, and after either a turn is measured from the
+ * finger's furthest point. The drag still goes to the program or the
+ * buffer as before; the fold is a side effect, never a capture. A touch
+ * that began with the keyboard up lowers it (`swipeLowers`) and folds
+ * nothing — the deck folds on a later drag. The scroll rule stays beside
+ * this one (reaching the bottom unfolds; a Mac's wheel folds a narrow
+ * window); the two agree on direction.
+ */
+export function swipeFolds(
+  scroller: HTMLElement,
+  /** The gates' seams: whether the foot is covered, and the telling. */
+  seams: { covered?: () => boolean; tell?: (fold: boolean) => void } = {},
+): () => void {
+  const covered = seams.covered ?? footCovered;
+  const tell = seams.tell ?? ((fold: boolean) => tellDeck(scroller, fold));
+  let x0 = 0;
+  let y0 = 0;
+  let t0 = 0;
+  /** Where a turn is measured from: the start, then the furthest point
+      in the direction last told. */
+  let ax = 0;
+  let ay = 0;
+  let away = false;
+  let said: boolean | null = null;
+  let one = false;
+  const start = (e: TouchEvent) => {
+    one = e.touches.length === 1 && !covered() && !(e.target as Element | null)?.closest?.("[data-session-bar]");
+    away = false;
+    said = null;
+    x0 = ax = e.touches[0]?.clientX ?? 0;
+    y0 = ay = e.touches[0]?.clientY ?? 0;
+    t0 = performance.now();
+  };
+  const move = (e: TouchEvent) => {
+    if (e.touches.length !== 1) one = false;
+    if (!one) return;
+    const t = e.touches[0];
+    if (!away) {
+      if (Math.hypot(t.clientX - x0, t.clientY - y0) <= SLOP) return;
+      // A press first is a selection (`pressSelects`): nothing folds.
+      if (performance.now() - t0 >= PRESS_MS) {
+        one = false;
+        return;
+      }
+      away = true;
+    }
+    const dx = Math.abs(t.clientX - ax);
+    const dy = t.clientY - ay;
+    if (said !== true && dy > FOLD_AT && dy > dx) said = true;
+    else if (said !== false && -dy > UNFOLD_BY && -dy > dx) said = false;
+    else {
+      if ((said === true && dy > 0) || (said === false && dy < 0)) {
+        ax = t.clientX;
+        ay = t.clientY;
+      }
+      return;
+    }
+    ax = t.clientX;
+    ay = t.clientY;
+    tell(said);
   };
   const end = () => {
     one = false;

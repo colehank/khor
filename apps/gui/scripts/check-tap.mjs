@@ -5,6 +5,11 @@
 // to the screen's bottom; a bare cursor row counts with one row either
 // side; a shell at its prompt without marks counts its row and the blank
 // below it, as item 28 ruled.
+//
+// Item 49: what a tap asks of the keyboard (`src/lib/term-tap.ts`
+// `tapAsks`) — in 自动 the input area raises and anywhere else lowers
+// (the 10-05 「点别处不动」 is overturned); 屏幕 raises anywhere and never
+// lowers; 按钮 leaves the keyboard to its switch.
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 
@@ -17,7 +22,7 @@ const alias = {
 };
 const out = await build({
   stdin: {
-    contents: `import { Terminal } from "@xterm/xterm"; import { inInput } from "@/lib/term-marks"; globalThis.lab = { Terminal, inInput };`,
+    contents: `import { Terminal } from "@xterm/xterm"; import { inInput } from "@/lib/term-marks"; import { tapAsks } from "@/lib/term-tap"; globalThis.lab = { Terminal, inInput, tapAsks };`,
     resolveDir: gui,
     loader: "ts",
   },
@@ -30,7 +35,7 @@ const out = await build({
   plugins: [alias],
 });
 await import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
-const { Terminal, inInput } = globalThis.lab;
+const { Terminal, inInput, tapAsks } = globalThis.lab;
 
 let bad = 0;
 const fail = (m) => {
@@ -92,5 +97,20 @@ await check("a shell at its prompt under tmux", tmux.map((r) => r ?? ""), 2, ran
 // Output below the prompt row (a command running): the row and one either side only.
 await check("a shell mid-command", ["$ sleep 10", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "waiting"], 0, range(0, 1));
 
+// Item 49: the mode and the input area decide; the pane raises only what
+// is down and lowers only what is up.
+for (const [wake, onInput, want] of [
+  ["auto", true, "raise"],
+  ["auto", false, "lower"],
+  ["screen", true, "raise"],
+  ["screen", false, "raise"],
+  ["button", true, null],
+  ["button", false, null],
+]) {
+  const got = tapAsks(wake, onInput);
+  if (got !== want) fail(`49: a tap in ${wake} ${onInput ? "on" : "off"} the input area asks ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+}
+console.log("tap gate: 49: auto raises on the input area and lowers off it; screen raises anywhere; button asks nothing");
+
 if (bad) process.exit(1);
-console.log("tap gate: a tap raises from the box and two rows beyond it, from a bare cursor row and one beyond it, and from a shell prompt's blank below");
+console.log("tap gate: a tap raises from the box and two rows beyond it, from a bare cursor row and one beyond it, and from a shell prompt's blank below; off the input area in auto it lowers");

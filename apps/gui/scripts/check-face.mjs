@@ -29362,10 +29362,27 @@ try {
         await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       };
       const upDrag = await sends(() => drag(-160));
+      // The up drag's last notches settle before the down drag is counted.
+      await wait(600);
+      const deckFolded = () => page.evaluate(() => document.querySelector("[data-session-screen]")?.hasAttribute("data-deck-folded") ?? null);
+      const foldedBefore = await deckFolded();
       const downDrag = await sends(() => drag(160));
+      await wait(300);
+      const foldedDown = await deckFolded();
       console.log(`bar g · a finger up the screen sent ${shown(upDrag.slice(0, 40))}…, down ${shown(downDrag.slice(0, 40))}…`);
       if (!upDrag.includes("\x1b[<65;")) fail(`bar g · a finger dragged up a program that took the mouse sent ${shown(upDrag)} — no wheel-down report (SGR 65)`);
       if (!downDrag.includes("\x1b[<64;")) fail(`bar g · a finger dragged down sent ${shown(downDrag)} — no wheel-up report (SGR 64)`);
+      if (downDrag.includes("\x1b[<65;")) fail(`bar g · a finger dragged down sent ${shown(downDrag)} — a wheel-down report (SGR 65) among them: the fold's resize mid-drag was handed on as a notch (item 50)`);
+      // **The finger folds, not the scroller** (item 50): over a program
+      // that holds the mouse the drag goes to it as wheel reports, and the
+      // deck still folds on a drag down and unfolds on a drag up.
+      const upAgain = await sends(() => drag(-160));
+      await wait(300);
+      const foldedUp = await deckFolded();
+      console.log(`bar g · the deck over a program holding the mouse: before ${foldedBefore}, after a drag down ${foldedDown}, after a drag up ${foldedUp} (reports up ${upAgain.includes("\x1b[<65;")})`);
+      if (foldedBefore !== false || foldedDown !== true || foldedUp !== false) {
+        fail(`bar g · over a program holding the mouse the deck read folded ${foldedBefore} → ${foldedDown} after 160 px down → ${foldedUp} after 160 px up — a drag down folds it and a drag up unfolds it (item 50)`);
+      }
       await program("\x1b[?1000l\x1b[?1006l\x1b[?1049l");
 
       // ── h. the keyboard switch, in 点击按钮 ──
@@ -29592,8 +29609,8 @@ try {
       await wait(400);
       const back = await read();
       const swapSizes = resized.length - sizes;
-      // The keyboard lowered the one way it is (the swipe, item 42): the
-      // field stops asking, the stand-in goes.
+      // The keyboard lowered (a swipe down or a tap off the input area,
+      // item 49): the field stops asking, the stand-in goes.
       await page.evaluate(() => {
         const f = document.querySelector("[data-terminal]").__xterm.textarea;
         f.setAttribute("inputmode", "none");
@@ -29641,13 +29658,13 @@ try {
       await wait(400);
       const raised = await read();
       const raiseSizes = resized.length - beforeRaise;
-      // A drag down the screen that reaches the panel's top edge lowers
-      // it, as it lowers the keyboard (item 42).
+      // Any drag down the screen lowers it, as it lowers the keyboard
+      // (item 49): 20 px high on the screen, far above the panel's edge.
       const screenBox = await rect("[data-terminal]");
       {
         const x = Math.round(screenBox.left + screenBox.width / 2);
         const y0 = Math.round(screenBox.top + 40);
-        const y1 = (raised.panel?.top ?? vh - 300) + 30;
+        const y1 = y0 + 20;
         await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
         for (let i = 1; i <= 8; i += 1) {
           await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: Math.round(y0 + ((y1 - y0) * i) / 8) }] });
@@ -29657,13 +29674,13 @@ try {
       await until(2_000, async () => (await read()).rows === rest.rows);
       await wait(400);
       const lowered = await read();
-      console.log(`bar u · keyboard down, 「…」: ${JSON.stringify(raised)} (${raiseSizes} resize); dragged down to the panel: ${JSON.stringify(lowered)}`);
+      console.log(`bar u · keyboard down, 「…」: ${JSON.stringify(raised)} (${raiseSizes} resize); dragged down 20 px: ${JSON.stringify(lowered)}`);
       if (!raised.stamped || !raised.panel || Math.abs(raised.panel.height - 300) > 1 || Math.abs(raised.root - (vh - 300)) > 1 || raised.rows !== typing.rows || raised.more !== "true") {
         fail(`bar u · with the keyboard down 「…」 reads ${JSON.stringify(raised)} — the panel at the last keyboard's 300, the shell shrunk once as for a keyboard`);
       }
       if (raiseSizes !== 1) fail(`bar u · raising the panel from the foot told the pty ${raiseSizes} size(s), one keyboard's worth is one`);
       if (lowered.stamped || lowered.panel || lowered.rows !== rest.rows || lowered.more !== null && lowered.more !== "false") {
-        fail(`bar u · the drag down reaching the panel reads ${JSON.stringify(lowered)} — the panel gone as a keyboard goes, the shell at rest`);
+        fail(`bar u · a 20 px drag down reads ${JSON.stringify(lowered)} — the panel gone as a keyboard goes, the shell at rest (item 49)`);
       }
       // Back to the row collapsed, for the steps after.
       if ((await read()).keys === 1) await press("[data-session-deck] [data-key-row-switch]");
@@ -29906,8 +29923,9 @@ try {
 
     // ── m. the deck folds on the terminal, and the grid resizes with it
     //       as it does with the keyboard (UX-13; item 44, the owner
-    //       2026-10-06 withdrawing 「网格不重排」). 300 lines, then the
-    //       scroller moved up into the history: the strip replaces the
+    //       2026-10-06 withdrawing 「网格不重排」). 300 lines; a scroll
+    //       alone folds nothing under a finger, a finger's drag down does
+    //       (item 50): the strip replaces the
     //       deck, the box grew by what the fold freed (the deck less the
     //       strip) while the bar shrank by it, the grid gained the rows
     //       that fit, and the pty was told once. Back at the bottom it
@@ -29968,9 +29986,26 @@ try {
         }, fromBottom);
       const rest = await state();
       resized.length = 0;
-      await scrollTo(100);
-      await wait(150);
+      // **The finger folds** (item 50): a drag down the screen, which also
+      // scrolls the buffer up into the history. A scroll alone, under a
+      // finger, no longer folds a terminal.
+      const fingerDown = async (dy) => {
+        const b = await rect("[data-terminal]");
+        const x = Math.round(b.left + b.width / 2);
+        const y0 = Math.round(b.top + 60);
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
+        for (let i = 1; i <= 8; i += 1) {
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y0 + Math.round((dy * i) / 8) }] });
+        }
+        await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      };
       await scrollTo(400);
+      await wait(400);
+      const scrolledOnly = await state();
+      if (scrolledOnly.strip !== 0) fail(`bar m · a scroll 400 px up with no finger moving folded the deck (${shown(scrolledOnly)}) — under a finger the finger folds a terminal, not its scroller (item 50)`);
+      await scrollTo(0);
+      await wait(400);
+      await fingerDown(200);
       await until(2_000, async () => (await state()).strip === 1);
       await wait(300);
       const up = await state();
@@ -30030,9 +30065,7 @@ try {
       await page.evaluate(() => window.__keyboard(300));
       await until(2_000, async () => page.evaluate(() => document.documentElement.hasAttribute("data-keyboard")));
       await wait(400);
-      await scrollTo(100);
-      await wait(150);
-      await scrollTo(400);
+      await fingerDown(200);
       await wait(600);
       const typing = await state();
       await page.evaluate(() => window.__keyboard(0));
@@ -30041,7 +30074,7 @@ try {
       await wait(700);
       await scrollTo(0);
       await until(2_000, async () => (await state()).strip === 0);
-      if (typing.strip !== 0) fail(`bar m · with the keyboard up a scroll into the history folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
+      if (typing.strip !== 0) fail(`bar m · with the keyboard up a drag down folded the deck (${shown(typing)}) — nothing folds while the keyboard is up`);
     }
 
     // ── n. a conversation folds the same way, and keeps its deck over
