@@ -247,7 +247,7 @@ function KeyPanel({
             className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--kb)] flex-col border-t bg-background font-sans text-foreground"
           >
             {kind === "files" ? (
-              <TermFiles term={term} road={files} />
+              <TermFiles road={files} />
             ) : editing ? (
               <>
                 <div className="flex flex-none items-center gap-row px-row">

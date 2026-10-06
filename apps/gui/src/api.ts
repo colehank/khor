@@ -1809,6 +1809,27 @@ export const notifyFinished = (title: string, body: string) => call<null>("notif
     into a command (`khor_gui_core::term::term_drop`). */
 export const termDrop = (id: string, paths: string[], from?: string | null) =>
   call<null>("term_drop", { id, paths, from: from ?? null });
+/** A file picked in a face (the phone's photos and files, item 60 part
+    3), put where this machine's node serves it by path, for `termDrop`
+    with `from` null. Answers its path here. The bytes ride raw, as
+    `chatPut`'s do. */
+export const termDropStage = async (file: File): Promise<string> => {
+  if (inApp && !bridge) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke<string>("term_drop_stage", new Uint8Array(await file.arrayBuffer()), {
+      headers: { "x-khor-name": encodeURIComponent(file.name) },
+    });
+  }
+  const q = `name=${encodeURIComponent(file.name)}`;
+  const url = bridge ? `http://127.0.0.1:${bridge}/term_drop_stage?${q}` : `/api/term_drop_stage?${q}`;
+  const r = await reach(url, {
+    method: "POST",
+    headers: bridge || webKey === null ? {} : { authorization: `Bearer ${webKey}` },
+    body: file,
+  });
+  if (!r.ok) throw new Error(unwrap(await r.text()));
+  return answer<string>(r);
+};
 /** How far this terminal's drop has got, 0 to 1, or `null` when none is
     under way (item 60): what its pill's line draws. */
 export const termDropProgress = (id: string) => call<number | null>("term_drop_progress", { id });

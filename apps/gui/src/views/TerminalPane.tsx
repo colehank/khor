@@ -63,7 +63,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, termAttach, termDrop, termDropProgress, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termDropProgress, termDropStage, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { offerTabAct } from "@/lib/tab-acts";
@@ -136,6 +136,9 @@ const LIVE_MS = 50;
 /** How often a drop under way is asked how far it got (item 60): the
     node asks the far machine at 250 ms, so faster would only re-read. */
 const DROP_LOOK_MS = 250;
+/** The largest file a drop takes (`khor_node::drops::CAP`): a picked
+    file over it is refused before its bytes are read into the page. */
+const DROP_CAP = 200 * 2 ** 20;
 /** How long one pushed wait is held open with nothing new (`termWait`).
     Short enough that a pane torn down mid-wait frees its question soon,
     and well under `CATCH_UP_MS`: a wait that ran its whole length is a
@@ -2863,20 +2866,26 @@ export function TerminalPane({
   const activeRef = useRef(active);
   activeRef.current = active;
   const dropping = useRef(false);
-  const drop = useCallback(
-    (paths: string[], from: string | null) => {
-      if (paths.length === 0 || dropping.current) return;
+  /** `paths` may first have to be made: files picked on a phone are
+      staged here before the drop (`dropFiles`), under the same line. */
+  const dropFrom = useCallback(
+    (paths: string[] | (() => Promise<string[]>), from: string | null) => {
+      if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return;
       dropping.current = true;
       setDropWhy(null);
+      // Files being staged: the line stands at its start meanwhile.
+      if (!Array.isArray(paths)) setDropShare(0);
       // How far it got, read while it runs: memory in the registry, so
-      // the ask is cheap at the pill's own pace.
+      // the ask is cheap at the pill's own pace (nothing to read yet
+      // while files are staged).
       const watch = window.setInterval(() => {
         termDropProgress(id).then(
-          (p) => setDropShare(p),
+          (p) => p !== null && setDropShare(p),
           () => {},
         );
       }, DROP_LOOK_MS);
-      termDrop(id, paths, from)
+      Promise.resolve(Array.isArray(paths) ? paths : paths())
+        .then((made) => termDrop(id, made, from))
         .then(() => pollNow.current())
         .catch((err: unknown) => {
           setDropWhy(String((err as { message?: string })?.message ?? err));
@@ -2888,6 +2897,27 @@ export function TerminalPane({
         });
     },
     [id],
+  );
+  const drop = useCallback((paths: string[], from: string | null) => dropFrom(paths, from), [dropFrom]);
+  // **Files picked on the phone** (item 60 part 3): bytes in the web
+  // view, staged where this machine's node serves them by path, then the
+  // same drop from this machine — the session's machine pulls them.
+  // Over the drop's cap, said before a byte is read.
+  const dropFiles = useCallback(
+    (files: File[]) => {
+      if (files.length === 0 || dropping.current) return;
+      const big = files.find((f) => f.size > DROP_CAP);
+      if (big) {
+        setDropWhy(msg.drop_too_big(DROP_CAP / 2 ** 20, big.name));
+        return;
+      }
+      dropFrom(async () => {
+        const staged: string[] = [];
+        for (const f of files) staged.push(await termDropStage(f));
+        return staged;
+      }, null);
+    },
+    [dropFrom],
   );
   const dropRef = useRef(drop);
   dropRef.current = drop;
@@ -3352,7 +3382,7 @@ export function TerminalPane({
             mode (this pane's own, `terminalKeyboard`). The mode is
             `lib/term-tap`'s (`useTermWake`). */}
         <KeyRowSeats field={keysRef} keyboard={wake === "button" && <KeyboardSwitch field={keysRef} />}>
-          <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, drop }} />
+          <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, drop, dropFiles }} />
         </KeyRowSeats>
       </>
     )}

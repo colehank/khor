@@ -158,3 +158,40 @@ async fn a_third_machine_orders_and_the_destination_pulls_from_the_source() {
     assert_eq!(std::fs::read(&dest).unwrap(), b"alpha's bytes\n");
     assert!(names(&rg.0.join("khor-drop")).is_empty(), "nothing landed on the asker");
 }
+
+/// **A file picked on a phone** (item 60 part 3): the phone's app stages
+/// the picked bytes under its own store (`khor_gui_core::term::
+/// term_drop_stage`, `<store>/.khor/uploads/drop/<dir>/<name>`) and drops
+/// that path onto the session's machine, which pulls it from the phone
+/// by `FetchPath` — so the node a phone runs (hosting nothing, its serve
+/// in the app's own process, resumable) must answer it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 6)]
+async fn a_phone_s_picked_file_is_pulled_by_the_session_s_machine() {
+    let p = pair("drop-phone").await;
+    let relays: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(p.ra.0.join(".khor/relays.json")).unwrap()).unwrap();
+    let relay = relays["relays"][0]["url"].as_str().unwrap().to_owned();
+    let rp = scratch("drop-phone-p");
+    home_on(&rp.0, &relay);
+    let served = khor_node::Node::open_hosting(rp.0.clone(), "phone", false).unwrap();
+    let serve = tokio::spawn(async move { served.serve_resumable().await });
+    stood_up(&[&rp.0]).await;
+    let phone = khor_node::Node::open_hosting(rp.0.clone(), "phone", false).unwrap();
+    let ticket = p.alpha.invite().unwrap();
+    timeout(Duration::from_secs(90), phone.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .expect("the phone joins through alpha");
+
+    let staged = rp.0.join(".khor/uploads/drop/1-1-0/IMG 0001.png");
+    std::fs::create_dir_all(staged.parent().unwrap()).unwrap();
+    let photo: Vec<u8> = (0..(1u32 << 20) + 5).map(|i| (i % 251) as u8).collect();
+    std::fs::write(&staged, &photo).unwrap();
+    let (out, seen) = dropped(&phone, "", &staged.display().to_string(), "alpha").await;
+    let dest = out.expect("the phone's file lands on alpha");
+    assert_eq!(Path::new(&dest), p.ra.0.join("khor-drop").join("IMG 0001.png"));
+    assert_eq!(std::fs::read(&dest).unwrap(), photo, "byte for byte");
+    assert!(seen.last().is_some_and(|s| s.done), "progress was read to the end");
+    assert!(names(&rp.0.join("khor-drop")).is_empty(), "nothing landed on the phone");
+    serve.abort();
+}

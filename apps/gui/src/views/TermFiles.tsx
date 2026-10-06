@@ -6,8 +6,10 @@
  * paths, the way a file dragged into iTerm becomes its path:
  *
  * - **照片 / 文件**: the system's own pickers (the photo library; Files
- *   and the rest). What is picked is copied to `~/khor-drop/` on the
- *   session's machine and its path goes in at the cursor.
+ *   and the rest). What is picked arrives as bytes, is staged where this
+ *   device's node serves it by path (`term_drop_stage`), and the session's
+ *   machine pulls it into its `~/khor-drop/` (`FilesRoad.dropFiles`): the
+ *   phone answers `FetchPath` like any machine.
  * - **网内机器**: a machine of the mesh, then its directories; a file
  *   pressed goes the same way — on the session's machine, the path as it
  *   is; on another, the session's machine pulls it (item 60's road).
@@ -22,12 +24,8 @@
  * road): on the session's machine the path goes in as it is; on another,
  * the session's machine pulls it into its `~/khor-drop/` and the path
  * there goes in when the copy is done.
- *
- * ⚠️ **Lab draft still**: the pickers' paths are typed as the road would
- * answer them; the phone as a source is the next step.
  */
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { Terminal } from "@xterm/xterm";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchDevices, fetchLs, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -35,18 +33,6 @@ import { IconBack, IconChevronRight, IconFile, IconFiles } from "@/components/ic
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { gui } from "@/gen/catalog";
 import type { DirListing } from "@/gen/bindings/DirListing";
-
-/** A path as a shell reads it: bare when it can be, else single-quoted. */
-function shellWord(p: string): string {
-  return /^[\w@%+=:,./~-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`;
-}
-
-/** The paths in at the cursor, space-separated, through the terminal's
-    own paste (bracketed when the program asked). */
-function putIn(term: Terminal | null, paths: string[]) {
-  if (!term || paths.length === 0) return;
-  term.paste(paths.map(shellWord).join(" ") + " ");
-}
 
 const ROW = "flex min-h-touch w-full items-center gap-row border-t text-left text-body";
 
@@ -60,6 +46,9 @@ export type FilesRoad = {
       there: the pane's own drop (item 60's road, `term_drop`), its
       progress on the pill's line and a failure in its corner. */
   drop: (paths: string[], from: string | null) => void;
+  /** Files picked on this device (照片, 文件): staged where its node
+      serves them, then the same drop from here. */
+  dropFiles: (files: File[]) => void;
 };
 
 /** The mesh's machines for the panel: the session's first, then the
@@ -70,17 +59,9 @@ export function machinesFor(devices: DeviceRow[], machine: string | null): Devic
   return [...hosting.filter(ours), ...hosting.filter((d) => !ours(d))];
 }
 
-export function TermFiles({ term, road }: { term: RefObject<Terminal | null>; road: FilesRoad }) {
+export function TermFiles({ road }: { road: FilesRoad }) {
   const photos = useRef<HTMLInputElement>(null);
   const files = useRef<HTMLInputElement>(null);
-  /** Lab: what the road answers for a file copied to the session's machine. */
-  const dropped = (list: FileList | null) => {
-    if (!list) return;
-    putIn(
-      term.current,
-      [...list].map((f) => `~/khor-drop/${f.name}`),
-    );
-  };
   const [devices, setDevices] = useState<DeviceRow[] | null>(null);
   useEffect(() => {
     void fetchDevices()
@@ -113,7 +94,18 @@ export function TermFiles({ term, road }: { term: RefObject<Terminal | null>; ro
         >
           {key === "photos" ? <FileKindIcon name="x.png" className="size-6" /> : <IconFile className="size-6" />}
           {label}
-          <input ref={ref} type="file" multiple accept={accept} hidden onChange={(e) => dropped(e.target.files)} />
+          <input
+            ref={ref}
+            type="file"
+            multiple
+            accept={accept}
+            hidden
+            onChange={(e) => {
+              road.dropFiles([...(e.target.files ?? [])]);
+              // The same file picked again is a change again.
+              e.target.value = "";
+            }}
+          />
         </button>
       ))}
     </div>

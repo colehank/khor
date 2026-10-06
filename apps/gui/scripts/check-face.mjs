@@ -28035,7 +28035,12 @@ try {
     //      a machine that hosts nothing (a phone) not listed;
     // vii. a file pressed in a machine's listing is one `term_drop` of
     //      the pane, with its path and that machine (`null` for this
-    //      one) — the road decides whether anything moves.
+    //      one) — the road decides whether anything moves;
+    // viii. 照片's hidden input changed with a picked File: its bytes are
+    //      staged (`term_drop_stage`, counted here, its name and size),
+    //      then one `term_drop` of the staged path from this machine; the
+    //      pill's line stands while it runs; a file over the drop's cap is
+    //      refused in the pane's corner before anything is staged.
     {
       const cdp = await page.context().newCDPSession(page);
       await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
@@ -28121,6 +28126,69 @@ try {
           `term vi · the files panel on peer's session listed ${JSON.stringify(machinesFar)} — the session's machine first and ` +
             "marked as the session's, no other marked, and no phone (item 60 part 3, the owner 2026-10-07)",
         );
+      }
+      // viii, on peer's session.
+      if (Array.isArray(machinesFar)) {
+        const staged = [];
+        const stage = async (r) => {
+          const url = new URL(r.request().url());
+          staged.push({ name: url.searchParams.get("name"), bytes: r.request().postDataBuffer()?.length ?? 0 });
+          await r.fulfill({ contentType: "application/json", body: JSON.stringify(`/stage/${staged.length}/${url.searchParams.get("name")}`) });
+        };
+        await page.route(/\/term_drop_stage\?/, stage);
+        /** A picked file, as the system's picker hands it to the page. */
+        const pick = (name, size) =>
+          page.evaluate(
+            ([name, size]) => {
+              const input = document.querySelector('[data-files-pick="photos"] input[type="file"]');
+              if (!input) return false;
+              const dt = new DataTransfer();
+              dt.items.add(new File([new Uint8Array(size)], name, { type: "image/png" }));
+              input.files = dt.files;
+              input.dispatchEvent(new Event("change", { bubbles: true }));
+              return true;
+            },
+            [name, size],
+          );
+        drops.length = 0;
+        let release;
+        dropHold = new Promise((r) => (release = r));
+        share = 0.5;
+        const picked = await pick("x y.png", 5);
+        await until(3_000, async () => drops.length > 0);
+        const line = await until(3_000, async () => (await page.locator('[data-tab-progress="0.5"], [data-pill-progress="0.5"]').count()) > 0);
+        share = null;
+        release();
+        dropHold = null;
+        await wait(300);
+        console.log(`term viii · 照片 picked: input ${picked}, staged ${JSON.stringify(staged)}, term_drop ${JSON.stringify(drops)}, pill's line ${line}`);
+        if (
+          !picked ||
+          staged.length !== 1 ||
+          staged[0].name !== "x y.png" ||
+          staged[0].bytes !== 5 ||
+          drops.length !== 1 ||
+          drops[0].id !== "tui/face-far" ||
+          JSON.stringify(drops[0].paths) !== '["/stage/1/x y.png"]' ||
+          drops[0].from !== null ||
+          !line
+        ) {
+          fail(
+            "term viii · a photo picked on the phone should stage its bytes once, then drop the staged path from this machine " +
+              "with the pill's line standing (item 60 part 3)",
+          );
+        }
+        staged.length = 0;
+        drops.length = 0;
+        await pick("big.mov", 200 * 2 ** 20 + 1);
+        const why = page.locator('[data-kept-terminal="tui/face-far"] [data-term-drop-why]');
+        await until(5_000, async () => (await why.count()) > 0);
+        const said = (await why.count()) ? await why.innerText() : null;
+        console.log(`term viii · over the cap: ${JSON.stringify(said)}, staged ${staged.length}, term_drop ${drops.length}`);
+        if (!said?.includes("200") || !said.includes("big.mov") || staged.length !== 0 || drops.length !== 0) {
+          fail("term viii · a picked file over 200 MB is refused in the pane's corner with the cap and its name, nothing staged or dropped");
+        }
+        await page.unroute(/\/term_drop_stage\?/, stage);
       }
       // vii, on peer's session: peer's own file, and elder's.
       if (Array.isArray(machinesFar)) {

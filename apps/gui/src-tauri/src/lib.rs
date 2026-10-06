@@ -2987,6 +2987,30 @@ async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// A file picked on the phone, as bytes (item 60 part 3): the raw request
+/// body, its name in a header. Staged where this machine's node serves
+/// it by path, for the terminal's `term_drop`; answers the path here.
+#[tauri::command]
+async fn term_drop_stage(request: tauri::ipc::Request<'_>) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("term_drop_stage takes the file's bytes as its body".to_owned());
+    };
+    let Some(name) = request
+        .headers()
+        .get("x-khor-name")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| khor_gui_core::percent_decoded(v).unwrap_or_else(|| v.to_owned()))
+    else {
+        return Err("term_drop_stage needs the x-khor-name header".to_owned());
+    };
+    let bytes = bytes.clone();
+    tokio::task::spawn_blocking(move || {
+        khor_gui_core::term::term_drop_stage(&Node::root_from_env(), &name, &mut bytes.as_slice())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Files this machine already has (a drop, a picker's paths), put where
 /// the agent conversation's machine keeps files (round CHAT).
 #[tauri::command]
@@ -4314,6 +4338,7 @@ pub fn run() {
             pick_and_send,
             chat_put,
             chat_put_paths,
+            term_drop_stage,
             agents,
             agents_known,
             agents_known_taken,

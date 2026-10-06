@@ -338,6 +338,23 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                     Err(sentence) => Reply::refused(400, sentence),
                 };
             }
+            // A picked file waiting here for a terminal's drop (item 60
+            // part 3): the same raw body, staged where this machine's
+            // node serves it.
+            if cmd == "term_drop_stage" {
+                let Some(name) = khor_gui_core::drop_stage_args(query) else {
+                    return Reply::refused(400, "term_drop_stage needs a name query arg".to_owned());
+                };
+                return match khor_gui_core::term::term_drop_stage(root, &name, req.as_reader()) {
+                    Ok(path) => Reply {
+                        code: 200,
+                        kind: "application/json",
+                        body: serde_json::to_vec(&path).unwrap_or_default(),
+                        remember: None,
+                    },
+                    Err(sentence) => Reply::refused(400, sentence),
+                };
+            }
             if cmd == "upload" {
                 let (machine, name) = match khor_gui_core::upload_args(query) {
                     Some(pair) => pair,

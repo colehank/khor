@@ -2180,6 +2180,17 @@ pub fn chat_put_args(query: &str) -> Option<(String, String)> {
     }
 }
 
+/// A picked file's query (`/term_drop_stage?name=…`, item 60 part 3):
+/// its name, the body being the bytes. `None` without one.
+pub fn drop_stage_args(query: &str) -> Option<String> {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(k, _)| *k == "name")
+        .and_then(|(_, v)| percent_decode(v))
+        .filter(|n| !n.is_empty())
+}
+
 pub fn upload_args(query: &str) -> Option<(String, String)> {
     let mut machine = None;
     let mut name = None;
