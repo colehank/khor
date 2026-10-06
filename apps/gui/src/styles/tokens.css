@@ -2757,6 +2757,13 @@
    * as Safari's; the one place the app's ink is not a theme's. ⚠️ 墓碑
    * (round UX-3 §3 → UX-13): a 24-pt strip across the width. */
   --deck-strip: 28px;
+  /* **The folded capsule's room is the home indicator's band** (item 62,
+   * the owner 2026-10-07: lower, and off the terminal's content):
+   * the band where the phone has one, never shorter than the capsule;
+   * where it has none (an SE, a Mac window) the finger's floor, `--touch`.
+   * The last term is `--touch` with no band and below nothing once there
+   * is one (a band of 1 px already takes it under zero). */
+  --deck-fold: max(var(--safe-bottom), var(--deck-strip), calc(var(--touch) - 100 * var(--safe-bottom)));
   --ink-on-dark: #ffffff;
   --ink-on-light: #000000;
   /* **The 我的 khor dial's seats** (UX-26, agreed on the prototype): a

@@ -158,11 +158,13 @@ export function SessionScreen({
       content once no load runs. A session's; a page and a file show
       nothing after a load. */
   status?: ReactNode;
-  /** **The folded capsule floats over the content** (UX-29): the fold
-      frees the deck's whole height to the content and the capsule stands
-      on it. `false` where the content is a native view the DOM cannot
-      float over (a Mac window's page): the capsule keeps its own room
-      under the content. */
+  /** **The folded capsule sits in the home indicator's band** (item 62,
+      the owner 2026-10-07: half of it covered the terminal's last rows):
+      the fold frees the deck's whole height to the content, which ends at
+      the capsule's top (`app.css`). `false` where the content is a native
+      view (a Mac window's page): the capsule keeps a room of its own
+      above the band. ⚠️ Tombstone (UX-29): the capsule floated over the
+      content's foot. */
   foldOver?: boolean;
   /** The capsule's ink, where the screen cannot sample what is behind it
       (the phone's native page says its ground, `page:ground`). Left out,
@@ -247,6 +249,12 @@ export function SessionScreen({
   useLayoutEffect(() => {
     if (folded && ink === undefined) sample();
   }, [folded, ink, active]);
+  /** The capsule pressed: the deck back, held through the flick. */
+  const unfold = () => {
+    hold.current.asked();
+    setOwn(false);
+    onUnfold?.();
+  };
   /** **Folding by the content's own scrollers** (UX-13): a terminal's or a
       conversation's, measured from their bottom. A move away or back
       counts only while the scroller kept its height — the fold itself
@@ -364,6 +372,7 @@ export function SessionScreen({
         data-session-bar
         data-folded={folded || undefined}
         data-native-deck={nativeDeck || undefined}
+        data-fold-over={foldOver || undefined}
         data-deck-away={away || undefined}
         // The deck steps away while the sheet is up (UX-37 §4; the owner
         // 2026-10-06 21:05 again: 「展开了不要有下面的药丸这一行」).
@@ -371,24 +380,28 @@ export function SessionScreen({
       >
         {folded && (
           // **Safari's capsule** (UX-29, the owner 2026-10-06): one small
-          // glass capsule centred at the foot with the title alone, over
-          // the content — the deck's whole height is the content's now —
-          // its ink from what is behind it. Where the content is a native
-          // view (`foldOver` false) the capsule keeps its own room instead.
-          // ⚠️ 墓碑 (UX-13): a 24-pt strip across the width.
+          // glass capsule centred at the foot with the title alone, its
+          // ink from what is behind it. **In the home indicator's band**
+          // (item 62): with nothing seated under the deck it takes the
+          // band (`--deck-fold`, `app.css`) and the content ends at its
+          // top; a row seated under the deck (a conversation's box, the
+          // key row) or a native page (`foldOver` false) gives it a room
+          // of its own above that row. Never over the content. The whole
+          // room is its press.
+          // ⚠️ 墓碑 (UX-13): a 24-pt strip across the width. ⚠️ Tombstone
+          // (UX-29): the capsule floated over the content's foot.
           <div
             data-deck-fold
-            className={cn("relative flex flex-none items-end justify-center", foldOver ? "h-0" : "h-[calc(var(--deck-strip)+var(--gap-in))]")}
+            onClick={(e) => {
+              if (e.target === e.currentTarget) unfold();
+            }}
+            className="relative flex h-[calc(var(--deck-strip)+var(--gap-in))] flex-none items-end justify-center"
           >
             <button
               type="button"
               data-deck-strip
               data-deck-ink={ink ?? sampled}
-              onClick={() => {
-                hold.current.asked();
-                setOwn(false);
-                onUnfold?.();
-              }}
+              onClick={unfold}
               className="glass absolute bottom-[var(--gap-in)] flex h-deck-strip max-w-[calc(100%-2*var(--page-inset))] animate-in items-center justify-center overflow-hidden rounded-full px-row text-callout fade-in"
             >
               <span className="min-w-0 truncate">{face?.label ?? ""}</span>
