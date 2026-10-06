@@ -2678,6 +2678,7 @@ export default function App() {
       // happening elsewhere, in the pill's glass, only while there is
       // something to say.
       status={status.items.length > 0 ? <StatusBar at="pill" items={status.items} onDismiss={status.dismiss} /> : undefined}
+      away={placeSheet !== null && selectedRow !== null}
     >
       {detail}
       {placeSheet && selectedRow && (

@@ -2,22 +2,162 @@
  * **The phone's pill opens the session's 附栏 as a sheet** (UX-30 §6; it
  * was UX-17's 目录 · 日志 sheet). The same five seats the wide face docks
  * beside the terminal (`SideBody`), risen from the bottom: 最近 · 工作区
- * · 浏览器 · 机器 · 额度; 目录 is the 工作区 seat. Under the capsule the
- * 「今天」 row (UX-36 §1): the day's line hangs under the pill, whose tap
- * is this sheet, so the day in full opens from here. The seat and the
- * day's expansion are the session's own memory (`use-session-side`).
+ * · 浏览器 · 机器 · 额度; 目录 is the 工作区 seat. The seat and the day's
+ * expansion are the session's own memory (`use-session-side`).
  *
+ * **Two detents, the seats at the foot** (UX-37 §3–4, the owner
+ * 2026-10-06, agreed on `audit/session-sheet-demo.html`): the pill opens
+ * it at half the screen, so the terminal keeps its upper half; the
+ * grabber, a page's head, or the body while nothing under the finger has
+ * scrolled drags it to nearly the whole screen or back; let go under
+ * half it goes away, as a tap on the scrim and Esc do. The five seats
+ * are one flat row at its foot on the screen's foot, wearing the safe
+ * area, and the pages scroll under it (`--nav-room`); the session's deck
+ * steps away while it is up (`SessionScreen`'s `away`). The heights are
+ * tokens (`--place-sheet-half`, `--place-sheet-full`).
+ *
+ * ⚠️ 墓碑 (UX-30 → UX-37): the sheet was the form dialog's sheet (`ui/
+ * dialog` `form`) at 80 % of the screen, padded by the dialog's own
+ * inset, the capsule of seats at its top.
  * ⚠️ 墓碑 (UX-30 §5 → UX-36): the day's heat line stood under the
  * capsule as a ruler, and a tap on it expanded the day.
  * ⚠️ 墓碑 (UX-17 → UX-30): a 目录 / 日志 segment with its own `keptTab`
  * store per session; the seat replaces the tab.
  */
-import type { ReactNode } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { DialogOverlay } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import type { SideSeat } from "@/hooks/use-session-side";
 import { SideBody } from "@/views/SessionSide";
+
+export type PlaceDetent = "half" | "full";
+
+/** A detent as a share of the screen's height, read from its token; the
+    fallbacks mirror tokens.css and only catch a token failing to resolve. */
+function share(detent: PlaceDetent): number {
+  const name = detent === "half" ? "--place-sheet-half" : "--place-sheet-full";
+  try {
+    const v = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name));
+    if (Number.isFinite(v) && v > 0 && v <= 1) return v;
+  } catch {
+    /* the fallback below */
+  }
+  return detent === "half" ? 0.5 : 0.92;
+}
+
+/** How fast a release has to be moving, in px per ms, to count as a
+    throw rather than a placement — the form sheet's own (`ui/dialog`). */
+const THROW = 0.5;
+/** Under this share of the half detent a release puts the sheet away
+    (the prototype's `HALF * 0.55`): a pull that ends a little under half
+    springs back, one that has gone most of the way down is a dismissal. */
+const AWAY = 0.55;
+
+/**
+ * The drag between the detents. Touch, not pointer, events, for the
+ * form sheet's reason (`ui/dialog` `useSheet`): a pointer on a scrolling
+ * page is taken by the browser's pan before it has moved far, and a touch
+ * move that is prevented is the sheet's. **Whose the touch is**: at once
+ * on the grabber; elsewhere once it has moved up or down rather than
+ * sideways (a row's swipe keeps its own), and only while nothing between
+ * the finger and the sheet has scrolled — a list scrolled down scrolls
+ * back first. At the full detent a move up is the page's scroll. A
+ * slider or anything marked `data-sheet-hold` keeps its touches.
+ */
+function useDetents(el: HTMLDivElement | null, onDetent: (d: PlaceDetent) => void, onClose: () => void) {
+  // Read through a ref: the shell hands a fresh `onOpenChange` on every
+  // render (a poll lands every two seconds), and re-binding the listeners
+  // mid-drag would drop the pull under the finger.
+  const told = useRef({ onDetent, onClose });
+  told.current = { onDetent, onClose };
+  useEffect(() => {
+    if (!el) return;
+    const close = () => told.current.onClose();
+    const detent = (d: PlaceDetent) => told.current.onDetent(d);
+    let from: number | null = null;
+    let fromX = 0;
+    let fromH = 0;
+    let pulling = false;
+    let live = 0;
+    let speed = 0;
+    let lastY = 0;
+    let lastT = 0;
+    const scrolled = (t: Element | null) => {
+      for (let n = t; n && n !== el; n = n.parentElement) {
+        if (n instanceof HTMLElement && n.scrollTop > 0) return true;
+      }
+      return false;
+    };
+    const grip = () => {
+      pulling = true;
+      el.setAttribute("data-sheet-pulling", "");
+    };
+    const down = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      const t = e.target instanceof Element ? e.target : null;
+      const band = !!t?.closest("[data-place-grab]");
+      if (!band && (t?.closest('[data-sheet-hold], input[type="range"]') || scrolled(t))) return;
+      from = e.touches[0].clientY;
+      fromX = e.touches[0].clientX;
+      fromH = el.getBoundingClientRect().height;
+      live = fromH;
+      lastY = from;
+      lastT = e.timeStamp;
+      speed = 0;
+      pulling = false;
+      if (band) grip();
+    };
+    const move = (e: TouchEvent) => {
+      if (from === null) return;
+      const y = e.touches[0].clientY;
+      const dy = y - from;
+      if (!pulling) {
+        const dx = Math.abs(e.touches[0].clientX - fromX);
+        if (Math.max(Math.abs(dy), dx) < 6) return;
+        if (Math.abs(dy) <= dx || (dy < 0 && el.getAttribute("data-detent") === "full")) {
+          from = null;
+          return;
+        }
+        grip();
+      }
+      e.preventDefault();
+      live = Math.max(0, Math.min(fromH - dy, share("full") * window.innerHeight));
+      el.style.height = `${live}px`;
+      const dt = e.timeStamp - lastT;
+      if (dt > 0) speed = (y - lastY) / dt;
+      lastY = y;
+      lastT = e.timeStamp;
+    };
+    const up = () => {
+      if (from === null) return;
+      from = null;
+      if (!pulling) return;
+      pulling = false;
+      el.removeAttribute("data-sheet-pulling");
+      el.style.removeProperty("height");
+      const half = share("half") * window.innerHeight;
+      const full = share("full") * window.innerHeight;
+      // A throw goes one detent its way: up to full, down to half from
+      // above it, away from half or under; a placement takes the nearer.
+      if (live < half * AWAY || (speed > THROW && live <= half)) return close();
+      if (speed < -THROW) return detent("full");
+      if (speed > THROW) return detent("half");
+      detent(live > (half + full) / 2 ? "full" : "half");
+    };
+    el.addEventListener("touchstart", down, { passive: true });
+    el.addEventListener("touchmove", move, { passive: false });
+    el.addEventListener("touchend", up);
+    el.addEventListener("touchcancel", up);
+    return () => {
+      el.removeEventListener("touchstart", down);
+      el.removeEventListener("touchmove", move);
+      el.removeEventListener("touchend", up);
+      el.removeEventListener("touchcancel", up);
+    };
+  }, [el]);
+}
 
 export function SessionPlaceSheet({
   open,
@@ -39,16 +179,44 @@ export function SessionPlaceSheet({
   /** The seat's page, composed by the shell (`App`'s `sideSeat`). */
   children?: ReactNode;
 }) {
+  // Each opening starts at half (§3): the pill's tap is a glance.
+  const [detent, setDetent] = useState<PlaceDetent>("half");
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  useDetents(el, setDetent, close);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-place-sheet className="flex h-[80dvh] flex-col !gap-0 overflow-hidden">
-        <DialogTitle className="sr-only">{gui.session_side}</DialogTitle>
-        <div ref={boxRef} data-place-body className="flex min-h-0 flex-1 flex-col [--side-ground:var(--popover)]">
-          <SideBody seat={seat} onSeat={onSeat} today={today}>
-            {children}
-          </SideBody>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogOverlay />
+        <DialogPrimitive.Content
+          ref={setEl}
+          data-place-sheet
+          data-detent={detent}
+          // The seats row and the page are the sheet's whole content; a
+          // description would be the decorative copy `ui/dialog` opts out of.
+          aria-describedby={undefined}
+          className="fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden rounded-t-(--menu-r) bg-popover shadow-(--shadow-float) outline-none"
+        >
+          <DialogPrimitive.Title className="sr-only">{gui.session_side}</DialogPrimitive.Title>
+          {/* The grabber's band: where a pull is the sheet's at once. */}
+          <div data-place-grab aria-hidden="true" className="flex h-[calc(2*var(--grabber-top)+var(--grabber-h))] flex-none justify-center pt-(--grabber-top)">
+            <span className="h-(--grabber-h) w-(--grabber-w) rounded-full bg-tertiary" />
+          </div>
+          <div
+            ref={boxRef}
+            data-place-body
+            // The pages read the sheet's ground as theirs (`--side-ground`),
+            // and their scrollers keep the seats row's room at their foot
+            // (`data-nav-shown`, `--nav-room` in `app.css`).
+            data-nav-shown
+            className="relative flex min-h-0 flex-1 flex-col [--side-ground:var(--popover)]"
+          >
+            <SideBody seat={seat} onSeat={onSeat} today={today} foot>
+              {children}
+            </SideBody>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }

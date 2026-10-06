@@ -30438,6 +30438,62 @@ try {
           await until(2_000, async () => (await count("[data-place-sheet]")) === 0);
         };
         const first = await sheet();
+        // ── UX-37 §3–4: the sheet opens at half the screen; the five
+        //    seats are one flat row on the screen's foot, inside the
+        //    sheet; the deck is away (hidden in place, so the terminal
+        //    keeps its height); the grabber drags it to full and back,
+        //    a release under half puts it away. ──
+        const shape = await page.evaluate(() => {
+          const sheet = document.querySelector("[data-place-sheet]");
+          const foot = document.querySelector("[data-place-sheet] [data-side-foot]");
+          const bar = document.querySelector("[data-session-bar]");
+          const r = (e) => e?.getBoundingClientRect() ?? null;
+          return {
+            vh: window.innerHeight,
+            detent: sheet?.getAttribute("data-detent") ?? null,
+            h: Math.round(r(sheet)?.height ?? 0),
+            footBottom: Math.round(r(foot)?.bottom ?? 0),
+            footSeats: document.querySelectorAll("[data-place-sheet] [data-side-foot] [data-col-seat]").length,
+            topCapsule: document.querySelectorAll("[data-place-sheet] [data-side-head]").length,
+            deck: bar ? `${bar.hasAttribute("data-deck-away")} ${getComputedStyle(bar).visibility}` : null,
+          };
+        });
+        const dragSheet = async (from, dy) => {
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 195, y: from }] });
+          for (let i = 1; i <= 8; i++) {
+            await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 195, y: Math.round(from + (i * dy) / 8) }] });
+            await wait(20);
+          }
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          await wait(450);
+          return page.evaluate(() => {
+            const s = document.querySelector("[data-place-sheet]");
+            return s ? { detent: s.getAttribute("data-detent"), h: Math.round(s.getBoundingClientRect().height) } : null;
+          });
+        };
+        const sheetTop = () => page.evaluate(() => document.querySelector("[data-place-sheet]")?.getBoundingClientRect().top ?? 0);
+        const toFull = await dragSheet((await sheetTop()) + 8, -Math.round(shape.vh * 0.4));
+        const toHalf = await dragSheet((await sheetTop()) + 8, Math.round(shape.vh * 0.4));
+        const spring = await dragSheet((await sheetTop()) + 8, Math.round(shape.vh * 0.08));
+        const away = await dragSheet((await sheetTop()) + 8, Math.round(shape.vh * 0.35));
+        const deckBack = await page.evaluate(() => {
+          const bar = document.querySelector("[data-session-bar]");
+          return bar ? `${bar.hasAttribute("data-deck-away")} ${getComputedStyle(bar).visibility}` : null;
+        });
+        console.log(`bar p · UX-37 shape ${shown(shape)}; up ${shown(toFull)}; down ${shown(toHalf)}; a short pull ${shown(spring)}; a long pull ${shown(away)}; the deck after ${deckBack}`);
+        const near = (h, share) => Math.abs(h - share * shape.vh) <= 2;
+        if (shape.detent !== "half" || !near(shape.h, 0.5)) fail(`bar p · the pill opened the sheet at ${shown(shape)} — half the screen (UX-37 §3)`);
+        if (shape.footSeats !== 5 || shape.topCapsule !== 0 || Math.abs(shape.footBottom - shape.vh) > 1) {
+          fail(`bar p · the seats stand ${shown(shape)} — one row of five at the sheet's foot on the screen's foot, no capsule at the top (UX-37 §4)`);
+        }
+        if (shape.deck !== "true hidden") fail(`bar p · with the sheet up the deck reads ${shape.deck} — it steps away (UX-37 §4)`);
+        if (toFull?.detent !== "full" || !near(toFull.h, 0.92)) fail(`bar p · a pull up on the grabber left ${shown(toFull)} — the full detent (UX-37 §3)`);
+        if (toHalf?.detent !== "half" || !near(toHalf.h, 0.5)) fail(`bar p · a pull down from full left ${shown(toHalf)} — back to half`);
+        if (spring?.detent !== "half" || !near(spring.h, 0.5)) fail(`bar p · a short pull from half left ${shown(spring)} — it springs back`);
+        if (away !== null) fail(`bar p · a pull most of the way down left ${shown(away)} — released under half it goes away`);
+        if (deckBack !== "false visible") fail(`bar p · the sheet gone, the deck reads ${deckBack} — it comes back`);
+        if (away !== null) await shut();
+        await sheet();
         await press('[data-place-sheet] [data-col-seat="workspace"]');
         await wait(600);
         const lsFirst = askedLs.map((a) => a.path);

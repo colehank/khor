@@ -144,8 +144,14 @@ export function SessionScreen({
   foldOver = true,
   ink,
   status,
+  away = false,
   children,
 }: {
+  /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4):
+      the sheet's own seats row stands on the screen's foot where the deck
+      was. Hidden in place, not taken out: the content keeps its height,
+      so the terminal under the sheet's half does not refit. */
+  away?: boolean;
   /** **The status strip under the pill** (UX-31, the owner 2026-10-06:
       the window's foot — what is happening elsewhere — hangs under the
       deck's pill on the phone, like Safari's progress bar): the slot's
@@ -358,7 +364,8 @@ export function SessionScreen({
         data-session-bar
         data-folded={folded || undefined}
         data-native-deck={nativeDeck || undefined}
-        className="flex flex-none flex-col pb-safe-bottom"
+        data-deck-away={away || undefined}
+        className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible")}
       >
         {folded && (
           // **Safari's capsule** (UX-29, the owner 2026-10-06): one small
