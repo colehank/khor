@@ -51,16 +51,24 @@ export type DeckProgress = {
   ease: [number, number, number, number];
 };
 
+/** **The glass's rim** (UX-38 §5): `--glass-rim`, a one-pixel ring of a
+    linear gradient — its CSS angle and its stops, each colour at a share
+    of the line. */
+export type DeckRim = { angle: number; stops: { color: string; at: number }[] };
+/** The glass's drop shadow, `--glass-shadow`'s widest layer. */
+export type DeckShadow = { y: number; blur: number; spread: number; color: string };
+
 export type DeckDrawing = {
   /** The deck's band, from its top to the screen's foot (safe area in). */
   h: number;
   /** The page's bottom inset: the deck row, or the strip, and the safe area. */
   inset: number;
   dark: boolean;
-  /** `--glass`, `--glass-sel` and the rim, as rgba strings. */
+  /** `--glass` and `--glass-sel`, as rgba strings. */
   tint: string;
   selTint: string;
-  rim: string;
+  rim: DeckRim;
+  shadow: DeckShadow | null;
   glass: DeckGlass[];
   images: DeckImage[];
   labels: DeckLabel[];
@@ -195,9 +203,24 @@ async function seatPng(seat: HTMLElement, w: number, h: number): Promise<string 
     const b = at(el);
     if (b.w <= 0 || b.h <= 0) continue;
     const cs = getComputedStyle(el);
+    // Drawn at its own opacity, and cut by the face it lies on (UX-38 §6:
+    // the face's veil, white at 0.1, was painted solid and square over
+    // the face — the native deck showed a white tile for every page).
+    let alpha = 1;
+    for (let at: Element | null = el; at && seat.contains(at); at = at.parentElement) alpha *= Number(getComputedStyle(at).opacity) || 0;
+    const face = el.closest<HTMLElement>("[data-face]");
+    const cut = (from: Element) => {
+      if (!face || face === from) return;
+      const cb = at(face);
+      g.beginPath();
+      g.roundRect(cb.x, cb.y, cb.w, cb.h, radius(face, cb) || cb.w / 2);
+      g.clip();
+    };
     const bg = cs.backgroundColor;
     if (bg && !/rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)/.test(bg) && bg !== "transparent") {
       g.save();
+      g.globalAlpha = alpha;
+      cut(el);
       g.beginPath();
       g.roundRect(b.x, b.y, b.w, b.h, radius(el, b));
       g.fillStyle = bg;
@@ -210,14 +233,9 @@ async function seatPng(seat: HTMLElement, w: number, h: number): Promise<string 
       if (!img) continue;
       // A face's svg is cropped by its box (`[data-face]`, round or
       // rounded); a glyph is drawn as it is.
-      const crop = el.closest<HTMLElement>("[data-face]");
       g.save();
-      if (crop) {
-        const cb = at(crop);
-        g.beginPath();
-        g.roundRect(cb.x, cb.y, cb.w, cb.h, radius(crop, cb) || cb.w / 2);
-        g.clip();
-      }
+      g.globalAlpha = alpha;
+      cut(el);
       try {
         g.drawImage(img, b.x, b.y, b.w, b.h);
         drew += 1;
@@ -273,6 +291,54 @@ function plain(color: string): string {
   pen.fillStyle = "#000000";
   pen.fillStyle = color;
   return String(pen.fillStyle);
+}
+
+/** `top` laid over the opaque `under`, as `#rrggbb` (both as `plain`
+    says them). */
+function over(top: string, under: string): string {
+  const rgba = (c: string) => {
+    const hex = /^#([0-9a-f]{6})$/i.exec(c)?.[1];
+    if (hex) return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16)).concat(1);
+    const n = /rgba?\(([^)]*)\)/.exec(c)?.[1].split(",").map(Number) ?? [0, 0, 0, 1];
+    return [n[0], n[1], n[2], n[3] ?? 1];
+  };
+  const [t, u] = [rgba(top), rgba(under)];
+  const a = t[3];
+  return `#${[0, 1, 2].map((i) => Math.round(t[i] * a + u[i] * (1 - a)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** A CSS colour token's colours in order — `#hex`, `rgb()`, `rgba()`,
+    the way a gradient or a shadow lists them. */
+const COLOURS = /#[0-9a-f]{3,8}\b|rgba?\([^)]*\)/gi;
+
+/** `--glass-rim` read as a gradient: `linear-gradient(<angle>, <colour>
+    <at>%, …)`. A rim that is not one is the plain ring at its first
+    colour. */
+export function rimOf(css: string): DeckRim {
+  const angle = Number(/(-?[\d.]+)deg/.exec(css)?.[1] ?? 180);
+  const stops: DeckRim["stops"] = [];
+  for (const m of css.matchAll(new RegExp(`(${COLOURS.source})\\s+(-?[\\d.]+)%`, "gi"))) {
+    stops.push({ color: plain(m[1]), at: Number(m[2]) / 100 });
+  }
+  if (stops.length === 0) {
+    const one = css.match(COLOURS)?.[0];
+    if (one) stops.push({ color: plain(one), at: 0 }, { color: plain(one), at: 1 });
+  }
+  return { angle, stops };
+}
+
+/** `--glass-shadow`'s widest layer: `<x> <y> <blur> [<spread>] <colour>`. */
+export function shadowOf(css: string): DeckShadow | null {
+  let best: DeckShadow | null = null;
+  for (const layer of css.split(/,(?![^(]*\))/)) {
+    if (/\binset\b/.test(layer)) continue;
+    const color = layer.match(COLOURS)?.[0];
+    const n = layer.replace(COLOURS, "").trim().split(/\s+/).map((v) => parseFloat(v));
+    if (!color || n.length < 3 || n.some((v) => !Number.isFinite(v))) continue;
+    const at = { y: n[1], blur: n[2], spread: n[3] ?? 0, color: plain(color) };
+    if (!best || at.blur > best.blur) best = at;
+  }
+  return best;
 }
 
 function rel(r: DOMRect, o: DOMRect) {
@@ -353,7 +419,9 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
   const tabs = bar.querySelector<HTMLElement>("[data-tabs-glyph]");
   if (tabs && shown(tabs)) {
     const b = tabs.getBoundingClientRect();
-    const fill = getComputedStyle(tabs.querySelector("[data-tabs-front]") ?? tabs).backgroundColor;
+    // The squares wear the glass's tint over the ground (`--tabs-fill`, a
+    // background image the computed colour leaves out).
+    const fill = over(plain(root.getPropertyValue("--glass").trim()), plain(getComputedStyle(tabs.querySelector("[data-tabs-front]") ?? tabs).backgroundColor));
     const svg = tabsSvg(tabs, ink, fill);
     const png = svg ? await svgPng(svg, b.width, b.height, ink) : null;
     if (png) images.push({ ...rel(b, o), png });
@@ -425,7 +493,8 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
       (document.documentElement.getAttribute("data-theme") !== "light" && matchMedia("(prefers-color-scheme: dark)").matches),
     tint: plain(root.getPropertyValue("--glass").trim()),
     selTint: plain(root.getPropertyValue("--glass-sel").trim()),
-    rim: "rgba(255, 255, 255, 0.5)",
+    rim: rimOf(root.getPropertyValue("--glass-rim")),
+    shadow: shadowOf(root.getPropertyValue("--glass-shadow")),
     glass,
     images,
     labels,

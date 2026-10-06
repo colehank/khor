@@ -30390,6 +30390,11 @@ try {
               glass: d.glass.map((g) => Math.round(g.h)),
               tint: d.tint,
               want: String(c.fillStyle),
+              // UX-38 §5: the rim and the shadow are the tokens', not a
+              // flat white ring.
+              rim: d.rim,
+              rimWant: (getComputedStyle(document.documentElement).getPropertyValue("--glass-rim").match(/#[0-9a-f]{3,8}\b|rgba?\([^)]*\)/gi) ?? []).length,
+              shadow: d.shadow,
               btn,
               strip,
               seats: d.hits.filter((h) => !h.swipe).map((h) => h.seat).sort(),
@@ -30422,6 +30427,10 @@ try {
             fail(`bar r · glass shapes ${shown(rest.glass)} — ‹, the pill and the tabs circle, each --glass-btn (${rest.btn}) tall`);
           }
           if (rest.tint !== rest.want) fail(`bar r · the native tint is ${rest.tint}, --glass is ${rest.want}`);
+          if (rest.rim?.stops?.length !== rest.rimWant || rest.rimWant < 2 || !Number.isFinite(rest.rim.angle)) {
+            fail(`bar r · the native rim reads ${shown(rest.rim)} — --glass-rim's ${rest.rimWant} stops at its angle (UX-38 §5; lib/native-deck.ts rimOf)`);
+          }
+          if (!rest.shadow || !(rest.shadow.blur > 0)) fail(`bar r · the native shadow reads ${shown(rest.shadow)} — --glass-shadow's widest layer (UX-38 §5)`);
           if (!rest.seats.includes(0) || !rest.seats.includes(3) || !rest.seats.includes(5) || rest.swipe !== 1) {
             fail(`bar r · seats ${shown(rest.seats)}, swipe ${rest.swipe} — ‹ (0), the title (3), the tabs (5), and the pill's swipe`);
           }

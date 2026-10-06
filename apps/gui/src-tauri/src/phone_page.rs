@@ -716,6 +716,29 @@ pub struct DeckProgress {
     ease: [f32; 4],
 }
 
+/// One stop of the rim's gradient: a colour at a share of the line.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckStop {
+    color: String,
+    at: f64,
+}
+
+/// `--glass-rim`: a one-point ring of a linear gradient at a CSS angle.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckRim {
+    angle: f64,
+    stops: Vec<DeckStop>,
+}
+
+/// `--glass-shadow`'s widest layer.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckShadow {
+    y: f64,
+    blur: f64,
+    spread: f64,
+    color: String,
+}
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeckDrawing {
@@ -724,7 +747,9 @@ pub struct DeckDrawing {
     dark: bool,
     tint: String,
     sel_tint: String,
-    rim: String,
+    rim: DeckRim,
+    #[serde(default)]
+    shadow: Option<DeckShadow>,
     glass: Vec<DeckGlass>,
     images: Vec<DeckImage>,
     labels: Vec<DeckLabel>,
@@ -881,24 +906,34 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         let _: () = msg_send![&*view, setOverrideUserInterfaceStyle: if dr.dark { 2isize } else { 1isize }];
         let hidden: bool = msg_send![&*page, isHidden];
         let _: () = msg_send![&*view, setHidden: hidden];
-        // 6: UIBlurEffectStyleSystemUltraThinMaterial — the DOM glass's
-        // blur and saturation; the tint over it is `--glass`.
+        // **The DOM glass, drawn natively** (UX-38 §5, the owner: the two
+        // decks did not read as one). The DOM's is a thin grey tint over
+        // the ground blurred and saturated (`--glass`, `--glass-blur`), a
+        // one-pixel rim of a gradient (`--glass-rim`) and a soft drop
+        // shadow (`--glass-shadow`). UIKit's ultra-thin material carries
+        // the same blur and saturation but lays a white (dark: black) veil
+        // over them — measured side by side over the same bands at 3×:
+        // the red under the pill read pink natively, red in the DOM — so
+        // its veil is taken off and the token's tint is laid on instead.
+        // ⚠️ 墓碑: the material as it comes, and a flat 50% white border.
         let blur: Retained<AnyObject> = msg_send![class!(UIBlurEffect), effectWithStyle: 6isize];
         for g in &dr.glass {
+            if let Some(sh) = &dr.shadow {
+                view_shadow(&view, g, sh);
+            }
             let a: Allocated<AnyObject> = msg_send![class!(UIVisualEffectView), alloc];
             let fx: Retained<AnyObject> = msg_send![a, initWithEffect: &*blur];
             let _: () = msg_send![&*fx, setFrame: rect(g.x, g.y, g.w, g.h)];
             let _: () = msg_send![&*fx, setClipsToBounds: true];
             let layer: *mut AnyObject = msg_send![&*fx, layer];
             let _: () = msg_send![layer, setCornerRadius: g.r];
-            let _: () = msg_send![layer, setBorderWidth: 1.0f64];
-            let rim = color(&dr.rim);
-            let cg: *mut std::ffi::c_void = msg_send![&*rim, CGColor];
-            let _: () = msg_send![layer, setBorderColor: cg];
             let content: *mut AnyObject = msg_send![&*fx, contentView];
             let tint = color(if g.sel { &dr.sel_tint } else { &dr.tint });
             let _: () = msg_send![content, setBackgroundColor: &*tint];
             let _: () = msg_send![&*view, addSubview: &*fx];
+            unveil(&fx);
+            let content_layer: *mut AnyObject = msg_send![content, layer];
+            rim_on(content_layer, g, &dr.rim);
         }
         let scale: f64 = {
             let screen: *mut AnyObject = msg_send![class!(UIScreen), mainScreen];
@@ -977,6 +1012,106 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         });
     }
     inset(tab, dr.inset);
+}
+
+/// A rounded rectangle as a `CGPath` (UIKit's, autoreleased with it).
+unsafe fn rounded(x: f64, y: f64, w: f64, h: f64, r: f64) -> *mut std::ffi::c_void {
+    unsafe {
+        let p: *mut AnyObject = msg_send![class!(UIBezierPath), bezierPathWithRoundedRect: rect(x, y, w, h), cornerRadius: r];
+        msg_send![p, CGPath]
+    }
+}
+
+/// Takes the material's own veil off a glass: the effect view's overlay
+/// subviews (`_UIVisualEffectSubview`) hidden, its backdrop — the blur and
+/// the saturation — kept. A future UIKit without them is left as it is.
+unsafe fn unveil(fx: &AnyObject) {
+    unsafe {
+        let subs: Retained<AnyObject> = msg_send![fx, subviews];
+        let n: usize = msg_send![&*subs, count];
+        for i in 0..n {
+            let sub: *mut AnyObject = msg_send![&*subs, objectAtIndex: i];
+            let name = std::ffi::CStr::from_ptr(objc2::ffi::class_getName(objc2::ffi::object_getClass(sub)));
+            if name.to_bytes().windows(19).any(|w| w == b"VisualEffectSubview") {
+                let _: () = msg_send![sub, setHidden: true];
+            }
+        }
+    }
+}
+
+/// The rim: `--glass-rim`'s gradient on a one-point ring inside the glass,
+/// along the CSS angle over the glass's own box.
+unsafe fn rim_on(layer: *mut AnyObject, g: &DeckGlass, rim: &DeckRim) {
+    if rim.stops.is_empty() {
+        return;
+    }
+    unsafe {
+        let grad: Retained<AnyObject> = msg_send![class!(CAGradientLayer), layer];
+        let _: () = msg_send![&*grad, setFrame: rect(0.0, 0.0, g.w, g.h)];
+        let colors: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
+        let at: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
+        for st in &rim.stops {
+            let c = color(&st.color);
+            let cg: *mut AnyObject = msg_send![&*c, CGColor];
+            let _: () = msg_send![&*colors, addObject: cg];
+            let n: Retained<AnyObject> = msg_send![class!(NSNumber), numberWithDouble: st.at];
+            let _: () = msg_send![&*at, addObject: &*n];
+        }
+        let _: () = msg_send![&*grad, setColors: &*colors];
+        let _: () = msg_send![&*grad, setLocations: &*at];
+        // CSS: 0deg points up, 90deg right; the line is as long as the box
+        // is across that way.
+        let a = rim.angle.to_radians();
+        let (dx, dy) = (a.sin(), -a.cos());
+        let len = (g.w * dx).abs() + (g.h * dy).abs();
+        let p = |k: f64| NSPoint::new((g.w / 2.0 + k * dx * len / 2.0) / g.w.max(1.0), (g.h / 2.0 + k * dy * len / 2.0) / g.h.max(1.0));
+        let _: () = msg_send![&*grad, setStartPoint: p(-1.0)];
+        let _: () = msg_send![&*grad, setEndPoint: p(1.0)];
+        let ring: Retained<AnyObject> = msg_send![class!(CAShapeLayer), layer];
+        let _: () = msg_send![&*ring, setPath: rounded(0.5, 0.5, g.w - 1.0, g.h - 1.0, (g.r - 0.5).max(0.0))];
+        let _: () = msg_send![&*ring, setLineWidth: 1.0f64];
+        let ink: *mut AnyObject = msg_send![class!(UIColor), blackColor];
+        let cg: *mut std::ffi::c_void = msg_send![ink, CGColor];
+        let _: () = msg_send![&*ring, setStrokeColor: cg];
+        let _: () = msg_send![&*ring, setFillColor: std::ptr::null_mut::<std::ffi::c_void>()];
+        let _: () = msg_send![&*grad, setMask: &*ring];
+        let _: () = msg_send![layer, addSublayer: &*grad];
+    }
+}
+
+/// The glass's drop shadow, outside it only, as CSS draws a box's: a
+/// shadow of the shape, cut by the shape (the glass is see-through).
+unsafe fn view_shadow(deck: &AnyObject, g: &DeckGlass, sh: &DeckShadow) {
+    unsafe {
+        let pad = sh.blur + sh.y.abs() + sh.spread.abs();
+        let a: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
+        let v: Retained<AnyObject> = msg_send![a, initWithFrame: rect(g.x - pad, g.y - pad, g.w + 2.0 * pad, g.h + 2.0 * pad)];
+        let _: () = msg_send![&*v, setUserInteractionEnabled: false];
+        let shape: Retained<AnyObject> = msg_send![class!(CALayer), layer];
+        let _: () = msg_send![&*shape, setFrame: rect(0.0, 0.0, g.w + 2.0 * pad, g.h + 2.0 * pad)];
+        let s = sh.spread;
+        let _: () = msg_send![&*shape, setShadowPath: rounded(pad - s, pad - s, g.w + 2.0 * s, g.h + 2.0 * s, (g.r + s).max(0.0))];
+        let c = color(&sh.color);
+        let cg: *mut std::ffi::c_void = msg_send![&*c, CGColor];
+        let _: () = msg_send![&*shape, setShadowColor: cg];
+        let _: () = msg_send![&*shape, setShadowOpacity: 1.0f32];
+        // CSS blur is twice UIKit's radius.
+        let _: () = msg_send![&*shape, setShadowRadius: sh.blur / 2.0];
+        let _: () = msg_send![&*shape, setShadowOffset: NSSize::new(0.0, sh.y)];
+        // Cut out the glass itself: everything but the shape shows.
+        let cut: Retained<AnyObject> = msg_send![class!(CAShapeLayer), layer];
+        let outer: *mut AnyObject = msg_send![class!(UIBezierPath), bezierPathWithRect: rect(0.0, 0.0, g.w + 2.0 * pad, g.h + 2.0 * pad)];
+        let inner: *mut AnyObject = msg_send![class!(UIBezierPath), bezierPathWithRoundedRect: rect(pad, pad, g.w, g.h), cornerRadius: g.r];
+        let _: () = msg_send![outer, appendPath: inner];
+        let path: *mut std::ffi::c_void = msg_send![outer, CGPath];
+        let _: () = msg_send![&*cut, setPath: path];
+        let even = NSString::from_str("even-odd");
+        let _: () = msg_send![&*cut, setFillRule: &*even];
+        let vl: *mut AnyObject = msg_send![&*v, layer];
+        let _: () = msg_send![vl, addSublayer: &*shape];
+        let _: () = msg_send![vl, setMask: &*cut];
+        let _: () = msg_send![deck, addSubview: &*v];
+    }
 }
 
 /// **The progress line under the pill** (UX-35 §2; UX-33 §2 in the DOM):
