@@ -27806,6 +27806,35 @@ try {
         await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.clear());
       }
     }
+    // **A bell rung off screen marks its row** (item 67): a second
+    // session, never opened, rings (its `doing.bell_ms` moves on) and its
+    // row wears the badge's dot; the session on screen rings too and
+    // wears nothing. A bell already there at first sight is not news.
+    {
+      const doing = (bell) => ({ command: null, running: false, started_ms: 0, ended_ms: null, exit: null, cwd: null, title: null, full_screen: false, progress: null, progress_failed: false, notice: null, notice_ms: 0, pane_unmarked: false, bell_ms: bell });
+      const other = { ...termRow, id: "tui/face-bell", title: "face-bell" };
+      let bells = { "tui/face-term": 5, "tui/face-bell": 5 };
+      const rowsNow = () => [termRow, other].map((r) => ({ ...r, doing: doing(bells[r.id]) }));
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(rowsNow()) }));
+      const marked = (id) => page.locator(`[data-side-row="${id}"] [data-bell-rang]`).count();
+      const listed = await until(6_000, async () => (await page.locator('[data-side-row="tui/face-bell"]').count()) > 0);
+      await wait(2_500);
+      const before = { other: await marked("tui/face-bell"), shown: await marked("tui/face-term") };
+      bells = { "tui/face-term": Date.now(), "tui/face-bell": Date.now() };
+      const rang = await until(6_000, async () => (await marked("tui/face-bell")) > 0);
+      const after = { other: await marked("tui/face-bell"), shown: await marked("tui/face-term"), tab: await page.locator("[data-tab-bar] [data-bell-rang]").count() };
+      console.log(`term bell · listed ${listed}; at first sight ${JSON.stringify(before)}; after both rang ${JSON.stringify(after)}`);
+      if (!listed) fail("probe dead: term bell · the second row was never listed");
+      else {
+        if (before.other || before.shown) fail(`term bell · a bell from before the face looked marked a row ${JSON.stringify(before)}`);
+        if (!rang) fail("term bell · a session that rang off screen wears no mark on its row");
+        if (after.shown || after.tab) fail(`term bell · the session on screen was marked for its own bell ${JSON.stringify(after)}`);
+      }
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json([termRow]));
+      await until(6_000, async () => (await page.locator('[data-side-row="tui/face-bell"]').count()) === 0);
+    }
     // One press, replayed: `steps` are [type, init] for key events,
     // ["input", data] for the text the input method commits, and
     // ["pause"] for the time between two presses — xterm's 229 road

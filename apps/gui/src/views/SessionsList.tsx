@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 
+import { BellMark } from "@/components/BellMark";
 import { StatusWord } from "@/components/StatusWord";
 import { takeover, takeoverTerm, type DeviceRow, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -69,6 +70,7 @@ export function SessionsList({
   closeRefused,
   showVia = true,
   devices = [],
+  rung,
 }: {
   rows: SessionRow[];
   /** The machine table, for whether a row's machine can be reached (the
@@ -91,6 +93,8 @@ export function SessionsList({
   pinFailed: Set<string>;
   /** What the node said when it would not close a row, by row id. */
   closeRefused: Map<string, string>;
+  /** The sessions whose bell rang off screen (item 67, `lib/bell-marks`). */
+  rung?: ReadonlySet<string>;
   /** Whether a row says which machine it came through (工作区批③).
       **Off where the surface already said it once**: the workspace
       pane's column is one machine's directory, named in the header
@@ -377,6 +381,7 @@ export function SessionsList({
               {r.unread}
             </span>
           )}
+          {r.unread === 0 && rung?.has(r.id) && <BellMark />}
           <StatusWord word={r.word} />
         </span>
         {r.at_ms > 0 &&

@@ -56,6 +56,7 @@ import { NarrowHead } from "@/components/SideHead";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { SideList, type SideRow } from "@/components/SideList";
+import { BellMark } from "@/components/BellMark";
 import { sessionKind } from "@/components/SessionFace";
 import { gui } from "@/gen/catalog";
 import { stillMotion, TRIP_MS, useTravel } from "@/lib/travel";
@@ -117,6 +118,9 @@ export type TabFace = {
       filled dot, VS Code's arrangement, and goes back to a × the moment
       a save lands. */
   dirty?: boolean;
+  /** The session's bell rang while it was off screen (item 67,
+      `lib/bell-marks`): the badge's dot before the name. */
+  rang?: boolean;
   /** This tab is the **preview**: one single click opened it and the
       next single click will replace it (工作区批⑧). Italic, the one
       place this app uses the slope, because what it marks is exactly
@@ -830,6 +834,7 @@ export function TabStrip({
                       {/* **The preview's mark** (the audit fix plan F4.7;
                           W17): a small ring before the name, in place
                           of the slope — the one italic in the app. */}
+                      {f.rang && <BellMark />}
                       {f.preview && <PreviewMark />}
                       <MidName text={f.label} />
                     </span>
@@ -851,6 +856,7 @@ export function TabStrip({
                     data-tab-name
                     className={cn("flex min-w-0 flex-1 items-center gap-1", glass ? "text-tab" : "text-body")}
                   >
+                    {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
                     <MidName text={f.label} />
                   </span>

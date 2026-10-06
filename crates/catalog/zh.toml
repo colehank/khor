@@ -2515,6 +2515,9 @@ term-picture = "图片"
 # (roadmap 4.2).
 term-bell = "响铃"
 term-bell-note = "终端响铃时，Mac 上闪一下边框，手机上轻震一下"
+# The mark on a tab and a list row whose terminal rang its bell while it
+# was off screen (item 67): what VoiceOver reads for the dot.
+bell-rang = "响过铃"
 term-predict = "预测输入"
 term-predict-note = "远端回显慢时，按下的字先带下划线显示，等远端确认"
 # Appearance → Terminal (item 21): the one ~/.zshrc line that makes shells

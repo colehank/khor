@@ -147,6 +147,7 @@
 - **动了列表的选中(`SideList` 的 `data-selected`、`FileTree` 的打开文件)、会话行的第二行、窄档的安全区(`data-safe-top`、`--safe-*` 落在谁身上)** → `FACE_ONLY=iphone npm run face`,再跑整个 `npm run face`;状态栏的墨(`set_window_theme` 的 iOS 那一半)→ `npm run mobile`,看模拟器截图;
 - **动了快捷键(`src/lib/shortcuts.ts`)、菜单栏(`src-tauri/src/menu.rs`)、`[menu]` 的字、选字或光标的规矩** → `FACE_ONLY=native npm run face`,构建后加 `NATIVE_ONLY=keys npm run native`(它按键,只投给临时 app);
 - **动了终端的历史命令(`views/TermHistory`、`TerminalPane` 的 `__history`、`Doing.pane_unmarked`)** → `FACE_ONLY=term npm run face`(history a、b 两例:人自己的 tmux 前面那格不发命令标记时只有启用标记的那一行和复制,没有列表和搜索;发标记或不知道时照旧搜索,SESS-BRIEF 3,2026-10-07);
+- **动了终端的查找条(`lib/term-find`、`TerminalPane` 的 `look` / `toggle`)或会话的铃声标记(`lib/bell-marks`、`components/BellMark`、`Doing.bell_ms`)** → `FACE_ONLY=term npm run face`(term find:区分大小写与正则两个开关、没写完的正则是没有匹配项、按设备记住、开关不抢光标,item 70;term bell:不在屏上的会话响铃后行上有徽标的点,在屏上的没有,第一次看到之前的铃不算,item 67);
 - **动了 `src-tauri/Info.plist`、`src/main.rs` 里嵌它那一行、或 `menu::speak_at_launch`** → 构建后 `NATIVE_ONLY=keys npm run native`;往 Info.plist 里加 `CFBundleIdentifier` 之前先读 `30-behavior.md`「菜单栏」——它会把页面的 localStorage 挪到一个空目录;
 - **动了 `src/browse/`** → 加 `npm run tabs`;
 - **动了协议、后端、或 `khor serve`** → `npm run smoke` / `npm run web-face`,
