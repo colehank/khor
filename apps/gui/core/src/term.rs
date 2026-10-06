@@ -170,6 +170,25 @@ struct Term {
     /// (`khor_node::host::HOST_VERSION`): 1 for a host from before the
     /// handshake, which is sent nothing it does not know.
     version: AtomicU32,
+    /// The most history any face holding this terminal has asked the
+    /// host to keep (its 历史行数, item 56); 0 until one says. Said
+    /// again to a host the attachment rejoins.
+    history: AtomicU32,
+}
+
+/// **The host keeps the history the face shows** (item 56): the face's
+/// 历史行数 goes to a host of version 4 or later as
+/// [`ClientOp::Scrollback`], the largest any face holding the terminal
+/// asked for. An older host keeps its own 2000 rows and is sent nothing.
+fn keep_history(term: &Term, lines: u32) {
+    let most = term.history.fetch_max(lines, Ordering::Relaxed).max(lines);
+    say_history(term, &mut plock(&term.conn), most);
+}
+
+fn say_history(term: &Term, conn: &mut std::net::TcpStream, lines: u32) {
+    if lines > 0 && term.version.load(Ordering::Relaxed) >= 4 {
+        let _ = write_frame(conn, &ClientOp::Scrollback(lines));
+    }
 }
 
 /// A lock that outlives a panic on the other side. A reader thread that
@@ -228,12 +247,18 @@ pub(crate) fn reach_blocking(
 /// terminal on screen — and those doors answer the window. So the lock
 /// is taken to look, let go, and taken again to put the new attachment
 /// in; an open that raced this one and got there first is the one kept.
-pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), String> {
+///
+/// `history` is the face's 历史行数 (item 56, [`keep_history`]); 0 says
+/// nothing.
+pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> Result<(), String> {
     if hold_if_open(id) {
         // **The face joining still says its size** (item 33): another face
         // may have sized the pty since. Unchanged, the kernel signals
         // nothing; a socket that just ended is the stream's to report.
         let _ = term_resize(id, cols, rows);
+        if let Ok(term) = term_of(id) {
+            keep_history(&term, history);
+        }
         return Ok(());
     }
     let attached = attach(root, id, cols, rows);
@@ -271,8 +296,10 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
         feed: Mutex::new(Feed::default()),
         fed: AtomicU64::new(0),
         version: AtomicU32::new(1),
+        history: AtomicU32::new(0),
     });
     term.version.store(version, Ordering::Relaxed);
+    keep_history(&term, history);
     let reader = term.clone();
     let root = root.to_path_buf();
     std::thread::spawn(move || {
@@ -307,6 +334,8 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16) -> Result<(), Stri
                         break;
                     };
                     let Ok(again) = conn.try_clone() else { break };
+                    let mut conn = conn;
+                    say_history(&reader, &mut conn, reader.history.load(Ordering::Relaxed));
                     *plock(&reader.conn) = conn;
                     reading = again;
                     fresh = true;
@@ -1259,6 +1288,7 @@ mod tests {
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
             version: AtomicU32::new(1),
+            history: AtomicU32::new(0),
         });
         push_feed(&term.feed, &term.fed, b"\x1b[31mhi");
         let id = format!("tui/feed-doors-{}", std::process::id());
@@ -1305,11 +1335,12 @@ mod tests {
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
             version: AtomicU32::new(1),
+            history: AtomicU32::new(0),
         });
         let id = format!("shell/held-size-{}", std::process::id());
         plock(terms()).insert(id.clone(), term.clone());
 
-        term_open(Path::new("/nonexistent"), &id, 46, 30).unwrap();
+        term_open(Path::new("/nonexistent"), &id, 46, 30, 0).unwrap();
         assert_eq!(term.holds.load(Ordering::Relaxed), 2, "held, not attached again");
         match khor_node::host::read_frame::<ClientOp>(&mut host) {
             Ok(ClientOp::Resize { cols, rows }) => assert_eq!((cols, rows), (46, 30)),
@@ -1340,6 +1371,7 @@ mod tests {
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
             version: AtomicU32::new(1),
+            history: AtomicU32::new(0),
         });
         let id = format!("tui/feed-wait-{}", std::process::id());
         plock(terms()).insert(id.clone(), term.clone());
@@ -1484,6 +1516,7 @@ mod burst_tests {
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
             version: AtomicU32::new(1),
+            history: AtomicU32::new(0),
         });
         let id = format!("tui/burst-{}", std::process::id());
         plock(terms()).insert(id.clone(), term.clone());

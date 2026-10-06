@@ -27798,6 +27798,47 @@ try {
         );
       }
     }
+    // **Paste (item 55)**: under bracketed paste (`?2004h`) a paste of
+    // many lines goes at once, bracketed, with no question; without it a
+    // paste of many lines asks, and so does one line that ends in a
+    // newline (it would run on landing); one plain line just goes.
+    const paste = async (mode, text) => {
+      sentKeys.length = 0;
+      await page.evaluate(
+        ([mode, text]) =>
+          new Promise((done) => {
+            const t = document.querySelector("[data-terminal]").__xterm;
+            t.write(mode, () => {
+              t.paste(text);
+              done();
+            });
+          }),
+        [mode, text],
+      );
+      await wait(400);
+      const asked = (await page.locator("[data-term-ask]").count()) > 0;
+      if (asked) {
+        await page.locator("[data-term-ask-no]").click();
+        await wait(150);
+      }
+      return { asked, sent: sentKeys.join("") };
+    };
+    const pastes = [
+      ["e", "two lines under ?2004h", "\x1b[?2004h", "echo a\necho b\n", false, "\x1b[200~echo a\recho b\r\x1b[201~"],
+      ["f", "two lines without it", "\x1b[?2004l", "echo a\necho b", true, ""],
+      ["g", "one line ending in a newline without it", "\x1b[?2004l", "echo a\n", true, ""],
+      ["h", "one plain line without it", "\x1b[?2004l", "echo a", false, "echo a"],
+    ];
+    for (const [tag, what, mode, text, ask, want] of pastes) {
+      const got = await paste(mode, text);
+      console.log(`term ${tag} · paste, ${what}: ${got.asked ? "asked" : "no question"}, sent ${JSON.stringify(got.sent)}`);
+      if (got.asked !== ask || got.sent !== want) {
+        fail(
+          `term ${tag} · paste, ${what}: ${got.asked ? "asked" : "did not ask"} and sent ${JSON.stringify(got.sent)}, ` +
+            `not ${ask ? "a question" : "no question"} and ${JSON.stringify(want)} — under bracketed paste nothing runs, so nothing asks (item 55)`,
+        );
+      }
+    }
     await page.unroute("**/term_open");
     await page.unroute("**/term_attach");
     await page.unroute("**/term_stream");

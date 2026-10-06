@@ -114,6 +114,8 @@ import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
 import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
+import { nativeSelects, selectionHolds, type Picked, type Selects } from "@/lib/term-select";
+import { offerEditMenu, type EditItem } from "@/lib/edit-menu";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
     the app's theme. 0–7 normal, 8–15 bright. Handed to xterm whole —
@@ -570,6 +572,9 @@ function tapsAskFirst(
   tapped: (row: number, col: number) => boolean,
   /** The cursor where the last whole frame left it (`settledCursor`). */
   cursor: () => Cursor,
+  /** A tap the selection takes first (`lib/term-select`, item 54): one
+      that ended a selection, or made one by a double or triple tap. */
+  taken: (x: number, y: number) => boolean,
 ): () => void {
   const field = term.textarea;
   if (!field) return () => {};
@@ -591,6 +596,7 @@ function tapsAskFirst(
   const lifted = () => {
     // A long press is a selection (`pressSelects`), not a tap.
     if (performance.now() - downAt >= LONG_PRESS_MS) still = false;
+    if (still && taken(startX, startY)) still = false;
     if (still) {
       const wake = termWake();
       const at = cellAt(term, startX, startY);
@@ -609,9 +615,11 @@ function tapsAskFirst(
     still = false;
   };
   const left = (e: FocusEvent) => {
-    // A mouse's page keeps its own focus rules (`useKeysTo`).
-    if (e.relatedTarget || !window.matchMedia("(pointer: coarse)").matches) return;
+    // A mouse's page keeps its own focus rules (`useKeysTo`); a selection
+    // up in the terminal has the focus let go on purpose (item 54).
+    if (e.relatedTarget || !window.matchMedia("(pointer: coarse)").matches || selectionHolds()) return;
     window.setTimeout(() => {
+      if (selectionHolds()) return;
       const at = document.activeElement;
       if (!field.isConnected || (at && at !== document.body)) return;
       lowerKeyboard(field);
@@ -629,134 +637,13 @@ function tapsAskFirst(
   };
 }
 
-/** xterm's own default `wordSeparator` (a double-click's word). */
-const WORD_SEPARATOR = " ()[]{}',\"`";
-
-/** A finger held this long without moving starts a selection. */
+/** A finger held this long without moving is a press, not a tap. */
 const LONG_PRESS_MS = 450;
-/** …and this much travel before then makes it a drag instead. */
-const PRESS_SLOP = 8;
 
-/**
- * **A long press selects, a drag after it extends, the lift copies**
- * (T-20, the terminal audit: no touch selection at all, so a phone could
- * copy nothing a program did not offer). xterm 6 has no touch code
- * (xterm.js #5961 is open); iSH and Blink select with native handles.
- * This is the plainer half of that — the same gesture iOS uses for text
- * (press and hold on a word, drag to extend) — drawn in xterm's own
- * selection, so the copy-on-select already wired keeps working, and the
- * lift writes the selection to the clipboard inside the gesture (iOS's
- * clipboard wants one). Ahead of everything else (capture): while a
- * selection is being drawn the drag is the selection's — its moves are
- * cancelled, so the native scroller never starts — and before the press
- * is long, a drag scrolls as ever.
- */
-function pressSelects(
-  live: Terminal,
-  box: HTMLElement,
-  /** A long press the caller takes instead (a block's prompt, 2.3). */
-  claims: (row: number, x: number, y: number) => boolean,
-  /** The terminal on screen instead of the live one: a tmux pane's
-      history while the person is up in it (item 31). */
-  over: () => Terminal | null,
-): () => void {
-  // The terminal this press selects in, chosen when it becomes a press.
-  let term = live;
-  let timer = 0;
-  let x0 = 0;
-  let y0 = 0;
-  let selecting = false;
-  let anchor: { col: number; row: number } | null = null;
-  // **A word is what a double-click takes on the Mac** (the terminal
-  // audit, item 53): xterm's `wordSeparator`, so `(src/a.rs:12),` gives
-  // `src/a.rs:12` under a finger as under a mouse; it was split on
-  // spaces only, brackets and quotes taken along.
-  const blank = (row: number, col: number) => {
-    const ch = term.buffer.active.getLine(row)?.getCell(col)?.getChars() ?? "";
-    return ch === "" || (term.options.wordSeparator ?? WORD_SEPARATOR).includes(ch);
-  };
-  // A word runs on over a row's end the grid wrapped (the terminal
-  // audit, item 53: a long press on a wrapped path's second row took only
-  // that row's half). Cells are counted row by row, `cols` to a row.
-  const selectWord = (at: { col: number; row: number }) => {
-    const cols = term.cols;
-    const wraps = (row: number) => !!term.buffer.active.getLine(row)?.isWrapped;
-    const word = (i: number) => !blank(Math.floor(i / cols), i % cols);
-    let from = at.row * cols + at.col;
-    let to = from;
-    if (word(from)) {
-      while (from % cols > 0 || wraps(from / cols)) {
-        if (!word(from - 1)) break;
-        from -= 1;
-      }
-      while ((to + 1) % cols > 0 || wraps((to + 1) / cols)) {
-        if (!word(to + 1)) break;
-        to += 1;
-      }
-    }
-    term.select(from % cols, Math.floor(from / cols), to - from + 1);
-    anchor = { col: from % cols, row: Math.floor(from / cols) };
-  };
-  const extend = (to: { col: number; row: number }) => {
-    if (!anchor) return;
-    const a = anchor.row * term.cols + anchor.col;
-    const b = to.row * term.cols + to.col;
-    const first = Math.min(a, b);
-    term.select(first % term.cols, Math.floor(first / term.cols), Math.abs(b - a) + 1);
-  };
-  const start = (e: TouchEvent) => {
-    window.clearTimeout(timer);
-    selecting = false;
-    if (e.touches.length !== 1) return;
-    x0 = e.touches[0].clientX;
-    y0 = e.touches[0].clientY;
-    timer = window.setTimeout(() => {
-      const history = over();
-      term = history ?? live;
-      const at = cellAt(term, x0, y0);
-      if (!at) return;
-      if (!history && claims(at.row, x0, y0)) return;
-      selecting = true;
-      selectWord(at);
-    }, LONG_PRESS_MS);
-  };
-  const move = (e: TouchEvent) => {
-    const t = e.touches[0];
-    if (!t) return;
-    if (!selecting) {
-      if (Math.hypot(t.clientX - x0, t.clientY - y0) > PRESS_SLOP) window.clearTimeout(timer);
-      return;
-    }
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const at = cellAt(term, t.clientX, t.clientY);
-    if (at) extend(at);
-  };
-  const end = (e: TouchEvent) => {
-    window.clearTimeout(timer);
-    if (!selecting) return;
-    selecting = false;
-    // No synthesized mousedown after it: that would clear the selection.
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    // Trimmed as copy-on-select trims it: the lift wrote the raw rows'
-    // padding over the copy just made.
-    const text = copyable(term.getSelection());
-    if (text) navigator.clipboard?.writeText(text).catch(() => {});
-  };
-  box.addEventListener("touchstart", start, { capture: true, passive: true });
-  box.addEventListener("touchmove", move, { capture: true, passive: false });
-  box.addEventListener("touchend", end, { capture: true, passive: false });
-  box.addEventListener("touchcancel", end, { capture: true, passive: false });
-  return () => {
-    window.clearTimeout(timer);
-    box.removeEventListener("touchstart", start, true);
-    box.removeEventListener("touchmove", move, true);
-    box.removeEventListener("touchend", end, true);
-    box.removeEventListener("touchcancel", end, true);
-  };
-}
-
+// ⚠️ 墓碑 (item 54): `pressSelects` — a 450 ms press drew a word in xterm's
+// own selection, a drag extended it, and the lift copied it silently (T-20).
+// Under a finger the selection is iOS's own now (`lib/term-select`), and
+// copying is the menu's 拷贝.
 
 /** Touches a drag sent on to the program as its wheel (`fingerWheels`). */
 export const wheeled = new WeakSet<Event>();
@@ -1949,7 +1836,8 @@ export function TerminalPane({
       return false;
     };
     const parked = settledCursor(term, () => frames.painting());
-    const asks = tapsAskFirst(term, box, marks, tapped, parked.at);
+    let selectsNow: Selects | null = null;
+    const asks = tapsAskFirst(term, box, marks, tapped, parked.at, (x, y) => selectsNow?.tapEnds(x, y) ?? false);
     const gestures = phoneGestures(term, box);
     fit.fit();
     termRef.current = term;
@@ -2179,8 +2067,8 @@ export function TerminalPane({
       const opened = again
         ? termLeave(id)
             .catch(() => {})
-            .then(() => termOpen(id, term.cols, term.rows))
-        : termOpen(id, term.cols, term.rows);
+            .then(() => termOpen(id, term.cols, term.rows, termHistory()))
+        : termOpen(id, term.cols, term.rows, termHistory());
       return opened
         .then(() => termAttach(id))
         .then((a) => {
@@ -2356,10 +2244,19 @@ export function TerminalPane({
     // is an Enter a person did not press. Every paste comes through here:
     // the system's (⌘V, iOS's callout) and the key row's (`term.paste`).
     // xterm still brackets what goes when the program asked for that.
+    //
+    // **Under bracketed paste nothing asks** (item 55, Windows Terminal's
+    // rule): a program that turned on `?2004h` (zsh, fish, Claude Code,
+    // vim) takes the paste as one piece and runs nothing by itself, so a
+    // newline in it is not an Enter. Without it the question stays, and
+    // also comes for a single line that ends in a newline — that one runs
+    // the moment it lands.
     const pasteRaw = term.paste.bind(term);
     const guarded = (text: string) => {
-      const lines = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
-      if (lines.length < 2) return pasteRaw(text);
+      if (term.modes.bracketedPasteMode) return pasteRaw(text);
+      const unix = text.replace(/\r\n?/g, "\n");
+      const lines = unix.replace(/\n+$/, "").split("\n");
+      if (lines.length < 2 && !unix.endsWith("\n")) return pasteRaw(text);
       setAsking({
         text: gui.paste_ask(lines.length),
         detail: lines[0],
@@ -2398,6 +2295,9 @@ export function TerminalPane({
     const data = term.onData((d) => {
       const reply = isReply(d);
       if (replaying > 0 && (reply || isFocusReport(d))) return;
+      // The field let go for a touch or a selection (item 54) is not the
+      // person leaving the terminal: the program is not told.
+      if (isFocusReport(d) && selectionHolds()) return;
       if (!reply && !isFocusReport(d)) ownSize();
       let out = d;
       const m = modsRef.current;
@@ -2528,12 +2428,69 @@ export function TerminalPane({
       const at = marks.current();
       setHistory({ cwd: marks.cwd(), atPrompt: !marks.running() && !!at?.input && !at.output });
     };
-    const selects = pressSelects(
-      term,
-      box,
-      (row, x, y) => showBlock(row, x, y, true),
-      () => tmuxHistory?.over() ?? null,
-    );
+    // **Under a finger the selection is iOS's own** (item 54,
+    // `lib/term-select`): handles, loupe, the system's menu with khor's
+    // 打开 and 粘贴. A mouse keeps xterm's selection.
+    const claimable = (row: number) => {
+      const b = blockAt(marks, row);
+      return !!b && onPromptOf(b, row) && actsFor(b).length > 0;
+    };
+    const itemsFor = (p: Picked) => {
+      const items: EditItem[] = [];
+      // A chosen item ends the selection: the terminal has its keys back.
+      const done = () => window.getSelection()?.removeAllRanges();
+      const open = (run: () => void) =>
+        items.unshift({
+          id: "open",
+          title: gui.web_open,
+          run: () => {
+            done();
+            run();
+          },
+        });
+      const url = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(p.text) ? p.text : urlAt(term, p.from.row, p.from.col);
+      if (url) open(() => follow(url, machine));
+      items.push({
+        id: "paste",
+        title: menu.paste,
+        run: (text) => {
+          done();
+          if (text) term.paste(text);
+        },
+      });
+      offerEditMenu(items.slice());
+      if (url || viaHistory()) return;
+      // A path under the selection: listed on the machine, so a moment
+      // later; the menu shown after it carries 打开.
+      void pathsOn(term, here, cwdAt, p.from.row).then((found) => {
+        const hit = found.find((f) => covers(f, p.from.row, p.from.col));
+        if (!hit || !selectsNow?.layer.isConnected) return;
+        open(() => openPath(hit.target));
+        offerEditMenu(items.slice());
+      });
+    };
+    const viaHistory = () => !!tmuxHistory?.over();
+    selectsNow = window.matchMedia("(pointer: coarse)").matches
+      ? nativeSelects({
+          live: term,
+          over: () => tmuxHistory?.over() ?? null,
+          scroller: scrollerRef.current!,
+          host: scrollerRef.current!.querySelector<HTMLElement>("[data-term-stick]")!,
+          claimable,
+          claim: (row, x, y) => showBlock(row, x, y, true),
+          keyboardUp: () => keyboardUp(term.textarea ?? null),
+          keeps: keyPanelUp,
+          refocus: (up, inGesture) => {
+            const f = term.textarea;
+            if (!f) return;
+            if (up && inGesture) raiseKeyboard(f);
+            else if (up) holdFocus(f, true);
+            else lowerKeyboard(f);
+          },
+          picked: (p) => (p ? itemsFor(p) : offerEditMenu([])),
+        })
+      : null;
+    (box as HTMLDivElement & { __selects?: Selects | null }).__selects = selectsNow;
     // **A tmux row on a phone scrolls the front pane's history here**
     // (item 31, `lib/term-tmux-history`), not tmux's copy mode by the
     // wheel; a mouse's page keeps the wheel going to tmux.
@@ -2767,7 +2724,8 @@ export function TerminalPane({
       firstTouchRef.current = null;
       window.clearTimeout(outShown);
       native.stop();
-      selects();
+      selectsNow?.dispose();
+      offerEditMenu([]);
       relined();
       unblock?.dispose();
       box.removeEventListener("contextmenu", rightClick);

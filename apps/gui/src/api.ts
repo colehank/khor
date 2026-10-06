@@ -1750,9 +1750,10 @@ export function onFullscreen(tell: (full: boolean) => void): () => void {
 }
 
 /** Attaches a terminal to a hosted session at cols×rows; the host
-    resizes its PTY to match. */
-export const termOpen = (id: string, cols: number, rows: number) =>
-  call<null>("term_open", { id, cols, rows });
+    resizes its PTY to match, and keeps `history` rows of it (the face's
+    历史行数, item 56; capped by the host). */
+export const termOpen = (id: string, cols: number, rows: number, history: number) =>
+  call<null>("term_open", { id, cols, rows, history });
 /** Everything the feed holds so far (it began with the host's ring, so
     history rides along) and the cursor to stream from. The pane writes
     it into xterm and then follows with `termStream`.
@@ -1777,6 +1778,11 @@ export const termKey = (id: string, keys: string) => call<null>("term_key", { id
 /** A line from the face into the app's own log (its stderr, which the
     device's console keeps): what a page saw that only a device shows. */
 export const faceNote = (line: string) => call<null>("face_note", { line });
+/** **khor's items in the system's edit menu** (item 54,
+    `src-tauri/src/edit_menu.rs`): `[id, title]` pairs the next menu over
+    a selection adds; none clears them. Only the phone app has the menu. */
+export const editMenu = (items: [string, string][]) =>
+  inApp ? call<null>("edit_menu", { items }) : Promise.resolve(null);
 /** A bell felt: a light haptic tap on a phone (roadmap 4.2). */
 export const bellHaptic = () => call<null>("bell_haptic");
 /** The cursor joystick, felt (item 23, `joy_haptic`): `prepare` at
