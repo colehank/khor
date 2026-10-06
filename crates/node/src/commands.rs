@@ -63,7 +63,7 @@
 //! past [`HISTORY_MAX`]. A full-screen program (the alternate screen, the
 //! mouse taken) is read off the same bytes (`crate::modes`).
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use khor_core::Doing;
@@ -114,6 +114,12 @@ pub struct Saved {
     /// host older than this field, which kept no such list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub marked_panes: Option<Vec<String>>,
+    /// Each pane's own reading, by pane, from a shell's own ledger (a
+    /// `tmux` typed in it): its running command, else its last one, and
+    /// its directory. The node says it for the pane in front of the
+    /// shell's tmux client. Empty from a host older than this field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub panes: BTreeMap<String, Doing>,
 }
 
 /// One line of the machine's `history.jsonl`.
@@ -612,19 +618,46 @@ impl Ledger {
         }
     }
 
-    /// The row's reading: the running command, else the last one.
-    pub fn doing(&self) -> Doing {
-        let c = self
-            .running
-            .as_ref()
-            .or_else(|| self.recent.iter().rev().find(|c| c.pane == self.pane));
+    /// One context's reading: its running command, else the last one it
+    /// finished, and its directory.
+    fn reading(&self, pane: Option<&str>, running: Option<&Command>, cwd: Option<&String>) -> Doing {
+        let c = running.or_else(|| self.recent.iter().rev().find(|c| c.pane.as_deref() == pane));
         Doing {
             command: c.and_then(|c| c.text.as_ref()).map(|t| one_line(t)),
-            running: self.running.is_some(),
+            running: running.is_some(),
             started_ms: c.map_or(0, |c| c.started_ms),
             ended_ms: c.and_then(|c| c.ended_ms),
             exit: c.and_then(|c| c.exit),
-            cwd: self.cwd.clone(),
+            cwd: cwd.cloned(),
+            ..Doing::default()
+        }
+    }
+
+    /// Every pane's reading in a shell's own ledger, the one in the
+    /// fields and the parked ones. A tmux client's ledger reads its front
+    /// pane in [`Ledger::doing`] already.
+    fn panes(&self) -> BTreeMap<String, Doing> {
+        if self.tmux {
+            return BTreeMap::new();
+        }
+        let here = self
+            .pane
+            .as_deref()
+            .map(|p| (p, self.reading(Some(p), self.running.as_ref(), self.cwd.as_ref())));
+        let parked = self.parked.iter().filter_map(|(p, k)| {
+            let p = p.as_deref()?;
+            Some((p, self.reading(Some(p), k.running.as_ref(), k.cwd.as_ref())))
+        });
+        here.into_iter()
+            .chain(parked)
+            .filter(|(p, _)| self.marked_panes.iter().any(|m| m == p))
+            .map(|(p, d)| (p.to_owned(), d))
+            .collect()
+    }
+
+    /// The row's reading: the running command, else the last one.
+    pub fn doing(&self) -> Doing {
+        Doing {
             title: self.title.clone(),
             // tmux itself holds a client's screen, whatever the pane runs.
             full_screen: !self.tmux && self.modes.program_holds_screen(),
@@ -632,7 +665,7 @@ impl Ledger {
             progress_failed: self.progress_failed,
             notice: self.notice.as_ref().map(|(t, _)| t.clone()),
             notice_ms: self.notice.as_ref().map_or(0, |(_, at)| *at),
-            pane_unmarked: false,
+            ..self.reading(self.pane.as_deref(), self.running.as_ref(), self.cwd.as_ref())
         }
     }
 
@@ -642,6 +675,7 @@ impl Ledger {
             recent: self.recent.iter().cloned().collect(),
             pane: self.front.clone().or_else(|| self.pane.clone()),
             marked_panes: Some(self.marked_panes.clone()),
+            panes: self.panes(),
         }
     }
 
@@ -696,11 +730,10 @@ pub fn read_pane(dir: &Path) -> Option<String> {
     serde_json::from_slice::<Saved>(&bytes).ok()?.pane
 }
 
-/// The tmux panes a session's ledger has read marks from
-/// (`Saved::marked_panes`); `None` where its host kept no such list.
-pub fn read_marked_panes(dir: &Path) -> Option<Vec<String>> {
+/// A session's ledger file, whole.
+pub fn read_saved(dir: &Path) -> Option<Saved> {
     let bytes = std::fs::read(saved_path(dir)).ok()?;
-    serde_json::from_slice::<Saved>(&bytes).ok()?.marked_panes
+    serde_json::from_slice::<Saved>(&bytes).ok()
 }
 
 /// Appends finished commands to the machine's history, cutting the file

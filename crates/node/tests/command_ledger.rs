@@ -178,4 +178,20 @@ fn a_tmux_typed_in_a_khor_shell_keeps_each_panes_commands_apart() {
         ledger.saved().marked_panes,
         Some(vec!["%0".to_owned(), "%1".to_owned()])
     );
+    // Item 64: each marking pane's own reading, for the row to say while
+    // that pane is in front.
+    let panes: Vec<(String, Option<String>, bool, Option<i32>, Option<String>)> = ledger
+        .saved()
+        .panes
+        .into_iter()
+        .map(|(p, d)| (p, d.command, d.running, d.exit, d.cwd))
+        .collect();
+    let some = |s: &str| Some(s.to_owned());
+    assert_eq!(
+        panes,
+        [
+            ("%0".to_owned(), some("echo one-c"), false, Some(0), some("/s3/w/three")),
+            ("%1".to_owned(), some("sleep 2; echo two-b"), false, Some(0), some("/s3/w/two")),
+        ]
+    );
 }
