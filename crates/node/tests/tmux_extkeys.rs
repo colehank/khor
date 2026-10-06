@@ -151,7 +151,19 @@ fn attach_and_check(root: &Path, vendors: &Path) {
         "printf '\\033[>4;2m'; stty raw -echo; exec cat > '{}'",
         log.display()
     );
+    // `extended-keys` on before the pane exists, in the same command: a
+    // tmux 3.7b with it off drops the pane's `CSI > 4 ; 2 m` as it parses
+    // it, and the program asks once, at its start. Set after the session
+    // (as this test first did), the request lost the race and the pane
+    // stayed `VT10x`.
     s.tmux(&[
+        "start-server",
+        ";",
+        "set-option",
+        "-s",
+        "extended-keys",
+        "on",
+        ";",
         "new-session",
         "-d",
         "-s",
@@ -164,7 +176,6 @@ fn attach_and_check(root: &Path, vendors: &Path) {
         "-c",
         &program,
     ]);
-    s.tmux(&["set-option", "-s", "extended-keys", "on"]);
     let tmux = Tmux::on_socket(&s.socket);
     if !tmux.takes_client_features() {
         println!("test {NAME} ... skipped: this tmux is older than 3.2 (no -T)");
