@@ -889,6 +889,9 @@ pub struct ClientInFront {
     /// The session it is attached to: tmux's id (`$3`) and its name.
     pub session_id: String,
     pub session_name: String,
+    /// The pane in front of it: the active pane of the session's current
+    /// window, as this client sees it (`%3`).
+    pub pane_id: String,
 }
 
 impl ClientInFront {
@@ -926,13 +929,18 @@ pub fn client_in_front(pid: u32) -> Option<ClientInFront> {
     })?;
     let socket = crate::host::tmux_socket_args(&argv);
     let tty = if tty.starts_with('/') { tty } else { format!("/dev/{tty}") };
-    let clients = Tmux::on_socket_args(&socket).ask(&["list-clients", "-F", "#{client_tty}\t#{session_id}\t#{session_name}"])?;
+    // `#{pane_id}` in a client's format is that client's front pane: it
+    // follows `select-window` and `select-pane` (measured on 3.7b). Last,
+    // because a session name may hold a tab.
+    let clients = Tmux::on_socket_args(&socket)
+        .ask(&["list-clients", "-F", "#{client_tty}\t#{session_id}\t#{pane_id}\t#{session_name}"])?;
     clients.lines().find_map(|l| {
-        let mut f = l.splitn(3, '\t');
+        let mut f = l.splitn(4, '\t');
         (f.next()? == tty).then(|| ClientInFront {
             socket: socket.clone(),
             tty: tty.clone(),
             session_id: f.next().unwrap_or_default().to_owned(),
+            pane_id: f.next().unwrap_or_default().to_owned(),
             session_name: f.next().unwrap_or_default().to_owned(),
         })
     })

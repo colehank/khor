@@ -1417,6 +1417,7 @@ impl LiveKind {
                     tmux: None,
                     running: None,
                     panes: Vec::new(),
+                    client: None,
                 });
             }
         }
@@ -1450,6 +1451,7 @@ impl LiveKind {
                 tmux: Some(held.found),
                 running: held.running,
                 panes: held.panes,
+                client: None,
             });
         }
         // **A khor shell with `tmux` typed in it holds the session that
@@ -1477,7 +1479,7 @@ impl LiveKind {
             {
                 continue;
             }
-            let Some(session) = self.discovery.attached(child) else {
+            let Some((session, front)) = self.discovery.attached_in(child) else {
                 continue;
             };
             if let Some(m) = hosts
@@ -1486,6 +1488,16 @@ impl LiveKind {
             {
                 let held = hosts[m].holds.clone();
                 hosts[k].holds.extend(held);
+                // With no agent in the session, the shell says what the
+                // client shows in front, not 「正在运行 tmux」 (2c).
+                let found = hosts[m].tmux.as_ref().map(|f| &f.sighting);
+                let pane = front.and_then(|p| hosts[m].panes.iter().find(|x| x.id == p));
+                hosts[k].client = found.map(|f| Client {
+                    word: f.word,
+                    at_ms: f.at_ms,
+                    running: pane.map_or(hosts[m].running.clone(), |p| p.running.clone()),
+                    cwd: pane.map_or(f.cwd.clone(), |p| p.cwd.clone()),
+                });
                 taken.push(m);
             }
         }
@@ -1675,8 +1687,21 @@ impl LiveKind {
                             },
                         )),
                         // khor's own terminal with nothing inside is
-                        // already in its own form: it is the terminal.
-                        (None, None) => {}
+                        // already in its own form: it is the terminal —
+                        // unless what runs in it is a tmux client.
+                        (None, None) => {
+                            if let Some(c) = host.client {
+                                forms.push((
+                                    k,
+                                    Form::Client {
+                                        word: c.word,
+                                        at_ms: c.at_ms,
+                                        running: c.running,
+                                        cwd: c.cwd,
+                                    },
+                                ));
+                            }
+                        }
                     }
                     Some(k)
                 }
@@ -1956,6 +1981,36 @@ impl LiveKind {
                     r.term = true;
                     r.mux = mux;
                 }
+                Form::Client {
+                    word,
+                    at_ms,
+                    running,
+                    cwd,
+                } => {
+                    // The shell's own marks saw it start the client and
+                    // nothing since: its command is `tmux`, and its last
+                    // line is the client's status bar. What it shows is
+                    // the pane in front; where it is called and any
+                    // notice stay the shell's.
+                    let r = &mut out[k];
+                    let own = r.doing.take().unwrap_or_default();
+                    r.doing = Some(khor_core::Doing {
+                        running: running.is_some(),
+                        command: running,
+                        cwd: cwd.or(own.cwd),
+                        title: own.title,
+                        notice: own.notice,
+                        notice_ms: own.notice_ms,
+                        ..Default::default()
+                    });
+                    r.state = StateStamp {
+                        state: word,
+                        at: Millis(at_ms.max(0) as u64),
+                    };
+                    // A multiplexer cannot say 完成.
+                    r.unread = 0;
+                    r.last = None;
+                }
             }
         }
         out.retain(|r| !folded.contains(&r.id));
@@ -2155,6 +2210,19 @@ struct Host {
     running: Option<String>,
     /// tmux's reading of each pane.
     panes: Vec<crate::adaptor::PaneReading>,
+    /// khor's own terminal showing a person's tmux client: what is in
+    /// front of it (SESS-BRIEF 2c).
+    client: Option<Client>,
+}
+
+/// What a khor shell's tmux client shows: the session's word, and the
+/// front pane's program and place (the session's reading where tmux
+/// named no front pane).
+struct Client {
+    word: State,
+    at_ms: i64,
+    running: Option<String>,
+    cwd: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2178,6 +2246,13 @@ enum Form {
     },
     /// The agent at row `from` — kind, category, word, preview.
     Agent { from: usize, mux: bool },
+    /// What a khor shell's tmux client shows in front ([`Client`]).
+    Client {
+        word: State,
+        at_ms: i64,
+        running: Option<String>,
+        cwd: Option<String>,
+    },
 }
 
 /// A registry row plus the two things [`LiveKind::rows`] needs that a
@@ -4427,6 +4502,78 @@ mod tests {
             Some(AGENT.to_owned()),
             "a press on it acts on that claude"
         );
+    }
+
+    /// **A khor shell with `tmux` typed in it and no agent in the
+    /// session** (SESS-BRIEF 2c) says what the pane in front of the
+    /// client runs and where it stands, not 「正在运行 tmux」: the
+    /// shell's own marks only ever saw it start the client. Where tmux
+    /// named no front pane, the session's reading stands in, as for an
+    /// attached tmux row. The session is no second row either way.
+    #[test]
+    fn a_khor_shell_attached_to_tmux_says_what_the_front_pane_runs() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let panes = concat!(
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%11\x1fwork\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fvim\x1f/w/two\x1f%12\x1fwork\n",
+        );
+        let row_with = |tag: &str, front: Option<&str>| {
+            let root = tmp(&format!("seat-shell-tmux-front-{tag}"));
+            let tmux = crate::adaptor::tmux::fake_tmux(&format!("front-{tag}"), panes);
+            let host = FakeHost::up();
+            let procs = Procs::of([
+                proc_under(5001, "zsh", host.pid()),
+                proc_under(5002, "tmux", 5001),
+                proc_under(3001, "zsh", 1),
+                proc_under(3002, "zsh", 1),
+            ]);
+            let discovery = Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&tmux));
+            let discovery = match front {
+                Some(p) => discovery.with_attached_in(5001, sid(T_ID), p),
+                None => discovery.with_attached(vec![(5001, sid(T_ID))]),
+            };
+            let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(discovery));
+            let term = sid("shell/a1b2c3d4e5f6");
+            k.register(&term, "shell", "zsh", Some(host.pid()), Some(khor_core::category::SHELL))
+                .unwrap();
+            let dir = k.dir_of(&term).unwrap();
+            host.serve(&dir, 5001);
+            crate::commands::write_saved(
+                &dir,
+                &crate::commands::Saved {
+                    doing: khor_core::Doing {
+                        command: Some("tmux".into()),
+                        running: true,
+                        started_ms: 1,
+                        cwd: Some("/w/start".into()),
+                        ..Default::default()
+                    },
+                    recent: Vec::new(),
+                    pane: None,
+                },
+            );
+            fs::write(dir.join("last.txt"), "work | 0:zsh | 12:00").unwrap();
+            let rows = k.rows(|_| 0);
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(ids, vec![term.0.as_str()], "{tag}: one row, the shell");
+            assert_eq!(rows[0].kind.0, khor_core::kind::SHELL, "{tag}");
+            assert_eq!(rows[0].last, None, "{tag}: not the client's status bar");
+            rows[0].doing.clone().unwrap()
+        };
+
+        let doing = row_with("busy", Some("%12"));
+        assert_eq!(doing.command.as_deref(), Some("vim"), "the front pane's program, not tmux");
+        assert!(doing.running);
+        assert_eq!(doing.cwd.as_deref(), Some("/w/two"));
+
+        let doing = row_with("idle", Some("%11"));
+        assert_eq!(doing.command, None, "a front pane at its prompt runs nothing");
+        assert!(!doing.running);
+        assert_eq!(doing.cwd.as_deref(), Some("/w/one"));
+
+        let doing = row_with("unnamed", None);
+        assert_eq!(doing.command.as_deref(), Some("vim"), "the session's reading");
     }
 
     /// **khor's own terminal.** A shell khor hosts wears the claude
