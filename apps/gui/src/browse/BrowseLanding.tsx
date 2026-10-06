@@ -54,7 +54,7 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { fetchPageIcons, onPageWord, openLink, pageDeck, pageGround, pageStep, recentVisit, type DeviceRow } from "@/api";
+import { fetchPageIcons, onPageWord, openLink, openTab, pageDeck, pageGround, pageStep, recentVisit, type DeviceRow } from "@/api";
 import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
 import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
 import { pageFail, type PageFail } from "@/browse/page-fail";
@@ -63,14 +63,14 @@ import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
 import type { BrowseTab, BrowseTabs } from "@/browse/use-browse-tabs";
 import { useLoading } from "@/browse/use-loading";
-import { IconArrow, IconReload } from "@/components/icons";
-import { GlassItem } from "@/components/Glass";
+import { IconArrow, IconPlus, IconReload } from "@/components/icons";
+import { GlassCircle, GlassItem } from "@/components/Glass";
+import { SideFind } from "@/components/SideFind";
 import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
 import { FOLD_AT, foldStep, inkOver, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { pageKind } from "@/components/SessionFace";
 import { ListPane } from "@/components/ListPane";
-import { SeatHead } from "@/components/SeatHead";
 import { PaneBar } from "@/components/PaneBar";
 import type { RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
@@ -156,19 +156,18 @@ export function BrowseLanding({
   bare,
 }: {
   /**
-   * **Drawn inside the session's 附栏** (UX-37 §6, UX-39 §3, narrow only):
-   * the list is the tabs opened from `here` (a session's id) under the
-   * 附栏's one head, and a page wears no deck: ‹ to that list · its host ·
-   * the page. No landing head (＋, search), no native deck (the session's
-   * deck is away while the sheet is up). ⚠️ 墓碑 (UX-37 §1 → UX-39 §3):
-   * ‹ from the slice to every tab (`here: null`, 全部网页).
+   * **Drawn inside the session's 附栏** (UX-37 §6, UX-39 §3, UX-40,
+   * narrow only): the list is the tabs opened from `here` (a session's
+   * id) under the 附栏's one head and its find row — this session's pages,
+   * ＋ a new page that is this session's (UX-40 §1). A page wears the main
+   * area's narrow deck at the 附栏's foot: ‹ · ← → host ↻ · the tabs
+   * circle with this session's pages, never folded, no native deck (the
+   * session's deck is away while the sheet is up; UX-40 §4). ⚠️ 墓碑
+   * (UX-37 §6 → UX-40 §4): ‹ and the host in a head at the page's top.
+   * ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ from the slice to every tab (`here:
+   * null`, 全部网页).
    */
-  bare?: {
-    here: string;
-    /** Where the page's ‹ goes, said: the list (浏览器) unless the page
-        was opened from a row of 最近 (UX-39 §3). */
-    backLabel?: string;
-  };
+  bare?: { here: string };
   /** Narrow only: which of the pair is up — the tabs or the page — and
       the shell's two moves between them. */
   screen?: "list" | "detail";
@@ -801,33 +800,43 @@ export function BrowseLanding({
     had.current = false;
     if (narrow && screen === "detail") onBack?.();
   }, [count, tabs.empty, narrow, screen, onBack]);
-  if (narrow && bare) {
-    // ⚠️ 墓碑 (UX-30 → UX-37 §6): the 附栏's page was the browser
-    // landing's own screen, the session deck at its foot over the
-    // sheet's.
-    if (screen === "detail" && !tabs.empty) {
-      return (
-        <section data-browse-landing={kind.kind} data-browse-bare="page" className="flex h-full min-h-0 flex-col">
-          <SeatHead
-            title={pillHost(tabs.current.path) || tabLabel(kind, tabs.current.path, deviceOf(tabs.current.device))}
-            back={() => onBack?.()}
-            backLabel={bare.backLabel ?? gui.browser_tab}
-          />
-          {/* The page's box (`data-nav-clear`): the native page is framed
-              to it, under the head. */}
-          <div data-nav-clear className="min-h-0 flex-1 overflow-hidden">
-            {body}
-          </div>
-        </section>
-      );
+  /** In the 附栏: this session's pages (`bare.here`), and a new page is
+      this session's, its address field up at once (UX-40 §1). */
+  const mine = bare ? new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id)) : null;
+  const newHere = () => {
+    if (!bare) {
+      tabs.add();
+      opened();
+      return;
     }
-    const mine = new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id));
+    void openTab(kind.kind, machine?.id ?? "", "", bare.here)
+      .then((id) => {
+        setQuery("");
+        tabs.focus(id);
+        setEditing(true);
+        opened();
+      })
+      .catch(() => {});
+  };
+  if (narrow && mine && !(screen === "detail" && !tabs.empty)) {
     return (
       <section data-browse-tabs data-browse-bare="here" className="flex h-full min-h-0 flex-col">
         {/* The 附栏's head is the seat's title (`SideBody`); this list has
-            none of its own. ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ to 全部网页. */}
+            none of its own, only the find row (UX-40 §1). ⚠️ 墓碑 (UX-37
+            §1 → UX-39 §3): ‹ to 全部网页. */}
+        <SideFind
+          label={gui.search_tabs}
+          query={query}
+          onQuery={setQuery}
+          plus={
+            <GlassCircle aria-label={gui.new_tab} data-side-new onClick={newHere}>
+              <IconPlus />
+            </GlassCircle>
+          }
+        />
         <div data-tab-switcher data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
           <SideList
+            query={query}
             rows={side.filter((r) => mine.has(r.id))}
             label={groupLabel}
             empty={<span data-page-none>{gui.side_pages_here_none}</span>}
@@ -838,9 +847,12 @@ export function BrowseLanding({
     );
   }
   if (narrow) {
+    // **A page in the 附栏 wears the main area's deck** (UX-40 §4, the
+    // owner 2026-10-07 02:10): the narrow screen below, its tabs this
+    // session's, never folded — the sheet is small already.
     return screen === "detail" && !tabs.empty ? (
       <SessionScreen
-        faces={faces}
+        faces={mine ? faces.filter((f) => mine.has(f.id)) : faces}
         active={tabs.current.id}
         onFocus={(id) => tabs.focus(id)}
         onClose={(id) => {
@@ -848,10 +860,7 @@ export function BrowseLanding({
           void tabs.close(id).catch(() => {});
         }}
         // ＋ in the tabs sheet: a new page, as the list's ＋ opens one.
-        onNew={() => {
-          tabs.add();
-          opened();
-        }}
+        onNew={newHere}
         onBack={() => onBack?.()}
         onTitle={() => setEditing(true)}
         caption={failedWord || caption}
@@ -863,15 +872,17 @@ export function BrowseLanding({
         foldOver={false}
         ink={native ? ink : undefined}
         onEditCancel={() => setEditing(false)}
-        folded={folded && !editing}
+        folded={folded && !editing && !bare}
         onUnfold={() => {
           hold.current.asked();
           setFolded(false);
         }}
         loading={pageLoading}
       >
-        <section data-browse-landing={kind.kind} className="flex h-full min-h-0 flex-col">
-          <div className="min-h-0 flex-1 overflow-hidden">{body}</div>
+        <section data-browse-landing={kind.kind} data-browse-bare={bare ? "page" : undefined} className="flex h-full min-h-0 flex-col">
+          <div data-nav-clear={bare ? true : undefined} className="min-h-0 flex-1 overflow-hidden">
+            {body}
+          </div>
           {/* **The page's own things are the pill's** (round UX-3): ← → at
               its left, reload at its right; the address is edited under
               the deck only when asked for (the title pressed, or a page

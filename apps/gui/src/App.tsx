@@ -1697,7 +1697,10 @@ export default function App() {
           controls: side.open ? SIDE_ID : undefined,
           toggle: () => {
             if (!side.open) toSlices();
-            setSessionSide(id, { open: !side.open });
+            // **Each opening lands on 最近** (UX-40, the owner 2026-10-07:
+            // 「每次打开都是显示最近」); a seat chosen inside lasts while
+            // the 附栏 stays open.
+            setSessionSide(id, side.open ? { open: false } : { open: true, seat: "recent" });
           },
         };
         // ⚠️ 墓碑 (UX-36 → UX-39 §4, the owner 2026-10-06 22:10: 「药丸下面就
@@ -2347,7 +2350,7 @@ export default function App() {
             screen={sideBrowse.page ? "detail" : "list"}
             onOpen={() => setSideBrowse({ page: true })}
             onBack={sideFrom === "recent" ? backToRecent : () => setSideBrowse({ page: false })}
-            bare={{ here: selectedRow.id, backLabel: sideFrom === "recent" ? gui.group_recent : undefined }}
+            bare={{ here: selectedRow.id }}
           />
         );
       case "machine": {
@@ -2791,7 +2794,11 @@ export default function App() {
               const dir = box?.__marks?.cwd() ?? selectedRow?.place ?? null;
               // The sheet's 工作区 seat stands where the shell is at the
               // tap (UX-17's rule, kept): pointed afresh each time.
-              if (selectedRow) setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null });
+              if (selectedRow) {
+                setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null });
+                // Each opening lands on 最近 (UX-40).
+                setSessionSide(selectedRow.id, { seat: "recent" });
+              }
               toSlices();
               setPlaceSheet({ dir });
             }

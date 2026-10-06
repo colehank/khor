@@ -1942,6 +1942,13 @@ aside[data-side] {
    corner at the list's own 20, and the page under it matches. */
 [data-narrow] {
   --page-inset: var(--gap-group);
+  /* The lines set in from it follow it (tokens.css): a custom property
+     takes its `var()`s where it is declared, so on a narrow box inside a
+     wide window (the Mac's 附栏 column) the root's would still stand on
+     the wide page's 24 — the tree 4 off the find row above it (UX-40). */
+  --files-inset: calc(var(--page-inset) - var(--gap-base));
+  --rows-inset: calc(var(--page-inset) - var(--gap-group));
+  --tree-inset: calc(var(--page-inset) - var(--tree-slot) / 2 + var(--affordance) * 0.113);
 }
 
 /* ⚠️ 墓碑: the wide left column re-derived the glass sizes from the

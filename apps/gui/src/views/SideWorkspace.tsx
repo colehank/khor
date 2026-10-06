@@ -8,21 +8,32 @@
  * the second). The ceiling is the workspace that holds the session's
  * directory (`holding`), or that directory itself when no workspace
  * does; git's letters come from one status read, folded up the tree the
- * way the landing folds them. A file opens in place as the bare file
- * page (UX-37 §6) and ‹ there is the way back to the tree.
+ * way the landing folds them. A file opens in place as the file page
+ * with the main area's deck (`FilePage docked`, UX-40 §4), and ‹ there is
+ * the way back to the tree — or to 最近, for the file a row of 最近 opened.
  *
- * ⚠️ 墓碑 (UX-37 §1): `MachineFiles` here, climbing to the root and on to
- * every workspace.
+ * **Find and make** (UX-40 §1): the find row under the 附栏's head is the
+ * landing tree's own box and ＋ — names and lines under the workspace
+ * (`Hits`), 新建文件 / 新建目录 into the tree (`FileTree`'s `make`).
+ *
+ * ⚠️ 墓碑 (UX-37 §6 → UX-40 §4): the bare file page, ‹ and the name in a
+ * head at its top. ⚠️ 墓碑 (UX-37 §1): `MachineFiles` here, climbing to
+ * the root and on to every workspace.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { fetchGitStatus } from "@/api";
+import { fetchGitStatus, searchIn, type Found } from "@/api";
+import { GlassCircle } from "@/components/Glass";
+import { IconPlus } from "@/components/icons";
+import { SideFind } from "@/components/SideFind";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SeatHead } from "@/components/SeatHead";
 import { gui } from "@/gen/catalog";
 import type { GitStatus } from "@/gen/bindings/GitStatus";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { FilePage } from "@/views/FilePage";
 import { FileTree } from "@/views/FileTree";
+import { Hits } from "@/views/WorkspacePane";
 import type { Draft } from "@/views/FileView";
 
 /** Absolute path → git's letter, folded so a directory carries the
@@ -71,6 +82,8 @@ export function SideWorkspace({
   fileActs?: (path: string) => { key: string; label: string; run: () => void }[];
 }) {
   const [file, setFile] = useState<string | null>(start?.path ?? null);
+  /** A line hit's line, for the file it opened (`FilePage`'s `goLine`). */
+  const [goLine, setGoLine] = useState<{ path: string; line: number; at: number } | null>(null);
   useEffect(() => {
     if (start !== null) setFile(start.path);
   }, [start]);
@@ -87,6 +100,73 @@ export function SideWorkspace({
     };
   }, [machine, root, gitAt]);
   const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
+  // The hunt: asked 300 ms after the typing stops, a late answer to an
+  // old question thrown away (`WorkspacePane`'s, the same rule).
+  const [hunt, setHunt] = useState("");
+  const [found, setFound] = useState<Found | null>(null);
+  const [huntError, setHuntError] = useState<string | null>(null);
+  const huntAsked = useRef(0);
+  useEffect(() => {
+    const q = hunt.trim();
+    if (q === "") {
+      huntAsked.current += 1;
+      setFound(null);
+      setHuntError(null);
+      return;
+    }
+    const mine = (huntAsked.current += 1);
+    const wait = window.setTimeout(() => {
+      searchIn(machine, root, q)
+        .then((f) => {
+          if (huntAsked.current !== mine) return;
+          setFound(f);
+          setHuntError(null);
+        })
+        .catch((e: unknown) => {
+          if (huntAsked.current !== mine) return;
+          setFound(null);
+          setHuntError(String(e instanceof Error ? e.message : e));
+        });
+    }, 300);
+    return () => window.clearTimeout(wait);
+  }, [hunt, machine, root]);
+  /** ＋'s choice, handed to the tree once the menu has given the focus
+      back (the name box takes it next), the box cleared so the tree is
+      there to take it. */
+  const [make, setMake] = useState<{ kind: "file" | "dir"; at: number } | null>(null);
+  const madeFromMenu = useRef<"file" | "dir" | null>(null);
+  const plus = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <GlassCircle aria-label={gui.new_item} data-side-new>
+          <IconPlus />
+        </GlassCircle>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="end"
+        onCloseAutoFocus={(e) => {
+          const kind = madeFromMenu.current;
+          if (kind === null) return;
+          madeFromMenu.current = null;
+          e.preventDefault();
+          setHunt("");
+          setMake({ kind, at: Date.now() });
+        }}
+      >
+        {(["file", "dir"] as const).map((kind) => (
+          <DropdownMenuItem
+            key={kind}
+            data-side-new-item={kind}
+            onSelect={() => {
+              madeFromMenu.current = kind;
+            }}
+          >
+            {kind === "file" ? gui.file_new : gui.dir_new}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
   useEffect(() => {
     if (file !== null) onRead?.(file);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,24 +177,40 @@ export function SideWorkspace({
           it was scrolled. */}
       <div className={file !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={gui.group_recent} />}
-        <FileTree
-          key={`${machine} ${root}`}
-          machine={machine}
-          root={root}
-          here={here}
-          marks={folded(root, git)}
-          open={file}
-          onOpen={(path) => setFile(path)}
-          onGone={(path) => {
-            if (file === path) setFile(null);
-            setGitAt((n) => n + 1);
-          }}
-          onMoved={(from, to) => {
-            if (file === from) setFile(to);
-            setGitAt((n) => n + 1);
-          }}
-          onMade={() => setGitAt((n) => n + 1)}
-        />
+        <SideFind label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />
+        {hunt.trim() !== "" ? (
+          <Hits
+            found={found}
+            error={huntError}
+            query={hunt.trim()}
+            dir={root}
+            onOpen={(path, line) => {
+              setFile(path);
+              setGoLine(line === null ? null : { path, line, at: Date.now() });
+            }}
+          />
+        ) : (
+          <FileTree
+            key={`${machine} ${root}`}
+            machine={machine}
+            root={root}
+            here={here}
+            marks={folded(root, git)}
+            open={file}
+            onOpen={(path) => setFile(path)}
+            onGone={(path) => {
+              if (file === path) setFile(null);
+              setGitAt((n) => n + 1);
+            }}
+            onMoved={(from, to) => {
+              if (file === from) setFile(to);
+              setGitAt((n) => n + 1);
+            }}
+            onMade={() => setGitAt((n) => n + 1)}
+            make={make}
+            onMakeSeen={() => setMake(null)}
+          />
+        )}
       </div>
       {file !== null && (
         <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
@@ -124,7 +220,8 @@ export function SideWorkspace({
             path={file}
             here={here}
             git
-            bare
+            docked
+            goLine={goLine?.path === file ? goLine : null}
             draft={drafts.get(file)}
             onDraft={(d) =>
               setDrafts((was) => {

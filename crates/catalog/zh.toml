@@ -3728,6 +3728,8 @@ search-devices = "搜索机器"
 search-quota = "搜索额度"
 # 浏览那一列的搜索框(docs/SHELL.md 第二轮):找的是标签页的标题和网址。
 search-tabs = "搜索标签页"
+# The 附栏's 最近 seat's search box (UX-40).
+search-recent = "搜索最近"
 filter = "筛选"
 # The filter menu's axis headings. It ticks on three axes now (状态 /
 # 机器 / 类别), and a flat checkbox list with no headings reads as one
