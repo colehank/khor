@@ -14,7 +14,8 @@
  * opened from this session — from its terminal's paths and URLs, or from
  * this 附栏 while the session was in front — as the record says
  * (`session` on a recent, `use-side-recent`). It starts with the day
- * (`today`, 过去24小时, UX-39 §4). A page opened from a row wears ‹ back
+ * (`today`, 过去24小时, UX-39 §4), or at the first opened item when the
+ * day has no record (UX-42). A page opened from a row wears ‹ back
  * here (`App`'s `sideFrom`). ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ from the
  * slice to the whole, 全部最近.
  */

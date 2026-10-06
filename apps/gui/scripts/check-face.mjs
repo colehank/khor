@@ -31639,10 +31639,12 @@ try {
       dir: [{ device: pin.device, name: "peer", place: pin.path, at_ms: now - 600_000, session: "tui/side-1" }],
       file: [{ device: pin.device, name: "peer", place: `${pin.path}/notes.md`, at_ms: now - 3_600_000, session: "tui/side-1" }],
     };
+    // side-2's day has no record (not a stretch wearing a word): its
+    // 最近 draws no 过去24小时 (UX-42, read in d).
     const days = Object.fromEntries(
       sideRows.map((r) => [
         r.id,
-        [
+        r.id === "tui/side-2" ? [{ cells: 90, mark: "absent" }, { cells: 10, mark: "unwatched" }] : [
           { cells: 20, mark: "absent" },
           { cells: 30, mark: { word: "idle" } },
           { cells: 10, mark: "unwatched" },
@@ -31892,6 +31894,16 @@ try {
       await openSession("tui/side-2");
       await press(front("tui/side-2"));
       await until(2_000, async () => (await count(col)) === 1);
+      // c, again: a day with no record draws no 过去24小时, and 最近
+      // starts at its list (UX-42, progressive disclosure).
+      await wait(600);
+      const quiet = await page.evaluate((c) => {
+        const scroller = document.querySelector(`${c} [data-side-recent] [data-nav-clear]`);
+        return scroller ? { days: scroller.querySelectorAll("[data-day-today-row]").length, first: scroller.firstElementChild?.getAttribute("data-list") ?? null } : null;
+      }, col);
+      console.log(`side c · 最近 of a day with no record ${JSON.stringify(quiet)}`);
+      if (!quiet) fail("probe dead: side c · side-2's column did not land on 最近");
+      else if (quiet.days !== 0 || quiet.first !== "recent") fail(`side c · a day with no record: 最近 draws ${quiet.days} 过去24小时 and starts at ${quiet.first} — no row, the list first (UX-42)`);
       await pick("workspace");
       await wait(500);
       const outside = await page.evaluate((c) => document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null, col);

@@ -354,9 +354,9 @@ try {
   //      not for one frame — sampled on every animation frame across the
   //      gesture, closed and open;
   //   d. the column and its day outlive a reload;
-  //   e. a day with no record (`day_fixture`'s quiet row): the row stands
-  //      and holds no band and no word; another session's column is
-  //      untouched;
+  //   e. a day with no record (`day_fixture`'s quiet row): the row is not
+  //      drawn and 最近 starts at its list (UX-42, progressive
+  //      disclosure); another session's column is untouched;
   //   f. while the day is on its way, the row holds the band's skeleton
   //      in the band's own geometry, never a blank (a context whose day
   //      route is held);
@@ -594,9 +594,8 @@ try {
     fail("probe dead: ⓪ had no fixture row to open");
   }
 
-  // e. a day with no record: the ruler is drawn as what it is, the
-  //    expanded view says so — in both shapes it arrives in (the route
-  //    above)
+  // e. a day with no record draws no row, and 最近 starts at its list —
+  //    in both shapes it arrives in (the route above)
   for (const shape of ["unwatched", "missing"]) {
   if (shape !== emptyAs) {
     emptyAs = shape;
@@ -613,17 +612,26 @@ try {
       fail(`⓪e pressing ${id}'s front tab (${shape}) opened no column`);
       continue;
     }
-    // The row stands; a day with no record holds no band and no word.
-    let got = null;
-    await until(`${id}'s day row`, 10_000, async () => {
-      got = await page.evaluate(() => {
-        const row = document.querySelector("[data-session-side] [data-detail-day]");
-        return row ? { bands: row.querySelectorAll("[data-day-strip]").length, words: row.querySelectorAll("[data-day-mark]").length, skeleton: row.querySelectorAll("[data-day-skeleton]").length } : null;
+    // No row: while the day is on its way the row holds the skeleton, so
+    // its going away is the answer arriving. Read again a beat later, so
+    // a row that comes back with the next answer is caught too.
+    const shapeOf = () =>
+      page.evaluate(() => {
+        const scroller = document.querySelector("[data-session-side] [data-side-recent] [data-nav-clear]");
+        return scroller
+          ? { rows: scroller.querySelectorAll("[data-detail-day]").length, first: scroller.firstElementChild?.getAttribute("data-list") ?? scroller.firstElementChild?.tagName ?? null }
+          : null;
       });
-      return got !== null && got.skeleton === 0;
+    let got = null;
+    await until(`${id}'s 最近 without a day row`, 10_000, async () => {
+      got = await shapeOf();
+      return got !== null && got.rows === 0;
     });
-    if (!got) fail(`⓪e ${id} (${shape}) has no record and its 附栏 draws no day row — the row stands`);
-    else if (got.bands !== 0 || got.words !== 0) fail(`⓪e ${id} (${shape}) has no record and ${got.bands} band(s), ${got.words} mark(s) stand in its row — an empty band is the blank band`);
+    await sleep(800);
+    got = await shapeOf();
+    if (!got) fail(`probe dead: ⓪e ${id} (${shape})'s column never drew 最近`);
+    else if (got.rows !== 0) fail(`⓪e ${id} (${shape}) has no record and its 最近 draws ${got.rows} day row(s) — a day with no record draws no row (UX-42)`);
+    else if (got.first !== "recent") fail(`⓪e ${id} (${shape}): 最近 starts at ${got.first} — at its list when the day has no record`);
     console.log(`⓪e ${id} (${shape}): ${JSON.stringify(got)}`);
     await page.keyboard.press("Escape");
     await pressFace(page, id);

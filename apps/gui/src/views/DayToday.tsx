@@ -7,6 +7,10 @@
  * a press with its popover (the stretch's hours, its word, its length).
  * Nothing else opens from the row.
  *
+ * **A day with no record draws no row** (UX-42, progressive disclosure):
+ * 最近 starts at the first opened item. While the day is on its way the
+ * row stands with the band's skeleton — what arrives might be a record.
+ *
  * ⚠️ 墓碑 (UX-36 → UX-39 §4): `DayLine`, the day flattened into a 2-pt
  * line in every session pill's slot, and `DayPanel`, the day in full
  * hanging from the pill (the menu's 「今天」) or expanding under 今天's row
@@ -17,9 +21,10 @@
 import { gui } from "@/gen/catalog";
 import type { DayTotals } from "@/hooks/use-day-totals";
 import { count, stretch } from "@/words";
-import { DayStrip, type Day } from "@/views/DayStrip";
+import { DayStrip, dayHasRecord, type Day } from "@/views/DayStrip";
 
 export function DayToday({ runs, totals }: { runs: Day; totals: DayTotals | null }) {
+  if (runs !== null && !dayHasRecord(runs)) return null;
   const said = totals ? gui.day_busy_idle(totalOf(totals.busy), totalOf(totals.idle)) : null;
   return (
     // `data-detail-day`: the session's day, wherever it is drawn (the
