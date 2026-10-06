@@ -110,6 +110,10 @@ pub struct Saved {
     /// no marks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pane: Option<String>,
+    /// The tmux panes that have sent a mark, oldest first. `None` from a
+    /// host older than this field, which kept no such list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marked_panes: Option<Vec<String>>,
 }
 
 /// One line of the machine's `history.jsonl`.
@@ -193,6 +197,8 @@ pub struct Ledger {
     parked: Vec<(Option<String>, Parked)>,
     /// A `KhorPane` named a pane for the string that follows it alone.
     lent: bool,
+    /// Every pane that has sent a mark, oldest first.
+    marked_panes: Vec<String>,
 }
 
 impl Ledger {
@@ -381,6 +387,13 @@ impl Ledger {
             && let Some(pane) = rest.strip_prefix("P;KhorPane=").filter(|p| !p.is_empty())
         {
             self.give_back();
+            if !self.marked_panes.iter().any(|p| p == pane) {
+                if self.marked_panes.len() >= PANES_MAX {
+                    self.marked_panes.remove(0);
+                }
+                self.marked_panes.push(pane.to_owned());
+                self.changed = true;
+            }
             self.switch(Some(pane));
             self.lent = true;
             return;
@@ -619,6 +632,7 @@ impl Ledger {
             progress_failed: self.progress_failed,
             notice: self.notice.as_ref().map(|(t, _)| t.clone()),
             notice_ms: self.notice.as_ref().map_or(0, |(_, at)| *at),
+            pane_unmarked: false,
         }
     }
 
@@ -627,6 +641,7 @@ impl Ledger {
             doing: self.doing(),
             recent: self.recent.iter().cloned().collect(),
             pane: self.front.clone().or_else(|| self.pane.clone()),
+            marked_panes: Some(self.marked_panes.clone()),
         }
     }
 
@@ -679,6 +694,13 @@ pub fn read_doing(dir: &Path) -> Option<Doing> {
 pub fn read_pane(dir: &Path) -> Option<String> {
     let bytes = std::fs::read(saved_path(dir)).ok()?;
     serde_json::from_slice::<Saved>(&bytes).ok()?.pane
+}
+
+/// The tmux panes a session's ledger has read marks from
+/// (`Saved::marked_panes`); `None` where its host kept no such list.
+pub fn read_marked_panes(dir: &Path) -> Option<Vec<String>> {
+    let bytes = std::fs::read(saved_path(dir)).ok()?;
+    serde_json::from_slice::<Saved>(&bytes).ok()?.marked_panes
 }
 
 /// Appends finished commands to the machine's history, cutting the file

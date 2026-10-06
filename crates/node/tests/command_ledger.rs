@@ -150,5 +150,9 @@ fn a_tmux_typed_in_a_khor_shell_keeps_each_panes_commands_apart() {
         (d.command.as_deref(), d.running, d.cwd.as_deref()),
         (Some("exit"), true, Some("/s3/w/start")),
         "the shell's own context, back at its prompt where it typed exit"
+    );    // Step 2: which panes send marks; `zsh -f` in %2 sent none.
+    assert_eq!(
+        ledger.saved().marked_panes,
+        Some(vec!["%0".to_owned(), "%1".to_owned()])
     );
 }

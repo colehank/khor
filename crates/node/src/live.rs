@@ -1519,12 +1519,13 @@ impl LiveKind {
                 // With no agent in the session, the shell says what the
                 // client shows in front, not 「正在运行 tmux」 (2c).
                 let found = hosts[m].tmux.as_ref().map(|f| &f.sighting);
-                let pane = front.and_then(|p| hosts[m].panes.iter().find(|x| x.id == p));
+                let pane = front.as_ref().and_then(|p| hosts[m].panes.iter().find(|x| &x.id == p));
                 hosts[k].client = found.map(|f| Client {
                     word: f.word,
                     at_ms: f.at_ms,
                     running: pane.map_or(hosts[m].running.clone(), |p| p.running.clone()),
                     cwd: pane.map_or(f.cwd.clone(), |p| p.cwd.clone()),
+                    pane: front,
                 });
                 taken.push(m);
             }
@@ -1726,6 +1727,7 @@ impl LiveKind {
                                         at_ms: c.at_ms,
                                         running: c.running,
                                         cwd: c.cwd,
+                                        pane: c.pane,
                                     },
                                 ));
                             }
@@ -2014,7 +2016,18 @@ impl LiveKind {
                     at_ms,
                     running,
                     cwd,
+                    pane,
                 } => {
+                    // **Whether the pane in front marks its commands**
+                    // (SESS-BRIEF 3): the shell's ledger lists every pane
+                    // that sent a mark. One it never heard from has no
+                    // commands in the history, and the face says why.
+                    // Unknown (no pane named, a host older than the list)
+                    // is not unmarked.
+                    let marked = self
+                        .dir_of(&out[k].id)
+                        .and_then(|d| crate::commands::read_marked_panes(&d));
+                    let pane_unmarked = pane.is_some_and(|p| marked.is_some_and(|m| !m.contains(&p)));
                     // The shell's own marks saw it start the client and
                     // nothing since: its command is `tmux`, and its last
                     // line is the client's status bar. What it shows is
@@ -2029,6 +2042,7 @@ impl LiveKind {
                         title: own.title,
                         notice: own.notice,
                         notice_ms: own.notice_ms,
+                        pane_unmarked,
                         ..Default::default()
                     });
                     r.state = StateStamp {
@@ -2251,6 +2265,8 @@ struct Client {
     at_ms: i64,
     running: Option<String>,
     cwd: Option<String>,
+    /// The pane in front, where tmux named one (`%3`).
+    pane: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2280,6 +2296,7 @@ enum Form {
         at_ms: i64,
         running: Option<String>,
         cwd: Option<String>,
+        pane: Option<String>,
     },
 }
 
@@ -4098,7 +4115,7 @@ mod tests {
         assert!(!last.contains('◖'), "the prompt's glyphs: {last:?}");
         assert_eq!(last, tilde(&here));
         let saved = |doing: khor_core::Doing| {
-            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, recent: Vec::new(), pane: None })
+            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, recent: Vec::new(), pane: None, marked_panes: None })
         };
         saved(khor_core::Doing { cwd: Some("/w/proj".into()), ..Default::default() });
         assert_eq!(row().last.as_deref(), Some("/w/proj"));
@@ -4139,6 +4156,7 @@ mod tests {
                     doing,
                     recent: Vec::new(),
                     pane: Some(pane.into()),
+                    marked_panes: None,
                 },
             )
         };
@@ -4556,6 +4574,7 @@ mod tests {
                 },
                 recent: Vec::new(),
                 pane: None,
+                marked_panes: None,
             },
         );
 
@@ -4589,7 +4608,7 @@ mod tests {
             "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%11\x1fwork\n",
             "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fvim\x1f/w/two\x1f%12\x1fwork\n",
         );
-        let row_with = |tag: &str, front: Option<&str>| {
+        let row_with = |tag: &str, front: Option<&str>, marked: Option<&[&str]>| {
             let root = tmp(&format!("seat-shell-tmux-front-{tag}"));
             let tmux = crate::adaptor::tmux::fake_tmux(&format!("front-{tag}"), panes);
             let host = FakeHost::up();
@@ -4622,6 +4641,7 @@ mod tests {
                     },
                     recent: Vec::new(),
                     pane: None,
+                    marked_panes: marked.map(|m| m.iter().map(|p| p.to_string()).collect()),
                 },
             );
             fs::write(dir.join("last.txt"), "work | 0:zsh | 12:00").unwrap();
@@ -4633,18 +4653,25 @@ mod tests {
             rows[0].doing.clone().unwrap()
         };
 
-        let doing = row_with("busy", Some("%12"));
+        let doing = row_with("busy", Some("%12"), None);
         assert_eq!(doing.command.as_deref(), Some("vim"), "the front pane's program, not tmux");
         assert!(doing.running);
         assert_eq!(doing.cwd.as_deref(), Some("/w/two"));
+        assert!(!doing.pane_unmarked, "a host older than the list: unknown, not unmarked");
 
-        let doing = row_with("idle", Some("%11"));
+        let doing = row_with("idle", Some("%11"), None);
         assert_eq!(doing.command, None, "a front pane at its prompt runs nothing");
         assert!(!doing.running);
         assert_eq!(doing.cwd.as_deref(), Some("/w/one"));
 
-        let doing = row_with("unnamed", None);
+        let doing = row_with("unnamed", None, Some(&[]));
         assert_eq!(doing.command.as_deref(), Some("vim"), "the session's reading");
+        assert!(!doing.pane_unmarked, "no pane named: unknown");
+
+        // SESS-BRIEF 3: which panes mark their commands reaches the row.
+        assert!(row_with("unmarked", Some("%12"), Some(&["%11"])).pane_unmarked, "vim's pane never marked");
+        assert!(row_with("none-yet", Some("%12"), Some(&[])).pane_unmarked);
+        assert!(!row_with("marked", Some("%11"), Some(&["%11"])).pane_unmarked, "the front pane marks");
     }
 
     /// **khor's own terminal.** A shell khor hosts wears the claude
