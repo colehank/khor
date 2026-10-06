@@ -482,6 +482,27 @@ impl LiveKind {
         )
     }
 
+    /// The vendor's session running in this row's host **now**, as the
+    /// sweep's pid join reads it: unlike [`LiveKind::learn_vendor_leaf`]
+    /// it replaces a different leaf on record. A `/clear`, or any new
+    /// session in the same host, is the conversation on screen, and the
+    /// first leaf names a transcript nobody writes any more.
+    pub fn follow_vendor_leaf(&self, id: &SessionId, leaf: &str) -> Result<(), String> {
+        if leaf.is_empty() {
+            return Ok(());
+        }
+        let dir = self.existing_dir(id)?;
+        let mut meta = read_meta(&dir)?;
+        if meta.vendor_leaf.as_deref() == Some(leaf) {
+            return Ok(());
+        }
+        meta.vendor_leaf = Some(leaf.to_owned());
+        write_whole(
+            &dir.join("meta.json"),
+            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
+        )
+    }
+
     /// Writes down where khor started this session. Write-once, like
     /// `learn_vendor_leaf`: it is a fact about the session's birth, and
     /// nothing later is a correction of it.
@@ -1202,12 +1223,64 @@ impl LiveKind {
         }
         let sweep = self.discovery.sweep();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
+        // Vendor leaves learned this poll, for the preview post-pass:
+        // `registered` was read before they were written.
+        let mut learned: std::collections::BTreeMap<String, String> =
+            std::collections::BTreeMap::new();
+        let mut joined: Vec<bool> = vec![false; registered.len()];
+        // What each live hosted agent row's host holds, taken once: one
+        // subtree walk per such row per poll, on the table the sweep took.
+        let hosted_holds: Vec<(usize, Vec<u32>)> = registered
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.row.kind.0 == khor_core::kind::TUI && !r.row.dead)
+            .filter_map(|(i, r)| Some((i, sweep.procs.subtree(&[r.host_child?]))))
+            .collect();
         for found in sweep.rows {
-            let id = found.id();
+            let found_id = found.id();
             let kind = found.kind;
+            let category = found.category;
             let sighting = found.sighting;
             let pids = sighting.pids.clone();
-            if let Some(seat) = out.iter().position(|r| r.id == id) {
+            // **A hosted agent row is the sighting whose pid runs under
+            // its host** (SESS-BRIEF 2b). `khor run --tui claude` and
+            // `--tui codex` mint their own id, and nothing names the
+            // vendor's session to them: codex cannot be told one at
+            // start, and no hook of khor's is in the owner's Claude
+            // settings. The sweep joined the process to its transcript;
+            // the process descends from the row's host, so the row is
+            // that session — it records the leaf once (the preview reads
+            // the transcript through it) and wears the sighting instead
+            // of the sighting standing as a second row. A new session in
+            // the same host (`/clear`) is the one on screen: the leaf on
+            // record follows it.
+            let by_id = out.iter().position(|r| r.id == found_id);
+            let hosted = by_id.is_none().then(|| {
+                hosted_holds
+                    .iter()
+                    .find(|(_, holds)| holds.iter().any(|p| pids.contains(p)))
+                    .map(|&(i, _)| i)
+            });
+            let leaf = clean_leaf(&sighting.vendor_session_id);
+            if let Some(Some(seat)) = hosted
+                // One session per host per poll, the first the sweep
+                // gives: a second claude under the same host must not
+                // have the leaf flip back and forth.
+                && !std::mem::replace(&mut joined[seat], true)
+                && registered[seat].vendor_leaf.as_deref() != Some(leaf.as_str())
+            {
+                let row = &registered[seat].row;
+                let _ = self.follow_vendor_leaf(&row.id, &leaf);
+                if row.category.is_none() {
+                    let _ = self.learn_category(&row.id, Some(category));
+                }
+                learned.insert(row.id.0.clone(), leaf);
+            }
+            let id = match hosted.flatten() {
+                Some(seat) => out[seat].id.clone(),
+                None => found_id,
+            };
+            if let Some(seat) = by_id.or(hosted.flatten()) {
                 for &p in &pids {
                     seat_of_pid.insert(p, seat);
                 }
@@ -1372,6 +1445,7 @@ impl LiveKind {
                     tmux: None,
                     running: None,
                     panes: Vec::new(),
+                    client: None,
                 });
             }
         }
@@ -1405,6 +1479,7 @@ impl LiveKind {
                 tmux: Some(held.found),
                 running: held.running,
                 panes: held.panes,
+                client: None,
             });
         }
         // **A khor shell with `tmux` typed in it holds the session that
@@ -1432,7 +1507,7 @@ impl LiveKind {
             {
                 continue;
             }
-            let Some(session) = self.discovery.attached(child) else {
+            let Some((session, front)) = self.discovery.attached_in(child) else {
                 continue;
             };
             if let Some(m) = hosts
@@ -1441,6 +1516,17 @@ impl LiveKind {
             {
                 let held = hosts[m].holds.clone();
                 hosts[k].holds.extend(held);
+                // With no agent in the session, the shell says what the
+                // client shows in front, not 「正在运行 tmux」 (2c).
+                let found = hosts[m].tmux.as_ref().map(|f| &f.sighting);
+                let pane = front.as_ref().and_then(|p| hosts[m].panes.iter().find(|x| &x.id == p));
+                hosts[k].client = found.map(|f| Client {
+                    word: f.word,
+                    at_ms: f.at_ms,
+                    running: pane.map_or(hosts[m].running.clone(), |p| p.running.clone()),
+                    cwd: pane.map_or(f.cwd.clone(), |p| p.cwd.clone()),
+                    pane: front,
+                });
                 taken.push(m);
             }
         }
@@ -1630,8 +1716,22 @@ impl LiveKind {
                             },
                         )),
                         // khor's own terminal with nothing inside is
-                        // already in its own form: it is the terminal.
-                        (None, None) => {}
+                        // already in its own form: it is the terminal —
+                        // unless what runs in it is a tmux client.
+                        (None, None) => {
+                            if let Some(c) = host.client {
+                                forms.push((
+                                    k,
+                                    Form::Client {
+                                        word: c.word,
+                                        at_ms: c.at_ms,
+                                        running: c.running,
+                                        cwd: c.cwd,
+                                        pane: c.pane,
+                                    },
+                                ));
+                            }
+                        }
                     }
                     Some(k)
                 }
@@ -1729,10 +1829,11 @@ impl LiveKind {
         // file), else the id's leaf, which for discovered rows is the
         // vendor's id already. Cached by (path, mtime) inside
         // `last_said`, so a list poll costs stats, not reads.
-        let vendor_leaves: std::collections::BTreeMap<String, String> = registered
+        let mut vendor_leaves: std::collections::BTreeMap<String, String> = registered
             .iter()
             .filter_map(|r| r.vendor_leaf.clone().map(|v| (r.row.id.0.clone(), v)))
             .collect();
+        vendor_leaves.extend(learned);
         let claude = crate::adaptor::claude::Claude::at(
             crate::adaptor::vendor_home(&self.root).join(".claude"),
         );
@@ -1909,6 +2010,48 @@ impl LiveKind {
                     }
                     r.term = true;
                     r.mux = mux;
+                }
+                Form::Client {
+                    word,
+                    at_ms,
+                    running,
+                    cwd,
+                    pane,
+                } => {
+                    // **Whether the pane in front marks its commands**
+                    // (SESS-BRIEF 3): the shell's ledger lists every pane
+                    // that sent a mark. One it never heard from has no
+                    // commands in the history, and the face says why.
+                    // Unknown (no pane named, a host older than the list)
+                    // is not unmarked.
+                    let marked = self
+                        .dir_of(&out[k].id)
+                        .and_then(|d| crate::commands::read_marked_panes(&d));
+                    let pane_unmarked = pane.is_some_and(|p| marked.is_some_and(|m| !m.contains(&p)));
+                    // The shell's own marks saw it start the client and
+                    // nothing since: its command is `tmux`, and its last
+                    // line is the client's status bar. What it shows is
+                    // the pane in front; where it is called and any
+                    // notice stay the shell's.
+                    let r = &mut out[k];
+                    let own = r.doing.take().unwrap_or_default();
+                    r.doing = Some(khor_core::Doing {
+                        running: running.is_some(),
+                        command: running,
+                        cwd: cwd.or(own.cwd),
+                        title: own.title,
+                        notice: own.notice,
+                        notice_ms: own.notice_ms,
+                        pane_unmarked,
+                        ..Default::default()
+                    });
+                    r.state = StateStamp {
+                        state: word,
+                        at: Millis(at_ms.max(0) as u64),
+                    };
+                    // A multiplexer cannot say 完成.
+                    r.unread = 0;
+                    r.last = None;
                 }
             }
         }
@@ -2109,6 +2252,21 @@ struct Host {
     running: Option<String>,
     /// tmux's reading of each pane.
     panes: Vec<crate::adaptor::PaneReading>,
+    /// khor's own terminal showing a person's tmux client: what is in
+    /// front of it (SESS-BRIEF 2c).
+    client: Option<Client>,
+}
+
+/// What a khor shell's tmux client shows: the session's word, and the
+/// front pane's program and place (the session's reading where tmux
+/// named no front pane).
+struct Client {
+    word: State,
+    at_ms: i64,
+    running: Option<String>,
+    cwd: Option<String>,
+    /// The pane in front, where tmux named one (`%3`).
+    pane: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2132,6 +2290,14 @@ enum Form {
     },
     /// The agent at row `from` — kind, category, word, preview.
     Agent { from: usize, mux: bool },
+    /// What a khor shell's tmux client shows in front ([`Client`]).
+    Client {
+        word: State,
+        at_ms: i64,
+        running: Option<String>,
+        cwd: Option<String>,
+        pane: Option<String>,
+    },
 }
 
 /// A registry row plus the two things [`LiveKind::rows`] needs that a
@@ -3655,6 +3821,144 @@ mod tests {
         assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last.as_deref(), Some("All 40 pass."));
     }
 
+    /// **A hosted agent row learns its vendor's session from the sweep,
+    /// not from hooks** (SESS-BRIEF 2b). `khor run --tui claude` mints
+    /// its own id and no hook on the owner's Mac ever names the
+    /// session, so the row could find no transcript, and the claude the
+    /// sweep joined by pid was a second row. The pid sits under the
+    /// row's host: the row records the leaf (and the vendor, where it
+    /// was unfiled), wears the sighting, and says the transcript's
+    /// newest sentence — on this poll and on the next.
+    #[test]
+    fn a_hosted_claude_row_learns_its_session_from_the_pid_under_its_host() {
+        use crate::adaptor::{Discovery, Procs};
+
+        let root = tmp("hosted-learns-claude");
+        let uuid = "11111111-1111-4111-8111-111111111111";
+        let proj = root.join(".claude/projects/-w-one");
+        fs::create_dir_all(&proj).unwrap();
+        fs::write(
+            proj.join(format!("{uuid}.jsonl")),
+            r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"From the transcript."}]}}"#.to_owned() + "\n",
+        )
+        .unwrap();
+        let host = FakeHost::up();
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&fixture_vendors())
+                .with_procs(Procs::of([proc_under(4001, "claude", host.pid())])),
+        ));
+        let id = sid("tui/khormint01");
+        k.register(&id, "tui", "claude", Some(host.pid()), None).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        host.serve(&dir, 4001);
+        fs::write(dir.join("last.txt"), "⏵⏵ auto mode on").unwrap();
+
+        for poll in ["first", "second"] {
+            let rows = k.rows(|_| 0);
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(ids, vec![id.0.as_str()], "{poll} poll: one row, the hosted one");
+            let row = &rows[0];
+            assert_eq!(row.category.as_deref(), Some("claude"), "{poll} poll");
+            assert_eq!(row.state.state, State::Blocked, "{poll} poll: claude's own word");
+            assert_eq!(row.last.as_deref(), Some("From the transcript."), "{poll} poll");
+        }
+        assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)), "the leaf is on record");
+        assert_eq!(
+            read_meta(&dir).unwrap().category.as_deref(),
+            Some("claude"),
+            "and the vendor, where the row was unfiled"
+        );
+    }
+
+    /// **The newest session in the host wins.** A `/clear` (or any new
+    /// claude session) in the same host gives the same pid a new
+    /// session id; a leaf recorded once and kept would have the row read
+    /// a transcript nobody writes any more. The pid join says the live
+    /// leaf every sweep, so the recorded one follows it.
+    #[test]
+    fn a_hosted_claude_row_follows_a_new_session_in_the_same_process() {
+        use crate::adaptor::{Discovery, Procs};
+
+        let root = tmp("hosted-follows-claude");
+        let sessions = root.join(".claude/sessions");
+        let proj = root.join(".claude/projects/-w-one");
+        fs::create_dir_all(&sessions).unwrap();
+        fs::create_dir_all(&proj).unwrap();
+        let status = fs::read_to_string(fixture_vendors().join(".claude/sessions/4001.json")).unwrap();
+        let first = "11111111-1111-4111-8111-111111111111";
+        let second = "22222222-2222-4222-8222-222222222222";
+        let third = "33333333-3333-4333-8333-333333333333";
+        for (uuid, said) in [(first, "The first."), (second, "The second."), (third, "The third.")] {
+            fs::write(
+                proj.join(format!("{uuid}.jsonl")),
+                format!(r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"{said}"}}]}}}}"#) + "\n",
+            )
+            .unwrap();
+        }
+        let host = FakeHost::up();
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&root).with_procs(Procs::of([proc_under(4001, "claude", host.pid())])),
+        ));
+        let id = sid("tui/khormint03");
+        k.register(&id, "tui", "claude", Some(host.pid()), Some("claude")).unwrap();
+        host.serve(&k.dir_of(&id).unwrap(), 4001);
+
+        for (uuid, said) in [(first, "The first."), (second, "The second."), (third, "The third.")] {
+            fs::write(sessions.join("4001.json"), status.replace(first, uuid)).unwrap();
+            let rows = k.rows(|_| 0);
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(ids, vec![id.0.as_str()], "{said} one row, the hosted one");
+            assert_eq!(rows[0].last.as_deref(), Some(said), "the session running now");
+            assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)), "{said} on record");
+        }
+    }
+
+    /// The same for codex (SESS-BRIEF 2b), which cannot be told a
+    /// session id at start at all: `khor run --tui codex` reaches its
+    /// rollout only through the process the sweep joined to it.
+    #[test]
+    fn a_hosted_codex_row_learns_its_rollout_from_the_pid_under_its_host() {
+        use crate::adaptor::{Discovery, Proc, Procs};
+
+        let root = tmp("hosted-learns-codex");
+        let uuid = "019fd755-e464-7aaa-8aaa-aaaaaaaaaaaa";
+        let day = root.join(".codex/sessions/2026/08/06");
+        fs::create_dir_all(&day).unwrap();
+        let lines = [
+            r#"{"type":"session_meta","payload":{"id":"x","cwd":"/w/alpha"}}"#,
+            r#"{"type":"event_msg","payload":{"type":"agent_message","message":"Done, all green."}}"#,
+        ];
+        fs::write(
+            day.join(format!("rollout-2026-08-06T21-49-18-{uuid}.jsonl")),
+            lines.join("\n") + "\n",
+        )
+        .unwrap();
+        let host = FakeHost::up();
+        let codex = Proc {
+            name: "codex".into(),
+            started_ms: 1_786_024_158_000,
+            cwd: Some(PathBuf::from("/w/alpha")),
+            ppid: Some(host.pid()),
+        };
+        let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/codex");
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&vendors).with_procs(Procs::of([(700, codex)])),
+        ));
+        let id = sid("tui/khormint02");
+        k.register(&id, "tui", "codex", Some(host.pid()), Some("codex")).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        host.serve(&dir, 700);
+        fs::write(dir.join("last.txt"), "› Ask Codex to do anything").unwrap();
+
+        for poll in ["first", "second"] {
+            let rows = k.rows(|_| 0);
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(ids, vec![id.0.as_str()], "{poll} poll: one row, the hosted one");
+            assert_eq!(rows[0].last.as_deref(), Some("Done, all green."), "{poll} poll");
+        }
+        assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)));
+    }
+
     /// The same rule against the **registry**: `khor run` started inside
     /// a tmux pane is already a row, so the pane is not a second one.
     ///
@@ -3811,7 +4115,7 @@ mod tests {
         assert!(!last.contains('◖'), "the prompt's glyphs: {last:?}");
         assert_eq!(last, tilde(&here));
         let saved = |doing: khor_core::Doing| {
-            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, recent: Vec::new(), pane: None })
+            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, recent: Vec::new(), pane: None, marked_panes: None })
         };
         saved(khor_core::Doing { cwd: Some("/w/proj".into()), ..Default::default() });
         assert_eq!(row().last.as_deref(), Some("/w/proj"));
@@ -3852,6 +4156,7 @@ mod tests {
                     doing,
                     recent: Vec::new(),
                     pane: Some(pane.into()),
+                    marked_panes: None,
                 },
             )
         };
@@ -4269,6 +4574,7 @@ mod tests {
                 },
                 recent: Vec::new(),
                 pane: None,
+                marked_panes: None,
             },
         );
 
@@ -4286,6 +4592,86 @@ mod tests {
             Some(AGENT.to_owned()),
             "a press on it acts on that claude"
         );
+    }
+
+    /// **A khor shell with `tmux` typed in it and no agent in the
+    /// session** (SESS-BRIEF 2c) says what the pane in front of the
+    /// client runs and where it stands, not 「正在运行 tmux」: the
+    /// shell's own marks only ever saw it start the client. Where tmux
+    /// named no front pane, the session's reading stands in, as for an
+    /// attached tmux row. The session is no second row either way.
+    #[test]
+    fn a_khor_shell_attached_to_tmux_says_what_the_front_pane_runs() {
+        use crate::adaptor::{Discovery, Procs, tmux::Tmux};
+
+        let panes = concat!(
+            "$7\x1f1786245338\x1f1786245400\x1f3001\x1f0\x1fzsh\x1f/w/one\x1f%11\x1fwork\n",
+            "$7\x1f1786245338\x1f1786245400\x1f3002\x1f0\x1fvim\x1f/w/two\x1f%12\x1fwork\n",
+        );
+        let row_with = |tag: &str, front: Option<&str>, marked: Option<&[&str]>| {
+            let root = tmp(&format!("seat-shell-tmux-front-{tag}"));
+            let tmux = crate::adaptor::tmux::fake_tmux(&format!("front-{tag}"), panes);
+            let host = FakeHost::up();
+            let procs = Procs::of([
+                proc_under(5001, "zsh", host.pid()),
+                proc_under(5002, "tmux", 5001),
+                proc_under(3001, "zsh", 1),
+                proc_under(3002, "zsh", 1),
+            ]);
+            let discovery = Discovery::empty().with_procs(procs).with_tmux(Tmux::at_binary(&tmux));
+            let discovery = match front {
+                Some(p) => discovery.with_attached_in(5001, sid(T_ID), p),
+                None => discovery.with_attached(vec![(5001, sid(T_ID))]),
+            };
+            let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(discovery));
+            let term = sid("shell/a1b2c3d4e5f6");
+            k.register(&term, "shell", "zsh", Some(host.pid()), Some(khor_core::category::SHELL))
+                .unwrap();
+            let dir = k.dir_of(&term).unwrap();
+            host.serve(&dir, 5001);
+            crate::commands::write_saved(
+                &dir,
+                &crate::commands::Saved {
+                    doing: khor_core::Doing {
+                        command: Some("tmux".into()),
+                        running: true,
+                        started_ms: 1,
+                        cwd: Some("/w/start".into()),
+                        ..Default::default()
+                    },
+                    recent: Vec::new(),
+                    pane: None,
+                    marked_panes: marked.map(|m| m.iter().map(|p| p.to_string()).collect()),
+                },
+            );
+            fs::write(dir.join("last.txt"), "work | 0:zsh | 12:00").unwrap();
+            let rows = k.rows(|_| 0);
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(ids, vec![term.0.as_str()], "{tag}: one row, the shell");
+            assert_eq!(rows[0].kind.0, khor_core::kind::SHELL, "{tag}");
+            assert_eq!(rows[0].last, None, "{tag}: not the client's status bar");
+            rows[0].doing.clone().unwrap()
+        };
+
+        let doing = row_with("busy", Some("%12"), None);
+        assert_eq!(doing.command.as_deref(), Some("vim"), "the front pane's program, not tmux");
+        assert!(doing.running);
+        assert_eq!(doing.cwd.as_deref(), Some("/w/two"));
+        assert!(!doing.pane_unmarked, "a host older than the list: unknown, not unmarked");
+
+        let doing = row_with("idle", Some("%11"), None);
+        assert_eq!(doing.command, None, "a front pane at its prompt runs nothing");
+        assert!(!doing.running);
+        assert_eq!(doing.cwd.as_deref(), Some("/w/one"));
+
+        let doing = row_with("unnamed", None, Some(&[]));
+        assert_eq!(doing.command.as_deref(), Some("vim"), "the session's reading");
+        assert!(!doing.pane_unmarked, "no pane named: unknown");
+
+        // SESS-BRIEF 3: which panes mark their commands reaches the row.
+        assert!(row_with("unmarked", Some("%12"), Some(&["%11"])).pane_unmarked, "vim's pane never marked");
+        assert!(row_with("none-yet", Some("%12"), Some(&[])).pane_unmarked);
+        assert!(!row_with("marked", Some("%11"), Some(&["%11"])).pane_unmarked, "the front pane marks");
     }
 
     /// **khor's own terminal.** A shell khor hosts wears the claude

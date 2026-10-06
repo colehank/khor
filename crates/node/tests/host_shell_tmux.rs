@@ -193,6 +193,11 @@ fn a_shells_own_tmux_client_is_found_by_its_terminal() {
     assert_eq!(front.session_name, "mine");
     assert!(front.tty.starts_with("/dev/"), "the terminal as tmux names it: {}", front.tty);
     assert_eq!(tmux(&sock, &["list-clients", "-F", "#{client_tty}"]).trim(), front.tty, "the client on the shell's terminal");
+    assert_eq!(
+        tmux(&sock, &["display-message", "-p", "-t", "mine", "#{pane_id}"]).trim(),
+        front.pane_id,
+        "and the pane in front of it (SESS-BRIEF 2c)"
+    );
 
     // The row side (SESS-BRIEF 1b): the discovery watching that server
     // names the session's row as its own sweep does; one watching

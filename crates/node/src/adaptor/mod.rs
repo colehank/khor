@@ -589,8 +589,8 @@ pub struct Discovery {
     /// production; a test that pins it here has a closed world, since
     /// the root is already a parameter.
     procs: Option<Procs>,
-    /// Fixed answers for [`Discovery::attached`], for tests.
-    attached: Vec<(u32, SessionId)>,
+    /// Fixed answers for [`Discovery::attached_in`], for tests.
+    attached: Vec<(u32, SessionId, Option<String>)>,
 }
 
 impl Discovery {
@@ -622,7 +622,13 @@ impl Discovery {
     /// Answers [`Discovery::attached`] with these instead: a shell's
     /// pid and the session row its terminal's tmux client shows.
     pub fn with_attached(mut self, attached: Vec<(u32, SessionId)>) -> Discovery {
-        self.attached = attached;
+        self.attached = attached.into_iter().map(|(p, s)| (p, s, None)).collect();
+        self
+    }
+
+    /// [`Discovery::with_attached`] with the client's front pane (`%3`).
+    pub fn with_attached_in(mut self, shell: u32, session: SessionId, pane: &str) -> Discovery {
+        self.attached.push((shell, session, Some(pane.to_owned())));
         self
     }
 
@@ -638,8 +644,14 @@ impl Discovery {
     /// creation time). Fixed answers ([`Discovery::with_attached`]) come
     /// first; with no server watched, nothing is asked.
     pub fn attached(&self, shell: u32) -> Option<SessionId> {
-        if let Some((_, row)) = self.attached.iter().find(|(pid, _)| *pid == shell) {
-            return Some(row.clone());
+        self.attached_in(shell).map(|(session, _)| session)
+    }
+
+    /// [`Discovery::attached`], and the pane in front of that client
+    /// (`%3`) where tmux named one (SESS-BRIEF 2c).
+    pub fn attached_in(&self, shell: u32) -> Option<(SessionId, Option<String>)> {
+        if let Some((_, row, pane)) = self.attached.iter().find(|(pid, _, _)| *pid == shell) {
+            return Some((row.clone(), pane.clone()));
         }
         let watched = self.tmux.as_ref()?;
         let client = tmux::client_in_front(shell)?;
@@ -647,7 +659,8 @@ impl Discovery {
             return None;
         }
         let created = watched.session_created(&client.session_id)?;
-        Some(tmux::id_of(&client.session_id, created))
+        let pane = (!client.pane_id.is_empty()).then_some(client.pane_id);
+        Some((tmux::id_of(&client.session_id, created), pane))
     }
     /// Adaptors reading the vendor directories under `home`.
     ///

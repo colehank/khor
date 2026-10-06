@@ -27871,6 +27871,53 @@ try {
         );
       }
     }
+    // **历史命令 in the person's tmux** (SESS-BRIEF 3): a khor shell
+    // whose tmux pane in front marks nothing (`doing.pane_unmarked`)
+    // opens the sheet on the note that turns the marks on — the line and
+    // its copy, no list and no search field; one whose pane marks (or
+    // where nothing knows) opens the search as before.
+    await page.route("**/term_history", json([{ session: "shell/x", text: "make", cwd: "/w", started_ms: 1, ended_ms: 2, exit: 0, runs: 1 }]));
+    const sheetWith = async (paneUnmarked) => {
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json([{ ...termRow, doing: { command: null, running: false, started_ms: 0, ended_ms: null, exit: null, cwd: "/w", title: null, full_screen: false, progress: null, progress_failed: false, notice: null, notice_ms: 0, pane_unmarked: paneUnmarked } }]));
+      let got = null;
+      await until(8_000, async () => {
+        await page.evaluate(() => document.querySelector("[data-terminal]").__history());
+        await wait(300);
+        got = await page.evaluate(() => ({
+          sheet: !!document.querySelector("[data-term-history]"),
+          note: !!document.querySelector("[data-term-history-unmarked] [data-term-tmux-line]"),
+          copy: !!document.querySelector("[data-term-history-unmarked] [data-term-tmux-copy]"),
+          field: !!document.querySelector("[data-term-history-field]"),
+          rows: document.querySelectorAll("[data-term-history-row]").length,
+        }));
+        const done = got.note === paneUnmarked;
+        if (!done) {
+          await page.locator("[data-term-history-close]").click().catch(() => {});
+          await wait(150);
+        }
+        return done;
+      });
+      await page.locator("[data-term-history-close]").click().catch(() => {});
+      await wait(150);
+      return got;
+    };
+    for (const [tag, unmarked] of [["history a", true], ["history b", false]]) {
+      const got = await sheetWith(unmarked);
+      console.log(`term ${tag} · 历史命令, front pane ${unmarked ? "unmarked" : "marked"}: ${JSON.stringify(got)}`);
+      const want = unmarked
+        ? got?.sheet && got.note && got.copy && !got.field && got.rows === 0
+        : got?.sheet && !got.note && got.field && got.rows === 1;
+      if (!want) {
+        fail(
+          `term ${tag} · 历史命令 with the tmux pane in front ${unmarked ? "sending no marks" : "marking"}: ${JSON.stringify(got)} — ` +
+            (unmarked
+              ? "the sheet says how to turn the marks on (the line and its copy), with no list or search (SESS-BRIEF 3)"
+              : "the sheet searches the history as before"),
+        );
+      }
+    }
+    await page.unroute("**/term_history");
     // **A file dropped on the terminal (item 60)**, as the app takes it:
     // tauri's window-wide drop event, synthesized through the dev build's
     // seam for it (`lib/window-drop`, `khor:window-drop`), and an HTML

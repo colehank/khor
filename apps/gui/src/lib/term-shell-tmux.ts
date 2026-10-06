@@ -11,6 +11,10 @@
 // vim or an htop in the shell is asked about once and left alone.
 import type { Terminal } from "@xterm/xterm";
 
+/** The ~/.zshrc line that loads khor's zsh integration in shells tmux
+    starts on its own (`crates/node/shell/khor.zsh`, item 21). */
+export const TMUX_ZSHRC = "[[ -n $TMUX && -r ~/.khor/shell/khor.zsh ]] && source ~/.khor/shell/khor.zsh";
+
 /** Whether a tmux client the person started is in front of this shell. */
 export function followsShellTmux(
   term: Terminal,

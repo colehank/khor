@@ -2690,6 +2690,14 @@ pub struct Doing {
     #[serde(default)]
     #[ts(type = "number")]
     pub notice_ms: u64,
+    /// A khor shell shows a tmux client whose pane in front has sent no
+    /// command marks (its shell does not load khor's integration), so
+    /// nothing it runs reaches the history (SESS-BRIEF 3). False where
+    /// nothing knows: an older host or node, or no pane named.
+    ///
+    /// Wire: appended at the tail with a serde default.
+    #[serde(default)]
+    pub pane_unmarked: bool,
 }
 
 #[cfg(test)]
