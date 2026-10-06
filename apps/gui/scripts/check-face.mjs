@@ -27322,6 +27322,19 @@ try {
         "a tmux terminal",
         { ...row(33, "idle"), id: "shell/1786245338-7", kind: "shell", category: "shell", title: "fix-tmux", attachable: true, mux: true },
       ],
+      [
+        "khor's terminal running tmux",
+        {
+          ...row(34, "busy"),
+          id: "shell/fix-intmux",
+          kind: "shell",
+          category: "shell",
+          title: "fix-intmux",
+          hosted: true,
+          attachable: true,
+          doing: { command: "tmux new -s work", running: true, cwd: "/tmp", started_ms: 0, exit: null },
+        },
+      ],
     ];
     const fixRows = (r) =>
       r.fulfill({ contentType: "application/json", body: JSON.stringify(FORMS.map(([, x]) => x)) });
@@ -27353,6 +27366,12 @@ try {
             "its own (DetailPane closeWarning, close-warn-terminal / close-warn-tmux)",
         );
       }
+    }
+    // Item 58: a tmux client typed in khor's shell ends with it; the
+    // session it was attached to does not.
+    const inTmux = says["khor's terminal running tmux"];
+    if (inTmux && (inTmux === says["khor's terminal"] || /tmux[^；;]*(停止|stops)/.test(inTmux))) {
+      fail(`fix a · 删除 on khor's terminal running tmux says 「${inTmux}」 — the tmux session goes on (close-warn-shell-tmux)`);
     }
     if (says["khor's terminal"] && says["khor's terminal"] === says["a tmux terminal"]) {
       fail(

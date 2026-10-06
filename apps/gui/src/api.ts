@@ -1359,6 +1359,9 @@ export const fetchCommandHistory = (machine: string, text: string, dir: string, 
 /** The prompt before (`up`) or after the one in view in a tmux row's
     front pane (item 21): tmux holds that screen, so tmux moves. */
 export const termPrompt = (id: string, up: boolean) => call<null>("term_prompt", { id, up });
+/** The wheel over a shell's own tmux client (item 58): `rows` up when
+    positive; false when no tmux client is in front (0 rows only asks). */
+export const termScroll = (id: string, rows: number) => call<boolean>("term_scroll", { id, rows });
 /** ⌘K kept by this attachment's feed and, on a host that speaks version
     2, by its ring; `redraw` sends the shell its ⌃L after. True when the
     host kept it (audit/term-attach.md). */

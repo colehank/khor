@@ -690,6 +690,12 @@ pub fn answer(
         "term_forget" => to_json(&crate::term::term_forget(&arg("id")?, flag("redraw")?)?),
         // A tmux row's prompts, moved between by tmux (item 21).
         "term_prompt" => to_json(&rt.block_on(crate::term::prompt(root, &arg("id")?, flag("up")?))?),
+        // The wheel over a shell's own tmux client (item 58).
+        "term_scroll" => {
+            // Signed: up is positive.
+            let rows = args.get("rows").and_then(|v| v.as_i64()).ok_or("missing number arg: rows")?;
+            to_json(&rt.block_on(crate::term::scroll(root, &arg("id")?, rows.clamp(-1000, 1000) as i32))?)
+        }
         // The bridge answers one request at a time, so it never holds one
         // open: here a wait is the stream's answer as it stands.
         "term_wait" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),

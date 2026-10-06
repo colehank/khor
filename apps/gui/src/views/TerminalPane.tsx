@@ -63,7 +63,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { offerTabAct } from "@/lib/tab-acts";
@@ -108,6 +108,7 @@ import { typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
+import { followsShellTmux, wheelsToShellTmux } from "@/lib/term-shell-tmux";
 import { countsGain } from "@/lib/term-gain";
 import { notesFirstTouch } from "@/lib/term-first-touch";
 import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
@@ -945,6 +946,10 @@ function drawBlocks(term: Terminal, marks: Marks): { dispose: () => void; size: 
 /** A tmux row's id (`adaptor::tmux::is_tmux_leaf`): the session's
     creation time and its number. */
 const TMUX_ROW = /^shell\/\d+-\d+$/;
+
+/** A khor shell's row (not a tmux session's): one the person may type
+    `tmux` in (item 58). */
+const SHELL_ROW = (id: string) => id.startsWith("shell/") && !TMUX_ROW.test(id);
 
 /** Scrolls to the previous (`-1`) or next (`1`) prompt from the screen's
     top; past the last one, to the bottom. */
@@ -2413,7 +2418,13 @@ export function TerminalPane({
     // **Through tmux** (item 21) tmux holds the screen and the history:
     // its own copy mode moves between the front pane's prompts, and the
     // row's ledger, read off every pane, says where that pane is.
-    const viaTmux = () => TMUX_ROW.test(id) && term.buffer.active.type === "alternate";
+    // **A shell with the person's own tmux in front** (item 58) is a tmux
+    // row while it is there: its prompts are tmux's, and on a Mac the
+    // wheel goes to tmux's copy mode (`lib/term-shell-tmux`).
+    const shellTmux = SHELL_ROW(id) ? followsShellTmux(term, (rows) => termScroll(id, rows)) : null;
+    const unwheel =
+      shellTmux && !window.matchMedia("(pointer: coarse)").matches ? wheelsToShellTmux(box, term, shellTmux, (rows) => termScroll(id, rows)) : () => {};
+    const viaTmux = () => (TMUX_ROW.test(id) || !!shellTmux?.front()) && term.buffer.active.type === "alternate";
     (box as HTMLDivElement & { __jump?: (dir: -1 | 1) => void }).__jump = (dir) => {
       if (viaTmux()) void termPrompt(id, dir < 0).catch(() => {});
       else jumpToPrompt(term, marks, dir);
@@ -2550,9 +2561,13 @@ export function TerminalPane({
     // opens Claude Code's own row, not the session's): both are khor's
     // grouped client, and the history is the pane in front's.
     const tmuxRow = TMUX_ROW.test(id);
-    if ((tmuxRow || muxRef.current) && window.matchMedia("(pointer: coarse)").matches) {
+    // **A shell row too** (item 58): its history is tmux's only while a
+    // tmux client the person typed is in front, which the holder follows.
+    const probe = SHELL_ROW(id) && !muxRef.current;
+    if ((tmuxRow || muxRef.current || probe) && window.matchMedia("(pointer: coarse)").matches) {
       tmuxHistory = holdsTmuxHistory({
         known: tmuxRow,
+        probe,
         live: term,
         seat: historyRef.current!,
         scroller: scrollerRef.current!,
@@ -2579,7 +2594,7 @@ export function TerminalPane({
       box,
       scroller: scrollerRef.current!,
       history: historyHas,
-      tmuxRow: tmuxHistory !== null,
+      tmuxRow: tmuxHistory !== null && !probe,
       pane: () => tmuxHistory?.pane() ?? null,
       reread: tmuxHistory?.reread,
       joining: () => ({ joined, tries: generation }),
@@ -2720,6 +2735,8 @@ export function TerminalPane({
       folds();
       tmuxHistory?.stop();
       tmuxHistoryRef.current = null;
+      shellTmux?.stop();
+      unwheel();
       firstTouch.stop();
       firstTouchRef.current = null;
       window.clearTimeout(outShown);

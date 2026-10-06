@@ -514,12 +514,18 @@ fn paint(
     // The catch is inside the lock scope on purpose: the guard then
     // drops normally and the mutex is never poisoned. On a panic
     // (vt100's corner cases — see `plock`) the parser is replaced at
-    // the same size and a same-size resize is sent, which is a
-    // SIGWINCH: the program repaints the whole frame into the fresh
-    // screen (mandala's self-heal trick).
+    // the same size, on the same screen with the same modes
+    // (`khor_node::host::parser_like`, item 57b): a repaint lands where
+    // the face looks, and `?2004h` is still known. The same-size resize
+    // sent back is **not** a SIGWINCH — the kernel signals only a change
+    // of size — so it repaints nothing; the repaint comes from the
+    // host, whose own model meets the same bytes and heals by signalling
+    // the program (`host::repaint_foreground`). The resize stays only
+    // because it costs nothing; a repaint asked of the host would need
+    // an op of its own (audit/term-57.md).
     if catch_unwind(AssertUnwindSafe(|| g.process(&bytes))).is_err() {
         let (rows, cols) = g.screen().size();
-        *g = vt100::Parser::new(rows, cols, 0);
+        *g = khor_node::host::parser_like(g.screen(), 0);
         return Some((cols, rows));
     }
     None
@@ -661,6 +667,15 @@ pub async fn history(root: &Path, machine: &str, text: &str, dir: &str, failed: 
 pub async fn prompt(root: &Path, id: &str, up: bool) -> Result<(), String> {
     let n = Node::open(root.to_path_buf())?;
     n.jump_prompt_anywhere(&SessionId(id.to_owned()), up).await
+}
+
+/// **The wheel over a shell's own tmux client** (item 58,
+/// `Node::tmux_wheel_anywhere`): `rows` up when positive. False when no
+/// tmux client is in front of the row's terminal: the face keeps the
+/// wheel. 0 rows only asks.
+pub async fn scroll(root: &Path, id: &str, rows: i32) -> Result<bool, String> {
+    let n = Node::open(root.to_path_buf())?;
+    n.tmux_wheel_anywhere(&SessionId(id.to_owned()), rows).await
 }
 
 /// Where the face's copy of a tmux pane's history ends (item 31,
@@ -964,7 +979,9 @@ pub fn term_forget(id: &str, redraw: bool) -> Result<bool, String> {
 /// into a screen already the right shape.
 pub fn term_resize(id: &str, cols: u16, rows: u16) -> Result<(), String> {
     let term = term_of(id)?;
-    plock(&term.parser).screen_mut().set_size(rows, cols);
+    // Never a wide character split at the new edge (item 57b): the next
+    // redraw over it panicked this oracle as it did the host's model.
+    khor_node::host::resize_screen(&mut plock(&term.parser), rows, cols);
     let mut conn = plock(&term.conn);
     write_frame(&mut *conn, &ClientOp::Resize { cols, rows })
 }
@@ -1175,6 +1192,50 @@ mod tests {
         assert!(
             reset,
             "another life's cursor is a restart, not a backwards stream"
+        );
+    }
+
+    /// **A narrowing over CJK keeps the oracle whole** (item 57b): a
+    /// program on the alternate screen with bracketed paste on and wide
+    /// characters to the right edge, the face one column narrower
+    /// (`term_resize`'s own call), then the program's redraw. vt100's
+    /// resize had left a wide character split at the new edge, the redraw
+    /// panicked the parser, and the fresh one forgot `?2004h` (a paste
+    /// went unbracketed, item 55's question came back) and answered a
+    /// face that fell behind with a blank screen.
+    #[test]
+    fn a_narrowing_over_wide_characters_keeps_the_modes_and_the_screen() {
+        let acs = Mutex::new(crate::acs::Acs::default());
+        let parser = Mutex::new(vt100::Parser::new(24, 80, 0));
+        let feed = Mutex::new(Feed::default());
+        let fed = AtomicU64::new(0);
+        // Past the cap first, so cursor 0 falls off the head.
+        let chunk = b"line of output\r\n".repeat(FEED_CAP * 2 / 5 / 16);
+        for _ in 0..3 {
+            paint(&acs, &parser, &feed, &fed, &chunk);
+        }
+        let mut program = b"\x1b[?2004h\x1b[?1049h\x1b[H\x1b[2J".to_vec();
+        for r in 1..=6 {
+            program.extend_from_slice(format!("\x1b[{r};1H{}", "\u{4e2d}".repeat(40)).as_bytes());
+        }
+        assert_eq!(paint(&acs, &parser, &feed, &fed, &program), None);
+        khor_node::host::resize_screen(&mut plock(&parser), 24, 79);
+        let mut redraw = Vec::new();
+        for r in 1..=6 {
+            redraw.extend_from_slice(format!("\x1b[{r};1H{}\x1b[K", "\u{6587}".repeat(39)).as_bytes());
+        }
+        redraw.extend_from_slice(b"\x1b[7;1HREDRAWN\x1b[K");
+        paint(&acs, &parser, &feed, &fed, &redraw);
+        assert!(plock(&parser).screen().bracketed_paste(), "the oracle still knows the program asked for bracketed paste");
+        let (bytes, _, reset) = take_since(&parser, &feed, &fed, 0);
+        assert!(reset, "cursor 0 fell off the trimmed head");
+        let mut face = vt100::Parser::new(24, 79, 0);
+        face.process(&bytes);
+        assert!(face.screen().alternate_screen(), "the face is on the program's screen");
+        assert_eq!(
+            face.screen().rows(0, 79).nth(6).unwrap().trim_end(),
+            "REDRAWN",
+            "a face that fell behind is handed the screen, not a blank"
         );
     }
 

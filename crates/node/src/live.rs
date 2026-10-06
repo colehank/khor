@@ -877,11 +877,42 @@ impl LiveKind {
     /// `Tmux::jump_prompt`): there tmux holds the screen and its history,
     /// so the face asks tmux.
     pub fn jump_prompt(&self, id: &SessionId, up: bool) -> Result<(), String> {
-        let tmux = self
-            .discovery
-            .tmux()
-            .ok_or_else(|| msg::no_terminal_here(&id.0))?;
-        tmux.jump_prompt(&id.0, up)
+        let row = self.discovery.tmux().ok_or_else(|| msg::no_terminal_here(&id.0)).and_then(|t| t.jump_prompt(&id.0, up));
+        // A shell with the person's own tmux client in front (item 58).
+        match row {
+            Err(e) => match self.tmux_in_shell(id) {
+                Some(c) => c.server().jump_prompt_in(&c.session_id, &id.0, up),
+                None => Err(e),
+            },
+            ok => ok,
+        }
+    }
+
+    /// **A person's own tmux client in front of this row's terminal**
+    /// (item 58, `adaptor::tmux::client_in_front`): a khor shell in which
+    /// they typed `tmux`, and the session that client is attached to.
+    /// `None` when the row has no running host here, or its terminal's
+    /// foreground is anything else — the moment the client leaves
+    /// (`exit`, a detach), the row is a plain shell again.
+    pub fn tmux_in_shell(&self, id: &SessionId) -> Option<crate::adaptor::tmux::ClientInFront> {
+        let dir = self.dir_of(id)?;
+        let hf = crate::host::read_host_file(&dir).ok()?;
+        if !crate::link::pid_running(hf.host_pid) {
+            return None;
+        }
+        crate::adaptor::tmux::client_in_front(hf.child_pid)
+    }
+
+    /// **The wheel over a shell's own tmux client** (item 58,
+    /// `Tmux::wheel_in`): `rows` up when positive, in the session the
+    /// client in front is attached to. `Ok(false)` when no tmux client is
+    /// in front: the face keeps the wheel for itself. `rows` 0 only asks.
+    pub fn tmux_wheel(&self, id: &SessionId, rows: i32) -> Result<bool, String> {
+        let Some(c) = self.tmux_in_shell(id) else {
+            return Ok(false);
+        };
+        c.server().wheel_in(&c.session_id, &id.0, rows)?;
+        Ok(true)
     }
 
     /// **The history of the pane a tmux row's client has in front**
@@ -892,11 +923,16 @@ impl LiveKind {
         id: &SessionId,
         since: Option<&crate::adaptor::tmux::HistoryAnchor>,
     ) -> Result<crate::adaptor::tmux::PaneHistory, String> {
-        let tmux = self
-            .discovery
-            .tmux()
-            .ok_or_else(|| msg::no_terminal_here(&id.0))?;
-        tmux.history(&id.0, since)
+        let row = self.discovery.tmux().ok_or_else(|| msg::no_terminal_here(&id.0)).and_then(|t| t.history(&id.0, since));
+        // A shell with the person's own tmux client in front (item 58):
+        // the history of the session that client is attached to.
+        match row {
+            Err(e) => match self.tmux_in_shell(id) {
+                Some(c) => c.server().history_in(&c.session_id, &id.0, since),
+                None => Err(e),
+            },
+            ok => ok,
+        }
     }
 
     /// **The address a face attaches to for this row, on the machine
@@ -1382,21 +1418,30 @@ impl LiveKind {
         // with a row of its own (a bridge, an imported row) keeps it.
         let mut taken: Vec<usize> = Vec::new();
         for k in 0..hosts.len() {
-            if hosts[k].tmux.is_some() {
+            // Asked only of a khor shell with a tmux client somewhere in
+            // it: the lookup runs `ps` and asks tmux, and a list poll
+            // must not pay that for every shell.
+            let Some(child) = hosts[k].own.and_then(|i| registered[i].host_child) else {
+                continue;
+            };
+            if hosts[k].tmux.is_some()
+                || !hosts[k]
+                    .holds
+                    .iter()
+                    .any(|&p| procs.get(p).is_some_and(|x| x.name == "tmux"))
+            {
                 continue;
             }
-            for m in 0..hosts.len() {
-                let shows = hosts[m].tmux.is_some()
-                    && hosts[m].own.is_none()
-                    && sweep
-                        .attached
-                        .iter()
-                        .any(|(client, session)| *session == hosts[m].id && hosts[k].holds.contains(client));
-                if shows {
-                    let held = hosts[m].holds.clone();
-                    hosts[k].holds.extend(held);
-                    taken.push(m);
-                }
+            let Some(session) = self.discovery.attached(child) else {
+                continue;
+            };
+            if let Some(m) = hosts
+                .iter()
+                .position(|h| h.tmux.is_some() && h.own.is_none() && h.id == session)
+            {
+                let held = hosts[m].holds.clone();
+                hosts[k].holds.extend(held);
+                taken.push(m);
             }
         }
         let mut m = 0;
@@ -3530,7 +3575,10 @@ mod tests {
     /// still the conversation's newest sentence (SESS-BRIEF 1a).
     #[test]
     fn a_khor_started_claude_row_says_its_transcript_past_the_bookkeeping() {
-        for (tag, pad) in [("small", 200usize), ("large", 96 * 1024)] {
+        // Measured on the owner's (lead, 2026-10-07): a `prompt_snapshot`
+        // attachment of 131 887 bytes on one line right after the answer,
+        // so one bookkeeping line alone outgrew the old 64 KiB tail.
+        for (tag, pad) in [("small", 200usize), ("large", 130 * 1024)] {
             let root = tmp(&format!("preview-owner-{tag}"));
             let proj = root.join(".claude/projects/-Users-someone");
             fs::create_dir_all(&proj).unwrap();
@@ -3539,8 +3587,9 @@ mod tests {
             let lines = [
                 r#"{"type":"user","message":{"role":"user","content":"what is in this repo"},"sessionId":"S"}"#.to_owned(),
                 r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Three crates and an app."}]},"sessionId":"S"}"#.to_owned(),
-                format!(r#"{{"type":"attachment","attachment":{{"type":"skill_listing","content":"{blob}"}},"sessionId":"S"}}"#),
+                format!(r#"{{"type":"attachment","attachment":{{"type":"prompt_snapshot","content":"{blob}"}},"sessionId":"S"}}"#),
                 r#"{"type":"system","subtype":"turn_duration","durationMs":5123,"sessionId":"S"}"#.to_owned(),
+                r#"{"type":"system","subtype":"stop_hook_summary","sessionId":"S"}"#.to_owned(),
                 r#"{"type":"last-prompt","lastPrompt":"what is in this repo","sessionId":"S"}"#.to_owned(),
                 r#"{"type":"mode","mode":"normal","sessionId":"S"}"#.to_owned(),
                 r#"{"type":"permission-mode","permissionMode":"auto","sessionId":"S"}"#.to_owned(),
@@ -4196,7 +4245,7 @@ mod tests {
             Discovery::at(&fixture_vendors())
                 .with_procs(Procs::of([shell, client, pane, claude]))
                 .with_tmux(Tmux::at_binary(&tmux))
-                .with_attached(vec![(5002, sid(T_ID))]),
+                .with_attached(vec![(5001, sid(T_ID))]),
         ));
         k.register(
             &term,

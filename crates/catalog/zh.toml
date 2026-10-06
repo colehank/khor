@@ -4316,6 +4316,9 @@ close-warn-terminal = "这个终端会关闭，里面正在运行的程序也会
 # Terminal.app's "Closing this window will terminate: make"): it names it.
 close-warn-running = "这个终端会关闭，正在运行的 {0} 也会停止"
 close-warn-tmux = "khor 里的这个终端会关闭；tmux 会话和里面的程序照常运行"
+# A khor shell whose running command is a tmux client the person typed
+# (item 58): closing ends the shell and that client, never the session.
+close-warn-shell-tmux = "这个终端会关闭；里面连着的 tmux 会话和它的程序照常运行"
 # ACP 对话那一行(gui 形态,docs/SHELL.md 第八轮):删掉的是 khor 里这一行和它起的 agent 进程,
 # 对话本身还在那个 agent 那里,在「导入」里还能再找回来。
 close-warn-gui = "只删除 khor 中的这一行，对话仍保留在该智能体中，可以再次导入"

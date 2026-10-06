@@ -86,6 +86,12 @@ export function holdsTmuxHistory(o: {
       succeeds there, a failed one only means there is no tmux history
       here, and nothing is said. */
   known: boolean;
+  /** **A shell row** (item 58): tmux's only while a tmux client the person
+      typed is in front, which the face sees as the alternate screen. Read
+      when the screen switches to it; given back the moment it switches
+      away; a failed read (vim, htop: not tmux) says nothing and waits for
+      the next switch. */
+  probe?: boolean;
   live: Terminal;
   /** Where the history xterm is drawn, over the live screen. */
   seat: HTMLElement;
@@ -267,6 +273,12 @@ export function holdsTmuxHistory(o: {
     window.clearTimeout(quiet);
     waitingSince = 0;
     if (stopped || !visible || absent) return Promise.resolve(true);
+    // A shell on its own screen has no tmux in front: nothing to read,
+    // and nothing for the cover to wait for.
+    if (o.probe && live.buffer.active.type !== "alternate") {
+      decide();
+      return Promise.resolve(true);
+    }
     if (!attached) {
       behind = true;
       return Promise.resolve(true);
@@ -316,6 +328,23 @@ export function holdsTmuxHistory(o: {
     behind = true;
     if (up()) quietThen();
   });
+  // **A shell's tmux comes and goes with its screen** (item 58): in, a
+  // read asks whether it is tmux; out, the scroller is the shell's again
+  // at once, and the copy of a history that is no longer there goes.
+  const switched = o.probe
+    ? live.buffer.onBufferChange((b) => {
+        absent = false;
+        proven = false;
+        anchor = null;
+        if (b.type === "alternate") {
+          behind = true;
+          if (visible && attached) quietThen();
+        } else {
+          drop();
+          show();
+        }
+      })
+    : null;
   // Another pane or window in front: tmux retitles khor's client with the
   // pane's id (`Tmux::grouped_attach_argv`), and the next read is that
   // pane's, whole.
@@ -355,6 +384,8 @@ export function holdsTmuxHistory(o: {
     },
     joined: () => {
       attached = true;
+      // A shell joined at its prompt: the scroller is its own, decided.
+      if (o.probe && live.buffer.active.type !== "alternate") decide();
       if (visible) quietThen();
     },
     decided: () => firstAnswer,
@@ -364,6 +395,7 @@ export function holdsTmuxHistory(o: {
       stopped = true;
       drop();
       wrote.dispose();
+      switched?.dispose();
       titled.dispose();
       resized.dispose();
       o.scroller.removeEventListener("touchstart", landed, true);

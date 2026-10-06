@@ -2168,6 +2168,9 @@ close-warn-live = "Close it, and the process it's running will stop"
 close-warn-terminal = "This terminal closes, and whatever is running in it stops"
 close-warn-running = "This terminal closes, and {0}, still running, stops"
 close-warn-tmux = "khor's terminal on it closes; the tmux session and what runs in it keep going"
+# A khor shell whose running command is a tmux client the person typed
+# (item 58): closing ends the shell and that client, never the session.
+close-warn-shell-tmux = "This terminal closes; the tmux session it was attached to keeps running, with what runs in it"
 close-warn-gui = "This deletes khor's row; the conversation itself stays with that agent and can be imported again"
 close-warn-chat = "Close it and this row is put away — history and received files stay, and it comes back with the next message"
 close-warn-transfer = "Close it and the files from this transfer are deleted — the row stays"
