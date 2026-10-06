@@ -54,10 +54,12 @@
 // browsing landing be a descriptor rather than a second copy of this.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { fetchPageIcons, onPageWord, openLink, openTab, pageDeck, pageGround, pageStep, recentVisit, type DeviceRow } from "@/api";
+import { fetchPageIcons, onPageWord, openLink, openTab, pageDeck, pageGround, pageStep, recentVisit, reveal, type DeviceRow } from "@/api";
+import { revealHere } from "@/views/chat-files";
 import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
 import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
 import { pageFail, type PageFail } from "@/browse/page-fail";
+import { pageDownload, type PageSaid } from "@/browse/page-download";
 import { Tabs } from "@/browse/Tabs";
 import type { TabFace } from "@/browse/TabStrip";
 import type { BrowseKind, HeldTab } from "@/browse/kind";
@@ -453,6 +455,11 @@ export function BrowseLanding({
   /** **Why the page could not be opened** (UX-22), until the next load
       starts: said in the pill (narrow) or the caption (wide), with 重试. */
   const [failed, setFailed] = useState<PageFail | null>(null);
+  /** **What the page's download did** (UX-42 §16): never silent — said
+      where the caption stands until the next load or the next word. */
+  const [said, setSaid] = useState<PageSaid | null>(null);
+  const [finder, setFinder] = useState(false);
+  useEffect(() => void revealHere().then(setFinder), []);
   /** **The folded capsule's ink, from the page's own ground** (UX-29):
       the phone's native page is asked what it paints under the capsule
       (`pageGround`, as the fold happens and a few times a second as the
@@ -470,6 +477,7 @@ export function BrowseLanding({
   useEffect(() => {
     setFolded(false);
     setFailed(null);
+    setSaid(null);
     setInk("dark");
     const id = tabs.current.id;
     // The one deck rule (UX-13, `lib/deck-fold`): a page rests at its top,
@@ -496,10 +504,12 @@ export function BrowseLanding({
       // tab arrived folded, its first scroll word lost to the editing).
       if (t === "started") {
         setFailed(null);
+        setSaid(null);
         setFolded(false);
       }
     });
     const offFail = onPageWord("page:fail", id, (t) => setFailed(pageFail(t)));
+    const offDown = onPageWord("page:download", id, (t) => setSaid(pageDownload(t)));
     // Arrived somewhere: whatever failed before is over (UX-38 §1; a load
     // quicker than the phone's poll used to leave the word standing).
     const offWent = onPageWord("page:went", id, () => setFailed(null));
@@ -508,6 +518,7 @@ export function BrowseLanding({
       offGround();
       offLoad();
       offFail();
+      offDown();
       offWent();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -526,17 +537,40 @@ export function BrowseLanding({
             「打不开：…」 there). */}
         {narrow ? failed.reason : gui.page_failed(failed.reason)}
       </span>
+      {/* An untrusted certificate is passed, not retried (UX-42 §14):
+          the same seat, so the phone's native deck draws and presses it
+          as 重试 (`native-deck` SEATS). */}
       <button
         type="button"
         data-page-retry
+        data-page-pass={failed.pass ? "" : undefined}
         onClick={() => {
           setFailed(null);
-          void pageStep(tabs.current.id, "retry").catch(() => {});
+          void pageStep(tabs.current.id, failed.pass ? "pass" : "retry").catch(() => {});
         }}
         className="grid min-h-touch flex-none place-items-center px-in text-caption font-label text-brand-strong"
       >
-        {gui.region_retry}
+        {failed.pass ? gui.page_pass : gui.region_retry}
       </button>
+    </span>
+  );
+  /** The download's sentence, in the same seat (UX-42 §16); 在访达中显示
+      where Finder is in front of the person. */
+  const saidWord = said && (
+    <span data-page-said className="flex min-w-0 items-center gap-in">
+      <span data-page-said-word title={said.reveal} className="min-w-0 truncate text-caption text-muted-foreground">
+        {said.text}
+      </span>
+      {said.reveal && finder && (
+        <button
+          type="button"
+          data-page-reveal
+          onClick={() => void reveal(said.reveal ?? "").catch(() => {})}
+          className="grid min-h-touch flex-none place-items-center px-in text-caption font-label text-brand-strong"
+        >
+          {gui.chat_file_reveal}
+        </button>
+      )}
     </span>
   );
   /** **The pill is the address editor** (UX-18, the owner 2026-10-05:
@@ -584,7 +618,7 @@ export function BrowseLanding({
     if (deck) ro.observe(deck);
     return () => ro.disconnect();
   }, [native, nativeTab]);
-  const nativeKey = `${folded}|${ink}|${pageLoading}|${failed?.reason ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}|${laid}`;
+  const nativeKey = `${folded}|${ink}|${pageLoading}|${failed?.reason ?? ""}|${said?.text ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}|${laid}`;
   useEffect(() => {
     if (!nativeDeckHere || !narrow) return;
     if (!native) {
@@ -687,8 +721,9 @@ export function BrowseLanding({
           onBusy={(busy) => load.errand(tabs.current.id, busy)}
           // A new tab beside this one, on the same machine — `open`
           // rather than `goTo`, which is the whole difference the shell
-          // draws between the two (`BrowseTabs`).
-          onPopup={(place) => tabs.open(machine.id, place)}
+          // draws between the two (`BrowseTabs`) — and in this one's
+          // session, so it is in the same 附栏 slice (UX-42 §15).
+          onPopup={(place) => tabs.open(machine.id, place, { session: tabs.current.session, after: tabs.current.id })}
           onLanded={(place) => {
             // **The visit is recorded here, once, for every kind.** The
             // ledger is the node's (`khor_sync::recents`); fire and forget.
@@ -863,7 +898,7 @@ export function BrowseLanding({
         onNew={newHere}
         onBack={() => onBack?.()}
         onTitle={() => setEditing(true)}
-        caption={failedWord || caption}
+        caption={failedWord || saidWord || caption}
         editor={tabs.ready && editing ? pillEditor : undefined}
         nativeDeck={native}
         // The page is a native view the capsule cannot float over: it
@@ -952,7 +987,7 @@ export function BrowseLanding({
           onFocus={(id) => tabs.focus(id)}
           onClose={(id) => void tabs.close(id).catch(() => {})}
           stripData={{ "data-page-tabs": "" }}
-          caption={failedWord || caption}
+          caption={failedWord || saidWord || caption}
           bodyClass="flex flex-col"
         >
           <div data-page-field-seat className="flex flex-none px-page pt-xxs pb-in">

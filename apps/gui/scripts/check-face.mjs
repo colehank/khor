@@ -31775,18 +31775,43 @@ try {
           host: pageFail(`-1003|NSURLErrorDomain|A server with the specified hostname could not be found.|${at}`),
           refused: pageFail(`-1004|NSURLErrorDomain|Could not connect to the server.|${at}`),
           timeout: pageFail(`-1001|NSURLErrorDomain|The request timed out.|${at}`),
-          tls: pageFail(`-1202|NSURLErrorDomain|The certificate for this server is invalid.|${at}`),
+          tls: pageFail(`-1200|NSURLErrorDomain|An SSL error has occurred and a secure connection to the server cannot be made.|${at}`),
+          cert: pageFail(`-1202|NSURLErrorDomain|The certificate for this server is invalid.|${at}`),
+          expired: pageFail(`-1201|NSURLErrorDomain|The certificate for this server has expired.|${at}`),
           route: pageFail(`route|khor||${at}`),
           proxy: pageFail(`310|kCFErrorDomainCFNetwork|There was a problem communicating with the secure web proxy server (HTTPS).|${at}`),
           other: pageFail(`-1100|NSURLErrorDomain|The requested URL was not found on this server.|${at}`),
-          want: { host: gui.page_fail_host, refused: gui.page_fail_refused, timeout: gui.page_fail_timeout, tls: gui.page_fail_tls, route: gui.page_fail_route, proxy: gui.page_fail_route },
+          want: { host: gui.page_fail_host, refused: gui.page_fail_refused, timeout: gui.page_fail_timeout, tls: gui.page_fail_tls, route: gui.page_fail_route, proxy: gui.page_fail_route, cert: gui.page_fail_cert, expired: gui.page_fail_cert },
         };
       });
       console.log(`bar t · failure words ${shown(words)}`);
-      for (const k of ["host", "refused", "timeout", "tls", "route", "proxy"]) {
+      for (const k of ["host", "refused", "timeout", "tls", "route", "proxy", "cert", "expired"]) {
         if (words[k]?.reason !== words.want[k] || words[k]?.url !== "https://nowhere.example/") fail(`bar t · a ${k} failure reads ${shown(words[k])} — the catalog's ${shown(words.want[k])} and the address`);
       }
+      // 「仍然访问」 only where a certificate can be passed (UX-42 §14).
+      for (const k of ["cert", "expired"]) if (words[k]?.pass !== true) fail(`bar t · an untrusted certificate (${k}) offers no 「仍然访问」: ${shown(words[k])} (browse/page-fail PASSABLE)`);
+      for (const k of ["host", "refused", "tls", "route", "proxy"]) if (words[k]?.pass) fail(`bar t · a ${k} failure offers 「仍然访问」 — only a certificate is passed`);
       if (!words.other?.reason?.startsWith("The requested URL")) fail(`bar t · an unsorted failure reads ${shown(words.other)} — the system's own sentence, never silence`);
+      // A page's download is never silent (UX-42 §16): each word the app
+      // tells reads as the catalog's sentence, and the phone's offered
+      // sheet says nothing more.
+      const down = await page.evaluate(async () => {
+        const { pageDownload } = await import("/src/browse/page-download.ts");
+        const { gui } = await import("/src/gen/catalog.ts");
+        return {
+          started: pageDownload("started|a|b.pdf"),
+          saved: pageDownload("saved|/Users/x/Downloads/b.pdf"),
+          failed: pageDownload("failed|b.pdf"),
+          offered: pageDownload("offered|b.pdf"),
+          want: { started: gui.page_downloading("a|b.pdf"), saved: gui.took_file("/Users/x/Downloads/b.pdf"), failed: gui.page_download_failed("b.pdf") },
+        };
+      });
+      console.log(`bar t · download words ${shown(down)}`);
+      for (const k of ["started", "saved", "failed"]) {
+        if (down[k]?.text !== down.want[k]) fail(`bar t · a ${k} download reads ${shown(down[k])} — the catalog's ${shown(down.want[k])} (src/browse/page-download.ts)`);
+      }
+      if (down.saved?.reveal !== "/Users/x/Downloads/b.pdf") fail(`bar t · a saved download offers no place to show: ${shown(down.saved)}`);
+      if (down.offered !== null) fail(`bar t · the phone's share sheet is the offer; the line says nothing more, read ${shown(down.offered)}`);
     }
 
     // ── u. the deck pill is a band (UX-33 §3): at rest one tab, a drag

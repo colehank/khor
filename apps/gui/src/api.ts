@@ -349,8 +349,8 @@ export const fetchTabs = (kind: string) => call<TabsOpen>("tabs_list", { kind })
     the fresh tab the 「+」 mints — a real state, not a half-made row.
     **The id is minted by the node**, because the terminal opens tabs
     too and two minters is two id shapes. */
-export const openTab = (kind: string, device: string, url: string, session?: string) =>
-  call<string>("tabs_open", { kind, device, url, ...(session ? { session } : {}) });
+export const openTab = (kind: string, device: string, url: string, session?: string, after?: string) =>
+  call<string>("tabs_open", { kind, device, url, ...(session ? { session } : {}), ...(after ? { after } : {}) });
 /** Points an open tab somewhere and names it. Refused by name for a tab
     that is not there, rather than quietly adding one. */
 export const goTab = (kind: string, id: string, device: string, url: string, title: string) =>
@@ -1472,11 +1472,12 @@ export const showPage = (tab: string) =>
   onWebFace ? Promise.resolve(null) : call<null>("show_page", { tab });
 
 /** Back, forward, reload, and 重试 — the address the last load failed
-    to reach, again (UX-22; a reload would load the page still there).
-    **The two arrows cannot know whether there is anywhere to go** —
+    to reach, again (UX-22; a reload would load the page still there);
+    `pass`: 「仍然访问」, the certificate it was shown passed for this run
+    (UX-42 §14). **The two arrows cannot know whether there is anywhere to go** —
     tauri has no `can_go_back` — so they stay lit and a press with no
     history behind it quietly does nothing. */
-export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry" | "stop") =>
+export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry" | "stop" | "pass") =>
   onWebFace ? Promise.resolve(null) : call<null>("page_step", { tab, way });
 
 /** **The browser's deck, drawn natively over an iPhone's page** (UX-13,
@@ -1498,7 +1499,7 @@ export const pageDeck = (tab: string, drawing: import("@/lib/native-deck").DeckD
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground",
+  event: "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground" | "page:download",
   tab: string,
   said: (text: string) => void,
 ): () => void {

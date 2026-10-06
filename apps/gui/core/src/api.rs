@@ -104,6 +104,7 @@ pub fn answer(
             &opt_str("device")?.unwrap_or_default(),
             &opt_str("url")?.unwrap_or_default(),
             &opt_str("session")?.unwrap_or_default(),
+            &opt_str("after")?.unwrap_or_default(),
         )?),
         "tabs_go" => to_json(&crate::tabs::go(
             root,
