@@ -486,51 +486,131 @@ impl Claude {
     ///
     /// A list polls this for every claude row every few seconds, so the
     /// answer is cached by (path, mtime): an unchanged transcript costs
-    /// directory stats, not a read. On change only the tail is read — the
-    /// last utterance lives at the end, and a long conversation's file
-    /// does not get re-parsed whole for one preview line.
+    /// directory stats, not a read. On change only what was appended
+    /// since is read ([`newest_said`]).
     pub fn last_said(&self, leaf: &str) -> Option<String> {
-        use std::collections::HashMap;
-        use std::sync::{Mutex, OnceLock};
-        /// One transcript's last line, keyed by file and stamped with the
-        /// mtime it was read at. A `type` only, to keep
-        /// `clippy::type_complexity` off the `static` below.
-        type SaidCache = OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Option<String>)>>>;
-        static CACHE: SaidCache = OnceLock::new();
         let (path, mtime) = self.transcript_path(leaf)?;
-        let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-        if let Some((t, said)) = cache.lock().unwrap().get(&path)
-            && *t == mtime
-        {
-            return said.clone();
-        }
-        let said = tail_said(&path);
-        cache.lock().unwrap().insert(path, (mtime, said.clone()));
-        said
+        heard_last(path, mtime, utterances_of)
     }
 }
 
-/// The last utterance out of a transcript's tail. Reads the final 64 KiB
-/// and drops the first (possibly cut) line before parsing — a line split
-/// mid-JSON must read as absent, not as garbage.
-fn tail_said(path: &std::path::Path) -> Option<String> {
+/// [`newest_said`] behind a cache keyed by file and stamped with the
+/// mtime it was read at — shared by every vendor whose transcript is
+/// JSONL appended in speaking order.
+pub(crate) fn heard_last(
+    path: PathBuf,
+    mtime: std::time::SystemTime,
+    parse: fn(&str) -> Vec<Utterance>,
+) -> Option<String> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static CACHE: OnceLock<Mutex<HashMap<PathBuf, (std::time::SystemTime, Heard)>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let before = match cache.lock().unwrap().get(&path) {
+        Some((t, heard)) if *t == mtime => return heard.said.clone(),
+        Some((_, heard)) => Some(heard.clone()),
+        None => None,
+    };
+    let heard = newest_said(&path, before.as_ref(), parse)?;
+    let said = heard.said.clone();
+    cache.lock().unwrap().insert(path, (mtime, heard));
+    said
+}
+
+/// A transcript's newest sentence, and how far the file was read for it.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Heard {
+    pub said: Option<String>,
+    /// Just past the last whole line read: a line still being written
+    /// is read again next time, whole.
+    pub upto: u64,
+}
+
+/// The newest user or agent sentence in a transcript.
+///
+/// # Back from the end until a sentence, not a fixed tail
+///
+/// **It used to read the last 64 KiB and give up.** Claude Code writes
+/// its own bookkeeping after an answer — `attachment` lines carrying
+/// skill listings and tool lists, `system`, `last-prompt`, `mode`,
+/// `permission-mode` — and a fresh session's attachments alone can
+/// outgrow 64 KiB. The row then had no sentence and kept the screen's
+/// bottom line, Claude Code's own chrome (SESS-BRIEF 1a). So the read
+/// widens backwards, four times each step, until a sentence or the
+/// file's head; `MOST` bounds what one look may cost.
+///
+/// # Only what was appended, once a look has been had
+///
+/// Transcripts only grow, so with `before` the read starts where the
+/// last one stopped: a sentence in the new part is the answer, else the
+/// old answer stands. A file shorter than that point was rewritten, and
+/// is read afresh.
+pub(crate) fn newest_said(
+    path: &Path,
+    before: Option<&Heard>,
+    parse: fn(&str) -> Vec<Utterance>,
+) -> Option<Heard> {
     use std::io::{Read, Seek, SeekFrom};
-    const TAIL: u64 = 64 * 1024;
+    const FIRST: u64 = 64 * 1024;
+    /// Past this much bookkeeping a row reads as saying nothing yet,
+    /// rather than costing a poll more.
+    const MOST: u64 = 16 * 1024 * 1024;
     let mut f = std::fs::File::open(path).ok()?;
     let len = f.metadata().ok()?.len();
-    let start = len.saturating_sub(TAIL);
-    f.seek(SeekFrom::Start(start)).ok()?;
-    let mut text = String::new();
-    f.take(TAIL).read_to_string(&mut text).ok()?;
-    let text = if start > 0 {
-        match text.split_once('\n') {
-            Some((_, rest)) => rest,
-            None => return None,
-        }
-    } else {
-        text.as_str()
+    let mut read = |from: u64, to: u64| -> Option<Vec<u8>> {
+        f.seek(SeekFrom::Start(from)).ok()?;
+        let mut buf = Vec::with_capacity((to - from) as usize);
+        (&mut f).take(to - from).read_to_end(&mut buf).ok()?;
+        Some(buf)
     };
-    utterances_of(text).into_iter().rev().find_map(|u| match u {
+    // A last line with no newline yet is parsed — it may be whole, and
+    // one still being written fails to parse and reads as absent — but
+    // the next look starts at its head again.
+    let whole = |buf: &[u8]| buf.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+    if let Some(b) = before.filter(|b| b.upto <= len) {
+        let buf = read(b.upto, len)?;
+        let end = whole(&buf);
+        let said = said_in(&buf, parse).or_else(|| b.said.clone());
+        return Some(Heard {
+            said,
+            upto: b.upto + end as u64,
+        });
+    }
+    // Just past the file's last newline, once a window has reached it.
+    let mut upto: Option<u64> = None;
+    // Everything at or past `end` has been looked at.
+    let mut end = len;
+    let mut window = FIRST;
+    loop {
+        let start = end.saturating_sub(window).max(len.saturating_sub(MOST));
+        let buf = read(start, end)?;
+        if upto.is_none() && whole(&buf) > 0 {
+            upto = Some(start + whole(&buf) as u64);
+        }
+        // The head of the window may be the tail of a line before it,
+        // unless the window starts the file.
+        let head = match start {
+            0 => 0,
+            _ => buf.iter().position(|&b| b == b'\n').map_or(buf.len(), |i| i + 1),
+        };
+        let heard = |said| Heard {
+            said,
+            upto: upto.unwrap_or(0),
+        };
+        if let Some(said) = said_in(&buf[head..], parse) {
+            return Some(heard(Some(said)));
+        }
+        if start == len.saturating_sub(MOST) {
+            return Some(heard(None));
+        }
+        end = start + head as u64;
+        window *= 4;
+    }
+}
+
+/// The newest sentence in a run of whole lines.
+fn said_in(bytes: &[u8], parse: fn(&str) -> Vec<Utterance>) -> Option<String> {
+    parse(&String::from_utf8_lossy(bytes)).into_iter().rev().find_map(|u| match u {
         // The marks come off before the line is folded: a said line is
         // markdown, and a preview has nowhere to render it to
         // (`khor_core::plain`). `plain` first — its list and heading
@@ -1323,6 +1403,67 @@ mod tests {
 
     fn claude_at_fixture() -> Claude {
         Claude::at(fixture_home().join("claude/.claude"))
+    }
+
+    fn said_line(who: &str, text: &str) -> String {
+        format!(r#"{{"type":"{who}","message":{{"role":"{who}","content":"{text}"}}}}"#) + "\n"
+    }
+
+    fn bookkeeping(bytes: usize) -> String {
+        format!(r#"{{"type":"attachment","attachment":{{"content":"{}"}}}}"#, "x".repeat(bytes)) + "\n"
+    }
+
+    /// `newest_said` past the bookkeeping, through growth, a line caught
+    /// half written, a rewrite, and its bound (SESS-BRIEF 1a).
+    #[test]
+    fn the_newest_sentence_is_found_however_much_bookkeeping_follows_it() {
+        let dir = Scratch(std::env::temp_dir().join(format!("khor-newest-said-{}", std::process::id())));
+        let _ = std::fs::remove_dir_all(&*dir);
+        std::fs::create_dir_all(&*dir).unwrap();
+        let path = dir.join("t.jsonl");
+        let append = |s: &str| {
+            use std::io::Write;
+            std::fs::OpenOptions::new().append(true).open(&path).unwrap().write_all(s.as_bytes()).unwrap();
+        };
+
+        // Several windows of bookkeeping after the answer.
+        let mut text = said_line("user", "hello") + &said_line("assistant", "the answer");
+        for _ in 0..12 {
+            text += &bookkeeping(30 * 1024);
+        }
+        std::fs::write(&path, &text).unwrap();
+        let first = newest_said(&path, None, utterances_of).unwrap();
+        assert_eq!(first.said.as_deref(), Some("the answer"));
+        assert_eq!(first.upto, text.len() as u64);
+
+        // More bookkeeping: the old answer stands, read from where it stopped.
+        append(&bookkeeping(100));
+        let grown = newest_said(&path, Some(&first), utterances_of).unwrap();
+        assert_eq!(grown.said.as_deref(), Some("the answer"));
+
+        // A sentence caught half written reads as absent, then whole.
+        let next = said_line("user", "and now");
+        let (a, b) = next.split_at(20);
+        append(a);
+        let half = newest_said(&path, Some(&grown), utterances_of).unwrap();
+        assert_eq!(half.said.as_deref(), Some("the answer"));
+        assert_eq!(half.upto, grown.upto, "the next look starts at the half line's head");
+        append(b);
+        let whole = newest_said(&path, Some(&half), utterances_of).unwrap();
+        assert_eq!(whole.said.as_deref(), Some("and now"));
+
+        // A rewrite shorter than the last look is read afresh.
+        std::fs::write(&path, said_line("assistant", "compacted")).unwrap();
+        let fresh = newest_said(&path, Some(&whole), utterances_of).unwrap();
+        assert_eq!(fresh.said.as_deref(), Some("compacted"));
+
+        // Past the bound the row says nothing, rather than costing more.
+        let mut text = said_line("user", "long ago");
+        for _ in 0..(17 * 1024 / 64) {
+            text += &bookkeeping(64 * 1024);
+        }
+        std::fs::write(&path, &text).unwrap();
+        assert_eq!(newest_said(&path, None, utterances_of).unwrap().said, None);
     }
 
     /// **A bounded read must not lose the whole file to its own
