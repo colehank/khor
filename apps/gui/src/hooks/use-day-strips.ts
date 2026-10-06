@@ -99,18 +99,27 @@ export function cellsFor(widthPx: number): number {
  * sits `mx-in` inside this box. The inset is read from the token, not
  * written here.
  *
- * - With a session open, the band's row (`data-detail-day`, the width
- *   of the pane) is measured, less the strip's inset — exact.
- * - Without one, the box less **both** insets — exact on the wide face
- *   and sixteen pixels short on the narrow one, where the board has no
- *   margin. Short is the safe side: a few fewer cells is a slightly
- *   coarser strip, and a few more would be overlapping pills.
+ * - With the day expanded, the band's row (`data-detail-day`) is
+ *   measured inside its own padding, less the strip's inset — exact.
+ * - Without one, the box less **both** insets — exact in the session's
+ *   附栏 (UX-30: the box is the column, whose panel keeps the capsule's
+ *   inset over the strip's) and sixteen pixels short on the narrow
+ *   face, where the board has no margin. Short is the safe side: a few
+ *   fewer cells is a slightly coarser strip, and a few more would be
+ *   overlapping pills.
  */
 function axisOf(box: HTMLElement, boxWidth: number): number {
   const inset = parseFloat(getComputedStyle(box).getPropertyValue("--gap-in")) || 0;
   const row = box.querySelector<HTMLElement>("[data-detail-day]");
-  const rowWidth = row ? row.getBoundingClientRect().width : 0;
-  return rowWidth > 0 ? rowWidth - 2 * inset : boxWidth - 4 * inset;
+  if (row) {
+    // The row's own inside (no scrollbar, no border) less its padding —
+    // the column's panel keeps the capsule's inset (`DayRuler`) — and
+    // then the strip's own `gap-in` each side.
+    const cs = getComputedStyle(row);
+    const inside = row.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    if (inside > 0) return inside - 2 * inset;
+  }
+  return boxWidth - 4 * inset;
 }
 
 /**

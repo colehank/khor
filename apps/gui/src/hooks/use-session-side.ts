@@ -28,10 +28,12 @@ export type SidePref = {
   /** The width it was dragged to; `null` = the token's default. */
   w: number | null;
   seat: SideSeat;
+  /** Whether the ruler is expanded into the full day (`DayRuler`). */
+  day: boolean;
 };
 
 const KEY = (session: string) => `khor.session-side.${session}`;
-const CLOSED: SidePref = { open: false, w: null, seat: "recent" };
+const CLOSED: SidePref = { open: false, w: null, seat: "recent", day: false };
 
 function isSeat(v: unknown): v is SideSeat {
   return typeof v === "string" && (SIDE_SEATS as readonly string[]).includes(v);
@@ -43,11 +45,12 @@ function stored(session: string): SidePref {
     if (!raw) return CLOSED;
     const p: unknown = JSON.parse(raw);
     if (typeof p !== "object" || p === null) return CLOSED;
-    const { open, w, seat } = p as Partial<SidePref>;
+    const { open, w, seat, day } = p as Partial<SidePref>;
     return {
       open: open === true,
       w: typeof w === "number" && Number.isFinite(w) ? w : null,
       seat: isSeat(seat) ? seat : "recent",
+      day: day === true,
     };
   } catch {
     return CLOSED;

@@ -332,7 +332,7 @@ export function DetailPane({
       data-detail-pane
       className={cn(
         "flex h-full min-w-0 flex-col [--day-under:var(--card)]",
-        drawn && !inBar ? "[--day-over:calc(2*var(--gap-xxs)+var(--spacing))]" : "[--day-over:calc(0*var(--spacing))]",
+        "[--day-over:calc(0*var(--spacing))]",
       )}
     >
       {/* **`min-h`, not `h`.** The bar's look is still `--ctl-lg`; what
@@ -503,17 +503,11 @@ export function DetailPane({
           scrolls under it — so the band reads over a terminal's first
           line without a hard cut. Only the stretches take a press: a
           gap between them, and the fade, are the session's. */}
-      {drawn && !inBar && (
-        <div className="relative z-30 h-0 flex-none">
-          <div
-            data-detail-day
-            id={DAY_ROW_ID}
-            className="pointer-events-none absolute inset-x-0 top-0 bg-linear-to-b from-(--day-under) from-65% to-transparent"
-          >
-            <DayStrip runs={day ?? null} />
-          </div>
-        </div>
-      )}
+      {/* ⚠️ 墓碑 (UX-30, 2026-10-06): on the wide face the band hung here,
+          under the tabs, from the front tab's press. That press opens the
+          session's 附栏 now, and the day is the column's ruler
+          (`DayRuler`); the narrow face keeps its foot band below until
+          the phone's sheet becomes the same column. */}
       {/* The session and, beside it, its 附栏 (UX-30): a row, the session
           taking what the column leaves. */}
       <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">

@@ -104,6 +104,7 @@ import { type Day } from "@/views/DayStrip";
 import { DetailPane, isTerminal } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
 import { SIDE_ID, SessionSide } from "@/views/SessionSide";
+import { DayRuler } from "@/views/DayRuler";
 import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
@@ -2116,6 +2117,8 @@ export default function App() {
         onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
         onWidth={(w) => setSessionSide(selectedRow.id, { w })}
         onClose={() => setSessionSide(selectedRow.id, { open: false })}
+        boxRef={setDetailBox}
+        ruler={<DayRuler runs={dayOf(selectedRow.id)} open={side.day} onToggle={() => setSessionSide(selectedRow.id, { day: !side.day })} />}
       >
         {sideSeat()}
       </SessionSide>
@@ -3314,7 +3317,10 @@ export default function App() {
                   (it was a row's item), and a flex item's default
                   min-height is its content — the file scroller would
                   grow to its whole file and never scroll. */}
-              <div ref={setDetailBox} className="flex min-h-0 min-w-0 flex-1 flex-col">
+              {/* ⚠️ 墓碑 (UX-30): `ref={setDetailBox}` stood here — the day's
+                  axis was this pane's; it is the column's now
+                  (`SessionSide` `boxRef`). */}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                 {sessions && openTabs.length > 0 ? (
                   <VerbSeat.Provider value={verbSeat}>
                   <Tabs

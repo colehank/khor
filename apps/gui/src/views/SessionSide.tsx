@@ -92,9 +92,13 @@ export function SessionSide({
   onWidth,
   onClose,
   ruler,
+  boxRef,
   children,
 }: {
   session: string;
+  /** The box the day's axis is measured in (`useStripWidth`): the band
+      drawn in the ruler's panel is this column's width. */
+  boxRef?: (el: HTMLDivElement | null) => void;
   /** The width it was dragged to, or `null` for the token's default. */
   width: number | null;
   seat: SideSeat;
@@ -108,8 +112,12 @@ export function SessionSide({
   /** The seat's page, composed by the shell. */
   children?: ReactNode;
 }) {
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement | null>(null);
   const capsule = useRef<HTMLElement>(null);
+  const setBox = (el: HTMLDivElement | null) => {
+    box.current = el;
+    boxRef?.(el);
+  };
   // The chosen seat slides to the one pressed (F7.2, `lib/travel`).
   useTravel("side", () => capsule.current, seat);
 
@@ -191,7 +199,7 @@ export function SessionSide({
 
   return (
     <NarrowBox
-      ref={box}
+      ref={setBox}
       id={SIDE_ID}
       data-session-side={session}
       data-col-seat-on={seat}

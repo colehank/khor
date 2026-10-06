@@ -2303,6 +2303,7 @@
   --spacing-deck-strip: var(--deck-strip);
   --spacing-dial-seat: var(--dial-seat);
   --spacing-progress-h: var(--progress-h);
+  --spacing-day-ruler-h: var(--day-ruler-h);
   --spacing-dial-seat-me: var(--dial-seat-me);
   --spacing-list-head: var(--list-head);
   --spacing-glass-tabs: var(--glass-tabs);
@@ -2771,6 +2772,9 @@
      pane, measured at the drag (the two-column answer, `use-list-width`). */
   --session-side-w: 390px;
   --session-side-min: 320px;
+  /* The column's ruler (UX-30 §5): the session's 24 hours flattened to a
+     heat line directly under the capsule, two points. */
+  --day-ruler-h: 2px;
   /* The session tabs' glass capsule and the pills in it, and a tab's
      face (the canvas: 34 / 28 / 16 in a window, 40 / 34 / 22 on a phone). */
   /* **The conversation's input, one glass capsule** (the redesign,
