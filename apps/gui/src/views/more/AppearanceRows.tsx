@@ -22,6 +22,7 @@ import { useCoarse } from "@/hooks/use-coarse";
 import { useNarrow } from "@/hooks/use-narrow";
 import { setTermCursor, useTermCursor, type CursorShape } from "@/lib/term-cursor";
 import { HISTORY_CHOICES, lineKb, setTermHistory, useTermHistory } from "@/lib/term-history";
+import { TMUX_ZSHRC } from "@/lib/term-shell-tmux";
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { FINISHED_CHOICES, setFinishedAfter, useFinishedAfter } from "@/lib/finished";
 import { setTermBell, useTermBell } from "@/lib/term-bell";
@@ -39,10 +40,6 @@ import { MoreSection } from "@/views/more/MorePage";
 import { KeyRowEditor } from "@/views/TermKeys";
 
 const ROW = "flex items-center gap-row px-row py-in";
-
-/** The ~/.zshrc line that loads khor's zsh integration in shells tmux
-    starts on its own (`crates/node/shell/khor.zsh`, item 21). */
-const TMUX_ZSHRC = "[[ -n $TMUX && -r ~/.khor/shell/khor.zsh ]] && source ~/.khor/shell/khor.zsh";
 
 /** 界面字号: follows the system, or a slider of iOS's seven sizes. */
 export function TypeSizeSection() {

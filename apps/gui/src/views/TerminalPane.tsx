@@ -1345,7 +1345,7 @@ export function TerminalPane({
   const [data, setData] = useState<{ command: string; peek: Peek } | null>(null);
   // The machine's commands, searched (roadmap 2.6), and where the shell
   // stands when it opened.
-  const [history, setHistory] = useState<{ cwd: string | undefined; atPrompt: boolean } | null>(null);
+  const [history, setHistory] = useState<{ cwd: string | undefined; atPrompt: boolean; unmarked?: boolean } | null>(null);
   const peekRef = useRef(false);
   peekRef.current = !!peek || !!data;
   const pinch = usePinch();
@@ -2432,6 +2432,11 @@ export function TerminalPane({
     // The menu's ⌘⇧; and the key sheet's 历史命令 (roadmap 2.6).
     (box as HTMLDivElement & { __history?: () => void }).__history = () => {
       const d = doingRef.current;
+      // The person's tmux pane in front marks nothing (SESS-BRIEF 3).
+      if (d?.pane_unmarked) {
+        setHistory({ cwd: undefined, atPrompt: false, unmarked: true });
+        return;
+      }
       if (viaTmux()) {
         setHistory({ cwd: d?.cwd ?? undefined, atPrompt: !!d?.cwd && !d.running });
         return;
@@ -3116,6 +3121,7 @@ export function TerminalPane({
         <TermHistory
           machine={machine ?? ""}
           cwd={history.cwd}
+          unmarked={history.unmarked}
           onClose={() => {
             setHistory(null);
             termRef.current?.focus();
