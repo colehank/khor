@@ -30017,6 +30017,12 @@ try {
       // Paste: the clipboard, typed — and bracketed once the program asked.
       await page.evaluate(() => {
         Object.defineProperty(navigator.clipboard, "readText", { configurable: true, value: async () => "echo pasted" });
+        // The key row reads the clipboard whole (text, else a picture:
+        // item 60 part 4, `lib/term-paste`).
+        Object.defineProperty(navigator.clipboard, "read", {
+          configurable: true,
+          value: async () => [new ClipboardItem({ "text/plain": new Blob(["echo pasted"], { type: "text/plain" }) })],
+        });
       });
       const plain = await sends(() => key("paste"));
       if (plain !== "echo pasted") fail(`bar f · paste sent ${shown(plain)}, the clipboard holds "echo pasted"`);
@@ -32203,6 +32209,59 @@ try {
       if (ceiling.root !== pin.path) fail(`side d · the 工作区 seat's ceiling is ${ceiling.root} — the workspace holding the session's directory, ${pin.path} (UX-39 §5)`);
       if (ceiling.up !== 0) fail(`side d · the 工作区 seat offers ${ceiling.up} way(s) above its ceiling — nothing above the workspace`);
       if (ceiling.tree !== 1) fail("side d · the 工作区 seat is not the workspace's tree (FileTree)");
+      // 「放进来的」 (item 60 part 5): with peer's ~/khor-drop holding a
+      // file, a row above the tree opens it as a tree of its own with ‹
+      // back to the workspace; with it empty or absent, no row.
+      {
+        let held = true;
+        const dropLs = async (r) => {
+          const { path } = r.request().postDataJSON() ?? {};
+          const answer = (body) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+          if (path === "") return answer({ path: "/home/peer", entries: [{ name: "khor-drop", dir: true, size: 0, at_ms: 0 }], truncated: false });
+          if (path === "/home/peer/khor-drop") {
+            return answer({ path, entries: held ? [{ name: "IMG 1.png", dir: false, size: 3, at_ms: 0 }] : [], truncated: false });
+          }
+          return r.fallback();
+        };
+        await page.route("**/ls", dropLs);
+        const again = async () => {
+          await pick("recent");
+          await pick("workspace");
+          await wait(700);
+        };
+        await again();
+        const row = await count(`${col} [data-side-drops]`);
+        let inside = null;
+        let back = null;
+        if (row === 1) {
+          await press(`${col} [data-side-drops]`);
+          await wait(600);
+          inside = await page.evaluate(
+            (c) => ({
+              root: document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null,
+              back: document.querySelectorAll(`${c} [data-side-workspace] [data-seat-back]`).length,
+              row: document.querySelectorAll(`${c} [data-side-drops]`).length,
+            }),
+            col,
+          );
+          if (inside.back === 1) await press(`${col} [data-side-workspace] [data-seat-back]`);
+          await wait(400);
+          back = await page.evaluate((c) => document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null, col);
+        }
+        held = false;
+        await again();
+        const empty = await count(`${col} [data-side-drops]`);
+        await page.unroute("**/ls", dropLs);
+        await again();
+        console.log(`side d · 放进来的: row ${row}, inside ${JSON.stringify(inside)}, back to ${back}, row while empty ${empty}`);
+        if (row !== 1 || inside?.root !== "/home/peer/khor-drop" || inside.back !== 1 || inside.row !== 0 || back !== pin.path) {
+          fail(
+            `side d · 放进来的 read row ${row}, inside ${JSON.stringify(inside)}, back to ${back} — one row while ~/khor-drop holds a file, ` +
+              `opening it as its own tree with ‹ back to the workspace ${pin.path} (item 60 part 5)`,
+          );
+        }
+        if (empty !== 0) fail(`side d · 放进来的 drawn ${empty} time(s) while ~/khor-drop is empty — not drawn (progressive disclosure)`);
+      }
       // A file from the tree: ‹ (the deck's, UX-40 §4) goes back to the tree.
       await press(`${col} [data-side-workspace] [data-file-tree] [data-file]`);
       await wait(900);

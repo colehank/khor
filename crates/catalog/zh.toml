@@ -3666,6 +3666,9 @@ files-session = "会话所在"
 # session machine's ~/khor-drop/, or the shell's current directory.
 files-to-term = "放到终端"
 files-to-cwd = "放到当前目录"
+# The 工作区 seat's pinned row to the session machine's ~/khor-drop/, shown
+# while it holds something (item 60 part 5).
+drops-row = "放进来的"
 # The terminal's reload circle beside ‹: join the session again.
 term-reload = "刷新"
 # The browsing landing's three page controls. **They are not the rail's

@@ -1941,6 +1941,7 @@ files-land = "Lands in ~/khor-drop/ on the session's machine; the path goes in a
 files-session = "This session"
 files-to-term = "Put in Terminal"
 files-to-cwd = "Put in Current Directory"
+drops-row = "Dropped In"
 term-reload = "Reload Terminal"
 page-back = "Previous page"
 page-forward = "Next page"
