@@ -786,6 +786,64 @@ fn redraw_tmux_client(cmd: &[String], tty: Option<std::path::PathBuf>) {
     });
 }
 
+/// **A narrowing never splits a wide character** (item 57, measured):
+/// vt100's resize cuts each row without clearing a wide character that
+/// straddles the new last column, and the next erase or write on that
+/// cell indexes past the row (`row.rs` `clear_wide`). A tmux client
+/// redraws every row after a resize, so a CJK pane and a face one column
+/// narrower panicked every vt100 that followed the pty: the host's model
+/// and gui-core's mode oracle alike. The straddling characters of the
+/// screen in view are erased first — they would be cut anyway — and the
+/// cursor and attributes put back. The screen out of view (the shell's
+/// under a full-screen program) cannot be reached; the callers' panic
+/// heals ([`parser_like`]) catch what that leaves.
+pub fn resize_screen(parser: &mut vt100::Parser, rows: u16, cols: u16) {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    let screen = parser.screen();
+    let (r, c) = screen.size();
+    if (r, c) == (rows, cols) {
+        return;
+    }
+    if cols < c && cols > 0 {
+        let mut scrub = Vec::new();
+        for row in 0..r {
+            if screen.cell(row, cols - 1).is_some_and(vt100::Cell::is_wide) {
+                scrub.extend_from_slice(format!("\x1b[{};{}H\x1b[X", row + 1, cols).as_bytes());
+            }
+        }
+        if !scrub.is_empty() {
+            let (cy, cx) = screen.cursor_position();
+            let mut bytes = b"\x1b[0m".to_vec();
+            bytes.extend_from_slice(&scrub);
+            bytes.extend_from_slice(format!("\x1b[{};{}H", cy + 1, cx + 1).as_bytes());
+            bytes.extend_from_slice(&screen.attributes_formatted());
+            let _ = catch_unwind(AssertUnwindSafe(|| parser.process(&bytes)));
+        }
+    }
+    parser.screen_mut().set_size(rows, cols);
+}
+
+/// **A fresh vt100 in place of one that panicked, on the same screen**
+/// (item 57): at `old`'s size, on the alternate screen if it was, with
+/// its input modes and its cursor's visibility. A program's repaint does
+/// not switch screens again, so a parser left on the normal screen kept
+/// the repaint where nobody looks and answered "no bracketed paste" to a
+/// program that had asked for it.
+pub fn parser_like(old: &vt100::Screen, scrollback: usize) -> vt100::Parser {
+    let (rows, cols) = old.size();
+    let mut kept = Vec::new();
+    if old.alternate_screen() {
+        kept.extend_from_slice(b"\x1b[?1049h");
+    }
+    kept.extend_from_slice(&old.input_mode_formatted());
+    if old.hide_cursor() {
+        kept.extend_from_slice(b"\x1b[?25l");
+    }
+    let mut fresh = vt100::Parser::new(rows, cols, scrollback);
+    fresh.process(&kept);
+    fresh
+}
+
 /// **The program on the terminal draws its screen again** (item 57):
 /// SIGWINCH to the pty's foreground process group, after the host's
 /// model lost its picture to a vt100 panic ([`Model::feed`]). Every
@@ -894,20 +952,9 @@ impl Model {
     /// the modes' `ESC [ ? 1049 h` as a blank alternate screen.
     fn feed(&mut self, bytes: &[u8]) -> bool {
         use std::panic::{AssertUnwindSafe, catch_unwind};
-        let (rows, cols) = self.parser.screen().size();
         let replaced = catch_unwind(AssertUnwindSafe(|| self.parser.process(bytes))).is_err();
         if replaced {
-            let old = self.parser.screen();
-            let mut kept = Vec::new();
-            if old.alternate_screen() {
-                kept.extend_from_slice(b"\x1b[?1049h");
-            }
-            kept.extend_from_slice(&old.input_mode_formatted());
-            if old.hide_cursor() {
-                kept.extend_from_slice(b"\x1b[?25l");
-            }
-            self.parser = vt100::Parser::new(rows, cols, self.keeps);
-            self.parser.process(&kept);
+            self.parser = parser_like(self.parser.screen(), self.keeps);
         }
         if self.asked > self.keeps {
             self.settle();
@@ -915,39 +962,10 @@ impl Model {
         replaced
     }
 
-    /// **A narrowing never splits a wide character** (item 57, measured):
-    /// vt100's resize cuts each row without clearing a wide character
-    /// that straddles the new last column, and the next erase or write
-    /// on that cell indexes past the row (`row.rs` `clear_wide`). A tmux
-    /// client redraws every row after a resize, so a CJK pane and a face
-    /// one column narrower panicked the model every time. The straddling
-    /// characters of the screen in view are erased first — they would be
-    /// cut anyway — and the cursor and attributes put back. The screen
-    /// out of view (the shell's under a full-screen program) cannot be
-    /// reached; [`Model::feed`] catches what that leaves.
+    /// Follows the pty's size without splitting a wide character
+    /// ([`resize_screen`], item 57).
     fn resize(&mut self, rows: u16, cols: u16) {
-        let screen = self.parser.screen();
-        let (r, c) = screen.size();
-        if (r, c) == (rows, cols) {
-            return;
-        }
-        if cols < c && cols > 0 {
-            let mut scrub = Vec::new();
-            for row in 0..r {
-                if screen.cell(row, cols - 1).is_some_and(vt100::Cell::is_wide) {
-                    scrub.extend_from_slice(format!("\x1b[{};{}H\x1b[X", row + 1, cols).as_bytes());
-                }
-            }
-            if !scrub.is_empty() {
-                let (cy, cx) = screen.cursor_position();
-                let mut bytes = b"\x1b[0m".to_vec();
-                bytes.extend_from_slice(&scrub);
-                bytes.extend_from_slice(format!("\x1b[{};{}H", cy + 1, cx + 1).as_bytes());
-                bytes.extend_from_slice(&screen.attributes_formatted());
-                let _ = self.feed(&bytes);
-            }
-        }
-        self.parser.screen_mut().set_size(rows, cols);
+        resize_screen(&mut self.parser, rows, cols);
     }
 
     /// **⌘K** ([`ClientOp::Forget`]), kept by the model as the ring keeps
