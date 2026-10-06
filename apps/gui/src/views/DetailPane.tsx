@@ -182,6 +182,11 @@ export function closeWarning(
   // person's tmux session is never ended by khor — only khor's terminal
   // on it goes. Both were asked the agent's sentence below.
   if (kind === "shell" && host.mux) return gui.close_warn_tmux;
+  // A tmux client the person typed in the shell (item 58): closing ends
+  // the shell and the client, and the session goes on.
+  if (kind === "shell" && host.hosted && host.doing?.running && programOf(host.doing.command ?? "") === "tmux") {
+    return gui.close_warn_shell_tmux;
+  }
   // A command the shell says is running is named, as Terminal.app names
   // what closing its window would end.
   if (kind === "shell" && host.hosted && host.doing?.running && host.doing.command) {
