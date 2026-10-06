@@ -85,6 +85,14 @@ pub struct Tab {
     /// it existed, which reads as 「longest ago」, the honest answer.
     #[serde(default)]
     pub touched: u64,
+    /// **The session it was opened from** (UX-37 §1): a URL a terminal
+    /// printed, or a page opened in that session's 附栏 — the id of the
+    /// session row. Empty where none is known (a tab opened on the
+    /// landing, any tab written before this existed), and such a tab is
+    /// in no session's slice. Never written while empty, so a file read
+    /// by an older build looks the same as before.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub session: String,
 }
 
 /// One kind's tabs, and which of them is in front.
@@ -302,6 +310,12 @@ fn mint() -> String {
 /// `device` and `url` may both be empty: that is the fresh tab the
 /// 「+」 mints, and it is a real state rather than a half-made row.
 pub fn open(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, String> {
+    open_from(root, kind, device, url, "")
+}
+
+/// [`open`], remembering the session it was opened from (`Tab::session`;
+/// empty = none known).
+pub fn open_from(root: &Path, kind: &str, device: &str, url: &str, session: &str) -> Result<String, String> {
     let limit = crate::config::tabs_limit(root);
     change(root, kind, |open| {
         let id = mint();
@@ -312,6 +326,7 @@ pub fn open(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, 
             title: String::new(),
             pinned: false,
             touched: now_ms(),
+            session: session.to_string(),
         });
         open.active = id.clone();
         if let Some(limit) = limit
@@ -354,6 +369,7 @@ pub fn adopt_pinned(root: &Path, kind: &str, device: &str, url: &str) -> Result<
             title: String::new(),
             pinned: true,
             touched: 0,
+            session: String::new(),
         });
         Ok(id)
     })
@@ -467,6 +483,8 @@ pub fn close(root: &Path, kind: &str, id: &str) -> Result<(), String> {
 ///
 /// **What is pinned is kept from the file, not taken from the caller**:
 /// a drag is not a pin, and [`pin`] is the one road that says either.
+/// The same for where a tab came from: a face that never heard of
+/// `session` sends rows without it, and a drag must not forget it.
 pub fn save_all(root: &Path, kind: &str, want: &Open) -> Result<(), String> {
     change(root, kind, |open| {
         let mut rows = Vec::with_capacity(want.tabs.len());
@@ -477,6 +495,7 @@ pub fn save_all(root: &Path, kind: &str, want: &Open) -> Result<(), String> {
             rows.push(Tab {
                 pinned: was.pinned,
                 touched: was.touched,
+                session: was.session.clone(),
                 ..t.clone()
             });
         }
@@ -690,6 +709,7 @@ mod tests {
             title: String::new(),
             pinned: false,
             touched: 0,
+            session: String::new(),
         });
         let said = save_all(&r.0, "page", &forged).unwrap_err();
         assert!(said.contains("mine"), "the refusal names the id: {said}");
@@ -952,5 +972,29 @@ mod tests {
             open(&r.0, "page", "m", &u.to_string()).unwrap();
         }
         assert_eq!(list(&r.0, "page").tabs.len(), 12);
+    }
+
+    /// **Where a tab came from survives a drag, and costs nothing where
+    /// it is unknown** (UX-37 §1). A face that predates `session` sends
+    /// rows without it through `save_all`, and the session must be kept
+    /// from the file; a tab with none writes no key, so the file an older
+    /// build reads is the file it always read.
+    #[test]
+    fn the_session_a_tab_came_from_is_kept() {
+        let r = root("session");
+        let here = open_from(&r.0, "page", "m", "https://a.example", "tui/one").unwrap();
+        let bare = open(&r.0, "page", "m", "https://b.example").unwrap();
+        let mut dragged = list(&r.0, "page");
+        for t in &mut dragged.tabs {
+            t.session = String::new();
+        }
+        dragged.tabs.reverse();
+        save_all(&r.0, "page", &dragged).unwrap();
+        let now = list(&r.0, "page");
+        let of = |id: &str| now.tabs.iter().find(|t| t.id == id).unwrap().session.clone();
+        assert_eq!(of(&here), "tui/one", "the drag kept where it came from");
+        assert_eq!(of(&bare), "", "control: a tab with no session has none");
+        let text = fs::read_to_string(path_for_tests(&r.0)).unwrap();
+        assert_eq!(text.matches("\"session\"").count(), 1, "only the tab with one writes the key: {text}");
     }
 }

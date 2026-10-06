@@ -103,6 +103,7 @@ pub fn answer(
             &arg("kind")?,
             &opt_str("device")?.unwrap_or_default(),
             &opt_str("url")?.unwrap_or_default(),
+            &opt_str("session")?.unwrap_or_default(),
         )?),
         "tabs_go" => to_json(&crate::tabs::go(
             root,
@@ -723,7 +724,7 @@ pub fn answer(
             num("limit")? as usize,
         )?),
         "recent_visit" => {
-            crate::recents::recent_visit(root, &arg("kind")?, &arg("machine")?, &arg("place")?)?;
+            crate::recents::recent_visit(root, &arg("kind")?, &arg("machine")?, &arg("place")?, opt_str("session")?.as_deref())?;
             Ok("null".to_owned())
         }
         "forget_recent" => {

@@ -36,6 +36,12 @@ pub struct TabRow {
     /// Put at the top by a person; sorts above every unpinned tab and
     /// cannot be closed until it is unpinned (`khor_node::tabs::pin`).
     pub pinned: bool,
+    /// The session it was opened from, empty where none is known
+    /// (`khor_node::tabs::Tab::session`, UX-37 §1). Optional on the way
+    /// in: a face that predates it sends rows without it, and the node
+    /// keeps the file's.
+    #[serde(default)]
+    pub session: String,
 }
 
 /// One kind's tabs and which is in front. `active` is empty only when
@@ -57,6 +63,7 @@ fn shape(open: tabs::Open) -> TabsOpen {
                 url: t.url,
                 title: t.title,
                 pinned: t.pinned,
+                session: t.session,
             })
             .collect(),
         active: open.active,
@@ -79,8 +86,8 @@ pub fn list(root: &Path, kind: &str) -> TabsOpen {
 
 /// Opens one and puts it in front; answers its id. Both arguments may
 /// be empty — that is the fresh tab the 「+」 mints.
-pub fn open(root: &Path, kind: &str, device: &str, url: &str) -> Result<String, String> {
-    tabs::open(root, kind, device, url)
+pub fn open(root: &Path, kind: &str, device: &str, url: &str, session: &str) -> Result<String, String> {
+    tabs::open_from(root, kind, device, url, session)
 }
 
 /// Points an open tab somewhere and names it. Refused by name for a tab
@@ -129,6 +136,7 @@ pub fn save_all(root: &Path, kind: &str, want: &TabsOpen) -> Result<TabsOpen, St
                 pinned: t.pinned,
                 // Kept from the file by `save_all`, like `pinned`.
                 touched: 0,
+                session: String::new(),
             })
             .collect(),
         active: want.active.clone(),

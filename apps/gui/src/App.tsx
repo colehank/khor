@@ -11,6 +11,7 @@ import {
   fetchSessions,
   notifyFinished,
   openTab,
+  recentVisit,
   syncNow,
   fetchWorkspaces,
   inApp,
@@ -73,7 +74,7 @@ import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui } from "@/gen/catalog";
 import { lasted } from "@/words";
-import { setSessionSide, useSessionSide } from "@/hooks/use-session-side";
+import { setSessionSide, useSessionSide, type SideSeat as PlaceSeat } from "@/hooks/use-session-side";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
@@ -103,6 +104,7 @@ import { cn } from "@/lib/utils";
 import { type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
+import { SeatHead } from "@/components/SeatHead";
 import { SIDE_ID, SessionSide } from "@/views/SessionSide";
 import { DayLine, DayPanel, DayToday } from "@/views/DayLine";
 import { SideRecent } from "@/views/SideRecent";
@@ -1686,7 +1688,10 @@ export default function App() {
           hint: side.open ? gui.side_hide : gui.side_show,
           expanded: side.open,
           controls: side.open ? SIDE_ID : undefined,
-          toggle: () => setSessionSide(id, { open: !side.open }),
+          toggle: () => {
+            if (!side.open) toSlices();
+            setSessionSide(id, { open: !side.open });
+          },
         };
         // **The session's day hangs under its pill** (UX-36): the line in
         // the pill's slot, and the day in full hanging from it — opened
@@ -1834,10 +1839,23 @@ export default function App() {
   const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) => {
     if (!selectedRow) return;
     setSideFiles({ session: selectedRow.id, machine, dir, start });
+    setSideWsAll(false);
     setSessionSide(selectedRow.id, { open: true, seat: "workspace" });
   };
+  /** **The session a thing was opened from** (UX-37 §1): the one in
+      front of the sessions landing — its terminal printed the path or
+      the URL, or its 附栏 opened it. Written into the record, which puts
+      the thing in that session's slice. */
+  const fromSession = () => (landing === "sessions" && selectedRow ? selectedRow.id : undefined);
+  /** A place opened from a session, remembered as its (`recentVisit`). */
+  const touched = (kind: "dir" | "file", machine: string, path: string) => {
+    const session = fromSession();
+    if (session && machine && path.startsWith("/")) recentVisit(kind, machine, path, session).catch(() => {});
+  };
   openDirRef.current = (machine, path) => {
-    if (inColumn()) return sideShow(machine || (devices.find((x) => x.me)?.name ?? ""), path, null);
+    const name = machine || (devices.find((x) => x.me)?.name ?? "");
+    touched("dir", name, path);
+    if (inColumn()) return sideShow(name, path, null);
     openDirMain(machine, path);
   };
   useEffect(() => {
@@ -1877,6 +1895,7 @@ export default function App() {
       });
   };
   openPathRef.current = (machine, path, dir, line) => {
+    touched(dir ? "dir" : "file", machine || (devices.find((x) => x.me)?.name ?? ""), path);
     if (inColumn()) {
       const name = machine || (devices.find((x) => x.me)?.name ?? "");
       if (dir) return sideShow(name, path, null);
@@ -1889,10 +1908,10 @@ export default function App() {
       browser with a session in front, else on the browser landing. */
   const openUrlMain = (machine: string, url: string, column: boolean) => {
     const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
-    void openTab("page", d?.id ?? "", url)
+    void openTab("page", d?.id ?? "", url, fromSession())
       .then(() => {
         if (column && selectedRow) {
-          setSideBrowse("detail");
+          setSideBrowse({ list: "here", page: true });
           setSessionSide(selectedRow.id, { open: true, seat: "browser" });
           return;
         }
@@ -2169,9 +2188,41 @@ export default function App() {
   }, [narrow, side.open, selectedRow?.id]);
   /** The column's own stacks (UX-30 §1: each seat its stack): the
       browser's and 额度's list ⇄ detail, 机器's machine and screen. */
-  const [sideBrowse, setSideBrowse] = useState<"list" | "detail">("detail");
+  // **Every seat lands on this session's slice, and ‹ goes to the
+  // whole** (UX-37 §1): 最近 and 浏览器 on what this session opened, 工作区
+  // on the shell's directory, 机器 on its machine, 额度 on its account.
+  // ⚠️ 墓碑 (UX-30 §1): each seat kept its own stack across visits; a
+  // seat pressed now starts on its slice again (`enterSeat`).
+  const [sideBrowse, setSideBrowse] = useState<{ list: "here" | "all"; page: boolean }>({ list: "here", page: false });
   const [sideQuota, setSideQuota] = useState<"list" | "detail">("list");
   const [sideMachine, setSideMachine] = useState<{ device: string | null; screen: "list" | "detail" }>({ device: null, screen: "detail" });
+  const [sideRecentAll, setSideRecentAll] = useState(false);
+  const [sideWsAll, setSideWsAll] = useState(false);
+  /** Bumped as a seat is entered: the seat's page mounts afresh, so a
+      page that lands by itself (额度's account) lands again. */
+  const [sideEntry, setSideEntry] = useState(0);
+  /** Every seat back on its slice — the pill's tap, a seat pressed. */
+  const toSlices = () => {
+    setSideBrowse({ list: "here", page: false });
+    setSideQuota("list");
+    setSideMachine({ device: null, screen: "detail" });
+    setSideRecentAll(false);
+    setSideWsAll(false);
+    setSideEntry((n) => n + 1);
+  };
+  /** A seat pressed: on its slice, the 工作区 at the shell's directory
+      now (the pill's own rule). */
+  const enterSeat = (seat: PlaceSeat) => {
+    if (!selectedRow) return;
+    toSlices();
+    if (seat === "workspace") {
+      const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]") as
+        | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
+        | null;
+      setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir: box?.__marks?.cwd() ?? selectedRow.place ?? null, start: null });
+    }
+    setSessionSide(selectedRow.id, { seat });
+  };
   /** **The terminal pill opens the session's 附栏 as a sheet** (UX-17 →
       UX-30 §6): the same seats, risen from the bottom. The
       sheet's lifetime is this state; the seat is the session's memory. */
@@ -2188,7 +2239,10 @@ export default function App() {
       workspace as the column's listing, a file as its file page. */
   const openRecent = (it: RecentItem) => {
     if (it.kind === "page") return openUrlMain(it.machine, it.url, true);
-    if (it.kind === "workspace") return sideShow(it.machine, it.path, null);
+    if (it.kind === "workspace") {
+      touched("dir", it.machine, it.path);
+      return sideShow(it.machine, it.path, null);
+    }
     sideShow(it.machine, it.path.slice(0, it.path.lastIndexOf("/")) || "/", { path: it.path, at: Date.now() });
   };
   /** …and a double-click (or 「在主区打开」) takes the same thing to the
@@ -2205,17 +2259,51 @@ export default function App() {
     const faceOf = (id: string) => devices.find((d) => d.id === id)?.face ?? null;
     switch (side.seat) {
       case "recent":
-        return <SideRecent items={recent} faceOf={faceOf} onOpen={openRecent} onOpenMain={openRecentMain} />;
+        return (
+          <SideRecent
+            items={recent}
+            slice={sideRecentAll ? null : selectedRow.id}
+            onAll={() => setSideRecentAll(true)}
+            faceOf={faceOf}
+            onOpen={openRecent}
+            onOpenMain={openRecentMain}
+          />
+        );
       case "workspace": {
+        // ‹ climbs the shell's directory to the root, then to every
+        // workspace; a workspace pressed there is the listing again.
+        if (sideWsAll) {
+          return (
+            <div data-side-workspaces className="flex min-h-0 flex-1 flex-col">
+              <SeatHead title={gui.workspaces_tab} />
+              <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
+                <WorkspacesList
+                  devices={devices}
+                  query=""
+                  words={[]}
+                  selected={null}
+                  treeOpen={false}
+                  onOpen={(w) => {
+                    touched("dir", w.machine || w.device, w.path);
+                    sideShow(w.machine || w.device, w.path, null);
+                  }}
+                />
+              </div>
+            </div>
+          );
+        }
         const f = sideFiles?.session === selectedRow.id ? sideFiles : { machine: selectedRow.home, dir: selectedRow.place ?? null, start: null };
         const here = devices.find((d) => d.name === f.machine)?.me ?? !selectedRow.source;
         return (
           <MachineFiles
-            key={`${f.machine} ${f.dir ?? ""}`}
+            key={`${sideEntry} ${f.machine} ${f.dir ?? ""}`}
             machine={f.machine}
             here={here}
             startDir={f.dir}
             start={f.start}
+            onTop={() => setSideWsAll(true)}
+            topLabel={gui.workspaces_tab}
+            onRead={(path) => touched("file", f.machine, path)}
             fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
           />
         );
@@ -2223,16 +2311,17 @@ export default function App() {
       case "browser":
         return (
           <BrowseLanding
-            key={browsing.kind.kind}
+            key={`${sideEntry} ${browsing.kind.kind}`}
             kind={browsing.kind}
             devices={devices}
             tabs={browsing.tabs}
             narrow
             pane={null}
             caption={stale ? gui.backend_unreachable : undefined}
-            screen={sideBrowse}
-            onOpen={() => setSideBrowse("detail")}
-            onBack={() => setSideBrowse("list")}
+            screen={sideBrowse.page ? "detail" : "list"}
+            onOpen={() => setSideBrowse((b) => ({ ...b, page: true }))}
+            onBack={() => setSideBrowse((b) => ({ ...b, page: false }))}
+            bare={{ here: sideBrowse.list === "here" ? selectedRow.id : null, onAll: () => setSideBrowse({ list: "all", page: false }) }}
           />
         );
       case "machine": {
@@ -2242,21 +2331,24 @@ export default function App() {
         const row = devices.find((d) => d.id === landed) ?? null;
         if (sideMachine.screen === "list" || row === null) {
           return (
-            <div data-side-machines className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-              <DevicesList
-                rows={devices}
-                sessions={rows}
-                loading={!devicesRead}
-                query=""
-                onPin={onPinDevice}
-                onForget={onForgetDevice}
-                forgetRefused={forgetRefused}
-                onPause={onPauseDevice}
-                pauseRefused={pauseRefused}
-                onOpen={(d) => setSideMachine({ device: d.id, screen: "detail" })}
-                selected={landed}
-                pinFailed={pinFailed}
-              />
+            <div data-side-machines className="flex min-h-0 flex-1 flex-col">
+              <SeatHead title={gui.devices_tab} />
+              <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
+                <DevicesList
+                  rows={devices}
+                  sessions={rows}
+                  loading={!devicesRead}
+                  query=""
+                  onPin={onPinDevice}
+                  onForget={onForgetDevice}
+                  forgetRefused={forgetRefused}
+                  onPause={onPauseDevice}
+                  pauseRefused={pauseRefused}
+                  onOpen={(d) => setSideMachine({ device: d.id, screen: "detail" })}
+                  selected={landed}
+                  pinFailed={pinFailed}
+                />
+              </div>
             </div>
           );
         }
@@ -2275,14 +2367,17 @@ export default function App() {
       case "quota":
         return (
           <QuotaLanding
+            key={sideEntry}
             narrow
             stale={stale}
             devices={devices}
             pane={null}
-            query={queries.quota}
-            onQuery={setQuery}
-            words={words.quota}
-            onToggleWord={toggleWord}
+            // The landing's search and ticks are the landing's: the seat
+            // shows every account, and lands on this session's.
+            query=""
+            onQuery={() => {}}
+            words={[]}
+            onToggleWord={() => {}}
             screen={sideQuota}
             onOpen={() => setSideQuota("detail")}
             onBack={() => setSideQuota("list")}
@@ -2299,7 +2394,7 @@ export default function App() {
         session={selectedRow.id}
         width={side.w}
         seat={side.seat}
-        onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
+        onSeat={enterSeat}
         onWidth={(w) => setSessionSide(selectedRow.id, { w })}
         onClose={() => setSessionSide(selectedRow.id, { open: false })}
       >
@@ -2654,6 +2749,7 @@ export default function App() {
               // The sheet's 工作区 seat stands where the shell is at the
               // tap (UX-17's rule, kept): pointed afresh each time.
               if (selectedRow) setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null });
+              toSlices();
               setPlaceSheet({ dir });
             }
           : undefined
@@ -2688,7 +2784,7 @@ export default function App() {
           open
           onOpenChange={(o) => !o && setPlaceSheet(null)}
           seat={side.seat}
-          onSeat={(seat) => setSessionSide(selectedRow.id, { seat })}
+          onSeat={enterSeat}
           today={sheetToday(selectedRow)}
           boxRef={setDetailBox}
         >

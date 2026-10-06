@@ -22,7 +22,7 @@
 //! opened through another's, so a placeless key would suggest going back
 //! somewhere nobody has been. The id and not the name, because a rename
 //! must not orphan the record. A device hex is fixed-width lowercase hex
-//! and a kind is one of two words with no colon in either, so the first
+//! and a kind is one of three words with no colon in any, so the first
 //! two colons split the key no matter what the place contains
 //! (`https://…`, a directory with a colon in its name).
 //!
@@ -41,6 +41,19 @@
 //! ([`crate::titles`] on why clearing writes a value rather than
 //! deleting a key). So forgetting writes `0`, and readers treat `0` and
 //! absent as one answer: not on the list.
+//!
+//! # Which session it was visited from rides beside it, in a second map
+//!
+//! UX-37 §1: the session's 附栏 lands on what *this session* touched —
+//! a file or a page opened from its terminal, or from its 附栏 while it
+//! was in front. That is `origins : Map<key, session id>` in the same
+//! document, written with the visit and LWW like it. **A second map and
+//! not a richer value** because the value is read by every build in the
+//! fleet as an `i64`: a map in its place would read as 「never visited」
+//! on all of them, and the list would empty network-wide. A build that
+//! has never heard of `origins` merges it and reads past it. A visit
+//! from nowhere in particular writes no origin and leaves the last one,
+//! so a place stays in the slice of the session that last went there.
 //!
 //! That is also why [`RecentDoc::visit`] is a plain LWW write and not a
 //! raise-only one like [`crate::seen::SeenDoc::mark`]. Raise-only would
@@ -68,6 +81,8 @@ pub fn recents_dir(home: &Path) -> PathBuf {
 }
 
 const RECENTS: &str = "recents";
+/// Key → the session the visit came from (the module's head).
+const ORIGINS: &str = "origins";
 
 /// What sort of place a visit was to.
 ///
@@ -81,6 +96,10 @@ pub enum Kind {
     Dir,
     /// A web page, through some machine's network (the browser landing).
     Page,
+    /// A file on some machine's disk, opened to be read (UX-37 §1: the
+    /// session's 附栏 lists what the session touched, and a deliverable
+    /// is a file). A build without this word skips its keys ([`split`]).
+    File,
 }
 
 impl Kind {
@@ -91,6 +110,7 @@ impl Kind {
         match self {
             Kind::Dir => "dir",
             Kind::Page => "page",
+            Kind::File => "file",
         }
     }
 
@@ -101,6 +121,7 @@ impl Kind {
         match word {
             "dir" => Some(Kind::Dir),
             "page" => Some(Kind::Page),
+            "file" => Some(Kind::File),
             _ => None,
         }
     }
@@ -165,6 +186,44 @@ impl RecentDoc {
             return Ok(());
         }
         self.write(key, at_ms)
+    }
+
+    /// [`Self::visit`], from a session (UX-37 §1): the origin is written
+    /// beside the instant. `None` writes no origin and keeps the last
+    /// one — a visit from the landing does not take a place out of the
+    /// slice of the session that went there before.
+    pub fn visit_from(&self, key: &str, at_ms: i64, session: Option<&str>) -> Result<(), String> {
+        let Some(session) = session.filter(|s| !s.is_empty()) else {
+            return self.visit(key, at_ms);
+        };
+        if at_ms <= 0 {
+            return Ok(());
+        }
+        let same = self.visited_at(key) == at_ms && self.origin_of(key).as_deref() == Some(session);
+        if same {
+            return Ok(());
+        }
+        let map = self.inner.get_map(RECENTS);
+        map.insert(key, at_ms).map_err(|e| e.to_string())?;
+        self.inner
+            .get_map(ORIGINS)
+            .insert(key, session)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// The session this place was last visited from, if one was said.
+    pub fn origin_of(&self, key: &str) -> Option<String> {
+        match self
+            .inner
+            .get_map(ORIGINS)
+            .get(key)
+            .and_then(|v| v.into_value().ok())
+        {
+            Some(LoroValue::String(s)) if !s.is_empty() => Some(s.to_string()),
+            _ => None,
+        }
     }
 
     /// "Stop suggesting this." Writes the tombstone, which travels; the
@@ -255,6 +314,31 @@ mod tests {
         );
         let k = key(Kind::Dir, "abc123", "/tmp/odd:name/dir");
         assert_eq!(split(&k), Some((Kind::Dir, "abc123", "/tmp/odd:name/dir")));
+    }
+
+    /// **A visit from a session carries it, and travels with it**
+    /// (UX-37 §1); a later visit from nowhere keeps it, a visit from
+    /// another session takes it over, and the instant reads exactly as
+    /// before — the value every build reads is still an `i64`.
+    #[test]
+    fn the_session_a_place_was_visited_from_rides_beside_it() {
+        let a = RecentDoc::new(1).unwrap();
+        let k = key(Kind::File, "abc123", "/home/x/out.md");
+        a.visit_from(&k, 100, Some("tui/one")).unwrap();
+        assert_eq!(a.visited_at(&k), 100);
+        assert_eq!(a.origin_of(&k).as_deref(), Some("tui/one"));
+        a.visit_from(&k, 200, None).unwrap();
+        assert_eq!(a.visited_at(&k), 200, "control: the visit moved");
+        assert_eq!(a.origin_of(&k).as_deref(), Some("tui/one"), "a visit from nowhere keeps the origin");
+        a.visit_from(&k, 300, Some("tui/two")).unwrap();
+        assert_eq!(a.origin_of(&k).as_deref(), Some("tui/two"));
+        let b = RecentDoc::new(2).unwrap();
+        b.merge(&a.snapshot().unwrap()).unwrap();
+        assert_eq!(b.visited_at(&k), 300);
+        assert_eq!(b.origin_of(&k).as_deref(), Some("tui/two"), "the origin travels with the visit");
+        let other = key(Kind::Page, "abc123", "https://example.com/");
+        b.visit(&other, 50).unwrap();
+        assert_eq!(b.origin_of(&other), None, "control: a plain visit says no session");
     }
 
     /// A kind word this version does not know is skipped, never guessed

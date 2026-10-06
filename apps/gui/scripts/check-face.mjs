@@ -30540,6 +30540,98 @@ try {
           }
         }
         if (grounds.quota?.head !== 0) fail(`bar p · the 额度 seat draws the landing's head (${grounds.quota?.head}) — the rows alone (UX-37 bug B)`);
+        // ── UX-37 §1: every seat lands on this session's slice, ‹ goes to
+        //    the whole, a seat pressed again lands on the slice. 最近's
+        //    slice is the records that say this session; the whole is
+        //    every row. 工作区's ‹ climbs to the root, then the
+        //    workspaces. ──
+        {
+          const me = terms[2].id;
+          const t0 = Date.now();
+          const recents = {
+            page: [
+              { device: "a".repeat(64), name: "gate", place: "https://mine.example/", at_ms: t0 - 60_000, session: me },
+              { device: "a".repeat(64), name: "gate", place: "https://other.example/", at_ms: t0 - 90_000, session: null },
+            ],
+            file: [
+              { device: "a".repeat(64), name: "gate", place: "/home/gate/work/out.md", at_ms: t0 - 30_000, session: me },
+              { device: "a".repeat(64), name: "gate", place: "/home/gate/else.md", at_ms: t0 - 40_000, session: "tui/someone-else" },
+            ],
+            dir: [],
+          };
+          await page.route("**/recents", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(recents[r.request().postDataJSON()?.kind] ?? []) }));
+          const rowsNow = () =>
+            page.evaluate(() => ({
+              slice: document.querySelector("[data-place-sheet] [data-recent-slice]")?.getAttribute("data-recent-slice") ?? null,
+              back: document.querySelectorAll("[data-place-sheet] [data-side-page] [data-seat-back]").length,
+              rows: [...document.querySelectorAll("[data-place-sheet] [data-recent-row]")].map((e) => e.getAttribute("data-recent-row")).sort(),
+            }));
+          await press('[data-place-sheet] [data-col-seat="recent"]');
+          await until(3_000, async () => (await rowsNow()).rows.length > 0);
+          const here = await rowsNow();
+          await press("[data-place-sheet] [data-side-page] [data-seat-back]");
+          await until(2_000, async () => (await rowsNow()).slice === "all");
+          const all = await rowsNow();
+          await press('[data-place-sheet] [data-col-seat="machine"]');
+          await wait(400);
+          await press('[data-place-sheet] [data-col-seat="recent"]');
+          await until(2_000, async () => (await rowsNow()).slice === "here");
+          const again = await rowsNow();
+          await page.unroute("**/recents");
+          console.log(`bar p · UX-37 §1 最近: slice ${shown(here)}; ‹ ${shown(all)}; re-entered ${shown(again)}`);
+          const want = [`file ${"a".repeat(64)} /home/gate/work/out.md`, `page ${"a".repeat(64)} https://mine.example/`];
+          if (here.slice !== "here" || here.back !== 1 || shown(here.rows) !== shown(want)) {
+            fail(`bar p · 最近 landed on ${shown(here)} — this session's records alone, under ‹ (UX-37 §1)`);
+          }
+          if (all.slice !== "all" || all.back !== 0 || all.rows.length < 4) fail(`bar p · ‹ from 最近's slice reads ${shown(all)} — every row, no ‹`);
+          if (again.slice !== "here") fail(`bar p · 最近 pressed again reads ${shown(again)} — a seat lands on its slice`);
+          // The other seats' ‹: browser to every tab, machine to the list,
+          // the workspace up to the root and then the workspaces.
+          const whole = {};
+          await press('[data-place-sheet] [data-col-seat="browser"]');
+          await wait(500);
+          whole.browser = [await page.evaluate(() => document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null)];
+          await press("[data-place-sheet] [data-side-page] [data-seat-back]");
+          await wait(400);
+          whole.browser.push(await page.evaluate(() => document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null));
+          await press('[data-place-sheet] [data-col-seat="machine"]');
+          await wait(500);
+          await press("[data-place-sheet] [data-side-page] [data-back]");
+          await wait(400);
+          whole.machine = await count("[data-place-sheet] [data-side-machines]");
+          await press('[data-place-sheet] [data-col-seat="workspace"]');
+          await wait(600);
+          let climbs = 0;
+          for (; climbs < 8 && !(await count("[data-place-sheet] [data-side-workspaces]")); climbs++) {
+            if (!(await press("[data-place-sheet] [data-up]"))) break;
+            await wait(400);
+          }
+          whole.workspace = { climbs, list: await count("[data-place-sheet] [data-side-workspaces]") };
+          console.log(`bar p · UX-37 §1 the wholes ${shown(whole)}`);
+          if (shown(whole.browser) !== shown(["here", "all"])) fail(`bar p · the browser seat read ${shown(whole.browser)} — this session's pages, ‹ every tab`);
+          if (whole.machine !== 1) fail("bar p · ‹ on the machine's card did not reach the machines (UX-37 §1)");
+          // /home/gate/work → /home/gate → /home → / → the workspaces.
+          if (whole.workspace.list !== 1 || whole.workspace.climbs !== 4) fail(`bar p · 工作区's ‹ read ${shown(whole.workspace)} — up to the root, then the workspaces (UX-37 §1)`);
+          // A file read in the 附栏 is written down as this session's:
+          // the record is what the slice is made of.
+          const visits = [];
+          await page.route("**/recent_visit", (r) => {
+            visits.push(r.request().postDataJSON() ?? {});
+            return r.fulfill({ contentType: "application/json", body: "null" });
+          });
+          await press('[data-place-sheet] [data-col-seat="workspace"]');
+          await wait(600);
+          const file = page.locator("[data-place-sheet] [data-files-list] button", { hasText: /\.[a-z]{2,4}$/ }).first();
+          const named = (await file.count()) ? ((await file.textContent()) ?? "").trim() : null;
+          if (named) await file.click();
+          await until(2_000, async () => visits.some((v) => v.kind === "file"));
+          await page.unroute("**/recent_visit");
+          const read = visits.find((v) => v.kind === "file") ?? null;
+          console.log(`bar p · UX-37 §1 a file read in the 附栏 (${named}) wrote ${shown(read)}`);
+          if (named === null) fail("probe dead: bar p · the 工作区 seat listed no file to read");
+          else if (read?.session !== me || !String(read?.place ?? "").endsWith(named)) fail(`bar p · reading ${named} in the 附栏 wrote ${shown(read)} — a visit from session ${me} (UX-37 §1)`);
+          if (await count("[data-place-sheet] [data-files-page]")) await press("[data-place-sheet] [data-files-page] [data-back]");
+        }
         await press('[data-place-sheet] [data-col-seat="workspace"]');
         await wait(600);
         const lsFirst = askedLs.map((a) => a.path);
@@ -30938,7 +31030,9 @@ try {
     });
     await page.route("**/term_leave", json(null));
     await page.route("**/term_key", json(null));
-    const recentsRoute = json(recents);
+    // The page records; a `file` or `dir` ask (UX-37 §1) has none here.
+    const recentsRoute = (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify((r.request().postDataJSON() ?? {}).kind === "page" ? recents : []) });
     await page.route("**/recents", recentsRoute);
     await page.route("**/day_strips", json(days));
     await page.route("**/page_icons", json({}));
@@ -31021,8 +31115,13 @@ try {
       await wait(600);
     }
 
-    // b. 最近: mixed, newest first
+    // b. 最近: mixed, newest first. The column lands on this session's
+    //    slice (UX-37 §1), which this fixture's records say nothing
+    //    about; ‹ is the whole, where they all are.
     {
+      const slice = await page.evaluate(() => document.querySelector("[data-session-side] [data-recent-slice]")?.getAttribute("data-recent-slice") ?? null);
+      if (slice !== "here") fail(`side b · the column's 最近 landed on ${slice} — this session's slice (UX-37 §1)`);
+      await press("[data-session-side] [data-side-page] [data-seat-back]");
       const rows = await until(5_000, async () => (await count("[data-session-side] [data-recent-row]")) >= 3);
       const list = await page.evaluate(() =>
         [...document.querySelectorAll("[data-session-side] [data-recent-row]")].map((e) => ({

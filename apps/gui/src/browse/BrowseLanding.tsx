@@ -70,6 +70,7 @@ import { BarSeat, SessionScreen } from "@/components/SessionBar";
 import { FOLD_AT, foldStep, inkOver, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { pageKind } from "@/components/SessionFace";
 import { ListPane } from "@/components/ListPane";
+import { SeatHead } from "@/components/SeatHead";
 import { PaneBar } from "@/components/PaneBar";
 import type { RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
@@ -152,7 +153,17 @@ export function BrowseLanding({
   screen = "list",
   onOpen,
   onBack,
+  bare,
 }: {
+  /**
+   * **Drawn inside the session's 附栏** (UX-37 §1, §6, narrow only): the
+   * list lands on the tabs opened from `here` (a session's id; `null` is
+   * every tab), under a seat head — ‹ to every tab from the slice — and
+   * a page wears no deck: ‹ · its host · the page. No landing head (＋,
+   * search) and no native deck: the session's deck stands down while the
+   * sheet is up, and the 附栏's seats row is at the page's foot.
+   */
+  bare?: { here: string | null; onAll: () => void };
   /** Narrow only: which of the pair is up — the tabs or the page — and
       the shell's two moves between them. */
   screen?: "list" | "detail";
@@ -541,7 +552,7 @@ export function BrowseLanding({
       and handed to the page, put away while the pill edits the address
       (the DOM deck is the deck then) or where there is no page. A press
       on it comes back as the DOM control it stands for. */
-  const native = nativeDeckHere && narrow && tabs.ready && somewhere && !editing;
+  const native = nativeDeckHere && narrow && tabs.ready && somewhere && !editing && !bare;
   const nativeTab = tabs.current.id;
   const nativeKey = `${folded}|${ink}|${pageLoading}|${failed?.reason ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}`;
   useEffect(() => {
@@ -651,7 +662,9 @@ export function BrowseLanding({
           onLanded={(place) => {
             // **The visit is recorded here, once, for every kind.** The
             // ledger is the node's (`khor_sync::recents`); fire and forget.
-            recentVisit(kind.kind, machine.name, place).catch(() => {});
+            // A tab opened from a session carries it into the record, so
+            // the page is in that session's 附栏 slice (UX-37 §1).
+            recentVisit(kind.kind, machine.name, place, tabs.current.session || undefined).catch(() => {});
           }}
         />
       </div>
@@ -757,6 +770,45 @@ export function BrowseLanding({
     had.current = false;
     if (narrow && screen === "detail") onBack?.();
   }, [count, tabs.empty, narrow, screen, onBack]);
+  if (narrow && bare) {
+    // ⚠️ 墓碑 (UX-30 → UX-37 §6): the 附栏's page was the browser
+    // landing's own screen, the session deck at its foot over the
+    // sheet's.
+    if (screen === "detail" && !tabs.empty) {
+      return (
+        <section data-browse-landing={kind.kind} data-browse-bare="page" className="flex h-full min-h-0 flex-col">
+          <SeatHead
+            title={pillHost(tabs.current.path) || tabLabel(kind, tabs.current.path, deviceOf(tabs.current.device))}
+            back={() => onBack?.()}
+            backLabel={bare.here === null ? gui.side_pages_all : gui.side_pages_here}
+          />
+          {/* The page's box stops at the seats row (`data-nav-clear`):
+              the native page is framed to it and must not cover them. */}
+          <div data-nav-clear className="min-h-0 flex-1 overflow-hidden">
+            {body}
+          </div>
+        </section>
+      );
+    }
+    const mine = bare.here === null ? null : new Set(tabs.tabs.filter((t) => t.session === bare.here).map((t) => t.id));
+    return (
+      <section data-browse-tabs data-browse-bare={bare.here === null ? "all" : "here"} className="flex h-full min-h-0 flex-col">
+        {bare.here === null ? (
+          <SeatHead title={gui.side_pages_all} />
+        ) : (
+          <SeatHead title={gui.side_pages_here} back={bare.onAll} backLabel={gui.side_pages_all} />
+        )}
+        <div data-tab-switcher data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
+          <SideList
+            rows={mine === null ? side : side.filter((r) => mine.has(r.id))}
+            label={groupLabel}
+            empty={<span data-page-none>{mine === null ? gui.page_none : gui.side_pages_here_none}</span>}
+            none={gui.no_matches}
+          />
+        </div>
+      </section>
+    );
+  }
   if (narrow) {
     return screen === "detail" && !tabs.empty ? (
       <SessionScreen

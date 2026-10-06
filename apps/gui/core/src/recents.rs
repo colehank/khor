@@ -26,6 +26,9 @@ pub struct RecentRow {
     /// ms; `number` on the TS side, for `SessionRow::at_ms`'s reason.
     #[ts(type = "number")]
     pub at_ms: i64,
+    /// The session it was last visited from, where one was said — the
+    /// 附栏's slice (UX-37 §1); `null` when none was.
+    pub session: Option<String>,
 }
 
 /// The kind word both skins spell on the way in.
@@ -54,14 +57,15 @@ pub fn recents(root: &Path, kind: &str, limit: usize) -> Result<Vec<RecentRow>, 
             device: p.machine,
             place: p.place,
             at_ms: p.at_ms,
+            session: p.session,
         })
         .collect())
 }
 
 /// Records a visit. Called when a tab actually lands somewhere, never
 /// when one is merely opened: the list is places a person has been.
-pub fn recent_visit(root: &Path, kind: &str, machine: &str, place: &str) -> Result<(), String> {
-    Node::open(root.to_path_buf())?.recent_visit(kind_of(kind)?, machine, place)
+pub fn recent_visit(root: &Path, kind: &str, machine: &str, place: &str, session: Option<&str>) -> Result<(), String> {
+    Node::open(root.to_path_buf())?.recent_visit_from(kind_of(kind)?, machine, place, session)
 }
 
 /// "Stop suggesting this." Travels like every other decision, and going
@@ -82,7 +86,8 @@ mod tests {
     fn only_a_known_kind_is_a_kind() {
         assert!(kind_of("dir").is_ok(), "control: dir is a kind");
         assert!(kind_of("page").is_ok(), "control: page is a kind");
-        for word in ["", "Dir", "dirs", "file", "url"] {
+        assert!(kind_of("file").is_ok(), "control: file is a kind (UX-37 §1)");
+        for word in ["", "Dir", "dirs", "files", "url"] {
             assert!(kind_of(word).is_err(), "must refuse: {word:?}");
         }
     }

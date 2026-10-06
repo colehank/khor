@@ -349,8 +349,8 @@ export const fetchTabs = (kind: string) => call<TabsOpen>("tabs_list", { kind })
     the fresh tab the 「+」 mints — a real state, not a half-made row.
     **The id is minted by the node**, because the terminal opens tabs
     too and two minters is two id shapes. */
-export const openTab = (kind: string, device: string, url: string) =>
-  call<string>("tabs_open", { kind, device, url });
+export const openTab = (kind: string, device: string, url: string, session?: string) =>
+  call<string>("tabs_open", { kind, device, url, ...(session ? { session } : {}) });
 /** Points an open tab somewhere and names it. Refused by name for a tab
     that is not there, rather than quietly adding one. */
 export const goTab = (kind: string, id: string, device: string, url: string, title: string) =>
@@ -1398,9 +1398,11 @@ export const reveal = (path: string) => call<null>("reveal", { path });
 export const fetchRecents = (kind: string, limit: number) =>
   call<RecentRow[]>("recents", { kind, limit });
 /** Records a landing. Called when a tab arrives somewhere, not when
-    one is opened — the list is places, not trips. */
-export const recentVisit = (kind: string, machine: string, place: string) =>
-  call<null>("recent_visit", { kind, machine, place });
+    one is opened — the list is places, not trips. `session`: the session
+    it was opened from, which puts it in that session's 附栏 slice
+    (UX-37 §1); kinds `dir`, `page` and `file`. */
+export const recentVisit = (kind: string, machine: string, place: string, session?: string) =>
+  call<null>("recent_visit", { kind, machine, place, ...(session ? { session } : {}) });
 /** "Stop suggesting this", for every device. Going back there puts it
     back on its own. */
 export const forgetRecent = (kind: string, machine: string, place: string) =>
