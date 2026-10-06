@@ -38,7 +38,8 @@ async fn the_pushed_beat_against_a_host() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(30);
     let opened = Instant::now();
-    term::term_open(&home, &row, 100, 30).expect("the row opens");
+    // 0: no history setting said (item 56), as an older face.
+    term::term_open(&home, &row, 100, 30, 0).expect("the row opens");
     let open_ms = opened.elapsed().as_millis();
 
     let mut since = 0u64;
