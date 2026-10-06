@@ -656,7 +656,9 @@ export function DeckBand({
           onClick={(e) => {
             if (e.detail === 0) onTitle();
           }}
-          className="text-left text-body"
+          // The finger's floor on the title (the 44 touch rule): the band
+          // row is 36 tall, so the button wears it and the row clips it.
+          className="flex min-h-touch items-center text-left text-body"
         >
           {f.label}
         </button>
