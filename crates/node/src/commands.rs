@@ -723,13 +723,6 @@ pub fn read_doing(dir: &Path) -> Option<Doing> {
         .map(|s| s.doing)
 }
 
-/// Which tmux pane a session's ledger is reading (`Saved::pane`), for a
-/// tmux client's row.
-pub fn read_pane(dir: &Path) -> Option<String> {
-    let bytes = std::fs::read(saved_path(dir)).ok()?;
-    serde_json::from_slice::<Saved>(&bytes).ok()?.pane
-}
-
 /// A session's ledger file, whole.
 pub fn read_saved(dir: &Path) -> Option<Saved> {
     let bytes = std::fs::read(saved_path(dir)).ok()?;
