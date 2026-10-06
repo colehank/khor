@@ -482,6 +482,27 @@ impl LiveKind {
         )
     }
 
+    /// The vendor's session running in this row's host **now**, as the
+    /// sweep's pid join reads it: unlike [`LiveKind::learn_vendor_leaf`]
+    /// it replaces a different leaf on record. A `/clear`, or any new
+    /// session in the same host, is the conversation on screen, and the
+    /// first leaf names a transcript nobody writes any more.
+    pub fn follow_vendor_leaf(&self, id: &SessionId, leaf: &str) -> Result<(), String> {
+        if leaf.is_empty() {
+            return Ok(());
+        }
+        let dir = self.existing_dir(id)?;
+        let mut meta = read_meta(&dir)?;
+        if meta.vendor_leaf.as_deref() == Some(leaf) {
+            return Ok(());
+        }
+        meta.vendor_leaf = Some(leaf.to_owned());
+        write_whole(
+            &dir.join("meta.json"),
+            &serde_json::to_vec(&meta).map_err(|e| e.to_string())?,
+        )
+    }
+
     /// Writes down where khor started this session. Write-once, like
     /// `learn_vendor_leaf`: it is a fact about the session's birth, and
     /// nothing later is a correction of it.
@@ -1206,6 +1227,7 @@ impl LiveKind {
         // `registered` was read before they were written.
         let mut learned: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
+        let mut joined: Vec<bool> = vec![false; registered.len()];
         // What each live hosted agent row's host holds, taken once: one
         // subtree walk per such row per poll, on the table the sweep took.
         let hosted_holds: Vec<(usize, Vec<u32>)> = registered
@@ -1229,7 +1251,9 @@ impl LiveKind {
             // the process descends from the row's host, so the row is
             // that session — it records the leaf once (the preview reads
             // the transcript through it) and wears the sighting instead
-            // of the sighting standing as a second row.
+            // of the sighting standing as a second row. A new session in
+            // the same host (`/clear`) is the one on screen: the leaf on
+            // record follows it.
             let by_id = out.iter().position(|r| r.id == found_id);
             let hosted = by_id.is_none().then(|| {
                 hosted_holds
@@ -1237,12 +1261,16 @@ impl LiveKind {
                     .find(|(_, holds)| holds.iter().any(|p| pids.contains(p)))
                     .map(|&(i, _)| i)
             });
+            let leaf = clean_leaf(&sighting.vendor_session_id);
             if let Some(Some(seat)) = hosted
-                && registered[seat].vendor_leaf.is_none()
+                // One session per host per poll, the first the sweep
+                // gives: a second claude under the same host must not
+                // have the leaf flip back and forth.
+                && !std::mem::replace(&mut joined[seat], true)
+                && registered[seat].vendor_leaf.as_deref() != Some(leaf.as_str())
             {
-                let leaf = clean_leaf(&sighting.vendor_session_id);
                 let row = &registered[seat].row;
-                let _ = self.learn_vendor_leaf(&row.id, &leaf);
+                let _ = self.follow_vendor_leaf(&row.id, &leaf);
                 if row.category.is_none() {
                     let _ = self.learn_category(&row.id, Some(category));
                 }
@@ -3823,6 +3851,49 @@ mod tests {
             Some("claude"),
             "and the vendor, where the row was unfiled"
         );
+    }
+
+    /// **The newest session in the host wins.** A `/clear` (or any new
+    /// claude session) in the same host gives the same pid a new
+    /// session id; a leaf recorded once and kept would have the row read
+    /// a transcript nobody writes any more. The pid join says the live
+    /// leaf every sweep, so the recorded one follows it.
+    #[test]
+    fn a_hosted_claude_row_follows_a_new_session_in_the_same_process() {
+        use crate::adaptor::{Discovery, Procs};
+
+        let root = tmp("hosted-follows-claude");
+        let sessions = root.join(".claude/sessions");
+        let proj = root.join(".claude/projects/-w-one");
+        fs::create_dir_all(&sessions).unwrap();
+        fs::create_dir_all(&proj).unwrap();
+        let status = fs::read_to_string(fixture_vendors().join(".claude/sessions/4001.json")).unwrap();
+        let first = "11111111-1111-4111-8111-111111111111";
+        let second = "22222222-2222-4222-8222-222222222222";
+        let third = "33333333-3333-4333-8333-333333333333";
+        for (uuid, said) in [(first, "The first."), (second, "The second."), (third, "The third.")] {
+            fs::write(
+                proj.join(format!("{uuid}.jsonl")),
+                format!(r#"{{"type":"assistant","message":{{"role":"assistant","content":[{{"type":"text","text":"{said}"}}]}}}}"#) + "\n",
+            )
+            .unwrap();
+        }
+        let host = FakeHost::up();
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
+            Discovery::at(&root).with_procs(Procs::of([proc_under(4001, "claude", host.pid())])),
+        ));
+        let id = sid("tui/khormint03");
+        k.register(&id, "tui", "claude", Some(host.pid()), Some("claude")).unwrap();
+        host.serve(&k.dir_of(&id).unwrap(), 4001);
+
+        for (uuid, said) in [(first, "The first."), (second, "The second."), (third, "The third.")] {
+            fs::write(sessions.join("4001.json"), status.replace(first, uuid)).unwrap();
+            let rows = k.rows(|_| 0);
+            let ids: Vec<&str> = rows.iter().map(|r| r.id.0.as_str()).collect();
+            assert_eq!(ids, vec![id.0.as_str()], "{said} one row, the hosted one");
+            assert_eq!(rows[0].last.as_deref(), Some(said), "the session running now");
+            assert_eq!(k.vendor_leaf_of(&id), Some(clean_leaf(uuid)), "{said} on record");
+        }
     }
 
     /// The same for codex (SESS-BRIEF 2b), which cannot be told a
