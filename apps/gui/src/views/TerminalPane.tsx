@@ -1481,6 +1481,9 @@ export function TerminalPane({
     const mount = mountRef.current;
     if (!box || !mount) return;
     const font = fontOf(box);
+    /** Opens an OSC 8 `file://` link; set once the session's machine
+        and the path opener are known (below). */
+    let fileLink = (_uri: string) => {};
     const term = new Terminal({
       // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
@@ -1489,9 +1492,18 @@ export function TerminalPane({
       // `window.open`, around `open_link`'s whitelist; OscLinkProvider.ts
       // 114). The same gesture as a plain URL (⌘-click, iTerm2's), and
       // the same road (`follow`).
+      //
+      // A `file://` link (`ls --hyperlink`, ripgrep's and gcc's
+      // hyperlinks, delta) is a path on the session's machine: it opens
+      // where a printed path opens (`lib/term-links`). xterm dropped
+      // every scheme but http(s) without `allowNonHttpProtocols`; any
+      // other scheme still opens nothing (the terminal audit, item 53).
       linkHandler: {
+        allowNonHttpProtocols: true,
         activate: (ev, uri) => {
-          if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
+          if (!(ev.metaKey || ev.ctrlKey)) return;
+          if (/^https?:/i.test(uri)) follow(uri, machine);
+          else if (/^file:/i.test(uri)) fileLink(uri);
         },
       },
       // **A secondary click does not select** (the terminal audit, item
@@ -1882,6 +1894,14 @@ export function TerminalPane({
     const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd();
     const openPath = (t: { path: string; dir: boolean; line: number | null }) =>
       askOpenPath(here, t.path, t.dir, t.line);
+    fileLink = (uri) => {
+      try {
+        const path = decodeURIComponent(new URL(uri).pathname);
+        if (path) openPath({ path, dir: path.endsWith("/"), line: null });
+      } catch {
+        /* not a URL: nothing to open */
+      }
+    };
     const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
     const tapped = (row: number, col: number) => {
       if (picture(row, col)) return true;
