@@ -1644,10 +1644,9 @@ impl LiveKind {
         // transcript last said. **The transcript outranks the hosted
         // screen line**, not the other way around: an agent TUI's last
         // non-empty screen line is its chrome ("⏵⏵ bypass permissions
-        // on…"), which is true of the screen and useless as a preview —
-        // the screen line stays only as the fallback for a row whose
-        // transcript nobody can find yet (no hook has spoken, no leaf
-        // matches). The leaf is the vendor's own where a hook recorded
+        // on…"), which is true of the screen and useless as a preview,
+        // so an agent row without a transcript says nothing rather than
+        // that (SESS-BRIEF 1d). The leaf is the vendor's own where a hook recorded
         // one (`Meta::vendor_leaf` — a khor-minted id names no vendor
         // file), else the id's leaf, which for discovered rows is the
         // vendor's id already. Cached by (path, mtime) inside
@@ -1660,6 +1659,15 @@ impl LiveKind {
             crate::adaptor::vendor_home(&self.root).join(".claude"),
         );
         for r in out.iter_mut() {
+            // **An agent row never says its screen's bottom line**
+            // (SESS-BRIEF 1d): that line is the program's chrome, not
+            // what was said. Until a transcript answers below — a
+            // session just opened, a vendor khor cannot read yet — the
+            // line is absent. A shell keeps its own line: it is what the
+            // shell runs or where it stands.
+            if r.kind.0 == khor_core::kind::TUI {
+                r.last = None;
+            }
             // **Claude's rows, and rows nobody filed.** The preview and
             // the title below are claude's answers and go only on rows
             // known to be claude's; but a `gui` row started without a
@@ -3404,8 +3412,8 @@ mod tests {
     /// "⏵⏵ bypass permissions on…" — true of the screen, useless as a
     /// preview. Three rows, one edge each:
     /// - a row whose id leaf finds a transcript: the transcript wins;
-    /// - a row with no transcript anywhere: the screen line is the
-    ///   honest fallback and stays;
+    /// - a row with no transcript anywhere: no line at all, since the
+    ///   screen's is chrome (SESS-BRIEF 1d);
     /// - a khor-minted row whose transcript is reachable only through
     ///   the recorded vendor leaf: the vendor leaf is the path.
     #[test]
@@ -3448,16 +3456,66 @@ mod tests {
         let rows = k.rows(|_| 0);
         let last = |id: &SessionId| rows.iter().find(|r| r.id == *id).unwrap().last.clone();
         assert_eq!(last(&hooked).as_deref(), Some("from the transcript"));
-        assert_eq!(
-            last(&bare).as_deref(),
-            Some("$ make test"),
-            "no transcript: the screen line is the honest fallback"
-        );
+        assert_eq!(last(&bare), None, "no transcript: no line, not the screen's");
         assert_eq!(
             last(&minted).as_deref(),
             Some("from the transcript"),
             "a khor-minted row reaches its transcript through the vendor leaf"
         );
+    }
+
+    /// A claude started from khor's own form (`claude --session-id`):
+    /// the row id's leaf is the transcript's, no hook ever ran, the host
+    /// is live and its screen line is Claude Code's bottom line. The
+    /// transcript holds the conversation first and the CLI's bookkeeping
+    /// after it — attachments, system notes, modes — and the answer is
+    /// still the conversation's newest sentence (SESS-BRIEF 1a).
+    #[test]
+    fn a_khor_started_claude_row_says_its_transcript_past_the_bookkeeping() {
+        for (tag, pad) in [("small", 200usize), ("large", 96 * 1024)] {
+            let root = tmp(&format!("preview-owner-{tag}"));
+            let proj = root.join(".claude/projects/-Users-someone");
+            fs::create_dir_all(&proj).unwrap();
+            let uuid = "20ccc275-8480-4c8e-ba73-0123456789ab";
+            let blob = "x".repeat(pad);
+            let lines = [
+                r#"{"type":"user","message":{"role":"user","content":"what is in this repo"},"sessionId":"S"}"#.to_owned(),
+                r#"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Three crates and an app."}]},"sessionId":"S"}"#.to_owned(),
+                format!(r#"{{"type":"attachment","attachment":{{"type":"skill_listing","content":"{blob}"}},"sessionId":"S"}}"#),
+                r#"{"type":"system","subtype":"turn_duration","durationMs":5123,"sessionId":"S"}"#.to_owned(),
+                r#"{"type":"last-prompt","lastPrompt":"what is in this repo","sessionId":"S"}"#.to_owned(),
+                r#"{"type":"mode","mode":"normal","sessionId":"S"}"#.to_owned(),
+                r#"{"type":"permission-mode","permissionMode":"auto","sessionId":"S"}"#.to_owned(),
+                r#"{"type":"atis-latch","sessionId":"S"}"#.to_owned(),
+            ];
+            fs::write(proj.join(format!("{uuid}.jsonl")), lines.join("\n") + "\n").unwrap();
+            let k = kind_at(&root);
+            let id = sid(&format!("tui/{}", clean_leaf(uuid)));
+            k.register(&id, "tui", "claude", None, Some("claude")).unwrap();
+            let dir = k.dir_of(&id).unwrap();
+            let me = std::process::id();
+            fs::write(
+                crate::host::host_file_path(&dir),
+                format!(r#"{{"port":1,"cookie":"c","host_pid":{me},"child_pid":{me}}}"#),
+            )
+            .unwrap();
+            fs::write(dir.join("last.txt"), "⏵⏵ auto mode on (shift+tab to cycle)").unwrap();
+            let rows = k.rows(|_| 0);
+            let row = rows.iter().find(|r| r.id == id).unwrap();
+            assert_eq!(
+                row.last.as_deref(),
+                Some("Three crates and an app."),
+                "{tag} bookkeeping after the answer"
+            );
+        }
+        // An agent khor cannot read the words of yet: no line, not its chrome.
+        let root = tmp("preview-unread-vendor");
+        let k = kind_at(&root);
+        let id = sid("tui/some-codex-session");
+        k.register(&id, "tui", "codex", None, Some("codex")).unwrap();
+        fs::write(k.dir_of(&id).unwrap().join("last.txt"), "› Ask Codex to do anything").unwrap();
+        let rows = k.rows(|_| 0);
+        assert_eq!(rows.iter().find(|r| r.id == id).unwrap().last, None);
     }
 
     /// The same rule against the **registry**: `khor run` started inside
