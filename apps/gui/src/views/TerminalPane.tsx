@@ -2356,10 +2356,19 @@ export function TerminalPane({
     // is an Enter a person did not press. Every paste comes through here:
     // the system's (⌘V, iOS's callout) and the key row's (`term.paste`).
     // xterm still brackets what goes when the program asked for that.
+    //
+    // **Under bracketed paste nothing asks** (item 55, Windows Terminal's
+    // rule): a program that turned on `?2004h` (zsh, fish, Claude Code,
+    // vim) takes the paste as one piece and runs nothing by itself, so a
+    // newline in it is not an Enter. Without it the question stays, and
+    // also comes for a single line that ends in a newline — that one runs
+    // the moment it lands.
     const pasteRaw = term.paste.bind(term);
     const guarded = (text: string) => {
-      const lines = text.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
-      if (lines.length < 2) return pasteRaw(text);
+      if (term.modes.bracketedPasteMode) return pasteRaw(text);
+      const unix = text.replace(/\r\n?/g, "\n");
+      const lines = unix.replace(/\n+$/, "").split("\n");
+      if (lines.length < 2 && !unix.endsWith("\n")) return pasteRaw(text);
       setAsking({
         text: gui.paste_ask(lines.length),
         detail: lines[0],
