@@ -29362,10 +29362,25 @@ try {
         await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
       };
       const upDrag = await sends(() => drag(-160));
+      const deckFolded = () => page.evaluate(() => document.querySelector("[data-session-screen]")?.hasAttribute("data-deck-folded") ?? null);
+      const foldedBefore = await deckFolded();
       const downDrag = await sends(() => drag(160));
+      await wait(300);
+      const foldedDown = await deckFolded();
       console.log(`bar g · a finger up the screen sent ${shown(upDrag.slice(0, 40))}…, down ${shown(downDrag.slice(0, 40))}…`);
       if (!upDrag.includes("\x1b[<65;")) fail(`bar g · a finger dragged up a program that took the mouse sent ${shown(upDrag)} — no wheel-down report (SGR 65)`);
       if (!downDrag.includes("\x1b[<64;")) fail(`bar g · a finger dragged down sent ${shown(downDrag)} — no wheel-up report (SGR 64)`);
+      if (downDrag.includes("\x1b[<65;")) fail(`bar g · a finger dragged down sent ${shown(downDrag)} — a wheel-down report (SGR 65) among them: the fold's resize mid-drag was handed on as a notch (item 50)`);
+      // **The finger folds, not the scroller** (item 50): over a program
+      // that holds the mouse the drag goes to it as wheel reports, and the
+      // deck still folds on a drag down and unfolds on a drag up.
+      const upAgain = await sends(() => drag(-160));
+      await wait(300);
+      const foldedUp = await deckFolded();
+      console.log(`bar g · the deck over a program holding the mouse: before ${foldedBefore}, after a drag down ${foldedDown}, after a drag up ${foldedUp} (reports up ${upAgain.includes("\x1b[<65;")})`);
+      if (foldedBefore !== false || foldedDown !== true || foldedUp !== false) {
+        fail(`bar g · over a program holding the mouse the deck read folded ${foldedBefore} → ${foldedDown} after 160 px down → ${foldedUp} after 160 px up — a drag down folds it and a drag up unfolds it (item 50)`);
+      }
       await program("\x1b[?1000l\x1b[?1006l\x1b[?1049l");
 
       // ── h. the keyboard switch, in 点击按钮 ──

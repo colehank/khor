@@ -1,4 +1,4 @@
-// The scroller gate (items 29, 30, 36 and 49): the terminal's history on the page's
+// The scroller gate (items 29, 30, 36, 49 and 50): the terminal's history on the page's
 // own scroller (`src/lib/term-scroller.ts`), driven in headless Chrome
 // against a real xterm, in the same DOM the pane builds.
 //
@@ -22,6 +22,10 @@
 //       however slow or paused, once; one inside the 10 px dead zone, more
 //       across than down, upward, held as a press first, from the bar, or
 //       with no keyboard up lowers nothing.
+//   50. **The finger folds the deck** (`swipeFolds`): 60 px down folds
+//       it once, 30 px up unfolds it, a turn is measured from the
+//       finger's furthest point; short, sideways, a press first, from the
+//       bar, or with the keyboard up tells nothing.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -40,8 +44,8 @@ const bundle = await build({
       import { Terminal } from "@xterm/xterm";
       import { FitAddon } from "@xterm/addon-fit";
       import * as scroller from "./src/lib/term-scroller.ts";
-      import { swipeLowers } from "./src/lib/term-swipe.ts";
-      window.lab = { Terminal, FitAddon, scroller, swipeLowers };
+      import { swipeFolds, swipeLowers } from "./src/lib/term-swipe.ts";
+      window.lab = { Terminal, FitAddon, scroller, swipeFolds, swipeLowers };
     `,
     resolveDir: gui,
     loader: "ts",
@@ -260,6 +264,56 @@ for (const k of ["dead", "across", "upward", "press", "down", "bar", "stopped"])
   if (swipe[k] !== 0) fail(`49 ${k}: lowered the keyboard ${swipe[k]} times, want 0`);
 }
 
+// ── 50 ──
+const fold = await page.evaluate(async () => {
+  const scroller = document.querySelector("#scroller");
+  let covered = false;
+  let told = [];
+  const stop = window.lab.swipeFolds(scroller, { covered: () => covered, tell: (f) => told.push(f) });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const touch = (type, x, y, target = scroller) => {
+    const t = new Touch({ identifier: 1, target, clientX: x, clientY: y });
+    const touches = type === "touchend" ? [] : [t];
+    target.dispatchEvent(new TouchEvent(type, { touches, changedTouches: [t], bubbles: true, cancelable: true }));
+  };
+  const drag = async (points, target) => {
+    touch("touchstart", points[0][0], points[0][1], target);
+    for (const [x, y, pause] of points.slice(1)) {
+      if (pause) await wait(pause);
+      touch("touchmove", x, y, target);
+    }
+    touch("touchend", points[points.length - 1][0], points[points.length - 1][1], target);
+  };
+  const out = {};
+  const said = async (name, points, target) => {
+    told = [];
+    await drag(points, target);
+    out[name] = told.join(",");
+  };
+  await said("down", [[200, 200], [200, 230], [200, 260], [200, 300]]);
+  await said("up", [[200, 400], [200, 385], [200, 370]]);
+  await said("short", [[200, 200], [200, 220], [200, 240]]);
+  await said("turn", [[200, 200], [200, 260], [200, 320], [200, 300], [200, 290]]);
+  await said("across", [[20, 200], [120, 260], [300, 300]]);
+  await said("press", [[200, 200], [200, 202, 500], [200, 300]]);
+  covered = true;
+  await said("keyboard", [[200, 200], [200, 300]]);
+  covered = false;
+  const bar = document.createElement("div");
+  bar.setAttribute("data-session-bar", "");
+  scroller.appendChild(bar);
+  await said("bar", [[200, 200], [200, 300]], bar);
+  bar.remove();
+  stop();
+  await said("stopped", [[200, 200], [200, 300]]);
+  return out;
+});
+console.log(`scroller gate: 50 fold: ${JSON.stringify(fold)}`);
+const foldWant = { down: "true", up: "false", short: "", turn: "true,false", across: "", press: "", keyboard: "", bar: "", stopped: "" };
+for (const [k, v] of Object.entries(foldWant)) {
+  if (fold[k] !== v) fail(`50 ${k}: the finger told the deck ${JSON.stringify(fold[k])}, want ${JSON.stringify(v)}`);
+}
+
 await browser.close();
 if (bad) process.exit(1);
-console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, and any swipe down lowers the keyboard");
+console.log("scroller gate: a resize keeps the bottom, output never moves the scroller under a finger, a program's wheel follows the travel, any swipe down lowers the keyboard, and the finger folds the deck");

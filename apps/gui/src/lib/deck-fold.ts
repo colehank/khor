@@ -50,6 +50,19 @@ const QUIET_MS = 250;
 /** Scrollers whose rest is their bottom: a terminal's, a conversation's. */
 export const RESTS_AT_BOTTOM = "[data-term-scroller], [data-chat-scroll], [data-machine-chat-scroll]";
 
+/** **The terminal's finger tells the deck** (item 50, the owner on tmux +
+    Claude Code: a drag down often did not fold). Over a program that
+    holds the mouse a finger's drag is the program's wheel and the
+    scroller's events cannot be read as reading away from rest, so the
+    pane measures the finger itself (`lib/term-swipe`'s `swipeFolds`) and
+    dispatches this from its scroller, bubbling: `detail` true folds,
+    false unfolds. `SessionBar` listens beside its scroll rule. */
+export const DECK_FOLD = "khor:deck-fold";
+
+export function tellDeck(from: Element, fold: boolean) {
+  from.dispatchEvent(new CustomEvent<boolean>(DECK_FOLD, { detail: fold, bubbles: true }));
+}
+
 /** Where the reader turned back toward rest, between steps. */
 export type FoldMemo = { turned: number | null };
 

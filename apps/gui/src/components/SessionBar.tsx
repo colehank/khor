@@ -75,7 +75,7 @@ import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
-import { foldStep, groundUnder, inkOver, RESTS_AT_BOTTOM, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
+import { DECK_FOLD, foldStep, groundUnder, inkOver, RESTS_AT_BOTTOM, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { TRIP_MS } from "@/lib/travel";
 import { footCovered } from "@/lib/viewport";
@@ -288,7 +288,20 @@ export function SessionScreen({
       }
     };
     el.addEventListener("scroll", on, { capture: true, passive: true });
-    return () => el.removeEventListener("scroll", on, { capture: true });
+    // **The terminal's finger folds it too** (item 50, `DECK_FOLD`): over
+    // a program holding the mouse the drag is the program's wheel and the
+    // scroll rule above reads nothing; the pane tells the deck instead.
+    const told = (e: Event) => {
+      if (footCovered()) return;
+      const fold = (e as CustomEvent<boolean>).detail;
+      if (!fold) hold.current.asked();
+      setOwn(fold);
+    };
+    el.addEventListener(DECK_FOLD, told);
+    return () => {
+      el.removeEventListener("scroll", on, { capture: true });
+      el.removeEventListener(DECK_FOLD, told);
+    };
   }, [active, asked]);
   useEffect(
     () =>

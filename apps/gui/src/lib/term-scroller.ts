@@ -197,8 +197,11 @@ export function scrollsNatively(
     }
     echo = null;
     if (wheeling() && row) {
-      // A resize moved it, not a finger: count from here.
-      if (!gesture() && shape() !== geom) {
+      // A resize moved it, not a finger: count from here. Under a
+      // finger too — the deck folding mid-drag (item 50) grows the box
+      // while the finger moves, and the engine's shift was handed to the
+      // program as a notch the other way.
+      if (shape() !== geom) {
         geom = shape();
         notched = top;
         return;

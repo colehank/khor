@@ -109,7 +109,7 @@ import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
 import { holdsTmuxHistory } from "@/lib/term-tmux-history";
 import { notesFirstTouch } from "@/lib/term-first-touch";
-import { swipeLowers } from "@/lib/term-swipe";
+import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
 import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
@@ -2481,6 +2481,10 @@ export function TerminalPane({
       up: keyPanelUp,
       lower: lowerKeyPanel,
     });
+    // **The finger folds the deck** (item 50): a program holding the
+    // mouse takes the drag as its wheel, and the scroller's events alone
+    // did not fold it.
+    const folds = swipeFolds(scrollerRef.current!);
     const native = scrollsNatively(term, scrollerRef.current!, roomRef.current!, mount, { yields: historyHas, wheel: fingers ? notch : undefined });
     // **A tmux row, or an agent inside a tmux pane** (item 33: the owner
     // opens Claude Code's own row, not the session's): both are khor's
@@ -2640,6 +2644,7 @@ export function TerminalPane({
       scrollerRef.current?.removeEventListener("touchstart", landedAt, true);
       swiped();
       swipedPanel();
+      folds();
       tmuxHistory?.stop();
       tmuxHistoryRef.current = null;
       firstTouch.stop();
