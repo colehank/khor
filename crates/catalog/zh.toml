@@ -1948,6 +1948,9 @@ store-belongs-to = "这个仓是 {0} 的，这台是 {1}。共用 home 的机器
 # what it is rather than "refused": the address is right there and the
 # face shows it, so the person decides.
 not-a-page = "这不是一个网页地址：{0}"
+page-port-taken = "本机的 {0} 端口已被占用"
+page-ask-ok = "好"
+page-ask-cancel = "取消"
 takeover-no-record = "没有它的对话记录，无法接管：{0}"
 # 接管 read backwards — a conversation moving into a terminal — when khor
 # has no way to spell that for this agent. **Not「没有它的对话记录」**,

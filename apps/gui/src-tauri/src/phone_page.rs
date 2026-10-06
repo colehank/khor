@@ -26,7 +26,8 @@
 //! What the face is told comes from polling the views (every 400 ms):
 //! where each page is once a load ends (`page:went`), its title
 //! (`page:title`) and whether it is loading (`page:load`) — the desktop's
-//! three events. A link that asks for a new window opens in place: a
+//! three events; the loading is also observed, so it is told the moment
+//! it changes (`load_heard`, UX-38 §2). A link that asks for a new window opens in place: a
 //! `WKUIDelegate` would be a class of khor's own, and the desktop's answer
 //! (a new tab) is the face's to mint; on the phone the page follows it.
 //!
@@ -53,6 +54,9 @@ struct Page {
     view: Retained<AnyObject>,
     /// The exit machine the view's data store is wired to (`""`: direct).
     exit: String,
+    /// Its borrow's proxy, for a loopback address the page goes to on its
+    /// own (`failed`).
+    proxy: Option<String>,
     /// Where the page last was, as asked or as it arrived.
     url: String,
     /// What the face was last told, so a poll reports changes only.
@@ -76,6 +80,8 @@ thread_local! {
     static WATCH: Retained<ScrollWatch> = unsafe { msg_send![ScrollWatch::class(), new] };
     /// Every page's navigation delegate (WebKit holds it weakly).
     static FAIL: Retained<PageFail> = unsafe { msg_send![PageFail::class(), new] };
+    /// Every page's UI delegate, for its alerts (also held weakly).
+    static ASK: Retained<PageAsk> = unsafe { msg_send![PageAsk::class(), new] };
 }
 
 /// The app, for the scroll observer, which is called by UIKit with
@@ -94,12 +100,23 @@ define_class!(
         #[unsafe(method(observeValueForKeyPath:ofObject:change:context:))]
         fn observe_value(
             &self,
-            _key: *mut AnyObject,
+            key: *mut AnyObject,
             object: *mut AnyObject,
             _change: *mut AnyObject,
             _context: *mut std::ffi::c_void,
         ) {
-            scrolled(object);
+            // SAFETY: KVO hands the key path as an NSString.
+            let loading = !key.is_null() && unsafe { (*(key as *const NSString)).to_string() } == "loading";
+            if loading {
+                // Heard on the beat after: a load begun from inside this
+                // module (`open`, `step`) fires while the pages are held.
+                let view = object as usize;
+                if let Some(app) = APP.get() {
+                    let _ = app.run_on_main_thread(move || load_heard(view));
+                }
+            } else {
+                scrolled(object);
+            }
         }
     }
 );
@@ -125,6 +142,116 @@ define_class!(
     }
 );
 
+define_class!(
+    // SAFETY: NSObject has no subclassing requirements, and this class
+    // has no ivars and no `Drop`.
+    #[unsafe(super(NSObject))]
+    #[name = "KhorPageAsk"]
+    struct PageAsk;
+
+    impl PageAsk {
+        // SAFETY: the signatures are WKUIDelegate's.
+        #[unsafe(method(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:))]
+        fn alert(&self, view: *mut AnyObject, message: *mut AnyObject, _frame: *mut AnyObject, done: &block2::Block<dyn Fn()>) {
+            let done = done.copy();
+            ask(view, message, None, false, move |_, _| done.call(()));
+        }
+
+        #[unsafe(method(webView:runJavaScriptConfirmPanelWithMessage:initiatedByFrame:completionHandler:))]
+        fn confirm(&self, view: *mut AnyObject, message: *mut AnyObject, _frame: *mut AnyObject, done: &block2::Block<dyn Fn(objc2::runtime::Bool)>) {
+            let done = done.copy();
+            ask(view, message, None, true, move |ok, _| done.call((objc2::runtime::Bool::new(ok),)));
+        }
+
+        #[unsafe(method(webView:runJavaScriptTextInputPanelWithPrompt:defaultText:initiatedByFrame:completionHandler:))]
+        fn prompt(&self, view: *mut AnyObject, prompt: *mut AnyObject, text: *mut AnyObject, _frame: *mut AnyObject, done: &block2::Block<dyn Fn(*mut AnyObject)>) {
+            let done = done.copy();
+            ask(view, prompt, Some(text), true, move |ok, said: Option<Retained<AnyObject>>| {
+                let said = if ok { said.as_deref().map_or(std::ptr::null_mut(), |s| s as *const AnyObject as *mut AnyObject) } else { std::ptr::null_mut() };
+                done.call((said,));
+            });
+        }
+    }
+);
+
+/// **A page's own alert, confirm and prompt are asked** (UX-38 audit:
+/// with no UI delegate WebKit answered them itself — an alert never
+/// showed, a confirm said false, a prompt null — and the page went on as
+/// if the person had refused). The system's alert, over the page, as
+/// Safari asks; the answer goes back exactly once, also when there is
+/// nothing to show it on.
+fn ask(
+    view: *mut AnyObject,
+    message: *mut AnyObject,
+    field: Option<*mut AnyObject>,
+    cancel: bool,
+    answer: impl FnOnce(bool, Option<Retained<AnyObject>>) + 'static,
+) {
+    let answer = std::rc::Rc::new(RefCell::new(Some(answer)));
+    // SAFETY: WebKit calls this on the main thread with a live view; every
+    // selector is documented UIKit.
+    unsafe {
+        let window: *mut AnyObject = msg_send![view, window];
+        let mut top: *mut AnyObject = if window.is_null() { std::ptr::null_mut() } else { msg_send![window, rootViewController] };
+        while !top.is_null() {
+            let next: *mut AnyObject = msg_send![top, presentedViewController];
+            if next.is_null() {
+                break;
+            }
+            top = next;
+        }
+        if top.is_null() {
+            if let Some(a) = answer.borrow_mut().take() {
+                a(false, None);
+            }
+            return;
+        }
+        // 1: UIAlertControllerStyleAlert.
+        let alert: Retained<AnyObject> = msg_send![class!(UIAlertController), alertControllerWithTitle: std::ptr::null::<AnyObject>(), message: message, preferredStyle: 1isize];
+        if let Some(text) = field {
+            let text = if text.is_null() { None } else { Some(Retained::retain(text).unwrap()) };
+            let fill = block2::RcBlock::new(move |f: *mut AnyObject| {
+                if let Some(t) = &text {
+                    let _: () = msg_send![f, setText: &**t];
+                }
+            });
+            let _: () = msg_send![&*alert, addTextFieldWithConfigurationHandler: &*fill];
+        }
+        let weak: *mut AnyObject = Retained::as_ptr(&alert) as *mut AnyObject;
+        let act = |title: String, style: isize, ok: bool| {
+            let answer = answer.clone();
+            let handler = block2::RcBlock::new(move |_a: *mut AnyObject| {
+                let said = if ok {
+                    let fields: *mut AnyObject = msg_send![weak, textFields];
+                    let first: *mut AnyObject = if fields.is_null() { std::ptr::null_mut() } else { msg_send![fields, firstObject] };
+                    if first.is_null() {
+                        None
+                    } else {
+                        let t: Option<Retained<AnyObject>> = msg_send![first, text];
+                        t
+                    }
+                } else {
+                    None
+                };
+                if let Some(a) = answer.borrow_mut().take() {
+                    a(ok, said);
+                }
+            });
+            let title = NSString::from_str(&title);
+            let action: Retained<AnyObject> = msg_send![class!(UIAlertAction), actionWithTitle: &*title, style: style, handler: &*handler];
+            action
+        };
+        if cancel {
+            // 1: UIAlertActionStyleCancel.
+            let no = act(khor_catalog::msg::page_ask_cancel().into(), 1, false);
+            let _: () = msg_send![&*alert, addAction: &*no];
+        }
+        let yes = act(khor_catalog::msg::page_ask_ok().into(), 0, true);
+        let _: () = msg_send![&*alert, addAction: &*yes];
+        let _: () = msg_send![top, presentViewController: &*alert, animated: true, completion: std::ptr::null::<AnyObject>()];
+    }
+}
+
 /// **A load that failed says why** (UX-22): `page:fail` with the error
 /// (`page_fail::word`), and the light out at once rather than at the next
 /// poll.
@@ -132,15 +259,70 @@ fn failed(view: *mut AnyObject, error: *mut AnyObject) {
     let Some(app) = APP.get() else { return };
     // SAFETY: WebKit hands a live NSError.
     let Some(text) = (unsafe { crate::page_fail::word(error) }) else { return };
-    let tab = PAGES.with(|pages| {
+    let found = PAGES.with(|pages| {
         let mut pages = pages.try_borrow_mut().ok()?;
         let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as *mut AnyObject == view)?;
         page.loading = false;
-        Some(tab.clone())
+        Some((tab.clone(), page.proxy.clone()))
     });
-    let Some(tab) = tab else { return };
+    let Some((tab, proxy)) = found else { return };
+    let mut parts = text.splitn(4, '|');
+    let (code, domain, _, url) = (parts.next(), parts.next(), parts.next(), parts.next().unwrap_or_default().to_owned());
+    // **A loopback address the page went to on its own** (a link, a
+    // redirect; UX-38 §1): refused because it went to the phone's own
+    // port. Piped to the machine's, then asked again, once per port.
+    if let (Some(proxy), Some((host, port))) = (&proxy, khor_gui_core::web::loopback_of(&url)) {
+        if domain == Some("NSURLErrorDomain") && code == Some("-1004") && !khor_gui_core::web::loopback_held(port) {
+            let (proxy, app, tab) = (proxy.clone(), app.clone(), tab.clone());
+            tauri::async_runtime::spawn(async move {
+                if khor_gui_core::web::hold_loopback(&host, port, &proxy).await.is_err() {
+                    return;
+                }
+                let _ = app.run_on_main_thread(move || {
+                    if let Some(page) = PAGES.with(|p| p.borrow().get(&tab).map(|p| p.view.clone())) {
+                        // SAFETY: main thread, a live view.
+                        unsafe { load(&page, &url) };
+                    }
+                });
+            });
+            return;
+        }
+    }
+    // A CONNECT the machine could not carry through: WebKit asks eight
+    // times and then says the connection was lost (measured: -1005 on
+    // every status a proxy answers), which is the route's failure, not
+    // the site's.
+    let text = if proxy.is_some() && domain == Some("NSURLErrorDomain") && code == Some("-1005") && khor_gui_core::web::loopback_of(&url).is_none() {
+        format!("route|khor||{url}")
+    } else {
+        text
+    };
     let _ = app.emit_to("main", "page:load", PageWord { tab: tab.clone(), text: "finished".into() });
     let _ = app.emit_to("main", "page:fail", PageWord { tab, text });
+}
+
+/// **Whether the page is loading, as WebKit says it** (UX-38 §2): the
+/// view's `loading` observed, so a load is `started` and `finished` the
+/// moment it is — the deck's line runs exactly as long. ⚠️ 墓碑: only the
+/// 400 ms poll told it, so a load quicker than a beat said nothing and a
+/// new page's first load never said `started`; the face lit the line from
+/// its own errand instead, and coming back to a tab ran it for the whole
+/// ceiling with nothing loading (measured on the simulator: 30 s).
+fn load_heard(view: usize) {
+    let Some(app) = APP.get() else { return };
+    let word = PAGES.with(|pages| {
+        let mut pages = pages.try_borrow_mut().ok()?;
+        let (tab, page) = pages.iter_mut().find(|(_, p)| Retained::as_ptr(&p.view) as usize == view)?;
+        let loading: bool = unsafe { msg_send![&*page.view, isLoading] };
+        if loading == page.loading {
+            return None;
+        }
+        page.loading = loading;
+        Some(PageWord { tab: tab.clone(), text: if loading { "started" } else { "finished" }.into() })
+    });
+    if let Some(w) = word {
+        let _ = app.emit_to("main", "page:load", w);
+    }
 }
 
 /// **Where the page is scrolled, as it moves** (round UX-4, the deck's
@@ -158,7 +340,19 @@ fn scrolled(view: *mut AnyObject) {
             if Retained::as_ptr(&page.scroll) as *mut AnyObject != view {
                 continue;
             }
+            // **Only a scroll somebody made** (UX-38 audit): the page's
+            // inset set under the deck moves the offset too, and a fresh
+            // page arrived with its deck folded (seen on the simulator).
+            let moved: bool = unsafe {
+                let t: bool = msg_send![&*page.scroll, isTracking];
+                let d: bool = msg_send![&*page.scroll, isDecelerating];
+                t || d
+            };
             let at: NSPoint = unsafe { msg_send![&*page.scroll, contentOffset] };
+            if !moved {
+                page.told_y = at.y;
+                return;
+            }
             let dy = at.y - page.told_y;
             if dy.abs() < 1.0 {
                 return;
@@ -345,28 +539,36 @@ pub fn open(
         FAIL.with(|f| {
             let _: () = msg_send![&*view, setNavigationDelegate: &**f];
         });
+        ASK.with(|a| {
+            let _: () = msg_send![&*view, setUIDelegate: &**a];
+        });
         // Attached hidden when the face stopped wanting it during the
         // dial (`page_wanted`); `show_page` brings it back.
         let _: () = msg_send![&*view, setHidden: !crate::page_is_wanted(tab)];
         let parent: *mut AnyObject = msg_send![face, superview];
         let _: () = msg_send![parent, addSubview: &*view];
-        load(&view, url);
         let scroll: Retained<AnyObject> = msg_send![&*view, scrollView];
         WATCH.with(|w| {
             let key = NSString::from_str("contentOffset");
             // 1: NSKeyValueObservingOptionNew.
             let _: () = msg_send![&*scroll, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
+            let key = NSString::from_str("loading");
+            let _: () = msg_send![&*view, addObserver: &**w, forKeyPath: &*key, options: 1usize, context: std::ptr::null_mut::<std::ffi::c_void>()];
         });
+        load(&view, url);
         PAGES.with(|pages| {
             pages.borrow_mut().insert(
                 tab.to_owned(),
                 Page {
                     view,
                     exit: exit.to_owned(),
+                    proxy: wiring.proxy.clone(),
                     url: url.to_owned(),
                     told_url: url.to_owned(),
                     told_title: String::new(),
-                    loading: true,
+                    // Not yet: the load just begun is heard as `started`
+                    // (`load_heard`, after this insert).
+                    loading: false,
                     told_steps: None,
                     scroll,
                     told_y: 0.0,
@@ -401,12 +603,14 @@ pub fn hide(tab: &str, hidden: bool) {
     deck_follows(tab);
 }
 
-/// Stops watching a page's scroll view, before the page goes.
+/// Stops watching a page's scroll view and its loading, before the page goes.
 fn unwatch(page: &Page) {
     WATCH.with(|w| {
         let key = NSString::from_str("contentOffset");
+        let load = NSString::from_str("loading");
         unsafe {
             let _: () = msg_send![&*page.scroll, removeObserver: &**w, forKeyPath: &*key];
+            let _: () = msg_send![&*page.view, removeObserver: &**w, forKeyPath: &*load];
         }
     });
 }
@@ -639,6 +843,29 @@ pub struct DeckProgress {
     ease: [f32; 4],
 }
 
+/// One stop of the rim's gradient: a colour at a share of the line.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckStop {
+    color: String,
+    at: f64,
+}
+
+/// `--glass-rim`: a one-point ring of a linear gradient at a CSS angle.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckRim {
+    angle: f64,
+    stops: Vec<DeckStop>,
+}
+
+/// `--glass-shadow`'s widest layer.
+#[derive(Debug, serde::Deserialize)]
+pub struct DeckShadow {
+    y: f64,
+    blur: f64,
+    spread: f64,
+    color: String,
+}
+
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeckDrawing {
@@ -647,7 +874,9 @@ pub struct DeckDrawing {
     dark: bool,
     tint: String,
     sel_tint: String,
-    rim: String,
+    rim: DeckRim,
+    #[serde(default)]
+    shadow: Option<DeckShadow>,
     glass: Vec<DeckGlass>,
     images: Vec<DeckImage>,
     labels: Vec<DeckLabel>,
@@ -804,24 +1033,33 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         let _: () = msg_send![&*view, setOverrideUserInterfaceStyle: if dr.dark { 2isize } else { 1isize }];
         let hidden: bool = msg_send![&*page, isHidden];
         let _: () = msg_send![&*view, setHidden: hidden];
-        // 6: UIBlurEffectStyleSystemUltraThinMaterial — the DOM glass's
-        // blur and saturation; the tint over it is `--glass`.
+        // **The DOM glass, drawn natively** (UX-38 §5, the owner: the two
+        // decks did not read as one). The DOM's is a thin grey tint over
+        // the ground blurred and saturated (`--glass`, `--glass-blur`), a
+        // one-pixel rim of a gradient (`--glass-rim`) and a soft drop
+        // shadow (`--glass-shadow`). UIKit's ultra-thin material carries
+        // the same blur and saturation but lays a white (dark: black) veil
+        // over them — measured side by side over the same bands at 3×:
+        // the red under the pill read pink natively, red in the DOM — so
+        // its veil is taken off and the token's tint is laid on instead.
+        // ⚠️ 墓碑: the material as it comes, and a flat 50% white border.
         let blur: Retained<AnyObject> = msg_send![class!(UIBlurEffect), effectWithStyle: 6isize];
         for g in &dr.glass {
+            if let Some(sh) = &dr.shadow {
+                view_shadow(&view, g, sh);
+            }
             let a: Allocated<AnyObject> = msg_send![class!(UIVisualEffectView), alloc];
             let fx: Retained<AnyObject> = msg_send![a, initWithEffect: &*blur];
             let _: () = msg_send![&*fx, setFrame: rect(g.x, g.y, g.w, g.h)];
             let _: () = msg_send![&*fx, setClipsToBounds: true];
             let layer: *mut AnyObject = msg_send![&*fx, layer];
             let _: () = msg_send![layer, setCornerRadius: g.r];
-            let _: () = msg_send![layer, setBorderWidth: 1.0f64];
-            let rim = color(&dr.rim);
-            let cg: *mut std::ffi::c_void = msg_send![&*rim, CGColor];
-            let _: () = msg_send![layer, setBorderColor: cg];
             let content: *mut AnyObject = msg_send![&*fx, contentView];
             let tint = color(if g.sel { &dr.sel_tint } else { &dr.tint });
             let _: () = msg_send![content, setBackgroundColor: &*tint];
             let _: () = msg_send![&*view, addSubview: &*fx];
+            let content_layer: *mut AnyObject = msg_send![content, layer];
+            rim_on(content_layer, g, &dr.rim);
         }
         let scale: f64 = {
             let screen: *mut AnyObject = msg_send![class!(UIScreen), mainScreen];
@@ -895,11 +1133,125 @@ pub fn deck(tab: &str, drawing: Option<DeckDrawing>) {
         if !parent.is_null() {
             let _: () = msg_send![parent, addSubview: &*view];
         }
+        // The material builds its layers once it is in a window: its veil
+        // is taken off after that (measured: taken before, it stayed).
+        let _: () = msg_send![&*view, layoutIfNeeded];
+        let subs: Retained<AnyObject> = msg_send![&*view, subviews];
+        let n: usize = msg_send![&*subs, count];
+        for i in 0..n {
+            let sub: *mut AnyObject = msg_send![&*subs, objectAtIndex: i];
+            let fx: bool = msg_send![sub, isKindOfClass: class!(UIVisualEffectView)];
+            if fx {
+                unveil(&*sub);
+            }
+        }
         DECKS.with(|d| {
             d.borrow_mut().insert(tab.to_owned(), Deck { view, h: dr.h, pill });
         });
     }
     inset(tab, dr.inset);
+}
+
+/// A rounded rectangle as a `CGPath` (UIKit's, autoreleased with it).
+unsafe fn rounded(x: f64, y: f64, w: f64, h: f64, r: f64) -> *mut std::ffi::c_void {
+    unsafe {
+        let p: *mut AnyObject = msg_send![class!(UIBezierPath), bezierPathWithRoundedRect: rect(x, y, w, h), cornerRadius: r];
+        msg_send![p, CGPath]
+    }
+}
+
+/// Takes the material's own veil off a glass: the effect view's overlay
+/// subviews (`_UIVisualEffectSubview`) hidden, its backdrop — the blur and
+/// the saturation — kept. A future UIKit without them is left as it is.
+/// ⚠️ Unmeasured: build 2 hid them before the deck was in a window and
+/// the veil stayed (the pill over red read 213,124,123, the DOM 236,32,31).
+unsafe fn unveil(fx: &AnyObject) {
+    unsafe {
+        let subs: Retained<AnyObject> = msg_send![fx, subviews];
+        let n: usize = msg_send![&*subs, count];
+        for i in 0..n {
+            let sub: *mut AnyObject = msg_send![&*subs, objectAtIndex: i];
+            let name = std::ffi::CStr::from_ptr(objc2::ffi::class_getName(objc2::ffi::object_getClass(sub)));
+            if name.to_bytes().windows(19).any(|w| w == b"VisualEffectSubview") {
+                let _: () = msg_send![sub, setHidden: true];
+            }
+        }
+    }
+}
+
+/// The rim: `--glass-rim`'s gradient on a one-point ring inside the glass,
+/// along the CSS angle over the glass's own box.
+unsafe fn rim_on(layer: *mut AnyObject, g: &DeckGlass, rim: &DeckRim) {
+    if rim.stops.is_empty() {
+        return;
+    }
+    unsafe {
+        let grad: Retained<AnyObject> = msg_send![class!(CAGradientLayer), layer];
+        let _: () = msg_send![&*grad, setFrame: rect(0.0, 0.0, g.w, g.h)];
+        let colors: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
+        let at: Retained<AnyObject> = msg_send![class!(NSMutableArray), array];
+        for st in &rim.stops {
+            let c = color(&st.color);
+            let cg: *mut AnyObject = msg_send![&*c, CGColor];
+            let _: () = msg_send![&*colors, addObject: cg];
+            let n: Retained<AnyObject> = msg_send![class!(NSNumber), numberWithDouble: st.at];
+            let _: () = msg_send![&*at, addObject: &*n];
+        }
+        let _: () = msg_send![&*grad, setColors: &*colors];
+        let _: () = msg_send![&*grad, setLocations: &*at];
+        // CSS: 0deg points up, 90deg right; the line is as long as the box
+        // is across that way.
+        let a = rim.angle.to_radians();
+        let (dx, dy) = (a.sin(), -a.cos());
+        let len = (g.w * dx).abs() + (g.h * dy).abs();
+        let p = |k: f64| NSPoint::new((g.w / 2.0 + k * dx * len / 2.0) / g.w.max(1.0), (g.h / 2.0 + k * dy * len / 2.0) / g.h.max(1.0));
+        let _: () = msg_send![&*grad, setStartPoint: p(-1.0)];
+        let _: () = msg_send![&*grad, setEndPoint: p(1.0)];
+        let ring: Retained<AnyObject> = msg_send![class!(CAShapeLayer), layer];
+        let _: () = msg_send![&*ring, setPath: rounded(0.5, 0.5, g.w - 1.0, g.h - 1.0, (g.r - 0.5).max(0.0))];
+        let _: () = msg_send![&*ring, setLineWidth: 1.0f64];
+        let ink: *mut AnyObject = msg_send![class!(UIColor), blackColor];
+        let cg: *mut std::ffi::c_void = msg_send![ink, CGColor];
+        let _: () = msg_send![&*ring, setStrokeColor: cg];
+        let _: () = msg_send![&*ring, setFillColor: std::ptr::null_mut::<std::ffi::c_void>()];
+        let _: () = msg_send![&*grad, setMask: &*ring];
+        let _: () = msg_send![layer, addSublayer: &*grad];
+    }
+}
+
+/// The glass's drop shadow, outside it only, as CSS draws a box's: a
+/// shadow of the shape, cut by the shape (the glass is see-through).
+unsafe fn view_shadow(deck: &AnyObject, g: &DeckGlass, sh: &DeckShadow) {
+    unsafe {
+        let pad = sh.blur + sh.y.abs() + sh.spread.abs();
+        let a: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
+        let v: Retained<AnyObject> = msg_send![a, initWithFrame: rect(g.x - pad, g.y - pad, g.w + 2.0 * pad, g.h + 2.0 * pad)];
+        let _: () = msg_send![&*v, setUserInteractionEnabled: false];
+        let shape: Retained<AnyObject> = msg_send![class!(CALayer), layer];
+        let _: () = msg_send![&*shape, setFrame: rect(0.0, 0.0, g.w + 2.0 * pad, g.h + 2.0 * pad)];
+        let s = sh.spread;
+        let _: () = msg_send![&*shape, setShadowPath: rounded(pad - s, pad - s, g.w + 2.0 * s, g.h + 2.0 * s, (g.r + s).max(0.0))];
+        let c = color(&sh.color);
+        let cg: *mut std::ffi::c_void = msg_send![&*c, CGColor];
+        let _: () = msg_send![&*shape, setShadowColor: cg];
+        let _: () = msg_send![&*shape, setShadowOpacity: 1.0f32];
+        // CSS blur is twice UIKit's radius.
+        let _: () = msg_send![&*shape, setShadowRadius: sh.blur / 2.0];
+        let _: () = msg_send![&*shape, setShadowOffset: NSSize::new(0.0, sh.y)];
+        // Cut out the glass itself: everything but the shape shows.
+        let cut: Retained<AnyObject> = msg_send![class!(CAShapeLayer), layer];
+        let outer: *mut AnyObject = msg_send![class!(UIBezierPath), bezierPathWithRect: rect(0.0, 0.0, g.w + 2.0 * pad, g.h + 2.0 * pad)];
+        let inner: *mut AnyObject = msg_send![class!(UIBezierPath), bezierPathWithRoundedRect: rect(pad, pad, g.w, g.h), cornerRadius: g.r];
+        let _: () = msg_send![outer, appendPath: inner];
+        let path: *mut std::ffi::c_void = msg_send![outer, CGPath];
+        let _: () = msg_send![&*cut, setPath: path];
+        let even = NSString::from_str("even-odd");
+        let _: () = msg_send![&*cut, setFillRule: &*even];
+        let vl: *mut AnyObject = msg_send![&*v, layer];
+        let _: () = msg_send![vl, addSublayer: &*shape];
+        let _: () = msg_send![vl, setMask: &*cut];
+        let _: () = msg_send![deck, addSubview: &*v];
+    }
 }
 
 /// **The progress line under the pill** (UX-35 §2; UX-33 §2 in the DOM):

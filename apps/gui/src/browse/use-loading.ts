@@ -18,10 +18,11 @@
 //     out when khor's errand to that site comes back, which is the
 //     closest true statement available there.
 //
-// **In the app the errands do not put it out**, only the page does:
+// **In the app an errand does not put out a load the page took up**:
 // `open_page` resolves as soon as the webview exists, long before the
 // site has sent anything, and letting that end the breath would put the
-// row out while the page is still arriving.
+// row out while the page is still arriving (below: held, and the page's
+// `started` keeps it).
 //
 // The ceiling over both is `loading-rule.ts`, which is where the whole
 // rule lives and where it is measured.
@@ -32,6 +33,15 @@
 // one reported its own start and finish, so the ring went out and came
 // back — and restarted its breath — on every hop. A finish is held for
 // `SETTLE_MS` and a start inside that time carries on the same pulse.
+//
+// **In the app an errand that comes back ends the light unless the page
+// took it up** (UX-38 §2, the owner 2026-10-06: the phone's line ran for
+// ever with nothing loading). Coming back to a tab is an errand (the body
+// asks for its page again) that starts no load, so nothing ever said
+// `finished` and the line ran for the whole ceiling — every tab switch
+// another 30 s (measured on the simulator). Now the errand's answer puts
+// it out after `SETTLE_MS`, unless the page said `started` in between:
+// then the page's own `finished` is the end.
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { hear, inApp } from "@/api";
@@ -50,8 +60,9 @@ export type Loading = {
       clock, not from a sweep. */
   busy: (id: string) => boolean;
   /** The body says what khor itself is doing for this tab. `true` lights
-      it on every face; `false` puts it out only where there are no page
-      events to hear (see the head). */
+      it on every face; `false` puts it out at once where there are no
+      page events to hear, and in the app after `SETTLE_MS` unless the
+      page said `started` (see the head). */
   errand: (id: string, busy: boolean) => void;
 };
 
@@ -59,6 +70,9 @@ export function useLoading(): Loading {
   const [loads, setLoads] = useState<Loads>(NONE);
   /** Each tab's finish, held (`SETTLE_MS`). */
   const settling = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  /** The tabs whose page said `started` and not yet `finished`: theirs is
+      the light, not the errand's. */
+  const paged = useRef(new Set<string>());
   // The app's own report, for every tab. Subscribed once for the life of
   // the landing: this is not per tab, and a subscription per row would
   // be the same event heard n times.
@@ -70,6 +84,8 @@ export function useLoading(): Loading {
           clearTimeout(held);
           settling.current.delete(said.tab);
         }
+        if (said.text === "started") paged.current.add(said.tab);
+        else paged.current.delete(said.tab);
         if (said.text === "started") {
           // Carried on: a start inside the hold is the same pulse, and
           // the ceiling's clock is not restarted by a hop.
@@ -103,6 +119,10 @@ export function useLoading(): Loading {
   const errand = useCallback((id: string, going: boolean) => {
     if (going) setLoads((was) => started(was, id, Date.now()));
     else if (!inApp) setLoads((was) => ended(was, id));
+    else
+      setTimeout(() => {
+        if (!paged.current.has(id)) setLoads((was) => ended(was, id));
+      }, SETTLE_MS);
   }, []);
   return { busy, errand };
 }

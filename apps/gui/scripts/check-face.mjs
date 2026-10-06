@@ -30362,6 +30362,9 @@ try {
     //       same module the app runs; the drawing itself is the
     //       simulator's. ──
     {
+      // o leaves the pill editing, where ‹ makes way for the field (UX-38 §3).
+      if (await count("[data-deck-edit-cancel]")) await press("[data-deck-edit-cancel]");
+      await wait(300);
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await wait(300);
       if (!(await open("browser")) || !(await press('[data-side-row="t1"] [data-side-open]'))) {
@@ -30387,6 +30390,11 @@ try {
               glass: d.glass.map((g) => Math.round(g.h)),
               tint: d.tint,
               want: String(c.fillStyle),
+              // UX-38 §5: the rim and the shadow are the tokens', not a
+              // flat white ring.
+              rim: d.rim,
+              rimWant: (getComputedStyle(document.documentElement).getPropertyValue("--glass-rim").match(/#[0-9a-f]{3,8}\b|rgba?\([^)]*\)/gi) ?? []).length,
+              shadow: d.shadow,
               btn,
               strip,
               seats: d.hits.filter((h) => !h.swipe).map((h) => h.seat).sort(),
@@ -30419,6 +30427,10 @@ try {
             fail(`bar r · glass shapes ${shown(rest.glass)} — ‹, the pill and the tabs circle, each --glass-btn (${rest.btn}) tall`);
           }
           if (rest.tint !== rest.want) fail(`bar r · the native tint is ${rest.tint}, --glass is ${rest.want}`);
+          if (rest.rim?.stops?.length !== rest.rimWant || rest.rimWant < 2 || !Number.isFinite(rest.rim.angle)) {
+            fail(`bar r · the native rim reads ${shown(rest.rim)} — --glass-rim's ${rest.rimWant} stops at its angle (UX-38 §5; lib/native-deck.ts rimOf)`);
+          }
+          if (!rest.shadow || !(rest.shadow.blur > 0)) fail(`bar r · the native shadow reads ${shown(rest.shadow)} — --glass-shadow's widest layer (UX-38 §5)`);
           if (!rest.seats.includes(0) || !rest.seats.includes(3) || !rest.seats.includes(5) || rest.swipe !== 1) {
             fail(`bar r · seats ${shown(rest.seats)}, swipe ${rest.swipe} — ‹ (0), the title (3), the tabs (5), and the pill's swipe`);
           }
@@ -30448,6 +30460,55 @@ try {
         console.log(`bar r · the page's words: ${shown(words)}`);
         if (words.pill !== "khor.example" || words.row !== "Khor One Page") {
           fail(`bar r · the page pill writes ${shown(words.pill)} and its sheet row ${shown(words.row)} — the host (khor.example) on the pill, the title (Khor One Page) in the sheet (UX-35 §4; browse/BrowseLanding.tsx pillHost)`);
+        }
+        // **The pill's address editor is Safari's field** (UX-38 §3, the
+        // owner: the address could not be seen whole, the caret could not
+        // be moved): the bar gives the field its finger back (the bar's
+        // `touch-action: none` reached the field), the keyboard is an
+        // address's with Go, the whole address selected as it opens, a
+        // clear ×, ‹ out of the way; 取消 brings the deck back as it was.
+        const editor = await page.evaluate(async () => {
+          const w = (ms) => new Promise((r) => setTimeout(r, ms));
+          const before = [...document.querySelectorAll("[data-session-deck] > *")].map((e) => e.getAttribute("aria-label") ?? e.tagName).join("|");
+          document.querySelector("[data-session-deck] [data-deck-title]")?.click();
+          await w(500);
+          const i = document.querySelector("[data-session-deck] [data-page-address]");
+          if (!i) return null;
+          const at = {
+            touch: getComputedStyle(document.querySelector("[data-session-bar]")).touchAction,
+            keys: ["enterkeyhint", "inputmode", "autocapitalize", "autocorrect", "spellcheck"].map((k) => i.getAttribute(k)).join(","),
+            focused: document.activeElement === i,
+            selected: [i.selectionStart, i.selectionEnd, i.value.length].join(","),
+            back: document.querySelectorAll("[data-session-deck] [data-back]").length,
+            clear: document.querySelectorAll("[data-session-deck] [data-page-address-clear]").length,
+            overflow: getComputedStyle(i).textOverflow,
+          };
+          document.querySelector("[data-session-deck] [data-page-address-clear]")?.click();
+          await w(200);
+          at.cleared = [i.value, document.activeElement === i].join(",");
+          document.querySelector("[data-deck-edit-cancel]")?.click();
+          await w(500);
+          at.after = [...document.querySelectorAll("[data-session-deck] > *")].map((e) => e.getAttribute("aria-label") ?? e.tagName).join("|");
+          at.before = before;
+          at.restTouch = getComputedStyle(document.querySelector("[data-session-bar]")).touchAction;
+          return at;
+        });
+        console.log(`bar r · the address editor: ${shown(editor)}`);
+        if (!editor) {
+          fail("probe dead: bar r · the pill never opened the address editor");
+        } else {
+          if (editor.touch !== "auto" || editor.restTouch !== "none") {
+            fail(`bar r · the bar's touch-action is ${editor.touch} while the pill edits, ${editor.restTouch} at rest — the field's finger back while editing, chrome held still otherwise (UX-38 §3; app.css)`);
+          }
+          if (editor.keys !== "go,url,none,off,false") fail(`bar r · the address field's keyboard reads ${editor.keys} — Go, an address's keys, nothing capitalised or corrected (UX-38 §3; PageField)`);
+          if (!editor.focused || editor.selected.split(",")[0] !== "0" || editor.selected.split(",")[1] !== editor.selected.split(",")[2]) {
+            fail(`bar r · the editor opened focused ${editor.focused} with ${editor.selected} selected — the whole address, as Safari opens it`);
+          }
+          if (editor.back !== 0 || editor.clear !== 1 || editor.overflow === "ellipsis") {
+            fail(`bar r · while editing ‹ ${editor.back}, clear × ${editor.clear}, text-overflow ${editor.overflow} — ‹ gives the field its room, a clear × at its end, the text not cut`);
+          }
+          if (editor.cleared !== ",true") fail(`bar r · the clear × left ${shown(editor.cleared)} — the field empty, the caret still in it`);
+          if (editor.after !== editor.before) fail(`bar r · after 取消 the deck reads ${shown(editor.after)}, before the pill was tapped ${shown(editor.before)} (UX-38 §4)`);
         }
         // **A sheet over the page takes the page away** (UX-28, the owner's
         // phone: the native page painted over every sheet). The pane says

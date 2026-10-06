@@ -123,6 +123,19 @@ if (!/#\[cfg_attr\(mobile,\s*tauri::mobile_entry_point\)\]\s*pub fn run\(\)/.tes
   }
 }
 
+// ── 3c) a plain-http page loads, as in Safari ──────────────────────
+// **App Transport Security refused every `http://` page by name** (UX-38
+// §6, measured on the simulator: 「被拦截」, NSURLErrorDomain -1022, for
+// any host that is not an IP address or `localhost`). A browser opens the
+// web as it is; the exception is for web content only
+// (`NSAllowsArbitraryLoadsInWebContent`), khor's own connections keep ATS.
+{
+  const plist = readFileSync(join(gui, "src-tauri", "gen", "apple", "khor-gui_iOS", "Info.plist"), "utf8");
+  if (!/<key>NSAppTransportSecurity<\/key>\s*<dict>[\s\S]*?<key>NSAllowsArbitraryLoadsInWebContent<\/key>\s*<true\/>[\s\S]*?<\/dict>/.test(plist)) {
+    fail("src-tauri/gen/apple/khor-gui_iOS/Info.plist does not allow web content over plain http (NSAppTransportSecurity › NSAllowsArbitraryLoadsInWebContent) — every http:// page by name says 被拦截");
+  }
+}
+
 // ── 4) nothing that waits runs on the main thread ──────────────────
 // **The phone froze when a machine dropped off** (2026-10-02, the owner
 // on a real iPhone). Tauri runs a command declared without `async` on

@@ -49,6 +49,11 @@
 	</array>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>扫描另一台机器上的配对二维码加入它的网络，或拍照发到对话里</string>
 	<key>NSLocalNetworkUsageDescription</key>

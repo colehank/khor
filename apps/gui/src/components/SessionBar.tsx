@@ -416,9 +416,13 @@ export function SessionScreen({
           // the first row.
           className="flex min-h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-start gap-in px-row py-in"
         >
-          <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
-            <IconBack />
-          </GlassCircle>
+          {/* ‹ gives the editor its room (UX-38 §3): Safari's address
+              field runs the width, with 取消 beside it. */}
+          {!editor && (
+            <GlassCircle aria-label={gui.back} data-back onClick={onBack}>
+              <IconBack />
+            </GlassCircle>
+          )}
           {editor ? (
             <div data-deck-pill data-deck-editing className="glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full">
               {editor}

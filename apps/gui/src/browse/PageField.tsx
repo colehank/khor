@@ -24,7 +24,7 @@ import { useEffect, useRef, useState } from "react";
 import { pageStep, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { GlassCapsule, GlassItem } from "@/components/Glass";
-import { IconBack, IconForward, IconReload } from "@/components/icons";
+import { IconBack, IconClose, IconForward, IconReload } from "@/components/icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -247,15 +247,30 @@ export function PageField({
                 </button>
               </DropdownMenuTrigger>
             )}
+            {/* **Safari's address field** (UX-38 §3): the keyboard for an
+                address with Go on its return key, nothing capitalised or
+                corrected, the whole address selected as the pill opens it
+                (typing replaces it, a tap places the caret), the text
+                scrolling rather than cut while it is edited, and a clear ×
+                at its end. */}
             <input
               ref={input}
               data-page-address
               aria-label={gui.address_page}
               placeholder={gui.page_address}
               value={typing ? draft : host}
-              onFocus={() => {
+              enterKeyHint="go"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              onFocus={(e) => {
                 editing.current = true;
                 setTyping(true);
+                if (inPill) {
+                  const field = e.currentTarget;
+                  requestAnimationFrame(() => field.select());
+                }
               }}
               autoFocus={autoFocus}
               onBlur={() => {
@@ -284,8 +299,25 @@ export function PageField({
                   input.current?.blur();
                 }
               }}
-              className="min-w-0 flex-1 truncate bg-transparent text-body outline-none placeholder:text-tertiary"
+              className={cn("min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-tertiary", !typing && "truncate")}
             />
+            {inPill && typing && draft !== "" && (
+              <button
+                type="button"
+                data-page-address-clear
+                aria-label={gui.search_clear}
+                // The caret stays in the field.
+                onPointerDown={(e) => e.preventDefault()}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setDraft("");
+                  input.current?.focus();
+                }}
+                className="grid size-6 flex-none place-items-center rounded-full bg-fill-strong text-muted-foreground"
+              >
+                <IconClose className="size-affordance" />
+              </button>
+            )}
           </label>
         )}
         {menu}

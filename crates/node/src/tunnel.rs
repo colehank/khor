@@ -260,6 +260,7 @@ pub async fn serve_proxy(
     activity: Activity,
 ) -> Result<(), String> {
     let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let unreached = Unreached::default();
     loop {
         let Ok((sock, _)) = listener.accept().await else {
             return Ok(());
@@ -267,11 +268,24 @@ pub async fn serve_proxy(
         let borrow = borrow.clone();
         let count = count.clone();
         let activity = activity.clone();
+        let unreached = unreached.clone();
         tokio::spawn(async move {
-            let _ = proxy_one(&borrow, sock, count, activity).await;
+            let _ = proxy_one(&borrow, sock, count, activity, &unreached).await;
         });
     }
 }
+
+/// **A target the exit just could not reach is answered at once for a
+/// moment** (UX-38 §1). WebKit asks a CONNECT that was refused again —
+/// eight times, whatever the status (measured: 502, 503, 504, 403 alike)
+/// — before it says the load failed, and an address the exit cannot
+/// route costs the exit's whole connect timeout each time: the phone sat
+/// on a blank page for 80 s before it said a word. The first refusal is
+/// asked of the exit; the asks right behind it get the same answer.
+const UNREACHED_HOLD: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The targets the exit refused, and when.
+type Unreached = std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>>;
 
 /// A local port that pipes to **one** fixed target on the far machine.
 ///
@@ -369,6 +383,7 @@ async fn proxy_one(
     mut sock: tokio::net::TcpStream,
     count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     activity: Activity,
+    unreached: &Unreached,
 ) -> Result<(), String> {
     use tokio::io::AsyncReadExt;
     let mut head = Vec::new();
@@ -398,7 +413,23 @@ async fn proxy_one(
     let target = match &ask {
         ProxyAsk::Tunnel { target } | ProxyAsk::Relay { target, .. } => target.clone(),
     };
-    match borrow.open(&target).await {
+    let fresh = unreached
+        .lock()
+        .ok()
+        .and_then(|u| u.get(&target).copied())
+        .is_some_and(|at| at.elapsed() < UNREACHED_HOLD);
+    let opened = if fresh {
+        Err(String::new())
+    } else {
+        borrow.open(&target).await
+    };
+    if opened.is_err() && !fresh {
+        if let Ok(mut u) = unreached.lock() {
+            u.retain(|_, at| at.elapsed() < UNREACHED_HOLD);
+            u.insert(target.clone(), std::time::Instant::now());
+        }
+    }
+    match opened {
         Ok((mut send, recv)) => {
             match ask {
                 ProxyAsk::Tunnel { .. } => {

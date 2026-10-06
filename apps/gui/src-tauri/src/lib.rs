@@ -2727,6 +2727,14 @@ async fn open_page(
         } else {
             khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?
         };
+        // A loopback address is the machine's, not the phone's (UX-38 §1):
+        // WebKit sends it past the proxy, so the phone's own port is piped
+        // to the machine's (`hold_loopback`).
+        if !direct {
+            if let Some((host, port)) = khor_gui_core::web::loopback_of(&url) {
+                khor_gui_core::web::hold_loopback(&host, port, &borrow.addr).await?;
+            }
+        }
         let wiring = phone_page::Wiring {
             proxy: (!direct).then(|| borrow.addr.clone()),
             agent: if direct { None } else { as_a_browser(&agent) },

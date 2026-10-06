@@ -164,3 +164,202 @@ mod open_link_tests {
         }
     }
 }
+
+/// Where a page asks for this device's own loopback — `localhost`,
+/// `127.x.x.x`, `[::1]` — the host as written and the port (the scheme's
+/// when none is written). `None` for anything else.
+pub fn loopback_of(url: &str) -> Option<(String, u16)> {
+    let (scheme, rest) = url.split_once("://")?;
+    let default = match scheme.to_ascii_lowercase().as_str() {
+        "http" => 80,
+        "https" => 443,
+        _ => return None,
+    };
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let authority = authority.rsplit_once('@').map_or(authority, |(_, a)| a);
+    let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
+        let (h, after) = v6.split_once(']')?;
+        (format!("[{h}]"), after.strip_prefix(':'))
+    } else {
+        match authority.rsplit_once(':') {
+            Some((h, p)) => (h.to_owned(), Some(p)),
+            None => (authority.to_owned(), None),
+        }
+    };
+    let port = match port {
+        Some(p) => p.parse().ok()?,
+        None => default,
+    };
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    let lower = host.to_ascii_lowercase();
+    let loop_ip = bare.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback());
+    (loop_ip || lower == "localhost" || lower == "localhost.").then_some((host, port))
+}
+
+/// One loopback forward: where its connections go on the far side, and
+/// through which borrow's proxy.
+type Loop = std::sync::Arc<std::sync::Mutex<(String, String)>>;
+
+fn loops() -> &'static std::sync::Mutex<std::collections::HashMap<u16, Loop>> {
+    static L: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u16, Loop>>> = std::sync::OnceLock::new();
+    L.get_or_init(Default::default)
+}
+
+/// **A loopback address through a machine is that machine's** (UX-38 §1,
+/// the owner 2026-10-06: `http://127.0.0.1:8765/…` on a tab through his
+/// Mac showed a blank page on the phone).
+///
+/// WebKit never sends a loopback address to a proxy: a data store's
+/// `proxyConfigurations` carry every other host through the borrow's
+/// CONNECT — names, private addresses — but `localhost`, `127.0.0.1` and
+/// the device's own addresses go straight out (measured with a logging
+/// proxy, macOS and the iOS simulator alike: no CONNECT, the load came
+/// from `com.apple.WebKit.Networking`). On a phone that is the phone's own
+/// loopback, where nothing listens. No setting changes it (`matchDomains`
+/// tried).
+///
+/// So the phone listens there itself: `127.0.0.1:<port>` on this device
+/// pipes every connection through the borrow's proxy as `CONNECT
+/// <host>:<port>`, which the machine resolves on its own side — its
+/// `localhost`, its dev server. The page keeps its address, its `Host`
+/// and its origin, and links to the same port keep working.
+///
+/// One forward per port, pointed at the page that asked last; asked again
+/// it is re-pointed, never bound twice. `Err` with the catalog's words
+/// when this device's port is taken.
+pub async fn hold_loopback(host: &str, port: u16, proxy: &str) -> Result<(), String> {
+    let target = format!("{host}:{port}");
+    if let Some(held) = loops().lock().map_err(|e| e.to_string())?.get(&port) {
+        if let Ok(mut at) = held.lock() {
+            *at = (target, proxy.to_owned());
+        }
+        return Ok(());
+    }
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .map_err(|_| khor_catalog::msg::page_port_taken(port))?;
+    let held: Loop = std::sync::Arc::new(std::sync::Mutex::new((target, proxy.to_owned())));
+    loops().lock().map_err(|e| e.to_string())?.insert(port, held.clone());
+    tokio::spawn(async move {
+        while let Ok((sock, _)) = listener.accept().await {
+            let at = held.lock().map(|a| a.clone());
+            if let Ok((target, proxy)) = at {
+                tokio::spawn(async move {
+                    let _ = through(sock, &target, &proxy).await;
+                });
+            }
+        }
+    });
+    Ok(())
+}
+
+/// Whether this device's `port` is already piped to a machine.
+pub fn loopback_held(port: u16) -> bool {
+    loops().lock().is_ok_and(|l| l.contains_key(&port))
+}
+
+/// One connection, through the proxy as a CONNECT: the pipe once the
+/// proxy says `200`, else the connection dropped — which the page hears as
+/// a failed load, and says so.
+async fn through(mut sock: tokio::net::TcpStream, target: &str, proxy: &str) -> Result<(), String> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut up = tokio::net::TcpStream::connect(proxy).await.map_err(|e| e.to_string())?;
+    up.write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes())
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut head = Vec::new();
+    let mut byte = [0u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        if up.read(&mut byte).await.map_err(|e| e.to_string())? == 0 || head.len() > 8 * 1024 {
+            return Err("the proxy hung up".into());
+        }
+        head.push(byte[0]);
+    }
+    let line = String::from_utf8_lossy(&head);
+    if line.split_whitespace().nth(1) != Some("200") {
+        return Err(line.lines().next().unwrap_or_default().to_owned());
+    }
+    tokio::io::copy_bidirectional(&mut sock, &mut up).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod loopback_tests {
+    use super::{hold_loopback, loopback_of};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn loopback_addresses_are_told_apart() {
+        assert_eq!(loopback_of("http://127.0.0.1:8765/x?y"), Some(("127.0.0.1".into(), 8765)));
+        assert_eq!(loopback_of("http://localhost/"), Some(("localhost".into(), 80)));
+        assert_eq!(loopback_of("https://LOCALHOST:5173"), Some(("LOCALHOST".into(), 5173)));
+        assert_eq!(loopback_of("http://[::1]:3000/"), Some(("[::1]".into(), 3000)));
+        assert_eq!(loopback_of("http://127.1.2.3:9/"), Some(("127.1.2.3".into(), 9)));
+        for url in ["http://172.23.250.213:8765/", "http://x.localhost:1/", "https://example.com/", "file:///etc", "http://localhost.example/"] {
+            assert_eq!(loopback_of(url), None, "{url}");
+        }
+    }
+
+    /// The page connects to this device's port; what arrives is the far
+    /// side's answer, asked through the proxy as the page's own host —
+    /// and a second ask re-points the same port.
+    #[tokio::test]
+    async fn the_port_pipes_through_the_proxy_to_the_far_side() {
+        // The far side: a server on a port of its own.
+        let far = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let far_at = far.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = far.accept().await {
+                let _ = s.write_all(b"far side").await;
+            }
+        });
+        // The borrow's proxy: answers a CONNECT for the asked host by
+        // dialling the far side, and remembers what it was asked.
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_at = proxy.local_addr().unwrap().to_string();
+        let (asked_tx, mut asked) = tokio::sync::mpsc::unbounded_channel::<String>();
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = proxy.accept().await {
+                let asked_tx = asked_tx.clone();
+                tokio::spawn(async move {
+                    let mut head = Vec::new();
+                    let mut b = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        s.read_exact(&mut b).await.unwrap();
+                        head.push(b[0]);
+                    }
+                    let line = String::from_utf8_lossy(&head).lines().next().unwrap().to_owned();
+                    let _ = asked_tx.send(line);
+                    let mut up = tokio::net::TcpStream::connect(far_at).await.unwrap();
+                    s.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.unwrap();
+                    let _ = tokio::io::copy_bidirectional(&mut s, &mut up).await;
+                });
+            }
+        });
+        // A free port on this device for the page's address.
+        let port = {
+            let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            l.local_addr().unwrap().port()
+        };
+        hold_loopback("localhost", port, &proxy_at).await.unwrap();
+        let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let mut got = String::new();
+        page.read_to_string(&mut got).await.unwrap();
+        assert_eq!(got, "far side");
+        assert_eq!(asked.recv().await.unwrap(), format!("CONNECT localhost:{port} HTTP/1.1"));
+        // Asked again for the same port: re-pointed, not bound twice.
+        hold_loopback("127.0.0.1", port, &proxy_at).await.unwrap();
+        let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let mut got = String::new();
+        page.read_to_string(&mut got).await.unwrap();
+        assert_eq!(asked.recv().await.unwrap(), format!("CONNECT 127.0.0.1:{port} HTTP/1.1"));
+    }
+
+    #[tokio::test]
+    async fn a_taken_port_is_said() {
+        let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = taken.local_addr().unwrap().port();
+        let said = hold_loopback("localhost", port, "127.0.0.1:9").await.unwrap_err();
+        assert!(said.contains(&port.to_string()), "{said}");
+    }
+}
