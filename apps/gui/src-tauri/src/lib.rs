@@ -79,12 +79,15 @@ fn tabs_list(kind: String) -> khor_gui_core::tabs::TabsOpen {
 /// Opens one and puts it in front; answers its id. Both places absent
 /// is the fresh tab the 「+」 mints.
 #[tauri::command]
-fn tabs_open(kind: String, device: Option<String>, url: Option<String>) -> Result<String, String> {
+fn tabs_open(kind: String, device: Option<String>, url: Option<String>, session: Option<String>) -> Result<String, String> {
     khor_gui_core::tabs::open(
         &Node::root_from_env(),
         &kind,
         device.as_deref().unwrap_or(""),
         url.as_deref().unwrap_or(""),
+        // The session it was opened from (UX-37 §1); a face that predates
+        // it sends none.
+        session.as_deref().unwrap_or(""),
     )
 }
 
@@ -1055,8 +1058,8 @@ fn recents(kind: String, limit: u32) -> Result<Vec<khor_gui_core::recents::Recen
 }
 
 #[tauri::command]
-fn recent_visit(kind: String, machine: String, place: String) -> Result<(), String> {
-    khor_gui_core::recents::recent_visit(&Node::root_from_env(), &kind, &machine, &place)
+fn recent_visit(kind: String, machine: String, place: String, session: Option<String>) -> Result<(), String> {
+    khor_gui_core::recents::recent_visit(&Node::root_from_env(), &kind, &machine, &place, session.as_deref())
 }
 
 #[tauri::command]

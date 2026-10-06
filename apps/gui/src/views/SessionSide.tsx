@@ -220,32 +220,79 @@ export function SessionSide({
 }
 
 /**
- * The column's inside — the capsule and the seat's page — which is also
+ * The column's inside — the seats and the seat's page — which is also
  * the phone's pill sheet (UX-30 §6: both faces share the components;
- * `SessionPlaceSheet` mounts this in a bottom sheet, with its 「今天」 row
- * under the capsule, UX-36).
+ * `SessionPlaceSheet` mounts this in a bottom sheet with `foot`).
  */
 export function SideBody({
   seat,
   onSeat,
-  today,
+  foot = false,
   children,
 }: {
   seat: SideSeat;
   onSeat: (seat: SideSeat) => void;
-  /** The phone sheet's 「今天」 row (`DayToday`): where the day opens on
-      the phone, whose pill's tap is the sheet's (UX-36 §1). */
-  today?: ReactNode;
+  /** **The seats at the foot** (UX-37 §4, the phone's sheet): one flat
+      row on the screen's foot wearing the safe area, the page scrolling
+      under it. Without it the capsule stands at the box's top (the wide
+      column, UX-30 §2: no deck to share the foot with). */
+  foot?: boolean;
   children?: ReactNode;
 }) {
   const capsule = useRef<HTMLElement>(null);
   // The chosen seat slides to the one pressed (F7.2, `lib/travel`).
   useTravel("side", () => capsule.current, seat);
+  const seats = SIDE_SEATS.map((s) => (
+    <button
+      key={s}
+      type="button"
+      data-slot="button"
+      data-col-seat={s}
+      data-on={seat === s}
+      aria-current={seat === s ? "page" : undefined}
+      onClick={() => onSeat(s)}
+      className={cn(NAV_SEAT, foot && "flex-1")}
+    >
+      {SEAT_GLYPH[s]}
+      <span className="text-nav-label">{seatName(s)}</span>
+    </button>
+  ));
+  // The seat's page: the narrow face's own, in a box. `relative` because
+  // the pages float their own navigation against the nearest placed
+  // ancestor, which must be this box and not the window. No window row
+  // to seat a head in (`NarrowHead`): the pages draw their own `‹ title`
+  // bar in place, as the workspace column's session bar does.
+  const page = (
+    <SideSeatsProvider value={null}>
+      <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {children}
+      </div>
+    </SideSeatsProvider>
+  );
+  if (foot) {
+    return (
+      <>
+        {page}
+        {/* ⚠️ 墓碑 (UX-30 §6 → UX-37 §4): on the phone the capsule stood
+            at the sheet's top, and the deck stayed under the sheet. */}
+        <div data-side-foot className="absolute inset-x-0 bottom-0 z-20 border-t pb-safe-bottom">
+          <nav
+            ref={capsule}
+            data-col-seats
+            aria-label={gui.session_side}
+            className="flex h-nav-h items-stretch px-in py-[calc(var(--gap-xxs)+var(--hair))] select-none"
+          >
+            {seats}
+          </nav>
+        </div>
+      </>
+    );
+  }
   return (
     <>
-      {/* **The phone's five seats, at the top of the box** (UX-30 §2):
-          one glass capsule across the column, the width the phone's bar
-          keeps off its edges. */}
+      {/* **The five seats, at the top of the box** (UX-30 §2): one glass
+          capsule across the column, the width the phone's bar keeps off
+          its edges. */}
       <div data-side-head className="flex flex-none justify-center px-nav-gap pt-in pb-xxs">
         <nav
           ref={capsule}
@@ -253,34 +300,10 @@ export function SideBody({
           aria-label={gui.session_side}
           className="glass flex h-nav-h max-w-full items-stretch rounded-full p-[calc(var(--gap-xxs)+var(--hair))] select-none"
         >
-          {SIDE_SEATS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              data-slot="button"
-              data-col-seat={s}
-              data-on={seat === s}
-              aria-current={seat === s ? "page" : undefined}
-              onClick={() => onSeat(s)}
-              className={cn(NAV_SEAT)}
-            >
-              {SEAT_GLYPH[s]}
-              <span className="text-nav-label">{seatName(s)}</span>
-            </button>
-          ))}
+          {seats}
         </nav>
       </div>
-      {today}
-      {/* The seat's page: the narrow face's own, in a box. `relative`
-          because the pages float their own navigation against the
-          nearest placed ancestor, which must be this box and not the
-          window. */}
-      {/* No window row to seat a head in (`NarrowHead`): the pages draw
-          their own `‹ title` bar in place, as the workspace column's
-          session bar does. */}
-      <SideSeatsProvider value={null}>
-        <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
-      </SideSeatsProvider>
+      {page}
     </>
   );
 }

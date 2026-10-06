@@ -2772,6 +2772,13 @@
      pane, measured at the drag (the two-column answer, `use-list-width`). */
   --session-side-w: 390px;
   --session-side-min: 320px;
+  /* **The phone's 附栏 sheet stands at two detents** (UX-37 §3): half
+     the screen when the pill opens it — the terminal keeps its upper
+     half — and nearly all of it when dragged up, the system sheet's
+     large detent. Fractions of the screen's height, read by the drag
+     (`SessionPlaceSheet`) as well as by the sheet's own height. */
+  --place-sheet-half: 0.5;
+  --place-sheet-full: 0.92;
   /* The session's day line (UX-36; UX-30 §5's ruler under the column's
      capsule before): the 24 hours flattened to a heat line along the
      session pill's foot, two points. */

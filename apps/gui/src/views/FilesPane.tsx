@@ -61,7 +61,14 @@ export function FilesPane({
   here,
   marks,
   onDiff,
+  onTop,
+  topLabel,
 }: {
+  /** ‹ at the root goes on here, under `topLabel`'s name (UX-37 §1:
+      the 附栏's 工作区 climbs to the root, then to every workspace).
+      Absent, the root has no way up, as before. */
+  onTop?: () => void;
+  topLabel?: string;
   /** The machine's name — what the node resolves. */
   machine: string;
   /** Where to open; "" is that machine's home. */
@@ -208,11 +215,12 @@ export function FilesPane({
           </div>
         ) : !listing ? null : (
           <>
-            {listing.path !== "/" && (
+            {(listing.path !== "/" || onTop) && (
               <button
                 type="button"
                 data-up
-                onClick={up}
+                data-up-top={listing.path === "/" ? "" : undefined}
+                onClick={listing.path === "/" ? onTop : up}
                 // The floor under a finger (tokens.css `--touch`), which
                 // this row was under by a third on its height alone. It
                 // is a whole row wide, so only the short way needed
@@ -223,7 +231,7 @@ export function FilesPane({
                 // F4.2; N08, W16): the way up is a ‹ before the current
                 // directory's name, so the listing says which directory
                 // it is; 上一级 is the button's name.
-                aria-label={gui.up_dir}
+                aria-label={listing.path === "/" ? topLabel : gui.up_dir}
                 title={listing.path}
                 // In the entries' anatomy (W-V16): the ‹ in the kind's 20
                 // box, so the name starts where theirs do, and the

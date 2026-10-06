@@ -34,6 +34,7 @@ import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
 import { IconBack, IconBranch, IconCheck, IconEye, IconMore, IconReload, IconShare } from "@/components/icons";
 import { RemoveDialog } from "@/components/RemoveDialog";
+import { SeatHead } from "@/components/SeatHead";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -406,7 +407,13 @@ export function FilePage({
   history = false,
   tabs,
   moreActs,
+  bare = false,
 }: {
+  /** **Inside the session's 附栏** (UX-37 §6): the page wears no deck —
+      ‹ · the name · the content, the name's head carrying what is the
+      page's own (✓ while it differs, the preview switch, 「…」 with
+      在主区打开); the 附栏's seats row stands at its foot. */
+  bare?: boolean;
   /** Acts the page's host adds at the head of 「…」 (UX-30 §4: the
       session's 附栏 offers 「在主区打开」, the one way out of the column). */
   moreActs?: { key: string; label: string; run: () => void }[];
@@ -587,7 +594,34 @@ export function FilePage({
       className="relative flex min-h-0 flex-1 flex-col bg-card"
       style={fileSizeStyle(verbs.size.step)}
     >
-      <div ref={box} className="flex min-h-0 flex-1 flex-col" onScrollCapture={scrolled} onFocusCapture={hold}>
+      {bare && (
+        <SeatHead title={name} back={rev === null ? onBack : () => setRev(null)} backLabel={rev === null ? gui.back : gui.file_rev_back}>
+          {rev === null && dirty && can && (
+            <GlassItem aria-label={gui.watch_save} data-file-save data-tab-act="save" onClick={save} className="text-brand-strong">
+              <IconCheck />
+            </GlassItem>
+          )}
+          {rev === null && previewable && (
+            <GlassCircle
+              aria-label={gui.file_face_preview}
+              aria-pressed={face === "preview"}
+              data-file-face-toggle={face}
+              onClick={turn}
+              className={cn(face === "preview" && "glass-sel text-[var(--rail-on-ink)]")}
+            >
+              <IconEye />
+            </GlassCircle>
+          )}
+          {rev === null && verbs.moreCircle}
+        </SeatHead>
+      )}
+      <div
+        ref={box}
+        data-nav-clear={bare || undefined}
+        className="flex min-h-0 flex-1 flex-col"
+        onScrollCapture={bare ? undefined : scrolled}
+        onFocusCapture={hold}
+      >
         {rev !== null ? (
           <RevisionView machine={machine} path={path} rev={rev} compare={compare} narrow />
         ) : (
@@ -612,6 +646,7 @@ export function FilePage({
           preview eye where the file renders; ✓ while it differs from the
           disk) · 分享 · 「…」. Nothing at the top of the page. Folded, the
           strip with the name; a tap brings the deck back. */}
+      {!bare && (
       <div
         ref={deck}
         data-file-deck
@@ -709,6 +744,7 @@ export function FilePage({
           </div>
         )}
       </div>
+      )}
       {tabs && (
         <TabSheet
           open={sheet}

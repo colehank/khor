@@ -51,6 +51,7 @@ import { PaneBar, type FilterOption } from "@/components/PaneBar";
 import { PageAvatar, PageSubtitle, Region } from "@/components/Region";
 import { FlushInk } from "@/hooks/use-flush-ink";
 import { NarrowHead } from "@/components/SideHead";
+import { SeatHead } from "@/components/SeatHead";
 import { useKept } from "@/lib/kept";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { type RowAction } from "@/components/RowMenu";
@@ -939,9 +940,16 @@ export function QuotaLanding({
   onOpen,
   onBack,
   landOn = null,
+  bare = false,
   stale = false,
   devices,
 }: {
+  /** **Drawn inside the session's 附栏** (UX-37 §2, the owner's 「额度页面
+      布局有问题，有背景」): the rows alone, edge to edge on the column's or
+      the sheet's own ground — the seat's head over them, not the
+      landing's (the filter, ＋ and the search are the 额度 landing's), and the account
+      opens as a card with no ground of its own, as the machine does. */
+  bare?: boolean;
   /** The shell cannot reach khor: what is on the board is the last
       answer, and R0's caption says so (components/RegionState). */
   stale?: boolean;
@@ -1095,12 +1103,14 @@ export function QuotaLanding({
     })),
   ];
   // The seat's landing (`landOn`): the first account of that provider,
-  // opened once the board has answered, only while nothing is picked.
+  // opened once the board has answered, only while nothing is picked —
+  // in the 附栏 whatever is picked: the seat lands on the account this
+  // session uses each time it is entered (UX-37 §1).
   const landed = useRef(false);
   useEffect(() => {
     if (landOn === null || landed.current || board === null) return;
     landed.current = true;
-    if (picked !== null) return;
+    if (picked !== null && !bare) return;
     const r = rows.find((x) => x.provider === landOn);
     if (!r) return;
     setPicked(r.id);
@@ -1984,7 +1994,7 @@ export function QuotaLanding({
         // the screen's head) was drawn only once the board had been read.
         narrow ? (
           board === null && !error ? (
-            <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bar}>
+            <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bare ? <SeatHead title={gui.accounts_tab} /> : bar}>
               {list}
             </ListPane>
           ) : (
@@ -2060,7 +2070,7 @@ export function QuotaLanding({
             </div>
           </div>
         ) : (
-          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bar}>
+          <ListPane mark="data-quota-pane" name={gui.accounts_tab} pane={null} narrow seat="side" head={bare ? <SeatHead title={gui.accounts_tab} /> : bar}>
             {list}
           </ListPane>
         )

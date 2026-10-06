@@ -736,6 +736,42 @@ aside[data-side] {
   }
 }
 
+/* **The session's 附栏 on the phone** (UX-37 §3–4, `SessionPlaceSheet`):
+   the whole width, standing on the bottom edge at one of two detents,
+   rising in like the form sheet; the drag paints its height inline and
+   the release lets it glide to the detent. The seats row at its foot is
+   flat glass over the pages, which keep its room at their scrollers'
+   foot (`[data-nav-shown]` above). */
+[data-place-sheet] {
+  /* **The sheet is the card** (UX-37 §2): a page inside wears no ground
+     of its own — a list's `side`, a page's `card`, the landing's
+     `background` all read the sheet's surface here. */
+  --background: var(--popover);
+  --card: var(--popover);
+  --side: var(--popover);
+  height: calc(var(--place-sheet-half) * 100dvh);
+  transition: height var(--dur-240) var(--ease-out);
+  animation: sheet-up var(--dur-240) var(--ease-out);
+  --nav-room: calc(var(--nav-h) + var(--safe-bottom) + var(--gap-in));
+}
+[data-place-sheet][data-detent="full"] {
+  height: calc(var(--place-sheet-full) * 100dvh);
+}
+[data-place-sheet][data-sheet-pulling] {
+  transition: none;
+}
+[data-side-foot] {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-place-sheet] {
+    animation: none;
+    transition: none;
+  }
+}
+
 /* **A sheet's buttons in its header** (UX-10; ux-9 I6). HIG Sheets on
    iOS: 「the Cancel button belongs on the leading edge of the top
    toolbar」, the one act on the trailing edge in the prominent style,

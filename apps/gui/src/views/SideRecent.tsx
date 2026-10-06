@@ -9,8 +9,18 @@
  * column — a file as the column's file page, a workspace as its listing,
  * a page in the column's browser. The main area is the session, always;
  * the one way there is a double-click, or the row menu's 「在主区打开」.
+ *
+ * **It lands on this session's slice; ‹ goes to the whole** (UX-37 §1):
+ * the slice is what was opened from this session — from its terminal's
+ * paths and URLs, or from this 附栏 while the session was in front — as
+ * the record says (`session` on a recent, `use-side-recent`); the whole is
+ * every row, and a row the record holds no session for is only there.
+ * The slice starts with the day (`today`, §5).
  */
+import type { ReactNode } from "react";
+
 import type { Avatar } from "@/gen/bindings/Avatar";
+import { SeatHead } from "@/components/SeatHead";
 import { SideList, type SideRow } from "@/components/SideList";
 import { fileKind, pageKind, workspaceKind } from "@/components/SessionFace";
 import { gui } from "@/gen/catalog";
@@ -46,18 +56,28 @@ function asideOf(it: RecentItem): string {
 
 export function SideRecent({
   items,
+  slice,
+  onAll,
+  today,
   faceOf,
   onOpen,
   onOpenMain,
 }: {
   /** `null` until the first answer. */
   items: RecentItem[] | null;
+  /** The session whose slice this is; `null` is the whole. */
+  slice: string | null;
+  /** ‹: from the slice to the whole. */
+  onAll: () => void;
+  /** The slice's first row, the day (`DayRow`, UX-37 §5). */
+  today?: ReactNode;
   /** The machine's face, by device id (the row's base, UX-32). */
   faceOf: (device: string) => Avatar | null;
   onOpen: (it: RecentItem) => void;
   onOpenMain: (it: RecentItem) => void;
 }) {
-  const rows: SideRow[] = (items ?? []).map((it) => ({
+  const shown = slice === null ? items : (items?.filter((it) => it.session === slice) ?? null);
+  const rows: SideRow[] = (shown ?? []).map((it) => ({
     id: it.key,
     group: GROUP,
     pinned: false,
@@ -67,8 +87,9 @@ export function SideRecent({
     name: nameOf(it),
     aside: asideOf(it),
     // A file tab carries no time of its own (`use-side-recent`): its
-    // corner stays empty rather than wearing its workspace's.
-    corners: { bottom: it.kind !== "file" && it.at !== null ? <span data-recent-at>{ago(it.at)}</span> : undefined },
+    // corner stays empty rather than wearing its workspace's. A file the
+    // record holds (no workspace root) has its own visit's.
+    corners: { bottom: (it.kind !== "file" || it.root === "") && it.at !== null ? <span data-recent-at>{ago(it.at)}</span> : undefined },
     find: `${nameOf(it)} ${asideOf(it)}`,
     menu: [{ key: "open-main", label: gui.open_in_main, run: () => onOpenMain(it) }],
     onOpen: () => onOpen(it),
@@ -87,7 +108,21 @@ export function SideRecent({
         if (it) onOpenMain(it);
       }}
     >
-      <SideList rows={rows} loading={items === null} label={() => gui.group_recent} empty={gui.recent_none} mark={{ "data-list": "recent" }} />
+      {slice === null ? (
+        <SeatHead title={gui.side_recent_all} />
+      ) : (
+        <SeatHead title={gui.side_recent_here} back={onAll} backLabel={gui.side_recent_all} />
+      )}
+      <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
+        {slice !== null && today}
+        <SideList
+          rows={rows}
+          loading={items === null}
+          label={() => gui.group_recent}
+          empty={slice === null ? gui.recent_none : gui.side_recent_here_none}
+          mark={{ "data-list": "recent", "data-recent-slice": slice === null ? "all" : "here" }}
+        />
+      </div>
     </div>
   );
 }

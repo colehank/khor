@@ -30495,7 +30495,8 @@ try {
             sheet: document.querySelectorAll("[data-place-sheet]").length,
             seats: [...document.querySelectorAll("[data-place-sheet] [data-col-seat]")].map((e) => e.dataset.colSeat).join(" "),
             on: document.querySelector('[data-place-sheet] [data-col-seat][data-on="true"]')?.getAttribute("data-col-seat") ?? null,
-            ruler: document.querySelectorAll("[data-place-sheet] [data-day-ruler], [data-place-sheet] [data-day-ruler-line]").length,
+            // 今天's own bar (UX-37 §5) is the row's, not a ruler.
+            ruler: document.querySelectorAll("[data-place-sheet] [data-day-ruler], [data-place-sheet] [data-day-ruler-line]:not([data-day-today] *)").length,
             today: document.querySelectorAll("[data-place-sheet] [data-day-today]").length,
             page: document.querySelectorAll("[data-place-sheet] [data-side-page]").length,
           }));
@@ -30505,6 +30506,238 @@ try {
           await until(2_000, async () => (await count("[data-place-sheet]")) === 0);
         };
         const first = await sheet();
+        // ── UX-37 §3–4: the sheet opens at half the screen; the five
+        //    seats are one flat row on the screen's foot, inside the
+        //    sheet; the deck is away (hidden in place, so the terminal
+        //    keeps its height); the grabber drags it to full and back,
+        //    a release under half puts it away. ──
+        const shape = await page.evaluate(() => {
+          const sheet = document.querySelector("[data-place-sheet]");
+          const foot = document.querySelector("[data-place-sheet] [data-side-foot]");
+          const bar = document.querySelector("[data-session-bar]");
+          const r = (e) => e?.getBoundingClientRect() ?? null;
+          return {
+            vh: window.innerHeight,
+            detent: sheet?.getAttribute("data-detent") ?? null,
+            h: Math.round(r(sheet)?.height ?? 0),
+            footBottom: Math.round(r(foot)?.bottom ?? 0),
+            footSeats: document.querySelectorAll("[data-place-sheet] [data-side-foot] [data-col-seat]").length,
+            topCapsule: document.querySelectorAll("[data-place-sheet] [data-side-head]").length,
+            deck: bar ? `${bar.hasAttribute("data-deck-away")} ${getComputedStyle(bar).visibility}` : null,
+          };
+        });
+        const dragSheet = async (from, dy) => {
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 195, y: from }] });
+          for (let i = 1; i <= 8; i++) {
+            await kTouch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 195, y: Math.round(from + (i * dy) / 8) }] });
+            await wait(20);
+          }
+          await kTouch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          await wait(450);
+          return page.evaluate(() => {
+            const s = document.querySelector("[data-place-sheet]");
+            return s ? { detent: s.getAttribute("data-detent"), h: Math.round(s.getBoundingClientRect().height) } : null;
+          });
+        };
+        const sheetTop = () => page.evaluate(() => document.querySelector("[data-place-sheet]")?.getBoundingClientRect().top ?? 0);
+        const toFull = await dragSheet((await sheetTop()) + 8, -Math.round(shape.vh * 0.4));
+        const toHalf = await dragSheet((await sheetTop()) + 8, Math.round(shape.vh * 0.4));
+        const spring = await dragSheet((await sheetTop()) + 8, Math.round(shape.vh * 0.08));
+        const away = await dragSheet((await sheetTop()) + 8, Math.round(shape.vh * 0.35));
+        const deckBack = await page.evaluate(() => {
+          const bar = document.querySelector("[data-session-bar]");
+          return bar ? `${bar.hasAttribute("data-deck-away")} ${getComputedStyle(bar).visibility}` : null;
+        });
+        console.log(`bar p · UX-37 shape ${shown(shape)}; up ${shown(toFull)}; down ${shown(toHalf)}; a short pull ${shown(spring)}; a long pull ${shown(away)}; the deck after ${deckBack}`);
+        const near = (h, share) => Math.abs(h - share * shape.vh) <= 2;
+        if (shape.detent !== "half" || !near(shape.h, 0.5)) fail(`bar p · the pill opened the sheet at ${shown(shape)} — half the screen (UX-37 §3)`);
+        if (shape.footSeats !== 5 || shape.topCapsule !== 0 || Math.abs(shape.footBottom - shape.vh) > 1) {
+          fail(`bar p · the seats stand ${shown(shape)} — one row of five at the sheet's foot on the screen's foot, no capsule at the top (UX-37 §4)`);
+        }
+        if (shape.deck !== "true hidden") fail(`bar p · with the sheet up the deck reads ${shape.deck} — it steps away (UX-37 §4)`);
+        if (toFull?.detent !== "full" || !near(toFull.h, 0.92)) fail(`bar p · a pull up on the grabber left ${shown(toFull)} — the full detent (UX-37 §3)`);
+        if (toHalf?.detent !== "half" || !near(toHalf.h, 0.5)) fail(`bar p · a pull down from full left ${shown(toHalf)} — back to half`);
+        if (spring?.detent !== "half" || !near(spring.h, 0.5)) fail(`bar p · a short pull from half left ${shown(spring)} — it springs back`);
+        if (away !== null) fail(`bar p · a pull most of the way down left ${shown(away)} — released under half it goes away`);
+        if (deckBack !== "false visible") fail(`bar p · the sheet gone, the deck reads ${deckBack} — it comes back`);
+        if (away !== null) await shut();
+        await sheet();
+        // ── UX-37 §2: rows run edge to edge — a row's box is the sheet's
+        //    width, only its face and words keep the page inset — and no
+        //    seat's page wears a ground of its own (the sheet is the
+        //    card); 额度 draws no landing head (bug B: 「额度页面布局有问题，
+        //    有背景」). Every seat is looked at. ──
+        const grounds = {};
+        for (const s of ["recent", "workspace", "browser", "machine", "quota"]) {
+          await press(`[data-place-sheet] [data-col-seat="${s}"]`);
+          await wait(700);
+          grounds[s] = await page.evaluate(() => {
+            const sheet = document.querySelector("[data-place-sheet]");
+            const pg = document.querySelector("[data-place-sheet] [data-side-page]");
+            if (!sheet || !pg) return null;
+            const own = getComputedStyle(sheet).backgroundColor;
+            const box = pg.getBoundingClientRect();
+            const odd = [];
+            for (const el of [pg, ...pg.querySelectorAll("*")]) {
+              const bg = getComputedStyle(el).backgroundColor;
+              if (bg === own || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") continue;
+              const r = el.getBoundingClientRect();
+              // A ground is a surface, not a control: most of the page's
+              // width and taller than a row.
+              if (r.width >= box.width * 0.6 && r.height >= 120) odd.push(`${el.tagName.toLowerCase()}${[...el.attributes].filter((a) => a.name.startsWith("data-")).map((a) => `[${a.name}]`).slice(0, 2).join("")} ${bg}`);
+            }
+            const row = pg.querySelector("[data-side-row]")?.getBoundingClientRect() ?? null;
+            const slot = pg.querySelector("[data-side-row] [data-side-face-slot]")?.getBoundingClientRect() ?? null;
+            const inset = parseFloat(getComputedStyle(pg).getPropertyValue("--page-inset"));
+            return {
+              odd,
+              head: pg.querySelectorAll("[data-pane-bar]").length,
+              row: row && { l: Math.round(row.left - box.left), r: Math.round(box.right - row.right), face: Math.round(slot.left - row.left), inset },
+            };
+          });
+        }
+        console.log(`bar p · UX-37 §2 ${shown(grounds)}`);
+        for (const [s, g] of Object.entries(grounds)) {
+          if (g === null) {
+            fail(`probe dead: bar p · the ${s} seat drew no page in the sheet`);
+            continue;
+          }
+          if (g.odd.length) fail(`bar p · the ${s} seat's page wears a ground of its own: ${g.odd.slice(0, 3).join("; ")} — the sheet is the card (UX-37 §2)`);
+          if (g.row && (g.row.l !== 0 || g.row.r !== 0 || g.row.face !== g.row.inset)) {
+            fail(`bar p · the ${s} seat's row stands ${shown(g.row)} — its box reaches both edges, its face the page inset in (UX-37 §2)`);
+          }
+        }
+        if (grounds.quota?.head !== 0) fail(`bar p · the 额度 seat draws the landing's head (${grounds.quota?.head}) — the rows alone (UX-37 bug B)`);
+        // ── UX-37 §1: every seat lands on this session's slice, ‹ goes to
+        //    the whole, a seat pressed again lands on the slice. 最近's
+        //    slice is the records that say this session; the whole is
+        //    every row. 工作区's ‹ climbs to the root, then the
+        //    workspaces. ──
+        {
+          const me = terms[2].id;
+          const t0 = Date.now();
+          const recents = {
+            page: [
+              { device: "a".repeat(64), name: "gate", place: "https://mine.example/", at_ms: t0 - 60_000, session: me },
+              { device: "a".repeat(64), name: "gate", place: "https://other.example/", at_ms: t0 - 90_000, session: null },
+            ],
+            file: [
+              { device: "a".repeat(64), name: "gate", place: "/home/gate/work/out.md", at_ms: t0 - 30_000, session: me },
+              { device: "a".repeat(64), name: "gate", place: "/home/gate/else.md", at_ms: t0 - 40_000, session: "tui/someone-else" },
+            ],
+            dir: [],
+          };
+          await page.route("**/recents", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(recents[r.request().postDataJSON()?.kind] ?? []) }));
+          const rowsNow = () =>
+            page.evaluate(() => ({
+              slice: document.querySelector("[data-place-sheet] [data-recent-slice]")?.getAttribute("data-recent-slice") ?? null,
+              back: document.querySelectorAll("[data-place-sheet] [data-side-page] [data-seat-back]").length,
+              rows: [...document.querySelectorAll("[data-place-sheet] [data-recent-row]")].map((e) => e.getAttribute("data-recent-row")).sort(),
+            }));
+          await press('[data-place-sheet] [data-col-seat="recent"]');
+          await until(3_000, async () => (await rowsNow()).rows.length > 0);
+          const here = await rowsNow();
+          await press("[data-place-sheet] [data-side-page] [data-seat-back]");
+          await until(2_000, async () => (await rowsNow()).slice === "all");
+          const all = await rowsNow();
+          await press('[data-place-sheet] [data-col-seat="machine"]');
+          await wait(400);
+          await press('[data-place-sheet] [data-col-seat="recent"]');
+          await until(2_000, async () => (await rowsNow()).slice === "here");
+          const again = await rowsNow();
+          await page.unroute("**/recents");
+          console.log(`bar p · UX-37 §1 最近: slice ${shown(here)}; ‹ ${shown(all)}; re-entered ${shown(again)}`);
+          const want = [`file ${"a".repeat(64)} /home/gate/work/out.md`, `page ${"a".repeat(64)} https://mine.example/`];
+          if (here.slice !== "here" || here.back !== 1 || shown(here.rows) !== shown(want)) {
+            fail(`bar p · 最近 landed on ${shown(here)} — this session's records alone, under ‹ (UX-37 §1)`);
+          }
+          if (all.slice !== "all" || all.back !== 0 || all.rows.length < 4) fail(`bar p · ‹ from 最近's slice reads ${shown(all)} — every row, no ‹`);
+          if (again.slice !== "here") fail(`bar p · 最近 pressed again reads ${shown(again)} — a seat lands on its slice`);
+          // The other seats' ‹: browser to every tab, machine to the list,
+          // the workspace up to the root and then the workspaces.
+          const whole = {};
+          await press('[data-place-sheet] [data-col-seat="browser"]');
+          await wait(500);
+          whole.browser = [await page.evaluate(() => document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null)];
+          await press("[data-place-sheet] [data-side-page] [data-seat-back]");
+          await wait(400);
+          whole.browser.push(await page.evaluate(() => document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null));
+          // A tab in the whole opens its page in place, without a deck (§6),
+          // and the page is framed in the sheet, not taken for covered by
+          // it (bug A: the sheet is a dialog, and the page inside it hid).
+          await page.evaluate(() => {
+            window.__placed = [];
+            document.addEventListener("khor:page-place", (e) => window.__placed.push(e.detail));
+          });
+          if (await press("[data-place-sheet] [data-browse-bare] [data-side-row] [data-side-open]")) {
+            await wait(500);
+            const placed = await page.evaluate(() => window.__placed.at(-1) ?? null);
+            const body = await page.evaluate(() => document.querySelector('[data-place-sheet] [data-browse-bare="page"] [data-nav-clear]')?.getBoundingClientRect().top ?? null);
+            console.log(`bar p · UX-37 bug A the page in the sheet placed ${shown(placed)}, its box at ${body}`);
+            if (!placed || placed.covered || placed.h < 24) fail(`bar p · the page opened in the sheet was placed ${shown(placed)} — framed to the sheet's body, not taken for covered by the sheet it is in (UX-37 bug A)`);
+            whole.browser.push(
+              await page.evaluate(() => {
+                const pg = document.querySelector('[data-place-sheet] [data-browse-bare="page"]');
+                return pg ? `page head ${pg.querySelectorAll("[data-seat-head]").length} deck ${document.querySelectorAll("[data-place-sheet] [data-session-deck]").length}` : null;
+              }),
+            );
+          }
+          await press('[data-place-sheet] [data-col-seat="machine"]');
+          await wait(500);
+          await press("[data-place-sheet] [data-side-page] [data-back]");
+          await wait(400);
+          whole.machine = await count("[data-place-sheet] [data-side-machines]");
+          await press('[data-place-sheet] [data-col-seat="workspace"]');
+          await wait(600);
+          let climbs = 0;
+          for (; climbs < 8 && !(await count("[data-place-sheet] [data-side-workspaces]")); climbs++) {
+            if (!(await press("[data-place-sheet] [data-up]"))) break;
+            await wait(400);
+          }
+          whole.workspace = { climbs, list: await count("[data-place-sheet] [data-side-workspaces]") };
+          console.log(`bar p · UX-37 §1 the wholes ${shown(whole)}`);
+          if (shown(whole.browser.slice(0, 2)) !== shown(["here", "all"])) fail(`bar p · the browser seat read ${shown(whole.browser)} — this session's pages, ‹ every tab`);
+          if (whole.browser.length > 2 && whole.browser[2] !== "page head 1 deck 0") fail(`bar p · a page opened in the sheet reads ${whole.browser[2]} — ‹ · host · the page, no deck (UX-37 §6)`);
+          if (whole.machine !== 1) fail("bar p · ‹ on the machine's card did not reach the machines (UX-37 §1)");
+          // /home/gate/work → /home/gate → /home → / → the workspaces.
+          if (whole.workspace.list !== 1 || whole.workspace.climbs !== 4) fail(`bar p · 工作区's ‹ read ${shown(whole.workspace)} — up to the root, then the workspaces (UX-37 §1)`);
+          // A file read in the 附栏 is written down as this session's:
+          // the record is what the slice is made of.
+          const visits = [];
+          await page.route("**/recent_visit", (r) => {
+            visits.push(r.request().postDataJSON() ?? {});
+            return r.fulfill({ contentType: "application/json", body: "null" });
+          });
+          await press('[data-place-sheet] [data-col-seat="workspace"]');
+          await wait(600);
+          const file = page.locator("[data-place-sheet] [data-files-list] button", { hasText: /\.[a-z]{2,4}$/ }).first();
+          const named = (await file.count()) ? ((await file.textContent()) ?? "").trim() : null;
+          if (named) await file.click();
+          await until(2_000, async () => visits.some((v) => v.kind === "file"));
+          await page.unroute("**/recent_visit");
+          const read = visits.find((v) => v.kind === "file") ?? null;
+          console.log(`bar p · UX-37 §1 a file read in the 附栏 (${named}) wrote ${shown(read)}`);
+          if (named === null) fail("probe dead: bar p · the 工作区 seat listed no file to read");
+          else if (read?.session !== me || !String(read?.place ?? "").endsWith(named)) fail(`bar p · reading ${named} in the 附栏 wrote ${shown(read)} — a visit from session ${me} (UX-37 §1)`);
+          // ── UX-37 §6: the file page in the sheet wears no deck: ‹ · its
+          //    name · the content, 「…」 in the head. ──
+          const filePage = await page.evaluate(() => {
+            const fp = document.querySelector("[data-place-sheet] [data-file-page]");
+            return fp
+              ? {
+                  head: fp.querySelectorAll(":scope > [data-seat-head]").length,
+                  title: fp.querySelector("[data-seat-title]")?.textContent ?? null,
+                  more: fp.querySelectorAll("[data-seat-head] [data-file-more]").length,
+                  deck: fp.querySelectorAll("[data-file-deck], [data-session-deck]").length,
+                }
+              : null;
+          });
+          console.log(`bar p · UX-37 §6 the file page in the sheet ${shown(filePage)}`);
+          if (!filePage || filePage.head !== 1 || filePage.title !== named || filePage.more !== 1 || filePage.deck !== 0) {
+            fail(`bar p · the file page in the sheet reads ${shown(filePage)} — ‹ · ${named} · the content, 「…」 in its head, no deck (UX-37 §6)`);
+          }
+          if (await count("[data-place-sheet] [data-files-page]")) await press("[data-place-sheet] [data-file-page] [data-seat-back]");
+        }
         await press('[data-place-sheet] [data-col-seat="workspace"]');
         await wait(600);
         const lsFirst = askedLs.map((a) => a.path);
@@ -30903,7 +31136,9 @@ try {
     });
     await page.route("**/term_leave", json(null));
     await page.route("**/term_key", json(null));
-    const recentsRoute = json(recents);
+    // The page records; a `file` or `dir` ask (UX-37 §1) has none here.
+    const recentsRoute = (r) =>
+      r.fulfill({ contentType: "application/json", body: JSON.stringify((r.request().postDataJSON() ?? {}).kind === "page" ? recents : []) });
     await page.route("**/recents", recentsRoute);
     await page.route("**/day_strips", json(days));
     await page.route("**/page_icons", json({}));
@@ -30986,8 +31221,13 @@ try {
       await wait(600);
     }
 
-    // b. 最近: mixed, newest first
+    // b. 最近: mixed, newest first. The column lands on this session's
+    //    slice (UX-37 §1), which this fixture's records say nothing
+    //    about; ‹ is the whole, where they all are.
     {
+      const slice = await page.evaluate(() => document.querySelector("[data-session-side] [data-recent-slice]")?.getAttribute("data-recent-slice") ?? null);
+      if (slice !== "here") fail(`side b · the column's 最近 landed on ${slice} — this session's slice (UX-37 §1)`);
+      await press("[data-session-side] [data-side-page] [data-seat-back]");
       const rows = await until(5_000, async () => (await count("[data-session-side] [data-recent-row]")) >= 3);
       const list = await page.evaluate(() =>
         [...document.querySelectorAll("[data-session-side] [data-recent-row]")].map((e) => ({

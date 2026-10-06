@@ -274,6 +274,9 @@ pub struct RecentPlace {
     /// When it was last visited, Unix ms. Never 0: that is the
     /// tombstone and those are not on this list.
     pub at_ms: i64,
+    /// The session it was last visited from, where one was said
+    /// (`khor_sync::recents`' origins, UX-37 §1).
+    pub session: Option<String>,
 }
 
 /// What subscribers receive. `watch()` is the one feed both faces
@@ -3455,14 +3458,29 @@ impl Node {
     /// [`Self::pin_dir`] demands it: a relative path names nowhere, and
     /// a suggestion nobody can open is worse than no suggestion.
     pub fn recent_visit(&self, kind: PlaceKind, machine: &str, place: &str) -> Result<(), String> {
-        if kind == PlaceKind::Dir && !std::path::Path::new(place).is_absolute() {
+        self.recent_visit_from(kind, machine, place, None)
+    }
+
+    /// [`Self::recent_visit`], from a session: the place joins that
+    /// session's slice of the 附栏's 最近 (UX-37 §1). `None` is a visit
+    /// from nowhere in particular, which keeps whatever origin the place
+    /// already had.
+    pub fn recent_visit_from(
+        &self,
+        kind: PlaceKind,
+        machine: &str,
+        place: &str,
+        session: Option<&str>,
+    ) -> Result<(), String> {
+        if kind != PlaceKind::Page && !std::path::Path::new(place).is_absolute() {
             return Err(msg::path_not_absolute(place));
         }
         let (_, home) = self.resolve(machine)?;
         let loaded = self.recents_loaded()?;
-        loaded.doc.visit(
+        loaded.doc.visit_from(
             &khor_sync::recents::key(kind, &home.hex(), place),
             crate::live::now_ms(),
+            session,
         )?;
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
@@ -3486,9 +3504,9 @@ impl Node {
     /// some other version spelled differently are skipped rather than
     /// guessed at.
     pub fn recents(&self, kind: PlaceKind, limit: usize) -> Result<Vec<RecentPlace>, String> {
-        Ok(self
-            .recents_loaded()?
-            .doc
+        let loaded = self.recents_loaded()?;
+        let doc = &loaded.doc;
+        Ok(doc
             .all()
             .iter()
             .filter_map(|(k, at_ms)| {
@@ -3497,6 +3515,7 @@ impl Node {
                     machine: device.to_owned(),
                     place: place.to_owned(),
                     at_ms: *at_ms,
+                    session: doc.origin_of(k),
                 })
             })
             .take(limit)

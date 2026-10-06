@@ -94,6 +94,9 @@ export type BrowseTab = {
       pinned tabs first and refuses to close one — this side only
       draws what it was told. */
   pinned: boolean;
+  /** The session it was opened from, `""` where none is known — the
+      附栏's browser seat lands on that session's tabs (UX-37 §1). */
+  session: string;
 };
 
 const shape = (open: TabsOpen): BrowseTab[] =>
@@ -103,6 +106,8 @@ const shape = (open: TabsOpen): BrowseTab[] =>
     path: t.url,
     title: t.title,
     pinned: t.pinned,
+    // An older node's row has none.
+    session: t.session ?? "",
   }));
 
 export type BrowseTabs = {
@@ -165,7 +170,7 @@ export type BrowseTabs = {
  * ⚠️ **Nothing may be *drawn against* it** — see `ready`. It stands in
  * so `current` is never undefined, not so a face can render it.
  */
-const PENDING: BrowseTab = { id: "?", device: null, path: "", title: "", pinned: false };
+const PENDING: BrowseTab = { id: "?", device: null, path: "", title: "", pinned: false, session: "" };
 
 /**
  * How often the list is re-read while the landing that draws it is on
