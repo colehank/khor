@@ -3675,7 +3675,7 @@ term-key-row = "终端键行"
 # that puts files into the terminal as paths.
 key-attach-name = "放文件进终端"
 files-device = "照片与文件"
-files-land = "放到会话所在机器的 ~/khor-drop/，路径粘贴到光标处"
+files-land = "放到会话所在机器的接收位置，路径粘贴到光标处"
 # The files panel's machine list: the mark on the session's own machine,
 # listed first (the owner, 2026-10-07).
 files-session = "会话所在"
