@@ -1600,7 +1600,8 @@ try {
   // here so the ask is visible if it happens; what is asserted is that
   // it never does (4l).
   const widened = [];
-  await page.route("**/widen", (r) => {
+  // Both halves of the window's room (UX-46: `widen` and `unwiden`).
+  await page.route(/\/(un)?widen$/, (r) => {
     widened.push(r.request().postDataJSON() ?? {});
     return r.fulfill({ contentType: "application/json", body: "null" });
   });
@@ -32297,19 +32298,26 @@ try {
   //      the wide tabs (§7): × on every pill, no act on any, the front
   //      pill as wide as its whole name;
   //   f. the width is remembered per session: dragged, another session
-  //      shows no column, this one comes back at the dragged width;
+  //      shows no column, this one comes back closed and the press opens
+  //      it at the dragged width (UX-46 §1);
   //   g. in the app (UX-39 §9), the column extends the window: the press
-  //      asks the window to grow by the column's width before the column
-  //      is drawn, and the close gives the same width back. Read as the
-  //      bridge's `widen` calls on a page asked for as the app (`as-app`,
-  //      fix c's stub); the web face asks nothing (4l). Whether the window
-  //      really grew is the Mac app's to show, not this page's;
+  //      asks the window to grow for the 附栏 before the column is drawn,
+  //      the close and leaving the session ask for the room back (UX-46
+  //      §2), and nothing beside the column — the front pill's ×, the
+  //      strip's end — moves in any frame while the window does (§3).
+  //      Read as the bridge's `widen` / `unwiden` calls on a page asked
+  //      for as the app (`as-app`, fix c's stub), the viewport standing in
+  //      for the window; the web face asks nothing (4l). Whether the real
+  //      window lands on its old frame is `room.rs`'s tests and the Mac;
   //   h. find and make in the lists, a page's deck, landing on 最近 (UX-40);
   //   i. the workspace (UX-43): the trees in step, 复制路径, the keyboard
   //      going down outside the terminal, the docked file deck folding;
   //   j. on the phone (UX-44): every sheet is the 附栏's paper, one scrim
   //      in each theme, 最近 and 浏览器 rows delete on a swipe, no › at a
   //      content row's end.
+  //   k. the 附栏 is its session's alone (UX-46 §1): another landing,
+  //      another tab, the tab closed — each closes it, and coming back
+  //      finds it closed; the press opens it on 最近.
   //
   // `FACE_ONLY=side` runs this section alone.
   side: {
@@ -32848,7 +32856,12 @@ try {
       if (!stored || Math.abs(stored.w - dragged) > 1) fail(`side f · the width is not remembered for the session (${JSON.stringify(stored)})`);
       await openSession("tui/side-2");
       if ((await count(col)) !== 0) fail("side f · the other session opened with a column — one memory per session");
-      await press(front("tui/side-1"));
+      // Back on the first session it is closed (UX-46 §1); the press opens
+      // it at the width it was dragged to — the one thing remembered.
+      await openSession("tui/side-1");
+      if ((await count(col)) !== 0) fail("side f · back on the first session its 附栏 is still open — leaving the session closed it (UX-46 §1)");
+      else await press(front("tui/side-1"));
+      await until(2_000, async () => (await count(col)) === 1);
       await wait(600);
       const back = (await rect(col))?.width ?? 0;
       if (Math.abs(back - dragged) > 1) fail(`side f · back on the first session the column is ${back}, it was dragged to ${dragged}`);
@@ -32860,6 +32873,51 @@ try {
       await page.mouse.up();
       await wait(500);
       if ((await count(col)) !== 0) fail("side f · dragging the seam under the floor did not fold the column away");
+    }
+
+    // k. the 附栏 is its session's alone (UX-46 §1, the owner 2026-10-07:
+    //    「在跳转到别的目录的时候仍然存在，这个侧栏应该是只属于 session」):
+    //    another landing closes it and coming back finds it closed; the
+    //    press opens it on 最近 whatever seat it was left on; another tab
+    //    closes it and coming back finds it closed; closing the session's
+    //    tab closes it.
+    {
+      const shut = () => until(2_000, async () => (await count(col)) === 0);
+      const opens = async (id) => {
+        if ((await count(col)) === 0) await press(front(id));
+        return until(2_000, async () => (await count(col)) === 1);
+      };
+      const expanded = (id) => page.evaluate((s) => document.querySelector(s)?.getAttribute("aria-expanded") ?? null, front(id));
+      const roads = {};
+      await openSession("tui/side-1");
+      if (!(await opens("tui/side-1"))) fail("probe dead: side k · the front tab's press opened no column");
+      await pick("browser");
+      roads.left = await seatOn();
+      await press('[data-landing-strip] [data-landing="devices"]');
+      roads.landing = await shut();
+      await press('[data-landing-strip] [data-landing="sessions"]');
+      await wait(800);
+      roads.back = { col: await count(col), expanded: await expanded("tui/side-1") };
+      await press(front("tui/side-1"));
+      await until(2_000, async () => (await count(col)) === 1);
+      await wait(300);
+      roads.seat = await seatOn();
+      await openSession("tui/side-2");
+      roads.tab = await shut();
+      await openSession("tui/side-1");
+      roads.tabBack = await count(col);
+      await opens("tui/side-1");
+      await press('[data-session-tabs] [data-tab="tui/side-1"] [data-tab-close]');
+      roads.closed = await shut();
+      await wait(400);
+      console.log(`side k · ${JSON.stringify(roads)}`);
+      if (roads.left !== "browser") fail(`probe dead: side k · the column was on ${roads.left} before leaving, not 浏览器`);
+      if (!roads.landing) fail("side k · the 附栏 stayed open on the 机器 landing — leaving the session closes it (UX-46 §1)");
+      if (roads.back.col !== 0 || roads.back.expanded !== "false") fail(`side k · back on the session the 附栏 is ${JSON.stringify(roads.back)} — closed, the front tab saying so (UX-46 §1)`);
+      if (roads.seat !== "recent") fail(`side k · reopened, the 附栏 is on ${roads.seat} — each opening lands on 最近 (UX-40 §3)`);
+      if (!roads.tab) fail("side k · another session's tab in front, the 附栏 stayed open (UX-46 §1)");
+      if (roads.tabBack !== 0) fail("side k · back on the first session's tab its 附栏 is open again — leaving closed it (UX-46 §1)");
+      if (!roads.closed) fail("side k · the session's tab closed and the 附栏 stayed (UX-46 §1)");
     }
 
     // i. the workspace, from the owner's iPhone (UX-43, 2026-10-07 13:40:
@@ -33415,7 +33473,12 @@ try {
       await wait(900);
     }
 
-    // g. the window grows by the column (UX-39 §9)
+    // g. the window grows by the column (UX-39 §9) and comes back
+    //    (UX-46 §2, §3). The window is this page's viewport: the bridge's
+    //    `widen` grows it by the column and `unwiden` puts it back, as the
+    //    app does, so what the face does while the window moves is on the
+    //    glass. Whether the real window lands on its old frame is the
+    //    app's arithmetic (`src-tauri/src/room.rs`'s tests).
     {
       await page.addInitScript(() => {
         if (!new URLSearchParams(location.search).has("as-app")) return;
@@ -33431,32 +33494,98 @@ try {
       await page.evaluate(() => window.localStorage.clear());
       await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&as-app`, { waitUntil: "load" });
       await wait(1_200);
-      const was = widened.length;
+      const base = page.viewportSize().width;
+      const asks = [];
       // The column's count at the moment each ask arrives: the window
       // grows first, the column arrives into the room it made.
       const colAtAsk = [];
-      const asked = async (r) => {
-        widened.push(r.request().postDataJSON() ?? {});
-        // Read while the ask is still unanswered.
+      let grown = 0;
+      const room = async (r) => {
+        const body = r.request().postDataJSON() ?? {};
+        const cmd = /\/unwiden$/.test(r.request().url()) ? "unwiden" : "widen";
+        asks.push({ cmd, ...body });
         colAtAsk.push(await page.evaluate(() => document.querySelectorAll("[data-session-side]").length).catch(() => null));
-        return r.fulfill({ contentType: "application/json", body: "null" });
+        let answer = null;
+        if (cmd === "widen" && typeof body.delta === "number") grown += body.delta;
+        else if (cmd === "widen") answer = grown = body.w;
+        else [answer, grown] = [grown, 0];
+        await page.setViewportSize({ width: base + grown, height: 900 });
+        return r.fulfill({ contentType: "application/json", body: JSON.stringify(answer) });
       };
-      await page.route("**/widen", asked);
+      await page.route(/\/(un)?widen$/, room);
+      // Every frame across a press: the front pill's × and the strip's end.
+      const sample = () =>
+        page.evaluate(() => {
+          window.__frames = [];
+          const tick = () => {
+            if (!window.__frames) return;
+            const at = (s) => document.querySelector(s)?.getBoundingClientRect().right ?? null;
+            window.__frames.push([at('[data-session-tabs] [data-tab][data-on="true"] [data-tab-close]'), at("[data-session-tabs] [data-tab-strip]")]);
+            requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+      const frames = () =>
+        page.evaluate(() => {
+          const f = window.__frames ?? [];
+          window.__frames = null;
+          return f;
+        });
+      const drift = (f) => {
+        const ok = f.filter(([x, e]) => x !== null && e !== null);
+        if (ok.length === 0) return null;
+        const [x0, e0] = ok[0];
+        return Math.max(...ok.map(([x, e]) => Math.max(Math.abs(x - x0), Math.abs(e - e0))));
+      };
       await openSession("tui/side-1");
       const w = await tokenPx("--session-side-w");
+      const session0 = await rect(sessionSel);
+      await sample();
       await press(front("tui/side-1"));
       await until(3_000, async () => (await count(col)) === 1);
       await wait(400);
-      const open = widened.slice(was).map((a) => a.delta);
+      const openFrames = await frames();
+      const open = asks.splice(0);
+      const session1 = await rect(sessionSel);
+      const grownTo = page.viewportSize().width;
+      await sample();
       await press(front("tui/side-1"));
       await until(3_000, async () => (await count(col)) === 0);
       await wait(400);
-      const shut = widened.slice(was).map((a) => a.delta);
-      await page.unroute("**/widen", asked);
-      console.log(`side g · as the app: widen ${JSON.stringify(open)} on the press (the column at the ask: ${JSON.stringify(colAtAsk)}), then ${JSON.stringify(shut)} with the close; the column's width ${w}`);
-      if (open.length !== 1 || Math.abs(open[0] - w) > 1) fail(`side g · the press asked the window to widen ${JSON.stringify(open)} — once, by the column's ${w} (UX-39 §9)`);
-      else if (colAtAsk[0] !== 0) fail(`side g · the column was drawn (${colAtAsk[0]}) when the window was asked to grow — it grows first, the column arrives into the room (UX-39 §9)`);
-      if (shut.length !== 2 || shut[1] !== -open[0]) fail(`side g · the close asked ${JSON.stringify(shut.slice(1))} — the same width back (UX-39 §9)`);
+      const shutFrames = await frames();
+      const shut = asks.splice(0);
+      const backTo = page.viewportSize().width;
+      // Leaving the session gives the room back too (UX-46 §1 → §2).
+      await press(front("tui/side-1"));
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(400);
+      asks.splice(0);
+      await press('[data-landing-strip] [data-landing="devices"]');
+      await until(3_000, async () => page.viewportSize().width === base);
+      await wait(400);
+      const left = asks.splice(0);
+      const leftTo = page.viewportSize().width;
+      await press('[data-landing-strip] [data-landing="sessions"]');
+      await wait(600);
+      await page.unroute(/\/(un)?widen$/, room);
+      await page.setViewportSize({ width: base, height: 900 });
+      const dOpen = drift(openFrames);
+      const dShut = drift(shutFrames);
+      console.log(
+        `side g · as the app: ${JSON.stringify(open)} on the press (the column at the ask: ${colAtAsk[0]}), window ${base} → ${grownTo}, ` +
+          `session ${session0?.width} → ${session1?.width}; ${JSON.stringify(shut)} with the close, window → ${backTo}; ` +
+          `${JSON.stringify(left)} on leaving, window → ${leftTo}; the strip's end moved ${dOpen} over ${openFrames.length} frames opening, ` +
+          `${dShut} over ${shutFrames.length} closing; the column's width ${w}`,
+      );
+      if (open.length !== 1 || open[0].cmd !== "widen" || open[0].column !== "session-side" || Math.abs(open[0].w - w) > 1) {
+        fail(`side g · the press asked ${JSON.stringify(open)} — the window once, for the 附栏's ${w} (UX-39 §9)`);
+      } else if (colAtAsk[0] !== 0) fail(`side g · the column was drawn (${colAtAsk[0]}) when the window was asked to grow — it grows first, the column arrives into the room (UX-39 §9)`);
+      if (!session0 || !session1 || Math.abs(session0.width - session1.width) > 0.5) fail(`side g · the session went ${session0?.width} → ${session1?.width} wide as the window grew by the column — it keeps its width (UX-39 §9)`);
+      if (shut.length !== 1 || shut[0].cmd !== "unwiden" || shut[0].column !== "session-side") fail(`side g · the close asked ${JSON.stringify(shut)} — the 附栏's room back, once (UX-46 §2)`);
+      if (left.length !== 1 || left[0].cmd !== "unwiden" || left[0].column !== "session-side" || leftTo !== base) fail(`side g · leaving the session asked ${JSON.stringify(left)} and left the window ${leftTo} — the room back, once (UX-46 §2)`);
+      if (openFrames.length < 5 || shutFrames.length < 5) fail(`probe dead: side g · ${openFrames.length} / ${shutFrames.length} frames sampled across the presses`);
+      if (dOpen === null || dOpen > 1) fail(`side g · opening, the front pill's × or the strip's end moved ${dOpen} px in some frame — nothing beside the column moves while the window does (UX-46 §3)`);
+      if (dShut === null || dShut > 1) fail(`side g · closing, the front pill's × or the strip's end moved ${dShut} px in some frame — 「按钮从左边跑到右边去了」 (UX-46 §3)`);
       await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
       await wait(900);
     }

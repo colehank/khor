@@ -337,8 +337,9 @@ try {
   // down under the tabs. The front tab's press opens the session's 附栏
   // (`views/SessionSide`), which lands on 最近, whose first row is
   // 过去24小时: the day's two totals over its band (`views/DayToday`,
-  // `DayStrip`); the row does not expand. No pill draws a day. Open,
-  // width and seat are one memory per session (`use-session-side`).
+  // `DayStrip`); the row does not expand. No pill draws a day. The
+  // column is its session's alone and closes when the session is left
+  // (UX-46 §1); its width is one memory per session (`use-session-side`).
   // Read on the glass:
   //
   //   a. a fresh profile draws no column and no day, and keeps no room
@@ -353,10 +354,12 @@ try {
   //   c. a double-click on the name renames and never toggles the column,
   //      not for one frame — sampled on every animation frame across the
   //      gesture, closed and open;
-  //   d. the column and its day outlive a reload;
+  //   d. a reload finds the column closed (UX-46 §1: nothing reopens it
+  //      but a press), and the press brings it back on 最近 with its day;
   //   e. a day with no record (`day_fixture`'s quiet row): the row is not
   //      drawn and 最近 starts at its list (UX-42, progressive
-  //      disclosure); another session's column is untouched;
+  //      disclosure); back on the first session its column is closed
+  //      (UX-46 §1);
   //   f. while the day is on its way, the row holds the band's skeleton
   //      in the band's own geometry, never a blank (a context whose day
   //      route is held);
@@ -583,13 +586,18 @@ try {
       await sleep(200);
     }
 
-    // d. it outlives a reload (the column is open now, from c)
+    // d. a reload finds it closed (the column is open now, from c), and
+    //    the press brings the day back (UX-46 §1; ⚠️ 墓碑 UX-30 → UX-46:
+    //    the column and its day outlived a reload, remembered per session)
     if (!(await openToday(page)) || !(await waitRows(page, true, 1_000))) fail("probe dead: ⓪d the column did not show the day before the reload");
     await page.reload({ waitUntil: "load" });
-    const kept = await until("the column and its day, back after a reload with nobody pressing", 20_000, async () =>
-      (await columns(page)) === 1 && (await page.locator("[data-session-side] [data-detail-day] [data-day-strip]").count()) === 1,
-    );
-    if (!kept) fail("⓪d the column was open on 最近 with its day before the reload and is not after it — the choice is remembered per session");
+    await until("the session's tab, back after a reload", 20_000, async () => (await frontOpen(page, first).count()) === 1);
+    await sleep(800);
+    if ((await columns(page)) !== 0) fail("⓪d after a reload the column is open with nobody pressing — it is its session's while it stays open, and closes with it (UX-46 §1)");
+    const kept = (await openToday(page)) && (await until("the day in the column the press opened", 10_000, async () =>
+      (await page.locator("[data-session-side] [data-detail-day] [data-day-strip]").count()) === 1,
+    ));
+    if (!kept) fail("⓪d after a reload the front tab's press did not bring the column back on 最近 with its day");
   } else {
     fail("probe dead: ⓪ had no fixture row to open");
   }
@@ -638,12 +646,12 @@ try {
     await waitColumn(page, false, 1_000);
   }
   }
-  // …and the quiet sessions' memories are their own: the first session
-  // still opens with its column (its day folded when a row beside it was
-  // pressed — a press outside folds it).
+  // …and leaving the first session closed its column: back on it, it is
+  // closed (UX-46 §1; ⚠️ 墓碑: it still opened with its column, one
+  // memory per session).
   if (first && (await openTab(first))) {
-    const still = await until("the first session's column, still open after the quiet ones", 10_000, async () => (await columns(page)) === 1);
-    if (!still) fail("⓪e opening the sessions with no record changed the first session's memory — one memory per session");
+    await sleep(800);
+    if ((await columns(page)) !== 0) fail("⓪e back on the first session after the quiet ones its column is open — leaving it closed it (UX-46 §1)");
   }
 
   // f. on its way: a skeleton in the band's own geometry in the row
@@ -651,7 +659,6 @@ try {
     const slow = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await slow.addInitScript((id) => {
       try {
-        localStorage.setItem(`khor.session-side.${id}`, JSON.stringify({ open: true, w: null, seat: "recent" }));
         localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
       } catch {
         /* then nothing is asked for, and the probe below says so */
@@ -667,6 +674,9 @@ try {
     const slowThrew = [];
     sp.on("pageerror", (e) => slowThrew.push(String(e)));
     await sp.goto(`http://localhost:${PORT}/?bridge=${BRIDGE_PORT}`, { waitUntil: "load" });
+    // The column opens on the front tab's press, never from memory (UX-46).
+    await until("the session's tab on the slow page", 15_000, async () => (await frontOpen(sp, first).count()) === 1);
+    await openToday(sp);
     const skeleton = await (async () => {
       const end = Date.now() + 15_000;
       while (Date.now() < end) {
@@ -1581,9 +1591,7 @@ try {
     try {
       localStorage.setItem("khor.list-width", '{"w":462,"collapsed":true}');
       localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
-      // …with the column open and its day open last time (⓪ d): a
-      // returning browser that had them open expects them open.
-      localStorage.setItem(`khor.session-side.${id}`, JSON.stringify({ open: true, w: null, seat: "recent", day: true }));
+      // (The column open last time is not: it opens on the press, UX-46.)
     } catch {
       /* a profile that refuses storage is simply the blank case again */
     }
@@ -1592,6 +1600,8 @@ try {
   const backThrew = [];
   back.on("pageerror", (e) => backThrew.push(String(e)));
   await back.goto(`http://localhost:${PORT}/?bridge=${BRIDGE_PORT}`, { waitUntil: "load" });
+  await until("the session's tab on the returning page", 15_000, async () => (await frontOpen(back, remembered).count()) === 1);
+  await openToday(back);
   const backSeen = await (async () => {
     const end = Date.now() + 25_000;
     let last = { rows: 0, strips: 0, boxW: null };
@@ -1668,7 +1678,6 @@ try {
     };
     try {
       localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: [id], active: id }));
-      localStorage.setItem(`khor.session-side.${id}`, JSON.stringify({ open: true, w: null, seat: "recent", day: true }));
     } catch {
       /* then nothing is open, and the probe below says so */
     }
@@ -1677,6 +1686,8 @@ try {
   const quietThrew = [];
   quiet.on("pageerror", (e) => quietThrew.push(String(e)));
   await quiet.goto(`http://localhost:${PORT}/?bridge=${BRIDGE_PORT}`, { waitUntil: "load" });
+  await until("the session's tab with a silent observer", 15_000, async () => (await frontOpen(quiet, remembered).count()) === 1);
+  await openToday(quiet);
   const quietSeen = await (async () => {
     const end = Date.now() + 25_000;
     let last = { rows: 0, strips: 0 };
