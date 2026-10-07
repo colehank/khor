@@ -189,3 +189,88 @@ fn a_checkouts_segment_counts_what_a_prompt_counts() {
     fs::create_dir_all(&plain).unwrap();
     assert_eq!(khor_node::git::last_moved(&plain), 0);
 }
+
+/// Like [`git`], for the commands that stop on a conflict on purpose.
+fn git_stops(dir: &std::path::Path, args: &[&str]) {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"])
+        .args(args)
+        .env("GIT_EDITOR", "true")
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "git {args:?} was to stop on a conflict");
+}
+
+/// **What a prompt says past the counts** (the workspace row lab draft,
+/// 2026-10-08): a branch with no upstream counts the commits no remote
+/// has — none at all in a checkout with no remote — and an operation
+/// left half done is named, its conflicts counted as conflicts.
+#[test]
+fn a_segment_names_an_operation_and_counts_what_no_remote_has() {
+    use khor_core::GitOperation as O;
+    let r = root("operation");
+    let origin = r.0.join("origin.git");
+    let repo = r.0.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    git(&r.0, &["init", "-q", "--bare", "origin.git"]);
+    git(&repo, &["init", "-q"]);
+    fs::write(repo.join("a.txt"), "one\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "first"]);
+    let seg = |why: &str| {
+        let s = khor_node::git::segment(&repo).unwrap();
+        eprintln!("[segment] {why}: ahead {} behind {} ~{} {:?}", s.ahead, s.behind, s.conflicted, s.operation);
+        s
+    };
+    assert_eq!((seg("no remote").ahead, seg("no remote").operation), (0, None), "no remote, no count");
+
+    // Pushed without `-u`: on the remote, and no upstream configured.
+    git(&repo, &["remote", "add", "origin", origin.to_str().unwrap()]);
+    git(&repo, &["push", "-q", "origin", "main"]);
+    assert_eq!(seg("main pushed, no upstream").ahead, 0);
+    git(&repo, &["checkout", "-q", "-b", "topic"]);
+    fs::write(repo.join("b.txt"), "b\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "topic b"]);
+    fs::write(repo.join("a.txt"), "topic\n").unwrap();
+    git(&repo, &["commit", "-q", "-am", "topic a"]);
+    let s = seg("topic never pushed");
+    assert_eq!((s.branch.as_deref(), s.ahead, s.behind), (Some("topic"), 2, 0), "⇡2 though no upstream");
+
+    git(&repo, &["checkout", "-q", "main"]);
+    fs::write(repo.join("a.txt"), "main\n").unwrap();
+    git(&repo, &["commit", "-q", "-am", "main a"]);
+    assert_eq!(seg("main one ahead of origin").ahead, 1);
+
+    git_stops(&repo, &["merge", "-q", "topic"]);
+    let s = seg("merging");
+    assert_eq!((s.operation, s.conflicted), (Some(O::Merge), 1), "合并中 ~1");
+    git(&repo, &["merge", "--abort"]);
+
+    git_stops(&repo, &["cherry-pick", "topic"]);
+    assert_eq!(seg("picking").operation, Some(O::CherryPick));
+    git(&repo, &["cherry-pick", "--abort"]);
+
+    let first = String::from_utf8(
+        Command::new("git").arg("-C").arg(&repo).args(["rev-list", "--max-parents=0", "HEAD"]).output().unwrap().stdout,
+    )
+    .unwrap();
+    git_stops(&repo, &["revert", "--no-edit", first.trim()]);
+    assert_eq!(seg("reverting").operation, Some(O::Revert));
+    git(&repo, &["revert", "--abort"]);
+
+    git(&repo, &["checkout", "-q", "topic"]);
+    git_stops(&repo, &["rebase", "main"]);
+    assert_eq!(seg("rebasing").operation, Some(O::Rebase));
+    git(&repo, &["rebase", "--abort"]);
+
+    git(&repo, &["bisect", "start"]);
+    assert_eq!(seg("bisecting").operation, Some(O::Bisect));
+    git(&repo, &["bisect", "reset"]);
+    assert_eq!(seg("done").operation, None);
+
+    git(&repo, &["checkout", "-q", "--detach"]);
+    assert_eq!(seg("detached").ahead, 0, "detached: no branch to count for");
+}

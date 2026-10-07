@@ -137,6 +137,7 @@ fn compute(path: &str, changed_ms: i64, was: Option<&WorkspaceFact>) -> Workspac
             untracked: s.untracked,
             capped: s.more,
             since_ms: 0,
+            operation: s.operation,
         };
         let since_ms = match was.and_then(|w| w.git.as_ref()) {
             Some(w) if w.same(&fresh) => w.since_ms,

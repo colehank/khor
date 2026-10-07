@@ -326,6 +326,24 @@ pub struct GitSegment {
     /// the latest moment git's own files say it could have.
     #[ts(type = "number")]
     pub since_ms: i64,
+    /// **What git is in the middle of** (the workspace row lab draft,
+    /// 2026-10-08): a merge, rebase, cherry-pick, revert or bisect that
+    /// has started and not been concluded; `None` otherwise. Tail field.
+    #[serde(default)]
+    pub operation: Option<GitOperation>,
+}
+
+/// An operation a checkout is in the middle of — the word a prompt shows
+/// before its counts (`MERGING`, `REBASE-i`, …). `git am` is not one of
+/// them: it has no word on the row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum GitOperation {
+    Merge,
+    Rebase,
+    CherryPick,
+    Revert,
+    Bisect,
 }
 
 impl GitSegment {

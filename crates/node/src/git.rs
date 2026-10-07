@@ -229,7 +229,8 @@ pub struct Segment {
     pub head: Option<String>,
     /// HEAD's subject line.
     pub subject: Option<String>,
-    /// [`divergence`], `(0, 0)` with no upstream.
+    /// [`divergence`]; with no upstream, [`unpushed`] and 0; `(0, 0)`
+    /// detached.
     pub ahead: u32,
     pub behind: u32,
     /// Entries in the stash.
@@ -246,6 +247,8 @@ pub struct Segment {
     pub changed: u32,
     /// The walk stopped at [`ROWS`] paths: the counts are a floor.
     pub more: bool,
+    /// [`operation`]: what the checkout is in the middle of.
+    pub operation: Option<khor_core::GitOperation>,
 }
 
 /// [`Segment`] for one checkout. **Blocking**: a status walk.
@@ -304,7 +307,10 @@ pub fn segment(root: &Path) -> Result<Segment, String> {
     }
     sets[0] = conflicted;
     let n = |s: &HashSet<String>| s.len().min(u32::MAX as usize) as u32;
-    let (ahead, behind) = divergence(&repo).unwrap_or((0, 0));
+    // A branch with no upstream still says what it has not pushed.
+    let (ahead, behind) = divergence(&repo)
+        .or_else(|| unpushed(&repo).map(|a| (a, 0)))
+        .unwrap_or((0, 0));
     Ok(Segment {
         branch,
         head,
@@ -318,7 +324,55 @@ pub fn segment(root: &Path) -> Result<Segment, String> {
         untracked: n(&sets[3]),
         changed: n(&all),
         more,
+        operation: operation(&repo),
     })
+}
+
+/// **What the checkout is in the middle of**, as git's own prompt reads
+/// it off the git directory (`gix::Repository::state`). A rebase is one
+/// word however it was started; `git am` has none.
+fn operation(repo: &gix::Repository) -> Option<khor_core::GitOperation> {
+    use gix::state::InProgress as P;
+    use khor_core::GitOperation as O;
+    Some(match repo.state()? {
+        P::Merge => O::Merge,
+        P::Rebase | P::RebaseInteractive | P::ApplyMailboxRebase => O::Rebase,
+        P::CherryPick | P::CherryPickSequence => O::CherryPick,
+        P::Revert | P::RevertSequence => O::Revert,
+        P::Bisect => O::Bisect,
+        P::ApplyMailbox => return None,
+    })
+}
+
+/// **Commits on HEAD's branch that no remote has**, for a branch with no
+/// upstream to count against (the lab draft, 2026-10-08: a branch never
+/// pushed is not silent). HEAD walked with every remote-tracking branch
+/// hidden — `git rev-list --count HEAD --not --remotes`.
+///
+/// `None` detached, and in a checkout with no remote-tracking branch at
+/// all: there every commit is 「not on a remote」, and a count of the
+/// whole history says nothing a person can act on.
+fn unpushed(repo: &gix::Repository) -> Option<u32> {
+    let head = repo.head_ref().ok()??;
+    let local = head.id().detach();
+    let remotes: Vec<gix::ObjectId> = repo
+        .references()
+        .ok()?
+        .remote_branches()
+        .ok()?
+        .filter_map(|r| Some(r.ok()?.into_fully_peeled_id().ok()?.detach()))
+        .collect();
+    if remotes.is_empty() {
+        return None;
+    }
+    Some(
+        repo.rev_walk([local])
+            .with_hidden(remotes)
+            .all()
+            .ok()?
+            .count()
+            .min(u32::MAX as usize) as u32,
+    )
 }
 
 /// **The latest moment git's own files say the segment could have
