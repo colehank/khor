@@ -39,18 +39,18 @@
 // clutter (this file's original judgment, kept, with its condition now
 // written down and measured rather than assumed).
 //
-// **The glass strip has left that arrangement** (UX-45, Chrome's): every
+// **The strip has left that arrangement** (UX-45, Chrome's): every
 // tab is drawn and all are one width, front or not (`--tab-w-even`),
 // shrinking together down to `--tab-w-floor` — the face and the × —
 // shedding as they go (a tab not in front keeps its × for the pointer
 // only, then its name goes), and past the floor the strip scrolls, the
 // front tab kept in view; after the last tab a hairline and ＋. No count
 // and no switcher there. ⚠️ 墓碑 (UX-25 → UX-45): the count after the
-// strip once it scrolled, and the switcher it opened (`Tabs`). Every
-// strip `Tabs` draws is the glass one at the top, so the plain strip,
-// the bottom strip and `TabCount` below are no longer drawn by it; the
-// phone's band is `SessionBar`'s, and the narrow shell's count is
-// `DetailPane`'s.
+// strip once it scrolled, and the switcher it opened (`Tabs`). ⚠️ 墓碑
+// (ux-q): the plain strip and the strip under a session's content —
+// every strip is the glass one at the top; the phone's band is
+// `SessionBar`'s, and the narrow shell's count (`TabCount`, below) is
+// `DetailPane`'s head's.
 import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
@@ -397,12 +397,8 @@ export function TabStrip({
   // the strip still takes the handler so every caller stays one shape.
   onClose,
   onNew,
-  onSwitch,
-  switching = false,
   head,
   tail,
-  at = "top",
-  glass = false,
   frontAct = false,
 }: {
   /** **The front tab's act at the capsule's end, and none on the pills**
@@ -414,14 +410,6 @@ export function TabStrip({
       its ↻); the workspace strip takes it for the file's ↻ / ✓. ⚠️ 墓碑
       (UX-33 §1): the third seat on every wide pill. */
   frontAct?: boolean;
-  /** **The glass look** (the redesign, 2026-10-02): the tabs are pills in
-      one glass capsule — the one in front a `fill-strong` pill with its
-      ×, the rest ink — and the count sits at the capsule's end after a
-      hairline. `head` and `tail` stand outside the capsule, as glass
-      circles of their own. The session tabs wear it, at the foot of a
-      session on the narrow face and at the top of the content on the
-      wide one; a workspace's file tabs keep the strip they had. */
-  glass?: boolean;
   faces: TabFace[];
   active: string;
   onFocus: (id: string) => void;
@@ -429,14 +417,6 @@ export function TabStrip({
   /** Add a tab. Absent on a strip whose tabs are not made here — the
       session strip's tabs come from the list, so it draws no "+". */
   onNew?: () => void;
-  /** Open the switcher. Drawn **only once the strip has stopped showing
-      every tab** — see the file head; a landing that has no switcher to
-      open leaves this out and gets the strip alone. **Not on the glass
-      strip** (UX-45): there every tab is drawn, down to its face. */
-  onSwitch?: () => void;
-  /** Whether the switcher the count opens is up — the count stays drawn
-      while it is, so the press that opened it can close it. */
-  switching?: boolean;
   /** Whatever the landing pins against the **left** end of the strip.
       One caller so far: the workspace's narrow face, where the file is
       one screen of three and this is the way back to the tree
@@ -451,36 +431,18 @@ export function TabStrip({
       **Outside the scroller**, unlike 「+」: these are not about the
       tabs, so they must not scroll away with them. */
   tail?: ReactNode;
-  /**
-   * Which side of its content the strip stands on (2026-10-02, iOS 第三步
-   * A). `"top"` is every strip there was: R0, the tabs standing on the
-   * board and joined to it by their foot. `"bottom"` is the narrow
-   * session page's bar (`components/SessionBar`): the content is above,
-   * so the open tab **hangs** from it — its foot is at the top, its
-   * rounded corners at the bottom, the label still on the row's
-   * centreline — and the paper it is joined to is the session over it.
-   * Same tabs, same widths, same scroll; only the joint moves.
-   */
-  at?: "top" | "bottom";
 }) {
-  const below = at === "bottom";
   /** The list is folded and its strip's block leads this row
       (`RegionLead`): the capsule follows the block, a gap after it. */
   const led = useContext(RegionLead) !== null;
   const strip = useRef<HTMLDivElement>(null);
   // The front tab's piece slides to the tab brought forward, in the glass
   // capsule (F7.2, `lib/travel`).
-  useTravel(below ? "tabs-below" : "tabs", () => (glass ? strip.current : null), active);
+  useTravel("tabs", () => strip.current, active);
   /** How many times a held row has let go (`held`): the re-balance runs
       on each. */
   const [released, setReleased] = useState(0);
-  const widths = useRebalance(() => (glass ? strip.current : null), active, released);
-  // Whether the strip has given up on its own promise. Measured off the
-  // element, not counted from `faces.length` and a width: how many tabs
-  // fit depends on the region, which the rail, the window and the
-  // landing all have a say in, and a number derived here would be a
-  // second opinion about a layout the browser has already decided.
-  const [crowded, setCrowded] = useState(false);
+  const widths = useRebalance(() => strip.current, active, released);
   /** Which ends have a tab cut off behind them, for the fade on that
       side (docs/SHELL.md 第三轮 第 2 条). No fade where nothing is cut:
       a fade over a whole tab would be a mark that says 「more this
@@ -488,7 +450,7 @@ export function TabStrip({
   const [cut, setCut] = useState({ left: false, right: false });
   /**
    * **The tab in front is scrolled into view** whenever it changes — a
-   * click, a shortcut, a pick from the switcher, a new one (第三轮 第 2
+   * click, a shortcut, a pick from a menu, a new one (第三轮 第 2
    * 条) — and when the strip itself changes width, which is how a tab
    * that was in view ends up past the edge without anybody touching it.
    * Measured against the strip rather than with `scrollIntoView`, which
@@ -533,7 +495,6 @@ export function TabStrip({
     // comparison flap between renders on a strip that fits.
     const measure = () => {
       const over = el.scrollWidth - el.clientWidth;
-      setCrowded(over > 1);
       setCut({ left: el.scrollLeft > 1, right: over - el.scrollLeft > 1 });
       widths.note();
     };
@@ -571,10 +532,26 @@ export function TabStrip({
     };
   }, [faces.length]);
 
+  /** Where a held strip stood when its × was pressed: its scroll and its
+      width. */
+  const kept = useRef<{ left: number; width: number } | null>(null);
+  /** **The room a held close leaves at the end** (ux-q): a strip scrolled
+      to its right end would lose its scroll as the row got shorter (the
+      browser clamps it), and the row would slide right under the pointer.
+      An empty seat after the last tab keeps the row as long as the scroll
+      needs, so the next tab's × lands under the pointer at the end too. */
+  const room = useRef<HTMLDivElement>(null);
   const frontWas = useRef(active);
   useLayoutEffect(() => {
     const moved = frontWas.current !== active;
     frontWas.current = active;
+    const el = strip.current;
+    if (holding.current && el && room.current && kept.current) {
+      room.current.style.width = "0";
+      const { left, width } = kept.current;
+      room.current.style.width = `${left > 0 ? Math.max(0, left + width - el.scrollWidth) : 0}px`;
+      el.scrollLeft = left;
+    }
     if (holding.current && !moved) return;
     bringFront.current();
   }, [active, faces.length]);
@@ -605,40 +582,12 @@ export function TabStrip({
   return (
     <div
       data-tab-bar
-      // **The band is the app's ground and the open tab is the board's
-      // colour** (docs/SHELL.md 第十三轮 第 5 条: the band wears nothing
-      // of its own since the board under it floats on `--background`,
-      // and the open tab is `--card` with its top corners rounded and
-      // no bottom edge, joined to the board), which is the whole of how
-      // a tab says it is in front: it reads as continuous with what is
-      // under it, and the ones that are not open sit transparent on the
-      // ground behind it. That is Chrome's arrangement, and it is not a
-      // stylistic borrowing — it is the only one where "in front" is
-      // said by the same surface that the content is on.
-      //
-      // The first spelling had it the other way round (a light tab on
-      // the page ground, a rule under the strip) and the open tab read
-      // as a floating pill with a line separating it from its own
-      // content — measured on a screenshot, which is the only way that
-      // kind of mistake shows.
-      //
-      // No `border-b`: the change of ground *is* the boundary, and a
-      // rule as well would cut the open tab off from the page again.
-      // A tab reaching the band's floor and a top-only radius do the
-      // rest.
-      //
-      // The strip scrolls rather than shrinking its tabs (tokens.css
-      // `--tab-w` says why they are fixed), and `flex-none` keeps it
-      // from being the thing that gives when the window is short.
-      //
-      // **The band is as tall as the floor under a finger**, which is
-      // the one place in this file where Chrome's proportions had to
-      // give (tokens.css `--touch`). `overflow-x-auto` makes this a
-      // scroll container on *both* axes — a child taller than the band
-      // would be clipped or made scrollable, not allowed to hang over
-      // it — so a hit area that reaches the floor while the tab stays
-      // short is not available here: either the band grows or the
-      // target stays under the floor. It grows.
+      // ⚠️ 墓碑 (ux-q, 2026-10-07): the plain strip — the band on the
+      // app's ground with the open tab the board's colour, joined to it
+      // by its foot (第十三轮 第 5 条) — and the strip hung under a
+      // session's content (`at="bottom"`, iOS 第三步 A). Every strip is
+      // the glass capsule now, at the top (`Tabs`); the phone's band is
+      // `SessionBar`'s own.
       //
       // **…and it is the same height as a pane's top row, from the same
       // token** (2026-09-20 第 5 条:「标签页的高度, 要和侧边栏搜索框的
@@ -649,13 +598,11 @@ export function TabStrip({
       //
       // **One centreline** (2026-09-29,「整行收紧到 38」): the band is
       // the window's first row, and everything in it is centred on the
-      // row's middle — the count, the landing's pins at either end, 「+」
-      // and every tab's label — the line macOS's three buttons, the
-      // search box and a page's title stand on. Only the tabs reach the
-      // floor, by their foot (`--tab-lip`, the tab below). It was
-      // `items-end` with the tabs standing on the floor, twenty under
-      // the window's edge on the 48 row: the blank the owner asked
-      // about.
+      // row's middle — the landing's pins at either end, the capsule
+      // and its ＋ — the line macOS's three buttons, the search box and a
+      // page's title stand on. It was `items-end` with the tabs standing
+      // on the floor, twenty under the window's edge on the 48 row: the
+      // blank the owner asked about.
       //
       // **The band and the scrolling row are two elements now, and the
       // reason is a measurement**: with everything in one scroll
@@ -665,87 +612,52 @@ export function TabStrip({
       // tab was to scroll right until you found it. The band keeps the
       // ground and the padding; the row inside it is what scrolls.
       //
-      // ⚠️ **The new-tab button moved back inside the scroller on
-      // 2026-09-09, and this comment used to argue it out.** It said
-      // Chrome pins it and that pinning means being outside the scroll
-      // container — the second half is true and the first was wrong:
-      // Chrome puts「+」immediately after the last tab and shrinks tabs
-      // rather than scrolling them. Pinned at the far right it read as a
-      // control belonging to the row, not to the tabs. **What that costs
-      // is real and is the reason the old note existed**: once the strip
-      // scrolls, 「+」 scrolls away with the last tab. The way to a new
-      // tab when it is crowded is the switcher, which has its own — and
-      // the switcher is offered exactly when the strip has stopped
-      // showing every tab.
       // **A glass piece aligns by its glass edge** (the owner,
       // 2026-10-03: 「浏览器这没有左对齐」): over the wide content the
       // capsule's left edge stands on the page's left line (`px-page`,
       // the machine page's avatar and the browser's steps capsule
-      // under it). ⚠️ 墓碑: `px-row`, 12 short of the line. At a
-      // session's foot the row keeps its own inset (`SessionBar`).
+      // under it). ⚠️ 墓碑: `px-row`, 12 short of the line.
       className={cn(
-        "flex h-pane-head min-w-0 flex-1 items-center",
+        "flex h-pane-head min-w-0 flex-1 items-center gap-in",
         // Folded, the strip's block leads the row and the capsule
         // follows it as before, a gap after it.
-        glass ? (below || led ? "gap-in px-row" : "gap-in px-page") : "gap-1 px-in",
+        led ? "px-row" : "px-page",
       )}
     >
       {head}
-      {/* The scroller and the two fades over its ends. **No scrollbar**
-          (第三轮 第 2 条:「标签会被移动条顶出窗口. 且此条无法拖动」):
-          `app.css` hides it on `[data-tab-strip]`; the wheel, the fades,
-          the count and the switcher are the ways past the edge. */}
+      {/* The capsule and the scroller in it. **No scrollbar** (第三轮 第 2
+          条:「标签会被移动条顶出窗口. 且此条无法拖动」): `app.css` hides it
+          on `[data-tab-strip]`; the wheel and the faded ends are the ways
+          past the edge. */}
       <div
-        data-tab-capsule={glass || undefined}
+        data-tab-capsule
         data-tabs-held={held !== null || undefined}
         onPointerLeave={
           held !== null
             ? () => {
+                kept.current = null;
                 setHeld(null);
                 setReleased((n) => n + 1);
               }
             : undefined
         }
-        className={cn(
-          "relative flex min-w-0",
-          // At a session's foot the capsule takes the row between the way
-          // back and the keyboard; over the wide face's content it is as
-          // long as its tabs (the canvas).
-          // **The capsule spans the row** (UX-39, the owner 2026-10-06
-          // 22:55: 「全挤在左边了」): Safari's tab bar — the tabs share the
-          // whole width between the row's start and the act circle, the
-          // front one as wide as its name (up to half), the rest equal.
-          // ⚠️ 墓碑 (UX-25): the capsule as long as its tabs, at the left.
-          glass ? "glass h-glass-tabs flex-1 items-center self-center rounded-full px-glass-pad" : "flex-1 self-stretch",
-        )}
+        // **The capsule spans the row** (UX-39, the owner 2026-10-06
+        // 22:55: 「全挤在左边了」): the tabs from the row's start, ＋ after
+        // the last one, the act circle at the end. ⚠️ 墓碑 (UX-25): the
+        // capsule as long as its tabs, at the left.
+        className="glass relative flex h-glass-tabs min-w-0 flex-1 items-center self-center rounded-full px-glass-pad"
       >
-      {!glass && cut.left && (
-        <div
-          data-tab-fade="left"
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-linear-to-r from-background to-transparent"
-        />
-      )}
-      {!glass && cut.right && (
-        <div
-          data-tab-fade="right"
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-linear-to-l from-background to-transparent"
-        />
-      )}
       <div
         ref={strip}
         data-tab-strip
-        // `items-center`: 「+」 on the row's centreline with the tabs'
-        // labels; the tabs themselves stretch to the floor (their foot).
-        // On the wide glass strip the row is as long as its tabs (they
-        // stop at `--tab-w-even`), so ＋ follows the last one (UX-45).
-        className={cn("flex min-w-0 items-center overflow-x-auto", glass ? cn("gap-0.5 self-stretch", below ? "flex-1" : "flex-initial") : "flex-1 gap-1")}
-        // **In the glass capsule a scrolled edge fades** (the audit fix plan
-        // F3.3; W09, N19): a mask over the 12 at each end that has a tab
-        // cut off behind it, instead of a glyph cut in half.
+        // The row is as long as its tabs (they stop at `--tab-w-even`),
+        // so ＋ follows the last one (UX-45).
+        className="flex min-w-0 flex-initial items-center gap-0.5 self-stretch overflow-x-auto"
+        // **A scrolled edge fades** (the audit fix plan F3.3; W09, N19): a
+        // mask over the 12 at each end that has a tab cut off behind it,
+        // instead of a glyph cut in half.
         style={
-          glass && (cut.left || cut.right)
+          cut.left || cut.right
             ? {
                 maskImage: `linear-gradient(to right, ${cut.left ? "transparent, black var(--fade-tabs)" : "black, black"}, ${cut.right ? "black calc(100% - var(--fade-tabs)), transparent" : "black, black"})`,
               }
@@ -755,18 +667,16 @@ export function TabStrip({
         {faces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
-          /** **Every wide pill sheds as it shrinks, the front one too**
-              (UX-45, Chrome's strip; the owner 「等宽先看看」): its own
-              width decides (`@container/tab`, tokens.css
-              `--container-tab-*`) — the ×, then the name, down to the
-              face alone. */
-          const shed = glass && !below;
+          // **Every pill sheds as it shrinks, the front one too** (UX-45,
+          // Chrome's strip; the owner 「等宽先看看」): its own width
+          // decides (`@container/tab`, tokens.css `--container-tab-*`) —
+          // the ×, then the name, down to the face alone.
           return (
             <div
               key={f.id}
               data-tab={f.id}
               data-on={on}
-              style={shed && held !== null ? { width: held, flexShrink: 0 } : undefined}
+              style={held !== null ? { width: held, flexShrink: 0 } : undefined}
               // Machine first, then where on it — the same order the
               // address bar commits them in, and the same order the
               // sentence reads: this tab is *on* that machine.
@@ -790,74 +700,20 @@ export function TabStrip({
                       .join(" · ") || undefined
               }
               className={cn(
-                // **A `--hit` tall label on the row's centreline and a
-                // foot under it** (2026-09-29): `mt-tab-lip` over the
-                // label, `pb-tab-lip` under it, and the tab stretched to
-                // the band's floor — so the label (and the ×, and the
-                // eye) sit on the line the window's buttons and the search
-                // box stand on, while the tab's colour runs on down into
-                // the board it is joined to. The label keeps the search
-                // box's height (2026-09-20 第 5 条); the foot is the
-                // joint. `--hit`, not `--ctl-md`: the tab is the target,
-                // and it is also what paints "this one is in front" —
-                // a tab whose colour stops short of where it can be
-                // pressed is a tab that lies about where it is, which is
-                // why the button below reaches into the foot.
-                glass
-                  ? shed
-                    ? "@container/tab group relative flex h-glass-tab items-center self-center rounded-full"
-                    : "group relative flex h-glass-tab items-center gap-1 self-center rounded-full pr-0.5 pl-1.5"
-                  : below
-                    ? "group relative flex mb-tab-lip items-center gap-1 self-stretch rounded-b-md pr-0.5 pt-tab-lip pl-2"
-                    : "group relative flex mt-tab-lip items-center gap-1 self-stretch rounded-t-md pr-0.5 pb-tab-lip pl-2",
-                // **Two widths, and each tab wears exactly one.** The one
-                // in front takes its own name's width — never less than a
-                // stub, so it does not read as the smallest tab on the
-                // strip, and up to the ceiling; every other is the stub.
-                // Spelled as two branches rather than a base plus an
-                // override because `w-tab` is a custom spacing class and
-                // `cn()` cannot lift one of those off another (button.tsx
-                // measured that) — both would survive and the
-                // stylesheet's order would pick.
-                //
-                // **…and the stubs give together before the strip scrolls**
-                // (docs/SHELL.md 第三轮 第 1 条:「先压，再溢出」). A stub is
-                // `--tab-w` at rest and shrinks, every one by the same
-                // amount, down to `--tab-w-min` — so they are still all
-                // one width, which is what 2026-09-02 asked for; only
-                // once every stub is at the floor does the strip overflow.
-                // The tab in front never gives.
-                // **In the glass capsule, Safari's widths** (UX-25 addendum,
-                // the owner 2026-10-05): every pill not in front is one
-                // width — an equal share of the capsule, `--tab-w` at most,
-                // `--tab-w-min` at least — and the one in front takes its
-                // whole name up to `--tab-w-on`, the others giving way down
-                // to their floor before the strip scrolls. The strip
-                // re-balances on each choice over the chosen piece's trip
-                // (`useRebalance`). ⚠️ 墓碑 (V07): one ceiling for every
-                // tab, the front one too, so a choice moved no width.
-                glass && !below
-                  ? // **One width, front or not** (UX-45, the owner
-                    // 2026-10-07 「等宽先看看」, Chrome's): every pill is
-                    // `--tab-w-even` and they shrink together, down to
-                    // `--tab-w-floor` — the face and the × (the owner: a
-                    // crowded strip still owes the front tab its ×) — and
-                    // past that the strip scrolls; the front one is told
-                    // by its lit glass only. ⚠️ 墓碑 (UX-39 §7 → UX-45):
-                    // the front pill grown to its whole name, up to half
-                    // the capsule, the rest an equal share. ⚠️ 墓碑
-                    // (UX-25): `--tab-w-min` as the floor and the count
-                    // after it. A width, not a basis: the pill is a size
-                    // container, so only a stated width gives the row its
-                    // length.
-                    cn("w-tab-even min-w-tab-floor shrink grow-0", on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill")
-                  : glass
-                  ? on
-                    ? cn("min-w-tab-min shrink-0 grow basis-auto glass-sel text-foreground", faces.length > 1 && "max-w-[50%]")
-                    : "min-w-glass-tab shrink grow basis-0 text-muted-foreground hover:bg-fill"
-                  : on
-                    ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
-                    : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
+                "@container/tab group relative flex h-glass-tab items-center self-center rounded-full",
+                // **One width, front or not** (UX-45, the owner 2026-10-07
+                // 「等宽先看看」, Chrome's): every pill is `--tab-w-even`
+                // and they shrink together, down to `--tab-w-floor` — the
+                // face and the × (the owner: a crowded strip still owes the
+                // front tab its ×) — and past that the strip scrolls; the
+                // front one is told by its lit glass only. ⚠️ 墓碑 (UX-39
+                // §7 → UX-45): the front pill grown to its whole name, up
+                // to half the capsule, the rest an equal share. ⚠️ 墓碑
+                // (UX-25): `--tab-w-min` as the floor and the count after
+                // it. A width, not a basis: the pill is a size container,
+                // so only a stated width gives the row its length.
+                "w-tab-even min-w-tab-floor shrink grow-0",
+                on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill",
               )}
             >
               {/* **Every tab sits in a Tooltip, and only the front one's
@@ -892,12 +748,6 @@ export function TabStrip({
                 // text in the middle of it. Left at content height this
                 // was 18 tall inside a tab it filled the width of — the
                 // band around the label looked pressable and was not.
-                // **…and down through the foot** (2026-09-29): the tab's
-                // `pb-tab-lip` would otherwise be a strip of painted tab
-                // that moves the window instead of opening it (R0 is a
-                // drag region, and only a control keeps its press), so
-                // the button hangs `-mb-tab-lip` into it and pads its
-                // label back up onto the centreline.
                 // `gap-tab-gap`, not the `gap-1` this had: 「标签页上的
                 // 标题距离头像稍远一些, 现在有些拥挤」 (2026-09-20 第 3
                 // 条). Four pixels put the name against the face while
@@ -907,19 +757,19 @@ export function TabStrip({
                 // than a step up in `--gap-in`, which would move every
                 // clump in the app for one complaint about tabs.
                 className={cn(
-                  "flex min-w-0 flex-1 items-center gap-tab-gap self-stretch text-left",
-                  glass && "text-tab",
+                  "flex min-w-0 flex-1 items-center gap-tab-gap self-stretch text-left text-tab",
                   // The pill's own insets, here so the face can centre
                   // once the name is gone; right only while no × stands.
-                  // The front pill always keeps its ×'s seat; another
-                  // centres its face while its × is away (under the
-                  // pointer it shows, and the face steps to the start).
-                  shed &&
-                    (on
-                      ? "pl-1.5"
-                      : "pl-1.5 pr-1.5 group-hover:pr-0 @min-tab-x/tab:pr-0 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0 @max-tab-face/tab:group-hover:justify-start @max-tab-face/tab:group-hover:pl-1.5"),
-                  // Into the foot, wherever the foot is.
-                  !glass && (below ? "-mt-tab-lip pt-tab-lip" : "-mb-tab-lip pb-tab-lip"),
+                  // **The face never moves under the pointer** (ux-q):
+                  // once the name is gone, every pill — the front one
+                  // too — centres its face in the room left of the ×'s
+                  // seat, and a pill not in front keeps that seat empty
+                  // until the pointer comes (the × below). ⚠️ 墓碑
+                  // (UX-45): the face centred on the whole pill, stepping
+                  // to the start when the × came in under the pointer.
+                  on
+                    ? "pl-1.5 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0"
+                    : "pl-1.5 pr-1.5 group-hover:pr-0 @min-tab-x/tab:pr-0 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0",
                 )}
               >
                 {/* **A two-line file tab stands its glyph beside both
@@ -942,12 +792,12 @@ export function TabStrip({
                     arrangement the list rows keep, and for the same
                     reason (`EditableName`'s head). */}
                 {f.rename ? (
-                  <span className={cn("flex min-w-0 flex-1 flex-col justify-center", shed && "@max-tab-face/tab:hidden")}>
+                  <span className="flex min-w-0 flex-1 flex-col justify-center @max-tab-face/tab:hidden">
                     <EditableName
                       kind={f.rename.kind}
                       id={f.rename.id}
                       title={f.label}
-                      className={cn("min-w-0 flex-1", glass ? "text-tab" : "text-body")}
+                      className="min-w-0 flex-1 text-tab"
                       inputClassName="w-full text-callout"
                       nested
                       // The hook the width gate measures, kept on the box
@@ -993,7 +843,7 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className={cn("flex min-w-0 flex-1 items-center gap-1", glass ? "text-tab" : "text-body", shed && "@max-tab-face/tab:hidden")}
+                    className="flex min-w-0 flex-1 items-center gap-1 text-tab @max-tab-face/tab:hidden"
                   >
                     {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
@@ -1004,22 +854,20 @@ export function TabStrip({
               </TooltipTrigger>
               </TabOpen>
               {again && (
-                <TooltipContent data-tab-hint side={below ? "top" : "bottom"}>
+                <TooltipContent data-tab-hint side="bottom">
                   {/* While files go in, the long form (「正在传入 … （M/N
                       已完成）」, the owner 2026-10-07 13:15) is what the
                       front tab's float says: the drop is on the tab in
                       front, and its hint is back once they are in. */}
                   {f.drop && f.title ? (
                     f.title
-                  ) : glass && !below ? (
+                  ) : (
                     // The name first (UX-45): the front pill may be the
                     // face alone, and this float is its hover.
                     <>
                       <span className="block">{f.title ?? f.label}</span>
                       <span className="block text-muted-foreground">{again.hint}</span>
                     </>
-                  ) : (
-                    again.hint
                   )}
                 </TooltipContent>
               )}
@@ -1031,13 +879,13 @@ export function TabStrip({
                   `--container-tab-x` wide, and under the pointer below
                   that, down to the floor (Chrome's). UX-39 §7's 「不悬浮就
                   显示 ×」 holds while there is room for it. In the seat the
-                  act had; ⌘W, the menu and the sheet still close. The
-                  phone's band keeps no ×.
+                  act had; ⌘W, the menu and the sheet still close.
                   ⚠️ 墓碑 (UX-33 §1 → UX-39 §7): the third seat on every
                   wide pill; the wide face's one act is the verbs seat's
-                  (or `frontAct`'s, after the capsule). */}
-              {!below && (
-                <button
+                  (or `frontAct`'s, after the capsule). ⚠️ 墓碑 (ux-q):
+                  that seat on the strip hung under a session (`at`), the
+                  phone's band before `SessionBar` drew its own. */}
+              <button
                   type="button"
                   data-tab-close
                   // Under a finger the × is a 44 hit box (app.css F1.5).
@@ -1046,60 +894,31 @@ export function TabStrip({
                   className={cn(
                     "flex h-full w-tab-close flex-none items-center justify-center hover:bg-muted hover:text-foreground",
                     on ? "text-muted-foreground" : "text-tertiary",
-                    glass ? "rounded-full" : "rounded-sm",
+                    "rounded-full me-0.5",
                     // The front pill's × at every width; another's at rest
                     // while it has `--container-tab-x`, under the pointer
                     // down to the floor (UX-45, the owner 2026-10-07).
-                    shed && (on ? "me-0.5" : "me-0.5 @max-tab-x/tab:hidden @max-tab-x/tab:group-hover:flex"),
+                    // Face alone, its seat is kept (invisible) under a
+                    // mouse so the face does not move when it shows
+                    // (ux-q); a finger has no hover and no seat.
+                    !on &&
+                      "@min-tab-face/tab:@max-tab-x/tab:hidden @min-tab-face/tab:@max-tab-x/tab:group-hover:flex pointer-coarse:@max-tab-face/tab:hidden @max-tab-face/tab:invisible @max-tab-face/tab:group-hover:visible",
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
                     // A pointer's press holds the row (`held`); a press
                     // from the keyboard (detail 0) re-lays at once.
-                    if (shed && e.detail > 0) {
+                    if (e.detail > 0) {
                       const pill = e.currentTarget.closest<HTMLElement>("[data-tab]");
                       if (pill) setHeld(pill.getBoundingClientRect().width);
+                      const el = strip.current;
+                      kept.current = el && { left: el.scrollLeft, width: el.clientWidth };
                     }
                     onClose(f.id);
                   }}
                 >
                   <IconClose className="size-affordance" />
                 </button>
-              )}
-              {/* **The third seat, on the phone's band** (UX-33): what
-                  aligns this tab with its source — a session's ↻, a
-                  page's ↻ / ×, a file's ↻ / ✓; the save face wears the
-                  brand ink. */}
-              {f.act && below && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      data-tab-act={f.act.kind}
-                      aria-label={f.act.label}
-                      className={cn(
-                        "flex h-full w-tab-close flex-none items-center justify-center focus-visible:-outline-offset-2",
-                        glass ? "rounded-full" : "rounded-sm",
-                        f.act.kind === "save" ? "text-brand-strong" : on ? "text-muted-foreground" : "text-tertiary group-hover:text-muted-foreground",
-                        "hover:bg-muted hover:text-foreground",
-                      )}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        f.act?.onPress();
-                      }}
-                    >
-                      {f.act.kind === "save" ? (
-                        <IconCheck className="size-affordance" />
-                      ) : f.act.kind === "stop" ? (
-                        <IconClose className="size-affordance" />
-                      ) : (
-                        <IconReload className={cn("size-affordance", f.loading && "animate-spin motion-reduce:animate-none")} />
-                      )}
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side={below ? "top" : "bottom"}>{f.act.label}</TooltipContent>
-                </Tooltip>
-              )}
               {/* **Progress under the pill itself** (UX-33 §2): a 2-pt line
                   along this pill's bottom edge while it reloads, Safari's
                   manner; nothing when done. */}
@@ -1117,23 +936,8 @@ export function TabStrip({
             </div>
           );
         })}
-        {onNew && !(glass && !below) && (
-          <Button
-            size="icon"
-            variant="ghost"
-            data-tab-new
-            aria-label={gui.new_tab}
-            // The `mb-1` it used to wear lifted a 30 button off the band's
-            // floor so it read as level with the 30 tabs. Both are `--hit`
-            // now and both centred on the row (2026-09-29: the tabs' labels
-            // are, their feet reach the floor) — a margin would put it off
-            // the line.
-            className="min-h-touch min-w-touch flex-none"
-            onClick={onNew}
-          >
-            <IconPlus />
-          </Button>
-        )}
+        {/* The room a held close leaves (`room`), while the row is held. */}
+        {held !== null && <div ref={room} data-tab-hold-room aria-hidden="true" className="-ms-0.5 flex-none self-stretch" />}
       </div>
       {/* **After the last tab, a hairline and ＋** (UX-45, Chrome's): in
           the capsule, outside the scroller, so it stays when the strip
@@ -1141,7 +945,7 @@ export function TabStrip({
           ⚠️ 墓碑 (UX-25 → UX-45): the count here once the strip was
           crowded, and the switcher it opened — every tab is drawn now,
           down to its face, and the strip scrolls past that. */}
-      {glass && !below && onNew && (
+      {onNew && (
         <>
           <span aria-hidden="true" className="h-4.5 w-px flex-none bg-border" />
           <Button
@@ -1158,7 +962,7 @@ export function TabStrip({
       )}
       </div>
       {/* The front tab's one act, after the capsule (`frontAct`). */}
-      {frontAct && !below && (() => {
+      {frontAct && (() => {
         const f = faces.find((x) => x.id === active);
         if (!f?.act) return null;
         return (
@@ -1178,50 +982,19 @@ export function TabStrip({
           </Tooltip>
         );
       })()}
-      {/* Pinned against the scrolling row, in the order a hand reaches
-          them: the way to see the ones that scrolled off, then the way
-          to add another.
-
-          **The condition can stop holding while somebody is inside the
-          switcher** — closing tabs from in there is one of the three
-          things they went in to do — and then this button leaves while
-          the switcher is still up. Measured (14 tabs, closing from
-          inside): it goes at 11, and the switcher stays up with 11 rows,
-          every one of them a way out, picking one puts it away. So the
-          way *in* disappearing is not a way *out* disappearing, and
-          holding the button drawn on `switching` would be drawing "go
-          see your tabs" over the screen that is showing them. */}
-      {!glass && onSwitch && (crowded || switching) && <TabCount n={faces.length} onPress={onSwitch} open={switching} />}
       {tail}
     </div>
   );
 }
 
 /**
- * The way to the switcher: the count *is* the control, which is what
- * makes it able to say how many without a second mark.
- *
- * **Both faces use it, for one reason spelled two ways.** On narrow it
- * is always there, because a phone shows one screen and the strip
- * cannot be that screen. On wide it appears only once the strip has
- * stopped showing every tab (`TabStrip`) — the same question, "how do I
- * get to the ones I cannot see", asked by a window that ran out of room
- * instead of by one that never had any. It is not a narrow control
- * borrowed onto the wide face; the narrow face is just the width where
- * the condition is permanently true.
+ * The way to the switcher on the narrow face: the count *is* the
+ * control, which is what makes it able to say how many without a second
+ * mark. A phone shows one screen and the strip cannot be that screen.
+ * ⚠️ 墓碑 (UX-45): the wide strip's count once it stopped showing every
+ * tab — it draws every tab now, down to its face.
  */
-export function TabCount({
-  n,
-  onPress,
-  open = false,
-  bare = false,
-}: {
-  n: number;
-  onPress: () => void;
-  open?: boolean;
-  /** Inside the glass capsule: the number alone, no box round it. */
-  bare?: boolean;
-}) {
+export function TabCount({ n, onPress, open = false }: { n: number; onPress: () => void; open?: boolean }) {
   return (
     <Button
       variant="ghost"
@@ -1240,7 +1013,7 @@ export function TabCount({
       // felt every time.
       className="min-h-touch min-w-touch flex-none"
     >
-      <span className={cn("text-caption tabular-nums", bare ? "text-muted-foreground" : "rounded-sm border px-1")}>{n}</span>
+      <span className="rounded-sm border px-1 text-caption tabular-nums">{n}</span>
     </Button>
   );
 }

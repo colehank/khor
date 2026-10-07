@@ -39,12 +39,9 @@ export function Tabs({
   bodyClass,
   frame = true,
   caption,
-  glass = false,
   frontAct = false,
   children,
 }: {
-  /** The strip's glass look (`TabStrip` `glass`): the session tabs. */
-  glass?: boolean;
   /** The front tab's act at the capsule's end (`TabStrip` `frontAct`). */
   frontAct?: boolean;
   /** A stale region's one line at R0's right end, after the strip
@@ -84,7 +81,6 @@ export function Tabs({
         onNew={onNew}
         head={head}
         tail={tail}
-        glass={glass}
       />
     </div>
   );

@@ -1003,7 +1003,6 @@ export function BrowseLanding({
       </ListPane>
       {tabs.ready ? (
         <Tabs
-          glass
           faces={faces}
           active={tabs.current.id}
           onFocus={(id) => tabs.focus(id)}

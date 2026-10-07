@@ -1952,7 +1952,6 @@ export function WorkspacePane({
             // one tab language): pills in one glass capsule, the file's
             // kind in the icon seat, one line of name, × on the one in
             // front and under the pointer. ⚠️ 墓碑: the VS Code-style strip.
-            glass
             faces={tabFaces}
             active={file === null ? "" : `${machine}:${file}`}
             onFocus={(id) => setFile(id.slice(machine.length + 1))}
