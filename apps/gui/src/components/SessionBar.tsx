@@ -739,11 +739,11 @@ export function DeckBand({
           // row is 36 tall, so the button wears it and the row clips it.
           className={cn("flex min-h-touch items-center text-left text-body", f.drop && "min-w-0 flex-1")}
         >
-          {f.drop ? <MidName text={f.drop.name} after={f.drop.count} even /> : f.label}
+          {f.drop ? <MidName text={f.drop.name} even /> : f.label}
         </button>
       ) : (
         <span data-deck-title={role === "cur" ? "" : undefined} className={cn("text-body", f.drop && "flex min-w-0 flex-1")}>
-          {f.drop ? <MidName text={f.drop.name} after={f.drop.count} even /> : f.label}
+          {f.drop ? <MidName text={f.drop.name} even /> : f.label}
         </span>
       )}
     </div>

@@ -1746,7 +1746,7 @@ export default function App() {
                   ? msg.drop_into_of(dropping.name, dropping.done, dropping.total)
                   : msg.drop_into(dropping.name)
                 : undefined,
-              drop: dropping ? { name: stemOf(dropping.name), count: "" } : undefined,
+              drop: dropping ? { name: stemOf(dropping.name) } : undefined,
               face: r.face,
               path: r.doing?.cwd ?? r.place ?? "",
               // **One line, the title** (UX-20, the owner 2026-10-05): where

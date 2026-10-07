@@ -187,11 +187,12 @@ export type TabFace = {
   /** **How far a drop onto this tab has landed** (item 60), 0 to 1: the
       same line, filled this far rather than running. `loading` wins. */
   share?: number;
-  /** **A file going into this session** (the owner 2026-10-07 13:05):
-      an upload mark stands in the face's seat, and the name is the
-      file's, cut in the middle, with `count` (「（1/3）」, empty for one
-      file) always whole after it. */
-  drop?: { name: string; count: string };
+  /** **A file going into this session** (the owner 2026-10-07 13:05,
+      13:15): an upload mark stands in the face's seat, and the name is
+      the file's without its extension, cut evenly in the middle; no
+      count (the line is the whole drop's). ⚠️ 墓碑 (13:05 → 13:15):
+      `count`, 「（1/3）」 kept whole after the name. */
+  drop?: { name: string };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -861,7 +862,7 @@ export function TabStrip({
                           of the slope — the one italic in the app. */}
                       {f.rang && <BellMark />}
                       {f.preview && <PreviewMark />}
-                      {f.drop ? <MidName text={f.drop.name} after={f.drop.count} even /> : <MidName text={f.label} />}
+                      {f.drop ? <MidName text={f.drop.name} even /> : <MidName text={f.label} />}
                     </span>
                     {/* **Both lines start on one edge**, which is the
                         glyph's right side: the icon is beside the pair
@@ -883,7 +884,7 @@ export function TabStrip({
                   >
                     {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
-                    {f.drop ? <MidName text={f.drop.name} after={f.drop.count} even /> : <MidName text={f.label} />}
+                    {f.drop ? <MidName text={f.drop.name} even /> : <MidName text={f.label} />}
                   </span>
                 )}
               </button>
@@ -891,7 +892,11 @@ export function TabStrip({
               </TabOpen>
               {again && (
                 <TooltipContent data-tab-hint side={below ? "top" : "bottom"}>
-                  {again.hint}
+                  {/* While files go in, the long form (「正在传入 … （M/N
+                      已完成）」, the owner 2026-10-07 13:15) is what the
+                      front tab's float says: the drop is on the tab in
+                      front, and its hint is back once they are in. */}
+                  {f.drop && f.title ? f.title : again.hint}
                 </TooltipContent>
               )}
               </Tooltip>
