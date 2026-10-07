@@ -33,10 +33,10 @@ import { footCovered } from "@/lib/viewport";
 
 /** The tap's dead zone, px (the pane's `TAP_SLOP`): past it a touch is a
     drag. */
-const SLOP = 10;
+export const SLOP = 10;
 /** Held this long inside the dead zone, a touch is a press (the pane's
     `LONG_PRESS_MS`). */
-const PRESS_MS = 450;
+export const PRESS_MS = 450;
 /** How often, and how long at most, the settle waits for the keyboard
     to have gone. */
 const SETTLE_POLL_MS = 50;

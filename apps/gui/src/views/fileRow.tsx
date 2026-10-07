@@ -18,6 +18,7 @@ import { neverAsks, type RemoveKind } from "@/components/RemoveDialog";
 import { type RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { useHereHosts } from "@/lib/here";
+import { levelOf, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 
 /** What a directory wears instead of a letter. Not a catalog string: it
@@ -228,7 +229,11 @@ export function useRemoveFlow({
       the dialog, so there is one place that knows what happens after. */
   const go = (full: string) =>
     removePath(machine, full).then(
-      () => onGone(full),
+      () => {
+        onGone(full);
+        // Every tree holding its level, and git (UX-43 §1).
+        treeChanged({ machine, here, dir: levelOf(full) });
+      },
       (e: unknown) => {
         setRefused(String(e instanceof Error ? e.message : e));
         throw e;

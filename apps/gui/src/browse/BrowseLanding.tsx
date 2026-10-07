@@ -164,9 +164,11 @@ export function BrowseLanding({
    * id) under the 附栏's one head and its find row — this session's pages,
    * ＋ a new page that is this session's (UX-40 §1). A page wears the main
    * area's narrow deck at the 附栏's foot: ‹ · ← → host ↻ · the tabs
-   * circle with this session's pages, never folded, no native deck (the
-   * session's deck is away while the sheet is up; UX-40 §4). ⚠️ 墓碑
-   * (UX-37 §6 → UX-40 §4): ‹ and the host in a head at the page's top.
+   * circle with this session's pages, no native deck (the session's deck
+   * is away while the sheet is up; UX-40 §4), folding as the main area's
+   * does (UX-43 §4). ⚠️ 墓碑 (UX-37 §6 → UX-40 §4): ‹ and the host in a
+   * head at the page's top. ⚠️ 墓碑 (UX-40 §4 → UX-43 §4): never folded
+   * in the 附栏 — the lead's default, not the owner's.
    * ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): ‹ from the slice to every tab (`here:
    * null`, 全部网页).
    */
@@ -895,7 +897,7 @@ export function BrowseLanding({
   if (narrow) {
     // **A page in the 附栏 wears the main area's deck** (UX-40 §4, the
     // owner 2026-10-07 02:10): the narrow screen below, its tabs this
-    // session's, never folded — the sheet is small already.
+    // session's, folding as the main area's does (UX-43 §4).
     return screen === "detail" && !tabs.empty ? (
       <SessionScreen
         faces={mine ? faces.filter((f) => mine.has(f.id)) : faces}
@@ -919,7 +921,7 @@ export function BrowseLanding({
         foldOver={false}
         ink={native ? ink : undefined}
         onEditCancel={() => setEditing(false)}
-        folded={folded && !editing && !bare}
+        folded={folded && !editing}
         onUnfold={() => {
           hold.current.asked();
           setFolded(false);

@@ -13,6 +13,7 @@ import { wearTypeSize } from "./lib/type-size";
 import { wearTermFont } from "./lib/term-font";
 import { followModality } from "./lib/modality";
 import { followScrollEdge } from "./lib/scroll-edge";
+import { followFieldSwipe } from "./lib/field-swipe";
 
 // **The theme is stamped before React is asked for a frame** (批 D2).
 //
@@ -59,6 +60,10 @@ followModality();
 
 // A page scrolled under its head fades into it (`lib/scroll-edge`).
 followScrollEdge();
+
+// A drag down the page lowers the keyboard of a field outside the
+// terminal (`lib/field-swipe`, UX-43 §3).
+followFieldSwipe();
 
 // The keyless screen this file used to paint is the server's job now
 // (记住一次批): the page itself sits behind the key, so a browser with

@@ -32303,7 +32303,10 @@ try {
   //      is drawn, and the close gives the same width back. Read as the
   //      bridge's `widen` calls on a page asked for as the app (`as-app`,
   //      fix c's stub); the web face asks nothing (4l). Whether the window
-  //      really grew is the Mac app's to show, not this page's.
+  //      really grew is the Mac app's to show, not this page's;
+  //   h. find and make in the lists, a page's deck, landing on 最近 (UX-40);
+  //   i. the workspace (UX-43): the trees in step, 复制路径, the keyboard
+  //      going down outside the terminal, the docked file deck folding.
   //
   // `FACE_ONLY=side` runs this section alone.
   side: {
@@ -32854,6 +32857,287 @@ try {
       await page.mouse.up();
       await wait(500);
       if ((await count(col)) !== 0) fail("side f · dragging the seam under the floor did not fold the column away");
+    }
+
+    // i. the workspace, from the owner's iPhone (UX-43, 2026-10-07 13:40:
+    //    「底栏的工作区应该会和主区工作区的变化同步对吧……工作区打字、键盘
+    //    无法收起。底栏工作区里，下滑没有让药丸缩小」):
+    //    1. the trees in step: a file renamed, then deleted, from the
+    //       附栏's file page is that way in the tree under it when ‹ comes
+    //       back — no remount (red before: the old name stayed, then the
+    //       deleted file); a file made in the main area's tree wears its
+    //       git letter there and is in the 附栏's tree with it;
+    //    2. 复制路径 on a file row, a directory row, the root's blank and
+    //       the landing's workspace row writes the absolute path;
+    //    3. the docked file page's deck folds 100 px from the top and
+    //       comes back 30 px toward it (red before: never folded there);
+    //    4. under a finger, a focused find box and a focused editor lose
+    //       the focus on a 60 px drag down, the find box on Enter; the
+    //       terminal's field keeps it (red before: no way down at all).
+    {
+      const root = pin.path;
+      // A tree of its own, stateful, so the listings say what the acts did.
+      const tree = new Map([["src", true], ["notes.md", false], ["one.rs", false], ["old.rs", false], ["long.rs", false]]);
+      const letters = new Map([["notes.md", "M"]]);
+      const inRoot = (p) => (p.slice(0, p.lastIndexOf("/")) === root ? p.slice(root.length + 1) : null);
+      const ok = json(null);
+      const routesI = {
+        "**/ls": (r) => {
+          const { path } = r.request().postDataJSON() ?? {};
+          if (path === root) return json({ path, entries: [...tree].map(([name, dir]) => ({ name, dir, size: dir ? 0 : 10, at_ms: 0 })), truncated: false })(r);
+          if (path === `${root}/src`) return json({ path, entries: [{ name: "inner.rs", dir: false, size: 3, at_ms: 0 }], truncated: false })(r);
+          return r.fallback();
+        },
+        "**/touch": (r) => {
+          const n = inRoot(r.request().postDataJSON()?.path ?? "");
+          if (n === null) return r.fallback();
+          tree.set(n, false);
+          letters.set(n, "U");
+          return ok(r);
+        },
+        "**/rename_path": (r) => {
+          const { from, to } = r.request().postDataJSON() ?? {};
+          const [a, b] = [inRoot(from ?? ""), inRoot(to ?? "")];
+          if (a === null || b === null) return r.fallback();
+          tree.set(b, tree.get(a) ?? false);
+          tree.delete(a);
+          letters.delete(a);
+          letters.set(b, "R");
+          return ok(r);
+        },
+        "**/remove": (r) => {
+          const n = inRoot(r.request().postDataJSON()?.path ?? "");
+          if (n === null) return r.fallback();
+          tree.delete(n);
+          letters.delete(n);
+          return ok(r);
+        },
+        "**/git_status": (r) => {
+          const { machine, dir } = r.request().postDataJSON() ?? {};
+          if (machine !== "peer" || dir !== root) return r.fallback();
+          return json({ branch: "main", rows: [...letters].map(([path, mark]) => ({ path, mark })) })(r);
+        },
+        "**/read_text": (r) => {
+          if (!(r.request().postData() ?? "").includes("long.rs")) return r.fallback();
+          const text = Array.from({ length: 200 }, (_, i) => `let line_${i + 1} = ${i + 1};`).join("\n");
+          return json({ total: text.length, at_ms: Date.now(), text, cut: false, binary: false, digest: "1".repeat(64) })(r);
+        },
+        // Not watched: the trees hear khor's own acts from the signal.
+        "**/dirs_wait": json({ seq: 0, dirs: [], unavailable: true }),
+      };
+      for (const [glob, run] of Object.entries(routesI)) await page.route(glob, run);
+      const stubClipboard = () =>
+        page.evaluate(() => {
+          window.__copied = [];
+          Object.defineProperty(navigator, "clipboard", {
+            configurable: true,
+            value: { writeText: (t) => (window.__copied.push(t), Promise.resolve()), readText: () => Promise.resolve("") },
+          });
+        });
+      const toColumn = async () => {
+        await openSession("tui/side-1");
+        if ((await count(col)) !== 1) await press(front("tui/side-1"));
+        await until(3_000, async () => (await count(col)) === 1);
+        await wait(500);
+      };
+      const names = (scope) => page.evaluate((s) => [...document.querySelectorAll(`${s} [data-file-tree] [data-file]`)].map((e) => e.getAttribute("data-file")).sort().join(" "), scope);
+      const letterOf = (scope, name) => page.evaluate(([s, n]) => document.querySelector(`${s} [data-file-tree] [data-file="${n}"] [data-git-mark]`)?.textContent ?? null, [scope, name]);
+      await page.evaluate(() => window.localStorage.clear());
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await stubClipboard();
+      await toColumn();
+      await pick("workspace");
+      await until(3_000, async () => (await names(col)).includes("long.rs"));
+
+      // 1. a rename and a delete from the file page, the tree under it in step
+      const fileMenu = async (item) => (await press(`${col} [data-file-more]`)) && press(`[data-file-more-menu] [data-file-more-item="${item}"]`);
+      await press(`${col} [data-file-tree] [data-file="one.rs"] > button`);
+      await until(3_000, async () => (await count(`${col} [data-files-page]`)) === 1);
+      let renamed = null;
+      if (await fileMenu("rename")) {
+        await page.fill("[data-file-rename] input", "two.rs");
+        await press("[data-file-rename-go]");
+        await wait(500);
+        await press(`${col} [data-file-back]`);
+        await until(2_000, async () => (await names(col)).includes("two.rs"));
+        renamed = { names: await names(col), letter: await letterOf(col, "two.rs") };
+      }
+      let deleted = null;
+      if (await press(`${col} [data-file-tree] [data-file="old.rs"] > button`)) {
+        if ((await fileMenu("remove")) && (await press("[data-remove-go]"))) {
+          await until(2_000, async () => (await count(`${col} [data-files-page]`)) === 0);
+          await wait(500);
+          deleted = await names(col);
+        }
+      }
+      console.log(`side i · 1 from the 附栏's file page: renamed one.rs → two.rs, the tree ${JSON.stringify(renamed)}; deleted old.rs, the tree ${JSON.stringify(deleted)}`);
+      if (!renamed) fail("probe dead: side i · the 附栏's file page offered no 重命名 to press");
+      else if (renamed.names.includes("one.rs") || !renamed.names.includes("two.rs") || renamed.letter !== "R") {
+        fail(`side i · renamed from the 附栏's file page, the tree under it reads ${JSON.stringify(renamed)} — two.rs wearing R, one.rs gone, without a remount (UX-43 §1)`);
+      }
+      if (deleted === null) fail("probe dead: side i · the 附栏's file page offered no 删除 to press");
+      else if (deleted.includes("old.rs")) fail(`side i · old.rs deleted from the 附栏's file page, the tree under it still lists ${deleted} — gone, without a remount (UX-43 §1)`);
+      // …made in the main area's tree: its letter there, and in the 附栏's.
+      const main = "[data-ws-tree]";
+      let made = null;
+      const wsRow = '[data-ws-row][data-ws-pinned="true"]';
+      if (await open("workspaces")) {
+        // 2, the landing's half: 复制路径 on the workspace's own row.
+        await until(3_000, async () => (await count(wsRow)) >= 1);
+        const menuUp = await page.locator(wsRow).first().click({ button: "right", timeout: 5_000 }).then(() => true, () => false);
+        await wait(300);
+        const wsCopy = menuUp && (await press('[data-row-menu] [data-menu-item="copy-path"]'));
+        const wsCopied = await page.evaluate(() => window.__copied.at(-1) ?? null);
+        console.log(`side i · 2 the landing's workspace row: 复制路径 ${wsCopy}, wrote ${JSON.stringify(wsCopied)}`);
+        if (!wsCopy || wsCopied !== root) fail(`side i · 复制路径 on the workspace row wrote ${JSON.stringify(wsCopied)} (offered: ${wsCopy}) — ${root} (UX-43 §2)`);
+        if (!wsCopy) await page.keyboard.press("Escape");
+      }
+      if ((await count(`${main} [data-file-tree]`)) === 0) await press(wsRow);
+      if (await until(3_000, async () => (await count(`${main} [data-file-tree] [data-tree-blank]`)) === 1)) {
+        if (await press(`${main} [data-file-tree] [data-tree-blank]`)) {
+          await page.fill(`${main} [data-new-name] [data-title-input]`, "made.rs");
+          await page.keyboard.press("Enter");
+          await until(3_000, async () => (await letterOf(main, "made.rs")) !== null);
+          const there = { names: await names(main), letter: await letterOf(main, "made.rs") };
+          await open("sessions");
+          await toColumn();
+          await pick("workspace");
+          await until(3_000, async () => (await names(col)).includes("made.rs"));
+          made = { main: there, side: { names: await names(col), letter: await letterOf(col, "made.rs") } };
+        }
+      }
+      console.log(`side i · 1 made in the main area's tree ${JSON.stringify(made)}`);
+      if (!made) fail("probe dead: side i · the main area's tree offered no blank to make a file from");
+      else if (made.main.letter !== "U" || !made.side.names.includes("made.rs") || made.side.letter !== "U") {
+        fail(`side i · made.rs, made in the main area's tree, reads ${JSON.stringify(made)} — U in the main tree, and in the 附栏's tree with U (UX-43 §1)`);
+      }
+
+      // 2. 复制路径 on a file row, a directory row and the root's blank
+      const copied = {};
+      for (const [what, sel, want] of [
+        ["file", `${col} [data-file-tree] [data-file="notes.md"] > button`, `${root}/notes.md`],
+        ["dir", `${col} [data-file-tree] [data-dir="src"]`, `${root}/src`],
+        ["root", `${col} [data-file-tree] [data-tree-blank]`, root],
+      ]) {
+        await page.locator(sel).first().click({ button: "right" });
+        await wait(300);
+        const offered = await press('[data-row-menu] [data-menu-item="copy-path"]');
+        copied[what] = { offered, wrote: await page.evaluate(() => window.__copied.at(-1) ?? null), want };
+        if (!offered) await page.keyboard.press("Escape");
+      }
+      console.log(`side i · 2 复制路径 in the 附栏's tree ${JSON.stringify(copied)}`);
+      for (const [what, c] of Object.entries(copied)) {
+        if (!c.offered || c.wrote !== c.want) fail(`side i · 复制路径 on the ${what} row reads ${JSON.stringify(c)} — offered, writing ${c.want} (UX-43 §2)`);
+      }
+
+      // 3. the docked file page's deck folds as the main area's
+      await press(`${col} [data-file-tree] [data-file="long.rs"] > button`);
+      await until(3_000, async () => (await count(`${col} [data-file-page] [data-file-scroll]`)) === 1);
+      await wait(500);
+      const scrollTo = async (y) => {
+        await page.evaluate(([c, y]) => {
+          const s = document.querySelector(`${c} [data-file-page] [data-file-scroll]`);
+          if (s) s.scrollTop = y;
+        }, [col, y]);
+        await wait(400);
+        return page.evaluate((c) => {
+          const s = document.querySelector(`${c} [data-file-page] [data-file-scroll]`);
+          return { top: s ? Math.round(s.scrollTop) : null, folded: document.querySelector(`${c} [data-file-page]`)?.hasAttribute("data-folded") ?? null, strip: document.querySelectorAll(`${c} [data-file-deck] [data-deck-strip]`).length };
+        }, col);
+      };
+      const away = await scrollTo(100);
+      // Back toward the top the way a finger reads, a few points a step.
+      for (const y of [95, 90, 85, 80, 75]) await scrollTo(y);
+      const fold = { away, back: await scrollTo(70) };
+      console.log(`side i · 3 the docked file page's deck ${JSON.stringify(fold)}`);
+      if (fold.away.top !== 100) fail(`probe dead: side i · long.rs's page scrolled to ${fold.away.top}, not 100`);
+      else {
+        if (!fold.away.folded || fold.away.strip !== 1) fail(`side i · 100 px from the top the docked file page reads ${JSON.stringify(fold.away)} — folded into its capsule, as the main area's (UX-43 §4)`);
+        if (fold.back.folded || fold.back.strip !== 0) fail(`side i · 30 px back toward the top it reads ${JSON.stringify(fold.back)} — the deck back (UX-43 §4)`);
+      }
+      await scrollTo(0);
+      await press(`${col} [data-file-back]`);
+
+      // 4. under a finger, the keyboard goes down outside the terminal
+      const touch = await page.context().newCDPSession(page);
+      await touch.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await toColumn();
+      await pick("workspace");
+      await until(3_000, async () => (await names(col)).includes("long.rs"));
+      const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+      const dragDown = async (sel) => {
+        const b = await rect(sel);
+        if (!b) return false;
+        const x = Math.round(b.left + b.width / 2);
+        const y0 = Math.round(b.top + Math.min(80, b.height / 3));
+        await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y: y0 }] });
+        for (let i = 1; i <= 6; i += 1) await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y0 + 10 * i }] });
+        await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await wait(300);
+        return true;
+      };
+      const holds = (sel) => page.evaluate((s) => document.activeElement === document.querySelector(s) && document.activeElement !== null, sel);
+      const find = `${col} [data-side-find-field]`;
+      await page.focus(find);
+      const findFocused = await holds(find);
+      await dragDown(`${col} [data-file-tree]`);
+      const findAfterDrag = await holds(find);
+      await page.focus(find);
+      await page.keyboard.press("Enter");
+      await wait(200);
+      const findAfterEnter = await holds(find);
+      await press(`${col} [data-file-tree] [data-file="long.rs"] > button`);
+      await until(3_000, async () => (await count(`${col} textarea[data-edit]`)) === 1);
+      const editor = `${col} textarea[data-edit]`;
+      await page.focus(editor).catch(() => {});
+      const editorFocused = await holds(editor);
+      await dragDown(`${col} [data-file-page] [data-file-scroll]`);
+      const editorAfterDrag = await holds(editor);
+      await press(`${col} [data-file-back]`);
+      // The terminal's field under the same drag, on the terminal's own
+      // box — dispatched in the page, so what moves the focus can only be
+      // a listener (Chrome's emulated finger moves the focus off the
+      // terminal's field by itself, old code and new alike). The find
+      // box under the same events is the control: the road reaches the
+      // rule.
+      const synthDrag = (sel) =>
+        page.evaluate((s) => {
+          const el = document.querySelector(s);
+          if (!el) return false;
+          const b = el.getBoundingClientRect();
+          const at = (y) => new Touch({ identifier: 1, target: el, clientX: b.left + b.width / 2, clientY: y });
+          const send = (type, y, on) => el.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: on ? [at(y)] : [], changedTouches: [at(y)] }));
+          const y0 = b.top + 40;
+          send("touchstart", y0, true);
+          for (let i = 1; i <= 6; i += 1) send("touchmove", y0 + 10 * i, true);
+          send("touchend", y0 + 60, false);
+          return true;
+        }, sel);
+      await page.focus(find);
+      await synthDrag(`${col} [data-file-tree]`);
+      const findAfterEvents = await holds(find);
+      const field = "[data-kept-terminal][data-active] .xterm-helper-textarea";
+      await page.focus(field).catch(() => {});
+      const termFocused = await holds(field);
+      await synthDrag("[data-kept-terminal][data-active] [data-terminal]");
+      const termAfterDrag = await holds(field);
+      await touch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await touch.detach();
+      const keys = { coarse, findFocused, findAfterDrag, findAfterEnter, editorFocused, editorAfterDrag, findAfterEvents, termFocused, termAfterDrag };
+      console.log(`side i · 4 under a finger ${JSON.stringify(keys)}`);
+      if (!coarse) fail("probe void: side i · the touch override did not take — no finger on the glass");
+      else if (!findFocused || !editorFocused || !termFocused) fail(`probe dead: side i · a field never took the focus ${JSON.stringify(keys)}`);
+      else {
+        if (findAfterDrag) fail("side i · the 附栏's find box kept the focus through a 60 px drag down — a drag down lowers the keyboard (UX-43 §3)");
+        if (findAfterEnter) fail("side i · the 附栏's find box kept the focus on Enter — its return key ends it (UX-43 §3)");
+        if (editorAfterDrag) fail("side i · the file editor kept the focus through a 60 px drag down inside it — a drag down lowers the keyboard (UX-43 §3)");
+        if (findAfterEvents) fail("side i · the find box kept the focus through the page's own touch events — the control: the terminal's reading below says nothing");
+        else if (!termAfterDrag) fail("side i · a drag down the terminal took the focus off its field — the terminal keeps its own rules (item 49)");
+      }
+      for (const glob of Object.keys(routesI)) await page.unroute(glob, routesI[glob]);
     }
 
     // g. the window grows by the column (UX-39 §9)

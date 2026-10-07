@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { pathDrag } from "@/lib/path-drag";
+import { onTreeChanged, sameMachine, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
 import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
@@ -331,6 +332,24 @@ export function FileTree({
     setWant((was) => new Set(was));
   };
 
+  // **khor's own acts, wherever they were made** (UX-43 §1,
+  // `lib/tree-changed`): a level said to have changed is read again where
+  // this tree holds it, its listing on screen until the new one lands. A
+  // watched tree is told by the watch instead; a level this tree never
+  // asked about is not its business. The tree's own acts say it too, after
+  // their `reread` has already taken the level off `asked`, so nothing is
+  // asked twice.
+  useEffect(
+    () =>
+      onTreeChanged((c) => {
+        if (!sameMachine(c, { machine, here }) || watching.current === true || !asked.current.has(c.dir)) return;
+        refresh([c.dir]);
+      }),
+    // `refresh` only touches refs and a setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [machine, here],
+  );
+
   // **Kept for the next mount** (`trees`): what this tree holds, and
   // how far its watch had got.
   useEffect(() => {
@@ -454,6 +473,7 @@ export function FileTree({
     // nobody can see.
     if (!expanded.has(dir)) toggle(dir);
     reread(dir);
+    treeChanged({ machine, here, dir });
     onMade?.(full);
     return null;
   };
@@ -470,14 +490,25 @@ export function FileTree({
       await renamePath(machine, full, to);
       onMoved?.(full, to);
       reread(dir);
+      treeChanged({ machine, here, dir });
     }
     return null;
   };
 
-  /** 新建文件 / 新建目录 / 重命名, on top of 删掉. **A directory offers
-      all four and a file three**: there is nothing to make inside a
-      file, and a menu item that could only refuse is worse than no
-      item. */
+  /** The path whose 复制路径 the clipboard refused, said on that item
+      until a copy takes. */
+  const [copyRefused, setCopyRefused] = useState<string | null>(null);
+
+  /** 新建文件 / 新建目录 / 复制路径 / 重命名, on top of 删掉. **A
+      directory offers all five and a file three**: there is nothing to
+      make inside a file, and a menu item that could only refuse is worse
+      than no item.
+   *
+   * **复制路径** (UX-43 §2, the owner 2026-10-07: 「list里新增一个复制路径」):
+   * the absolute path on its machine, the word the file page's 「…」 and
+   * the tab menu already use, on the root's blank too. The menu closing
+   * is the success face — it has no line to say 已复制 on — and a refusal
+   * rejects, so the menu stays open with the item saying so (`RowMenu`). */
   const menu = (full: string, isDir: boolean): RowAction[] => [
     ...(isDir
       ? [
@@ -493,6 +524,19 @@ export function FileTree({
           },
         ]
       : []),
+    {
+      key: "copy-path",
+      label: copyRefused === full ? gui.copy_failed : gui.tab_copy_path,
+      failed: copyRefused === full || undefined,
+      run: () =>
+        navigator.clipboard.writeText(full).then(
+          () => setCopyRefused(null),
+          (e: unknown) => {
+            setCopyRefused(full);
+            throw e;
+          },
+        ),
+    },
     {
       key: "rename",
       label: gui.rename,

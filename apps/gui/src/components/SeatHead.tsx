@@ -7,8 +7,8 @@
  *
  * ⚠️ 墓碑 (UX-37 §6 → UX-40 §4): a file's or a web page's head — ‹, the
  * name, the file's ✓ / preview / 「…」 — at the page's top. A page opened
- * in the 附栏 wears the main area's deck at the foot instead (`FilePage
- * docked`, the narrow `SessionScreen`). ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): the
+ * in the 附栏 wears the main area's deck at the foot instead (`FilePage`,
+ * the narrow `SessionScreen`). ⚠️ 墓碑 (UX-37 §1 → UX-39 §3): the
  * slice's head as ‹ to the whole and the whole's as its title alone
  * (「这个会话碰过的」 / 「全部最近」).
  */

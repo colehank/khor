@@ -49,6 +49,7 @@ import { blameOfLines, useBlameShown } from "@/lib/blame";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { useHereHosts } from "@/lib/here";
+import { levelOf, treeChanged } from "@/lib/tree-changed";
 import { ago } from "@/words";
 import { usePinch } from "@/hooks/use-pinch";
 import { cn } from "@/lib/utils";
@@ -907,9 +908,11 @@ export function FileView({
         setSaved(true);
         // The gutter is about HEAD and the file just moved, so it is
         // wrong until it is asked again. Same for the tree's marks,
-        // which this view does not hold.
+        // which this view does not hold — nor does its host alone: every
+        // holder of this checkout's letters asks again (UX-43 §1).
         setDiffAt((n) => n + 1);
         onSaved?.();
+        treeChanged({ machine, dir: levelOf(path) });
       })
       .catch((e: unknown) => setSaved(String(e instanceof Error ? e.message : e)))
       .finally(() => setSaving(false));
@@ -980,6 +983,7 @@ export function FileView({
         setSaved(true);
         setDiffAt((n) => n + 1);
         onSaved?.();
+        treeChanged({ machine, dir: levelOf(path) });
       })
       .catch((e: unknown) => setSaved(String(e instanceof Error ? e.message : e)))
       .finally(() => setSaving(false));

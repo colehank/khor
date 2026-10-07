@@ -541,6 +541,14 @@ export function WorkspacesList({
         run: run(() => wsPin(r.device, r.path, !r.pinned)),
       },
       {
+        // The workspace's directory on its machine (UX-43 §2), the tree's
+        // own 复制路径. The menu closing is the success face; a clipboard
+        // refusal rejects, so the menu stays open where it was pressed.
+        key: "copy-path",
+        label: gui.tab_copy_path,
+        run: () => navigator.clipboard.writeText(r.path),
+      },
+      {
         key: "remove",
         // What deleting a workspace does is the window's sentence: the
         // row comes off the list and the directory is not touched (the

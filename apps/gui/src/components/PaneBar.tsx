@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
+import { endsOnEnter } from "@/lib/field-swipe";
 import { keyLabel, useNewAct } from "@/lib/shortcuts";
 import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
@@ -233,10 +234,14 @@ export function PaneBar({
               data-pane-search
               data-search-field
               type="search"
+              // The return key ends the box under a finger, and the
+              // keyboard goes (UX-43 §3).
+              enterKeyHint="search"
               aria-label={searchLabel}
               placeholder={searchLabel}
               value={query}
               onChange={(e) => onQuery(e.target.value)}
+              onKeyDown={endsOnEnter}
               // The look is the text field's own (`ui/input`, components/
               // TextField, 2026-09-28): `fill`, `radius-sm`, `body`, the
               // `ring` on focus, and the finger floor (`min-h-touch`,

@@ -9,7 +9,8 @@
  * directory (`holding`), or that directory itself when no workspace
  * does; git's letters come from one status read, folded up the tree the
  * way the landing folds them. A file opens in place as the file page
- * with the main area's deck (`FilePage docked`, UX-40 §4), and ‹ there is
+ * with the main area's deck (`FilePage`, UX-40 §4; it folds as the main
+ * area's does, UX-43 §4), and ‹ there is
  * the way back to the tree — or to 最近, for the file a row of 最近 opened.
  *
  * **Find and make** (UX-40 §1): the find row under the 附栏's head is the
@@ -36,6 +37,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { SeatHead } from "@/components/SeatHead";
 import { gui } from "@/gen/catalog";
 import type { GitStatus } from "@/gen/bindings/GitStatus";
+import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { FilePage } from "@/views/FilePage";
 import { FileTree } from "@/views/FileTree";
@@ -111,6 +113,15 @@ export function SideWorkspace({
       live = false;
     };
   }, [machine, root, gitAt]);
+  // git's letters move with khor's acts anywhere in this checkout — the
+  // main area's tree, a save there (UX-43 §1, `lib/tree-changed`).
+  useEffect(
+    () =>
+      onTreeChanged((c) => {
+        if (sameMachine(c, { machine, here }) && holds(root, c.dir)) setGitAt((n) => n + 1);
+      }),
+    [machine, here, root],
+  );
   // **「放进来的」**: the machine's home, then its `khor-drop` when it is
   // there and holds something. Asked once per seat.
   const [dropDir, setDropDir] = useState<string | null>(null);
@@ -276,7 +287,6 @@ export function SideWorkspace({
             path={file}
             here={here}
             git
-            docked
             goLine={goLine?.path === file ? goLine : null}
             draft={drafts.get(file)}
             onDraft={(d) =>
