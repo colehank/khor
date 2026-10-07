@@ -32306,7 +32306,10 @@ try {
   //      really grew is the Mac app's to show, not this page's;
   //   h. find and make in the lists, a page's deck, landing on 最近 (UX-40);
   //   i. the workspace (UX-43): the trees in step, 复制路径, the keyboard
-  //      going down outside the terminal, the docked file deck folding.
+  //      going down outside the terminal, the docked file deck folding;
+  //   j. on the phone (UX-44): every sheet is the 附栏's paper, one scrim
+  //      in each theme, 最近 and 浏览器 rows delete on a swipe, no › at a
+  //      content row's end.
   //
   // `FACE_ONLY=side` runs this section alone.
   side: {
@@ -33138,6 +33141,277 @@ try {
         else if (!termAfterDrag) fail("side i · a drag down the terminal took the focus off its field — the terminal keeps its own rules (item 49)");
       }
       for (const glob of Object.keys(routesI)) await page.unroute(glob, routesI[glob]);
+    }
+
+    // j. one sheet, one scrim, swipe to delete, no › (UX-44, the owner
+    //    2026-10-07 15:10–15:45, on the phone's face under a finger):
+    //    1. every sheet that rises from the foot wears the 附栏's paper —
+    //       its computed ground, rim on each side, corners, shadow and the
+    //       grabber's place equal the 附栏's (red before: the forms wore
+    //       `popover` grey with a hairline on three sides);
+    //    2. one scrim in each theme, the same behind every sheet, and the
+    //       page under it visibly dimmed — ΔL* of the scrim over the
+    //       ground (red before: the 附栏's ink at .32 beside the forms'
+    //       black at half, which on the dark ground changes nothing);
+    //    3. a row of 最近 and of 浏览器 deletes on a full swipe and on the
+    //       revealed button, a vertical drag opens no row and closes an
+    //       open one (red before: 最近 had nothing to slide, 浏览器 slid to
+    //       its pin); 最近's delete forgets the record (`forget_recent`),
+    //       浏览器's closes the page (`tabs_close`);
+    //    4. no svg at the end of a content row (the sessions list, 最近,
+    //       浏览器; red before: the narrow face's ›).
+    {
+      const fingerJ = await page.context().newCDPSession(page);
+      await fingerJ.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+      const forgot = [];
+      const closedJ = [];
+      const tabsJ = ["one", "two", "three"].map((n, i) => ({ id: `j${i + 1}`, device: pin.device, url: `https://${n}.example/`, title: n, pinned: false, session: "tui/side-1" }));
+      const tabsJBody = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ tabs: tabsJ, active: tabsJ[0]?.id ?? "" }) });
+      const routesJ = {
+        "**/forget_recent": (r) => {
+          forgot.push(r.request().postDataJSON() ?? {});
+          return json(null)(r);
+        },
+        "**/tabs_list": tabsJBody,
+        "**/tabs_close": (r) => {
+          const id = (r.request().postDataJSON() ?? {}).id;
+          closedJ.push(id);
+          const at = tabsJ.findIndex((t) => t.id === id);
+          if (at >= 0) tabsJ.splice(at, 1);
+          return tabsJBody(r);
+        },
+      };
+      for (const [glob, run] of Object.entries(routesJ)) await page.route(glob, run);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.evaluate(() => window.localStorage.clear());
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const coarseJ = await page.evaluate(() => matchMedia("(pointer: coarse)").matches && document.documentElement.hasAttribute("data-narrow"));
+      const theme = async (scheme) => {
+        await page.emulateMedia({ colorScheme: scheme });
+        await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === scheme);
+        await wait(200);
+      };
+      const toSession = async () => {
+        if (!(await open("sessions"))) return false;
+        if (!(await press('[data-side-row="tui/side-1"] [data-side-open]'))) return false;
+        return until(5_000, async () => (await count("[data-session-deck] button[data-deck-title]")) === 1);
+      };
+      const shutJ = async (sel) => {
+        await page.keyboard.press("Escape");
+        await until(2_000, async () => (await count(sel)) === 0);
+        await wait(300);
+      };
+      const newItem = async (key) => {
+        const plus = page.locator("[data-pane-new]").filter({ visible: true });
+        if ((await plus.count()) === 0) return false;
+        await plus.first().click().catch(() => {});
+        await wait(400);
+        if ((await page.locator('[role="menu"]').count()) === 0) return true;
+        return press(`[role="menu"] [data-new-item="${key}"]`);
+      };
+      /** The paper and the scrim behind it, as computed. */
+      const paper = (sel) =>
+        page.evaluate((s) => {
+          const el = document.querySelector(s);
+          if (!el) return null;
+          const c = document.createElement("canvas").getContext("2d");
+          const norm = (v) => {
+            c.fillStyle = "#000";
+            c.fillStyle = v;
+            return String(c.fillStyle);
+          };
+          const cs = getComputedStyle(el);
+          const grab = [...el.querySelectorAll("[data-place-grab] > span, [data-sheet-grabber]")].find((g) => g.getBoundingClientRect().height > 0);
+          const scrim = [...document.querySelectorAll('[data-slot="dialog-overlay"]')].at(-1);
+          const app = getComputedStyle(document.documentElement).getPropertyValue("--background").trim();
+          // The scrim laid over the app's ground, as painted: one pixel,
+          // the ground then the scrim, read back.
+          const px = document.createElement("canvas");
+          px.width = px.height = 1;
+          const p = px.getContext("2d", { willReadFrequently: true });
+          p.fillStyle = app;
+          p.fillRect(0, 0, 1, 1);
+          if (scrim) {
+            p.fillStyle = getComputedStyle(scrim).backgroundColor;
+            p.fillRect(0, 0, 1, 1);
+          }
+          const over = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+          return {
+            ground: norm(cs.backgroundColor),
+            rim: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].join(" "),
+            ink: norm(cs.borderTopColor),
+            corners: [cs.borderTopLeftRadius, cs.borderTopRightRadius, cs.borderBottomRightRadius, cs.borderBottomLeftRadius].join(" "),
+            shadow: cs.boxShadow,
+            grab: grab ? Math.round(grab.getBoundingClientRect().top - el.getBoundingClientRect().top) : null,
+            scrim: scrim ? norm(getComputedStyle(scrim).backgroundColor) : null,
+            app: norm(app),
+            over,
+          };
+        }, sel);
+      const sheetsJ = [
+        ["the 附栏", "[data-place-sheet]", async () => (await toSession()) && press("[data-session-deck] button[data-deck-title]")],
+        ["the tabs sheet", "[data-tab-sheet]", async () => (await toSession()) && press("[data-session-deck] [data-deck-tabs]")],
+        ["新会话", "[data-new-session-dialog]", async () => (await open("sessions")) && newItem("new")],
+        ["导入", "[data-import-dialog]", async () => (await open("sessions")) && newItem("import")],
+        ["加入网络", "[data-join-dialog]", async () => (await open("devices")) && newItem("join")],
+        ["the key row editor", "[data-key-row-editor]", async () => ((await openMore("terminal")) && (await press('[data-setting-row-name="term-key-row"]'))) || ((await openMore("appearance")) && press('[data-setting-row-name="term-key-row"]'))],
+      ];
+      const hex = (v) => [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16));
+      const lStar = ([r, g, b]) => {
+        const lin = (u) => ((u /= 255) <= 0.04045 ? u / 12.92 : ((u + 0.055) / 1.055) ** 2.4);
+        const y = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+        return y > 216 / 24389 ? 116 * Math.cbrt(y) - 16 : (24389 / 27) * y;
+      };
+      /** How far the scrim moves the app's ground it lies over, in L*. */
+      const dims = (p) => +Math.abs(lStar(p.over) - lStar(hex(p.app))).toFixed(1);
+      const papers = {};
+      for (const scheme of ["light", "dark"]) {
+        await theme(scheme);
+        papers[scheme] = {};
+        for (const [what, sel, go] of sheetsJ) {
+          if (!(await go()) || !(await until(4_000, async () => (await count(sel)) === 1))) {
+            fail(`probe dead: side j · ${scheme} · ${what} never rose`);
+            if ((await count(sel)) > 0) await shutJ(sel);
+            continue;
+          }
+          await wait(500);
+          papers[scheme][what] = await paper(sel);
+          // The report's shots (FACE_SHOTS): the two sheets the owner
+          // compared, in each theme.
+          if (process.env.FACE_SHOTS && (what === "the 附栏" || what === "the tabs sheet")) {
+            await page.screenshot({ path: join(process.env.FACE_SHOTS, `ux44-${scheme}-${what === "the 附栏" ? "side" : "tabs"}.png`) });
+          }
+          await shutJ(sel);
+        }
+        const all = papers[scheme];
+        const ref = all["the 附栏"];
+        console.log(`side j · 1 ${scheme} papers ${JSON.stringify(all)}`);
+        if (!ref) continue;
+        for (const [what, got] of Object.entries(all)) {
+          if (what === "the 附栏" || !got) continue;
+          for (const k of ["ground", "rim", "ink", "corners", "shadow", "grab"]) {
+            if (got[k] !== ref[k]) fail(`side j · ${scheme} · ${what}'s ${k} is ${JSON.stringify(got[k])}, the 附栏's ${JSON.stringify(ref[k])} — every sheet is the 附栏's paper (UX-44 §1)`);
+          }
+        }
+        if (ref.ground !== ref.app) fail(`side j · ${scheme} · the 附栏's ground is ${ref.ground}, the app's ${ref.app} (UX-39 §1)`);
+        const scrims = [...new Set(Object.values(all).filter(Boolean).map((p) => p.scrim))];
+        const dim = Object.fromEntries(Object.entries(all).filter(([, p]) => p).map(([what, p]) => [what, dims(p)]));
+        console.log(`side j · 2 ${scheme} scrims ${JSON.stringify(scrims)}, ΔL* over the ground ${JSON.stringify(dim)}`);
+        if (scrims.length !== 1) fail(`side j · ${scheme} · the sheets' scrims are ${JSON.stringify(scrims)} — one scrim, the tabs sheet's (UX-44 §2)`);
+        for (const [what, d] of Object.entries(dim)) {
+          if (!(d >= 10)) fail(`side j · ${scheme} · behind ${what} the scrim moves the ground ${ref.app} by ${d} L* — the page behind visibly dimmed (UX-44 §2)`);
+        }
+      }
+      await theme("light");
+
+      // 3 and 4: the rows, under a finger.
+      const dragJ = async (x0, y0, x1, y1) => {
+        await fingerJ.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x0, y: y0 }] });
+        for (let i = 1; i <= 10; i++) {
+          await fingerJ.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: Math.round(x0 + ((x1 - x0) * i) / 10), y: Math.round(y0 + ((y1 - y0) * i) / 10) }] });
+          await wait(16);
+        }
+        await fingerJ.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await wait(700);
+      };
+      const rowAt = (sel) =>
+        page.evaluate((s) => {
+          const r = document.querySelector(s)?.getBoundingClientRect();
+          return r ? { x: Math.round(r.left), y: Math.round(r.top + r.height / 2), w: Math.round(r.width) } : null;
+        }, sel);
+      const shown = (sel) =>
+        page.evaluate((s) => {
+          const r = document.querySelector(s);
+          return r ? { revealed: r.hasAttribute("data-row-revealed"), by: r.style.getPropertyValue("--row-reveal") || "0px", acts: [...r.querySelectorAll("[data-row-action]")].map((b) => b.getAttribute("data-row-action")).join(" ") } : null;
+        }, sel);
+      const chevrons = (scope) => page.evaluate((s) => document.querySelectorAll(`${s} [data-side-text] > svg, ${s} [data-side-drill]`).length, scope);
+      /** Up, in the row, not out of it; left by `by`; right of the back swipe's edge. */
+      const slide = async (sel, by) => {
+        const r = await rowAt(sel);
+        if (!r) return false;
+        await dragJ(r.x + r.w - 20, r.y, r.x + r.w - 20 - by, r.y);
+        return true;
+      };
+      const lift = async (sel) => {
+        const r = await rowAt(sel);
+        if (!r) return false;
+        await dragJ(r.x + r.w / 2, r.y, r.x + r.w / 2, r.y - 80);
+        return true;
+      };
+      const tapAct = async (sel, key) => {
+        const b = page.locator(`${sel} [data-row-action="${key}"]`);
+        if ((await b.count()) === 0) return false;
+        await b.first().click({ timeout: 3_000 }).catch(() => {});
+        await wait(700);
+        return true;
+      };
+      const swipeRows = async (what, rowSel, key, ids, gone) => {
+        const [a, b, c] = ids.map((id) => `[data-place-sheet] ${rowSel}="${id}"]`);
+        const out = {};
+        await lift(a);
+        out.vertical = await shown(a);
+        await slide(a, 110);
+        out.opened = await shown(a);
+        await lift(b);
+        out.afterScroll = await shown(a);
+        await slide(a, 110);
+        out.tapped = await tapAct(a, key);
+        await until(2_000, async () => (await count(a)) === 0);
+        out.buttonGone = (await count(a)) === 0;
+        await slide(c, 330);
+        await until(2_000, async () => (await count(c)) === 0);
+        out.fullGone = (await count(c)) === 0;
+        if (!out.fullGone) out.afterFull = { ...(await shown(c)), at: await rowAt(c) };
+        out.done = gone();
+        console.log(`side j · 3 ${what} ${JSON.stringify(out)}`);
+        if (out.vertical?.revealed || out.vertical?.by !== "0px") fail(`side j · a vertical drag on a ${what} row left it ${JSON.stringify(out.vertical)} — it scrolls, it opens no row (UX-44 §3)`);
+        if (!out.opened?.revealed || out.opened.acts !== key) fail(`side j · a ${what} row slid 110 reads ${JSON.stringify(out.opened)} — open, a red 删除 alone (UX-44 §3)`);
+        else if (out.afterScroll?.revealed) fail(`side j · a vertical drag elsewhere left the open ${what} row ${JSON.stringify(out.afterScroll)} — a scroll closes it (UX-44 §3)`);
+        if (!out.tapped || !out.buttonGone) fail(`side j · the revealed 删除 on a ${what} row ${out.tapped ? "was pressed and the row stayed" : "was not there to press"} (UX-44 §3)`);
+        if (!out.fullGone) fail(`side j · a full swipe across a ${what} row left it in the list — it deletes at once (UX-44 §3)`);
+        return out;
+      };
+      if (!coarseJ) fail("probe void: side j · the phone's face under a finger did not take");
+      else if (!(await toSession()) || !(await press("[data-session-deck] button[data-deck-title]")) || !(await until(3_000, async () => (await count("[data-place-sheet] [data-recent-row]")) === 3))) {
+        fail(`probe dead: side j · 最近 never drew its three rows in the sheet (${await count("[data-place-sheet] [data-recent-row]")})`);
+      } else {
+        const keysR = await page.evaluate(() => [...document.querySelectorAll("[data-place-sheet] [data-recent-row]")].map((r) => r.getAttribute("data-recent-row")));
+        const kinds = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("[data-place-sheet] [data-recent-row]")].map((r) => [r.getAttribute("data-recent-row"), r.getAttribute("data-recent-kind")])));
+        const recentChev = await chevrons("[data-place-sheet] [data-side-recent]");
+        await swipeRows("最近", "[data-recent-row", "forget", keysR, () => forgot.map((f) => `${f.kind} ${f.place}`));
+        // The record each row stands on, its own place: a page's address,
+        // a directory's or a file's path.
+        const want = [keysR[0], keysR[2]].map((k) => {
+          const kind = kinds[k];
+          const place = k.split(" ").slice(2).join(" ");
+          return `${kind === "workspace" ? "dir" : kind} ${place}`;
+        });
+        if (JSON.stringify(forgot.map((f) => `${f.kind} ${f.place}`)) !== JSON.stringify(want) || forgot.some((f) => f.machine !== "peer")) {
+          fail(`side j · 最近's deletes asked ${JSON.stringify(forgot)} — forget_recent for ${JSON.stringify(want)} on peer, the record only (UX-44 §3)`);
+        }
+        await page.selectOption("[data-place-sheet] [data-side-head] [data-seat-pick] select", "browser");
+        await until(3_000, async () => (await count("[data-place-sheet] [data-switch-tab]")) === 3);
+        await wait(400);
+        const pageChev = await chevrons("[data-place-sheet]");
+        await swipeRows("浏览器", "[data-switch-tab", "close", ["j1", "j2", "j3"], () => closedJ);
+        if (JSON.stringify(closedJ) !== JSON.stringify(["j1", "j3"])) fail(`side j · 浏览器's deletes closed ${JSON.stringify(closedJ)} — j1 by the button, j3 by the full swipe (UX-44 §3)`);
+        await shutJ("[data-place-sheet]");
+        await open("sessions");
+        const listChev = await chevrons("body");
+        const rowsSeen = await count("[data-side-row]");
+        console.log(`side j · 4 svgs at a content row's end: sessions ${listChev} (of ${rowsSeen} rows), 最近 ${recentChev}, 浏览器 ${pageChev}`);
+        if (rowsSeen === 0) fail("probe dead: side j · the sessions list drew no rows");
+        if (listChev + recentChev + pageChev !== 0) fail(`side j · ${listChev + recentChev + pageChev} svg(s) stand at a content row's end — no › (UX-44 §4)`);
+      }
+      for (const [glob, run] of Object.entries(routesJ)) await page.unroute(glob, run);
+      await fingerJ.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await fingerJ.detach();
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
     }
 
     // g. the window grows by the column (UX-39 §9)
