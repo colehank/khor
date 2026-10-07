@@ -11,12 +11,13 @@
 //
 // **Four parts.** Pinned at the left end, 📎, the files panel (`AttachKey`,
 // the owner 2026-10-07 12:30). The caps a person chose (`lib/term-keys`,
-// default the row of 2026-10-02) scroll sideways; after them, pinned, the
-// cursor pad (`views/CursorPad`) and 「…」, **a panel in the keyboard's
-// place** with every key, the row's editor and the keyboard's own settings
-// (`KeyPanel`, `lib/key-panel`; UX-31 — it was a sheet, which took the
-// focus and dropped the keyboard). 📎 and 「…」 are one band's two
-// panels: each is on while its own is up, and pressed again puts it away.
+// default the row of 2026-10-02) scroll sideways, and the last of them is
+// always 「…」, **a panel in the keyboard's place** with every key, the
+// row's editor and the keyboard's own settings (`KeyPanel`,
+// `lib/key-panel`; UX-31 — it was a sheet, which took the focus and
+// dropped the keyboard). Pinned at the right end, the cursor pad
+// (`views/CursorPad`) alone. 📎 and 「…」 are one band's two panels: each
+// is on while its own is up, and pressed again puts it away.
 //
 // **Real bytes, the terminal's own road.** A key here is handed to xterm
 // as if typed (`Terminal.input`, `wasUserInput`), so it leaves through
@@ -154,9 +155,11 @@ export function TermKeys({
       role="toolbar"
       aria-label={gui.term_keys}
       // The canvas's key row (the redesign, 2026-10-02): rounded caps on a
-      // `fill`, a row's inset at each end. The caps scroll sideways; 📎
-      // stays at the left end, the cursor pad and 「…」 at the right,
-      // outside them.
+      // `fill`, a row's inset at each end. The caps scroll sideways with
+      // 「…」 the last of them; 📎 stays at the left end and the cursor pad
+      // at the right, outside them. ⚠️ 墓碑 (item 72, the owner
+      // 2026-10-07: 「终端的更多放在软键盘里面的最后吧」, then 「进横滑区的末
+      // 尾」): 「…」 was pinned at the right end beside the pad.
       className="flex h-key-row flex-none items-center gap-1.5 px-row"
     >
       <AttachKey term={term} />
@@ -164,9 +167,9 @@ export function TermKeys({
         {shown.map((k) => (
           <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
         ))}
+        <KeyPanel term={term} mods={mods} onMods={onMods} files={files} />
       </div>
       <CursorKey term={term} mods={mods} onMods={onMods} />
-      <KeyPanel term={term} mods={mods} onMods={onMods} files={files} />
     </div>
   );
 }
@@ -209,7 +212,8 @@ function AttachKey({ term }: { term: RefObject<Terminal | null> }) {
 
 /**
  * **「…」: a panel in the keyboard's place** (UX-31, the owner 2026-10-06;
- * `lib/key-panel`). The row's last seat, pinned. A press puts the panel
+ * `lib/key-panel`). The scrolled caps' last, always (item 72), and the
+ * row's own: not in the editor's list. A press puts the panel
  * where the keyboard is, as tall as it, with every key in four groups —
  * 移动, 修饰, 符号, 功能键 — and the two jumps between prompts; a press
  * there sends the key the way the row does and leaves the panel up, so
