@@ -28488,11 +28488,17 @@ try {
       const seat = await page.evaluate(() => {
         const a = [...document.querySelectorAll('[data-term-key="attach"]')].find((b) => b.offsetParent);
         const row = a?.closest("[data-term-keys]");
+        const scroll = row?.querySelector("[data-term-keys-scroll]");
+        const pad = row?.querySelector('[data-term-key="cursor"]');
+        const mark = pad?.querySelector("svg")?.getBoundingClientRect();
         return {
           on: a?.getAttribute("data-on") ?? null,
           first: row?.firstElementChild === a,
           inScroll: !!a?.closest("[data-term-keys-scroll]"),
           foot: document.querySelectorAll("[data-key-panel-keyboard]").length,
+          moreLast: scroll?.lastElementChild?.getAttribute("data-term-key") ?? null,
+          padLast: row?.lastElementChild === pad,
+          padMark: mark ? [Math.round(mark.width), Math.round(mark.height)].join("x") : null,
         };
       });
       await page.locator('[data-term-key="attach"]').filter({ visible: true }).first().click();
@@ -28506,6 +28512,15 @@ try {
         fail(
           `term vi · 📎 ${JSON.stringify(seat)}, pressed again away ${away} on ${offAfter} — wanted it first in the row outside the scroll, ` +
             "on while its panel is up, the panel with no 「键盘」 key, and a second press putting the panel away and the key off",
+        );
+      }
+      // 「…」 is the scrolled caps' last and the cursor pad alone is
+      // pinned at the right end; the pad's mark is `--key-pad-glyph`, 26
+      // (item 72, the owner 2026-10-07).
+      if (seat.moreLast !== "more" || !seat.padLast || seat.padMark !== "26x26") {
+        fail(
+          `term vi · the row's right end: last of the scroll ${seat.moreLast}, the pad last in the row ${seat.padLast}, its mark ${seat.padMark} — ` +
+            "wanted 「…」 last of the scrolled caps, the cursor pad alone outside them at the right end, its mark 26×26 (item 72)",
         );
       }
       const machinesHere = await panelFor("tui/face-term");
@@ -30989,8 +31004,11 @@ try {
               ink: cap.getAttribute("data-deck-ink"),
               color: cs.color,
               // Under the content, never over it (item 62; ⚠️ Tombstone
-              // UX-29: the capsule floated over the content's foot).
-              offContent: b.top >= (box?.getBoundingClientRect().bottom ?? Infinity) - 0.5,
+              // UX-29: the capsule floated over the content's foot): under
+              // the grid's last row, which item 72 lifts it toward — the
+              // grid where layout put it, without the scroller's part-row
+              // shift.
+              offContent: b.top >= (screen ? screen.getBoundingClientRect().bottom - new DOMMatrixReadOnly(getComputedStyle(screen.closest("[data-term-screen]")).transform).m42 : Infinity) - 0.5,
             };
           })();
           return {
@@ -31106,10 +31124,16 @@ try {
     //       grid ends at its top (item 62, the owner 2026-10-07: half of
     //       it covered the terminal's last rows). At 390×844 with a 34-pt
     //       band and at 375×667 with none, folded by a finger: the grid
-    //       and its box end at or above the capsule's top, the capsule's
-    //       bottom is inside the viewport, the folded bar is the band (or
-    //       the finger's floor, 44, where there is none) with the capsule
-    //       in it, and the grid gained rows over the unfolded deck. ──
+    //       ends at or above the capsule's top, the capsule's bottom is
+    //       inside the viewport, the folded bar is the band (or the
+    //       finger's floor, 44, where there is none), and the grid gained
+    //       rows over the unfolded deck. **The capsule's centre is midway
+    //       between the last row's bottom and the viewport's** (item 72,
+    //       the owner 2026-10-07: centred in the band it read as stuck to
+    //       the screen's edge), within 1 px, at two terminal font sizes
+    //       (the grid refitted while folded), and a press there is the
+    //       capsule's. ⚠️ 墓碑 (item 62): the box ended at the capsule's
+    //       top and the capsule stood inside the band. ──
     for (const [w, h, band] of [[390, 844, 34], [375, 667, 0]]) {
       await fresh(w, h);
       await page.evaluate((b) => document.documentElement.style.setProperty("--safe-bottom", `${b}px`), band);
@@ -31122,17 +31146,25 @@ try {
         page.evaluate(() => {
           const box = document.querySelector("[data-kept-terminal][data-active] [data-terminal]");
           const screen = box?.querySelector(".xterm-screen")?.getBoundingClientRect();
+          // The grid where layout put it: the scroller's part-row shift
+          // (`lib/term-scroller`) moves the drawing between two rows.
+          const mount = box?.querySelector("[data-term-screen]");
+          const shift = mount ? new DOMMatrixReadOnly(getComputedStyle(mount).transform).m42 : 0;
           const cap = document.querySelector("[data-session-bar] [data-deck-strip]")?.getBoundingClientRect();
           const bar = document.querySelector("[data-session-bar]")?.getBoundingClientRect();
           const r = (n) => (n === undefined ? null : +n.toFixed(1));
+          const hit = cap ? document.elementFromPoint(cap.left + cap.width / 2, (cap.top + cap.bottom) / 2) : null;
           return {
             rows: box?.__xterm?.rows,
-            grid: r(screen?.bottom),
+            grid: r(screen && screen.bottom - shift),
+            shift: r(shift),
             box: r(box?.getBoundingClientRect().bottom),
             capTop: r(cap?.top),
             capBottom: r(cap?.bottom),
             bar: r(bar?.height),
             vh: window.innerHeight,
+            pressed: !!hit?.closest("[data-deck-strip]"),
+            hit: hit ? `${hit.tagName.toLowerCase()}${[...hit.attributes].map((a) => `[${a.name}]`).join("")}` : null,
           };
         });
       await wait(400);
@@ -31154,14 +31186,39 @@ try {
         fail(`bar x · ${w}×${h}: a finger's drag down did not fold the deck (${shown(f)})`);
         continue;
       }
-      if (!(f.grid <= f.capTop + 0.5) || !(f.box <= f.capTop + 0.5)) {
-        fail(`bar x · ${w}×${h}, folded: the grid ends at ${f.grid} and its box at ${f.box}, the capsule's top is ${f.capTop} — no row of the terminal under the capsule (item 62)`);
-      }
-      if (!(f.capBottom <= f.vh + 0.5) || !(f.capTop >= f.vh - room - 0.5)) {
-        fail(`bar x · ${w}×${h}, folded: the capsule runs ${f.capTop}–${f.capBottom} in a ${f.vh} viewport — inside the bottom ${room} (the band, or the finger's floor without one; item 62)`);
-      }
+      // Where the capsule stands against the grid, at the font size the
+      // grid has now.
+      const seated = (g, size) => {
+        if (!(g.grid <= g.capTop + 0.5)) {
+          fail(`bar x · ${w}×${h}, folded, term ${size}: the grid ends at ${g.grid}, the capsule's top is ${g.capTop} — no row of the terminal under the capsule (item 62)`);
+        }
+        if (!(g.capBottom <= g.vh + 0.5)) fail(`bar x · ${w}×${h}, folded, term ${size}: the capsule runs ${g.capTop}–${g.capBottom} in a ${g.vh} viewport`);
+        const mid = (g.grid + g.vh) / 2;
+        const centre = (g.capTop + g.capBottom) / 2;
+        if (!(Math.abs(centre - mid) <= 1)) {
+          fail(`bar x · ${w}×${h}, folded, term ${size}: the capsule's centre is ${centre}, the midpoint of the last row's bottom ${g.grid} and the viewport's ${g.vh} is ${mid} — centred between them within 1 px (item 72)`);
+        }
+        if (!g.pressed) fail(`bar x · ${w}×${h}, folded, term ${size}: a press at the capsule's centre lands on ${g.hit} — the capsule's (item 72)`);
+      };
+      seated(f, 14);
       if (Math.abs(f.bar - room) > 0.5) fail(`bar x · ${w}×${h}, folded: the bar is ${f.bar} tall — the room is ${room} (--deck-fold; item 62)`);
       if (!(f.rows > open62.rows)) fail(`bar x · ${w}×${h}: the grid has ${f.rows} rows folded against ${open62.rows} open — the fold gives the terminal rows (item 44, item 62)`);
+      // A second size while folded: the grid refits and the capsule
+      // follows it (item 72: 「re-place it when the grid refits」).
+      const sizeTo = (term) =>
+        page.evaluate((px) => {
+          document.documentElement.style.setProperty("--text-term", `${px}px`);
+          window.dispatchEvent(new CustomEvent("khor:type-size", { detail: { followSystem: true, uiStep: 3, term: px } }));
+        }, term);
+      await sizeTo(19);
+      await until(2_000, async () => (await geo()).rows !== f.rows);
+      await wait(400);
+      const f19 = await geo();
+      console.log(`bar x · ${w}×${h}, band ${band}, term 19: folded ${shown(f19)}`);
+      if (f19.capTop === null || f19.rows === f.rows) fail(`probe dead: bar x · ${w}×${h}: at term 19 the deck is ${f19.capTop === null ? "unfolded" : "folded"} with ${f19.rows} rows (${f.rows} at 14)`);
+      else seated(f19, 19);
+      await sizeTo(14);
+      await wait(400);
     }
     await page.evaluate(() => document.documentElement.style.removeProperty("--safe-bottom"));
     await fresh(390, 844);

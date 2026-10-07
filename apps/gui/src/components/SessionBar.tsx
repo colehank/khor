@@ -77,6 +77,7 @@ import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
 import { gui } from "@/gen/catalog";
 import { DECK_FOLD, foldStep, groundUnder, inkOver, RESTS_AT_BOTTOM, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
+import { seatFold } from "@/lib/fold-seat";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { TRIP_MS } from "@/lib/travel";
 import { footCovered } from "@/lib/viewport";
@@ -251,6 +252,14 @@ export function SessionScreen({
     const b = cap.getBoundingClientRect();
     setSampled(inkOver(groundUnder(b.left + b.width / 2, b.top + b.height / 2, bar.current)));
   };
+  /** **Midway between the last line and the foot** (item 72, `lib/fold-seat`):
+      the capsule is lifted into the part-row a terminal's grid leaves
+      empty above the band. Seated before the ink is sampled under it. */
+  useLayoutEffect(() => {
+    const room = bar.current?.querySelector<HTMLElement>("[data-deck-fold]");
+    if (!folded || !room || !content.current) return;
+    return seatFold(room, content.current);
+  }, [folded, active]);
   useLayoutEffect(() => {
     if (folded && ink === undefined) sample();
   }, [folded, ink, active]);
