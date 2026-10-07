@@ -257,6 +257,9 @@ impl TryFrom<String> for Hop {
 pub struct WorkspaceFact {
     /// Absolute, on that machine — the workspace table's path.
     pub path: String,
+    /// The checkout's git state as a prompt says it (UX-48); `None` for
+    /// a plain folder or a status that would not read.
+    pub git: Option<GitSegment>,
     /// The branch HEAD is on; `None` for a plain folder, a detached
     /// HEAD, or a repository with no commit yet.
     pub branch: Option<String>,
@@ -273,6 +276,44 @@ pub struct WorkspaceFact {
     /// with nothing to date.
     #[ts(type = "number")]
     pub changed_ms: i64,
+}
+
+/// **A checkout's git state, as a prompt's git segment says it** (UX-48,
+/// the owner: the workspace row's top-right is 「main ⇡861 *1 !1 ?2」 —
+/// powerlevel10k's counts), with HEAD's subject and how long all of it
+/// has held.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct GitSegment {
+    /// The branch HEAD is on; `None` detached or before the first commit.
+    pub branch: Option<String>,
+    /// HEAD's id, eight hex digits — what a detached HEAD is called;
+    /// `None` before the first commit.
+    pub head: Option<String>,
+    /// HEAD's subject line: the row's second line.
+    pub subject: Option<String>,
+    /// Commits the upstream lacks and the other way round; 0 with none.
+    pub ahead: u32,
+    pub behind: u32,
+    pub stashes: u32,
+    /// Paths conflicted, staged, edited and not staged, untracked.
+    pub conflicted: u32,
+    pub staged: u32,
+    pub unstaged: u32,
+    pub untracked: u32,
+    /// The counts stopped at the status walk's cap: each is a floor.
+    pub capped: bool,
+    /// **When this segment last changed**, ms since the epoch — any of
+    /// the fields above but this one; on a resident new to the checkout,
+    /// the latest moment git's own files say it could have.
+    #[ts(type = "number")]
+    pub since_ms: i64,
+}
+
+impl GitSegment {
+    /// Equal but for the time: the segment did not change.
+    pub fn same(&self, other: &GitSegment) -> bool {
+        GitSegment { since_ms: 0, ..self.clone() } == GitSegment { since_ms: 0, ..other.clone() }
+    }
 }
 
 /// **One machine's connection, as the resident holds it**: the road its
@@ -320,6 +361,12 @@ pub struct Link {
     /// Tail field.
     #[serde(default)]
     pub last_rtt_ms: Option<u32>,
+    /// **How long the live wire has been on the road `hop` says**, in ms
+    /// (UX-48: the machine row's 「直连 · 3 小时」). Reset when the road
+    /// changes or a new wire is made. `None` without a live wire.
+    /// Tail field.
+    #[serde(default)]
+    pub since_ms: Option<u64>,
 }
 
 impl Link {

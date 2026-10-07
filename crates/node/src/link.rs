@@ -7994,6 +7994,7 @@ impl Node {
                             relay: None,
                             down_ms: None,
                             last_rtt_ms: None,
+                            since_ms: None,
                         },
                     )
                 })
@@ -8043,6 +8044,7 @@ impl Node {
                         relay: r.relay,
                         down_ms: r.down.map(ms),
                         last_rtt_ms: r.last_rtt.map(whole),
+                        since_ms: r.since.map(ms),
                     },
                 )
             })
@@ -9281,6 +9283,7 @@ mod last_links {
                             relay: None,
                             down_ms: l.down_ms.map(|d| d.saturating_add(since)),
                             last_rtt_ms: l.last_rtt_ms.or(l.rtt_ms),
+                            since_ms: l.since_ms.map(|s| s.saturating_add(since)),
                         },
                     )
                 })

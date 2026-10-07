@@ -109,8 +109,14 @@ async fn a_workspaces_facts_move_when_a_file_does_and_reach_the_other_machine() 
     let first = fact(&a, &repo).unwrap();
     assert_eq!(first.branch.as_deref(), Some("main"));
     assert_eq!(first.changed, Some(0), "a clean checkout");
+    let seg = first.git.clone().expect("a checkout has a git segment");
+    assert_eq!((seg.branch.as_deref(), seg.subject.as_deref()), (Some("main"), Some("one")));
+    assert_eq!(seg.head.as_ref().map(String::len), Some(8), "HEAD's short id");
+    assert_eq!((seg.staged, seg.unstaged, seg.untracked), (0, 0, 0));
+    assert!(seg.since_ms > 0, "dated by git's own files on first sight");
     let folder = fact(&a, &plain).unwrap();
     assert_eq!((folder.branch.as_deref(), folder.changed), (None, None), "a folder has only a time");
+    assert_eq!(folder.git, None, "and no git segment");
     assert!(folder.changed_ms > 0, "and has one");
 
     // Beta learns them in two rounds: the first brings the table that
@@ -132,10 +138,54 @@ async fn a_workspaces_facts_move_when_a_file_does_and_reach_the_other_machine() 
     .await;
     let now = fact(&a, &repo).unwrap();
     assert!(now.changed_ms > first.changed_ms, "the time moved: {} → {}", first.changed_ms, now.changed_ms);
+    let moved_seg = now.git.clone().unwrap();
+    assert_eq!((moved_seg.unstaged, moved_seg.untracked), (1, 1), "!1 ?1");
+    assert!(moved_seg.since_ms > seg.since_ms, "a changed segment is dated anew");
     timeout(Duration::from_secs(60), b.sync_now()).await.unwrap().unwrap();
     assert_eq!(fact(&b, &repo), Some(now), "and beta has the new count");
     eprintln!(
         "[wsfacts] kept after {kept:?}; a write counted on alpha {moved:?} after it ({:?} with the round)",
         written.elapsed()
     );
+}
+
+/// **The prompt's segment, piece by piece** (UX-48): staged, edited,
+/// untracked, a stash, a detached HEAD — read straight off a checkout.
+#[test]
+fn a_checkouts_segment_counts_what_a_prompt_counts() {
+    let r = root("segment");
+    let repo = r.0.join("repo");
+    fs::create_dir_all(&repo).unwrap();
+    git(&repo, &["init", "-q"]);
+    fs::write(repo.join("a.txt"), "one\n").unwrap();
+    fs::write(repo.join("b.txt"), "one\n").unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-q", "-m", "first line\n\nbody"]);
+    let seg = khor_node::git::segment(&repo).unwrap();
+    assert_eq!((seg.branch.as_deref(), seg.subject.as_deref()), (Some("main"), Some("first line")));
+    assert_eq!((seg.ahead, seg.behind, seg.stashes, seg.staged, seg.unstaged, seg.untracked), (0, 0, 0, 0, 0, 0));
+
+    fs::write(repo.join("a.txt"), "two\n").unwrap();
+    git(&repo, &["stash", "-q"]);
+    fs::write(repo.join("a.txt"), "three\n").unwrap();
+    git(&repo, &["add", "a.txt"]);
+    fs::write(repo.join("b.txt"), "two\n").unwrap();
+    fs::write(repo.join("c.txt"), "new\n").unwrap();
+    fs::write(repo.join("d.txt"), "new\n").unwrap();
+    let seg = khor_node::git::segment(&repo).unwrap();
+    assert_eq!(
+        (seg.stashes, seg.staged, seg.unstaged, seg.untracked, seg.changed),
+        (1, 1, 1, 2, 4),
+        "*1 +1 !1 ?2"
+    );
+
+    let head = seg.head.clone().unwrap();
+    git(&repo, &["checkout", "-q", "--detach"]);
+    let seg = khor_node::git::segment(&repo).unwrap();
+    assert_eq!((seg.branch, seg.head), (None, Some(head)), "detached: no branch, its short id");
+    assert!(khor_node::git::last_moved(&repo) > 0, "git's own files date it");
+
+    let plain = r.0.join("plain");
+    fs::create_dir_all(&plain).unwrap();
+    assert_eq!(khor_node::git::last_moved(&plain), 0);
 }

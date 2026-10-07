@@ -107,29 +107,49 @@ pub(crate) fn write(root: &Path, device: &str, facts: &[WorkspaceFact]) {
     }
 }
 
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows", target_os = "linux")), allow(dead_code))]
 fn now_ms() -> i64 {
     crate::live::now_ms()
 }
 
 /// One workspace's facts, read now. **Blocking**: a status walk.
-fn compute(path: &str, changed_ms: i64) -> WorkspaceFact {
+///
+/// `was` is what was known of it before — this resident's last reading,
+/// or the facts file a resident before it wrote: an unchanged git
+/// segment keeps its date; a changed one is dated now; one never seen is
+/// dated by git's own files ([`crate::git::last_moved`]).
+fn compute(path: &str, changed_ms: i64, was: Option<&WorkspaceFact>) -> WorkspaceFact {
     let dir = Path::new(path);
-    let (branch, changed, changed_capped) = if crate::git::is_checkout(dir) {
-        match crate::git::status(dir) {
-            Ok(s) => (
-                Some(s.branch).filter(|b| !b.is_empty()),
-                Some(s.rows.iter().filter(|(_, m)| m.as_str() != crate::git::IGNORED).count() as u32),
-                s.more,
-            ),
-            Err(_) => (None, None, false),
-        }
-    } else {
-        (None, None, false)
-    };
+    let read = crate::git::is_checkout(dir)
+        .then(|| crate::git::segment(dir).ok())
+        .flatten();
+    let changed = read.as_ref().map(|s| s.changed);
+    let changed_capped = read.as_ref().is_some_and(|s| s.more);
+    let git = read.map(|s| {
+        let fresh = khor_core::GitSegment {
+            branch: s.branch,
+            head: s.head,
+            subject: s.subject,
+            ahead: s.ahead,
+            behind: s.behind,
+            stashes: s.stashes,
+            conflicted: s.conflicted,
+            staged: s.staged,
+            unstaged: s.unstaged,
+            untracked: s.untracked,
+            capped: s.more,
+            since_ms: 0,
+        };
+        let since_ms = match was.and_then(|w| w.git.as_ref()) {
+            Some(w) if w.same(&fresh) => w.since_ms,
+            Some(_) => now_ms(),
+            None => crate::git::last_moved(dir),
+        };
+        khor_core::GitSegment { since_ms, ..fresh }
+    });
     WorkspaceFact {
         path: path.to_owned(),
-        branch,
+        branch: git.as_ref().and_then(|g| g.branch.clone()),
+        git,
         changed,
         changed_capped,
         changed_ms,
@@ -210,7 +230,8 @@ impl WsFacts {
         let dated = crate::workspace::touched(Path::new(&path));
         #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let (watcher, _dirs) = self.watch(&path);
-        let fact = compute(&path, dated);
+        let was = read(&self.root, &self.me).and_then(|k| k.facts.into_iter().find(|f| f.path == path));
+        let fact = compute(&path, dated, was.as_ref());
         {
             let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
             entries.insert(
@@ -319,10 +340,10 @@ impl WsFacts {
     /// Reads one workspace again, unless it was read less than [`EVERY`]
     /// ago — then once that much has passed.
     fn recompute(self: Arc<Self>, ws: String) {
-        let (since, dated) = {
+        let (since, dated, was) = {
             let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
             let Some(e) = entries.get(&ws) else { return };
-            (e.last.map(|l| l.elapsed()), e.fact.changed_ms)
+            (e.last.map(|l| l.elapsed()), e.fact.changed_ms, e.fact.clone())
         };
         if let Some(since) = since
             && since < EVERY
@@ -338,7 +359,7 @@ impl WsFacts {
             e.last = Some(Instant::now());
         }
         tokio::task::spawn_blocking(move || {
-            let fresh = compute(&ws, dated);
+            let fresh = compute(&ws, dated, Some(&was));
             let moved = {
                 let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
                 match entries.get_mut(&ws) {

@@ -216,6 +216,9 @@ struct Slot {
     heard: Option<Instant>,
     /// The settled road, and a different one being considered.
     word: Option<PathKind>,
+    /// When `word` became what it is (UX-48: a machine row says how long
+    /// its 直连 or 中继 has held). Read only while `word` is set.
+    word_at: Option<Instant>,
     leaning: Option<(PathKind, u8)>,
     failures: u32,
     retry_at: Option<Instant>,
@@ -382,6 +385,7 @@ fn settle(slot: &mut Slot, kind: PathKind) {
     match slot.word {
         None => {
             slot.word = Some(kind);
+            slot.word_at = Some(Instant::now());
             slot.leaning = None;
         }
         Some(w) if w == kind => slot.leaning = None,
@@ -392,6 +396,7 @@ fn settle(slot: &mut Slot, kind: PathKind) {
             };
             if n >= SETTLE {
                 slot.word = Some(kind);
+                slot.word_at = Some(Instant::now());
                 slot.leaning = None;
             } else {
                 slot.leaning = Some((kind, n));
@@ -406,6 +411,8 @@ pub(crate) struct Reading {
     /// The settled road of a live wire; `None` when none is live.
     pub(crate) road: Option<PathKind>,
     pub(crate) heard: Option<Duration>,
+    /// How long the live wire's road has been what `road` says.
+    pub(crate) since: Option<Duration>,
     /// The live wire's smoothed round trip ([`rtt_of`]).
     pub(crate) rtt: Option<Duration>,
     /// The relay the live wire goes through, by name; `None` when direct.
@@ -882,6 +889,7 @@ impl Wires {
         let now = Instant::now();
         let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let mut road = None;
+        let mut since = None;
         let mut rtt = None;
         let mut relay = None;
         let mut heard: Option<Instant> = None;
@@ -897,6 +905,7 @@ impl Wires {
                 && let Some(conn) = slot.conn.as_ref().filter(|c| c.close_reason().is_none())
             {
                 road = slot.word;
+                since = slot.word.and(slot.word_at).map(|at| now.saturating_duration_since(at));
                 rtt = Some(rtt_of(conn)).filter(|r| !r.is_zero());
                 relay = khor_net::path::relay_name(conn);
             }
@@ -914,6 +923,7 @@ impl Wires {
             .map(|at| now.saturating_duration_since(at));
         Reading {
             road,
+            since,
             heard: heard.map(|h| now.saturating_duration_since(h)),
             rtt,
             relay,
@@ -1026,6 +1036,22 @@ mod tests {
         );
         settle(&mut s, PathKind::Direct);
         assert_eq!(s.word, Some(PathKind::Direct), "two in a row is a change");
+    }
+
+    /// **The road's age restarts when the road changes, and only then**
+    /// (UX-48: a machine row's 「直连 · 3 小时」 is how long that word has
+    /// held).
+    #[test]
+    fn the_roads_age_restarts_on_a_change_and_not_on_the_same_word() {
+        let mut s = Slot::default();
+        settle(&mut s, PathKind::Relay);
+        let first = s.word_at.expect("the first road is dated");
+        std::thread::sleep(Duration::from_millis(5));
+        settle(&mut s, PathKind::Relay);
+        settle(&mut s, PathKind::Direct);
+        assert_eq!(s.word_at, Some(first), "the same word and a flicker keep its age");
+        settle(&mut s, PathKind::Direct);
+        assert!(s.word_at.is_some_and(|at| at > first), "a settled change is a new age");
     }
 
     #[test]
