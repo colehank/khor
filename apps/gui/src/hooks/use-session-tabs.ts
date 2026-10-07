@@ -118,7 +118,9 @@ export function useSessionTabs(
       if (was.tabs.includes(id)) return { ...was, active: id };
       const now = [...was.tabs, id];
       const { limit, keep } = rules.current;
-      const gone = stalestTab(now, limit, touched.current, (t) => t === id || keep(t));
+      // Nor the tab that was in front (UX-45): a new tab's 取消 goes back
+      // to it, and a tab restored at launch has no time to be judged by.
+      const gone = stalestTab(now, limit, touched.current, (t) => t === id || t === was.active || keep(t));
       return { tabs: gone === null ? now : now.filter((t) => t !== gone), active: id };
     });
   }, []);

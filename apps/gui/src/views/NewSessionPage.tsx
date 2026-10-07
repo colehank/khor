@@ -451,10 +451,12 @@ export function NewSessionPage({
   );
   /** The page's one act is 创建 whatever the kind (UX-45): 留言 makes
       nothing on the node — every machine already has its conversation
-      (`chat/<name>`, one row per machine) — so 创建 turns the tab into it. */
+      (`chat/<name>`, one row per machine) — so 创建 turns the tab into it.
+      **A page's push button, not the brand's**: `primary` is a dialog's
+      one act and nowhere else (components/Button, README 「一个品牌电压」;
+      `check-face` round 17 b) — the dialog this was wore it. */
   const pageAct = (
     <Button
-      variant="primary"
       data-new-session-create
       disabled={opening}
       aria-busy={opening || undefined}
