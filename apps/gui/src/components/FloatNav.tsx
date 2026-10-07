@@ -19,7 +19,7 @@
 import { useRef, type ReactNode } from "react";
 
 import { MachineAvatar } from "@/components/Avatar";
-import { IconGear, IconMore, IconPulse } from "@/components/icons";
+import { IconFile, IconGear, IconMore, IconPulse } from "@/components/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { useTravel } from "@/lib/travel";
@@ -76,6 +76,7 @@ export function FloatNav({
   onGo,
   onSettings,
   onDoctor,
+  onStore,
   me,
   onMe,
   className,
@@ -91,6 +92,7 @@ export function FloatNav({
   onGo: (key: string) => void;
   onSettings: () => void;
   onDoctor: () => void;
+  onStore: () => void;
   /** This machine's face, the glyph of 我的 khor at the head of the menu. */
   me: { face: Avatar | null } | null;
   onMe: () => void;
@@ -145,21 +147,22 @@ export function FloatNav({
           onCloseAutoFocus={(e) => e.preventDefault()}
           className="min-w-nav-menu"
         >
-          <MoreMenuItems more={more} onGo={onGo} onSettings={onSettings} onDoctor={onDoctor} me={me} onMe={onMe} />
+          <MoreMenuItems more={more} onGo={onGo} onSettings={onSettings} onDoctor={onDoctor} onStore={onStore} me={me} onMe={onMe} />
         </DropdownMenuContent>
       </DropdownMenu>
     </nav>
   );
 }
 
-/** **更多's four** (UX-16): 我的 khor, the landings past the fourth, 设置
-    and 诊断 — the narrow bar's menu and the wide strip's (UX-19), one list
-    in one order. */
+/** **更多's items** (UX-16): 我的 khor, the landings past the fourth, 存储
+    (STORE-BRIEF phase 1), 设置 and 诊断 — the narrow bar's menu and the
+    wide strip's (UX-19), one list in one order. */
 export function MoreMenuItems({
   more,
   onGo,
   onSettings,
   onDoctor,
+  onStore,
   me,
   onMe,
 }: {
@@ -167,6 +170,7 @@ export function MoreMenuItems({
   onGo: (key: string) => void;
   onSettings: () => void;
   onDoctor: () => void;
+  onStore: () => void;
   me: { face: Avatar | null } | null;
   onMe: () => void;
 }) {
@@ -184,6 +188,11 @@ export function MoreMenuItems({
           {s.name}
         </DropdownMenuItem>
       ))}
+      {/* 存储 wears a file (received files): the folder is 工作区's. */}
+      <DropdownMenuItem data-nav-store className={MENU_ITEM} onSelect={onStore}>
+        <IconFile />
+        {gui.settings_store}
+      </DropdownMenuItem>
       <DropdownMenuItem data-nav-settings className={MENU_ITEM} onSelect={onSettings}>
         <IconGear />
         {gui.nav_settings}

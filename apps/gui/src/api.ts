@@ -915,6 +915,12 @@ export const forgetDevice = (machine: string) => call<string>("forget_device", {
     answers the list as kept. */
 export const setWatch = (machine: string, paths: string[]) =>
   call<string[]>("set_watch", { machine, paths });
+/** Where files sent to a machine land (存储's location row), for
+    everyone; `""` takes it back to the default (`~/khor-drop`). The node
+    refuses a relative path in its own sentence and answers the setting
+    as kept. */
+export const setReceiveDir = (machine: string, dir: string) =>
+  call<string>("set_receive_dir", { machine, dir });
 /** What a machine wears and every option painted as it would look —
     derived by the node, one call for the whole editor.
 

@@ -52,6 +52,7 @@ import {
   IconChevronRight,
   IconClose,
   IconDevices,
+  IconFile,
   IconFiles,
   IconGear,
   IconNetwork,
@@ -90,6 +91,7 @@ import {
   sidePlaces,
   useSessionSide,
   type SidePlace,
+  type StoreSpot,
   type SideSeat as PlaceSeat,
   type WsSpot,
 } from "@/hooks/use-session-side";
@@ -137,6 +139,7 @@ import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspacesNow } from "@/views/WorkspacesNow";
 import { LockScreen } from "@/views/LockScreen";
 import { inSettings, moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
+import { StorePage, StoreScreen } from "@/views/StorePage";
 import { rememberPlace, storedPlace } from "@/lib/place";
 import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
@@ -313,6 +316,8 @@ const MORE_GLYPH: Record<Exclude<MorePage, "me">, (p: { className?: string }) =>
   connection: IconNetwork,
   security: IconShield,
   about: IconGear,
+  // 存储 wears a file (received files): the folder is 工作区's.
+  store: IconFile,
   doctor: IconPulse,
 };
 
@@ -1510,6 +1515,12 @@ export default function App() {
     setSwitchingTabs(false);
     listPane.expand();
   };
+  const moreStore = () => {
+    setMorePage("store");
+    setScreen("detail");
+    setSwitchingTabs(false);
+    listPane.expand();
+  };
   const moreMe = () => {
     setMorePage("me");
     setScreen("detail");
@@ -1527,6 +1538,7 @@ export default function App() {
       }}
       onSettings={moreSettings}
       onDoctor={moreDoctor}
+      onStore={moreStore}
       me={me ? { face: me.face } : null}
       onMe={moreMe}
     />
@@ -1583,6 +1595,11 @@ export default function App() {
       }}
       onDoctor={() => {
         setMorePage("doctor");
+        setScreen("detail");
+        setSwitchingTabs(false);
+      }}
+      onStore={() => {
+        setMorePage("store");
         setScreen("detail");
         setSwitchingTabs(false);
       }}
@@ -2349,6 +2366,11 @@ export default function App() {
   // seat kept its own stack across visits.
   const [sideBrowse, setSideBrowse] = useState<{ page: boolean }>({ page: false });
   const [sideQuota, setSideQuota] = useState<"list" | "detail">("list");
+  /** **Where 存储 stands in the 附栏** (UX-47): said by the page as it
+      moves, kept with the place; and the spot an opening came back to,
+      for the page's next mount only. */
+  const [sideStore, setSideStore] = useState<{ session: string; spot: StoreSpot } | null>(null);
+  const [sideStoreResume, setSideStoreResume] = useState<{ session: string; spot: StoreSpot | null } | null>(null);
   /** Where the 工作区 seat points: the directory a seat press, a tapped
       path or a row of 最近 asked for, else the session's own. */
   const sideWs = selectedRow
@@ -2387,6 +2409,7 @@ export default function App() {
     setSideBrowse({ page: false });
     setSideQuota("list");
     setSideResume(null);
+    setSideStoreResume(null);
     setSideEntry((n) => n + 1);
   };
   /** A seat pressed: on its slice, the 工作区 at the shell's directory
@@ -2423,8 +2446,8 @@ export default function App() {
    * **Opened again, the 附栏 is where it was left** (UX-47, the owner
    * 2026-10-07, replacing UX-40 §3's 「每次打开都是显示最近」): per
    * session, the seat and what was open in it — a file page, a web page,
-   * the 工作区 tree and 「放进来的」, the browser's list, 机器, 额度's list
-   * or account. Kept in memory while the 附栏 is open (`keepSidePlace`,
+   * the 工作区 tree, the browser's list, 机器, 额度's list or account,
+   * 存储's machine and the file open there. Kept in memory while the 附栏 is open (`keepSidePlace`,
    * below), never written down: after a restart it opens on 最近.
    *
    * **What is gone lands on 最近**: never opened; the file deleted (khor's
@@ -2443,7 +2466,8 @@ export default function App() {
       selectedRow?.id === session &&
       (p.seat !== "machine" || known(selectedRow.home)) &&
       (p.seat !== "workspace" || (p.files !== null && known(p.files.machine))) &&
-      (p.seat !== "browser" || p.page === null || pageTabs.tabs.some((t) => t.id === p.page && t.session === session));
+      (p.seat !== "browser" || p.page === null || pageTabs.tabs.some((t) => t.id === p.page && t.session === session)) &&
+      (p.seat !== "store" || p.store === null || known(p.store.machine));
     if (!standing || p === null) {
       forgetSidePlace(session);
       toSlices();
@@ -2455,6 +2479,7 @@ export default function App() {
     setSideQuota(p.quota);
     if (p.files) setSideFiles({ session, machine: p.files.machine, dir: p.files.dir, start: p.files.start });
     setSideResume(p.seat === "workspace" && p.files ? { session, spot: p.files.spot } : null);
+    setSideStoreResume(p.seat === "store" ? { session, spot: p.store } : null);
     if (p.seat === "browser" && p.page !== null && p.page !== pageTabs.current.id) pageTabs.focus(p.page);
     setSessionSide(session, { seat: p.seat });
     // Asked as it opens: a file or a page gone by a road khor did not see
@@ -2465,6 +2490,12 @@ export default function App() {
     if (file !== null && p.files) {
       void fileThere(p.files.machine, file).then((there) => {
         if (there === false && still() && placeFile(sidePlace(session)?.files?.spot ?? null) === file) landOnRecent(session);
+      });
+    }
+    const stored = p.seat === "store" ? (p.store?.file ?? null) : null;
+    if (stored !== null && p.store) {
+      void fileThere(p.store.machine, stored).then((there) => {
+        if (there === false && still() && sidePlace(session)?.store?.file === stored) landOnRecent(session);
       });
     }
     if (p.seat === "browser" && p.page !== null) {
@@ -2546,9 +2577,10 @@ export default function App() {
       },
       page: side.seat === "browser" && sideBrowse.page && pageFront !== "?" && pageFront !== "" ? pageFront : null,
       quota: sideQuota,
+      store: sideStore?.session === selectedRow.id ? sideStore.spot : null,
     } satisfies SidePlace);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideOn, selectedRow?.id, side.seat, sideFrom, sideFiles, sideSpot, sideBrowse.page, pageFront, sideQuota]);
+  }, [sideOn, selectedRow?.id, side.seat, sideFrom, sideFiles, sideSpot, sideBrowse.page, pageFront, sideQuota, sideStore]);
   const [recent, forgetRecentRow] = useSideRecent(sideOn && side.seat === "recent");
   /** 最近's rows open in place (§4): a page in the column's browser, a
       workspace as the column's listing, a file as its file page. */
@@ -2666,6 +2698,21 @@ export default function App() {
             onBack={() => setSideQuota("list")}
             landOn={selectedRow.category}
             bare
+          />
+        );
+      case "store":
+        // 存储 (STORE-BRIEF phase 1), this machine first; a file opens
+        // in place, and 在文件视图中打开 is the 工作区 seat's tree.
+        return (
+          <StorePage
+            key={sideEntry}
+            devices={devices}
+            spot={sideStoreResume?.session === selectedRow.id ? sideStoreResume.spot : null}
+            onSpot={(spot) => setSideStore({ session: selectedRow.id, spot })}
+            onChanged={() => {
+              refresh().catch(() => {});
+            }}
+            onReveal={(machine, path) => sideShow(machine, levelOf(path), null)}
           />
         );
     }
@@ -3247,6 +3294,15 @@ export default function App() {
       <AboutPage onClose={leaveMorePage} />
     ) : morePage === "doctor" ? (
       <DoctorPage devices={devices} onClose={leaveMorePage} />
+    ) : morePage === "store" ? (
+      <StoreScreen
+        devices={devices}
+        onClose={leaveMorePage}
+        onChanged={() => {
+          refresh().catch(() => {});
+        }}
+        onReveal={showFile}
+      />
     ) : (
       <MyKhorPage
         devices={devices}
@@ -3425,7 +3481,7 @@ export default function App() {
               className={cn(
                 // The ring inside the row, as every list row's (W-V6).
                 "mx-in flex min-h-touch items-stretch gap-row rounded-md ps-3 text-start text-headline focus-visible:-outline-offset-2",
-                p === "doctor" && "mt-group",
+                p === "store" && "mt-group",
                 morePage === p ? "bg-fill-strong" : "hover:bg-fill",
               )}
             >

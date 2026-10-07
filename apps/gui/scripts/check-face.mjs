@@ -147,15 +147,16 @@ try {
       `terminal`, `session`, `workspace`, `connection`, `security`,
       `about`). Wide, every key is a row of 更多's list. Narrow, the seven
       are 设置's card; 我的 khor (`me`) and 诊断 (`doctor`) are 更多's own
-      menu items on the bottom bar. ⚠️ 墓碑: `settings` (通用), `network`
+      menu items on the bottom bar, and 存储 (`store`, STORE-BRIEF phase
+      1) beside them. ⚠️ 墓碑: `settings` (通用), `network`
       (网络) and `identity` (这台机器) were pages until UX-16. */
   const openMore = async (key) => {
     let opened;
-    if ((await narrowNow()) && (key === "me" || key === "doctor")) {
+    if ((await narrowNow()) && (key === "me" || key === "doctor" || key === "store")) {
       for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
         if (!(await tap("[data-file-back], [data-back], [data-ws-back], [data-more-back]"))) break;
       }
-      opened = (await tap("[data-nav-more]")) && (await tap(key === "me" ? "[data-nav-me]" : "[data-nav-doctor]"));
+      opened = (await tap("[data-nav-more]")) && (await tap(`[data-nav-${key}]`));
     } else {
       opened = (await toMore()) && (await tap(`[data-more-open="${key}"]`));
     }
@@ -2233,7 +2234,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -24487,7 +24488,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -24914,7 +24915,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25272,7 +25273,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -25641,7 +25642,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26373,7 +26374,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27262,7 +27263,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -32649,10 +32650,10 @@ try {
     const col = "[data-session-side]";
     const seatOn = () => page.evaluate((c) => document.querySelector(c)?.getAttribute("data-col-seat-on") ?? null, col);
     /** A seat, by the head's seat bar (UX-45): 最近 · 工作区 · 浏览器 in
-        the bar, 机器 · 额度 in 更多's menu. ⚠️ 墓碑 (UX-39 §2): the seat's
+        the bar, 机器 · 额度 · 存储 in 更多's menu. ⚠️ 墓碑 (UX-39 §2): the seat's
         native picker, picked by `selectOption`. */
     const pick = async (seat) => {
-      if (seat === "machine" || seat === "quota") {
+      if (seat === "machine" || seat === "quota" || seat === "store") {
         await press(`${col} [data-side-head] [data-seat-more]`);
         await until(2_000, async () => (await count(`[data-seat-more-menu] [data-seat-more-item="${seat}"]`)) === 1);
         await press(`[data-seat-more-menu] [data-seat-more-item="${seat}"]`);
@@ -32762,9 +32763,10 @@ try {
         if (seat === "machine" && s.name !== "peer") fail(`side b · 机器's first line is ${JSON.stringify(s.name)} — the machine's name (UX-39 §3)`);
         if (seat === "quota" && s.name !== null && s.name !== "claude code") fail(`side b · 额度's first line is ${JSON.stringify(s.name)} — the account's name (UX-39 §3)`);
       }
-      // Every seat its own glyph (UX-39 §2): the bar's three and the menu's two.
+      // Every seat its own glyph (UX-39 §2): the bar's three and the menu's
+      // three (存储 joined 机器 and 额度 there, STORE-BRIEF phase 1).
       await press(`${col} [data-side-head] [data-seat-more]`);
-      await until(2_000, async () => (await count("[data-seat-more-menu] [data-seat-more-item]")) === 2);
+      await until(2_000, async () => (await count("[data-seat-more-menu] [data-seat-more-item]")) === 3);
       const glyphs = await page.evaluate((c) => {
         const bar = [...document.querySelectorAll(`${c} [data-seat-bar] [data-seat-item]:not([data-seat-item="more"]) svg`)];
         const menu = [...document.querySelectorAll("[data-seat-more-menu] [data-seat-more-item] svg")];
@@ -32773,8 +32775,8 @@ try {
       await page.keyboard.press("Escape");
       await wait(300);
       console.log(`side b · 更多 ${JSON.stringify(glyphs)}`);
-      if (glyphs.menu.join(" ") !== "machine quota") fail(`side b · 更多's menu holds ${JSON.stringify(glyphs.menu)} — 机器 and 额度 (UX-45)`);
-      if (glyphs.distinct !== 5) fail(`side b · the five seats wear ${glyphs.distinct} distinct glyph(s) — each its own`);
+      if (glyphs.menu.join(" ") !== "machine quota store") fail(`side b · 更多's menu holds ${JSON.stringify(glyphs.menu)} — 机器, 额度 and 存储 (UX-45, STORE-BRIEF phase 1)`);
+      if (glyphs.distinct !== 6) fail(`side b · the six seats wear ${glyphs.distinct} distinct glyph(s) — each its own`);
     }
 
     // c. 最近: 过去24小时 first, then this session's slice
@@ -32847,58 +32849,30 @@ try {
       if (ceiling.root !== pin.path) fail(`side d · the 工作区 seat's ceiling is ${ceiling.root} — the workspace holding the session's directory, ${pin.path} (UX-39 §5)`);
       if (ceiling.up !== 0) fail(`side d · the 工作区 seat offers ${ceiling.up} way(s) above its ceiling — nothing above the workspace`);
       if (ceiling.tree !== 1) fail("side d · the 工作区 seat is not the workspace's tree (FileTree)");
-      // 「放进来的」 (item 60 part 5): with peer's ~/khor-drop holding a
-      // file, a row above the tree opens it as a tree of its own with ‹
-      // back to the workspace; with it empty or absent, no row.
+      // ⚠️ 墓碑 (item 60 part 5 → STORE-BRIEF phase 1, the owner
+      // 2026-10-07: 「工作区不显示"放进来的"」): 「放进来的」, a row above
+      // the tree opening ~/khor-drop. With peer's ~/khor-drop holding a
+      // file, the seat draws no such row: received files are 存储's
+      // (`FACE_ONLY=store`).
       {
-        let held = true;
         const dropLs = async (r) => {
           const { path } = r.request().postDataJSON() ?? {};
           const answer = (body) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
           if (path === "") return answer({ path: "/home/peer", entries: [{ name: "khor-drop", dir: true, size: 0, at_ms: 0 }], truncated: false });
-          if (path === "/home/peer/khor-drop") {
-            return answer({ path, entries: held ? [{ name: "IMG 1.png", dir: false, size: 3, at_ms: 0 }] : [], truncated: false });
-          }
+          if (path === "/home/peer/khor-drop") return answer({ path, entries: [{ name: "IMG 1.png", dir: false, size: 3, at_ms: 0 }], truncated: false });
           return r.fallback();
         };
         await page.route("**/ls", dropLs);
-        const again = async () => {
-          await pick("recent");
-          await pick("workspace");
-          await wait(700);
-        };
-        await again();
-        const row = await count(`${col} [data-side-drops]`);
-        let inside = null;
-        let back = null;
-        if (row === 1) {
-          await press(`${col} [data-side-drops]`);
-          await wait(600);
-          inside = await page.evaluate(
-            (c) => ({
-              root: document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null,
-              back: document.querySelectorAll(`${c} [data-side-workspace] [data-seat-back]`).length,
-              row: document.querySelectorAll(`${c} [data-side-drops]`).length,
-            }),
-            col,
-          );
-          if (inside.back === 1) await press(`${col} [data-side-workspace] [data-seat-back]`);
-          await wait(400);
-          back = await page.evaluate((c) => document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null, col);
-        }
-        held = false;
-        await again();
-        const empty = await count(`${col} [data-side-drops]`);
+        await pick("recent");
+        await pick("workspace");
+        await wait(1_200);
+        const row = await page.evaluate(
+          (c) => [...document.querySelectorAll(`${c} [data-side-workspace] button`)].filter((b) => b.textContent === "放进来的").length,
+          col,
+        );
         await page.unroute("**/ls", dropLs);
-        await again();
-        console.log(`side d · 放进来的: row ${row}, inside ${JSON.stringify(inside)}, back to ${back}, row while empty ${empty}`);
-        if (row !== 1 || inside?.root !== "/home/peer/khor-drop" || inside.back !== 1 || inside.row !== 0 || back !== pin.path) {
-          fail(
-            `side d · 放进来的 read row ${row}, inside ${JSON.stringify(inside)}, back to ${back} — one row while ~/khor-drop holds a file, ` +
-              `opening it as its own tree with ‹ back to the workspace ${pin.path} (item 60 part 5)`,
-          );
-        }
-        if (empty !== 0) fail(`side d · 放进来的 drawn ${empty} time(s) while ~/khor-drop is empty — not drawn (progressive disclosure)`);
+        console.log(`side d · 放进来的 rows with ~/khor-drop holding a file: ${row}`);
+        if (row !== 0) fail(`side d · the 工作区 seat draws 放进来的 ${row} time(s) — it is gone; received files are 存储's (STORE-BRIEF phase 1)`);
       }
       // A file from the tree: ‹ (the deck's, UX-40 §4) goes back to the tree.
       await press(`${col} [data-side-workspace] [data-file-tree] [data-file]`);
@@ -33181,9 +33155,10 @@ try {
     //    1. a session never opened lands on 最近;
     //    2. a file opened from the tree: shut and opened, its page is there;
     //       its ‹ is the tree's, and the tree comes back the same way;
-    //    3. every place comes back — 「放进来的」, the browser's list, a
-    //       page, 机器, 额度 — and the seat bar's 最近 reaches 最近 from
-    //       each; a file opened from 最近 comes back with its ‹ to 最近;
+    //    3. every place comes back — the browser's list, a page, 机器,
+    //       额度, a file open in 存储 — and the seat bar's 最近 reaches 最近
+    //       from each; a file opened from 最近 comes back with its ‹ to 最近
+    //       (⚠️ 墓碑, STORE-BRIEF phase 1: 「放进来的」 was one of them);
     //    4. two sessions keep two places;
     //    5. the file deleted in the main area's tree (khor's own act):
     //       opened again, 最近 at once; deleted outside khor (the listing
@@ -33201,6 +33176,8 @@ try {
       let slowLs = false;
       const tabsLBody = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ tabs: tabsL, active: tabsL.some((t) => t.id === activeL) ? activeL : (tabsL[0]?.id ?? "") }) });
       const routesL = {
+        // 存储's seat lists this machine's receive location.
+        "**/devices": (r) => json(devs.map((d) => (d.me ? { ...d, receive_dir: null, receive_at: drop, receive_for: null, receive_why: null } : d)))(r),
         "**/ls": async (r) => {
           const { path } = r.request().postDataJSON() ?? {};
           if (slowLs) await wait(2_500);
@@ -33253,6 +33230,7 @@ try {
             recent: vis("[data-side-recent]").length,
             list: vis("[data-switch-tab]").length,
             deck: vis("[data-session-deck]").length,
+            store: box.querySelector("[data-store-file]")?.getAttribute("data-store-file") ?? null,
           };
         }, col);
       /** Shut, opened again, read. */
@@ -33286,12 +33264,6 @@ try {
       // 3. every other place, and the bar's 最近 from each
       const places = {};
       const leave = {
-        drops: async () => {
-          await pick("workspace");
-          await until(3_000, async () => (await count(`${col} [data-side-drops]`)) === 1);
-          await press(`${col} [data-side-drops]`);
-          await wait(500);
-        },
         list: () => pick("browser"),
         page: async () => {
           await pick("browser");
@@ -33301,13 +33273,21 @@ try {
         },
         machine: () => pick("machine"),
         quota: () => pick("quota"),
+        // 存储, a file open in it (STORE-BRIEF phase 1; replaces
+        // 「放进来的」 here).
+        store: async () => {
+          await pick("store");
+          await until(3_000, async () => (await seen(`${col} [data-store-row="IMG 1.png"]`)) === 1);
+          await press(`${col} [data-store-row="IMG 1.png"] [data-side-open]`);
+          await until(3_000, async () => (await seen(`${col} [data-store-file]`)) === 1);
+        },
       };
       for (const [what, go] of Object.entries(leave)) {
         await go();
         const left = await where();
         const back = await again("tui/side-1");
-        await wait(what === "drops" ? 700 : 0);
-        places[what] = { left: left?.seat, back: what === "drops" ? await where() : back, recent: await toRecentByBar() };
+        await wait(what === "store" ? 700 : 0);
+        places[what] = { left: left?.seat, back: what === "store" ? await where() : back, recent: await toRecentByBar() };
       }
       // …a file opened from 最近: back with its ‹ to 最近
       await press(`${col} [data-recent-row][data-recent-kind="file"] [data-side-open]`);
@@ -33394,12 +33374,12 @@ try {
       if (out.fileBack?.tree !== 1 || out.fileBack.file !== null) fail(`side l · ‹ on the file come back to reads ${say(out.fileBack)} — the tree (UX-47)`);
       if (out.tree?.seat !== "workspace" || out.tree.tree !== 1 || out.tree.file !== null || out.tree.root !== root) fail(`side l · the tree left, shut and opened, reads ${say(out.tree)} — the tree at ${root} (UX-47)`);
       if (!out.treeToRecent) fail("side l · from the tree come back to, the seat bar's 最近 did not reach 最近 (UX-47)");
-      const want = { drops: "workspace", list: "browser", page: "browser", machine: "machine", quota: "quota" };
+      const want = { list: "browser", page: "browser", machine: "machine", quota: "quota", store: "store" };
       for (const [what, p] of Object.entries(places)) {
         const b = p.back;
         const right =
           b?.seat === want[what] &&
-          (what !== "drops" || b.root === drop) &&
+          (what !== "store" || b.store === `${drop}/IMG 1.png`) &&
           (what !== "list" || (b.list === 1 && b.deck === 0)) &&
           (what !== "page" || b.deck === 1);
         if (p.left !== want[what] || !right) fail(`side l · left on ${what} (${p.left}), shut and opened it reads ${say(b)} — where it was left (UX-47)`);
@@ -34092,6 +34072,299 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "side") console.log("side · FACE_ONLY=side: the other sections are skipped");
+
+  // ── 存储 (STORE-BRIEF phase 1, store-b, 2026-10-07) ─────────────────
+  //
+  // The owner: 「工作区不显示"放进来的"，这些上传的文件，统一到更多里，有个
+  // 存储吧」. One page of 更多 (wide and narrow) and a seat under the
+  // 附栏's 更多: a machine's received files in its receive location,
+  // newest first, as list rows; a switcher of machines (this one first);
+  // 删除 through the file trees' ask; the location changed through 选择
+  // 目录 and taken back to the default; where the machine resolved it and
+  // why, and a setting it has not seen yet. Value checks only
+  // (30-behavior: layout is the owner's checklist). New, not a fix: no
+  // red first.
+  //   a. wide 更多 → 存储: a row of 更多's list, the page in the board;
+  //      files only, newest first, no dotfile, no › on a row; the box
+  //      filters, and a word nothing matches says 没有匹配项;
+  //   b. the switcher: this machine first; peer's list is its own
+  //      directory's, and its setting not yet seen says so; elder's
+  //      fallback says the machine's own sentence;
+  //   c. 删除… asks (the trees' window) and removes that path;
+  //   d. 更改… opens 选择目录 with no machine popup, sends the path for the
+  //      machine on screen; 恢复默认 sends empty;
+  //   e. narrow: 更多's menu → 存储, ‹ in the head, rows there too;
+  //   f. the 附栏: 更多 → 存储 is a seat, a file opens in place, and shut
+  //      and opened the 附栏 is back on that file (UX-47); ‹ is the list.
+  store: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "store") break store;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const now = Date.now();
+    const places = {
+      gate: { receive_dir: null, receive_at: "/home/gate/khor-drop", receive_for: null, receive_why: null },
+      // Set from here, not yet seen by peer: still landing in its default.
+      peer: { receive_dir: "~/in", receive_at: "/home/peer/khor-drop", receive_for: null, receive_why: null },
+      elder: {
+        receive_dir: "/mnt/gone",
+        receive_at: "/home/elder/khor-drop",
+        receive_for: "/mnt/gone",
+        receive_why: "接收位置 /mnt/gone 不可用（Permission denied），文件存到了默认位置",
+      },
+    };
+    const files = {
+      "/home/gate/khor-drop": [
+        { name: "old.txt", dir: false, size: 12, at_ms: now - 86_400_000 },
+        { name: ".khor-probe-1", dir: false, size: 0, at_ms: now },
+        { name: "newest.png", dir: false, size: 2_048, at_ms: now - 60_000 },
+        { name: "a folder", dir: true, size: 0, at_ms: now - 30_000 },
+        { name: "middle.pdf", dir: false, size: 1_200_000, at_ms: now - 3_600_000 },
+      ],
+      "/home/peer/khor-drop": [{ name: "from peer.md", dir: false, size: 30, at_ms: now - 5_000 }],
+      "/home/elder/khor-drop": [],
+    };
+    const asked = { set: [], removed: [] };
+    const routesS = {
+      "**/devices": (r) => json(devs.map((d) => ({ ...d, ...places[d.name] })))(r),
+      "**/set_receive_dir": (r) => {
+        const { machine, dir } = r.request().postDataJSON() ?? {};
+        asked.set.push({ machine, dir });
+        const p = places[machine];
+        if (p) {
+          p.receive_dir = dir === "" ? null : dir;
+          // This machine takes it on at once (`Node::set_receive_dir`).
+          if (machine === "gate") Object.assign(p, { receive_for: p.receive_dir, receive_at: p.receive_dir ?? "/home/gate/khor-drop", receive_why: null });
+        }
+        return json(dir)(r);
+      },
+      "**/ls": (r) => {
+        const { path } = r.request().postDataJSON() ?? {};
+        if (files[path] === undefined) return r.fallback();
+        return json({ path, entries: files[path], truncated: false })(r);
+      },
+      "**/remove": (r) => {
+        const p = r.request().postDataJSON()?.path ?? "";
+        const dir = p.slice(0, p.lastIndexOf("/"));
+        if (files[dir] === undefined) return r.fallback();
+        asked.removed.push(p);
+        files[dir] = files[dir].filter((e) => e.name !== p.slice(dir.length + 1));
+        return json(null)(r);
+      },
+    };
+    for (const [glob, run] of Object.entries(routesS)) await page.route(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const box = "[data-more-page='store']";
+    /** The page's list, as drawn. */
+    const read = (scope) =>
+      page.evaluate((s) => {
+        const root = document.querySelector(s);
+        if (!root) return null;
+        const rows = [...root.querySelectorAll("[data-store-row]")];
+        return {
+          machine: root.querySelector("[data-store]")?.getAttribute("data-store-machine") ?? null,
+          dir: root.querySelector("[data-store-dir]")?.getAttribute("data-store-dir") ?? null,
+          rows: rows.map((r) => r.getAttribute("data-store-row")),
+          chevrons: rows.filter((r) => r.querySelector("[data-side-text] > svg")).length,
+          note: root.querySelector("[data-store-note]")?.textContent ?? null,
+          pending: root.querySelector("[data-store-place]")?.hasAttribute("data-store-pending") ?? false,
+          reset: root.querySelectorAll("[data-store-reset]").length,
+          find: root.querySelectorAll("[data-side-find] input").length,
+          empty: root.querySelector("[data-empty-state]")?.textContent ?? null,
+          picks: [...(root.querySelector("[data-store-machine-pick]")?.querySelectorAll("option") ?? [])].map((o) => o.value),
+        };
+      }, scope);
+
+    // a. wide: 更多 → 存储
+    const opened = (await tap("[data-rail-more]")) && (await tap("[data-rail-more-menu] [data-nav-store]"));
+    await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+    const wide = await read(box);
+    const listRow = await count("[data-more-list] [data-more-open='store']");
+    console.log(`store a · opened ${opened}, 更多's row ${listRow}, ${JSON.stringify(wide)}`);
+    if (!opened || !wide) fail("store a · 更多 → 存储 opened no page (data-more-page=store)");
+    else {
+      if (listRow !== 1) fail(`store a · 更多's list has ${listRow} 存储 row(s) — one, beside 诊断`);
+      if (wide.machine !== "gate" || wide.dir !== "/home/gate/khor-drop") fail(`store a · the page opened on ${wide.machine} at ${wide.dir} — this machine, its receive_at`);
+      if (wide.rows.join(" | ") !== "newest.png | middle.pdf | old.txt") fail(`store a · the rows read ${wide.rows.join(" | ")} — files only, newest first, no dotfile`);
+      if (wide.chevrons !== 0) fail(`store a · ${wide.chevrons} row(s) end in a › — content rows wear none (UX-44 §4)`);
+      if (wide.find !== 1) fail("store a · no find box over the list");
+      if (wide.note !== "默认位置") fail(`store a · under an unset location the page says ${JSON.stringify(wide.note)} — 默认位置`);
+      if (wide.reset !== 0) fail("store a · 恢复默认 drawn with nothing set (progressive disclosure)");
+      if (wide.picks[0] !== "gate" || wide.picks.length < 2) fail(`store a · the switcher lists ${wide.picks.join(", ")} — this machine first, every machine`);
+      await page.locator(`${box} [data-side-find] input`).fill("mid");
+      await wait(300);
+      const found = (await read(box))?.rows ?? [];
+      await page.locator(`${box} [data-side-find] input`).fill("zzz");
+      await wait(300);
+      const none = (await read(box))?.empty ?? null;
+      await page.locator(`${box} [data-side-find] input`).fill("");
+      await wait(300);
+      if (found.join(" ") !== "middle.pdf") fail(`store a · 「mid」 left ${found.join(", ")} — middle.pdf`);
+      if (none !== "没有匹配项") fail(`store a · a word nothing matches says ${JSON.stringify(none)} — 没有匹配项`);
+    }
+
+    // b. the switcher
+    {
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await until(3_000, async () => (await read(box))?.machine === "peer");
+      await wait(500);
+      const peer = await read(box);
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("elder");
+      await until(3_000, async () => (await read(box))?.machine === "elder");
+      await wait(500);
+      const elder = await read(box);
+      console.log(`store b · peer ${JSON.stringify(peer)} · elder ${JSON.stringify(elder)}`);
+      if (peer?.dir !== "/home/peer/khor-drop" || peer.rows.join() !== "from peer.md") fail(`store b · peer reads ${JSON.stringify(peer)} — its own receive_at and file`);
+      if (!peer?.pending || !(peer.note ?? "").includes("同步后生效")) fail(`store b · peer's setting not yet seen reads ${JSON.stringify(peer?.note)} — 「peer 同步后生效」`);
+      if (peer?.reset !== 1) fail("store b · peer has a setting and no 恢复默认");
+      if (elder?.note !== places.elder.receive_why) fail(`store b · elder fell back and the page says ${JSON.stringify(elder?.note)} — the machine's own sentence`);
+      if (elder?.empty !== "还没有收到的文件") fail(`store b · elder's empty directory says ${JSON.stringify(elder?.empty)} — 还没有收到的文件`);
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("gate");
+      await until(3_000, async () => (await read(box))?.machine === "gate");
+      await wait(500);
+    }
+
+    // c. 删除… asks, then removes
+    {
+      await page.locator(`${box} [data-store-row="old.txt"] [data-side-open]`).click({ button: "right" });
+      const menu = await until(3_000, async () => (await count('[data-row-menu] [data-menu-item="remove"]')) === 1);
+      const items = await page.evaluate(() => [...document.querySelectorAll("[data-row-menu] [data-menu-item]")].map((e) => e.getAttribute("data-menu-item")));
+      if (menu) await page.locator('[data-row-menu] [data-menu-item="remove"]').click();
+      const asking = await until(3_000, async () => (await count("[data-remove-go]")) === 1);
+      if (asking) await press("[data-remove-go]");
+      await until(3_000, async () => !((await read(box))?.rows ?? []).includes("old.txt"));
+      const after = (await read(box))?.rows ?? [];
+      console.log(`store c · menu ${items.join(", ")}, asked ${asking}, removed ${JSON.stringify(asked.removed)}, rows ${after.join(", ")}`);
+      if (items.join(" ") !== "open copy-path reveal remove") fail(`store c · a row's menu is ${items.join(", ")} — 打开, 复制路径, 在文件视图中打开, 删除…`);
+      if (!asking) fail("store c · 删除 asked nothing — the file trees' window comes first");
+      if (asked.removed.join() !== "/home/gate/khor-drop/old.txt" || after.includes("old.txt")) fail(`store c · removed ${JSON.stringify(asked.removed)}, rows ${after.join(", ")} — that path, and the row gone`);
+    }
+
+    // d. 更改… and 恢复默认
+    {
+      await press(`${box} [data-store-change]`);
+      const up = await until(3_000, async () => (await count("[data-dir-picker]")) === 1);
+      const machines = await count("[data-dir-picker] [data-dir-picker-machines]");
+      await page.locator("input[data-dir-picker-path], [data-dir-picker-path] input").first().fill("/srv/inbox");
+      await press("[data-dir-picker-take]");
+      await until(3_000, async () => (await count("[data-dir-picker]")) === 0);
+      await until(5_000, async () => ((await read(box))?.reset ?? 0) === 1);
+      const set = await read(box);
+      await press(`${box} [data-store-reset]`);
+      await until(5_000, async () => ((await read(box))?.reset ?? 1) === 0);
+      const back = await read(box);
+      console.log(`store d · picker ${up} (machine popups ${machines}), sent ${JSON.stringify(asked.set)}, set ${JSON.stringify(set)}, back ${JSON.stringify(back)}`);
+      if (!up) fail("store d · 更改… opened no 选择目录");
+      if (machines !== 0) fail("store d · 选择目录 offers a machine — the location is the machine on screen's");
+      if (asked.set[0]?.machine !== "gate" || asked.set[0]?.dir !== "/srv/inbox") fail(`store d · the picker sent ${JSON.stringify(asked.set[0])} — gate, /srv/inbox`);
+      if (set?.dir !== "/srv/inbox" || set.reset !== 1 || set.note !== null) fail(`store d · after the change the page reads ${JSON.stringify(set)} — /srv/inbox, 恢复默认 drawn, nothing else said`);
+      if (asked.set[1]?.machine !== "gate" || asked.set[1]?.dir !== "") fail(`store d · 恢复默认 sent ${JSON.stringify(asked.set[1])} — gate, empty`);
+      if (back?.dir !== "/home/gate/khor-drop" || back.reset !== 0) fail(`store d · after 恢复默认 the page reads ${JSON.stringify(back)} — the default`);
+    }
+    await press("[data-more-close]");
+    await wait(400);
+
+    // e. narrow
+    {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await wait(900);
+      const opened = await openMore("store");
+      await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+      const narrow = await read(box);
+      const head = await count("[data-more-back]");
+      console.log(`store e · opened ${opened}, back ${head}, ${JSON.stringify(narrow)}`);
+      if (!opened || !narrow) fail("store e · 更多 → 存储 opened no page on the narrow face");
+      else {
+        if (head !== 1) fail("store e · the narrow page has no ‹ in its head");
+        if (narrow.rows.join(" | ") !== "newest.png | middle.pdf") fail(`store e · narrow rows read ${narrow.rows.join(" | ")}`);
+        if (narrow.chevrons !== 0) fail(`store e · ${narrow.chevrons} narrow row(s) end in a ›`);
+        await press(`${box} [data-store-row="newest.png"] [data-side-open]`);
+        const inPlace = await until(3_000, async () => (await count(`${box} [data-store-file]`)) === 1);
+        const headGone = (await count("[data-more-back]")) === 0;
+        await press(`${box} [data-file-back]`);
+        const backList = await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+        if (!inPlace || !headGone || !backList) fail(`store e · a row opened the file in place ${inPlace}, the head stood aside ${headGone}, ‹ came back to the list ${backList}`);
+        await press("[data-more-back]");
+      }
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(900);
+    }
+
+    // f. the 附栏's seat
+    {
+      const base = {
+        kind: "tui", word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "shell",
+        group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
+      };
+      const storeRows = [{ ...base, id: "tui/store-1", title: "store-1" }];
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json(storeRows));
+      const termRoutes = {
+        "**/term_open": json(null),
+        "**/term_attach": json({ bytes: "", seq: 0 }),
+        "**/term_stream": json({ bytes: "", seq: 0, gone: false, reset: false }),
+        "**/term_resize": json(null),
+        "**/term_leave": json(null),
+        "**/term_key": json(null),
+        "**/recents": json([]),
+        "**/day_strips": json({}),
+      };
+      for (const [glob, run] of Object.entries(termRoutes)) await page.route(glob, run);
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await open("sessions");
+      const col = "[data-session-side]";
+      const front = '[data-session-tabs] [data-tab-open="tui/store-1"]';
+      await press('[data-side-row="tui/store-1"] [data-side-open]');
+      await until(5_000, async () => (await count(front)) === 1);
+      await wait(800);
+      await press(front);
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(600);
+      await press(`${col} [data-side-head] [data-seat-more]`);
+      const item = await until(2_000, async () => (await count('[data-seat-more-menu] [data-seat-more-item="store"]')) === 1);
+      if (item) await press('[data-seat-more-menu] [data-seat-more-item="store"]');
+      await until(3_000, async () => (await count(`${col} [data-store-row]`)) > 0);
+      const seat = await read(col);
+      const on = await page.evaluate((c) => document.querySelector(c)?.getAttribute("data-col-seat-on") ?? null, col);
+      const moreLit = await page.evaluate((c) => document.querySelector(`${c} [data-seat-more]`)?.getAttribute("data-on") ?? null, col);
+      await press(`${col} [data-store-row="middle.pdf"] [data-side-open]`);
+      const inPlace = await until(3_000, async () => (await count(`${col} [data-store-file="/home/gate/khor-drop/middle.pdf"]`)) === 1);
+      await press(front);
+      await until(2_000, async () => (await count(col)) === 0);
+      await press(front);
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(700);
+      const back = {
+        seat: await page.evaluate((c) => document.querySelector(c)?.getAttribute("data-col-seat-on") ?? null, col),
+        file: await count(`${col} [data-store-file="/home/gate/khor-drop/middle.pdf"]`),
+      };
+      await press(`${col} [data-file-back]`);
+      const list = await until(3_000, async () => (await count(`${col} [data-store-row]`)) > 0);
+      console.log(`store f · menu item ${item}, seat ${on} (更多 lit ${moreLit}), ${JSON.stringify(seat)}, file in place ${inPlace}, shut and opened ${JSON.stringify(back)}, ‹ to the list ${list}`);
+      if (!item) fail("store f · the 附栏's 更多 has no 存储");
+      if (on !== "store" || seat?.machine !== "gate") fail(`store f · the seat is ${on} on ${seat?.machine} — 存储, this machine`);
+      if (moreLit !== "true") fail("store f · 更多 is not lit while 存储 is the seat");
+      if ((seat?.rows ?? []).join(" | ") !== "newest.png | middle.pdf") fail(`store f · the seat lists ${(seat?.rows ?? []).join(" | ")}`);
+      if (!inPlace) fail("store f · a row did not open the file in place in the 附栏");
+      if (back.seat !== "store" || back.file !== 1) fail(`store f · shut and opened the 附栏 reads ${JSON.stringify(back)} — 存储, on the file it was left on (UX-47)`);
+      if (!list) fail("store f · ‹ on the file did not come back to 存储's list");
+      await press(front);
+      for (const [glob, run] of Object.entries(termRoutes)) await page.unroute(glob, run);
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json(rows));
+    }
+
+    for (const [glob, run] of Object.entries(routesS)) await page.unroute(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "store") console.log("store · FACE_ONLY=store: the other sections are skipped");
 
   // ── tabs like Chrome's, a new tab and its page (UX-45, 2026-10-07) ──
   //

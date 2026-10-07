@@ -512,6 +512,11 @@ fn set_watch(machine: String, paths: Vec<String>) -> Result<Vec<String>, String>
     khor_gui_core::set_watch(&Node::root_from_env(), &machine, &paths)
 }
 
+#[tauri::command]
+fn set_receive_dir(machine: String, dir: String) -> Result<String, String> {
+    khor_gui_core::set_receive_dir(&Node::root_from_env(), &machine, &dir)
+}
+
 /// `machine` is a device id and **empty is this one** — 「头像设置这, 要
 /// 支持对每台机器的修改」 (the user, 2026-09-20), so the editor opens on
 /// whichever machine was pressed rather than always on this one.
@@ -4336,6 +4341,7 @@ pub fn run() {
             pin_device,
             forget_device,
             set_watch,
+            set_receive_dir,
             face_choices,
             restyle,
             hooks_state,

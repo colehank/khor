@@ -10,7 +10,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use khor_core::State;
-use khor_node::transfer::{partial_path, payload_path};
 use khor_node::{MsgBody, Node, SessionId};
 use khor_sync::chat::{ChatDoc, FileRef, Sender};
 use tokio::time::timeout;
@@ -117,7 +116,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
             .any(|m| matches!(&m.body, MsgBody::Files(f) if f[0].name == "big.bin")),
         "the offer must be a file message naming the file"
     );
-    let files_dir = rb.join(".khor").join("chat").join("beta").join("files");
+    let files_dir = rb.join("khor-drop");
     let payload_bytes_present =
         files_dir.exists() && fs::read_dir(&files_dir).unwrap().next().is_some();
     assert!(!payload_bytes_present, "no byte may move before approval");
@@ -144,14 +143,18 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         unreachable!()
     };
     let f = &files[0];
+    // Where it landed: the receive directory, under its own name, found
+    // again by its digest (`khor_node::road`).
+    let landed = |f: &khor_sync::chat::FileRef| khor_node::road::landed(&rb, &dir, f).expect("landed");
+    assert_eq!(landed(f), rb.join("khor-drop").join("big.bin"));
     assert_eq!(
-        fs::read(payload_path(&dir, f)).unwrap(),
+        fs::read(landed(f)).unwrap(),
         payload,
         "bytes must be verbatim"
     );
     assert_eq!(
         b.transfer_landing(&tid).unwrap(),
-        vec![payload_path(&dir, f)],
+        vec![landed(f)],
         "the landing must be nameable — accept's answer prints it"
     );
 
@@ -204,8 +207,8 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
 
     // Resume: plant a partial of the first 100k — the second pull moves
     // only the missing tail, and the result is still verbatim.
-    fs::remove_file(payload_path(&dir, f)).unwrap();
-    fs::write(partial_path(&dir, f), &payload[..100_000]).unwrap();
+    fs::remove_file(landed(f)).unwrap();
+    fs::write(khor_node::road::partial_of(&rb, &f.digest).unwrap(), &payload[..100_000]).unwrap();
     let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("accept must not hang")
@@ -216,7 +219,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         "a resume moves only the tail"
     );
     assert_eq!(
-        fs::read(payload_path(&dir, f)).unwrap(),
+        fs::read(landed(f)).unwrap(),
         payload,
         "resumed bytes verbatim"
     );
@@ -224,10 +227,10 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     // ── control groups ─────────────────────────────────────
     // A poisoned partial cannot sneak through: right length, wrong bytes
     // — the digest fails, the partial is discarded, a clean retry works.
-    fs::remove_file(payload_path(&dir, f)).unwrap();
+    fs::remove_file(landed(f)).unwrap();
     let mut bad = payload[..100_000].to_vec();
     bad[0] ^= 0xff;
-    fs::write(partial_path(&dir, f), &bad).unwrap();
+    fs::write(khor_node::road::partial_of(&rb, &f.digest).unwrap(), &bad).unwrap();
     let err = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("a failing accept must not hang either")
@@ -238,7 +241,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         "wrong bytes must fail the digest: {err}"
     );
     assert!(
-        !partial_path(&dir, f).exists(),
+        !khor_node::road::partial_of(&rb, &f.digest).unwrap().exists(),
         "the poisoned partial must be discarded"
     );
     let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
@@ -310,6 +313,50 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         khor_catalog::msg::offer_lost(),
         "an unrecorded digest is refused by name"
     );
+
+    serve.abort();
+}
+
+/// **A receive location set from another machine is taken on when the
+/// sync brings it** (the lead, 2026-10-07): beta sets alpha's, beta's
+/// sync pushes it, and alpha's resident resolves it then — the directory
+/// made and `receive_at` reported — without alpha receiving anything. A
+/// second sync carries the answer back to beta. (It watches the effect:
+/// a round's quota reading also opens a node on alpha, and every open
+/// follows the setting too, so this stays green with the sync hooks
+/// alone taken out.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_receive_dir_set_elsewhere_is_resolved_on_sync() {
+    let ra = root("follow-a");
+    let rb = root("follow-b");
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let alpha = a.device_str().to_owned();
+    let ticket = a.invite().unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    timeout(Duration::from_secs(45), b.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+
+    b.set_receive_dir("alpha", "~/inbox").unwrap();
+    timeout(Duration::from_secs(45), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let want = ra.join("inbox").display().to_string();
+    let mine = |n: &Node| n.devices().unwrap().into_iter().find(|d| d.id == alpha).unwrap();
+    assert_eq!(mine(&a).receive_at.as_deref(), Some(want.as_str()), "alpha resolved it as the sync arrived");
+    assert_eq!(mine(&a).receive_for.as_deref(), Some("~/inbox"));
+    assert!(ra.join("inbox").is_dir(), "and made it");
+
+    timeout(Duration::from_secs(45), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    assert_eq!(mine(&b).receive_at.as_deref(), Some(want.as_str()), "beta reads where alpha's files land now");
 
     serve.abort();
 }

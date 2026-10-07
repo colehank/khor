@@ -20,7 +20,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 import { GlassCapsule, GlassItem } from "@/components/Glass";
-import { IconBrowser, IconDevices, IconFiles, IconMore, IconQuota, IconRecent } from "@/components/icons";
+import { IconBrowser, IconDevices, IconFile, IconFiles, IconMore, IconQuota, IconRecent } from "@/components/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { gui } from "@/gen/catalog";
 import { type SideSeat } from "@/hooks/use-session-side";
@@ -43,6 +43,8 @@ export function seatName(seat: SideSeat): string {
       return gui.devices_tab;
     case "quota":
       return gui.accounts_tab;
+    case "store":
+      return gui.settings_store;
   }
 }
 
@@ -54,11 +56,14 @@ const SEAT_GLYPH: Record<SideSeat, ReactNode> = {
   browser: <IconBrowser />,
   machine: <IconDevices />,
   quota: <IconQuota />,
+  // A file — received files — as in 更多's menu; not the folder, which
+  // is 工作区's: every seat wears its own (UX-39 §2).
+  store: <IconFile />,
 };
 
-/** The bar's own three; 机器 and 额度 sit in 更多's menu. */
+/** The bar's own three; 机器, 额度 and 存储 sit in 更多's menu. */
 const BAR_SEATS: readonly SideSeat[] = ["recent", "workspace", "browser"];
-const MORE_SEATS: readonly SideSeat[] = ["machine", "quota"];
+const MORE_SEATS: readonly SideSeat[] = ["machine", "quota", "store"];
 
 /**
  * **The seat bar** (UX-45, the owner 2026-10-07: 「右边是导航栏…就四个：最
@@ -66,8 +71,8 @@ const MORE_SEATS: readonly SideSeat[] = ["machine", "quota"];
  * 附栏's head, a glass capsule of four — 最近 · 工作区 · 浏览器 · 更多 —
  * drawn as the wide face's landing strip draws its seats (the glyph alone,
  * its name the hint, the current one the chosen piece in the brand's deep
- * ink). 更多 opens a small menu of 机器 and 额度, and is lit while one of
- * them is the page. The phone's sheet and the Mac's column alike.
+ * ink). 更多 opens a small menu of 机器, 额度 and 存储 (STORE-BRIEF
+ * phase 1), and is lit while one of them is the page. The phone's sheet and the Mac's column alike.
  * ⚠️ 墓碑 (UX-39 §2 → UX-45): the seat's icon · noun · ⌄ over a native
  * picker of the five (`SeatTitle`).
  */

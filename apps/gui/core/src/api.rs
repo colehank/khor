@@ -433,6 +433,7 @@ pub fn answer(
             };
             to_json(&crate::set_watch(root, &arg("machine")?, &paths)?)
         }
+        "set_receive_dir" => to_json(&crate::set_receive_dir(root, &arg("machine")?, &arg("dir")?)?),
         "relays" => to_json(&crate::relays(root)?),
         "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
         "connections" => to_json(&rt.block_on(crate::connections(root))?),

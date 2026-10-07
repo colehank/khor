@@ -12,18 +12,17 @@
  * with the main area's deck (`FilePage`, UX-40 §4; it folds as the main
  * area's does, UX-43 §4), and ‹ there is
  * the way back to the tree — or to 最近, for the file a row of 最近 opened.
- * Where it stands — the file open, 「放进来的」 open — is said as it moves
- * (`onSpot`) and handed back when the 附栏 opens again (`spot`, UX-47).
+ * Where it stands — the file open — is said as it moves (`onSpot`) and
+ * handed back when the 附栏 opens again (`spot`, UX-47).
  *
  * **Find and make** (UX-40 §1): the find row under the 附栏's head is the
  * landing tree's own box and ＋ — names and lines under the workspace
  * (`Hits`), 新建文件 / 新建目录 into the tree (`FileTree`'s `make`).
  *
- * **「放进来的」** (item 60 part 5): while the machine's `~/khor-drop/`
- * holds something, a row above the tree opens it in the seat, as its own
- * tree with ‹ back to the workspace — where files dropped onto this
- * machine's terminals land. It is outside the workspace on purpose: the
- * one door out of the ceiling, and only to that directory.
+ * ⚠️ 墓碑 (item 60 part 5 → STORE-BRIEF phase 1, the owner 2026-10-07:
+ * 「工作区不显示"放进来的"」): **「放进来的」**, a row above the tree
+ * opening the machine's `~/khor-drop/` as a tree of its own, the one door
+ * out of the ceiling. Received files are 更多 → 存储's (`StorePage`).
  *
  * ⚠️ 墓碑 (UX-37 §6 → UX-40 §4): the bare file page, ‹ and the name in a
  * head at its top. ⚠️ 墓碑 (UX-37 §1): `MachineFiles` here, climbing to
@@ -31,9 +30,9 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { fetchGitStatus, fetchLs, searchIn, type Found } from "@/api";
+import { fetchGitStatus, searchIn, type Found } from "@/api";
 import { GlassCircle } from "@/components/Glass";
-import { IconFiles, IconPlus } from "@/components/icons";
+import { IconPlus } from "@/components/icons";
 import { SideFind } from "@/components/SideFind";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SeatHead } from "@/components/SeatHead";
@@ -77,21 +76,18 @@ export function SideWorkspace({
   fileActs,
   onLeave,
   backLabel = gui.group_recent,
-  drops = true,
   spot,
   onSpot,
 }: {
   /** **Where the seat was left** (UX-47), read once at mount: the file
-      open over the tree, 「放进来的」 open. Absent, the seat starts at
-      the tree (or at `start`). */
+      open over the tree. Absent, the seat starts at the tree (or at
+      `start`). */
   spot?: WsSpot | null;
   /** Where the seat stands now, said as it moves, so the 附栏 opened
       again comes back to it. */
   onSpot?: (spot: WsSpot) => void;
   /** What ‹ goes back to, said on its head (`onLeave`). */
   backLabel?: string;
-  /** Whether the 「放进来的」 row is looked for (not inside it). */
-  drops?: boolean;
   /** Entered from 最近 (UX-39 §3): the tree wears ‹ back there, and a file
       opened that way leaves to it rather than to the tree. */
   onLeave?: () => void;
@@ -138,25 +134,6 @@ export function SideWorkspace({
       }),
     [machine, here, root],
   );
-  // **「放进来的」**: the machine's home, then its `khor-drop` when it is
-  // there and holds something. Asked once per seat.
-  const [dropDir, setDropDir] = useState<string | null>(null);
-  const [inDrops, setInDrops] = useState(!!spot?.drops);
-  const [dropSpot, setDropSpot] = useState<WsSpot | null>(spot?.drops ?? null);
-  useEffect(() => {
-    if (!drops) return;
-    let live = true;
-    void fetchLs(machine, "")
-      .then((home) => {
-        if (!home.entries.some((e) => e.dir && e.name === "khor-drop")) return null;
-        return fetchLs(machine, `${home.path.replace(/\/$/, "")}/khor-drop`);
-      })
-      .then((d) => live && d && d.entries.length > 0 && d.path !== root && setDropDir(d.path))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [machine, root, drops]);
   const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
   // The hunt: asked 300 ms after the typing stops, a late answer to an
   // old question thrown away (`WorkspacePane`'s, the same rule).
@@ -233,28 +210,9 @@ export function SideWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
   useEffect(() => {
-    onSpot?.({ file, drops: inDrops ? (dropSpot ?? { file: null, drops: null }) : null });
+    onSpot?.({ file });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file, inDrops, dropSpot]);
-  if (inDrops && dropDir !== null) {
-    return (
-      <SideWorkspace
-        machine={machine}
-        here={here}
-        root={dropDir}
-        drops={false}
-        onLeave={() => {
-          setInDrops(false);
-          setDropSpot(null);
-        }}
-        backLabel={gui.workspaces_tab}
-        onRead={onRead}
-        fileActs={fileActs}
-        spot={dropSpot}
-        onSpot={setDropSpot}
-      />
-    );
-  }
+  }, [file]);
   return (
     <div data-side-workspace data-root={root} className="relative flex min-h-0 flex-1 flex-col">
       {/* The tree stays mounted under an open file, so ‹ finds it where
@@ -262,18 +220,6 @@ export function SideWorkspace({
       <div className={file !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={backLabel} />}
         <SideFind label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />
-        {dropDir !== null && hunt.trim() === "" && (
-          <button
-            type="button"
-            data-side-drops={dropDir}
-            onClick={() => setInDrops(true)}
-            className="flex min-h-touch w-full flex-none items-center gap-row px-row text-left text-body"
-          >
-            <IconFiles className="size-kind-mark flex-none text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">{gui.drops_row}</span>
-            {/* ⚠️ 墓碑 (UX-44 §4): a › at the row's end. */}
-          </button>
-        )}
         {hunt.trim() !== "" ? (
           <Hits
             found={found}

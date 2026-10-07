@@ -23,7 +23,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use khor_core::State;
-use khor_node::transfer::payload_path;
 use khor_node::{MsgBody, Node, ipc};
 use tokio::time::timeout;
 
@@ -161,7 +160,7 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         unreachable!()
     };
     assert_eq!(
-        fs::read(payload_path(&dir, &files[0])).unwrap(),
+        fs::read(khor_node::road::landed(&rb, &dir, &files[0]).expect("landed")).unwrap(),
         payload,
         "bytes verbatim"
     );

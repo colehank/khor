@@ -160,7 +160,7 @@ const QUICK = new Set([
   "tabs_close", "tabs_pin", "tabs_save", "ws_rm", "ws_pin", "pin_account", "rename_account",
   "update_account", "register_account", "remove_account", "seen", "rename_session",
   "rename_machine", "relays", "set_relays", "tell", "pin_session", "pin_device", "forget_device",
-  "set_watch", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
+  "set_watch", "set_receive_dir", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
   "history", "history_follow", "machine_log", "import_candidates", "import_sessions", "agents",
   "agents_known", "agents_known_taken", "register_known_agent", "agent_seen", "invite",
   "pending_list", "root_words", "set_paused", "set_machine_paused", "config", "set_config",

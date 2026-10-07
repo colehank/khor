@@ -27,20 +27,13 @@
 //! stops before its next slice, its part file going as on any other
 //! failure. A file that already landed stays where it landed.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::atomic::Ordering;
 
 /// The largest file a drop takes, for now (the owner, 2026-10-06: 200
 /// MB). Checked against the size the first slice reports, before the
 /// rest is asked for.
 pub const CAP: u64 = 200 * 1024 * 1024;
-
-/// How long a finished job's answer is kept for an asker that comes
-/// back for it.
-const KEPT_FOR: Duration = Duration::from_secs(600);
 
 /// How far a drop got: bytes landed of how many (0 until the far
 /// machine has said), and once `done`, the absolute path over there.
@@ -63,92 +56,7 @@ impl DropState {
     }
 }
 
-/// One pull into the drop directory, as it goes.
-#[derive(Default)]
-pub struct Job {
-    pub moved: AtomicU64,
-    pub total: AtomicU64,
-    /// Set by [`stop`]: the pull ends before its next slice. Shared, so
-    /// a pull on a blocking thread can read it.
-    pub stopped: Arc<AtomicBool>,
-    /// The landed path, or why it did not land; `None` while it runs.
-    end: Mutex<Option<(Instant, Result<String, String>)>>,
-}
-
-impl Job {
-    pub fn is_stopped(&self) -> bool {
-        self.stopped.load(Ordering::Relaxed)
-    }
-
-    pub fn finish(&self, outcome: Result<String, String>) {
-        if let Ok(mut end) = self.end.lock() {
-            *end = Some((Instant::now(), outcome));
-        }
-    }
-
-    pub fn state(&self) -> Result<DropState, String> {
-        let end = self.end.lock().map(|e| e.as_ref().map(|(_, o)| o.clone())).unwrap_or(None);
-        let (moved, total) = (self.moved.load(Ordering::Relaxed), self.total.load(Ordering::Relaxed));
-        match end {
-            None => Ok(DropState {
-                moved,
-                total,
-                ..DropState::default()
-            }),
-            Some(Ok(dest)) => Ok(DropState {
-                moved,
-                total,
-                dest,
-                done: true,
-            }),
-            Some(Err(why)) => Err(why),
-        }
-    }
-
-    fn ended_long_ago(&self) -> bool {
-        self.end
-            .lock()
-            .map(|e| e.as_ref().is_some_and(|(at, _)| at.elapsed() > KEPT_FOR))
-            .unwrap_or(false)
-    }
-}
-
-fn jobs() -> &'static Mutex<HashMap<String, Arc<Job>>> {
-    static JOBS: std::sync::OnceLock<Mutex<HashMap<String, Arc<Job>>>> = std::sync::OnceLock::new();
-    JOBS.get_or_init(Default::default)
-}
-
-/// The job this token names, and whether it was made just now (the
-/// caller then starts it). Tokens are the asker's random words, so one
-/// table serves every node in the process.
-pub fn job(token: &str) -> (Arc<Job>, bool) {
-    let mut all = jobs().lock().unwrap_or_else(|e| e.into_inner());
-    all.retain(|_, j| !j.ended_long_ago());
-    if let Some(j) = all.get(token) {
-        return (j.clone(), false);
-    }
-    let j = Arc::new(Job::default());
-    all.insert(token.to_owned(), j.clone());
-    (j, true)
-}
-
-/// **The drop this token names, cancelled** (item 71): its pull stops
-/// before the next slice and answers [`cancelled`]. A token no job has
-/// yet is held as a job already ended so — an ask that arrives after its
-/// own cancel then starts nothing — and costs nothing else: no file is
-/// touched and no other job is.
-pub fn stop(token: &str) {
-    let (j, fresh) = job(token);
-    j.stopped.store(true, Ordering::Relaxed);
-    if fresh {
-        j.finish(Err(cancelled()));
-    }
-}
-
-/// Why a cancelled drop did not land.
-pub fn cancelled() -> String {
-    khor_catalog::msg::drop_cancelled().to_owned()
-}
+pub use crate::road::{cancelled, job, stop, Job};
 
 /// Where a dropped file lands in `dir`, and the part file it grows in.
 ///
@@ -233,16 +141,11 @@ pub fn copy_into(src: &Path, dir: &Path, job: &Job) -> Result<PathBuf, String> {
     Ok(at.dest)
 }
 
-/// `~/khor-drop` for the machine's own store; `<root>/khor-drop` for any
-/// other (a scratch home, a test's), so no test and no scratch node ever
-/// writes into the person's own.
+/// The default receive directory (`crate::road::default_dir`): where a
+/// drop lands when nobody set the machine's receive location. A node
+/// reads its setting through `Node::receive_dir`.
 pub fn dir_for(root: &Path) -> PathBuf {
-    if let Some(home) = std::env::home_dir()
-        && (root == home || root.parent() == Some(&home.join(".khor-hosts")))
-    {
-        return home.join("khor-drop");
-    }
-    root.join("khor-drop")
+    crate::road::default_dir(root)
 }
 
 #[cfg(test)]

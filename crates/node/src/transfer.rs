@@ -4,11 +4,14 @@
 //! into a session row and moves the payload only after the user's
 //! approval (docs/SESSION.md 传输: 摘要到了,等你许可收全量).
 //!
-//! Disk layout, all under the channel that carries the summary:
-//! `files/<digest8>-<name>` (verified payload), `files/.partial-…`
-//! (resumable), `files/.pulling-<digest8>` (pid of a live pull). `close`
-//! on the chat row deletes `files/` wholesale; `close` on a transfer row
-//! deletes just that transfer's payload.
+//! Disk layout: an accepted payload lands in the receiving machine's
+//! receive directory under its own name, found again by its digest
+//! (`crate::road`'s receipts); its partial and the pid of a live pull sit
+//! under `.khor/received/`. A khor before the receive directory landed it
+//! in the channel's `files/<digest8>-<name>` ([`payload_path`]), which is
+//! still read for a file that has not moved. `close` on a transfer row
+//! clears only an unfinished pull; a landed file is the person's
+//! (deleted from 存储 or a file tree, 2026-10-07).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,15 +23,58 @@ use khor_sync::chat::{FileRef, Message, MsgBody};
 /// Where an offered payload is read from, recorded at send time.
 /// Machine-local — the path means nothing on any other device. Keyed by
 /// digest so `Fetch` is one lookup.
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Offer {
     pub path: PathBuf,
     pub name: String,
     pub size: u64,
     /// The sender's only window into the far side: a fetch has begun /
-    /// the final slice was served.
+    /// the final slice was served — by anyone. What an offer recorded by
+    /// a khor before [`Offer::to`] says; read only when `to` is empty.
     pub started: bool,
     pub done: bool,
+    /// **The same, per receiver**, by device id (STORE-BRIEF foundation
+    /// A): one file sent to two machines is two deliveries. It was one
+    /// pair of flags per digest, so the second machine's offer read
+    /// 已送达 the moment the first had fetched it.
+    #[serde(default)]
+    pub to: std::collections::BTreeMap<String, Fetched>,
+}
+
+/// What one receiver did with an offer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Fetched {
+    pub started: bool,
+    pub done: bool,
+}
+
+impl Offer {
+    /// A slice served to `receiver`; `last` when it was the final one.
+    /// Answers whether anything changed (the record is written only
+    /// then: slices are served several at once, and a middle slice
+    /// rewriting what it loaded could undo the last slice's `done`).
+    pub fn note_fetch(&mut self, receiver: &str, last: bool) -> bool {
+        let was = (self.started, self.done, self.to.get(receiver).copied());
+        self.started = true;
+        self.done |= last;
+        let f = self.to.entry(receiver.to_owned()).or_default();
+        f.started = true;
+        f.done |= last;
+        was != (self.started, self.done, Some(*f))
+    }
+
+    /// Where `receiver` stands with this offer: its own record, or — for
+    /// an offer recorded before receivers were told apart — the one pair
+    /// of flags there was.
+    pub fn fetched_by(&self, receiver: &str) -> Fetched {
+        if self.to.is_empty() {
+            return Fetched {
+                started: self.started,
+                done: self.done,
+            };
+        }
+        self.to.get(receiver).copied().unwrap_or_default()
+    }
 }
 
 pub fn offers_dir(root: &Path) -> PathBuf {
@@ -93,22 +139,15 @@ pub fn digest_file(path: &Path) -> Result<(String, u64), String> {
 
 // ── payload locations inside a channel dir ──────────────────
 
-/// Where a machine keeps the files it is handed, under its khor `home`:
-/// its own channel's `files` folder (the round CHAT rule, the same one
-/// `payload_path` lands an accepted `send` in). `None` for a channel name
-/// that is not a valid directory name.
-pub fn files_dir(home: &Path, channel: &str) -> Option<PathBuf> {
-    khor_sync::chat::channel_dir(home, channel).map(|d| d.join("files"))
-}
-
+/// Where a khor before the receive directory landed an accepted file:
+/// the channel's `files/<digest8>-<name>`. Read only to find a file that
+/// has not moved (`crate::road::landed`, `crate::road::move_chat_files`).
 pub fn payload_path(channel_dir: &Path, f: &FileRef) -> PathBuf {
     channel_dir.join("files").join(landed_name(&f.digest, &f.name))
 }
 
-/// A landed file's leaf: the first 8 of its digest, then its name made
-/// safe. **One spelling for both roads into `files_dir`** — an accepted
-/// `send` and a file a conversation put there (`khor_gui_core::chat`) —
-/// so the same bytes under the same name are the same file either way.
+/// A leaf in the old conversation folder: the first 8 of its digest,
+/// then its name made safe.
 pub fn landed_name(digest: &str, name: &str) -> String {
     format!("{}-{}", digest.chars().take(8).collect::<String>(), safe_name(name))
 }
@@ -241,7 +280,10 @@ impl TransferKind {
     /// stays the receiver's alone (`urgency`'s iron rule, untouched;
     /// the row-level 忙碌 while bytes flow also stays `urgency`'s).
     /// `None` for every seat but the sender's.
-    pub fn message_delivery(&self, m: &Message) -> Option<Delivery> {
+    ///
+    /// `receiver` is the device id of the machine the message was sent
+    /// to (the channel's): the offer is read for that machine alone.
+    pub fn message_delivery(&self, m: &Message, receiver: &str) -> Option<Delivery> {
         let MsgBody::Files(files) = &m.body else {
             return None;
         };
@@ -249,9 +291,9 @@ impl TransferKind {
             return None;
         }
         Some(
-            match load_offer(&self.root, &files[0].digest).ok().flatten() {
-                Some(o) if o.done => Delivery::Served,
-                Some(o) if o.started => Delivery::Fetching,
+            match load_offer(&self.root, &files[0].digest).ok().flatten().map(|o| o.fetched_by(receiver)) {
+                Some(f) if f.done => Delivery::Served,
+                Some(f) if f.started => Delivery::Fetching,
                 _ => Delivery::Waiting,
             },
         )
@@ -282,11 +324,14 @@ impl TransferKind {
     /// `None` when nothing is in flight; the caller keeps the row's own
     /// word. Ties go to the most pressing rank, stamped with the moment
     /// that made it true.
+    ///
+    /// `receiver` is the channel's device id, [`Self::message_delivery`]'s.
     pub fn urgency(
         &self,
         channel: &str,
         channel_dir: &Path,
         msgs: &[Message],
+        receiver: &str,
     ) -> Option<(State, i64)> {
         let mut best: Option<(State, i64)> = None;
         for m in msgs {
@@ -310,7 +355,7 @@ impl TransferKind {
                     _ => None,
                 }
             } else if i_sent {
-                match load_offer(&self.root, &f.digest).ok().flatten() {
+                match load_offer(&self.root, &f.digest).ok().flatten().map(|o| o.fetched_by(receiver)) {
                     Some(o) if o.started && !o.done => Some((State::Busy, m.at)),
                     _ => None,
                 }
@@ -351,8 +396,7 @@ impl TransferKind {
         msg_at: i64,
         watermark: i64,
     ) -> (State, i64) {
-        let done = payload_path(channel_dir, f);
-        if done.exists() {
+        if let Some(done) = crate::road::landed(&self.root, channel_dir, f) {
             let at = mtime_ms(&done).unwrap_or(msg_at);
             let state = if msg_at > watermark {
                 State::Done
@@ -361,10 +405,10 @@ impl TransferKind {
             };
             return (state, at);
         }
-        let partial = partial_path(channel_dir, f);
-        if partial.exists() {
+        let partial = crate::road::partial_of(&self.root, &f.digest);
+        if let Some(partial) = partial.filter(|p| p.exists()) {
             let at = mtime_ms(&partial).unwrap_or(msg_at);
-            if marker_pid_alive(&pulling_marker(channel_dir, f)) {
+            if crate::road::marker_of(&self.root, &f.digest).is_some_and(|m| marker_pid_alive(&m)) {
                 return (State::Busy, at);
             }
             // 断了可续 — the partial is the resume point, not garbage.
@@ -373,16 +417,24 @@ impl TransferKind {
         (State::Blocked, msg_at)
     }
 
-    /// Deletes this transfer's received payload (verified and partial
-    /// both). The summary stays in the CRDT — the row falls back to 待批
-    /// and the payload can be pulled again.
+    /// Clears what an unfinished pull of this transfer left (the partial
+    /// and the pid marker). **The landed file stays, with its receipt**
+    /// (the lead, 2026-10-07): it sits in the visible receive directory
+    /// and belongs to the person, who deletes it from 存储 or a file tree
+    /// — closing a row is not deleting a file. ⚠️ 墓碑 (STORE-BRIEF phase
+    /// 1, store-a): close deleted the landed file too, the habit of the
+    /// days it lay hidden under the conversation's folder.
     pub fn close_payload(&self, channel_dir: &Path, f: &FileRef) -> Result<(), String> {
         for p in [
-            payload_path(channel_dir, f),
-            partial_path(channel_dir, f),
-            pulling_marker(channel_dir, f),
-        ] {
-            if p.exists() {
+            Some(partial_path(channel_dir, f)),
+            Some(pulling_marker(channel_dir, f)),
+            crate::road::partial_of(&self.root, &f.digest),
+            crate::road::marker_of(&self.root, &f.digest),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if p.symlink_metadata().is_ok() {
                 fs::remove_file(&p).map_err(msg::cant_delete)?;
             }
         }
@@ -481,26 +533,46 @@ mod tests {
         let f = file_ref("report.pdf");
         let m = [msg("m1", "far", f.clone())];
 
-        let word = |k: &TransferKind| k.urgency("mybox", &ch, &m).map(|(w, _)| w);
+        let word = |k: &TransferKind| k.urgency("mybox", &ch, &m, "me").map(|(w, _)| w);
         assert_eq!(
             word(&k),
             Some(State::Blocked),
             "no payload = waiting for THIS machine"
         );
 
-        fs::write(partial_path(&ch, &f), b"he").unwrap();
-        fs::write(pulling_marker(&ch, &f), format!("{}", std::process::id())).unwrap();
+        let (partial, marker) = (
+            crate::road::partial_of(&root, &f.digest).unwrap(),
+            crate::road::marker_of(&root, &f.digest).unwrap(),
+        );
+        fs::create_dir_all(partial.parent().unwrap()).unwrap();
+        fs::write(&partial, b"he").unwrap();
+        fs::write(&marker, format!("{}", std::process::id())).unwrap();
         assert_eq!(word(&k), Some(State::Busy), "a live pull (this pid) = busy");
 
-        fs::remove_file(pulling_marker(&ch, &f)).unwrap();
+        fs::remove_file(&marker).unwrap();
         assert_eq!(
             word(&k),
             Some(State::Errored),
             "a partial with no live pull = resumable"
         );
 
-        fs::remove_file(partial_path(&ch, &f)).unwrap();
-        fs::write(payload_path(&ch, &f), b"hello").unwrap();
+        fs::remove_file(&partial).unwrap();
+        let landed = root.join("khor-drop").join("report.pdf");
+        fs::create_dir_all(landed.parent().unwrap()).unwrap();
+        fs::write(&landed, b"hello").unwrap();
+        crate::road::record(
+            &root,
+            &crate::road::Receipt {
+                digest: f.digest.clone(),
+                name: f.name.clone(),
+                path: landed,
+                size: 5,
+                from: "far".into(),
+                at_ms: 1,
+                mode: crate::road::Mode::Offer,
+            },
+        )
+        .unwrap();
         assert_eq!(
             word(&k),
             None,
@@ -522,7 +594,7 @@ mod tests {
         let k = kind(&root);
         let f = file_ref("data.bin");
         let mine = [msg("m1", &"me".repeat(32), f.clone())];
-        let word = |k: &TransferKind, m: &[Message]| k.urgency("otherbox", &ch, m).map(|(w, _)| w);
+        let word = |k: &TransferKind, m: &[Message]| k.urgency("otherbox", &ch, m, "other-id").map(|(w, _)| w);
 
         assert_eq!(
             word(&k, &mine),
@@ -539,6 +611,7 @@ mod tests {
                 size: 5,
                 started: true,
                 done: false,
+                to: Default::default(),
             },
         )
         .unwrap();
@@ -557,6 +630,7 @@ mod tests {
                 size: 5,
                 started: true,
                 done: true,
+                to: Default::default(),
             },
         )
         .unwrap();
@@ -568,6 +642,46 @@ mod tests {
             None,
             "neither sender nor recipient = no pressure"
         );
+    }
+
+    /// **One file sent to two machines is two deliveries** (STORE-BRIEF
+    /// foundation A): the first receiver fetching it whole leaves the
+    /// second's offer waiting, on the message to each and on each row.
+    #[test]
+    fn one_file_sent_to_two_receivers_is_two_deliveries() {
+        let root = tmp("two");
+        let ch = root.join("ch");
+        fs::create_dir_all(&ch).unwrap();
+        let k = kind(&root);
+        let f = file_ref("data.bin");
+        let m = msg("m1", &"me".repeat(32), f.clone());
+        let mut offer = Offer {
+            path: "/tmp/x".into(),
+            name: f.name.clone(),
+            size: 5,
+            started: false,
+            done: false,
+            to: Default::default(),
+        };
+        assert!(offer.note_fetch("alpha", false));
+        assert!(!offer.note_fetch("alpha", false), "nothing new, nothing written");
+        save_offer(&root, &f.digest, &offer).unwrap();
+        assert_eq!(k.message_delivery(&m, "alpha"), Some(Delivery::Fetching));
+        assert_eq!(k.message_delivery(&m, "beta"), Some(Delivery::Waiting));
+        assert!(offer.note_fetch("alpha", true));
+        save_offer(&root, &f.digest, &offer).unwrap();
+        assert_eq!(k.message_delivery(&m, "alpha"), Some(Delivery::Served));
+        assert_eq!(k.message_delivery(&m, "beta"), Some(Delivery::Waiting), "beta has fetched nothing");
+        let busy = |r: &str| k.urgency("box", &ch, std::slice::from_ref(&m), r).map(|(w, _)| w);
+        assert_eq!((busy("alpha"), busy("beta")), (None, None));
+        offer.note_fetch("beta", false);
+        save_offer(&root, &f.digest, &offer).unwrap();
+        assert_eq!(busy("beta"), Some(State::Busy));
+        assert_eq!(busy("alpha"), None, "alpha's is served");
+
+        // An offer recorded before receivers were told apart reads as one.
+        let old: Offer = serde_json::from_str(r#"{"path":"/x","name":"a","size":5,"started":true,"done":true}"#).unwrap();
+        assert_eq!(old.fetched_by("anyone"), Fetched { started: true, done: true });
     }
 
     /// A malicious file name must not escape the files/ directory.

@@ -37,7 +37,9 @@ import { config, gui } from "@/gen/catalog";
  * UX-16 (the owner, 2026-10-05): 更多 is 我的 khor · 浏览器 · 设置 · 诊断,
  * and 设置 is seven groups — 外观 · 终端 · 会话 · 工作区 · 连接 · 安全 ·
  * 关于. ⚠️ 墓碑: 通用 (`settings`), 网络 (`network`) and 这台机器
- * (`identity`) were pages of their own until then.
+ * (`identity`) were pages of their own until then. 存储 (`store`,
+ * STORE-BRIEF phase 1, 2026-10-07) joined 更多's own items beside 诊断:
+ * received files and where they land (`views/StorePage`).
  */
 export type MorePage =
   | "me"
@@ -48,11 +50,12 @@ export type MorePage =
   | "connection"
   | "security"
   | "about"
+  | "store"
   | "doctor";
 
 /** Every page, in the order the wide list (and the Mac settings
     window's sidebar) shows them: 我的 khor at the head, like System
-    Settings' account, then 设置's seven, then 诊断. */
+    Settings' account, then 设置's seven, then 存储 and 诊断. */
 export const morePageOrder: readonly MorePage[] = [
   "me",
   "appearance",
@@ -62,14 +65,15 @@ export const morePageOrder: readonly MorePage[] = [
   "connection",
   "security",
   "about",
+  "store",
   "doctor",
 ];
 
 /** Whether a page is one of 设置's — reached through its list — rather
-    than one 更多's menu opens by itself (我的 khor, 诊断; UX-16). On the
+    than one 更多's menu opens by itself (我的 khor, 存储, 诊断; UX-16). On the
     narrow face the second kind is pushed over the landing it was opened
     from, so its way back is that landing, not 设置's list. */
-export const inSettings = (page: MorePage): boolean => page !== "me" && page !== "doctor";
+export const inSettings = (page: MorePage): boolean => page !== "me" && page !== "store" && page !== "doctor";
 
 /** The section names, in one place, so the list item and the page head
     cannot come to call the same section two things.
@@ -88,6 +92,7 @@ export const moreName = (page: MorePage): string =>
     connection: config.connection,
     security: gui.security,
     about: gui.settings_about,
+    store: gui.settings_store,
     doctor: gui.doctor,
   })[page];
 
