@@ -14,7 +14,8 @@
  *   own sentence), and that it has not seen a change yet
  *   (`receive_for` ≠ the setting).
  * - **What landed there**: the files in `receive_at`, newest first, as
- *   `SideList` rows (a file's kind on the machine's face, no ›). A press
+ *   `SideList` rows (a file's kind on the machine's face, no ›): the
+ *   name, the machine it came from, how long ago it landed. A press
  *   opens the file here, as the file page with its deck (‹ back to the
  *   list); the row's menu has 打开, 复制路径, 在文件视图中打开 (the
  *   workspace holding it, else that machine's files) and 删除… — the
@@ -66,7 +67,6 @@ import { usePullRefresh } from "@/hooks/use-pull-refresh";
 import type { StoreSpot } from "@/hooks/use-session-side";
 import { onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { FilePage } from "@/views/FilePage";
-import { sizeWord } from "@/views/FilesPane";
 import { useRemoveFlow } from "@/views/fileRow";
 import { ago } from "@/words";
 
@@ -267,8 +267,10 @@ export function StorePage({
   const files = (shown ?? [])
     // Files only, and none of khor's own (a pull's partial, a probe).
     .filter((e) => !e.dir && !e.name.startsWith("."))
-    .sort((a, b) => b.at_ms - a.at_ms);
+    .sort((a, b) => (b.received_ms ?? b.at_ms) - (a.received_ms ?? a.at_ms));
   const full = (n: string) => `${(dir ?? "").replace(/\/$/, "")}/${n}`;
+  /** A sender's name on the glass, by the device id a receipt names. */
+  const sender = (id: string | null) => (id ? (devices.find((d) => d.id === id)?.shown ?? null) : null);
   const rows: SideRow[] = files.map((e) => {
     const path = full(e.name);
     return {
@@ -279,8 +281,15 @@ export function StorePage({
       mark: fileKind(e.name),
       title: e.name,
       name: e.name,
-      sub: <span className="tabular-nums">{sizeWord(e.size)}</span>,
-      corners: { bottom: <span data-store-at={e.at_ms}>{ago(e.at_ms)}</span> },
+      // The row rule (UX-48): bottom-left where it came from — the machine
+      // its receipt names, not drawn for a file with none (put there by
+      // hand, landed before receipts named senders, a sender since
+      // forgotten); no top-right; bottom-right how long ago it was
+      // received, by its receipt, else by its mtime.
+      sub: sender(e.from) ? <span data-store-from={e.from ?? ""}>{sender(e.from)}</span> : undefined,
+      corners: {
+        bottom: <span data-store-at={e.received_ms ?? e.at_ms}>{ago(e.received_ms ?? e.at_ms)}</span>,
+      },
       find: e.name,
       onOpen: () => setFile(path),
       menu: [

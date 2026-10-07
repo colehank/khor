@@ -27,6 +27,15 @@ pub struct DirRow {
     pub size: u64,
     #[ts(type = "number")]
     pub at_ms: u64,
+    /// A received file's sender, the device id its receipt names (UX-48,
+    /// the storage page's row: where it came from); `None` for any other
+    /// file.
+    pub from: Option<String>,
+    /// When a received file landed, ms since the epoch (its receipt):
+    /// the storage page's "how long ago received". `None` for any other
+    /// file.
+    #[ts(type = "number | null")]
+    pub received_ms: Option<u64>,
 }
 
 /// One machine's directory — the call `khor ls` makes. Async because
@@ -43,6 +52,8 @@ pub async fn ls(root: &Path, machine: &str, path: &str) -> Result<DirListing, St
                 dir: e.dir,
                 size: e.size,
                 at_ms: e.at_ms,
+                from: e.from,
+                received_ms: e.received_ms,
             })
             .collect(),
         truncated,

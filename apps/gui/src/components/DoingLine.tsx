@@ -1,39 +1,21 @@
-// **What a terminal session is doing, in a line** (roadmap 2.1): the row's
-// second line from its shell's command ledger (`khor_core::Doing`) —
-// "Running pytest tests/ · 3 min" while it runs, "make · exit 0 · 12 s"
-// after — never the prompt's own glyphs. The command is set in the
-// terminal's type, the rest in the row's.
+// **What a terminal session is doing, in a line** (roadmap 2.1, UX-48):
+// the row's second line from its shell's command ledger
+// (`khor_core::Doing`) — the command itself, the running one or else the
+// last, in the terminal's type, never the prompt's own glyphs.
+// ⚠️ 墓碑 (UX-48, the owner 2026-10-07): 「正在运行 pytest tests/ · 3 分钟」
+// and 「make · 退出 0 · 12 秒」. Whether it runs is the row's state word,
+// how long is the time under it; an exit code is the terminal's to show.
 import type { Doing } from "@/gen/bindings/Doing";
 import type { RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { askNewSession, askOpenDir } from "@/lib/composer-handoff";
-import { lasted } from "@/words";
 
-/** Where the command goes in the catalog's sentence. */
-const SLOT = "\u0001";
-
-export function DoingLine({ doing, now = Date.now() }: { doing: Doing; now?: number }) {
+export function DoingLine({ doing }: { doing: Doing }) {
   if (!doing.command) return null;
-  const known = doing.started_ms > 0;
-  const took = known ? lasted((doing.ended_ms ?? now) - doing.started_ms) : null;
-  const text = doing.running
-    ? took
-      ? gui.row_running(SLOT, took)
-      : gui.row_running_bare(SLOT)
-    : doing.exit !== null && took
-      ? gui.row_ran(SLOT, doing.exit, took)
-      : took
-        ? gui.row_ran_plain(SLOT, took)
-        : SLOT;
-  const [before, after] = text.split(SLOT);
   return (
-    <span data-doing={doing.running ? "running" : "ran"} data-exit={doing.exit ?? undefined} className="block min-w-0">
-      <span className="block min-w-0 truncate">
-        {before}
-        <span data-doing-command className="font-term">
-          {doing.command}
-        </span>
-        {after}
+    <span data-doing={doing.running ? "running" : "ran"} className="block min-w-0">
+      <span data-doing-command className="block min-w-0 truncate font-term">
+        {doing.command}
       </span>
       {doing.running && doing.progress !== null && <ProgressLine doing={doing} />}
     </span>

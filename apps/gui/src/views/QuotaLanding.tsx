@@ -729,6 +729,9 @@ function valueWord(axis: string, value: string): string {
 
 /** The axis's own name, for the heading over its ticks and over its
     group. */
+// ⚠️ 墓碑 (UX-48): `whatOf` (「Claude 订阅」, the row's aside), `pctWord`
+// and `resetWord` (「剩 40% · 周三 14:00 重置」, its second line).
+
 /**
  * The line under a row's name — **类型 · 提供商**, the same pair on
  * every row.
@@ -766,30 +769,6 @@ function valueWord(axis: string, value: string): string {
  * vendor's one product, and a row's job here is to say what *kind* of
  * thing this is.
  */
-/** **What the account is, in the natural order** (UX-15): 「Claude 订阅」,
-    「OpenAI API」 — the provider, then the kind, no 「·」. */
-function whatOf(r: Row): string {
-  // A subscription names the product (「Claude 订阅」), not the API the
-  // same vendor sells (`subLine`'s rule).
-  const who = r.kind === "sub" && r.provider === "claude" ? gui.quota_sub_provider_claude : providerWord(r.provider);
-  return r.kind === "sub" ? gui.row_kind_sub(who) : r.kind === "bill" ? gui.row_kind_api(who) : `${who} ${kindWord(r.kind)}`;
-}
-
-/** A share left, as the row says it: whole percent. */
-function pctWord(left: number): string {
-  return `${Math.round(left * 100)}%`;
-}
-
-/** **When a window resets, as a moment** (UX-15: 「周三 14:00 重置」): the
-    weekday and the time within a week, the date beyond it. */
-function resetWord(at: number): string {
-  const when = new Date(at * 1000);
-  const soon = at * 1000 - Date.now() < 6 * 24 * 3600_000;
-  return when.toLocaleString(document.documentElement.lang || undefined, soon
-    ? { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false }
-    : { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-}
-
 function subLine(r: Row): string {
   // A subscription names the product (「订阅 · Claude」), not the API the
   // same vendor sells (`quota-sub-provider-claude`, 2026-10-03).
@@ -1304,11 +1283,9 @@ export function QuotaLanding({
   const side: SideRow[] = grouped.map((r) => {
     const on = current?.id === r.id;
     const win = rowWindow({ windows: r.windows, fill: r.fill, resets_at: r.account?.reading.resets_at ?? null });
-    const left = win
-      ? win.resets_at !== null
-        ? gui.row_window(pctWord(win.left), resetWord(win.resets_at))
-        : gui.row_left(pctWord(win.left))
-      : null;
+    // Bottom-left (UX-48): how long until the window the row speaks for
+    // starts again — the fullest one, the ring on the right.
+    const resets = win && win.resets_at !== null ? gui.quota_resets(until(win.resets_at * 1000)) : null;
     const trouble = r.account?.reading.trouble ?? null;
     const state = trouble ? gui.day_unreachable : win && win.left <= 0 ? gui.quota_credits_out : null;
     return {
@@ -1367,8 +1344,12 @@ export function QuotaLanding({
         </span>
       ),
       name: r.name,
-      aside: <span data-quota-what className="min-w-0 truncate">{whatOf(r)}</span>,
-      sub: left ? <span data-quota-sub-line>{left}</span> : undefined,
+      // **UX-48** (the owner 2026-10-07, every list): top-left the name
+      // alone; bottom-left the time to the next reset; top-right the
+      // fullest ring's state; bottom-right how long ago it was read.
+      // ⚠️ 墓碑: 「Claude 订阅」 as the name's aside, and 「剩 40% · 周四
+      // 14:00 重置」 under it (UX-15).
+      sub: resets ? <span data-quota-sub-line className="tabular-nums">{resets}</span> : undefined,
       corners: {
         // The ring is the heading's glyph (`Glyph`: the same 210° gauge
         // one size down, the strain's colour), the number the dial's
@@ -1380,11 +1361,10 @@ export function QuotaLanding({
             {state ? <span data-quota-state>{state}</span> : <span data-quota-ring-word>{centreOf(r)}</span>}
           </span>
         ),
-        bottom: (
-          <span data-quota-age-cell>{r.age_ms === null ? gui.accounts_just_now : gui.card_age(lasting(r.age_ms))}</span>
-        ),
+        // A reading this machine takes as it is shown has no age to say.
+        bottom: r.age_ms === null ? undefined : <span data-quota-age-cell>{lasting(r.age_ms)}</span>,
       },
-      find: `${r.name} ${subLine(r)} ${whatOf(r)} ${left ?? ""}`,
+      find: `${r.name} ${subLine(r)}`,
       selected: on,
       menu: actionsFor(r),
       onOpen: () => {

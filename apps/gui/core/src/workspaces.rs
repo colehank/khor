@@ -58,6 +58,15 @@ pub struct WorkspaceRow {
     /// When the tree last changed, ms since the epoch.
     #[ts(type = "number | null")]
     pub changed_ms: Option<i64>,
+    /// The checkout's git segment, HEAD's subject and how long it has
+    /// held (UX-48, `khor_core::GitSegment`); `None` for a plain folder
+    /// and before that machine has said.
+    pub git: Option<khor_core::GitSegment>,
+    /// A plain folder's most recently modified file and when it changed
+    /// (UX-48, `khor_core::NewestFile`): the row's second line and its
+    /// bottom-right. `None` for a checkout, a folder with no file, and
+    /// before that machine has said.
+    pub newest: Option<khor_core::NewestFile>,
 }
 
 /// Every workspace, pinned first then by path — this machine's copy of
@@ -80,6 +89,8 @@ pub fn workspaces(root: &Path) -> Result<Vec<WorkspaceRow>, String> {
                 changed: known.as_ref().and_then(|f| f.changed),
                 changed_capped: known.as_ref().is_some_and(|f| f.changed_capped),
                 changed_ms: known.as_ref().map(|f| f.changed_ms).filter(|&t| t > 0),
+                git: known.as_ref().and_then(|f| f.git.clone()),
+                newest: known.as_ref().and_then(|f| f.newest.clone()),
                 device: w.device,
                 machine: w.machine,
                 path: w.path,

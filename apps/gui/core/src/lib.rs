@@ -442,6 +442,19 @@ pub struct DeviceRow {
     /// resident started, and for this machine.
     #[ts(type = "number | null")]
     pub last_rtt_ms: Option<u32>,
+    /// **How long since the road `last_hop` says settled**, in ms (UX-48,
+    /// `khor_core::Link::since_ms`): the row's bottom-right under the
+    /// road word — the live wire's road, or with none live the road it last
+    /// used. `None` when no wire to it ever settled since the resident
+    /// started, and for this machine.
+    #[ts(type = "number | null")]
+    pub since_ms: Option<u64>,
+    /// **The road the last settled wire was on**, live or gone, as its
+    /// `[hop]` key (`direct` / `relay`, `khor_core::Link::last_hop`): what
+    /// an idle machine's row says in place of "offline" (UX-48). `None` when no
+    /// wire to it ever settled, from an older resident, and for this
+    /// machine.
+    pub last_hop: Option<String>,
     /// **Which relay, when `hop` is 中继** (round NET-8 addendum, UX-16's
     /// map): its host, and port when not the scheme's own
     /// (`relay.khor.cloud`, `101.200.80.77:3340`). `None` on a direct
@@ -1231,6 +1244,15 @@ fn rows_of_devices(
                 .then(|| links.iter().find(|(id, _)| *id == d.id))
                 .flatten()
                 .and_then(|(_, l)| l.last_rtt_ms),
+            since_ms: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .and_then(|(_, l)| l.since_ms),
+            last_hop: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .and_then(|(_, l)| l.last_hop)
+                .map(|h| h.key().to_owned()),
             // This machine's from its live wires, first-hand, the same
             // readings `rtt_ms` and `relay` are; another machine's as it
             // wrote them into the table (round NET-12).

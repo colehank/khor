@@ -1179,6 +1179,8 @@ done"#
                 size: 0,
                 dir: true,
                 at_ms: 0,
+                from: None,
+                received_ms: None,
             });
         } else if let Some(rest) = l.strip_prefix("f ")
             && let Some((size, name)) = rest.split_once(' ')
@@ -1188,6 +1190,8 @@ done"#
                 size: size.parse().unwrap_or(0),
                 dir: false,
                 at_ms: 0,
+                from: None,
+                received_ms: None,
             });
         }
     }

@@ -83,6 +83,8 @@ pub fn list_dir(path: &str) -> Result<(std::path::PathBuf, Vec<DirEntry>, bool),
             dir,
             size,
             at_ms,
+            from: None,
+            received_ms: None,
         });
     }
     entries.sort_by(|a, b| {

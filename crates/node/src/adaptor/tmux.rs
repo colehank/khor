@@ -1085,6 +1085,14 @@ impl Gathering {
 /// khor cannot find, so there is nothing to read a word off.
 fn word_of(pane: &Pane, procs: &Procs) -> Option<State> {
     let p: &Proc = procs.get(pane.pid)?;
+    // **A shell at the pane's root, in front, is at its prompt — however
+    // the pane was started** (UX-48). khor's own grouped session starts
+    // every pane through `default-command` (the shell shim, `exec env …
+    // zsh -l`), which tmux reports as the pane's start command; read as
+    // "the pane is its command", every such prompt was 忙碌, running `zsh`.
+    if is_shell(&p.name) && same_program(&pane.current_command, &p.name) {
+        return Some(State::Idle);
+    }
     if pane.started_with_command {
         return Some(State::Busy);
     }
@@ -1110,7 +1118,22 @@ fn word_of(pane: &Pane, procs: &Procs) -> Option<State> {
 /// observed here — kept because it costs one call and the failure it
 /// would prevent is silent and total.
 fn same_program(a: &str, b: &str) -> bool {
-    a.trim_start_matches('-') == b.trim_start_matches('-')
+    program(a) == program(b)
+}
+
+/// A process name as a program: no login dash, no directory (`ps`
+/// prints `/bin/zsh` for a shell started by its path).
+fn program(name: &str) -> &str {
+    name.rsplit('/').next().unwrap_or(name).trim_start_matches('-')
+}
+
+/// Whether a program is an interactive shell — one whose being in front
+/// means a prompt, not a command.
+fn is_shell(name: &str) -> bool {
+    matches!(
+        program(name),
+        "sh" | "bash" | "zsh" | "fish" | "dash" | "ksh" | "mksh" | "tcsh" | "csh" | "nu" | "xonsh" | "elvish"
+    )
 }
 
 /// The stable part of a tmux session's identity.
@@ -2278,6 +2301,55 @@ mod tests {
             word_of(&pane(99, false, "zsh"), &procs),
             None,
             "no process, no word — never a guessed one"
+        );
+    }
+
+    /// **A shell at the pane's root, at its prompt, is idle — however the
+    /// pane was started** (UX-48: turing's idle zsh read 「正在运行 zsh」).
+    /// khor's grouped session sets `default-command` to the shell shim
+    /// (`exec env … zsh -l`, [`Tmux::shell_shim`]), and tmux then reports
+    /// that as the pane's start command — measured 2026-10-07 on a scratch
+    /// server: `start=["exec env FOO=1 /bin/zsh -l"] cur=zsh`. The pane
+    /// was read as *being* its command, so its prompt was 忙碌 and `zsh`
+    /// its running program.
+    #[test]
+    fn a_shell_started_as_the_panes_command_is_idle_at_its_prompt() {
+        let pane = |pid: u32, current: &str| Pane {
+            session_id: "$1".into(),
+            session_name: "s".into(),
+            created_secs: 100,
+            activity_secs: 100,
+            pid,
+            started_with_command: true,
+            current_command: current.into(),
+            current_path: "/somewhere".into(),
+            pane_id: "%1".into(),
+        };
+        let shells = ["bash", "zsh", "fish", "sh", "dash", "ksh", "-zsh", "-bash", "/bin/zsh"];
+        let procs = Procs::of(
+            shells
+                .iter()
+                .enumerate()
+                .map(|(i, s)| (20 + i as u32, proc_named(s, Some(1))))
+                .chain([(40, proc_named("bash", Some(1))), (41, proc_named("python3", Some(1)))]),
+        );
+        for (i, s) in shells.iter().enumerate() {
+            let current = s.rsplit('/').next().unwrap_or(s);
+            assert_eq!(
+                word_of(&pane(20 + i as u32, current), &procs),
+                Some(State::Idle),
+                "{s} at its own prompt"
+            );
+        }
+        assert_eq!(
+            word_of(&pane(40, "make"), &procs),
+            Some(State::Busy),
+            "a shell's child in front is a command"
+        );
+        assert_eq!(
+            word_of(&pane(41, "python3"), &procs),
+            Some(State::Busy),
+            "a pane that is a program, not a shell, is that program"
         );
     }
 

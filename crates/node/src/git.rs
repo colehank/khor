@@ -218,6 +218,153 @@ pub fn status(root: &Path) -> Result<Status, String> {
     })
 }
 
+/// **A workspace's git state as a prompt's git segment says it** (UX-48:
+/// the workspace row's 「main ⇡861 *1 !1 ?2」, powerlevel10k's counts),
+/// with HEAD's subject for the row's second line.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Segment {
+    /// The branch HEAD is on; `None` detached or before the first commit.
+    pub branch: Option<String>,
+    /// HEAD's id, eight hex digits; `None` before the first commit.
+    pub head: Option<String>,
+    /// HEAD's subject line.
+    pub subject: Option<String>,
+    /// [`divergence`], `(0, 0)` with no upstream.
+    pub ahead: u32,
+    pub behind: u32,
+    /// Entries in the stash.
+    pub stashes: u32,
+    /// Paths by what differs where: conflicted, in the index against
+    /// HEAD, in the worktree against the index, unknown to git. One path
+    /// staged and edited again counts in both of its middle two, as
+    /// `git status` lists it twice.
+    pub conflicted: u32,
+    pub staged: u32,
+    pub unstaged: u32,
+    pub untracked: u32,
+    /// Distinct paths that differ, untracked included.
+    pub changed: u32,
+    /// The walk stopped at [`ROWS`] paths: the counts are a floor.
+    pub more: bool,
+}
+
+/// [`Segment`] for one checkout. **Blocking**: a status walk.
+pub fn segment(root: &Path) -> Result<Segment, String> {
+    use gix::status::Item;
+    use gix::status::index_worktree::Item as Work;
+    use gix::status::plumbing::index_as_worktree::EntryStatus;
+    use std::collections::HashSet;
+    let repo = gix::open(root).map_err(|e| e.to_string())?;
+    let branch = repo
+        .head_name()
+        .map_err(|e| e.to_string())?
+        .map(|n| n.shorten().to_str_lossy().into_owned());
+    let commit = repo.head_commit().ok();
+    let head = commit.as_ref().map(|c| c.id.to_hex_with_len(8).to_string());
+    let subject = commit
+        .as_ref()
+        .and_then(|c| c.message().ok())
+        .map(|m| m.summary().to_str_lossy().into_owned())
+        .filter(|s| !s.is_empty());
+    let mut sets: [HashSet<String>; 4] = Default::default();
+    let mut all: HashSet<String> = HashSet::new();
+    let mut more = false;
+    let items = repo
+        .status(gix::progress::Discard)
+        .map_err(|e| e.to_string())?
+        .into_iter(Vec::<BString>::new())
+        .map_err(|e| e.to_string())?;
+    for item in items {
+        let item = item.map_err(|e| e.to_string())?;
+        let which = match &item {
+            Item::TreeIndex(_) => 1,
+            Item::IndexWorktree(Work::Modification { status, .. }) => match status {
+                EntryStatus::Conflict { .. } => 0,
+                EntryStatus::Change(_) => 2,
+                EntryStatus::IntentToAdd | EntryStatus::NeedsUpdate(_) => continue,
+            },
+            Item::IndexWorktree(Work::Rewrite { .. }) => 2,
+            Item::IndexWorktree(Work::DirectoryContents { entry, .. }) => match entry.status {
+                gix::dir::entry::Status::Untracked => 3,
+                _ => continue,
+            },
+        };
+        let path = item.location().to_str_lossy().into_owned();
+        if all.len() >= ROWS && !all.contains(&path) {
+            more = true;
+            break;
+        }
+        all.insert(path.clone());
+        sets[which].insert(path);
+    }
+    // A conflicted path is that and nothing else.
+    let conflicted = std::mem::take(&mut sets[0]);
+    for s in &mut sets[1..] {
+        s.retain(|p| !conflicted.contains(p));
+    }
+    sets[0] = conflicted;
+    let n = |s: &HashSet<String>| s.len().min(u32::MAX as usize) as u32;
+    let (ahead, behind) = divergence(&repo).unwrap_or((0, 0));
+    Ok(Segment {
+        branch,
+        head,
+        subject,
+        ahead,
+        behind,
+        stashes: stashes(&repo),
+        conflicted: n(&sets[0]),
+        staged: n(&sets[1]),
+        unstaged: n(&sets[2]),
+        untracked: n(&sets[3]),
+        changed: n(&all),
+        more,
+    })
+}
+
+/// **The latest moment git's own files say the segment could have
+/// changed**, epoch ms, 0 when none can be read: HEAD moved (a checkout,
+/// a commit, a reset), the index was written (a stage), the stash or a
+/// remote-tracking branch moved (a push, a fetch). What a resident that
+/// has not watched this checkout before dates its segment by — the
+/// segment has held at least since then.
+pub fn last_moved(root: &Path) -> i64 {
+    let Ok(repo) = gix::open(root) else { return 0 };
+    let (git, common) = (repo.git_dir().to_path_buf(), repo.common_dir().to_path_buf());
+    let mut paths = vec![
+        git.join("HEAD"),
+        git.join("index"),
+        git.join("logs/HEAD"),
+        git.join("FETCH_HEAD"),
+        common.join("logs/refs/stash"),
+    ];
+    // Remote-tracking branches' logs, `logs/refs/remotes/<remote>/<branch>`.
+    let mut dirs = vec![common.join("logs/refs/remotes")];
+    while let Some(dir) = dirs.pop() {
+        for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            match e.file_type() {
+                Ok(t) if t.is_dir() && paths.len() < 256 => dirs.push(e.path()),
+                Ok(_) => paths.push(e.path()),
+                Err(_) => {}
+            }
+        }
+    }
+    paths
+        .iter()
+        .filter_map(|p| std::fs::metadata(p).ok()?.modified().ok())
+        .filter_map(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .max()
+        .unwrap_or(0)
+}
+
+/// Entries in the stash: the lines of its reflog, which is where git
+/// keeps them (`stash@{n}` is the n-th line from the end).
+fn stashes(repo: &gix::Repository) -> u32 {
+    std::fs::read(repo.common_dir().join("logs/refs/stash"))
+        .map(|b| b.split(|&c| c == b'\n').filter(|l| !l.is_empty()).count().min(u32::MAX as usize) as u32)
+        .unwrap_or(0)
+}
+
 /// How far HEAD is from its remote-tracking branch, `(ahead, behind)`.
 ///
 /// **`None` for every shape that is not a question**: a detached HEAD,

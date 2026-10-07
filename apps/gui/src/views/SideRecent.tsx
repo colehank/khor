@@ -26,6 +26,7 @@
 import { useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
+import { PathCut } from "@/components/PathCut";
 import { SideFind } from "@/components/SideFind";
 import { SideList, type SideRow } from "@/components/SideList";
 import { fileKind, pageKind, workspaceKind } from "@/components/SessionFace";
@@ -48,16 +49,11 @@ function nameOf(it: RecentItem): string {
   }
 }
 
-/** The muted words after the name: where it is. */
-function asideOf(it: RecentItem): string {
-  switch (it.kind) {
-    case "page":
-      return it.machine;
-    case "workspace":
-      return `${it.machine} · ${it.path}`;
-    case "file":
-      return it.root !== "" && it.path.startsWith(`${it.root}/`) ? it.path.slice(it.root.length + 1, it.path.lastIndexOf("/")) || it.machine : it.machine;
-  }
+/** **Where it is** (UX-48, the row's bottom-left): a page's address, a
+    directory's or a file's path. ⚠️ 墓碑: the machine (and the folder
+    within the workspace) as the name's aside — the face says the machine. */
+function whereOf(it: RecentItem): string {
+  return it.kind === "page" ? it.url : it.path;
 }
 
 export function SideRecent({
@@ -92,12 +88,21 @@ export function SideRecent({
     mark: it.kind === "page" ? pageKind(it.icon) : it.kind === "workspace" ? workspaceKind(it.repo) : fileKind(nameOf(it)),
     title: nameOf(it),
     name: nameOf(it),
-    aside: asideOf(it),
-    // A file tab carries no time of its own (`use-side-recent`): its
-    // corner stays empty rather than wearing its workspace's. A file the
-    // record holds (no workspace root) has its own visit's.
+    // **UX-48** (the owner 2026-10-07): bottom-left where it is; no state
+    // on the right; bottom-right how long ago it was opened. A file tab
+    // carries no time of its own (`use-side-recent`): its corner stays
+    // empty rather than wearing its workspace's. A file the record holds
+    // (no workspace root) has its own visit's.
+    sub:
+      it.kind === "page" ? (
+        <span data-recent-where className="block min-w-0 truncate">
+          {whereOf(it)}
+        </span>
+      ) : (
+        <PathCut data-recent-where text={whereOf(it)} />
+      ),
     corners: { bottom: (it.kind !== "file" || it.root === "") && it.at !== null ? <span data-recent-at>{ago(it.at)}</span> : undefined },
-    find: `${nameOf(it)} ${asideOf(it)}`,
+    find: `${nameOf(it)} ${whereOf(it)}`,
     menu: [
       { key: "open-main", label: gui.open_in_main, run: () => onOpenMain(it) },
       // **删除 forgets the record, nothing else** (UX-44 §3): the file,

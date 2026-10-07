@@ -1117,6 +1117,17 @@ pub struct DirEntry {
     pub size: u64,
     /// Modified, ms since epoch. 0 when the machine could not say.
     pub at_ms: u64,
+    /// **A received file's sender** (UX-48, the storage page's row): the device id
+    /// its receipt names (`road::Receipt::from`); `None` for a file with
+    /// no receipt, a receipt that does not know, and from an older khor.
+    /// Tail field.
+    #[serde(default)]
+    pub from: Option<String>,
+    /// When a received file landed, ms since the epoch (its receipt's
+    /// `at_ms`): a copy can keep its source's mtime. `None` without a
+    /// receipt. Tail field.
+    #[serde(default)]
+    pub received_ms: Option<u64>,
 }
 
 impl Request {

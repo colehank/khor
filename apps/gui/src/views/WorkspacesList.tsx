@@ -41,8 +41,8 @@ import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { ago, axisOf, groupLabel, valueOf } from "@/words";
-import { IGNORED } from "@/views/fileRow";
 import { PathCut } from "@/components/PathCut";
+import type { GitSegment } from "@/gen/bindings/GitSegment";
 
 /** One row's identity, the same pair the table is keyed by: two
     machines can hold the same path, and the machine is half the answer.
@@ -574,19 +574,10 @@ export function WorkspacesList({
     WORKSPACE_KEYS,
   );
   const side: SideRow[] = kept.map((r) => {
-    const k = keyOf(r);
     const isOpen = selected?.device === r.device && selected.path === r.path;
-    const git = marks[k];
-    // **The holding machine's own facts first** (net's NET-8,
-    // `WorkspaceRow.branch` / `changed` / `changed_ms`, kept by its
-    // resident and carried by a round), the per-row asks only for a
-    // machine too old to say them.
-    const at = r.changed_ms ?? times[k] ?? 0;
-    // **Ignored paths are rows too since 2026-09-16, and they are not
-    // changes** (`khor_node::git::IGNORED`).
-    const changed = r.changed ?? (git ? git.rows.filter((w) => w.mark !== IGNORED).length : null);
-    const capped = r.changed !== null && r.changed_capped;
-    const branch = r.branch ?? (git && git.branch !== "" ? git.branch : null);
+    // **The holding machine's own facts** (net's NET-8, UX-48's
+    // `WorkspaceRow.git`, kept by its resident and carried by a round).
+    const seg = r.git;
     // Only the branch *name* waits on the walk; whether it is a
     // repository at all is `kindOf`'s.
     const repo = r.kind === "branch";
@@ -607,23 +598,39 @@ export function WorkspacesList({
         </span>
       ),
       name: r.name,
-      // **One rule for the four lists** (UX-15, the owner 2026-10-05):
-      // the name, and where it is as its aside — the machine and the path,
-      // cut at its start (F2.5; N10), not shortened to `~` (whose home that
-      // is, is a fact about the far machine); under it what is happening
-      // (「3 个改动」); right-top the branch, right-bottom the last change.
-      // A plain folder: only the time. ⚠️ 墓碑: the place was the second
-      // line, and the branch shared its corner with the count
-      // (`YieldingCorner`, 「main · 3 个已修改」).
-      aside: <PathCut data-ws-where text={r.machine === "" ? r.path : `${r.machine}:${r.path}`} />,
-      sub: changed !== null && changed > 0 ? <span data-ws-changes>{gui.row_changes(capped ? `${changed}+` : changed)}</span> : undefined,
+      // **UX-48** (the owner 2026-10-07, every list): top-left the name
+      // alone; bottom-left HEAD's subject; top-right the prompt's git
+      // segment ("main ⇡861 *1 !1 ?2", the branch cut first on a narrow
+      // row, the counts whole); bottom-right how long that segment has
+      // held. A plain folder has no state: bottom-left its most recently
+      // modified file (its name, the path under the folder when nested,
+      // `WorkspaceRow.newest`), bottom-right how long ago that file
+      // changed.
+      // Tombstone (UX-15): the machine and path as the name's aside, the
+      // change count under it, the branch alone on the right and the
+      // tree's last change under it. And (UX-48, the lead 2026-10-07) a
+      // plain folder's path as its second line.
+      sub: !repo ? (
+        r.newest ? <PathCut data-ws-newest text={r.newest.path} /> : undefined
+      ) : seg?.subject ? (
+        <span data-ws-subject className="block min-w-0 truncate">
+          {seg.subject}
+        </span>
+      ) : undefined,
       corners: {
-        top: branch !== null && repo ? <span data-ws-git className="max-w-full truncate">{branch}</span> : undefined,
-        bottom: at > 0 ? <span data-ws-touched>{ago(at)}</span> : undefined,
+        top: repo && seg ? <GitSegmentWord seg={seg} /> : undefined,
+        bottom:
+          repo && seg && seg.since_ms > 0 ? (
+            <span data-ws-held>{ago(seg.since_ms)}</span>
+          ) : !repo && r.newest && r.newest.at_ms > 0 ? (
+            <span data-ws-held>{ago(r.newest.at_ms)}</span>
+          ) : undefined,
       },
-      // **The three things the row says out loud**: its name, its
-      // machine, its path (2026-09-17 ruling 50).
-      find: `${r.name} ${r.machine} ${r.path} ${changed ? gui.row_changes(changed) : ""}`,
+      // **What the row says out loud**: its name, its line, its segment —
+      // and its machine, which the face says (as the sessions' rows).
+      // A plain folder stays findable by its path, which it no longer
+      // draws, and by the file it names.
+      find: `${r.name} ${r.machine} ${repo ? (seg?.subject ?? "") : `${r.path} ${r.newest?.path ?? ""}`} ${repo && seg ? segmentText(seg) : ""}`,
       selected: isOpen,
       menu: actions(r),
       // **The row is the control, and pressing the open one folds its
@@ -682,3 +689,44 @@ export function WorkspacesList({
 
 /* ⚠️ 墓碑 (UX-15): `YieldingCorner` — the branch gives way before the name
    — lived here; it is `SideList`'s corners' rule now, for every list. */
+
+/** **The prompt's git segment as one string** (UX-48, powerlevel10k's
+    order and marks): the branch, or `@` and HEAD's short id when
+    detached; then ⇣ behind ⇡ ahead, * stashes, ~ conflicted, + staged,
+    ! edited, ? untracked — each only when it is not zero. */
+export function segmentParts(seg: GitSegment): { head: string; counts: string } {
+  const head = seg.branch ?? (seg.head ? `@${seg.head}` : "");
+  const way = `${seg.behind ? `⇣${seg.behind}` : ""}${seg.ahead ? `⇡${seg.ahead}` : ""}`;
+  const counts = [
+    way,
+    seg.stashes ? `*${seg.stashes}` : "",
+    seg.conflicted ? `~${seg.conflicted}` : "",
+    seg.staged ? `+${seg.staged}` : "",
+    seg.unstaged ? `!${seg.unstaged}` : "",
+    seg.untracked ? `?${seg.untracked}` : "",
+  ].filter(Boolean);
+  return { head, counts: counts.join(" ") };
+}
+
+export function segmentText(seg: GitSegment): string {
+  const { head, counts } = segmentParts(seg);
+  return [head, counts].filter(Boolean).join(" ");
+}
+
+/** The segment on the row's top-right: the branch gives way, the counts
+    never do (`data-corner-keep`, which `SideList`'s corner keeps whole). */
+function GitSegmentWord({ seg }: { seg: GitSegment }) {
+  const { head, counts } = segmentParts(seg);
+  return (
+    <span data-ws-git className="flex min-w-0 items-baseline">
+      <span data-ws-branch className="min-w-0 truncate">
+        {head}
+      </span>
+      {counts && (
+        <span data-ws-counts data-corner-keep className="flex-none whitespace-pre">
+          {` ${counts}`}
+        </span>
+      )}
+    </span>
+  );
+}

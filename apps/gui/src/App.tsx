@@ -2218,7 +2218,6 @@ export default function App() {
         ) : (
           <DevicesList
             rows={devices}
-            sessions={rows}
             loading={!devicesRead}
             query={queries[landing]}
             words={words.devices}

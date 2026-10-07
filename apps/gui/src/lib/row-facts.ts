@@ -1,33 +1,9 @@
-// **The list rows' numbers that the face already holds** (round NET-8,
-// for UX-15). Two of the four rows' facts need nothing new from the
-// network; they are derived here, once, so every row that shows them
-// says the same thing.
-//
-// - A machine's activity line: how many of its sessions are running,
-//   counted from the session rows this face already has — the very rows
-//   the 会话 list paints, so the two never disagree.
-// - A quota row's window: which of an account's windows the row speaks
-//   for, and when it resets.
-//
-// The other two facts are fields: `DeviceRow.rtt_ms` (the latency) and
-// the workspace row's `changed` / `changed_capped` / `changed_ms`.
-import type { DeviceRow, SessionRow } from "@/api";
+// **A list row's number that the face derives** (round NET-8, for
+// UX-15): a quota row's window — which of an account's windows the row
+// speaks for, and when it resets. The other rows' facts are fields.
+// ⚠️ 墓碑 (UX-48): `runningOn`, a machine row's count of running
+// sessions; the owner's machine row reads latency, CPU, memory and GPU.
 import type { AccountReading } from "@/gen/bindings/AccountReading";
-
-/** The state words that are a session running: 忙碌, and 待批 — waiting
-    on a person is still work in hand, not idle. */
-const RUNNING = new Set(["busy", "blocked"]);
-
-/** How many sessions are running on `machine`. A row with no `source`
-    is this machine's own; another machine's rows carry its name. */
-export function runningOn(rows: readonly SessionRow[], machine: Pick<DeviceRow, "name" | "me">): number {
-  let n = 0;
-  for (const r of rows) {
-    const on = r.source ? r.source.device === machine.name : machine.me;
-    if (on && RUNNING.has(r.word)) n += 1;
-  }
-  return n;
-}
 
 /** The window a quota row speaks for: **the fullest whole-plan window**
     (a subscription's 5-hour or 7-day, whichever is nearer its limit —
