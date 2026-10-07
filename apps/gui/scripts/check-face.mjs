@@ -28717,10 +28717,14 @@ try {
         if (!KEYS_OF[col].test(m.key)) fail(`mark ${when} · ${col} ${m.row} wears the mark 「${m.key}」, not one of the column's kinds (src/components/SessionFace.tsx)`);
       }
     };
-    /** A file tab on the workspace strip: the machine's face with the
-        file's kind as its mark — a picture, so no ink to judge — drawn
-        the way the setting says (UX-32; the strip is UX-25's pill). */
-    const judgeFileTab = async (when, wantAt) => {
+    /** A file tab on the workspace strip: the file's kind alone, whatever
+        the setting says (UX-45 superseded UX-32 here: the machine's face
+        with the file's kind as its mark is gone; tabs f owns the rule).
+        This walk only checks the setting does not bring the machine's
+        face back, and always returns to the rows: a stop that left the
+        workspace open used to blank the workspaces column for every
+        later setting. */
+    const judgeFileTab = async (when) => {
       // The peer's workspace (the git one), its tree out (section 22's `openWs`).
       const openWs = async () => {
         if (!(await press("[data-ws-row]"))) return false;
@@ -28728,19 +28732,20 @@ try {
         return true;
       };
       const opened = (await open("workspaces")) && (await openWs()) && (await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button'));
-      const drew = opened && (await until(5_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab] [data-side-mark]").count()) > 0));
-      if (!drew) {
-        fail(`probe dead: mark ${when} · no file tab with a kind on the workspace strip (src/views/WorkspacePane.tsx tabFaces)`);
-        return;
+      const drew = opened && (await until(5_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab]").count()) > 0));
+      if (!drew) fail(`probe dead: mark ${when} · no file tab on the workspace strip (src/views/WorkspacePane.tsx tabFaces)`);
+      else {
+        const faces = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-ws-tab-strip] [data-tab]")].map((t) => ({
+            file: !!t.querySelector("[data-file-face]"),
+            machine: !!t.querySelector("[data-face]"),
+          })),
+        );
+        await shot(`${when}-file-tab`);
+        console.log(`mark ${when} · file tabs: ${JSON.stringify(faces)}`);
+        if (faces.some((f) => !f.file || f.machine)) fail(`mark ${when} · a file tab wears ${JSON.stringify(faces)} — its kind alone under every setting (UX-45)`);
       }
-      const tabs = await readMarks("[data-ws-tab-strip] [data-tab]");
-      await shot(`${wantAt}-file-tab`);
-      console.log(`mark ${when} · file tabs: ${JSON.stringify(tabs.map((m) => [m.key, m.at, m.badge, m.base, m.faceCorner, m.face?.w, m.glyph?.w]))}`);
-      for (const m of tabs) {
-        if (m.key !== "file") fail(`mark ${when} · a file tab wears 「${m.key}」 — the file's kind is the mark (src/components/SessionFace.tsx fileKind)`);
-        if (m.at !== wantAt || !m.face) fail(`mark ${when} · a file tab's mark is ${JSON.stringify(m.at)} with ${m.badge} corner(s), face ${m.face ? "drawn" : "missing"} — the tab follows the setting (${wantAt}), on the machine's face`);
-      }
-      // Back to the rows for the next column.
+      // Back to the rows for the next column, whatever happened above.
       if ((await page.locator("[data-ws-list-back]").count()) > 0) await press("[data-ws-list-back]");
     };
     /** a′: the ink and the veil are the face's (the blank's the theme's). */
@@ -28837,7 +28842,7 @@ try {
           fail(`mark ${when} · a session tab's mark is ${m.glyph?.w} on a ${m.face?.w} face at ${m.glyph && m.face ? [m.glyph.x - m.face.x, m.glyph.y - m.face.y] : "?"} — 12 on 18, 3 in`);
         }
       }
-      await judgeFileTab(when, "face");
+      await judgeFileTab(when);
     };
     const judgeCorner = async (when) => {
       for (const col of COLUMNS) {
@@ -28867,7 +28872,7 @@ try {
       if (tab.length === 0 || tab.some((m) => m.at !== "corner" || m.badge !== 1)) {
         fail(`mark ${when} · the session tab's mark is ${JSON.stringify(tab.map((m) => m.at))} — the tab follows the setting to the corner`);
       }
-      await judgeFileTab(when, "corner");
+      await judgeFileTab(when);
     };
     /** d (UX-32): 角标是 = 机器 — the mark is the base, on a neutral disc
         the face's size, and the machine's face is the small one on the
@@ -28914,7 +28919,7 @@ try {
       for (const m of tab) {
         if (m.face?.w !== 10 || m.glyph?.w !== 12) fail(`mark ${when} · a session tab's corner face is ${m.face?.w} and its mark ${m.glyph?.w} — 10 on the corner, 12 on the disc`);
       }
-      await judgeFileTab(when, "base");
+      await judgeFileTab(when);
     };
     /** The 角标是 row on 外观: drawn only under 角标 (用不上的控件不画). */
     const chooseCornerIs = async (value, expectRow) => {
