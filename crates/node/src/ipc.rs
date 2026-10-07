@@ -388,6 +388,18 @@ pub enum Op {
     /// the cookie first and makes it the carried link to `carrier`
     /// (`crate::carry`). Answered [`Reply::Piping`]. Tail-appended.
     CarryIn { carrier: String },
+    /// **The add flow's carry** (round ROAD-3, `Node::carry_for`): an ssh
+    /// session to `id`, not paired yet, by this road, so its pairing can
+    /// ride it. Answered [`Reply::Noted`] once it has held. Tail-appended.
+    CarryFor {
+        id: String,
+        host: String,
+        port: Option<u16>,
+        jump: Option<String>,
+        identity: Option<String>,
+        password: bool,
+        passphrase: bool,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -492,6 +504,7 @@ impl Op {
             Op::PipeOn { .. } => ("PipeOn", DEADLINE_FAR),
             Op::AddOn { .. } => ("AddOn", DEADLINE_FAR),
             Op::CarryIn { .. } => ("CarryIn", DEADLINE_FAR),
+            Op::CarryFor { .. } => ("CarryFor", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),

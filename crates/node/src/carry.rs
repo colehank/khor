@@ -38,6 +38,14 @@ const CLAIM_WITHIN: Duration = Duration::from_secs(10);
 /// starts the backoff from the beginning.
 const LIVED: Duration = Duration::from_secs(60);
 
+/// How long the add flow's session to a machine not yet paired lives
+/// ([`Node::carry_for`]): the pairing it is for, twice, with room.
+const FOR_PAIRING: Duration = Duration::from_secs(180);
+
+/// How long that session must have held before the pairing is tried:
+/// long enough for the far `khor _carry` to have reached its resident.
+const SETTLED: Duration = Duration::from_secs(3);
+
 /// The carrier's wait before the next ssh after `failures` short ones.
 fn backoff(failures: u32) -> Duration {
     Duration::from_secs(2u64.saturating_mul(1 << failures.min(5))).min(Duration::from_secs(60))
@@ -150,12 +158,18 @@ impl Node {
     /// The resident's half of [`Self::carry_in`]: a loopback port that
     /// makes the one connection saying the cookie first the link to
     /// `carrier`. Only a machine in the table is carried.
+    ///
+    /// **A machine not in the table yet is carried too** (round ROAD-3):
+    /// that is the add flow, which carries a machine before it pairs over
+    /// the link. Only a local process holding the hand-off cookie asks
+    /// this, and that is someone who logged in here; what the link then
+    /// carries still meets iroh's handshake and the roster's gate.
     pub(crate) async fn carry_hosted(&self, carrier: &str) -> Result<(String, String), String> {
         let peer: iroh::EndpointId = carrier.parse().map_err(|_| msg::carry_not_a_machine(carrier))?;
         if !self.carry_on() || self.carrying().is_none() {
             return Err(msg::carry_off().to_owned());
         }
-        if !self.devices()?.iter().any(|d| d.id == carrier && d.sponsor.is_none()) {
+        if self.devices()?.iter().any(|d| d.id == carrier && d.sponsor.is_some()) {
             return Err(msg::carry_not_a_machine(carrier));
         }
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
@@ -218,16 +232,67 @@ impl Node {
                     continue;
                 }
                 let Ok(peer) = id.parse::<iroh::EndpointId>() else { continue };
-                let node = self.clone();
-                let road = dest.clone();
-                let task = tokio::spawn(async move { node.carry_one(peer, road).await });
+                let one = self.one_carry(peer, dest.clone());
+                let task = tokio::spawn(one.run(None));
                 running.insert(id, (dest, task.abort_handle()));
             }
         }
     }
 
-    /// Keeps the ssh session to one member up, reconnecting with backoff.
-    async fn carry_one(&self, peer: iroh::EndpointId, to: Dest) {
+    fn one_carry(&self, peer: iroh::EndpointId, to: Dest) -> OneCarry {
+        OneCarry {
+            links: self.carry.clone(),
+            wires: self.wires.clone(),
+            me: self.device_str().to_owned(),
+            peer,
+            to,
+        }
+    }
+
+    /// **The add flow's carry** (round ROAD-3, `ipc::Op::CarryFor`): an
+    /// ssh session to a machine that has khor but did not connect back,
+    /// before it is paired, so the pairing can ride it. It lives for
+    /// [`FOR_PAIRING`], or until another session to it takes over (the
+    /// carrier's, once the row names this machine). Answers once the
+    /// session has held [`SETTLED`].
+    pub(crate) async fn carry_for(&self, id: &str, to: Dest) -> Result<(), String> {
+        let peer: iroh::EndpointId = id.parse().map_err(|_| msg::carry_not_a_machine(id))?;
+        if !self.carry_on() || self.carrying().is_none() {
+            return Err(msg::carry_off().to_owned());
+        }
+        let to_host = to.host.clone();
+        if !self.carry.has(&peer) {
+            let one = self.one_carry(peer, to);
+            tokio::spawn(one.run(Some(Instant::now() + FOR_PAIRING)));
+        }
+        let started = Instant::now();
+        let mut up_since = None;
+        while started.elapsed() < SETTLED * 6 {
+            up_since = if self.carry.has(&peer) { up_since.or(Some(Instant::now())) } else { None };
+            if up_since.is_some_and(|t| t.elapsed() >= SETTLED) {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+        Err(msg::carry_not_up(&to_host))
+    }
+}
+
+/// One ssh session kept up to one machine: what it needs of the node.
+struct OneCarry {
+    links: khor_net::carry::Links,
+    wires: Arc<crate::wires::Wires>,
+    me: String,
+    peer: iroh::EndpointId,
+    to: Dest,
+}
+
+impl OneCarry {
+    /// Keeps the session up, reconnecting with backoff. `until`: the add
+    /// flow's session, which also ends when another link to the machine
+    /// took its place.
+    async fn run(self, until: Option<Instant>) {
+        let OneCarry { links, wires, me, peer, to } = self;
         let id = peer.to_string();
         let mut failures = 0u32;
         loop {
@@ -236,7 +301,7 @@ impl Node {
             ssh.args(["-T", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3"])
                 .args(["-o", "ConnectTimeout=10"])
                 .arg(&to.host)
-                .arg(far_command(self.device_str()))
+                .arg(far_command(&me))
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped())
@@ -253,8 +318,8 @@ impl Node {
                         String::from_utf8_lossy(&all).trim().lines().last().unwrap_or("").to_owned()
                     })
                 });
-                let attached = self.carry.attach(peer, Carrier::Ssh, r, w);
-                self.wires.forgive(&id);
+                let attached = links.attach(peer, Carrier::Ssh, r, w);
+                wires.forgive(&id);
                 tokio::select! {
                     () = attached.ended() => {}
                     _ = child.wait() => {}
@@ -267,6 +332,11 @@ impl Node {
                 {
                     eprintln!("carry {}: {line}", to.host);
                 }
+            }
+            if let Some(until) = until
+                && (Instant::now() >= until || links.has(&peer))
+            {
+                return;
             }
             failures = if started.elapsed() >= LIVED { 0 } else { failures.saturating_add(1) };
             tokio::time::sleep(backoff(failures)).await;

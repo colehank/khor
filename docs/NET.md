@@ -481,6 +481,12 @@ iroh 路（`khor_net::carry`，iroh 的 `unstable-custom-transports`）。
 - 走这条路时连接读数是「经 SSH」（`Hop::Ssh`），设备表里转连那台到它的路是 `ssh`。
 - 选路（`khor_net::carry::RoadOrder`）：直连、转连、中继依次；直连随时可以升上去；转连和中继之间，
   只在连接开头 3 秒里中继可以让给转连，之后只在用着的那条断了时才换。
+- **添加机器时也走这条**（ROAD-3 轮）：`khor add` 装好、启动了 khor，配对却没连回来（「未在 60 秒内
+  连接回来」）时，先不退回 SSH 主机：本机常驻经同一条 ssh 起一条转连（`ipc::Op::CarryFor`，它还
+  不在表里，对面常驻也接——只有登录进去的人能让它的 `khor _carry` 走到这一步），稳住 3 秒后对面的
+  `khor pair -` 经这条路再配一次（最多两次）；配上了就在它的行上写 `carrier` = 本机，从此照常转连，
+  步骤「配对」后面写「经 SSH 转连」。都不成才退回 SSH 主机（`Node::pair_carried`，测试
+  `a_machine_that_cannot_connect_back_pairs_over_the_ssh_it_was_added_by`）。
 - 开关：`khor config set ssh-carry on|off`（默认开，重启常驻生效）。两个开关都关时这个传输根本不注册。
 - 测试：`crates/net/tests/carry.rs`（内存里的一条流），`crates/cli/tests/carry.rs`（真的非特权 sshd，
   被转连那台挂在不存在的中继和不存在的代理后面）。

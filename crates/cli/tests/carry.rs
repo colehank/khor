@@ -339,3 +339,72 @@ async fn a_third_machine_reaches_a_carried_member_through_its_carrier() {
     .await;
     eprintln!("[hop] alpha's register named beta as the middle {named:?} after it settled");
 }
+
+/// Round ROAD-3, the add flow's fallback (`Node::pair_carried`, called by
+/// `khor add` when khor runs there but did not connect back): beta has
+/// khor and a resident but no road at all, and is not paired. Alpha's
+/// resident carries it over ssh before it is anyone's (`ipc::Op::
+/// CarryFor`; beta's resident takes a link from a machine not in its
+/// table), the far `khor pair -` rides that link, and once paired alpha
+/// carries it for good (`carrier` on the row).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_machine_that_cannot_connect_back_pairs_over_the_ssh_it_was_added_by() {
+    if !Path::new("/usr/sbin/sshd").exists() {
+        eprintln!("no /usr/sbin/sshd here: skipped");
+        return;
+    }
+    let (ra, rb, rr) = (scratch("pairc-a"), scratch("pairc-b"), scratch("pairc-r"));
+    let (_relay, url) = local_relay(&rr.0);
+    home_on(&ra.0, &url);
+    home_on(&rb.0, "http://127.0.0.1:9");
+    let world = rr.0.join("ssh-world");
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    ssh_world(&world, port, &rb.0);
+    let ssh_dir = world.display().to_string();
+    let _a = serve_with(&ra.0, "alpha", &[("KHOR_SSH_DIR", &ssh_dir)]);
+    let _b = serve_with(&rb.0, "beta", CUT_OFF);
+    stood_up(&[&ra.0, &rb.0]).await;
+    let _sshd = Reaped(
+        Command::new("/usr/sbin/sshd")
+            .args(["-D", "-e", "-f"])
+            .arg(world.join("sshd_config"))
+            .stderr(std::fs::File::create(world.join("sshd.log")).unwrap())
+            .spawn()
+            .unwrap(),
+    );
+    until(Duration::from_secs(10), "sshd listens", || async {
+        tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok()
+    })
+    .await;
+    let alpha = khor_node::Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let b_id = khor_node::Node::open_as(rb.0.clone(), "beta").unwrap().device_str().to_owned();
+    let a_id = alpha.device_str().to_owned();
+
+    let (home, id) = (ra.0.clone(), b_id.clone());
+    let started = Instant::now();
+    let paired = std::thread::spawn(move || {
+        // ssh here reads the scratch client config, as alpha's resident's does.
+        unsafe { std::env::set_var("KHOR_SSH_DIR", &ssh_dir) };
+        let n = khor_node::Node::open_as(home, "alpha").unwrap();
+        n.pair_carried(&khor_node::satellite::Dest::new("member", None), &id)
+    })
+    .join()
+    .unwrap();
+    let log = |p: &Path| std::fs::read_to_string(p).unwrap_or_default();
+    assert!(
+        paired,
+        "beta paired over the carried road\n-- sshd --\n{}\n-- alpha --\n{}\n-- beta --\n{}",
+        log(&world.join("sshd.log")),
+        log(&ra.0.join("serve.log")),
+        log(&rb.0.join("serve.log"))
+    );
+    eprintln!("[carry] paired over the carried road in {:?}", started.elapsed());
+    let row = alpha.devices().unwrap().into_iter().find(|d| d.id == b_id).expect("beta's row");
+    assert_eq!(row.carrier.as_deref(), Some(a_id.as_str()), "alpha carries beta for good");
+    assert_eq!(row.ssh_host.as_deref(), Some("member"));
+    until(Duration::from_secs(60), "alpha lists beta over the carried road", || async {
+        alpha.ls_of("beta", "/").await.is_ok()
+    })
+    .await;
+    until_reads(&alpha, &b_id, Hop::Ssh, Duration::from_secs(20)).await;
+}

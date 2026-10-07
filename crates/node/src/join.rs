@@ -527,7 +527,11 @@ impl Node {
         .map_err(Stop::Fatal)?;
         drop(ticket);
         let joined = ok && self.wait_for_row(&id, Duration::from_secs(10));
-        if !joined {
+        // **khor inside ssh before SSH 主机** (round ROAD-3): khor runs
+        // there but cannot connect back over iroh, so this machine carries
+        // it over the ssh it already holds and the pairing rides that.
+        let carried = !joined && self.carry_on() && self.pair_carried(to, &id);
+        if !joined && !carried {
             let why = msg::add_why_no_pair(host, PAIR_WAIT.as_secs());
             on(Step::Pair, Mark::Failed(why.clone()));
             return Err(Stop::Fallback(why));
@@ -535,7 +539,7 @@ impl Node {
         if name != host || !self.devices().is_ok_and(|d| d.iter().any(|r| r.id == id && r.shown() == name)) {
             self.rename_machine(&id, name).map_err(Stop::Fatal)?;
         }
-        on(Step::Pair, Mark::Done(String::new()));
+        on(Step::Pair, Mark::Done(if carried { cli::add_paired_carried().to_owned() } else { String::new() }));
         Ok(Added {
             id,
             name: name.to_owned(),
@@ -646,6 +650,51 @@ impl Node {
         );
         let (ok, _, err) = run(to, &vars, UNDO_SH.as_bytes(), Duration::from_secs(60))?;
         if ok { Ok(()) } else { Err(satellite::cant_reach(to, &err)) }
+    }
+
+    /// **Pairs `id` over khor inside ssh** (round ROAD-3): this machine's
+    /// resident carries it by `to` (`ipc::Op::CarryFor`), the far `khor
+    /// pair -` goes through its own resident, which holds the link, and
+    /// once the row is in this machine carries it for good
+    /// (`DeviceDoc::set_carried`). Twice at most: the far end's first
+    /// dial may leave before its link is up. `false` with no resident
+    /// here, or when neither pairing arrives.
+    pub fn pair_carried(&self, to: &Dest, id: &str) -> bool {
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+            return false;
+        };
+        let op = crate::ipc::Op::CarryFor {
+            id: id.to_owned(),
+            host: to.host.clone(),
+            port: to.port,
+            jump: to.jump.clone(),
+            identity: to.identity.clone(),
+            password: to.password,
+            passphrase: to.passphrase,
+        };
+        if !matches!(rt.block_on(self.via_serve(op)), Some(Ok(crate::ipc::Reply::Noted))) {
+            return false;
+        }
+        for _ in 0..2 {
+            let Ok(ticket) = self.invite() else { return false };
+            let paired = run(
+                to,
+                "env -u KHOR_HOME \"$HOME/.local/bin/khor\" pair -",
+                format!("{ticket}\n").as_bytes(),
+                PAIR_WAIT,
+            );
+            drop(ticket);
+            if matches!(paired, Ok((true, _, _))) && self.wait_for_row(id, Duration::from_secs(10)) {
+                let me = self.device_str().to_owned();
+                return self.devices_loaded().is_ok_and(|loaded| {
+                    loaded.doc.set_carried(id, Some(&me), Some(&to.as_row())).is_ok() && {
+                        let mut store = loaded.store;
+                        store.flush(&loaded.doc).is_ok()
+                    }
+                });
+            }
+        }
+        false
     }
 
     /// Whether `id` shows up in this machine's table within `wait` — the

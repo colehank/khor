@@ -1891,6 +1891,17 @@ impl Node {
                 Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::CarryFor { id, host, port, jump, identity, password, passphrase } => {
+                let to = crate::satellite::Dest::new(host, jump.as_deref())
+                    .on_port(port)
+                    .with_password(password)
+                    .with_identity(identity.as_deref())
+                    .with_passphrase(passphrase);
+                match self.carry_for(&id, to).await {
+                    Ok(()) => ipc::Reply::Noted,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::PipeOn { machine, target } => match self.pipe_hosted(ep, &machine, &target).await {
                 Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
                 Err(why) => ipc::Reply::Refused { why },
