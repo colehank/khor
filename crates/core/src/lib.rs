@@ -212,10 +212,17 @@ pub enum Hop {
     /// No resident on this machine, so nothing here holds a wire to read
     /// the answer off.
     NoServe,
+    /// Over this machine's own ssh session to it (round ROAD-2, khor
+    /// inside ssh): this machine carries it. Tail-appended; an older face
+    /// paints the key.
+    Ssh,
+    /// Through a third khor machine that splices the two ends (round
+    /// ROAD-2, the peer hop). Tail-appended.
+    Forwarded,
 }
 
 impl Hop {
-    pub const ALL: [Hop; 4] = [Hop::Direct, Hop::Relay, Hop::Idle, Hop::NoServe];
+    pub const ALL: [Hop; 6] = [Hop::Direct, Hop::Relay, Hop::Idle, Hop::NoServe, Hop::Ssh, Hop::Forwarded];
 
     /// Wire and catalog key.
     pub const fn key(self) -> &'static str {
@@ -229,6 +236,8 @@ impl Hop {
             // mistake echo the key instead, which is visible.
             Hop::Idle => "quiet",
             Hop::NoServe => "no-serve",
+            Hop::Ssh => "ssh",
+            Hop::Forwarded => "forwarded",
         }
     }
 }

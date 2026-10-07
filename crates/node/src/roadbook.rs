@@ -213,6 +213,11 @@ impl crate::Node {
                 let road = match r.road {
                     Some(khor_net::path::PathKind::Direct) => RoadKind::Direct,
                     Some(khor_net::path::PathKind::Relay) => RoadKind::Relay,
+                    // This machine's own ssh session to it (khor inside
+                    // ssh, round ROAD-2).
+                    Some(khor_net::path::PathKind::Carried) if self.carried_hop(&d.id) == khor_core::Hop::Ssh => {
+                        RoadKind::Ssh
+                    }
                     _ if r.down.is_some() => RoadKind::None,
                     _ => {
                         book.idle(&d.id);

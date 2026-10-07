@@ -155,6 +155,14 @@ const F_SSH_PASSWORD: &str = "ssh_password";
 /// a bool register but read three-valued: "unprobed" must not read as
 /// "absent".
 const F_SAT_TMUX: &str = "sat_tmux";
+/// **The machine that carries this one over ssh** (round ROAD-2, khor
+/// inside ssh), by id; empty = none. A member, not a satellite: it runs
+/// khor and speaks for itself, but reaches nothing except through the
+/// carrier's ssh session to it, which the carrier keeps up with the road
+/// in `ssh_host` / `ssh_jump` / `ssh_port` / `ssh_password`. An older
+/// khor replicates the register untouched and reads the row as an
+/// ordinary machine it cannot reach.
+const F_CARRIER: &str = "carrier";
 /// The directories this machine is asked to keep an eye on (2026-09-06
 /// 关注目录): one JSON array, whole-value LWW like `addrs`, and anyone
 /// may write it like `pinned` — it is a fact about the machine that the
@@ -325,6 +333,9 @@ pub struct DeviceInfo {
     /// older khor). Three states on purpose: unprobed must not read as
     /// absent.
     pub sat_tmux: Option<bool>,
+    /// The machine that carries it over ssh (`F_CARRIER`), `None` for
+    /// one that reaches the others itself.
+    pub carrier: Option<String>,
     /// The directories it is asked to watch, in the order they were
     /// given — empty when nobody asked (`F_WATCH`). The list is the
     /// setting; the readings for it come from the machine itself
@@ -655,6 +666,43 @@ impl DeviceDoc {
         Ok(())
     }
 
+    /// **Carries a member over ssh** (round ROAD-2): `carrier` keeps an ssh
+    /// session to it by `road` and bridges its resident's endpoint
+    /// through it. `None` stops carrying it; the road is left as it was,
+    /// a decision rather than a credential, for the next time.
+    pub fn set_carried(&self, id: &str, carrier: Option<&str>, road: Option<&SshRoad<'_>>) -> Result<(), String> {
+        let mut dirty = false;
+        let carrier = carrier.unwrap_or("");
+        if self.flat_str(id, F_CARRIER).unwrap_or_default() != carrier {
+            self.write_field(id, F_CARRIER, carrier)?;
+            dirty = true;
+        }
+        if let Some(road) = road {
+            let jump = road.jump.unwrap_or("");
+            if self.flat_str(id, F_SSH_JUMP).as_deref().unwrap_or("") != jump {
+                self.write_field(id, F_SSH_JUMP, jump)?;
+                dirty = true;
+            }
+            let port = road.port.map(|p| p.to_string()).unwrap_or_default();
+            if self.flat_str(id, F_SSH_PORT).unwrap_or_default() != port {
+                self.write_field(id, F_SSH_PORT, port)?;
+                dirty = true;
+            }
+            if self.bool_field(id, F_SSH_PASSWORD) != road.password {
+                self.write_field(id, F_SSH_PASSWORD, road.password)?;
+                dirty = true;
+            }
+            if self.flat_str(id, F_SSH_HOST).as_deref() != Some(road.host) {
+                self.write_field(id, F_SSH_HOST, road.host)?;
+                dirty = true;
+            }
+        }
+        if dirty {
+            self.inner.commit();
+        }
+        Ok(())
+    }
+
     /// Shows a machine the door, network-wide — or takes it back in.
     ///
     /// **Leaving is expressed as "not in the table", which is why this
@@ -766,6 +814,7 @@ impl DeviceDoc {
                     Some(LoroValue::Bool(b)) => Some(b),
                     _ => None,
                 },
+                carrier: self.str_field(&id, F_CARRIER).filter(|c| !c.is_empty()),
                 watch: self
                     .str_field(&id, F_WATCH)
                     .and_then(|s| serde_json::from_str(&s).ok())

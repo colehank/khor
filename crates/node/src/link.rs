@@ -870,6 +870,7 @@ impl Node {
                 self.relays_n0(),
                 preferred.as_deref(),
                 ports,
+                self.carrying(),
             )
         };
         // **The ports these ears had last time** (round NET-11), so a
@@ -1059,6 +1060,12 @@ impl Node {
         {
             let n = node.clone();
             tokio::spawn(async move { n.satellite_sampler().await });
+        }
+        // The carrier (round ROAD-2, khor inside ssh): an ssh session up to
+        // every member this machine carries.
+        if node.carry_on() && node.carrying().is_some() {
+            let n = node.clone();
+            tokio::spawn(async move { n.carrier().await });
         }
         // The day strip's sampler (`crates/node/src/day.rs`), on the same
         // footing and for the same reason: one sample is a whole
@@ -1880,6 +1887,10 @@ impl Node {
                 Ok(changes) => ipc::Reply::DirsChanged { changes },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::CarryIn { carrier } => match self.carry_hosted(&carrier).await {
+                Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::PipeOn { machine, target } => match self.pipe_hosted(ep, &machine, &target).await {
                 Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
                 Err(why) => ipc::Reply::Refused { why },
@@ -2587,9 +2598,11 @@ impl Node {
         if self.wires.live(&d.id, wires::Proto::Main).is_some() {
             return Early::NotTaken;
         }
-        let Ok(addr) = endpoint::dial_addr(&d.id, &d.addrs, self.relays()) else {
+        let Ok(mut addr) = endpoint::dial_addr(&d.id, &d.addrs, self.relays()) else {
             return Early::NotTaken;
         };
+        // A road this machine carries itself, as `dial_with` adds it.
+        addr.addrs.extend(self.carried_addr(&d.id));
         let Ok(frame) = proto::encode(req) else {
             return Early::NotTaken;
         };
@@ -8461,6 +8474,7 @@ impl Node {
                         self.wires.counts.read_relay.fetch_add(1, Relaxed);
                         khor_core::Hop::Relay
                     }
+                    Some(khor_net::path::PathKind::Carried) => self.carried_hop(&d.id),
                     _ => {
                         if r.down.is_some() {
                             self.wires.counts.read_down.fetch_add(1, Relaxed);
@@ -8475,6 +8489,7 @@ impl Node {
                 let last_hop = r.last_road.and_then(|k| match k {
                     khor_net::path::PathKind::Direct => Some(khor_core::Hop::Direct),
                     khor_net::path::PathKind::Relay => Some(khor_core::Hop::Relay),
+                    khor_net::path::PathKind::Carried => Some(self.carried_hop(&d.id)),
                     _ => None,
                 });
                 let ms = |d: Duration| u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
@@ -10291,8 +10306,14 @@ impl Node {
         // person waits through is the whole dial, head start included.
         let started = std::time::Instant::now();
         let mut roads = tokio::task::JoinSet::new();
-        if !direct.is_empty() {
-            let addr = endpoint::dial_addr(id, direct, relays).map_err(bare)?;
+        // A road this machine carries itself (round ROAD-2): a candidate
+        // beside the direct ones, so it races them from the first packet
+        // (`khor_net::carry::RoadOrder` then keeps the owner's order).
+        let carried = self.carried_addr(id);
+        let ahead = !direct.is_empty() || carried.is_some();
+        if ahead {
+            let mut addr = endpoint::dial_addr(id, direct, relays).map_err(bare)?;
+            addr.addrs.extend(carried);
             let (ep, alpn) = (ep.clone(), alpn.to_vec());
             roads.spawn(async move { ep.connect(addr, &alpn).await });
         }
@@ -10300,7 +10321,7 @@ impl Node {
         // is the one thing about it that a restart does not change.
         {
             let addr = endpoint::dial_addr(id, &[], relays).map_err(bare)?;
-            let (ep, alpn, wait) = (ep.clone(), alpn.to_vec(), !direct.is_empty());
+            let (ep, alpn, wait) = (ep.clone(), alpn.to_vec(), ahead);
             roads.spawn(async move {
                 if wait {
                     tokio::time::sleep(RELAY_HEAD_START).await;

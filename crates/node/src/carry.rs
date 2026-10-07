@@ -1,0 +1,294 @@
+//! **khor inside ssh** (round ROAD-2, audit/ROAD-BRIEF.md T5): a member
+//! that ssh reaches but that reaches neither the internet nor a relay is
+//! a full peer through the ssh session of a machine that can log in to it.
+//!
+//! - **The carrier** (the machine named in the member's `carrier`
+//!   register) keeps `ssh <road> khor _carry <carrier id>` running, with
+//!   everything the row keeps for that road (port, jump, password through
+//!   the askpass), and reconnects with backoff. The session's stdin and
+//!   stdout are the carried link (`khor_net::carry`).
+//! - **The member**: `khor _carry` hands its stdin and stdout to its own
+//!   resident through a one-shot loopback port with a cookie, the way
+//!   `khor pipe` does (`crate::pipe`), and the resident makes it the link
+//!   to the carrier.
+//!
+//! iroh's handshake runs end to end over it, so ssh and the carrier's
+//! sshd see ciphertext. **Only the carrier has the road.** Another
+//! machine reaches the member through the carrier with the peer hop, or
+//! not at all while the hop is off (audit/road-2.md).
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use khor_catalog::msg;
+use khor_net::carry::Carrier;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
+use crate::satellite::Dest;
+use crate::{Node, ipc};
+
+/// How often the carrier looks at which members it carries.
+const LOOK_EVERY: Duration = Duration::from_secs(5);
+
+/// How long the resident's one-shot port waits for `khor _carry`.
+const CLAIM_WITHIN: Duration = Duration::from_secs(10);
+
+/// A session that stayed up this long was a good one: the next failure
+/// starts the backoff from the beginning.
+const LIVED: Duration = Duration::from_secs(60);
+
+/// The carrier's wait before the next ssh after `failures` short ones.
+fn backoff(failures: u32) -> Duration {
+    Duration::from_secs(2u64.saturating_mul(1 << failures.min(5))).min(Duration::from_secs(60))
+}
+
+/// The far command: the member's own khor, by the path `khor add` puts it
+/// at, on the member's own store (`KHOR_HOME` unset, as for `pair`).
+fn far_command(carrier: &str) -> String {
+    format!("env -u KHOR_HOME \"$HOME/.local/bin/khor\" _carry {carrier}")
+}
+
+impl Node {
+    /// Whether this machine carries members over ssh (`ssh-carry`).
+    pub(crate) fn carry_on(&self) -> bool {
+        crate::config::on(self.root(), "ssh-carry")
+    }
+
+    /// Whether this machine asks for and serves the peer hop (`peer-hop`).
+    pub(crate) fn hop_on(&self) -> bool {
+        crate::config::on(self.root(), "peer-hop")
+    }
+
+    /// The carried transport to register at bind; `None` with both
+    /// switches off, which is the transport not registered at all.
+    pub(crate) fn carrying(&self) -> Option<&khor_net::carry::Links> {
+        (self.carry_on() || self.hop_on()).then_some(&self.carry)
+    }
+
+    /// The carried address of `id`, when a link to it is up.
+    pub(crate) fn carried_addr(&self, id: &str) -> Option<iroh::TransportAddr> {
+        let peer: iroh::EndpointId = id.parse().ok()?;
+        self.carry.has(&peer).then(|| khor_net::carry::transport_addr(&peer))
+    }
+
+    /// The word for a wire on a carried path: over this machine's own ssh
+    /// session, or forwarded by a third machine.
+    pub(crate) fn carried_hop(&self, id: &str) -> khor_core::Hop {
+        let carrier = id.parse().ok().and_then(|p| self.carry.carrier(&p));
+        match carrier {
+            Some(Carrier::Hop { .. }) => khor_core::Hop::Forwarded,
+            _ => khor_core::Hop::Ssh,
+        }
+    }
+
+    /// **`khor carry <machine> <ssh host>`**: this machine carries the
+    /// member over ssh by `road` from now on; `None` stops it.
+    pub fn set_carried(&self, machine: &str, road: Option<&Dest>) -> Result<String, String> {
+        let (channel, id) = self.resolve(machine)?;
+        let id = id.hex();
+        let loaded = self.devices_loaded()?;
+        let row = loaded
+            .doc
+            .all()
+            .into_iter()
+            .find(|d| d.id == id)
+            .ok_or_else(|| msg::carry_not_a_machine(machine))?;
+        if row.sponsor.is_some() {
+            return Err(msg::carry_is_satellite(row.shown()));
+        }
+        let me = self.device_str().to_owned();
+        let carrier = road.map(|_| me.as_str());
+        loaded.doc.set_carried(&id, carrier, road.map(Dest::as_row).as_ref())?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        Ok(match road {
+            Some(r) => msg::carry_set(&channel, r),
+            None => msg::carry_unset(&channel),
+        })
+    }
+
+    /// **`khor _carry <carrier>`, the member's end**: this process's
+    /// stdin and stdout become its resident's link to `carrier`, until
+    /// either side hangs up.
+    pub async fn carry_in<I, O>(&self, carrier: &str, input: I, output: O) -> Result<(), String>
+    where
+        I: AsyncRead + Unpin,
+        O: AsyncWrite + Unpin,
+    {
+        carrier
+            .parse::<iroh::EndpointId>()
+            .map_err(|_| msg::carry_not_a_machine(carrier))?;
+        if !self.carry_on() {
+            return Err(msg::carry_off().to_owned());
+        }
+        let Some(reply) = self
+            .via_serve(ipc::Op::CarryIn {
+                carrier: carrier.to_owned(),
+            })
+            .await
+        else {
+            return Err(msg::carry_needs_serve().to_owned());
+        };
+        let (addr, cookie) = match reply? {
+            ipc::Reply::Piping { addr, cookie } => (addr, cookie),
+            ipc::Reply::Refused { why } => return Err(why),
+            other => return Err(msg::serve_non_answer(format_args!("{other:?}"))),
+        };
+        let mut tcp = tokio::net::TcpStream::connect(&addr)
+            .await
+            .map_err(msg::serve_unreachable)?;
+        tcp.write_all(format!("{cookie}\n").as_bytes())
+            .await
+            .map_err(msg::handoff_failed)?;
+        let _ = tcp.set_nodelay(true);
+        let (r, w) = tcp.into_split();
+        crate::pipe::splice(input, output, r, w).await;
+        Ok(())
+    }
+
+    /// The resident's half of [`Self::carry_in`]: a loopback port that
+    /// makes the one connection saying the cookie first the link to
+    /// `carrier`. Only a machine in the table is carried.
+    pub(crate) async fn carry_hosted(&self, carrier: &str) -> Result<(String, String), String> {
+        let peer: iroh::EndpointId = carrier.parse().map_err(|_| msg::carry_not_a_machine(carrier))?;
+        if !self.carry_on() || self.carrying().is_none() {
+            return Err(msg::carry_off().to_owned());
+        }
+        if !self.devices()?.iter().any(|d| d.id == carrier && d.sponsor.is_none()) {
+            return Err(msg::carry_not_a_machine(carrier));
+        }
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .map_err(|e| e.to_string())?;
+        let addr = listener.local_addr().map_err(|e| e.to_string())?.to_string();
+        let cookie = crate::link::fresh_hex()?;
+        let want = format!("{cookie}\n");
+        let (links, wires, id) = (self.carry.clone(), self.wires.clone(), carrier.to_owned());
+        tokio::spawn(async move {
+            let claimed = tokio::time::timeout(CLAIM_WITHIN, async {
+                loop {
+                    let Ok((mut sock, _)) = listener.accept().await else {
+                        return None;
+                    };
+                    let mut said = vec![0u8; want.len()];
+                    if sock.read_exact(&mut said).await.is_ok() && said == want.as_bytes() {
+                        return Some(sock);
+                    }
+                }
+            })
+            .await;
+            if let Ok(Some(sock)) = claimed {
+                let _ = sock.set_nodelay(true);
+                let (r, w) = sock.into_split();
+                let attached = links.attach(peer, Carrier::Ssh, r, w);
+                wires.forgive(&id);
+                attached.ended().await;
+            }
+        });
+        Ok((addr, cookie))
+    }
+
+    /// **The carrier**: one ssh session up to each member this machine
+    /// carries, for as long as the row says so and the switch is on.
+    pub(crate) async fn carrier(self: Arc<Self>) {
+        let mut running: HashMap<String, (Dest, tokio::task::AbortHandle)> = HashMap::new();
+        let mut tick = tokio::time::interval(LOOK_EVERY);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            let me = self.device_str();
+            let want: HashMap<String, Dest> = self
+                .devices()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|d| d.carrier.as_deref() == Some(me) && d.sponsor.is_none())
+                .filter(|d| !crate::pause::peer_on(self.root(), &d.id))
+                .filter_map(|d| Some((d.id.clone(), Dest::of(&d)?)))
+                .collect();
+            running.retain(|id, (dest, task)| {
+                let keep = want.get(id) == Some(dest) && !task.is_finished();
+                if !keep {
+                    task.abort();
+                }
+                keep
+            });
+            for (id, dest) in want {
+                if running.contains_key(&id) {
+                    continue;
+                }
+                let Ok(peer) = id.parse::<iroh::EndpointId>() else { continue };
+                let node = self.clone();
+                let road = dest.clone();
+                let task = tokio::spawn(async move { node.carry_one(peer, road).await });
+                running.insert(id, (dest, task.abort_handle()));
+            }
+        }
+    }
+
+    /// Keeps the ssh session to one member up, reconnecting with backoff.
+    async fn carry_one(&self, peer: iroh::EndpointId, to: Dest) {
+        let id = peer.to_string();
+        let mut failures = 0u32;
+        loop {
+            let started = Instant::now();
+            let mut ssh = tokio::process::Command::from(to.command("ssh"));
+            ssh.args(["-T", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3"])
+                .args(["-o", "ConnectTimeout=10"])
+                .arg(&to.host)
+                .arg(far_command(self.device_str()))
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .kill_on_drop(true);
+            if let Ok(mut child) = ssh.spawn()
+                && let (Some(w), Some(r)) = (child.stdin.take(), child.stdout.take())
+            {
+                // What ssh (or the far `khor _carry`) last said, for the
+                // resident's log when the session ends.
+                let said = child.stderr.take().map(|mut e| {
+                    tokio::spawn(async move {
+                        let mut all = Vec::new();
+                        let _ = e.read_to_end(&mut all).await;
+                        String::from_utf8_lossy(&all).trim().lines().last().unwrap_or("").to_owned()
+                    })
+                });
+                let attached = self.carry.attach(peer, Carrier::Ssh, r, w);
+                self.wires.forgive(&id);
+                tokio::select! {
+                    () = attached.ended() => {}
+                    _ = child.wait() => {}
+                }
+                let _ = child.start_kill();
+                let _ = child.wait().await;
+                if let Some(said) = said
+                    && let Ok(Ok(line)) = tokio::time::timeout(Duration::from_secs(2), said).await
+                    && !line.is_empty()
+                {
+                    eprintln!("carry {}: {line}", to.host);
+                }
+            }
+            failures = if started.elapsed() >= LIVED { 0 } else { failures.saturating_add(1) };
+            tokio::time::sleep(backoff(failures)).await;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_carrier_backs_off_to_a_minute() {
+        let s = |n| backoff(n).as_secs();
+        assert_eq!([s(0), s(1), s(2), s(3), s(4), s(5), s(9)], [2, 4, 8, 16, 32, 60, 60]);
+    }
+
+    #[test]
+    fn the_far_command_runs_the_members_own_khor() {
+        assert_eq!(
+            far_command("ab"),
+            "env -u KHOR_HOME \"$HOME/.local/bin/khor\" _carry ab"
+        );
+    }
+}

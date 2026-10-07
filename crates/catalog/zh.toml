@@ -57,6 +57,10 @@ quiet = "未连"
 down = "不通"
 # 本机没有常驻,压根没人能读这个数——和「未连接」分开,因为它有解:去起 serve。
 no-serve = "serve 未运行"
+# 经本机到它的 SSH 会话转连(ROAD-2,它连不上互联网)。
+ssh = "经 SSH"
+# 经第三台 khor 机器转发(ROAD-2)。
+forwarded = "转发"
 
 [avatar]
 axis-palette = "色板"
@@ -147,6 +151,12 @@ tabs-limit = "标签页上限"
 session-form = "新会话默认打开方式"
 files-click = "单击文件"
 confirm-takeover = "接管会话"
+# 连接(ROAD-2)。没有互联网、只能经 SSH 登录的 khor 主机，由能登录它的机器转连。
+ssh-carry = "经 SSH 转连"
+ssh-carry-note = "连不上互联网的 khor 主机，由能通过 SSH 登录它的机器转连。重启 khor 后生效"
+# 两台机器之间没有直连时，先经一台都连得上的机器转发，再用中继；中间那台只转发密文。
+peer-hop = "经其他机器转发"
+peer-hop-note = "没有直连时，先经一台两边都连得上的机器转发，再用中继。重启 khor 后生效"
 # 每条侧边栏右键「删除」之前那一问(docs/SHELL.md 第四轮);取代「删除工作区」那一项。
 confirm-delete = "删除"
 
@@ -272,6 +282,9 @@ usage = """
                         经那台机器的网接一根管子到这个主机的这个端口，接在标准输入输出上。
                         给 ssh 当 ProxyCommand：
                         ssh -o ProxyCommand='khor pipe --via 实验室 %h %p' 内网机
+  carry <机器> <SSH主机> [--port <端口>] [--via <跳板机>] [--password] | carry <机器> --off
+                        连不上互联网的 khor 主机，经本机到它的 SSH 登录转连；
+                        别的机器经本机连到它
   tabs [ls] | open [-m 机器] <网址> | close|focus|pin|unpin <序号|id>
                         浏览器这块屏幕上开着的标签页。**本机的，不同步**：
                         开着什么是这块屏幕的事，别的机器不看（常去的地方才跟着人走）。
@@ -2006,6 +2019,13 @@ reach-paused = "{0} 已暂停，没有问它"
 reach-predates = "{0} 的 khor 版本较旧，不认识这个请求"
 reach-no-host = "要给一个地址"
 reach-silent = "{0} 接受了连接，但没有回 ssh 的版本行（可能是代理的假地址）"
+# khor 经 SSH 转连(ROAD-2):被转连那台上的 `khor _carry`,和转连那台。
+carry-off = "本机关闭了「经 SSH 转连」：khor config set ssh-carry on"
+carry-needs-serve = "本机的 khor 没有运行，无法经 SSH 转连"
+carry-not-a-machine = "{0} 不是网络中的机器"
+carry-set = "{0} 由本机经 SSH 转连：{1}"
+carry-unset = "本机不再转连 {0}"
+carry-is-satellite = "{0} 是 SSH 主机，不运行 khor，无法转连"
 pipe-via-satellite = "{0} 是卫星，不是 khor，经不了它；它的 ssh 用 ssh -J 跳"
 self-moved = "khor 程序已不在 {0}（已升级或移动），需重启 serve"
 # What the scheduler is told about itself, appended to the vendor's own

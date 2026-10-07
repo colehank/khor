@@ -15,6 +15,7 @@ pub mod adaptor;
 pub mod backup;
 pub(crate) mod beside;
 pub mod cagent;
+pub mod carry;
 pub mod chat;
 pub mod code;
 pub mod codexagent;
@@ -496,6 +497,12 @@ pub struct Node {
     /// `ipc::Op::Roads` — because only it lives long enough to have
     /// dialled anything more than once.
     pub(crate) roads: roads::Roads,
+    /// **The roads this machine carries itself** (round ROAD-2,
+    /// `khor_net::carry`): ssh sessions to members that reach nothing
+    /// else, and hops through a third machine. One table for the life of
+    /// the node; every bind of the resident registers it, unless both
+    /// switches are off ([`Node::carrying`]).
+    pub(crate) carry: khor_net::carry::Links,
     /// Whether this machine can host a session (`khor_core::hosts_here`,
     /// docs/IOS.md): `false` on a phone. Read once at open and written to
     /// this machine's own row in the device table, so every machine in
@@ -1073,6 +1080,7 @@ impl Node {
         // that wants a changed list gets it by opening another node.
         let (relay_map, relays_only_mine) = relays_under(&root);
         let relays = relay_map.iter().map(|r| r.url.clone()).collect();
+        let carry = khor_net::carry::Links::new(key.public());
         let mut node = Node {
             root,
             key,
@@ -1112,6 +1120,7 @@ impl Node {
             app_resident: std::sync::atomic::AtomicBool::new(false),
             root_born: false,
             roads: Arc::default(),
+            carry,
             hosts,
         };
         node.register_self()?;

@@ -414,7 +414,7 @@ pub async fn bind_preferring(
     n0: bool,
     preferred: Option<&str>,
 ) -> Result<iroh::Endpoint> {
-    bind_pinned(secret, relays, n0, preferred, (0, 0)).await
+    bind_pinned(secret, relays, n0, preferred, (0, 0), None).await
 }
 
 /// [`bind_preferring`] on the UDP ports `(v4, v6)` it was on last time
@@ -429,14 +429,25 @@ pub async fn bind_preferring(
 /// restarts also keeps the hints the peers hold true. Field practice:
 /// Tailscale's tailscaled keeps one UDP port (41641 by default),
 /// WireGuard a fixed `ListenPort`, Syncthing 22000.
+///
+/// **`carry`: the roads khor carries itself** (round ROAD-2,
+/// [`crate::carry`]): registered with khor's [`crate::carry::RoadOrder`]
+/// selector when given; `None` is the transport not registered at all —
+/// both switches off.
 pub async fn bind_pinned(
     secret: iroh::SecretKey,
     relays: &[Relay],
     n0: bool,
     preferred: Option<&str>,
     (v4, v6): (u16, u16),
+    carry: Option<&crate::carry::Links>,
 ) -> Result<iroh::Endpoint> {
     let mut b = builder(secret, relays, n0, on_the_segment())?;
+    if let Some(links) = carry {
+        b = b
+            .add_custom_transport(links.transport())
+            .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()));
+    }
     if (v4, v6) != (0, 0) && std::env::var_os(RELAY_ONLY_ENV).is_none() {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
         b = b
@@ -677,6 +688,9 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
             std::net::IpAddr::V6(_) => false,
         },
         iroh::TransportAddr::Relay(_) => false,
+        // A carried road (round ROAD-2) is this machine's id on a link
+        // only the far end of that link holds: nobody else can use it.
+        iroh::TransportAddr::Custom(_) => true,
         // `TransportAddr` is `#[non_exhaustive]`. A kind of road this
         // build has never heard of gets published, not hidden: the cost
         // of publishing one nobody can use is some wasted probes, and

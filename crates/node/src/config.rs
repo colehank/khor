@@ -90,6 +90,11 @@ pub const SECTIONS: &[Section] = &[
         name: "workspace",
         page: "workspace",
     },
+    // 连接: the roads khor carries itself (round ROAD-2).
+    Section {
+        name: "connection",
+        page: "connection",
+    },
     // On 安全, because the sections beside it there are the other things
     // that cost something.
     Section {
@@ -255,6 +260,30 @@ pub const KEYS: &[Key] = &[
         section: "workspace",
         values: &["preview", "pin"],
         default: "preview",
+    },
+    // ── 连接 ──────────────────────────────────────────────────────
+    //
+    // **khor inside ssh** (round ROAD-2, audit/ROAD-BRIEF.md T5): a khor
+    // machine that ssh reaches but that reaches neither the internet nor a
+    // relay is carried over the ssh session of a machine that can log in
+    // (`crate::carry`). Off: the transport is not registered at all, and
+    // this machine neither carries nor is carried. Read at bind, so a
+    // change takes effect when the resident starts again.
+    Key {
+        name: "ssh-carry",
+        section: "connection",
+        values: &["on", "off"],
+        default: "on",
+    },
+    // **The peer hop** (T6): two machines with no direct road meet through
+    // a third that reaches both, before the relay; the middle forwards
+    // ciphertext. Off: this machine neither asks for a hop nor serves as a
+    // middle. Read at bind, like `ssh-carry`.
+    Key {
+        name: "peer-hop",
+        section: "connection",
+        values: &["on", "off"],
+        default: "on",
     },
     // ── 危险动作二次确认 ──────────────────────────────────────────
     //

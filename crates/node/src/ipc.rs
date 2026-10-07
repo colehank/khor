@@ -382,6 +382,11 @@ pub enum Op {
         name: Option<String>,
         satellite_only: bool,
     },
+    /// **khor inside ssh, this end** (round ROAD-2, `khor _carry`): the
+    /// resident binds a loopback port that takes the one connection saying
+    /// the cookie first and makes it the carried link to `carrier`
+    /// (`crate::carry`). Answered [`Reply::Piping`]. Tail-appended.
+    CarryIn { carrier: String },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -485,6 +490,7 @@ impl Op {
             Op::ReachProbe { .. } => ("ReachProbe", DEADLINE_FAR),
             Op::PipeOn { .. } => ("PipeOn", DEADLINE_FAR),
             Op::AddOn { .. } => ("AddOn", DEADLINE_FAR),
+            Op::CarryIn { .. } => ("CarryIn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),

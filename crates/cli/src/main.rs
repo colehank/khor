@@ -343,6 +343,19 @@ const VERBS: &[Verb] = &[
         run: pipe,
         reach: Reach::Act,
     },
+    // Has this machine keep an ssh session up to another and carry that
+    // machine's khor through it (round ROAD-2).
+    Verb {
+        word: "carry",
+        run: carry,
+        reach: Reach::Act,
+    },
+    // The far end of that session: what the carrier's ssh runs.
+    Verb {
+        word: "_carry",
+        run: carry_in,
+        reach: Reach::Inner,
+    },
     // `ls` reads and the other three write this machine's own tab
     // table, so the word is an act — the rule is per word, not per
     // invocation (`ws` above). **Nothing here goes out on the wire**:
@@ -706,6 +719,10 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
     (
         "_codexagent",
         "internal: khor's own codex ACP shim; the agent a codex GUI session runs (`codexagent` module head)",
+    ),
+    (
+        "_carry",
+        "internal: the far end of a carrier's ssh session (`khor_node::carry`), stdin and stdout are the link",
     ),
     (
         "_verbs",
@@ -2120,6 +2137,50 @@ fn pipe(rest: &[String]) -> Result<(), String> {
     // stdin is read on a blocking thread that never returns while ssh
     // holds it open; waiting for it would keep the pipe up after the
     // far end hung up.
+    rt.shutdown_background();
+    out
+}
+
+/// `khor carry <machine> <ssh host> [--port N] [--via jump] [--password]`
+/// (round ROAD-2): this machine carries a khor host that reaches nothing
+/// else over its ssh login to it; `--off` stops (`khor_node::carry`).
+fn carry(rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    match rest {
+        [machine, off] if off == "--off" => {
+            println!("{}", n.set_carried(machine, None)?);
+            Ok(())
+        }
+        [machine, host, flags @ ..] => {
+            let (mut port, mut jump, mut password) = (None, None, false);
+            let mut it = flags.iter();
+            while let Some(f) = it.next() {
+                match f.as_str() {
+                    "--port" => port = Some(it.next().and_then(|p| p.parse().ok()).ok_or_else(usage_text)?),
+                    "--via" => jump = Some(it.next().ok_or_else(usage_text)?.clone()),
+                    "--password" => password = true,
+                    _ => return Err(usage_text().into()),
+                }
+            }
+            let road = khor_node::satellite::Dest::new(host.clone(), jump.as_deref())
+                .on_port(port)
+                .with_password(password);
+            println!("{}", n.set_carried(machine, Some(&road))?);
+            Ok(())
+        }
+        _ => Err(usage_text().into()),
+    }
+}
+
+/// `khor _carry <carrier id>`: what a carrier's ssh runs here. stdin and
+/// stdout are the link; nothing of this verb's own goes on stdout.
+fn carry_in(rest: &[String]) -> Result<(), String> {
+    let [carrier] = rest else {
+        return Err(usage_text().into());
+    };
+    let n = node()?;
+    let rt = rt()?;
+    let out = rt.block_on(n.carry_in(carrier, tokio::io::stdin(), tokio::io::stdout()));
     rt.shutdown_background();
     out
 }

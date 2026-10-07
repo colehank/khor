@@ -448,6 +448,25 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
 - 和 adopt 的区别：adopt 让 sponsor 替那台机器说话（读数、文件、会话都经它）；pipe 只是一根
   管子，那台机器不进设备表。只想 ssh 过去，用 pipe；要 khor 看得见它，才 adopt。
 
+### khor 走 ssh：连不上互联网的 khor 主机，经能登录它的机器转连（2026-10-08，ROAD-2 轮）
+
+`khor carry <机器> <SSH主机> [--port N] [--via 跳板] [--password]`（关：`khor carry <机器> --off`）。
+那台机器装着 khor、常驻在跑，但到不了互联网和任何中继；本机能 ssh 登录它。从此本机（转连的
+那台，行上的 `carrier`）一直挂着 `ssh <路> khor _carry <本机 id>`，ssh 的标准输入输出就是一条
+iroh 路（`khor_net::carry`，iroh 的 `unstable-custom-transports`）。
+
+- 那头的 `khor _carry` 像 `khor pipe` 一样经一次性回环口和暗号把标准输入输出交给自己的常驻，常驻
+  把它当成到转连那台的路。iroh 的握手两端照做，ssh 和 sshd 只看见密文。
+- 路就是 `khor add` 记下的那条：端口、跳板、密钥或密码（askpass）都照用；断了按 2、4、8……最多
+  60 秒重连，连上过一分钟的从头数。
+- **只有转连的那台有这条路。** 别的机器要经它去够（下一步的「经其他机器转发」）；在那之前它们够不着。
+- 走这条路时连接读数是「经 SSH」（`Hop::Ssh`），设备表里转连那台到它的路是 `ssh`。
+- 选路（`khor_net::carry::RoadOrder`）：直连、转连、中继依次；直连随时可以升上去；转连和中继之间，
+  只在连接开头 3 秒里中继可以让给转连，之后只在用着的那条断了时才换。
+- 开关：`khor config set ssh-carry on|off`（默认开，重启常驻生效）。两个开关都关时这个传输根本不注册。
+- 测试：`crates/net/tests/carry.rs`（内存里的一条流），`crates/cli/tests/carry.rs`（真的非特权 sshd，
+  被转连那台挂在不存在的中继和不存在的代理后面）。
+
 ### 长连接：每台对端一条，一直挂着（2026-10-03，NET-FIX 轮）
 
 每台机器对网里每台对端**只拨一次**，之后所有请求——同步、列目录、拉文件、收下、

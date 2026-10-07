@@ -27,6 +27,8 @@ relay = "Relay"
 quiet = "Idle"
 down = "Down"
 no-serve = "Serve not running"
+ssh = "Over SSH"
+forwarded = "Forwarded"
 
 [avatar]
 axis-palette = "Palette"
@@ -76,6 +78,10 @@ lang = "Interface language"
 tabs-limit = "Tab limit"
 session-form = "New sessions open as"
 files-click = "Single click"
+ssh-carry = "Connect over SSH"
+ssh-carry-note = "A khor host with no internet is connected through a machine that can log in to it over SSH. Takes effect when khor restarts"
+peer-hop = "Forward through other machines"
+peer-hop-note = "With no direct connection, go through a machine both ends reach before using a relay. Takes effect when khor restarts"
 # Under "Ask before", so each key names the act rather than repeating
 # the question.
 confirm-takeover = "Taking over a session"
@@ -236,6 +242,10 @@ usage: khor <verb>
                         network, on stdin and stdout. For ssh's
                         ProxyCommand:
                         ssh -o ProxyCommand='khor pipe --via lab %h %p' box
+  carry <machine> <ssh host> [--port <port>] [--via <jump>] [--password] | carry <machine> --off
+                        connect a khor host with no internet through this
+                        machine's ssh login to it; others reach it through
+                        this machine
   tabs [ls] | open [-m machine] <url> | close|focus|pin|unpin <n|id>
                         the browsing tabs this screen has open. **Local,
                         never replicated**: what is open belongs to this
@@ -1282,6 +1292,12 @@ reach-paused = "{0} is paused, so it wasn't asked"
 reach-predates = "{0} runs an older khor that doesn't know this request"
 reach-no-host = "Give an address"
 reach-silent = "{0} accepted the connection but sent no ssh version line (possibly a proxy's fake address)"
+carry-off = "Connect over SSH is off on this machine: khor config set ssh-carry on"
+carry-needs-serve = "khor is not running on this machine, so it can't be connected over SSH"
+carry-not-a-machine = "{0} is not a machine in this network"
+carry-set = "This machine connects {0} over SSH: {1}"
+carry-unset = "This machine no longer connects {0}"
+carry-is-satellite = "{0} is an SSH host and does not run khor, so it can't be connected this way"
 pipe-via-satellite = "{0} is a satellite, not khor, so a pipe can't go through it; jump through its ssh with ssh -J"
 self-moved = "khor's own binary is no longer at {0} (upgraded or moved) — restart serve"
 agent-brief = """You're attached to khor: a network connecting all of this person's machines.\
