@@ -182,6 +182,7 @@ pub fn answer(
                 _ => Vec::new(),
             },
             unavailable: true,
+            unreported: Vec::new(),
         }),
         "stat_text" => to_json(&rt.block_on(crate::files::stat_text(
             root,

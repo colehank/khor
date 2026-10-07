@@ -34095,7 +34095,13 @@ try {
   //      machine on screen; 恢复默认 sends empty;
   //   e. narrow: 更多's menu → 存储, ‹ in the head, rows there too;
   //   f. the 附栏: 更多 → 存储 is a seat, a file opens in place, and shut
-  //      and opened the 附栏 is back on that file (UX-47); ‹ is the list.
+  //      and opened the 附栏 is back on that file (UX-47); ‹ is the list;
+  //   g. read again only on a change (store-c): no ls while nothing
+  //      changes, here or on a watched machine; a level announced through
+  //      tree-changed reads at once; here (`unavailable`) the window's
+  //      focus reads again; a far machine's dirs_wait answer reads; a new
+  //      receive location is watched instead of the old; a location on a
+  //      network mount (`unreported`) reads again on focus.
   store: {
   if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "store") break store;
   {
@@ -34125,7 +34131,35 @@ try {
       "/home/elder/khor-drop": [],
     };
     const asked = { set: [], removed: [] };
+    // **The watch** (store-c): this machine cannot be watched; any other
+    // holds each question until `change` releases it or its wait is up.
+    const watch = { asked: [], pending: [], seq: 1, unreported: new Set() };
+    const lsCount = {};
+    const change = (dir) => {
+      watch.seq += 1;
+      for (const e of [...watch.pending]) if (e.dirs.includes(dir)) e.release([dir]);
+    };
     const routesS = {
+      "**/dirs_wait": (r) => {
+        const { machine, dirs = [], since = 0, wait_ms: hold = 0 } = r.request().postDataJSON() ?? {};
+        watch.asked.push({ machine, dirs, since, hold });
+        if (machine === "gate") return json({ seq: since, dirs, unavailable: true, unreported: [] })(r);
+        const answer = (changed) =>
+          json({ seq: watch.seq, dirs: changed, unavailable: false, unreported: dirs.filter((d) => watch.unreported.has(d)) })(r).catch(() => {});
+        if (hold === 0) return answer(dirs);
+        return new Promise((done) => {
+          const entry = {
+            dirs,
+            release: (changed) => {
+              clearTimeout(t);
+              watch.pending = watch.pending.filter((e) => e !== entry);
+              done(answer(changed));
+            },
+          };
+          const t = setTimeout(() => entry.release([]), Math.min(hold, 20_000));
+          watch.pending.push(entry);
+        });
+      },
       "**/devices": (r) => json(devs.map((d) => ({ ...d, ...places[d.name] })))(r),
       "**/set_receive_dir": (r) => {
         const { machine, dir } = r.request().postDataJSON() ?? {};
@@ -34141,6 +34175,7 @@ try {
       "**/ls": (r) => {
         const { path } = r.request().postDataJSON() ?? {};
         if (files[path] === undefined) return r.fallback();
+        lsCount[path] = (lsCount[path] ?? 0) + 1;
         return json({ path, entries: files[path], truncated: false })(r);
       },
       "**/remove": (r) => {
@@ -34358,6 +34393,112 @@ try {
       await page.route("**/sessions", json(rows));
     }
 
+    // g. read again only on a change (store-c)
+    {
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const here = "/home/gate/khor-drop";
+      const opened = (await tap("[data-rail-more]")) && (await tap("[data-rail-more-menu] [data-nav-store]"));
+      await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+      const rowsNow = async () => (await read(box))?.rows ?? [];
+      const has = (name, ms = 1_500) => until(ms, async () => (await rowsNow()).includes(name));
+      const calls = (dir) => lsCount[dir] ?? 0;
+      /** ls calls on `dir` over `ms` of nothing happening. */
+      const quiet = async (dir, ms) => {
+        const from = calls(dir);
+        await wait(ms);
+        return calls(dir) - from;
+      };
+      const focus = () => page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      const announce = (dir) =>
+        page.evaluate((d) => window.dispatchEvent(new CustomEvent("khor:tree-changed", { detail: { machine: "gate", here: true, dir: d } })), dir);
+      const stamp = (name) => ({ name, dir: false, size: 10, at_ms: Date.now() });
+
+      // This machine: nothing asked while nothing changes (the old beat
+      // was 5 s; this watches 6).
+      await wait(1_500);
+      const hereQuiet = await quiet(here, 6_000);
+      // A drop landing here says its level: read at once.
+      files[here].push(stamp("landed.txt"));
+      let from = calls(here);
+      await announce(here);
+      const landed = await has("landed.txt");
+      const landedReads = calls(here) - from;
+      // A file nothing in khor announced: the window's return reads it.
+      files[here].push(stamp("focused.txt"));
+      await focus();
+      const focused = await has("focused.txt");
+
+      // A far machine, watched: nothing asked while nothing changes, and
+      // the window's return asks nothing either.
+      const peerDir = places.peer.receive_at;
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await until(3_000, async () => (await read(box))?.machine === "peer" && (await rowsNow()).length > 0);
+      const held = await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(peerDir)));
+      await wait(500);
+      const peerQuiet = await quiet(peerDir, 6_000);
+      from = calls(peerDir);
+      await focus();
+      await wait(800);
+      const peerFocus = calls(peerDir) - from;
+      // Its watch answers: read.
+      files[peerDir].push(stamp("far.txt"));
+      from = calls(peerDir);
+      change(peerDir);
+      const far = await has("far.txt");
+      const farReads = calls(peerDir) - from;
+
+      // Its receive location moves (a sync brings the new receive_at):
+      // the new one is watched, and its answers read.
+      const moved = "/home/peer/inbox";
+      files[moved] = [stamp("moved.md")];
+      places.peer.receive_at = moved;
+      const shown = await until(15_000, async () => (await read(box))?.dir === moved);
+      const rearmed = await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(moved)));
+      const oldLeft = watch.asked.filter((a) => a.dirs.includes(peerDir)).length;
+      await wait(1_000);
+      const oldAfter = watch.asked.filter((a) => a.dirs.includes(peerDir)).length;
+      files[moved].push(stamp("after-move.md"));
+      change(moved);
+      const afterMove = await has("after-move.md");
+      places.peer.receive_at = peerDir;
+
+      // A location on a network mount: the watch says another host's
+      // changes go unheard there, so the window's return reads again.
+      const elderDir = places.elder.receive_at;
+      watch.unreported.add(elderDir);
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("elder");
+      await until(3_000, async () => (await read(box))?.machine === "elder");
+      await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(elderDir)));
+      await wait(500);
+      files[elderDir].push(stamp("from turing.txt"));
+      await focus();
+      const nfs = await has("from turing.txt");
+      watch.unreported.delete(elderDir);
+
+      console.log(
+        `store g · opened ${opened}; here: quiet ${hereQuiet} ls in 6 s, announced ${landed} (${landedReads} ls), focus ${focused}; ` +
+          `peer: held ${held}, quiet ${peerQuiet}, focus ${peerFocus}, answer ${far} (${farReads} ls); ` +
+          `moved: shown ${shown}, re-armed ${rearmed}, old asked ${oldLeft}→${oldAfter}, read ${afterMove}; elder on NFS: focus ${nfs}`,
+      );
+      if (!opened) fail("store g · 更多 → 存储 did not open");
+      if (hereQuiet !== 0) fail(`store g · this machine's list was read ${hereQuiet} time(s) in 6 s of nothing changing — read only on a change (store-c)`);
+      if (!landed || landedReads !== 1) fail(`store g · a level announced through tree-changed read ${landedReads} time(s), row there ${landed} — once, at once`);
+      if (!focused) fail("store g · this machine cannot be watched, and the window's focus did not read the list again");
+      if (!held) fail("store g · no dirs_wait held on peer's receive location");
+      if (peerQuiet !== 0) fail(`store g · a watched machine's list was read ${peerQuiet} time(s) in 6 s of nothing changing`);
+      if (peerFocus !== 0) fail(`store g · focus read a watched machine's list ${peerFocus} time(s) — its watch hears every change`);
+      if (!far || farReads !== 1) fail(`store g · peer's dirs_wait answer read ${farReads} time(s), row there ${far} — once`);
+      if (!shown || !rearmed) fail(`store g · a new receive location shown ${shown}, watched ${rearmed}`);
+      if (oldAfter !== oldLeft) fail(`store g · the old location was asked ${oldAfter - oldLeft} more time(s) after the move — the watch moves with it`);
+      if (!afterMove) fail("store g · an answer about the new location did not read it");
+      if (!nfs) fail("store g · a location the watch cannot fully hear (unreported) was not read again on focus");
+      for (const e of [...watch.pending]) e.release([]);
+      await press("[data-more-close]");
+      await wait(400);
+    }
+
+    for (const e of [...watch.pending]) e.release([]);
     for (const [glob, run] of Object.entries(routesS)) await page.unroute(glob, run);
     await page.evaluate(() => window.localStorage.clear());
     await page.reload({ waitUntil: "load" });
