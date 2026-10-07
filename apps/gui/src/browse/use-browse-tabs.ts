@@ -97,6 +97,9 @@ export type BrowseTab = {
   /** The session it was opened from, `""` where none is known — the
       附栏's browser seat lands on that session's tabs (UX-37 §1). */
   session: string;
+  /** When a person last put it in front or pointed it somewhere, ms
+      since the epoch; 0 when never (UX-48: the row's bottom-right). */
+  touched: number;
 };
 
 const shape = (open: TabsOpen): BrowseTab[] =>
@@ -108,6 +111,7 @@ const shape = (open: TabsOpen): BrowseTab[] =>
     pinned: t.pinned,
     // An older node's row has none.
     session: t.session ?? "",
+    touched: t.touched,
   }));
 
 export type BrowseTabs = {
@@ -171,7 +175,7 @@ export type BrowseTabs = {
  * ⚠️ **Nothing may be *drawn against* it** — see `ready`. It stands in
  * so `current` is never undefined, not so a face can render it.
  */
-const PENDING: BrowseTab = { id: "?", device: null, path: "", title: "", pinned: false, session: "" };
+const PENDING: BrowseTab = { id: "?", device: null, path: "", title: "", pinned: false, session: "", touched: 0 };
 
 /**
  * How often the list is re-read while the landing that draws it is on

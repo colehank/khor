@@ -42,6 +42,13 @@ pub struct TabRow {
     /// keeps the file's.
     #[serde(default)]
     pub session: String,
+    /// When a person last put it in front or pointed it somewhere, ms
+    /// since the epoch, 0 when never (`khor_node::tabs::Tab::touched`):
+    /// the row's 「how long ago it was opened」 (UX-48). Read only on the
+    /// way out; `save_all` keeps the file's.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub touched: u64,
 }
 
 /// One kind's tabs and which is in front. `active` is empty only when
@@ -64,6 +71,7 @@ fn shape(open: tabs::Open) -> TabsOpen {
                 title: t.title,
                 pinned: t.pinned,
                 session: t.session,
+                touched: t.touched,
             })
             .collect(),
         active: open.active,

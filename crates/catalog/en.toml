@@ -1550,10 +1550,6 @@ release-to-sync = "Release to sync"
 syncing = "Syncing"
 synced-now = "Synced"
 row-unreachable = "Unreachable · {0}"
-row-running = "Running {0} · {1}"
-row-ran = "{0} · exit {1} · {2}"
-row-ran-plain = "{0} · {1}"
-row-running-bare = "Running {0}"
 day-unreachable = "Unreachable"
 reading-unreachable = "Unreachable · last {0}"
 machine-cant-reach = "Can't reach {0}"
@@ -1637,19 +1633,15 @@ quota-group-none = "No grouping"
 accounts-log-capped = "Only fetched the most recent {0} entries"
 
 machine-here = "This machine"
-# **The list rows' four corners** (UX-15, the owner 2026-10-05): a machine's
-# activity (sessions running · CPU) and its latency, a workspace's changes, an
-# account's window (what is left · when it resets).
-row-sessions = "{0} sessions"
+# **The list rows' four corners** (UX-48): a machine's readings under its
+# name, its connection on the right, or Offline.
+row-offline = "Offline"
 row-cpu = "CPU {0}%"
+row-mem = "Mem {0}%"
+row-gpu = "GPU {0}%"
 # Unspaced: conn-relay-ms already says "{0} ms" and the catalog refuses one text
 # under two names.
 row-rtt = "{0}ms"
-row-changes = "{0} changes"
-row-window = "{0} left · resets {1}"
-row-left = "{0} left"
-row-kind-sub = "{0} subscription"
-row-kind-api = "{0} API"
 card-version = "khor {0}"
 card-age = "{0} ago"
 # The strip of facts at the top of a machine's detail (2026-10-01; it was a

@@ -598,7 +598,9 @@ export function SideList({
  * UX-15). As wide as the state wants, but never more than what the row has
  * left once the name is whole — and never less than the time under it,
  * which is not cut (an 「ago」 missing its tail is a different amount of
- * time). Measured, because what the name needs is its own text's width,
+ * time), nor than a part of the state that says it is kept whole
+ * (`data-corner-keep`: a workspace's git counts, UX-48 — its branch is cut
+ * first). Measured, because what the name needs is its own text's width,
  * which no flex rule can hand a sibling. The title's aside is not counted:
  * it is cut first, to nothing.
  */
@@ -619,7 +621,8 @@ function Corners({ top, bottom }: { top?: ReactNode; bottom?: ReactNode }) {
       // its own box), so the outer box only reports what it was given.
       Math.max(name.scrollWidth, ...[...name.querySelectorAll<HTMLElement>("*")].map((e) => e.scrollWidth));
     const time = el.querySelector<HTMLElement>('[data-corner="bottom"]')?.scrollWidth ?? 0;
-    el.style.maxWidth = `${Math.max(time, room)}px`;
+    const keep = el.querySelector<HTMLElement>("[data-corner-keep]")?.scrollWidth ?? 0;
+    el.style.maxWidth = `${Math.max(time, keep, room)}px`;
   }, []);
   // Every render: a rename or a new state changes what the two need.
   useLayoutEffect(fit);

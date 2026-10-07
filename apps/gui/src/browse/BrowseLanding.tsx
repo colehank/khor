@@ -68,7 +68,6 @@ import { useLoading } from "@/browse/use-loading";
 import { IconArrow, IconPlus, IconReload } from "@/components/icons";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { SideFind } from "@/components/SideFind";
-import { PathCut } from "@/components/PathCut";
 import { BarSeat, SessionScreen } from "@/components/SessionBar";
 import { FOLD_AT, foldStep, inkOver, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { pageKind } from "@/components/SessionFace";
@@ -79,7 +78,7 @@ import { SideList, type SideRow } from "@/components/SideList";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { gui } from "@/gen/catalog";
 import { useTabHost } from "@/lib/shortcuts";
-import { groupLabel } from "@/words";
+import { ago, groupLabel } from "@/words";
 
 /** A page's kind mark, on its machine's face — in the list and on its tab
     (the redesign): the face says which machine, the mark that it is a
@@ -405,7 +404,16 @@ export function BrowseLanding({
         </span>
       ),
       name: t.title || host || label,
-      sub: t.title && host && t.title !== host ? <PathCut text={host} /> : undefined,
+      // **UX-48** (the owner 2026-10-07): bottom-left where it is — the
+      // address without its scheme (第四轮); no state on the right;
+      // bottom-right how long ago it was last opened.
+      // ⚠️ 墓碑 (F2.4): the host alone, and only where the title differs.
+      sub: t.path ? (
+        <span data-tab-where className="block min-w-0 truncate">
+          {t.path.replace(/^https?:\/\//i, "")}
+        </span>
+      ) : undefined,
+      corners: { bottom: t.touched > 0 ? <span data-tab-opened>{ago(t.touched)}</span> : undefined },
       // What the row shows — its name and its place — and nothing else.
       find: `${label} ${t.title} ${t.path}`,
       selected: on,

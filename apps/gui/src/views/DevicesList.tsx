@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import type { DeviceRow, SessionRow } from "@/api";
+import type { DeviceRow } from "@/api";
 import { type OmniAxis } from "@/components/Omnibox";
 import { type FilterOption } from "@/components/PaneBar";
 import { EditableName } from "@/components/EditableName";
@@ -10,10 +10,8 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { band, BAND_INK } from "@/lib/latency";
 import { gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
-import { runningOn } from "@/lib/row-facts";
 import { isDown } from "@/lib/topology";
-import { cn } from "@/lib/utils";
-import { ago, connectionKey, connectionKeyWord, groupLabel, hopWord, systemWord } from "@/words";
+import { lasted, connectionKey, connectionKeyWord, groupLabel, hopWord, systemWord } from "@/words";
 import { MachineEditDialog } from "@/views/MachineEditDialog";
 import { PendingStrip } from "@/views/PairDialogs";
 
@@ -151,12 +149,8 @@ export function DevicesList({
   onPause,
   pauseRefused,
   onRestyled,
-  sessions = [],
 }: {
   rows: DeviceRow[];
-  /** The session rows the face holds: a machine's row says how many of
-      its sessions are running (UX-15, `runningOn`). */
-  sessions?: readonly SessionRow[];
   /** Not answered yet: a skeleton rather than 「there are none」. */
   loading?: boolean;
   query: string;
@@ -274,50 +268,47 @@ export function DevicesList({
   const side: SideRow[] = sieve(rows, words, DEVICE_SIEVE, DEVICE_KEYS).map((d) => {
     const system = d.vitals?.vitals.system ?? null;
     const modelName = d.vitals?.vitals.model?.name ?? null;
-    // **One rule for the four lists** (UX-15, the owner 2026-10-05, the
-    // session row the model): left-top who (the name, its model aside),
-    // left-bottom what is happening, right-top the state, right-bottom
-    // the state's time; a slot with nothing to say is not drawn.
-    // ⚠️ 墓碑: the second line said how the machine is reached (直连 /
-    // 中继 / 本机) then the model; 连接方式 is the machine page's now.
-    const running = runningOn(sessions, d);
-    const cpu = d.vitals?.vitals.cpu_pct;
-    const doing = [
-      d.paused ? gui.machine_paused : null,
-      running > 0 ? gui.row_sessions(running) : null,
-      cpu !== undefined && cpu !== null && d.hop !== "quiet" ? gui.row_cpu(Math.round(cpu)) : null,
-    ].filter((w): w is string => w !== null);
-    // The latency light, in the app's one scale of bands (UX-26,
-    // `lib/latency`: under 30 ms the 完成 green, under 120 the 出错 amber,
-    // slower the 失败 red, no road `tertiary`'s grey; the 我的 khor dial
-    // reads the same four) — never the colour alone: the number, 本机 or
-    // 无法获取 is always beside it. This machine's own row wears the
-    // fast light: it answers by looking. ⚠️ 墓碑: reached-green / idle-grey.
-    // An older resident sends no `rtt_ms` at all: no number, not 「无法获取」.
+    // **The owner's row rule** (UX-48, 2026-10-07, every list): the face at
+    // the far left; top-left the name alone; bottom-left the latest
+    // readings; top-right the state; bottom-right how long it has held. A
+    // slot with nothing true to say is not drawn.
     //
-    // **Three states without a live number** (round NET-13): unreachable
-    // (`down_ms`: the resident's last attempt failed) is the grey light
-    // and 无法获取, the row dimmed; idle (no live wire, nothing known to
-    // be wrong — it closed while nothing was asked) is the last reading's
-    // band at half ink, its number, or 未连 when there never was one;
-    // either says when it was last heard under it.
+    // A machine's state is its connection: 直连 or 中继 for as long as the
+    // live wire has been on that road (`since_ms`), 本机 for this one, and
+    // with no live wire 离线 for as long as it has not been heard — its
+    // readings are then not drawn, an old number being no reading at all.
+    // Paused is the state that wins: this machine stopped talking to it.
+    // ⚠️ 墓碑 (UX-15 → UX-48): the model as the name's aside; the
+    // sessions running in the second line; the latency on the right with
+    // 无法获取 / 未连 and the last-heard time under it.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
     const down = !d.me && d.hop === "quiet" && isDown(d.down_ms);
-    const reached = d.me || rtt !== null || (d.rtt_ms === undefined && d.hop !== "quiet");
-    const idle = !reached && !down;
-    const last = typeof d.last_rtt_ms === "number" ? d.last_rtt_ms : null;
-    const latency = d.me
-      ? gui.machine_here
-      : rtt !== null
-        ? gui.row_rtt(rtt)
-        : reached
-          ? null
-          : down
-            ? gui.day_unreachable
-            : last !== null
-              ? gui.row_rtt(last)
-              : hopWord("quiet");
-    const rowBand = d.me ? "fast" : reached ? band(rtt) : idle ? band(last) : "none";
+    const live = d.me || d.hop === "direct" || d.hop === "relay";
+    const offline = !d.me && d.hop === "quiet";
+    const state = d.paused
+      ? gui.machine_paused
+      : d.me
+        ? gui.machine_here
+        : live
+          ? hopWord(d.hop ?? "")
+          : offline
+            ? gui.row_offline
+            : null;
+    const held = d.paused
+      ? null
+      : live && typeof d.since_ms === "number"
+        ? lasted(d.since_ms)
+        : offline && typeof d.heard_ms === "number"
+          ? lasted(d.heard_ms)
+          : null;
+    const v = live ? d.vitals?.vitals : undefined;
+    const pct = (n: number) => Math.round(n);
+    const readings = [
+      rtt !== null && !d.me ? { key: "rtt", word: gui.row_rtt(rtt) } : null,
+      v ? { key: "cpu", word: gui.row_cpu(pct(v.cpu_pct)) } : null,
+      v && v.mem.total > 0 ? { key: "mem", word: gui.row_mem(pct((v.mem.used / v.mem.total) * 100)) } : null,
+      v?.gpu ? { key: "gpu", word: gui.row_gpu(pct(v.gpu.util_pct)) } : null,
+    ].filter((w): w is { key: string; word: string } => w !== null);
     return {
       id: d.id,
       group: d.pinned ? "pin" : "",
@@ -347,33 +338,35 @@ export function DevicesList({
         <span className="block truncate">{d.shown}</span>
       ),
       name: d.shown,
-      aside: modelName ? <span data-row-model>{modelName}</span> : undefined,
-      // What it is doing: paused first (第 10 条), then its running
-      // sessions and its CPU (net's NET-8: a percent, not 负载).
-      sub: doing.length ? (
-        <span data-row-doing>
-          {d.paused && <span data-row-paused>{gui.machine_paused}</span>}
-          {(d.paused ? doing.slice(1) : doing).map((w, i) => (d.paused || i > 0 ? ` · ${w}` : w))}
+      sub: readings.length ? (
+        <span data-row-readings className="tabular-nums">
+          {readings.map((r, i) => (
+            <span key={r.key} data-row-reading={r.key}>
+              {i > 0 && " · "}
+              {r.key === "rtt" && (
+                // The latency light, in the app's one scale of bands
+                // (UX-26, `lib/latency`) — never the colour alone: the
+                // number is beside it.
+                <span
+                  aria-hidden="true"
+                  data-lat={band(rtt)}
+                  className="me-xxs inline-block size-1.5 rounded-full align-middle"
+                  style={{ background: BAND_INK[band(rtt)] }}
+                />
+              )}
+              {r.word}
+            </span>
+          ))}
         </span>
       ) : undefined,
       corners: {
-        top: latency && (
-          <span data-row-latency={reached ? "on" : idle ? "idle" : "off"} data-lat={rowBand} className="flex items-center gap-xxs">
-            <span
-              aria-hidden="true"
-              className={cn("size-1.5 flex-none rounded-full", idle && "opacity-50")}
-              style={{ background: BAND_INK[rowBand] }}
-            />
-            {latency}
-          </span>
-        ),
-        // Empty while connected; when it is not, when it was last heard.
-        bottom: !reached && typeof d.heard_ms === "number" ? <span data-row-heard>{ago(d.heard_ms)}</span> : undefined,
+        top: state ? <span data-row-state={d.paused ? "paused" : d.me ? "here" : live ? d.hop : "offline"}>{state}</span> : undefined,
+        bottom: held ? <span data-row-held>{held}</span> : undefined,
       },
       // **Both names are searchable**, and the id people paste: a renamed
       // machine must be findable by what it is called now and by the
       // name this person knew it by.
-      find: `${d.shown} ${d.name} ${d.id} ${modelName ?? ""} ${doing.join(" ")}`,
+      find: `${d.shown} ${d.name} ${d.id} ${modelName ?? ""}`,
       selected: onOpen !== undefined && d.id === selected,
       // A pane with nowhere to send a row has not earned actions on it.
       menu: onOpen ? actions(d) : [],

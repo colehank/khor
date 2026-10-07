@@ -2571,14 +2571,10 @@ release-to-sync = "松开同步"
 syncing = "正在同步"
 synced-now = "已同步"
 row-unreachable = "无法获取 · {0}"
-# A terminal row's second line, from its shell's command ledger
-# (roadmap 2.1): {0} the command, {1} how long it has run; then the
-# last command, {1} its exit status, {2} how long it took; the third
-# when the shell did not say how it ended.
-row-running = "正在运行 {0} · {1}"
-row-ran = "{0} · 退出 {1} · {2}"
-row-ran-plain = "{0} · {1}"
-row-running-bare = "正在运行 {0}"
+# ⚠️ 墓碑 (UX-48, the owner 2026-10-07): row-running 「正在运行 {0} · {1}」,
+# row-ran 「{0} · 退出 {1} · {2}」, row-ran-plain, row-running-bare — a
+# terminal row's second line is the command itself; its time is the
+# bottom-right's, under the state.
 day-unreachable = "无法获取"
 reading-unreachable = "无法获取 · 上次 {0}"
 machine-cant-reach = "无法连接 {0}"
@@ -2900,19 +2896,21 @@ accounts-log-capped = "只取到最近 {0} 条"
 # 那条读数(2026-09-02:「本机不用写一个括号在机器名旁边。连接方式就是本机」)。
 # [cli] 的 this-machine 是括号后缀,还给终端列表和向导用;别混。
 machine-here = "本机"
-# **The list rows' four corners** (UX-15, the owner 2026-10-05): a machine's
-# activity (sessions running · CPU) and its latency, a workspace's changes, an
-# account's window (what is left · when it resets).
-row-sessions = "{0} 个会话"
+# **The list rows' four corners** (UX-48, the owner 2026-10-07): a machine's
+# readings under its name (latency · CPU · 内存 · GPU), its connection on the
+# right — 直连 / 中继 / 本机 ([hop], machine-here) or 离线.
+# ⚠️ 墓碑: row-sessions 「{0} 个会话」 (UX-15's activity line).
+row-offline = "离线"
 row-cpu = "CPU {0}%"
+row-mem = "内存 {0}%"
+row-gpu = "GPU {0}%"
 # The row's latency keeps the Latin unit (the owner, 2026-10-05: 「23 ms」); the
 # relay rows on 连接 keep theirs (conn-relay-ms).
 row-rtt = "{0} ms"
-row-changes = "{0} 个改动"
-row-window = "剩 {0} · {1} 重置"
-row-left = "剩余 {0}"
-row-kind-sub = "{0} 订阅"
-row-kind-api = "{0} API"
+# ⚠️ 墓碑 (UX-48): row-changes 「{0} 个改动」 (the workspace row says the
+# prompt's git segment instead), row-window 「剩 {0} · {1} 重置」 and
+# row-left (the quota row says quota-resets), row-kind-sub / row-kind-api
+# (the quota row's aside 「Claude 订阅」).
 # The machine card's head, right side (2026-09-06:「右上角的『khor xxx N 秒前
 # 的读数』,改为『Khor xxx N 秒前』」). **Two keys of the card's own**, not the
 # CLI's `vitals-version` / `vitals-taken`, which `khor devices` prints and
