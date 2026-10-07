@@ -289,6 +289,9 @@ const MORE_GLYPH: Record<Exclude<MorePage, "me">, (p: { className?: string }) =>
   doctor: IconPulse,
 };
 
+/** 「（1/3）」 after a dropping file's name, nothing for one file. */
+const dropCount = (d: { done: number; total: number }) => (d.total > 1 ? msg.drop_count(d.done, d.total) : "");
+
 export default function App() {
   const narrow = useNarrow();
   /**
@@ -1729,12 +1732,14 @@ export default function App() {
               id,
               // An unnamed shell's tab follows what runs in it (roadmap
               // 2.5, `termName`); a name somebody gave stays.
-              label: dropping
+              label: dropping ? dropping.name + dropCount(dropping) : termName(r),
+              // The long form: the hover title, the tabs sheet's row.
+              title: dropping
                 ? dropping.total > 1
                   ? msg.drop_into_of(dropping.name, dropping.done, dropping.total)
                   : msg.drop_into(dropping.name)
-                : termName(r),
-              drop: dropping ? { name: dropping.name } : undefined,
+                : undefined,
+              drop: dropping ? { name: dropping.name, count: dropCount(dropping) } : undefined,
               face: r.face,
               path: r.doing?.cwd ?? r.place ?? "",
               // **One line, the title** (UX-20, the owner 2026-10-05): where

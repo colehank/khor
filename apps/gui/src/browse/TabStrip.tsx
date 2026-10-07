@@ -48,7 +48,7 @@ import type { EditItem } from "@/hooks/use-read-first";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
 import { FaceMark, type KindMark } from "@/components/FaceMark";
-import { IconBack, IconCheck, IconClose, IconPlus, IconReload } from "@/components/icons";
+import { IconBack, IconCheck, IconClose, IconPlus, IconReload, IconArrow } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { PaneBar } from "@/components/PaneBar";
 import { RegionLead } from "@/components/Region";
@@ -58,7 +58,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SideList, type SideRow } from "@/components/SideList";
 import { BellMark } from "@/components/BellMark";
 import { sessionKind } from "@/components/SessionFace";
-import { FileKindIcon } from "@/components/FileKindIcon";
 import { gui } from "@/gen/catalog";
 import { stillMotion, TRIP_MS, useTravel } from "@/lib/travel";
 import { cn } from "@/lib/utils";
@@ -188,9 +187,11 @@ export type TabFace = {
   /** **How far a drop onto this tab has landed** (item 60), 0 to 1: the
       same line, filled this far rather than running. `loading` wins. */
   share?: number;
-  /** A file going into this session (the owner 2026-10-07 12:50): its
-      kind's icon stands in the face's seat while it goes in. */
-  drop?: { name: string };
+  /** **A file going into this session** (the owner 2026-10-07 13:05):
+      an upload mark stands in the face's seat, and the name is the
+      file's, cut in the middle, with `count` (「（1/3）」, empty for one
+      file) always whole after it. */
+  drop?: { name: string; count: string };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -200,7 +201,12 @@ export type TabFace = {
     (`SessionFace` `tab`, halo and corner inside the tab's box); the
     switcher's rows are list rows and keep a row's. */
 export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "tab" | "row" }) {
-  if (f.drop) return <FileKindIcon name={f.drop.name} className={bare} />;
+  if (f.drop)
+    return (
+      <span data-tab-dropping className={cn(bare, "grid flex-none place-items-center rounded-full bg-fill-strong text-foreground")}>
+        <IconArrow to="up" className="size-3.5" />
+      </span>
+    );
   if (f.session) return <SessionFace face={f.face} {...f.session} size={seat} />;
   // A browsing page: the machine it goes through, wearing its kind's
   // mark the way a session's tab does (the redesign, 2026-10-02).
@@ -220,7 +226,7 @@ function PreviewMark() {
  * `notes-final.md`, and a file's extension. Short names are one span, so
  * nothing about them changes.
  */
-function MidName({ text }: { text: string }) {
+export function MidName({ text, after = "" }: { text: string; after?: string }) {
   const KEEP = 5;
   const [sizer, setSizer] = useState<HTMLSpanElement | null>(null);
   const [shown, setShown] = useState(text);
@@ -240,7 +246,7 @@ function MidName({ text }: { text: string }) {
       const room = sizer.clientWidth;
       if (room <= 0) return;
       const wide = measurer(fontOf(sizer));
-      if (wide(text) <= room - 1) {
+      if (wide(text + after) <= room - 1) {
         setShown(text);
         return;
       }
@@ -250,7 +256,7 @@ function MidName({ text }: { text: string }) {
       let hi = chars.length - KEEP;
       while (lo < hi) {
         const mid = Math.ceil((lo + hi) / 2);
-        if (wide(`${chars.slice(0, mid).join("")}…${tail}`) <= room - 1) lo = mid;
+        if (wide(`${chars.slice(0, mid).join("")}…${tail}${after}`) <= room - 1) lo = mid;
         else hi = mid - 1;
       }
       setShown(`${chars.slice(0, lo).join("")}…${tail}`);
@@ -259,17 +265,17 @@ function MidName({ text }: { text: string }) {
     const watch = new ResizeObserver(fit);
     watch.observe(sizer);
     return () => watch.disconnect();
-  }, [sizer, text]);
-  if (text.length <= KEEP * 2) return <span className="min-w-0 truncate">{text}</span>;
+  }, [sizer, text, after]);
+  if (text.length <= KEEP * 2) return <span className="min-w-0 truncate">{text + after}</span>;
   return (
     <span data-mid-name className="relative flex min-w-0">
       <span ref={setSizer} aria-hidden className="invisible min-w-0 overflow-hidden whitespace-nowrap">
-        {text}
+        {text + after}
       </span>
       <span aria-hidden className="absolute inset-0 overflow-hidden whitespace-nowrap">
-        {shown}
+        {shown + after}
       </span>
-      <span className="sr-only">{text}</span>
+      <span className="sr-only">{text + after}</span>
     </span>
   );
 }
@@ -841,7 +847,7 @@ export function TabStrip({
                           of the slope — the one italic in the app. */}
                       {f.rang && <BellMark />}
                       {f.preview && <PreviewMark />}
-                      <MidName text={f.label} />
+                      {f.drop ? <MidName text={f.drop.name} after={f.drop.count} /> : <MidName text={f.label} />}
                     </span>
                     {/* **Both lines start on one edge**, which is the
                         glyph's right side: the icon is beside the pair
@@ -863,7 +869,7 @@ export function TabStrip({
                   >
                     {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
-                    <MidName text={f.label} />
+                    {f.drop ? <MidName text={f.drop.name} after={f.drop.count} /> : <MidName text={f.label} />}
                   </span>
                 )}
               </button>
