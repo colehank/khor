@@ -48,6 +48,169 @@ fn ssh_dir() -> Option<PathBuf> {
     std::env::var_os("KHOR_SSH_DIR").map(Into::into)
 }
 
+/// Where a machine is reached over ssh: the destination as the user
+/// names it (a Host alias or user@host), and the jump in front of it
+/// when there is one.
+///
+/// **The jump rides every command as `-J`, never the user's config**
+/// (docs/NET.md 卫星 经由): khor does not write `~/.ssh`, so a jump the
+/// person picked in khor lives on the satellite's row next to its
+/// destination and is handed to each ssh and scp this module runs.
+/// `Display` is the destination alone — what every sentence names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Dest {
+    pub host: String,
+    pub jump: Option<String>,
+}
+
+impl Dest {
+    pub fn new(host: impl Into<String>, jump: Option<&str>) -> Dest {
+        Dest {
+            host: host.into(),
+            jump: jump.filter(|j| !j.is_empty()).map(str::to_owned),
+        }
+    }
+
+    /// A satellite row's road: its destination and its jump, `None`
+    /// when the row has no destination on record.
+    pub fn of(d: &khor_sync::devices::DeviceInfo) -> Option<Dest> {
+        Some(Dest::new(d.ssh_host.clone()?, d.ssh_jump.as_deref()))
+    }
+
+    /// The flags every ssh and scp this module runs shares, before the
+    /// destination: the test door's config, BatchMode, and the jump.
+    ///
+    /// **The jump is spelled as the `ProxyCommand` that `-J` stands
+    /// for**, `ssh -W %h:%p <jump>`, because `-J` starts that second ssh
+    /// without our `-o`s: measured on a scratch sshd, a jump that wanted
+    /// a password was asked for one three times, and from a terminal it
+    /// would have prompted. Spelled out, the jump gets BatchMode and the
+    /// same timeout as the hop behind it.
+    pub fn road(&self) -> Vec<String> {
+        let mut v = Vec::new();
+        let mut cfg = String::new();
+        if let Some(dir) = ssh_dir() {
+            let path = dir.join("config").display().to_string();
+            cfg = format!("-F {} ", sh_quote(&path));
+            v.extend(["-F".to_owned(), path]);
+        }
+        v.extend(["-o".to_owned(), "BatchMode=yes".to_owned()]);
+        if let Some(j) = &self.jump {
+            v.push("-o".to_owned());
+            v.push(format!(
+                "ProxyCommand=ssh {cfg}-o BatchMode=yes -o ConnectTimeout=8 -W %h:%p {}",
+                sh_quote(j)
+            ));
+        }
+        v
+    }
+}
+
+impl std::fmt::Display for Dest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.host)
+    }
+}
+
+/// Which part of an ssh road broke, read off ssh's own words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Broken {
+    /// This machine could not get to the jump, or the jump refused it.
+    ToJump,
+    /// The jump was reached and could not open the way on to the target.
+    JumpToTarget,
+    /// The target answered and takes only a password (or keys that are
+    /// not this machine's): BatchMode stopped at its door.
+    PasswordOnly,
+}
+
+/// Reads which segment failed from what ssh printed — the texts below
+/// are OpenSSH's, measured on scratch sshds (OpenSSH 10.3, 2026-10-08):
+///
+/// - jump down: the inner ssh says `ssh: connect to host … port …` or
+///   `Could not resolve hostname`, and the outer one `Connection closed
+///   by UNKNOWN port 65535` (its proxy, not a host);
+/// - jump refuses this key: `Permission denied (…)` **and** the outer's
+///   UNKNOWN line;
+/// - jump up, target not: `channel 0: open failed: …` and `stdio
+///   forwarding failed`, from the jump's `-W`;
+/// - target refuses the key: `Permission denied (publickey,password)`
+///   with no UNKNOWN line — over a jump or not.
+///
+/// `None` is "ssh said something else": the caller passes its words on
+/// unread (a banner timeout over a proxy cannot say which side hung).
+pub fn broken(to: &Dest, said: &str) -> Option<Broken> {
+    let via_proxy = said.contains("UNKNOWN port 65535");
+    let denied = said.contains("Permission denied");
+    if to.jump.is_some() {
+        if said.contains("stdio forwarding failed") || said.contains("open failed") {
+            return Some(Broken::JumpToTarget);
+        }
+        if via_proxy
+            && (denied
+                || said.contains("ssh: connect to host")
+                || said.contains("Could not resolve hostname")
+                || said.contains("Host key verification failed"))
+        {
+            return Some(Broken::ToJump);
+        }
+    }
+    if denied && !via_proxy {
+        return Some(Broken::PasswordOnly);
+    }
+    None
+}
+
+/// The sentence for an ssh that failed: the broken segment named when
+/// ssh's words say which, else ssh's words as they are. ssh's last
+/// meaningful line rides along, never a password prompt — BatchMode.
+pub(crate) fn cant_reach(to: &Dest, said: &str) -> String {
+    let said = said.trim();
+    // The proxy's own close is noise once the segment is named.
+    let words: Vec<&str> = said
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.contains("UNKNOWN port 65535"))
+        .collect();
+    // The jump's own refusal is the line that says why (`channel 0:
+    // open failed: connect failed: Connection refused`), not the
+    // `stdio forwarding failed` after it.
+    let last = words
+        .iter()
+        .find(|l| l.contains("open failed"))
+        .or(words.last())
+        .copied()
+        .unwrap_or(said);
+    match (broken(to, said), &to.jump) {
+        (Some(Broken::ToJump), Some(j)) => msg::sat_to_jump_broken(j, last),
+        (Some(Broken::JumpToTarget), Some(j)) => msg::sat_jump_to_target_broken(j, &to.host, last),
+        (Some(Broken::PasswordOnly), _) => msg::sat_password_only(&to.host, copy_id_line(to)),
+        _ => msg::sat_cant_reach(to, said),
+    }
+}
+
+/// What a person runs once to stop a host asking for a password: the
+/// GUI's action opens a terminal running exactly this (argv, so no shell
+/// ever sees the names), and the sentence quotes it.
+pub fn copy_id_argv(to: &Dest) -> Vec<String> {
+    let mut v = vec!["ssh-copy-id".to_owned()];
+    if let Some(dir) = ssh_dir() {
+        v.extend(["-F".to_owned(), dir.join("config").display().to_string()]);
+    }
+    if let Some(j) = &to.jump {
+        v.extend(["-o".to_owned(), format!("ProxyJump={j}")]);
+    }
+    v.push(to.host.clone());
+    v
+}
+
+fn copy_id_line(to: &Dest) -> String {
+    match &to.jump {
+        Some(j) => format!("ssh-copy-id -o ProxyJump={j} {}", to.host),
+        None => format!("ssh-copy-id {}", to.host),
+    }
+}
+
 /// What one adoption probe learned over a single connection.
 #[derive(Debug, Clone)]
 pub struct Probe {
@@ -62,30 +225,23 @@ pub struct Probe {
 
 /// The flags every satellite ssh shares. `ConnectTimeout` because a
 /// dead host must cost seconds, not a TCP stack's patience.
-fn ssh_base(host: &str) -> Command {
+fn ssh_base(host: &Dest) -> Command {
     let mut c = Command::new("ssh");
-    if let Some(dir) = ssh_dir() {
-        c.arg("-F").arg(dir.join("config"));
-    }
+    c.args(host.road());
     c.arg("-o")
-        .arg("BatchMode=yes")
-        .arg("-o")
         .arg("ConnectTimeout=8")
-        .arg(host);
+        .arg(&host.host);
     c
 }
 
 /// One connection, two answers: what it is, and whether tmux is there.
-pub fn probe(host: &str) -> Result<Probe, String> {
+pub fn probe(host: &Dest) -> Result<Probe, String> {
     let out = ssh_base(host)
         .arg("uname -s 2>/dev/null || echo unknown; command -v tmux >/dev/null 2>&1 && echo tmux-yes || echo tmux-no")
         .output()
         .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
-        return Err(msg::sat_cant_reach(
-            host,
-            String::from_utf8_lossy(&out.stderr).trim(),
-        ));
+        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
     }
     let text = String::from_utf8_lossy(&out.stdout);
     let mut lines = text.lines();
@@ -147,7 +303,7 @@ df -kP 2>/dev/null | awk 'NR>1 && $1 ~ /^\// {printf "vol=%s|%d|%d\n", $6, $3*10
 /// that breaks: a script travelling as an argument is re-split by
 /// whatever shell receives it, and a script travelling on stdin is
 /// bytes.
-fn sh_over_ssh(host: &str, script: &str) -> Result<String, String> {
+fn sh_over_ssh(host: &Dest, script: &str) -> Result<String, String> {
     use std::io::Write;
     let mut child = ssh_base(host)
         .arg("sh")
@@ -164,10 +320,7 @@ fn sh_over_ssh(host: &str, script: &str) -> Result<String, String> {
         .map_err(|e| msg::sat_cant_reach(host, e.to_string()))?;
     let out = child.wait_with_output().map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
-        return Err(msg::sat_cant_reach(
-            host,
-            String::from_utf8_lossy(&out.stderr).trim(),
-        ));
+        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
     }
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -243,7 +396,7 @@ exit 0
 "#;
 
 /// [`REMOVE_SH`] over the user's ssh road.
-pub fn remove(host: &str, path: &str) -> Result<(), String> {
+pub fn remove(host: &Dest, path: &str) -> Result<(), String> {
     let out = sh_over_ssh_in(host, path, REMOVE_SH)?;
     let said = out
         .lines()
@@ -282,7 +435,7 @@ exit 0
 "#;
 
 /// [`MKDIR_SH`] over the user's ssh road.
-pub fn mkdir(host: &str, path: &str) -> Result<(), String> {
+pub fn mkdir(host: &Dest, path: &str) -> Result<(), String> {
     let out = sh_over_ssh_in(host, path, MKDIR_SH)?;
     let said = out
         .lines()
@@ -318,7 +471,7 @@ exit 0
 "#;
 
 /// [`TOUCH_SH`] over the user's ssh road.
-pub fn touch(host: &str, path: &str) -> Result<(), String> {
+pub fn touch(host: &Dest, path: &str) -> Result<(), String> {
     let out = sh_over_ssh_in(host, path, TOUCH_SH)?;
     let said = out
         .lines()
@@ -372,7 +525,7 @@ fn rename_script(from: &str, to: &str) -> String {
 }
 
 /// [`RENAME_SH`] over the user's ssh road.
-pub fn rename_path(host: &str, from: &str, to: &str) -> Result<(), String> {
+pub fn rename_path(host: &Dest, from: &str, to: &str) -> Result<(), String> {
     let out = sh_over_ssh(host, &rename_script(from, to))?;
     let said = out
         .lines()
@@ -425,7 +578,7 @@ fn launch_script(target: &str) -> String {
 }
 
 /// [`LAUNCH_SH`] over the user's ssh road.
-pub fn launch(host: &str, target: &str) -> Result<(), String> {
+pub fn launch(host: &Dest, target: &str) -> Result<(), String> {
     let out = sh_over_ssh(host, &launch_script(target))?;
     let said = out
         .lines()
@@ -520,7 +673,7 @@ fn search_script(dir: &str, query: &str) -> String {
 
 /// [`SEARCH_SH`] over the user's ssh road, in [`crate::files::Found`]'s
 /// shape.
-pub fn search(host: &str, dir: &str, query: &str) -> Result<crate::files::Found, String> {
+pub fn search(host: &Dest, dir: &str, query: &str) -> Result<crate::files::Found, String> {
     Ok(parse_found(
         &sh_over_ssh(host, &search_script(dir, query))?,
         dir,
@@ -576,7 +729,7 @@ fn parse_found(text: &str, dir: &str) -> crate::files::Found {
 
 /// [`TOUCHED_SH`] over the user's ssh road, in ms since the epoch —
 /// `0` where there was nothing to date.
-pub fn touched(host: &str, path: &str) -> Result<i64, String> {
+pub fn touched(host: &Dest, path: &str) -> Result<i64, String> {
     Ok(parse_touched(&sh_over_ssh_in(host, path, TOUCHED_SH)?))
 }
 
@@ -603,7 +756,7 @@ exit 0
 /// [`CHECKOUT_SH`] over the user's ssh road. **Output that says neither
 /// is a refusal**, not a `false`: 「not a repository」 is a claim, and a
 /// shell that answered something else did not make it.
-pub fn is_checkout(host: &str, path: &str) -> Result<bool, String> {
+pub fn is_checkout(host: &Dest, path: &str) -> Result<bool, String> {
     parse_checkout(&sh_over_ssh_in(host, path, CHECKOUT_SH)?)
 }
 
@@ -672,7 +825,7 @@ exit 0
 "#;
 
 /// [`STATUS_SH`] over ssh, in [`crate::git::Status`]'s shape.
-pub fn git_status(host: &str, root: &str) -> Result<crate::git::Status, String> {
+pub fn git_status(host: &Dest, root: &str) -> Result<crate::git::Status, String> {
     let text = sh_over_ssh_in(host, root, STATUS_SH)?;
     parse_status(&text)
 }
@@ -806,7 +959,7 @@ fn row_mark(x: char, y: char) -> Option<&'static str> {
 /// the string it is in; `ssh -o SendEnv` needs the far sshd's consent,
 /// so the assignment is written by this side into the pipe, quoted
 /// once, by code rather than by hand.
-fn sh_over_ssh_in(host: &str, root: &str, script: &str) -> Result<String, String> {
+fn sh_over_ssh_in(host: &Dest, root: &str, script: &str) -> Result<String, String> {
     sh_over_ssh(host, &rooted(root, script))
 }
 
@@ -835,7 +988,7 @@ exit 0
 "#;
 
 /// [`DIFF_SH`] over ssh, in [`crate::git::Diff`]'s shape.
-pub fn git_diff(host: &str, path: &str) -> Result<crate::git::Diff, String> {
+pub fn git_diff(host: &Dest, path: &str) -> Result<crate::git::Diff, String> {
     let text = sh_over_ssh_in(host, path, DIFF_SH)?;
     Ok(parse_diff(&text))
 }
@@ -903,16 +1056,13 @@ fn plus_side(head: &str) -> Option<(u32, u32)> {
 /// same `khor_core::Vitals` shape every machine reports about itself,
 /// with `version: None`: no khor runs there, and saying so is the row's
 /// honest gap, never a guessed number.
-pub fn sample(host: &str) -> Result<khor_core::Vitals, String> {
+pub fn sample(host: &Dest) -> Result<khor_core::Vitals, String> {
     let out = ssh_base(host)
         .arg(SAMPLE_SH)
         .output()
         .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
-        return Err(msg::sat_cant_reach(
-            host,
-            String::from_utf8_lossy(&out.stderr).trim(),
-        ));
+        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
     }
     Ok(parse_vitals(&String::from_utf8_lossy(&out.stdout)))
 }
@@ -1009,18 +1159,10 @@ fn parse_vitals(text: &str) -> khor_core::Vitals {
 /// same command under `-tt` came up. BatchMode still, because the
 /// no-password contract holds for terminals too and a hidden prompt
 /// would hang the host, not ask anyone.
-pub fn ssh_argv(host: &str) -> Vec<String> {
+pub fn ssh_argv(host: &Dest) -> Vec<String> {
     let mut v = vec!["ssh".to_owned()];
-    if let Some(dir) = ssh_dir() {
-        v.push("-F".to_owned());
-        v.push(dir.join("config").display().to_string());
-    }
-    v.extend([
-        "-o".to_owned(),
-        "BatchMode=yes".to_owned(),
-        "-tt".to_owned(),
-        host.to_owned(),
-    ]);
+    v.extend(host.road());
+    v.extend(["-tt".to_owned(), host.host.clone()]);
     v
 }
 
@@ -1089,7 +1231,7 @@ exit 0
 ///
 /// Every refusal is a sentence rather than a silence, because the one
 /// thing a save must never do is answer「fine」 while writing nothing.
-pub fn write_file(host: &str, path: &str, want_sha: &str, bytes: &[u8]) -> Result<u64, String> {
+pub fn write_file(host: &Dest, path: &str, want_sha: &str, bytes: &[u8]) -> Result<u64, String> {
     use base64::Engine as _;
     let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
     let script = format!(
@@ -1137,7 +1279,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 /// through — measured, `no matches found: ..?*` where a listing should
 /// have been. `wc -c` per file costs a fork each, tolerable under the
 /// same entry cap the local listing keeps.
-pub fn ls(host: &str, path: &str) -> Result<(String, Vec<crate::proto::DirEntry>, bool), String> {
+pub fn ls(host: &Dest, path: &str) -> Result<(String, Vec<crate::proto::DirEntry>, bool), String> {
     let target = if path.is_empty() {
         "\"$HOME\"".to_owned()
     } else {
@@ -1156,10 +1298,7 @@ done"#
         .output()
         .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
-        return Err(msg::sat_cant_reach(
-            host,
-            String::from_utf8_lossy(&out.stderr).trim(),
-        ));
+        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
     }
     let text = String::from_utf8_lossy(&out.stdout);
     let mut lines = text.lines();
@@ -1211,24 +1350,16 @@ done"#
 /// scp, riding the same config door every ssh here rides. The bytes
 /// land where the caller says; slicing them onward to a third machine
 /// is the caller's business (`SatFetchPath` stages through this).
-pub fn pull_file(host: &str, path: &str, dest: &std::path::Path) -> Result<u64, String> {
-    let mut c = Command::new("scp");
-    if let Some(dir) = ssh_dir() {
-        c.arg("-F").arg(dir.join("config"));
-    }
-    let out = c
-        .arg("-o")
-        .arg("BatchMode=yes")
+pub fn pull_file(host: &Dest, path: &str, dest: &std::path::Path) -> Result<u64, String> {
+    let out = Command::new("scp")
+        .args(host.road())
         .arg("-q")
-        .arg(format!("{host}:{path}"))
+        .arg(format!("{}:{path}", host.host))
         .arg(dest)
         .output()
         .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
-        return Err(msg::sat_cant_reach(
-            host,
-            String::from_utf8_lossy(&out.stderr).trim(),
-        ));
+        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
     }
     std::fs::metadata(dest)
         .map(|m| m.len())
@@ -1237,27 +1368,19 @@ pub fn pull_file(host: &str, path: &str, dest: &std::path::Path) -> Result<u64, 
 
 /// Pushes one local file into the satellite's home directory — the
 /// sponsor-side half of `khor send <satellite> <file>`.
-pub fn push_file(host: &str, local: &std::path::Path) -> Result<u64, String> {
+pub fn push_file(host: &Dest, local: &std::path::Path) -> Result<u64, String> {
     let size = std::fs::metadata(local)
         .map(|m| m.len())
         .map_err(|e| e.to_string())?;
-    let mut c = Command::new("scp");
-    if let Some(dir) = ssh_dir() {
-        c.arg("-F").arg(dir.join("config"));
-    }
-    let out = c
-        .arg("-o")
-        .arg("BatchMode=yes")
+    let out = Command::new("scp")
+        .args(host.road())
         .arg("-q")
         .arg(local)
-        .arg(format!("{host}:"))
+        .arg(format!("{}:", host.host))
         .output()
         .map_err(msg::ssh_wont_run)?;
     if !out.status.success() {
-        return Err(msg::sat_cant_reach(
-            host,
-            String::from_utf8_lossy(&out.stderr).trim(),
-        ));
+        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
     }
     Ok(size)
 }
@@ -1394,7 +1517,7 @@ mod tests {
         {
             let loaded = n.devices_loaded().unwrap();
             loaded.doc.upsert(&sat, "box", &[]).unwrap();
-            loaded.doc.set_satellite(&sat, &me, "box", false).unwrap();
+            loaded.doc.set_satellite(&sat, &me, "box", None, false).unwrap();
             let mut store = loaded.store;
             store.flush(&loaded.doc).unwrap();
         }
@@ -1408,6 +1531,38 @@ mod tests {
             .unwrap();
         assert_eq!(n.satellite_road(&sat), Some(khor_core::RoadKind::None), "a stale sample is a broken ssh");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ssh's own words, as measured on scratch sshds (OpenSSH 10.3),
+    /// each read as the segment that broke.
+    #[test]
+    fn sshs_words_name_the_broken_segment() {
+        let via = Dest::new("gpu-box", Some("bastion"));
+        let direct = Dest::new("gpu-box", None);
+        let jump_down = "ssh: connect to host 127.0.0.1 port 22499: Connection refused\r\nConnection closed by UNKNOWN port 65535\r\n";
+        let on_down = "channel 0: open failed: connect failed: Connection refused\r\nstdio forwarding failed\r\nConnection closed by UNKNOWN port 65535\r\n";
+        let jump_denies = "zgh@127.0.0.1: Permission denied (publickey,password).\r\nConnection closed by UNKNOWN port 65535\r\n";
+        let target_denies = "zgh@127.0.0.1: Permission denied (publickey,password).\r\n";
+        assert_eq!(broken(&via, jump_down), Some(Broken::ToJump));
+        assert_eq!(broken(&via, on_down), Some(Broken::JumpToTarget));
+        assert_eq!(broken(&via, jump_denies), Some(Broken::ToJump));
+        assert_eq!(broken(&via, target_denies), Some(Broken::PasswordOnly));
+        assert_eq!(broken(&direct, target_denies), Some(Broken::PasswordOnly));
+        assert_eq!(broken(&direct, "ssh: connect to host 127.0.0.1 port 22: Connection refused"), None);
+        // A banner timeout over a proxy cannot say which side hung.
+        assert_eq!(broken(&via, "Connection timed out during banner exchange\r\nConnection to UNKNOWN port 65535 timed out"), None);
+        // The jump's refusal is the line quoted, not the noise after it.
+        assert!(cant_reach(&via, on_down).contains("channel 0: open failed: connect failed: Connection refused"));
+    }
+
+    /// The jump rides every command as an explicit ProxyCommand with
+    /// BatchMode (the `-J` spelling would let the jump prompt).
+    #[test]
+    fn a_jump_is_a_batch_mode_proxy_command() {
+        let road = Dest::new("gpu-box", Some("bastion")).road();
+        let proxy = road.iter().find(|a| a.starts_with("ProxyCommand=")).expect("a proxy");
+        assert!(proxy.contains("-o BatchMode=yes") && proxy.ends_with("-W %h:%p 'bastion'"), "{proxy}");
+        assert!(!Dest::new("gpu-box", Some("")).road().iter().any(|a| a.starts_with("ProxyCommand=")));
     }
 
     /// The fingerprint-to-id math on a fixed digest: 32 bytes in, the

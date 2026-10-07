@@ -73,7 +73,7 @@
 ## 卫星：只有 ssh 可达的机器（附属机器批，2026-08-26）
 
 **卫星 = 看得见、够得着，但不是它自己在说话；行星 = 它自己在说话；
-转正 = 一条命令。** `khor adopt <ssh主机>` 在任一 khor 机器上把它领进
+转正 = 一条命令。** `khor add <ssh主机> --satellite` 在任一 khor 机器上把它领进
 网，领它的那台从此是它的 **sponsor**：卫星的 home = sponsor，一切对
 它的操作路由到 sponsor、由 sponsor 经 ssh 代跑。这天然使 C→B(sponsor)
 →A(卫星) 跨内网可达——不需要新传输，就是既有的「问 home」。
@@ -113,6 +113,37 @@
   边缘：sponsor 离线期间别处 forget 的墓碑后到，会压掉离线期写的
   re-adopt（删除赢过修改的正确后果）；那时行已消失，人再 adopt 一次
   即赢——墓碑此刻已合并，新写的时钟高过它。
+
+## 添加机器：经 ssh 装成成员，留不住才作卫星（2026-10-08，join-a）
+
+`khor add <ssh主机> [名字] [--via <跳板>] [--satellite]`（取代 `khor adopt`；v1 前不留旧词）。
+`khor_node::join`。
+
+- **默认是成员**：本机经 ssh 跑四步——连接（一条连接看清那台：系统、tmux、哪些东西本来就在）、
+  放 khor（`install.sh` 经 ssh 的标准输入跑，`KHOR_NO_SERVE`；版本是本机自己的
+  `v<VERSION>`，本机设了 `KHOR_MIRROR` 就一并带过去；那台拿不到就由本机送：同平台送本机这份
+  程序，否则本机去下那台的资产，经 ssh 推到 `~/.local/bin/.khor.push.gz`，`KHOR_ASSET_FILE`）、
+  启动（同一脚本 `KHOR_SKIP_FETCH`，用户级常驻：macOS LaunchAgent、Linux `systemd --user`，
+  否则登录脚本一行；**不要 root**）、配对（本机出票，票走 `khor pair -` 的标准输入，不进任何
+  命令行和日志，`PAIR_WAIT` 60 秒）。
+- **留不住就作卫星**：`~/.local/bin` 写不进、没有这种机器的版本、放不上、会话一断常驻就停
+  （从一条新连接看 pid）、60 秒内没连回来——先把这次放上去的东西逐样撤掉（连接那一步记下了
+  哪些本来就在，只撤新放的：程序、`khor-serve-up`、LaunchAgent / unit、`.profile` 里加的行、
+  存储、新建的空目录），再领成卫星。一句话说为什么。`--satellite` 直接作卫星。
+- **退出登录**：常驻照常运行（从一条新连接验过）；重启后谁拉起看 `install.sh` 报的
+  `khor: keeper <词>`：launchd / systemd 开机拉起，`systemd-login` / `login` 要登录一次，`none`
+  要手动 `khor-serve-up`。
+- **经由**：`--via` 每条 ssh 和 scp 都带上跳板，写成 `ProxyCommand=ssh -o BatchMode=yes -W %h:%p
+  <跳板>`——`-J` 起的第二个 ssh 不继承 `-o`，实测会对跳板要三次密码。不改用户的 ssh 配置；
+  跳板记在卫星那一行、ssh 地址旁边（`ssh_jump`）。经一台 khor 机器添加 = 在那台上跑 add，它当 sponsor。
+- **哪一段断了**：读 ssh 自己的话（`satellite::broken`，OpenSSH 10.3 实测）：`ssh: connect to host`
+  / `Could not resolve hostname` / 跳板拒钥匙，且外层说 `UNKNOWN port 65535` = 本机到跳板；
+  `channel 0: open failed` / `stdio forwarding failed` = 跳板到目标；没有 UNKNOWN 的
+  `Permission denied (…)` = 目标只认密码。代理上的 banner 超时分不出哪边，原话照给。
+- **只认密码**：一句话加修法 `ssh-copy-id [-o ProxyJump=<跳板>] <主机>`；app 的动作开一个 khor
+  终端跑它（`satellite::copy_id_argv`）。khor 从不经手密码。
+- **转正**：`khor promote <卫星>` 走同一条安装路；成了，卫星那一行按 id 撤掉、名字带到新机器上；
+  没成，撤掉放上去的东西，它还是原来那颗卫星。
 
 ## 中继
 

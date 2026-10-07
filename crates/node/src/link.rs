@@ -2180,10 +2180,7 @@ impl Node {
             .filter(|d| d.sponsor.is_some())
         {
             let sponsor_id = sat.sponsor.clone().expect("filtered on sponsor");
-            let host = sat
-                .ssh_host
-                .clone()
-                .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+            let host = crate::satellite::Dest::of(&sat).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
             let sponsor_name = self
                 .devices_loaded()?
                 .doc
@@ -3659,7 +3656,7 @@ impl Node {
     /// the one gate every satellite op passes: not in the table, not
     /// mine, or mine without a road each refuse by name. One row, one
     /// speaker (附属机器批).
-    fn my_satellite_host(&self, sat: &str) -> Result<String, String> {
+    fn my_satellite_host(&self, sat: &str) -> Result<crate::satellite::Dest, String> {
         let d = self
             .devices_loaded()?
             .doc
@@ -3675,7 +3672,7 @@ impl Node {
         if self.standing_of(sat) == crate::Standing::Revoked {
             return Err(msg::sat_revoked(d.shown()));
         }
-        d.ssh_host.ok_or_else(|| msg::sat_no_ssh_host(sat))
+        crate::satellite::Dest::of(&d).ok_or_else(|| msg::sat_no_ssh_host(sat))
     }
 
     /// Where a satellite pull stages on the sponsor: one spot per
@@ -3700,13 +3697,13 @@ impl Node {
     async fn sat_slice(
         &self,
         sat: &str,
-        host: &str,
+        host: &crate::satellite::Dest,
         path: &str,
         offset: u64,
     ) -> Result<(u64, u64, Vec<u8>), String> {
         let staged = self.sat_staging_path(sat, path)?;
         if offset == 0 || !staged.exists() {
-            let (h, p, s) = (host.to_owned(), path.to_owned(), staged.clone());
+            let (h, p, s) = (host.clone(), path.to_owned(), staged.clone());
             tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &s))
                 .await
                 .map_err(|e| e.to_string())??;
@@ -3738,7 +3735,7 @@ impl Node {
     async fn sat_write(
         &self,
         sat: &str,
-        host: &str,
+        host: &crate::satellite::Dest,
         path: &str,
         was: &str,
         bytes: &[u8],
@@ -3755,7 +3752,7 @@ impl Node {
         let staged = self.sat_staging_path(sat, path)?;
         let want = {
             let (h, p, sp, was) = (
-                host.to_owned(),
+                host.clone(),
                 path.to_owned(),
                 staged.clone(),
                 was.to_owned(),
@@ -3774,7 +3771,7 @@ impl Node {
             .await
             .map_err(|e| e.to_string())??
         };
-        let (h, p, mine) = (host.to_owned(), path.to_owned(), bytes.to_vec());
+        let (h, p, mine) = (host.clone(), path.to_owned(), bytes.to_vec());
         let at_ms =
             tokio::task::spawn_blocking(move || crate::satellite::write_file(&h, &p, &want, &mine))
                 .await
@@ -4666,10 +4663,7 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || crate::satellite::remove(&host, &path))
                     .await
@@ -4711,11 +4705,11 @@ impl Node {
     /// [`Self::sat_and_sponsor`]**: that one answers whose satellite it
     /// is, this one answers how to reach it, and a row can lose its
     /// address without leaving the table.
-    fn sponsored_host(&self, channel: &str) -> Result<String, String> {
+    fn sponsored_host(&self, channel: &str) -> Result<crate::satellite::Dest, String> {
         self.devices_loaded()?
             .doc
             .by_name(channel)
-            .and_then(|d| d.ssh_host.clone())
+            .and_then(|d| crate::satellite::Dest::of(&d))
             .ok_or_else(|| msg::sat_no_ssh_host(channel))
     }
 
@@ -5313,10 +5307,7 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || {
                     crate::satellite::is_checkout(&host, &path)
@@ -5384,10 +5375,7 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || {
                     crate::satellite::touched(&host, &path)
@@ -5915,7 +5903,7 @@ impl Node {
                     .devices_loaded()?
                     .doc
                     .by_name(&channel)
-                    .and_then(|d| d.ssh_host.clone())
+                    .and_then(|d| crate::satellite::Dest::of(&d))
                     .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 return self.sat_write(&sat, &host, path, was, bytes).await;
             };
@@ -6230,10 +6218,7 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 return self.sat_slice(&sat, &host, path, offset).await;
             }
             let sponsor = self
@@ -6706,10 +6691,7 @@ impl Node {
         // sponsor itself no wire is needed at all.
         if let Some(sp) = target.sponsor.clone() {
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || crate::satellite::ls(&host, &path))
                     .await
@@ -6881,10 +6863,7 @@ impl Node {
         // (`Request::SatFetchPath`).
         let (dial_to, sat) = match target.sponsor.clone() {
             Some(sp) if sp == self.device_str() => {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let (h, p, part) = (host, path.to_owned(), fell.part.clone());
                 let moved =
                     tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &part))

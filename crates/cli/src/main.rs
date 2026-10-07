@@ -541,8 +541,13 @@ const VERBS: &[Verb] = &[
         reach: Reach::Act,
     },
     Verb {
-        word: "adopt",
-        run: adopt,
+        word: "add",
+        run: add,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "promote",
+        run: promote,
         reach: Reach::Act,
     },
     // What waits for the root holder (docs/CONNECT.md 根不在场). Reads.
@@ -5191,6 +5196,17 @@ fn pair(rest: &[String]) -> Result<(), String> {
     let [ticket] = rest else {
         return Err(usage_text().into());
     };
+    // `-`: the ticket on stdin, so it is on no command line — `khor add`
+    // pairs a machine this way over ssh, and a command line is in `ps`.
+    let mut read = String::new();
+    let ticket = if ticket == "-" {
+        std::io::stdin()
+            .read_line(&mut read)
+            .map_err(|e| e.to_string())?;
+        read.trim()
+    } else {
+        ticket.as_str()
+    };
     let n = node()?;
     let name = rt()?.block_on(n.pair(ticket))?;
     println!("{}", cli::paired_ok(name));
@@ -5202,33 +5218,86 @@ fn pair(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Leads an ssh-only machine into the network as this machine's
-/// satellite (附属机器批) — `Node::adopt_satellite` does the probing
-/// and the minting; this prints the report, and the tmux line rides
-/// along so the terminal's nature is no surprise later.
-fn adopt(rest: &[String]) -> Result<(), String> {
-    let (host, name) = match rest {
+/// Adds a machine over ssh (添加机器; `khor_node::join`): a member by
+/// default, a satellite when it cannot stay one or when `--satellite`
+/// says so. Each step is told on stderr as it ends; the outcome on
+/// stdout.
+fn add(rest: &[String]) -> Result<(), String> {
+    let mut words = Vec::new();
+    let mut via = None;
+    let mut satellite_only = false;
+    let mut it = rest.iter();
+    while let Some(w) = it.next() {
+        match w.as_str() {
+            "--via" => via = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
+            "--satellite" => satellite_only = true,
+            _ => words.push(w.clone()),
+        }
+    }
+    let (host, name) = match words.as_slice() {
         [host] => (host, None),
         [host, name] => (host, Some(name.as_str())),
         _ => return Err(usage_text().into()),
     };
     let n = node()?;
-    let (id, name, tmux) = n.adopt_satellite(host, name)?;
-    println!("{}", cli::adopted(&name, n.name()));
+    let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref());
+    let added = n.add_over_ssh(&to, name, satellite_only, &mut tell_step)?;
+    say_added(&n, &added);
+    Ok(())
+}
+
+/// 转正 (docs/NET.md 卫星): a satellite of this machine becomes a member.
+fn promote(rest: &[String]) -> Result<(), String> {
+    let [machine] = rest else {
+        return Err(usage_text().into());
+    };
+    let n = node()?;
+    let added = n.promote(machine, &mut tell_step)?;
+    println!("{}", cli::promoted(&added.name));
+    Ok(())
+}
+
+/// One finished step, one line on stderr: its word and what it did.
+fn tell_step(step: khor_node::join::Step, mark: khor_node::join::Mark) {
+    use khor_node::join::{Mark, Step};
+    let word = match step {
+        Step::Connect => cli::add_step_connect(),
+        Step::Place => cli::add_step_place(),
+        Step::Start => cli::add_step_start(),
+        Step::Pair => cli::add_step_pair(),
+        Step::Undo => cli::add_step_undo(),
+        Step::Satellite => cli::add_step_satellite(),
+    };
+    match mark {
+        Mark::Live => {}
+        Mark::Done(note) if note.is_empty() => eprintln!("✓ {word}"),
+        Mark::Done(note) => eprintln!("✓ {word}  {note}"),
+        Mark::Failed(why) => eprintln!("✗ {word}  {why}"),
+    }
+}
+
+fn say_added(n: &khor_node::Node, added: &khor_node::join::Added) {
+    if added.member {
+        println!("{}", cli::added_member(&added.name));
+        return;
+    }
+    if let Some(why) = &added.why {
+        println!("{}", cli::added_satellite(why));
+    }
+    println!("{}", cli::adopted(&added.name, n.name()));
     // On the roster only once the root holder signs it (docs/CONNECT.md
     // 卫星也进名单); until then it waits, and it still works from here.
-    if n.standing_of(&id) == khor_node::Standing::Pending {
+    if n.standing_of(&added.id) == khor_node::Standing::Pending {
         eprintln!("{}", cli::adopt_pending_hint());
     }
     println!(
         "{}",
-        if tmux {
+        if added.tmux {
             cli::sat_tmux_yes()
         } else {
             cli::sat_tmux_no()
         }
     );
-    Ok(())
 }
 
 fn sync(_rest: &[String]) -> Result<(), String> {
