@@ -5086,6 +5086,7 @@ fn add(rest: &[String]) -> Result<(), String> {
     let mut via = None;
     let mut port = None;
     let mut password = false;
+    let mut from = None;
     let mut satellite_only = false;
     let mut it = rest.iter();
     while let Some(w) = it.next() {
@@ -5096,6 +5097,7 @@ fn add(rest: &[String]) -> Result<(), String> {
                 port = Some(p.parse::<u16>().map_err(|_| usage_text().to_owned())?);
             }
             "--password" => password = true,
+            "-m" => from = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
             "--satellite" => satellite_only = true,
             _ => words.push(w.clone()),
         }
@@ -5108,8 +5110,16 @@ fn add(rest: &[String]) -> Result<(), String> {
     let password = if password { Some(read_password()?) } else { None };
     let n = node()?;
     let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref()).on_port(port);
+    // From another khor machine (通过 khor 主机): it is the sponsor and
+    // runs the add; this one tells its steps as they come.
+    if let Some(m) = from.filter(|m| m != n.name()) {
+        let to = to.with_password(password.is_some());
+        let added = rt()?.block_on(n.add_on(&m, &to, name, satellite_only, tell_step))?;
+        say_added(&n, &added, &m);
+        return Ok(());
+    }
     let added = n.add_over_ssh(&to, name, satellite_only, password.as_deref(), &mut tell_step)?;
-    say_added(&n, &added);
+    say_added(&n, &added, n.name());
     Ok(())
 }
 
@@ -5173,7 +5183,7 @@ fn tell_step(step: khor_node::join::Step, mark: khor_node::join::Mark) {
     }
 }
 
-fn say_added(n: &khor_node::Node, added: &khor_node::join::Added) {
+fn say_added(n: &khor_node::Node, added: &khor_node::join::Added, sponsor: &str) {
     if added.member {
         println!("{}", cli::added_member(&added.name));
         return;
@@ -5181,7 +5191,7 @@ fn say_added(n: &khor_node::Node, added: &khor_node::join::Added) {
     if let Some(why) = &added.why {
         println!("{}", cli::added_satellite(why));
     }
-    println!("{}", cli::adopted(&added.name, n.name()));
+    println!("{}", cli::adopted(&added.name, sponsor));
     // On the roster only once the root holder signs it (docs/CONNECT.md
     // 卫星也进名单); until then it waits, and it still works from here.
     if n.standing_of(&added.id) == khor_node::Standing::Pending {

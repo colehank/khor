@@ -256,14 +256,20 @@ fn khor(w: &World, mirror: &str, args: &[&str]) -> Output {
 }
 
 fn sponsor_env(w: &World, mirror: &str) -> Vec<(String, String)> {
+    node_env(w, mirror, "sponsor")
+}
+
+/// A scratch khor node's environment: its own home, name and tmux
+/// socket, the scratch ssh world, mirror and secret store.
+fn node_env(w: &World, mirror: &str, who: &str) -> Vec<(String, String)> {
     let d = &w.dir;
     [
-        ("KHOR_HOME", d.join("sponsor").display().to_string()),
-        ("KHOR_NAME", "sponsor".into()),
+        ("KHOR_HOME", d.join(who).display().to_string()),
+        ("KHOR_NAME", who.to_owned()),
         ("KHOR_NO_MDNS", "1".into()),
         ("KHOR_WEB_PORT", "0".into()),
-        ("TMUX_TMPDIR", d.join("sponsor-tmux").display().to_string()),
-        ("KHOR_TMUX_SOCKET", "khor-add-sponsor".into()),
+        ("TMUX_TMPDIR", d.join(format!("{who}-tmux")).display().to_string()),
+        ("KHOR_TMUX_SOCKET", format!("khor-add-{who}")),
         ("KHOR_SSH_DIR", d.join("client").display().to_string()),
         ("KHOR_SECRET_DIR", d.join("secrets").display().to_string()),
         ("KHOR_MIRROR", mirror.into()),
@@ -481,4 +487,48 @@ fn add_over_ssh_in_a_scratch_world() {
     let said = text(&out);
     assert!(out.status.success() && said.contains("Added box9"), "{said}");
     assert_eq!(kept(&w), 0, "a member's password is dropped once it is in");
+    // Every far host is this one machine, and a far serve runs without
+    // KHOR_HOME, so the next far khor would take box9's serve for one on
+    // its own store (`serves::beside`): one far resident at a time.
+    reset_far(&dir, "lock");
+
+    // 9. From another khor machine: `origin`, paired with the sponsor,
+    //    runs the add over its own ssh road and is the sponsor; this
+    //    machine watches its steps.
+    fs::create_dir_all(dir.join("origin")).unwrap();
+    let mut serve = Command::new(env!("CARGO_BIN_EXE_khor"));
+    serve
+        .arg("serve")
+        .envs(node_env(&w, &m, "origin"))
+        .env_remove("KHOR_SESSION")
+        .stdout(Stdio::null())
+        .stderr(fs::File::create(dir.join("origin.log")).unwrap());
+    let _origin = Kept(serve.spawn().unwrap());
+    std::thread::sleep(Duration::from_secs(3));
+    let ticket = khor(&w, &m, &["invite"]);
+    assert!(ticket.status.success(), "invite: {}", String::from_utf8_lossy(&ticket.stderr));
+    let ticket = String::from_utf8_lossy(&ticket.stdout).lines().next().unwrap_or("").to_owned();
+    let paired = Command::new(env!("CARGO_BIN_EXE_khor"))
+        .args(["pair", "-"])
+        .envs(node_env(&w, &m, "origin"))
+        .env_remove("KHOR_SESSION")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .and_then(|mut c| {
+            c.stdin.take().unwrap().write_all(format!("{ticket}\n").as_bytes())?;
+            c.wait_with_output()
+        })
+        .unwrap();
+    drop(ticket);
+    assert!(paired.status.success(), "origin pairs: {}", String::from_utf8_lossy(&paired.stderr));
+    let out = khor_in(&w, &m, &["add", "lock", "-m", "origin", "--password"], "x\n");
+    assert!(!out.status.success() && text(&out).contains("key login only"), "{}", text(&out));
+    reset_far(&dir, "target");
+    let out = khor(&w, &m, &["add", "target", "box10", "--via", "jump", "-m", "origin"]);
+    let said = text(&out);
+    assert!(out.status.success() && said.contains("Added box10"), "{said}");
+    assert!(said.contains("Install khor") && said.contains("Pair"), "the steps came back: {said}");
+    assert!(far_home(&dir, "target").join(".local/bin/khor").exists());
 }

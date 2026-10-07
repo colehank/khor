@@ -360,6 +360,17 @@ pub enum Op {
     /// `to`, which pulls it, is told to stop. Answered with
     /// [`Reply::Noted`]. Tail-appended.
     DropStop { token: String, to: String },
+    /// [`crate::proto::Request::AddOverSsh`] asked of `machine` by the
+    /// resident. Answered with [`Reply::Adding`]. Tail-appended.
+    AddOn {
+        machine: String,
+        token: String,
+        host: String,
+        port: Option<u16>,
+        jump: Option<String>,
+        name: Option<String>,
+        satellite_only: bool,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -460,6 +471,7 @@ impl Op {
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
             Op::DropInto { .. } => ("DropInto", DEADLINE_FAR),
             Op::DropStop { .. } => ("DropStop", DEADLINE_FAR),
+            Op::AddOn { .. } => ("AddOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -667,6 +679,8 @@ pub enum Reply {
     },
     /// Tail-appended with [`Op::DropOn`].
     DropFile { state: crate::drops::DropState },
+    /// Tail-appended with [`Op::AddOn`].
+    Adding { run: crate::join::Run },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

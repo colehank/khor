@@ -424,7 +424,8 @@ usage: khor <verb>
                         serve running)
   pair <ticket|->       joins the network with a ticket; - reads it
                         from standard input
-  add <SSH host> [name] [--port <port>] [--via <jump>] [--password] [--satellite]
+  add <SSH host> [name] [--port <port>] [--via <jump>] [-m <khor host>] [--password]
+      [--satellite]
                         adds a machine over SSH: by default installs khor
                         and makes it a khor host (user-level resident, no
                         root); when khor can't keep running there, removes
@@ -433,7 +434,9 @@ usage: khor <verb>
                         installed; this machine runs everything over SSH).
                         --port defaults to 22 or your ssh config's port.
                         --via sends every ssh through that jump host
-                        without changing your ssh config. --password reads
+                        without changing your ssh config. -m has that khor
+                        host add it over its own ssh (it runs the add; key
+                        login only). --password reads
                         the password from standard input and keeps it only
                         in this machine's system keychain; without it, key
                         login is used. Identity comes from your known_hosts
@@ -1376,6 +1379,10 @@ sat-one-time-code = "{0} asks for a one-time code at every login; khor doesn't s
 no-secret-store = "This machine has no system keychain to keep the password in; use key login instead"
 secret-store-failed = "Couldn't use the system keychain: {0}"
 password-not-given = "No password on standard input"
+add-on-no-password = "Adding through the khor host {0} takes key login only: a password stays on the machine that runs ssh and never crosses the network"
+add-on-self = "That is this machine; add it directly"
+add-on-predates = "khor on {0} is too old to add machines for you; update it first"
+add-on-needs-serve = "khor on {0} isn't running as a resident, so it can't add machines for you"
 # 添加机器 over ssh (`khor_node::join`). Why a member attempt became a
 # satellite, one sentence each; {0} is the host.
 add-timed-out = "No response within {0} seconds"

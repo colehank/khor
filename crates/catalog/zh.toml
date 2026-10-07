@@ -379,13 +379,15 @@ usage = """
                         --fix 跑那一项的修法（能修的项在行尾写着怎么跑）
   invite                出一张一次性配对票（要求 serve 在跑）
   pair <票|->           凭票入网；- 从标准输入读票
-  add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [--password] [--satellite]
+  add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [-m <khor主机>] [--password]
+      [--satellite]
                         通过 SSH 添加一台机器：默认安装 khor，作为 khor 主机
                         （用户级常驻，不需要 root）；无法持续运行时移除安装
                         的文件，改为通过 SSH 连接。--satellite 直接作为 SSH
                         主机（不安装任何东西，由本机通过 SSH 执行）。--port
                         不填时用 22 或你的 ssh 配置里的端口。--via 每条 ssh
-                        都经过该跳板机，不修改你的 ssh 配置。--password 从
+                        都经过该跳板机，不修改你的 ssh 配置。-m 由那台 khor
+                        主机经它自己的 ssh 添加（它代为执行，只能用密钥）。--password 从
                         标准输入读取密码，只存进本机的系统钥匙串；不加时用
                         密钥登录。主机身份取自你的 known_hosts
   promote <SSH主机>     安装 khor：在本机添加的 SSH 主机上安装 khor，名称保留，
@@ -2228,6 +2230,11 @@ sat-one-time-code = "{0} 每次登录都要求一次性验证码，khor 不支�
 no-secret-store = "本机没有可用的系统钥匙串，无法保存密码；改用密钥登录"
 secret-store-failed = "无法访问系统钥匙串：{0}"
 password-not-given = "标准输入中没有密码"
+# 通过 khor 主机添加 (Node::add_on): that machine runs the add as the sponsor.
+add-on-no-password = "通过 khor 主机 {0} 添加时只能使用密钥登录：密码只保存在运行 ssh 的机器上，不经网络传输"
+add-on-self = "这就是本机，直接添加即可"
+add-on-predates = "{0} 上的 khor 版本过旧，无法代为添加；先更新它"
+add-on-needs-serve = "{0} 上的 khor 没有常驻运行，无法代为添加"
 # 添加机器 over ssh (`khor_node::join`). Why a member attempt became a
 # satellite, one sentence each; {0} is the host.
 add-timed-out = "{0} 秒内没有响应"

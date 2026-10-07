@@ -131,7 +131,9 @@
   要手动 `khor-serve-up`。
 - **经由**：`--via` 每条 ssh 和 scp 都带上跳板，写成 `ProxyCommand=ssh -o BatchMode=yes -W %h:%p
   <跳板>`——`-J` 起的第二个 ssh 不继承 `-o`，实测会对跳板要三次密码。不改用户的 ssh 配置；
-  跳板记在卫星那一行、ssh 地址旁边（`ssh_jump`）。经一台 khor 机器添加 = 在那台上跑 add，它当 sponsor。
+  跳板记在卫星那一行、ssh 地址旁边（`ssh_jump`）。经一台 khor 机器添加（`-m <机器>`，界面「通过 khor
+  主机」）= 在那台上跑 add，它当 sponsor：本机发 `Request::AddOverSsh`（按 token，像投递），那台
+  在自己的线程里跑，本机每 500 ms 再问一次，拿回到目前为止的每一步（`join::Run`）。只能用密钥。
 - **哪一段断了**：读 ssh 自己的话（`satellite::broken`，OpenSSH 10.3 实测）：`ssh: connect to host`
   / `Could not resolve hostname` / 跳板拒钥匙，且外层说 `UNKNOWN port 65535` = 本机到跳板；
   `channel 0: open failed` / `stdio forwarding failed` = 跳板到目标；没有 UNKNOWN 的
