@@ -1,7 +1,16 @@
-// Lab only (lane join-a, Stage 0): the whole 添加机器 flow drawn with fake
-// data, one screen at a time, in the real dialog, buttons, fields and
-// faces. Nothing here talks to a node. `#1` … `#8` picks the screen,
-// `?dark` / `?light` the theme. Served by the 1460 lab vite.
+// Lab only (lanes join-a → join-c): the whole 添加机器 flow drawn with
+// fake data, one screen at a time, in the real dialog, buttons, fields,
+// switch and faces. Nothing here talks to a node. `#1` … `#8` picks the
+// screen (`#3b` and the like are the SSH form's own pages), `?dark` /
+// `?light` the theme. Served by the 1460 lab vite.
+//
+// Round 3 (the owner: 「整体ui太丑了」): every screen is a form dialog, so
+// on a phone it is the bottom sheet (`ui/dialog`, `app.css`), and the
+// lab stamps `data-narrow` the way the shell does. Forms are lists on
+// the one ground with hairlines — a row per answer, its value at the
+// trailing end, a chevron where a choice opens — not a two-column web
+// form. A choice is a page of its own inside the sheet with a check on
+// what is picked, as iOS's settings do.
 import { useEffect, useState, type ReactNode } from "react";
 import ReactDOM from "react-dom/client";
 
@@ -9,20 +18,12 @@ import "@/styles/tokens.css";
 import "@/styles/app.css";
 
 import { MachineAvatar } from "@/components/Avatar";
-import { IconCheck, IconChevronRight, IconClose, IconDevices, IconTerminal } from "@/components/icons";
+import { IconCheck, IconChevronRight, IconClose, IconDevices } from "@/components/icons";
+import { Switch } from "@/components/settings/Switch";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { FormGrid, FormLabel } from "@/components/ui/form-grid";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { PopupButton } from "@/components/ui/popup-button";
-import { SegmentedControl } from "@/components/ui/segmented-control";
+import { NARROW_QUERY } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
 
 // ---- fixtures -------------------------------------------------------------
@@ -48,17 +49,161 @@ const faces: Record<string, any> = {
   hinton: av("#6b3a2a", "#f0c674", "#cc6666"),
   lecun: av("#4a4a4a", "#b294bb", "#969896"),
   "gpu-box": av("#3a5a40", "#dad7cd", "#a3b18a"),
+  bastion: av("#5a4a6b", "#d7cdda", "#a38ab1"),
+  "lab-gw": av("#6b5a2a", "#dad2a6", "#b8a67a"),
 };
 
-const sshHosts = ["gpu-box", "bastion", "lab-gw", "hinton", "lecun", "aliyun-bj"];
+/** Host lines of the user's ssh config (read-only; patterns skipped). */
+const sshHosts = ["gpu-box", "gpu-box-2", "bastion", "lab-gw", "hinton", "lecun", "aliyun-bj"];
 const khorMachines = ["turing", "hinton", "lecun"];
+/** A routed add's key files: the names in that machine's ~/.ssh. */
+const farKeys = ["id_ed25519", "id_rsa", "lab_key"];
 
+/** The SSH form's answers, kept above the screens so a page of choices
+    and the form it returns to share them. */
+type Form = {
+  host: string;
+  port: string;
+  /** "" = 直接连接; "khor:<name>" = run the add there; else an ssh jump. */
+  via: string;
+  auth: "key" | "password";
+  /** null = 默认 (ssh config and agent); else the key file's path. */
+  key: string | null;
+  install: boolean;
+};
+const blank: Form = { host: "gpu-box", port: "", via: "bastion", auth: "key", key: null, install: true };
+
+const go = (to: string) => (location.hash = `#${to}`);
+const viaKhor = (via: string) => (via.startsWith("khor:") ? via.slice(5) : null);
 
 // ---- pieces ---------------------------------------------------------------
 
 function Face({ name, className }: { name: string; className?: string }) {
-  return <MachineAvatar face={faces[name] ?? null} className={cn("size-list-face flex-none", className)} />;
+  return <MachineAvatar face={faces[name] ?? null} className={cn("size-ctl-md flex-none", className)} />;
 }
+
+/**
+ * **Proposed glyph (not in the set yet): an SSH host.** The owner asked
+ * for the two first-screen choices at one icon weight; the family's
+ * terminal is a bare `>_` (0.15 ink) and the machine is the rack, two
+ * solid units — side by side the first read as a lighter, smaller mark.
+ * This is the rack's own box on the 24 canvas, one unit tall: the window
+ * is the solid piece and the prompt is punched through it with the
+ * family's line, the keyboard's construction. If the owner keeps it, it
+ * goes into `icons.tsx` as the 36th with its measured fit.
+ */
+function IconSshHost({ className }: { className?: string }) {
+  // `devices`' fit (square share): the same box, so the same painted size.
+  const f = { x: 1.45, y: 1.45, side: 21.11 };
+  const line = 0.072 * f.side;
+  return (
+    <svg
+      className={className}
+      viewBox={`${f.x} ${f.y} ${f.side} ${f.side}`}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={line}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <mask id="lab-ssh-cut">
+        <rect x={f.x} y={f.y} width={f.side} height={f.side} fill="white" stroke="none" />
+        <path d="M7.7 8.9 10.8 12l-3.1 3.1M12.6 15.1h3.8" stroke="black" strokeWidth={line} />
+      </mask>
+      <rect data-body mask="url(#lab-ssh-cut)" x="3.5" y="4.6" width="17" height="14.8" rx="2.6" />
+    </svg>
+  );
+}
+
+/**
+ * A list on the one ground: rows with a hairline between them that
+ * starts where the words start (macOS and iOS), an optional group name
+ * above in `group` / `tertiary`, and an optional note below in `callout`
+ * / `secondary`. No card, no fill: the sheet's ground and its lines.
+ */
+function Group({ head, foot, children, mark }: { head?: string; foot?: ReactNode; children: ReactNode; mark?: string }) {
+  return (
+    <section data-join-group={mark} className="flex flex-col gap-xxs">
+      {head && <h3 className="text-group text-tertiary">{head}</h3>}
+      <div className="-mx-row flex flex-col [&>*:first-child_[data-row-body]]:border-t-0">{children}</div>
+      {foot && <div className="text-callout text-muted-foreground">{foot}</div>}
+    </section>
+  );
+}
+
+/**
+ * One row: a leading seat (a glyph, a face, a step's mark), the title and
+ * its note, a value in `secondary`, then the trailing control — a check
+ * on the picked choice, a chevron where a choice opens, a switch.
+ */
+function Row({
+  lead,
+  title,
+  note,
+  value,
+  trail,
+  chevron,
+  checked,
+  onPress,
+  dim,
+  children,
+}: {
+  lead?: ReactNode;
+  title?: ReactNode;
+  note?: ReactNode;
+  value?: ReactNode;
+  trail?: ReactNode;
+  chevron?: boolean;
+  checked?: boolean;
+  onPress?: () => void;
+  /** A row that cannot be picked (an unreachable machine): words in
+      `secondary`, no press. */
+  dim?: boolean;
+  /** In place of title / note / value: the row's own body (a field). */
+  children?: ReactNode;
+}) {
+  const body = (
+    <>
+      {lead && <span className="flex flex-none items-center justify-center self-center">{lead}</span>}
+      <span
+        data-row-body
+        className="flex min-h-[max(var(--touch),calc(var(--ctl-md)+2*var(--gap-in)))] min-w-0 flex-1 items-center gap-row border-t py-in"
+      >
+        {children ?? (
+          <>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className={cn("text-body", dim ? "text-muted-foreground" : "text-foreground")}>{title}</span>
+              {note && <span className="text-callout text-muted-foreground">{note}</span>}
+            </span>
+            {value !== undefined && (
+              <span className="min-w-0 flex-none truncate text-body text-muted-foreground tabular-nums">{value}</span>
+            )}
+          </>
+        )}
+        {trail}
+        {checked !== undefined && (
+          <span className="flex w-icon-mark flex-none justify-center">
+            {checked && <IconCheck className="size-icon-mark text-foreground" />}
+          </span>
+        )}
+        {chevron && <IconChevronRight className="size-affordance flex-none text-tertiary" />}
+      </span>
+    </>
+  );
+  const cls = "flex w-full items-stretch gap-row rounded-md px-row text-left";
+  return onPress && !dim ? (
+    <button type="button" onClick={onPress} className={cn(cls, "hover:bg-fill")}>
+      {body}
+    </button>
+  ) : (
+    <div className={cls}>{body}</div>
+  );
+}
+
+/** A field that is its row: no fill of its own, the row's hairlines
+    around it. */
+const bare = "h-auto min-h-0 rounded-none bg-transparent px-0";
 
 /** A pretend QR code: a fixed scatter of modules in the real one's frame. */
 function FakeQr() {
@@ -84,70 +229,45 @@ function FakeQr() {
   );
 }
 
-/** A choice on the first screen: a row you press, glyph · words · ›. */
-function Choice({ icon, title, note, onPick }: { icon: ReactNode; title: string; note: string; onPick?: () => void }) {
+/** A sheet's title. On the phone it shares the first row with the
+    footer's buttons (`app.css`, UX-10). */
+function Head({ title }: { title: string }) {
   return (
-    <button
-      type="button"
-      onClick={onPick}
-      className="flex w-full items-center gap-row rounded-md px-row py-in text-left hover:bg-fill"
-    >
-      <span className="flex size-ctl-md flex-none items-center justify-center text-muted-foreground [&_svg]:size-icon-mark">
-        {icon}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="text-headline text-foreground">{title}</span>
-        <span className="text-callout text-muted-foreground">{note}</span>
-      </span>
-      <IconChevronRight className="size-icon-mark flex-none text-muted-foreground" />
-    </button>
+    <DialogHeader>
+      <DialogTitle>{title}</DialogTitle>
+    </DialogHeader>
   );
 }
 
-type StepState = "done" | "live" | "wait" | "failed" | "undone";
-/** One line of the install: its mark, its verb, what it did. */
-function Step({ state, word, note }: { state: StepState; word: string; note?: string }) {
-  return (
-    <li data-step={state} className="flex items-start gap-row py-xxs">
-      <span className="flex h-(--text-body--line-height) w-icon-mark flex-none items-center justify-center">
-        {state === "done" ? (
-          <IconCheck className="size-icon-mark text-foreground" />
-        ) : state === "failed" ? (
-          <IconClose className="size-icon-mark text-destructive" />
-        ) : state === "live" ? (
-          <span className="size-2 animate-pulse rounded-full bg-foreground motion-reduce:animate-none" />
-        ) : (
-          <span className="size-2 rounded-full border border-muted-foreground" />
-        )}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span
-          className={cn(
-            "text-body",
-            state === "wait" || state === "undone" ? "text-muted-foreground" : "text-foreground",
-            state === "undone" && "line-through",
-          )}
-        >
-          {word}
-        </span>
-        {note && <span className="text-callout text-muted-foreground">{note}</span>}
-      </span>
-    </li>
-  );
+/** The sheet's parts, `gap-group` apart. */
+function Body({ children }: { children: ReactNode }) {
+  return <div className="flex min-w-0 flex-col gap-group">{children}</div>;
 }
 
-// ---- the screens ----------------------------------------------------------
+// ---- 1 · the first choice ---------------------------------------------------
 
 function Pick() {
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>添加机器</DialogTitle>
-      </DialogHeader>
-      <div className="-mx-row flex flex-col">
-        <Choice icon={<IconDevices />} title="khor 主机" note="已安装 khor，使用邀请码添加" onPick={() => (location.hash = "#2")} />
-        <Choice icon={<IconTerminal />} title="SSH 主机" note="通过 SSH 添加，自动安装 khor" onPick={() => (location.hash = "#3")} />
-      </div>
+      <Head title="添加机器" />
+      <Body>
+        <Group mark="pick">
+          <Row
+            lead={<IconDevices className="size-nav-glyph text-foreground" />}
+            title="khor 主机"
+            note="已安装 khor，使用邀请码添加"
+            chevron
+            onPress={() => go("2")}
+          />
+          <Row
+            lead={<IconSshHost className="size-nav-glyph text-foreground" />}
+            title="SSH 主机"
+            note="通过 SSH 添加"
+            chevron
+            onPress={() => go("3")}
+          />
+        </Group>
+      </Body>
       <DialogFooter>
         <Button>取消</Button>
       </DialogFooter>
@@ -155,22 +275,25 @@ function Pick() {
   );
 }
 
+// ---- 2 · khor 主机: the ticket, and a ticket from elsewhere -----------------
+
 function AtHand() {
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>khor 主机</DialogTitle>
-      </DialogHeader>
-      <FakeQr />
-      <Input readOnly value="khor1qxy7…（邀请码）" aria-label="邀请码" />
-      <div className="text-callout text-muted-foreground">15 分钟内有效，仅可使用一次</div>
-      <div className="flex flex-col gap-in border-t pt-row">
-        <span className="text-callout text-muted-foreground">已有其他机器的邀请码</span>
-        <div className="flex items-center gap-in">
-          <Input placeholder="输入邀请码" aria-label="输入邀请码" />
-          <Button className="flex-none">加入</Button>
+      <Head title="khor 主机" />
+      <Body>
+        <div className="flex flex-col gap-in">
+          <FakeQr />
+          <Input readOnly value="khor1qxy7…（邀请码）" aria-label="邀请码" className="font-mono text-mono" />
+          <span className="text-callout text-muted-foreground">15 分钟内有效，仅可使用一次</span>
         </div>
-      </div>
+        <Group head="已有邀请码">
+          <Row>
+            <Input placeholder="输入邀请码" aria-label="输入邀请码" className={bare} />
+            <Button className="flex-none">加入</Button>
+          </Row>
+        </Group>
+      </Body>
       <DialogFooter>
         <Button>关闭</Button>
         <Button variant="primary">复制邀请码</Button>
@@ -179,81 +302,210 @@ function AtHand() {
   );
 }
 
-/** 认证方式: 密钥 (the BatchMode road) or 密码 (kept in this machine's
-    keychain only, handed to ssh through SSH_ASKPASS). */
-function Auth({ auth, setAuth }: { auth: "key" | "password"; setAuth: (a: "key" | "password") => void }) {
+// ---- 3 · SSH 主机: the form and its pages of choices -----------------------
+
+function HostRow({ form, set, suggest }: { form: Form; set: (f: Partial<Form>) => void; suggest?: boolean }) {
+  const [focused, setFocused] = useState(false);
+  const open = suggest || focused;
+  const typed = form.host.split("@").pop() ?? "";
+  const hits = sshHosts.filter((h) => h.startsWith(typed));
+  const list = hits.length > 0 ? hits : sshHosts;
   return (
-    <>
-      <FormLabel>认证方式</FormLabel>
-      <SegmentedControl
-        label="认证方式"
-        value={auth}
-        onChange={setAuth}
-        options={[
-          { key: "key", label: "密钥" },
-          { key: "password", label: "密码" },
-        ]}
-      />
-      {auth === "password" && (
-        <>
-          <FormLabel htmlFor="lab-pw">密码</FormLabel>
-          <div className="flex min-w-0 flex-col gap-in">
-            <Input id="lab-pw" type="password" defaultValue="placeholder" />
-            <span className="text-callout text-muted-foreground">密码仅保存在本机钥匙串中</span>
-          </div>
-        </>
+    <div className="relative">
+      <Row>
+        <label htmlFor="lab-host" className="flex-none text-body text-foreground">
+          主机
+        </label>
+        <Input
+          id="lab-host"
+          role="combobox"
+          aria-expanded={open}
+          autoComplete="off"
+          spellCheck={false}
+          value={form.host}
+          onChange={(e) => set({ host: e.target.value })}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder="user@host"
+          className={cn(bare, "flex-1 text-right")}
+        />
+        <span aria-hidden className="h-ctl-sm w-px flex-none bg-border" />
+        <Input
+          aria-label="端口"
+          inputMode="numeric"
+          placeholder="22"
+          value={form.port}
+          onChange={(e) => set({ port: e.target.value.replace(/\D/g, "") })}
+          className={cn(bare, "w-[5ch] flex-none text-right tabular-nums")}
+        />
+      </Row>
+      {open && (
+        // The ssh config's hosts, offered while the field is focused —
+        // `PathField`'s list: floats on the wide face, in the flow on
+        // the phone's sheet.
+        <ul
+          role="listbox"
+          data-ssh-config-hosts
+          className="absolute inset-x-0 top-full z-20 flex flex-col rounded-lg border bg-popover p-xxs shadow-(--shadow-float) [[data-narrow]_&]:static [[data-narrow]_&]:rounded-none [[data-narrow]_&]:border-0 [[data-narrow]_&]:border-t [[data-narrow]_&]:bg-transparent [[data-narrow]_&]:px-0 [[data-narrow]_&]:shadow-none"
+        >
+          <li className="px-in pt-xxs pb-xxs text-group text-tertiary [[data-narrow]_&]:px-row">SSH 配置中的主机</li>
+          {list.slice(0, 5).map((h) => (
+            <li key={h}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={false}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  set({ host: h });
+                }}
+                className="flex min-h-touch w-full items-center rounded-sm px-in text-left text-body hover:bg-fill [[data-narrow]_&]:px-row"
+              >
+                {h}
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
-    </>
+    </div>
   );
 }
 
-function SshForm() {
-  const [host, setHost] = useState("gpu-box");
-  const [via, setVia] = useState("bastion");
-  const [auth, setAuth] = useState<"key" | "password">("key");
+const viaWord = (via: string) => (via === "" ? "直接连接" : (viaKhor(via) ?? via));
+const keyName = (path: string) => path.split("/").pop() ?? path;
+const authWord = (f: Form) => (f.auth === "password" ? "密码" : f.key ? `密钥 · ${keyName(f.key)}` : "密钥");
+
+function SshForm({ form, set, suggest }: { form: Form; set: (f: Partial<Form>) => void; suggest?: boolean }) {
+  const host = form.host.trim() || "该主机";
+  const sponsor = viaKhor(form.via);
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>SSH 主机</DialogTitle>
-      </DialogHeader>
-      <FormGrid>
-        <FormLabel htmlFor="lab-host">主机</FormLabel>
-        <div className="flex min-w-0 flex-col gap-in">
-          <Input id="lab-host" value={host} onChange={(e) => setHost(e.target.value)} placeholder="user@host 或 SSH 配置中的名称" />
-          <div data-ssh-config-hosts className="flex flex-wrap gap-xxs">
-            {sshHosts.map((h) => (
-              <Button key={h} size="sm" variant={h === host ? "secondary" : "ghost"} onClick={() => setHost(h)}>
-                {h}
-              </Button>
-            ))}
-          </div>
-        </div>
-        <FormLabel htmlFor="lab-port">端口</FormLabel>
-        <Input id="lab-port" inputMode="numeric" className="w-24" placeholder="22" aria-describedby="lab-port-note" />
-        <FormLabel>跳板机</FormLabel>
-        <PopupButton
-          look="field"
-          label="跳板机"
-          value={via}
-          onPick={(v) => (v === "?" ? (location.hash = "#4") : setVia(v))}
-          choices={[
-            { value: "", label: "直接连接" },
-            ...khorMachines.map((m) => ({ value: `khor:${m}`, label: m, group: "通过 khor 主机" })),
-            ...sshHosts.filter((h) => h !== host).map((h) => ({ value: h, label: h, group: "通过 SSH 跳板机" })),
-            { value: "?", label: "检测哪些机器可以连接…", group: "连通性检测" },
-          ]}
-        />
-        <FormLabel htmlFor="lab-name">名称</FormLabel>
-        <Input id="lab-name" placeholder={host || "机器名称"} />
-        <Auth auth={auth} setAuth={setAuth} />
-      </FormGrid>
+      <Head title="SSH 主机" />
+      <Body>
+        <Group
+          mark="ssh"
+          foot={
+            form.auth === "password"
+              ? "密码仅保存在本机钥匙串中"
+              : sponsor
+                ? `添加在 ${sponsor} 上执行，由 ${sponsor} 通过 SSH 连接 ${host}`
+                : undefined
+          }
+        >
+          <HostRow form={form} set={set} suggest={suggest} />
+          <Row title="跳板机" value={viaWord(form.via)} chevron onPress={() => go("3b")} />
+          <Row title="认证方式" value={authWord(form)} chevron onPress={() => go("3c")} />
+          {form.auth === "password" && (
+            <Row>
+              <label htmlFor="lab-pw" className="flex-none text-body text-foreground">
+                密码
+              </label>
+              <Input id="lab-pw" type="password" defaultValue="placeholder" className={cn(bare, "flex-1 text-right")} />
+            </Row>
+          )}
+        </Group>
+        <Group mark="install">
+          <Row
+            title={`在 ${host} 上安装 khor`}
+            note="关闭则仅通过 SSH 连接，不在该主机上留下文件"
+            trail={<Switch on={form.install} label={`在 ${host} 上安装 khor`} onToggle={() => set({ install: !form.install })} />}
+          />
+        </Group>
+      </Body>
       <DialogFooter>
         <Button>取消</Button>
-        <Button variant="primary">添加</Button>
+        <Button variant="primary" onClick={() => go(form.install ? "5" : "6s")}>
+          添加
+        </Button>
       </DialogFooter>
     </>
   );
 }
+
+/** 跳板机: one page of choices, a check on the one in use. */
+function JumpPage({ form, set }: { form: Form; set: (f: Partial<Form>) => void }) {
+  const pick = (via: string) => {
+    set({ via, ...(viaKhor(via) ? { auth: "key" as const, key: null } : {}) });
+    go("3");
+  };
+  return (
+    <>
+      <Head title="跳板机" />
+      <Body>
+        <Group>
+          <Row title="直接连接" checked={form.via === ""} onPress={() => pick("")} />
+        </Group>
+        <Group head="通过 khor 主机" foot="添加在该机器上执行">
+          {khorMachines.map((m) => (
+            <Row key={m} lead={<Face name={m} />} title={m} checked={form.via === `khor:${m}`} onPress={() => pick(`khor:${m}`)} />
+          ))}
+        </Group>
+        <Group head="通过 SSH 跳板机">
+          {sshHosts
+            .filter((h) => h !== form.host && !khorMachines.includes(h))
+            .slice(0, 4)
+            .map((h) => (
+              <Row key={h} title={h} checked={form.via === h} onPress={() => pick(h)} />
+            ))}
+        </Group>
+        <Group>
+          <Row title="检测哪些机器可以连接…" chevron onPress={() => go("4")} />
+        </Group>
+      </Body>
+      <DialogFooter>
+        <Button onClick={() => go("3")}>返回</Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+/** 认证方式: 密钥 (默认, or a key file) or 密码. A routed add is key
+    only — a password or a passphrase would have to cross the wire. */
+function AuthPage({ form, set }: { form: Form; set: (f: Partial<Form>) => void }) {
+  const sponsor = viaKhor(form.via);
+  const [picked, setPicked] = useState<string | null>(form.key);
+  const pickKey = (key: string | null) => {
+    setPicked(key);
+    set({ auth: "key", key });
+  };
+  return (
+    <>
+      <Head title="认证方式" />
+      <Body>
+        {!sponsor && (
+          <Group>
+            <Row title="密钥" checked={form.auth === "key"} onPress={() => set({ auth: "key" })} />
+            <Row title="密码" checked={form.auth === "password"} onPress={() => set({ auth: "password", key: null })} />
+          </Group>
+        )}
+        {form.auth === "key" && (
+          <Group
+            head={sponsor ? `${sponsor} 上的密钥文件` : "密钥文件"}
+            foot={sponsor ? `通过 ${sponsor} 添加时只能使用密钥。khor 只记录密钥文件的路径` : "khor 只记录密钥文件的路径，不复制密钥"}
+          >
+            <Row title="默认" note="SSH 配置和 ssh-agent 中的密钥" checked={form.key === null} onPress={() => pickKey(null)} />
+            {sponsor ? (
+              farKeys.map((k) => (
+                <Row key={k} title={`~/.ssh/${k}`} checked={form.key === `~/.ssh/${k}`} onPress={() => pickKey(`~/.ssh/${k}`)} />
+              ))
+            ) : (
+              <>
+                {picked && <Row title={picked} checked={form.key === picked} onPress={() => pickKey(picked)} />}
+                {/* The file picker of the machine that runs ssh; faked here. */}
+                <Row title="选择密钥文件…" onPress={() => pickKey("~/.ssh/id_lab")} />
+              </>
+            )}
+          </Group>
+        )}
+      </Body>
+      <DialogFooter>
+        <Button onClick={() => go("3")}>返回</Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+// ---- 4 · 连通性检测 ----------------------------------------------------------
 
 /** road-a's ReachReport, faked. */
 type ReachRow = {
@@ -275,136 +527,223 @@ const report = {
   known_as: null as string | null,
   rows: [
     { id: "a".repeat(64), shown: "MacLab", here: true, outcome: "timeout", ms: null, addr: null, banner: null, host_key: null, why: "连接超时" },
-    { id: "c".repeat(64), shown: "turing", here: false, outcome: "reached", ms: 3, addr: "10.0.0.7:22", banner: "SSH-2.0-OpenSSH_9.6", host_key: "SHA256:q3Vf…9kLw", why: null },
-    { id: "d".repeat(64), shown: "hinton", here: false, outcome: "reached", ms: 41, addr: "10.0.0.7:22", banner: "SSH-2.0-OpenSSH_9.6", host_key: "SHA256:q3Vf…9kLw", why: null },
-    { id: "e".repeat(64), shown: "lecun", here: false, outcome: "reached", ms: 38, addr: "192.168.1.7:22", banner: "SSH-2.0-OpenSSH_8.9", host_key: "SHA256:Zt0p…aa1M", why: null },
+    { id: "c".repeat(64), shown: "turing", here: false, outcome: "reached", ms: 3, addr: "10.0.0.7:22", banner: "OpenSSH_9.6", host_key: "SHA256:q3Vf…9kLw", why: null },
+    { id: "d".repeat(64), shown: "hinton", here: false, outcome: "reached", ms: 41, addr: "10.0.0.7:22", banner: "OpenSSH_9.6", host_key: "SHA256:q3Vf…9kLw", why: null },
+    { id: "e".repeat(64), shown: "lecun", here: false, outcome: "reached", ms: 38, addr: "192.168.1.7:22", banner: "OpenSSH_8.9", host_key: "SHA256:Zt0p…aa1M", why: null },
   ] as ReachRow[],
 };
+/** The key most machines recorded; a row holding another is the odd one. */
+const usualKey = "SHA256:q3Vf…9kLw";
 
-function Reachers() {
-  const best = report.rows.find((r) => r.id === report.entrance)!;
-  const [pick, setPick] = useState(best.id);
-  // The key most machines recorded; a row holding another is the odd one.
-  const usual = "SHA256:q3Vf…9kLw";
-  const chosen = report.rows.find((r) => r.id === pick)!;
+function Reachers({ form, set }: { form: Form; set: (f: Partial<Form>) => void }) {
+  // Expanded: the one row whose address, banner and key are shown.
+  const [open, setOpen] = useState<string | null>(null);
+  const odd = report.rows.find((r) => report.disagree && r.host_key !== null && r.host_key !== usualKey);
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>连通性检测</DialogTitle>
-        <DialogDescription>每台在线的机器分别尝试连接 gpu-box 的 22 端口</DialogDescription>
-      </DialogHeader>
-      <ul data-reach className="-mx-row flex flex-col">
-        {report.rows.map((r) => {
-          const on = r.id === pick;
-          const ok = r.outcome === "reached";
-          const odd = report.disagree && r.host_key !== null && r.host_key !== usual;
-          return (
-            <li key={r.id}>
-              <button
-                type="button"
-                disabled={!ok}
-                onClick={() => setPick(r.id)}
-                className={cn(
-                  "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-row rounded-md px-row py-in text-left",
-                  on ? "bg-fill-strong" : ok && "hover:bg-fill",
-                )}
-              >
-                <Face name={r.shown} />
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-body text-foreground">
+      <Head title="连通性检测" />
+      <Body>
+        <p className="text-body text-muted-foreground">
+          每台在线的机器分别尝试连接 {report.host}:{report.port}
+        </p>
+        <Group
+          mark="reach"
+          foot={odd && `${odd.shown} 记录的主机密钥与其他机器记录的不一致，可能不是同一台主机`}
+        >
+          {report.rows.map((r) => {
+            const ok = r.outcome === "reached";
+            const isOdd = r === odd;
+            const via = r.here ? "" : `khor:${r.shown}`;
+            const shown = open === r.id;
+            return (
+              <Row
+                key={r.id}
+                lead={<Face name={r.shown} className="size-ctl-sm" />}
+                dim={!ok}
+                checked={ok && form.via === via}
+                onPress={ok ? () => (shown ? (set({ via }), go("3")) : setOpen(r.id)) : undefined}
+                title={
+                  <>
                     {r.shown}
-                    {r.here && <span className={on ? "text-foreground" : "text-muted-foreground"}>（本机）</span>}
-                  </span>
-                  <span
-                    className={cn(
-                      "truncate text-caption",
-                      ok && "font-mono",
-                      odd ? "text-destructive" : on ? "text-foreground" : "text-muted-foreground",
-                    )}
-                  >
-                    {ok ? r.host_key : r.why}
-                  </span>
-                </span>
-                <span className={cn("text-callout tabular-nums", on ? "text-foreground" : "text-muted-foreground")}>
-                  {ok ? `${r.ms} ms` : "无法连接"}
-                  {r.id === report.entrance && <span className="ml-in">延迟最低</span>}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {report.disagree && (
-        <div className="text-callout text-destructive">lecun 记录的主机密钥与其他机器记录的不一致，可能不是同一台主机</div>
-      )}
+                    {r.here && <span className="text-tertiary">（本机）</span>}
+                  </>
+                }
+                note={
+                  !ok ? (
+                    r.why
+                  ) : isOdd || shown ? (
+                    <span className="font-mono text-caption">
+                      {shown && `${r.addr} · ${r.banner} · `}
+                      <span className={isOdd ? "text-destructive" : undefined}>{r.host_key}</span>
+                    </span>
+                  ) : undefined
+                }
+                value={
+                  ok ? (
+                    <>
+                      {r.id === report.entrance && <span className="me-in text-foreground">延迟最低</span>}
+                      {r.ms} ms
+                    </>
+                  ) : (
+                    "无法连接"
+                  )
+                }
+              />
+            );
+          })}
+        </Group>
+      </Body>
       <DialogFooter>
-        <Button>返回</Button>
-        <Button variant="primary">{chosen.here ? "直接连接" : `通过 ${chosen.shown}`}</Button>
+        <Button onClick={() => go("3b")}>返回</Button>
       </DialogFooter>
     </>
   );
 }
 
-function Installing({ fallback = false }: { fallback?: boolean }) {
+// ---- 5 / 6 · installing, and the fallback ----------------------------------
+
+type StepState = "done" | "live" | "wait" | "failed";
+/** One line of the install: its mark in the leading seat, its verb, what
+    it did under it. */
+function Step({ state, word, note }: { state: StepState; word: string; note?: string }) {
+  return (
+    <Row
+      lead={
+        <span data-step={state} className="flex w-icon-mark justify-center">
+          {state === "done" ? (
+            <IconCheck className="size-icon-mark text-foreground" />
+          ) : state === "failed" ? (
+            <IconClose className="size-icon-mark text-destructive" />
+          ) : state === "live" ? (
+            <span className="size-2 animate-pulse rounded-full bg-foreground motion-reduce:animate-none" />
+          ) : (
+            <span className="size-2 rounded-full border border-tertiary" />
+          )}
+        </span>
+      }
+      dim={state === "wait"}
+      title={word}
+      note={note}
+    />
+  );
+}
+
+function Installing({ form }: { form: Form }) {
+  const via = viaWord(form.via);
   return (
     <>
-      <DialogHeader>
-        <DialogTitle>添加 gpu-box</DialogTitle>
-        <DialogDescription>通过 bastion</DialogDescription>
-      </DialogHeader>
-      {fallback ? (
-        <>
-          <ol data-steps className="flex flex-col">
-            <Step state="done" word="连接" note="通过 bastion，34 ms" />
-            <Step state="undone" word="安装 khor" note="已移除" />
-            <Step state="failed" word="启动" note="没有 systemd --user，也没有 tmux" />
-            <Step state="done" word="作为 SSH 主机添加" note="khor 未安装，操作通过 SSH 执行" />
-          </ol>
-          <div data-fallback-why className="text-body text-foreground">
-            无法在 gpu-box 上持续运行 khor，已移除安装的文件，改为通过 SSH 连接
-          </div>
-        </>
-      ) : (
-        <ol data-steps className="flex flex-col">
-          <Step state="done" word="连接" note="通过 bastion，34 ms" />
+      <Head title={`添加 ${form.host}`} />
+      <Body>
+        <Group mark="steps">
+          <Step state="done" word="连接" note={form.via ? `通过 ${via}，34 ms` : "34 ms"} />
           <Step state="done" word="安装 khor" note="0.1.14，由目标主机自行下载" />
           <Step state="live" word="启动" note="systemd --user，退出登录后继续运行" />
           <Step state="wait" word="配对" />
-        </ol>
-      )}
-      <DialogFooter>{fallback ? <Button>完成</Button> : <Button>取消</Button>}</DialogFooter>
-    </>
-  );
-}
-
-/** The key was refused: pick how to sign in. */
-function AuthChoice() {
-  const [auth, setAuth] = useState<"key" | "password">("key");
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>gpu-box 不接受本机的密钥</DialogTitle>
-      </DialogHeader>
-      <FormGrid>
-        <Auth auth={auth} setAuth={setAuth} />
-      </FormGrid>
-      {auth === "key" && (
-        <>
-          <div className="text-body text-foreground">将本机的公钥上传到 gpu-box，之后登录不再需要密码</div>
-          <div data-selectable className="rounded-sm bg-fill px-row py-in font-mono text-mono text-foreground">
-            ssh-copy-id -o ProxyJump=bastion gpu-box
-          </div>
-        </>
-      )}
+        </Group>
+      </Body>
       <DialogFooter>
         <Button>取消</Button>
-        <Button variant="primary">{auth === "key" ? "在终端中上传公钥" : "添加"}</Button>
       </DialogFooter>
     </>
   );
 }
 
-/** The machine page's 连接 cell and, when a road is broken, the segment. */
+/** Checked and the install failed: the automatic fallback. `alone`: the
+    switch was off, so it was an SSH host from the start. */
+function Fallback({ form, alone = false }: { form: Form; alone?: boolean }) {
+  const via = viaWord(form.via);
+  return (
+    <>
+      <Head title={`添加 ${form.host}`} />
+      <Body>
+        <Group
+          mark="steps"
+          foot={alone ? undefined : `未能在 ${form.host} 上安装 khor，已移除安装的文件`}
+        >
+          <Step state="done" word="连接" note={form.via ? `通过 ${via}，34 ms` : "34 ms"} />
+          {!alone && <Step state="failed" word="安装 khor" note="无法在该主机上持续运行 khor：没有 systemd --user，也没有 tmux" />}
+          <Step state="done" word="作为 SSH 主机添加" note="操作通过 SSH 执行" />
+        </Group>
+      </Body>
+      <DialogFooter>
+        {/* The phone's sheet spreads its footer edge to edge; the one
+            act keeps the trailing edge, as iOS's Done does. */}
+        <span aria-hidden />
+        <Button variant="primary">完成</Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+// ---- 7 · the key was refused; 7b · a key that asks for its passphrase ------
+
+function AuthChoice({ form }: { form: Form }) {
+  const [way, setWay] = useState<"copy" | "password">("copy");
+  const jump = form.via && !viaKhor(form.via) ? `-o ProxyJump=${form.via} ` : "";
+  return (
+    <>
+      <Head title={`登录 ${form.host}`} />
+      <Body>
+        <p className="text-body text-muted-foreground">{form.host} 不接受本机的密钥</p>
+        <Group
+          foot={
+            way === "copy" ? (
+              <span data-selectable className="font-mono text-mono">
+                ssh-copy-id {jump}
+                {form.host}
+              </span>
+            ) : (
+              "密码仅保存在本机钥匙串中"
+            )
+          }
+        >
+          <Row title="上传公钥" note="在终端中运行 ssh-copy-id，之后使用密钥登录" checked={way === "copy"} onPress={() => setWay("copy")} />
+          <Row title="使用密码" checked={way === "password"} onPress={() => setWay("password")} />
+          {way === "password" && (
+            <Row>
+              <label htmlFor="lab-pw7" className="flex-none text-body text-foreground">
+                密码
+              </label>
+              <Input id="lab-pw7" type="password" autoFocus className={cn(bare, "flex-1 text-right")} />
+            </Row>
+          )}
+        </Group>
+      </Body>
+      <DialogFooter>
+        <Button>取消</Button>
+        <Button variant="primary">{way === "copy" ? "上传公钥" : "添加"}</Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+function Passphrase({ form }: { form: Form }) {
+  const key = form.key ?? "~/.ssh/id_lab";
+  return (
+    <>
+      <Head title={`${keyName(key)} 需要口令`} />
+      <Body>
+        <Group foot="口令仅保存在本机钥匙串中">
+          <Row>
+            <label htmlFor="lab-pp" className="flex-none text-body text-foreground">
+              口令
+            </label>
+            <Input id="lab-pp" type="password" className={cn(bare, "flex-1 text-right")} />
+          </Row>
+        </Group>
+      </Body>
+      <DialogFooter>
+        <Button>取消</Button>
+        <Button variant="primary">添加</Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+// ---- 8 · the machine page's road -------------------------------------------
+
+/** The road a machine is reached on, hop by hop; a broken segment is the
+    one dashed in the failed ink. The sentence under it stays calm. */
 function Road({ machine, road, hops, broken, why, sat }: {
   machine: string;
   road: string;
@@ -414,52 +753,46 @@ function Road({ machine, road, hops, broken, why, sat }: {
   sat?: boolean;
 }) {
   return (
-    <section className="flex flex-col gap-row border-b pb-base">
-      <div className="flex items-center gap-row">
+    <section data-road-machine={machine} className="flex flex-col gap-in border-t pt-base first:border-t-0 first:pt-0">
+      <div className="flex min-h-ctl-lg items-center gap-row">
         <Face name={machine} className="size-avatar" />
-        <span className="flex-1 text-title-sm text-foreground">{machine}</span>
+        <span className="min-w-0 flex-1 truncate text-headline text-foreground">{machine}</span>
         {sat && <Button>安装 khor…</Button>}
       </div>
-      <dl className="grid grid-cols-4 gap-x-row">
-        {[
-          ["系统", "Linux"],
-          ["连接", road],
-          ["已运行", "12 天"],
-          ["读数", "40 秒前"],
-        ].map(([k, v]) => (
-          <div key={k} className="flex min-w-0 flex-col border-l pl-row first:border-l-0 first:pl-0">
-            <dt className="text-caption text-muted-foreground">{k}</dt>
-            <dd className="truncate text-body text-foreground">{v}</dd>
-          </div>
-        ))}
-      </dl>
-      <div data-road className="flex flex-wrap items-center gap-in text-callout">
-        {hops.map((h, i) => (
-          <span key={h} className="flex items-center gap-in">
-            {i > 0 && (
-              <span
-                aria-hidden
-                className={cn("h-px w-8 flex-none", broken === i ? "border-t border-dashed border-destructive" : "bg-muted-foreground")}
-              />
-            )}
-            <span className={broken !== undefined && i >= broken ? "text-destructive" : "text-foreground"}>{h}</span>
-          </span>
-        ))}
+      <div className="flex items-baseline gap-row text-body">
+        <span className="w-16 flex-none text-muted-foreground">连接</span>
+        <span className="text-foreground tabular-nums">{road}</span>
       </div>
-      {why && <div className="text-callout text-destructive">{why}</div>}
+      <div className="flex items-baseline gap-row text-body">
+        <span className="w-16 flex-none text-muted-foreground">线路</span>
+        <span data-road className="flex min-w-0 flex-wrap items-center gap-in">
+          {hops.map((h, i) => (
+            <span key={h} className="flex items-center gap-in">
+              {i > 0 && (
+                <span
+                  aria-hidden
+                  className={cn("h-0 w-6 flex-none border-t", broken === i ? "border-dashed border-destructive" : "border-tertiary")}
+                />
+              )}
+              <span className={broken !== undefined && i >= broken ? "text-muted-foreground" : "text-foreground"}>{h}</span>
+            </span>
+          ))}
+        </span>
+      </div>
+      {why && <div className="ps-[calc(4rem+var(--gap-row))] text-callout text-muted-foreground">{why}</div>}
     </section>
   );
 }
 
 function MachinePage() {
   return (
-    <main className="mx-auto flex max-w-[44rem] flex-col gap-base px-pane pt-16 pb-pane">
+    <main className="mx-auto flex max-w-detail flex-col gap-base px-pane pt-24 pb-pane">
       <Road machine="hinton" road="直连 · 31 ms" hops={["本机", "hinton"]} />
       <Road machine="lecun" road="中继 · 140 ms" hops={["本机", "中继 北京", "lecun"]} />
       <Road machine="turing" road="通过 hinton" hops={["本机", "hinton", "turing"]} />
       <Road
         machine="gpu-box"
-        road="通过 bastion"
+        road="SSH 主机 · 通过 bastion"
         sat
         hops={["本机", "bastion", "gpu-box"]}
         broken={2}
@@ -467,7 +800,7 @@ function MachinePage() {
       />
       <Road
         machine="lab-gw"
-        road="通过 bastion"
+        road="SSH 主机 · 通过 bastion"
         sat
         hops={["本机", "bastion", "lab-gw"]}
         broken={1}
@@ -479,26 +812,43 @@ function MachinePage() {
 
 // ---- the lab shell --------------------------------------------------------
 
-const screens: [string, string, () => ReactNode][] = [
+type Screen = [key: string, word: string, draw: (f: Form, set: (p: Partial<Form>) => void) => ReactNode];
+const screens: Screen[] = [
   ["1", "选择", () => <Pick />],
   ["2", "khor 主机", () => <AtHand />],
-  ["3", "SSH 主机", () => <SshForm />],
-  ["4", "连通性检测", () => <Reachers />],
-  ["5", "安装中", () => <Installing />],
-  ["6", "改为 SSH 连接", () => <Installing fallback />],
-  ["7", "认证方式", () => <AuthChoice />],
+  ["3", "SSH 主机", (f, s) => <SshForm form={f} set={s} />],
+  ["3a", "主机建议", (f, s) => <SshForm form={f} set={s} suggest />],
+  ["3b", "跳板机", (f, s) => <JumpPage form={f} set={s} />],
+  ["3c", "认证方式", (f, s) => <AuthPage form={f} set={s} />],
+  ["3d", "通过 khor 主机", (f, s) => <AuthPage form={{ ...f, via: "khor:turing", auth: "key" }} set={s} />],
+  ["4", "连通性检测", (f, s) => <Reachers form={f} set={s} />],
+  ["5", "安装中", (f) => <Installing form={f} />],
+  ["6", "安装未成功", (f) => <Fallback form={f} />],
+  ["6s", "仅 SSH", (f) => <Fallback form={f} alone />],
+  ["7", "密钥被拒", (f) => <AuthChoice form={f} />],
+  ["7b", "密钥口令", (f) => <Passphrase form={{ ...f, key: f.key ?? "~/.ssh/id_lab" }} />],
   ["8", "机器页", () => null],
 ];
 
 function Lab() {
   const [at, setAt] = useState(() => location.hash.slice(1) || "1");
+  const [form, setForm] = useState<Form>(blank);
+  const set = (p: Partial<Form>) => setForm((f) => ({ ...f, ...p }));
   useEffect(() => {
     const on = () => setAt(location.hash.slice(1) || "1");
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
+  // The shell's breakpoint, stamped on the root as `App` does, so the
+  // phone's sheet is the real one.
+  useEffect(() => {
+    const m = window.matchMedia(NARROW_QUERY);
+    const stamp = () => document.documentElement.toggleAttribute("data-narrow", m.matches);
+    stamp();
+    m.addEventListener("change", stamp);
+    return () => m.removeEventListener("change", stamp);
+  }, []);
   const screen = screens.find(([k]) => k === at) ?? screens[0];
-  const form = at === "3" || at === "7";
   const theme = () => {
     const r = document.documentElement;
     r.setAttribute("data-theme", r.getAttribute("data-theme") === "dark" ? "light" : "dark");
@@ -511,7 +861,7 @@ function Lab() {
         className="fixed inset-x-0 top-0 flex flex-wrap items-center gap-xxs border-b bg-background px-row py-xxs text-caption"
       >
         {screens.map(([k, word]) => (
-          <Button key={k} size="sm" variant={k === at ? "secondary" : "ghost"} onClick={() => (location.hash = `#${k}`)}>
+          <Button key={k} size="sm" variant={k === at ? "secondary" : "ghost"} onClick={() => go(k)}>
             {k} {word}
           </Button>
         ))}
@@ -523,8 +873,8 @@ function Lab() {
         <MachinePage />
       ) : (
         <Dialog open onOpenChange={() => {}}>
-          <DialogContent form={form} data-add-machine={at}>
-            {screen[2]()}
+          <DialogContent form data-add-machine={at}>
+            {screen[2](form, set)}
           </DialogContent>
         </Dialog>
       )}
