@@ -31550,7 +31550,7 @@ try {
     //       a native picker); 最近 first, 过去24小时 its first row; one page
     //       per seat, nothing back to a whole; 工作区 is the tree of the
     //       workspace holding the shell's directory (OSC 7), else that
-    //       directory; each opening lands on 最近 (UX-40 §3); the list
+    //       directory; opened again, where it was left (UX-47); the list
     //       seats wear a find row, a page the main area's deck (UX-40).
     //       Every session's pill opens it, a conversation's too. ──
     {
@@ -31954,9 +31954,9 @@ try {
           if (opens.length !== 1 || opens[0].session !== me) fail(`bar p · ＋ on 浏览器 asked for ${shown(opens)} — one page, this session's (${me}) (UX-40 §1)`);
           if (made.address !== 1 || !made.focused || made.detent !== "full") fail(`bar p · ＋'s page reads ${shown(made)} — its address field up and focused, the sheet full (UX-40 §1–2)`);
         }
-        // ── each opening lands on 最近 (UX-40 §3; ⚠️ 墓碑 UX-30: the seat
-        //    kept per session); 工作区 stands at the shell's directory
-        //    afresh (OSC 7). ──
+        // ── opened again, where it was left (UX-47; ⚠️ 墓碑 UX-40 §3: each
+        //    opening on 最近); 工作区 pressed stands at the shell's
+        //    directory afresh (OSC 7). ──
         const kept = await sheet();
         await pick("workspace");
         await shut();
@@ -31969,8 +31969,31 @@ try {
         const movedRoot = await rootNow();
         await shut();
         console.log(`bar p · left on 工作区, reopened ${shown(kept.on)} then ${shown(again.on)}; after OSC 7 the tree's ceiling ${movedRoot}`);
-        if (again.on !== "recent") fail(`bar p · reopened, the sheet is on ${shown(again.on)} — each opening lands on 最近 (UX-40 §3)`);
+        if (again.on !== "workspace") fail(`bar p · left on 工作区, reopened, the sheet is on ${shown(again.on)} — where it was left (UX-47)`);
         if (movedRoot !== "/tmp/elsewhere") fail(`bar p · after the shell said /tmp/elsewhere (OSC 7), 工作区's ceiling is ${movedRoot}`);
+        // ── the sheet keeps the place as the column does (UX-47): a file
+        //    page left open comes back as that page, at half (each opening
+        //    is the pill's glance — the detent is not part of the place),
+        //    and the seat bar's 最近 reaches 最近 from it. ──
+        {
+          await page.evaluate(() => window.dispatchEvent(new CustomEvent("khor:open-path", { detail: { machine: "gate", path: "/home/gate/work/notes.md", dir: false, line: null } })));
+          await until(3_000, async () => (await count("[data-place-sheet] [data-file-deck] [data-file-name]")) === 1);
+          const leftAt = (await dragSheet((await sheetTop()) + 8, -Math.round(shape.vh * 0.4)))?.detent ?? null;
+          await shut();
+          const backAs = await sheet();
+          const kept = await page.evaluate(() => ({
+            file: document.querySelector("[data-place-sheet] [data-file-deck] [data-file-name]")?.textContent ?? null,
+            detent: document.querySelector("[data-place-sheet]")?.getAttribute("data-detent") ?? null,
+          }));
+          await pick("recent");
+          const toRecent = await seatNow();
+          await shut();
+          console.log(`bar p · UX-47 a file page left open (the sheet at ${leftAt}): opened again ${shown({ on: backAs.on, ...kept })}, the bar's 最近 → ${shown(toRecent)}`);
+          if (backAs.on !== "workspace" || kept.file !== "notes.md") fail(`bar p · a file page left open in the sheet came back as ${shown({ on: backAs.on, ...kept })} — notes.md's page (UX-47)`);
+          if (leftAt !== "full") fail(`probe dead: bar p · UX-47 the grabber's pull left the sheet at ${shown(leftAt)}, not full`);
+          if (kept.detent !== "half") fail(`bar p · the sheet left at ${leftAt} opened again at ${shown(kept.detent)} — each opening at half (UX-37 §3; the detent is not part of the place, UX-47)`);
+          if (toRecent !== "recent") fail(`bar p · the seat bar's 最近 from the file page come back to reached ${shown(toRecent)} (UX-47)`);
+        }
       }
       // ── q. a cold start opens the seat, never a pushed page (UX-14 §7):
       //       the place left was a workspace open on the workspaces
@@ -32340,7 +32363,8 @@ try {
   //      for as the app (`as-app`, fix c's stub), the viewport standing in
   //      for the window; the web face asks nothing (4l). Whether the real
   //      window lands on its old frame is `room.rs`'s tests and the Mac;
-  //   h. find and make in the lists, a page's deck, landing on 最近 (UX-40);
+  //   h. find and make in the lists, a page's deck (UX-40), opened again
+  //      where it was left (UX-47; ⚠️ 墓碑 UX-40 §3: on 最近);
   //   i. the workspace (UX-43): the trees in step, 复制路径, the keyboard
   //      going down outside the terminal, the docked file deck folding;
   //   j. on the phone (UX-44): every sheet is the 附栏's paper, one scrim
@@ -32348,7 +32372,9 @@ try {
   //      content row's end.
   //   k. the 附栏 is its session's alone (UX-46 §1): another landing,
   //      another tab, the tab closed — each closes it, and coming back
-  //      finds it closed; the press opens it on 最近.
+  //      finds it closed; the press opens it where it was left (UX-47).
+  //   l. where it was left (UX-47): per session, in memory only; what is
+  //      gone lands on 最近.
   //
   // `FACE_ONLY=side` runs this section alone.
   side: {
@@ -32751,8 +32777,9 @@ try {
       await openSession("tui/side-1");
     }
 
-    // h. find and make in the lists; a page wears the main area's deck;
-    //    each opening lands on 最近 (UX-40, the owner 2026-10-07)
+    // h. find and make in the lists; a page wears the main area's deck
+    //    (UX-40, the owner 2026-10-07); opened again, where it was left
+    //    (UX-47; ⚠️ 墓碑 UX-40 §3: each opening on 最近)
     {
       if ((await count(col)) !== 1) await press(front("tui/side-1"));
       await until(2_000, async () => (await count(col)) === 1);
@@ -32849,7 +32876,7 @@ try {
         fail(`side h · a file from 最近 reads ${JSON.stringify(fileOpened)} — the main area's deck at the column's foot with ‹ and the name, no head at the page's top (UX-40 §4)`);
       }
       if (fileBack !== "recent") fail(`side h · ‹ on a file opened from 最近 reached ${fileBack} — back to 最近`);
-      // 7. each opening lands on 最近
+      // 7. opened again, where it was left (UX-47; ⚠️ 墓碑 UX-40 §3: 最近)
       await pick("workspace");
       await press(front("tui/side-1"));
       await until(2_000, async () => (await count(col)) === 0);
@@ -32858,7 +32885,7 @@ try {
       await wait(500);
       const landed = await seatOn();
       console.log(`side h · left on 工作区, shut and opened: ${landed}`);
-      if (landed !== "recent") fail(`side h · the column opened on ${landed} — each opening lands on 最近 (UX-40 §3)`);
+      if (landed !== "workspace") fail(`side h · left on 工作区, the column opened on ${landed} — where it was left (UX-47)`);
     }
 
     // e. no day line, the wide tabs
@@ -32936,9 +32963,9 @@ try {
     // k. the 附栏 is its session's alone (UX-46 §1, the owner 2026-10-07:
     //    「在跳转到别的目录的时候仍然存在，这个侧栏应该是只属于 session」):
     //    another landing closes it and coming back finds it closed; the
-    //    press opens it on 最近 whatever seat it was left on; another tab
-    //    closes it and coming back finds it closed; closing the session's
-    //    tab closes it.
+    //    press opens it on the seat it was left on (UX-47; ⚠️ 墓碑 UX-40
+    //    §3: on 最近 whatever seat); another tab closes it and coming back
+    //    finds it closed; closing the session's tab closes it.
     {
       const shut = () => until(2_000, async () => (await count(col)) === 0);
       const opens = async (id) => {
@@ -32972,10 +32999,249 @@ try {
       if (roads.left !== "browser") fail(`probe dead: side k · the column was on ${roads.left} before leaving, not 浏览器`);
       if (!roads.landing) fail("side k · the 附栏 stayed open on the 机器 landing — leaving the session closes it (UX-46 §1)");
       if (roads.back.col !== 0 || roads.back.expanded !== "false") fail(`side k · back on the session the 附栏 is ${JSON.stringify(roads.back)} — closed, the front tab saying so (UX-46 §1)`);
-      if (roads.seat !== "recent") fail(`side k · reopened, the 附栏 is on ${roads.seat} — each opening lands on 最近 (UX-40 §3)`);
+      if (roads.seat !== "browser") fail(`side k · left on 浏览器, reopened, the 附栏 is on ${roads.seat} — where it was left (UX-47)`);
       if (!roads.tab) fail("side k · another session's tab in front, the 附栏 stayed open (UX-46 §1)");
       if (roads.tabBack !== 0) fail("side k · back on the first session's tab its 附栏 is open again — leaving closed it (UX-46 §1)");
       if (!roads.closed) fail("side k · the session's tab closed and the 附栏 stayed (UX-46 §1)");
+    }
+
+    // l. where it was left (UX-47, the owner 2026-10-07, replacing UX-40
+    //    §3's 「每次打开都是显示最近」): opened again, the 附栏 is where it
+    //    was in it, per session, in memory only; what is gone lands on 最近.
+    //    1. a session never opened lands on 最近;
+    //    2. a file opened from the tree: shut and opened, its page is there;
+    //       its ‹ is the tree's, and the tree comes back the same way;
+    //    3. every place comes back — 「放进来的」, the browser's list, a
+    //       page, 机器, 额度 — and the seat bar's 最近 reaches 最近 from
+    //       each; a file opened from 最近 comes back with its ‹ to 最近;
+    //    4. two sessions keep two places;
+    //    5. the file deleted in the main area's tree (khor's own act):
+    //       opened again, 最近 at once; deleted outside khor (the listing
+    //       alone stops naming it): 最近 within a beat; the page closed
+    //       elsewhere: 最近;
+    //    6. a reload: 最近.
+    {
+      const root = pin.path;
+      const drop = "/home/peer/khor-drop";
+      const treeL = new Map([["notes.md", false], ["a.rs", false], ["src", true]]);
+      const tabsL = [{ id: "l1", device: pin.device, url: "https://l.example/", title: "l one", pinned: false, session: "tui/side-1" }];
+      let activeL = "l1";
+      // A listing held back: what is read at once cannot be the answer of
+      // a question asked as the 附栏 opened.
+      let slowLs = false;
+      const tabsLBody = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ tabs: tabsL, active: tabsL.some((t) => t.id === activeL) ? activeL : (tabsL[0]?.id ?? "") }) });
+      const routesL = {
+        "**/ls": async (r) => {
+          const { path } = r.request().postDataJSON() ?? {};
+          if (slowLs) await wait(2_500);
+          const answer = (body) => json(body)(r);
+          if (path === root) return answer({ path, entries: [...treeL].map(([name, dir]) => ({ name, dir, size: dir ? 0 : 10, at_ms: 0 })), truncated: false });
+          if (path === `${root}/src`) return answer({ path, entries: [{ name: "inner.rs", dir: false, size: 3, at_ms: 0 }], truncated: false });
+          if (path === "") return answer({ path: "/home/peer", entries: [{ name: "khor-drop", dir: true, size: 0, at_ms: 0 }], truncated: false });
+          if (path === drop) return answer({ path, entries: [{ name: "IMG 1.png", dir: false, size: 3, at_ms: 0 }], truncated: false });
+          return r.fallback();
+        },
+        "**/remove": (r) => {
+          const p = r.request().postDataJSON()?.path ?? "";
+          if (p.slice(0, p.lastIndexOf("/")) !== root) return r.fallback();
+          treeL.delete(p.slice(root.length + 1));
+          return json(null)(r);
+        },
+        "**/tabs_list": tabsLBody,
+        "**/tabs_focus": (r) => {
+          activeL = (r.request().postDataJSON() ?? {}).id ?? activeL;
+          return tabsLBody(r);
+        },
+        "**/dirs_wait": json({ seq: 0, dirs: [], unavailable: true }),
+      };
+      for (const [glob, run] of Object.entries(routesL)) await page.route(glob, run);
+      await page.evaluate(() => window.localStorage.clear());
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const seen = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)].filter((e) => e.checkVisibility({ visibilityProperty: true })).length, sel);
+      const shutCol = async (id) => {
+        if ((await count(col)) === 1) await press(front(id));
+        return until(2_000, async () => (await count(col)) === 0);
+      };
+      const openCol = async (id) => {
+        if ((await count(col)) === 0) await press(front(id));
+        const up = await until(3_000, async () => (await count(col)) === 1);
+        await wait(700);
+        return up;
+      };
+      /** What the 附栏 stands on, as drawn. */
+      const where = () =>
+        page.evaluate((c) => {
+          const box = document.querySelector(c);
+          if (!box) return null;
+          const vis = (s) => [...box.querySelectorAll(s)].filter((e) => e.checkVisibility({ visibilityProperty: true }));
+          return {
+            seat: box.getAttribute("data-col-seat-on"),
+            file: vis("[data-file-deck] [data-file-name]")[0]?.textContent ?? null,
+            root: box.querySelector("[data-side-workspace]")?.getAttribute("data-root") ?? null,
+            tree: vis("[data-file-tree]").length,
+            recent: vis("[data-side-recent]").length,
+            list: vis("[data-switch-tab]").length,
+            deck: vis("[data-session-deck]").length,
+          };
+        }, col);
+      /** Shut, opened again, read. */
+      const again = async (id) => {
+        await shutCol(id);
+        await openCol(id);
+        return where();
+      };
+      const toRecentByBar = async () => {
+        await press(`${col} [data-side-head] [data-seat-item="recent"]`);
+        await wait(400);
+        const w = await where();
+        return w?.seat === "recent" && w.recent === 1;
+      };
+      const out = {};
+      await openSession("tui/side-1");
+      // 1. never opened
+      await openCol("tui/side-1");
+      out.first = (await where())?.seat ?? null;
+      // 2. a file from the tree; its ‹; the tree
+      await pick("workspace");
+      await until(3_000, async () => (await seen(`${col} [data-file-tree] [data-file="notes.md"]`)) === 1);
+      await press(`${col} [data-file-tree] [data-file="notes.md"] > button`);
+      await until(3_000, async () => (await seen(`${col} [data-files-page]`)) === 1);
+      out.file = await again("tui/side-1");
+      await press(`${col} [data-file-deck] [data-file-back]`);
+      await wait(400);
+      out.fileBack = await where();
+      out.tree = await again("tui/side-1");
+      out.treeToRecent = await toRecentByBar();
+      // 3. every other place, and the bar's 最近 from each
+      const places = {};
+      const leave = {
+        drops: async () => {
+          await pick("workspace");
+          await until(3_000, async () => (await count(`${col} [data-side-drops]`)) === 1);
+          await press(`${col} [data-side-drops]`);
+          await wait(500);
+        },
+        list: () => pick("browser"),
+        page: async () => {
+          await pick("browser");
+          await until(3_000, async () => (await seen(`${col} [data-switch-tab="l1"]`)) === 1);
+          await press(`${col} [data-switch-tab="l1"] [data-side-open]`);
+          await until(3_000, async () => (await seen(`${col} [data-session-deck]`)) === 1);
+        },
+        machine: () => pick("machine"),
+        quota: () => pick("quota"),
+      };
+      for (const [what, go] of Object.entries(leave)) {
+        await go();
+        const left = await where();
+        const back = await again("tui/side-1");
+        await wait(what === "drops" ? 700 : 0);
+        places[what] = { left: left?.seat, back: what === "drops" ? await where() : back, recent: await toRecentByBar() };
+      }
+      // …a file opened from 最近: back with its ‹ to 最近
+      await press(`${col} [data-recent-row][data-recent-kind="file"] [data-side-open]`);
+      await until(3_000, async () => (await seen(`${col} [data-file-deck] [data-file-back]`)) === 1);
+      const fromRecent = await again("tui/side-1");
+      await press(`${col} [data-file-deck] [data-file-back]`);
+      await wait(400);
+      out.fromRecent = { back: fromRecent, then: (await where())?.seat ?? null };
+      // 4. two sessions, two places: side-1 on a file, side-2 on 机器
+      await pick("workspace");
+      await press(`${col} [data-file-tree] [data-file="notes.md"] > button`);
+      await until(3_000, async () => (await seen(`${col} [data-files-page]`)) === 1);
+      await openSession("tui/side-2");
+      await openCol("tui/side-2");
+      const twoFirst = (await where())?.seat ?? null;
+      await pick("machine");
+      await openSession("tui/side-1");
+      await openCol("tui/side-1");
+      const twoOne = await where();
+      await openSession("tui/side-2");
+      await openCol("tui/side-2");
+      const twoTwo = await where();
+      out.two = { side2First: twoFirst, side1: twoOne, side2: twoTwo };
+      // 5a. deleted in the main area's tree
+      await openSession("tui/side-1");
+      const main = "[data-ws-tree]";
+      const wsRow = '[data-ws-row][data-ws-pinned="true"]';
+      let removed = false;
+      if (await open("workspaces")) {
+        await until(3_000, async () => (await count(wsRow)) >= 1);
+        if ((await count(`${main} [data-file-tree]`)) === 0) await press(wsRow);
+        if (await until(3_000, async () => (await count(`${main} [data-file-tree] [data-file="notes.md"]`)) === 1)) {
+          await page.locator(`${main} [data-file-tree] [data-file="notes.md"]`).first().click({ button: "right" });
+          await wait(300);
+          removed = (await press('[data-row-menu] [data-menu-item="remove"]')) && (await press("[data-remove-go]"));
+          await until(2_000, async () => !treeL.has("notes.md"));
+          await wait(500);
+        }
+      }
+      await open("sessions");
+      await openSession("tui/side-1");
+      // Read at once, the listing held back: khor's own delete was heard
+      // when it happened, not asked about now.
+      slowLs = true;
+      await press(front("tui/side-1"));
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(300);
+      out.deleted = { removed, gone: !treeL.has("notes.md"), at: await where() };
+      slowLs = false;
+      await wait(2_500);
+      // 5b. deleted outside khor: no signal, the listing alone
+      treeL.set("notes.md", false);
+      await pick("workspace");
+      await until(3_000, async () => (await seen(`${col} [data-file-tree] [data-file="notes.md"]`)) === 1);
+      await press(`${col} [data-file-tree] [data-file="notes.md"] > button`);
+      await until(3_000, async () => (await seen(`${col} [data-files-page]`)) === 1);
+      await shutCol("tui/side-1");
+      treeL.delete("notes.md");
+      await openCol("tui/side-1");
+      const outside = await until(3_000, async () => (await where())?.seat === "recent");
+      out.outside = { recent: outside, at: await where() };
+      treeL.set("notes.md", false);
+      // 5c. the page closed elsewhere
+      await leave.page();
+      await shutCol("tui/side-1");
+      tabsL.splice(0, 1);
+      await openCol("tui/side-1");
+      const closed = await until(3_000, async () => (await where())?.seat === "recent");
+      out.pageClosed = { recent: closed, at: await where() };
+      // 6. a reload
+      await pick("workspace");
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await openSession("tui/side-1");
+      await openCol("tui/side-1");
+      out.reload = (await where())?.seat ?? null;
+      await shutCol("tui/side-1");
+      for (const [glob, run] of Object.entries(routesL)) await page.unroute(glob, run);
+      console.log(`side l · ${JSON.stringify(out)}`);
+      console.log(`side l · places ${JSON.stringify(places)}`);
+      const say = (w) => JSON.stringify(w);
+      if (out.first !== "recent") fail(`side l · a session never opened opened on ${out.first} — 最近 (UX-47)`);
+      if (out.file?.seat !== "workspace" || out.file.file !== "notes.md") fail(`side l · a file left open, shut and opened, reads ${say(out.file)} — its page, notes.md (UX-47)`);
+      if (out.fileBack?.tree !== 1 || out.fileBack.file !== null) fail(`side l · ‹ on the file come back to reads ${say(out.fileBack)} — the tree (UX-47)`);
+      if (out.tree?.seat !== "workspace" || out.tree.tree !== 1 || out.tree.file !== null || out.tree.root !== root) fail(`side l · the tree left, shut and opened, reads ${say(out.tree)} — the tree at ${root} (UX-47)`);
+      if (!out.treeToRecent) fail("side l · from the tree come back to, the seat bar's 最近 did not reach 最近 (UX-47)");
+      const want = { drops: "workspace", list: "browser", page: "browser", machine: "machine", quota: "quota" };
+      for (const [what, p] of Object.entries(places)) {
+        const b = p.back;
+        const right =
+          b?.seat === want[what] &&
+          (what !== "drops" || b.root === drop) &&
+          (what !== "list" || (b.list === 1 && b.deck === 0)) &&
+          (what !== "page" || b.deck === 1);
+        if (p.left !== want[what] || !right) fail(`side l · left on ${what} (${p.left}), shut and opened it reads ${say(b)} — where it was left (UX-47)`);
+        if (!p.recent) fail(`side l · from ${what} come back to, the seat bar's 最近 did not reach 最近 (UX-47)`);
+      }
+      if (out.fromRecent.back?.file !== "notes.md" || out.fromRecent.then !== "recent") fail(`side l · a file opened from 最近 came back as ${say(out.fromRecent)} — its page, and its ‹ to 最近 (UX-47)`);
+      if (out.two.side2First !== "recent" || out.two.side1?.file !== "notes.md" || out.two.side2?.seat !== "machine") fail(`side l · two sessions read ${say(out.two)} — side-2 first on 最近, then side-1 on its file and side-2 on 机器 (UX-47)`);
+      if (!out.deleted.removed || !out.deleted.gone) fail(`probe dead: side l · the main area's tree did not delete notes.md (${say(out.deleted)})`);
+      else if (out.deleted.at?.seat !== "recent" || out.deleted.at.file !== null) fail(`side l · the file left open was deleted in the main area's tree; opened again the 附栏 reads ${say(out.deleted.at)} at once — 最近 (UX-47)`);
+      if (!out.outside.recent) fail(`side l · the file left open was deleted outside khor; opened again the 附栏 stayed on ${say(out.outside.at)} — 最近 within a beat (UX-47)`);
+      if (!out.pageClosed.recent) fail(`side l · the page left open was closed elsewhere; opened again the 附栏 stayed on ${say(out.pageClosed.at)} — 最近 (UX-47)`);
+      if (out.reload !== "recent") fail(`side l · after a reload the 附栏 opened on ${out.reload} — 最近, the place is remembered in memory only (UX-47)`);
     }
 
     // i. the workspace, from the owner's iPhone (UX-43, 2026-10-07 13:40:

@@ -354,8 +354,10 @@ try {
   //   c. a double-click on the name renames and never toggles the column,
   //      not for one frame — sampled on every animation frame across the
   //      gesture, closed and open;
-  //   d. a reload finds the column closed (UX-46 §1: nothing reopens it
-  //      but a press), and the press brings it back on 最近 with its day;
+  //   d. shut and pressed again, the column is where it was left (UX-47:
+  //      left on 工作区, it opens on 工作区); a reload finds it closed (UX-46
+  //      §1: nothing reopens it but a press), and the press brings it back
+  //      on 最近 — the place is remembered in memory only — with its day;
   //   e. a day with no record (`day_fixture`'s quiet row): the row is not
   //      drawn and 最近 starts at its list (UX-42, progressive
   //      disclosure); back on the first session its column is closed
@@ -591,14 +593,32 @@ try {
       await sleep(200);
     }
 
-    // d. a reload finds it closed (the column is open now, from c), and
-    //    the press brings the day back (UX-46 §1; ⚠️ 墓碑 UX-30 → UX-46:
-    //    the column and its day outlived a reload, remembered per session)
+    // d. shut and pressed again, where it was left (UX-47); a reload finds
+    //    it closed (the column is open now, from c), and the press brings
+    //    it back on 最近 with the day (UX-46 §1, UX-47; ⚠️ 墓碑 UX-30 →
+    //    UX-46: the column and its day outlived a reload, remembered per
+    //    session)
     if (!(await openToday(page)) || !(await waitRows(page, true, 1_000))) fail("probe dead: ⓪d the column did not show the day before the reload");
+    const seatOn = () => page.locator("[data-session-side] [data-side-head] [data-seat-bar]").getAttribute("data-seat-on").catch(() => null);
+    await page.locator('[data-session-side] [data-side-head] [data-seat-item="workspace"]').click().catch(() => {});
+    await until("the column on 工作区", 3_000, async () => (await seatOn()) === "workspace");
+    await pressFace(page, first);
+    await waitColumn(page, false, 1_500);
+    await pressFace(page, first);
+    await waitColumn(page, true, 1_500);
+    await sleep(300);
+    const leftOn = await seatOn();
+    if (leftOn !== "workspace") fail(`⓪d left on 工作区, shut and pressed again the column is on ${leftOn} — where it was left (UX-47)`);
     await page.reload({ waitUntil: "load" });
     await until("the session's tab, back after a reload", 20_000, async () => (await frontOpen(page, first).count()) === 1);
     await sleep(800);
     if ((await columns(page)) !== 0) fail("⓪d after a reload the column is open with nobody pressing — it is its session's while it stays open, and closes with it (UX-46 §1)");
+    await pressFace(page, first);
+    await waitColumn(page, true, 1_500);
+    await sleep(300);
+    const reloadedOn = await seatOn();
+    console.log(`⓪d left on 工作区: pressed again ${leftOn}; after a reload ${reloadedOn}`);
+    if (reloadedOn !== "recent") fail(`⓪d after a reload the press opened the column on ${reloadedOn} — 最近, the place is remembered in memory only (UX-47)`);
     const kept = (await openToday(page)) && (await until("the day in the column the press opened", 10_000, async () =>
       (await page.locator("[data-session-side] [data-detail-day] [data-day-strip]").count()) === 1,
     ));
