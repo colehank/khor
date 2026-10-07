@@ -759,23 +759,27 @@ export const tell = (machine: string, text: string) => call<null>("tell", { mach
     for the pane. Takes the row's id (`chat/<channel>`); the core layer
     peels the prefix. */
 export const machineLog = (id: string) => call<MachineLog>("machine_log", { id });
-/** The waiting file chip's 收下 — `khor accept`, same node call
-    (docs/KHOR.md equivalence). Answers where the files landed. */
-export const acceptTransfer = (msg: string) => call<string[]>("accept_transfer", { msg });
+/** A conversation file sent again after it failed or was cancelled —
+    `khor retry`, same node call (docs/KHOR.md equivalence). Answers
+    where the files landed. */
+export const retryTransfer = (msg: string) => call<string[]>("retry_transfer", { msg });
+/** A conversation file's move cancelled on its receiver (the chip's ×):
+    nothing partial stays. */
+export const stopTransfer = (msg: string) => call<null>("stop_transfer", { msg });
 /** The composer's 发文件, desktop form: the native picker answers with
     a real local path and the path goes straight to `khor send`'s call.
     `null` = cancelled, which is not an error. App only (`inApp`) — the
     browser forms upload bytes instead (`uploadFile`). */
-export const pickAndSendFile = (machine: string) =>
-  call<string | null>("pick_and_send", { machine });
+export const pickAndSendFile = (machine: string, into: string | null = null) =>
+  call<string | null>("pick_and_send", { machine, into });
 /** The composer's 发文件, browser form: the bytes stream to the sending
     machine's staging area and the same send runs there
     (`khor_gui_core::send_upload`). Raw-bytes POST, not a JSON command —
     a file does not belong inside a JSON envelope — so this is the one
     call in this file that does not go through `call`. The size cap and
     its refusal sentence are the backend's (`UPLOAD_CAP_BYTES`). */
-export const uploadFile = async (machine: string, file: File): Promise<string> => {
-  const q = `machine=${encodeURIComponent(machine)}&name=${encodeURIComponent(file.name)}`;
+export const uploadFile = async (machine: string, file: File, into: string | null = null): Promise<string> => {
+  const q = `machine=${encodeURIComponent(machine)}&name=${encodeURIComponent(file.name)}${into ? `&into=${encodeURIComponent(into)}` : ""}`;
   const url = bridge ? `http://127.0.0.1:${bridge}/upload?${q}` : `/api/upload?${q}`;
   const r = await reach(url, {
     method: "POST",

@@ -2214,12 +2214,12 @@ empty-dir = "Empty directory"
 take-file = "Download"
 took-file = "Landed in {0}"
 
-accept-file-working = "Receiving…"
-accept-file = "Accept"
-accept-file-failed = "Couldn't accept"
-file-not-taken = "Not received yet"
-file-being-taken = "The other side is receiving"
-file-taken = "Received"
+# A conversation's file goes directly (STORE-BRIEF phase 2): the chip
+# says how its move stands, the same on every device.
+file-stop = "Cancel Transfer"
+file-stopped = "Cancelled"
+file-failed = "Transfer failed: {0}"
+send-into = "Save to"
 send-file = "Send file"
 uploading = "Uploading…"
 send-file-failed = "Couldn't send"
