@@ -9,7 +9,9 @@ import {
   faceHere,
   fetchDevices,
   fetchHooks,
+  fetchLs,
   fetchSessions,
+  fetchTabs,
   notifyFinished,
   openTab,
   recentVisit,
@@ -77,7 +79,20 @@ import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui, msg } from "@/gen/catalog";
 import { lasted } from "@/words";
-import { closeSessionSide, sessionSideOpen, setSessionSide, useSessionSide, type SideSeat as PlaceSeat } from "@/hooks/use-session-side";
+import {
+  closeSessionSide,
+  forgetSidePlace,
+  keepSidePlace,
+  placeFile,
+  sessionSideOpen,
+  setSessionSide,
+  sidePlace,
+  sidePlaces,
+  useSessionSide,
+  type SidePlace,
+  type SideSeat as PlaceSeat,
+  type WsSpot,
+} from "@/hooks/use-session-side";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
@@ -103,6 +118,7 @@ import {
 import { draftCount, watchDrafts } from "@/lib/drafts";
 import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { band } from "@/lib/scroll-edge";
+import { levelOf, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
@@ -1693,9 +1709,13 @@ export default function App() {
       until the first answer, then its runs. */
   const dayOf = (id: string): Day => (days === null ? null : (days[id] ?? []));
   /** **The front tab's press opens the session's 附栏** (UX-30: the
-      phone's pill gesture, docked). One memory per session
-      (`use-session-side`): open, width, seat. */
+      phone's pill gesture, docked). Per session (`use-session-side`):
+      open, width, seat, and where it was left (UX-47). */
   const side = useSessionSide(selected);
+  /** The 附栏 put back where it was left (UX-47); through a ref, because
+      the tab faces are memoised and the place reads state declared
+      further down. */
+  const resumeSideRef = useRef<(session: string) => boolean>(() => false);
   // The open sessions as the strip paints them: each tab wears its
   // row's title and the row's own identity assembly (`SessionFace` —
   // face, state halo, kind mark), the same facts in the same clothes. A
@@ -1785,11 +1805,11 @@ export default function App() {
           expanded: side.open,
           controls: side.open ? SIDE_ID : undefined,
           toggle: () => {
-            if (!side.open) toSlices();
-            // **Each opening lands on 最近** (UX-40, the owner 2026-10-07:
-            // 「每次打开都是显示最近」); a seat chosen inside lasts while
-            // the 附栏 stays open.
-            setSessionSide(id, side.open ? { open: false } : { open: true, seat: "recent" });
+            if (side.open) return setSessionSide(id, { open: false });
+            // **Opened again, it is where it was left** (UX-47,
+            // `resumeSide`); ⚠️ 墓碑 (UX-40 §3): each opening on 最近.
+            resumeSideRef.current(id);
+            setSessionSide(id, { open: true });
           },
         };
         // ⚠️ 墓碑 (UX-36 → UX-39 §4, the owner 2026-10-06 22:10: 「药丸下面就
@@ -1906,7 +1926,18 @@ export default function App() {
   /** **Where the column's 工作区 seat stands** (UX-30 §2, §4): the
       session's directory (OSC 7, else its place) when the column opens
       on it; a directory or a file a session printed, opened in place. */
-  const [sideFiles, setSideFiles] = useState<{ session: string; machine: string; dir: string | null; start: { path: string; at: number } | null } | null>(null);
+  const [sideFiles, setSideFiles] = useState<{
+    session: string;
+    machine: string;
+    dir: string | null;
+    start: { path: string; at: number } | null;
+  } | null>(null);
+  /** **Where the 工作区 tree stands inside** (UX-47): said by the mounted
+      tree as it moves (`SideWorkspace`'s `onSpot`), kept with the place. */
+  const [sideSpot, setSideSpot] = useState<{ session: string; spot: WsSpot } | null>(null);
+  /** The spot an opening came back to, handed to the tree's next mount
+      only; any seat entered or road taken since starts it afresh. */
+  const [sideResume, setSideResume] = useState<{ session: string; spot: WsSpot | null } | null>(null);
   const sideFilesRef = useRef(sideFiles);
   sideFilesRef.current = sideFiles;
   // A terminal's 「open enclosing folder」 (roadmap 2.5): that machine's
@@ -1941,9 +1972,13 @@ export default function App() {
   };
   const sideTo = (seat: PlaceSeat) => {
     if (!selectedRow) return;
+    // A road from outside (a path or a URL the terminal printed) opening
+    // the 附栏: what was opened from 最近 before it shut does not carry
+    // over into the place it now keeps (UX-47).
+    if (sideOpenFor.current !== selectedRow.id) setSideFrom(null);
     if (!narrow) return setSessionSide(selectedRow.id, { open: true, seat });
     setSessionSide(selectedRow.id, { seat });
-    setPlaceSheet((was) => was ?? { dir: null });
+    setPlaceSheet((was) => was ?? { dir: null, session: selectedRow.id });
   };
   /** The 附栏's 工作区 seat, pointed somewhere (and the 附栏 opened on
       it): a directory, or a file to open in place — the file page inside
@@ -1951,6 +1986,7 @@ export default function App() {
   const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) => {
     if (!selectedRow) return;
     setSideFiles({ session: selectedRow.id, machine, dir, start });
+    setSideResume(null);
     sideTo("workspace");
   };
   /** **The session a thing was opened from** (UX-37 §1): the one in
@@ -2350,6 +2386,7 @@ export default function App() {
     setSideFrom(null);
     setSideBrowse({ page: false });
     setSideQuota("list");
+    setSideResume(null);
     setSideEntry((n) => n + 1);
   };
   /** A seat pressed: on its slice, the 工作区 at the shell's directory
@@ -2368,19 +2405,116 @@ export default function App() {
   /** **The terminal pill opens the session's 附栏 as a sheet** (UX-17 →
       UX-30 §6): the same seats, risen from the bottom. The
       sheet's lifetime is this state; the seat is the session's memory. */
-  const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
+  const [placeSheet, setPlaceSheet] = useState<{ dir: string | null; session: string } | null>(null);
   /** **The 附栏 is its session's alone** (UX-46 §1, the owner 2026-10-07:
       「在跳转到别的目录的时候仍然存在，这个侧栏应该是只属于 session，该关闭
       的」): leaving the session — another landing, another tab, the session
       closed — closes it, the column and the phone's sheet alike; back on
-      the session it is closed, and the press opens it on 最近. ⚠️ 墓碑
-      (UX-30 → UX-46): the column standing on every landing beside
-      whatever was there, and each session reopening docked. */
+      the session it is closed, and the press opens it where it was left
+      (UX-47). ⚠️ 墓碑 (UX-30 → UX-46): the column standing on every
+      landing beside whatever was there, and each session reopening
+      docked. */
   useEffect(() => {
     const open = sessionSideOpen();
     if (open !== null && (!sessions || open !== selected)) closeSessionSide();
     setPlaceSheet(null);
   }, [selected, sessions]);
+  /**
+   * **Opened again, the 附栏 is where it was left** (UX-47, the owner
+   * 2026-10-07, replacing UX-40 §3's 「每次打开都是显示最近」): per
+   * session, the seat and what was open in it — a file page, a web page,
+   * the 工作区 tree and 「放进来的」, the browser's list, 机器, 额度's list
+   * or account. Kept in memory while the 附栏 is open (`keepSidePlace`,
+   * below), never written down: after a restart it opens on 最近.
+   *
+   * **What is gone lands on 最近**: never opened; the file deleted (khor's
+   * own acts say so at once, `onTreeChanged` below; anything else is
+   * asked as it opens); the page closed; the session's machine gone from
+   * the table. The detent of the phone's sheet is not part of it: each
+   * opening is the pill's glance, at half (UX-37 §3).
+   *
+   * Answers whether there was a place to go back to.
+   */
+  const resumeSide = (session: string): boolean => {
+    const p = sidePlace(session);
+    const known = (machine: string) => devices.some((d) => d.name === machine);
+    const standing =
+      p !== null &&
+      selectedRow?.id === session &&
+      (p.seat !== "machine" || known(selectedRow.home)) &&
+      (p.seat !== "workspace" || (p.files !== null && known(p.files.machine))) &&
+      (p.seat !== "browser" || p.page === null || pageTabs.tabs.some((t) => t.id === p.page && t.session === session));
+    if (!standing || p === null) {
+      forgetSidePlace(session);
+      toSlices();
+      setSessionSide(session, { seat: "recent" });
+      return false;
+    }
+    setSideFrom(p.fromRecent ? "recent" : null);
+    setSideBrowse({ page: p.seat === "browser" && p.page !== null });
+    setSideQuota(p.quota);
+    if (p.files) setSideFiles({ session, machine: p.files.machine, dir: p.files.dir, start: p.files.start });
+    setSideResume(p.seat === "workspace" && p.files ? { session, spot: p.files.spot } : null);
+    if (p.seat === "browser" && p.page !== null && p.page !== pageTabs.current.id) pageTabs.focus(p.page);
+    setSessionSide(session, { seat: p.seat });
+    // Asked as it opens: a file or a page gone by a road khor did not see
+    // (another window, the shell, another machine). Only while the 附栏
+    // still stands on that very thing.
+    const still = () => sidePlace(session) !== null && sideOpenFor.current === session;
+    const file = p.seat === "workspace" ? placeFile(p.files?.spot ?? null) : null;
+    if (file !== null && p.files) {
+      void fileThere(p.files.machine, file).then((there) => {
+        if (there === false && still() && placeFile(sidePlace(session)?.files?.spot ?? null) === file) landOnRecent(session);
+      });
+    }
+    if (p.seat === "browser" && p.page !== null) {
+      const page = p.page;
+      void fetchTabs(PAGES.kind).then(
+        (open) => {
+          if (!open.tabs.some((t) => t.id === page) && still() && sidePlace(session)?.page === page) landOnRecent(session);
+        },
+        () => {},
+      );
+    }
+    return true;
+  };
+  resumeSideRef.current = resumeSide;
+  /** The thing come back to has gone: 最近, and nothing to come back to. */
+  const landOnRecent = (session: string) => {
+    forgetSidePlace(session);
+    toSlices();
+    setSessionSide(session, { seat: "recent" });
+  };
+  /** The session whose 附栏 is up now — the column or the phone's sheet —
+      for an answer that arrives after it may have gone. */
+  const sideOpenFor = useRef<string | null>(null);
+  sideOpenFor.current = narrow ? (placeSheet?.session ?? null) : sessionSideOpen();
+  /** Whether a file is still there: its directory, read. `null` when the
+      machine did not answer — not gone, only not known. */
+  const fileThere = (machine: string, path: string): Promise<boolean | null> =>
+    fetchLs(machine, levelOf(path)).then(
+      (l) => l.entries.some((e) => !e.dir && e.name === path.slice(path.lastIndexOf("/") + 1)),
+      () => null,
+    );
+  // **A file khor itself deleted or moved** (`lib/tree-changed`): any
+  // session that was left on it lands on 最近 when its 附栏 opens again.
+  // The one open now is not touched — its own page answers the change.
+  const fileThereRef = useRef(fileThere);
+  fileThereRef.current = fileThere;
+  useEffect(
+    () =>
+      onTreeChanged((c) => {
+        for (const [session, p] of sidePlaces()) {
+          const file = p.seat === "workspace" ? placeFile(p.files?.spot ?? null) : null;
+          if (session === sideOpenFor.current || file === null || !p.files) continue;
+          if (!sameMachine(c, { machine: p.files.machine, here: p.files.here }) || levelOf(file) !== c.dir) continue;
+          void fileThereRef.current(p.files.machine, file).then((there) => {
+            if (there === false && sidePlace(session) === p) forgetSidePlace(session);
+          });
+        }
+      }),
+    [],
+  );
   /** **过去24小时, 最近's first row, on both faces, and it does not
       expand** (UX-39 §4, the owner 2026-10-06 20:30 and 22:10): the day's
       band and its two totals; hover or a press on a stretch says that
@@ -2392,6 +2526,29 @@ export default function App() {
   const sheetToday = (row: SessionRow) => <DayToday runs={dayOf(row.id)} totals={dayTotals} />;
   const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
   useEffect(() => setSideBrowsing(sideOn && side.seat === "browser"), [sideOn, side.seat]);
+  // **Where the 附栏 stands, kept as it moves** (UX-47, `resumeSide`): only
+  // while it is up beside the session in front — a render on the way to
+  // another session still holds the last one's pieces, and must not
+  // write them under the new one's name.
+  const pageFront = pageTabs.current.id;
+  useEffect(() => {
+    if (!sideOn || !selectedRow || sideOpenFor.current !== selectedRow.id) return;
+    const files = sideFiles?.session === selectedRow.id ? sideFiles : null;
+    keepSidePlace(selectedRow.id, {
+      seat: side.seat,
+      fromRecent: sideFrom === "recent",
+      files: files && {
+        machine: files.machine,
+        here: devices.find((d) => d.name === files.machine)?.me ?? !selectedRow.source,
+        dir: files.dir,
+        start: files.start,
+        spot: sideSpot?.session === selectedRow.id ? sideSpot.spot : null,
+      },
+      page: side.seat === "browser" && sideBrowse.page && pageFront !== "?" && pageFront !== "" ? pageFront : null,
+      quota: sideQuota,
+    } satisfies SidePlace);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sideOn, selectedRow?.id, side.seat, sideFrom, sideFiles, sideSpot, sideBrowse.page, pageFront, sideQuota]);
   const [recent, forgetRecentRow] = useSideRecent(sideOn && side.seat === "recent");
   /** 最近's rows open in place (§4): a page in the column's browser, a
       workspace as the column's listing, a file as its file page. */
@@ -2447,6 +2604,9 @@ export default function App() {
               here={here}
               root={root}
               start={f.start}
+              // Where it was left (UX-47), and where it is as it moves.
+              spot={sideResume?.session === selectedRow.id ? sideResume.spot : null}
+              onSpot={(spot) => setSideSpot({ session: selectedRow.id, spot })}
               onLeave={sideFrom === "recent" ? backToRecent : undefined}
               onRead={(path) => touched("file", f.machine, path)}
               fileActs={(path) => [{ key: "open-main", label: gui.open_in_main, run: () => openPathMain(f.machine, path, false, null) }]}
@@ -2939,15 +3099,13 @@ export default function App() {
                 | (HTMLElement & { __marks?: { cwd: () => string | undefined } })
                 | null;
               const dir = box?.__marks?.cwd() ?? selectedRow?.place ?? null;
-              // The sheet's 工作区 seat stands where the shell is at the
-              // tap (UX-17's rule, kept): pointed afresh each time.
-              if (selectedRow) {
-                setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null });
-                // Each opening lands on 最近 (UX-40).
-                setSessionSide(selectedRow.id, { seat: "recent" });
-              }
-              toSlices();
-              setPlaceSheet({ dir });
+              if (!selectedRow) return;
+              // **Where it was left** (UX-47, `resumeSide`); with nothing
+              // to come back to, 最近, and the 工作区 seat where the shell
+              // is at the tap (UX-17's rule). ⚠️ 墓碑 (UX-40 §3): each
+              // opening on 最近, the tree pointed afresh each time.
+              if (!resumeSide(selectedRow.id)) setSideFiles({ session: selectedRow.id, machine: selectedRow.home, dir, start: null });
+              setPlaceSheet({ dir, session: selectedRow.id });
             }
           : undefined
       }
