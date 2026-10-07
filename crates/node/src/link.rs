@@ -5417,6 +5417,7 @@ impl Node {
             seq: since,
             dirs: dirs.to_vec(),
             unavailable: true,
+            unreported: Vec::new(),
         };
         if machine.is_empty() || machine == self.name() {
             return Ok(unavailable());
@@ -5458,6 +5459,7 @@ impl Node {
                 seq: since,
                 dirs: dirs.to_vec(),
                 unavailable: true,
+                unreported: Vec::new(),
             });
         }
         let line = self

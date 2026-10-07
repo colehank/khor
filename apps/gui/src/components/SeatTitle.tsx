@@ -20,7 +20,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 import { GlassCapsule, GlassItem } from "@/components/Glass";
-import { IconBrowser, IconDevices, IconFile, IconFiles, IconMore, IconQuota, IconRecent } from "@/components/icons";
+import { IconBrowser, IconDevices, IconFiles, IconMore, IconQuota, IconRecent, IconStore } from "@/components/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { gui } from "@/gen/catalog";
 import { type SideSeat } from "@/hooks/use-session-side";
@@ -56,9 +56,9 @@ const SEAT_GLYPH: Record<SideSeat, ReactNode> = {
   browser: <IconBrowser />,
   machine: <IconDevices />,
   quota: <IconQuota />,
-  // A file — received files — as in 更多's menu; not the folder, which
-  // is 工作区's: every seat wears its own (UX-39 §2).
-  store: <IconFile />,
+  // A tray things come down into, as in 更多's menu; not the folder,
+  // which is 工作区's: every seat wears its own (UX-39 §2).
+  store: <IconStore />,
 };
 
 /** The bar's own three; 机器, 额度 and 存储 sit in 更多's menu. */

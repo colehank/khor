@@ -1020,8 +1020,15 @@ pub enum Response {
         digest: String,
     },
     /// [`Request::Watch`]'s first frame: the directories it is watching
-    /// (one that is gone, or not a directory, is left out).
-    Watching { dirs: Vec<String> },
+    /// (one that is gone, or not a directory, is left out), and which of
+    /// them sit on a network mount (`unreported`, store-c): there a
+    /// change made by another host sharing it is never told to the
+    /// watcher, so a quiet answer about them is not a fact.
+    Watching {
+        dirs: Vec<String>,
+        #[serde(default)]
+        unreported: Vec<String>,
+    },
     /// One burst of changes on a [`Request::Watch`] stream: the watched
     /// directories whose listings changed.
     Changed { dirs: Vec<String> },
@@ -1674,6 +1681,23 @@ mod tests {
         }
         let ask = encode(&Request::Watched).unwrap();
         assert!(matches!(decode::<Request>(&ask), Ok(Request::Watched)));
+    }
+
+    /// A watch's first frame says which of the directories it took are on
+    /// a network mount (store-c), and that list crosses intact.
+    #[test]
+    fn a_watch_says_which_directories_it_cannot_fully_hear() {
+        let sent = Response::Watching {
+            dirs: vec!["/home/t/khor-drop".into(), "/srv/a".into()],
+            unreported: vec!["/home/t/khor-drop".into()],
+        };
+        match decode::<Response>(&encode(&sent).unwrap()).unwrap() {
+            Response::Watching { dirs, unreported } => {
+                assert_eq!(dirs.len(), 2);
+                assert_eq!(unreported, vec!["/home/t/khor-drop".to_owned()]);
+            }
+            other => panic!("decoded wrong: {other:?}"),
+        }
     }
 
     /// The load answer crosses the wire with its gaps intact: a bucket

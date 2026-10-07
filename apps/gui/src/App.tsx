@@ -52,7 +52,6 @@ import {
   IconChevronRight,
   IconClose,
   IconDevices,
-  IconFile,
   IconFiles,
   IconGear,
   IconNetwork,
@@ -60,6 +59,7 @@ import {
   IconQuota,
   IconSessions,
   IconShield,
+  IconStore,
   IconTerminal,
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
@@ -316,8 +316,8 @@ const MORE_GLYPH: Record<Exclude<MorePage, "me">, (p: { className?: string }) =>
   connection: IconNetwork,
   security: IconShield,
   about: IconGear,
-  // 存储 wears a file (received files): the folder is 工作区's.
-  store: IconFile,
+  // 存储 wears its own tray (store-c): received files, not a page.
+  store: IconStore,
   doctor: IconPulse,
 };
 

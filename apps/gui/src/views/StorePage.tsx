@@ -22,6 +22,20 @@
  *   done here or in a tree: closing a conversation's file row no longer
  *   deletes it (the lead, 2026-10-07).
  *
+ * **Read again only when it changed** (store-c): no beat while nothing
+ * happens. A far machine watches the receive location and answers a long
+ * wait (`dirsWait`, the file tree's watch, NET-4); khor's own acts on
+ * files — a delete, a rename, a drop landing there — say the level they
+ * changed (`lib/tree-changed`). Where the watch cannot hear everything —
+ * this machine and any other it cannot watch (`unavailable`), or a
+ * location on a network mount another host writes into too
+ * (`unreported`: turing and hinton share an NFS home) — the page also
+ * reads again when the window comes back to the front and, slowly, while
+ * it stays open. A new receive location is a new watch. And under a
+ * finger the list pulls to refresh like every other list
+ * (`usePullRefresh`): a pull reads the location now, whatever the watch
+ * says.
+ *
  * The same page is the 附栏's 更多 → 存储 seat (`bare`): no head of its
  * own there — the 附栏's one head says who and which seat — and where it
  * stands (the machine, the file open) is said as it moves (`onSpot`) and
@@ -30,12 +44,13 @@
  * ⚠️ 墓碑 (STORE-BRIEF phase 1): 「放进来的」, a row above the 工作区
  * seat's tree opening `~/khor-drop` as a tree of its own.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { fetchLs, setReceiveDir, type DeviceRow } from "@/api";
+import { dirsWait, fetchLs, setReceiveDir, type DeviceRow } from "@/api";
 import { DirPicker } from "@/components/DirPicker";
 import { GlassCircle } from "@/components/Glass";
 import { IconBack } from "@/components/icons";
+import { PullSpinner } from "@/components/ListPane";
 import { PathCut } from "@/components/PathCut";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { fileKind } from "@/components/SessionFace";
@@ -46,6 +61,8 @@ import { Button } from "@/components/ui/button";
 import { PopupButton } from "@/components/ui/popup-button";
 import type { DirRow } from "@/gen/bindings/DirRow";
 import { gui } from "@/gen/catalog";
+import { useHidden } from "@/hooks/use-hidden";
+import { usePullRefresh } from "@/hooks/use-pull-refresh";
 import type { StoreSpot } from "@/hooks/use-session-side";
 import { onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { FilePage } from "@/views/FilePage";
@@ -53,9 +70,16 @@ import { sizeWord } from "@/views/FilesPane";
 import { useRemoveFlow } from "@/views/fileRow";
 import { ago } from "@/words";
 
-/** How often the listing is asked again while the page is up: a file
-    landing is the one change nothing on this screen announces. */
-const RELIST_MS = 5000;
+/** How long one watch question is held when nothing changes (the
+    file tree's `WATCH_HOLD_MS`). */
+const WATCH_HOLD_MS = 20_000;
+/** Where the watch cannot hear every change: how often the listing is
+    asked again while the page stays open. Slow — the window coming back
+    to the front asks at once. */
+const UNHEARD_MS = 60_000;
+
+/** A directory as one spelling: no trailing slash. */
+const level = (d: string) => d.replace(/\/+$/, "") || "/";
 
 export function StorePage({
   devices,
@@ -91,30 +115,110 @@ export function StorePage({
   const [listed, setListed] = useState<{ dir: string; rows: DirRow[] } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [again, setAgain] = useState(0);
+  // One read per ask: the mount, a new machine or location, and every
+  // `again` below.
   useEffect(() => {
     if (dir === null) return;
     let live = true;
-    const read = () =>
-      fetchLs(name, dir).then(
-        (l) => {
-          if (!live) return;
-          setListed({ dir, rows: l.entries });
-          setFailed(null);
-        },
-        (e: unknown) => live && setFailed(String(e instanceof Error ? e.message : e)),
-      );
-    void read();
-    const every = window.setInterval(() => void read(), RELIST_MS);
+    fetchLs(name, dir).then(
+      (l) => {
+        if (!live) return;
+        setListed({ dir, rows: l.entries });
+        setFailed(null);
+      },
+      (e: unknown) => live && setFailed(String(e instanceof Error ? e.message : e)),
+    );
     return () => {
       live = false;
-      window.clearInterval(every);
     };
   }, [name, dir, again]);
-  // A delete, a rename or a save anywhere in khor under this directory.
+
+  /** The watch hears every change to this location: khor's own acts are
+      left to it then, as a watched tree leaves them (`FileTree`). */
+  const heard = useRef(false);
+  const hidden = useHidden();
+  /** Hidden since the last arm: the location may have changed unseen. */
+  const wasHidden = useRef(false);
+  useEffect(() => {
+    heard.current = false;
+    if (dir === null) return;
+    if (hidden) {
+      wasHidden.current = true;
+      return;
+    }
+    let stopped = false;
+    const reread = () => {
+      if (!stopped && !document.hidden) setAgain((n) => n + 1);
+    };
+    if (wasHidden.current) {
+      wasHidden.current = false;
+      reread();
+    }
+    // What the watch cannot hear is asked again: on the window's return
+    // and on a slow beat.
+    let slow: number | null = null;
+    const unheard = () => {
+      heard.current = false;
+      if (slow !== null) return;
+      slow = window.setInterval(reread, UNHEARD_MS);
+      window.addEventListener("focus", reread);
+    };
+    const at = level(dir);
+    void (async () => {
+      let seq = 0;
+      let first = true;
+      while (!stopped) {
+        try {
+          const w = await dirsWait(name, [dir], seq, first ? 0 : WATCH_HOLD_MS);
+          if (stopped) return;
+          if (w.unavailable) {
+            unheard();
+            return;
+          }
+          if (w.unreported.some((d) => level(d) === at)) unheard();
+          else if (!first) heard.current = slow === null;
+          // The first answer only arms the watch: the listing was just
+          // read. Every later one that names the location is a change.
+          if (!first && w.dirs.some((d) => level(d) === at)) reread();
+          first = false;
+          seq = w.seq;
+        } catch {
+          // Not reached just now: the next question will say.
+          await new Promise((r) => setTimeout(r, 5_000));
+        }
+      }
+    })();
+    return () => {
+      stopped = true;
+      if (slow !== null) window.clearInterval(slow);
+      window.removeEventListener("focus", reread);
+    };
+  }, [name, dir, hidden]);
+
+  /** Pulled down under a finger: read now and hold the spinner until
+      the answer is in (`ListPane`'s pull, on this page's own list). */
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const pull = usePullRefresh(scroller, () =>
+    dir === null
+      ? Promise.resolve()
+      : fetchLs(name, dir).then(
+          (l) => {
+            setListed({ dir, rows: l.entries });
+            setFailed(null);
+          },
+          (e: unknown) => setFailed(String(e instanceof Error ? e.message : e)),
+        ),
+  );
+  const pulling = pull.state !== "idle" || pull.pull > 0;
+  const dragging = pull.state === "pulling" || pull.state === "armed";
+
+  // A delete, a rename, a save or a drop landing anywhere in khor in
+  // this directory — at once, unless the watch is about to say so.
   useEffect(
     () =>
       onTreeChanged((c) => {
-        if (dir !== null && sameMachine(c, { machine: name, here: isHere }) && c.dir === dir) setAgain((n) => n + 1);
+        if (dir === null || heard.current) return;
+        if (sameMachine(c, { machine: name, here: isHere }) && level(c.dir) === level(dir)) setAgain((n) => n + 1);
       }),
     [name, isHere, dir],
   );
@@ -211,7 +315,17 @@ export function StorePage({
   const machines = devices;
 
   return (
-    <div data-store data-store-machine={name} className="flex min-h-0 flex-1 flex-col">
+    <div
+      data-store
+      data-store-machine={name}
+      // A pull moves the page's parts, never its box (`app.css`
+      // `[data-pull-host]`), as a pane's does.
+      data-pull-host={pulling ? "" : undefined}
+      data-pull-drag={dragging ? "" : undefined}
+      className="relative flex min-h-0 flex-1 flex-col"
+      style={{ "--pull": `${pull.pull}px` } as CSSProperties}
+    >
+      <PullSpinner {...pull} />
       <SideFind
         label={gui.store_search}
         query={query}
@@ -236,7 +350,7 @@ export function StorePage({
           ) : undefined
         }
       />
-      <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={setScroller} data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
         <div data-store-place data-store-pending={pending || undefined} className="flex flex-col gap-xxs border-b px-(--page-inset) py-in">
           <div className="flex min-w-0 items-center gap-row">
             <div className="flex min-w-0 flex-1 flex-col">

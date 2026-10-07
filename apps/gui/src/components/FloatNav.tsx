@@ -19,7 +19,7 @@
 import { useRef, type ReactNode } from "react";
 
 import { MachineAvatar } from "@/components/Avatar";
-import { IconFile, IconGear, IconMore, IconPulse } from "@/components/icons";
+import { IconGear, IconMore, IconPulse, IconStore } from "@/components/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { useTravel } from "@/lib/travel";
@@ -188,9 +188,9 @@ export function MoreMenuItems({
           {s.name}
         </DropdownMenuItem>
       ))}
-      {/* 存储 wears a file (received files): the folder is 工作区's. */}
+      {/* 存储 wears its own tray (store-c): the folder is 工作区's. */}
       <DropdownMenuItem data-nav-store className={MENU_ITEM} onSelect={onStore}>
-        <IconFile />
+        <IconStore />
         {gui.settings_store}
       </DropdownMenuItem>
       <DropdownMenuItem data-nav-settings className={MENU_ITEM} onSelect={onSettings}>
