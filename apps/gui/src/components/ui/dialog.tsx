@@ -36,8 +36,12 @@ function DialogOverlay({
       // makes the scrim a thing a tap clicks.
       onClick={() => {}}
       data-scrim
+      // **One scrim** (UX-44 §2, the owner 2026-10-07: 「都用标签列表的深
+      // 灰」): every sheet's and dialog's backdrop is `--sheet-scrim`, the
+      // 附栏's included. ⚠️ 墓碑: `bg-black/50` here, invisible on the dark
+      // theme's black ground, and the 附栏 alone on the token.
       className={cn(
-        "fixed inset-0 z-50 bg-black/50",
+        "fixed inset-0 z-50 bg-(--sheet-scrim)",
         "duration-[var(--dur-180)] ease-[var(--ease-out)]",
         "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
         className,

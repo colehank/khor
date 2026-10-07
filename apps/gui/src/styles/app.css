@@ -655,9 +655,11 @@ aside[data-side] {
   animation: screen-in-from-left var(--dur-240) var(--ease-out);
 }
 
-/* **A row slid left** (`hooks/use-row-swipe`, F7.5): the row's face
-   moves left by `--row-reveal` and the actions open from the right edge
-   by as much — the pin on the fill, the delete on the destructive red. */
+/* **A row slid left** (`components/SwipeRow`, F7.5; UX-44 §3): the row's
+   face moves left by `--row-reveal` and the actions open from the right
+   edge by as much — the pin on the fill, the delete on the destructive
+   red. On a row a full swipe acts on, the red takes all that is
+   revealed, as iOS's does, and carries the row off its end. */
 [data-row-swipe] {
   position: relative;
   overflow: hidden;
@@ -687,10 +689,40 @@ aside[data-side] {
   background: var(--destructive);
   color: var(--destructive-foreground);
 }
+[data-row-full-swipe] [data-row-actions-inner] {
+  min-width: 100%;
+}
+[data-row-full-swipe] [data-row-action][data-destructive] {
+  flex: 1 0 auto;
+}
 @media (prefers-reduced-motion: reduce) {
   :is([data-row-face], [data-row-actions]) {
     transition: none;
   }
+}
+
+/* **Every bottom sheet is one sheet of paper** (UX-44 §1, the owner
+   2026-10-07: 「整个app的底栏风格一致，底栏颜色、布局等向点击药丸弹出的底栏
+   一致」). The 附栏's (UX-39 §1, 「展开了就是 app 的颜色，不要额外颜色」)
+   is the pattern, written here once for it and for every form that is a
+   sheet on the phone — the tabs sheet, the key row editor, 新会话, 文件
+   历史, 加入网络, 导入, the machine editor, the directory picker, the
+   relay, the map's card: the app's own ground, no surface of its own, and
+   every page or row inside reads the same ground (a list's `side`, a
+   page's `card`, a sticky row's `popover`); a top rim and the sheet's
+   corners, no side or foot rim; the grabber inside the paper (each draws
+   its own from `--grabber-*`). The scrim is `DialogOverlay`'s one
+   (UX-44 §2). A question stays a centred alert, and the wide face's
+   dialogs keep `popover` (`ui/dialog`). ⚠️ 墓碑 (UX-37 → UX-44): a form
+   sheet wore `popover` grey with a hairline on three sides. */
+:is([data-place-sheet], [data-narrow] [data-slot="dialog-content"][data-form]) {
+  --card: var(--background);
+  --side: var(--background);
+  --popover: var(--background);
+  background: var(--background);
+  border-width: var(--hair) 0 0;
+  border-radius: var(--menu-r) var(--menu-r) 0 0;
+  box-shadow: var(--shadow-float);
 }
 
 /* **On a phone a form is a sheet** (`ui/dialog` `useSheet`, F7.4; narrow
@@ -712,8 +744,6 @@ aside[data-side] {
   overflow-y: auto;
   translate: none;
   transform: translateY(var(--sheet-pull));
-  border-radius: var(--menu-r) var(--menu-r) 0 0;
-  border-bottom: 0;
   padding-top: calc(var(--gap-row) + var(--grabber-h));
   padding-bottom: calc(var(--page-inset) + var(--safe-bottom));
   transition: transform var(--dur-240) var(--ease-out);
@@ -762,14 +792,6 @@ aside[data-side] {
    at their scrollers' foot (`[data-nav-shown]` above). ⚠️ 墓碑 (UX-37 §4
    → UX-39 §2): the seats row of flat glass at its foot. */
 [data-place-sheet] {
-  /* **The sheet wears the app's own ground** (UX-39 §1, the owner 2026-10-06
-     21:10: 「展开了就是 app 的颜色，不要额外颜色」): no surface colour of
-     its own, and every page inside reads the same ground — a list's
-     `side` and a page's `card` are the background here. ⚠️ 墓碑 (UX-37
-     §2): `popover` as the sheet's surface. */
-  --card: var(--background);
-  --side: var(--background);
-  --popover: var(--background);
   height: calc(var(--place-sheet-half) * 100dvh);
   transition: height var(--dur-240) var(--ease-out);
   animation: sheet-up var(--dur-240) var(--ease-out);

@@ -31,7 +31,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { fetchGitStatus, fetchLs, searchIn, type Found } from "@/api";
 import { GlassCircle } from "@/components/Glass";
-import { IconChevronRight, IconFiles, IconPlus } from "@/components/icons";
+import { IconFiles, IconPlus } from "@/components/icons";
 import { SideFind } from "@/components/SideFind";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SeatHead } from "@/components/SeatHead";
@@ -242,7 +242,7 @@ export function SideWorkspace({
           >
             <IconFiles className="size-kind-mark flex-none text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{gui.drops_row}</span>
-            <IconChevronRight className="size-4 flex-none text-tertiary" />
+            {/* ⚠️ 墓碑 (UX-44 §4): a › at the row's end. */}
           </button>
         )}
         {hunt.trim() !== "" ? (
