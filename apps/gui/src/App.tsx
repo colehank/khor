@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { hereActs, ProgressLine, termName } from "@/components/DoingLine";
 import { tabAct, useTabActs } from "@/lib/tab-acts";
@@ -16,6 +16,7 @@ import {
   syncNow,
   fetchWorkspaces,
   widenWindow,
+  giveBackWindow,
   inApp,
   installHooks,
   launchOn,
@@ -76,7 +77,7 @@ import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui, msg } from "@/gen/catalog";
 import { lasted } from "@/words";
-import { setSessionSide, useSessionSide, type SideSeat as PlaceSeat } from "@/hooks/use-session-side";
+import { closeSessionSide, sessionSideOpen, setSessionSide, useSessionSide, type SideSeat as PlaceSeat } from "@/hooks/use-session-side";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
@@ -2303,6 +2304,18 @@ export default function App() {
       UX-30 §6): the same seats, risen from the bottom. The
       sheet's lifetime is this state; the seat is the session's memory. */
   const [placeSheet, setPlaceSheet] = useState<{ dir: string | null } | null>(null);
+  /** **The 附栏 is its session's alone** (UX-46 §1, the owner 2026-10-07:
+      「在跳转到别的目录的时候仍然存在，这个侧栏应该是只属于 session，该关闭
+      的」): leaving the session — another landing, another tab, the session
+      closed — closes it, the column and the phone's sheet alike; back on
+      the session it is closed, and the press opens it on 最近. ⚠️ 墓碑
+      (UX-30 → UX-46): the column standing on every landing beside
+      whatever was there, and each session reopening docked. */
+  useEffect(() => {
+    const open = sessionSideOpen();
+    if (open !== null && (!sessions || open !== selected)) closeSessionSide();
+    setPlaceSheet(null);
+  }, [selected, sessions]);
   /** **过去24小时, 最近's first row, on both faces, and it does not
       expand** (UX-39 §4, the owner 2026-10-06 20:30 and 22:10): the day's
       band and its two totals; hover or a press on a stretch says that
@@ -2437,43 +2450,66 @@ export default function App() {
    * session's width** (UX-39, the owner 2026-10-06 23:15: 「保留 app 宽度，
    * 拓展到右侧的，就像现在在工作区点 chat 一样」 — `WorkspacePane`'s
    * `showSessions`, rulings 2026-09-16 and 51). The window grows first and
-   * the column arrives into the room it made; shut, the column goes and
-   * the window gives back exactly what it took (the width at the press,
-   * not a re-measure — the seam is draggable). Where the window cannot
-   * grow (the screen's edge, the web face) the column takes its room off
-   * the session, as before.
+   * the column arrives into the room it made; shut, the window gives back
+   * exactly the frame it had (UX-46 §2, the owner 2026-10-07: 「打开多大，
+   * 关闭了不影响原来的大小」) — the app keeps that account (`widenWindow`),
+   * by any road the column goes: the tab pressed again, the seam, leaving
+   * the session. Where the window cannot grow (the screen's edges,
+   * fullscreen, the web face) the column takes its room off the session,
+   * as before.
+   *
+   * **Nothing beside the column moves while the window does** (UX-46 §3,
+   * the owner: 「收起附栏的时候，按钮从左边跑到右边去了」). The column went
+   * first and the window followed a moment later, so for that moment the
+   * strip ran to the still-wide window's edge and its end — the verbs
+   * seat's ↻, the front tab's × — jumped right, then back as the window
+   * narrowed; opening did the same the other way round. The session's
+   * side is held at its width (`sideHold`) from before the ask until the
+   * window has answered, and the column comes or goes in the same frame
+   * the hold lets go.
+   *
+   * A narrow window draws no column and asks nothing: the room stays
+   * taken while the 附栏 stays open, and comes back with its close.
    */
-  const sideWanted = !narrow && side.open && selectedRow !== null;
+  const sideWanted = sessions && side.open && selectedRow !== null;
   const [sideShown, setSideShown] = useState(false);
-  const sideGrew = useRef(0);
-  useEffect(() => {
-    if (sideWanted === sideShown) return;
-    if (!sideWanted) {
-      setSideShown(false);
-      if (sideGrew.current > 0) {
-        void widenWindow(-sideGrew.current);
-        sideGrew.current = 0;
-      }
+  const [sideHold, setSideHold] = useState<number | null>(null);
+  const sideMain = useRef<HTMLDivElement | null>(null);
+  /** Whether the window holds room for the column now. */
+  const sideAsked = useRef(false);
+  /** Bumped each turn: an answer from the window that a later turn
+      overtook changes nothing. */
+  const sideTurn = useRef(0);
+  // A layout effect: the hold is measured with the column still drawn and
+  // set in the same frame it goes, before anything is painted.
+  useLayoutEffect(() => {
+    const turn = ++sideTurn.current;
+    const hold = () => setSideHold(sideMain.current ? sideMain.current.getBoundingClientRect().width : null);
+    if (sideWanted === sideAsked.current || (sideWanted && narrow)) {
+      setSideShown(sideWanted && !narrow);
+      setSideHold(null);
       return;
     }
-    let live = true;
-    const fallback = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--session-side-w")) || 0;
-    const w = Math.round(side.w ?? fallback);
-    sideGrew.current = w;
-    void widenWindow(w).then(
-      () => live && setSideShown(true),
-      () => {
-        sideGrew.current = 0;
-        if (live) setSideShown(true);
-      },
-    );
-    return () => {
-      live = false;
-    };
+    hold();
+    if (sideWanted) {
+      sideAsked.current = true;
+      const fallback = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--session-side-w")) || 0;
+      void widenWindow("session-side", side.w ?? fallback).then(() => {
+        if (turn !== sideTurn.current) return;
+        setSideShown(true);
+        setSideHold(null);
+      });
+      return;
+    }
+    sideAsked.current = false;
+    setSideShown(false);
+    void giveBackWindow("session-side").then(() => turn === sideTurn.current && setSideHold(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideWanted, sideShown]);
+  }, [sideWanted, narrow]);
+  // Drawn until the window effect lets it go (`sideShown`), not until the
+  // store says closed: the hold is measured with it still there.
   const sessionSide =
-    sideShown && !narrow && side.open && selectedRow ? (
+    sideShown && selectedRow ? (
       <SessionSide
         key={selectedRow.id}
         session={selectedRow.id}
@@ -3698,13 +3734,19 @@ export default function App() {
               {/* ⚠️ 墓碑 (UX-30): `ref={setDetailBox}` stood here — the day's
                   axis was this pane's; it is the column's now
                   (`SessionSide` `boxRef`). */}
-              <div className="flex min-h-0 min-w-0 flex-1 flex-row">
+              <div className={cn("flex min-h-0 min-w-0 flex-1 flex-row", sideHold !== null && "overflow-hidden")}>
               {/* **The column stands beside the strip too** (UX-39, the
                   owner 2026-10-06 21:45: 「桌面都要顶部对齐」): its head is
                   on the window's first row, level with the tabs' capsule,
                   not under it. ⚠️ 墓碑 (UX-30): the column inside
-                  `DetailPane`, below the strip. */}
-              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  `DetailPane`, below the strip. Held at its width while
+                  the window grows or gives back (`sideHold`, UX-46 §3). */}
+              <div
+                ref={sideMain}
+                data-side-held={sideHold !== null ? "" : undefined}
+                className="flex min-h-0 min-w-0 flex-1 flex-col"
+                style={sideHold === null ? undefined : { flex: "none", width: sideHold }}
+              >
                 {sessions && openTabs.length > 0 ? (
                   <VerbSeat.Provider value={verbSeat}>
                   <Tabs

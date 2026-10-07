@@ -1,18 +1,22 @@
 // The session's 附栏 (UX-30): whether it is open beside this session, how
-// wide it was dragged, and which seat it is on — one memory per session.
+// wide it was dragged, and which seat it is on.
 //
-// **Per session, not per face** (the owner: 「一边 vibe 一边看交付物」 —
-// the deliverable is this session's, and the column is where it is
-// watched from, so a session someone docked a phone beside keeps it
-// docked, and the next session starts without one). A session's seat is
-// remembered the same way the old pill sheet kept its tab (`keptTab`,
-// which this replaces): 最近 first, then whichever was last looked at.
+// **Open belongs to the session in front, and to nothing else** (UX-46,
+// the owner 2026-10-07: 「这个侧栏应该是只属于 session，该关闭的」): one
+// session at most has it open, leaving that session — another landing,
+// another tab, the session closed — closes it (`App`), and coming back
+// finds it closed; the press opens it again, on 最近 (UX-40 §3). ⚠️ 墓碑
+// (UX-30 → UX-46): 「open」 remembered per session on this device, so a
+// session someone had docked a phone beside came back docked, and the
+// column outlived its session on every other landing.
 //
-// **Kept on this device** (`localStorage`, beside `use-list-width`'s and
-// `use-day-shown`'s keys): a viewer's own convenience, never a fact about
-// the session. Storage can be absent or throwing (a private window,
-// blocked site data), and every touch of it is wrapped: unreadable reads
-// as 「never opened」, and a refused write costs only the memory.
+// **The width is remembered per session** (`localStorage`, beside
+// `use-list-width`'s and `use-day-shown`'s keys): a viewer's own
+// convenience, never a fact about the session. Storage can be absent or
+// throwing (a private window, blocked site data), and every touch of it
+// is wrapped: unreadable reads as the token's default, and a refused
+// write costs only the memory. The seat lives as long as the app does
+// and every opening resets it (UX-40 §3), so it is not written down.
 //
 // A store outside React with `useSyncExternalStore`: the front tab's
 // press (`App`'s tab faces) and the column that answers it (`DetailPane`)
@@ -34,22 +38,15 @@ export type SidePref = {
 const KEY = (session: string) => `khor.session-side.${session}`;
 const CLOSED: SidePref = { open: false, w: null, seat: "recent" };
 
-function isSeat(v: unknown): v is SideSeat {
-  return typeof v === "string" && (SIDE_SEATS as readonly string[]).includes(v);
-}
-
 function stored(session: string): SidePref {
   try {
     const raw = window.localStorage.getItem(KEY(session));
     if (!raw) return CLOSED;
     const p: unknown = JSON.parse(raw);
     if (typeof p !== "object" || p === null) return CLOSED;
-    const { open, w, seat } = p as Partial<SidePref>;
-    return {
-      open: open === true,
-      w: typeof w === "number" && Number.isFinite(w) ? w : null,
-      seat: isSeat(seat) ? seat : "recent",
-    };
+    // An `open` or a `seat` written before UX-46 is read past: closed, 最近.
+    const { w } = p as Partial<SidePref>;
+    return { ...CLOSED, w: typeof w === "number" && Number.isFinite(w) ? w : null };
   } catch {
     return CLOSED;
   }
@@ -69,15 +66,36 @@ function current(session: string): SidePref {
   return p;
 }
 
+/** The one session whose 附栏 is open, if any. */
+let openFor: string | null = null;
+
 export function setSessionSide(session: string, patch: Partial<SidePref>): void {
+  // Opening one closes any other: the 附栏 is the session in front's.
+  if (patch.open === true && openFor !== null && openFor !== session) {
+    live.set(openFor, { ...current(openFor), open: false });
+  }
+  if (patch.open !== undefined) openFor = patch.open ? session : openFor === session ? null : openFor;
   const next = { ...current(session), ...patch };
   live.set(session, next);
-  try {
-    window.localStorage.setItem(KEY(session), JSON.stringify(next));
-  } catch {
-    /* the column still moves; only the memory of it is lost */
+  if (patch.w !== undefined) {
+    try {
+      window.localStorage.setItem(KEY(session), JSON.stringify({ w: next.w }));
+    } catch {
+      /* the column still moves; only the memory of it is lost */
+    }
   }
   for (const tell of heard) tell();
+}
+
+/** The session whose 附栏 is open, or `null`. */
+export function sessionSideOpen(): string | null {
+  return openFor;
+}
+
+/** Closes the 附栏, whichever session it was open beside (`App`, when
+    that session is left). */
+export function closeSessionSide(): void {
+  if (openFor !== null) setSessionSide(openFor, { open: false });
 }
 
 function listen(tell: () => void): () => void {

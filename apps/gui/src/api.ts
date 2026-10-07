@@ -1557,13 +1557,31 @@ export const showMenu = (at: Spot, rows: MenuRows): Promise<boolean> =>
 /** Takes it off the screen. Hidden, not closed — the window is reused. */
 export const hideMenu = () => (inApp ? call<null>("hide_menu", {}) : Promise.resolve(null));
 
+/** The columns that ask the window for their room: the session's 附栏
+    (`App`) and the workspace's sessions (`WorkspacePane`). Each one's
+    room is its own account on the app side. */
+export type RoomColumn = "session-side" | "ws-sessions";
+
 /**
- * Grows the app's window to the right by `delta` CSS pixels, or shrinks
- * it by a negative one.
+ * Grows the app's window for `column`, `w` CSS pixels wide — rightward,
+ * and leftward for what the screen's right edge cannot give.
  *
  * 「右上角的icon,都是点击后,在最右侧,拓宽窗口, 而不是挤占现有窗口」—
  * the user, 2026-09-16. A column that really is a column asks the window
  * for its room instead of taking it off the file beside it.
+ *
+ * **The window keeps the account, not the face** (UX-46, the owner
+ * 2026-10-07: 「本来的窗口还变了」): it notes its frame at the press, and
+ * `giveBackWindow` puts that frame back exactly — or, if the person moved
+ * or resized the window meanwhile, takes only the column's width off.
+ * ⚠️ 墓碑: `widenWindow(delta)`, `+w` on the press and `-w` on the close,
+ * which came back wrong whenever the two did not meet (`src-tauri/src/
+ * room.rs` has the three ways).
+ *
+ * **Answers the width the window grew by, once the page has it** (0 when
+ * it did not grow: fullscreen, maximised, no room at either edge, or
+ * outside the app). The caller holds its layout still until then, so
+ * nothing on the glass moves while the window does (UX-46 §3).
  *
  * **A no-op everywhere but the app, and that is the honest answer
  * rather than a missing feature.** A browser window is not the page's
@@ -1573,10 +1591,35 @@ export const hideMenu = () => (inApp ? call<null>("hide_menu", {}) : Promise.res
  *
  * **CSS pixels, which are tauri's logical pixels.** The app side scales
  * them by the window's own factor; a number measured on the glass must
- * not be sent as a physical one (`src-tauri/src/lib.rs` widen).
+ * not be sent as a physical one.
  */
-export const widenWindow = (delta: number) =>
-  inApp ? call<null>("widen", { delta: Math.round(delta) }) : Promise.resolve(null);
+export const widenWindow = (column: RoomColumn, w: number) => roomAsk("widen", { column, w: Math.round(w) });
+/** What `widenWindow` took for `column`, given back; answers the width
+    given back, once the page has it. */
+export const giveBackWindow = (column: RoomColumn) => roomAsk("unwiden", { column });
+
+async function roomAsk(cmd: "widen" | "unwiden", args: Record<string, unknown>): Promise<number> {
+  if (!inApp) return 0;
+  const from = window.innerWidth;
+  // A refused ask took no room: the column takes its room off the page.
+  const px = (await call<number | null>(cmd, args).catch(() => 0)) ?? 0;
+  if (px < 1) return 0;
+  // The window answers when it has its new frame; the page hears its new
+  // width a moment later. Waited for (with a ceiling, a resize that never
+  // arrives must not hold a column back), then one frame for the layout.
+  await new Promise<void>((done) => {
+    const end = () => {
+      window.removeEventListener("resize", heard);
+      clearTimeout(cap);
+      requestAnimationFrame(() => done());
+    };
+    const heard = () => window.innerWidth !== from && end();
+    const cap = setTimeout(end, 400);
+    window.addEventListener("resize", heard);
+    heard();
+  });
+  return px;
+}
 
 /** How tall the list came out, said by the window that drew it — the only
     side that can measure a laid-out list. Showing it is the app's answer
