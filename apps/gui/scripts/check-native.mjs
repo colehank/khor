@@ -496,8 +496,9 @@ async function keysPhase(pid) {
  * 了」). The session's 附栏 grows the window by its width (UX-39 §9) and
  * every road that closes it must put the frame back: the front tab
  * pressed again, another landing, the tab closed. A window the person
- * moved or resized while it was open keeps their move and loses only the
- * column; a window against the screen's right edge grows leftward and
+ * only moved while it was open keeps their move and gets its pressed
+ * size back; one they resized keeps their size (the lead's ruling,
+ * 2026-10-07); a window against the screen's right edge grows leftward and
  * comes back the same way. Read as the window's frame, by pid, before
  * and after each road (`native-probe window`, points); the presses are
  * accessibility's (`axpress`), posted to the scratch app, and the moves
@@ -600,14 +601,14 @@ async function roomPhase(pid) {
     (f0) => ({ x: f0.x + 60, y: f0.y + 40, w: f0.w, h: f0.h }),
   );
   await home();
-  // 5. resized while open: their size kept, less the column
+  // 5. resized while open: their size stands, the close leaves it alone
   await road(
     "resized while open",
     async (f0, f1) => {
       await sizeTo(f1.w + 100, f0.h - 60);
       await tab();
     },
-    (f0) => ({ x: f0.x, y: f0.y, w: f0.w + 100, h: f0.h - 60 }),
+    (f0, f1) => ({ x: f1.x, y: f1.y, w: f1.w + 100, h: f0.h - 60 }),
   );
   await home();
   // 6. against the screen's right edge: 100 to the right, the rest leftward

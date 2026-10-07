@@ -2534,7 +2534,9 @@ export default function App() {
    * the hold lets go.
    *
    * A narrow window draws no column and asks nothing: the room stays
-   * taken while the 附栏 stays open, and comes back with its close.
+   * on the account while the 附栏 stays open, and its close asks for it
+   * back — which a window the person resized (into the narrow layout or
+   * not) declines: their size stands (the lead's ruling, 2026-10-07).
    */
   const sideWanted = sessions && side.open && selectedRow !== null;
   const [sideShown, setSideShown] = useState(false);

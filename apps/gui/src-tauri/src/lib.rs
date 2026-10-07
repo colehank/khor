@@ -2468,8 +2468,8 @@ fn widen(window: tauri::Window, column: String, w: f64) -> Result<f64, String> {
 }
 
 /// Gives back what `widen` took for `column`: the frame it grew from,
-/// exactly, or — the window moved or resized meanwhile — the column's
-/// width off the edges it was added at.
+/// exactly; a window only moved meanwhile gets its pressed size back
+/// where it stands; a window resized meanwhile is left alone.
 #[cfg(desktop)]
 #[tauri::command]
 fn unwiden(window: tauri::Window, column: String) -> Result<f64, String> {

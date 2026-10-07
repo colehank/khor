@@ -1572,8 +1572,9 @@ export type RoomColumn = "session-side" | "ws-sessions";
  *
  * **The window keeps the account, not the face** (UX-46, the owner
  * 2026-10-07: 「本来的窗口还变了」): it notes its frame at the press, and
- * `giveBackWindow` puts that frame back exactly — or, if the person moved
- * or resized the window meanwhile, takes only the column's width off.
+ * `giveBackWindow` puts that frame back exactly; a window the person only
+ * moved meanwhile gets its pressed size back where it stands, and one
+ * they resized keeps their size (the lead's ruling, 2026-10-07).
  * ⚠️ 墓碑: `widenWindow(delta)`, `+w` on the press and `-w` on the close,
  * which came back wrong whenever the two did not meet (`src-tauri/src/
  * room.rs` has the three ways).

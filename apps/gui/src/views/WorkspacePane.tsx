@@ -426,8 +426,9 @@ export function WorkspacePane({
    * way out — the seam is draggable, so the column a person closes may
    * not be the width it opened at — but the window's own frame from the
    * press, which the app keeps (UX-46, `widenWindow` / `giveBackWindow`):
-   * exactly that frame when nobody moved the window meanwhile, and the
-   * column's width off it when somebody did.
+   * exactly that frame when nobody touched the window meanwhile, the
+   * pressed size where it stands when somebody only moved it, and their
+   * size left alone when somebody resized it.
    *
    * Narrow does none of this (33): there the column is a screen, and a
    * window that could grow is not the situation. The web face does none

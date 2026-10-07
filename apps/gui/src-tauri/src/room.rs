@@ -23,9 +23,12 @@
 //! So the window, not the face, keeps the account: [`grow`] notes the
 //! frame before (`from`) and after (`to`) and what each edge gave, and
 //! [`give_back`] answers the close from that note — `from` exactly when
-//! the window still stands at `to`; otherwise the person moved or
-//! resized it while the column was open, and only the column's width
-//! comes off, from the edges it was added at, keeping their move.
+//! the window still stands at `to`; the size it had at the press, where
+//! it stands now, when the person only moved it while the column was
+//! open; and nothing at all when they resized it (the lead's ruling
+//! 2026-10-07 on UX-46: a size somebody chose is theirs — the narrow
+//! layout included, where taking the column off a window they had just
+//! made narrow would shrink it under their hand).
 //!
 //! # Which way it grows
 //!
@@ -70,6 +73,9 @@ pub(crate) struct Grown {
     pub right: f64,
     /// What the left edge gave, logical pixels.
     pub left: f64,
+    /// The scale `to` was read at, so a window dragged to a screen of
+    /// another scale is not taken for a resized one.
+    pub scale: f64,
 }
 
 /// The frame a window at `from` grows to for a column `want` physical
@@ -85,19 +91,26 @@ pub(crate) fn grow(from: Frame, area: Frame, want: f64, scale: f64) -> Option<Gr
         return None;
     }
     let to = Frame { x: from.x - left, y: from.y, w: from.w + right + left, h: from.h };
-    Some(Grown { from, to, right: right / scale, left: left / scale })
+    Some(Grown { from, to, right: right / scale, left: left / scale, scale })
 }
 
-/// Where a window standing at `now` goes when the column closes.
-pub(crate) fn give_back(g: &Grown, now: Frame, scale: f64) -> Frame {
+/// Where a window standing at `now` goes when the column closes; `None`
+/// leaves it where and as it is.
+pub(crate) fn give_back(g: &Grown, now: Frame, scale: f64) -> Option<Frame> {
     if now.same(&g.to) {
-        return g.from;
+        return Some(g.from);
     }
-    // Moved or resized meanwhile: their frame, less the column, from the
-    // edges it was added at.
+    // Compared in logical pixels: the same window on a screen of another
+    // scale has another physical size and is not resized.
+    let resized = (now.w / scale - g.to.w / g.scale).abs() >= 1.0 || (now.h / scale - g.to.h / g.scale).abs() >= 1.0;
+    if resized {
+        return None;
+    }
+    // Only moved: their place, less the column, off the edges it was added
+    // at — the size it had at the press.
     let left = g.left * scale;
     let right = g.right * scale;
-    Frame { x: now.x + left, y: now.y, w: (now.w - left - right).max(1.0), h: now.h }
+    Some(Frame { x: now.x + left, y: now.y, w: (now.w - left - right).max(1.0), h: now.h })
 }
 
 /// The notes, by window label and column. Two columns may hold room at
@@ -174,10 +187,10 @@ pub(crate) fn widen(window: &tauri::Window, column: String, w: f64) -> Result<f6
 }
 
 /// Gives back what [`widen`] took for `column` (lib.rs's `unwiden`).
-/// Answers the logical width given back — 0 when nothing was taken, or
-/// the window went fullscreen meanwhile: leaving fullscreen puts back a
-/// frame of AppKit's keeping, and the note is dropped rather than
-/// applied to it.
+/// Answers the logical width given back — 0 when nothing was taken, when
+/// the person resized the window meanwhile (their size stands), or when
+/// it went fullscreen meanwhile: leaving fullscreen puts back a frame of
+/// AppKit's keeping, and the note is dropped rather than applied to it.
 pub(crate) fn unwiden(window: &tauri::Window, column: String) -> Result<f64, String> {
     let key = (window.label().to_string(), column);
     let Some(g) = notes().lock().map_err(|e| e.to_string())?.remove(&key) else {
@@ -188,7 +201,10 @@ pub(crate) fn unwiden(window: &tauri::Window, column: String) -> Result<f64, Str
     }
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
     let now = frame_of(window)?;
-    place(window, give_back(&g, now, scale))?;
+    let Some(to) = give_back(&g, now, scale) else {
+        return Ok(0.0);
+    };
+    place(window, to)?;
     Ok(g.right + g.left)
 }
 
@@ -238,29 +254,43 @@ mod tests {
             Frame { x: 100.0, y: 200.0, w: 2824.0, h: 1440.0 },
         ] {
             let g = grow(from, AREA, 780.0, S).unwrap();
-            assert_eq!(give_back(&g, g.to, S), from);
+            assert_eq!(give_back(&g, g.to, S), Some(from));
             // A pixel of the window manager's rounding is still untouched.
             let nudged = Frame { w: g.to.w + 1.0, ..g.to };
-            assert_eq!(give_back(&g, nudged, S), from);
+            assert_eq!(give_back(&g, nudged, S), Some(from));
         }
     }
 
     #[test]
-    fn a_moved_window_keeps_its_move_and_loses_the_column() {
+    fn a_moved_window_keeps_its_move_and_gets_its_size_back() {
         let from = Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 };
         let g = grow(from, AREA, 780.0, S).unwrap();
         let moved = Frame { x: g.to.x - 40.0, y: g.to.y + 100.0, ..g.to };
-        assert_eq!(give_back(&g, moved, S), Frame { x: 760.0, y: 300.0, w: 2160.0, h: 1440.0 });
-        let resized = Frame { w: g.to.w + 200.0, h: 1200.0, ..g.to };
-        assert_eq!(give_back(&g, resized, S), Frame { x: 800.0, y: 200.0, w: 2360.0, h: 1200.0 });
+        assert_eq!(give_back(&g, moved, S), Some(Frame { x: 760.0, y: 300.0, w: 2160.0, h: 1440.0 }));
+    }
+
+    /// The lead's ruling (2026-10-07): a size somebody chose while the
+    /// column was open is theirs — wider, narrower (the narrow layout),
+    /// or only taller.
+    #[test]
+    fn a_resized_window_is_left_alone() {
+        let from = Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 };
+        let g = grow(from, AREA, 780.0, S).unwrap();
+        for now in [
+            Frame { w: g.to.w + 200.0, h: 1200.0, ..g.to },
+            Frame { w: 1000.0, ..g.to },
+            Frame { h: 1300.0, x: g.to.x + 30.0, ..g.to },
+        ] {
+            assert_eq!(give_back(&g, now, S), None);
+        }
     }
 
     #[test]
     fn the_column_comes_off_in_logical_pixels_on_another_screen() {
         let from = Frame { x: 100.0, y: 200.0, w: 2000.0, h: 1440.0 };
         let g = grow(from, AREA, 780.0, S).unwrap();
-        // Dragged to a 1× screen: the window is 1470 physical wide there.
-        let there = Frame { x: 3100.0, y: 100.0, w: 1470.0, h: 720.0 };
-        assert_eq!(give_back(&g, there, 1.0), Frame { x: 3100.0, y: 100.0, w: 1080.0, h: 720.0 });
+        // Dragged to a 1× screen: the same 1390×720 points, half the pixels.
+        let there = Frame { x: 3100.0, y: 100.0, w: 1390.0, h: 720.0 };
+        assert_eq!(give_back(&g, there, 1.0), Some(Frame { x: 3100.0, y: 100.0, w: 1000.0, h: 720.0 }));
     }
 }
