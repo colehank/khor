@@ -187,7 +187,8 @@ export function SessionPlaceSheet({
   /** The seat's page, composed by the shell (`App`'s `sideSeat`). */
   children?: ReactNode;
 }) {
-  // Each opening starts at half (§3): the pill's tap is a glance.
+  // Each opening starts at half (§3): the pill's tap is a glance. The
+  // place it opens on is where it was left (UX-47); the height is not.
   const [detent, setDetent] = useState<PlaceDetent>("half");
   const [el, setEl] = useState<HTMLDivElement | null>(null);
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);

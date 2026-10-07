@@ -12,6 +12,8 @@
  * with the main area's deck (`FilePage`, UX-40 §4; it folds as the main
  * area's does, UX-43 §4), and ‹ there is
  * the way back to the tree — or to 最近, for the file a row of 最近 opened.
+ * Where it stands — the file open, 「放进来的」 open — is said as it moves
+ * (`onSpot`) and handed back when the 附栏 opens again (`spot`, UX-47).
  *
  * **Find and make** (UX-40 §1): the find row under the 附栏's head is the
  * landing tree's own box and ＋ — names and lines under the workspace
@@ -37,6 +39,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { SeatHead } from "@/components/SeatHead";
 import { gui } from "@/gen/catalog";
 import type { GitStatus } from "@/gen/bindings/GitStatus";
+import type { WsSpot } from "@/hooks/use-session-side";
 import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { FilePage } from "@/views/FilePage";
@@ -75,7 +78,16 @@ export function SideWorkspace({
   onLeave,
   backLabel = gui.group_recent,
   drops = true,
+  spot,
+  onSpot,
 }: {
+  /** **Where the seat was left** (UX-47), read once at mount: the file
+      open over the tree, 「放进来的」 open. Absent, the seat starts at
+      the tree (or at `start`). */
+  spot?: WsSpot | null;
+  /** Where the seat stands now, said as it moves, so the 附栏 opened
+      again comes back to it. */
+  onSpot?: (spot: WsSpot) => void;
   /** What ‹ goes back to, said on its head (`onLeave`). */
   backLabel?: string;
   /** Whether the 「放进来的」 row is looked for (not inside it). */
@@ -95,11 +107,15 @@ export function SideWorkspace({
   /** Acts for the open file's 「…」, by path. */
   fileActs?: (path: string) => { key: string; label: string; run: () => void }[];
 }) {
-  const [file, setFile] = useState<string | null>(start?.path ?? null);
+  const [file, setFile] = useState<string | null>(spot ? spot.file : (start?.path ?? null));
   /** A line hit's line, for the file it opened (`FilePage`'s `goLine`). */
   const [goLine, setGoLine] = useState<{ path: string; line: number; at: number } | null>(null);
+  // A seat come back to (`spot`) has already answered the `start` it
+  // carries; only a new one opens its file.
+  const startSeen = useRef(spot ? start : undefined);
   useEffect(() => {
-    if (start !== null) setFile(start.path);
+    if (start !== null && start !== startSeen.current) setFile(start.path);
+    startSeen.current = start;
   }, [start]);
   const [git, setGit] = useState<GitStatus | null>(null);
   const [gitAt, setGitAt] = useState(0);
@@ -125,7 +141,8 @@ export function SideWorkspace({
   // **「放进来的」**: the machine's home, then its `khor-drop` when it is
   // there and holds something. Asked once per seat.
   const [dropDir, setDropDir] = useState<string | null>(null);
-  const [inDrops, setInDrops] = useState(false);
+  const [inDrops, setInDrops] = useState(!!spot?.drops);
+  const [dropSpot, setDropSpot] = useState<WsSpot | null>(spot?.drops ?? null);
   useEffect(() => {
     if (!drops) return;
     let live = true;
@@ -208,10 +225,17 @@ export function SideWorkspace({
       </DropdownMenuContent>
     </DropdownMenu>
   );
+  // A file come back to was read when it was opened, not again now.
+  const readSeen = useRef(spot ? file : null);
   useEffect(() => {
-    if (file !== null) onRead?.(file);
+    if (file !== null && file !== readSeen.current) onRead?.(file);
+    readSeen.current = file;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
+  useEffect(() => {
+    onSpot?.({ file, drops: inDrops ? (dropSpot ?? { file: null, drops: null }) : null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, inDrops, dropSpot]);
   if (inDrops && dropDir !== null) {
     return (
       <SideWorkspace
@@ -219,10 +243,15 @@ export function SideWorkspace({
         here={here}
         root={dropDir}
         drops={false}
-        onLeave={() => setInDrops(false)}
+        onLeave={() => {
+          setInDrops(false);
+          setDropSpot(null);
+        }}
         backLabel={gui.workspaces_tab}
         onRead={onRead}
         fileActs={fileActs}
+        spot={dropSpot}
+        onSpot={setDropSpot}
       />
     );
   }

@@ -5,18 +5,24 @@
 // the owner 2026-10-07: 「这个侧栏应该是只属于 session，该关闭的」): one
 // session at most has it open, leaving that session — another landing,
 // another tab, the session closed — closes it (`App`), and coming back
-// finds it closed; the press opens it again, on 最近 (UX-40 §3). ⚠️ 墓碑
-// (UX-30 → UX-46): 「open」 remembered per session on this device, so a
-// session someone had docked a phone beside came back docked, and the
-// column outlived its session on every other landing.
+// finds it closed; the press opens it again where it was left (UX-47,
+// below). ⚠️ 墓碑 (UX-30 → UX-46): 「open」 remembered per session on
+// this device, so a session someone had docked a phone beside came back
+// docked, and the column outlived its session on every other landing.
 //
 // **The width is remembered per session** (`localStorage`, beside
 // `use-list-width`'s and `use-day-shown`'s keys): a viewer's own
 // convenience, never a fact about the session. Storage can be absent or
 // throwing (a private window, blocked site data), and every touch of it
 // is wrapped: unreadable reads as the token's default, and a refused
-// write costs only the memory. The seat lives as long as the app does
-// and every opening resets it (UX-40 §3), so it is not written down.
+// write costs only the memory.
+//
+// **Where it was left is remembered per session, in memory only**
+// (UX-47, the owner 2026-10-07, replacing UX-40 §3's 「每次打开都是显示
+// 最近」): the seat and what was open in it (`SidePlace`), kept by the
+// shell while the 附栏 is open and read back when it opens again. Never
+// written down: after a restart, or a reload, it opens on 最近. ⚠️ 墓碑
+// (UX-40 §3 → UX-47): every opening landing on 最近.
 //
 // A store outside React with `useSyncExternalStore`: the front tab's
 // press (`App`'s tab faces) and the column that answers it (`DetailPane`)
@@ -113,4 +119,59 @@ export function useSessionSide(session: string | null): SidePref {
     () => (session === null ? CLOSED : current(session)),
     () => CLOSED,
   );
+}
+
+/** Where the 工作区 seat stands inside its tree (`SideWorkspace`): the
+    file open over it, and 「放进来的」 open as a tree of its own, with
+    its own spot. */
+export type WsSpot = { file: string | null; drops: WsSpot | null };
+
+/** **Where the 附栏 was left** (UX-47): the seat, and what was open in
+    it — the shell's own pieces of the 附栏's state, as they stood. */
+export type SidePlace = {
+  seat: SideSeat;
+  /** The page was opened from 最近: its ‹ goes back there. */
+  fromRecent: boolean;
+  /** The 工作区 seat's tree: its machine (and whether that is this one),
+      the directory it was pointed at, the file it was asked to open, and
+      where it stood inside. */
+  files: {
+    machine: string;
+    here: boolean;
+    dir: string | null;
+    start: { path: string; at: number } | null;
+    spot: WsSpot | null;
+  } | null;
+  /** 浏览器: the page in front, or `null` for the list. */
+  page: string | null;
+  /** 额度: the list, or the account's page. */
+  quota: "list" | "detail";
+};
+
+/** Not a store anyone renders from: written while the 附栏 is open,
+    read once when it opens again. */
+const places = new Map<string, SidePlace>();
+
+export function keepSidePlace(session: string, place: SidePlace): void {
+  places.set(session, place);
+}
+
+export function sidePlace(session: string): SidePlace | null {
+  return places.get(session) ?? null;
+}
+
+/** The remembered thing is gone: the next opening lands on 最近. */
+export function forgetSidePlace(session: string): void {
+  places.delete(session);
+}
+
+/** Every session's place, for a change that may have taken one away. */
+export function sidePlaces(): [string, SidePlace][] {
+  return [...places];
+}
+
+/** The file a place shows, if any: inside 「放进来的」 its own. */
+export function placeFile(spot: WsSpot | null): string | null {
+  if (spot === null) return null;
+  return spot.drops !== null ? placeFile(spot.drops) : spot.file;
 }
