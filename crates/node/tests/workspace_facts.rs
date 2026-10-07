@@ -203,7 +203,7 @@ fn git_stops(dir: &std::path::Path, args: &[&str]) {
     assert!(!out.status.success(), "git {args:?} was to stop on a conflict");
 }
 
-/// **What a prompt says past the counts** (the workspace row lab draft,
+/// **What a prompt says past the counts** (UX-51, the owner
 /// 2026-10-08): a branch with no upstream counts the commits no remote
 /// has — none at all in a checkout with no remote — and an operation
 /// left half done is named, its conflicts counted as conflicts.

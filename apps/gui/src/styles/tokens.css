@@ -589,6 +589,28 @@
   --git-deleted: #ad0707;
   --git-conflict: #c0143c;
 
+  /* **Three more for a workspace row's git symbols** (UX-51, the owner
+   * 2026-10-08: 「颜色更丰富」 — every symbol its own ink). The letters
+   * above have no hue for what a file is not: commits to move between
+   * here and a remote (⇣⇡), a path git does not know (?), work put
+   * aside (*). Blue, teal and violet, at the letters' own lightness
+   * (OKLCH .49–.51 here, .78 dark) and chroma (.08–.15), so the seven
+   * read as one family. ≥ 4.5 on the ground and on a picked row
+   * (`--fill-strong` over it), both themes:
+   *
+   *            light        dark
+   *   remote    5.66 / 4.64  10.47 / 7.69
+   *   untracked 5.64 / 4.62  10.95 / 8.04
+   *   stash     5.63 / 4.61  10.02 / 7.35
+   *
+   * Hue neighbours, told apart by where they stand rather than by hue:
+   * the blue (256°) sits by 忙碌's indigo (275°), dark's teal (195°) by
+   * 待批's cyan (214°) — the six words are on sessions, these only on a
+   * workspace row's top right. */
+  --git-remote: #1460b4;
+  --git-untracked: #0a6c6c;
+  --git-stash: #7a4aa9;
+
   /* ── the overview ruler (2026-09-16) ───────────────────────────
    *
    * 「取消 git 文件上方的状态栏……然后,右侧滑动条后方,就是全文件带颜色
@@ -2105,6 +2127,10 @@
   --git-added: #73c991;
   --git-deleted: #ef8a76;
   --git-conflict: #ff8a8a;
+  /* UX-51's three, at the dark letters' lightness (OKLCH .78). */
+  --git-remote: #87bafd;
+  --git-untracked: #4fcdcd;
+  --git-stash: #cba1fa;
 
   --strain: #d59ab8;
 
@@ -2218,6 +2244,9 @@
   --color-git-added: var(--git-added);
   --color-git-deleted: var(--git-deleted);
   --color-git-conflict: var(--git-conflict);
+  --color-git-remote: var(--git-remote);
+  --color-git-untracked: var(--git-untracked);
+  --color-git-stash: var(--git-stash);
 
   --color-state-busy: var(--state-busy);
   --color-state-blocked: var(--state-blocked);

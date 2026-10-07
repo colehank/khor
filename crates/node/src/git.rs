@@ -345,7 +345,7 @@ fn operation(repo: &gix::Repository) -> Option<khor_core::GitOperation> {
 }
 
 /// **Commits on HEAD's branch that no remote has**, for a branch with no
-/// upstream to count against (the lab draft, 2026-10-08: a branch never
+/// upstream to count against (UX-51, the owner 2026-10-08: a branch never
 /// pushed is not silent). HEAD walked with every remote-tracking branch
 /// hidden — `git rev-list --count HEAD --not --remotes`.
 ///

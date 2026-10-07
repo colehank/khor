@@ -7433,11 +7433,13 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   if (!cli(envA, "ws", "ls").split("\n").some((l) => l.split("\t")[1] === wsName)) {
     throw new Error(`khor ws ls on alpha does not name the row ${wsName}: ${cli(envA, "ws", "ls")}`);
   }
-  //      Not a repository, so the git corner is empty — never the word
-  //      for「no git」, and never「clean」.
-  const gitCorner = await wsRow.locator("[data-ws-git]").innerText();
-  if (gitCorner.trim() !== "") {
-    throw new Error(`a directory that is no checkout drew 「${gitCorner}」 in its git corner`);
+  //      Not a repository, so the git corner is not drawn — never the
+  //      word for「no git」, and never「clean」 — and no branch stands
+  //      after its name (UX-51). ⚠️ 墓碑: `innerText()` of an always-drawn
+  //      `[data-ws-git]`, which UX-48 stopped drawing for a plain folder.
+  const gitCorner = await wsRow.locator("[data-ws-git], [data-ws-branch]").count();
+  if (gitCorner !== 0) {
+    throw new Error(`a directory that is no checkout drew ${gitCorner} git corner(s) or branch(es)`);
   }
   //      **Whether it is a repository is its own question** (docs/SHELL.md
   //      第五轮 第 6 条), asked of alpha across the wire — the corner is

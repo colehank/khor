@@ -329,7 +329,7 @@ pub struct GitSegment {
     /// the latest moment git's own files say it could have.
     #[ts(type = "number")]
     pub since_ms: i64,
-    /// **What git is in the middle of** (the workspace row lab draft,
+    /// **What git is in the middle of** (UX-51, the owner
     /// 2026-10-08): a merge, rebase, cherry-pick, revert or bisect that
     /// has started and not been concluded; `None` otherwise. Tail field.
     #[serde(default)]

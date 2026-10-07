@@ -3877,7 +3877,7 @@ filter-unknown = "未知"
 ws-kind-repo = "git 仓库"
 ws-kind-folder = "文件夹"
 # The word before a workspace row's git symbols (top right): a merge, rebase, cherry-pick,
-# revert or bisect started and not concluded (the workspace row lab draft, 2026-10-08).
+# revert or bisect started and not concluded (UX-51, the owner 2026-10-08).
 ws-op-merge = "合并中"
 ws-op-rebase = "变基中"
 ws-op-cherry-pick = "拣选中"
