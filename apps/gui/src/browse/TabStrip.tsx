@@ -531,6 +531,19 @@ export function TabStrip({
   /** Whether the front tab's hint is up (`TabFace.again`). One for the
       strip: only the tab in front ever has one. */
   const [hint, setHint] = useState(false);
+  /**
+   * **Closing with the pointer keeps the row still** (UX-45, Chrome's rule;
+   * the owner 2026-10-07: closing many tabs, the pointer stays on one
+   * tab's ×). A × pressed on the wide glass strip holds every pill at the
+   * width it had: the tabs after the closed one slide left by exactly one
+   * tab, so the next one's × lands under the pointer, and the room is
+   * left empty at the end. The pointer leaving the capsule lets go and
+   * the tabs share the room again. ⌘W and the menu never hold.
+   */
+  const [held, setHeld] = useState<number | null>(null);
+  useEffect(() => {
+    if (faces.length === 0) setHeld(null);
+  }, [faces.length]);
   useEffect(() => setHint(false), [active]);
   /** A press on the front tab, resolved against a double-click on its
       name — which renames, and must not show and hide the day on its
@@ -632,6 +645,8 @@ export function TabStrip({
           the count and the switcher are the ways past the edge. */}
       <div
         data-tab-capsule={glass || undefined}
+        data-tabs-held={held !== null || undefined}
+        onPointerLeave={held !== null ? () => setHeld(null) : undefined}
         className={cn(
           "relative flex min-w-0",
           // At a session's foot the capsule takes the row between the way
@@ -692,6 +707,7 @@ export function TabStrip({
               key={f.id}
               data-tab={f.id}
               data-on={on}
+              style={shed && held !== null ? { width: held, flexShrink: 0 } : undefined}
               // Machine first, then where on it — the same order the
               // address bar commits them in, and the same order the
               // sentence reads: this tab is *on* that machine.
@@ -976,6 +992,12 @@ export function TabStrip({
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
+                    // A pointer's press holds the row (`held`); a press
+                    // from the keyboard (detail 0) re-lays at once.
+                    if (shed && e.detail > 0) {
+                      const pill = e.currentTarget.closest<HTMLElement>("[data-tab]");
+                      if (pill) setHeld(pill.getBoundingClientRect().width);
+                    }
                     onClose(f.id);
                   }}
                 >
