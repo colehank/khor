@@ -51,6 +51,7 @@ pub mod reactor;
 pub mod road;
 pub(crate) mod roads;
 pub mod satellite;
+pub mod secret;
 pub mod join;
 pub mod serves;
 pub mod roadbook;
@@ -2031,7 +2032,7 @@ impl Node {
         name: Option<&str>,
     ) -> Result<(String, String, bool), String> {
         let probe = satellite::probe(host)?;
-        let id = satellite::fingerprint_id(&host.host)?;
+        let id = satellite::fingerprint_id(host)?;
         let name = name.unwrap_or(&host.host);
         let name = channel_of_machine(name)
             .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
@@ -2054,7 +2055,7 @@ impl Node {
         loaded.doc.upsert(id, name, &[])?;
         loaded
             .doc
-            .set_satellite(id, self.device_str(), &host.host, host.jump.as_deref(), tmux)?;
+            .set_satellite(id, self.device_str(), &host.as_row(), tmux)?;
         loaded.doc.set_gone(id, false)?;
         self.enroll_satellite(&loaded.doc, id, name)?;
         let mut store = loaded.store;
@@ -3648,6 +3649,15 @@ impl Node {
     /// the new member wears the same name, so a name would be ambiguous.
     pub(crate) fn forget_id(&self, id: &str) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
+        // A satellite of this machine that logged in with a password:
+        // the password goes with it (docs/NET.md 添加机器 认证方式).
+        if let Some(row) = loaded.doc.get(id)
+            && row.ssh_password
+            && row.sponsor.as_deref() == Some(self.device_str())
+            && let Some(to) = satellite::Dest::of(&row)
+        {
+            crate::secret::forget(&to.secret_key())?;
+        }
         loaded.doc.set_gone(id, true)?;
         // On the machine holding the root the removal is also a
         // revocation (docs/CONNECT.md 名单是信任的唯一出处); anywhere else

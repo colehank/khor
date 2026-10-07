@@ -4592,6 +4592,7 @@ dependencies = [
  "pulldown-cmark",
  "reqwest",
  "rmp-serde",
+ "security-framework",
  "serde",
  "serde_bytes",
  "serde_json",

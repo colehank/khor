@@ -62,6 +62,9 @@ use khor_node::{
 mod relay;
 
 fn main() {
+    // ssh asking for a kept password (`khor_node::secret`): answered
+    // before anything else, and the process ends there.
+    khor_node::secret::answer_askpass_if_asked();
     // 语言, before the first word this process can print (docs/MORE.md
     // 语言). A stored choice wins, `auto` reads the environment, and
     // anything that is not zh* — 「read nothing at all」 included — is
@@ -5081,11 +5084,18 @@ fn pair(rest: &[String]) -> Result<(), String> {
 fn add(rest: &[String]) -> Result<(), String> {
     let mut words = Vec::new();
     let mut via = None;
+    let mut port = None;
+    let mut password = false;
     let mut satellite_only = false;
     let mut it = rest.iter();
     while let Some(w) = it.next() {
         match w.as_str() {
             "--via" => via = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
+            "--port" => {
+                let p = it.next().ok_or_else(|| usage_text().to_owned())?;
+                port = Some(p.parse::<u16>().map_err(|_| usage_text().to_owned())?);
+            }
+            "--password" => password = true,
             "--satellite" => satellite_only = true,
             _ => words.push(w.clone()),
         }
@@ -5095,11 +5105,42 @@ fn add(rest: &[String]) -> Result<(), String> {
         [host, name] => (host, Some(name.as_str())),
         _ => return Err(usage_text().into()),
     };
+    let password = if password { Some(read_password()?) } else { None };
     let n = node()?;
-    let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref());
-    let added = n.add_over_ssh(&to, name, satellite_only, &mut tell_step)?;
+    let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref()).on_port(port);
+    let added = n.add_over_ssh(&to, name, satellite_only, password.as_deref(), &mut tell_step)?;
     say_added(&n, &added);
     Ok(())
+}
+
+/// `--password`'s password: one line of standard input, never an
+/// argument (an argument is in `ps`). From a terminal the echo is off
+/// while it is typed.
+fn read_password() -> Result<String, String> {
+    use std::io::IsTerminal;
+    let tty = std::io::stdin().is_terminal();
+    let stty = |arg: &str| {
+        let _ = std::process::Command::new("stty")
+            .arg(arg)
+            .stdin(std::process::Stdio::inherit())
+            .status();
+    };
+    if tty {
+        eprint!("{}: ", cli::password_prompt());
+        stty("-echo");
+    }
+    let mut line = String::new();
+    let read = std::io::stdin().read_line(&mut line);
+    if tty {
+        stty("echo");
+        eprintln!();
+    }
+    read.map_err(|e| e.to_string())?;
+    let p = line.trim_end_matches(['\n', '\r']).to_owned();
+    if p.is_empty() {
+        return Err(msg::password_not_given().to_owned());
+    }
+    Ok(p)
 }
 
 /// 转正 (docs/NET.md 卫星): a satellite of this machine becomes a member.

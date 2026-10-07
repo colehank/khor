@@ -10,8 +10,9 @@
 //!
 //! Everything here shells out to `ssh` so the user's `~/.ssh/config`,
 //! agent and known_hosts do all the deciding. khor stores no
-//! credential, opens no socket of its own, and never calls
-//! `ssh-keyscan`: the identity comes out of **known_hosts** — the trust
+//! credential (beyond a password the person chose to keep in the OS
+//! secret store, [`crate::secret`]), opens no socket of its own, and
+//! never calls `ssh-keyscan`: the identity comes out of **known_hosts** — the trust
 //! the user already extended — and a host they never connected to is
 //! refused with directions, not probed behind their back.
 //!
@@ -24,12 +25,16 @@
 //! can dial it — and the row's empty `addrs` keeps every sync loop
 //! walking past it, which is exactly right.
 //!
-//! # BatchMode everywhere
+//! # BatchMode, or one askpass try
 //!
 //! Every ssh this module runs carries `-o BatchMode=yes`: a password
 //! prompt inside a serve is a hang nobody can answer. A host that needs
 //! interactive auth fails fast with ssh's own words, which the caller
-//! wraps in directions.
+//! wraps in directions. The one exception is a host the person chose to
+//! log in to with a password (`Dest::password`): ssh then asks khor
+//! itself through `SSH_ASKPASS`, once, and khor answers from this
+//! machine's OS secret store ([`crate::secret`]) — still no terminal,
+//! still no prompt anyone has to answer.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -49,8 +54,9 @@ fn ssh_dir() -> Option<PathBuf> {
 }
 
 /// Where a machine is reached over ssh: the destination as the user
-/// names it (a Host alias or user@host), and the jump in front of it
-/// when there is one.
+/// names it (a Host alias or user@host), its port and the jump in front
+/// of it when the person gave them, and whether it logs in with a
+/// password from this machine's secret store ([`crate::secret`]).
 ///
 /// **The jump rides every command as `-J`, never the user's config**
 /// (docs/NET.md 卫星 经由): khor does not write `~/.ssh`, so a jump the
@@ -60,25 +66,95 @@ fn ssh_dir() -> Option<PathBuf> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Dest {
     pub host: String,
+    pub port: Option<u16>,
     pub jump: Option<String>,
+    pub password: bool,
 }
 
 impl Dest {
     pub fn new(host: impl Into<String>, jump: Option<&str>) -> Dest {
         Dest {
             host: host.into(),
+            port: None,
             jump: jump.filter(|j| !j.is_empty()).map(str::to_owned),
+            password: false,
         }
     }
 
-    /// A satellite row's road: its destination and its jump, `None`
-    /// when the row has no destination on record.
+    /// The same road on `port` (`None`, or 0, = 22 or the ssh config's).
+    pub fn on_port(mut self, port: Option<u16>) -> Dest {
+        self.port = port.filter(|p| *p != 0);
+        self
+    }
+
+    /// The same road, logging in with the password kept for it.
+    pub fn with_password(mut self, password: bool) -> Dest {
+        self.password = password;
+        self
+    }
+
+    /// A satellite row's road, `None` when the row has no destination
+    /// on record.
     pub fn of(d: &khor_sync::devices::DeviceInfo) -> Option<Dest> {
-        Some(Dest::new(d.ssh_host.clone()?, d.ssh_jump.as_deref()))
+        Some(
+            Dest::new(d.ssh_host.clone()?, d.ssh_jump.as_deref())
+                .on_port(d.ssh_port)
+                .with_password(d.ssh_password),
+        )
+    }
+
+    /// The road as a device row keeps it.
+    pub fn as_row(&self) -> khor_sync::devices::SshRoad<'_> {
+        khor_sync::devices::SshRoad {
+            host: &self.host,
+            port: self.port,
+            jump: self.jump.as_deref(),
+            password: self.password,
+        }
+    }
+
+    /// The name its password is kept under: the destination, and the
+    /// port when one was given — two sshds on one host are two logins.
+    pub fn secret_key(&self) -> String {
+        match self.port {
+            Some(p) => format!("{}:{p}", self.host),
+            None => self.host.clone(),
+        }
+    }
+
+    /// `program` (ssh or scp) with this road's flags and environment,
+    /// ready for the caller's own arguments after the destination's.
+    pub fn command(&self, program: &str) -> Command {
+        let mut c = Command::new(program);
+        c.envs(self.env()).args(self.road());
+        c
+    }
+
+    /// The environment a password road needs: ssh asks this very
+    /// program for the password ([`crate::secret::answer_askpass_if_asked`])
+    /// instead of a terminal, and is never allowed to fall back to one.
+    /// Empty for a key road.
+    pub fn env(&self) -> Vec<(String, String)> {
+        if !self.password {
+            return Vec::new();
+        }
+        let me = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default();
+        vec![
+            ("SSH_ASKPASS".to_owned(), me),
+            ("SSH_ASKPASS_REQUIRE".to_owned(), "force".to_owned()),
+            (crate::secret::ASKPASS_KEY.to_owned(), self.secret_key()),
+        ]
     }
 
     /// The flags every ssh and scp this module runs shares, before the
-    /// destination: the test door's config, BatchMode, and the jump.
+    /// destination: the test door's config, the port, BatchMode (or one
+    /// password try through askpass), and the jump.
+    ///
+    /// **The port is `-o Port=`**, the one spelling ssh and scp share
+    /// (`-p` and `-P` are each other's opposites), and a command-line
+    /// option wins over the user's config.
     ///
     /// **The jump is spelled as the `ProxyCommand` that `-J` stands
     /// for**, `ssh -W %h:%p <jump>`, because `-J` starts that second ssh
@@ -94,7 +170,16 @@ impl Dest {
             cfg = format!("-F {} ", sh_quote(&path));
             v.extend(["-F".to_owned(), path]);
         }
-        v.extend(["-o".to_owned(), "BatchMode=yes".to_owned()]);
+        if let Some(p) = self.port {
+            v.extend(["-o".to_owned(), format!("Port={p}")]);
+        }
+        if self.password {
+            // One try: a wrong password is an answer, not a loop.
+            v.extend(["-o".to_owned(), "BatchMode=no".to_owned()]);
+            v.extend(["-o".to_owned(), "NumberOfPasswordPrompts=1".to_owned()]);
+        } else {
+            v.extend(["-o".to_owned(), "BatchMode=yes".to_owned()]);
+        }
         if let Some(j) = &self.jump {
             v.push("-o".to_owned());
             v.push(format!(
@@ -181,9 +266,16 @@ pub(crate) fn cant_reach(to: &Dest, said: &str) -> String {
         .or(words.last())
         .copied()
         .unwrap_or(said);
+    if said.contains(crate::secret::ASKPASS_NOT_A_PASSWORD) {
+        return msg::sat_one_time_code(&to.host);
+    }
+    if said.contains(crate::secret::ASKPASS_NONE_KEPT) {
+        return msg::sat_password_missing(&to.host);
+    }
     match (broken(to, said), &to.jump) {
         (Some(Broken::ToJump), Some(j)) => msg::sat_to_jump_broken(j, last),
         (Some(Broken::JumpToTarget), Some(j)) => msg::sat_jump_to_target_broken(j, &to.host, last),
+        (Some(Broken::PasswordOnly), _) if to.password => msg::sat_password_refused(&to.host),
         (Some(Broken::PasswordOnly), _) => msg::sat_password_only(&to.host, copy_id_line(to)),
         _ => msg::sat_cant_reach(to, said),
     }
@@ -197,6 +289,9 @@ pub fn copy_id_argv(to: &Dest) -> Vec<String> {
     if let Some(dir) = ssh_dir() {
         v.extend(["-F".to_owned(), dir.join("config").display().to_string()]);
     }
+    if let Some(p) = to.port {
+        v.extend(["-p".to_owned(), p.to_string()]);
+    }
     if let Some(j) = &to.jump {
         v.extend(["-o".to_owned(), format!("ProxyJump={j}")]);
     }
@@ -205,10 +300,14 @@ pub fn copy_id_argv(to: &Dest) -> Vec<String> {
 }
 
 fn copy_id_line(to: &Dest) -> String {
-    match &to.jump {
-        Some(j) => format!("ssh-copy-id -o ProxyJump={j} {}", to.host),
-        None => format!("ssh-copy-id {}", to.host),
+    let mut line = "ssh-copy-id".to_owned();
+    if let Some(p) = to.port {
+        line.push_str(&format!(" -p {p}"));
     }
+    if let Some(j) = &to.jump {
+        line.push_str(&format!(" -o ProxyJump={j}"));
+    }
+    format!("{line} {}", to.host)
 }
 
 /// What one adoption probe learned over a single connection.
@@ -226,8 +325,7 @@ pub struct Probe {
 /// The flags every satellite ssh shares. `ConnectTimeout` because a
 /// dead host must cost seconds, not a TCP stack's patience.
 fn ssh_base(host: &Dest) -> Command {
-    let mut c = Command::new("ssh");
-    c.args(host.road());
+    let mut c = host.command("ssh");
     c.arg("-o")
         .arg("ConnectTimeout=8")
         .arg(&host.host);
@@ -1160,7 +1258,15 @@ fn parse_vitals(text: &str) -> khor_core::Vitals {
 /// no-password contract holds for terminals too and a hidden prompt
 /// would hang the host, not ask anyone.
 pub fn ssh_argv(host: &Dest) -> Vec<String> {
-    let mut v = vec!["ssh".to_owned()];
+    // A password road's environment rides in front as `env`, since an
+    // argv is all a terminal host is handed.
+    let env = host.env();
+    let mut v: Vec<String> = Vec::new();
+    if !env.is_empty() {
+        v.push("env".to_owned());
+        v.extend(env.into_iter().map(|(k, val)| format!("{k}={val}")));
+    }
+    v.push("ssh".to_owned());
     v.extend(host.road());
     v.extend(["-tt".to_owned(), host.host.clone()]);
     v
@@ -1351,8 +1457,8 @@ done"#
 /// land where the caller says; slicing them onward to a third machine
 /// is the caller's business (`SatFetchPath` stages through this).
 pub fn pull_file(host: &Dest, path: &str, dest: &std::path::Path) -> Result<u64, String> {
-    let out = Command::new("scp")
-        .args(host.road())
+    let out = host
+        .command("scp")
         .arg("-q")
         .arg(format!("{}:{path}", host.host))
         .arg(dest)
@@ -1372,8 +1478,8 @@ pub fn push_file(host: &Dest, local: &std::path::Path) -> Result<u64, String> {
     let size = std::fs::metadata(local)
         .map(|m| m.len())
         .map_err(|e| e.to_string())?;
-    let out = Command::new("scp")
-        .args(host.road())
+    let out = host
+        .command("scp")
         .arg("-q")
         .arg(local)
         .arg(format!("{}:", host.host))
@@ -1390,18 +1496,23 @@ pub fn push_file(host: &Dest, local: &std::path::Path) -> Result<u64, String> {
 ///
 /// The alias the user types may not be what known_hosts is keyed by, so
 /// a miss retries with the canonical hostname `ssh -G` resolves the
-/// alias to — the same resolution the connection itself would use.
-pub fn fingerprint_id(host: &str) -> Result<String, String> {
-    if let Some(id) = known_host_id(host)? {
+/// alias to — the same resolution the connection itself would use. A
+/// port other than 22 is keyed `[host]:port`, the way ssh records it.
+pub fn fingerprint_id(to: &Dest) -> Result<String, String> {
+    let typed = match to.port {
+        Some(p) if p != 22 => format!("[{}]:{p}", to.host),
+        _ => to.host.clone(),
+    };
+    if let Some(id) = known_host_id(&typed)? {
         return Ok(id);
     }
-    if let Some(real) = canonical_hostname(host)
-        && real != host
+    if let Some(real) = canonical_hostname(to)
+        && real != typed
         && let Some(id) = known_host_id(&real)?
     {
         return Ok(id);
     }
-    Err(msg::sat_not_in_known_hosts(host))
+    Err(msg::sat_not_in_known_hosts(&to.host))
 }
 
 /// One name's known_hosts entry, fingerprinted — `None` when the file
@@ -1464,12 +1575,15 @@ fn known_host_id(name: &str) -> Result<Option<String>, String> {
 /// What known_hosts would key this alias under — the hostname the
 /// user's config resolves it to, spelled the way ssh itself records it:
 /// bare for port 22, `[host]:port` for any other port.
-fn canonical_hostname(host: &str) -> Option<String> {
+fn canonical_hostname(to: &Dest) -> Option<String> {
     let mut c = Command::new("ssh");
     if let Some(dir) = ssh_dir() {
         c.arg("-F").arg(dir.join("config"));
     }
-    let out = c.arg("-G").arg(host).output().ok()?;
+    if let Some(p) = to.port {
+        c.arg("-o").arg(format!("Port={p}"));
+    }
+    let out = c.arg("-G").arg(&to.host).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -1533,6 +1647,32 @@ mod tests {
         let proxy = road.iter().find(|a| a.starts_with("ProxyCommand=")).expect("a proxy");
         assert!(proxy.contains("-o BatchMode=yes") && proxy.ends_with("-W %h:%p 'bastion'"), "{proxy}");
         assert!(!Dest::new("gpu-box", Some("")).road().iter().any(|a| a.starts_with("ProxyCommand=")));
+    }
+
+    /// A port rides as `-o Port=` (ssh and scp both read it), the
+    /// password road trades BatchMode for one askpass try, and only the
+    /// password road carries an environment.
+    #[test]
+    fn a_port_and_a_password_change_the_road() {
+        let key = Dest::new("gpu-box", Some("bastion")).on_port(Some(2222));
+        let road = key.road();
+        assert!(road.windows(2).any(|w| w == ["-o", "Port=2222"]), "{road:?}");
+        assert!(road.windows(2).any(|w| w == ["-o", "BatchMode=yes"]), "{road:?}");
+        assert!(key.env().is_empty());
+        assert_eq!(key.secret_key(), "gpu-box:2222");
+        assert_eq!(copy_id_argv(&key)[1..3], ["-p", "2222"]);
+
+        let pw = key.clone().with_password(true);
+        let road = pw.road();
+        assert!(road.windows(2).any(|w| w == ["-o", "BatchMode=no"]), "{road:?}");
+        assert!(road.windows(2).any(|w| w == ["-o", "NumberOfPasswordPrompts=1"]), "{road:?}");
+        let proxy = road.iter().find(|a| a.starts_with("ProxyCommand=")).expect("a proxy");
+        assert!(proxy.contains("-o BatchMode=yes"), "the jump stays a key road: {proxy}");
+        let env = pw.env();
+        assert!(env.iter().any(|(k, v)| k == "SSH_ASKPASS_REQUIRE" && v == "force"));
+        assert!(env.iter().any(|(k, v)| k == crate::secret::ASKPASS_KEY && v == "gpu-box:2222"));
+        assert_eq!(ssh_argv(&pw)[0], "env");
+        assert_eq!(Dest::new("h", None).on_port(Some(0)).port, None, "0 is no port");
     }
 
     /// The fingerprint-to-id math on a fixed digest: 32 bytes in, the
