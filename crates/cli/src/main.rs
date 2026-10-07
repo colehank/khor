@@ -325,6 +325,14 @@ const VERBS: &[Verb] = &[
         run: borrow,
         reach: Reach::Act,
     },
+    // Writes nothing anywhere, and still an act: it has every machine in
+    // the network open a connection to an address of the caller's
+    // choosing, which is the thing a mode should be asked about.
+    Verb {
+        word: "reach",
+        run: reach,
+        reach: Reach::Act,
+    },
     // `ls` reads and the other three write this machine's own tab
     // table, so the word is an act — the rule is per word, not per
     // invocation (`ws` above). **Nothing here goes out on the wire**:
@@ -2005,6 +2013,73 @@ fn borrow(rest: &[String]) -> Result<(), String> {
     };
     let (session, addr) = rt()?.block_on(node()?.borrow(machine))?;
     println!("{}", cli::borrowing(machine, addr, session));
+    Ok(())
+}
+
+/// `khor reach <host> [--port N]` (round ROAD-1): every online machine's
+/// try at one address, and the entrance. One line per machine, this one
+/// first; then the entrance, and a warning when two machines' known_hosts
+/// disagree about whose key the name is.
+fn reach(rest: &[String]) -> Result<(), String> {
+    let (host, port) = match rest {
+        [host] => (host, None),
+        [host, flag, n] | [flag, n, host] if flag == "--port" => {
+            (host, Some(n.parse::<u16>().map_err(|_| usage_text())?))
+        }
+        _ => return Err(usage_text().into()),
+    };
+    let n = node()?;
+    let port = khor_node::reach::port_or_ssh(port);
+    let view = rt()?.block_on(n.reach_probe(host, port))?;
+    let all = n.devices()?;
+    let name = |id: &str| {
+        all.iter()
+            .find(|d| d.id == id)
+            .map(|d| d.shown().to_owned())
+            .unwrap_or_else(|| id.chars().take(8).collect())
+    };
+    println!("{}", cli::reach_head(&view.host, view.port));
+    for (id, s) in &view.rows {
+        let here = if id == n.device_str() { cli::this_machine() } else { "" };
+        let word = match s.outcome {
+            khor_node::ReachOutcome::Reached => cli::reach_reached(),
+            khor_node::ReachOutcome::Refused => cli::reach_refused_word(),
+            khor_node::ReachOutcome::Timeout => cli::reach_timeout_word(),
+            khor_node::ReachOutcome::NoName => cli::reach_no_name_word(),
+            khor_node::ReachOutcome::Unasked => cli::reach_unasked(),
+            khor_node::ReachOutcome::Predates => cli::reach_predates_word(),
+        };
+        let ms = s.ms.map(|ms| cli::roads_ms(ms)).unwrap_or_default();
+        let key = s.host_key.as_deref().map(khor_node::reach::shown_key).unwrap_or_default();
+        let tail = match s.outcome {
+            khor_node::ReachOutcome::Reached => s.banner.clone().unwrap_or_default(),
+            _ => s.why.clone().unwrap_or_default(),
+        };
+        println!(
+            "  {}{here}\t{word}\t{ms}\t{}\t{tail}\t{key}",
+            name(id),
+            s.addr.as_deref().unwrap_or("")
+        );
+    }
+    match view.entrance.as_deref() {
+        Some(id) => {
+            let ms = view.rows.iter().find(|(r, _)| r == id).and_then(|(_, s)| s.ms).unwrap_or(0);
+            println!("{}", cli::reach_entrance(name(id), ms));
+        }
+        None => println!("{}", cli::reach_no_entrance()),
+    }
+    if view.disagree {
+        println!("{}", cli::reach_disagree());
+    }
+    // A key that is a satellite's id names that satellite: the name
+    // answered with a machine this network already holds.
+    let keys: std::collections::BTreeSet<&str> =
+        view.rows.iter().filter_map(|(_, s)| s.host_key.as_deref()).collect();
+    for k in keys {
+        if let Some(d) = all.iter().find(|d| d.id == k) {
+            println!("{}", cli::reach_known_as(d.shown()));
+        }
+    }
     Ok(())
 }
 

@@ -263,6 +263,11 @@ usage = """
                         标记的结果打到标准输出，退出码 1
   borrow <机器>         借那台机器的网：起一个本地代理口，浏览器指过来就从
                         它那儿出去（要 serve 在跑；close 那条 session 收口）
+  reach <主机> [--port 端口]
+                        每台在线的机器各用自己的网连一次这个地址（默认 ssh 的
+                        22），报可达与否、毫秒、对方的第一行（ssh 的版本行）、
+                        它自己 known_hosts 里这个名字的钥匙；最快连上的是入口。
+                        只连这一个地址，不扫描，不取钥匙
   tabs [ls] | open [-m 机器] <网址> | close|focus|pin|unpin <序号|id>
                         浏览器这块屏幕上开着的标签页。**本机的，不同步**：
                         开着什么是这块屏幕的事，别的机器不看（常去的地方才跟着人走）。
@@ -1277,6 +1282,18 @@ relay-stats-no-device = "还没有设备连过"
 # Round NET-12: `khor devices --roads`.
 roads-ms = "{0} 毫秒"
 roads-unreported = "没有报告路（旧版 khor，或还没报）"
+# Round ROAD-1: `khor reach`.
+reach-head = "{0} 端口 {1}，每台机器各试一次"
+reach-reached = "可达"
+reach-refused-word = "拒绝连接"
+reach-timeout-word = "超时"
+reach-no-name-word = "无法解析"
+reach-unasked = "未询问"
+reach-predates-word = "版本过旧"
+reach-entrance = "入口：{0}（{1} 毫秒）"
+reach-no-entrance = "没有一台机器连得上它"
+reach-disagree = "几台机器的 known_hosts 给这个名字记着不同的钥匙：它们说的不是同一台机器"
+reach-known-as = "这把钥匙是 {0} 的"
 
 [msg]
 # ── the watch list (关注目录) ──
@@ -1942,6 +1959,13 @@ no-such-dir = "没有这个目录：{0}"
 # A fixed-target pipe could not open its stream. Only ever seen in a
 # log: the terminal protocol has no room to say it.
 tunnel-pipe-failed = "通道无法连接到 {0}：{1}"
+# Round ROAD-1: `khor reach`, every machine's try at one address.
+reach-no-name = "{0} 解析不到地址"
+reach-refused = "{0} 拒绝了连接：{1}"
+reach-timeout = "{0} 在 {1} 秒内没有回应"
+reach-paused = "{0} 已暂停，没有问它"
+reach-predates = "{0} 的 khor 版本较旧，不认识这个请求"
+reach-no-host = "要给一个地址"
 self-moved = "khor 程序已不在 {0}（已升级或移动），需重启 serve"
 # What the scheduler is told about itself, appended to the vendor's own
 # system prompt (docs/AGENT.md). Short on purpose: the tools carry their

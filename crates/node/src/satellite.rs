@@ -1283,7 +1283,7 @@ pub fn fingerprint_id(host: &str) -> Result<String, String> {
 
 /// One name's known_hosts entry, fingerprinted — `None` when the file
 /// has never seen it.
-fn known_host_id(name: &str) -> Result<Option<String>, String> {
+pub(crate) fn known_host_id(name: &str) -> Result<Option<String>, String> {
     let mut find = Command::new("ssh-keygen");
     if let Some(dir) = ssh_dir() {
         find.arg("-f").arg(dir.join("known_hosts"));

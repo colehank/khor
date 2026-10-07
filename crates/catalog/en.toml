@@ -223,6 +223,14 @@ usage: khor <verb>
                         proxy port — point a browser at it and traffic
                         goes out from there (needs serve running;
                         close that session to shut the port)
+  reach <host> [--port N]
+                        every online machine connects to this address
+                        once from its own network (ssh's 22 by default)
+                        and reports whether it got through, the ms, the
+                        server's first line (ssh's version line) and the
+                        key its own known_hosts holds for the name; the
+                        fastest is the entrance. One address only: no
+                        scan, no key fetch
   tabs [ls] | open [-m machine] <url> | close|focus|pin|unpin <n|id>
                         the browsing tabs this screen has open. **Local,
                         never replicated**: what is open belongs to this
@@ -867,6 +875,18 @@ relay-stats-no-device = "No device has connected yet"
 # Round NET-12: `khor devices --roads`.
 roads-ms = "{0} ms"
 roads-unreported = "reports no roads (an older khor, or not yet)"
+# Round ROAD-1: `khor reach`.
+reach-head = "{0} port {1}, tried once from each machine"
+reach-reached = "reachable"
+reach-refused-word = "refused"
+reach-timeout-word = "timed out"
+reach-no-name-word = "can't resolve"
+reach-unasked = "not asked"
+reach-predates-word = "older khor"
+reach-entrance = "Entrance: {0} ({1} ms)"
+reach-no-entrance = "No machine can connect to it"
+reach-disagree = "These machines' known_hosts hold different keys for this name: they mean different machines"
+reach-known-as = "This key belongs to {0}"
 
 [msg]
 watch-path-relative = "Watched directory must be an absolute path: {0}"
@@ -1212,6 +1232,13 @@ command-not-found = "Command not found: {0}. khor looked on this PATH: {1}. Inst
 
 no-such-dir = "No such directory: {0}"
 tunnel-pipe-failed = "Pipe couldn't reach {0}: {1}"
+# Round ROAD-1: `khor reach`, every machine's try at one address.
+reach-no-name = "No address found for {0}"
+reach-refused = "{0} refused the connection: {1}"
+reach-timeout = "{0} didn't answer within {1} s"
+reach-paused = "{0} is paused, so it wasn't asked"
+reach-predates = "{0} runs an older khor that doesn't know this request"
+reach-no-host = "Give an address"
 self-moved = "khor's own binary is no longer at {0} (upgraded or moved) — restart serve"
 agent-brief = """You're attached to khor: a network connecting all of this person's machines.\
 khor's tools are your hands — devices/sessions/ls are for looking, use them freely;\

@@ -1876,6 +1876,10 @@ impl Node {
                 Ok(changes) => ipc::Reply::DirsChanged { changes },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::ReachProbe { host, port } => match self.reach_probe_with(ep, &host, port).await {
+                Ok(view) => ipc::Reply::ReachProbe { view },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::StatOn { machine, path } => match self.stat_with(ep, &machine, &path).await {
                 Ok((total, at_ms, digest)) => ipc::Reply::Stat {
                     total,
@@ -2671,7 +2675,7 @@ impl Node {
     /// `None` = no live serve, take the direct path. `Some(Err)` = a
     /// serve is alive but unreachable — never fall back then: the key is
     /// taken and a second endpoint would knock both off.
-    async fn via_serve(&self, op: ipc::Op) -> Option<Result<ipc::Reply, String>> {
+    pub(crate) async fn via_serve(&self, op: ipc::Op) -> Option<Result<ipc::Reply, String>> {
         let f = match self.endpoint_file() {
             Ok(Some(f)) => f,
             _ => return None,
@@ -3629,6 +3633,9 @@ impl Node {
                 crate::drops::stop(&token);
                 Ok(Response::DropStopped)
             }
+            Request::Probe { host, port } => Ok(Response::Probed {
+                seen: crate::reach::probe_here(&host, port).await,
+            }),
             Request::FetchPath { path, offset } => {
                 // Off the reactor with Ls, for Ls's reason.
                 let (total, at_ms, bytes) =

@@ -480,6 +480,13 @@ async fn connections() -> Result<khor_gui_core::Connections, String> {
     khor_gui_core::connections(&Node::root_from_env()).await
 }
 
+/// 全网谁够得着 (`khor_gui_core::reach_probe`, round ROAD-1): every
+/// machine's try at one address. Async: it asks every machine.
+#[tauri::command]
+async fn reach_probe(host: String, port: Option<u16>) -> Result<khor_gui_core::ReachReport, String> {
+    khor_gui_core::reach_probe(&Node::root_from_env(), host, port).await
+}
+
 /// 首选中继 (`khor_gui_core::set_preferred_relay`). Off the main thread:
 /// it writes a file.
 #[tauri::command]
@@ -4352,6 +4359,7 @@ pub fn run() {
             set_relays,
             road_share,
             connections,
+            reach_probe,
             face_here,
             set_preferred_relay,
             tell,

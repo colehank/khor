@@ -1025,6 +1025,144 @@ pub enum RoadKind {
     None,
 }
 
+/// **One machine's try at an address a person gave** (round ROAD-1,
+/// `khor reach`): it resolved the name with its own resolver, opened a
+/// TCP connection with a short timeout, read the first line the server
+/// says, and looked the name up in its own known_hosts. Nothing else —
+/// no scan, no keyscan (`khor_node::reach`).
+///
+/// Crosses the wire (`Response::Probed`) and the hand-off; every field is
+/// required on the wire, so a later field goes at the tail with a serde
+/// default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct ReachSeen {
+    pub outcome: ReachOutcome,
+    /// The TCP connect, whole ms; only when `reached`.
+    #[ts(type = "number | null")]
+    pub ms: Option<u32>,
+    /// The address its resolver gave and it tried last (`ip:port`).
+    pub addr: Option<String>,
+    /// The server's first line, printable ASCII, at most
+    /// [`REACH_BANNER_MAX`] characters (`SSH-2.0-OpenSSH_9.6`); `None`
+    /// when the server said nothing first, which a web server does not.
+    pub banner: Option<String>,
+    /// The host key this machine's known_hosts holds for the name, as
+    /// the SHA256 digest in hex — the same shape as a satellite's id
+    /// (docs/NET.md 卫星). `None` when it holds none.
+    pub host_key: Option<String>,
+    /// Why it was not reached, in the far machine's words.
+    pub why: Option<String>,
+}
+
+/// The longest banner a probe keeps.
+pub const REACH_BANNER_MAX: usize = 120;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReachOutcome {
+    /// Connected.
+    Reached,
+    /// The address answered and refused the connection, or the network
+    /// said there is no route.
+    Refused,
+    /// Nothing answered inside the timeout.
+    Timeout,
+    /// Its resolver has no address for the name.
+    NoName,
+    /// That machine could not be asked: offline, paused, or the ask failed.
+    Unasked,
+    /// A khor older than the probe: it refused the question by its name.
+    Predates,
+}
+
+/// **Every machine's try at one address**, and the pick (round ROAD-1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReachView {
+    pub host: String,
+    pub port: u16,
+    /// By device id; this machine first.
+    pub rows: Vec<(String, ReachSeen)>,
+    /// The entrance: the lowest `ms` among the reached, this machine on
+    /// a tie ([`ReachView::pick`]).
+    pub entrance: Option<String>,
+    /// Two machines' known_hosts hold different keys for the name: the
+    /// name means a different machine from each — the same
+    /// `192.168.1.5` on two LANs.
+    pub disagree: bool,
+}
+
+impl ReachView {
+    /// Fills `entrance` and `disagree` from `rows`; `me` is this
+    /// machine's id. A tie in ms goes to this machine — no hop beats a
+    /// hop — and otherwise to the earlier row, so the pick is stable.
+    pub fn pick(mut self, me: &str) -> Self {
+        let best = self
+            .rows
+            .iter()
+            .filter(|(_, s)| s.outcome == ReachOutcome::Reached)
+            .filter_map(|(id, s)| s.ms.map(|ms| (ms, id != me, id)))
+            .min_by_key(|(ms, not_me, _)| (*ms, *not_me))
+            .map(|(_, _, id)| id.clone());
+        let mut keys = self.rows.iter().filter_map(|(_, s)| s.host_key.as_deref());
+        let first = keys.next();
+        self.disagree = first.is_some_and(|k| keys.any(|o| o != k));
+        self.entrance = best;
+        self
+    }
+}
+
+#[cfg(test)]
+mod reach_tests {
+    use super::{ReachOutcome, ReachSeen, ReachView};
+
+    fn seen(outcome: ReachOutcome, ms: Option<u32>, key: Option<&str>) -> ReachSeen {
+        ReachSeen { outcome, ms, addr: None, banner: None, host_key: key.map(Into::into), why: None }
+    }
+
+    fn view(rows: Vec<(&str, ReachSeen)>) -> ReachView {
+        ReachView {
+            host: "h".into(),
+            port: 22,
+            rows: rows.into_iter().map(|(id, s)| (id.to_owned(), s)).collect(),
+            entrance: None,
+            disagree: false,
+        }
+        .pick("me")
+    }
+
+    #[test]
+    fn the_entrance_is_the_fastest_reached_and_this_machine_on_a_tie() {
+        let v = view(vec![
+            ("me", seen(ReachOutcome::Reached, Some(9), None)),
+            ("a", seen(ReachOutcome::Reached, Some(3), None)),
+            ("b", seen(ReachOutcome::Timeout, None, None)),
+        ]);
+        assert_eq!(v.entrance.as_deref(), Some("a"));
+        let tie = view(vec![
+            ("a", seen(ReachOutcome::Reached, Some(3), None)),
+            ("me", seen(ReachOutcome::Reached, Some(3), None)),
+        ]);
+        assert_eq!(tie.entrance.as_deref(), Some("me"), "no hop beats a hop");
+        let none = view(vec![("me", seen(ReachOutcome::Refused, None, None))]);
+        assert_eq!(none.entrance, None);
+    }
+
+    #[test]
+    fn two_keys_for_one_name_are_two_machines() {
+        let same = view(vec![
+            ("me", seen(ReachOutcome::Reached, Some(1), Some("aa"))),
+            ("a", seen(ReachOutcome::Reached, Some(2), Some("aa"))),
+            ("b", seen(ReachOutcome::Reached, Some(2), None)),
+        ]);
+        assert!(!same.disagree, "one key, and a machine that holds none, agree");
+        let two = view(vec![
+            ("me", seen(ReachOutcome::Reached, Some(1), Some("aa"))),
+            ("a", seen(ReachOutcome::Timeout, None, Some("bb"))),
+        ]);
+        assert!(two.disagree);
+    }
+}
+
 /// Whether this build's machine can **host** — hold a session's process
 /// (a PTY, an agent, a shell), run tmux, be handed a path to open, have
 /// VS Code, claude's hooks or a web face of its own (docs/IOS.md).

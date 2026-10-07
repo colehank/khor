@@ -12,6 +12,7 @@ import { gui, msg } from "./gen/catalog";
 import type { MenuRows } from "./components/OmniMenu";
 import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
 import type { Connections } from "./gen/bindings/Connections";
+import type { ReachReport } from "./gen/bindings/ReachReport";
 import type { TabRow } from "./gen/bindings/TabRow";
 import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
@@ -966,6 +967,12 @@ export const fetchRoadShare = () => call<RoadShare>("road_share");
 /** The 网络 page's 连接 group: home relay, relay round trips, and per
     machine its road, round trip, age and last failure (round NET-2). */
 export const fetchConnections = () => call<Connections>("connections");
+/** 全网谁够得着 (round ROAD-1): every online machine connects once to
+    `host:port` (`null` = ssh's 22) from its own network and reports what
+    it saw; the entrance is the fastest. Takes up to ~20 s when a machine
+    does not answer. */
+export const reachProbe = (host: string, port: number | null) =>
+  call<ReachReport>("reach_probe", { host, port });
 /** This face is on screen, or stopped being: what paces the resident's
     pump (`khor_gui_core::face_here`, round NET-6). */
 export const faceHere = (visible: boolean) => call<null>("face_here", { visible });

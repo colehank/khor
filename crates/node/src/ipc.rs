@@ -360,6 +360,11 @@ pub enum Op {
     /// `to`, which pulls it, is told to stop. Answered with
     /// [`Reply::Noted`]. Tail-appended.
     DropStop { token: String, to: String },
+    /// **Every machine's try at `host:port`** (round ROAD-1, `khor
+    /// reach`): the resident asks them all at once
+    /// (`proto::Request::Probe`). Answered [`Reply::ReachProbe`].
+    /// Tail-appended.
+    ReachProbe { host: String, port: u16 },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -460,6 +465,7 @@ impl Op {
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
             Op::DropInto { .. } => ("DropInto", DEADLINE_FAR),
             Op::DropStop { .. } => ("DropStop", DEADLINE_FAR),
+            Op::ReachProbe { .. } => ("ReachProbe", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -667,6 +673,8 @@ pub enum Reply {
     },
     /// Tail-appended with [`Op::DropOn`].
     DropFile { state: crate::drops::DropState },
+    /// Tail-appended with [`Op::ReachProbe`].
+    ReachProbe { view: khor_core::ReachView },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

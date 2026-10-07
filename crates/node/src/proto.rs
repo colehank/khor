@@ -723,6 +723,16 @@ pub enum Request {
     /// this name. The asker has stopped waiting by then and pastes
     /// nothing; that machine's pull lands quietly in its drop directory.
     DropStop { token: String },
+    /// **Try `host:port` from your network** (round ROAD-1, `khor
+    /// reach`): resolve the name with your own resolver, connect once
+    /// with a short timeout, read the server's first line, and look the
+    /// name up in your known_hosts (`crate::reach`). Answered
+    /// [`Response::Probed`]. Asked only when a person gives an address.
+    ///
+    /// **A new variant**: a khor that predates it refuses the frame by
+    /// this name, and the asker's row for it reads `predates` — a word
+    /// the screen says, never a machine drawn as unable to reach.
+    Probe { host: String, port: u16 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1071,6 +1081,8 @@ pub enum Response {
     },
     /// [`Request::DropStop`] taken.
     DropStopped,
+    /// [`Request::Probe`]'s try.
+    Probed { seen: khor_core::ReachSeen },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1189,6 +1201,8 @@ impl Request {
                 | Request::DropFileInto { .. }
                 // Cancelled twice is cancelled once.
                 | Request::DropStop { .. }
+                // One more connect to an address a person gave.
+                | Request::Probe { .. }
         )
     }
 

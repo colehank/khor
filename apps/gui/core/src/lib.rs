@@ -264,6 +264,94 @@ pub struct PeerRow {
     pub unanswered: u64,
 }
 
+/// **Every machine's try at one address** (round ROAD-1, 全网谁够得着):
+/// `khor_core::ReachView` with names on the machines and the key shown
+/// as OpenSSH prints it.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ReachReport {
+    pub host: String,
+    pub port: u16,
+    /// This machine first, then the table's order; satellites left out.
+    pub rows: Vec<ReachRow>,
+    /// The entrance's device id: the lowest ms among the reached, this
+    /// machine on a tie.
+    pub entrance: Option<String>,
+    /// Two machines' known_hosts hold different keys for the name: it
+    /// means a different machine from each.
+    pub disagree: bool,
+    /// The shown name of the machine in the table whose id is that host
+    /// key (a satellite), when one is.
+    pub known_as: Option<String>,
+}
+
+/// One machine's try.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ReachRow {
+    pub id: String,
+    pub shown: String,
+    pub here: bool,
+    pub outcome: khor_core::ReachOutcome,
+    /// The TCP connect, whole ms.
+    #[ts(type = "number | null")]
+    pub ms: Option<u32>,
+    /// The address its resolver gave and it tried.
+    pub addr: Option<String>,
+    /// The server's first line (`SSH-2.0-OpenSSH_9.6`).
+    pub banner: Option<String>,
+    /// `SHA256:<base64>`, as that machine's known_hosts holds it.
+    pub host_key: Option<String>,
+    /// Words for a failure, in this machine's language.
+    pub why: Option<String>,
+}
+
+/// Every machine's try at `host:port` (`Node::reach_probe`); `port`
+/// `None` is ssh's 22. With no resident it binds an endpoint of its own
+/// and still asks everyone; an error is a probe that could not run at
+/// all (no address given, the resident's hand-off failed).
+pub async fn reach_probe(root: &Path, host: String, port: Option<u16>) -> Result<ReachReport, String> {
+    let at = root.to_path_buf();
+    let n = tokio::task::spawn_blocking(move || open(&at))
+        .await
+        .map_err(|e| e.to_string())??;
+    let port = khor_node::reach::port_or_ssh(port);
+    let devices = n.devices().unwrap_or_default();
+    let shown = |id: &str| {
+        devices
+            .iter()
+            .find(|d| d.id == id)
+            .map(|d| d.shown().to_owned())
+            .unwrap_or_else(|| id.chars().take(8).collect())
+    };
+    let view = n.reach_probe(&host, port).await?;
+    let known_as = view
+        .rows
+        .iter()
+        .filter_map(|(_, s)| s.host_key.as_deref())
+        .find_map(|k| devices.iter().find(|d| d.id == k).map(|d| d.shown().to_owned()));
+    Ok(ReachReport {
+        rows: view
+            .rows
+            .iter()
+            .map(|(id, s)| ReachRow {
+                shown: shown(id),
+                here: id == n.device_str(),
+                id: id.clone(),
+                outcome: s.outcome,
+                ms: s.ms,
+                addr: s.addr.clone(),
+                banner: s.banner.clone(),
+                host_key: s.host_key.as_deref().map(khor_node::reach::shown_key),
+                why: s.why.clone(),
+            })
+            .collect(),
+        host: view.host,
+        port: view.port,
+        entrance: view.entrance,
+        disagree: view.disagree,
+        known_as,
+    })
+}
+
 /// A face is on screen, or stopped being (`Node::face_is_here`): the
 /// resident's pump beats every 5 s while one is and every 30 s while none
 /// is, and gives a face that arrives a round at once (round NET-6). With
