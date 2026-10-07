@@ -150,6 +150,13 @@ const F_SSH_PORT: &str = "ssh_port";
 /// (`khor_node::secret`); the row says which road to take, never what
 /// opens it.
 const F_SSH_PASSWORD: &str = "ssh_password";
+/// The private key file the sponsor logs in with, as a path on the
+/// sponsor (empty = none: the sponsor's ssh config and agent decide).
+/// Only the path: the key itself never leaves the sponsor's disk.
+const F_SSH_IDENTITY: &str = "ssh_identity";
+/// Whether that key's passphrase is kept in the sponsor's OS secret
+/// store — `ssh_password`'s sibling, and like it never the secret.
+const F_SSH_PASSPHRASE: &str = "ssh_passphrase";
 /// Whether the satellite had tmux when it was adopted (or last probed)
 /// — what decides if a terminal on it can be made persistent. Stored as
 /// a bool register but read three-valued: "unprobed" must not read as
@@ -281,14 +288,18 @@ fn fkey(id: &str, field: &str) -> String {
 }
 
 /// A satellite's ssh road as its row keeps it: the destination, its
-/// port and jump when the person gave them, and whether the sponsor logs
-/// in with a password (kept in the sponsor's secret store, never here).
+/// port and jump when the person gave them, whether the sponsor logs
+/// in with a password (kept in the sponsor's secret store, never here),
+/// and the key file it logs in with and whether that key's passphrase is
+/// kept beside such a password.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SshRoad<'a> {
     pub host: &'a str,
     pub port: Option<u16>,
     pub jump: Option<&'a str>,
     pub password: bool,
+    pub identity: Option<&'a str>,
+    pub passphrase: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -328,6 +339,11 @@ pub struct DeviceInfo {
     pub ssh_port: Option<u16>,
     /// The sponsor logs in with a password from its own secret store.
     pub ssh_password: bool,
+    /// The key file the sponsor logs in with (a path on the sponsor),
+    /// `None` for its ssh config and agent.
+    pub ssh_identity: Option<String>,
+    /// That key's passphrase is in the sponsor's secret store.
+    pub ssh_passphrase: bool,
     /// `Some(true)` = tmux was there at the last probe, `Some(false)` =
     /// probed and absent, `None` = never probed (an adoption from an
     /// older khor). Three states on purpose: unprobed must not read as
@@ -648,6 +664,15 @@ impl DeviceDoc {
             self.write_field(id, F_SSH_PASSWORD, road.password)?;
             dirty = true;
         }
+        let identity = road.identity.unwrap_or("");
+        if self.flat_str(id, F_SSH_IDENTITY).as_deref().unwrap_or("") != identity {
+            self.write_field(id, F_SSH_IDENTITY, identity)?;
+            dirty = true;
+        }
+        if self.bool_field(id, F_SSH_PASSPHRASE) != road.passphrase {
+            self.write_field(id, F_SSH_PASSPHRASE, road.passphrase)?;
+            dirty = true;
+        }
         if self.flat_str(id, F_SPONSOR).as_deref() != Some(sponsor) {
             self.write_field(id, F_SPONSOR, sponsor)?;
             dirty = true;
@@ -810,6 +835,8 @@ impl DeviceDoc {
                 ssh_jump: self.str_field(&id, F_SSH_JUMP).filter(|j| !j.is_empty()),
                 ssh_port: self.str_field(&id, F_SSH_PORT).and_then(|p| p.parse().ok()),
                 ssh_password: self.bool_field(&id, F_SSH_PASSWORD),
+                ssh_identity: self.str_field(&id, F_SSH_IDENTITY).filter(|k| !k.is_empty()),
+                ssh_passphrase: self.bool_field(&id, F_SSH_PASSPHRASE),
                 sat_tmux: match self.field(&id, F_SAT_TMUX) {
                     Some(LoroValue::Bool(b)) => Some(b),
                     _ => None,
@@ -1681,6 +1708,8 @@ mod tests {
                     port: Some(2222),
                     jump: Some("bastion"),
                     password: true,
+                    identity: Some("~/.ssh/lab_key"),
+                    passphrase: true,
                 },
                 true,
             )
@@ -1701,6 +1730,8 @@ mod tests {
         assert_eq!(sat.ssh_jump.as_deref(), Some("bastion"), "…and its jump");
         assert_eq!(sat.ssh_port, Some(2222), "…and its port");
         assert!(sat.ssh_password, "…and that it logs in with a password");
+        assert_eq!(sat.ssh_identity.as_deref(), Some("~/.ssh/lab_key"), "…and its key file's path");
+        assert!(sat.ssh_passphrase, "…and that the key's passphrase is kept");
         assert_eq!(sat.sat_tmux, Some(true), "…and the tmux probe");
         let plain = far.get("aa").expect("the sponsor itself crossed");
         assert_eq!(

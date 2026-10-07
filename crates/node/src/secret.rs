@@ -1,5 +1,6 @@
-//! The one password khor keeps: an ssh host the person chose to log in
-//! to with a password (添加机器 认证方式 密码; docs/NET.md 添加机器).
+//! The secrets khor keeps: the password of an ssh host the person chose
+//! to log in to with one, or the passphrase of the key file they picked
+//! for it (添加机器 认证方式; docs/NET.md 添加机器).
 //!
 //! # Only the OS secret store of the machine that runs ssh
 //!
@@ -21,7 +22,16 @@
 //! parent: a host-key question gets no answer (known_hosts decides
 //! that), and a one-time code is out of scope, said once by the caller
 //! from [`ASKPASS_NOT_A_PASSWORD`].
-use std::path::PathBuf;
+//!
+//! # A ledger of names, and the sweep
+//!
+//! Every name this machine keeps something under is also written, name
+//! only, to a ledger in its khor home ([`LEDGER`]). The sponsor's minute
+//! round ([`sweep`]) drops every kept secret whose satellite row has left
+//! the table — removed on any machine, not only here — so a password
+//! outlives its host by at most a minute of a running sponsor.
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use khor_catalog::msg;
 
@@ -48,6 +58,82 @@ fn door() -> Option<PathBuf> {
 fn door_file(dir: &std::path::Path, key: &str) -> PathBuf {
     let name: String = key.bytes().map(|b| format!("{b:02x}")).collect();
     dir.join(name)
+}
+
+/// The ledger's file in a khor home: one line per kept name, `<ms>\t<name>`
+/// — when it was kept, and under what. Never the secret.
+pub const LEDGER: &str = "ssh-secrets";
+
+/// How long a name kept for an add in progress is spared by the sweep:
+/// its row is written only once the add is done, which takes up to the
+/// pairing wait plus the install, well inside this.
+pub const SWEEP_GRACE_MS: u64 = 15 * 60 * 1000;
+
+fn ledger(root: &Path) -> Vec<(u64, String)> {
+    std::fs::read_to_string(root.join(LEDGER))
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| {
+            let (ms, name) = l.split_once('\t')?;
+            Some((ms.parse().ok()?, name.to_owned()))
+        })
+        .collect()
+}
+
+fn write_ledger(root: &Path, rows: &[(u64, String)]) -> Result<(), String> {
+    let text: String = rows.iter().map(|(ms, n)| format!("{ms}\t{n}\n")).collect();
+    crate::link::write_private(&root.join(LEDGER), text.as_bytes())
+}
+
+/// [`put`], and the name in `root`'s ledger.
+pub fn keep(root: &Path, key: &str, secret: &str, now_ms: u64) -> Result<(), String> {
+    put(key, secret)?;
+    note(root, key, now_ms)
+}
+
+/// The name into `root`'s ledger, kept at `now_ms`.
+fn note(root: &Path, key: &str, now_ms: u64) -> Result<(), String> {
+    let mut rows: Vec<_> = ledger(root).into_iter().filter(|(_, n)| n != key).collect();
+    rows.push((now_ms, key.to_owned()));
+    write_ledger(root, &rows)
+}
+
+/// [`forget`], and the name out of `root`'s ledger.
+pub fn drop_kept(root: &Path, key: &str) -> Result<(), String> {
+    forget(key)?;
+    let rows = ledger(root);
+    if rows.iter().any(|(_, n)| n == key) {
+        let rest: Vec<_> = rows.into_iter().filter(|(_, n)| n != key).collect();
+        write_ledger(root, &rest)?;
+    }
+    Ok(())
+}
+
+/// Drops every secret in `root`'s ledger that no live road needs: `live`
+/// is the names of the satellites this machine sponsors that still log in
+/// with a kept secret. A name kept within [`SWEEP_GRACE_MS`] stays — an
+/// add is still writing its row. Returns how many went.
+pub fn sweep(root: &Path, live: &HashSet<String>, now_ms: u64) -> Result<usize, String> {
+    sweep_with(root, live, now_ms, forget)
+}
+
+fn sweep_with(
+    root: &Path,
+    live: &HashSet<String>,
+    now_ms: u64,
+    forget: impl Fn(&str) -> Result<(), String>,
+) -> Result<usize, String> {
+    let rows = ledger(root);
+    let (keep, gone): (Vec<_>, Vec<_>) = rows
+        .into_iter()
+        .partition(|(ms, n)| live.contains(n) || now_ms.saturating_sub(*ms) < SWEEP_GRACE_MS);
+    for (_, n) in &gone {
+        forget(n)?;
+    }
+    if !gone.is_empty() {
+        write_ledger(root, &keep)?;
+    }
+    Ok(gone.len())
 }
 
 /// Keeps `password` for `key`, replacing what was there.
@@ -271,6 +357,31 @@ mod os {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sweep_drops_what_no_row_needs_and_spares_an_add_in_progress() {
+        // The store is a closure here: no test touches a real keychain,
+        // and none sets the process-wide door under the others.
+        let home = crate::testdir::TempTree::fresh("secret-sweep");
+        let root = home.path();
+        note(&root, "gone-box", 0).unwrap();
+        note(&root, "live-box:2222", 0).unwrap();
+        note(&root, "adding-box", SWEEP_GRACE_MS).unwrap();
+        let live: HashSet<String> = ["live-box:2222".to_owned()].into();
+        let dropped = std::cell::RefCell::new(Vec::new());
+        let went = sweep_with(&root, &live, SWEEP_GRACE_MS + 1, |n| {
+            dropped.borrow_mut().push(n.to_owned());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(went, 1, "only the row that left goes");
+        assert_eq!(dropped.into_inner(), ["gone-box"]);
+        let names: Vec<String> = ledger(&root).into_iter().map(|(_, n)| n).collect();
+        assert_eq!(names, ["live-box:2222", "adding-box"], "an add in progress is spared");
+        // Keeping a name again moves it, it does not double it.
+        note(&root, "adding-box", SWEEP_GRACE_MS + 2).unwrap();
+        assert_eq!(ledger(&root).len(), 2);
+    }
 
     #[test]
     fn only_a_password_prompt_is_answered() {

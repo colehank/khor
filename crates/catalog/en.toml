@@ -447,22 +447,26 @@ usage: khor <verb>
                         serve running)
   pair <ticket|->       joins the network with a ticket; - reads it
                         from standard input
-  add <SSH host> [name] [--port <port>] [--via <jump>] [-m <khor host>] [--password]
-      [--satellite]
+  add <SSH host> [name] [--port <port>] [--via <jump>] [-m <khor host>]
+      [--password | --key <key file> [--passphrase]] [--no-install]
                         adds a machine over SSH: by default installs khor
                         and makes it a khor host (user-level resident, no
                         root); when khor can't keep running there, removes
                         the installed files and connects over SSH instead.
-                        --satellite goes straight to an SSH host (nothing
-                        installed; this machine runs everything over SSH).
-                        --port defaults to 22 or your ssh config's port.
-                        --via sends every ssh through that jump host
-                        without changing your ssh config. -m has that khor
-                        host add it over its own ssh (it runs the add; key
-                        login only). --password reads
-                        the password from standard input and keeps it only
-                        in this machine's system keychain; without it, key
-                        login is used. Identity comes from your known_hosts
+                        --no-install installs nothing and adds an SSH host
+                        (no files left there; this machine runs everything
+                        over SSH). --port defaults to 22 or your ssh
+                        config's port. --via sends every ssh through that
+                        jump host without changing your ssh config. -m has
+                        that khor host add it over its own ssh (it runs the
+                        add; key login only, --key is a path there).
+                        --password reads the password from standard input
+                        and keeps it only in this machine's system
+                        keychain. --key logs in with that key file, keeping
+                        only its path, never the key; --passphrase reads
+                        its passphrase from standard input, kept the same
+                        way. Without them, your ssh config's and ssh-agent's
+                        keys are used. Identity comes from your known_hosts
   promote <SSH host>    installs khor on an SSH host this machine added;
                         the name carries over, the SSH host row goes
   pending [--json]      what waits for the root holder: machines paired
@@ -705,6 +709,7 @@ keeper-boot = "Keeps running after logout; systemd starts it at boot"
 keeper-login = "Keeps running after logout; after a restart it starts at the next login"
 keeper-none = "Keeps running after logout; after a restart run khor-serve-up"
 password-prompt = "Password"
+passphrase-prompt = "Key passphrase"
 added-member = "Added {0}: khor is installed and connects directly"
 added-satellite = "{0}; installed files removed, connected over SSH instead"
 promoted = "Installed khor on {0}; it is a khor host now"
@@ -1432,11 +1437,16 @@ sat-jump-to-target-broken = "The jump host {0} can't connect to the target host 
 sat-password-only = "{0} did not accept this machine's key. Log in with a password, or run {1} in a terminal to upload the public key"
 sat-password-refused = "{0} did not accept the saved password"
 sat-password-missing = "No password for {0} is saved on this machine"
+sat-passphrase-missing = "No passphrase for the key {0} uses is saved on this machine"
+sat-passphrase-refused = "{0} did not accept the key {1}, or the saved passphrase is wrong"
+sat-key-locked = "The key {0} has a passphrase. Give it when adding; it is kept only in this machine's keychain"
+sat-key-refused = "{0} did not accept the key {1}. Run {2} in a terminal to upload the public key"
 sat-one-time-code = "{0} asks for a one-time code at every login; khor doesn't support such hosts"
 no-secret-store = "This machine has no system keychain to keep the password in; use key login instead"
 secret-store-failed = "Couldn't use the system keychain: {0}"
 password-not-given = "No password on standard input"
 add-on-no-password = "Adding through the khor host {0} takes key login only: a password stays on the machine that runs ssh and never crosses the network"
+add-on-no-passphrase = "Adding through the khor host {0} can't use a key with a passphrase: a passphrase stays on the machine that runs ssh and never crosses the network"
 add-on-self = "That is this machine; add it directly"
 add-on-predates = "khor on {0} is too old to add machines for you; update it first"
 add-on-needs-serve = "khor on {0} isn't running as a resident, so it can't add machines for you"

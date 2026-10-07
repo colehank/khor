@@ -55,8 +55,14 @@ fn ssh_dir() -> Option<PathBuf> {
 
 /// Where a machine is reached over ssh: the destination as the user
 /// names it (a Host alias or user@host), its port and the jump in front
-/// of it when the person gave them, and whether it logs in with a
-/// password from this machine's secret store ([`crate::secret`]).
+/// of it when the person gave them, whether it logs in with a password
+/// from this machine's secret store ([`crate::secret`]), and the key file
+/// it logs in with when the person picked one — whose passphrase, when
+/// it has one, is kept in that same store.
+///
+/// **A key file is only ever a path** (添加机器 认证方式 密钥, round 3):
+/// it rides each ssh and scp as `-i <path> -o IdentitiesOnly=yes`, and
+/// khor never copies, syncs or uploads the key behind it.
 ///
 /// **The jump rides every command as `-J`, never the user's config**
 /// (docs/NET.md 卫星 经由): khor does not write `~/.ssh`, so a jump the
@@ -69,6 +75,8 @@ pub struct Dest {
     pub port: Option<u16>,
     pub jump: Option<String>,
     pub password: bool,
+    pub identity: Option<String>,
+    pub passphrase: bool,
 }
 
 impl Dest {
@@ -78,6 +86,8 @@ impl Dest {
             port: None,
             jump: jump.filter(|j| !j.is_empty()).map(str::to_owned),
             password: false,
+            identity: None,
+            passphrase: false,
         }
     }
 
@@ -93,13 +103,35 @@ impl Dest {
         self
     }
 
+    /// The same road, logging in with the key at `path` (a path on the
+    /// machine that runs ssh; `None`, or empty, = the ssh config's and
+    /// the agent's keys).
+    pub fn with_identity(mut self, path: Option<&str>) -> Dest {
+        self.identity = path.filter(|p| !p.is_empty()).map(str::to_owned);
+        self
+    }
+
+    /// The same road, its key unlocked with the passphrase kept for it.
+    pub fn with_passphrase(mut self, passphrase: bool) -> Dest {
+        self.passphrase = passphrase;
+        self
+    }
+
+    /// Whether ssh asks khor for something kept in the secret store —
+    /// a password, or a key's passphrase.
+    pub fn asks(&self) -> bool {
+        self.password || self.passphrase
+    }
+
     /// A satellite row's road, `None` when the row has no destination
     /// on record.
     pub fn of(d: &khor_sync::devices::DeviceInfo) -> Option<Dest> {
         Some(
             Dest::new(d.ssh_host.clone()?, d.ssh_jump.as_deref())
                 .on_port(d.ssh_port)
-                .with_password(d.ssh_password),
+                .with_password(d.ssh_password)
+                .with_identity(d.ssh_identity.as_deref())
+                .with_passphrase(d.ssh_passphrase),
         )
     }
 
@@ -110,11 +142,15 @@ impl Dest {
             port: self.port,
             jump: self.jump.as_deref(),
             password: self.password,
+            identity: self.identity.as_deref(),
+            passphrase: self.passphrase,
         }
     }
 
-    /// The name its password is kept under: the destination, and the
-    /// port when one was given — two sshds on one host are two logins.
+    /// The name its password or key passphrase is kept under: the
+    /// destination, and the port when one was given — two sshds on one
+    /// host are two logins. One name for either secret: a road logs in
+    /// with a password or with a key, never both.
     pub fn secret_key(&self) -> String {
         match self.port {
             Some(p) => format!("{}:{p}", self.host),
@@ -135,7 +171,7 @@ impl Dest {
     /// instead of a terminal, and is never allowed to fall back to one.
     /// Empty for a key road.
     pub fn env(&self) -> Vec<(String, String)> {
-        if !self.password {
+        if !self.asks() {
             return Vec::new();
         }
         let me = std::env::current_exe()
@@ -173,10 +209,22 @@ impl Dest {
         if let Some(p) = self.port {
             v.extend(["-o".to_owned(), format!("Port={p}")]);
         }
-        if self.password {
+        if let Some(k) = &self.identity {
+            // Only this key: the agent's and the config's would be tried
+            // first otherwise, and a server counts every refusal.
+            v.extend(["-i".to_owned(), k.clone()]);
+            v.extend(["-o".to_owned(), "IdentitiesOnly=yes".to_owned()]);
+        }
+        if self.asks() {
             // One try: a wrong password is an answer, not a loop.
             v.extend(["-o".to_owned(), "BatchMode=no".to_owned()]);
             v.extend(["-o".to_owned(), "NumberOfPasswordPrompts=1".to_owned()]);
+            if !self.password {
+                // A passphrase road offers the key alone: a server's
+                // password prompt would otherwise be answered with the
+                // key's passphrase.
+                v.extend(["-o".to_owned(), "PreferredAuthentications=publickey".to_owned()]);
+            }
         } else {
             v.extend(["-o".to_owned(), "BatchMode=yes".to_owned()]);
         }
@@ -270,15 +318,42 @@ pub(crate) fn cant_reach(to: &Dest, said: &str) -> String {
         return msg::sat_one_time_code(&to.host);
     }
     if said.contains(crate::secret::ASKPASS_NONE_KEPT) {
-        return msg::sat_password_missing(&to.host);
+        return if to.passphrase {
+            msg::sat_passphrase_missing(&to.host)
+        } else {
+            msg::sat_password_missing(&to.host)
+        };
     }
-    match (broken(to, said), &to.jump) {
-        (Some(Broken::ToJump), Some(j)) => msg::sat_to_jump_broken(j, last),
-        (Some(Broken::JumpToTarget), Some(j)) => msg::sat_jump_to_target_broken(j, &to.host, last),
-        (Some(Broken::PasswordOnly), _) if to.password => msg::sat_password_refused(&to.host),
-        (Some(Broken::PasswordOnly), _) => msg::sat_password_only(&to.host, copy_id_line(to)),
+    match (broken(to, said), &to.jump, &to.identity) {
+        (Some(Broken::ToJump), Some(j), _) => msg::sat_to_jump_broken(j, last),
+        (Some(Broken::JumpToTarget), Some(j), _) => msg::sat_jump_to_target_broken(j, &to.host, last),
+        (Some(Broken::PasswordOnly), _, _) if to.password => msg::sat_password_refused(&to.host),
+        (Some(Broken::PasswordOnly), _, Some(k)) if to.passphrase => msg::sat_passphrase_refused(&to.host, k),
+        (Some(Broken::PasswordOnly), _, Some(k)) if key_locked(k) => msg::sat_key_locked(k),
+        (Some(Broken::PasswordOnly), _, Some(k)) => msg::sat_key_refused(&to.host, k, copy_id_line(to)),
+        (Some(Broken::PasswordOnly), _, None) => msg::sat_password_only(&to.host, copy_id_line(to)),
         _ => msg::sat_cant_reach(to, said),
     }
+}
+
+/// Whether the key file at `path` is locked with a passphrase — asked of
+/// `ssh-keygen` with an empty one, after ssh was refused with that key
+/// in BatchMode (which skips a locked key without a word). The key is
+/// read by ssh-keygen on this machine only; its public half goes to the
+/// void and khor sees nothing but the exit and the refusal's words.
+pub fn key_locked(path: &str) -> bool {
+    let path = match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
+        (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
+        _ => PathBuf::from(path),
+    };
+    Command::new("ssh-keygen")
+        .args(["-y", "-P", ""])
+        .arg("-f")
+        .arg(&path)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .output()
+        .is_ok_and(|o| !o.status.success() && String::from_utf8_lossy(&o.stderr).contains("passphrase"))
 }
 
 /// What a person runs once to stop a host asking for a password: the
@@ -292,6 +367,10 @@ pub fn copy_id_argv(to: &Dest) -> Vec<String> {
     if let Some(p) = to.port {
         v.extend(["-p".to_owned(), p.to_string()]);
     }
+    if let Some(k) = &to.identity {
+        // ssh-copy-id uploads `<k>.pub`, and logs in with `k` to do it.
+        v.extend(["-i".to_owned(), k.clone()]);
+    }
     if let Some(j) = &to.jump {
         v.extend(["-o".to_owned(), format!("ProxyJump={j}")]);
     }
@@ -303,6 +382,9 @@ fn copy_id_line(to: &Dest) -> String {
     let mut line = "ssh-copy-id".to_owned();
     if let Some(p) = to.port {
         line.push_str(&format!(" -p {p}"));
+    }
+    if let Some(k) = &to.identity {
+        line.push_str(&format!(" -i {k}"));
     }
     if let Some(j) = &to.jump {
         line.push_str(&format!(" -o ProxyJump={j}"));
@@ -1734,6 +1816,32 @@ mod tests {
         assert!(env.iter().any(|(k, v)| k == crate::secret::ASKPASS_KEY && v == "gpu-box:2222"));
         assert_eq!(ssh_argv(&pw)[0], "env");
         assert_eq!(Dest::new("h", None).on_port(Some(0)).port, None, "0 is no port");
+    }
+
+    /// A key file is `-i` with IdentitiesOnly on every command, and
+    /// stays a BatchMode road until it has a kept passphrase; then ssh
+    /// asks khor, and only the key is offered (a password prompt must not
+    /// be answered with a passphrase).
+    #[test]
+    fn a_key_file_and_its_passphrase_change_the_road() {
+        let k = Dest::new("gpu-box", Some("bastion")).with_identity(Some("~/.ssh/lab_key"));
+        let road = k.road();
+        assert!(road.windows(2).any(|w| w == ["-i", "~/.ssh/lab_key"]), "{road:?}");
+        assert!(road.windows(2).any(|w| w == ["-o", "IdentitiesOnly=yes"]), "{road:?}");
+        assert!(road.windows(2).any(|w| w == ["-o", "BatchMode=yes"]), "{road:?}");
+        assert!(!k.asks() && k.env().is_empty());
+        let proxy = road.iter().find(|a| a.starts_with("ProxyCommand=")).expect("a proxy");
+        assert!(!proxy.contains("lab_key"), "the key is the target's, not the jump's: {proxy}");
+        assert!(copy_id_argv(&k).windows(2).any(|w| w == ["-i", "~/.ssh/lab_key"]));
+
+        let pp = k.clone().with_passphrase(true);
+        let road = pp.road();
+        assert!(road.windows(2).any(|w| w == ["-o", "BatchMode=no"]), "{road:?}");
+        assert!(road.windows(2).any(|w| w == ["-o", "PreferredAuthentications=publickey"]), "{road:?}");
+        assert!(pp.env().iter().any(|(k, v)| k == crate::secret::ASKPASS_KEY && v == "gpu-box"));
+        let pw = Dest::new("gpu-box", None).with_password(true).road();
+        assert!(!pw.iter().any(|a| a.starts_with("PreferredAuthentications")), "{pw:?}");
+        assert_eq!(Dest::new("h", None).with_identity(Some("")).identity, None, "empty is no key");
     }
 
     /// The fingerprint-to-id math on a fixed digest: 32 bytes in, the

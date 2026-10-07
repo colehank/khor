@@ -5281,14 +5281,16 @@ fn pair(rest: &[String]) -> Result<(), String> {
 }
 
 /// Adds a machine over ssh (添加机器; `khor_node::join`): a member by
-/// default, a satellite when it cannot stay one or when `--satellite`
-/// says so. Each step is told on stderr as it ends; the outcome on
+/// default, a satellite when it cannot stay one or when `--no-install`
+/// says so (the form's 「在 … 上安装 khor」 switch, off). Each step is told on stderr as it ends; the outcome on
 /// stdout.
 fn add(rest: &[String]) -> Result<(), String> {
     let mut words = Vec::new();
     let mut via = None;
     let mut port = None;
     let mut password = false;
+    let mut key = None;
+    let mut passphrase = false;
     let mut from = None;
     let mut satellite_only = false;
     let mut it = rest.iter();
@@ -5300,8 +5302,10 @@ fn add(rest: &[String]) -> Result<(), String> {
                 port = Some(p.parse::<u16>().map_err(|_| usage_text().to_owned())?);
             }
             "--password" => password = true,
+            "--key" => key = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
+            "--passphrase" => passphrase = true,
             "-m" => from = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
-            "--satellite" => satellite_only = true,
+            "--no-install" => satellite_only = true,
             _ => words.push(w.clone()),
         }
     }
@@ -5310,26 +5314,39 @@ fn add(rest: &[String]) -> Result<(), String> {
         [host, name] => (host, Some(name.as_str())),
         _ => return Err(usage_text().into()),
     };
-    let password = if password { Some(read_password()?) } else { None };
+    // A road logs in with a password or with a key, never both; a
+    // passphrase is a key file's.
+    if (password && (passphrase || key.is_some())) || (passphrase && key.is_none()) {
+        return Err(usage_text().into());
+    }
+    let secret = if password {
+        Some(read_password(cli::password_prompt())?)
+    } else if passphrase {
+        Some(read_password(cli::passphrase_prompt())?)
+    } else {
+        None
+    };
     let n = node()?;
-    let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref()).on_port(port);
+    let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref())
+        .on_port(port)
+        .with_identity(key.as_deref());
     // From another khor machine (通过 khor 主机): it is the sponsor and
     // runs the add; this one tells its steps as they come.
     if let Some(m) = from.filter(|m| m != n.name()) {
-        let to = to.with_password(password.is_some());
+        let to = to.with_password(password).with_passphrase(passphrase);
         let added = rt()?.block_on(n.add_on(&m, &to, name, satellite_only, tell_step))?;
         say_added(&n, &added, &m);
         return Ok(());
     }
-    let added = n.add_over_ssh(&to, name, satellite_only, password.as_deref(), &mut tell_step)?;
+    let added = n.add_over_ssh(&to, name, satellite_only, secret.as_deref(), &mut tell_step)?;
     say_added(&n, &added, n.name());
     Ok(())
 }
 
-/// `--password`'s password: one line of standard input, never an
-/// argument (an argument is in `ps`). From a terminal the echo is off
-/// while it is typed.
-fn read_password() -> Result<String, String> {
+/// `--password`'s password or `--passphrase`'s passphrase: one line of
+/// standard input, never an argument (an argument is in `ps`). From a
+/// terminal the echo is off while it is typed, after `prompt`.
+fn read_password(prompt: &str) -> Result<String, String> {
     use std::io::IsTerminal;
     let tty = std::io::stdin().is_terminal();
     let stty = |arg: &str| {
@@ -5339,7 +5356,7 @@ fn read_password() -> Result<String, String> {
             .status();
     };
     if tty {
-        eprint!("{}: ", cli::password_prompt());
+        eprint!("{prompt}: ");
         stty("-echo");
     }
     let mut line = String::new();

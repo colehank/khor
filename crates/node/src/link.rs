@@ -2072,6 +2072,7 @@ impl Node {
                 host,
                 port,
                 jump,
+                identity,
                 name,
                 satellite_only,
             } => {
@@ -2080,6 +2081,7 @@ impl Node {
                     host,
                     port,
                     jump,
+                    identity,
                     name,
                     satellite_only,
                 };
@@ -3712,6 +3714,7 @@ impl Node {
                 host,
                 port,
                 jump,
+                identity,
                 name,
                 satellite_only,
             } => {
@@ -3724,7 +3727,9 @@ impl Node {
                 let (run, fresh) = crate::join::run_for(&token);
                 if fresh {
                     let node = self.me().ok_or_else(|| msg::add_on_needs_serve(self.name()))?;
-                    let to = crate::satellite::Dest::new(host, jump.as_deref()).on_port(port);
+                    let to = crate::satellite::Dest::new(host, jump.as_deref())
+                        .on_port(port)
+                        .with_identity(identity.as_deref());
                     crate::join::start(node, run.clone(), to, name, satellite_only);
                 }
                 let run = run.lock().unwrap_or_else(|p| p.into_inner()).clone();
@@ -7335,11 +7340,15 @@ impl Node {
         if to.password {
             return Err(msg::add_on_no_password(machine));
         }
+        if to.passphrase {
+            return Err(msg::add_on_no_passphrase(machine));
+        }
         let req = Request::AddOverSsh {
             token: fresh_hex()?,
             host: to.host.clone(),
             port: to.port,
             jump: to.jump.clone(),
+            identity: to.identity.clone(),
             name: name.map(str::to_owned),
             satellite_only,
         };
@@ -7349,6 +7358,7 @@ impl Node {
                 host,
                 port,
                 jump,
+                identity,
                 name,
                 satellite_only,
             } => ipc::Op::AddOn {
@@ -7357,6 +7367,7 @@ impl Node {
                 host,
                 port,
                 jump,
+                identity,
                 name,
                 satellite_only,
             },

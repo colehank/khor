@@ -739,7 +739,8 @@ pub enum Request {
     /// the asker watches. Named by `token` like a drop: the first ask
     /// starts the run, every ask answers its marks so far and, once
     /// over, how it ended ([`Response::Adding`]). Key login only — a
-    /// password does not cross the wire.
+    /// password or a passphrase does not cross the wire; `identity` is a
+    /// key file's path on the answering machine.
     ///
     /// **A new variant**: a khor that predates it refuses the frame by
     /// this name, and the asker says `msg::add_on_predates`.
@@ -748,6 +749,7 @@ pub enum Request {
         host: String,
         port: Option<u16>,
         jump: Option<String>,
+        identity: Option<String>,
         name: Option<String>,
         satellite_only: bool,
     },

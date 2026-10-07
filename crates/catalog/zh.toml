@@ -401,17 +401,21 @@ usage = """
                         --fix 跑那一项的修法（能修的项在行尾写着怎么跑）
   invite                出一张一次性配对票（要求 serve 在跑）
   pair <票|->           凭票入网；- 从标准输入读票
-  add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [-m <khor主机>] [--password]
-      [--satellite]
+  add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [-m <khor主机>]
+      [--password | --key <密钥文件> [--passphrase]] [--no-install]
                         通过 SSH 添加一台机器：默认安装 khor，作为 khor 主机
                         （用户级常驻，不需要 root）；无法持续运行时移除安装
-                        的文件，改为通过 SSH 连接。--satellite 直接作为 SSH
-                        主机（不安装任何东西，由本机通过 SSH 执行）。--port
-                        不填时用 22 或你的 ssh 配置里的端口。--via 每条 ssh
-                        都经过该跳板机，不修改你的 ssh 配置。-m 由那台 khor
-                        主机经它自己的 ssh 添加（它代为执行，只能用密钥）。--password 从
-                        标准输入读取密码，只存进本机的系统钥匙串；不加时用
-                        密钥登录。主机身份取自你的 known_hosts
+                        的文件，改为通过 SSH 连接。--no-install 不安装 khor，
+                        直接作为 SSH 主机（不在该主机上留下文件，由本机通过
+                        SSH 执行）。--port 不填时用 22 或你的 ssh 配置里的
+                        端口。--via 每条 ssh 都经过该跳板机，不修改你的 ssh
+                        配置。-m 由那台 khor 主机经它自己的 ssh 添加（它代为
+                        执行，只能用密钥，--key 是它上面的路径）。--password
+                        从标准输入读取密码，只存进本机的系统钥匙串。--key 用
+                        该密钥文件登录，只记录路径，不复制密钥；--passphrase
+                        从标准输入读取它的口令，同样只存进本机钥匙串。不加时
+                        用你的 ssh 配置和 ssh-agent 中的密钥。主机身份取自你
+                        的 known_hosts
   promote <SSH主机>     安装 khor：在本机添加的 SSH 主机上安装 khor，名称保留，
                         原来的 SSH 主机那一行移除
   pending [--json]      等持根的机器批的：刚配进来还没拿到证书的机器、不持根
@@ -669,6 +673,7 @@ keeper-boot = "退出登录后继续运行，开机时由 systemd 启动"
 keeper-login = "退出登录后继续运行，重启后登录一次才会启动"
 keeper-none = "退出登录后继续运行，重启后需手动运行 khor-serve-up"
 password-prompt = "密码"
+passphrase-prompt = "密钥口令"
 added-member = "已添加 {0}：已安装 khor，可直接连接"
 added-satellite = "{0}，已移除安装的文件，改为通过 SSH 连接"
 promoted = "已在 {0} 上安装 khor，它现在是 khor 主机"
@@ -2283,12 +2288,20 @@ sat-password-only = "{0} 未接受本机的密钥。改用密码登录，或在�
 # it through SSH_ASKPASS.
 sat-password-refused = "{0} 未接受保存的密码"
 sat-password-missing = "本机没有保存 {0} 的密码"
+# 认证方式 密钥 with a key file (round 3): khor keeps only the path; a
+# locked key's passphrase is kept like a password. {0} the host, {1} the
+# key file's path, {2} the ssh-copy-id line.
+sat-passphrase-missing = "本机没有保存 {0} 所用密钥的口令"
+sat-passphrase-refused = "{0} 未接受密钥 {1}，或保存的口令不正确"
+sat-key-locked = "密钥 {0} 设有口令。添加时输入口令，口令只保存在本机钥匙串中"
+sat-key-refused = "{0} 未接受密钥 {1}。在终端中运行 {2} 上传公钥"
 sat-one-time-code = "{0} 每次登录都要求一次性验证码，khor 不支持这类主机"
 no-secret-store = "本机没有可用的系统钥匙串，无法保存密码；改用密钥登录"
 secret-store-failed = "无法访问系统钥匙串：{0}"
 password-not-given = "标准输入中没有密码"
 # 通过 khor 主机添加 (Node::add_on): that machine runs the add as the sponsor.
 add-on-no-password = "通过 khor 主机 {0} 添加时只能使用密钥登录：密码只保存在运行 ssh 的机器上，不经网络传输"
+add-on-no-passphrase = "通过 khor 主机 {0} 添加时不能使用设有口令的密钥：口令只保存在运行 ssh 的机器上，不经网络传输"
 add-on-self = "这就是本机，直接添加即可"
 add-on-predates = "{0} 上的 khor 版本过旧，无法代为添加；先更新它"
 add-on-needs-serve = "{0} 上的 khor 没有常驻运行，无法代为添加"

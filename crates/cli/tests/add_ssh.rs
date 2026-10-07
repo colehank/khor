@@ -18,6 +18,11 @@
 //! and khor answers its askpass from a scratch store (`KHOR_SECRET_DIR`)
 //! — never the Keychain.
 //!
+//! **A key file of the person's choosing** (认证方式 密钥 选择密钥文件…)
+//! is tested on `keyed`, which takes only keys the scratch config never
+//! names: `other` (no passphrase) and the `lock` key — so the default
+//! road is refused there and `--key` is what gets in.
+//!
 //! One test, run in order: the world is a few seconds to build and the
 //! cases share it.
 use std::collections::BTreeSet;
@@ -70,13 +75,15 @@ impl Drop for World {
 /// `jump` a jump, `pw` takes only a password, `fragile` cannot keep a
 /// resident (its `kill -0` always says no, so install.sh reports the
 /// serve dead and the add falls back), `lock` takes only the
-/// passphrase-protected key (the module head).
+/// passphrase-protected key (the module head), `keyed` only `other` and
+/// the `lock` key, neither of them in the scratch config.
 const HOSTS: &[(&str, bool, bool)] = &[
     ("target", true, false),
     ("jump", true, false),
     ("pw", false, false),
     ("fragile", true, true),
     ("lock", true, false),
+    ("keyed", true, false),
 ];
 
 fn free_port() -> u16 {
@@ -153,6 +160,7 @@ fn build() -> Option<World> {
         .arg(&w.phrase)
         .arg("-f")
         .arg(client.join("lock")));
+    sh(Command::new("ssh-keygen").args(["-q", "-t", "ed25519", "-N", "", "-C", "add-ssh-other", "-f"]).arg(client.join("other")));
     let user = String::from_utf8(Command::new("id").arg("-un").output().unwrap().stdout).unwrap();
     let mut config = String::new();
     let mut known = String::new();
@@ -163,8 +171,14 @@ fn build() -> Option<World> {
         fs::create_dir_all(d.join("home")).unwrap();
         sh(Command::new("ssh-keygen").args(["-q", "-t", "ed25519", "-N", "", "-C", host, "-f"]).arg(d.join("hostkey")));
         let keys = d.join("authorized_keys");
-        let key = if host == "lock" { "lock.pub" } else { "id.pub" };
-        fs::write(&keys, if takes_key { fs::read(client.join(key)).unwrap() } else { vec![] }).unwrap();
+        let takes: &[&str] = match host {
+            "lock" => &["lock.pub"],
+            "keyed" => &["other.pub", "lock.pub"],
+            _ if takes_key => &["id.pub"],
+            _ => &[],
+        };
+        let takes: Vec<u8> = takes.iter().flat_map(|k| fs::read(client.join(k)).unwrap()).collect();
+        fs::write(&keys, takes).unwrap();
         // No keeper on the far side reaches the real launchd or systemd.
         let mut fakes = vec![("launchctl", "exit 1".to_owned()), ("systemctl", "exit 1".into()), ("loginctl", "exit 1".into())];
         if fragile {
@@ -409,7 +423,7 @@ fn add_over_ssh_in_a_scratch_world() {
     //    a member now.
     let _ = khor(&w, &m, &["forget", "box1"]);
     reset_far(&dir, "target");
-    let out = khor(&w, &m, &["add", "target", "box2", "--via", "jump", "--satellite"]);
+    let out = khor(&w, &m, &["add", "target", "box2", "--via", "jump", "--no-install"]);
     assert!(out.status.success(), "{}", text(&out));
     assert!(tree(&far_home(&dir, "target")).is_empty(), "a satellite is left nothing");
     assert!(rows(&w, &m).iter().any(|(n, road)| n == "box2" && road.contains("sponsor")));
@@ -460,7 +474,7 @@ fn add_over_ssh_in_a_scratch_world() {
     let _ = khor(&w, &m, &["forget", "box3"]);
     reset_far(&dir, "target");
     let port = w.port("target").to_string();
-    let out = khor(&w, &m, &["add", "127.0.0.1", "box7", "--port", &port, "--satellite"]);
+    let out = khor(&w, &m, &["add", "127.0.0.1", "box7", "--port", &port, "--no-install"]);
     assert!(out.status.success(), "{}", text(&out));
     assert!(rows(&w, &m).iter().any(|(n, road)| n == "box7" && road.contains("sponsor")));
     let _ = khor(&w, &m, &["forget", "box7"]);
@@ -469,11 +483,11 @@ fn add_over_ssh_in_a_scratch_world() {
     let out = khor(&w, &m, &["add", "lock"]);
     assert!(text(&out).contains("did not accept this machine's key"), "{}", text(&out));
     // …a wrong password is said to be wrong, and is not kept…
-    let out = khor_in(&w, &m, &["add", "lock", "box8", "--password", "--satellite"], "not-it\n");
+    let out = khor_in(&w, &m, &["add", "lock", "box8", "--password", "--no-install"], "not-it\n");
     assert!(!out.status.success() && text(&out).contains("did not accept the saved password"), "{}", text(&out));
     assert_eq!(kept(&w), 0, "a password that failed is not kept");
     // …the right one makes a satellite, kept while the row is…
-    let out = khor_in(&w, &m, &["add", "lock", "box8", "--password", "--satellite"], &format!("{}\n", w.phrase));
+    let out = khor_in(&w, &m, &["add", "lock", "box8", "--password", "--no-install"], &format!("{}\n", w.phrase));
     assert!(out.status.success(), "{}", text(&out));
     assert!(rows(&w, &m).iter().any(|(n, road)| n == "box8" && road.contains("sponsor")));
     assert_eq!(kept(&w), 1, "a satellite's password is kept");
@@ -491,6 +505,42 @@ fn add_over_ssh_in_a_scratch_world() {
     // KHOR_HOME, so the next far khor would take box9's serve for one on
     // its own store (`serves::beside`): one far resident at a time.
     reset_far(&dir, "lock");
+
+    // 11. A key file: the default road is refused at `keyed`…
+    let client = dir.join("client");
+    let other = client.join("other").display().to_string();
+    let lock = client.join("lock").display().to_string();
+    let out = khor(&w, &m, &["add", "keyed", "--no-install"]);
+    assert!(text(&out).contains("did not accept this machine's key"), "{}", text(&out));
+    // …`--key` gets in, and only its path is on the row…
+    let out = khor(&w, &m, &["add", "keyed", "box11", "--key", &other, "--no-install"]);
+    assert!(out.status.success(), "{}", text(&out));
+    // The row kept the road: a later look at the satellite rides it.
+    fs::write(far_home(&dir, "keyed").join("marker"), "x").unwrap();
+    let out = khor(&w, &m, &["ls", "box11"]);
+    assert!(out.status.success() && text(&out).contains("marker"), "ls over the kept key: {}", text(&out));
+    assert_eq!(kept(&w), 0, "a key without a passphrase keeps nothing");
+    let _ = khor(&w, &m, &["forget", "box11"]);
+    // …a locked key with no passphrase given is said to be locked…
+    let out = khor(&w, &m, &["add", "keyed", "box12", "--key", &lock, "--no-install"]);
+    assert!(!out.status.success() && text(&out).contains("has a passphrase"), "{}", text(&out));
+    // …a wrong passphrase is not kept…
+    let out = khor_in(&w, &m, &["add", "keyed", "box12", "--key", &lock, "--passphrase", "--no-install"], "not-it\n");
+    assert!(!out.status.success() && text(&out).contains("or the saved passphrase is wrong"), "{}", text(&out));
+    assert_eq!(kept(&w), 0, "a passphrase that failed is not kept");
+    // …the right one is kept while the row is, and goes with it.
+    let out = khor_in(&w, &m, &["add", "keyed", "box12", "--key", &lock, "--passphrase", "--no-install"], &format!("{}\n", w.phrase));
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(!text(&out).contains(&w.phrase), "the passphrase is never printed");
+    assert_eq!(kept(&w), 1, "a satellite's passphrase is kept");
+    let out = khor(&w, &m, &["ls", "box12"]);
+    assert!(out.status.success() && text(&out).contains("marker"), "ls over the kept passphrase: {}", text(&out));
+    let ledger = fs::read_to_string(dir.join("sponsor").join("ssh-secrets")).unwrap_or_default();
+    assert!(ledger.contains("keyed") && !ledger.contains(&w.phrase), "the ledger names it, never the secret");
+    let out = khor(&w, &m, &["forget", "box12"]);
+    assert!(out.status.success(), "{}", text(&out));
+    assert_eq!(kept(&w), 0, "forgetting the machine forgets its passphrase");
+    assert!(!fs::read_to_string(dir.join("sponsor").join("ssh-secrets")).unwrap_or_default().contains("keyed"));
 
     // 9. From another khor machine: `origin`, paired with the sponsor,
     //    runs the add over its own ssh road and is the sponsor; this
@@ -525,6 +575,11 @@ fn add_over_ssh_in_a_scratch_world() {
     assert!(paired.status.success(), "origin pairs: {}", String::from_utf8_lossy(&paired.stderr));
     let out = khor_in(&w, &m, &["add", "lock", "-m", "origin", "--password"], "x\n");
     assert!(!out.status.success() && text(&out).contains("key login only"), "{}", text(&out));
+    let out = khor_in(&w, &m, &["add", "keyed", "-m", "origin", "--key", &lock, "--passphrase"], "x\n");
+    assert!(!out.status.success() && text(&out).contains("can't use a key with a passphrase"), "{}", text(&out));
+    // A key file's path rides the wire and is a path on `origin`.
+    let out = khor(&w, &m, &["add", "keyed", "box13", "-m", "origin", "--key", &other, "--no-install"]);
+    assert!(out.status.success(), "{}", text(&out));
     reset_far(&dir, "target");
     let out = khor(&w, &m, &["add", "target", "box10", "--via", "jump", "-m", "origin"]);
     let said = text(&out);

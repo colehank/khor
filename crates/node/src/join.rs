@@ -312,38 +312,44 @@ fn last_line(text: &str) -> String {
 impl Node {
     /// Adds the machine at `to` — a full member unless `satellite_only`,
     /// a satellite when it cannot be one (the module head). `name` is
-    /// what the row is called; the host when `None`. `password`, when
-    /// given, is kept in this machine's secret store and ssh logs in
-    /// with it ([`crate::secret`]). `on` hears every step as it starts
+    /// what the row is called; the host when `None`. `secret`, when
+    /// given, is kept in this machine's secret store and ssh asks for it
+    /// ([`crate::secret`]): the password, or — when `to` logs in with a
+    /// key file ([`Dest::identity`]) — that key's passphrase. `on` hears every step as it starts
     /// and ends. Errors are sentences; one that is a password-only door
     /// reads as such ([`satellite::broken`]).
     ///
-    /// **The password stays only while something needs it**: a
+    /// **The secret stays only while something needs it**: a
     /// satellite is reached over ssh for as long as it is one, so its
-    /// row says `ssh_password` and the password goes when the row does
-    /// (`Node::forget_id`); a member is reached over iroh, so the
-    /// password is dropped the moment the add succeeds, and so is one
-    /// whose add failed.
+    /// row says `ssh_password` / `ssh_passphrase` and the secret goes
+    /// when the row does (`Node::forget_id`, and the sponsor's sweep for
+    /// a row removed elsewhere, [`crate::secret::sweep`]); a member is
+    /// reached over iroh, so the secret is dropped the moment the add
+    /// succeeds, and so is one whose add failed.
     pub fn add_over_ssh(
         &self,
         to: &Dest,
         name: Option<&str>,
         satellite_only: bool,
-        password: Option<&str>,
+        secret: Option<&str>,
         on: &mut dyn FnMut(Step, Mark),
     ) -> Result<Added, String> {
-        let Some(password) = password else {
+        let Some(secret) = secret else {
             return self.add_road(to, name, satellite_only, on);
         };
-        let to = to.clone().with_password(true);
+        let to = if to.identity.is_some() {
+            to.clone().with_passphrase(true)
+        } else {
+            to.clone().with_password(true)
+        };
         let key = to.secret_key();
-        if let Err(e) = crate::secret::put(&key, password) {
+        if let Err(e) = crate::secret::keep(self.root(), &key, secret, crate::now_ms()) {
             on(Step::Connect, Mark::Failed(e.clone()));
             return Err(e);
         }
         let added = self.add_road(&to, name, satellite_only, on);
         if !matches!(added, Ok(Added { member: false, .. })) {
-            crate::secret::forget(&key)?;
+            crate::secret::drop_kept(self.root(), &key)?;
         }
         added
     }
