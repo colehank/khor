@@ -217,11 +217,6 @@ export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "
       </span>
     );
   if (f.session) return <SessionFace face={f.face} {...f.session} size={seat} />;
-  // **A file's face is its kind, alone** (UX-45, the owner 2026-10-07:
-  // 「全都只有文件类型」): the icon the tree draws, no machine face under
-  // it — on the strip, the phone deck's pill, the 附栏's docked page.
-  // ⚠️ 墓碑 (UX-32 for files): the kind as the mark on the machine's face.
-  if (f.mark?.key === "file") return <span data-tab-file-face className={cn(bare, "grid flex-none place-items-center")}>{f.mark.glyph("size-full")}</span>;
   // A browsing page: the machine it goes through, wearing its kind's
   // mark the way a session's tab does (the redesign, 2026-10-02).
   if (f.mark) return <FaceMark face={{ machine: f.face }} mark={f.mark} size={seat} />;

@@ -185,6 +185,18 @@ export function FaceMark({
   const ink = "machine" in face ? (face.machine?.mark.ink ?? "blank") : "blank";
   /** A mark drawn as it came, or in the ink its seat gives it. */
   const inked = (cls: string) => (mark?.picture ? "" : cls);
+  // **A file's face is its kind, alone** (UX-45, the owner 2026-10-07:
+  // 「全都只有文件类型」): the icon the tree draws, in the face's box, no
+  // machine under it and no corner — every tab, pill and row that shows
+  // a file. The row's text names the machine. Directories and pages
+  // keep the assembly. ⚠️ 墓碑 (UX-32 for files): the kind as the mark
+  // on the machine's face.
+  if (mark?.key === "file")
+    return (
+      <span data-side-face data-file-face className={cn("relative grid flex-none place-items-center", s.face, className)}>
+        {mark.glyph(size === "tab" ? "size-full" : "size-[70%]")}
+      </span>
+    );
   return (
     // `flex`, not inline: an inline wrap grows the baseline's few
     // pixels under the face and the mark's corner offset bites into
