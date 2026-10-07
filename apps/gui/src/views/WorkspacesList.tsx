@@ -599,15 +599,19 @@ export function WorkspacesList({
       ),
       name: r.name,
       // **UX-48** (the owner 2026-10-07, every list): top-left the name
-      // alone; bottom-left HEAD's subject, or a plain folder's path;
-      // top-right the prompt's git segment (「main ⇡861 *1 !1 ?2」, the
-      // branch cut first on a narrow row, the counts whole); bottom-right
-      // how long that segment has held. A plain folder has no state.
-      // ⚠️ 墓碑 (UX-15): the machine and path as the name's aside,
-      // 「3 个改动」 under it, the branch alone on the right and the
-      // tree's last change under it.
+      // alone; bottom-left HEAD's subject; top-right the prompt's git
+      // segment ("main ⇡861 *1 !1 ?2", the branch cut first on a narrow
+      // row, the counts whole); bottom-right how long that segment has
+      // held. A plain folder has no state: bottom-left its most recently
+      // modified file (its name, the path under the folder when nested,
+      // `WorkspaceRow.newest`), bottom-right how long ago that file
+      // changed.
+      // Tombstone (UX-15): the machine and path as the name's aside, the
+      // change count under it, the branch alone on the right and the
+      // tree's last change under it. And (UX-48, the lead 2026-10-07) a
+      // plain folder's path as its second line.
       sub: !repo ? (
-        <PathCut data-ws-where text={r.path} />
+        r.newest ? <PathCut data-ws-newest text={r.newest.path} /> : undefined
       ) : seg?.subject ? (
         <span data-ws-subject className="block min-w-0 truncate">
           {seg.subject}
@@ -615,11 +619,18 @@ export function WorkspacesList({
       ) : undefined,
       corners: {
         top: repo && seg ? <GitSegmentWord seg={seg} /> : undefined,
-        bottom: repo && seg && seg.since_ms > 0 ? <span data-ws-held>{ago(seg.since_ms)}</span> : undefined,
+        bottom:
+          repo && seg && seg.since_ms > 0 ? (
+            <span data-ws-held>{ago(seg.since_ms)}</span>
+          ) : !repo && r.newest && r.newest.at_ms > 0 ? (
+            <span data-ws-held>{ago(r.newest.at_ms)}</span>
+          ) : undefined,
       },
       // **What the row says out loud**: its name, its line, its segment —
       // and its machine, which the face says (as the sessions' rows).
-      find: `${r.name} ${r.machine} ${repo ? (seg?.subject ?? "") : r.path} ${repo && seg ? segmentText(seg) : ""}`,
+      // A plain folder stays findable by its path, which it no longer
+      // draws, and by the file it names.
+      find: `${r.name} ${r.machine} ${repo ? (seg?.subject ?? "") : `${r.path} ${r.newest?.path ?? ""}`} ${repo && seg ? segmentText(seg) : ""}`,
       selected: isOpen,
       menu: actions(r),
       // **The row is the control, and pressing the open one folds its

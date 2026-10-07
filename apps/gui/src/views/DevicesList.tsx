@@ -273,32 +273,42 @@ export function DevicesList({
     // readings; top-right the state; bottom-right how long it has held. A
     // slot with nothing true to say is not drawn.
     //
-    // A machine's state is its connection: 直连 or 中继 for as long as the
-    // live wire has been on that road (`since_ms`), 本机 for this one, and
-    // with no live wire 离线 for as long as it has not been heard — its
-    // readings are then not drawn, an old number being no reading at all.
-    // Paused is the state that wins: this machine stopped talking to it.
-    // ⚠️ 墓碑 (UX-15 → UX-48): the model as the name's aside; the
+    // A machine's state is its connection: the road its live wire is on
+    // for as long as it has been on it (`since_ms`), the "here" word for
+    // this one. With no live wire it is offline only when unreachable
+    // (`down_ms`: an attempt failed and nothing was heard since), for as
+    // long as it has not been heard; idle — no live wire, nothing known
+    // wrong — says the road it last used (`last_hop`) over how long since
+    // that road settled, and nothing when it never connected. Without a
+    // live wire its readings are not drawn, an old number being no
+    // reading at all. Paused is the state that wins: this machine stopped
+    // talking to it.
+    // Tombstone (UX-15 → UX-48): the model as the name's aside; the
     // sessions running in the second line; the latency on the right with
-    // 无法获取 / 未连 and the last-heard time under it.
+    // the unreadable / not-connected words and the last-heard time under
+    // it. And (UX-48, the lead 2026-10-07) the offline word on every idle
+    // row: idle is not unreachable.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
     const down = !d.me && d.hop === "quiet" && isDown(d.down_ms);
     const live = d.me || d.hop === "direct" || d.hop === "relay";
-    const offline = !d.me && d.hop === "quiet";
+    const idle = !d.me && d.hop === "quiet" && !down;
+    const lastRoad = idle && (d.last_hop === "direct" || d.last_hop === "relay") ? d.last_hop : null;
     const state = d.paused
       ? gui.machine_paused
       : d.me
         ? gui.machine_here
         : live
           ? hopWord(d.hop ?? "")
-          : offline
+          : down
             ? gui.row_offline
-            : null;
+            : lastRoad
+              ? hopWord(lastRoad)
+              : null;
     const held = d.paused
       ? null
-      : live && typeof d.since_ms === "number"
+      : (live || lastRoad) && typeof d.since_ms === "number"
         ? lasted(d.since_ms)
-        : offline && typeof d.heard_ms === "number"
+        : down && typeof d.heard_ms === "number"
           ? lasted(d.heard_ms)
           : null;
     const v = live ? d.vitals?.vitals : undefined;
@@ -360,7 +370,11 @@ export function DevicesList({
         </span>
       ) : undefined,
       corners: {
-        top: state ? <span data-row-state={d.paused ? "paused" : d.me ? "here" : live ? d.hop : "offline"}>{state}</span> : undefined,
+        top: state ? (
+          <span data-row-state={d.paused ? "paused" : d.me ? "here" : live ? d.hop : down ? "offline" : "idle"} data-row-road={lastRoad ?? undefined}>
+            {state}
+          </span>
+        ) : undefined,
         bottom: held ? <span data-row-held>{held}</span> : undefined,
       },
       // **Both names are searchable**, and the id people paste: a renamed
