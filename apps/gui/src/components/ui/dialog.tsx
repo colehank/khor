@@ -38,8 +38,8 @@ function DialogOverlay({
       data-scrim
       // **One scrim** (UX-44 §2, the owner 2026-10-07: 「都用标签列表的深
       // 灰」): every sheet's and dialog's backdrop is `--sheet-scrim`, the
-      // 附栏's included. ⚠️ 墓碑: `bg-black/50` here, invisible on the dark
-      // theme's black ground, and the 附栏 alone on the token.
+      // 附栏's included; it darkens in both themes (UX-49 §1). ⚠️ 墓碑:
+      // `bg-black/50` here, and the 附栏 alone on the token.
       className={cn(
         "fixed inset-0 z-50 bg-(--sheet-scrim)",
         "duration-[var(--dur-180)] ease-[var(--ease-out)]",
