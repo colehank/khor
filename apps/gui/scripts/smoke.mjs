@@ -4371,8 +4371,11 @@ for line in sys.stdin:
   //     drew the line would satisfy the absent half on its own, so what
   //     is asserted is the agreement — a seat draws the line exactly
   //     when its count is above zero. Whether anything is waiting on
-  //     this particular run is the run's business; 26 below creates the
-  //     state on purpose and checks the drawn half there.
+  //     this particular run is the run's business. ⚠️ 墓碑: 25j made 待批
+  //     on purpose with a conversation file offer and read the drawn half
+  //     there; a conversation's file goes directly since STORE-BRIEF
+  //     phase 2 (2026-10-08), and nothing in this run makes 待批 on demand
+  //     until the broadcast session's offers (phase 3).
   const seatMarks = await page.locator("[data-mandala-map] [data-seat]").evaluateAll((els) =>
     els.map((e) => ({
       name: e.querySelector("[data-seat-name]")?.textContent.trim() ?? "",
@@ -4394,7 +4397,7 @@ for line in sys.stdin:
     }
   }
   if (seatMarks.every((m) => m.blocked === 0)) {
-    console.log("  note: nothing is waiting on this run — the drawn half of the seat's mark was not exercised here (26 does it)");
+    console.log("  note: nothing is waiting on this run — the drawn half of the seat's mark was not exercised");
   }
   await openLanding("devices");
 
@@ -6898,94 +6901,56 @@ for line in sys.stdin:
   //      the row the fact actually lives on now: beta's own window,
   //      chat/beta. What it proves is unchanged — the two admission
   //      rules, against something that really happened.
+  //
+  //      **The file goes directly** (STORE-BRIEF phase 2, 2026-10-08): no
+  //      accept, no 待批 — beta pulls it the moment it reads the message.
+  //      A small file over loopback crosses between two polls, so the
+  //      movement this section can hold still is a **break**: the send
+  //      names a directory on beta that is not there yet (`--into`), beta
+  //      says so on the message (中断, a PRESS word that stays), the
+  //      directory is made, and `khor retry` lands it there. ⚠️ 墓碑: the
+  //      offer pressing 待批 onto the row, the map's seat saying so at
+  //      rest, and `khor accept` moving it.
   await openLanding("sessions");
   if ((await page.locator("[data-statusbar]").count()) !== 0) {
     throw new Error("probe dead: the corner is already occupied before anything happened");
   }
   const sentFile = join(SCRATCH, "corner-note.txt");
   writeFileSync(sentFile, "a file worth a line in the corner\n");
-  //      **The accept handle comes from the verb that made it.** Rows
+  const cornerInto = join(SCRATCH, "corner-into");
+  //      **The retry handle comes from the verb that made it.** Rows
   //      retired; the address scheme did not (`TransferKind::session_id`
-  //      still mints transfer/<msg>, and `khor accept` still takes it).
+  //      still mints transfer/<msg>, and `khor retry` takes it).
   //      `\S+` and not a hex pattern: a character class that stopped at
   //      the first dash once produced a real-looking id for a transfer
   //      that does not exist, which timed out reading exactly like the
   //      sync being slow.
-  const transferRow = cli(envA, "send", "beta", sentFile).match(/transfer\/\S+/)?.[0];
+  const transferRow = cli(envA, "send", "beta", sentFile, "--into", cornerInto).match(/transfer\/\S+/)?.[0];
   if (!transferRow) throw new Error("khor send did not name the transfer it made");
-  //      The offer arriving presses 待批 onto beta's own window row —
-  //      the merged shape's way of saying "the summary reached beta".
-  await until("the offer pressing 待批 onto beta's window row", 30_000, async () =>
-    (await page.locator('[data-row="chat/beta"][data-word="blocked"]').count()) === 1,
+  //      Nobody accepts: beta starts the pull by itself, finds no such
+  //      directory, and writes the failure on the message — 中断 on its
+  //      own window row.
+  await until("beta's own pull breaking on a directory that is not there (中断 on chat/beta)", 30_000, async () =>
+    (await page.locator('[data-row="chat/beta"][data-word="errored"]').count()) === 1,
   );
-  //      **And with something provably waiting, the mark's place has to
-  //      say so without being pressed.** This is the half 29 above
-  //      cannot guarantee — whether anything is waiting when that item
-  //      runs is the run's business, and a gate whose positive case
-  //      depends on the weather is a gate that reports "both directions
-  //      asserted" having exercised one. Here the state was just
-  //      created, so the assertion holds every time.
-  //
-  //      **And it has to say so on the right machine.** The mark moved
-  //      from one node standing for the whole mesh onto the seat of the
-  //      machine that owns the row, so "somebody is waiting" and "this
-  //      one is" stopped being the same claim — a mark on the wrong
-  //      seat sends a person to the wrong card and would still pass
-  //      "something says so". Which machine that is, is not written
-  //      here: it is read off the row itself (`SessionRow::home`, the
-  //      node's own join), and the map has to agree with it.
-  const waitingHome = await page.locator('[data-row="chat/beta"]').getAttribute("data-home");
-  if (!waitingHome) {
-    throw new Error("probe dead: the waiting row does not say which machine it is on");
-  }
-  //      The map is the machines overview's since 2026-09-28 — nothing
-  //      picked, so a fresh page.
-  await page.reload();
-  await openLanding("devices");
-  await until("the map", 15_000, async () =>
-    (await page.locator("[data-mandala-map] [data-seat]").count()) > 1,
-  );
-  //      A poll apart: the list saw 待批 first, and the map is fed by
-  //      the same table one round later.
-  await until(`${waitingHome}'s seat to say something is waiting`, 30_000, async () => {
-    const seat = await page.locator("[data-mandala-map] [data-seat]").evaluateAll(
-      (els, name) =>
-        els
-          .filter((e) => e.querySelector("[data-seat-name]")?.textContent.trim() === name)
-          .map((e) => ({
-            blocked: Number(e.getAttribute("data-blocked") ?? "0"),
-            drawn: e.querySelector("[data-seat-blocked]") !== null,
-          }))[0] ?? null,
-      waitingHome,
-    );
-    return seat !== null && seat.blocked >= 1 && seat.drawn;
-  });
-  //      …read at rest: nothing here was pressed open, which is the
-  //      whole point — the count has to be legible before anyone asks.
-  if ((await page.locator("[data-machine-card]").count()) !== 0) {
-    throw new Error("probe void: a machine is open, so this was not read at rest");
-  }
-  await openLanding("sessions");
-  await until("the list back", 15_000, async () => (await page.locator("[data-row]").count()) > 0);
-
-  //      **待批 does not announce itself.** The strip has watched the
-  //      row arrive at 待批 and stayed empty: an offer waiting on THIS
-  //      machine already has the badge and the top of the list, and the
-  //      corner carries only what is happening — the same half that
-  //      used to keep a first-seen 待批 transfer row out of it, worn by
-  //      the new carrier.
-  await settle();
-  if ((await page.locator("[data-statusbar]").count()) !== 0) {
-    throw new Error("an offer nobody touched put itself in the corner");
-  }
-  //      Now it moves — the accept pulls the bytes, the row leaves 待批
-  //      (through 忙碌 to 完成, and a small file may cross both between
-  //      two polls; leaving 待批 is itself an admission, so the strip
-  //      catches it either way) — and the corner says so, keyed by the
-  //      row the fact lives on.
-  cli(envB, "accept", transferRow);
-  await until("the corner reporting the movement", 30_000, async () =>
+  //      …and the corner carries it, keyed by the row the fact lives on:
+  //      a break is something happening, and it stays until it is
+  //      answered (a failure that vanished on its own was not reported).
+  await until("the corner reporting the break", 30_000, async () =>
     (await page.locator('[data-status-item="chat/beta"]').count()) === 1,
+  );
+  await settle();
+  if ((await page.locator('[data-status-item="chat/beta"]').count()) !== 1) {
+    throw new Error("a break left the corner on its own — 中断 stays until it is answered");
+  }
+  //      Now it moves — the directory is there, the retry pulls the
+  //      bytes into it, the row leaves 中断 (through 忙碌 to 完成, and a
+  //      small file may cross both between two polls; leaving a PRESS
+  //      word is itself an admission, so the strip catches it either way).
+  mkdirSync(cornerInto, { recursive: true });
+  cli(envB, "retry", transferRow);
+  await until("the retried file landing in the directory the sender named", 30_000, async () =>
+    existsSync(join(cornerInto, "corner-note.txt")),
   );
   //      Every line in there is a process-class fact with a row behind
   //      it — never a click's outcome, never mere chatter (a message
@@ -6999,9 +6964,9 @@ for line in sys.stdin:
   if (inCorner.some((k) => k !== "chat/beta")) {
     throw new Error(`the corner took something beyond the pressed row: ${JSON.stringify(inCorner)}`);
   }
-  //      …and it goes to zero on its own. **Absent, not empty**: the
-  //      whole strip stops rendering, so there is no box left saying
-  //      nothing.
+  //      …and it goes to zero on its own once the break is answered.
+  //      **Absent, not empty**: the whole strip stops rendering, so there
+  //      is no box left saying nothing.
   await until("the corner emptying itself", 20_000, async () =>
     (await page.locator("[data-statusbar]").count()) === 0,
   );
