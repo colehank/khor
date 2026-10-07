@@ -664,7 +664,9 @@ export function TabStrip({
         data-tab-strip
         // `items-center`: 「+」 on the row's centreline with the tabs'
         // labels; the tabs themselves stretch to the floor (their foot).
-        className={cn("flex min-w-0 items-center overflow-x-auto", glass ? "flex-1 gap-0.5 self-stretch" : "flex-1 gap-1")}
+        // On the wide glass strip the row is as long as its tabs (they
+        // stop at `--tab-w-even`), so ＋ follows the last one (UX-45).
+        className={cn("flex min-w-0 items-center overflow-x-auto", glass ? cn("gap-0.5 self-stretch", below ? "flex-1" : "flex-initial") : "flex-1 gap-1")}
         // **In the glass capsule a scrolled edge fades** (the audit fix plan
         // F3.3; W09, N19): a mask over the 12 at each end that has a tab
         // cut off behind it, instead of a glyph cut in half.
@@ -679,11 +681,12 @@ export function TabStrip({
         {faces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
-          /** **A wide pill that is not in front sheds as it shrinks**
-              (UX-45, Chrome's strip): its own width decides
-              (`@container/tab`, tokens.css `--container-tab-*`) — the
-              ×, then the name, down to the face alone. */
-          const shed = glass && !below && !on;
+          /** **Every wide pill sheds as it shrinks, the front one too**
+              (UX-45, Chrome's strip; the owner 「等宽先看看」): its own
+              width decides (`@container/tab`, tokens.css
+              `--container-tab-*`) — the ×, then the name, down to the
+              face alone. */
+          const shed = glass && !below;
           return (
             <div
               key={f.id}
@@ -705,7 +708,9 @@ export function TabStrip({
               title={
                 again
                   ? undefined
-                  : [f.title, [f.machine, f.path].filter(Boolean).join(": "), f.note]
+                  : // The whole name first (UX-45): a pill that sheds its
+                    // name keeps it here.
+                    [f.title ?? f.label, [f.machine, f.path].filter(Boolean).join(": "), f.note]
                       .filter(Boolean)
                       .join(" · ") || undefined
               }
@@ -756,18 +761,23 @@ export function TabStrip({
                 // re-balances on each choice over the chosen piece's trip
                 // (`useRebalance`). ⚠️ 墓碑 (V07): one ceiling for every
                 // tab, the front one too, so a choice moved no width.
-                glass
+                glass && !below
+                  ? // **One width, front or not** (UX-45, the owner
+                    // 2026-10-07 「等宽先看看」, Chrome's): every pill is
+                    // `--tab-w-even` and they shrink together, down to a
+                    // `--glass-tab` circle (the face alone), before the
+                    // strip scrolls; the front one is told by its lit glass
+                    // only. ⚠️ 墓碑 (UX-39 §7, suspended for this look): the
+                    // front pill grown to its whole name, up to half the
+                    // capsule, the rest an equal share. ⚠️ 墓碑 (UX-25):
+                    // `--tab-w-min` as the floor and the count after it.
+                    // A width, not a basis: the pill is a size container, so
+                    // only a stated width gives the row its length.
+                    cn("w-tab-even min-w-glass-tab shrink grow-0", on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill")
+                  : glass
                   ? on
-                    ? // The front pill starts from its whole name and grows
-                      // with the rest, so it is never the narrowest and a
-                      // long name is read whole (up to half the capsule
-                      // when it has neighbours).
-                      cn("min-w-tab-min shrink-0 grow basis-auto glass-sel text-foreground", faces.length > 1 && "max-w-[50%]")
-                    : // **Down to the face alone** (UX-45): a pill gives
-                      // way to a `--glass-tab` circle before the strip
-                      // scrolls; ⚠️ 墓碑 (UX-25): `--tab-w-min` as the floor
-                      // and the count after it.
-                      "min-w-glass-tab shrink grow basis-0 text-muted-foreground hover:bg-fill"
+                    ? cn("min-w-tab-min shrink-0 grow basis-auto glass-sel text-foreground", faces.length > 1 && "max-w-[50%]")
+                    : "min-w-glass-tab shrink grow basis-0 text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
                     : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
@@ -916,7 +926,18 @@ export function TabStrip({
                       已完成）」, the owner 2026-10-07 13:15) is what the
                       front tab's float says: the drop is on the tab in
                       front, and its hint is back once they are in. */}
-                  {f.drop && f.title ? f.title : again.hint}
+                  {f.drop && f.title ? (
+                    f.title
+                  ) : glass && !below ? (
+                    // The name first (UX-45): the front pill may be the
+                    // face alone, and this float is its hover.
+                    <>
+                      <span className="block">{f.title ?? f.label}</span>
+                      <span className="block text-muted-foreground">{again.hint}</span>
+                    </>
+                  ) : (
+                    again.hint
+                  )}
                 </TooltipContent>
               )}
               </Tooltip>
@@ -941,7 +962,10 @@ export function TabStrip({
                     "flex h-full w-tab-close flex-none items-center justify-center hover:bg-muted hover:text-foreground",
                     on ? "text-muted-foreground" : "text-tertiary",
                     glass ? "rounded-full" : "rounded-sm",
-                    shed && "me-0.5 @max-tab-x/tab:hidden",
+                    // Too narrow for it, × shows under the pointer (UX-45);
+                    // never on the face alone, where a press must bring
+                    // the tab forward.
+                    shed && "me-0.5 @max-tab-x/tab:hidden @max-tab-x/tab:group-hover:flex @max-tab-face/tab:group-hover:hidden",
                   )}
                   onClick={(e) => {
                     e.stopPropagation();

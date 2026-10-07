@@ -1314,6 +1314,10 @@
    * 长度」 is about stubs not following their names, and they still do
    * not. */
   --tab-w-min: 104px;
+  /* **Every wide glass tab, front or not** (UX-45, the owner 「等宽先看
+   * 看」): Chrome's look, all one width, shrinking together. 200 holds a
+   * face, a gap, about fourteen characters and the ×. */
+  --tab-w-even: 200px;
   /* A kind's tile on a new tab's page (UX-45): the dial's 40 face and a
    * name of about eight characters under it. */
   --new-tile: 76px;
@@ -2257,6 +2261,7 @@
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);
   --spacing-tab-min: var(--tab-w-min);
+  --spacing-tab-even: var(--tab-w-even);
   --spacing-new-tile: var(--new-tile);
   --spacing-chat-box: var(--chat-box);
   --spacing-top-h: var(--top-h);
