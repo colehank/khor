@@ -3776,7 +3776,6 @@ export default function App() {
                 {sessions && openTabs.length > 0 ? (
                   <VerbSeat.Provider value={verbSeat}>
                   <Tabs
-                    glass
                     faces={tabFaces}
                     active={selected ?? ""}
                     onFocus={(id) => {

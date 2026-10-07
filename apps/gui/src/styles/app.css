@@ -2501,6 +2501,15 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   position: relative;
   bottom: var(--fold-lift, 0);
 }
+/* **…and the way-back float rises with it** (ux-q, the owner's
+   pair-19.png: lifted, the capsule stood 3.5–6.5 under 「回到底部」, which
+   had 11 above it). The float stands at the terminal box's foot over the
+   capsule; it rises by what the capsule rose (`--fold-lift` on the
+   content, set by `lib/fold-seat` while folded), so the gap between the
+   two is what it was before the lift. */
+[data-session-content] [data-term-bottom] {
+  bottom: calc(var(--spacing) * 2 + var(--fold-lift, 0rem));
+}
 
 /* ── 我的 khor 的表盘 (UX-26, the owner 2026-10-06; the spec is
    audit/my-khor-dial.html) ──────────────────────────────────────

@@ -23667,7 +23667,9 @@ try {
     //   (a) every selectable setting on More is one of the four row kinds,
     //       and a popup row opens the system's menu (a native select);
     //   (b) the brand-strong push button is a dialog's, at most one each,
-    //       and never on a page;
+    //       and never on a page — **but one**: the new tab's 创建, the page
+    //       that replaced the new-session dialog (the owner 2026-10-07),
+    //       which is the brand and the only brand button on that page;
     //   (c) no board holds a row of buttons: two or more buttons side by
     //       side as direct children of one box inside [data-board];
     //   (d) a create form is a centred dialog over a scrim — ⚠️ 墓碑
@@ -23738,6 +23740,8 @@ try {
         ["workspaces", async () => open("workspaces")],
         ["browser", async () => open("browser")],
         ["more", () => openMore("appearance")],
+        // Last, as it leaves a new tab open (取消 after the loop).
+        ["the new tab", async () => (await open("sessions")) && (await pressNew("new")) && until(3_000, async () => (await page.locator("[data-new-session-page]").count()) === 1)],
       ];
       for (const [where, go] of reads) {
         if (!(await go())) {
@@ -23756,10 +23760,14 @@ try {
           document.body.appendChild(probe);
           const brand = getComputedStyle(probe).backgroundColor;
           probe.remove();
-          const primaries = [...document.querySelectorAll("button")].filter(
+          const painted = [...document.querySelectorAll("button")].filter(
             (b) => shown(b) && !b.closest('[role="dialog"], [role="switch"]') && b.getAttribute("role") !== "switch" &&
               getComputedStyle(b).backgroundColor === brand && !b.closest("[data-more-list], [data-side-row], [data-list], [data-rail]"),
           );
+          // The one exception, and nothing wider: the new tab's 创建.
+          const isCreate = (b) => b.matches("[data-new-session-page] [data-new-session-create]");
+          const primaries = painted.filter((b) => !isCreate(b));
+          const create = painted.filter(isCreate).length;
           const board = document.querySelector("[data-main] [data-board]");
           const rows = [];
           if (board) {
@@ -23774,22 +23782,29 @@ try {
               }
             }
           }
-          return { primaries: primaries.map((b) => b.outerHTML.slice(0, 80)), rows };
+          return { primaries: primaries.map((b) => b.outerHTML.slice(0, 80)), create, rows };
         });
-        console.log(`round 17 (b/c) · ${where}: primary ${r.primaries.length}, button rows ${JSON.stringify(r.rows)}`);
+        console.log(`round 17 (b/c) · ${where}: primary ${r.primaries.length}, 创建 ${r.create}, button rows ${JSON.stringify(r.rows)}`);
+        if (where === "the new tab" && r.create !== 1) {
+          fail(`round 17 (b): the new tab's 创建 is not the brand (${r.create}) — the page that replaced the dialog keeps its primary (the owner 2026-10-07)`);
+        }
         if (r.primaries.length) {
           fail(
             `round 17 (b): ${where} paints ${r.primaries.length} brand-strong button(s) outside a dialog — ` +
               `the primary is a dialog's one act, a page's buttons are fill-strong (${JSON.stringify(r.primaries)})`,
           );
         }
-        if (r.rows.length) {
+        // (c) is not asked of the new tab: its foot is the dialog's foot
+        // it was (取消 · 创建), read here for (b) only; its rows are logged.
+        if (r.rows.length && where !== "the new tab") {
           fail(
             `round 17 (c): ${where} has a row of buttons in the board at ${JSON.stringify([...new Set(r.rows)])} — ` +
               "page buttons live at R0's right end, row acts in the context menu (D9)",
           );
         }
       }
+      // The new tab the last read opened goes again.
+      await press("[data-new-session-page] [data-new-tab-cancel]");
 
       // (b) inside a dialog: at most one primary.
       // (d) the create forms are centred dialogs over a scrim.
@@ -31039,7 +31054,10 @@ try {
     //       the screen's edge), within 1 px, at two terminal font sizes
     //       (the grid refitted while folded), and a press there is the
     //       capsule's. ⚠️ 墓碑 (item 62): the box ended at the capsule's
-    //       top and the capsule stood inside the band. ──
+    //       top and the capsule stood inside the band. **「回到底部」 rises
+    //       with the capsule** (ux-q): at both sizes its gap over the
+    //       capsule is the one it had before the lift (its inset off the
+    //       box's foot plus the unlifted capsule's), within 1 px. ──
     for (const [w, h, band] of [[390, 844, 34], [375, 667, 0]]) {
       await fresh(w, h);
       await page.evaluate((b) => document.documentElement.style.setProperty("--safe-bottom", `${b}px`), band);
@@ -31060,7 +31078,21 @@ try {
           const bar = document.querySelector("[data-session-bar]")?.getBoundingClientRect();
           const r = (n) => (n === undefined ? null : +n.toFixed(1));
           const hit = cap ? document.elementFromPoint(cap.left + cap.width / 2, (cap.top + cap.bottom) / 2) : null;
+          // 「回到底部」 over the capsule (ux-q): where it stands, and where it
+          // stood before the lift — its own inset off the box's foot, with
+          // the capsule as low as an unlifted one.
+          const float = box?.querySelector("[data-term-bottom]");
+          const fb = float?.getBoundingClientRect();
+          const room = document.querySelector("[data-session-bar] [data-deck-fold]");
+          const lift = room ? parseFloat(getComputedStyle(room).getPropertyValue("--fold-lift")) || 0 : 0;
+          const probe = document.createElement("div");
+          probe.style.cssText = "position:absolute;visibility:hidden;height:calc(var(--spacing) * 2)";
+          document.body.append(probe);
+          const inset = probe.getBoundingClientRect().height;
+          probe.remove();
+          const under = float?.offsetParent?.getBoundingClientRect().bottom;
           return {
+            float: fb && cap && fb.height > 0 ? { gap: r(cap.top - fb.bottom), was: r(cap.top + lift - (under - inset)), lift: r(lift) } : null,
             rows: box?.__xterm?.rows,
             grid: r(screen && screen.bottom - shift),
             shift: r(shift),
@@ -31105,6 +31137,11 @@ try {
           fail(`bar x · ${w}×${h}, folded, term ${size}: the capsule's centre is ${centre}, the midpoint of the last row's bottom ${g.grid} and the viewport's ${g.vh} is ${mid} — centred between them within 1 px (item 72)`);
         }
         if (!g.pressed) fail(`bar x · ${w}×${h}, folded, term ${size}: a press at the capsule's centre lands on ${g.hit} — the capsule's (item 72)`);
+        // 「回到底部」 keeps the gap it had over the unlifted capsule (ux-q).
+        if (!g.float) fail(`probe dead: bar x · ${w}×${h}, folded, term ${size}: no 「回到底部」 while the terminal is read back`);
+        else if (Math.abs(g.float.gap - g.float.was) > 1) {
+          fail(`bar x · ${w}×${h}, folded, term ${size}: 「回到底部」 stands ${g.float.gap} over the capsule (lifted ${g.float.lift}) — ${g.float.was} as before the lift, within 1 px (ux-q)`);
+        }
       };
       seated(f, 14);
       if (Math.abs(f.bar - room) > 0.5) fail(`bar x · ${w}×${h}, folded: the bar is ${f.bar} tall — the room is ${room} (--deck-fold; item 62)`);
@@ -33490,10 +33527,14 @@ try {
   //      pill and outside the scroller; the front pill's × shown at every
   //      width; another pill's × shown at rest exactly when the pill is
   //      at least `--container-tab-x` wide, and under the pointer at the
-  //      floor; no name under `--container-tab-face`;
+  //      floor; no name under `--container-tab-face`; at 9 tabs (between
+  //      the two thresholds) and 10 (the face alone) a pill not in front
+  //      keeps its face where it was when the pointer comes (ux-q; red on
+  //      the old code: 871.7 → 841 at 10);
   //   b. ＋ makes a tab labelled 「新标签页」 (`new-tab:`), last and in
   //      front, its page `[data-new-session-page]` — from the strip and
-  //      from the list's ＋ → 新会话…;
+  //      from the list's ＋ → 新会话…; 创建 is the brand's primary and
+  //      the page's only brand button (the owner 2026-10-07);
   //   c. 取消 goes back to where it was asked: a terminal in front (the
   //      strip's ＋), a machine page (its 开会话, the machine prefilled),
   //      and on the phone the list (＋ → 新会话…) and a terminal (the
@@ -33507,7 +33548,10 @@ try {
   //   e. hold on close: a × pressed with the pointer keeps every pill's
   //      width and the next × under the pointer; the pointer leaving the
   //      capsule lets go; a keyboard press on × and ⌘W never hold; a
-  //      strip scrolled to 300 keeps its scroll through three closes;
+  //      strip scrolled to 300 keeps its scroll through three closes,
+  //      and so does one scrolled to its right end, the next tab's × under
+  //      the pointer each time (ux-q; red on the old code: the scroll
+  //      clamped 1046 → 980 → 914 → 848 and the row slid right);
   //   f. a file's face is its kind alone: the workspace strip's file tab
   //      and the phone's file page pill wear `[data-file-face]` with no
   //      machine face inside, a session tab keeps its machine face and
@@ -33664,6 +33708,39 @@ try {
       }
     }
 
+    // a. hover moves no face: a pill not in front between
+    //    `--container-tab-face` and `--container-tab-x` (9 tabs), and one
+    //    under `--container-tab-face` (10), pointed at — its face stands
+    //    where it stood at rest, within 1 px (ux-q, the 96–120 jump)
+    for (const n of [9, 10]) {
+      await withTabs(ids.slice(0, n));
+      const faceAt = (id) =>
+        page.evaluate((id) => {
+          const p = document.querySelector(`[data-session-tabs] [data-tab="${CSS.escape(id)}"]`);
+          const f = p?.querySelector("[data-tab-open] > :first-child")?.getBoundingClientRect();
+          const x = p?.querySelector("[data-tab-close]");
+          const name = p?.querySelector("[data-tab-label], [data-tab-name]");
+          const shows = (el) => !!el && getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" && el.getBoundingClientRect().width > 0;
+          return f ? { w: +p.getBoundingClientRect().width.toFixed(1), x: +f.left.toFixed(1), close: shows(x), name: shows(name) } : null;
+        }, id);
+      const id = ids[Math.floor(n / 2)];
+      const rest = await faceAt(id);
+      const b = await page.locator(`[data-session-tabs] [data-tab="${id}"]`).boundingBox();
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+      await wait(300);
+      const hover = await faceAt(id);
+      await page.mouse.move(700, 600);
+      console.log(`tabs a · hover at ${n} tabs: rest ${JSON.stringify(rest)}, under the pointer ${JSON.stringify(hover)} (face ${TAB_FACE}, × ${TAB_X})`);
+      if (!rest || !hover) {
+        fail(`probe dead: tabs a · no face on ${id} at ${n} tabs`);
+        continue;
+      }
+      const band = n === 9 ? rest.w >= TAB_FACE && rest.w < TAB_X : rest.w < TAB_FACE;
+      if (!band) fail(`probe dead: tabs a · at ${n} tabs the pills are ${rest.w} wide — not the band this stop is for`);
+      if (!hover.close) fail(`tabs a · at ${n} tabs a pill ${rest.w} wide shows no × under the pointer (UX-45)`);
+      if (Math.abs(hover.x - rest.x) > 1) fail(`tabs a · at ${n} tabs a pill ${rest.w} wide moves its face ${rest.x} → ${hover.x} under the pointer — hover only shows the ×, the face stays (ux-q)`);
+    }
+
     // g. MidName, at widths that cut and widths that do not: the
     //    workspace's file strip, where the owner saw 「frontier_diagno…
     //    cs.py」 (a session's name is its own `EditableName`)
@@ -33726,6 +33803,20 @@ try {
         fail(`tabs b · ＋ (${how}) left ${JSON.stringify({ ids: t.after.ids.length, last: made, front: t.after.front, page: t.page })} — a new tab, last and in front, its page the choices (UX-45)`);
       }
       if (t.after.label !== "新标签页") fail(`tabs b · the new tab is labelled ${JSON.stringify(t.after.label)} — 「新标签页」`);
+      // 创建 is the brand's primary, and the only brand button on the page
+      // (the owner 2026-10-07: the one exception to 「一个品牌电压」).
+      const brand = await page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(--brand-strong)";
+        document.body.appendChild(probe);
+        const fill = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return [...document.querySelectorAll("[data-new-session-page] button")]
+          .filter((b) => b.getBoundingClientRect().width > 0 && getComputedStyle(b).backgroundColor === fill)
+          .map((b) => (b.hasAttribute("data-new-session-create") ? "create" : b.outerHTML.slice(0, 60)));
+      });
+      console.log(`tabs b · the page's brand buttons (${how}): ${JSON.stringify(brand)}`);
+      if (JSON.stringify(brand) !== '["create"]') fail(`tabs b · the new tab's brand buttons are ${JSON.stringify(brand)} — 创建 alone wears the primary (README 「一个品牌电压」, the one exception)`);
       // c. (wide, a terminal) 取消: the terminal that was in front is back.
       await press("[data-new-session-page] [data-new-tab-cancel]");
       await wait(500);
@@ -33933,6 +34024,60 @@ try {
         console.log(`tabs e · scrolled to ${s0.scroll.left}, three closes: ${JSON.stringify(lefts)}`);
         if (lefts.map((l) => l[0]).join(" ") !== "29 28 27") fail(`probe dead: tabs e · three presses in the scrolled strip left ${JSON.stringify(lefts)}`);
         if (lefts.some((l) => Math.abs(l[1] - s0.scroll.left) > 1)) fail(`tabs e · a held strip scrolled ${JSON.stringify(lefts)} from ${s0.scroll.left} — it keeps its scroll, so the next × stays under the pointer (UX-45)`);
+      }
+    }
+    // …and at the far end (ux-q): a strip scrolled all the way right keeps
+    // its scroll through three closes, and each time the next tab's × is
+    // the one under the pointer — the room the closed tabs leave does not
+    // pull the row right under it.
+    {
+      await withTabs(ids.slice(0, 30));
+      await page.evaluate(() => {
+        const s = document.querySelector("[data-session-tabs] [data-tab-strip]");
+        s.scrollLeft = s.scrollWidth;
+      });
+      await wait(400);
+      const s0 = await strip();
+      const pick = await page.evaluate(() => {
+        const s = document.querySelector("[data-session-tabs] [data-tab-strip]").getBoundingClientRect();
+        const pills = [...document.querySelectorAll("[data-session-tabs] [data-tab]")];
+        const shown = pills.filter((e) => {
+          const b = e.getBoundingClientRect();
+          return b.left > s.left + 4 && b.right < s.right - 4 && e.getAttribute("data-on") !== "true";
+        });
+        const p = shown[shown.length - 5];
+        const b = p?.getBoundingClientRect();
+        return b ? { id: p.getAttribute("data-tab"), x: b.right - 14, y: b.top + b.height / 2 } : null;
+      });
+      const under = (x, y) =>
+        page.evaluate(([x, y]) => {
+          const p = document.elementFromPoint(x, y)?.closest("[data-tab]");
+          const c = p?.querySelector("[data-tab-close]")?.getBoundingClientRect();
+          return { id: p?.getAttribute("data-tab") ?? null, close: c && c.width > 0 ? +(c.left + c.width / 2).toFixed(1) : null };
+        }, [x, y]);
+      const steps = [];
+      if (s0.scroll.over <= 1 || Math.abs(s0.scroll.left - s0.scroll.over) > 1) fail(`probe dead: tabs e · the strip did not scroll to its end (${JSON.stringify(s0.scroll)})`);
+      if (!pick) fail("probe dead: tabs e · no pill to close at the scrolled end");
+      else {
+        await page.mouse.move(pick.x, pick.y);
+        await wait(250);
+        const first = await under(pick.x, pick.y);
+        const at = ids.indexOf(pick.id);
+        for (let i = 1; i <= 3; i++) {
+          await page.mouse.click(first.close ?? pick.x, pick.y);
+          await wait(400);
+          const s = await strip();
+          steps.push({ n: s.ids.length, left: s.scroll.left, ...(await under(first.close ?? pick.x, pick.y)), want: ids[at + i] });
+        }
+        await page.mouse.move(700, 600);
+        console.log(`tabs e · at the end (${JSON.stringify(s0.scroll)}), × of ${pick.id} at ${first.close}: ${JSON.stringify(steps)}`);
+        if (steps.map((t) => t.n).join(" ") !== "29 28 27") fail(`probe dead: tabs e · three presses at the scrolled end left ${JSON.stringify(steps.map((t) => t.n))}`);
+        for (const t of steps) {
+          if (Math.abs(t.left - s0.scroll.left) > 1) fail(`tabs e · at the scrolled end a close moved the scroll ${s0.scroll.left} → ${t.left} — a held strip keeps its scroll (ux-q)`);
+          if (t.id !== t.want || t.close === null || Math.abs(t.close - first.close) > 1) {
+            fail(`tabs e · at the scrolled end the pointer is over ${t.id} (× at ${t.close}) after a close — ${t.want}, its × at ${first.close} (ux-q)`);
+          }
+        }
       }
     }
 

@@ -47,7 +47,9 @@ const buttonVariants = cva(
         // one per dialog, never two in a row. `check-face` (第十七轮)
         // goes red on a primary outside `[role=dialog]`, and on two in
         // one. (A form is a dialog too since the R0 sheet was retired,
-        // 2026-09-30.)
+        // 2026-09-30.) **One exception**: the new-tab page's 创建, the
+        // page that replaced the new-session dialog (the owner
+        // 2026-10-07) — round 17 (b) allows exactly that button.
         primary: "bg-primary text-primary-foreground hover:bg-primary/90",
         secondary: "bg-secondary text-secondary-foreground hover:bg-fill-strong",
         // `plain`: no ground, `secondary` ink, `fill` under the pointer.

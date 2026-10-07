@@ -20,11 +20,11 @@
 //            is not read here at all.
 //
 // So this is **not a second session page**. It is the same `DetailPane`,
-// the same `TabStrip`, the same `SessionFace` on every tab, laid out in a
-// different order: the strip leaves the top of the board for the foot of
-// the screen, and it hangs from the content instead of standing under it
-// (`TabStrip` `at="bottom"`: the open tab is the paper joined to the
-// session above it).
+// the same tab faces (`TabAvatar`, `MidName`), the same `SessionFace` on
+// every tab, laid out in a different order: the tabs leave the top of the
+// board for the foot of the screen. ⚠️ 墓碑 (ux-q): `TabStrip`
+// `at="bottom"`, the wide strip hung from the content — this bar draws
+// its own band.
 //
 // # The bar
 //
