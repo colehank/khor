@@ -442,6 +442,8 @@ export function BrowseLanding({
       at={tabs.current.path}
       onGo={(place) => machine && tabs.goTo(machine.id, place)}
       onMachine={(d) => tabs.goTo(d.id, tabs.current.path, tabs.current.title)}
+      // A blank tab is somewhere to type an address (UX-45 §2).
+      autoFocus={!tabs.current.path}
     />
   );
 
@@ -1006,6 +1008,9 @@ export function BrowseLanding({
           active={tabs.current.id}
           onFocus={(id) => tabs.focus(id)}
           onClose={(id) => void tabs.close(id).catch(() => {})}
+          // ＋ after the last tab: a blank tab, its address field taking
+          // the caret at once (UX-45 §2).
+          onNew={newHere}
           stripData={{ "data-page-tabs": "" }}
           caption={failedWord || saidWord || caption}
           bodyClass="flex flex-col"

@@ -5,7 +5,7 @@ import type { SystemKind } from "@/gen/bindings/SystemKind";
 import { machineMark, sessionMark } from "@/components/BrandIcons";
 import { FaceMark, SIZES, type KindMark } from "@/components/FaceMark";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBranch, IconBrowser, IconFiles } from "@/components/icons";
+import { IconBranch, IconBrowser, IconFiles, IconPlus } from "@/components/icons";
 
 /** A glyph component as a `KindMark`'s drawing, at whatever size the
     assembly asks for. */
@@ -19,6 +19,11 @@ const drawn =
 export function sessionKind(kind: string, category: string | null): KindMark {
   const key = category ?? kind;
   return { key, glyph: drawn(sessionMark(kind, category)), data: { "data-kind-mark": key } };
+}
+
+/** A new tab's (UX-45): ＋ on the blank face, until a kind is chosen. */
+export function newTabKind(): KindMark {
+  return { key: "new-tab", glyph: drawn(IconPlus) };
 }
 
 /** A machine's kind mark: the system family the node reported, or the

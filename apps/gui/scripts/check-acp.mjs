@@ -904,8 +904,8 @@ try {
     await wait(700);
     // The door is the sessions landing's ＋ menu item of that name — its
     // one home since 2026-09-30 (「一个动作只有一个家」): ＋ holds 新会话…
-    // and 导入…, R0 holds neither, and the new-session dialog no longer
-    // carries an 导入 of its own.
+    // and 导入…, R0 holds neither, and 新会话 no longer carries an 导入 of
+    // its own. 新会话… makes a new tab whose page is the wizard (UX-45).
     await page.locator("[data-side-head] [data-pane-new]").click();
     await wait(300);
     await page.locator(`[role="menu"] [data-new-item="${door}"]`).click();
@@ -933,7 +933,8 @@ try {
       await wait(600);
     }
     if (pick && door === "new") {
-      await page.locator(`[data-new-session-agent="${pick}"]`).click();
+      // An agent is a tile among the kinds on the new tab's page (UX-45).
+      await page.locator(`[data-new-session-tile="agent:${pick}"]`).click();
       await wait(400);
     }
     // **Two poll ticks (POLL_MS is 2000).** The claim is that nothing
@@ -967,16 +968,17 @@ try {
         // The positive control for every negative claim below: the
         // dialog is open and painting agents at all.
         buttons: door === "new"
-          ? document.querySelectorAll("[data-new-session-agent]").length
+          ? document.querySelectorAll('[data-new-session-tile^="agent:"]').length
           : document.querySelectorAll("[data-agent-seen]").length,
         askButton: !!document.querySelector("[data-agent-ask]"),
         // **Where things actually landed**, asked of the engine. `box`
-        // is the dialog; `worst` is how far past its right edge any
-        // descendant reaches. Measured against the painted box rather
-        // than against `scrollWidth`, because a child positioned
-        // outside an `overflow:visible` parent does not grow it.
+        // is the dialog (the new tab's page for `new`, UX-45); `worst` is
+        // how far past its right edge any descendant reaches. Measured
+        // against the painted box rather than against `scrollWidth`,
+        // because a child positioned outside an `overflow:visible` parent
+        // does not grow it.
         geom: (() => {
-          const box = document.querySelector(door === "new" ? "[data-new-session-dialog]" : "[data-import-dialog]");
+          const box = document.querySelector(door === "new" ? "[data-new-session-page]" : "[data-import-dialog]");
           if (!box) return null;
           const r = box.getBoundingClientRect();
           let worst = 0;

@@ -81,7 +81,7 @@ import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
-import { useSessionTabs } from "@/hooks/use-session-tabs";
+import { isNewTab, newTabId, useSessionTabs } from "@/hooks/use-session-tabs";
 import { tabsLimitOf } from "@/browse/tab-limit";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
@@ -146,7 +146,9 @@ import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSea
 import { SessionScreen, VerbSeat } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
-import { NewSessionDialog } from "@/views/NewSessionDialog";
+import { NewSessionPage } from "@/views/NewSessionPage";
+import { MachineChat } from "@/views/MachineChat";
+import { newTabKind } from "@/components/SessionFace";
 
 /**
  * The four landings, all present from the first day.
@@ -169,10 +171,18 @@ type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
  * card it opened over the map went with that.
  */
 
+/** A tab on a machine's conversation (`chat/<name>`). */
+const isChatTab = (id: string | null): boolean => !!id && id.startsWith("chat/");
+
+/** What a road into 新建会话 knew (UX-45): the machine, the directory,
+    and whether it was a workspace column's own ＋. */
+type NewTabAt = { machine?: string; dir?: string; inPlace?: boolean };
+
 /** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
-    leaving a line is the wizard's first kind now (`NewSessionDialog`),
-    one door for every kind of session. */
-type PlusDialog = "new" | "import" | "invite" | "join" | "ws-add" | null;
+    leaving a line is the wizard's first kind (`NewSessionPage`), one door
+    for every kind of session; `new` left on 2026-10-07 (UX-45): 新建会话
+    is a new tab's page. */
+type PlusDialog = "import" | "invite" | "join" | "ws-add" | null;
 
 const POLL_MS = 2000;
 /**
@@ -544,9 +554,9 @@ export default function App() {
     document.visibilityState === "visible" && landing === "sessions" && selected === id && (!narrow || screen === "detail");
   // Whether the open tabs are up as a list to pick from (`TabSwitcher`)
   // instead of the front tab's content. The narrow face's only way to
-  // another tab — a phone has no strip — and the wide face's answer
-  // once the strip has stopped showing every tab (`TabStrip.onSwitch`,
-  // which is the side that can measure that). Reset wherever the tabs
+  // another tab — a phone has no strip. ⚠️ 墓碑 (UX-45): the wide face's
+  // too, once its strip scrolled; the wide strip draws every tab now and
+  // has no count to open it. Reset wherever the tabs
   // stop being the thing on screen: another landing, a 「…」 page,
   // or the last tab closing.
   const [switchingTabs, setSwitchingTabs] = useState(false);
@@ -638,35 +648,26 @@ export default function App() {
   const [words, setWords] = useState<Record<Landing, string[]>>(storedWordsAll);
   const [arrangeBy, setArrangeBy] = useState<string>(storedArrange);
   const [dialog, setDialog] = useState<PlusDialog>(null);
-  /** Which machine the wizard opens with picked — the machine card's
-      开会话 names one (2026-09-06); the sessions pane's "+" names none,
-      which the wizard reads as this machine. Set together with the
-      dialog and never on its own, so a card's pick cannot outlive the
-      opening it was made for. */
-  const [newSessionOn, setNewSessionOn] = useState("");
-  /** …and which directory. The workspace column's 「+」 names its
-      project's (工作区批⑩); every other door names none, which the
-      wizard reads as that machine's home. Set together with the dialog
-      for `newSessionOn`'s reason. */
-  const [newSessionAt, setNewSessionAt] = useState("");
+  /* ⚠️ 墓碑 (UX-45): `newSessionOn` / `newSessionAt`, the dialog's
+     machine and directory; a new tab carries its own (`newTabs`). */
   /** Bumped when this shell has changed the workspace table from
       outside the list — the pane bar's 「+」 lives up here, and the list
       owns every read it makes. One number rather than a callback,
       because what the list needs to know is 「something changed」 and
       not what: it re-reads a local table, which costs nothing. */
   const [wsAdded, setWsAdded] = useState(0);
-  /** Open the wizard. `inPlace` is the workspace column's own 「+」
-      (2026-09-16 ruling 34): the session it makes belongs to the
-      project somebody is standing in, so when it opens, this shell
-      stays where it is and hands the id down instead of walking to the
-      sessions landing. Every other door keeps the old behaviour —
-      「the freshly-opened session is what the person came to see」, and
-      from those doors there is nowhere else it could be seen. */
+  /** **Every road into 新建会话 is a new tab** (UX-45, the owner
+      2026-10-07), with what the road knew filled in: the machine card's
+      and the machines row's 开会话 (the machine), the workspace column's
+      ＋ (machine and directory, `inPlace`), a terminal's 发给智能体 and
+      在这里新开会话 (machine, directory, the handed block). `inPlace` is
+      the workspace column's own (2026-09-16 ruling 34): the session it
+      makes belongs to the project somebody is standing in, so once made
+      the shell goes back there and hands the id down. Through a ref:
+      the new tab is opened by state declared further down. */
+  const openNewTabRef = useRef<(at?: NewTabAt) => void>(() => {});
   const openNewSession = useCallback((machine = "", dir = "", inPlace = false) => {
-    setNewSessionOn(machine);
-    setNewSessionAt(dir);
-    setNewSessionInPlace(inPlace);
-    setDialog("new");
+    openNewTabRef.current({ machine, dir, inPlace });
   }, []);
   // A terminal block's "Send to Agent" (roadmap 2.3, `lib/composer-handoff`):
   // the wizard on that machine, in that directory.
@@ -678,11 +679,12 @@ export default function App() {
     window.addEventListener(NEW_SESSION_EVENT, asked);
     return () => window.removeEventListener(NEW_SESSION_EVENT, asked);
   }, [openNewSession]);
-  /** Whether the open wizard was started from a workspace's own column,
-      and the id it left there. **Two pieces of state and not one**: the
-      first is true while the dialog is up and the second outlives it,
-      which is what the column reads. */
-  const [newSessionInPlace, setNewSessionInPlace] = useState(false);
+  /** The id a new tab opened from a workspace's own column left there,
+      which the column reads. ⚠️ 墓碑 (UX-45): `newSessionInPlace`, while
+      the dialog was up; the new tab carries it (`NewTabAt.inPlace`). */
+  /** Back from a workspace column's new tab (UX-45, `WorkspacePane`
+      `back`). */
+  const [wsBack, setWsBack] = useState(false);
   const [openedInWs, setOpenedInWs] = useState<string | null>(null);
   /**
    * Which page behind 「…」 or the avatar is open, if any (docs/MORE.md).
@@ -1383,7 +1385,10 @@ export default function App() {
     // Every one of these opens a dialog, so each wears the ellipsis
     // (components/Button:「还会再问一次的动作，文案带省略号」) — the
     // `-ask` keys; the dialog's own title keeps the bare word.
-    { key: "new", label: gui.new_session_ask, onSelect: () => openNewSession() },
+    // ＋'s 新会话 is a new tab (UX-45, the owner 2026-10-07): in front at
+    // once, its page the choices — the strip's ＋, and ⌘N / ⌘T with it.
+    // ⚠️ 墓碑: the 新建会话 dialog from here.
+    { key: "new", label: gui.new_session_ask, onSelect: () => openNewTab() },
     // What khor found and has not put on the list (docs/SHELL.md 第八轮).
     { key: "import", label: gui.import_sessions_ask, onSelect: () => setDialog("import") },
   ];
@@ -1705,10 +1710,70 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, selected, landing, screen, narrow, hidden],
   );
+  /** **＋ makes a new tab** (UX-45): in front at once, its page the
+      new-session choices (`NewSessionPage`); made, it becomes
+      that session (`sessionTabs.become`), closed first, it is gone. */
+  const openNewTab = (at: NewTabAt = {}) => {
+    const id = newTabId();
+    newTabs.current.set(id, {
+      at,
+      from: { landing, screen, morePage, front: isNewTab(selected) ? null : selected },
+    });
+    setMorePage(null);
+    setLanding("sessions");
+    sessionTabs.open(id);
+    setScreen("detail");
+  };
+  openNewTabRef.current = openNewTab;
+  /** Each new tab's road: what it filled in, and **where the person was
+      when they asked** — the landing, its screen, a 「…」 page, the tab
+      in front — which 取消 (and a workspace's 创建) goes back to. */
+  const newTabs = useRef(
+    new Map<string, { at: NewTabAt; from: { landing: Landing; screen: typeof screen; morePage: typeof morePage; front: string | null } }>(),
+  );
+  /** **Back to where they asked from** (UX-45, the owner 2026-10-07): the
+      machine page, the terminal, the workspace, the list, or the tab
+      that was in front — one rule on the phone and wide. */
+  const leaveNewTab = (id: string) => {
+    const road = newTabs.current.get(id);
+    newTabs.current.delete(id);
+    sessionTabs.close(id);
+    if (!road) return;
+    const { from } = road;
+    if (road.at.inPlace) setWsBack(true);
+    if (from.front && openTabs.includes(from.front)) sessionTabs.focus(from.front);
+    setLanding(from.landing);
+    setMorePage(from.morePage);
+    setScreen(from.front || from.landing !== "sessions" ? from.screen : "list");
+  };
   const tabFaces: TabFace[] = useMemo(
     () =>
       openTabs.map((id) => {
+        if (isNewTab(id))
+          return {
+            id,
+            label: gui.new_tab,
+            face: null,
+            mark: newTabKind(),
+            path: "",
+            menu: [{ key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) }],
+          };
         const r = rows.find((row) => row.id === id);
+        // **A machine's conversation the list does not show** (UX-45): one
+        // put away with nothing newer (docs/SESSION.md 动作) is still the
+        // machine's, and 留言 opens it; its first message brings the row
+        // back. Drawn from the machine until then.
+        if (!r && isChatTab(id)) {
+          const name = id.slice("chat/".length);
+          return {
+            id,
+            label: name,
+            face: devices.find((d) => d.name === name)?.face ?? null,
+            path: "",
+            session: { word: "idle", kind: "chat", category: null },
+            menu: [{ key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) }],
+          };
+        }
         // **Pressed again, the tab in front opens or closes its 附栏**
         // (UX-30; ⚠️ 墓碑 2026-09-29 → 10-06: it showed or hid the day —
         // 「点击标签后显示吧」 — which is 最近's first row now, UX-39 §4). Read by
@@ -1790,7 +1855,7 @@ export default function App() {
           : { id, label: id, face: null, path: "", again };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [openTabs, rows, side, actsVersion, days, selected, rung],
+    [openTabs, rows, devices, side, actsVersion, days, selected, rung],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
@@ -2489,7 +2554,33 @@ export default function App() {
       </SessionSide>
     ) : undefined;
 
-  const detail = sessions ? (
+  const detail = sessions && isNewTab(selected) ? (
+    // A new tab's page (UX-45): the wizard's questions laid out in the
+    // tab, one per new tab.
+    <NewSessionPage
+      key={selected}
+      machine={newTabs.current.get(selected ?? "")?.at.machine}
+      dir={newTabs.current.get(selected ?? "")?.at.dir}
+      onCancel={() => selected && leaveNewTab(selected)}
+      onOpened={(id) => {
+        if (!selected) return;
+        // **Made from a workspace: back to the workspace** (ruling 34,
+        // 「应该是在工作区就地打开」): the column beside its files is
+        // where the session belongs.
+        if (newTabs.current.get(selected)?.at.inPlace) {
+          leaveNewTab(selected);
+          setOpenedInWs(id);
+          return;
+        }
+        newTabs.current.delete(selected);
+        justOpened.current.set(id, Date.now());
+        sessionTabs.become(selected, id);
+      }}
+    />
+  ) : sessions && selectedRow === null && isChatTab(selected) ? (
+    // That conversation's page, before its row is back (UX-45).
+    <MachineChat key={selected} id={selected ?? ""} />
+  ) : sessions ? (
     // The conversation in this pane is painted inside the workspace it
     // is running in, as far as its paths are concerned (2026-09-18
     // ruling 54). **Null where the row has no directory**, which is
@@ -2503,7 +2594,8 @@ export default function App() {
       openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}
-      onNew={() => openNewSession()}
+      // The empty pane's 新会话…: a new tab, as ＋'s (UX-45).
+      onNew={() => openNewTab()}
       // The way to the other open tabs on the face that has no strip:
       // the count is the button (`TabCount`), and pressing it swaps
       // this pane for the switcher. Wide has the strip above the pane,
@@ -2606,6 +2698,8 @@ export default function App() {
         // here (2026-09-16 ruling 34).
         onNewSession={(m, dir) => openNewSession(m, dir, true)}
         opened={openedInWs}
+        back={wsBack}
+        onBackSeen={() => setWsBack(false)}
         onOpenedSeen={() => setOpenedInWs(null)}
         // A file a path in a conversation on the **sessions** landing
         // asked for, once this is the workspace that holds it (2026-09-18
@@ -2713,7 +2807,7 @@ export default function App() {
         open={dialog === "import"}
         onOpenChange={(o) => setDialog(o ? "import" : null)}
         // The first one imported is what the person came to see, the
-        // way a freshly opened session is (`NewSessionDialog` below).
+        // way a freshly opened session is (`NewSessionPage`).
         onImported={(ids) => {
           if (ids.length === 0) return;
           setLanding("sessions");
@@ -2721,33 +2815,8 @@ export default function App() {
           setScreen("detail");
         }}
       />
-      <NewSessionDialog
-        open={dialog === "new"}
-        onOpenChange={(o) => setDialog(o ? "new" : null)}
-        machine={newSessionOn}
-        dir={newSessionAt}
-        // The freshly-opened session is what the person came to see —
-        // on the sessions landing, on its row, whichever pane the
-        // wizard was opened from (the machine card opens it too, and
-        // its person wants the same thing). The selection outlives the
-        // poll that has not listed the row yet, by the guard above.
-        onOpened={(id) => {
-          // **Made from a workspace: stay in the workspace** (ruling
-          // 34). The session is that project's, the column beside its
-          // files is where it belongs, and a landing change here was
-          // khor walking somebody out of the screen they were working
-          // on (「应该是在工作区就地打开」).
-          if (newSessionInPlace) {
-            setOpenedInWs(id);
-            return;
-          }
-          setMorePage(null);
-          setLanding("sessions");
-          justOpened.current.set(id, Date.now());
-          sessionTabs.open(id);
-          setScreen("detail");
-        }}
-      />
+      {/* ⚠️ 墓碑 (UX-45): the 新建会话 dialog. Every road opens a new tab
+          whose page asks the same (`NewSessionPage`). */}
       {/* 「+」 on the workspace pane. **The picker validates nothing and
           this is where the validating happens**: `wsAdd` probes the
           path on that machine and refuses in that machine's own words,
@@ -2855,9 +2924,8 @@ export default function App() {
         if (openTabs.length === 1) setScreen("list");
         sessionTabs.close(id);
       }}
-      // Once the strip scrolls, its count opens the switcher — the
-      // narrow shell's own screen, with its 「‹」 back to this one.
-      onNew={() => openNewSession()}
+      // ＋ in the tabs sheet: a new tab, its page the choices (UX-45).
+      onNew={() => openNewTab()}
       newLabel={gui.new_session}
       onBack={() => setScreen("list")}
       caption={stale ? gui.backend_unreachable : undefined}
@@ -3716,6 +3784,8 @@ export default function App() {
                       setScreen("detail");
                     }}
                     onClose={sessionTabs.close}
+                    // ＋ after the last tab: a new tab (UX-45).
+                    onNew={() => openNewTab()}
                     stripData={{ "data-session-tabs": "", "aria-label": gui.session_tabs }}
                     // 过期 / 离线 on B's R0: after the strip, which then
                     // compresses its tabs into what is left.

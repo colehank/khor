@@ -1319,6 +1319,18 @@
    * 长度」 is about stubs not following their names, and they still do
    * not. */
   --tab-w-min: 104px;
+  /* **Every wide glass tab, front or not** (UX-45, the owner 「等宽先看
+   * 看」): Chrome's look, all one width, shrinking together. 200 holds a
+   * face, a gap, about fourteen characters and the ×. */
+  --tab-w-even: 200px;
+  /* …and the narrowest one may get (the owner 2026-10-07: crowded, a
+   * pressed tab still showed no ×): the face and the ×, never less —
+   * 6 + the 18 face + 6, the 24 × cell, its 2, and 8 between. Past it
+   * the strip scrolls. */
+  --tab-w-floor: 64px;
+  /* A kind's tile on a new tab's page (UX-45): the dial's 40 face and a
+   * name of about eight characters under it. */
+  --new-tile: 76px;
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
    * is a ceiling a growing box stops at. Without a ceiling a pasted
@@ -2161,6 +2173,14 @@
   /* A menu that opens from glass (更多), iOS's 20. */
   --radius-2xl: 20px;
   --radius-full: 9999px;
+  /* **A wide glass tab sheds as it shrinks** (UX-45, Chrome's strip):
+   * under `tab-x` a pill that is not in front keeps its × for the
+   * pointer only, under `tab-face` its name goes too — the face and the
+   * ×'s seat, down to `--tab-w-floor`. Container sizes (`@max-tab-x/tab:`),
+   * so literal: a container query cannot read a variable. 96 is the
+   * floor's 64 and about three characters; 120 about five more. */
+  --container-tab-face: 96px;
+  --container-tab-x: 120px;
 }
 
 @theme inline {
@@ -2251,6 +2271,9 @@
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);
   --spacing-tab-min: var(--tab-w-min);
+  --spacing-tab-even: var(--tab-w-even);
+  --spacing-tab-floor: var(--tab-w-floor);
+  --spacing-new-tile: var(--new-tile);
   --spacing-chat-box: var(--chat-box);
   --spacing-top-h: var(--top-h);
   --spacing-drawer-row: var(--drawer-row);
