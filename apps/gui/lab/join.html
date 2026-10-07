@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+    <title>添加机器 · lab</title>
+    <link rel="icon" href="data:," />
+    <script>
+      (function () {
+        var q = new URLSearchParams(location.search);
+        var t = q.has("dark") ? "dark" : q.has("light") ? "light" : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/lab/join.tsx"></script>
+  </body>
+</html>
