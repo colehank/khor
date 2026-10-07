@@ -23,8 +23,8 @@
 // read the same session's state, and both must turn on one press.
 import { useSyncExternalStore } from "react";
 
-/** The five seats of the 附栏, in the order its title's menu lists them
-    (`SeatTitle`, UX-39 §2). */
+/** The five seats of the 附栏: the seat bar's first three, then the two
+    under its 更多 (`SeatBar`, UX-45). */
 export type SideSeat = "recent" | "workspace" | "browser" | "machine" | "quota";
 export const SIDE_SEATS: readonly SideSeat[] = ["recent", "workspace", "browser", "machine", "quota"];
 

@@ -9,9 +9,8 @@
  * and nothing in here is designed twice. It stands beside the tab strip,
  * from the window's first row (UX-39 §6), on the app's own ground. At its
  * top one head (`SideBody`): the session's face and title at the left,
- * the seat's icon · noun · ⌄ at the right — the menu of the five seats,
- * 最近 · 工作区 · 浏览器 · 机器 · 额度 (`SeatTitle`) — and under it the
- * seat's page. The seat's content is composed by the shell (`App`), which
+ * the seat bar at the right — 最近 · 工作区 · 浏览器 · 更多, 更多 holding
+ * 机器 and 额度 (UX-45, `SeatBar`) — and under it the seat's page. The seat's content is composed by the shell (`App`), which
  * owns the state those pages read; this file is the box, the head, and
  * the seam.
  *
@@ -25,13 +24,14 @@
  * width from the session beside it (the terminal refits as it goes);
  * under the floor it folds the column away, the same gesture the list
  * pane's seam makes (`use-list-width`); double-click is the default
- * width; ← → Home walk the stops from a keyboard. Width and open state
- * are one memory per session (`use-session-side`).
+ * width; ← → Home walk the stops from a keyboard. The width is one
+ * memory per session; open is the session in front's alone and closes
+ * when it is left (UX-46, `use-session-side`).
  */
 import { useMemo, useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
-import { SeatPick, SeatTitle } from "@/components/SeatTitle";
+import { SeatBar, SeatPick } from "@/components/SeatTitle";
 import { SessionFace } from "@/components/SessionFace";
 import { SideSeatsProvider } from "@/components/SideHead";
 import { gui } from "@/gen/catalog";
@@ -234,13 +234,14 @@ export function SideBody({
   // **One head** (UX-39 §2, the owner 2026-10-06 21:40: 「左上角是
   // session 的头像+标题，右上角是可展开的标题」): the session at the left
   // — its face and title, the subject the 附栏 belongs to — and the
-  // seat's icon · noun · ⌄ at the right (`SeatTitle`, a native picker),
-  // the two gaps one token (`gap-in`). The seats' own heads step back
-  // inside (`SeatHead` draws only the tree's way back to 最近; a page wears
-  // the main area's deck at its foot, UX-40 §4). ⚠️ 墓碑: the glass
-  // capsule at the column's top (UX-30 §2), the flat row at the sheet's
-  // foot (UX-37 §4), the page's own title at the left (「这个会话碰过
-  // 的」, the machine's name).
+  // seat bar at the right (UX-45, `SeatBar`: 最近 · 工作区 · 浏览器 · 更多,
+  // 更多 holding 机器 and 额度). The seats' own heads step back inside
+  // (`SeatHead` draws only the tree's way back to 最近; a page wears the
+  // main area's deck at its foot, UX-40 §4). ⚠️ 墓碑: the glass capsule
+  // at the column's top (UX-30 §2), the flat row at the sheet's foot
+  // (UX-37 §4), the page's own title at the left (「这个会话碰过的」, the
+  // machine's name), the seat's icon · noun · ⌄ over a native picker
+  // (UX-39 §2 → UX-45, `SeatTitle`).
   const pick = useMemo(() => ({ seat, onSeat }), [seat, onSeat]);
   return (
     <SeatPick.Provider value={pick}>
@@ -255,7 +256,7 @@ export function SideBody({
             <SessionFace face={who.face} word={who.word} kind={who.kind} category={who.category} size="tab" />
             <span className="min-w-0 truncate text-title-md font-title">{who.title}</span>
           </span>
-          <SeatTitle className="flex-none" />
+          <SeatBar />
         </header>
         <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {children}

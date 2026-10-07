@@ -30,6 +30,20 @@ type Tabs = { tabs: string[]; active: string | null };
 
 const EMPTY: Tabs = { tabs: [], active: null };
 
+/**
+ * **A new tab is a tab before it is a session** (UX-45, the owner
+ * 2026-10-07: 「+ 应该不给终端，直接新建一个标签页，这个标签页上进行选择」):
+ * ＋ puts one in front at once, its page the new-session choices; made,
+ * it becomes that session in its own place (`become`). Its id is this
+ * prefix and a nonce, never a row's, so the gone-row rule never takes it
+ * (it was never listed) and nothing else mistakes it for a session.
+ * **Not kept across launches**: closed before it was made, it leaves
+ * nothing behind, a reload included.
+ */
+const NEW_TAB = "new-tab:";
+export const isNewTab = (id: string | null | undefined): boolean => !!id && id.startsWith(NEW_TAB);
+export const newTabId = (): string => `${NEW_TAB}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
 function restore(): Tabs {
   try {
     const raw = window.localStorage.getItem(STORE_KEY);
@@ -38,7 +52,7 @@ function restore(): Tabs {
     if (typeof v !== "object" || v === null) return EMPTY;
     const o = v as { tabs?: unknown; active?: unknown };
     const tabs = Array.isArray(o.tabs)
-      ? o.tabs.filter((t): t is string => typeof t === "string" && t.length > 0)
+      ? o.tabs.filter((t): t is string => typeof t === "string" && t.length > 0 && !isNewTab(t))
       : [];
     const active = typeof o.active === "string" && tabs.includes(o.active) ? o.active : null;
     return { tabs, active };
@@ -61,6 +75,10 @@ export type SessionTabs = {
   /** Close every tab among `ids` — the shell's gone-row rule, in one
       state change so the front is decided once. */
   drop: (ids: string[]) => void;
+  /** A new tab made into the session it chose (UX-45): `id` takes its
+      place in the strip and the front; already open elsewhere, the new
+      tab simply goes and `id` comes forward. */
+  become: (draft: string, id: string) => void;
 };
 
 /**
@@ -100,7 +118,9 @@ export function useSessionTabs(
       if (was.tabs.includes(id)) return { ...was, active: id };
       const now = [...was.tabs, id];
       const { limit, keep } = rules.current;
-      const gone = stalestTab(now, limit, touched.current, (t) => t === id || keep(t));
+      // Nor the tab that was in front (UX-45): a new tab's 取消 goes back
+      // to it, and a tab restored at launch has no time to be judged by.
+      const gone = stalestTab(now, limit, touched.current, (t) => t === id || t === was.active || keep(t));
       return { tabs: gone === null ? now : now.filter((t) => t !== gone), active: id };
     });
   }, []);
@@ -131,5 +151,15 @@ export function useSessionTabs(
     setState((was) => closeMany(was, new Set(ids)));
   }, []);
 
-  return { tabs: state.tabs, active: state.active, open, focus, close, drop };
+  const become = useCallback((draft: string, id: string) => {
+    touched.current.set(id, Date.now());
+    setState((was) => {
+      if (was.tabs.includes(id)) return { tabs: was.tabs.filter((t) => t !== draft), active: id };
+      const at = was.tabs.indexOf(draft);
+      if (at < 0) return { tabs: [...was.tabs, id], active: id };
+      return { tabs: was.tabs.map((t) => (t === draft ? id : t)), active: id };
+    });
+  }, []);
+
+  return { tabs: state.tabs, active: state.active, open, focus, close, drop, become };
 }

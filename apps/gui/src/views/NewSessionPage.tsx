@@ -1,3 +1,10 @@
+// **A new tab's page** (UX-45, the owner 2026-10-07): every road into
+// 新建会话 — the list's ＋, ⌘N / ⌘T, the strip's ＋, the machine card's
+// and the machines row's 开会话, the workspace column's ＋, a terminal's
+// 发给智能体 and 在这里新开会话 — opens a new tab whose page is this, with
+// what the road knew filled in. ⚠️ 墓碑 (UX-45): the dialog this was
+// (`NewSessionDialog`), its 取消 / 创建 foot, and 留言's line and 发送.
+//
 // The wizard (会话身份批B): opening a session is the first act, and it
 // asks the four questions of the ruling — where (目录), which agent
 // (智能体), which form (对话 or 终端 — the same two words the detail's
@@ -66,7 +73,7 @@
 // sentences and its 问一次 — stood here. It moved to 导入 whole
 // (`ImportDialog`): continuing a conversation that exists is bringing
 // something in, not starting something, and one act has one place.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
   agentAsk,
@@ -77,28 +84,23 @@ import {
   openSession,
   openTermOn,
   registerKnownAgent,
-  tell,
   type AgentRow,
   type DeviceRow,
   type KnownAgent,
 } from "@/api";
+import { FaceMark, type KindMark } from "@/components/FaceMark";
 import { PathField, settledPath } from "@/components/PathField";
+import { sessionKind } from "@/components/SessionFace";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
-import { SEGMENTS_MAX, SegmentedControl } from "@/components/ui/segmented-control";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
 import { dropHandOff, peekHandOff } from "@/lib/composer-handoff";
 import { useHereHosts } from "@/lib/here";
 import { useSetting } from "@/settings";
+import { cn } from "@/lib/utils";
 import { connectionWord } from "@/words";
 
 /** 类型 — the wizard's second step. Three, and no fourth (the ruling):
@@ -123,16 +125,16 @@ const createToken = (key: string): string => {
   return token;
 };
 
-export function NewSessionDialog({
-  open,
-  onOpenChange,
+export function NewSessionPage({
+  onCancel,
   onOpened,
   machine: picked = "",
   dir: at = "",
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /** The freshly-minted session id — the caller may select its row. */
+  /** 取消: the new tab goes, and the person is back where they asked
+      from (UX-45). */
+  onCancel: () => void;
+  /** The freshly-minted session id — the tab becomes it. */
   onOpened: (id: string) => void;
   // ⚠️ 墓碑 (2026-09-30): `onImport` stood here — 导入… as a button in
   // this dialog's foot, offered because ＋ was one act then. ＋ is a menu
@@ -165,8 +167,6 @@ export function NewSessionDialog({
   /** 类型 — the second step. Opens on 智能体, the kind this dialog was
       born for; a person who came to leave a line is one press away. */
   const [kind, setKind] = useState<Kind>("agent");
-  /** The line to leave, for the 留言 kind. */
-  const [text, setText] = useState("");
   const [form, setForm] = useState<"chat" | "term">("chat");
   /** 新会话默认开成 (`khor config set session-form chat|term`). **Only an
       explicit 「term」 moves it**: `useSetting` answers `null` until khor
@@ -202,7 +202,6 @@ export function NewSessionDialog({
   // a list cached across openings would be a stale answer to the one
   // question this dialog cannot guess.
   useEffect(() => {
-    if (!open) return;
     setMachines([]);
     // The card's pick, or this machine. Read at opening: the prop only
     // ever changes together with `open` (`App.openNewSession`).
@@ -213,7 +212,6 @@ export function NewSessionDialog({
     setDir(at);
     setTitle("");
     setKind("agent");
-    setText("");
     // **The reset is what decides**, not the `useState` above: this
     // dialog stays mounted and every opening comes back through here.
     //
@@ -255,7 +253,7 @@ export function NewSessionDialog({
     return () => {
       live = false;
     };
-  }, [open, picked, at]);
+  }, [picked, at]);
 
   // **Named by id or by name**: a terminal's 发给智能体 and 在这里新开会话
   // name the session's machine as its row does, by device id, and every
@@ -265,11 +263,13 @@ export function NewSessionDialog({
     const d = machines.find((m) => m.id === machine);
     if (d) setMachine(d.name);
   }, [machines, machine]);
-  // A handed-over block is for the conversation this dialog starts and
-  // no other: closed any other way, it is let go.
-  useEffect(() => {
-    if (!open && !startedAgent.current) dropHandOff();
-  }, [open]);
+  // A handed-over block is for the conversation this page starts and no
+  // other: 取消 lets it go (`cancel`). Switching to another tab and back
+  // keeps it — the page is drawn again with the same block.
+  const cancel = () => {
+    if (!startedAgent.current) dropHandOff();
+    onCancel();
+  };
 
   const registered = (name: string) => known.some((a) => a.name === name);
   /** Every agent this dialog offers, khor's own two first. */
@@ -375,67 +375,104 @@ export function NewSessionDialog({
       .then((id) => {
         createTokens.delete(key);
         startedAgent.current = kind === "agent";
-        onOpenChange(false);
         onOpened(id);
       })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
       .finally(() => setOpening(false));
   };
 
-  /** 留言: the whole of `khor tell`. The message on refusal is the
-      node's, in the catalog's words — this layer has none to add. */
-  const send = () => {
-    if (opening) return;
-    // Always pressable (`components/Why`): with nothing written, say so
-    // and put the caret in the line.
-    if (!text.trim()) {
-      setError(gui.need_text);
-      requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-tell-text]")?.focus());
-      return;
-    }
-    setOpening(true);
-    setError(null);
-    tell(target, text)
-      .then(() => onOpenChange(false))
-      .catch((e) => setError(String(e instanceof Error ? e.message : e)))
-      .finally(() => setOpening(false));
+  /* ⚠️ 墓碑 (UX-45): `send` — 留言's line sent from here (`khor tell`).
+     留言 is a kind now; 创建 opens the machine's conversation, and the
+     line is written there. */
+
+  /** **The kinds as a page's choices** (UX-45, the owner: the kinds 新建
+      会话 offers — shell, claude, codex, …): one row of tiles, each the
+      chosen machine's face wearing that kind's mark and its name under
+      it, the picked one a `fill-strong` block. 类型 and 智能体 in one
+      pick, since on a page they are one question: what runs here. */
+  const tileFace = machines.find((d) => d.name === target)?.face ?? null;
+  const tiles: { key: string; label: string; mark: KindMark; on: boolean; pick: () => void }[] = [
+    ...(targetHosts
+      ? [
+          {
+            key: "shell",
+            label: gui.new_session_kind_shell,
+            mark: sessionKind("shell", "shell"),
+            on: kind === "shell",
+            pick: () => setKind("shell"),
+          },
+          ...agentNames.map((name) => ({
+            key: `agent:${name}`,
+            label: name,
+            mark: sessionKind("tui", name),
+            on: kind === "agent" && agent === name,
+            pick: () => {
+              setKind("agent");
+              pick(name);
+            },
+          })),
+        ]
+      : []),
+    { key: "tell", label: gui.message_text, mark: sessionKind("chat", null), on: kind === "tell", pick: () => setKind("tell") },
+  ];
+  /** The arrows walk the tiles and pick as they go, one tab stop for
+      the row — a radio group's keys (`SegmentedControl`'s). */
+  const tileKey = (i: number) => (e: KeyboardEvent<HTMLButtonElement>) => {
+    const by = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (by === 0) return;
+    e.preventDefault();
+    const next = (i + by + tiles.length) % tiles.length;
+    tiles[next].pick();
+    e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[data-new-session-tile]")[next]?.focus();
   };
+  const tileRow = (
+    <div data-new-session-tiles role="radiogroup" aria-label={gui.new_session_kind} className="flex flex-wrap gap-in">
+      {tiles.map((t, i) => (
+        <button
+          key={t.key}
+          type="button"
+          role="radio"
+          aria-checked={t.on}
+          tabIndex={t.on ? 0 : -1}
+          data-new-session-tile={t.key}
+          data-on={t.on}
+          onClick={t.pick}
+          onKeyDown={tileKey(i)}
+          className={cn(
+            "flex w-new-tile flex-col items-center gap-xxs rounded-lg py-in text-callout",
+            t.on ? "bg-fill-strong text-foreground" : "text-muted-foreground hover:bg-fill",
+          )}
+        >
+          <FaceMark face={{ machine: tileFace }} mark={t.mark} size="dial" />
+          <span className="max-w-full truncate px-xxs">{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+  /** The page's one act is 创建 whatever the kind (UX-45): 留言 makes
+      nothing on the node — every machine already has its conversation
+      (`chat/<name>`, one row per machine) — so 创建 turns the tab into it.
+      **A page's push button, not the brand's**: `primary` is a dialog's
+      one act and nowhere else (components/Button, README 「一个品牌电压」;
+      `check-face` round 17 b) — the dialog this was wore it. */
+  const pageAct = (
+    <Button
+      data-new-session-create
+      disabled={opening}
+      aria-busy={opening || undefined}
+      onClick={() => (kind === "tell" ? onOpened(`chat/${target}`) : create())}
+    >
+      {gui.create}
+    </Button>
+  );
 
   return (
-    <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent form data-new-session-dialog>
-        <DialogHeader>
-          <DialogTitle>{gui.new_session}</DialogTitle>
-        </DialogHeader>
-        {/* **One form, label beside control** (2026-09-28, the owner's
-            sketch): the questions stand in one column and their answers
-            in the next, so the form reads down one edge. Every answer
-            is a system-shaped control — a popup for the machines (they
-            grow), a segmented control for the three fixed questions —
-            where each row used to be a set of grey pills of its own.
-            Labels are right-aligned against their controls, macOS's
-            form habit.
-
-            **`min-w-0` on the grid and `minmax(0,1fr)` on its second
-            column, and both are load-bearing.** `DialogContent` is a
-            grid and this is its item; a grid (or flex) item defaults to
-            `min-width: auto`, so one long cwd in the lists below pushes
-            the whole dialog past its width — inputs, buttons and
-            all — and `truncate` never fires because nothing above it
-            agreed to shrink. */}
-        <FormGrid data-new-session-form>
-          {/* **在哪台, first — before the directory, because the
-              directory is a fact about the machine.** The whole net's
-              machines, this one marked; picking one makes the box,
-              its completions and the agent all that machine's. Drawn
-              only when there is a choice to make. **A popup, not a
-              row of choices**: machines are a list that grows, and the
-              system's menu is what holds a long one (components/
-              PopupButton). A satellite is offered greyed: it has no
-              khor of its own to host an agent (`open --on` reaches it
-              over ssh for a shell), and a choice that cannot be taken
-              says so more plainly than a refusal after the fact. */}
+      // **A page, top-down** (UX-45): the machine, what runs there (the
+      // tiles), then the name and the directory, and 取消 · 创建 at the
+      // end of the column — no title (the tab says 新标签页).
+      <div data-new-session-page className="h-full min-h-0 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-measure flex-col gap-group px-page pt-pane pb-nav-room">
+          <FormGrid data-new-session-form>
           {machines.length > 1 && (
             <>
               <FormLabel>{gui.new_session_machine}</FormLabel>
@@ -464,109 +501,11 @@ export function NewSessionDialog({
               </div>
             </>
           )}
-          {/* **类型, second** (2026-09-06:「选机器、选类型、起名字、定目录」).
-              Three kinds; which of the steps below are drawn depends on
-              it, and the ones a kind does not ask are absent rather
-              than greyed — a greyed field is a question still being
-              asked, and a line has no name and no directory. */}
           <FormLabel>{gui.new_session_kind}</FormLabel>
-          <div data-new-session-kinds className="flex min-w-0">
-            <SegmentedControl<Kind>
-              label={gui.new_session_kind}
-              value={kind}
-              onChange={setKind}
-              options={(
-                [
-                  ["tell", gui.message_text],
-                  ["agent", gui.new_session_agent],
-                  ["shell", gui.new_session_kind_shell],
-                ] as const
-              )
-                // The kinds this machine cannot host are not offered.
-                .filter(([k]) => k === "tell" || targetHosts)
-                .map(([k, word]) => ({
-                  key: k,
-                  label: word,
-                  mark: { "data-new-session-kind": k },
-                }))}
-            />
-          </div>
-          {kind === "tell" && (
-            // 留言's third step is the line itself — the whole of
-            // `khor tell`, which used to be a dialog of its own. Under
-            // the controls, not beside a label: the kind above already
-            // says what it is.
-            <Input
-              data-tell-text
-              aria-label={gui.message_text}
-              placeholder={gui.chat_input}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && send()}
-              className="col-start-2"
-            />
-          )}
+          {tileRow}
           {kind === "agent" && (
             <>
-              {/* The agent row, directly under the kind that chose it.
-                  ⚠️ **It has a label, and so does the form row below**
-                  (2026-09-28): it sat without one on the argument that
-                  the pressed 智能体 above named it — but two unlabelled
-                  rows in a form whose other rows are all labelled read
-                  as loose buttons, not as two more questions. The label
-                  is `new-session-agent-pick` rather than 智能体 again,
-                  which was the original objection and still stands. */}
-              {handed && (
-                <>
-                  <FormLabel mark={{ "data-new-session-label": "handed" }}>{gui.new_session_handed}</FormLabel>
-                  <span data-new-session-handed className="min-w-0 truncate text-body" style={{ fontFamily: "var(--font-term)" }}>
-                    {handed}
-                  </span>
-                </>
-              )}
-              <FormLabel mark={{ "data-new-session-label": "agent" }}>{gui.new_session_agent_pick}</FormLabel>
-              <div data-new-session-agents className="flex min-w-0 flex-wrap items-center gap-in">
-                {/* Vendor names are proper nouns with no catalog entry
-                    (words.ts's rule), and a registered agent wears the
-                    name its owner gave it — so every choice here is a
-                    name, never a translated word. khor's own two lead
-                    because they need no registering; the rest follow in
-                    the registry's order, which is alphabetical, so two
-                    machines paint the same row.
-
-                    **Segments while the list is short, the system's
-                    menu once it is not** (components/SegmentedControl:
-                    ≤ ~4 fixed choices → segmented, a list that grows →
-                    popup). The registry is an open position, so the
-                    same row turns into a popup the day a fifth agent is
-                    attached; every choice keeps its anchor either way. */}
-                {agentNames.length <= SEGMENTS_MAX ? (
-                  <SegmentedControl
-                    label={gui.new_session_agent_pick}
-                    value={agent}
-                    onChange={pick}
-                    options={agentNames.map((name) => ({
-                      key: name,
-                      label: name,
-                      title: name,
-                      mark: { "data-new-session-agent": name },
-                    }))}
-                  />
-                ) : (
-                  <PopupButton
-                    look="field"
-                    label={gui.new_session_agent_pick}
-                    value={agent}
-                    onPick={pick}
-                    mark={{ "data-new-session-agent-select": "" }}
-                    choices={agentNames.map((name) => ({
-                      value: name,
-                      label: name,
-                      mark: { "data-new-session-agent": name },
-                    }))}
-                    className="flex-1"
-                  />
-                )}
+              <div className="col-start-2 flex">
                 {/* **The door onto the snapshot, and not a fourth
                     segment.** It opens a list; it is not an agent one
                     could be using. As a segment it would be announced
@@ -691,6 +630,21 @@ export function NewSessionDialog({
                   {gui.new_session_more_agents}
                 </span>
               )}
+            </>
+          )}
+          {/* ⚠️ 墓碑 (UX-45, the owner 2026-10-07): 留言's line and 发送
+              on the page. 留言 is chosen like any kind and 创建 opens
+              that machine's conversation, where the line is written. */}
+            {kind === "agent" && (
+              <>
+              {handed && (
+                <>
+                  <FormLabel mark={{ "data-new-session-label": "handed" }}>{gui.new_session_handed}</FormLabel>
+                  <span data-new-session-handed className="min-w-0 truncate text-body" style={{ fontFamily: "var(--font-term)" }}>
+                    {handed}
+                  </span>
+                </>
+              )}
               {/* **claude's own two forms**, right under its name and
                   only for it: the ruling keeps claude-in-a-terminal
                   reachable without making it a fourth kind. ⚠️ 墓碑 (the
@@ -713,8 +667,8 @@ export function NewSessionDialog({
                   </div>
                 </>
               )}
-            </>
-          )}
+              </>
+            )}
           {kind !== "tell" && (
             <>
               <FormLabel htmlFor="khor-new-session-name">{gui.new_session_name}</FormLabel>
@@ -751,25 +705,17 @@ export function NewSessionDialog({
               {error}
             </p>
           )}
-        </FormGrid>
-        <DialogFooter>
-          {/* The way out, left of the one act (components/Dialog). The
-              sheet this used to be had a cross in its corner. */}
-          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
-            {gui.delete_keep}
-          </Button>
-          {kind === "tell" ? (
-            <Button variant="primary" data-tell-send disabled={opening} aria-busy={opening || undefined} onClick={send}>
-              {gui.send_it}
+          </FormGrid>
+          {/* 取消 beside 创建 (UX-45, the owner 2026-10-07: on the phone a
+              tab has no × to close it by): the new tab goes, and the tab
+              that was in front comes back. */}
+          <div className="flex justify-end gap-in">
+            <Button data-new-tab-cancel onClick={cancel}>
+              {gui.delete_keep}
             </Button>
-          ) : (
-            <Button variant="primary" data-new-session-create disabled={opening} aria-busy={opening || undefined} onClick={create}>
-              {gui.create}
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-    </>
-  );
+            {pageAct}
+          </div>
+        </div>
+      </div>
+    );
 }

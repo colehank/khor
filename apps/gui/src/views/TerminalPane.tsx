@@ -1512,6 +1512,9 @@ export function TerminalPane({
     // latter (0.4.0), so no `activeVersion` is set here.
     term.loadAddon(new UnicodeGraphemesAddon());
     term.open(mount);
+    // The grid's last row is where the folded capsule measures from
+    // (item 72, `lib/fold-seat`): xterm's screen is exactly its rows tall.
+    term.element?.querySelector(".xterm-screen")?.setAttribute("data-fold-foot", "");
     // **OSC 52: a program may write the clipboard, never read it** (T-8,
     // the terminal audit: neither direction was handled). The field's
     // defaults: kitty, Alacritty, WezTerm and Windows Terminal allow the

@@ -38,6 +38,19 @@
 // you all of them and a second way to a thing that is not hidden is
 // clutter (this file's original judgment, kept, with its condition now
 // written down and measured rather than assumed).
+//
+// **The glass strip has left that arrangement** (UX-45, Chrome's): every
+// tab is drawn and all are one width, front or not (`--tab-w-even`),
+// shrinking together down to `--tab-w-floor` — the face and the × —
+// shedding as they go (a tab not in front keeps its × for the pointer
+// only, then its name goes), and past the floor the strip scrolls, the
+// front tab kept in view; after the last tab a hairline and ＋. No count
+// and no switcher there. ⚠️ 墓碑 (UX-25 → UX-45): the count after the
+// strip once it scrolled, and the switcher it opened (`Tabs`). Every
+// strip `Tabs` draws is the glass one at the top, so the plain strip,
+// the bottom strip and `TabCount` below are no longer drawn by it; the
+// phone's band is `SessionBar`'s, and the narrow shell's count is
+// `DetailPane`'s.
 import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
@@ -232,6 +245,8 @@ function PreviewMark() {
  */
 export function MidName({ text, after = "", even = false }: { text: string; after?: string; even?: boolean }) {
   const KEEP = 5;
+  /** The fewest characters of the head a middle cut may leave. */
+  const HEAD = 3;
   const [sizer, setSizer] = useState<HTMLSpanElement | null>(null);
   const [shown, setShown] = useState(text);
   // **Cut by measure** (2026-10-03): the head used to be a CSS `truncate`
@@ -247,34 +262,57 @@ export function MidName({ text, after = "", even = false }: { text: string; afte
       return;
     }
     const fit = () => {
-      const room = sizer.clientWidth;
+      const room = sizer.getBoundingClientRect().width;
       if (room <= 0) return;
-      const wide = measurer(fontOf(sizer));
-      if (wide(text + after) <= room - 1) {
+      // **A name that fits is never cut** (UX-45, the owner 2026-10-07:
+      // 「frontier_diagno…cs.py」 in a tab it fitted). Asked of the layout
+      // itself — the full name overflowing its box or not — rather than
+      // of a measure against a rounded width with a pixel taken off,
+      // which cut names that fitted to the fraction.
+      if (sizer.scrollWidth <= sizer.clientWidth) {
         setShown(text);
         return;
       }
+      const wide = measurer(fontOf(sizer));
+      const fits = (s: string) => wide(s + after) <= room;
       const chars = [...text];
+      /** The plain end cut, 「fron…」: when not even a few characters of
+          the head stand before the tail. **Never a tail with no head**
+          (the owner: 「…ue.p」 said nothing). */
+      const endCut = () => {
+        let n = chars.length - 1;
+        while (n > 1 && !fits(`${chars.slice(0, n).join("")}…`)) n -= 1;
+        setShown(`${chars.slice(0, n).join("")}…`);
+      };
       // **`even`: as much of the end as of the start**, Finder's middle
       // cut — for a name with no extension to keep (a file going in,
       // the owner 2026-10-07 13:15), where a fixed tail of wide
       // characters left no start at all.
       if (even) {
         let n = chars.length - 1;
-        const cut = (k: number) => `${chars.slice(0, Math.ceil(k / 2)).join("")}…${chars.slice(chars.length - Math.floor(k / 2)).join("")}${after}`;
-        while (n > 0 && wide(cut(n)) > room - 1) n -= 1;
-        setShown(cut(n).slice(0, cut(n).length - after.length));
+        const cut = (k: number) => `${chars.slice(0, Math.ceil(k / 2)).join("")}…${chars.slice(chars.length - Math.floor(k / 2)).join("")}`;
+        while (n > 0 && !fits(cut(n))) n -= 1;
+        if (Math.ceil(n / 2) < HEAD) endCut();
+        else setShown(cut(n));
         return;
       }
-      const tail = chars.slice(-KEEP).join("");
-      let lo = 0;
-      let hi = chars.length - KEEP;
-      while (lo < hi) {
-        const mid = Math.ceil((lo + hi) / 2);
-        if (wide(`${chars.slice(0, mid).join("")}…${tail}${after}`) <= room - 1) lo = mid;
-        else hi = mid - 1;
+      // The middle cut, the tail shortened first (down to two) before the
+      // head is let go below `HEAD` characters.
+      for (let keep = KEEP; keep >= 2; keep -= 1) {
+        const tail = chars.slice(-keep).join("");
+        let lo = 0;
+        let hi = chars.length - keep;
+        while (lo < hi) {
+          const mid = Math.ceil((lo + hi) / 2);
+          if (fits(`${chars.slice(0, mid).join("")}…${tail}`)) lo = mid;
+          else hi = mid - 1;
+        }
+        if (lo >= HEAD) {
+          setShown(`${chars.slice(0, lo).join("")}…${tail}`);
+          return;
+        }
       }
-      setShown(`${chars.slice(0, lo).join("")}…${tail}`);
+      endCut();
     };
     fit();
     const watch = new ResizeObserver(fit);
@@ -313,9 +351,12 @@ function TabOpen({ menu, children }: { menu?: RowAction[]; children: ReactNode }
  * every layout and on the strip's resize, so the run starts from where
  * the pills really were. Reduced motion: no run.
  */
-function useRebalance(host: () => HTMLElement | null, active: string) {
+function useRebalance(host: () => HTMLElement | null, active: string, kick = 0) {
   const was = useRef(new Map<string, number>());
   const last = useRef(active);
+  // **…and when a held row lets go** (UX-45): `kick` counts the releases,
+  // so the tabs grow back into the room over the same beat, not a snap.
+  const kicked = useRef(kick);
   const note = () => {
     const h = host();
     if (!h) return;
@@ -325,8 +366,9 @@ function useRebalance(host: () => HTMLElement | null, active: string) {
     const h = host();
     if (!h) return;
     const before = was.current;
-    const changed = last.current !== active;
+    const changed = last.current !== active || kicked.current !== kick;
     last.current = active;
+    kicked.current = kick;
     note();
     if (!changed || before.size === 0 || stillMotion()) return;
     const ease = getComputedStyle(document.documentElement).getPropertyValue("--ease-move").trim() || "ease";
@@ -389,7 +431,8 @@ export function TabStrip({
   onNew?: () => void;
   /** Open the switcher. Drawn **only once the strip has stopped showing
       every tab** — see the file head; a landing that has no switcher to
-      open leaves this out and gets the strip alone. */
+      open leaves this out and gets the strip alone. **Not on the glass
+      strip** (UX-45): there every tab is drawn, down to its face. */
   onSwitch?: () => void;
   /** Whether the switcher the count opens is up — the count stays drawn
       while it is, so the press that opened it can close it. */
@@ -428,7 +471,10 @@ export function TabStrip({
   // The front tab's piece slides to the tab brought forward, in the glass
   // capsule (F7.2, `lib/travel`).
   useTravel(below ? "tabs-below" : "tabs", () => (glass ? strip.current : null), active);
-  const widths = useRebalance(() => (glass ? strip.current : null), active);
+  /** How many times a held row has let go (`held`): the re-balance runs
+      on each. */
+  const [released, setReleased] = useState(0);
+  const widths = useRebalance(() => (glass ? strip.current : null), active, released);
   // Whether the strip has given up on its own promise. Measured off the
   // element, not counted from `faces.length` and a width: how many tabs
   // fit depends on the region, which the rail, the window and the
@@ -450,6 +496,11 @@ export function TabStrip({
    * boxes are not this strip's to move.
    */
   const bringFront = useRef(() => {});
+  /** Whether the row is held (`held`, below): a held row keeps its
+      scroll when a tab goes (UX-45), so the next × stays under the
+      pointer — neither the count changing nor the strip resizing brings
+      the front tab back; a new front tab still is. */
+  const holding = useRef(false);
   bringFront.current = () => {
     const el = strip.current;
     const tab = el?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(active)}"]`);
@@ -490,7 +541,7 @@ export function TabStrip({
     // The observer catches the region changing; the dependency catches
     // tabs opening and closing. Neither alone sees both.
     const ro = new ResizeObserver(() => {
-      bringFront.current();
+      if (!holding.current) bringFront.current();
       measure();
     });
     ro.observe(el);
@@ -520,11 +571,31 @@ export function TabStrip({
     };
   }, [faces.length]);
 
-  useLayoutEffect(() => bringFront.current(), [active, faces.length]);
+  const frontWas = useRef(active);
+  useLayoutEffect(() => {
+    const moved = frontWas.current !== active;
+    frontWas.current = active;
+    if (holding.current && !moved) return;
+    bringFront.current();
+  }, [active, faces.length]);
 
   /** Whether the front tab's hint is up (`TabFace.again`). One for the
       strip: only the tab in front ever has one. */
   const [hint, setHint] = useState(false);
+  /**
+   * **Closing with the pointer keeps the row still** (UX-45, Chrome's rule;
+   * the owner 2026-10-07: closing many tabs, the pointer stays on one
+   * tab's ×). A × pressed on the wide glass strip holds every pill at the
+   * width it had: the tabs after the closed one slide left by exactly one
+   * tab, so the next one's × lands under the pointer, and the room is
+   * left empty at the end. The pointer leaving the capsule lets go and
+   * the tabs share the room again. ⌘W and the menu never hold.
+   */
+  const [held, setHeld] = useState<number | null>(null);
+  holding.current = held !== null;
+  useEffect(() => {
+    if (faces.length === 0) setHeld(null);
+  }, [faces.length]);
   useEffect(() => setHint(false), [active]);
   /** A press on the front tab, resolved against a double-click on its
       name — which renames, and must not show and hide the day on its
@@ -626,6 +697,15 @@ export function TabStrip({
           the count and the switcher are the ways past the edge. */}
       <div
         data-tab-capsule={glass || undefined}
+        data-tabs-held={held !== null || undefined}
+        onPointerLeave={
+          held !== null
+            ? () => {
+                setHeld(null);
+                setReleased((n) => n + 1);
+              }
+            : undefined
+        }
         className={cn(
           "relative flex min-w-0",
           // At a session's foot the capsule takes the row between the way
@@ -658,7 +738,9 @@ export function TabStrip({
         data-tab-strip
         // `items-center`: 「+」 on the row's centreline with the tabs'
         // labels; the tabs themselves stretch to the floor (their foot).
-        className={cn("flex min-w-0 items-center overflow-x-auto", glass ? "flex-1 gap-0.5 self-stretch" : "flex-1 gap-1")}
+        // On the wide glass strip the row is as long as its tabs (they
+        // stop at `--tab-w-even`), so ＋ follows the last one (UX-45).
+        className={cn("flex min-w-0 items-center overflow-x-auto", glass ? cn("gap-0.5 self-stretch", below ? "flex-1" : "flex-initial") : "flex-1 gap-1")}
         // **In the glass capsule a scrolled edge fades** (the audit fix plan
         // F3.3; W09, N19): a mask over the 12 at each end that has a tab
         // cut off behind it, instead of a glyph cut in half.
@@ -673,11 +755,18 @@ export function TabStrip({
         {faces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
+          /** **Every wide pill sheds as it shrinks, the front one too**
+              (UX-45, Chrome's strip; the owner 「等宽先看看」): its own
+              width decides (`@container/tab`, tokens.css
+              `--container-tab-*`) — the ×, then the name, down to the
+              face alone. */
+          const shed = glass && !below;
           return (
             <div
               key={f.id}
               data-tab={f.id}
               data-on={on}
+              style={shed && held !== null ? { width: held, flexShrink: 0 } : undefined}
               // Machine first, then where on it — the same order the
               // address bar commits them in, and the same order the
               // sentence reads: this tab is *on* that machine.
@@ -694,7 +783,9 @@ export function TabStrip({
               title={
                 again
                   ? undefined
-                  : [f.title, [f.machine, f.path].filter(Boolean).join(": "), f.note]
+                  : // The whole name first (UX-45): a pill that sheds its
+                    // name keeps it here.
+                    [f.title ?? f.label, [f.machine, f.path].filter(Boolean).join(": "), f.note]
                       .filter(Boolean)
                       .join(" · ") || undefined
               }
@@ -713,7 +804,9 @@ export function TabStrip({
                 // pressed is a tab that lies about where it is, which is
                 // why the button below reaches into the foot.
                 glass
-                  ? "group relative flex h-glass-tab items-center gap-1 self-center rounded-full pr-0.5 pl-1.5"
+                  ? shed
+                    ? "@container/tab group relative flex h-glass-tab items-center self-center rounded-full"
+                    : "group relative flex h-glass-tab items-center gap-1 self-center rounded-full pr-0.5 pl-1.5"
                   : below
                     ? "group relative flex mb-tab-lip items-center gap-1 self-stretch rounded-b-md pr-0.5 pt-tab-lip pl-2"
                     : "group relative flex mt-tab-lip items-center gap-1 self-stretch rounded-t-md pr-0.5 pb-tab-lip pl-2",
@@ -743,14 +836,25 @@ export function TabStrip({
                 // re-balances on each choice over the chosen piece's trip
                 // (`useRebalance`). ⚠️ 墓碑 (V07): one ceiling for every
                 // tab, the front one too, so a choice moved no width.
-                glass
+                glass && !below
+                  ? // **One width, front or not** (UX-45, the owner
+                    // 2026-10-07 「等宽先看看」, Chrome's): every pill is
+                    // `--tab-w-even` and they shrink together, down to
+                    // `--tab-w-floor` — the face and the × (the owner: a
+                    // crowded strip still owes the front tab its ×) — and
+                    // past that the strip scrolls; the front one is told
+                    // by its lit glass only. ⚠️ 墓碑 (UX-39 §7 → UX-45):
+                    // the front pill grown to its whole name, up to half
+                    // the capsule, the rest an equal share. ⚠️ 墓碑
+                    // (UX-25): `--tab-w-min` as the floor and the count
+                    // after it. A width, not a basis: the pill is a size
+                    // container, so only a stated width gives the row its
+                    // length.
+                    cn("w-tab-even min-w-tab-floor shrink grow-0", on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill")
+                  : glass
                   ? on
-                    ? // The front pill starts from its whole name and grows
-                      // with the rest, so it is never the narrowest and a
-                      // long name is read whole (up to half the capsule
-                      // when it has neighbours).
-                      cn("min-w-tab-min shrink-0 grow basis-auto glass-sel text-foreground", faces.length > 1 && "max-w-[50%]")
-                    : "min-w-tab-min shrink grow basis-0 text-muted-foreground hover:bg-fill"
+                    ? cn("min-w-tab-min shrink-0 grow basis-auto glass-sel text-foreground", faces.length > 1 && "max-w-[50%]")
+                    : "min-w-glass-tab shrink grow basis-0 text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
                     : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
@@ -805,6 +909,15 @@ export function TabStrip({
                 className={cn(
                   "flex min-w-0 flex-1 items-center gap-tab-gap self-stretch text-left",
                   glass && "text-tab",
+                  // The pill's own insets, here so the face can centre
+                  // once the name is gone; right only while no × stands.
+                  // The front pill always keeps its ×'s seat; another
+                  // centres its face while its × is away (under the
+                  // pointer it shows, and the face steps to the start).
+                  shed &&
+                    (on
+                      ? "pl-1.5"
+                      : "pl-1.5 pr-1.5 group-hover:pr-0 @min-tab-x/tab:pr-0 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0 @max-tab-face/tab:group-hover:justify-start @max-tab-face/tab:group-hover:pl-1.5"),
                   // Into the foot, wherever the foot is.
                   !glass && (below ? "-mt-tab-lip pt-tab-lip" : "-mb-tab-lip pb-tab-lip"),
                 )}
@@ -829,7 +942,7 @@ export function TabStrip({
                     arrangement the list rows keep, and for the same
                     reason (`EditableName`'s head). */}
                 {f.rename ? (
-                  <span className="flex min-w-0 flex-1 flex-col justify-center">
+                  <span className={cn("flex min-w-0 flex-1 flex-col justify-center", shed && "@max-tab-face/tab:hidden")}>
                     <EditableName
                       kind={f.rename.kind}
                       id={f.rename.id}
@@ -880,7 +993,7 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className={cn("flex min-w-0 flex-1 items-center gap-1", glass ? "text-tab" : "text-body")}
+                    className={cn("flex min-w-0 flex-1 items-center gap-1", glass ? "text-tab" : "text-body", shed && "@max-tab-face/tab:hidden")}
                   >
                     {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
@@ -896,14 +1009,30 @@ export function TabStrip({
                       已完成）」, the owner 2026-10-07 13:15) is what the
                       front tab's float says: the drop is on the tab in
                       front, and its hint is back once they are in. */}
-                  {f.drop && f.title ? f.title : again.hint}
+                  {f.drop && f.title ? (
+                    f.title
+                  ) : glass && !below ? (
+                    // The name first (UX-45): the front pill may be the
+                    // face alone, and this float is its hover.
+                    <>
+                      <span className="block">{f.title ?? f.label}</span>
+                      <span className="block text-muted-foreground">{again.hint}</span>
+                    </>
+                  ) : (
+                    again.hint
+                  )}
                 </TooltipContent>
               )}
               </Tooltip>
-              {/* **× on every wide pill, always** (UX-39 §7, the owner
-                  2026-10-06 22:45–22:50: 「桌面版的看不见 ×」, 「不悬浮就显
-                  示 ×」): in the seat the act had; ⌘W, the menu and the
-                  sheet still close. The phone's band keeps no ×.
+              {/* **× at rest on every wide pill that has room** (UX-45
+                  narrows UX-39 §7): the front pill at every width, down to
+                  the floor (the owner 2026-10-07: crowded, the tab pressed
+                  still owes its ×); any other at rest while it is at least
+                  `--container-tab-x` wide, and under the pointer below
+                  that, down to the floor (Chrome's). UX-39 §7's 「不悬浮就
+                  显示 ×」 holds while there is room for it. In the seat the
+                  act had; ⌘W, the menu and the sheet still close. The
+                  phone's band keeps no ×.
                   ⚠️ 墓碑 (UX-33 §1 → UX-39 §7): the third seat on every
                   wide pill; the wide face's one act is the verbs seat's
                   (or `frontAct`'s, after the capsule). */}
@@ -918,9 +1047,19 @@ export function TabStrip({
                     "flex h-full w-tab-close flex-none items-center justify-center hover:bg-muted hover:text-foreground",
                     on ? "text-muted-foreground" : "text-tertiary",
                     glass ? "rounded-full" : "rounded-sm",
+                    // The front pill's × at every width; another's at rest
+                    // while it has `--container-tab-x`, under the pointer
+                    // down to the floor (UX-45, the owner 2026-10-07).
+                    shed && (on ? "me-0.5" : "me-0.5 @max-tab-x/tab:hidden @max-tab-x/tab:group-hover:flex"),
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
+                    // A pointer's press holds the row (`held`); a press
+                    // from the keyboard (detail 0) re-lays at once.
+                    if (shed && e.detail > 0) {
+                      const pill = e.currentTarget.closest<HTMLElement>("[data-tab]");
+                      if (pill) setHeld(pill.getBoundingClientRect().width);
+                    }
                     onClose(f.id);
                   }}
                 >
@@ -978,7 +1117,7 @@ export function TabStrip({
             </div>
           );
         })}
-        {onNew && (
+        {onNew && !(glass && !below) && (
           <Button
             size="icon"
             variant="ghost"
@@ -996,10 +1135,25 @@ export function TabStrip({
           </Button>
         )}
       </div>
-      {glass && onSwitch && (crowded || switching) && (
+      {/* **After the last tab, a hairline and ＋** (UX-45, Chrome's): in
+          the capsule, outside the scroller, so it stays when the strip
+          scrolls. ＋ makes a new tab whose page is where one chooses.
+          ⚠️ 墓碑 (UX-25 → UX-45): the count here once the strip was
+          crowded, and the switcher it opened — every tab is drawn now,
+          down to its face, and the strip scrolls past that. */}
+      {glass && !below && onNew && (
         <>
           <span aria-hidden="true" className="h-4.5 w-px flex-none bg-border" />
-          <TabCount n={faces.length} onPress={onSwitch} open={switching} bare />
+          <Button
+            size="icon"
+            variant="ghost"
+            data-tab-new
+            aria-label={gui.new_tab}
+            className="min-h-touch min-w-touch flex-none rounded-full"
+            onClick={onNew}
+          >
+            <IconPlus />
+          </Button>
         </>
       )}
       </div>

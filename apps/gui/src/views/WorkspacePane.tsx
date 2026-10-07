@@ -100,6 +100,8 @@ export function WorkspacePane({
   onNewSession,
   opened,
   onOpenedSeen,
+  back = false,
+  onBackSeen,
   reveal,
   onRevealSeen,
   narrow,
@@ -184,6 +186,12 @@ export function WorkspacePane({
       them would come up standing on somebody else's session (measured
       on the narrow face, where it opened the wrong screen). */
   onOpenedSeen: () => void;
+  /** **Back from the new tab this column's ＋ opened** (UX-45): the ＋ is
+      a new tab now, so this pane was left and is drawn again — with its
+      sessions column up, where the person pressed (取消 or 创建 alike).
+      A one-shot like `opened`. */
+  back?: boolean;
+  onBackSeen?: () => void;
   /** A file this shell was asked to show, from outside this pane
       (2026-09-18 ruling 54: a path pressed in a conversation on the
       **sessions** landing, whose workspace is this one). Absolute, with
@@ -732,7 +740,10 @@ export function WorkspacePane({
     }
     if (declaredNarrow.current === false) return;
     declaredNarrow.current = false;
-    setSessions(!listOpen);
+    // Back from this column's new tab, or a session made there: the
+    // column is where the person was (UX-45).
+    setSessions(!listOpen || back || opened !== null);
+    if (back) onBackSeen?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow]);
 

@@ -86,6 +86,7 @@ svg [data-body] {
 }
 
 [data-rail-item][data-on="true"] svg [data-body],
+[data-seat-item][data-on="true"] svg [data-body],
 :is([data-nav-item], [data-nav-more])[data-on="true"] svg [data-body] {
   fill-opacity: 1;
 }
@@ -2482,7 +2483,13 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
    (`SessionBar`). ⚠️ Tombstone (UX-29): the capsule floated over the
    content's foot, and the terminal's way-back float (`data-term-bottom`)
    was lifted over it here; with the content ending above the capsule the
-   float needs no lift. */
+   float needs no lift.
+   **Midway between the last line and the foot** (item 72, the owner
+   2026-10-07: centred in the band it read as stuck to the screen's edge):
+   a terminal's grid is whole rows and leaves a part-row empty above the
+   band, and the capsule rises by half of it (`--fold-lift`,
+   `lib/fold-seat`), its centre at the midpoint of the last row's bottom
+   and the screen's. No row is under it; the grid keeps its rows. */
 [data-session-bar][data-folded][data-fold-over]:not(:has(> [data-session-bar-under]:not(:empty))) {
   padding-bottom: 0;
 }
@@ -2492,7 +2499,7 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 }
 [data-session-bar][data-folded][data-fold-over]:not(:has(> [data-session-bar-under]:not(:empty))) > [data-deck-fold] > [data-deck-strip] {
   position: relative;
-  bottom: auto;
+  bottom: var(--fold-lift, 0);
 }
 
 /* ── 我的 khor 的表盘 (UX-26, the owner 2026-10-06; the spec is

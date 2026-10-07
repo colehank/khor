@@ -427,8 +427,11 @@ try {
       await p.mouse.click(b.x + 6, b.y + b.height / 2);
       if (!(await waitColumn(p, true, 1_500))) return false;
     }
-    const pick = p.locator("[data-session-side] [data-side-head] [data-seat-pick] select");
-    if ((await pick.inputValue().catch(() => null)) !== "recent") await pick.selectOption("recent").catch(() => {});
+    // 最近 on the head's seat bar (UX-45; ⚠️ 墓碑: the native picker).
+    const bar = p.locator("[data-session-side] [data-side-head] [data-seat-bar]");
+    if ((await bar.getAttribute("data-seat-on").catch(() => null)) !== "recent") {
+      await p.locator('[data-session-side] [data-side-head] [data-seat-item="recent"]').click().catch(() => {});
+    }
     return true;
   };
   /** Whether the column stood in the pane, on every animation frame for

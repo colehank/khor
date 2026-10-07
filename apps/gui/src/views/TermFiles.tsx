@@ -30,7 +30,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { fetchDevices, fetchLs, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu } from "@/components/RowMenu";
-import { IconBack, IconChevronRight, IconFile, IconFiles } from "@/components/icons";
+import { IconBack, IconFile, IconFiles } from "@/components/icons";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { gui } from "@/gen/catalog";
 import type { DirListing } from "@/gen/bindings/DirListing";
@@ -109,6 +109,10 @@ export function TermFiles({ road }: { road: FilesRoad }) {
     </button>
   );
 
+  // **No › at a row's end** (item 72, the owner 2026-10-07: 「list 不要有
+  // 右侧的 >」): a machine or a directory still opens on a tap; its mark
+  // (a face, the folder) says it is one to open. ⚠️ 墓碑: a tertiary
+  // chevron at the end of the machine and directory rows.
   let mesh: ReactNode;
   if (at === null) {
     mesh = machinesFor(devices ?? [], road.machine).map((d, i) => {
@@ -125,7 +129,6 @@ export function TermFiles({ road }: { road: FilesRoad }) {
           <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
           <span className="min-w-0 flex-1 truncate">{d.shown}</span>
           {session && <span className="flex-none text-footnote text-muted-foreground">{gui.files_session}</span>}
-          <IconChevronRight className="size-4 text-tertiary" />
         </button>
       );
     });
@@ -156,7 +159,6 @@ export function TermFiles({ road }: { road: FilesRoad }) {
             >
               {e.dir ? <IconFiles className="size-kind-mark flex-none text-muted-foreground" /> : <FileKindIcon name={e.name} className="size-kind-mark flex-none" />}
               <span className="min-w-0 flex-1 truncate">{e.name}</span>
-              {e.dir && <IconChevronRight className="size-4 text-tertiary" />}
             </button>
           );
           // A file's menu (long press, or a secondary click): where it
