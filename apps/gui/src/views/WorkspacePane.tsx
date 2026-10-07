@@ -67,6 +67,7 @@ import {
   storedWords,
 } from "@/lib/session-filter";
 import { band } from "@/lib/scroll-edge";
+import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { basename } from "@/words";
 import { DetailPane } from "@/views/DetailPane";
@@ -665,6 +666,17 @@ export function WorkspacePane({
     setGitAt((n) => n + 1);
     setReadAt((n) => n + 1);
   }, [hidden]);
+
+  // **…and after khor's own acts anywhere in this checkout** (UX-43 §1,
+  // `lib/tree-changed`): a file made, renamed, deleted or saved in the
+  // 附栏's tree — or in this pane — moves the letters here too.
+  useEffect(
+    () =>
+      onTreeChanged((c) => {
+        if (root !== "" && sameMachine(c, { machine, here }) && holds(root, c.dir)) setGitAt((n) => n + 1);
+      }),
+    [machine, here, root],
+  );
 
   // **Only the sessions column's default lives here now** (工作区批⑧).
   // It used to also throw away the open file, both draft maps and the

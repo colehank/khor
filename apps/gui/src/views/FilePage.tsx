@@ -55,6 +55,7 @@ import { useBlameShown } from "@/lib/blame";
 import { FILE_STEPS, fileSizeStyle, useFileSize } from "@/lib/file-size";
 import { groundAttr, GROUNDS, usePreviewGround } from "@/lib/preview-ground";
 import { baseName } from "@/lib/paths";
+import { treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { bytesOf, revealHere, shares } from "@/views/chat-files";
 import { HistorySheet, RevisionView, shortId } from "@/views/FileHistory";
@@ -314,6 +315,9 @@ function useFileVerbs({
           if (to === path) return;
           await renamePath(machine, path, to);
           onMoved(path, to);
+          // The tree under this page, and any other of this machine's
+          // (UX-43 §1).
+          treeChanged({ machine, here, dir });
         }}
       />
     </>

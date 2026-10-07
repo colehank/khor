@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { pathDrag } from "@/lib/path-drag";
+import { onTreeChanged, sameMachine, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
 import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
@@ -331,6 +332,24 @@ export function FileTree({
     setWant((was) => new Set(was));
   };
 
+  // **khor's own acts, wherever they were made** (UX-43 §1,
+  // `lib/tree-changed`): a level said to have changed is read again where
+  // this tree holds it, its listing on screen until the new one lands. A
+  // watched tree is told by the watch instead; a level this tree never
+  // asked about is not its business. The tree's own acts say it too, after
+  // their `reread` has already taken the level off `asked`, so nothing is
+  // asked twice.
+  useEffect(
+    () =>
+      onTreeChanged((c) => {
+        if (!sameMachine(c, { machine, here }) || watching.current === true || !asked.current.has(c.dir)) return;
+        refresh([c.dir]);
+      }),
+    // `refresh` only touches refs and a setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [machine, here],
+  );
+
   // **Kept for the next mount** (`trees`): what this tree holds, and
   // how far its watch had got.
   useEffect(() => {
@@ -454,6 +473,7 @@ export function FileTree({
     // nobody can see.
     if (!expanded.has(dir)) toggle(dir);
     reread(dir);
+    treeChanged({ machine, here, dir });
     onMade?.(full);
     return null;
   };
@@ -470,6 +490,7 @@ export function FileTree({
       await renamePath(machine, full, to);
       onMoved?.(full, to);
       reread(dir);
+      treeChanged({ machine, here, dir });
     }
     return null;
   };

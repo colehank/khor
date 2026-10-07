@@ -36,6 +36,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { SeatHead } from "@/components/SeatHead";
 import { gui } from "@/gen/catalog";
 import type { GitStatus } from "@/gen/bindings/GitStatus";
+import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { FilePage } from "@/views/FilePage";
 import { FileTree } from "@/views/FileTree";
@@ -111,6 +112,15 @@ export function SideWorkspace({
       live = false;
     };
   }, [machine, root, gitAt]);
+  // git's letters move with khor's acts anywhere in this checkout — the
+  // main area's tree, a save there (UX-43 §1, `lib/tree-changed`).
+  useEffect(
+    () =>
+      onTreeChanged((c) => {
+        if (sameMachine(c, { machine, here }) && holds(root, c.dir)) setGitAt((n) => n + 1);
+      }),
+    [machine, here, root],
+  );
   // **「放进来的」**: the machine's home, then its `khor-drop` when it is
   // there and holds something. Asked once per seat.
   const [dropDir, setDropDir] = useState<string | null>(null);
