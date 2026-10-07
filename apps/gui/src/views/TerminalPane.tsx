@@ -63,7 +63,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, termAttach, termDrop, termDropProgress, termDropStage, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, termAttach, termDrop, termDropCancel, termDropProgress, termDropStage, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { offerTabAct } from "@/lib/tab-acts";
@@ -78,6 +78,7 @@ import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, useWaited, WAIT_SAY_MS, Waiting } from "@/components/RegionState";
 import { gui, menu, msg } from "@/gen/catalog";
+import { baseName } from "@/lib/paths";
 import { ago } from "@/words";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
@@ -141,6 +142,14 @@ const DROP_LOOK_MS = 250;
 /** The largest file a drop takes (`khor_node::drops::CAP`): a picked
     file over it is refused before its bytes are read into the page. */
 const DROP_CAP = 200 * 2 ** 20;
+
+/** The pill's words for a drop `share` of the way through `names`: the
+    file going in now and how many are done of all. */
+export function dropOf(names: string[], share: number): { name: string; done: number; total: number } {
+  const total = names.length;
+  const done = Math.max(0, Math.min(total, Math.floor(share * total + 1e-6)));
+  return { name: names[Math.min(done, total - 1)] ?? "", done, total };
+}
 /** How long one pushed wait is held open with nothing new (`termWait`).
     Short enough that a pane torn down mid-wait frees its question soon,
     and well under `CATCH_UP_MS`: a wait that ran its whole length is a
@@ -1283,15 +1292,20 @@ export function TerminalPane({
   // **A drop under way runs it too, filled to how far it got** (item
   // 60): `null` when nothing is being dropped.
   const [dropShare, setDropShare] = useState<number | null>(null);
+  // **What goes in, by name** (the owner 2026-10-07 12:50): the pill
+  // says which file and how many are done, and its third seat cancels
+  // (`dropCancel`) while they go.
+  const [dropNames, setDropNames] = useState<string[] | null>(null);
+  const dropCancel = useRef<() => void>(() => {});
   useEffect(
     () =>
-      offerTabAct(id, {
-        kind: "reload",
-        busy: joining,
-        share: dropShare ?? undefined,
-        run: () => void reopenRef.current?.(),
-      }),
-    [id, joining, dropShare],
+      offerTabAct(
+        id,
+        dropShare !== null && dropNames
+          ? { kind: "stop", busy: joining, share: dropShare, drop: dropOf(dropNames, dropShare), run: () => dropCancel.current() }
+          : { kind: "reload", busy: joining, run: () => void reopenRef.current?.() },
+      ),
+    [id, joining, dropShare, dropNames],
   );
   // Why the terminal never opened, in khor's own words. **Not the same
   // fact as `gone`**: `gone` means the host this pane was watching
@@ -2871,39 +2885,58 @@ export function TerminalPane({
   activeRef.current = active;
   const dropping = useRef(false);
   /** `paths` may first have to be made: files picked on a phone are
-      staged here before the drop (`dropFiles`), under the same line. */
+      staged here before the drop (`dropFiles`), under the same line.
+      `names` are what the pill says, in the order they go in. */
   const dropFrom = useCallback(
-    (paths: string[] | (() => Promise<string[]>), from: string | null, into: string | null = null) => {
+    (paths: string[] | (() => Promise<string[]>), names: string[], from: string | null, into: string | null = null) => {
       if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return;
       dropping.current = true;
       setDropWhy(null);
-      // Files being staged: the line stands at its start meanwhile.
-      if (!Array.isArray(paths)) setDropShare(0);
+      // The pill turns to the files at once, the line at its start.
+      setDropShare(0);
+      setDropNames(names);
+      let cancelled = false;
       // How far it got, read while it runs: memory in the registry, so
       // the ask is cheap at the pill's own pace (nothing to read yet
       // while files are staged).
       const watch = window.setInterval(() => {
         termDropProgress(id).then(
-          (p) => p !== null && setDropShare(p),
+          (p) => p !== null && !cancelled && setDropShare(p),
           () => {},
         );
       }, DROP_LOOK_MS);
+      const settle = () => {
+        window.clearInterval(watch);
+        setDropShare(null);
+        setDropNames(null);
+      };
+      // **Cancelled** (the pill's ×): the pill is the session's again at
+      // once; whatever is staged is not dropped, a pull under way stops
+      // and pastes nothing. A new drop waits for this one to settle.
+      dropCancel.current = () => {
+        cancelled = true;
+        settle();
+        void termDropCancel(id).catch(() => {});
+      };
       Promise.resolve(Array.isArray(paths) ? paths : paths())
-        .then((made) => termDrop(id, made, from, into))
+        .then((made) => (cancelled ? null : termDrop(id, made, from, into)))
         .then(() => pollNow.current())
         .catch((err: unknown) => {
-          setDropWhy(String((err as { message?: string })?.message ?? err));
+          if (!cancelled) setDropWhy(String((err as { message?: string })?.message ?? err));
         })
         .finally(() => {
-          window.clearInterval(watch);
+          if (!cancelled) settle();
+          dropCancel.current = () => {};
           dropping.current = false;
-          setDropShare(null);
         });
     },
     [id],
   );
   // `into`: the shell's current directory (「放到当前目录」, part 5).
-  const drop = useCallback((paths: string[], from: string | null, into?: string | null) => dropFrom(paths, from, into ?? null), [dropFrom]);
+  const drop = useCallback(
+    (paths: string[], from: string | null, into?: string | null) => dropFrom(paths, paths.map(baseName), from, into ?? null),
+    [dropFrom],
+  );
   // **Files picked on the phone** (item 60 part 3): bytes in the web
   // view, staged where this machine's node serves them by path, then the
   // same drop from this machine — the session's machine pulls them.
@@ -2916,11 +2949,15 @@ export function TerminalPane({
         setDropWhy(msg.drop_too_big(DROP_CAP / 2 ** 20, big.name));
         return;
       }
-      dropFrom(async () => {
-        const staged: string[] = [];
-        for (const f of files) staged.push(await termDropStage(f));
-        return staged;
-      }, null);
+      dropFrom(
+        async () => {
+          const staged: string[] = [];
+          for (const f of files) staged.push(await termDropStage(f));
+          return staged;
+        },
+        files.map((f) => f.name),
+        null,
+      );
     },
     [dropFrom],
   );
@@ -3387,7 +3424,21 @@ export function TerminalPane({
         session again from scratch (`reopen`). On the wide face it stands
         at the end of the tab strip, among the page's verbs. While it
         joins the glyph turns and nothing else changes; it stays pressable. */}
-    {active && (
+    {/* While files go in, the same seat cancels them (the owner
+        2026-10-07 12:50), as a page's reload is its stop while it loads. */}
+    {active && dropNames !== null && (
+    <BarSeat at="lead">
+      <GlassCircle
+        data-term-drop-stop
+        aria-label={gui.term_drop_stop}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => dropCancel.current()}
+      >
+        <IconClose />
+      </GlassCircle>
+    </BarSeat>
+    )}
+    {active && dropNames === null && (
     <BarSeat at="lead">
       <GlassCircle
         data-term-reload

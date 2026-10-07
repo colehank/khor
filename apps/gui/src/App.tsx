@@ -74,7 +74,7 @@ import { BrowseLanding } from "@/browse/BrowseLanding";
 import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
-import { gui } from "@/gen/catalog";
+import { gui, msg } from "@/gen/catalog";
 import { lasted } from "@/words";
 import { setSessionSide, useSessionSide, type SideSeat as PlaceSeat } from "@/hooks/use-session-side";
 import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
@@ -1720,12 +1720,21 @@ export default function App() {
         // 不绘制 session 的日志了，日志在最近里面，放在最上面」): the day's
         // line in the pill's slot, the day in full hanging from it, and the
         // menu's 「今天」. The day is 最近's first row now, on both faces.
+        // **Files going in** (the owner 2026-10-07 12:50): the pill wears
+        // the file's kind for a face and says 「正在传入」, and its third
+        // seat cancels them; back to the session once they are in.
+        const dropping = tabAct(id)?.drop;
         return r
           ? {
               id,
               // An unnamed shell's tab follows what runs in it (roadmap
               // 2.5, `termName`); a name somebody gave stays.
-              label: termName(r),
+              label: dropping
+                ? dropping.total > 1
+                  ? msg.drop_into_of(dropping.name, dropping.done, dropping.total)
+                  : msg.drop_into(dropping.name)
+                : termName(r),
+              drop: dropping ? { name: dropping.name } : undefined,
               face: r.face,
               path: r.doing?.cwd ?? r.place ?? "",
               // **One line, the title** (UX-20, the owner 2026-10-05): where
@@ -1752,14 +1761,16 @@ export default function App() {
               // offered by id while it is mounted (`lib/tab-acts`); a tab
               // whose pane has not offered one yet is brought to the front,
               // where it mounts and offers it.
-              act: {
-                kind: "reload" as const,
-                label: gui.term_reload,
-                onPress: () => {
-                  sessionTabs.focus(id);
-                  tabAct(id)?.run();
-                },
-              },
+              act: dropping
+                ? { kind: "stop" as const, label: gui.term_drop_stop, onPress: () => tabAct(id)?.run() }
+                : {
+                    kind: "reload" as const,
+                    label: gui.term_reload,
+                    onPress: () => {
+                      sessionTabs.focus(id);
+                      tabAct(id)?.run();
+                    },
+                  },
               loading: tabAct(id)?.busy ?? false,
               share: tabAct(id)?.share,
               rang: rung.has(id),

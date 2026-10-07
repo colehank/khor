@@ -89,11 +89,19 @@ const SHAPES = Object.fromEntries(
   ]),
 );
 
+/** Kinds the package does not know: the iPhone's own picture format,
+    which its photos arrive in when they are put into a session. */
+const MORE: Record<string, Pick> = { ".heic": ["image", "purple"], ".heif": ["image", "purple"] };
+
 function pick(name: string): Pick {
   if (Object.hasOwn(DEFS.files, name)) return DEFS.files[name];
   let ext = name.slice(name.indexOf("."));
   while (ext !== "" && name.includes(".")) {
-    if (Object.hasOwn(DEFS.extensions, ext)) return DEFS.extensions[ext];
+    // A camera's capitals (`IMG_2041.JPG`) are the same kind.
+    for (const e of [ext, ext.toLowerCase()]) {
+      if (Object.hasOwn(DEFS.extensions, e)) return DEFS.extensions[e];
+      if (Object.hasOwn(MORE, e)) return MORE[e];
+    }
     ext = ext.slice(1);
     ext = ext.slice(ext.indexOf("."));
     if (!ext.startsWith(".")) break;

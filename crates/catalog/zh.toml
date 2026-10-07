@@ -2284,6 +2284,11 @@ write-predates = "那台机器上的 khor 版本较旧，无法保存"
 # The cap is the owner's, for now; the number rides in {0} so the
 # sentence never disagrees with the code.
 drop-too-big = "文件超过 {0} MB，暂不支持放进会话：{1}"
+# The tab pill's title while files go into the session (the owner
+# 2026-10-07 12:50): the file going in now; with several, how many of
+# them are done ({1}) of all ({2}).
+drop-into = "正在传入 {0}"
+drop-into-of = "正在传入 {0}（{1}/{2} 已完成）"
 drop-predates = "那台机器上的 khor 版本较旧，无法接收放进来的文件"
 drop-serve-gone = "本机的 khor 服务中途退出，文件没有放完"
 # VS Code on a machine (工作区批5). **Says what is missing, not what to
@@ -3679,6 +3684,9 @@ page-forward = "下一页"
 page-reload = "重新加载"
 # The tab pill's third seat while a page loads (UX-33): stop the load.
 page-stop = "停止"
+# The tab pill's third seat while files go into the session: cancel
+# them, nothing is pasted.
+term-drop-stop = "取消传入"
 # …and on a file tab that is clean: read it from the disk again.
 file-reread = "重新读取"
 # The mandala map's region name. No page carries a title (docs/UX.md), so

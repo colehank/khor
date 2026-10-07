@@ -58,6 +58,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SideList, type SideRow } from "@/components/SideList";
 import { BellMark } from "@/components/BellMark";
 import { sessionKind } from "@/components/SessionFace";
+import { FileKindIcon } from "@/components/FileKindIcon";
 import { gui } from "@/gen/catalog";
 import { stillMotion, TRIP_MS, useTravel } from "@/lib/travel";
 import { cn } from "@/lib/utils";
@@ -187,6 +188,9 @@ export type TabFace = {
   /** **How far a drop onto this tab has landed** (item 60), 0 to 1: the
       same line, filled this far rather than running. `loading` wins. */
   share?: number;
+  /** A file going into this session (the owner 2026-10-07 12:50): its
+      kind's icon stands in the face's seat while it goes in. */
+  drop?: { name: string };
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -196,6 +200,7 @@ export type TabFace = {
     (`SessionFace` `tab`, halo and corner inside the tab's box); the
     switcher's rows are list rows and keep a row's. */
 export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "tab" | "row" }) {
+  if (f.drop) return <FileKindIcon name={f.drop.name} className={bare} />;
   if (f.session) return <SessionFace face={f.face} {...f.session} size={seat} />;
   // A browsing page: the machine it goes through, wearing its kind's
   // mark the way a session's tab does (the redesign, 2026-10-02).
