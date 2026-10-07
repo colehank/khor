@@ -3114,6 +3114,7 @@ mod top_table {
             down_ms: None,
             last_rtt_ms: Some(23),
             since_ms: None,
+            last_hop: None,
         };
         let down = khor_node::Link { down_ms: Some(4_000), ..idle.clone() };
         assert_eq!(super::link_words(idle, false), khor_catalog::hop::word("quiet"));

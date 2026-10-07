@@ -3314,8 +3314,9 @@ impl Node {
                 // does it block", 坑节): a directory on a network mount
                 // can sit for seconds, and this reply's own QUIC
                 // connection would sit with it.
+                let root = self.root().to_path_buf();
                 let (path, entries, truncated) =
-                    tokio::task::spawn_blocking(move || crate::files::list_dir(&path))
+                    tokio::task::spawn_blocking(move || listed_with_arrivals(&root, &path))
                         .await
                         .map_err(|e| e.to_string())??;
                 Ok(Response::Dir {
@@ -6642,9 +6643,9 @@ impl Node {
         // asked exactly that and drew nothing (2026-09-15).
         let (channel, home) = self.resolve_or_here(machine)?;
         if home == self.device() {
-            let path = path.to_owned();
+            let (path, root) = (path.to_owned(), self.root().to_path_buf());
             let (at, entries, truncated) =
-                tokio::task::spawn_blocking(move || crate::files::list_dir(&path))
+                tokio::task::spawn_blocking(move || listed_with_arrivals(&root, &path))
                     .await
                     .map_err(|e| e.to_string())??;
             return Ok((at.display().to_string(), entries, truncated));
@@ -8082,6 +8083,7 @@ impl Node {
                             down_ms: None,
                             last_rtt_ms: None,
                             since_ms: None,
+                            last_hop: None,
                         },
                     )
                 })
@@ -8118,6 +8120,13 @@ impl Node {
                         khor_core::Hop::Idle
                     }
                 };
+                // The road the last settled wire was on, live or gone: an
+                // idle row says it (UX-48), dated by `since_ms`.
+                let last_hop = r.last_road.and_then(|k| match k {
+                    khor_net::path::PathKind::Direct => Some(khor_core::Hop::Direct),
+                    khor_net::path::PathKind::Relay => Some(khor_core::Hop::Relay),
+                    _ => None,
+                });
                 let ms = |d: Duration| u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
                 // Whole milliseconds, never 0 for a wire that has one: a
                 // loopback wire's 0.3 ms reads as 1 ms, not as nothing.
@@ -8131,7 +8140,8 @@ impl Node {
                         relay: r.relay,
                         down_ms: r.down.map(ms),
                         last_rtt_ms: r.last_rtt.map(whole),
-                        since_ms: r.since.map(ms),
+                        since_ms: last_hop.and(r.since).map(ms),
+                        last_hop,
                     },
                 )
             })
@@ -9377,12 +9387,22 @@ mod last_links {
                             down_ms: l.down_ms.map(|d| d.saturating_add(since)),
                             last_rtt_ms: l.last_rtt_ms.or(l.rtt_ms),
                             since_ms: l.since_ms.map(|s| s.saturating_add(since)),
+                            last_hop: l.last_hop,
                         },
                     )
                 })
                 .collect(),
         )
     }
+}
+
+/// A directory's listing with each received file's sender and landing
+/// time from its receipt (`road::mark_arrivals`, UX-48's storage row).
+/// **Blocking.**
+fn listed_with_arrivals(root: &std::path::Path, path: &str) -> Result<(std::path::PathBuf, Vec<proto::DirEntry>, bool), String> {
+    let (dir, mut entries, truncated) = crate::files::list_dir(path)?;
+    crate::road::mark_arrivals(root, &dir, &mut entries);
+    Ok((dir, entries, truncated))
 }
 
 /// A held wire to one machine, as a caller holds it: the connection, and

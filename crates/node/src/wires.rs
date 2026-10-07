@@ -217,8 +217,12 @@ struct Slot {
     /// The settled road, and a different one being considered.
     word: Option<PathKind>,
     /// When `word` became what it is (UX-48: a machine row says how long
-    /// its 直连 or 中继 has held). Read only while `word` is set.
+    /// its direct or relay road has held).
     word_at: Option<Instant>,
+    /// The last road this slot settled on, kept past the wire: an idle
+    /// machine's row says which road it last used and how long ago that
+    /// road settled (`word_at`). `None` until a wire first settles.
+    last_word: Option<PathKind>,
     leaning: Option<(PathKind, u8)>,
     failures: u32,
     retry_at: Option<Instant>,
@@ -385,6 +389,7 @@ fn settle(slot: &mut Slot, kind: PathKind) {
     match slot.word {
         None => {
             slot.word = Some(kind);
+            slot.last_word = Some(kind);
             slot.word_at = Some(Instant::now());
             slot.leaning = None;
         }
@@ -396,6 +401,7 @@ fn settle(slot: &mut Slot, kind: PathKind) {
             };
             if n >= SETTLE {
                 slot.word = Some(kind);
+                slot.last_word = Some(kind);
                 slot.word_at = Some(Instant::now());
                 slot.leaning = None;
             } else {
@@ -411,8 +417,12 @@ pub(crate) struct Reading {
     /// The settled road of a live wire; `None` when none is live.
     pub(crate) road: Option<PathKind>,
     pub(crate) heard: Option<Duration>,
-    /// How long the live wire's road has been what `road` says.
+    /// How long since `last_road` settled: the live wire's road, or,
+    /// with none live, the road the last wire was on.
     pub(crate) since: Option<Duration>,
+    /// The road the last settled wire was on, live or gone; `None` when
+    /// no wire to it ever settled since the resident started.
+    pub(crate) last_road: Option<PathKind>,
     /// The live wire's smoothed round trip ([`rtt_of`]).
     pub(crate) rtt: Option<Duration>,
     /// The relay the live wire goes through, by name; `None` when direct.
@@ -894,6 +904,8 @@ impl Wires {
         let mut relay = None;
         let mut heard: Option<Instant> = None;
         let mut last_rtt: Option<Duration> = None;
+        // With no live wire: the newest road either protocol settled on.
+        let mut last: Option<(PathKind, Instant)> = None;
         for proto in [Proto::Main, Proto::Tunnel] {
             let Some(slot) = slots.get(&(id.to_owned(), proto)) else {
                 continue;
@@ -912,8 +924,17 @@ impl Wires {
             if let Some(h) = slot.heard {
                 heard = Some(heard.map_or(h, |was| was.max(h)));
             }
+            if let (Some(w), Some(at)) = (slot.last_word, slot.word_at)
+                && last.is_none_or(|(_, was)| at > was)
+            {
+                last = Some((w, at));
+            }
         }
         drop(slots);
+        let (last_road, since) = match road {
+            Some(r) => (Some(r), since),
+            None => (last.map(|(w, _)| w), last.map(|(_, at)| now.saturating_duration_since(at))),
+        };
         // A live wire is the machine reached, whatever an attempt on the
         // other protocol said.
         let down = road
@@ -924,6 +945,7 @@ impl Wires {
         Reading {
             road,
             since,
+            last_road,
             heard: heard.map(|h| now.saturating_duration_since(h)),
             rtt,
             relay,
@@ -1052,6 +1074,42 @@ mod tests {
         assert_eq!(s.word_at, Some(first), "the same word and a flicker keep its age");
         settle(&mut s, PathKind::Direct);
         assert!(s.word_at.is_some_and(|at| at > first), "a settled change is a new age");
+    }
+
+    /// **An idle machine keeps the road it last used** (UX-48: an idle
+    /// row reads direct or relay over how long ago that road settled): the
+    /// road and its date outlive the wire; never connected says neither;
+    /// the newer of the two protocols' roads is the one said.
+    #[test]
+    fn an_idle_machine_keeps_the_road_it_last_used_and_when_it_settled() {
+        let w = Wires::default();
+        let r = w.link("m");
+        assert_eq!((r.road, r.last_road, r.since), (None, None, None), "never connected: nothing to say");
+        {
+            let mut slots = w.slots.lock().unwrap();
+            let s = slots.entry(("m".to_owned(), Proto::Main)).or_default();
+            settle(s, PathKind::Relay);
+            settle(s, PathKind::Direct);
+            settle(s, PathKind::Direct);
+            drop_wire(s, Retired::Silent);
+        }
+        let r = w.link("m");
+        assert_eq!(r.road, None, "no live wire");
+        assert_eq!(r.last_road, Some(PathKind::Direct), "the road it last settled on");
+        let first = r.since.expect("dated by when that road settled");
+        std::thread::sleep(Duration::from_millis(5));
+        let aged = w.link("m").since.expect("still dated");
+        assert!(aged > first, "and it keeps ageing");
+        {
+            let mut slots = w.slots.lock().unwrap();
+            let s = slots.entry(("m".to_owned(), Proto::Tunnel)).or_default();
+            settle(s, PathKind::Relay);
+            drop_wire(s, Retired::Closed);
+        }
+        let r = w.link("m");
+        assert_eq!(r.last_road, Some(PathKind::Relay), "the newer road of the two protocols");
+        assert!(r.since.is_some_and(|s| s < aged), "dated by that road");
+        assert_eq!(r.down, None, "idle is not unreachable");
     }
 
     #[test]

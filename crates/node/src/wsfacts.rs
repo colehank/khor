@@ -119,9 +119,8 @@ fn now_ms() -> i64 {
 /// dated by git's own files ([`crate::git::last_moved`]).
 fn compute(path: &str, changed_ms: i64, was: Option<&WorkspaceFact>) -> WorkspaceFact {
     let dir = Path::new(path);
-    let read = crate::git::is_checkout(dir)
-        .then(|| crate::git::segment(dir).ok())
-        .flatten();
+    let checkout = crate::git::is_checkout(dir);
+    let read = checkout.then(|| crate::git::segment(dir).ok()).flatten();
     let changed = read.as_ref().map(|s| s.changed);
     let changed_capped = read.as_ref().is_some_and(|s| s.more);
     let git = read.map(|s| {
@@ -153,6 +152,12 @@ fn compute(path: &str, changed_ms: i64, was: Option<&WorkspaceFact>) -> Workspac
         changed,
         changed_capped,
         changed_ms,
+        // A plain folder's row says its newest file (UX-48); a checkout's
+        // says HEAD's subject instead.
+        newest: (!checkout)
+            .then(|| crate::workspace::newest_file(dir))
+            .flatten()
+            .map(|(path, at_ms)| khor_core::NewestFile { path, at_ms }),
     }
 }
 
@@ -392,5 +397,26 @@ impl WsFacts {
 
     fn write_out(&self) {
         write(&self.root, &self.me, &self.facts());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A plain folder's facts name its newest file; a checkout's do not.
+    #[test]
+    fn a_plain_folders_facts_name_its_newest_file() {
+        let root = crate::testdir::TempTree::fresh("wsfacts-newest");
+        let plain = root.join("plain");
+        std::fs::create_dir_all(plain.join("sub")).unwrap();
+        std::fs::write(plain.join("sub").join("n.txt"), "x").unwrap();
+        let f = compute(&plain.display().to_string(), 0, None);
+        assert_eq!(f.git, None);
+        assert_eq!(f.newest.map(|n| n.path), Some("sub/n.txt".to_owned()));
+        let repo = root.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(repo.join("x.txt"), "x").unwrap();
+        assert_eq!(compute(&repo.display().to_string(), 0, None).newest, None, "a checkout says HEAD's subject instead");
     }
 }

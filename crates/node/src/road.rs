@@ -450,6 +450,65 @@ pub fn receipt(root: &Path, digest: &str) -> Option<Receipt> {
     (meta.is_file() && meta.len() == r.size).then_some(r)
 }
 
+/// **Where each received file in `dir` came from, and when it landed**
+/// (UX-48: a storage row reads the machine a file came from and how long
+/// ago it was received), by file name: the receipts whose file is in
+/// `dir` still at the size it landed. `dir` is canonical (a listing's).
+/// Reads every receipt, so it is asked only beside a listing.
+pub fn arrivals(root: &Path, dir: &Path) -> std::collections::HashMap<String, (String, i64)> {
+    let mut out = std::collections::HashMap::new();
+    let Ok(rd) = std::fs::read_dir(received_dir(root)) else {
+        return out;
+    };
+    let mut canon: std::collections::HashMap<PathBuf, Option<PathBuf>> = Default::default();
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.extension().is_none_or(|x| x != "json") {
+            continue;
+        }
+        let Some(r) = std::fs::read(&p).ok().and_then(|t| serde_json::from_slice::<Receipt>(&t).ok()) else {
+            continue;
+        };
+        let (Some(parent), Some(name)) = (r.path.parent(), r.path.file_name().and_then(|n| n.to_str())) else {
+            continue;
+        };
+        let here = canon
+            .entry(parent.to_path_buf())
+            .or_insert_with(|| parent.canonicalize().ok())
+            .as_deref()
+            == Some(dir);
+        if !here || std::fs::metadata(&r.path).map_or(true, |m| !m.is_file() || m.len() != r.size) {
+            continue;
+        }
+        // Two receipts for one name (one landed, deleted, another took
+        // its name): the later landing is the file there now.
+        let newer = out.get(name).is_none_or(|(_, at): &(String, i64)| r.at_ms > *at);
+        if newer {
+            out.insert(name.to_owned(), (r.from, r.at_ms));
+        }
+    }
+    out
+}
+
+/// A listing of `dir` with each received file's sender and landing time
+/// filled in from its receipt ([`arrivals`]); nothing read when the
+/// listing holds no file.
+pub fn mark_arrivals(root: &Path, dir: &Path, entries: &mut [crate::proto::DirEntry]) {
+    if !entries.iter().any(|e| !e.dir) {
+        return;
+    }
+    let got = arrivals(root, dir);
+    if got.is_empty() {
+        return;
+    }
+    for e in entries.iter_mut().filter(|e| !e.dir) {
+        if let Some((from, at)) = got.get(&e.name) {
+            e.from = (!from.is_empty()).then(|| from.clone());
+            e.received_ms = u64::try_from(*at).ok();
+        }
+    }
+}
+
 /// Forgets a receipt (the file it names is left alone).
 pub fn forget(root: &Path, digest: &str) {
     if let Some(p) = keyed(root, digest, "json") {
@@ -682,6 +741,33 @@ mod tests {
         assert_eq!(landed(&root, &root.join("ch"), &f), None, "another size is another file");
         std::fs::remove_file(&path).unwrap();
         assert_eq!(receipt(&root, &f.digest), None);
+    }
+
+    /// **A listing of the receive directory says where each received file
+    /// came from and when it landed** (UX-48, the storage page's row); a
+    /// file with no receipt, or changed since it landed, says neither.
+    #[test]
+    fn a_listing_names_each_received_files_sender_and_landing() {
+        let root = crate::testdir::TempTree::fresh("road-arrivals");
+        let dir = root.join("khor-drop");
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, body, from, at_ms) in [("a.txt", &b"hello"[..], "far", 7), ("b.txt", b"bye", "", 8)] {
+            let path = dir.join(name);
+            std::fs::write(&path, body).unwrap();
+            let f = file_ref(name, body);
+            record(&root, &Receipt { digest: f.digest, name: name.into(), path, size: body.len() as u64, from: from.into(), at_ms, mode: Mode::Offer }).unwrap();
+        }
+        std::fs::write(dir.join("mine.txt"), b"put here by hand").unwrap();
+        let (at, mut rows, _) = crate::files::list_dir(dir.to_str().unwrap()).unwrap();
+        mark_arrivals(&root, &at, &mut rows);
+        let said = |n: &str| rows.iter().find(|e| e.name == n).map(|e| (e.from.clone(), e.received_ms)).unwrap();
+        assert_eq!(said("a.txt"), (Some("far".into()), Some(7)));
+        assert_eq!(said("b.txt"), (None, Some(8)), "a receipt that does not know the sender");
+        assert_eq!(said("mine.txt"), (None, None), "no receipt");
+        std::fs::write(dir.join("a.txt"), b"changed!").unwrap();
+        let (at, mut rows, _) = crate::files::list_dir(dir.to_str().unwrap()).unwrap();
+        mark_arrivals(&root, &at, &mut rows);
+        assert_eq!(rows.iter().find(|e| e.name == "a.txt").map(|e| e.from.clone()), Some(None), "another size is another file");
     }
 
     /// **The move out of the conversation folders**: each file lands under

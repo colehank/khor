@@ -276,6 +276,25 @@ pub struct WorkspaceFact {
     /// with nothing to date.
     #[ts(type = "number")]
     pub changed_ms: i64,
+    /// **A plain folder's most recently modified file** (UX-48: the row's
+    /// second line and how long ago it changed); `None` for a checkout,
+    /// a folder with no file to name, and from an older resident. Tail
+    /// field.
+    #[serde(default)]
+    pub newest: Option<NewestFile>,
+}
+
+/// **The file a plain folder last changed in** (UX-48), looked for at the
+/// top level and one directory down — hidden entries and the build and
+/// dependency directories left out (`khor_node::workspace::SKIP`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct NewestFile {
+    /// Relative to the folder: the file's name at the top level,
+    /// `dir/name` one level down.
+    pub path: String,
+    /// Its modification time, ms since the epoch.
+    #[ts(type = "number")]
+    pub at_ms: i64,
 }
 
 /// **A checkout's git state, as a prompt's git segment says it** (UX-48,
@@ -361,12 +380,21 @@ pub struct Link {
     /// Tail field.
     #[serde(default)]
     pub last_rtt_ms: Option<u32>,
-    /// **How long the live wire has been on the road `hop` says**, in ms
-    /// (UX-48: the machine row's 「直连 · 3 小时」). Reset when the road
-    /// changes or a new wire is made. `None` without a live wire.
-    /// Tail field.
+    /// **How long since the road [`Link::last_hop`] says settled**, in ms
+    /// (UX-48: the machine row's "direct, 3 hours"), live or not: with a
+    /// live wire, how long it has been on the road `hop` says (reset when
+    /// the road changes or a new wire is made); with none, how long since
+    /// the last wire's road settled. `None` when no wire to that machine
+    /// ever settled since the resident started. Tail field.
     #[serde(default)]
     pub since_ms: Option<u64>,
+    /// **The road the last settled wire was on**, live or gone (UX-48: an
+    /// idle machine's row reads the road it last used, not "offline"): `hop`
+    /// itself while a wire is live; [`Hop::Direct`] or [`Hop::Relay`]
+    /// after it went. `None` when no wire ever settled since the resident
+    /// started, and from an older resident. Tail field.
+    #[serde(default)]
+    pub last_hop: Option<Hop>,
 }
 
 impl Link {

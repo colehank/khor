@@ -34,6 +34,7 @@ fn an_older_residents_link_decodes_without_a_relay() {
             down_ms: None,
             last_rtt_ms: None,
             since_ms: None,
+            last_hop: None,
         }
     );
     // …and a link that names its relay round-trips with it.

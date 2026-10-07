@@ -131,6 +131,76 @@ pub fn touched(dir: &Path) -> i64 {
     newest
 }
 
+/// How many entries [`newest_file`] looks at before it answers what it
+/// has: a folder holding a dump of files still answers at once.
+pub const MOST_NEWEST: usize = 4_000;
+
+/// **A plain folder's most recently modified file** (UX-48), as a path
+/// relative to `dir` and its mtime in ms since the epoch: the top level
+/// and one directory down. Dot-named entries (`.DS_Store`, `.cache/`)
+/// and [`SKIP`]'s directories are left out — neither is the work. Only
+/// regular files are named; a link is not followed. `None` when there
+/// is no file to name. Ties go to the path that sorts first, so the
+/// answer does not flicker between equal times.
+pub fn newest_file(dir: &Path) -> Option<(String, i64)> {
+    fn mtime(m: &std::fs::Metadata) -> i64 {
+        m.modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
+    }
+    let mut best: Option<(String, i64)> = None;
+    let mut seen = 0usize;
+    let mut take = |path: String, at: i64| {
+        let better = match &best {
+            None => true,
+            Some((p, t)) => at > *t || (at == *t && path < *p),
+        };
+        if better {
+            best = Some((path, at));
+        }
+    };
+    let mut below: Vec<(String, std::path::PathBuf)> = Vec::new();
+    for e in std::fs::read_dir(dir).ok()?.flatten() {
+        if seen >= MOST_NEWEST {
+            return best;
+        }
+        seen += 1;
+        let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(kind) = e.file_type() else { continue };
+        if kind.is_dir() {
+            if !SKIP.contains(&name.as_str()) {
+                below.push((name, e.path()));
+            }
+        } else if kind.is_file()
+            && let Ok(m) = e.metadata()
+        {
+            take(name, mtime(&m));
+        }
+    }
+    for (top, d) in below {
+        let Ok(rd) = std::fs::read_dir(&d) else { continue };
+        for e in rd.flatten() {
+            if seen >= MOST_NEWEST {
+                return best;
+            }
+            seen += 1;
+            let Some(name) = e.file_name().to_str().map(str::to_owned) else { continue };
+            if name.starts_with('.') || !e.file_type().is_ok_and(|k| k.is_file()) {
+                continue;
+            }
+            if let Ok(m) = e.metadata() {
+                take(format!("{top}/{name}"), mtime(&m));
+            }
+        }
+    }
+    best
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,5 +292,31 @@ mod tests {
             1_000_000,
             "the build output must not date the workspace"
         );
+    }
+
+    /// **A plain folder's newest file** (UX-48): the top level and one
+    /// directory down, the newest by mtime; hidden entries, the skipped
+    /// directories and anything deeper are not looked at.
+    #[test]
+    fn newest_file_looks_two_levels_down_past_hidden_and_build_directories() {
+        let tmp = root("newest-file");
+        assert_eq!(newest_file(&tmp), None, "nothing to name");
+        std::fs::create_dir_all(tmp.join("notes/deep")).unwrap();
+        std::fs::create_dir_all(tmp.join(".cache")).unwrap();
+        std::fs::create_dir_all(tmp.join("node_modules")).unwrap();
+        for (p, t) in [
+            ("a.txt", 1_000),
+            ("notes/b.md", 2_000),
+            ("notes/deep/c.md", 9_000),
+            (".DS_Store", 9_000),
+            (".cache/d", 9_000),
+            ("node_modules/e.js", 9_000),
+        ] {
+            std::fs::write(tmp.join(p), "x").unwrap();
+            stamp(&tmp.join(p), t);
+        }
+        assert_eq!(newest_file(&tmp), Some(("notes/b.md".to_owned(), 2_000_000)));
+        stamp(&tmp.join("a.txt"), 3_000);
+        assert_eq!(newest_file(&tmp), Some(("a.txt".to_owned(), 3_000_000)), "the top level counts the same");
     }
 }
