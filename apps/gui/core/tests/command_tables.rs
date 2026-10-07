@@ -121,6 +121,16 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "edit_menu",
         "the phone's own edit menu over a selection, which a browser tab does not have",
     ),
+    // Item 73's keyboard-up selection shows and hides the same native
+    // menu at a point the page names: the same menu, so the same reason.
+    (
+        "edit_menu_at",
+        "the phone's own edit menu shown over khor's selection, which a browser tab does not have",
+    ),
+    (
+        "edit_menu_hide",
+        "hides the phone's own edit menu, which a browser tab does not have",
+    ),
     // ── the root's words, written down 2026-09-30 (docs/CONNECT.md 身份)
     //
     // **A secret, not a window** — the second entry here that is about
