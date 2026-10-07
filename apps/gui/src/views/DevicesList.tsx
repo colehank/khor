@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import type { DeviceRow } from "@/api";
 import { type OmniAxis } from "@/components/Omnibox";
@@ -8,7 +8,7 @@ import { machineKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
 import { band, BAND_INK } from "@/lib/latency";
-import { gui } from "@/gen/catalog";
+import { cli, gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { isDown } from "@/lib/topology";
 import { lasted, connectionKey, connectionKeyWord, groupLabel, hopWord, systemWord } from "@/words";
@@ -287,7 +287,9 @@ export function DevicesList({
     // sessions running in the second line; the latency on the right with
     // the unreadable / not-connected words and the last-heard time under
     // it. And (UX-48, the lead 2026-10-07) the offline word on every idle
-    // row: idle is not unreachable.
+    // row: idle is not unreachable. (UX-50) the latency first in the
+    // second line and the middle dots between its readings; a fourth
+    // reading (disk beside GPU) — at most three, the owner 2026-10-08.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
     const down = !d.me && d.hop === "quiet" && isDown(d.down_ms);
     const live = d.me || d.hop === "direct" || d.hop === "relay";
@@ -311,14 +313,25 @@ export function DevicesList({
         : down && typeof d.heard_ms === "number"
           ? lasted(d.heard_ms)
           : null;
+    // **UX-50** (the owner 2026-10-08): the latency is the title line's,
+    // after the name; under the name at most three readings, each a label
+    // and a value with a gap between them and no middle dot: CPU, memory,
+    // then the GPU on a machine that has one, else the disk (`vitals.disk`,
+    // the volume khor's home is on — the one the card's disk ring reads, so
+    // the two never disagree). When they do not fit, whole items go from
+    // the end (`Whole`); CPU stays.
     const v = live ? d.vitals?.vitals : undefined;
-    const pct = (n: number) => Math.round(n);
+    const lat = live && !d.me ? rtt : null;
+    const share = (f: { used: number; total: number }) => Math.round((f.used / f.total) * 100);
     const readings = [
-      rtt !== null && !d.me ? { key: "rtt", word: gui.row_rtt(rtt) } : null,
-      v ? { key: "cpu", word: gui.row_cpu(pct(v.cpu_pct)) } : null,
-      v && v.mem.total > 0 ? { key: "mem", word: gui.row_mem(pct((v.mem.used / v.mem.total) * 100)) } : null,
-      v?.gpu ? { key: "gpu", word: gui.row_gpu(pct(v.gpu.util_pct)) } : null,
-    ].filter((w): w is { key: string; word: string } => w !== null);
+      v ? { key: "cpu", label: cli.vitals_name_cpu, value: Math.round(v.cpu_pct) } : null,
+      v && v.mem.total > 0 ? { key: "mem", label: cli.vitals_name_mem, value: share(v.mem) } : null,
+      v?.gpu
+        ? { key: "gpu", label: cli.vitals_name_gpu, value: Math.round(v.gpu.util_pct) }
+        : v?.disk && v.disk.total > 0
+          ? { key: "disk", label: cli.vitals_name_disk, value: share(v.disk) }
+          : null,
+    ].filter((w): w is { key: string; label: string; value: number } => w !== null);
     return {
       id: d.id,
       group: d.pinned ? "pin" : "",
@@ -328,7 +341,7 @@ export function DevicesList({
       // 「角标按系统」) — the node's `vitals.system`. A machine that could
       // not say (an older peer, a satellite, no reading yet) wears the
       // plain machine mark, never a guess. The model is not the mark's
-      // any more; its name is the title's aside. On the face or
+      // any more (nor, since UX-48, the row's). On the face or
       // on its corner by the 外观 setting (`FaceMark`, 2026-10-02) — and
       // `MachineFace` is this same assembly for anywhere else.
       mark: machineKind(system),
@@ -348,26 +361,36 @@ export function DevicesList({
         <span className="block truncate">{d.shown}</span>
       ),
       name: d.shown,
+      // The title line's aside: `SideList` draws it one size down
+      // (`callout`) in the secondary ink. Whole or not at all.
+      aside:
+        lat !== null ? (
+          <Whole>
+            <span data-row-reading="rtt" className="flex-none whitespace-nowrap tabular-nums">
+              {/* The latency light, in the app's one scale of bands
+                  (UX-26, `lib/latency`) — never the colour alone: the
+                  number is beside it. */}
+              <span
+                aria-hidden="true"
+                data-lat={band(lat)}
+                className="me-xxs inline-block size-1.5 rounded-full align-middle"
+                style={{ background: BAND_INK[band(lat)] }}
+              />
+              {gui.row_rtt(lat)}
+            </span>
+          </Whole>
+        ) : undefined,
       sub: readings.length ? (
-        <span data-row-readings className="tabular-nums">
-          {readings.map((r, i) => (
-            <span key={r.key} data-row-reading={r.key}>
-              {i > 0 && " · "}
-              {r.key === "rtt" && (
-                // The latency light, in the app's one scale of bands
-                // (UX-26, `lib/latency`) — never the colour alone: the
-                // number is beside it.
-                <span
-                  aria-hidden="true"
-                  data-lat={band(rtt)}
-                  className="me-xxs inline-block size-1.5 rounded-full align-middle"
-                  style={{ background: BAND_INK[band(rtt)] }}
-                />
-              )}
-              {r.word}
+        <Whole keep={1} data-row-readings>
+          {readings.map((r) => (
+            <span key={r.key} data-row-reading={r.key} className="flex-none whitespace-nowrap">
+              <span data-reading-label>{r.label}</span>{" "}
+              <span data-reading-value className="text-foreground tabular-nums">
+                {gui.row_pct(r.value)}
+              </span>
             </span>
           ))}
-        </span>
+        </Whole>
       ) : undefined,
       corners: {
         top: state ? (
@@ -429,5 +452,50 @@ export function DevicesList({
           stays): only 完成 or Esc closes it. */}
       <MachineEditDialog row={edited} onClose={() => setEditing(null)} onChanged={() => onRestyled?.()} />
     </>
+  );
+}
+
+/**
+ * **Whole items or none** (UX-50, the owner 2026-10-08: when they do not
+ * fit, items drop from the end, whole; never a cut value). The items sit in a row with `gap-row` between
+ * them; those past the line's end are hidden from the last back, so a
+ * reading is never cut mid-number. Measured, because what fits is each
+ * item's laid-out width against the line's, which no flex rule can say:
+ * every item is shown, measured, and the ones that do not fit are hidden
+ * again before the frame is painted. A hidden item says so (`hidden`),
+ * which is what the face gate reads. The first `keep` items stay whatever
+ * the width: CPU is never dropped.
+ */
+function Whole({ keep = 0, children, ...data }: { keep?: number; children: ReactNode } & Record<`data-${string}`, unknown>) {
+  const box = useRef<HTMLSpanElement | null>(null);
+  const fit = useCallback(() => {
+    const el = box.current;
+    if (!el) return;
+    const items = [...el.children] as HTMLElement[];
+    for (const i of items) i.hidden = false;
+    const room = el.getBoundingClientRect().width;
+    const gap = Number.parseFloat(getComputedStyle(el).columnGap) || 0;
+    let used = 0;
+    let out = false;
+    items.forEach((i, n) => {
+      used += (n > 0 ? gap : 0) + i.getBoundingClientRect().width;
+      // A hair of rounding is not a cut glyph.
+      out ||= used > room + 0.5;
+      i.hidden = out && n >= keep;
+    });
+  }, [keep]);
+  // Every render: a new number changes what the items need.
+  useLayoutEffect(fit);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const watch = new ResizeObserver(fit);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [fit]);
+  return (
+    <span ref={box} {...data} className="flex min-w-0 gap-row overflow-hidden">
+      {children}
+    </span>
   );
 }

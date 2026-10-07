@@ -32,6 +32,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { gui } from "@/gen/catalog";
+// `82K`, `1.2M`: a token count a person reads at a glance (K / M / B, UX-50).
+import { tokensShort as compact } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 import { gaugeColor } from "@/lib/vitals";
 
@@ -464,12 +466,6 @@ export type Who = {
   usage: { used: number; size: number } | null;
 };
 
-/** `82k`, `1.2M`: a token count a person reads at a glance. */
-function compact(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}M`;
-  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
-  return String(n);
-}
 
 /**
  * **The context as a dial** (the owner, 2026-10-02: 「上下文用环表示,
