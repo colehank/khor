@@ -53,15 +53,6 @@ const faces: Record<string, any> = {
 const sshHosts = ["gpu-box", "bastion", "lab-gw", "hinton", "lecun", "aliyun-bj"];
 const khorMachines = ["turing", "hinton", "lecun"];
 
-/** One machine's answer to 「够得着 gpu-box:22 吗」 (road-a's probe; the
-    field names are a draft until agreed through the lead). */
-type Reach = { machine: string; me?: boolean; ok: boolean; ms?: number; key?: string; why?: string; odd?: boolean };
-const reach: Reach[] = [
-  { machine: "MacLab", me: true, ok: false, why: "超时" },
-  { machine: "turing", ok: true, ms: 3, key: "SHA256:q3Vf…9kLw" },
-  { machine: "hinton", ok: true, ms: 41, key: "SHA256:q3Vf…9kLw" },
-  { machine: "lecun", ok: true, ms: 38, key: "SHA256:Zt0p…aa1M", odd: true },
-];
 
 // ---- pieces ---------------------------------------------------------------
 
@@ -154,18 +145,8 @@ function Pick() {
         <DialogTitle>添加机器</DialogTitle>
       </DialogHeader>
       <div className="-mx-row flex flex-col">
-        <Choice
-          icon={<IconDevices />}
-          title="手边的机器"
-          note="它已经装了 khor：扫码，或者输入邀请码"
-          onPick={() => (location.hash = "#2")}
-        />
-        <Choice
-          icon={<IconTerminal />}
-          title="ssh 主机"
-          note="经 ssh 给它装上 khor，不用走到它跟前"
-          onPick={() => (location.hash = "#3")}
-        />
+        <Choice icon={<IconDevices />} title="khor 主机" note="已安装 khor，使用邀请码添加" onPick={() => (location.hash = "#2")} />
+        <Choice icon={<IconTerminal />} title="SSH 主机" note="通过 SSH 添加，自动安装 khor" onPick={() => (location.hash = "#3")} />
       </div>
       <DialogFooter>
         <Button>取消</Button>
@@ -178,22 +159,50 @@ function AtHand() {
   return (
     <>
       <DialogHeader>
-        <DialogTitle>手边的机器</DialogTitle>
+        <DialogTitle>khor 主机</DialogTitle>
       </DialogHeader>
       <FakeQr />
-      <Input readOnly value="khor1qxy7…（邀请码，一次有效）" aria-label="邀请码" />
-      <div className="text-callout text-muted-foreground">15 分钟内有效，用过一次就作废</div>
+      <Input readOnly value="khor1qxy7…（邀请码）" aria-label="邀请码" />
+      <div className="text-callout text-muted-foreground">15 分钟内有效，仅可使用一次</div>
       <div className="flex flex-col gap-in border-t pt-row">
-        <span className="text-callout text-muted-foreground">反过来，对方给了你邀请码</span>
+        <span className="text-callout text-muted-foreground">已有其他机器的邀请码</span>
         <div className="flex items-center gap-in">
-          <Input placeholder="粘贴邀请码" aria-label="粘贴邀请码" />
+          <Input placeholder="输入邀请码" aria-label="输入邀请码" />
           <Button className="flex-none">加入</Button>
         </div>
       </div>
       <DialogFooter>
         <Button>关闭</Button>
-        <Button variant="primary">拷贝邀请码</Button>
+        <Button variant="primary">复制邀请码</Button>
       </DialogFooter>
+    </>
+  );
+}
+
+/** 认证方式: 密钥 (the BatchMode road) or 密码 (kept in this machine's
+    keychain only, handed to ssh through SSH_ASKPASS). */
+function Auth({ auth, setAuth }: { auth: "key" | "password"; setAuth: (a: "key" | "password") => void }) {
+  return (
+    <>
+      <FormLabel>认证方式</FormLabel>
+      <SegmentedControl
+        label="认证方式"
+        value={auth}
+        onChange={setAuth}
+        options={[
+          { key: "key", label: "密钥" },
+          { key: "password", label: "密码" },
+        ]}
+      />
+      {auth === "password" && (
+        <>
+          <FormLabel htmlFor="lab-pw">密码</FormLabel>
+          <div className="flex min-w-0 flex-col gap-in">
+            <Input id="lab-pw" type="password" defaultValue="placeholder" />
+            <span className="text-callout text-muted-foreground">密码仅保存在本机钥匙串中</span>
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -201,17 +210,16 @@ function AtHand() {
 function SshForm() {
   const [host, setHost] = useState("gpu-box");
   const [via, setVia] = useState("bastion");
-  const [kind, setKind] = useState<"member" | "satellite">("member");
+  const [auth, setAuth] = useState<"key" | "password">("key");
   return (
     <>
       <DialogHeader>
-        <DialogTitle>ssh 主机</DialogTitle>
+        <DialogTitle>SSH 主机</DialogTitle>
       </DialogHeader>
       <FormGrid>
         <FormLabel htmlFor="lab-host">主机</FormLabel>
         <div className="flex min-w-0 flex-col gap-in">
-          <Input id="lab-host" value={host} onChange={(e) => setHost(e.target.value)} placeholder="user@host 或 ssh 配置里的名字" />
-          {/* The user's own ssh config, as names to press. */}
+          <Input id="lab-host" value={host} onChange={(e) => setHost(e.target.value)} placeholder="user@host 或 SSH 配置中的名称" />
           <div data-ssh-config-hosts className="flex flex-wrap gap-xxs">
             {sshHosts.map((h) => (
               <Button key={h} size="sm" variant={h === host ? "secondary" : "ghost"} onClick={() => setHost(h)}>
@@ -220,38 +228,24 @@ function SshForm() {
             ))}
           </div>
         </div>
-        <FormLabel>经由</FormLabel>
+        <FormLabel htmlFor="lab-port">端口</FormLabel>
+        <Input id="lab-port" inputMode="numeric" className="w-24" placeholder="22" aria-describedby="lab-port-note" />
+        <FormLabel>跳板机</FormLabel>
         <PopupButton
           look="field"
-          label="经由"
+          label="跳板机"
           value={via}
           onPick={(v) => (v === "?" ? (location.hash = "#4") : setVia(v))}
           choices={[
-            { value: "", label: "直接连" },
-            ...khorMachines.map((m) => ({ value: `khor:${m}`, label: m, group: "从 khor 机器添加" })),
-            ...sshHosts.filter((h) => h !== host).map((h) => ({ value: h, label: h, group: "经 ssh 跳板" })),
-            { value: "?", label: "问问每台机器谁够得着…", group: "不知道" },
+            { value: "", label: "直接连接" },
+            ...khorMachines.map((m) => ({ value: `khor:${m}`, label: m, group: "通过 khor 主机" })),
+            ...sshHosts.filter((h) => h !== host).map((h) => ({ value: h, label: h, group: "通过 SSH 跳板机" })),
+            { value: "?", label: "检测哪些机器可以连接…", group: "连通性检测" },
           ]}
         />
-        <FormLabel htmlFor="lab-name">名字</FormLabel>
-        <Input id="lab-name" placeholder={host || "机器名"} />
-        <FormLabel>方式</FormLabel>
-        <div className="flex min-w-0 flex-col gap-in">
-          <SegmentedControl
-            label="方式"
-            value={kind}
-            onChange={setKind}
-            options={[
-              { key: "member", label: "成员" },
-              { key: "satellite", label: "卫星" },
-            ]}
-          />
-          <span className="text-callout text-muted-foreground">
-            {kind === "member"
-              ? "装上 khor，它自己连网；留不住时改作卫星"
-              : "什么都不装，本机经 ssh 替它跑"}
-          </span>
-        </div>
+        <FormLabel htmlFor="lab-name">名称</FormLabel>
+        <Input id="lab-name" placeholder={host || "机器名称"} />
+        <Auth auth={auth} setAuth={setAuth} />
       </FormGrid>
       <DialogFooter>
         <Button>取消</Button>
@@ -261,60 +255,91 @@ function SshForm() {
   );
 }
 
+/** road-a's ReachReport, faked. */
+type ReachRow = {
+  id: string;
+  shown: string;
+  here: boolean;
+  outcome: "reached" | "refused" | "timeout" | "no-name" | "unasked" | "predates";
+  ms: number | null;
+  addr: string | null;
+  banner: string | null;
+  host_key: string | null;
+  why: string | null;
+};
+const report = {
+  host: "gpu-box",
+  port: 22,
+  entrance: "c".repeat(64),
+  disagree: true,
+  known_as: null as string | null,
+  rows: [
+    { id: "a".repeat(64), shown: "MacLab", here: true, outcome: "timeout", ms: null, addr: null, banner: null, host_key: null, why: "连接超时" },
+    { id: "c".repeat(64), shown: "turing", here: false, outcome: "reached", ms: 3, addr: "10.0.0.7:22", banner: "SSH-2.0-OpenSSH_9.6", host_key: "SHA256:q3Vf…9kLw", why: null },
+    { id: "d".repeat(64), shown: "hinton", here: false, outcome: "reached", ms: 41, addr: "10.0.0.7:22", banner: "SSH-2.0-OpenSSH_9.6", host_key: "SHA256:q3Vf…9kLw", why: null },
+    { id: "e".repeat(64), shown: "lecun", here: false, outcome: "reached", ms: 38, addr: "192.168.1.7:22", banner: "SSH-2.0-OpenSSH_8.9", host_key: "SHA256:Zt0p…aa1M", why: null },
+  ] as ReachRow[],
+};
+
 function Reachers() {
-  const best = reach.filter((r) => r.ok).sort((a, b) => (a.ms ?? 0) - (b.ms ?? 0))[0];
-  const [pick, setPick] = useState(best.machine);
-  const odd = reach.find((r) => r.odd);
+  const best = report.rows.find((r) => r.id === report.entrance)!;
+  const [pick, setPick] = useState(best.id);
+  // The key most machines recorded; a row holding another is the odd one.
+  const usual = "SHA256:q3Vf…9kLw";
+  const chosen = report.rows.find((r) => r.id === pick)!;
   return (
     <>
       <DialogHeader>
-        <DialogTitle>谁够得着 gpu-box</DialogTitle>
-        <DialogDescription>每台在线的机器各试一次 22 端口</DialogDescription>
+        <DialogTitle>连通性检测</DialogTitle>
+        <DialogDescription>每台在线的机器分别尝试连接 gpu-box 的 22 端口</DialogDescription>
       </DialogHeader>
       <ul data-reach className="-mx-row flex flex-col">
-        {reach.map((r) => {
-          const on = r.machine === pick;
+        {report.rows.map((r) => {
+          const on = r.id === pick;
+          const ok = r.outcome === "reached";
+          const odd = report.disagree && r.host_key !== null && r.host_key !== usual;
           return (
-            <li key={r.machine}>
+            <li key={r.id}>
               <button
                 type="button"
-                disabled={!r.ok}
-                onClick={() => setPick(r.machine)}
+                disabled={!ok}
+                onClick={() => setPick(r.id)}
                 className={cn(
                   "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-row rounded-md px-row py-in text-left",
-                  on ? "bg-fill-strong" : r.ok && "hover:bg-fill",
+                  on ? "bg-fill-strong" : ok && "hover:bg-fill",
                 )}
               >
-                <Face name={r.machine} />
+                <Face name={r.shown} />
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate text-body text-foreground">
-                    {r.machine}
-                    {r.me && <span className={on ? "text-foreground" : "text-muted-foreground"}>（本机）</span>}
+                    {r.shown}
+                    {r.here && <span className={on ? "text-foreground" : "text-muted-foreground"}>（本机）</span>}
                   </span>
                   <span
                     className={cn(
-                      "truncate font-mono text-caption",
-                      r.odd ? "text-destructive" : on ? "text-foreground" : "text-muted-foreground",
+                      "truncate text-caption",
+                      ok && "font-mono",
+                      odd ? "text-destructive" : on ? "text-foreground" : "text-muted-foreground",
                     )}
                   >
-                    {r.ok ? r.key : r.why}
+                    {ok ? r.host_key : r.why}
                   </span>
                 </span>
                 <span className={cn("text-callout tabular-nums", on ? "text-foreground" : "text-muted-foreground")}>
-                  {r.ok ? `${r.ms} ms` : "够不着"}
-                  {r === best && <span className="ml-in">最快</span>}
+                  {ok ? `${r.ms} ms` : "无法连接"}
+                  {r.id === report.entrance && <span className="ml-in">延迟最低</span>}
                 </span>
               </button>
             </li>
           );
         })}
       </ul>
-      {odd && (
-        <div className="text-callout text-destructive">{odd.machine} 认的钥匙和别的机器不同，它够到的可能不是同一台</div>
+      {report.disagree && (
+        <div className="text-callout text-destructive">lecun 记录的主机密钥与其他机器记录的不一致，可能不是同一台主机</div>
       )}
       <DialogFooter>
         <Button>返回</Button>
-        <Button variant="primary">{pick === "MacLab" ? "直接连" : `经 ${pick}`}</Button>
+        <Button variant="primary">{chosen.here ? "直接连接" : `通过 ${chosen.shown}`}</Button>
       </DialogFooter>
     </>
   );
@@ -325,49 +350,55 @@ function Installing({ fallback = false }: { fallback?: boolean }) {
     <>
       <DialogHeader>
         <DialogTitle>添加 gpu-box</DialogTitle>
-        <DialogDescription>经 bastion</DialogDescription>
+        <DialogDescription>通过 bastion</DialogDescription>
       </DialogHeader>
       {fallback ? (
         <>
           <ol data-steps className="flex flex-col">
-            <Step state="done" word="连接" note="经 bastion，34 ms" />
-            <Step state="undone" word="放 khor" note="已撤掉" />
+            <Step state="done" word="连接" note="通过 bastion，34 ms" />
+            <Step state="undone" word="安装 khor" note="已移除" />
             <Step state="failed" word="启动" note="没有 systemd --user，也没有 tmux" />
-            <Step state="done" word="作为卫星添加" note="本机经 ssh 替它跑" />
+            <Step state="done" word="作为 SSH 主机添加" note="khor 未安装，操作通过 SSH 执行" />
           </ol>
           <div data-fallback-why className="text-body text-foreground">
-            gpu-box 留不住常驻的 khor，已撤掉装上的东西，改作卫星
+            无法在 gpu-box 上持续运行 khor，已移除安装的文件，改为通过 SSH 连接
           </div>
         </>
       ) : (
         <ol data-steps className="flex flex-col">
-          <Step state="done" word="连接" note="经 bastion，34 ms" />
-          <Step state="done" word="放 khor" note="0.1.14，它自己从 GitHub 下载" />
-          <Step state="live" word="启动" note="systemd --user，退出登录后照常运行" />
+          <Step state="done" word="连接" note="通过 bastion，34 ms" />
+          <Step state="done" word="安装 khor" note="0.1.14，由目标主机自行下载" />
+          <Step state="live" word="启动" note="systemd --user，退出登录后继续运行" />
           <Step state="wait" word="配对" />
         </ol>
       )}
-      <DialogFooter>
-        {fallback ? <Button>完成</Button> : <Button>取消</Button>}
-      </DialogFooter>
+      <DialogFooter>{fallback ? <Button>完成</Button> : <Button>取消</Button>}</DialogFooter>
     </>
   );
 }
 
-function PasswordOnly() {
+/** The key was refused: pick how to sign in. */
+function AuthChoice() {
+  const [auth, setAuth] = useState<"key" | "password">("key");
   return (
     <>
       <DialogHeader>
-        <DialogTitle>gpu-box 只认密码</DialogTitle>
+        <DialogTitle>gpu-box 不接受本机的密钥</DialogTitle>
       </DialogHeader>
-      <div className="text-body text-foreground">khor 不经手密码。先把本机的钥匙放到 gpu-box 上，再回来添加</div>
-      <div data-selectable className="rounded-sm bg-fill px-row py-in font-mono text-mono text-foreground">
-        ssh-copy-id -J bastion gpu-box
-      </div>
-      <div className="text-callout text-muted-foreground">在终端里输一次密码，以后就不用了</div>
+      <FormGrid>
+        <Auth auth={auth} setAuth={setAuth} />
+      </FormGrid>
+      {auth === "key" && (
+        <>
+          <div className="text-body text-foreground">将本机的公钥上传到 gpu-box，之后登录不再需要密码</div>
+          <div data-selectable className="rounded-sm bg-fill px-row py-in font-mono text-mono text-foreground">
+            ssh-copy-id -o ProxyJump=bastion gpu-box
+          </div>
+        </>
+      )}
       <DialogFooter>
         <Button>取消</Button>
-        <Button variant="primary">在终端里放钥匙</Button>
+        <Button variant="primary">{auth === "key" ? "在终端中上传公钥" : "添加"}</Button>
       </DialogFooter>
     </>
   );
@@ -387,7 +418,7 @@ function Road({ machine, road, hops, broken, why, sat }: {
       <div className="flex items-center gap-row">
         <Face name={machine} className="size-avatar" />
         <span className="flex-1 text-title-sm text-foreground">{machine}</span>
-        {sat && <Button>转正…</Button>}
+        {sat && <Button>安装 khor…</Button>}
       </div>
       <dl className="grid grid-cols-4 gap-x-row">
         {[
@@ -402,17 +433,13 @@ function Road({ machine, road, hops, broken, why, sat }: {
           </div>
         ))}
       </dl>
-      {/* The road, machine by machine; a broken segment says so in ssh's words. */}
       <div data-road className="flex flex-wrap items-center gap-in text-callout">
         {hops.map((h, i) => (
           <span key={h} className="flex items-center gap-in">
             {i > 0 && (
               <span
                 aria-hidden
-                className={cn(
-                  "h-px w-8 flex-none",
-                  broken === i ? "border-t border-dashed border-destructive" : "bg-muted-foreground",
-                )}
+                className={cn("h-px w-8 flex-none", broken === i ? "border-t border-dashed border-destructive" : "bg-muted-foreground")}
               />
             )}
             <span className={broken !== undefined && i >= broken ? "text-destructive" : "text-foreground"}>{h}</span>
@@ -429,22 +456,22 @@ function MachinePage() {
     <main className="mx-auto flex max-w-[44rem] flex-col gap-base px-pane pt-16 pb-pane">
       <Road machine="hinton" road="直连 · 31 ms" hops={["本机", "hinton"]} />
       <Road machine="lecun" road="中继 · 140 ms" hops={["本机", "中继 北京", "lecun"]} />
-      <Road machine="turing" road="经 hinton" hops={["本机", "hinton", "turing"]} />
+      <Road machine="turing" road="通过 hinton" hops={["本机", "hinton", "turing"]} />
       <Road
         machine="gpu-box"
-        road="经 bastion"
+        road="通过 bastion"
         sat
         hops={["本机", "bastion", "gpu-box"]}
         broken={2}
-        why="跳板到目标不通：bastion 连不上 gpu-box（Connection timed out）"
+        why="跳板机无法连接目标主机：bastion 无法连接 gpu-box（Connection timed out）"
       />
       <Road
         machine="lab-gw"
-        road="经 bastion"
+        road="通过 bastion"
         sat
         hops={["本机", "bastion", "lab-gw"]}
         broken={1}
-        why="本机到跳板不通：连不上 bastion（Connection refused）"
+        why="本机无法连接跳板机 bastion（Connection refused）"
       />
     </main>
   );
@@ -454,12 +481,12 @@ function MachinePage() {
 
 const screens: [string, string, () => ReactNode][] = [
   ["1", "选择", () => <Pick />],
-  ["2", "手边", () => <AtHand />],
-  ["3", "ssh", () => <SshForm />],
-  ["4", "谁够得着", () => <Reachers />],
+  ["2", "khor 主机", () => <AtHand />],
+  ["3", "SSH 主机", () => <SshForm />],
+  ["4", "连通性检测", () => <Reachers />],
   ["5", "安装中", () => <Installing />],
-  ["6", "改作卫星", () => <Installing fallback />],
-  ["7", "只认密码", () => <PasswordOnly />],
+  ["6", "改为 SSH 连接", () => <Installing fallback />],
+  ["7", "认证方式", () => <AuthChoice />],
   ["8", "机器页", () => null],
 ];
 
@@ -471,7 +498,7 @@ function Lab() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
   const screen = screens.find(([k]) => k === at) ?? screens[0];
-  const form = at === "3";
+  const form = at === "3" || at === "7";
   const theme = () => {
     const r = document.documentElement;
     r.setAttribute("data-theme", r.getAttribute("data-theme") === "dark" ? "light" : "dark");
