@@ -3434,9 +3434,11 @@ fn tokens_line(t: &Tokens) -> String {
 /// A count as a person reads it: 1000-based, because tokens are counted,
 /// not stored. **Not the same function as `bytes` one screen up**, and
 /// the difference is the base: 1024 is a property of memory, and a
-/// thousand tokens is a thousand tokens.
+/// thousand tokens is a thousand tokens. K / M / B in every language
+/// (UX-50, the owner 2026-10-08) — the face's `lib/tokens` spells them
+/// the same; billions are B, not the G a byte size wears.
 fn count(n: u64) -> String {
-    const UNITS: [&str; 4] = ["", "k", "M", "G"];
+    const UNITS: [&str; 4] = ["", "K", "M", "B"];
     let mut v = n as f64;
     let mut u = 0;
     while v >= 1000.0 && u + 1 < UNITS.len() {
@@ -4389,6 +4391,20 @@ fn web_qr(url: &str) -> String {
         row += 2;
     }
     out
+}
+
+#[cfg(test)]
+mod count_tests {
+    use super::count;
+
+    #[test]
+    fn a_token_count_steps_through_k_m_b() {
+        assert_eq!(count(999), "999");
+        assert_eq!(count(1_200), "1.2K");
+        assert_eq!(count(3_400_000), "3.4M");
+        assert_eq!(count(5_600_000_000), "5.6B");
+        assert_eq!(count(7_000_000_000_000), "7000.0B");
+    }
 }
 
 #[cfg(test)]

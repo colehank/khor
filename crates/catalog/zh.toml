@@ -2905,13 +2905,16 @@ accounts-log-capped = "只取到最近 {0} 条"
 # [cli] 的 this-machine 是括号后缀,还给终端列表和向导用;别混。
 machine-here = "本机"
 # **The list rows' four corners** (UX-48, the owner 2026-10-07): a machine's
-# readings under its name (latency · CPU · 内存 · GPU), its connection on the
-# right — 直连 / 中继 / 本机 ([hop], machine-here) or 离线.
-# ⚠️ 墓碑: row-sessions 「{0} 个会话」 (UX-15's activity line).
+# connection on the right — 直连 / 中继 / 本机 ([hop], machine-here) or 离线.
+# UX-50 (the owner 2026-10-08): the latency after the name (row-rtt); under it
+# at most three: CPU, memory, then GPU on a machine with one, else disk — each
+# its label (vitals-name-*, the card's words) and its value (row-pct), no
+# middle dot between them.
+# ⚠️ 墓碑: row-sessions 「{0} 个会话」 (UX-15's activity line); row-cpu,
+# row-mem, row-gpu (UX-50: the label and the value are inked apart, so they
+# are two words).
 row-offline = "离线"
-row-cpu = "CPU {0}%"
-row-mem = "内存 {0}%"
-row-gpu = "GPU {0}%"
+row-pct = "{0}%"
 # The row's latency keeps the Latin unit (the owner, 2026-10-05: 「23 ms」); the
 # relay rows on 连接 keep theirs (conn-relay-ms).
 row-rtt = "{0} ms"
