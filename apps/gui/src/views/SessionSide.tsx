@@ -36,6 +36,7 @@ import { SessionFace } from "@/components/SessionFace";
 import { SideSeatsProvider } from "@/components/SideHead";
 import { gui } from "@/gen/catalog";
 import { NarrowBox } from "@/hooks/use-narrow";
+import { WINDOW_DRAG } from "@/components/shell";
 import { type SideSeat } from "@/hooks/use-session-side";
 
 /** The column, for whatever reaches it by name (the front tab's
@@ -244,7 +245,12 @@ export function SideBody({
   return (
     <SeatPick.Provider value={pick}>
       <SideSeatsProvider value={null}>
-        <header data-side-head className="flex h-pane-head flex-none items-center gap-row border-b px-(--page-inset)">
+        {/* **The column's first row moves the window** (the owner
+            2026-10-07 15:50: 「desktop 端点击药丸展开的侧边，无法在这个标题
+            上拖动」): on the Mac it stands beside R0, top-aligned, and is a
+            first row like it — the shell's one mark (`WINDOW_DRAG`); the
+            seat control keeps its press (tauri's own rule). */}
+        <header data-side-head {...WINDOW_DRAG} className="flex h-pane-head flex-none items-center gap-row border-b px-(--page-inset)">
           <span data-side-who className="flex min-w-0 flex-1 items-center gap-in">
             <SessionFace face={who.face} word={who.word} kind={who.kind} category={who.category} size="tab" />
             <span className="min-w-0 truncate text-title-md font-title">{who.title}</span>
