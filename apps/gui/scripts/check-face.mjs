@@ -24786,10 +24786,15 @@ try {
       fail(`corners c · ${posture} · the second lines read ${JSON.stringify([sub.sub, bill.sub])} — 「23 小时后重置」, the time to the fullest window's reset (UX-48)`);
     }
     if (none.sub !== "") fail(`corners c · ${posture} · a row with no reset time reads ${JSON.stringify(none.sub)} under its name — nothing (UX-48)`);
-    // The subscription read two minutes ago: bare. ⚠️ 墓碑: `card-age`,
+    // The subscription's reading is as old as the fixture made it
+    // (`routeQuota`: two minutes before it was routed) plus however long
+    // the walk took to get here, so the age is read against that clock,
+    // not a constant: bare, in minutes. ⚠️ 墓碑: `card-age`,
     // `accounts-just-now`.
-    if (sub.bottom !== "2 分钟") {
-      fail(`corners c · ${posture} · the subscription's bottom-right reads ${JSON.stringify(sub.bottom)} — 「2 分钟」, how old the reading is, bare (UX-48)`);
+    const ageMin = probeNow ? Math.floor((Date.now() / 1000 - probeNow.as_of) / 60) : 2;
+    const ages = [ageMin - 1, ageMin, ageMin + 1].map((m) => `${m} 分钟`);
+    if (!ages.includes(sub.bottom)) {
+      fail(`corners c · ${posture} · the subscription's bottom-right reads ${JSON.stringify(sub.bottom)} — 「${ageMin} 分钟」, how old the reading is, bare (UX-48)`);
     }
     // A reading this machine takes as it is shown has no age to say.
     if (bill.bottom !== null) fail(`corners c · ${posture} · a reading taken here says ${JSON.stringify(bill.bottom)} at its bottom-right — nothing (UX-48)`);
