@@ -11802,7 +11802,7 @@ try {
               glyph: row.querySelector("[data-side-mark] svg")?.getAttribute("data-icon") ?? null,
               sub: row.querySelector("[data-side-sub]")?.textContent ?? "",
               aside: row.querySelector("[data-side-aside]")?.textContent ?? null,
-              title: row.querySelector("[data-side-title]")?.textContent ?? "",
+              title: (row.querySelector("[data-side-name]") ?? row.querySelector("[data-side-title]"))?.textContent ?? "",
             },
           ]),
         ),
@@ -11826,12 +11826,14 @@ try {
       if (seen.elder?.corner === "macos" && seen.elder?.glyph !== "finder") {
         fail(`the elder row (macOS) wears 「${seen.elder?.glyph}」 where the Mac wears the Finder (UX-27)`);
       }
-      // UX-48 (the owner 2026-10-07): top-left the name alone — the
-      // model is the machine page's, not the row's.
+      // UX-48 (the owner 2026-10-07): top-left the name — the model is
+      // the machine page's, not the row's; after the name only its
+      // latency (UX-50).
       // ⚠️ 墓碑: the model as the name's aside (UX-15), and before 10-05
       // the model as the row's second line.
-      if (seen.peer?.aside !== null || seen.peer?.title.trim() !== "peer" || seen.peer?.sub.includes("SYS-4028GR-TR")) {
-        fail(`the peer row reads title ${JSON.stringify(seen.peer?.title)}, aside ${JSON.stringify(seen.peer?.aside)}, second line ${JSON.stringify(seen.peer?.sub)} — the name alone, no model (UX-48)`);
+      const aside = seen.peer?.aside ?? null;
+      if ((aside !== null && !/^\d+ ms$/.test(aside)) || seen.peer?.title.trim() !== "peer" || seen.peer?.sub.includes("SYS-4028GR-TR")) {
+        fail(`the peer row reads title ${JSON.stringify(seen.peer?.title)}, aside ${JSON.stringify(seen.peer?.aside)}, second line ${JSON.stringify(seen.peer?.sub)} — the name, after it the latency at most, no model (UX-48, UX-50)`);
       }
     }
     if (peer?.vitals?.vitals) {
@@ -24497,11 +24499,14 @@ try {
   // Read at the wide window and at the phone's width, per list:
   //
   //   a. machines — direct / relay (`[hop]`) over how long the wire has
-  //      been on that road (`since_ms`), the readings under the name
-  //      (latency, CPU, memory, GPU only where there is one);
-  //      `machine-here` with nothing under it; `row-offline` over how long
-  //      unheard (`heard_ms`) with no readings; `machine-paused` with no
-  //      time;
+  //      been on that road (`since_ms`); the latency after the name, one
+  //      size down in the secondary ink (UX-50); under the name CPU,
+  //      memory, disk, GPU (GPU only where there is one), each a label in
+  //      the secondary ink and a tabular value in the primary, `gap-row`
+  //      apart with no middle dot; at a narrowing width whole items drop
+  //      from the end, CPU never (measured); `machine-here` with nothing
+  //      under it; `row-offline` over how long unheard (`heard_ms`) with
+  //      no readings and no latency; `machine-paused` with no time;
   //   b. terminal sessions — the command alone under the name, idle or
   //      running: no `row-running` sentence, no exit code, no time in the
   //      line (the
@@ -24538,7 +24543,9 @@ try {
             .map((r) => [
               r.getAttribute(a),
               {
-                title: r.querySelector("[data-side-title]")?.textContent?.trim() ?? null,
+                // The name's own words: an aside (a machine's latency,
+                // UX-50) sits inside the title line, after the name.
+                title: (r.querySelector("[data-side-name]") ?? r.querySelector("[data-side-title]"))?.textContent?.trim() ?? null,
                 aside: r.querySelectorAll("[data-side-aside]").length,
                 sub: r.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
                 top: r.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
@@ -24581,15 +24588,58 @@ try {
       // No GPU on elder: its readings stop at memory.
       Object.assign(elder, { hop: "relay", rtt_ms: 140, since_ms: 2 * 3600_000, heard_ms: 2_000, down_ms: null, paused: false });
       elder.vitals.vitals = { ...elder.vitals.vitals, gpu: null };
+      // Each row's readings as laid out: every item the line holds, the
+      // ones shown (`hidden` is how `Whole` drops one), each shown item's
+      // words and inks, the room between neighbours, whether any shown
+      // item runs past the line's end (a cut value), and the latency
+      // after the name (`[data-side-aside]`) with its size and ink against
+      // the name's. Inks are compared with the tokens resolved in the row
+      // itself (a picked row re-points `--muted-foreground`).
       const readings = () =>
         page.evaluate(() =>
           Object.fromEntries(
             [...document.querySelectorAll("[data-side-row][data-device]")]
               .filter((r) => r.getBoundingClientRect().width > 0)
-              .map((r) => [
-                r.getAttribute("data-device"),
-                {
-                  keys: [...r.querySelectorAll("[data-row-readings] [data-row-reading]")].map((e) => e.getAttribute("data-row-reading")),
+              .map((r) => {
+                const text = r.querySelector("[data-side-text]");
+                const ink = (v) => {
+                  const probe = document.createElement("span");
+                  probe.style.color = `var(${v})`;
+                  text?.appendChild(probe);
+                  const c = getComputedStyle(probe).color;
+                  probe.remove();
+                  return c;
+                };
+                const sub = r.querySelector("[data-side-sub]")?.getBoundingClientRect();
+                const items = [...r.querySelectorAll("[data-row-readings] [data-row-reading]")];
+                const shown = items.filter((e) => !e.hidden);
+                const box = (e) => e.getBoundingClientRect();
+                const aside = r.querySelector("[data-side-aside]");
+                const rtt = r.querySelector('[data-row-reading="rtt"]');
+                const name = r.querySelector("[data-side-name]") ?? r.querySelector("[data-side-title]");
+                return [
+                  r.getAttribute("data-device"),
+                  {
+                  keys: items.map((e) => e.getAttribute("data-row-reading")),
+                  shown: shown.map((e) => e.getAttribute("data-row-reading")),
+                  words: shown.map((e) => e.textContent),
+                  labels: [...new Set(shown.map((e) => getComputedStyle(e.querySelector("[data-reading-label]")).color))],
+                  values: [...new Set(shown.map((e) => getComputedStyle(e.querySelector("[data-reading-value]")).color))],
+                  tabular: shown.every((e) => getComputedStyle(e.querySelector("[data-reading-value]")).fontVariantNumeric.includes("tabular-nums")),
+                  gaps: shown.slice(1).map((e, i) => +(box(e).left - box(shown[i]).right).toFixed(1)),
+                  cut: sub ? shown.filter((e) => box(e).right > sub.right + 0.5).map((e) => e.getAttribute("data-row-reading")) : null,
+                  dot: (r.querySelector("[data-side-sub]")?.textContent ?? "").includes("·"),
+                  secondary: ink("--muted-foreground"),
+                  primary: ink("--foreground"),
+                  aside: aside
+                    ? {
+                        words: rtt && !rtt.hidden ? rtt.textContent : null,
+                        size: +parseFloat(getComputedStyle(aside).fontSize).toFixed(1),
+                        color: getComputedStyle(aside).color,
+                        cut: rtt && !rtt.hidden ? box(rtt).right > box(aside).right + 0.5 : false,
+                      }
+                    : null,
+                  nameSize: name ? +parseFloat(getComputedStyle(name).fontSize).toFixed(1) : null,
                   lat: r.querySelector('[data-row-reading="rtt"] [data-lat]')?.getAttribute("data-lat") ?? null,
                   state: r.querySelector("[data-row-state]")?.getAttribute("data-row-state") ?? null,
                   road: r.querySelector("[data-row-state]")?.getAttribute("data-row-road") ?? null,
@@ -24597,10 +24647,15 @@ try {
                   // ⚠️ 墓碑 (UX-15): the latency corner, the last-heard
                   // time, the doing line, the paused word in the sub line.
                   gone: r.querySelectorAll("[data-row-latency], [data-row-heard], [data-row-doing], [data-row-paused], [data-row-model]").length,
-                },
-              ]),
+                  },
+                ];
+              }),
           ),
         );
+      const ORDER = ["cpu", "mem", "disk", "gpu"];
+      /** The shown items are the line's first few in the owner's order —
+          what dropping from the end leaves — CPU among them. */
+      const prefix = (shown, all) => shown.length >= 1 && shown[0] === "cpu" && shown.every((k, i) => k === all[i]);
       for (const [posture, size] of POSTURES) {
         await land(size, "devices");
         await until(5_000, async () => Object.keys(await slots("[data-side-row][data-device]", "data-device")).length >= 3);
@@ -24608,24 +24663,101 @@ try {
         const rows = await slots("[data-side-row][data-device]", "data-device");
         const more = await readings();
         console.log(`corners a · ${posture} · machines: ${JSON.stringify(rows)} ${JSON.stringify(more)}`);
+        // The report's shots (FACE_SHOTS): the machine list as it stands.
+        if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, `corners-a-${posture}.png`) }).catch(() => {});
         const [p, e, g] = [rows.peer, rows.elder, rows.gate];
         if (!p || !e || !g) {
           fail(`probe dead: corners a · ${posture} · the devices column drew ${JSON.stringify(Object.keys(rows))}`);
           continue;
         }
+        // The name top-left, and after it only the latency (UX-50): one
+        // aside on the two machines with a live round trip, none here.
+        const asides = { peer: 1, elder: 1, gate: 0 };
         for (const [name, r] of Object.entries(rows)) {
-          if (r.aside !== 0 || r.title !== name || more[name]?.gone !== 0) {
-            fail(`corners a · ${posture} · the ${name} row reads ${JSON.stringify({ ...r, ...more[name] })} — the name alone top-left, none of UX-15's slots (UX-48)`);
+          if (r.aside !== (asides[name] ?? 0) || r.title !== name || more[name]?.gone !== 0) {
+            fail(`corners a · ${posture} · the ${name} row reads ${JSON.stringify({ ...r, ...more[name] })} — the name top-left, after it the latency alone where there is one, none of UX-15's slots (UX-48, UX-50)`);
           }
         }
-        if (p.sub !== "23 ms · CPU 41% · 内存 81% · GPU 67%" || p.top !== "直连" || p.bottom !== "3 分钟" || more.peer.state !== "direct" || more.peer.lat !== "fast") {
-          fail(`corners a · ${posture} · peer reads ${JSON.stringify({ ...p, ...more.peer })} — 「23 ms · CPU 41% · 内存 81% · GPU 67%」 under its name, 直连 over 「3 分钟」, the latency dot fast (UX-48)`);
+        // The latency: after the name, one size down, the secondary ink.
+        for (const [name, want, band] of [["peer", "23 ms", "fast"], ["elder", "140 ms", "slow"]]) {
+          const m = more[name];
+          const a = m.aside;
+          if (!a || a.words !== want || a.cut || !(a.size < m.nameSize) || a.color !== m.secondary || m.lat !== band) {
+            fail(`corners a · ${posture} · ${name}'s title line reads ${JSON.stringify({ aside: a, nameSize: m.nameSize, secondary: m.secondary, lat: m.lat })} — 「${want}」 after the name, whole, smaller than the name (${m.nameSize}px), in the secondary ink ${m.secondary}, the ${band} light beside it (UX-50)`);
+          }
         }
-        if (e.sub !== "140 ms · CPU 5% · 内存 13%" || more.elder.keys.includes("gpu") || e.top !== "中继" || e.bottom !== "2 小时" || more.elder.state !== "relay") {
-          fail(`corners a · ${posture} · elder reads ${JSON.stringify({ ...e, ...more.elder })} — 「140 ms · CPU 5% · 内存 13%」 with no GPU (it has none), 中继 over 「2 小时」 (UX-48)`);
+        // The readings: label secondary, value primary and tabular, a gap
+        // and no middle dot; whole items only.
+        for (const [name, all, words] of [
+          ["peer", ORDER, ["CPU 41%", "内存 81%", "磁盘 80%", "GPU 67%"]],
+          ["elder", ORDER.slice(0, 3), ["CPU 5%", "内存 13%", "磁盘 10%"]],
+        ]) {
+          const m = more[name];
+          const n = m.shown.length;
+          const inks = m.labels.length === 1 && m.labels[0] === m.secondary && m.values.length === 1 && m.values[0] === m.primary && m.secondary !== m.primary;
+          if (
+            JSON.stringify(m.keys) !== JSON.stringify(all) ||
+            !prefix(m.shown, all) ||
+            JSON.stringify(m.words) !== JSON.stringify(words.slice(0, n)) ||
+            !inks ||
+            !m.tabular ||
+            m.dot ||
+            m.cut?.length !== 0 ||
+            m.gaps.some((g) => Math.abs(g - 12) > 0.6)
+          ) {
+            fail(`corners a · ${posture} · ${name}'s readings read ${JSON.stringify(m)} — ${JSON.stringify(words)} in that order (the first ${n} shown), each label in the secondary ink and its value in the primary, tabular, 12 px (gap-row) apart, no 「·」, none cut (UX-50)`);
+          }
         }
-        if (g.top !== "本机" || g.bottom !== null || more.gate.keys.includes("rtt") || more.gate.state !== "here") {
-          fail(`corners a · ${posture} · this machine reads ${JSON.stringify({ ...g, ...more.gate })} — 本机, nothing under it, no latency of its own (UX-48)`);
+        if (p.sub.includes("ms") || p.top !== "直连" || p.bottom !== "3 分钟" || more.peer.state !== "direct") {
+          fail(`corners a · ${posture} · peer reads ${JSON.stringify({ ...p, ...more.peer })} — no latency under the name (it is the title line's), 直连 over 「3 分钟」 (UX-48, UX-50)`);
+        }
+        if (more.elder.keys.includes("gpu") || e.sub.includes("ms") || e.top !== "中继" || e.bottom !== "2 小时" || more.elder.state !== "relay") {
+          fail(`corners a · ${posture} · elder reads ${JSON.stringify({ ...e, ...more.elder })} — no GPU (it has none), no latency under the name, 中继 over 「2 小时」 (UX-48, UX-50)`);
+        }
+        if (g.top !== "本机" || g.bottom !== null || more.gate.aside !== null || more.gate.lat !== null || more.gate.state !== "here") {
+          fail(`corners a · ${posture} · this machine reads ${JSON.stringify({ ...g, ...more.gate })} — 本机, no latency of its own (UX-48)`);
+        }
+      }
+      // The drop order, measured (UX-50): peer's row narrowed step by step
+      // at the wide window, from as wide as the list can be dragged
+      // (`--list-w-max`, the row that much wider than at `--list-w`),
+      // where all four fit. At every width the shown readings are the
+      // first few of CPU, memory, disk, GPU; they only ever shrink as the
+      // row does; each of GPU, disk and memory is seen to go, in that
+      // order; CPU never; and no shown item, nor the latency, is cut.
+      {
+        await land(POSTURES[0][1], "devices");
+        await until(5_000, async () => ((await readings()).peer?.keys.length ?? 0) === 4);
+        const steps = [];
+        const { start, more: room } = await page.evaluate(() => {
+          const css = getComputedStyle(document.documentElement);
+          return {
+            start: document.querySelector('[data-side-row][data-device="peer"]')?.getBoundingClientRect().width ?? 0,
+            more: parseFloat(css.getPropertyValue("--list-w-max")) - parseFloat(css.getPropertyValue("--list-w")),
+          };
+        });
+        for (let w = Math.floor(start + room); w >= 160; w -= 2) {
+          await page.evaluate((px) => {
+            const row = document.querySelector('[data-side-row][data-device="peer"]');
+            if (row) row.style.width = `${px}px`;
+          }, w);
+          await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+          const m = (await readings()).peer;
+          if (!m) break;
+          steps.push({ w, shown: m.shown, cut: m.cut, lat: m.aside?.words ?? null, latCut: m.aside?.cut ?? null });
+          if (m.shown.length === 1) break;
+        }
+        await page.evaluate(() => {
+          const row = document.querySelector('[data-side-row][data-device="peer"]');
+          if (row) row.style.width = "";
+        });
+        const counts = steps.map((x) => x.shown.length);
+        console.log(`corners a · wide · peer's row (${Math.floor(start)} px at the list's own width) narrowed from ${Math.floor(start + room)} px: ${JSON.stringify(steps.filter((x, i) => i === 0 || x.shown.length !== steps[i - 1].shown.length || x.lat !== steps[i - 1].lat))}`);
+        const bad = steps.filter((x) => !prefix(x.shown, ORDER) || x.cut?.length !== 0 || x.latCut);
+        const grew = counts.some((c, i) => i > 0 && c > counts[i - 1]);
+        const seen = counts[0] === 4 && [3, 2, 1].every((c) => counts.includes(c));
+        if (steps.length === 0 || bad.length || grew || !seen) {
+          fail(`corners a · wide · narrowing peer's row reads ${JSON.stringify(bad.length ? bad : steps)} — GPU goes first, then 磁盘, then 内存, whole; CPU stays; nothing cut (UX-50, DevicesList Whole)`);
         }
       }
       // Offline: elder unreachable — no live wire, the last attempt failed
@@ -24641,8 +24773,8 @@ try {
         const more = await readings();
         console.log(`corners a · ${posture} · offline elder, paused peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
         const [e, p] = [rows.elder, rows.peer];
-        if (!e || e.top !== "离线" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || more.elder.state !== "offline" || more.elder.road !== null || !(e.opacity < 0.99)) {
-          fail(`corners a · ${posture} · an unreachable elder reads ${JSON.stringify({ ...e, ...more.elder })} — 离线 over 「20 小时」 (how long unheard), no readings under its name, dimmed (UX-48)`);
+        if (!e || e.top !== "离线" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.lat !== null || more.elder.state !== "offline" || more.elder.road !== null || !(e.opacity < 0.99)) {
+          fail(`corners a · ${posture} · an unreachable elder reads ${JSON.stringify({ ...e, ...more.elder })} — 离线 over 「20 小时」 (how long unheard), no readings under its name, no latency after it, dimmed (UX-48, UX-50)`);
         }
         if (!p || p.top !== "已暂停" || p.bottom !== null || more.peer.state !== "paused" || more.peer.held !== 0) {
           fail(`corners a · ${posture} · a paused peer reads ${JSON.stringify({ ...p, ...more.peer })} — 已暂停 top-right, no time under it (UX-48)`);
@@ -24662,7 +24794,7 @@ try {
         const more = await readings();
         console.log(`corners a · ${posture} · idle elder (last road relay), never-connected peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
         const [e, p] = [rows.elder, rows.peer];
-        if (!e || e.top !== "中继" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || more.elder.state !== "idle" || more.elder.road !== "relay" || e.opacity < 0.99) {
+        if (!e || e.top !== "中继" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.state !== "idle" || more.elder.road !== "relay" || e.opacity < 0.99) {
           fail(`corners a · ${posture} · an idle elder reads ${JSON.stringify({ ...e, ...more.elder })} — the road it last used, 中继, over 「5 小时」 (since that road settled), no readings, undimmed; never 离线 (UX-48)`);
         }
         if (!p || p.top !== null || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== null || p.opacity < 0.99) {
