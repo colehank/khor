@@ -2223,10 +2223,12 @@ try {
   // **`FACE_ONLY=scan` walks section 19 alone** (加入网络的扫码, iOS 第三步,
   // 2026-10-02), for the same reason.
   // **`FACE_ONLY=side` walks the session's 附栏 alone** (UX-30, 2026-10-06).
+  // **`FACE_ONLY=tabs` walks the Chrome strip and the new tab alone**
+  // (UX-45, 2026-10-07).
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -5832,21 +5834,22 @@ try {
     }
   }
 
-  // The wizard's box: empty on the 「+」, and completing the same way.
+  // The wizard's box: empty on the 「+」, and completing the same way —
+  // the new tab's page since UX-45.
   await press(rail("sessions"));
   await pressNew("new");
   const wizard = await until(5_000, async () =>
     (await page.locator("[data-new-session-dir]").count()) === 1,
   );
   if (!wizard) {
-    fail("probe dead: the wizard drew no 目录 box (src/views/NewSessionDialog.tsx)");
+    fail("probe dead: the new tab's page drew no 目录 box (src/views/NewSessionPage.tsx)");
   } else {
     const was = await page.locator("[data-new-session-dir]").inputValue();
     if (was !== "" || (await page.locator("[data-new-session-pick], [data-new-session-places]").count()) !== 0) {
       fail(
         `the wizard's 目录 opened on 「${was}」 with its old shortcuts ` +
           `(${await page.locator("[data-new-session-pick], [data-new-session-places]").count()}) — ` +
-          "nothing is offered before typing (src/views/NewSessionDialog.tsx)",
+          "nothing is offered before typing (src/views/NewSessionPage.tsx)",
       );
     }
     await page.locator("[data-new-session-dir]").click();
@@ -5866,24 +5869,24 @@ try {
       if (said !== `${pin.path}/target/`) {
         fail(`↓ Enter left 「${said}」 in the wizard's box (src/components/PathField.tsx)`);
       }
-      // The first Escape closes the list and not the sheet.
+      // Escape closes the list and leaves the page (a tab's page, UX-45:
+      // ⚠️ 墓碑 — Escape's second press closed the dialog).
       await page.locator("[data-new-session-dir]").fill(`${pin.path}/s`);
       await until(5_000, async () => (await offered()).length > 0);
       await page.keyboard.press("Escape");
       await wait(150);
       const after = {
-        sheet: await page.locator("[data-new-session-dialog]").count(),
+        sheet: await page.locator("[data-new-session-page]").count(),
         list: (await offered()).length,
       };
       if (after.sheet !== 1 || after.list !== 0) {
         fail(
-          `Escape over an open list left ${JSON.stringify(after)} — it closes the list first and the ` +
-            "sheet second (src/components/ui/dialog.tsx)",
+          `Escape over an open list left ${JSON.stringify(after)} — it closes the list and the ` +
+            "page stays (src/components/PathField.tsx)",
         );
       }
     }
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Escape");
+    await press("[data-new-session-page] [data-new-tab-cancel]");
   }
 
   // …and on a phone. What is measured is that the sheet's body fits
@@ -7140,10 +7143,11 @@ try {
       await page.keyboard.press("Escape");
       await wait(200);
 
-      // ii) 「+」 opens the wizard on this machine, in this directory.
+      // ii) 「+」 opens the wizard on this machine, in this directory —
+      // a new tab's page since UX-45.
       await press("[data-ws-sessions] [data-ws-new-session]");
       const wizard = await until(3_000, async () =>
-        (await page.locator("[data-new-session-dialog]").count()) === 1,
+        (await page.locator("[data-new-session-page]").count()) === 1,
       );
       if (!wizard) {
         fail(
@@ -7163,7 +7167,7 @@ try {
           fail(
             `the wizard opened on ${JSON.stringify(filled.dir)} rather than ${JSON.stringify(pin.path)} ` +
               "— 「机器与目录预填成这个工作区」 is the whole of what that 「+」 is for " +
-              "(src/views/NewSessionDialog.tsx)",
+              "(src/views/NewSessionPage.tsx)",
           );
         }
         if (JSON.stringify(filled.on) !== JSON.stringify([pin.name])) {
@@ -7202,7 +7206,7 @@ try {
         for (let i = 0; i < 40; i++) {
           const ready = await page.evaluate(
             (id) =>
-              document.querySelectorAll("[data-new-session-dialog]").length === 0 &&
+              document.querySelectorAll("[data-new-session-page]").length === 0 &&
               document.querySelectorAll(`[data-ws-sessions] [data-row="${id}"]`).length > 0,
             born,
           );
@@ -7210,7 +7214,7 @@ try {
           await wait(200);
         }
         const stayed = await page.evaluate((id) => ({
-          wizard: document.querySelectorAll("[data-new-session-dialog]").length,
+          wizard: document.querySelectorAll("[data-new-session-page]").length,
           column: document.querySelectorAll("[data-ws-sessions]").length,
           tree: document.querySelectorAll("[data-ws-tree]").length,
           // The sessions landing's own strip, which is what the shell
@@ -7224,7 +7228,7 @@ try {
         console.log(`ws new session: ${JSON.stringify(stayed)}`);
         await page.unroute("**/open_session");
         if (stayed.wizard !== 0) {
-          fail("the wizard stayed open after it opened a session (src/views/NewSessionDialog.tsx)");
+          fail("the new tab's page stayed up after it opened a session — 创建 from a workspace goes back to the workspace (src/App.tsx leaveNewTab)");
         }
         if (stayed.column === 0 || stayed.tree === 0 || stayed.landed !== 0) {
           fail(
@@ -10879,15 +10883,15 @@ try {
         return h;
       });
 
-    // ── (a) the glass strip at 1080: Safari's widths — the stubs one
-    //        width, the front tab its whole name, a press re-balances ──
+    // ── (a) the glass strip at 1080: Chrome's widths — every pill one
+    //        width, the front one too, between the floor and the even ──
     //
-    // UX-25's addendum (the owner, 2026-10-05 17:40): every pill not in
-    // front has the same width (an equal share of the capsule, `--tab-w`
-    // at most, `--tab-w-min` at least), the one in front takes its whole
-    // name up to `--tab-w-on`, and the strip re-balances on each choice.
-    // ⚠️ 墓碑 (the redesign V07, 2026-10-02): one ceiling for every tab,
-    // the front one too, and a press moved no width.
+    // UX-45 (the owner, 2026-10-07: 「等宽先看看」): every wide glass pill
+    // is `--tab-w-even` and they shrink together, never under
+    // `--tab-w-floor`; the front one is told by its lit glass alone.
+    // ⚠️ 墓碑 (UX-25 addendum → UX-39 §7 → UX-45): the stubs an equal
+    // share between `--tab-w-min` and `--tab-w`, the front one its whole
+    // name, re-balanced on each choice.
     await page.setViewportSize({ width: 1080, height: 800 });
     await open("sessions");
     await wait(300);
@@ -10908,36 +10912,21 @@ try {
           el.remove();
           return w;
         };
-        const front = document.querySelector('[data-session-tabs] [data-tab][data-on="true"] [data-tab-label]');
-        return { ceiling: px("var(--tab-w)"), floor: px("var(--tab-w-min)"), cut: front ? front.scrollWidth > front.clientWidth + 1 : null };
+        return { ceiling: px("var(--tab-w-even)"), floor: px("var(--tab-w-floor)") };
       });
-      const stubs = fit.tabs.filter((t) => !t.on);
-      const front = fit.tabs.find((t) => t.on);
-      const widths = [...new Set(stubs.map((t) => t.w))];
-      console.log(`tabs 4T · stubs ${JSON.stringify(stubs.map((t) => t.w))}, front ${front?.w}, bounds ${JSON.stringify(bounds)}`);
+      const widths = fit.tabs.map((t) => t.w);
+      console.log(`tabs 4T · pills ${JSON.stringify(widths)}, bounds ${JSON.stringify(bounds)}`);
       if (Math.max(...widths) - Math.min(...widths) > 1) {
-        fail(`the stubs are ${widths.join(", ")} wide — every pill not in front is one width (UX-25 addendum; src/browse/TabStrip.tsx)`);
+        fail(`the pills are ${[...new Set(widths)].join(", ")} wide — every wide pill one width, front or not (UX-45; src/browse/TabStrip.tsx)`);
       }
-      if (stubs.some((t) => t.w > bounds.ceiling + 1 || t.w < bounds.floor - 1)) {
-        fail(`a stub stands outside --tab-w-min..--tab-w (${bounds.floor}..${bounds.ceiling}): ${stubs.map((t) => t.w).join(", ")}`);
-      }
-      if (bounds.cut !== false) fail(`the front tab's name is cut (${bounds.cut}) with room on the strip — the one in front takes its whole name (UX-25 addendum)`);
-      await press('[data-session-tabs] [data-tab-strip] [data-tab]:not([data-on="true"]) > button:first-of-type');
-      await wait(600);
-      const after = await stripOf("[data-session-tabs]");
-      const nowFront = after?.tabs.find((t) => t.on);
-      const was = after?.tabs.find((t) => t.id === front?.id);
-      const nowStubs = (after?.tabs ?? []).filter((t) => !t.on).map((t) => t.w);
-      console.log(`tabs 4T · another tab pressed: front ${nowFront?.id} ${nowFront?.w}, the old front now ${was?.w}, stubs ${JSON.stringify(nowStubs)}`);
-      if (!nowFront || nowFront.id === front?.id) {
-        fail("probe dead: tabs 4T · the press brought no other tab to the front");
-      } else if (Math.max(...nowStubs) - Math.min(...nowStubs) > 1) {
-        fail(`after the press the stubs are ${nowStubs.join(", ")} — the strip re-balances to one stub width (UX-25 addendum)`);
+      if (widths.some((w) => w > bounds.ceiling + 1 || w < bounds.floor - 1)) {
+        fail(`a pill stands outside --tab-w-floor..--tab-w-even (${bounds.floor}..${bounds.ceiling}): ${widths.join(", ")}`);
       }
     }
 
     // ── (b) past the edge at 760: no scrollbar, a wheel that moves it,
-    //        a count, a switcher with a box, the picked tab in view ──
+    //        no count (UX-45), a tab put in front from the list is in
+    //        view ──
     await page.setViewportSize({ width: 760, height: 800 });
     await wait(500);
     const over = await stripOf("[data-session-tabs]");
@@ -10955,9 +10944,9 @@ try {
       if (over.band !== head) {
         fail(`the tab band is ${over.band} tall over a pane head of ${head} — one token, --pane-head`);
       }
-      if (over.count !== String(over.tabs.length)) {
-        fail(`the overflowing strip's count reads ${JSON.stringify(over.count)} for ${over.tabs.length} tabs`);
-      }
+      // ⚠️ 墓碑 (UX-25 → UX-45): the count after an overflowing strip and
+      // the switcher it opened, with its search box.
+      if (over.count !== null) fail(`the overflowing strip shows a count ${JSON.stringify(over.count)} — every tab is drawn, no count (UX-45)`);
       // The wheel: a vertical flick over the strip moves it sideways, and
       // nothing else on the page moves.
       const railWas = await page.evaluate(() => document.querySelector("[data-rail]")?.getBoundingClientRect().top ?? null);
@@ -10978,40 +10967,15 @@ try {
       if (moved.doc !== 0 || moved.rail !== railWas) {
         fail(`the wheel over the strip moved the page (${JSON.stringify(moved)}) — 滚到头不带动整页`);
       }
-      // The switcher, and its box.
-      const last = over.tabs[over.tabs.length - 1];
-      const lastName = await page
-        .locator(`[data-session-tabs] [data-tab="${last.id}"] [data-tab-name], [data-session-tabs] [data-tab="${last.id}"] [data-tab-label]`)
-        .first()
-        .innerText()
-        .catch(() => "");
-      await press("[data-session-tabs] [data-tab-count]");
-      await wait(300);
-      const box = page.locator("[data-tab-switcher] input");
-      if ((await box.count()) === 0) {
-        fail("the tab switcher has no search box — 「切换器头上加搜索框」 (src/browse/TabStrip.tsx)");
-      } else {
-        await box.first().fill(lastName.trim());
-        await wait(250);
-        const rows = await page.locator("[data-tab-switcher] [data-switch-tab]").evaluateAll((els) =>
-          els.map((e) => e.getAttribute("data-switch-tab")),
-        );
-        if (rows.length !== 1 || rows[0] !== last.id) {
-          fail(`typing ${JSON.stringify(lastName.trim())} into the switcher leaves ${JSON.stringify(rows)} — only ${last.id}`);
-        }
-      }
-      // Whatever the box did, pick from the switcher a tab that is **past
-      // the edge now and not in front**, and read it back on the strip,
-      // wholly inside.
+      // A tab **past the edge now and not in front**, put in front from
+      // its list row, is read back on the strip wholly inside.
       const now = (await stripOf("[data-session-tabs]")) ?? over;
-      const first = now.tabs.find((t) => !t.on && now.clipped.includes(t.id))?.id ?? last.id;
-      if ((await page.locator("[data-tab-switcher]").count()) === 0) await press("[data-session-tabs] [data-tab-count]");
-      if ((await box.count()) > 0) await box.first().fill("");
-      await press(`[data-tab-switcher] [data-switch-open="${first}"]`);
+      const first = now.tabs.find((t) => !t.on && now.clipped.includes(t.id))?.id ?? now.tabs[now.tabs.length - 1].id;
+      await press(`[data-list] [data-row="${first}"] [data-row-open]`);
       await wait(400);
       const picked = await stripOf("[data-session-tabs]");
       if (!picked || picked.clipped.includes(first)) {
-        fail(`picked ${first} from the switcher and it sits past the strip's edge — 选中一枚时把它滚进视野`);
+        fail(`put ${first} in front from the list and it sits past the strip's edge — 选中一枚时把它滚进视野`);
       }
     }
 
@@ -11030,31 +10994,12 @@ try {
       fail(`probe dead: the workspace strip drew ${ws?.tabs.length ?? "no"} of 20 seeded tabs`);
     } else {
       if (ws.bar !== 0) fail(`the workspace's tab strip spends ${ws.bar}px on a scrollbar — the screenshot's bar`);
-      if (ws.count !== "20") {
-        fail(
-          `the workspace strip overflows with ${JSON.stringify(ws.count)} for a count — its only road to the tabs ` +
-            "past the edge was a scrollbar nobody could drag (src/views/WorkspacePane.tsx onSwitch)",
-        );
-      } else {
-        await press("[data-ws-tab-strip] [data-tab-count]");
-        await wait(300);
-        const wsBox = page.locator("[data-tab-switcher] input");
-        if ((await wsBox.count()) === 0) {
-          fail("the workspace's tab switcher has no search box");
-        } else {
-          await wsBox.first().fill("f17");
-          await wait(250);
-          const rows = await page.locator("[data-tab-switcher] [data-switch-tab]").count();
-          if (rows !== 1) fail(`typing f17 into the workspace switcher leaves ${rows} rows, not 1`);
-          await press("[data-tab-switcher] [data-switch-open]");
-          await wait(400);
-          const after = await stripOf("[data-ws-tab-strip]");
-          const id = "peer:/home/peer/work/f17.rs";
-          if (!after || !after.tabs.find((t) => t.id === id)?.on || after.clipped.includes(id)) {
-            fail(`picked f17 from the workspace switcher and the strip reads ${JSON.stringify(after && { on: after.tabs.find((t) => t.on)?.id, clipped: after.clipped.includes(id) })}`);
-          }
-        }
-      }
+      // Every tab drawn down to the floor, then the strip scrolls with
+      // the front one in view (UX-45). ⚠️ 墓碑 (UX-25): the count and
+      // the switcher with its box as the road past the edge.
+      if (ws.count !== null) fail(`the workspace strip shows a count ${JSON.stringify(ws.count)} — every tab is drawn, no count (UX-45)`);
+      const front = ws.tabs.find((t) => t.on);
+      if (front && ws.clipped.includes(front.id)) fail(`the workspace strip's front tab ${front.id} sits past its edge — the front tab is kept in view`);
     }
 
     // ── (d) 标签页上限: set 4 on the settings page, then open a fifth ──
@@ -11425,9 +11370,8 @@ try {
   // 再次点击要能收起。」 Two claims:
   //   · nothing on the browse landing is a pin control or a pin mark — a
   //     pinned tab is said by the sidebar's pinned group, and it has no ×;
-  //   · every `[data-tab-count]` is a switch: press → the switcher is up
-  //     and `aria-expanded` is true; press again → it is gone and the tab
-  //     in front is the one that was.
+  //   · ⚠️ 墓碑 (UX-45): every `[data-tab-count]` was a switch — the wide
+  //     strips have no count now; read as none.
   {
     await page.setViewportSize({ width: 1400, height: 900 });
     await open("browser");
@@ -11457,44 +11401,18 @@ try {
       }
     }
 
-    // The count, three seats.
-    const toggles = async (seat, count) => {
-      const front = () =>
-        page.evaluate(
-          (seat) =>
-            document.querySelector(`${seat} [data-tab][data-on="true"]`)?.getAttribute("data-tab") ??
-            document.querySelector('[data-switch-tab][data-on="true"]')?.getAttribute("data-switch-tab") ??
-            document.querySelector("[data-address-tab]")?.getAttribute("data-address-tab") ??
-            null,
-          seat,
-        );
-      const btn = page.locator(count).first();
-      if ((await btn.count()) === 0) return { dead: true };
-      const was = await front();
-      await btn.click();
-      await wait(300);
-      const up = {
-        switcher: await page.locator("[data-tab-switcher]").count(),
-        expanded: await btn.getAttribute("aria-expanded").catch(() => null),
-      };
-      await btn.click();
-      await wait(300);
-      const down = {
-        switcher: await page.locator("[data-tab-switcher]").count(),
-        expanded: await btn.getAttribute("aria-expanded").catch(() => null),
-        front: await front(),
-      };
-      return { was, up, down };
-    };
-    const seats = [];
-    // Sessions, at a width where its strip overflows (4T measured 760).
+    // ⚠️ 墓碑 (UX-45): **the count as a switch** (第四轮:「点击计数按钮展开
+    // 后，再次点击要能收起」), on the sessions and the workspace strips.
+    // A wide strip has no count now — every tab is drawn, down to its
+    // face, and the strip scrolls past that — so no seat has one to
+    // press: read at the widths that used to draw it.
+    const counts = [];
     await page.setViewportSize({ width: 760, height: 800 });
     await open("sessions");
     await wait(400);
     await press("[data-list] [data-row-open]");
     await wait(400);
-    seats.push({ seat: "sessions", ...(await toggles("[data-session-tabs]", "[data-session-tabs] [data-tab-count]")) });
-    // The workspace, twenty files.
+    counts.push(["sessions", await page.locator("[data-session-tabs] [data-tab-count], [data-tab-switcher]").count()]);
     const wsKey2 = "khor.ws-tabs.peer:/home/peer/work";
     await page.evaluate(
       (k) => window.localStorage.setItem(k, JSON.stringify(Array.from({ length: 20 }, (_, i) => `/home/peer/work/g${i}.rs`))),
@@ -11505,31 +11423,10 @@ try {
     await wait(900);
     await atTree();
     await wait(400);
-    seats.push({ seat: "workspace", ...(await toggles("[data-ws-tab-strip]", "[data-ws-tab-strip] [data-tab-count]")) });
+    counts.push(["workspace", await page.locator("[data-ws-tab-strip] [data-tab-count], [data-tab-switcher]").count()]);
     await page.evaluate((k) => window.localStorage.removeItem(k), wsKey2);
-    // ⚠️ 墓碑 (round UX-3, 2026-10-04): the browse landing's narrow face
-    // carried a count in its address bar, measured here. A phone's page
-    // is full screen now, and its way to the tabs is the deck's tabs
-    // circle and its sheet — the session page's, measured in 8b.
-    console.log(`tabs 4X · count toggles: ${JSON.stringify(seats)}`);
-    for (const x of seats) {
-      if (x.dead) {
-        fail(`probe dead: no tab count on the ${x.seat} seat`);
-        continue;
-      }
-      if (x.up.switcher !== 1 || x.up.expanded !== "true") {
-        fail(`pressing the ${x.seat} count drew ${x.up.switcher} switcher(s), aria-expanded ${x.up.expanded}`);
-      }
-      if (x.down.switcher !== 0 || x.down.expanded !== "false") {
-        fail(
-          `pressing the ${x.seat} count again left ${x.down.switcher} switcher(s), aria-expanded ${x.down.expanded} — ` +
-            "「点击计数按钮展开后，再次点击要能收起」",
-        );
-      }
-      if (x.down.front !== x.was) {
-        fail(`after the ${x.seat} switcher folded, ${x.down.front} is in front where ${x.was} was`);
-      }
-    }
+    console.log(`tabs 4X · counts: ${JSON.stringify(counts)}`);
+    for (const [seat, n] of counts) if (n !== 0) fail(`the ${seat} strip draws ${n} count(s) or switcher(s) — no count on a wide strip (UX-45)`);
     await page.reload({ waitUntil: "load" });
     await wait(900);
     await page.setViewportSize({ width: 1400, height: 900 });
@@ -13562,15 +13459,16 @@ try {
       // that list's own head (the helper's own note, 2026-09-02).
       await open("sessions");
       await pressNew("new");
-      if (!(await until(5_000, async () => (await page.locator("[data-new-session-dialog]").count()) === 1))) {
+      if (!(await until(5_000, async () => (await page.locator("[data-new-session-page]").count()) === 1))) {
         return null;
       }
       const lit = await page.evaluate(() => ({
         chat: document.querySelector("[data-new-session-chat]")?.getAttribute("data-on") ?? null,
         term: document.querySelector("[data-new-session-term]")?.getAttribute("data-on") ?? null,
       }));
-      await page.keyboard.press("Escape");
-      await until(3_000, async () => (await page.locator("[data-new-session-dialog]").count()) === 0);
+      // 取消 on the new tab's page (UX-45; ⚠️ 墓碑: Escape on the dialog).
+      await press("[data-new-session-page] [data-new-tab-cancel]");
+      await until(3_000, async () => (await page.locator("[data-new-session-page]").count()) === 0);
       return lit;
     };
 
@@ -13853,7 +13751,7 @@ try {
         fail(
           `设置 says 终端 and the wizard still opens on ${JSON.stringify(after)} — ` +
             "a setting nothing reads is a switch that stores an answer and changes nothing " +
-            "(src/views/NewSessionDialog.tsx, the reset effect)",
+            "(src/views/NewSessionPage.tsx, the reset effect)",
         );
       }
 
@@ -14184,7 +14082,9 @@ try {
         };
       }, [sel, kind]);
     const surfaces = [
-      ["the new-session dialog", "[data-new-session-dialog]", async () => (await open("sessions")) && pressNew("new")],
+      // ⚠️ 墓碑 (UX-45): the new-session dialog, a new tab's page now; 导入
+      // is the form dialog measured in its place.
+      ["the import dialog", "[data-import-dialog]", async () => (await open("sessions")) && pressNew("import")],
       [
         // 编辑… off a machine row (2026-09-30; it was 这台机器's 改名…,
         // which left that page with the face editor).
@@ -23894,9 +23794,9 @@ try {
       // (b) inside a dialog: at most one primary.
       // (d) the create forms are centred dialogs over a scrim.
       const forms = [
-        // Both are the sessions landing's ＋, a menu of the two
-        // (2026-09-30, 「一个动作只有一个家」).
-        ["new session", "[data-new-session-dialog]", async () => (await open("sessions")) && pressNew("new")],
+        // The sessions landing's ＋, a menu of the two (2026-09-30, 「一个
+        // 动作只有一个家」). ⚠️ 墓碑 (UX-45): 新会话 here — a new tab's page
+        // now, not a form dialog.
         ["import", "[data-import-dialog]", async () => (await open("sessions")) && pressNew("import")],
       ];
       for (const [what, sel, go] of forms) {
@@ -24523,7 +24423,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -24950,7 +24850,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25308,7 +25208,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -25677,7 +25577,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -25979,17 +25879,19 @@ try {
     const searching = await page.evaluate(() => document.activeElement?.hasAttribute("data-search-box") ?? false);
     await key("Escape");
     if (!searching) fail(`${mod}+K did not put the cursor in the search box`);
-    // ⌘N on 会话 opens the new-session sheet — and under it nothing else
-    // answers: ⌘2 leaves the landing where it is.
+    // ⌘N on 会话 makes a new tab in front, its page the choices (UX-45:
+    // the landing's 「+」's first act). ⚠️ 墓碑: the new-session sheet,
+    // and 「nothing behind it answers」 — a tab's page is no sheet.
+    const beforeN = await tabIds();
     await key(`${mod}+n`);
-    const sheet = (await n("[data-new-session-dialog]")) > 0;
-    await key(`${mod}+1`);
-    const under = await landingNow();
-    await key("Escape");
+    const sheet = (await n("[data-new-session-page]")) > 0;
+    const afterN = await tabIds();
+    await press("[data-new-session-page] [data-new-tab-cancel]");
     await wait(300);
-    console.log(`mac · ⌘N on 会话 → sheet ${sheet}; ⌘2 under it → ${under}`);
-    if (!sheet) fail("⌘N on the sessions landing did not open the new-session sheet — it is the landing's 「+」");
-    if (under !== "sessions") fail(`${mod}+1 under an open sheet walked to ${under} — nothing behind a sheet answers`);
+    console.log(`mac · ⌘N on 会话 → page ${sheet}; tabs ${beforeN.length} → ${afterN.length}, front ${afterN.at(-1)}`);
+    if (!sheet || afterN.length !== beforeN.length + 1 || !String(afterN.at(-1)).startsWith("new-tab:")) {
+      fail("⌘N on the sessions landing did not make a new tab with the new-session page — it is the landing's 「+」 (UX-45)");
+    }
     // A sidebar list walks with the arrows and opens nothing on the way.
     const items = '[data-list] [data-side-list] :is([data-side-open], [data-side-group], [data-old-fold])';
     await page.locator(items).first().focus({ timeout: 2_000 }).catch(() => {});
@@ -26407,7 +26309,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -26540,8 +26442,10 @@ try {
       await wait(400);
       return "menu";
     };
+    // ⚠️ 墓碑 (UX-45): 新会话… here — it is ＋'s menu's first act still,
+    // but it makes a new tab whose page asks, not a dialog
+    // (`FACE_ONLY=tabs` b).
     const forms = [
-      ["sessions", "new", "新会话…", "[data-new-session-dialog]", "menu"],
       ["sessions", "import", "导入…", "[data-import-dialog]", "menu"],
       ["devices", "invite", "邀请设备…", "[data-invite-dialog]", "menu"],
       ["devices", "join", "加入网络…", "[data-join-dialog]", "menu"],
@@ -27294,7 +27198,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -29061,12 +28965,12 @@ try {
   //   a. **a computer looking at a phone** (elder says it cannot host):
   //      elder's card has no 开会话, no VS Code switch (and `code_here`
   //      is never asked about it), no process table — peer's card has
-  //      all three; the new-session dialog opens on this machine, and
-  //      picking elder greys 智能体 and shell and leaves 留言 chosen,
-  //      where picking peer leaves them live;
+  //      all three; the new tab's page (UX-45) opens on this machine, and
+  //      picking elder leaves 智能体 and shell off its tiles and 留言
+  //      chosen, where picking peer leaves them live;
   //   b. **this machine is the phone** (gate says it cannot host): the
-  //      dialog opens on the first machine that can (peer), and picking
-  //      gate greys 智能体 / shell; gate's own card has no 开会话, no
+  //      page opens on the first machine that can (peer), and picking
+  //      gate leaves 智能体 / shell off; gate's own card has no 开会话, no
   //      借网, no hooks, no process table; peer's card keeps 开会话 but
   //      has no 借网 and no VS Code (a phone has no second window), and
   //      `code_here` is never asked of anyone; the hooks are never polled;
@@ -29128,29 +29032,31 @@ try {
       if ((await sessions.count()) && !wasOn) await press('[data-main] [data-region-head] [data-verb="sessions"]');
       return { newSession, ...seen };
     };
-    /** The dialog: where it opens, and the kinds after picking `pick`. */
+    /** The new tab's page (UX-45; it was the dialog): where it opens,
+        and the kinds after picking `pick` — read off its tiles, 智能体
+        being any agent's tile; a kind not on offer is not drawn. */
     const readDialog = async (pick) => {
       await open("sessions");
       if (!(await press("[data-side-head] [data-pane-new]"))) return null;
       if ((await count('[role="menu"]')) > 0 && !(await press('[role="menu"] [data-new-item="new"]'))) return null;
-      if (!(await until(3_000, async () => (await count("[data-new-session-dialog]")) > 0))) return null;
+      if (!(await until(3_000, async () => (await count("[data-new-session-page]")) > 0))) return null;
       const select = page.locator("[data-new-session-machine-select]");
-      if ((await select.count()) === 0) return null;
+      if (!(await until(3_000, async () => (await select.count()) > 0))) return null;
       const opened = await select.inputValue();
       const kinds = async () =>
-        page.evaluate(() =>
-          Object.fromEntries(
-            [...document.querySelectorAll("[data-new-session-kind]")].map((b) => [
-              b.getAttribute("data-new-session-kind"),
-              { disabled: b.disabled, on: b.getAttribute("data-on") === "true" },
-            ]),
-          ),
-        );
+        page.evaluate(() => {
+          const tiles = [...document.querySelectorAll("[data-new-session-tile]")];
+          const kind = (is) => {
+            const t = tiles.filter((x) => is(x.getAttribute("data-new-session-tile")));
+            return t.length ? { disabled: false, on: t.some((x) => x.getAttribute("data-on") === "true") } : undefined;
+          };
+          return { agent: kind((k) => k.startsWith("agent:")), shell: kind((k) => k === "shell"), tell: kind((k) => k === "tell") };
+        });
       const atOpen = await kinds();
       await select.selectOption(pick);
       await wait(300);
       const picked = await kinds();
-      await press("[data-new-session-dialog] [data-dialog-cancel]");
+      await press("[data-new-session-page] [data-new-tab-cancel]");
       return { opened, atOpen, picked };
     };
     /** The first workspace (peer's pinned one), its tree out — the
@@ -29199,7 +29105,7 @@ try {
       // **Not drawn** where they cannot be had (the owner's progressive
       // disclosure, 2026-10-04); greyed until then.
       if (!((!k.agent || k.agent.disabled) && (!k.shell || k.shell.disabled) && k.tell?.disabled === false && k.tell?.on)) {
-        fail(`phone a · picking elder left the kinds ${JSON.stringify(k)} — 智能体 and shell not on offer, 留言 chosen (src/views/NewSessionDialog.tsx)`);
+        fail(`phone a · picking elder left the kinds ${JSON.stringify(k)} — 智能体 and shell not on offer, 留言 chosen (src/views/NewSessionPage.tsx)`);
       }
     }
     // The b-arm's controls, on this computer's own pages.
@@ -31553,8 +31459,9 @@ try {
             return {
               sheet: document.querySelectorAll("[data-place-sheet]").length,
               who: head?.querySelector("[data-side-who]")?.textContent ?? null,
-              options: [...(head?.querySelectorAll("[data-seat-pick] select option") ?? [])].map((o) => o.value).join(" "),
-              on: head?.querySelector("[data-seat-pick] select")?.value ?? null,
+              // The seat bar (UX-45): four items; the seat it is on.
+              options: [...(head?.querySelectorAll("[data-seat-bar] [data-seat-item]") ?? [])].map((o) => o.getAttribute("data-seat-item")).join(" "),
+              on: head?.querySelector("[data-seat-bar]")?.getAttribute("data-seat-on") ?? null,
               // ⚠️ 墓碑 (UX-30 §2, UX-37 §4): the seats as a capsule or a row.
               seatsRow: s?.querySelectorAll("[data-col-seats], [data-col-seat], [data-side-foot]").length ?? 0,
               lines: s?.querySelectorAll("[data-day-ruler], [data-day-ruler-line]").length ?? 0,
@@ -31567,11 +31474,17 @@ try {
           await page.keyboard.press("Escape");
           await until(2_000, async () => (await count(sheetSel)) === 0);
         };
+        /** A seat by the head's seat bar (UX-45): 机器 and 额度 are in
+            更多's menu. ⚠️ 墓碑 (UX-39 §2): the native picker. */
         const pick = async (seat) => {
-          await page.selectOption(`${sheetSel} [data-side-head] [data-seat-pick] select`, seat);
+          if (seat === "machine" || seat === "quota") {
+            await press(`${sheetSel} [data-side-head] [data-seat-more]`);
+            await until(2_000, async () => (await count(`[data-seat-more-menu] [data-seat-more-item="${seat}"]`)) === 1);
+            await press(`[data-seat-more-menu] [data-seat-more-item="${seat}"]`);
+          } else await press(`${sheetSel} [data-side-head] [data-seat-item="${seat}"]`);
           await wait(700);
         };
-        const seatNow = () => page.evaluate(() => document.querySelector("[data-place-sheet] [data-seat-pick] select")?.value ?? null);
+        const seatNow = () => page.evaluate(() => document.querySelector("[data-place-sheet] [data-seat-bar]")?.getAttribute("data-seat-on") ?? null);
         const rootNow = () => page.evaluate(() => document.querySelector("[data-place-sheet] [data-side-workspace]")?.getAttribute("data-root") ?? null);
         const first = await sheet();
         // ── UX-37 §3 and UX-39 §1: half the screen; the paper is the app's
@@ -31629,8 +31542,8 @@ try {
           return bar ? `${bar.hasAttribute("data-deck-away")} ${getComputedStyle(bar).visibility}` : null;
         });
         console.log(`bar p · first ${shown(first)}; shape ${shown(shape)}; up ${shown(toFull)}; down ${shown(toHalf)}; a short pull ${shown(spring)}; a long pull ${shown(away)}; the deck after ${deckBack}`);
-        if (first.sheet !== 1 || first.options !== "recent workspace browser machine quota" || first.seatsRow !== 0 || first.lines !== 0 || first.page !== 1) {
-          fail(`bar p · the pill opened ${shown(first)} — one sheet, one head whose picker offers the five seats, no row or capsule of seats, no day line (UX-39 §2, §4)`);
+        if (first.sheet !== 1 || first.options !== "recent workspace browser more" || first.seatsRow !== 0 || first.lines !== 0 || first.page !== 1) {
+          fail(`bar p · the pill opened ${shown(first)} — one sheet, one head whose seat bar holds 最近 · 工作区 · 浏览器 · 更多, no row or capsule of seats at the foot, no day line (UX-39 §2, §4; UX-45)`);
         }
         if (first.who !== terms[2].title) fail(`bar p · the sheet's head says ${shown(first.who)} at its left — the session's face and title (UX-39 §2)`);
         if (first.on !== "recent") fail(`bar p · a fresh session's sheet lands on ${shown(first.on)} — 最近 is the landing`);
@@ -31695,8 +31608,9 @@ try {
               odd,
               head: pg.querySelectorAll("[data-pane-bar]").length,
               row: row && { l: Math.round(row.left - box.left), r: Math.round(box.right - row.right), face: Math.round(slot.left - row.left), inset },
-              noun: head?.querySelector("[data-seat-noun]")?.textContent ?? null,
-              glyph: !!head?.querySelector("[data-seat-glyph] svg"),
+              // The lit item of the seat bar (UX-45): its name, its glyph.
+              noun: head?.querySelector("[data-seat-item][data-on='true']")?.getAttribute("aria-label") ?? null,
+              glyph: !!head?.querySelector("[data-seat-item][data-on='true'] svg"),
               backs: pg.querySelectorAll("[data-seat-back], [data-back]").length,
               name: pg.querySelector("[data-head-name]")?.textContent?.trim() ?? null,
               // UX-40 §1: the find row on the list seats, ＋ on 工作区 and 浏览器.
@@ -31715,7 +31629,9 @@ try {
           if (g.row && (g.row.l !== 0 || g.row.r !== 0 || g.row.face !== g.row.inset)) {
             fail(`bar p · the ${s} seat's row stands ${shown(g.row)} — its box reaches both edges, its face the page inset in (UX-37 §2)`);
           }
-          if (g.noun !== nouns[s] || !g.glyph) fail(`bar p · the ${s} seat's head says ${shown(g.noun)} with glyph ${g.glyph} — the seat's noun under its own icon (UX-39 §2)`);
+          // 机器 and 额度 light 更多 (UX-45).
+          const lit = s === "machine" || s === "quota" ? "更多" : nouns[s];
+          if (g.noun !== lit || !g.glyph) fail(`bar p · on the ${s} seat the bar lights ${shown(g.noun)} with glyph ${g.glyph} — ${lit} (UX-45)`);
           if (g.backs !== 0) fail(`bar p · the ${s} seat, entered by the picker, draws ${g.backs} way(s) back — nothing back to a whole (UX-39 §3)`);
           const want = { recent: [1, 0], workspace: [1, 1], browser: [1, 1], machine: [0, 0], quota: [0, 0] }[s];
           if (g.find !== want[0] || g.make !== want[1]) fail(`bar p · the ${s} seat draws ${g.find} find row(s) and ${g.make} ＋ — want ${want[0]} and ${want[1]} (UX-40 §1)`);
@@ -31742,7 +31658,7 @@ try {
             const sheet = document.querySelector("[data-place-sheet]")?.getBoundingClientRect();
             const deck = document.querySelector("[data-place-sheet] [data-file-deck]")?.getBoundingClientRect();
             return {
-              seat: document.querySelector("[data-place-sheet] [data-seat-pick] select")?.value ?? null,
+              seat: document.querySelector("[data-place-sheet] [data-seat-bar]")?.getAttribute("data-seat-on") ?? null,
               file: document.querySelector("[data-place-sheet] [data-file-deck] [data-file-name]")?.textContent ?? null,
               back: document.querySelectorAll("[data-place-sheet] [data-file-deck] [data-file-back]").length,
               // UX-40 §4: the deck at the sheet's foot, no head at the page's top.
@@ -31837,7 +31753,7 @@ try {
             await wait(800);
             return page.evaluate(() => ({
               sheet: document.querySelector("[data-place-sheet]")?.getAttribute("data-detent") ?? null,
-              seat: document.querySelector("[data-place-sheet] [data-seat-pick] select")?.value ?? null,
+              seat: document.querySelector("[data-place-sheet] [data-seat-bar]")?.getAttribute("data-seat-on") ?? null,
               file: document.querySelector("[data-place-sheet] [data-file-deck] [data-file-name]")?.textContent ?? null,
               root: document.querySelector("[data-place-sheet] [data-side-workspace]")?.getAttribute("data-root") ?? null,
               page: document.querySelector("[data-place-sheet] [data-browse-bare]")?.getAttribute("data-browse-bare") ?? null,
@@ -31978,7 +31894,7 @@ try {
     //       2026-10-05: 「点击栏外空白都应该要支持收起。现在只能拖动那个横杆
     //       收起」); the tap that puts it away presses nothing under it.
     //       Each sheet the narrow terminal page reaches: the pill's 目录,
-    //       the tabs sheet, its 新会话. ──
+    //       the tabs sheet. ──
     {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await wait(300);
@@ -31988,8 +31904,10 @@ try {
         const sheets = [
           ["目录", "[data-place-sheet]", () => press("[data-session-deck] button[data-deck-title]")],
           ["标签页", "[data-tab-sheet]", () => press("[data-session-deck] [data-deck-tabs]")],
-          ["新会话", "[data-new-session-dialog]", async () => (await press("[data-session-deck] [data-deck-tabs]")) && press("[data-tab-sheet-new]")],
         ];
+        // ⚠️ 墓碑 (UX-45): the tabs sheet's 新会话 was a sheet on this
+        // list; its ＋ makes a new tab now, whose page is the choices
+        // (`FACE_ONLY=tabs` c).
         // ⚠️ 墓碑 (UX-31): the key row's 「…」 was a sheet on this list; it
         // is a keyboard panel now (bar u), and a tap beside a keyboard
         // puts nothing away.
@@ -32268,24 +32186,25 @@ try {
   // A phone docked beside the terminal: the front tab's press opens a
   // column at the phone's width running the narrow face's own pages,
   // beside the tab strip from the window's first row; one head — the
-  // session's face and title, the seat's icon · noun · ⌄ as a native
-  // picker of the five seats; one page per seat, nothing back to a
-  // whole. Measured:
+  // session's face and title, the seat bar (UX-45: 最近 · 工作区 · 浏览器
+  // · 更多, 更多 holding 机器 and 额度); one page per seat, nothing back
+  // to a whole. Measured:
   //
   //   a. the press opens the column at `--session-side-w`, inside a
   //      `[data-narrow]` box, from the window's top with its head level
   //      with the strip's capsule (UX-39 §6); the session gives up
   //      exactly the column's width; the press again closes it;
-  //   b. the head (UX-39 §2): the session's face and title at the left,
-  //      the seat's glyph · noun · chevron at the right, the two gaps
-  //      equal; the picker lists the five seats in order, 最近 chosen;
-  //      every seat entered by the picker says its own noun under its own
-  //      glyph, draws one picker and no ‹ (§3); 机器's first line is the
-  //      machine's name, 额度's the account's;
+  //   b. the head (UX-39 §2 → UX-45): the session's face and title at
+  //      the left, the seat bar at the right — four items, each a glyph
+  //      named by its tip, 最近 lit on landing, no native picker; every
+  //      seat entered by the bar lights its item (更多 for 机器 and 额度),
+  //      draws one bar and no ‹ (§3); 更多's menu is 机器 · 额度; the five
+  //      glyphs are five; 机器's first line is the machine's name, 额度's
+  //      the account's;
   //   c. 最近 (§4): the first row is 过去24小时 with the day's band; a
   //      press on a stretch opens that stretch's popover and the row does
   //      not expand; then this session's slice only, types mixed, newest
-  //      first;
+  //      first; a file row's face is its kind alone (UX-45);
   //   d. in place (§3, §5): a workspace row of 最近 opens the 工作区 tree
   //      with ‹ back to 最近; the seat entered by the picker is the tree
   //      of the workspace holding the session's directory, and no way
@@ -32294,8 +32213,8 @@ try {
   //      column, whose 「…」 holds 在主区打开; a file opened from the tree
   //      wears ‹ back to the tree;
   //   e. no day line under any pill, no 「今天」 in the pill's menu (§4);
-  //      the wide tabs (§7): × on every pill, no act on any, the front
-  //      pill as wide as its whole name;
+  //      the wide tabs (§7, UX-45): × at rest on every pill with room,
+  //      no act on any, every pill one width;
   //   f. the width is remembered per session: dragged, another session
   //      shows no column, this one comes back at the dragged width;
   //   g. in the app (UX-39 §9), the column extends the window: the press
@@ -32413,8 +32332,15 @@ try {
     };
     const col = "[data-session-side]";
     const seatOn = () => page.evaluate((c) => document.querySelector(c)?.getAttribute("data-col-seat-on") ?? null, col);
+    /** A seat, by the head's seat bar (UX-45): 最近 · 工作区 · 浏览器 in
+        the bar, 机器 · 额度 in 更多's menu. ⚠️ 墓碑 (UX-39 §2): the seat's
+        native picker, picked by `selectOption`. */
     const pick = async (seat) => {
-      await page.selectOption(`${col} [data-side-head] [data-seat-pick] select`, seat);
+      if (seat === "machine" || seat === "quota") {
+        await press(`${col} [data-side-head] [data-seat-more]`);
+        await until(2_000, async () => (await count(`[data-seat-more-menu] [data-seat-more-item="${seat}"]`)) === 1);
+        await press(`[data-seat-more-menu] [data-seat-more-item="${seat}"]`);
+      } else await press(`${col} [data-side-head] [data-seat-item="${seat}"]`);
       await wait(700);
     };
 
@@ -32466,7 +32392,7 @@ try {
       await wait(600);
     }
 
-    // b. the one head, the picker, one page per seat
+    // b. the one head, the seat bar, one page per seat (UX-39 §2–3 → UX-45)
     {
       const head = await page.evaluate((c) => {
         const h = document.querySelector(`${c} [data-side-head]`);
@@ -32474,54 +32400,65 @@ try {
         const who = h?.querySelector("[data-side-who]");
         const face = who?.firstElementChild ?? null;
         const title = face?.nextElementSibling ?? null;
-        const pick = h?.querySelector("[data-seat-pick]");
-        const glyph = pick?.querySelector("[data-seat-glyph]");
-        const noun = pick?.querySelector("[data-seat-noun]");
+        const bar = h?.querySelector("[data-seat-bar]");
+        const items = [...(bar?.querySelectorAll("[data-seat-item]") ?? [])];
         return {
           title: title?.textContent ?? null,
-          faceGap: face && title ? +(r(title).left - r(face).right).toFixed(1) : null,
-          glyphGap: glyph && noun ? +(r(noun).left - r(glyph).right).toFixed(1) : null,
-          whoLeft: who && pick ? r(who).right <= r(pick).left + 0.5 : false,
-          noun: noun?.textContent ?? null,
-          glyph: !!glyph?.querySelector("svg"),
-          options: [...(pick?.querySelectorAll("select option") ?? [])].map((o) => o.value),
-          chosen: pick?.querySelector("select")?.value ?? null,
+          whoLeft: who && bar ? r(who).right <= r(bar).left + 0.5 : false,
+          items: items.map((i) => i.getAttribute("data-seat-item")),
+          drawn: items.filter((i) => i.querySelector("svg") && (i.getAttribute("aria-label") ?? "") !== "").length,
+          lit: items.filter((i) => i.getAttribute("data-on") === "true").map((i) => i.getAttribute("data-seat-item")),
+          chosen: bar?.getAttribute("data-seat-on") ?? null,
+          picks: h?.querySelectorAll("[data-seat-pick], select").length ?? 0,
         };
       }, col);
       console.log(`side b · head ${JSON.stringify(head)}`);
       if (head.title !== longName) fail(`side b · the head's left says ${JSON.stringify(head.title)} — the session's title beside its face (UX-39 §2)`);
-      if (!head.whoLeft) fail("side b · the session is not at the head's left and the seat's picker at its right");
-      if (head.faceGap === null || head.glyphGap === null || Math.abs(head.faceGap - head.glyphGap) > 0.5) {
-        fail(`side b · face → title is ${head.faceGap}, glyph → noun is ${head.glyphGap} — the two gaps are one (UX-39 §2)`);
+      if (!head.whoLeft) fail("side b · the session is not at the head's left and the seat bar at its right");
+      if (head.items.join(" ") !== "recent workspace browser more" || head.drawn !== 4) {
+        fail(`side b · the seat bar holds ${JSON.stringify(head.items)} (${head.drawn} with a glyph and a name) — 最近 · 工作区 · 浏览器 · 更多, each a glyph with its name as the tip (UX-45)`);
       }
-      if (head.options.join(" ") !== "recent workspace browser machine quota") fail(`side b · the picker offers ${JSON.stringify(head.options)} — 最近 · 工作区 · 浏览器 · 机器 · 额度`);
-      if (head.chosen !== "recent") fail(`side b · the column landed on ${head.chosen} — 最近 is the landing seat`);
+      if (head.picks !== 0) fail(`side b · the head still draws ${head.picks} native picker(s) — ⚠️ 墓碑 the seat's picker (UX-45)`);
+      if (head.chosen !== "recent" || head.lit.join(" ") !== "recent") fail(`side b · the column landed on ${head.chosen}, lit ${JSON.stringify(head.lit)} — 最近 is the landing seat, and the lit one`);
       const nouns = { recent: "最近", workspace: "工作区", browser: "浏览器", machine: "机器", quota: "额度" };
-      const glyphs = new Set();
       for (const seat of ["workspace", "browser", "machine", "quota", "recent"]) {
         await pick(seat);
         const s = await page.evaluate((c) => {
           const h = document.querySelector(`${c} [data-side-head]`);
+          const lit = [...(h?.querySelectorAll("[data-seat-item][data-on='true']") ?? [])];
           return {
             on: document.querySelector(c)?.getAttribute("data-col-seat-on"),
-            noun: h?.querySelector("[data-seat-noun]")?.textContent ?? null,
-            glyph: h?.querySelector("[data-seat-glyph]")?.innerHTML ?? "",
-            picks: document.querySelectorAll(`${c} [data-seat-pick]`).length,
+            bar: h?.querySelector("[data-seat-bar]")?.getAttribute("data-seat-on") ?? null,
+            lit: lit.map((i) => i.getAttribute("data-seat-item")),
+            noun: lit[0]?.getAttribute("aria-label") ?? null,
+            bars: document.querySelectorAll(`${c} [data-seat-bar]`).length,
             backs: document.querySelectorAll(`${c} [data-seat-back], ${c} [data-side-page] [data-back]`).length,
             name: document.querySelector(`${c} [data-side-page] [data-head-name] > :first-child`)?.textContent?.trim() ?? null,
           };
         }, col);
-        console.log(`side b · ${seat}: ${JSON.stringify({ ...s, glyph: s.glyph.length })}`);
-        glyphs.add(s.glyph);
-        if (s.on !== seat) fail(`side b · the picker's ${seat} turned the column to ${s.on}`);
-        if (s.noun !== nouns[seat]) fail(`side b · the ${seat} seat's head says ${JSON.stringify(s.noun)} — the seat's noun, ${nouns[seat]}, not the page's (UX-39 §2)`);
-        if (!s.glyph.includes("<svg")) fail(`side b · the ${seat} seat's head wears no glyph — every seat its own icon (UX-39 §2)`);
-        if (s.picks !== 1) fail(`side b · the ${seat} seat draws ${s.picks} picker(s) — the head's one`);
-        if (s.backs !== 0) fail(`side b · the ${seat} seat, entered by the picker, draws ${s.backs} way(s) back — one page per seat, nothing back to a whole (UX-39 §3)`);
+        console.log(`side b · ${seat}: ${JSON.stringify(s)}`);
+        const more = seat === "machine" || seat === "quota";
+        if (s.on !== seat || s.bar !== seat) fail(`side b · the bar's ${seat} turned the column to ${s.on} (the bar says ${s.bar})`);
+        if (s.lit.join(" ") !== (more ? "more" : seat)) fail(`side b · on ${seat} the bar lights ${JSON.stringify(s.lit)} — ${more ? "更多, which holds 机器 and 额度" : "that seat"} (UX-45)`);
+        if (!more && s.noun !== nouns[seat]) fail(`side b · the lit ${seat} item is named ${JSON.stringify(s.noun)} — the seat's noun, ${nouns[seat]}`);
+        if (s.bars !== 1) fail(`side b · the ${seat} seat draws ${s.bars} seat bar(s) — the head's one`);
+        if (s.backs !== 0) fail(`side b · the ${seat} seat, entered by the bar, draws ${s.backs} way(s) back — one page per seat, nothing back to a whole (UX-39 §3)`);
         if (seat === "machine" && s.name !== "peer") fail(`side b · 机器's first line is ${JSON.stringify(s.name)} — the machine's name (UX-39 §3)`);
         if (seat === "quota" && s.name !== null && s.name !== "claude code") fail(`side b · 额度's first line is ${JSON.stringify(s.name)} — the account's name (UX-39 §3)`);
       }
-      if (glyphs.size !== 5) fail(`side b · the five seats wear ${glyphs.size} distinct glyph(s) — each its own`);
+      // Every seat its own glyph (UX-39 §2): the bar's three and the menu's two.
+      await press(`${col} [data-side-head] [data-seat-more]`);
+      await until(2_000, async () => (await count("[data-seat-more-menu] [data-seat-more-item]")) === 2);
+      const glyphs = await page.evaluate((c) => {
+        const bar = [...document.querySelectorAll(`${c} [data-seat-bar] [data-seat-item]:not([data-seat-item="more"]) svg`)];
+        const menu = [...document.querySelectorAll("[data-seat-more-menu] [data-seat-more-item] svg")];
+        return { menu: [...document.querySelectorAll("[data-seat-more-menu] [data-seat-more-item]")].map((i) => i.getAttribute("data-seat-more-item")), distinct: new Set([...bar, ...menu].map((g) => g.innerHTML)).size };
+      }, col);
+      await page.keyboard.press("Escape");
+      await wait(300);
+      console.log(`side b · 更多 ${JSON.stringify(glyphs)}`);
+      if (glyphs.menu.join(" ") !== "machine quota") fail(`side b · 更多's menu holds ${JSON.stringify(glyphs.menu)} — 机器 and 额度 (UX-45)`);
+      if (glyphs.distinct !== 5) fail(`side b · the five seats wear ${glyphs.distinct} distinct glyph(s) — each its own`);
     }
 
     // c. 最近: 过去24小时 first, then this session's slice
@@ -32534,10 +32471,20 @@ try {
           says: first?.textContent ?? "",
           band: !!first?.querySelector("[data-day-strip] [data-day-run]"),
           expands: !!first && (first.hasAttribute("aria-expanded") || first.querySelector(":scope > button[aria-expanded]") !== null),
-          rows: [...document.querySelectorAll(`${c} [data-recent-row]`)].map((e) => ({ kind: e.dataset.recentKind, at: e.querySelector("[data-recent-at]")?.textContent ?? null })),
+          rows: [...document.querySelectorAll(`${c} [data-recent-row]`)].map((e) => ({
+            kind: e.dataset.recentKind,
+            at: e.querySelector("[data-recent-at]")?.textContent ?? null,
+            // UX-45: a file's face is its kind alone, no machine's face.
+            fileFace: !!e.querySelector("[data-file-face]"),
+            machineFace: !!e.querySelector("[data-face]"),
+          })),
         };
       }, col);
       console.log(`side c · 最近 ${JSON.stringify(shape)}`);
+      for (const r of shape.rows) {
+        if (r.kind === "file" && (!r.fileFace || r.machineFace)) fail(`side c · 最近's file row wears ${JSON.stringify(r)} — a file's face is its kind alone (UX-45)`);
+        if (r.kind !== "file" && r.fileFace) fail(`side c · 最近's ${r.kind} row wears a file's face — only a file does (UX-45)`);
+      }
       if (!shape.first) fail("side c · 最近's first row is not 过去24小时 (UX-39 §4)");
       if (!shape.says.includes("过去24小时")) fail(`side c · the first row says ${JSON.stringify(shape.says)} — 过去24小时, not 今天`);
       if (!shape.band) fail("side c · 过去24小时 draws no day band with stretches (DayStrip)");
@@ -32806,7 +32753,6 @@ try {
       if (today !== 0) fail("side e · the pill's menu still offers 「今天」 (UX-39 §4)");
       const tabs = await page.evaluate(() => {
         const all = [...document.querySelectorAll("[data-session-tabs] [data-tab]")];
-        const on = document.querySelector('[data-session-tabs] [data-tab][data-on="true"] [data-tab-label]');
         return {
           tabs: all.length,
           closes: all.filter((t) => t.querySelector("[data-tab-close]")).length,
@@ -32815,17 +32761,17 @@ try {
             return x && getComputedStyle(x).visibility === "visible" && x.getBoundingClientRect().width > 0;
           }).length,
           acts: document.querySelectorAll("[data-session-tabs] [data-tab] [data-tab-act]").length,
-          name: on ? { scroll: on.scrollWidth, client: on.clientWidth } : null,
-          // What an equal share would have given it.
-          share: (document.querySelector("[data-session-tabs] [data-tab-strip]")?.getBoundingClientRect().width ?? 0) / Math.max(1, all.length),
-          pill: document.querySelector('[data-session-tabs] [data-tab][data-on="true"]')?.getBoundingClientRect().width ?? 0,
+          widths: [...new Set(all.map((t) => Math.round(t.getBoundingClientRect().width)))],
         };
       });
       console.log(`side e · wide tabs ${JSON.stringify(tabs)}`);
-      if (tabs.tabs < 2 || tabs.closes !== tabs.tabs || tabs.shown !== tabs.tabs) fail(`side e · ${tabs.closes} of ${tabs.tabs} wide pills wear a ×, ${tabs.shown} shown — × on every pill, always (UX-39 §7)`);
+      // Three pills with room for a name (UX-45: × at rest on a pill at
+      // least --container-tab-x wide; the strip's own widths are `tabs`).
+      if (tabs.tabs < 2 || tabs.closes !== tabs.tabs || tabs.shown !== tabs.tabs) fail(`side e · ${tabs.closes} of ${tabs.tabs} wide pills wear a ×, ${tabs.shown} shown — × at rest on every pill that has room (UX-39 §7, UX-45)`);
       if (tabs.acts !== 0) fail(`side e · ${tabs.acts} wide pill(s) wear an act — the one ↻ is the verbs seat's (UX-39 §7)`);
-      if (tabs.tabs < 3 || tabs.pill <= tabs.share) fail(`probe void: side e · the front pill is ${tabs.pill} of an equal share ${tabs.share} across ${tabs.tabs} tabs — the name does not outgrow a share`);
-      if (!tabs.name || tabs.name.scroll > tabs.name.client + 1) fail(`side e · the front pill's name needs ${tabs.name?.scroll} and has ${tabs.name?.client} — it grows from its whole name (UX-39 §7)`);
+      // ⚠️ 墓碑 (UX-39 §7 → UX-45): the front pill as wide as its whole
+      // name — every wide pill is one width now (`FACE_ONLY=tabs` a).
+      if (tabs.widths.length !== 1) fail(`side e · the wide pills are ${JSON.stringify(tabs.widths)} wide — one width, front or not (UX-45)`);
     }
 
     // f. remembered per session
@@ -33254,7 +33200,7 @@ try {
       const sheetsJ = [
         ["the 附栏", "[data-place-sheet]", async () => (await toSession()) && press("[data-session-deck] button[data-deck-title]")],
         ["the tabs sheet", "[data-tab-sheet]", async () => (await toSession()) && press("[data-session-deck] [data-deck-tabs]")],
-        ["新会话", "[data-new-session-dialog]", async () => (await open("sessions")) && newItem("new")],
+        // ⚠️ 墓碑 (UX-45): 新会话 here — it is a new tab's page now, not a sheet.
         ["导入", "[data-import-dialog]", async () => (await open("sessions")) && newItem("import")],
         ["加入网络", "[data-join-dialog]", async () => (await open("devices")) && newItem("join")],
         ["the key row editor", "[data-key-row-editor]", async () => ((await openMore("terminal")) && (await press('[data-setting-row-name="term-key-row"]'))) || ((await openMore("appearance")) && press('[data-setting-row-name="term-key-row"]'))],
@@ -33392,7 +33338,7 @@ try {
         if (JSON.stringify(forgot.map((f) => `${f.kind} ${f.place}`)) !== JSON.stringify(want) || forgot.some((f) => f.machine !== "peer")) {
           fail(`side j · 最近's deletes asked ${JSON.stringify(forgot)} — forget_recent for ${JSON.stringify(want)} on peer, the record only (UX-44 §3)`);
         }
-        await page.selectOption("[data-place-sheet] [data-side-head] [data-seat-pick] select", "browser");
+        await press('[data-place-sheet] [data-side-head] [data-seat-item="browser"]');
         await until(3_000, async () => (await count("[data-place-sheet] [data-switch-tab]")) === 3);
         await wait(400);
         const pageChev = await chevrons("[data-place-sheet]");
@@ -33469,6 +33415,529 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "side") console.log("side · FACE_ONLY=side: the other sections are skipped");
+
+  // ── tabs like Chrome's, a new tab and its page (UX-45, 2026-10-07) ──
+  //
+  // The owner aligned the draft on the lab (「做吧」): every wide glass
+  // pill one width, front or not, shrinking together to a floor; past it
+  // the strip scrolls; no count; ＋ after the last tab makes a new tab
+  // whose page is 新建会话's questions; 取消 there goes back to where the
+  // person asked from; a × pressed with the pointer holds the row still.
+  // Value checks only (30-behavior: layout is the owner's checklist).
+  // New, not a fix: no red first.
+  //
+  //   a. widths (1400): at 4, 10 and 30 tabs every pill is one width, at
+  //      most `--tab-w-even` and at least `--tab-w-floor`; the strip
+  //      scrolls only once the pills are at the floor; no
+  //      `[data-tab-count]`; ＋ (`[data-tab-new]`) right after the last
+  //      pill and outside the scroller; the front pill's × shown at every
+  //      width; another pill's × shown at rest exactly when the pill is
+  //      at least `--container-tab-x` wide, and under the pointer at the
+  //      floor; no name under `--container-tab-face`;
+  //   b. ＋ makes a tab labelled 「新标签页」 (`new-tab:`), last and in
+  //      front, its page `[data-new-session-page]` — from the strip and
+  //      from the list's ＋ → 新会话…;
+  //   c. 取消 goes back to where it was asked: a terminal in front (the
+  //      strip's ＋), a machine page (its 开会话, the machine prefilled),
+  //      and on the phone the list (＋ → 新会话…) and a terminal (the
+  //      tabs sheet's ＋);
+  //   d. a road's prefill reaches the page: a terminal's 发给智能体
+  //      (`askNewSession` with a device id, a directory and a handed
+  //      block) shows the machine's name, the directory and the block;
+  //      取消 lets the block go; the workspace column's ＋ fills the
+  //      directory, and its 创建 goes back to the workspace with the new
+  //      row marked in the column;
+  //   e. hold on close: a × pressed with the pointer keeps every pill's
+  //      width and the next × under the pointer; the pointer leaving the
+  //      capsule lets go; a keyboard press on × and ⌘W never hold; a
+  //      strip scrolled to 300 keeps its scroll through three closes;
+  //   f. a file's face is its kind alone: the workspace strip's file tab
+  //      and the phone's file page pill wear `[data-file-face]` with no
+  //      machine face inside, a session tab keeps its machine face and
+  //      its kind's mark (最近's file rows: side c);
+  //   g. `MidName`: a name whose whole width fits its box is shown whole,
+  //      no shown name starts with 「…」, and a middle cut keeps at least
+  //      three characters of the head.
+  //
+  // `FACE_ONLY=tabs` runs this section alone.
+  tabs: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "tabs") break tabs;
+  {
+    const peer = devs.find((d) => d.name === "peer");
+    if (!peer) {
+      fail("probe dead: tabs · the fixture lost peer");
+      break tabs;
+    }
+    const base = {
+      kind: "tui",
+      word: "idle",
+      at_ms: Date.now(),
+      unread: 0,
+      source: null,
+      pinned: false,
+      stale: false,
+      category: "shell",
+      group: "",
+      face: null,
+      hosted: true,
+      attachable: true,
+      last: null,
+      via: null,
+      via_face: null,
+      home: "peer",
+      place: pin.path,
+      mux: false,
+    };
+    // Names of every length a strip meets, the owner's 「frontier_diagno…
+    // cs.py」 among them, and some wide characters.
+    const names = ["frontier_diagnostics.py", "queue.py", "schema_mem_replay.py", "理解方法和公式逻辑.md", "plot_figures.ipynb", "khor", "a-rather-long-session-name-that-cannot-fit"];
+    const tabRows = Array.from({ length: 30 }, (_, i) => ({
+      ...base,
+      id: `tui/tabs-${i}`,
+      title: i < names.length ? names[i] : `tabs-${i}`,
+      category: ["shell", "claude", "codex"][i % 3],
+    }));
+    const ids = tabRows.map((r) => r.id);
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(tabRows) }));
+    await page.route("**/term_open", json(null));
+    await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
+    await page.route("**/term_stream", json({ bytes: "", seq: 0, gone: false, reset: false }));
+    await page.route("**/term_resize", json(null));
+    await page.route("**/term_leave", json(null));
+    await page.route("**/term_key", json(null));
+    await page.route("**/machine_log", json({ messages: [], broken: 0 }));
+    const count = (sel) => page.locator(sel).count();
+    const px = (v) =>
+      page.evaluate((v) => {
+        const el = document.createElement("div");
+        el.style.width = v;
+        document.body.append(el);
+        const w = el.getBoundingClientRect().width;
+        el.remove();
+        return w;
+      }, v);
+    const EVEN = await px("var(--tab-w-even)");
+    const FLOOR = await px("var(--tab-w-floor)");
+    const TAB_X = await px("var(--container-tab-x)");
+    const TAB_FACE = await px("var(--container-tab-face)");
+    /** A fresh window with these tabs open, the first in front. */
+    const withTabs = async (open, { width = 1400, height = 900 } = {}) => {
+      await page.evaluate((t) => {
+        window.localStorage.clear();
+        if (t.length) window.localStorage.setItem("khor.sessions.tabs", JSON.stringify({ tabs: t, active: t[0] }));
+      }, open);
+      await page.setViewportSize({ width, height });
+      await page.reload({ waitUntil: "load" });
+      await until(5_000, async () => (await count("[data-session-tabs] [data-tab]")) === open.length);
+      await wait(700);
+    };
+    /** The strip as drawn: each pill's width and what of it shows. */
+    const strip = () =>
+      page.evaluate(() => {
+        const shows = (el) => !!el && getComputedStyle(el).display !== "none" && getComputedStyle(el).visibility !== "hidden" && el.getBoundingClientRect().width > 0;
+        const s = document.querySelector("[data-session-tabs] [data-tab-strip]");
+        const cap = document.querySelector("[data-session-tabs] [data-tab-capsule]");
+        const pills = [...document.querySelectorAll("[data-session-tabs] [data-tab]")];
+        const plus = document.querySelector("[data-session-tabs] [data-tab-new]");
+        const last = pills[pills.length - 1]?.getBoundingClientRect() ?? null;
+        return {
+          ids: pills.map((p) => p.getAttribute("data-tab")),
+          front: pills.find((p) => p.getAttribute("data-on") === "true")?.getAttribute("data-tab") ?? null,
+          w: pills.map((p) => +p.getBoundingClientRect().width.toFixed(1)),
+          x: pills.map((p) => shows(p.querySelector("[data-tab-close]"))),
+          name: pills.map((p) => shows(p.querySelector("[data-tab-label], [data-tab-name]"))),
+          on: pills.map((p) => p.getAttribute("data-on") === "true"),
+          scroll: s ? { left: s.scrollLeft, over: s.scrollWidth - s.clientWidth } : null,
+          held: cap?.hasAttribute("data-tabs-held") ?? null,
+          count: document.querySelectorAll("[data-session-tabs] [data-tab-count]").length,
+          // After the last pill, or after the scroller's edge once the last
+          // pill is scrolled past it.
+          plus: plus
+            ? { inScroller: !!plus.closest("[data-tab-strip]"), gap: last && s ? +(plus.getBoundingClientRect().left - Math.min(last.right, s.getBoundingClientRect().right)).toFixed(1) : null }
+            : null,
+          label: pills.find((p) => p.getAttribute("data-on") === "true")?.querySelector("[data-tab-open]")?.textContent?.trim() ?? null,
+        };
+      });
+    const spread = (w) => Math.max(...w) - Math.min(...w);
+
+    // a. widths
+    for (const n of [4, 10, 30]) {
+      await withTabs(ids.slice(0, n));
+      const s = await strip();
+      console.log(`tabs a · ${n} tabs: widths ${JSON.stringify([...new Set(s.w)])}, × ${s.x.filter(Boolean).length}, names ${s.name.filter(Boolean).length}, scroll ${JSON.stringify(s.scroll)}, ＋ ${JSON.stringify(s.plus)}, count ${s.count} (even ${EVEN}, floor ${FLOOR}, × ${TAB_X}, face ${TAB_FACE})`);
+      if (s.w.length !== n) {
+        fail(`probe dead: tabs a · ${s.w.length} of ${n} tabs drew`);
+        continue;
+      }
+      if (spread(s.w) > 0.5) fail(`tabs a · at ${n} tabs the pills are ${JSON.stringify([...new Set(s.w)])} wide — one width, front or not (UX-45)`);
+      if (Math.max(...s.w) > EVEN + 0.5 || Math.min(...s.w) < FLOOR - 0.5) fail(`tabs a · at ${n} tabs a pill stands outside ${FLOOR}..${EVEN}: ${JSON.stringify([...new Set(s.w)])}`);
+      if (s.scroll.over > 1 && Math.abs(s.w[0] - FLOOR) > 0.5) fail(`tabs a · at ${n} tabs the strip scrolls ${s.scroll.over} with pills ${s.w[0]} wide — it scrolls only once they are at the floor`);
+      if (n === 30 && s.scroll.over <= 1) fail(`tabs a · 30 tabs at the floor do not scroll (${JSON.stringify(s.scroll)}) — past the floor the strip scrolls`);
+      if (s.count !== 0) fail(`tabs a · at ${n} tabs the strip draws a count — every tab is drawn, no count (UX-45)`);
+      if (!s.plus || s.plus.inScroller || s.plus.gap < 0 || s.plus.gap > 16) fail(`tabs a · ＋ stands ${JSON.stringify(s.plus)} — after the last pill, a hairline between, outside the scroller`);
+      s.on.forEach((on, i) => {
+        if (on && !s.x[i]) fail(`tabs a · at ${n} tabs the front pill (${s.w[i]} wide) shows no × — the front pill's × at every width (UX-45)`);
+        if (!on && s.x[i] !== s.w[i] >= TAB_X) fail(`tabs a · at ${n} tabs a pill ${s.w[i]} wide ${s.x[i] ? "shows" : "hides"} its × at rest — shown exactly from ${TAB_X} (UX-45)`);
+        if (s.name[i] && s.w[i] < TAB_FACE) fail(`tabs a · at ${n} tabs a pill ${s.w[i]} wide shows its name — under ${TAB_FACE} it is the face alone`);
+      });
+      if (n === 30) {
+        // Under the pointer at the floor, a pill not in front shows its ×.
+        const target = await page.evaluate(() => {
+          const s = document.querySelector("[data-session-tabs] [data-tab-strip]").getBoundingClientRect();
+          const p = [...document.querySelectorAll('[data-session-tabs] [data-tab]:not([data-on="true"])')].find((e) => {
+            const b = e.getBoundingClientRect();
+            return b.left > s.left + 4 && b.right < s.right - 4;
+          });
+          const b = p?.getBoundingClientRect();
+          return b ? { id: p.getAttribute("data-tab"), x: b.left + b.width / 2, y: b.top + b.height / 2 } : null;
+        });
+        if (!target) fail("probe dead: tabs a · no pill wholly inside the scrolled strip to point at");
+        else {
+          await page.mouse.move(target.x, target.y);
+          await wait(250);
+          const hovered = await page.evaluate((id) => {
+            const x = document.querySelector(`[data-session-tabs] [data-tab="${CSS.escape(id)}"] [data-tab-close]`);
+            return !!x && getComputedStyle(x).display !== "none" && x.getBoundingClientRect().width > 0;
+          }, target.id);
+          if (!hovered) fail("tabs a · a pill at the floor shows no × under the pointer — under the pointer down to the floor (UX-45)");
+          await page.mouse.move(700, 600);
+        }
+      }
+    }
+
+    // g. MidName, at widths that cut and widths that do not: the
+    //    workspace's file strip, where the owner saw 「frontier_diagno…
+    //    cs.py」 (a session's name is its own `EditableName`)
+    const files = ["frontier_diagnostics.py", "schema_mem_replay.py", "理解方法和公式逻辑.md", "plot_figures.ipynb", "notes-final.md", "queue.py", "a-rather-long-file-name-that-cannot-fit.rs", "SessionSide.tsx"];
+    for (const n of [4, 6, 8]) {
+      await withTabs([]);
+      await page.evaluate(
+        ([k, v]) => window.localStorage.setItem(k, JSON.stringify(v)),
+        [`khor.ws-tabs.peer:${pin.path}`, files.slice(0, n).map((f) => `${pin.path}/${f}`)],
+      );
+      await page.reload({ waitUntil: "load" });
+      await wait(700);
+      await open("workspaces");
+      await press("[data-ws-row]");
+      await until(5_000, async () => (await count("[data-ws-tab-strip] [data-tab]")) === n);
+      await wait(500);
+      const cuts = await page.evaluate(() => {
+        const ctx = document.createElement("canvas").getContext("2d");
+        return [...document.querySelectorAll("[data-ws-tab-strip] [data-mid-name]")]
+          .filter((m) => m.getBoundingClientRect().width > 0)
+          .map((m) => {
+            const sizer = m.children[0];
+            const cs = getComputedStyle(sizer);
+            ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+            const full = sizer.textContent ?? "";
+            return { full, shown: m.children[1]?.textContent ?? "", need: +ctx.measureText(full).width.toFixed(1), room: +sizer.getBoundingClientRect().width.toFixed(1) };
+          });
+      });
+      console.log(`tabs g · ${n} files: ${JSON.stringify(cuts.map((c) => `${c.shown} (${c.need}/${c.room})`))}`);
+      if (n === 4 && cuts.length === 0) fail("probe dead: tabs g · no middle-cut name drew at 4 files");
+      for (const c of cuts) {
+        if (c.need <= c.room - 1 && c.shown !== c.full) fail(`tabs g · 「${c.full}」 needs ${c.need} of ${c.room} and shows 「${c.shown}」 — a name that fits is never cut (UX-45)`);
+        if (c.shown.startsWith("…")) fail(`tabs g · 「${c.full}」 shows 「${c.shown}」 — never a tail without a head (UX-45)`);
+        const at = [...c.shown].indexOf("…");
+        if (at >= 0 && at < [...c.shown].length - 1 && at < 3) fail(`tabs g · 「${c.full}」 shows 「${c.shown}」 — a middle cut keeps at least three characters of the head`);
+      }
+    }
+
+    // b. ＋ makes a new tab, in front, its page the choices
+    const newTab = async (how) => {
+      const before = await strip();
+      if (how === "strip") await press("[data-session-tabs] [data-tab-new]");
+      else {
+        await press("[data-side-head] [data-pane-new]");
+        if ((await count('[role="menu"]')) > 0) await press('[role="menu"] [data-new-item="new"]');
+      }
+      await until(3_000, async () => (await count("[data-new-session-page]")) === 1);
+      await wait(300);
+      const after = await strip();
+      return { before, after, page: await count("[data-new-session-page]") };
+    };
+    await withTabs(ids.slice(0, 4));
+    await page.locator(`[data-session-tabs] [data-tab="${ids[2]}"] [data-tab-open]`).click({ position: { x: 8, y: 10 } });
+    await wait(500);
+    for (const how of ["strip", "list"]) {
+      const t = await newTab(how);
+      const made = t.after.ids.at(-1) ?? "";
+      console.log(`tabs b · ＋ (${how}): ${t.before.ids.length} → ${t.after.ids.length}, last ${made}, front ${t.after.front}, label ${JSON.stringify(t.after.label)}, page ${t.page}`);
+      if (t.after.ids.length !== t.before.ids.length + 1 || !made.startsWith("new-tab:") || t.after.front !== made || t.page !== 1) {
+        fail(`tabs b · ＋ (${how}) left ${JSON.stringify({ ids: t.after.ids.length, last: made, front: t.after.front, page: t.page })} — a new tab, last and in front, its page the choices (UX-45)`);
+      }
+      if (t.after.label !== "新标签页") fail(`tabs b · the new tab is labelled ${JSON.stringify(t.after.label)} — 「新标签页」`);
+      // c. (wide, a terminal) 取消: the terminal that was in front is back.
+      await press("[data-new-session-page] [data-new-tab-cancel]");
+      await wait(500);
+      const back = await strip();
+      console.log(`tabs c · 取消 (${how}): front ${back.front}, ${back.ids.length} tabs`);
+      if (back.front !== ids[2] || back.ids.length !== 4 || back.ids.some((id) => id.startsWith("new-tab:"))) {
+        fail(`tabs c · 取消 from a terminal (${how}) left ${JSON.stringify({ front: back.front, ids: back.ids })} — the new tab gone, ${ids[2]} in front again`);
+      }
+    }
+
+    // c. (wide, a machine page) 开会话 → the machine filled in → 取消 → the card
+    {
+      await open("devices");
+      await press(`[data-list] [data-side-row="${peer.id}"] [data-row-open]`);
+      await until(5_000, async () => (await count("[data-machine-card]")) > 0);
+      const sessions = page.locator('[data-main] [data-region-head] [data-verb="sessions"]');
+      if ((await sessions.count()) && (await sessions.getAttribute("data-on").catch(() => null)) !== "true") await press('[data-main] [data-region-head] [data-verb="sessions"]');
+      const went = await press('[data-verb="new-session-on"]');
+      const up = went && (await until(3_000, async () => (await count("[data-new-session-page]")) === 1));
+      const select = page.locator("[data-new-session-machine-select]");
+      await until(3_000, async () => (await select.count()) > 0);
+      const machine = up ? await select.inputValue().catch(() => null) : null;
+      await press("[data-new-session-page] [data-new-tab-cancel]");
+      await wait(500);
+      const at = await page.evaluate(() => ({
+        landing: document.querySelector("[data-rail-item][data-on='true']")?.getAttribute("data-landing") ?? null,
+        card: document.querySelectorAll("[data-machine-card]").length,
+        page: document.querySelectorAll("[data-new-session-page]").length,
+      }));
+      console.log(`tabs c · 开会话 on peer: page ${up}, machine ${machine}; 取消 → ${JSON.stringify(at)}`);
+      if (!up) fail("probe dead: tabs c · the machine card's 开会话 opened no new tab");
+      else {
+        if (machine !== "peer") fail(`tabs d · the machine card's 开会话 opened the page on ${JSON.stringify(machine)} — the card's machine, peer`);
+        if (at.landing !== "devices" || at.card === 0 || at.page !== 0) fail(`tabs c · 取消 from a machine page left ${JSON.stringify(at)} — back on 机器 with the card`);
+      }
+    }
+
+    // d. a terminal's 发给智能体: the machine by device id, the directory,
+    //    the handed block; 取消 lets the block go
+    {
+      await withTabs(ids.slice(0, 3));
+      await page.evaluate(async (dev) => {
+        const m = await import("/src/lib/composer-handoff.ts");
+        m.handOff("block.txt", "$ ls\nnotes.md\n");
+        m.askNewSession(dev, "/home/peer/work/sub");
+      }, peer.id);
+      const up = await until(3_000, async () => (await count("[data-new-session-page]")) === 1);
+      await until(3_000, async () => (await count("[data-new-session-machine-select]")) > 0);
+      await wait(400);
+      const filled = await page.evaluate(() => ({
+        machine: document.querySelector("[data-new-session-machine-select]")?.value ?? null,
+        dir: document.querySelector("[data-new-session-dir]")?.value ?? null,
+        handed: document.querySelector("[data-new-session-handed]")?.textContent ?? null,
+      }));
+      await press("[data-new-session-page] [data-new-tab-cancel]");
+      await wait(400);
+      const left = await page.evaluate(async () => (await import("/src/lib/composer-handoff.ts")).peekHandOff());
+      const back = await strip();
+      console.log(`tabs d · 发给智能体: page ${up}, ${JSON.stringify(filled)}; 取消 → block ${JSON.stringify(left)}, front ${back.front}`);
+      if (!up) fail("probe dead: tabs d · askNewSession opened no new tab");
+      else {
+        if (filled.machine !== "peer" || filled.dir !== "/home/peer/work/sub" || filled.handed !== "block.txt") {
+          fail(`tabs d · the terminal's road filled ${JSON.stringify(filled)} — peer (named by its device id), its directory, the handed block (UX-45)`);
+        }
+        if (left !== null) fail(`tabs d · 取消 kept the handed block ${JSON.stringify(left)} — it is for the conversation this page starts, and 取消 lets it go`);
+        if (back.front !== ids[0]) fail(`tabs c · 取消 from a terminal's road left ${back.front} in front — ${ids[0]}, where it was asked`);
+      }
+    }
+
+    // d. the workspace column's ＋: the directory filled; 创建 goes back to
+    //    the workspace with the new row marked in the column
+    {
+      await withTabs([]);
+      await open("workspaces");
+      if (!(await press("[data-ws-row]"))) fail("probe dead: tabs d · no workspace row");
+      if ((await count("[data-ws-tree]")) === 0) await press("[data-ws-row]");
+      if ((await count("[data-ws-sessions]")) === 0) await press("[data-ws-sessions-switch]");
+      await until(5_000, async () => (await count("[data-ws-sessions] [data-ws-new-session]")) > 0);
+      await press("[data-ws-sessions] [data-ws-new-session]");
+      const up = await until(3_000, async () => (await count("[data-new-session-page]")) === 1);
+      const dir = await page.locator("[data-new-session-dir]").inputValue().catch(() => null);
+      const born = "tui/tabs-born";
+      await page.route("**/open_session", (r) => {
+        if (!tabRows.some((x) => x.id === born)) tabRows.push({ ...base, id: born, title: "tabs-born" });
+        r.fulfill({ contentType: "application/json", body: JSON.stringify(born) });
+      });
+      await press("[data-new-session-create]");
+      await until(5_000, async () => (await count(`[data-ws-sessions] [data-row="${born}"]`)) > 0);
+      await wait(600);
+      const at = await page.evaluate((id) => ({
+        page: document.querySelectorAll("[data-new-session-page]").length,
+        column: document.querySelectorAll("[data-ws-sessions]").length,
+        tree: document.querySelectorAll("[data-ws-tree]").length,
+        strip: document.querySelectorAll("[data-session-tabs]").length,
+        marked: [...document.querySelectorAll('[data-ws-sessions] [data-row][data-selected="true"]')].map((e) => e.getAttribute("data-row")),
+        there: document.querySelectorAll(`[data-ws-sessions] [data-row="${id}"]`).length,
+      }), born);
+      await page.unroute("**/open_session");
+      console.log(`tabs d · the workspace's ＋: page ${up}, dir ${JSON.stringify(dir)}; 创建 → ${JSON.stringify(at)}`);
+      if (!up) fail("probe dead: tabs d · the workspace column's ＋ opened no new tab");
+      else {
+        if (dir !== pin.path) fail(`tabs d · the workspace column's ＋ filled the directory ${JSON.stringify(dir)} — ${pin.path}`);
+        if (at.page !== 0 || at.column === 0 || at.tree === 0 || at.strip !== 0) fail(`tabs d · 创建 from the workspace left ${JSON.stringify(at)} — back in the workspace, its column up (ruling 34)`);
+        else if (at.there === 0) fail("probe void: tabs d · the new row never reached the workspace's column");
+        else if (JSON.stringify(at.marked) !== JSON.stringify([born])) fail(`tabs d · the column marks ${JSON.stringify(at.marked)} after 创建 made ${born}`);
+      }
+    }
+
+    // f. a file's face is its kind alone
+    {
+      const opened = (await press("[data-ws-row]")) || true;
+      if ((await count("[data-ws-tree]")) === 0) await press("[data-ws-row]");
+      const file = await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+      await until(3_000, async () => (await count("[data-ws-tab-strip] [data-tab]")) > 0);
+      const faces = await page.evaluate(() => {
+        const tabs = [...document.querySelectorAll("[data-ws-tab-strip] [data-tab]")];
+        return tabs.map((t) => ({ file: !!t.querySelector("[data-file-face]"), machine: !!t.querySelector("[data-face]") }));
+      });
+      console.log(`tabs f · the workspace strip's faces ${JSON.stringify(faces)} (opened ${opened && file})`);
+      if (!file || faces.length === 0) fail("probe dead: tabs f · no file tab in the workspace strip");
+      else if (faces.some((f) => !f.file || f.machine)) fail(`tabs f · a file tab wears ${JSON.stringify(faces)} — its kind alone, no machine face (UX-45)`);
+      await withTabs(ids.slice(0, 2));
+      const session = await page.evaluate(() => {
+        const t = document.querySelector("[data-session-tabs] [data-tab]");
+        return { file: !!t?.querySelector("[data-file-face]"), mark: !!t?.querySelector("[data-side-face] [data-kind-mark]") };
+      });
+      if (session.file || !session.mark) fail(`tabs f · a session tab wears ${JSON.stringify(session)} — the machine's face with its kind's mark, as before`);
+    }
+
+    // e. hold on close
+    {
+      await withTabs(ids.slice(0, 10));
+      const s0 = await strip();
+      const w0 = s0.w[0];
+      /** Where pill `i`'s × is, the pointer on the pill so it shows. */
+      const xOf = async (i) => {
+        const b = await page.locator("[data-session-tabs] [data-tab]").nth(i).boundingBox();
+        await page.mouse.move(b.x + b.width - 14, b.y + b.height / 2);
+        await wait(250);
+        const x = await page.locator("[data-session-tabs] [data-tab]").nth(i).locator("[data-tab-close]").boundingBox();
+        return x && { x: x.x + x.width / 2, y: x.y + x.height / 2 };
+      };
+      const at = await xOf(3);
+      if (!at) fail("probe dead: tabs e · the fourth pill showed no × under the pointer");
+      else {
+        await page.mouse.click(at.x, at.y);
+        await wait(400);
+        const s1 = await strip();
+        const next = await page.locator("[data-session-tabs] [data-tab]").nth(3).locator("[data-tab-close]").boundingBox();
+        await page.mouse.click(at.x, at.y);
+        await wait(400);
+        const s2 = await strip();
+        await page.mouse.move(700, 600);
+        await wait(700);
+        const s3 = await strip();
+        console.log(`tabs e · held: ${w0} → ${JSON.stringify([...new Set(s1.w)])} (${s1.ids.length}, held ${s1.held}), next × at ${next && (next.x + next.width / 2).toFixed(1)} vs ${at.x.toFixed(1)}, then ${JSON.stringify([...new Set(s2.w)])} (${s2.ids.length}); let go → ${JSON.stringify([...new Set(s3.w)])} (held ${s3.held})`);
+        if (s1.ids.length !== 9 || s2.ids.length !== 8) fail(`probe dead: tabs e · two presses closed ${10 - s2.ids.length} tab(s)`);
+        if (!s1.held || spread([...s1.w, w0]) > 0.5 || spread([...s2.w, w0]) > 0.5) fail(`tabs e · a pointer's × left the pills ${JSON.stringify([...new Set(s1.w)])} then ${JSON.stringify([...new Set(s2.w)])} (held ${s1.held}) — every pill keeps ${w0} while the pointer is in the strip (UX-45)`);
+        if (!next || Math.abs(next.x + next.width / 2 - at.x) > 1) fail(`tabs e · after a close the next × is at ${next && next.x + next.width / 2}, the pointer at ${at.x} — the next × lands under the pointer`);
+        if (s3.held || spread(s3.w) > 0.5 || s3.w[0] <= w0 + 0.5) fail(`tabs e · the pointer left and the pills are ${JSON.stringify([...new Set(s3.w)])} (held ${s3.held}) — letting go shares the room again`);
+      }
+      // The keyboard on the front ×, then ⌘W: neither holds.
+      await page.focus('[data-session-tabs] [data-tab][data-on="true"] [data-tab-close]');
+      await page.keyboard.press("Enter");
+      await wait(400);
+      const k = await strip();
+      const mod = (await page.evaluate(() => /mac/i.test(navigator.platform))) ? "Meta" : "Control";
+      await page.locator("[data-session-tabs] [data-tab] [data-tab-open]").first().focus();
+      await page.keyboard.press(`${mod}+w`);
+      await wait(400);
+      const w = await strip();
+      console.log(`tabs e · the keyboard's ×: ${k.ids.length} tabs, held ${k.held}, ${JSON.stringify([...new Set(k.w)])}; ⌘W: ${w.ids.length} tabs, held ${w.held}`);
+      if (k.held || spread(k.w) > 0.5) fail(`tabs e · a keyboard press on × held the row (${JSON.stringify(k)}) — only a pointer's press holds`);
+      if (w.held || w.ids.length !== k.ids.length - 1) fail(`tabs e · ⌘W left ${w.ids.length} tabs, held ${w.held} — it closes the front one and re-lays at once`);
+    }
+    {
+      await withTabs(ids.slice(0, 30));
+      await page.evaluate(() => {
+        document.querySelector("[data-session-tabs] [data-tab-strip]").scrollLeft = 300;
+      });
+      await wait(400);
+      const s0 = await strip();
+      const target = await page.evaluate(() => {
+        const s = document.querySelector("[data-session-tabs] [data-tab-strip]").getBoundingClientRect();
+        const pills = [...document.querySelectorAll('[data-session-tabs] [data-tab]:not([data-on="true"])')];
+        const p = pills.find((e) => {
+          const b = e.getBoundingClientRect();
+          return b.left > s.left + s.width / 3 && b.right < s.right - 8;
+        });
+        const b = p?.getBoundingClientRect();
+        return b ? { x: b.right - 14, y: b.top + b.height / 2 } : null;
+      });
+      const lefts = [];
+      if (!target) fail("probe dead: tabs e · no pill to close in the scrolled strip");
+      else {
+        await page.mouse.move(target.x, target.y);
+        await wait(250);
+        for (let i = 0; i < 3; i++) {
+          await page.mouse.click(target.x, target.y);
+          await wait(400);
+          const s = await strip();
+          lefts.push([s.ids.length, s.scroll.left]);
+        }
+        await page.mouse.move(700, 600);
+        console.log(`tabs e · scrolled to ${s0.scroll.left}, three closes: ${JSON.stringify(lefts)}`);
+        if (lefts.map((l) => l[0]).join(" ") !== "29 28 27") fail(`probe dead: tabs e · three presses in the scrolled strip left ${JSON.stringify(lefts)}`);
+        if (lefts.some((l) => Math.abs(l[1] - s0.scroll.left) > 1)) fail(`tabs e · a held strip scrolled ${JSON.stringify(lefts)} from ${s0.scroll.left} — it keeps its scroll, so the next × stays under the pointer (UX-45)`);
+      }
+    }
+
+    // c. on the phone: the list's ＋ → 取消 → the list; the tabs sheet's ＋
+    //    → 取消 → the terminal
+    {
+      await withTabs([], { width: 390, height: 844 });
+      await open("sessions");
+      await press("[data-side-head] [data-pane-new]");
+      if ((await count('[role="menu"]')) > 0) await press('[role="menu"] [data-new-item="new"]');
+      const up = await until(3_000, async () => (await count("[data-new-session-page]")) === 1);
+      await press("[data-new-session-page] [data-new-tab-cancel]");
+      await wait(500);
+      const list = await page.evaluate(() => ({
+        page: document.querySelectorAll("[data-new-session-page]").length,
+        rows: [...document.querySelectorAll("[data-list] [data-row-open]")].filter((e) => e.checkVisibility()).length,
+        bar: document.querySelectorAll("[data-session-bar]").length,
+      }));
+      console.log(`tabs c · phone, the list's ＋: page ${up}; 取消 → ${JSON.stringify(list)}`);
+      if (!up) fail("probe dead: tabs c · the phone list's ＋ → 新会话… opened no new tab");
+      else if (list.page !== 0 || list.rows === 0 || list.bar !== 0) fail(`tabs c · 取消 on the phone left ${JSON.stringify(list)} — back on the list it was asked from`);
+      await page.locator(`[data-list] [data-row="${ids[1]}"] [data-row-open]`).click();
+      await until(3_000, async () => (await count("[data-session-deck] [data-deck-tabs]")) === 1);
+      await wait(500);
+      const title = () => page.evaluate(() => document.querySelector("[data-deck-title]")?.textContent?.trim() ?? null);
+      const was = await title();
+      await press("[data-session-deck] [data-deck-tabs]");
+      await until(3_000, async () => (await count("[data-tab-sheet-new]")) === 1);
+      await press("[data-tab-sheet-new]");
+      const up2 = await until(3_000, async () => (await count("[data-new-session-page]")) === 1);
+      const label = await title();
+      await press("[data-new-session-page] [data-new-tab-cancel]");
+      await wait(500);
+      const now = await title();
+      console.log(`tabs c · phone, the tabs sheet's ＋ on ${JSON.stringify(was)}: page ${up2}, the deck says ${JSON.stringify(label)}; 取消 → ${JSON.stringify(now)}`);
+      if (!up2) fail("probe dead: tabs c · the tabs sheet's ＋ opened no new tab");
+      else if (now !== was) fail(`tabs c · 取消 on the phone's new tab left ${JSON.stringify(now)} — back to ${JSON.stringify(was)}, the terminal it was asked from`);
+    }
+
+    // f. (the phone) a file page's pill wears the file's kind alone
+    {
+      await open("workspaces");
+      await press("[data-ws-row]");
+      await until(5_000, async () => (await count('[data-file-tree] [data-depth="0"][data-file="one.rs"]')) > 0);
+      await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+      await until(5_000, async () => (await count("[data-file-pill]")) > 0);
+      await wait(500);
+      const pill = await page.evaluate(() => {
+        const p = [...document.querySelectorAll("[data-file-pill]")].find((e) => e.checkVisibility());
+        return p ? { file: !!p.querySelector("[data-file-face]"), machine: !!p.querySelector("[data-face]") } : null;
+      });
+      console.log(`tabs f · the phone's file pill ${JSON.stringify(pill)}`);
+      if (!pill) fail("probe dead: tabs f · no file page's pill on the phone");
+      else if (!pill.file || pill.machine) fail(`tabs f · the phone's file pill wears ${JSON.stringify(pill)} — the file's kind alone (UX-45)`);
+    }
+
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", json(rows));
+    await withTabs([]);
+  }
+  }
+  if (process.env.FACE_ONLY === "tabs") console.log("tabs · FACE_ONLY=tabs: the other sections are skipped");
 
   // ── 21) What the owner saw on a real iPhone (2026-10-02) ──────────
   //

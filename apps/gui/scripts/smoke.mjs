@@ -1300,29 +1300,34 @@ for line in sys.stdin:
 
   // 5) leaving a line: from beta's GUI into alpha's window, read back by
   //    alpha's own CLI. Two machines, two faces, one message. **Through
-  //    the wizard** since 2026-09-06 — 留言 is its first kind, and the
-  //    "+" menu's separate door went with the old dialog: pick alpha in
-  //    在哪台, pick 留言 in 类型, and the third step is the line itself.
+  //    the new tab's page** (UX-45; the wizard since 2026-09-06): pick
+  //    alpha in 目标机器 and the 留言 tile; 创建 turns the tab into
+  //    alpha's conversation, and the line is written in its composer.
+  //    ⚠️ 墓碑 (UX-45): the line and 发送 on the wizard itself.
   await assertUntitled("sessions");
   await plusAct("new");
-  await until("the wizard offering alpha", 10_000, async () =>
+  await until("the new tab's page offering alpha", 10_000, async () =>
     (await page.locator('[data-new-session-machine="alpha"]').count()) === 1,
   );
   // The machines are a popup since 2026-09-28 — the system's menu,
-  // picked through its `<select>`; the kinds are a segmented control.
+  // picked through its `<select>`; the kinds are tiles (UX-45).
   await page.locator("[data-new-session-machine-select]").selectOption("alpha");
-  await page.locator('[data-new-session-kind="tell"]').click();
+  await page.locator('[data-new-session-tile="tell"]').click();
   //     The kind step is a step: 名字 and 目录 are not asked for a line.
   if ((await page.locator("[data-new-session-name], [data-new-session-dir]").count()) !== 0) {
     throw new Error("留言 still asks for a name or a directory — a line has neither");
   }
-  await page.locator("[data-tell-text]").fill(NEEDLE);
-  await page.locator("[data-tell-send]").click();
-  await until("the wizard to close on a sent line", 20_000, async () => {
+  await page.locator("[data-new-session-create]").click();
+  await until("the new tab to become alpha's conversation", 20_000, async () => {
     const err = await page.locator("[data-new-session-error]").count();
     if (err) throw new Error(await page.locator("[data-new-session-error]").innerText());
-    return (await page.locator("[data-new-session-dialog]").count()) === 0;
+    return (
+      (await page.locator("[data-new-session-page]").count()) === 0 &&
+      (await page.locator('[data-session-tabs] [data-tab="chat/alpha"][data-on="true"]').count()) === 1
+    );
   });
+  await page.locator("[data-machine-chat] [data-chat-composer]").fill(NEEDLE);
+  await page.locator("[data-machine-chat] [data-chat-composer]").press("Enter");
   // Polled at a walking pace: each turn is a whole CLI process opening
   // the node, and the sync pump is on a five-second beat anyway.
   await until(
@@ -5836,10 +5841,11 @@ for line in sys.stdin:
   await until("the completed directory's own subdirectory offered", 20_000, async () =>
     (await page.locator('[data-path-suggestions] [data-omni-item="apps"]').count()) === 1,
   );
+  // 取消 on the new tab's page (UX-45; ⚠️ 墓碑: Escape twice on the dialog).
   await page.keyboard.press("Escape");
-  await page.keyboard.press("Escape");
-  await until("the wizard closed", 10_000, async () =>
-    (await page.locator("[data-new-session-dialog]").count()) === 0,
+  await page.locator("[data-new-session-page] [data-new-tab-cancel]").click();
+  await until("the new tab gone", 10_000, async () =>
+    (await page.locator("[data-new-session-page]").count()) === 0,
   );
 
   // 25c) the wizard (会话身份批B): a claude session born as a
@@ -5855,10 +5861,11 @@ for line in sys.stdin:
   await page.locator("[data-new-session-name]").fill("wizard-one");
   // The conversation form is the default (the ruling); just create.
   await page.locator("[data-new-session-create]").click();
-  await until("the wizard dialog closed on success", 40_000, async () => {
+  // The new tab becomes the session it made (UX-45).
+  await until("the new tab's page gone on success", 40_000, async () => {
     const err = await page.locator("[data-new-session-error]").count();
     if (err) throw new Error(await page.locator("[data-new-session-error]").innerText());
-    return (await page.locator("[data-new-session-dialog]").count()) === 0;
+    return (await page.locator("[data-new-session-page]").count()) === 0;
   });
   // **A session khor opened itself knows whose it is.** The wizard's
   // 智能体 field is the user's own answer, so the row wears the vendor
@@ -5948,8 +5955,8 @@ for line in sys.stdin:
   await page.locator("[data-new-session-dir]").fill(farDir);
   await page.locator("[data-new-session-name]").fill("far-one");
   await page.locator("[data-new-session-create]").click();
-  await until("the far wizard dialog closed on success", 60_000, async () =>
-    (await page.locator("[data-new-session-dialog]").count()) === 0,
+  await until("the far new tab's page gone on success", 60_000, async () =>
+    (await page.locator("[data-new-session-page]").count()) === 0,
   );
   await until("the far row on beta's list", 30_000, async () =>
     (await page.locator('[data-title="far-one"]').count()) === 1,
@@ -7672,8 +7679,9 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
       (await page.locator("[data-ws-sessions] [data-ws-new-session]").count()) === 1,
     );
     await page.locator("[data-ws-sessions] [data-ws-new-session]").click();
+    // A new tab whose page is the wizard (UX-45).
     await until("the wizard", 10_000, async () =>
-      (await page.locator("[data-new-session-dialog]").count()) === 1,
+      (await page.locator("[data-new-session-page]").count()) === 1,
     );
     //      **And its machine row, which arrives a round trip later.**
     //      The wizard reads the device table on every opening (it syncs,
@@ -7701,9 +7709,11 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
           "and a directory on alpha's disk under beta's name is a session that starts elsewhere",
       );
     }
-    await page.keyboard.press("Escape");
-    await until("the wizard closed", 10_000, async () =>
-      (await page.locator("[data-new-session-dialog]").count()) === 0,
+    // 取消 goes back to the workspace, its column up (UX-45).
+    await page.locator("[data-new-session-page] [data-new-tab-cancel]").click();
+    await until("the wizard closed, the column back", 10_000, async () =>
+      (await page.locator("[data-new-session-page]").count()) === 0 &&
+      (await page.locator("[data-ws-sessions] [data-ws-new-session]").count()) === 1,
     );
 
     // 31i) an agent in this project going quiet re-asks git (工作区批⑩:
