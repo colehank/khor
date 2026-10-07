@@ -171,16 +171,17 @@ type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
  * card it opened over the map went with that.
  */
 
-/** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
-    leaving a line is the wizard's first kind now (`NewSessionPage`),
-    one door for every kind of session. */
-/** What a road into 新建会话 knew (UX-45): the machine, the directory,
-    and whether it was a workspace column's own ＋. */
 /** A tab on a machine's conversation (`chat/<name>`). */
 const isChatTab = (id: string | null): boolean => !!id && id.startsWith("chat/");
 
+/** What a road into 新建会话 knew (UX-45): the machine, the directory,
+    and whether it was a workspace column's own ＋. */
 type NewTabAt = { machine?: string; dir?: string; inPlace?: boolean };
 
+/** Which of the "+" dialogs is up, if any. `tell` left on 2026-09-06:
+    leaving a line is the wizard's first kind (`NewSessionPage`), one door
+    for every kind of session; `new` left on 2026-10-07 (UX-45): 新建会话
+    is a new tab's page. */
 type PlusDialog = "import" | "invite" | "join" | "ws-add" | null;
 
 const POLL_MS = 2000;
@@ -553,9 +554,9 @@ export default function App() {
     document.visibilityState === "visible" && landing === "sessions" && selected === id && (!narrow || screen === "detail");
   // Whether the open tabs are up as a list to pick from (`TabSwitcher`)
   // instead of the front tab's content. The narrow face's only way to
-  // another tab — a phone has no strip — and the wide face's answer
-  // once the strip has stopped showing every tab (`TabStrip.onSwitch`,
-  // which is the side that can measure that). Reset wherever the tabs
+  // another tab — a phone has no strip. ⚠️ 墓碑 (UX-45): the wide face's
+  // too, once its strip scrolled; the wide strip draws every tab now and
+  // has no count to open it. Reset wherever the tabs
   // stop being the thing on screen: another landing, a 「…」 page,
   // or the last tab closing.
   const [switchingTabs, setSwitchingTabs] = useState(false);

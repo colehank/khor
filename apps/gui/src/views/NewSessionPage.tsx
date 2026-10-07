@@ -73,7 +73,7 @@
 // sentences and its 问一次 — stood here. It moved to 导入 whole
 // (`ImportDialog`): continuing a conversation that exists is bringing
 // something in, not starting something, and one act has one place.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import {
   agentAsk,
@@ -415,17 +415,29 @@ export function NewSessionPage({
       : []),
     { key: "tell", label: gui.message_text, mark: sessionKind("chat", null), on: kind === "tell", pick: () => setKind("tell") },
   ];
+  /** The arrows walk the tiles and pick as they go, one tab stop for
+      the row — a radio group's keys (`SegmentedControl`'s). */
+  const tileKey = (i: number) => (e: KeyboardEvent<HTMLButtonElement>) => {
+    const by = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (by === 0) return;
+    e.preventDefault();
+    const next = (i + by + tiles.length) % tiles.length;
+    tiles[next].pick();
+    e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[data-new-session-tile]")[next]?.focus();
+  };
   const tileRow = (
     <div data-new-session-tiles role="radiogroup" aria-label={gui.new_session_kind} className="flex flex-wrap gap-in">
-      {tiles.map((t) => (
+      {tiles.map((t, i) => (
         <button
           key={t.key}
           type="button"
           role="radio"
           aria-checked={t.on}
+          tabIndex={t.on ? 0 : -1}
           data-new-session-tile={t.key}
           data-on={t.on}
           onClick={t.pick}
+          onKeyDown={tileKey(i)}
           className={cn(
             "flex w-new-tile flex-col items-center gap-xxs rounded-lg py-in text-callout",
             t.on ? "bg-fill-strong text-foreground" : "text-muted-foreground hover:bg-fill",

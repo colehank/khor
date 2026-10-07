@@ -234,14 +234,14 @@ export function SideBody({
   // **One head** (UX-39 §2, the owner 2026-10-06 21:40: 「左上角是
   // session 的头像+标题，右上角是可展开的标题」): the session at the left
   // — its face and title, the subject the 附栏 belongs to — and the
-  // seat's icon · noun · ⌄ at the right (`SeatTitle`, a native picker),
-  // the two gaps one token (`gap-in`) — the seat bar since UX-45
-  // (`SeatBar`: 最近 · 工作区 · 浏览器 · 更多). The seats' own heads step back
-  // inside (`SeatHead` draws only the tree's way back to 最近; a page wears
-  // the main area's deck at its foot, UX-40 §4). ⚠️ 墓碑: the glass
-  // capsule at the column's top (UX-30 §2), the flat row at the sheet's
-  // foot (UX-37 §4), the page's own title at the left (「这个会话碰过
-  // 的」, the machine's name).
+  // seat bar at the right (UX-45, `SeatBar`: 最近 · 工作区 · 浏览器 · 更多,
+  // 更多 holding 机器 and 额度). The seats' own heads step back inside
+  // (`SeatHead` draws only the tree's way back to 最近; a page wears the
+  // main area's deck at its foot, UX-40 §4). ⚠️ 墓碑: the glass capsule
+  // at the column's top (UX-30 §2), the flat row at the sheet's foot
+  // (UX-37 §4), the page's own title at the left (「这个会话碰过的」, the
+  // machine's name), the seat's icon · noun · ⌄ over a native picker
+  // (UX-39 §2 → UX-45, `SeatTitle`).
   const pick = useMemo(() => ({ seat, onSeat }), [seat, onSeat]);
   return (
     <SeatPick.Provider value={pick}>

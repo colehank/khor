@@ -39,10 +39,18 @@
 // clutter (this file's original judgment, kept, with its condition now
 // written down and measured rather than assumed).
 //
-// **The glass strip has left that arrangement** (UX-45, Chrome's): it
-// draws every tab, shrinking the ones not in front down to the face
-// alone (× first, then the name), and scrolls past that, the front tab
-// kept in view; after the last tab a hairline and ＋. No count there.
+// **The glass strip has left that arrangement** (UX-45, Chrome's): every
+// tab is drawn and all are one width, front or not (`--tab-w-even`),
+// shrinking together down to `--tab-w-floor` — the face and the × —
+// shedding as they go (a tab not in front keeps its × for the pointer
+// only, then its name goes), and past the floor the strip scrolls, the
+// front tab kept in view; after the last tab a hairline and ＋. No count
+// and no switcher there. ⚠️ 墓碑 (UX-25 → UX-45): the count after the
+// strip once it scrolled, and the switcher it opened (`Tabs`). Every
+// strip `Tabs` draws is the glass one at the top, so the plain strip,
+// the bottom strip and `TabCount` below are no longer drawn by it; the
+// phone's band is `SessionBar`'s, and the narrow shell's count is
+// `DetailPane`'s.
 import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
@@ -835,12 +843,13 @@ export function TabStrip({
                     // `--tab-w-floor` — the face and the × (the owner: a
                     // crowded strip still owes the front tab its ×) — and
                     // past that the strip scrolls; the front one is told
-                    // by its lit glass only. ⚠️ 墓碑 (UX-39 §7, suspended for this look): the
-                    // front pill grown to its whole name, up to half the
-                    // capsule, the rest an equal share. ⚠️ 墓碑 (UX-25):
-                    // `--tab-w-min` as the floor and the count after it.
-                    // A width, not a basis: the pill is a size container, so
-                    // only a stated width gives the row its length.
+                    // by its lit glass only. ⚠️ 墓碑 (UX-39 §7 → UX-45):
+                    // the front pill grown to its whole name, up to half
+                    // the capsule, the rest an equal share. ⚠️ 墓碑
+                    // (UX-25): `--tab-w-min` as the floor and the count
+                    // after it. A width, not a basis: the pill is a size
+                    // container, so only a stated width gives the row its
+                    // length.
                     cn("w-tab-even min-w-tab-floor shrink grow-0", on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill")
                   : glass
                   ? on
@@ -1015,13 +1024,15 @@ export function TabStrip({
                 </TooltipContent>
               )}
               </Tooltip>
-              {/* **× on every wide pill that has room** (UX-45 narrows UX-39
-                  §7): the front pill always, any other while it is at least
-                  `--container-tab-x` wide — a face-only pill has none, and a
-                  press makes it the front one, which has. Never only on
-                  hover (UX-39 §7, the owner 2026-10-06: 「不悬浮就显示 ×」);
-                  in the seat the act had; ⌘W, the menu and the sheet still
-                  close. The phone's band keeps no ×.
+              {/* **× at rest on every wide pill that has room** (UX-45
+                  narrows UX-39 §7): the front pill at every width, down to
+                  the floor (the owner 2026-10-07: crowded, the tab pressed
+                  still owes its ×); any other at rest while it is at least
+                  `--container-tab-x` wide, and under the pointer below
+                  that, down to the floor (Chrome's). UX-39 §7's 「不悬浮就
+                  显示 ×」 holds while there is room for it. In the seat the
+                  act had; ⌘W, the menu and the sheet still close. The
+                  phone's band keeps no ×.
                   ⚠️ 墓碑 (UX-33 §1 → UX-39 §7): the third seat on every
                   wide pill; the wide face's one act is the verbs seat's
                   (or `frontAct`'s, after the capsule). */}

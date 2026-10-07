@@ -1,19 +1,17 @@
 /**
- * ⚠️ 墓碑 (UX-45): what follows was this file until the seat bar
- * (`SeatBar`, below) took the head's right half — **the seat's title is
- * the menu** (UX-39 §2, the owner 2026-10-06 20:30:
- * the five-seat row at the sheet's foot was 「太丑了」; 「点击后展开一个
- * 菜单，选择最近、工作区啥的」). At the right of the 附栏's one head — the
- * phone's sheet and the Mac's column alike — the seat's own icon, its
- * noun (最近 / 工作区 / 浏览器 / 机器 / 额度: the seat's name, never the
- * page's) and a chevron, with a transparent native `<select>` over all
- * three, so the system draws the picker (iOS's menu, the Mac's pop-up) —
- * `PopupButton`'s own arrangement, never a menu of ours. The icon → noun
- * gap is the face → title gap at the head's left (`gap-in`).
+ * The 附栏's seats: which one is showing and the way to another
+ * (`SeatPick`), and the bar at the right of the 附栏's one head that
+ * chooses between them (`SeatBar`, UX-45) — the phone's sheet and the
+ * Mac's column alike.
  *
  * `SeatPick` is present inside the 附栏 only; the pages that are drawn
  * both there and on their own screens (`MachineCard`, `QuotaLanding`)
  * read it to drop their own ‹ and face there.
+ *
+ * ⚠️ 墓碑 (UX-39 §2 → UX-45): **the seat's title as the menu** (the owner
+ * 2026-10-06 20:30: 「点击后展开一个菜单，选择最近、工作区啥的」) — the
+ * seat's own icon, its noun and a chevron, with a transparent native
+ * `<select>` of the five over all three (`SeatTitle`).
  *
  * ⚠️ 墓碑 (UX-30 §2 → UX-37 §4 → UX-39 §2): the glass capsule at the
  * column's top, then the flat row at the sheet's foot; the page's title
@@ -78,7 +76,7 @@ export function SeatBar({ className }: { className?: string }) {
   if (!pick) return null;
   const moreOn = MORE_SEATS.includes(pick.seat);
   return (
-    <GlassCapsule data-seat-bar role="toolbar" aria-label={gui.session_side} className={cn("flex-none", className)}>
+    <GlassCapsule data-seat-bar data-seat-on={pick.seat} role="group" aria-label={gui.session_side} className={cn("flex-none", className)}>
       {BAR_SEATS.map((s) => (
         <GlassItem
           key={s}
