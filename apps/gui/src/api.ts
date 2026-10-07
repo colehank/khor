@@ -1811,6 +1811,12 @@ export const notifyFinished = (title: string, body: string) => call<null>("notif
     shell's current directory, where 「放到当前目录」 lands them. */
 export const termDrop = (id: string, paths: string[], from?: string | null, into?: string | null) =>
   call<null>("term_drop", { id, paths, from: from ?? null, into: into ?? null });
+/** **The drop under way on session `id`, cancelled** (the owner
+    2026-10-07 12:50, item 71): the pull stops, its part file goes,
+    nothing is pasted; with no drop under way, nothing happens.
+    `staged`: files `termDropStage` put up for a drop that will now
+    never be asked for, which go at once. */
+export const termDropCancel = (id: string, staged: string[] = []) => call<null>("term_drop_cancel", { id, staged });
 /** A file picked in a face (the phone's photos and files, item 60 part
     3), put where this machine's node serves it by path, for `termDrop`
     with `from` null. Answers its path here. The bytes ride raw, as

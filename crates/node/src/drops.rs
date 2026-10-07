@@ -20,10 +20,16 @@
 //! The pull runs where the file lands, as a job named by the asker's
 //! token, so the asker can ask again with the same words and read the
 //! job's progress ([`DropState`]); asking twice never starts two pulls.
+//!
+//! **A drop can be cancelled** (item 71, the owner 2026-10-07: the
+//! pill's × while files go in): the asker names the job by the same
+//! token ([`stop`]; from afar `proto::Request::DropStop`), and the pull
+//! stops before its next slice, its part file going as on any other
+//! failure. A file that already landed stays where it landed.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -62,11 +68,18 @@ impl DropState {
 pub struct Job {
     pub moved: AtomicU64,
     pub total: AtomicU64,
+    /// Set by [`stop`]: the pull ends before its next slice. Shared, so
+    /// a pull on a blocking thread can read it.
+    pub stopped: Arc<AtomicBool>,
     /// The landed path, or why it did not land; `None` while it runs.
     end: Mutex<Option<(Instant, Result<String, String>)>>,
 }
 
 impl Job {
+    pub fn is_stopped(&self) -> bool {
+        self.stopped.load(Ordering::Relaxed)
+    }
+
     pub fn finish(&self, outcome: Result<String, String>) {
         if let Ok(mut end) = self.end.lock() {
             *end = Some((Instant::now(), outcome));
@@ -117,6 +130,24 @@ pub fn job(token: &str) -> (Arc<Job>, bool) {
     let j = Arc::new(Job::default());
     all.insert(token.to_owned(), j.clone());
     (j, true)
+}
+
+/// **The drop this token names, cancelled** (item 71): its pull stops
+/// before the next slice and answers [`cancelled`]. A token no job has
+/// yet is held as a job already ended so — an ask that arrives after its
+/// own cancel then starts nothing — and costs nothing else: no file is
+/// touched and no other job is.
+pub fn stop(token: &str) {
+    let (j, fresh) = job(token);
+    j.stopped.store(true, Ordering::Relaxed);
+    if fresh {
+        j.finish(Err(cancelled()));
+    }
+}
+
+/// Why a cancelled drop did not land.
+pub fn cancelled() -> String {
+    khor_catalog::msg::drop_cancelled().to_owned()
 }
 
 /// Where a dropped file lands in `dir`, and the part file it grows in.
@@ -188,9 +219,12 @@ pub fn copy_into(src: &Path, dir: &Path, job: &Job) -> Result<PathBuf, String> {
     }
     job.total.store(size, Ordering::Relaxed);
     let at = landing(dir, &name)?;
+    // One copy, not slices (a clone on APFS): a cancel that came while
+    // it ran is honoured before the rename, so nothing lands.
     let copied = std::fs::copy(src, &at.part)
         .map_err(|e| e.to_string())
-        .and_then(|_| std::fs::rename(&at.part, &at.dest).map_err(|e| e.to_string()));
+        .and_then(|_| if job.is_stopped() { Err(cancelled()) } else { Ok(()) })
+        .and_then(|()| std::fs::rename(&at.part, &at.dest).map_err(|e| e.to_string()));
     if let Err(why) = copied {
         let _ = std::fs::remove_file(&at.part);
         return Err(why);
@@ -250,5 +284,36 @@ mod tests {
         assert_eq!(b.state().unwrap().moved, 7);
         b.finish(Ok("/x".into()));
         assert_eq!(a.state().unwrap(), DropState { moved: 7, total: 0, dest: "/x".into(), done: true });
+    }
+
+    /// **A cancel reaches the job its token names, and only that one**
+    /// (item 71); a cancel for a token no job has is held as one ended
+    /// cancelled, so an ask arriving after it starts no pull.
+    #[test]
+    fn a_stop_names_one_job_and_a_stop_before_the_ask_starts_nothing() {
+        let (running, _) = job("drops-test-token-stop-run");
+        let (other, _) = job("drops-test-token-stop-other");
+        stop("drops-test-token-stop-run");
+        assert!(running.is_stopped());
+        assert!(!other.is_stopped(), "another drop goes on");
+        stop("drops-test-token-stop-early");
+        let (early, fresh) = job("drops-test-token-stop-early");
+        assert!(!fresh, "the ask after the cancel finds it and starts nothing");
+        assert_eq!(early.state(), Err(cancelled()));
+    }
+
+    /// A copy into a directory (放到当前目录) cancelled while it ran
+    /// leaves neither the file nor its part file.
+    #[test]
+    fn a_cancelled_copy_leaves_nothing() {
+        let dir = crate::testdir::TempTree::fresh("drops-copy-stop");
+        let src = dir.join("a.txt");
+        std::fs::write(&src, b"x").unwrap();
+        let into = dir.join("into");
+        std::fs::create_dir_all(&into).unwrap();
+        let j = Job::default();
+        j.stopped.store(true, Ordering::Relaxed);
+        assert_eq!(copy_into(&src, &into, &j), Err(cancelled()));
+        assert_eq!(std::fs::read_dir(&into).unwrap().count(), 0, "no file and no part file");
     }
 }

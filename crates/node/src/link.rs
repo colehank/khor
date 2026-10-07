@@ -689,6 +689,11 @@ const PULL_AHEAD: u64 = 8;
 /// frame.
 pub const DROP_ASK_EVERY: Duration = Duration::from_millis(250);
 
+/// How often a drop's asker looks whether it was cancelled between its
+/// asks (`Node::drop_file_until`, item 71): the order to stop goes out
+/// within this of the ×, not a whole ask later.
+const DROP_STOP_LOOK: Duration = Duration::from_millis(50);
+
 /// How long the direct roads get to themselves before the relay road is
 /// opened alongside them (`Node::dial_with`).
 ///
@@ -2019,6 +2024,10 @@ impl Node {
                 dir,
             } => match self.drop_step_with(ep, &token, &from, &path, &to, Some(&dir)).await {
                 Ok(state) => ipc::Reply::DropFile { state },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::DropStop { token, to } => match self.drop_stop_with(ep, &token, &to).await {
+                Ok(()) => ipc::Reply::Noted,
                 Err(why) => ipc::Reply::Refused { why },
             },
         }
@@ -3591,6 +3600,14 @@ impl Node {
                     .map(|d| d.name)
                     .ok_or_else(|| msg::machine_left_table(&from))?;
                 self.drop_here(ep, &token, &channel, &path, Some(&dir)).await.map(drop_answer)
+            }
+            Request::DropStop { token } => {
+                // The asker's cancel (item 71): the job by its token, here.
+                if !crate::once::valid(&token) {
+                    return Err(msg::create_token_bad().into());
+                }
+                crate::drops::stop(&token);
+                Ok(Response::DropStopped)
             }
             Request::FetchPath { path, offset } => {
                 // Off the reactor with Ls, for Ls's reason.
@@ -6741,7 +6758,9 @@ impl Node {
     /// drop's (`crate::drops`): it is told the bytes as they land, the
     /// size is held to [`crate::drops::CAP`] from the first slice, and
     /// a pull that stops for any reason leaves no part file behind —
-    /// a drop is asked again by dropping again, not carried on.
+    /// a drop is asked again by dropping again, not carried on. A job
+    /// cancelled (`crate::drops::stop`, item 71) stops before its next
+    /// slice.
     async fn pull_into(
         &self,
         ep: &iroh::Endpoint,
@@ -6752,8 +6771,10 @@ impl Node {
     ) -> Result<(u64, std::path::PathBuf), String> {
         use std::io::Write;
         let (channel, home) = self.resolve(machine)?;
+        let stopped = job.map(|j| j.stopped.clone());
+        let is_stopped = move || stopped.as_ref().is_some_and(|s| s.load(std::sync::atomic::Ordering::Relaxed));
         if home == self.device() {
-            let (path, part) = (path.to_owned(), fell.part.clone());
+            let (path, part, is_stopped) = (path.to_owned(), fell.part.clone(), is_stopped.clone());
             let moved = tokio::task::spawn_blocking(move || -> Result<u64, String> {
                 // Through read_slice rather than fs::copy so the local
                 // pull refuses exactly what the remote one refuses
@@ -6761,6 +6782,9 @@ impl Node {
                 let mut out = std::fs::File::create(&part).map_err(|e| e.to_string())?;
                 let mut offset = 0u64;
                 loop {
+                    if is_stopped() {
+                        return Err(crate::drops::cancelled());
+                    }
                     let (total, _, bytes) = crate::files::read_slice(&path, offset)?;
                     out.write_all(&bytes).map_err(|e| e.to_string())?;
                     offset += bytes.len() as u64;
@@ -6805,11 +6829,13 @@ impl Node {
                         .map_err(|e| e.to_string())
                         .and_then(|r| r)
                         // scp says no size before it lands, so a drop's cap
-                        // is held after.
+                        // is held after — and a cancel, which one scp
+                        // cannot hear.
                         .and_then(|moved| match job {
                             Some(_) if moved > crate::drops::CAP => {
                                 Err(msg::drop_too_big(crate::drops::CAP >> 20, path))
                             }
+                            Some(_) if is_stopped() => Err(crate::drops::cancelled()),
                             _ => Ok(moved),
                         });
                 return match moved {
@@ -6889,6 +6915,11 @@ impl Node {
             Spoiled(String),
         }
         let outcome: Result<u64, Stop> = 'pull: loop {
+            // A drop cancelled (item 71): before the next slices are
+            // asked, and its part file goes as a spoiled one does.
+            if is_stopped() {
+                break 'pull Err(Stop::Spoiled(crate::drops::cancelled()));
+            }
             // The first slice alone until the file's (size, mtime) is
             // known; then up to `PULL_AHEAD` asked at once, written in
             // order (the offers' shape, `pull_one`).
@@ -7015,7 +7046,25 @@ impl Node {
         path: &str,
         to: &str,
         into: Option<&str>,
+        on: impl FnMut(&crate::drops::DropState),
+    ) -> Result<String, String> {
+        self.drop_file_until(from, path, to, into, on, || false).await
+    }
+
+    /// [`Node::drop_file`], **cancelled when `stopped` says so** (item
+    /// 71, the pill's ×): the machine that pulls is told to stop, by the
+    /// job's token, and this answers `crate::drops::cancelled` at once —
+    /// whatever that machine does with the order. A machine whose khor
+    /// predates the order refuses it; its pull then lands quietly in its
+    /// drop directory, and nothing of it is pasted here either.
+    pub async fn drop_file_until(
+        &self,
+        from: &str,
+        path: &str,
+        to: &str,
+        into: Option<&str>,
         mut on: impl FnMut(&crate::drops::DropState),
+        stopped: impl Fn() -> bool,
     ) -> Result<String, String> {
         let token = fresh_hex()?;
         let op = || match into {
@@ -7041,16 +7090,28 @@ impl Node {
         // Through the resident when there is one: it holds the key's one
         // endpoint, and a pull this machine runs must outlive this call.
         // Else on an endpoint of this call's, kept for the whole drop.
-        let mut ep = None;
-        let mut answer = match self.via_serve(op()).await {
-            Some(reply) => from_serve(reply),
-            None => {
-                let e = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
-                    .await
-                    .map_err(|e| e.to_string())?;
-                let first = self.drop_step_with(&e, &token, from, path, to, into).await;
-                ep = Some(e);
-                first
+        let first = async {
+            match self.via_serve(op()).await {
+                Some(reply) => (from_serve(reply), None),
+                None => match endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0()).await {
+                    Ok(e) => (self.drop_step_with(&e, &token, from, path, to, into).await, Some(e)),
+                    Err(e) => (Err(e.to_string()), None),
+                },
+            }
+        };
+        // **A cancel during the first ask.** With no resident, a pull
+        // that lands here runs inside that ask, in this process: its job
+        // is told here, and the ask ends at the pull's next slice. It is
+        // never dropped mid-pull — that would leave its part file.
+        tokio::pin!(first);
+        let (mut answer, ep) = loop {
+            tokio::select! {
+                a = &mut first => break a,
+                () = tokio::time::sleep(DROP_STOP_LOOK) => {
+                    if stopped() {
+                        crate::drops::stop(&token);
+                    }
+                }
             }
         };
         let outcome = loop {
@@ -7063,7 +7124,13 @@ impl Node {
                 }
                 Err(why) => break Err(why),
             }
-            tokio::time::sleep(DROP_ASK_EVERY).await;
+            let next = tokio::time::Instant::now() + DROP_ASK_EVERY;
+            while !stopped() && tokio::time::Instant::now() < next {
+                tokio::time::sleep_until(next.min(tokio::time::Instant::now() + DROP_STOP_LOOK)).await;
+            }
+            if stopped() {
+                break Err(crate::drops::cancelled());
+            }
             answer = match &ep {
                 Some(e) => self.drop_step_with(e, &token, from, path, to, into).await,
                 None => match self.via_serve(op()).await {
@@ -7072,10 +7139,50 @@ impl Node {
                 },
             };
         };
+        // **Cancelled: the machine that pulls is told** (item 71), by the
+        // road the asks took. What it answers changes nothing here — an
+        // older khor refuses the order, and its pull lands quietly.
+        if stopped() && outcome.is_err() {
+            let _ = match &ep {
+                Some(e) => self.drop_stop_with(e, &token, to).await,
+                None => match self.via_serve(ipc::Op::DropStop { token: token.clone(), to: to.to_owned() }).await {
+                    Some(Ok(ipc::Reply::Noted)) => Ok(()),
+                    Some(Ok(ipc::Reply::Refused { why })) => Err(why),
+                    Some(Ok(other)) => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+                    Some(Err(why)) => Err(why),
+                    None => Err(msg::drop_serve_gone().into()),
+                },
+            };
+        }
         if let Some(ep) = ep {
             ep.close().await;
         }
         outcome
+    }
+
+    /// **The order to stop a drop** (item 71), on an endpoint the caller
+    /// owns: the job `token` names on `to`, the machine that pulls. Here,
+    /// it is told at once; another machine is asked (`Request::DropStop`).
+    pub(crate) async fn drop_stop_with(&self, ep: &iroh::Endpoint, token: &str, to: &str) -> Result<(), String> {
+        let (dst_channel, dst) = self.resolve_or_here(to)?;
+        if dst == self.device() {
+            crate::drops::stop(token);
+            return Ok(());
+        }
+        match self
+            .ask(
+                ep,
+                &dst_channel,
+                &Request::DropStop {
+                    token: token.to_owned(),
+                },
+            )
+            .await?
+        {
+            Response::DropStopped => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     /// One ask of a drop on an endpoint the caller owns: started by the

@@ -172,6 +172,9 @@ const QUICK = new Set([
   "chat_poll", "chat_answer", "chat_stop", "chat_set_mode", "chat_set_option",
   "chat_replay", "chat_leave", "term_attach", "term_stream", "term_key", "term_resize", "term_leave",
   "term_forget", "term_drop_progress",
+  // A drop's cancel (item 71): a flag in memory, and the directories of
+  // the few files a face staged for it.
+  "term_drop_cancel",
   // Answers the build knows, or plain memory.
   "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
   "reveal_here",

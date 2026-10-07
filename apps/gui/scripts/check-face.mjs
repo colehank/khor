@@ -28072,6 +28072,32 @@ try {
       const shown = await until(3_000, async () => (await line.count()) > 0);
       console.log(`term iii · the pill's line while the drop runs: ${shown ? "filled to 0.4" : "absent"}`);
       if (!shown) fail("term iii · no pill line filled by term_drop_progress while a drop ran (item 60: progress on the tab pill's line)");
+      // …and the Mac tab says the file (item 71): the upload mark in the
+      // face seat, the name with no extension, and the verbs seat's ↻ a
+      // × (the session strip has no act of its own, UX-39). The long
+      // form is not read here: the front tab's hover is `again`'s hint,
+      // so on the Mac it is the tabs switcher's row.
+      const macTab = await page.evaluate(() => {
+        const tab = document.querySelector('[data-tab="tui/face-term"]');
+        const shown = (sel) => [...document.querySelectorAll(sel)].some((b) => b.offsetParent);
+        return {
+          mark: tab?.querySelector("[data-tab-dropping] svg")?.getAttribute("data-icon") ?? null,
+          label: tab?.querySelector("[data-tab-label]")?.innerText.trim() ?? null,
+          stop: shown("[data-term-drop-stop]"),
+          reload: shown("[data-term-reload]"),
+        };
+      });
+      console.log(`term iii · the Mac tab while e.txt goes in: ${JSON.stringify(macTab)}`);
+      if (process.env.FACE_SHOTS) {
+        await page.screenshot({ path: join(process.env.FACE_SHOTS, "term71-mac.png") }).catch(() => {});
+        await page.locator('[data-tab="tui/face-term"]').screenshot({ path: join(process.env.FACE_SHOTS, "term71-mac-tab.png") }).catch(() => {});
+      }
+      if (macTab.mark !== "upload" || macTab.label !== "e" || !macTab.stop || macTab.reload) {
+        fail(
+          `term iii · the Mac tab while a file went in showed ${JSON.stringify(macTab)} — wanted the upload mark, the name without ` +
+            "its extension, and × in ↻'s seat (item 71)",
+        );
+      }
       share = null;
       release();
       dropHold = null;
@@ -28207,26 +28233,28 @@ try {
       // viii, on peer's session.
       if (Array.isArray(machinesFar)) {
         const staged = [];
+        // Held while set (xiv: a cancel while a file is being staged).
+        let stageHold = null;
         const stage = async (r) => {
           const url = new URL(r.request().url());
           staged.push({ name: url.searchParams.get("name"), bytes: r.request().postDataBuffer()?.length ?? 0 });
-          await r.fulfill({ contentType: "application/json", body: JSON.stringify(`/stage/${staged.length}/${url.searchParams.get("name")}`) });
+          const n = staged.length;
+          if (stageHold) await stageHold;
+          await r.fulfill({ contentType: "application/json", body: JSON.stringify(`/stage/${n}/${url.searchParams.get("name")}`) });
         };
         await page.route(/\/term_drop_stage\?/, stage);
-        /** A picked file, as the system's picker hands it to the page. */
-        const pick = (name, size) =>
-          page.evaluate(
-            ([name, size]) => {
-              const input = document.querySelector('[data-files-pick="device"] input[type="file"]');
-              if (!input) return false;
-              const dt = new DataTransfer();
-              dt.items.add(new File([new Uint8Array(size)], name, { type: "image/png" }));
-              input.files = dt.files;
-              input.dispatchEvent(new Event("change", { bubbles: true }));
-              return true;
-            },
-            [name, size],
-          );
+        /** Picked files, as the system's picker hands them to the page. */
+        const pickAll = (files) =>
+          page.evaluate((files) => {
+            const input = document.querySelector('[data-files-pick="device"] input[type="file"]');
+            if (!input) return false;
+            const dt = new DataTransfer();
+            for (const [name, size] of files) dt.items.add(new File([new Uint8Array(size)], name, { type: "image/png" }));
+            input.files = dt.files;
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+            return true;
+          }, files);
+        const pick = (name, size) => pickAll([[name, size]]);
         drops.length = 0;
         let release;
         dropHold = new Promise((r) => (release = r));
@@ -28265,6 +28293,133 @@ try {
         if (!said?.includes("200") || !said.includes("big.mov") || staged.length !== 0 || drops.length !== 0) {
           fail("term viii · a picked file over 200 MB is refused in the pane's corner with the cap and its name, nothing staged or dropped");
         }
+        // **The pill while files go in, and its ×** (item 71, the owner
+        // 2026-10-07 12:45–13:20), on the phone's deck band:
+        //
+        // xiii. a drop under way: the face seat wears the upload mark
+        //       (`data-tab-dropping`), the title is the file's name with
+        //       no extension, cut evenly in the middle when it does not
+        //       fit, and the third seat is × (`data-term-drop-stop`);
+        //       × asks `term_drop_cancel` for the session, and at once
+        //       the pill is the session's again — its name, its ↻ — and
+        //       when the held `term_drop` then answers the cancel, the
+        //       corner says nothing and nothing was typed;
+        //  xiv. × while files are being staged: the one going up
+        //       finishes, no more are staged, nothing is dropped, and
+        //       the cancel takes what was staged.
+        const cancels = [];
+        const cancelRoute = (r) => {
+          cancels.push(JSON.parse(r.request().postData() || "{}"));
+          return r.fulfill({ contentType: "application/json", body: "null" });
+        };
+        await page.route("**/term_drop_cancel", cancelRoute);
+        const stopSeat = page.locator("[data-term-drop-stop]").filter({ visible: true });
+        /** What the deck band's current segment shows. */
+        const band = () =>
+          page.evaluate(() => {
+            const seg = document.querySelector('[data-band-seg="cur"]');
+            const mid = seg?.querySelector("[data-mid-name]");
+            return {
+              dropping: !!seg?.querySelector("[data-tab-dropping]"),
+              mark: seg?.querySelector("[data-tab-dropping] svg")?.getAttribute("data-icon") ?? null,
+              shown: mid ? (mid.children[1]?.textContent ?? null) : (seg?.querySelector("[data-deck-title]")?.textContent ?? null),
+              whole: mid ? (mid.querySelector(".sr-only")?.textContent ?? null) : null,
+              stop: [...document.querySelectorAll("[data-term-drop-stop]")].some((b) => b.offsetParent),
+              reload: [...document.querySelectorAll("[data-term-reload]")].some((b) => b.offsetParent),
+            };
+          });
+        const rest = await band();
+        // xiii.
+        const long = "IMG_2041 the harbour at dusk from the ferry on the way back home.HEIC";
+        const stem = long.slice(0, long.lastIndexOf("."));
+        staged.length = 0;
+        drops.length = 0;
+        sentKeys.length = 0;
+        dropHold = new Promise((r) => (release = r));
+        share = 0.25;
+        await pick(long, 5);
+        await until(3_000, async () => drops.length > 0);
+        await until(3_000, async () => (await band()).dropping);
+        const going = await band();
+        // The report's shots (FACE_SHOTS): the phone, and its pill close.
+        if (process.env.FACE_SHOTS) {
+          await page.screenshot({ path: join(process.env.FACE_SHOTS, "term71-phone.png") }).catch(() => {});
+          await page.locator("[data-deck-band]").first().screenshot({ path: join(process.env.FACE_SHOTS, "term71-phone-pill.png") }).catch(() => {});
+        }
+        const [head, tail] = (going.shown ?? "").split("…");
+        const even =
+          tail !== undefined && head.length >= 3 && stem.startsWith(head) && stem.endsWith(tail) && Math.abs(head.length - tail.length) <= 1;
+        console.log(`term xiii · the pill while ${JSON.stringify(long)} goes in: ${JSON.stringify(going)}; at rest ${JSON.stringify(rest)}`);
+        if (
+          !going.dropping ||
+          going.mark !== "upload" ||
+          going.whole !== stem ||
+          !even ||
+          !going.stop ||
+          going.reload
+        ) {
+          fail(
+            `term xiii · the pill while a file goes in showed ${JSON.stringify(going)} — wanted the upload mark in the face seat, ` +
+              `the name without its extension (${JSON.stringify(stem)}) cut evenly in the middle, and × in ↻'s seat (item 71)`,
+          );
+        }
+        cancels.length = 0;
+        if ((await stopSeat.count()) > 0) await stopSeat.first().click();
+        const back = await until(2_000, async () => !(await band()).dropping);
+        const after = await band();
+        dropAnswer = () => ({ status: 400, body: JSON.stringify("传入已取消，没有粘贴") });
+        share = null;
+        release();
+        dropHold = null;
+        await wait(500);
+        const saidAfter = (await why.count()) ? await why.innerText() : null;
+        dropAnswer = () => ({ status: 200, body: "null" });
+        console.log(
+          `term xiii · × pressed: cancels ${JSON.stringify(cancels)}, pill back ${back} ${JSON.stringify(after)}, corner ${JSON.stringify(saidAfter)}, typed ${JSON.stringify(sentKeys.join(""))}`,
+        );
+        if (
+          cancels.length !== 1 ||
+          cancels[0].id !== "tui/face-far" ||
+          !back ||
+          after.shown !== rest.shown ||
+          after.stop ||
+          !after.reload ||
+          saidAfter !== null ||
+          sentKeys.join("") !== ""
+        ) {
+          fail(
+            "term xiii · × on the pill while a file went in should ask term_drop_cancel once for the session and give the pill back " +
+              "at once — its name, its ↻ — with no word in the corner and nothing typed when the drop then answers the cancel (item 71)",
+          );
+        }
+        // xiv.
+        staged.length = 0;
+        drops.length = 0;
+        cancels.length = 0;
+        let unstage;
+        stageHold = new Promise((r) => (unstage = r));
+        await pickAll([["one.png", 3], ["two.png", 3], ["three.png", 3]]);
+        await until(3_000, async () => staged.length > 0);
+        await until(3_000, async () => (await stopSeat.count()) > 0);
+        if ((await stopSeat.count()) > 0) await stopSeat.first().click();
+        const backStaging = await until(2_000, async () => !(await band()).dropping);
+        unstage();
+        stageHold = null;
+        await until(3_000, async () => cancels.some((c) => (c.staged ?? []).length > 0));
+        await wait(400);
+        console.log(`term xiv · × while staging: staged ${JSON.stringify(staged)}, term_drop ${drops.length}, cancels ${JSON.stringify(cancels)}, pill back ${backStaging}`);
+        if (
+          staged.length !== 1 ||
+          drops.length !== 0 ||
+          !backStaging ||
+          !cancels.some((c) => c.id === "tui/face-far" && JSON.stringify(c.staged) === '["/stage/1/one.png"]')
+        ) {
+          fail(
+            "term xiv · × while picked files were being staged should let the one going up finish, stage no more, drop nothing, " +
+              "and hand what was staged to term_drop_cancel to go (item 71)",
+          );
+        }
+        await page.unroute("**/term_drop_cancel", cancelRoute);
         await page.unroute(/\/term_drop_stage\?/, stage);
       }
       // vii, on peer's session: peer's own file, and elder's.

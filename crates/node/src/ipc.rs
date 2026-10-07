@@ -353,6 +353,10 @@ pub enum Op {
         to: String,
         dir: String,
     },
+    /// **The drop named by `token` cancelled** (item 71): the machine
+    /// `to`, which pulls it, is told to stop. Answered with
+    /// [`Reply::Noted`]. Tail-appended.
+    DropStop { token: String, to: String },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -452,6 +456,7 @@ impl Op {
             Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
             Op::DropInto { .. } => ("DropInto", DEADLINE_FAR),
+            Op::DropStop { .. } => ("DropStop", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),

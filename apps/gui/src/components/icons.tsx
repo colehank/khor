@@ -136,6 +136,10 @@ const LIVE = {
   // pencil laid on the diagonal (round), and the tray with its arrow.
   pencil: fit(1.99, 1.95, 12.06), // round
   share: fit(1.2, 0.9, 13.6),
+  // A file going into a session (item 71, 2026-10-07), on the 16 canvas,
+  // computed: a disc of r 6.5 with its line fills the whole box — it
+  // stands in a face's seat, and a face fills its seat.
+  upload: fit(1, 1, 14),
   // 最近's clock (UX-30, 2026-10-06), on the 24 canvas beside the
   // landings' glyphs: a ring of r 8.5 — the rack's 17 across — computed
   // rather than scanned (ink = 17 + the line, at the round share).
@@ -192,7 +196,7 @@ function RailGlyph({
     >
       {cut && (
         <mask id={cutId}>
-          <rect x={live.x} y={live.y} width={live.side} height={live.side} fill="white" />
+          <rect x={live.x} y={live.y} width={live.side} height={live.side} fill="white" stroke="none" />
           {cut}
         </mask>
       )}
@@ -541,7 +545,11 @@ function Mark({
     >
       {cut && (
         <mask id={cutId}>
-          <rect x={live.x} y={live.y} width={live.side} height={live.side} fill="white" />
+          {/* No stroke: it would inherit the glyph's `currentColor`
+              line, and a dark line round the mask's edge hid whatever
+              of a glyph reaches its box — the upload disc's rim, on
+              the light theme only (item 71). */}
+          <rect x={live.x} y={live.y} width={live.side} height={live.side} fill="white" stroke="none" />
           {cut}
         </mask>
       )}
@@ -1052,6 +1060,38 @@ export function IconShare({ className }: IconProps) {
       <path d="M5.6 6.6H4.6a1.1 1.1 0 0 0-1.1 1.1v5a1.1 1.1 0 0 0 1.1 1.1h6.8a1.1 1.1 0 0 0 1.1-1.1v-5a1.1 1.1 0 0 0-1.1-1.1h-1" />
       <path d="M8 4.6v5.8" />
       <path data-body d="M8 1.8l2.4 2.8H5.6Z" />
+    </Mark>
+  );
+}
+
+/**
+ * 上传 — a file going into a session (item 71, the owner 2026-10-07):
+ * the mark the tab's face seat wears while a drop runs, SF's
+ * `arrow.up.circle.fill` in this family. The 34th glyph, 16 canvas.
+ * **The disc is the solid piece** and the arrow is punched through it
+ * with the family's cut, the keyboard's construction; at the tick's
+ * `bold` weight, because a hole reads thinner than a line of its width.
+ * Not `IconShare` (an arrow leaving an open tray: handing something
+ * out) and not the cursor key's bare arrows (a way to move): a closed
+ * round thing with the arrow inside is a state, something going up.
+ */
+export function IconUpload({ className }: IconProps) {
+  return (
+    <Mark
+      className={className}
+      live={LIVE.upload}
+      icon="upload"
+      cut={
+        <path
+          stroke="black"
+          strokeWidth={lineOf(LIVE.upload, STROKE.bold)}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M8 11.3V4.9M5.3 7.5 8 4.8l2.7 2.7"
+        />
+      }
+    >
+      {(cutId) => <circle data-body mask={`url(#${cutId})`} cx="8" cy="8" r="6.5" />}
     </Mark>
   );
 }

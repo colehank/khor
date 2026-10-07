@@ -714,6 +714,15 @@ pub enum Request {
         path: String,
         dir: String,
     },
+    /// **Stop the drop job `token` names** (item 71, the pill's ×): its
+    /// pull ends before the next slice and leaves no part file; a file
+    /// already landed stays. A token with no job is held as one ended
+    /// cancelled, nothing else. Answered [`Response::DropStopped`].
+    ///
+    /// **A new variant**: a khor that predates it refuses the frame by
+    /// this name. The asker has stopped waiting by then and pastes
+    /// nothing; that machine's pull lands quietly in its drop directory.
+    DropStop { token: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1053,6 +1062,8 @@ pub enum Response {
         dest: String,
         done: bool,
     },
+    /// [`Request::DropStop`] taken.
+    DropStopped,
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1158,6 +1169,8 @@ impl Request {
                 // the one job's progress (`crate::drops`).
                 | Request::DropFile { .. }
                 | Request::DropFileInto { .. }
+                // Cancelled twice is cancelled once.
+                | Request::DropStop { .. }
         )
     }
 
@@ -1600,6 +1613,7 @@ mod tests {
                 },
                 &b"DropFileInto"[..],
             ),
+            (Request::DropStop { token: String::new() }, &b"DropStop"[..]),
         ] {
             let bytes = encode(&op).unwrap();
             assert!(

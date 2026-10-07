@@ -19,6 +19,11 @@ export type TabAct = {
       file dropped on a terminal): the pill's line is filled this far,
       0 to 1, while `busy` is not. */
   share?: number;
+  /** **Files going into this tab's session** (the owner 2026-10-07
+      12:50): the one going in now, how many are done of all. The pill
+      wears the file's kind for a face and 「正在传入」 for a title, and
+      this act, a `stop`, cancels them. */
+  drop?: { name: string; done: number; total: number };
   run: () => void;
 };
 

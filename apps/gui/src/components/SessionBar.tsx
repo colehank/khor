@@ -68,7 +68,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { TabAvatar, type TabFace } from "@/browse/TabStrip";
+import { MidName, TabAvatar, type TabFace } from "@/browse/TabStrip";
 import { BellMark } from "@/components/BellMark";
 import { IconBack, IconClose, IconPlus } from "@/components/icons";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -717,6 +717,10 @@ export function DeckBand({
       data-band-seg={role}
       className={cn(
         "flex h-full min-w-[var(--band-w)] flex-none items-center gap-in whitespace-nowrap pe-row",
+        // A file going in keeps to the band: its name is cut in the
+        // middle so the count after it always shows (the owner
+        // 2026-10-07 13:05), not panned.
+        f.drop && "w-[var(--band-w)]",
         role === "cur" ? "text-foreground" : "text-tertiary",
       )}
     >
@@ -733,13 +737,13 @@ export function DeckBand({
           }}
           // The finger's floor on the title (the 44 touch rule): the band
           // row is 36 tall, so the button wears it and the row clips it.
-          className="flex min-h-touch items-center text-left text-body"
+          className={cn("flex min-h-touch items-center text-left text-body", f.drop && "min-w-0 flex-1")}
         >
-          {f.label}
+          {f.drop ? <MidName text={f.drop.name} after={f.drop.count} even /> : f.label}
         </button>
       ) : (
-        <span data-deck-title={role === "cur" ? "" : undefined} className="text-body">
-          {f.label}
+        <span data-deck-title={role === "cur" ? "" : undefined} className={cn("text-body", f.drop && "flex min-w-0 flex-1")}>
+          {f.drop ? <MidName text={f.drop.name} after={f.drop.count} even /> : f.label}
         </span>
       )}
     </div>

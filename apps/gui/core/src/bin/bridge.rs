@@ -12,7 +12,9 @@
 //! it is not written yet (批⑦), and this file is what a reader should
 //! copy nothing from when it is.
 //!
-//! One request at a time, still. Measured on this server, 2026-08-21:
+//! One request at a time, still — but for a terminal's drop, which runs
+//! on a thread of its own (item 71: its × must reach it). Measured on
+//! this server, 2026-08-21:
 //! a poll's own service time is ~3ms, but its p99 goes 3.5ms alone →
 //! 70ms with two clients → 107ms with four, because the 35–40ms list
 //! calls sit in front of it. That is a reason for a **product** server
@@ -144,32 +146,61 @@ fn main() {
         let _ = req.as_reader().read_to_string(&mut body);
         let args: serde_json::Value =
             serde_json::from_str(&body).unwrap_or(serde_json::Value::Null);
-        // The belt under every handler: a panic in one request must be
-        // that request's 500, not the whole server's death — the bridge
-        // runs its loop on main, and one poisoned corner took the whole
-        // preview down once (term.rs `plock` has the story).
-        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            khor_gui_core::api::answer(&rt, &root, &cmd, &args)
-        }))
-        .unwrap_or_else(|_| Err("panic in handler".to_owned()));
-        let (code, payload) = match outcome {
-            Ok(json) => (200, json),
-            Err(e) => (
-                400,
-                serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into()),
-            ),
-        };
-        let resp = with_cors(
-            tiny_http::Response::from_string(payload)
-                .with_status_code(code)
-                .with_header(
-                    "Content-Type: application/json"
-                        .parse::<tiny_http::Header>()
-                        .unwrap(),
-                ),
-        );
-        let _ = req.respond(resp);
+        // **A drop runs beside the loop** (item 71): one `term_drop`
+        // holds its request for as long as its files take to land, and
+        // behind it the pill's progress asks and its × waited until
+        // there was nothing left to cancel. Its own thread and runtime;
+        // the one-at-a-time rule above stands for everything else.
+        if cmd == "term_drop" {
+            let root = root.clone();
+            std::thread::spawn(move || {
+                let outcome = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                    Ok(rt) => answered(&rt, &root, &cmd, &args),
+                    Err(e) => Err(e.to_string()),
+                };
+                let _ = req.respond(json_response(outcome));
+            });
+            continue;
+        }
+        let _ = req.respond(json_response(answered(&rt, &root, &cmd, &args)));
     }
+}
+
+/// One command's answer. The belt under every handler: a panic in one
+/// request must be that request's 500, not the whole server's death —
+/// the bridge runs its loop on main, and one poisoned corner took the
+/// whole preview down once (term.rs `plock` has the story).
+fn answered(
+    rt: &tokio::runtime::Runtime,
+    root: &std::path::Path,
+    cmd: &str,
+    args: &serde_json::Value,
+) -> Result<String, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        khor_gui_core::api::answer(rt, root, cmd, args)
+    }))
+    .unwrap_or_else(|_| Err("panic in handler".to_owned()))
+}
+
+fn json_response(
+    outcome: Result<String, String>,
+) -> tiny_http::Response<std::io::Cursor<Vec<u8>>> {
+    let (code, payload) = match outcome {
+        Ok(json) => (200, json),
+        Err(e) => (
+            400,
+            serde_json::to_string(&e).unwrap_or_else(|_| "\"error\"".into()),
+        ),
+    };
+    with_cors(
+        tiny_http::Response::from_string(payload)
+            .with_status_code(code)
+            .with_header(
+                "Content-Type: application/json"
+                    .parse::<tiny_http::Header>()
+                    .unwrap(),
+            ),
+    )
 }
 
 /// The disks `BRIDGE_SLOW_VOLUME_MS` puts under this bridge: one that
