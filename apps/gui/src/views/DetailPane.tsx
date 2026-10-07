@@ -170,7 +170,8 @@ export function closeWarning(
   // An imported row leaves the list and nothing else (docs/SHELL.md
   // 第八轮 第 3 条) — the window says so, whatever its kind.
   if (imported) return gui.close_warn_imported;
-  if (kind === "chat") return gui.close_warn_chat;
+  // The broadcast closes the way a machine's window does: put away.
+  if (kind === "chat" || kind === "broadcast") return gui.close_warn_chat;
   if (kind === "transfer") return gui.close_warn_transfer;
   // An ACP conversation outlives the row: it is the agent's, and 导入
   // finds it again (docs/SHELL.md 第八轮).
@@ -216,7 +217,7 @@ export function closeWarning(
 // address and the kind is the behaviour.
 /** Whether a row is shown as a terminal here — and so whether the deck's
     pill opens its directory (UX-17, `SessionPlaceSheet`). */
-export const isTerminal = (r: SessionRow) => r.kind !== "chat" && (r.mux || (r.kind !== "gui" && r.attachable));
+export const isTerminal = (r: SessionRow) => r.kind !== "chat" && r.kind !== "broadcast" && (r.mux || (r.kind !== "gui" && r.attachable));
 
 export function DetailPane({
   row,
@@ -505,11 +506,12 @@ export function DetailPane({
           taking what the column leaves. */}
       <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {terminalShown ? null : row && row.kind === "chat" ? (
+      {terminalShown ? null : row && (row.kind === "chat" || row.kind === "broadcast") ? (
         // A machine's conversation — the stream `khor log` prints,
-        // with the composer `tell` fills. Keyed so switching machines
-        // drops the draft and the scroll with the conversation they
-        // belonged to.
+        // with the composer `tell` fills — or the broadcast, the khor's
+        // own (STORE-BRIEF phase 3). Keyed so switching machines drops
+        // the draft and the scroll with the conversation they belonged
+        // to.
         <MachineChat key={row.id} id={row.id} />
       ) : row && row.mux ? (
         // **The face follows the host** (2026-09-01: 「什么宿主跑的就用

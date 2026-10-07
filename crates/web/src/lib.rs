@@ -328,7 +328,8 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                 let Some((id, name)) = khor_gui_core::chat_put_args(query) else {
                     return Reply::refused(400, msg::upload_needs_machine_and_name().to_owned());
                 };
-                return match khor_gui_core::chat::chat_put(root, &id, &name, req.as_reader()) {
+                let into = khor_gui_core::into_arg(query);
+                return match khor_gui_core::chat::chat_put(root, &id, &name, &into, req.as_reader()) {
                     Ok(path) => Reply {
                         code: 200,
                         kind: "application/json",
@@ -365,7 +366,8 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                         );
                     }
                 };
-                return match khor_gui_core::send_upload(root, &machine, &name, req.as_reader()) {
+                let into = khor_gui_core::into_arg(query);
+                return match khor_gui_core::send_upload(root, &machine, &name, &into, req.as_reader()) {
                     Ok(id) => Reply {
                         code: 200,
                         kind: "application/json",

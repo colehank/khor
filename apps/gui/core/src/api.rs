@@ -501,7 +501,7 @@ pub fn answer(
                 Some(serde_json::Value::Array(a)) => a.iter().filter_map(|p| p.as_str().map(str::to_owned)).collect(),
                 _ => return Err("missing list arg: paths".to_owned()),
             };
-            to_json(&crate::chat::chat_put_paths(root, &arg("id")?, &paths)?)
+            to_json(&crate::chat::chat_put_paths(root, &arg("id")?, &paths, opt_str("into")?.as_deref().unwrap_or(""))?)
         }
         "chat_say" => {
             // `images` absent is the ordinary turn. Read as an array of
@@ -827,9 +827,11 @@ pub fn answer(
             root,
             &arg("machine")?,
             std::path::Path::new(&arg("path")?),
+            opt_str("into")?.as_deref().unwrap_or(""),
         )?),
         "machine_log" => to_json(&crate::machine_log(root, &arg("id")?)?),
-        "accept_transfer" => to_json(&rt.block_on(crate::accept_transfer(root, &arg("msg")?))?),
+        "retry_transfer" => to_json(&rt.block_on(crate::retry_transfer(root, &arg("msg")?))?),
+        "stop_transfer" => to_json(&rt.block_on(crate::stop_transfer(root, &arg("msg")?))?),
         "agents" => to_json(&crate::agents(root)?),
         // The shipped ACP registry snapshot, and when it was taken.
         // Two arms rather than one object because the list is 40 rows

@@ -126,7 +126,7 @@ async fn an_offer_is_unseen_on_the_machine_it_was_offered_to() {
 
     let src = ra.join("drop.bin");
     fs::write(&src, b"the payload").unwrap();
-    let tid = a.send("beta", &src).unwrap();
+    let tid = a.send("beta", &src, "").unwrap();
     timeout(Duration::from_secs(45), b.sync_now())
         .await
         .expect("sync must not hang")
@@ -142,17 +142,17 @@ async fn an_offer_is_unseen_on_the_machine_it_was_offered_to() {
         r.unread, 1,
         "the offer is content this machine has not looked at: unread must count it"
     );
-    assert_eq!(
+    assert_ne!(
         r.state.state,
         State::Blocked,
-        "control: the seat's own word is 待批 and this fix must not disturb it"
+        "control: a file on its way waits on nobody's approval"
     );
 
-    // The landing answers the ask, so 待批 lifts — to 完成/未看, not to
-    // 空闲 (docs/SESSION.md 传输并入对话批).
-    timeout(Duration::from_secs(60), b.accept(&tid))
+    // The landing lifts 忙碌 — to 完成/未看, not to 空闲 (docs/SESSION.md
+    // 传输并入对话批).
+    timeout(Duration::from_secs(60), b.take(&tid))
         .await
-        .expect("accept must not hang")
+        .expect("take must not hang")
         .unwrap();
     let r = row(&b, "chat/beta");
     assert_eq!(

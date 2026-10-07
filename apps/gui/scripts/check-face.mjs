@@ -2251,6 +2251,8 @@ try {
   // **`FACE_ONLY=side` walks the session's 附栏 alone** (UX-30, 2026-10-06).
   // **`FACE_ONLY=tabs` walks the Chrome strip and the new tab alone**
   // (UX-45, 2026-10-07).
+  // **`FACE_ONLY=mchat` walks a conversation's file chip and 「存到」
+  // alone** (STORE-BRIEF phase 2, 2026-10-08).
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   // **`FACE_ONLY=corners` walks every list's row alone** (UX-48,
@@ -2260,7 +2262,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25002,7 +25004,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25429,7 +25431,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25787,7 +25789,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26162,7 +26164,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26894,7 +26896,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27783,7 +27785,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -35182,6 +35184,446 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "store") console.log("store · FACE_ONLY=store: the other sections are skipped");
+
+  // ── a conversation's file goes directly (STORE-BRIEF phase 2, store-e, 2026-10-08) ──
+  //
+  // The owner: 「用户传文件，不指定位置就是默认位置，指定位置就传到指定
+  // 位置。这个是直接传，不用等接收」. A machine's conversation (留言) and an
+  // agent's: no accept step anywhere; the file chip reads the receiver's
+  // record the same on every device; where a file lands is said above the
+  // box and can be changed. Value checks only (30-behavior: layout is the
+  // owner's checklist). New, not a fix: no red first.
+  //   a. 留言's chips, one per step: no `[data-accept-file]`; not started
+  //      and moving show `[data-file-progress]` (floor(moved*100/size))
+  //      and ×; landed, failed and stopped do not;
+  //   b. × posts `stop_transfer` with that message;
+  //   c. a landed chip shows `[data-file-landed=<path>]`, and a press opens
+  //      `[data-file-preview=<path>]`;
+  //   d. failed says the receiver's sentence and 重试 posts
+  //      `retry_transfer`; stopped says the catalog's `file-stopped` and
+  //      has 重试 too;
+  //   e. 「存到」 reads the receiver's receive_at; ＋ (the browser form)
+  //      uploads with no `into=`; 更改… opens 选择目录 with no machine
+  //      popup, and the next upload carries `into=<picked>`; 恢复默认 is
+  //      drawn only then, and takes it back;
+  //   f. the agent conversation: the same line against its machine; a file
+  //      put with no choice carries no `into=`, one put after 更改… carries
+  //      it; the pending chip's path is what the node answered (the landed
+  //      path), and that path is what the agent is told.
+  mchat: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "mchat") break mchat;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const now = Date.now();
+    // The catalog's word, read where it is written, not typed again here.
+    const stoppedWord = /^file-stopped = "(.*)"$/m.exec(readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8"))?.[1] ?? null;
+    const drop = { gate: "/home/gate/khor-drop", peer: "/home/peer/khor-drop" };
+    const base = {
+      kind: "tui", word: "idle", at_ms: now, unread: 0, source: null, pinned: false, stale: false, category: "shell",
+      group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
+    };
+    const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+    const agentRow = {
+      ...base, id: "gui/mchat-agent", kind: "gui", title: "mchat-agent", category: "claude", attachable: false,
+      source: { device: "f".repeat(64), age_ms: 0 },
+    };
+    const msg = (id, name, size, fate = {}) => ({
+      id, at_ms: now - 60_000, from: "gate", from_me: true, text: null, files: [{ name, size }], unknown: null,
+      retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null, ...fate,
+    });
+    const landedAt = `${drop.peer}/land.pdf`;
+    const why = "no such dir: /srv/gone";
+    const said = [
+      msg("m-wait", "wait.bin", 1000),
+      msg("m-move", "move.bin", 1000, { step: "moving", moved: 420 }),
+      msg("m-land", "land.pdf", 30, { step: "landed", moved: 30, landed: [landedAt] }),
+      msg("m-fail", "fail.bin", 50, { step: "failed", why, into: "/srv/gone" }),
+      msg("m-stop", "stop.bin", 50, { step: "stopped", moved: 10 }),
+    ];
+    const asked = { stop: [], retry: [], uploads: [], puts: [], says: [] };
+    const query = (r) => Object.fromEntries(new URL(r.request().url()).searchParams);
+    const routesM = [
+      ["**/sessions", json([chatRow, agentRow])],
+      ["**/devices", (r) => json(devs.map((d) => ({ ...d, receive_dir: null, receive_for: null, receive_why: null, receive_at: drop[d.name] ?? null })))(r)],
+      ["**/machine_log", json({ messages: said, broken: 0 })],
+      ["**/stop_transfer", (r) => (asked.stop.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      ["**/retry_transfer", (r) => (asked.retry.push(r.request().postDataJSON() ?? {}), json([])(r))],
+      ["**/chat_say", (r) => (asked.says.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      // Raw-bytes POSTs with a query string: matched on the path.
+      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json("m-new")(r))],
+      [
+        (u) => u.pathname.endsWith("/chat_put"),
+        (r) => {
+          const q = query(r);
+          asked.puts.push(q);
+          return json(`${q.into ?? drop.peer}/${q.name}`)(r);
+        },
+      ],
+    ];
+    for (const [glob, run] of routesM) await page.route(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const pane = "[data-machine-chat]";
+    /** The 「存到」 line on screen: its path and whether 恢复默认 is drawn. */
+    const into = () =>
+      page.evaluate(() => {
+        const line = [...document.querySelectorAll("[data-send-into]")].find((e) => e.getClientRects().length > 0);
+        if (!line) return null;
+        return {
+          at: line.querySelector("[data-send-into-path]")?.getAttribute("title") ?? null,
+          set: line.getAttribute("data-send-into"),
+          reset: line.querySelectorAll("[data-send-into-reset]").length,
+        };
+      });
+    /** 更改… → 选择目录 → a path → 选择. Answers whether it opened and how
+        many machine popups it offered. */
+    const pickDir = async (path) => {
+      await press("[data-send-into-change]");
+      const up = await until(3_000, async () => (await count("[data-dir-picker]")) === 1);
+      const machines = await count("[data-dir-picker] [data-dir-picker-machines]");
+      await page.locator("input[data-dir-picker-path], [data-dir-picker-path] input").first().fill(path);
+      await press("[data-dir-picker-take]");
+      await until(3_000, async () => (await count("[data-dir-picker]")) === 0);
+      return { up, machines };
+    };
+
+    await open("sessions");
+    await press('[data-side-row="chat/peer"] [data-side-open]');
+    const shown = await until(5_000, async () => (await count(`${pane} [data-msg-files]`)) === said.length);
+
+    // a. the chips
+    const chips = await page.evaluate((p) =>
+      Object.fromEntries(
+        [...document.querySelectorAll(`${p} [data-msg]`)].map((m) => {
+          const c = m.querySelector("[data-msg-files]");
+          return [
+            m.getAttribute("data-msg"),
+            c && {
+              step: c.getAttribute("data-file-step"),
+              progress: c.querySelector("[data-file-progress]")?.getAttribute("data-file-progress") ?? null,
+              stop: c.querySelectorAll("[data-file-stop]").length,
+              landed: [...c.querySelectorAll("[data-file-landed]")].map((e) => e.getAttribute("data-file-landed")),
+              why: c.querySelector("[data-file-why]")?.textContent ?? null,
+              retry: c.querySelectorAll("[data-file-retry]").length,
+            },
+          ];
+        }),
+      ), pane);
+    const accepts = await count("[data-accept-file]");
+    console.log(`mchat a · shown ${shown}, accept buttons ${accepts}, ${JSON.stringify(chips)}`);
+    if (!shown) fail(`mchat a · the conversation drew ${await count(`${pane} [data-msg-files]`)} file chip(s) — ${said.length}`);
+    else {
+      if (accepts !== 0) fail(`mchat a · ${accepts} accept button(s) — a conversation's file goes directly, nobody accepts it`);
+      const w = chips["m-wait"], m = chips["m-move"], l = chips["m-land"], f = chips["m-fail"], s = chips["m-stop"];
+      if (w?.progress !== "0" || w.stop !== 1) fail(`mchat a · not started reads ${JSON.stringify(w)} — the bar at 0 and ×`);
+      if (m?.progress !== "42" || m.stop !== 1) fail(`mchat a · moving 420 of 1000 reads ${JSON.stringify(m)} — the bar at 42 and ×`);
+      for (const [k, c] of [["m-land", l], ["m-fail", f], ["m-stop", s]]) {
+        if (c?.progress !== null || c.stop !== 0) fail(`mchat a · ${k} still shows the bar or × (${JSON.stringify(c)}) — only a move on its way has them`);
+      }
+    }
+
+    // b. × cancels on the receiver
+    await press(`${pane} [data-msg="m-move"] [data-file-stop]`);
+    await until(3_000, async () => asked.stop.length > 0);
+    console.log(`mchat b · stop_transfer ${JSON.stringify(asked.stop)}`);
+    if (asked.stop.length !== 1 || asked.stop[0].msg !== "m-move") fail(`mchat b · × posted ${JSON.stringify(asked.stop)} — stop_transfer once, {msg: "m-move"}`);
+
+    // c. the landed path, pressed
+    {
+      const l = chips["m-land"];
+      if (l?.landed.join() !== landedAt || l.retry !== 0) fail(`mchat c · landed reads ${JSON.stringify(l)} — ${landedAt}, no 重试`);
+      await press(`${pane} [data-msg="m-land"] [data-file-landed]`);
+      const opened = await until(3_000, async () => (await count(`[data-file-preview="${landedAt}"]`)) === 1);
+      console.log(`mchat c · the landed path opened ${opened}`);
+      if (!opened) fail(`mchat c · a press on the landed path opened no [data-file-preview="${landedAt}"]`);
+      await page.keyboard.press("Escape");
+      await until(3_000, async () => (await count("[data-file-preview]")) === 0);
+    }
+
+    // d. failed and stopped, each with 重试
+    {
+      const f = chips["m-fail"], s = chips["m-stop"];
+      await press(`${pane} [data-msg="m-fail"] [data-file-retry]`);
+      await press(`${pane} [data-msg="m-stop"] [data-file-retry]`);
+      await until(3_000, async () => asked.retry.length >= 2);
+      console.log(`mchat d · failed ${JSON.stringify(f)}, stopped ${JSON.stringify(s)}, retry_transfer ${JSON.stringify(asked.retry)}`);
+      if (!f?.why?.includes(why) || f.retry !== 1) fail(`mchat d · failed reads ${JSON.stringify(f)} — the receiver's sentence and 重试`);
+      if (stoppedWord === null) fail("probe dead: mchat d · no file-stopped in crates/catalog/zh.toml");
+      else if (s?.why !== stoppedWord || s.retry !== 1) fail(`mchat d · stopped reads ${JSON.stringify(s)} — ${stoppedWord} and 重试`);
+      if (asked.retry.map((a) => a.msg).join() !== "m-fail,m-stop") fail(`mchat d · 重试 posted ${JSON.stringify(asked.retry)} — retry_transfer for m-fail, then m-stop`);
+    }
+
+    // e. 「存到」 above 留言's box
+    {
+      const file = (name) => ({ name, mimeType: "text/plain", buffer: Buffer.from(name) });
+      const upload = async (name) => {
+        const n = asked.uploads.length;
+        await page.locator(`${pane} [data-file-input]`).setInputFiles(file(name));
+        await until(3_000, async () => asked.uploads.length > n);
+        return asked.uploads[n] ?? null;
+      };
+      const before = await into();
+      const plain = await upload("one.txt");
+      const pick = await pickDir("/srv/inbox");
+      const picked = await into();
+      const there = await upload("two.txt");
+      await press("[data-send-into-reset]");
+      const back = await into();
+      const again = await upload("three.txt");
+      console.log(
+        `mchat e · line ${JSON.stringify(before)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
+          `after ${JSON.stringify(picked)}; there ${JSON.stringify(there)}; reset ${JSON.stringify(back)}; again ${JSON.stringify(again)}`,
+      );
+      if (before?.at !== drop.peer || before.reset !== 0) fail(`mchat e · 「存到」 reads ${JSON.stringify(before)} — peer's receive_at, no 恢复默认`);
+      if (plain?.machine !== "peer" || plain.into !== undefined) fail(`mchat e · ＋ uploaded ${JSON.stringify(plain)} — to peer, no into=`);
+      if (!pick.up) fail("mchat e · 更改… opened no 选择目录");
+      if (pick.machines !== 0) fail("mchat e · 选择目录 offers a machine — the directory is the receiver's");
+      if (picked?.at !== "/srv/inbox" || picked.reset !== 1) fail(`mchat e · after the pick the line reads ${JSON.stringify(picked)} — /srv/inbox, 恢复默认 drawn`);
+      if (there?.into !== "/srv/inbox") fail(`mchat e · the upload after the pick carried ${JSON.stringify(there)} — into=/srv/inbox`);
+      if (back?.at !== drop.peer || back.reset !== 0) fail(`mchat e · 恢复默认 left ${JSON.stringify(back)} — the receive location again`);
+      if (again?.into !== undefined) fail(`mchat e · after 恢复默认 the upload carried ${JSON.stringify(again)} — no into=`);
+    }
+
+    // f. the agent conversation
+    {
+      await open("sessions");
+      await press(`[data-side-row="${agentRow.id}"] [data-side-open]`);
+      const up = await until(5_000, async () => (await page.locator("[data-chat-input]").filter({ visible: true }).count()) === 1);
+      await wait(500);
+      const line = await into();
+      const add = async (name) => {
+        const n = asked.puts.length;
+        await page.locator("[data-chat-file-input]").first().setInputFiles({ name, mimeType: "text/plain", buffer: Buffer.from(name) });
+        await until(3_000, async () => asked.puts.length > n);
+        await until(3_000, async () => (await count(`[data-chat-pending-file="${name}"][data-placed]`)) === 1);
+        return { put: asked.puts[n] ?? null, path: await page.locator(`[data-chat-pending-file="${name}"]`).first().getAttribute("title") };
+      };
+      const plain = await add("a.txt");
+      const pick = await pickDir("/srv/agent");
+      const picked = await into();
+      const there = await add("b.txt");
+      await page.locator("[data-chat-input]").filter({ visible: true }).fill("look");
+      await page.locator("[data-chat-input]").filter({ visible: true }).press("Enter");
+      await until(3_000, async () => asked.says.length > 0);
+      const told = asked.says[0]?.text ?? "";
+      console.log(
+        `mchat f · opened ${up}, line ${JSON.stringify(line)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
+          `after ${JSON.stringify(picked)}; there ${JSON.stringify(there)}; told ${JSON.stringify(told)}`,
+      );
+      if (!up) fail("probe dead: mchat f · the agent conversation drew no box");
+      else {
+        if (line?.at !== drop.peer || line.reset !== 0) fail(`mchat f · 「存到」 reads ${JSON.stringify(line)} — the conversation's machine's receive_at, no 恢复默认`);
+        if (plain.put?.id !== agentRow.id || plain.put.into !== undefined) fail(`mchat f · a file with no choice was put as ${JSON.stringify(plain.put)} — this conversation, no into=`);
+        if (plain.path !== `${drop.peer}/a.txt`) fail(`mchat f · the chip's path is ${plain.path} — what the node answered`);
+        if (!pick.up || pick.machines !== 0) fail(`mchat f · 更改… opened ${JSON.stringify(pick)} — 选择目录, no machine popup`);
+        if (picked?.at !== "/srv/agent" || picked.reset !== 1) fail(`mchat f · after the pick the line reads ${JSON.stringify(picked)}`);
+        if (there.put?.into !== "/srv/agent" || there.path !== "/srv/agent/b.txt") fail(`mchat f · a file after the pick: put ${JSON.stringify(there.put)}, chip ${there.path} — into=/srv/agent, landed there`);
+        if (!told.includes(`@${drop.peer}/a.txt`) || !told.includes("@/srv/agent/b.txt")) fail(`mchat f · the agent was told ${JSON.stringify(told)} — the two landed paths`);
+      }
+    }
+
+    for (const [glob, run] of routesM) await page.unroute(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "mchat") console.log("mchat · FACE_ONLY=mchat: the other sections are skipped");
+
+  // ── the broadcast: the khor's own group conversation (STORE-BRIEF phase 3, store-f, 2026-10-08) ──
+  //
+  // The owner: 「我们新增一个广播类型的session，这个session是向khor内的所有
+  // 机器发文件，但目标机器要接受才下载，也是存到默认位置」 and 「广播 session
+  // 也带文字：全网机器的群聊」. One row on every machine; text and files; a
+  // file is an offer each machine answers for itself. Value checks only
+  // (30-behavior: layout is the owner's checklist). New, not a fix: no red
+  // first.
+  //   a. the row: `wide/all`, kind broadcast, a blank face (no machine's)
+  //      with a kind mark, the newest line under the title, its word and
+  //      age on the right;
+  //   b. opened, it is a conversation: lines with the machine's name over
+  //      them, and no 「存到」 line — an offer lands in each machine's own
+  //      receive location;
+  //   c. an offer this machine has not answered says 待接收 with 接收 and
+  //      no bar; 接收 posts `retry_transfer` with that message;
+  //   d. this machine's own state on the others: moving = 接收中, the bar
+  //      and ×; landed = 已收到 and the path; failed = the sentence and 重试
+  //      (posted); stopped = 已取消 and 接收;
+  //   e. the sender's chip counts the machines that have it (3/5), with
+  //      nothing to accept, stop or retry;
+  //   f. the composer: a line posts `tell` to `wide/all`; ＋ (the browser
+  //      form) uploads to `wide/all` with no `into=`.
+  bcast: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "bcast") break bcast;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const now = Date.now();
+    const zh = readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8");
+    // The catalog's words, read where they are written, not typed again.
+    const word = (k) => new RegExp(`^${k} = "(.*)"$`, "m").exec(zh)?.[1] ?? null;
+    const w = {
+      waiting: word("bcast-waiting"), take: word("bcast-take"), taking: word("bcast-taking"),
+      landed: word("bcast-landed"), stopped: word("file-stopped"), count: word("bcast-count"),
+    };
+    const row = {
+      id: "wide/all", kind: "broadcast", title: "广播", word: "blocked", at_ms: now - 120_000, unread: 2, source: null,
+      pinned: false, stale: false, quiet: false, imported: false, category: "khor", group: "", face: null, hosted: false,
+      attachable: false, last: "lunch at noon", doing: null, via: null, via_face: null, home: "gate", place: null, mux: false,
+    };
+    const msg = (id, from, body, fate = {}) => ({
+      id, at_ms: now - 60_000, from, from_me: from === "gate", text: null, files: null, unknown: null,
+      retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
+      got: null, of: null, ...body, ...fate,
+    });
+    const file = (name, size) => ({ files: [{ name, size }], got: 0, of: 4 });
+    const landedAt = "/home/gate/khor-drop/land.pdf";
+    const why = "the sender's file is gone";
+    const said = [
+      msg("t-peer", "peer", { text: "lunch at noon" }),
+      msg("t-me", "gate", { text: "on my way" }),
+      msg("f-wait", "peer", file("wait.bin", 1000)),
+      msg("f-move", "peer", file("move.bin", 1000), { step: "moving", moved: 250 }),
+      msg("f-land", "peer", file("land.pdf", 30), { step: "landed", moved: 30, landed: [landedAt], got: 1 }),
+      msg("f-fail", "peer", file("fail.bin", 50), { step: "failed", moved: 10, why }),
+      msg("f-stop", "peer", file("stop.bin", 50), { step: "stopped" }),
+      msg("f-mine", "gate", { files: [{ name: "mine.zip", size: 2048 }], got: 3, of: 5 }),
+    ];
+    const asked = { retry: [], stop: [], tells: [], uploads: [] };
+    const query = (r) => Object.fromEntries(new URL(r.request().url()).searchParams);
+    const routesB = [
+      ["**/sessions", json([row])],
+      ["**/devices", (r) => json(devs.map((d) => ({ ...d, receive_dir: null, receive_for: null, receive_why: null, receive_at: null })))(r)],
+      ["**/machine_log", json({ messages: said, broken: 0 })],
+      ["**/retry_transfer", (r) => (asked.retry.push(r.request().postDataJSON() ?? {}), json([])(r))],
+      ["**/stop_transfer", (r) => (asked.stop.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      ["**/tell", (r) => (asked.tells.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json("f-new")(r))],
+    ];
+    for (const [glob, run] of routesB) await page.route(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const pane = "[data-machine-chat]";
+    if (Object.values(w).some((v) => v === null)) fail(`probe dead: bcast · a catalog word is missing in zh.toml: ${JSON.stringify(w)}`);
+
+    // a. the row
+    await open("sessions");
+    const sel = '[data-side-row="wide/all"]';
+    const listed = await until(5_000, async () => (await count(sel)) === 1);
+    const r = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      return {
+        kind: el.querySelector("[data-kind]")?.getAttribute("data-kind") ?? el.getAttribute("data-kind"),
+        blank: el.querySelectorAll("[data-face-blank]").length,
+        faces: el.querySelectorAll("[data-face]").length,
+        mark: el.querySelectorAll("[data-kind-mark]").length,
+        last: el.querySelector("[data-last]")?.textContent ?? null,
+        text: el.textContent,
+      };
+    }, sel);
+    console.log(`bcast a · listed ${listed}, ${JSON.stringify(r)}`);
+    if (!listed || !r) fail("bcast a · no [data-side-row=\"wide/all\"] on the sessions list");
+    else {
+      if (r.kind !== "broadcast") fail(`bcast a · the row's kind reads ${r.kind} — broadcast`);
+      if (r.blank !== 1 || r.faces !== 0) fail(`bcast a · the row wears ${r.faces} machine face(s), ${r.blank} blank — every machine's, so none of theirs`);
+      if (r.mark < 1) fail("bcast a · the row draws no kind mark");
+      if (r.last !== "lunch at noon") fail(`bcast a · the row's second line reads ${JSON.stringify(r.last)} — the newest line`);
+      if (!r.text.includes("广播") || !r.text.includes("待批")) fail(`bcast a · the row reads ${JSON.stringify(r.text)} — 广播 and its word 待批`);
+    }
+
+    // b. opened: a conversation, no 「存到」
+    await press(`${sel} [data-side-open]`);
+    const shown = await until(5_000, async () => (await count(`${pane} [data-msg]`)) === said.length);
+    const lines = await page.evaluate((p) => ({
+      from: [...document.querySelectorAll(`${p} [data-msg="t-peer"] [data-msg-from]`)].map((e) => e.textContent),
+      mine: document.querySelectorAll(`${p} [data-msg="t-me"] [data-msg-from]`).length,
+      into: [...document.querySelectorAll("[data-send-into]")].filter((e) => e.getClientRects().length > 0).length,
+    }), pane);
+    console.log(`bcast b · shown ${shown}, ${JSON.stringify(lines)}`);
+    if (!shown) fail(`bcast b · the broadcast drew ${await count(`${pane} [data-msg]`)} message(s) — ${said.length}`);
+    if (lines.from.join() !== "peer" || lines.mine !== 0) fail(`bcast b · names over the lines read ${JSON.stringify(lines)} — peer over theirs, none over mine`);
+    if (lines.into !== 0) fail("bcast b · a 「存到」 line is drawn — an offer lands in each machine's own receive location");
+
+    // c–e. the chips
+    const chips = await page.evaluate((p) =>
+      Object.fromEntries(
+        [...document.querySelectorAll(`${p} [data-msg]`)].map((m) => {
+          const c = m.querySelector("[data-msg-files]");
+          const t = (s) => c?.querySelector(s)?.textContent ?? null;
+          return [
+            m.getAttribute("data-msg"),
+            c && {
+              waiting: t("[data-bcast-waiting]"), take: t("[data-bcast-take]"), taking: t("[data-bcast-taking]"),
+              landedWord: t("[data-bcast-landed]"), count: c.querySelector("[data-bcast-count]")?.getAttribute("data-bcast-count") ?? null,
+              countText: t("[data-bcast-count]"),
+              progress: c.querySelector("[data-file-progress]")?.getAttribute("data-file-progress") ?? null,
+              stop: c.querySelectorAll("[data-file-stop]").length,
+              landed: [...c.querySelectorAll("[data-file-landed]")].map((e) => e.getAttribute("data-file-landed")),
+              why: t("[data-file-why]"), retry: t("[data-file-retry]"),
+            },
+          ];
+        }),
+      ), pane);
+    console.log(`bcast c-e · ${JSON.stringify(chips)}`);
+    {
+      const c = chips["f-wait"];
+      if (c?.waiting !== w.waiting || c.take !== w.take) fail(`bcast c · an unanswered offer reads ${JSON.stringify(c)} — ${w.waiting} and ${w.take}`);
+      if (c?.progress !== null || c?.stop !== 0) fail(`bcast c · an unanswered offer draws the bar or × (${JSON.stringify(c)}) — nothing moves before 接收`);
+      await press(`${pane} [data-msg="f-wait"] [data-bcast-take]`);
+      await until(3_000, async () => asked.retry.length > 0);
+      if (asked.retry[0]?.msg !== "f-wait") fail(`bcast c · 接收 posted ${JSON.stringify(asked.retry)} — retry_transfer {msg: "f-wait"}`);
+    }
+    {
+      const m = chips["f-move"], l = chips["f-land"], f = chips["f-fail"], s = chips["f-stop"];
+      if (m?.taking !== w.taking || m.progress !== "25" || m.stop !== 1) fail(`bcast d · moving 250 of 1000 reads ${JSON.stringify(m)} — ${w.taking}, the bar at 25 and ×`);
+      if (m?.waiting !== null || m?.take !== null) fail(`bcast d · a move under way still offers ${w.take}`);
+      if (l?.landedWord !== w.landed || l.landed.join() !== landedAt || l.progress !== null) fail(`bcast d · landed reads ${JSON.stringify(l)} — ${w.landed} and ${landedAt}`);
+      if (!f?.why?.includes(why) || f.retry !== "重试") fail(`bcast d · failed reads ${JSON.stringify(f)} — the sentence and 重试`);
+      if (s?.why !== w.stopped || s.retry !== w.take) fail(`bcast d · stopped reads ${JSON.stringify(s)} — ${w.stopped} and ${w.take}`);
+      const n = asked.retry.length;
+      await press(`${pane} [data-msg="f-fail"] [data-file-retry]`);
+      await until(3_000, async () => asked.retry.length > n);
+      if (asked.retry[n]?.msg !== "f-fail") fail(`bcast d · 重试 posted ${JSON.stringify(asked.retry.slice(n))} — retry_transfer {msg: "f-fail"}`);
+      await press(`${pane} [data-msg="f-move"] [data-file-stop]`);
+      await until(3_000, async () => asked.stop.length > 0);
+      if (asked.stop[0]?.msg !== "f-move") fail(`bcast d · × posted ${JSON.stringify(asked.stop)} — stop_transfer {msg: "f-move"}`);
+    }
+    {
+      const c = chips["f-mine"];
+      const want = w.count?.replace("{0}", "3").replace("{1}", "5");
+      if (c?.count !== "3/5" || c.countText !== want) fail(`bcast e · the sender's chip reads ${JSON.stringify(c)} — 3/5, 「${want}」`);
+      if (c && (c.take !== null || c.waiting !== null || c.progress !== null || c.stop !== 0 || c.retry !== null)) fail(`bcast e · the sender's chip offers an act (${JSON.stringify(c)}) — it has nothing to receive`);
+      for (const k of ["t-peer", "t-me"]) if (chips[k] !== null) fail(`bcast e · the line ${k} drew a file chip`);
+    }
+
+    // f. the composer
+    {
+      const box = page.locator(`${pane} [data-chat-composer]`);
+      await box.fill("see you all");
+      await box.press("Enter");
+      await until(3_000, async () => asked.tells.length > 0);
+      const n = asked.uploads.length;
+      await page.locator(`${pane} [data-file-input]`).setInputFiles({ name: "all.txt", mimeType: "text/plain", buffer: Buffer.from("all") });
+      await until(3_000, async () => asked.uploads.length > n);
+      const up = asked.uploads[n] ?? null;
+      console.log(`bcast f · tell ${JSON.stringify(asked.tells)}, upload ${JSON.stringify(up)}`);
+      if (asked.tells[0]?.machine !== "wide/all" || asked.tells[0]?.text !== "see you all") fail(`bcast f · a line posted ${JSON.stringify(asked.tells)} — tell {machine: "wide/all", text}`);
+      if (up?.machine !== "wide/all" || up.into !== undefined || up.name !== "all.txt") fail(`bcast f · ＋ uploaded ${JSON.stringify(up)} — to wide/all, no into=`);
+    }
+
+    for (const [glob, run] of routesB) await page.unroute(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "bcast") console.log("bcast · FACE_ONLY=bcast: the other sections are skipped");
 
   // ── tabs like Chrome's, a new tab and its page (UX-45, 2026-10-07) ──
   //

@@ -1250,7 +1250,7 @@ impl Request {
     pub fn budget(&self) -> std::time::Duration {
         use std::time::Duration;
         match self {
-            Request::Act { action, .. } if action == "accept" => Duration::from_secs(3600),
+            Request::Act { action, .. } if action == "take" => Duration::from_secs(3600),
             Request::CodeServe { .. } => Duration::from_secs(280),
             Request::Sync { .. }
             | Request::Fetch { .. }

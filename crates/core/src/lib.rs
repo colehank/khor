@@ -45,6 +45,9 @@ pub mod kind {
     /// the exchange itself, there is no terminal to attach.
     pub const GUI: &str = "gui";
     pub const CHAT: &str = "chat";
+    /// The group conversation of every machine in the khor (STORE-BRIEF
+    /// phase 3): a session of the whole khor, not of one machine.
+    pub const BROADCAST: &str = "broadcast";
     pub const TRANSFER: &str = "transfer";
     /// A held borrow of another machine's network (docs/NET.md 借网): a
     /// local proxy in front of one lease. It is the one borrow shape that

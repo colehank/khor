@@ -879,30 +879,15 @@ pub fn shell_quote(path: &str) -> String {
 /// which is already async, and a nested runtime panics instead of
 /// returning something a person can read.
 ///
-/// **The sync in the middle is not optional and not a cadence tweak.**
-/// `send` writes the offer into this machine's copy of the chat
-/// document; the machine being asked to accept looks the transfer up in
-/// *its* copy, and without a push it has never heard of it and refuses
-/// by name. The CLI's `send` leaves that to the serve's own rhythm
-/// because an offer is content to wait for a person — this one cannot,
-/// because the same gesture that sends is the gesture that accepts.
-///
-/// **Since `2f68ac2` the push is an optimisation, not a requirement**,
-/// and the distinction is worth keeping straight. `Node::accept` now
-/// drives a sync round of its own when the offer is not here yet, so
-/// dropping this line would still work — it would just make the far
-/// machine pull from everyone instead of letting this one push what it
-/// has just written, which is strictly the more expensive half of the
-/// same round. So it stays, on cost rather than on correctness.
-///
-/// It was, until that commit, one of **two** hand-placed workarounds for
-/// one bug: this one in product code (so the feature worked and nobody
-/// looked), and a `b.sync_now()` in `crates/node/tests/transfer.rs` (so
-/// the test was green and nobody looked). Between them they explain how
-/// a race with a written-down repro sat in the ledger for days —
-/// **every road had a brick under it, and the bricks had no names.**
-pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> Result<Vec<String>, String> {
-    let (root, machine, paths) = (root.to_path_buf(), machine.to_owned(), paths.to_vec());
+/// **The sync in the middle is the push**: `send` writes the message
+/// into this machine's copy of the chat document, and the receiver
+/// starts the pull the moment a round brings it there (STORE-BRIEF phase
+/// 2: 直接传). `take` then joins that pull — or, when the round has not
+/// landed the message yet, drives one of its own — and answers where the
+/// files landed. `into` is the directory on that machine, empty for its
+/// receive location.
+pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String], into: &str) -> Result<Vec<String>, String> {
+    let (root, machine, paths, into) = (root.to_path_buf(), machine.to_owned(), paths.to_vec(), into.to_owned());
     std::thread::spawn(move || -> Result<Vec<String>, String> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -911,12 +896,12 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> 
         let n = Node::open(root)?;
         let mut sent = Vec::with_capacity(paths.len());
         for p in &paths {
-            sent.push(n.send(&machine, Path::new(p))?);
+            sent.push(n.send(&machine, Path::new(p), &into)?);
         }
         rt.block_on(n.sync_now())?;
         let mut landed = Vec::with_capacity(sent.len());
         for id in &sent {
-            let (_, where_it_is) = rt.block_on(n.accept(id))?;
+            let (_, where_it_is) = rt.block_on(n.take(id))?;
             if where_it_is.is_empty() {
                 // The files did arrive — this is the far machine
                 // declining to say where, which is what a khor from

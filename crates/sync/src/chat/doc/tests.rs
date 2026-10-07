@@ -100,6 +100,7 @@ fn a_huge_attachment_only_costs_its_metadata() {
             size: 209_715_200,
             digest: "b3:9f2c".repeat(6),
         }],
+        "",
     )
     .unwrap();
 
@@ -313,4 +314,92 @@ fn sharing_one_peer_between_two_writers_silently_loses_a_message() {
         1,
         "a shared peer loses a line — this test guards the fact, not the behaviour:\n{text}"
     );
+}
+
+/// **A file message carries its own road** (STORE-BRIEF phase 2): the
+/// sender's target and the receiver's account travel with the message,
+/// so a third device reads the same state as the two ends.
+#[test]
+fn a_file_message_carries_its_target_and_its_fate_to_every_device() {
+    let sender = ChatDoc::new(1).unwrap();
+    let receiver = ChatDoc::new(2).unwrap();
+    let third = ChatDoc::new(3).unwrap();
+    let f = FileRef {
+        name: "a.txt".into(),
+        size: 5,
+        digest: "ab".repeat(32),
+    };
+    let id = sender.send_files(&me("s"), &[f], "/data/in").unwrap();
+    receiver.merge(&sender.snapshot().unwrap()).unwrap();
+    let got = &receiver.messages()[0];
+    assert_eq!((got.into.as_str(), got.fate.clone()), ("/data/in", None), "not started yet");
+
+    let moving = Fate { step: Step::Moving, moved: 2, landed: vec![], why: String::new() };
+    receiver.set_fate(&id, &moving).unwrap();
+    let before = receiver.version();
+    receiver.set_fate(&id, &moving).unwrap();
+    assert_eq!(receiver.version(), before, "the same account twice writes nothing");
+    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/data/in/a.txt".into()], why: String::new() };
+    receiver.set_fate(&id, &landed).unwrap();
+
+    third.merge(&receiver.snapshot().unwrap()).unwrap();
+    let seen = &third.messages()[0];
+    assert_eq!(seen.fate.as_ref(), Some(&landed));
+    assert_eq!(seen.into, "/data/in");
+    let plain = sender.send_files(&me("s"), &[FileRef { name: "b".into(), size: 1, digest: String::new() }], "").unwrap();
+    let m = sender.messages().into_iter().find(|m| m.id == plain).unwrap();
+    assert_eq!(m.into, "", "the default is no key at all");
+}
+
+/// **A khor-wide file is one record per receiver** (STORE-BRIEF phase
+/// 3): two machines answering the same offer at once, each from its own
+/// copy, both keep their account after the merge, and a third device
+/// reads both. The single-receiver record is not touched.
+#[test]
+fn every_receiver_keeps_its_own_fate_of_one_offer() {
+    let sender = ChatDoc::new(1).unwrap();
+    let a = ChatDoc::new(2).unwrap();
+    let b = ChatDoc::new(3).unwrap();
+    let third = ChatDoc::new(4).unwrap();
+    let f = FileRef { name: "a.txt".into(), size: 5, digest: "cd".repeat(32) };
+    let id = sender.send_files(&me("s"), &[f], "").unwrap();
+    for d in [&a, &b] {
+        d.merge(&sender.snapshot().unwrap()).unwrap();
+    }
+    assert!(a.messages()[0].fates.is_empty(), "nobody has answered yet");
+
+    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/home/a/khor-drop/a.txt".into()], why: String::new() };
+    let failed = Fate { step: Step::Failed, moved: 2, landed: vec![], why: "gone".into() };
+    a.set_fate_of(&id, "dev-a", &Fate { step: Step::Moving, moved: 1, landed: vec![], why: String::new() }).unwrap();
+    a.set_fate_of(&id, "dev-a", &landed).unwrap();
+    let before = a.version();
+    a.set_fate_of(&id, "dev-a", &landed).unwrap();
+    assert_eq!(a.version(), before, "the same account twice writes nothing");
+    b.set_fate_of(&id, "dev-b", &failed).unwrap();
+
+    for d in [&a, &b] {
+        third.merge(&d.snapshot().unwrap()).unwrap();
+    }
+    let m = &third.messages()[0];
+    assert_eq!(m.fates.get("dev-a"), Some(&landed));
+    assert_eq!(m.fates.get("dev-b"), Some(&failed));
+    assert_eq!(m.fates.len(), 2);
+    assert_eq!(m.fate, None, "the single-receiver record stays empty");
+}
+
+/// The head names the machine that runs a khor-wide conversation, and
+/// travels like everything else; the broadcast names none.
+#[test]
+fn the_head_names_a_home_that_travels_and_can_move() {
+    let a = ChatDoc::new(1).unwrap();
+    let b = ChatDoc::new(2).unwrap();
+    assert_eq!(a.home(), None, "every machine answers for itself");
+    a.set_home("dev-a").unwrap();
+    b.merge(&a.snapshot().unwrap()).unwrap();
+    assert_eq!(b.home().as_deref(), Some("dev-a"));
+    b.set_home("dev-b").unwrap();
+    a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
+    assert_eq!(a.home().as_deref(), Some("dev-b"), "moving a home is writing another id");
+    a.set_home("").unwrap();
+    assert_eq!(a.home(), None);
 }

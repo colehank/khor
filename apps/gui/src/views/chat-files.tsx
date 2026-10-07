@@ -7,7 +7,10 @@
 // is put on the machine the conversation runs on, in that machine's
 // receive directory (`~/khor-drop` unless set in 存储, under its own name,
 // `khor_gui_core::chat::chat_put`), the very folder a `khor send` to that
-// machine lands in. A file already on that machine (「这台机器上的文件」) is
+// machine lands in — or in a directory there the person chose above the
+// box (「存到」, `SendInto`, STORE-BRIEF phase 2: 指定位置就传到指定位置);
+// the agent is told the landed path. A file already on that machine
+// (「这台机器上的文件」) is
 // not copied at all. Either way the agent is told the **path**, one line
 // `@<path>` per file after the person's words (`lib/paths`): what Claude
 // Code and Codex read. A small picture also rides inline when the agent
@@ -28,7 +31,8 @@
 // on (Finder on the Mac, the system's share sheet on a phone).
 import { useEffect, useRef, useState } from "react";
 
-import { chatPut, chatPutPaths, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
+import { chatPut, chatPutPaths, fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
+import { DirPicker } from "@/components/DirPicker";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { PathCut } from "@/components/PathCut";
 import { PathField } from "@/components/PathField";
@@ -79,7 +83,9 @@ async function base64Of(f: File): Promise<string> {
   return btoa(bin);
 }
 
-export function usePendingFiles(id: string) {
+/** `into`: the directory on the conversation's machine the files go
+    to, as chosen when each is added; `null` is its receive location. */
+export function usePendingFiles(id: string, into: string | null = null) {
   const [items, setItems] = useState<Pending[]>([]);
   const seq = useRef(0);
   const mounted = useRef(true);
@@ -116,7 +122,7 @@ export function usePendingFiles(id: string) {
       if (picture && f.size <= INLINE_MAX) {
         void base64Of(f).then((b) => patch(key, { inline: [f.type, b] }));
       }
-      chatPut(id, f).then(
+      chatPut(id, f, into).then(
         (path) => patch(key, { path }),
         (e) => patch(key, { error: why(e) }),
       );
@@ -130,7 +136,7 @@ export function usePendingFiles(id: string) {
       ...now,
       ...paths.map((p, i) => ({ key: keys[i], name: baseName(p), size: null, thumb: null, inline: null, path: null, error: null })),
     ]);
-    chatPutPaths(id, paths).then(
+    chatPutPaths(id, paths, into).then(
       (landed) => landed.forEach((path, i) => patch(keys[i], { path })),
       (e) => keys.forEach((k) => patch(k, { error: why(e) })),
     );
@@ -206,6 +212,64 @@ export function PendingChips({ items, onRemove }: { items: Pending[]; onRemove: 
         </span>
       ))}
     </div>
+  );
+}
+
+/**
+ * **Where a file sent from here lands** (STORE-BRIEF phase 2): 「存到」 and
+ * the receiving machine's receive location, or the directory picked on
+ * it (更改…, `DirPicker` fixed to that machine); 恢复默认 once one is
+ * picked. One line for both conversations — a machine's (`MachineChat`)
+ * and an agent's (`ChatView`) — so the two cannot say it two ways.
+ */
+export function SendInto({
+  machine,
+  name,
+  into,
+  onInto,
+  className,
+}: {
+  /** The API's spelling, for the picker: `""` is this machine. */
+  machine: string;
+  /** The machine's name as its device row reads it. */
+  name: string;
+  /** The picked directory; `null` is the receive location. */
+  into: string | null;
+  onInto: (into: string | null) => void;
+  className?: string;
+}) {
+  const [at, setAt] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetchDevices().then(
+      (rows) => live && setAt(rows.find((r) => r.name === name)?.receive_at ?? null),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [name]);
+  return (
+    <>
+      <div
+        data-send-into={into ?? ""}
+        className={cn("flex min-w-0 items-center gap-in text-caption text-muted-foreground", className)}
+      >
+        <span className="flex-none">{gui.send_into}</span>
+        {/* `~/khor-drop` where the row has no `receive_at` (an older khor). */}
+        <PathCut data-send-into-path text={into ?? at ?? "~/khor-drop"} className="min-w-0 flex-1" />
+        <Button size="sm" variant="ghost" data-send-into-change onClick={() => setPicking(true)}>
+          {gui.store_place_change}
+        </Button>
+        {into !== null && (
+          <Button size="sm" variant="ghost" data-send-into-reset onClick={() => onInto(null)}>
+            {gui.store_place_reset}
+          </Button>
+        )}
+      </div>
+      <DirPicker open={picking} onOpenChange={setPicking} machine={machine} fixed onPick={(p) => onInto(p.path)} />
+    </>
   );
 }
 

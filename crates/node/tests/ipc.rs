@@ -120,12 +120,13 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         "beta's table should hold both"
     );
 
-    // A transfer end to end with BOTH serves alive: sync and accept ride
-    // beta's serve; the payload comes off alpha's serve.
+    // A transfer end to end with BOTH serves alive: the sync rides
+    // beta's serve, which pulls the payload off alpha's serve as the
+    // message lands — nobody asks (STORE-BRIEF phase 2: 直接传).
     let payload: Vec<u8> = (0..600_000u32).map(|i| (i % 253) as u8).collect();
     let src = ra.join("bundle.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src).unwrap();
+    let tid = a.send("beta", &src, "").unwrap();
     timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("routed sync must not hang")
@@ -142,12 +143,20 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         .find(|v| v.session.id.0 == "chat/beta")
         .expect("the machine's chat row exists")
         .session;
-    assert_eq!(row.state.state, State::Blocked);
-    let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
-        .await
-        .expect("routed accept must not hang")
-        .unwrap();
-    assert_eq!(moved, payload.len() as u64);
+    assert_ne!(row.state.state, State::Blocked, "nothing waits on beta's approval");
+    timeout(Duration::from_secs(60), async {
+        loop {
+            let landed = b.log("beta").unwrap().messages.iter().any(|m| {
+                m.fate.as_ref().is_some_and(|f| f.step == khor_sync::chat::Step::Landed)
+            });
+            if landed {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("beta's resident lands the file by itself");
     let dir = rb.join(".khor").join("chat").join("beta");
     let m = b
         .log("beta")

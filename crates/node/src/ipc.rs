@@ -27,8 +27,11 @@ pub enum Op {
         ticket: String,
     },
     SyncNow,
-    Accept {
+    /// A conversation file's move, asked of its receiver: `take` lands
+    /// it now (a retry after a failure or a cancel), `stop` cancels it.
+    Take {
         session: String,
+        action: String,
     },
     /// List a machine's directory (`proto::Request::Ls` carried to the
     /// resident endpoint). Tail-appended, like everything after v1.
@@ -463,7 +466,7 @@ impl Op {
             Op::BorrowUnlisted { .. } => ("BorrowUnlisted", DEADLINE_SLOW),
             Op::CodeOpenOn { .. } => ("CodeOpenOn", DEADLINE_SLOW),
             Op::Pull { .. } => ("Pull", DEADLINE_TRANSFER),
-            Op::Accept { .. } => ("Accept", DEADLINE_TRANSFER),
+            Op::Take { .. } => ("Take", DEADLINE_TRANSFER),
         }
     }
 }
