@@ -2055,6 +2055,7 @@ fn reach(rest: &[String]) -> Result<(), String> {
         let here = if id == n.device_str() { cli::this_machine() } else { "" };
         let word = match s.outcome {
             khor_node::ReachOutcome::Reached => cli::reach_reached(),
+            khor_node::ReachOutcome::Silent => cli::reach_silent_word(),
             khor_node::ReachOutcome::Refused => cli::reach_refused_word(),
             khor_node::ReachOutcome::Timeout => cli::reach_timeout_word(),
             khor_node::ReachOutcome::NoName => cli::reach_no_name_word(),
@@ -2078,6 +2079,9 @@ fn reach(rest: &[String]) -> Result<(), String> {
             let ms = view.rows.iter().find(|(r, _)| r == id).and_then(|(_, s)| s.ms).unwrap_or(0);
             println!("{}", cli::reach_entrance(name(id), ms));
         }
+        // Disagreeing keys and none here: which machine is meant is the
+        // person's to say.
+        None if view.disagree => println!("{}", cli::reach_choose()),
         None => println!("{}", cli::reach_no_entrance()),
     }
     if view.disagree {
@@ -2308,10 +2312,15 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
     // which leg broke.
     let legs = |r: &khor_node::Road| {
         let via = r.via.as_deref().map(|v| format!(" {}", cli::via_sponsor(name(v)))).unwrap_or_default();
+        // A jump host is no device: its end is said as the jump.
+        let end = |e: &Option<String>| e.as_deref().map(name).unwrap_or_else(|| cli::roads_jump().to_owned());
         let broke = r
             .broken
             .as_ref()
-            .map(|l| format!(" {}", cli::roads_broken(name(&l.from), name(&l.to))))
+            .map(|l| match l.leg {
+                khor_node::LegKind::Auth => format!(" {}", cli::roads_broken_auth(end(&l.to))),
+                _ => format!(" {}", cli::roads_broken(end(&l.from), end(&l.to))),
+            })
             .unwrap_or_default();
         format!("{via}{broke}")
     };

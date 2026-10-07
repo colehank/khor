@@ -356,6 +356,12 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "notify_finished",
         "posts a notification through the operating system's notification centre; a page in \
          a browser is not an app the system notifies for, and `lib/finished` catches the miss",
+    ),    // ── 全网谁够得着 (round ROAD-1) ─────
+    (
+        "reach_probe",
+        "has every machine in the network open a connection to an address of the caller's \
+         choosing; the lead kept it to the app (2026-10-08), so a browser holding the web \
+         face's key cannot turn the fleet into a prober",
     ),
 ];
 

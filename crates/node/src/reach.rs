@@ -87,10 +87,17 @@ async fn probe_with(host: &str, port: u16, lookup: fn(&str, u16) -> Option<Strin
             match tokio::time::timeout(left, tokio::net::TcpStream::connect(a)).await {
                 Ok(Ok(mut tcp)) => {
                     let ms = started.elapsed().as_micros().div_ceil(1000);
-                    seen.outcome = ReachOutcome::Reached;
                     seen.ms = Some(u32::try_from(ms).unwrap_or(u32::MAX));
-                    seen.why = None;
                     seen.banner = banner(&mut tcp).await;
+                    // The banner decides: a connect that says no ssh line
+                    // may be a proxy's fake address taking anything.
+                    if seen.banner.as_deref().is_some_and(|b| b.starts_with("SSH-")) {
+                        seen.outcome = ReachOutcome::Reached;
+                        seen.why = None;
+                    } else {
+                        seen.outcome = ReachOutcome::Silent;
+                        seen.why = Some(msg::reach_silent(&a.to_string()));
+                    }
                     break;
                 }
                 Ok(Err(e)) => {
@@ -313,6 +320,17 @@ mod tests {
         };
         let seen = probe_with("127.0.0.1", closed, none).await;
         assert_eq!(seen.outcome, ReachOutcome::Refused, "{seen:?}");
+        // A listener that says nothing: connected, not reached.
+        let quiet = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let qport = quiet.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Ok((s, _)) = quiet.accept().await {
+                held.push(s);
+            }
+        });
+        let seen = probe_with("127.0.0.1", qport, none).await;
+        assert_eq!((seen.outcome, seen.banner.as_deref()), (ReachOutcome::Silent, None), "{seen:?}");
         // No `no-name` case here: a resolver behind a fake-ip proxy
         // answers every name, `.invalid` included (measured: 198.18.0.23),
         // so the only loopback-safe way to it is a lookup that is never made.

@@ -75,7 +75,7 @@ pub use khor_core::avatar::{
     Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    CpuDay, Fill, Hop, Leg, Link, Load, ReachOutcome, ReachSeen, ReachView, Road, RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
+    CpuDay, Fill, Hop, Leg, LegKind, Link, Load, ReachOutcome, ReachSeen, ReachView, Road, RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
     WireCounts,
     UsageDay, Vitals, kind,
 };
@@ -3871,9 +3871,17 @@ impl Node {
                 };
                 // Off the runtime: a sample is an ssh dial plus a
                 // one-second on-host measurement.
-                let taken = tokio::task::spawn_blocking(move || satellite::sample(&host)).await;
-                if let Ok(Ok(v)) = taken {
-                    let _ = self.cache_peer_vitals(&d.id, &v);
+                let taken = tokio::task::spawn_blocking(move || satellite::sample_read(&host)).await;
+                // What broke is kept for the road to it (round ROAD-1).
+                let mut book = self.roadbook.lock().unwrap_or_else(|p| p.into_inner());
+                match taken {
+                    Ok(Ok(v)) => {
+                        book.sampled(&d.id, None);
+                        drop(book);
+                        let _ = self.cache_peer_vitals(&d.id, &v);
+                    }
+                    Ok(Err((_, broke))) => book.sampled(&d.id, Some(broke)),
+                    Err(_) => {}
                 }
             }
         }

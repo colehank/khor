@@ -71,6 +71,30 @@ pub fn target(host: &str, port: u16) -> String {
     }
 }
 
+/// **The ProxyCommand that reaches `host:port` through `via`** (round
+/// ROAD-1): the ssh config line, and the one-off command that carries it
+/// with `-o`. khor never writes the user's ssh config; a face shows these
+/// with a copy button. `khor` is the CLI a terminal here would run, by
+/// its full path when found, so ssh does not depend on PATH.
+pub fn proxy_line(via: &str, host: &str, port: u16) -> (String, String) {
+    let khor = crate::doctor::khor_cli_binary()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "khor".to_owned());
+    proxy_line_with(&khor, via, host, port)
+}
+
+/// Single quotes for a POSIX shell, an inner `'` closed, escaped, reopened.
+fn sh_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+fn proxy_line_with(khor: &str, via: &str, host: &str, port: u16) -> (String, String) {
+    let value = format!("{} pipe --via {} %h %p", sh_quote(khor), sh_quote(via));
+    let port = if port == crate::reach::SSH_PORT { String::new() } else { format!(" -p {port}") };
+    let command = format!("ssh -o {}{port} {}", sh_quote(&format!("ProxyCommand={value}")), sh_quote(host));
+    (format!("ProxyCommand {value}"), command)
+}
+
 impl crate::Node {
     /// **The pipe through `via` to `host:port`**, spliced to `input` and
     /// `output` until the far end hangs up.
@@ -193,6 +217,24 @@ impl crate::Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every name is quoted, and a shell reading the one-off command
+    /// hands ssh the config line's value whole.
+    #[test]
+    fn the_proxy_line_survives_a_shell() {
+        let (config, command) = proxy_line_with("/opt/khor app/khor", "lab's box", "gpu-box", 2222);
+        assert_eq!(config, r"ProxyCommand '/opt/khor app/khor' pipe --via 'lab'\''s box' %h %p");
+        let out = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(format!("printf '%s\\n' {}", command.trim_start_matches("ssh ")))
+            .output()
+            .unwrap();
+        let args: Vec<String> = String::from_utf8_lossy(&out.stdout).lines().map(str::to_owned).collect();
+        assert_eq!(args[0], "-o");
+        assert_eq!(args[1], format!("ProxyCommand={}", config.trim_start_matches("ProxyCommand ")));
+        assert_eq!(&args[2..], ["-p", "2222", "gpu-box"]);
+        assert!(!proxy_line_with("khor", "lab", "box", 22).1.contains("-p"), "22 is ssh's own");
+    }
 
     #[test]
     fn a_target_brackets_an_ipv6_literal() {

@@ -1310,6 +1310,7 @@ roads-unreported = "没有报告路（旧版 khor，或还没报）"
 # Round ROAD-1: `khor reach`.
 reach-head = "{0} 端口 {1}，每台机器各试一次"
 reach-reached = "可达"
+reach-silent-word = "无 ssh 应答"
 reach-refused-word = "拒绝连接"
 reach-timeout-word = "超时"
 reach-no-name-word = "无法解析"
@@ -1317,11 +1318,14 @@ reach-unasked = "未询问"
 reach-predates-word = "版本过旧"
 reach-entrance = "入口：{0}（{1} 毫秒）"
 reach-no-entrance = "没有一台机器连得上它"
+reach-choose = "本机没有它的钥匙，几台机器又说法不一：选哪台做入口由你定"
 reach-disagree = "几台机器的 known_hosts 给这个名字记着不同的钥匙：它们说的不是同一台机器"
 reach-known-as = "这把钥匙是 {0} 的"
 # Round ROAD-1: roads with legs in `khor devices --roads`.
 roads-ssh = "ssh"
 roads-broken = "断在 {0} → {1}"
+roads-jump = "跳板"
+roads-broken-auth = "{0} 只接受密码登录"
 
 [msg]
 # ── the watch list (关注目录) ──
@@ -1994,6 +1998,7 @@ reach-timeout = "{0} 在 {1} 秒内没有回应"
 reach-paused = "{0} 已暂停，没有问它"
 reach-predates = "{0} 的 khor 版本较旧，不认识这个请求"
 reach-no-host = "要给一个地址"
+reach-silent = "{0} 接受了连接，但没有回 ssh 的版本行（可能是代理的假地址）"
 pipe-via-satellite = "{0} 是卫星，不是 khor，经不了它；它的 ssh 用 ssh -J 跳"
 self-moved = "khor 程序已不在 {0}（已升级或移动），需重启 serve"
 # What the scheduler is told about itself, appended to the vendor's own

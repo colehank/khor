@@ -13,6 +13,7 @@ import type { MenuRows } from "./components/OmniMenu";
 import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
 import type { Connections } from "./gen/bindings/Connections";
 import type { ReachReport } from "./gen/bindings/ReachReport";
+import type { ProxyLine } from "./gen/bindings/ProxyLine";
 import type { TabRow } from "./gen/bindings/TabRow";
 import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
@@ -970,9 +971,14 @@ export const fetchConnections = () => call<Connections>("connections");
 /** 全网谁够得着 (round ROAD-1): every online machine connects once to
     `host:port` (`null` = ssh's 22) from its own network and reports what
     it saw; the entrance is the fastest. Takes up to ~20 s when a machine
-    does not answer. */
+    does not answer. App only: the web face does not offer it. */
 export const reachProbe = (host: string, port: number | null) =>
   call<ReachReport>("reach_probe", { host, port });
+/** 经由: the ProxyCommand that reaches `host:port` through `machine`
+    (`khor pipe --via`), as an ssh config line and a one-off command, for
+    a copy button. khor never writes the user's ssh config. */
+export const proxyLine = (machine: string, host: string, port: number | null) =>
+  call<ProxyLine>("proxy_line", { machine, host, port });
 /** This face is on screen, or stopped being: what paces the resident's
     pump (`khor_gui_core::face_here`, round NET-6). */
 export const faceHere = (visible: boolean) => call<null>("face_here", { visible });

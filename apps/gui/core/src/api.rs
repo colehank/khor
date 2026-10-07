@@ -438,7 +438,7 @@ pub fn answer(
         "relays" => to_json(&crate::relays(root)?),
         "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
         "connections" => to_json(&rt.block_on(crate::connections(root))?),
-        "reach_probe" => {
+        "proxy_line" => {
             let port = match args.get("port") {
                 None | Some(serde_json::Value::Null) => None,
                 Some(v) => Some(
@@ -447,7 +447,7 @@ pub fn answer(
                         .ok_or_else(|| "arg is not a port: port".to_owned())?,
                 ),
             };
-            to_json(&rt.block_on(crate::reach_probe(root, arg("host")?, port))?)
+            to_json(&crate::proxy_line(&arg("machine")?, &arg("host")?, port))
         }
         "face_here" => {
             rt.block_on(crate::face_here(root, matches!(args.get("visible"), Some(serde_json::Value::Bool(true)))))?;

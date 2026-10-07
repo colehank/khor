@@ -1017,7 +1017,7 @@ pub fn identity_path(root: &Path) -> PathBuf {
 /// Beside this binary first: on a desktop the app is `khor-gui` and the
 /// CLI is its neighbour, and that pair is what an installer lays down.
 /// PATH after, for a machine where they are not neighbours.
-fn khor_cli_binary() -> Option<PathBuf> {
+pub(crate) fn khor_cli_binary() -> Option<PathBuf> {
     if let Ok(me) = crate::self_exe()
         && let Some(dir) = me.parent()
     {

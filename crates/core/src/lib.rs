@@ -1035,11 +1035,33 @@ impl Road {
     }
 }
 
-/// One leg of a road, by its two ends' device ids.
+/// **The leg of a road that broke** (round ROAD-1): which kind of leg,
+/// and its two ends by device id where the end is a device — a jump
+/// host is not one, so that end is `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct Leg {
-    pub from: String,
-    pub to: String,
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub leg: LegKind,
+}
+
+/// Which leg, read off the wire or off ssh's own words
+/// (`khor_node::satellite::broken`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum LegKind {
+    /// This machine to the sponsor: khor's own wire.
+    ToSponsor,
+    /// The sponsor to the ssh jump host.
+    ToJump,
+    /// The jump host on to the satellite.
+    JumpToTarget,
+    /// The sponsor's ssh to the satellite, for a reason ssh's words do
+    /// not name.
+    Ssh,
+    /// The satellite answered and refused the key: it takes a password
+    /// only (BatchMode stopped at its door).
+    Auth,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -1090,8 +1112,14 @@ pub const REACH_BANNER_MAX: usize = 120;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReachOutcome {
-    /// Connected.
+    /// Connected, and the server said an ssh version line.
     Reached,
+    /// **Connected, and nothing answered as ssh** (round ROAD-1, the
+    /// lead 2026-10-08): no first line, or one that is not `SSH-`. A
+    /// fake-ip proxy accepts every connection this way (measured:
+    /// `no-such-host.invalid` → 198.18.0.23:22), so a connect alone is
+    /// not reached, and a silent row is never the entrance.
+    Silent,
     /// The address answered and refused the connection, or the network
     /// said there is no route.
     Refused,
@@ -1113,7 +1141,8 @@ pub struct ReachView {
     /// By device id; this machine first.
     pub rows: Vec<(String, ReachSeen)>,
     /// The entrance: the lowest `ms` among the reached, this machine on
-    /// a tie ([`ReachView::pick`]).
+    /// a tie ([`ReachView::pick`]); when the keys disagree, only among
+    /// the rows whose key is this machine's own.
     pub entrance: Option<String>,
     /// Two machines' known_hosts hold different keys for the name: the
     /// name means a different machine from each — the same
@@ -1123,20 +1152,28 @@ pub struct ReachView {
 
 impl ReachView {
     /// Fills `entrance` and `disagree` from `rows`; `me` is this
-    /// machine's id. A tie in ms goes to this machine — no hop beats a
-    /// hop — and otherwise to the earlier row, so the pick is stable.
+    /// machine's id. Only a row that said ssh's version line is a
+    /// candidate. A tie in ms goes to this machine — no hop beats a hop —
+    /// and otherwise to the earlier row, so the pick is stable.
+    ///
+    /// **When the keys disagree** the name means two machines, and the
+    /// one meant is the one this machine knows: only rows holding this
+    /// machine's own key are candidates, and with no key here there is no
+    /// pick — the person chooses.
     pub fn pick(mut self, me: &str) -> Self {
-        let best = self
-            .rows
-            .iter()
-            .filter(|(_, s)| s.outcome == ReachOutcome::Reached)
-            .filter_map(|(id, s)| s.ms.map(|ms| (ms, id != me, id)))
-            .min_by_key(|(ms, not_me, _)| (*ms, *not_me))
-            .map(|(_, _, id)| id.clone());
         let mut keys = self.rows.iter().filter_map(|(_, s)| s.host_key.as_deref());
         let first = keys.next();
         self.disagree = first.is_some_and(|k| keys.any(|o| o != k));
-        self.entrance = best;
+        let mine = self.rows.iter().find(|(id, _)| id == me).and_then(|(_, s)| s.host_key.clone());
+        let disagree = self.disagree;
+        self.entrance = self
+            .rows
+            .iter()
+            .filter(|(_, s)| s.outcome == ReachOutcome::Reached)
+            .filter(|(_, s)| !disagree || (mine.is_some() && s.host_key == mine))
+            .filter_map(|(id, s)| s.ms.map(|ms| (ms, id != me, id)))
+            .min_by_key(|(ms, not_me, _)| (*ms, *not_me))
+            .map(|(_, _, id)| id.clone());
         self
     }
 }
@@ -1175,6 +1212,11 @@ mod reach_tests {
         assert_eq!(tie.entrance.as_deref(), Some("me"), "no hop beats a hop");
         let none = view(vec![("me", seen(ReachOutcome::Refused, None, None))]);
         assert_eq!(none.entrance, None);
+        let silent = view(vec![
+            ("me", seen(ReachOutcome::Silent, Some(1), None)),
+            ("a", seen(ReachOutcome::Reached, Some(40), None)),
+        ]);
+        assert_eq!(silent.entrance.as_deref(), Some("a"), "a connect with no ssh line is never the entrance");
     }
 
     #[test]
@@ -1190,6 +1232,19 @@ mod reach_tests {
             ("a", seen(ReachOutcome::Timeout, None, Some("bb"))),
         ]);
         assert!(two.disagree);
+        // Disagreeing: only the rows holding this machine's key.
+        let mine = view(vec![
+            ("me", seen(ReachOutcome::Timeout, None, Some("aa"))),
+            ("a", seen(ReachOutcome::Reached, Some(2), Some("bb"))),
+            ("b", seen(ReachOutcome::Reached, Some(5), Some("aa"))),
+        ]);
+        assert_eq!(mine.entrance.as_deref(), Some("b"));
+        let unknown = view(vec![
+            ("me", seen(ReachOutcome::Timeout, None, None)),
+            ("a", seen(ReachOutcome::Reached, Some(2), Some("bb"))),
+            ("b", seen(ReachOutcome::Reached, Some(5), Some("aa"))),
+        ]);
+        assert_eq!(unknown.entrance, None, "no key here: the person chooses");
     }
 }
 

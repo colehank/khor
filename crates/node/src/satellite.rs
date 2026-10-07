@@ -1057,12 +1057,20 @@ fn plus_side(head: &str) -> Option<(u32, u32)> {
 /// with `version: None`: no khor runs there, and saying so is the row's
 /// honest gap, never a guessed number.
 pub fn sample(host: &Dest) -> Result<khor_core::Vitals, String> {
+    sample_read(host).map_err(|(why, _)| why)
+}
+
+/// [`sample`], with which segment broke when ssh's words say
+/// ([`broken`]): what the sponsor's road to its satellite names
+/// (round ROAD-1).
+pub fn sample_read(host: &Dest) -> Result<khor_core::Vitals, (String, Option<Broken>)> {
     let out = ssh_base(host)
         .arg(SAMPLE_SH)
         .output()
-        .map_err(msg::ssh_wont_run)?;
+        .map_err(|e| (msg::ssh_wont_run(e), None))?;
     if !out.status.success() {
-        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
+        let said = String::from_utf8_lossy(&out.stderr);
+        return Err((cant_reach(host, &said), broken(host, &said)));
     }
     Ok(parse_vitals(&String::from_utf8_lossy(&out.stdout)))
 }
@@ -1521,15 +1529,25 @@ mod tests {
             let mut store = loaded.store;
             store.flush(&loaded.doc).unwrap();
         }
-        assert_eq!(n.satellite_road(&sat), None, "never sampled: no reading");
+        let kind = |n: &crate::Node| n.satellite_road(&sat).map(|r| r.road);
+        assert_eq!(kind(&n), None, "never sampled: no reading");
         n.cache_peer_vitals_aged(&sat, &parse_vitals(""), 1_000).unwrap();
-        assert_eq!(n.satellite_road(&sat), Some(khor_core::RoadKind::Ssh));
+        assert_eq!(kind(&n), Some(khor_core::RoadKind::Ssh));
         let mine = n.my_satellite_roads();
         assert_eq!(mine.len(), 1);
         assert_eq!((mine[0].to.as_str(), mine[0].road), (sat.as_str(), khor_core::RoadKind::Ssh));
         n.cache_peer_vitals_aged(&sat, &parse_vitals(""), crate::roadbook::SAT_FRESH.as_millis() as u64 + 1_000)
             .unwrap();
-        assert_eq!(n.satellite_road(&sat), Some(khor_core::RoadKind::None), "a stale sample is a broken ssh");
+        let r = n.satellite_road(&sat).unwrap();
+        assert_eq!(r.road, khor_core::RoadKind::None, "a stale sample is a broken ssh");
+        assert_eq!(r.broken.map(|l| l.leg), Some(khor_core::LegKind::Ssh), "ssh said nothing that names a leg");
+        // ssh's words on the last failed sample name the leg; a jump's
+        // far end is no device.
+        n.roadbook.lock().unwrap().sampled(&sat, Some(Some(Broken::ToJump)));
+        let leg = n.satellite_road(&sat).unwrap().broken.unwrap();
+        assert_eq!((leg.leg, leg.from.as_deref(), leg.to), (khor_core::LegKind::ToJump, Some(me.as_str()), None));
+        n.roadbook.lock().unwrap().sampled(&sat, Some(Some(Broken::PasswordOnly)));
+        assert_eq!(n.satellite_road(&sat).unwrap().broken.map(|l| l.leg), Some(khor_core::LegKind::Auth));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

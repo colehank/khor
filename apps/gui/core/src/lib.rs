@@ -304,6 +304,24 @@ pub struct ReachRow {
     pub why: Option<String>,
 }
 
+/// **The ProxyCommand through a khor machine** (round ROAD-1, 经由):
+/// the ssh config line and the one-off ssh command, to show with a copy
+/// button. khor never writes the user's ssh config.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ProxyLine {
+    /// `ProxyCommand '<khor>' pipe --via '<machine>' %h %p`
+    pub config_line: String,
+    /// `ssh -o 'ProxyCommand=…' [-p port] '<host>'`
+    pub command: String,
+}
+
+/// [`ProxyLine`] for `host:port` through `machine`; `port` `None` is 22.
+pub fn proxy_line(machine: &str, host: &str, port: Option<u16>) -> ProxyLine {
+    let (config_line, command) =
+        khor_node::pipe::proxy_line(machine, host, khor_node::reach::port_or_ssh(port));
+    ProxyLine { config_line, command }
+}
+
 /// Every machine's try at `host:port` (`Node::reach_probe`); `port`
 /// `None` is ssh's 22. With no resident it binds an endpoint of its own
 /// and still asks everyone; an error is a probe that could not run at

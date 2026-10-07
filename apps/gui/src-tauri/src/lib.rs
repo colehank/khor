@@ -487,6 +487,13 @@ async fn reach_probe(host: String, port: Option<u16>) -> Result<khor_gui_core::R
     khor_gui_core::reach_probe(&Node::root_from_env(), host, port).await
 }
 
+/// 经由's ProxyCommand line (`khor_gui_core::proxy_line`): shown with a
+/// copy button, never written into the user's ssh config.
+#[tauri::command]
+fn proxy_line(machine: String, host: String, port: Option<u16>) -> khor_gui_core::ProxyLine {
+    khor_gui_core::proxy_line(&machine, &host, port)
+}
+
 /// 首选中继 (`khor_gui_core::set_preferred_relay`). Off the main thread:
 /// it writes a file.
 #[tauri::command]
@@ -4360,6 +4367,7 @@ pub fn run() {
             road_share,
             connections,
             reach_probe,
+            proxy_line,
             face_here,
             set_preferred_relay,
             tell,
