@@ -238,7 +238,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
             &alpha_info.addrs,
             &Request::Act {
                 session: id.0.clone(),
-                action: "accept".into(),
+                action: "take".into(),
             },
         ),
     )
@@ -250,7 +250,7 @@ async fn a_live_row_travels_as_a_report_and_the_seen_loop_closes() {
             assert_eq!(
                 why,
                 khor_catalog::msg::no_such_transfer(&id.0),
-                "accept stays off live sessions"
+                "take stays off live sessions"
             )
         }
         other => panic!("Act on a live session must be refused, got {other:?}"),

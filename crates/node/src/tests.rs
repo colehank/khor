@@ -297,10 +297,10 @@ fn a_send_makes_a_file_message_and_no_transfer_row() {
 
     // To this machine's own window: sender seat, and a channel that
     // exists without pairing anybody.
-    let tid = n.send(n.name().to_owned().as_str(), &payload).unwrap();
+    let tid = n.send(n.name().to_owned().as_str(), &payload, "").unwrap();
     assert!(
         tid.0.starts_with("transfer/"),
-        "the accept handle is still a transfer id"
+        "the retry handle is still a transfer id"
     );
 
     let rows = n.sessions().unwrap();
@@ -352,7 +352,7 @@ fn an_offer_must_not_raise_the_seen_watermark() {
 
     let payload = r.join("handover.bin");
     fs::write(&payload, b"bytes").unwrap();
-    n.send(&me, &payload).unwrap();
+    n.send(&me, &payload, "").unwrap();
     assert_eq!(
         watermark(&n),
         0,
@@ -384,10 +384,10 @@ fn an_offer_must_not_raise_the_seen_watermark() {
     );
 }
 
-/// The receiving seat's half of the pair: an offer sent TO this machine
-/// presses 待批 onto its chat row — the approval asked for is this
-/// machine's — and the payload landing clears it (accept 即清), to
-/// 完成/未看 and not to 空闲.
+/// The receiving seat's half of the pair: a file sent TO this machine
+/// presses 忙碌 onto its chat row while it is on its way — never 待批,
+/// nobody's approval is asked (STORE-BRIEF phase 2: 直接传) — and the
+/// landing lifts it, to 完成/未看 and not to 空闲.
 ///
 /// **What this fixture can and cannot reach.** The far machine here is
 /// planted bytes, so whatever it "did" is whatever this function writes:
@@ -409,7 +409,7 @@ fn an_offer_must_not_raise_the_seen_watermark() {
 /// by `an_offer_must_not_raise_the_seen_watermark` below, which watches
 /// this machine's own `send` from the offering seat.
 #[test]
-fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
+fn an_incoming_file_is_busy_on_the_chat_row_until_it_lands() {
     let r = root("recv-offer");
     let n = Node::open(r.to_path_buf()).unwrap();
 
@@ -429,7 +429,7 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     // about the clock instead of about the rule.
     std::thread::sleep(std::time::Duration::from_millis(5));
     let f = khor_node_test_fileref();
-    far.send_files(&who, std::slice::from_ref(&f)).unwrap();
+    far.send_files(&who, std::slice::from_ref(&f), "").unwrap();
     let block = far.changes_since(&Default::default()).unwrap();
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
@@ -460,21 +460,27 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     };
     assert_eq!(
         chat_row(&n).state.state,
-        State::Blocked,
-        "an offer waiting on THIS machine's approval must press 待批 onto its row"
+        State::Done,
+        "a file on its way to THIS machine is new content (完成/未看), never 待批"
+    );
+    assert_eq!(
+        n.log_faced(n.name()).unwrap().1[1],
+        Some(State::Busy),
+        "its chip says 忙碌 while it is on its way"
     );
 
-    // The payload lands (what accept's pull produces): the ask is
-    // answered, so 待批 clears — to the row's own message-based word.
-    let files = dir.join("files");
-    fs::create_dir_all(&files).unwrap();
-    fs::write(crate::transfer::payload_path(&dir, &f), b"bytes!").unwrap();
+    // The file lands (what the receiver's pull writes on the message):
+    // the pressure lifts — to the row's own message-based word.
+    let msg_id = far.messages().last().expect("the file message").id.clone();
+    let landed = khor_sync::chat::Fate {
+        step: khor_sync::chat::Step::Landed,
+        moved: 6,
+        landed: vec![r.join("khor-drop").join("drop.bin").display().to_string()],
+        why: String::new(),
+    };
+    n.chat.set_fate(n.name(), &msg_id, &landed).unwrap();
     let row = chat_row(&n);
-    assert_ne!(
-        row.state.state,
-        State::Blocked,
-        "答了才清: the landing clears 待批"
-    );
+    assert_eq!(n.log_faced(n.name()).unwrap().1[1], Some(State::Done), "the landing lifts 忙碌");
     assert_eq!(
         row.state.state,
         State::Done,
@@ -501,7 +507,7 @@ fn closing_a_transfer_keeps_the_landed_file() {
         name: "far".into(),
     };
     let f = khor_node_test_fileref();
-    far.send_files(&who, std::slice::from_ref(&f)).unwrap();
+    far.send_files(&who, std::slice::from_ref(&f), "").unwrap();
     let msg_id = far.messages().last().expect("the offer is in the doc").id.clone();
     let dir = channel_dir(&r, n.name()).unwrap();
     fs::create_dir_all(&dir).unwrap();
@@ -529,6 +535,24 @@ fn closing_a_transfer_keeps_the_landed_file() {
     assert!(landed.exists(), "the landed file is the person's: close must leave it");
     assert!(crate::road::receipt(&r, &f.digest).is_some(), "and its receipt, so the chip still finds it");
     assert!(!partial.exists(), "what an unfinished pull left goes");
+}
+
+/// Writes the landing of the last file message `far` planted, as this
+/// machine's pull would.
+fn land_planted(n: &Node, far: &ChatDoc, r: &std::path::Path) {
+    let msg_id = far
+        .messages()
+        .into_iter()
+        .rfind(|m| matches!(m.body, MsgBody::Files(_)))
+        .expect("the file message")
+        .id;
+    let fate = khor_sync::chat::Fate {
+        step: khor_sync::chat::Step::Landed,
+        moved: 6,
+        landed: vec![r.join("khor-drop").join("drop.bin").display().to_string()],
+        why: String::new(),
+    };
+    n.chat.set_fate(n.name(), &msg_id, &fate).unwrap();
 }
 
 /// The file ref the incoming-offer test plants.
@@ -1841,26 +1865,25 @@ fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
         name: "far".into(),
     };
     let f = khor_node_test_fileref();
-    far.send_files(&who, std::slice::from_ref(&f)).unwrap();
+    far.send_files(&who, std::slice::from_ref(&f), "").unwrap();
     fs::write(
         dir.join("u-000000000000fafa-00000000.loro"),
         far.changes_since(&Default::default()).unwrap(),
     )
     .unwrap();
 
-    let chip = |n: &Node| n.log_faced(n.name()).unwrap().1[0].0;
+    let chip = |n: &Node| n.log_faced(n.name()).unwrap().1[0];
     assert_eq!(
         chip(&n),
-        Some(State::Blocked),
-        "control: nothing has landed, and this seat is the one being asked"
+        Some(State::Busy),
+        "control: nothing has landed, and it is on its way to this seat"
     );
 
-    fs::create_dir_all(dir.join("files")).unwrap();
-    fs::write(crate::transfer::payload_path(&dir, &f), b"bytes!").unwrap();
+    land_planted(&n, &far, &r);
     assert_eq!(
         chip(&n),
         Some(State::Done),
-        "control: it landed and nobody has looked — the probe moves with the disk"
+        "control: it landed and nobody has looked — the probe moves with the record"
     );
 
     let id = SessionId(format!("chat/{}", n.name()));
@@ -1930,7 +1953,7 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
         name: "far".into(),
     };
     let f = khor_node_test_fileref();
-    far.send_files(&who, std::slice::from_ref(&f)).unwrap();
+    far.send_files(&who, std::slice::from_ref(&f), "").unwrap();
     fs::write(
         dir.join("u-000000000000fafa-00000000.loro"),
         far.changes_since(&Default::default()).unwrap(),
@@ -1976,20 +1999,19 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
         "the person has spoken in this conversation: nothing here is waiting to be read"
     );
 
-    // **And the boundary**: speaking is not answering. The approval this
-    // machine owes is untouched by anything said in the window — 答了才
-    // 清, and only the landing answers it (docs/SESSION.md 六词).
+    // **And the boundary**: speaking is not landing. A file still on its
+    // way is untouched by anything said in the window — only the landing
+    // lifts it (docs/SESSION.md 六词).
     assert_eq!(
         row.state.state,
-        State::Blocked,
-        "待批 is not covered by a line: the file still wants THIS machine's approval"
+        State::Busy,
+        "忙碌 is not covered by a line: the file is still on its way here"
     );
 
     // Once it does land, the chip agrees with the row rather than
     // arguing with it — one rule for 看过没看过, not two.
-    fs::create_dir_all(dir.join("files")).unwrap();
-    fs::write(crate::transfer::payload_path(&dir, &f), b"bytes!").unwrap();
-    let chip = n.log_faced(n.name()).unwrap().1[0].0;
+    land_planted(&n, &far, &r);
+    let chip = n.log_faced(n.name()).unwrap().1[0];
     assert_eq!(
         chip,
         Some(State::Idle),

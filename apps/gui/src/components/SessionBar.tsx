@@ -79,7 +79,8 @@ import { gui } from "@/gen/catalog";
 import { DECK_FOLD, foldStep, groundUnder, inkOver, RESTS_AT_BOTTOM, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { seatFold } from "@/lib/fold-seat";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
-import { TRIP_MS } from "@/lib/travel";
+import { feel } from "@/lib/haptics";
+import { stillMotion } from "@/lib/travel";
 import { footCovered } from "@/lib/viewport";
 
 type Seats = {
@@ -599,17 +600,38 @@ export function PillProgress({ share }: { share?: number } = {}) {
 }
 
 /**
- * **The phone's deck pill is a band** (UX-33 §3, the owner 2026-10-06):
- * at rest exactly one tab — the current one's face and name, the name cut
- * at the band's edge — and under it a track of three, the previous, this
- * and the next. A sideways drag first pans the name's own overflow; at
- * its end it keeps going and pulls **one** neighbour in, never more;
- * released past half, that tab becomes current; released short, it
- * springs back. More than one neighbour: the tabs circle. A tap anywhere
- * on the current segment — face, name or the room after it — is the
- * title's own press (the address editor, the 目录 sheet; UX-35 §1). The
- * face seat takes the shared face assembly (`TabAvatar`, ux-b's). ⚠️ 墓碑
- * (UX-25): a sideways swipe stepped one tab per flick.
+ * **The phone's deck pill is a band** (UX-33 §3, the owner 2026-10-06;
+ * UX-49, 2026-10-08): at rest exactly one tab — the current one's face
+ * and name, the name cut at the band's edge. A sideways drag moves it
+ * and pulls **one** neighbour in, never more.
+ *
+ * - **A ring** (UX-49 §2): the first tab's previous is the last, the
+ *   last one's next the first; with two, either way is the other. With
+ *   one the band gives a little (`GIVE`) and springs back.
+ * - **The incoming tab hugs the edge it comes in from** (UX-49 §3): from
+ *   the right it is right-aligned, from the left left-aligned, in the
+ *   room the outgoing one has left — its face and name show from the
+ *   first pixel, whatever the names' lengths, and a name too long for
+ *   the room is cut. A switch glides it to its left-aligned rest
+ *   (`GLIDE_MS`); a drag that does not switch springs back, no glide.
+ * - **Letting go switches past `COMMIT_SHARE` of the band, or on a
+ *   flick** (UX-49 §5). Crossing that line either way is felt (a light
+ *   impact, `feel("threshold")`) and seen: below it the incoming tab is
+ *   dim (`DIM`) and the outgoing full; past it the other way round.
+ * - **Every end of a drag is one tab at rest** (UX-49 §4): a lift, a
+ *   cancel, the system taking the touch, the capture lost, the list or
+ *   the front tab changing under the finger.
+ *
+ * More than one neighbour away: the tabs circle. A tap anywhere on the
+ * current segment — face, name or the room after it — is the title's own
+ * press (the address editor, the 目录 sheet; UX-35 §1). The face seat
+ * takes the shared face assembly (`TabAvatar`, ux-b's). ⚠️ 墓碑 (UX-25):
+ * a sideways swipe stepped one tab per flick. ⚠️ 墓碑 (UX-33 → UX-49): a
+ * track of three segments, each at least the band wide, panned as one; a
+ * drag first panned the current name's overflow, and a release short of
+ * half kept that pan — the owner's 「停在一半」, the old tab's face half
+ * outside the pill — while a neighbour's face came in only after the
+ * blank rest of its segment.
  */
 export function DeckBand({
   faces,
@@ -623,80 +645,209 @@ export function DeckBand({
   onTitle?: () => void;
 }) {
   const band = useRef<HTMLDivElement>(null);
-  const track = useRef<HTMLDivElement>(null);
+  const curSeg = useRef<HTMLDivElement>(null);
+  const prevSeg = useRef<HTMLDivElement>(null);
+  const nextSeg = useRef<HTMLDivElement>(null);
+  const n = faces.length;
   const at = faces.findIndex((f) => f.id === active);
   const cur = at < 0 ? null : faces[at];
-  const prev = at > 0 ? faces[at - 1] : null;
-  const next = at >= 0 && at + 1 < faces.length ? faces[at + 1] : null;
-  /** The track's x, and the drag under way. */
-  const x = useRef(0);
-  const drag = useRef<{ x0: number; y0: number; start: number; moved: boolean; onTitle: boolean } | null>(null);
-  const put = (nx: number, animate: boolean) => {
-    const t = track.current;
-    if (!t) return;
-    x.current = nx;
-    t.style.transition = animate ? `transform ${TRIP_MS}ms var(--ease-move, ease)` : "none";
-    t.style.transform = `translateX(${nx}px)`;
+  const prev = at >= 0 && n > 1 ? faces[(at + n - 1) % n] : null;
+  const next = at >= 0 && n > 1 ? faces[(at + 1) % n] : null;
+  const drag = useRef<BandDrag | null>(null);
+  /** A switch gliding in: where to, and when it lands. */
+  const going = useRef<{ id: string; timer: number } | null>(null);
+  /** A spring back's end, which puts the neighbour away. */
+  const springing = useRef<number | null>(null);
+  const latest = useRef({ faces, active, onFocus });
+  useLayoutEffect(() => {
+    latest.current = { faces, active, onFocus };
+  });
+  const ease = () => getComputedStyle(document.documentElement).getPropertyValue("--ease-move").trim() || "ease";
+  const glide = () => (stillMotion() ? 0 : GLIDE_MS);
+  /** Exactly the current tab, nothing moving: every inline style the
+      gesture wrote taken off (the segments have none of React's). */
+  const rest = () => {
+    if (springing.current !== null) window.clearTimeout(springing.current);
+    springing.current = null;
+    for (const el of [curSeg.current, prevSeg.current, nextSeg.current]) el?.removeAttribute("style");
+    band.current?.removeAttribute("data-band-past");
   };
-  /** The track's geometry: `home` is this tab's segment at the band's
-      left edge, `over` the name's own travel past the band. */
-  const geometry = () => {
+  /** The drag and any switch under way, dropped where they are. */
+  const stop = () => {
+    const d = drag.current;
+    drag.current = null;
     const b = band.current;
-    const t = track.current;
-    if (!b || !t) return null;
-    const bw = b.clientWidth;
-    const seg = [...t.children] as HTMLElement[];
-    const prevW = prev ? seg[0].offsetWidth : 0;
-    const curW = seg[prev ? 1 : 0]?.offsetWidth ?? bw;
-    return { bw, home: -prevW, over: Math.max(0, curW - bw) };
+    if (d && b?.hasPointerCapture(d.pointer)) b.releasePointerCapture(d.pointer);
+    if (going.current) window.clearTimeout(going.current.timer);
+    going.current = null;
   };
-  // Home on every change of tab or of the band's width.
+  // At rest on every change of the front tab or of the list — a drag or
+  // a glide under way included (UX-49 §4). The band's width is measured
+  // for a file's name; a width that changes under a finger (a seat filled
+  // beside the band) leaves the drag going, its next move drawn to the
+  // new width.
+  const ids = faces.map((f) => f.id).join("\n");
   useLayoutEffect(() => {
     const b = band.current;
     if (!b) return;
-    const settle = () => {
-      b.style.setProperty("--band-w", `${b.clientWidth}px`);
-      const g = geometry();
-      if (g) put(g.home, false);
-    };
-    settle();
-    const ro = new ResizeObserver(settle);
+    stop();
+    rest();
+    const measure = () => b.style.setProperty("--band-w", `${b.clientWidth}px`);
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(b);
     return () => ro.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, faces.length]);
+  }, [active, ids]);
+  useEffect(
+    () => () => {
+      if (going.current) window.clearTimeout(going.current.timer);
+      if (springing.current !== null) window.clearTimeout(springing.current);
+    },
+    [],
+  );
+  /** The drag drawn: the current tab moved by `dx`, the incoming one in
+      the room it left, hugging its own edge, and the cue. */
+  const pull = (dx: number, past: boolean) => {
+    const c = curSeg.current;
+    if (!c) return;
+    c.style.transition = `opacity var(--dur-120) linear`;
+    c.style.transform = `translateX(${dx}px)`;
+    c.style.opacity = past ? String(DIM) : "";
+    const inc = dx < 0 ? nextSeg.current : dx > 0 ? prevSeg.current : null;
+    for (const el of [prevSeg.current, nextSeg.current]) {
+      if (!el) continue;
+      if (el !== inc) {
+        el.removeAttribute("style");
+        continue;
+      }
+      el.style.display = "flex";
+      el.style.transition = `opacity var(--dur-120) linear`;
+      el.style.maxWidth = `${Math.abs(dx)}px`;
+      el.style.opacity = past ? "" : String(DIM);
+    }
+    band.current?.toggleAttribute("data-band-past", past);
+  };
+  /** Back to rest the way it came: the incoming tab's room closes over
+      it, nothing glides. */
+  const springBack = () => {
+    const ms = glide();
+    const c = curSeg.current;
+    if (ms === 0 || !c) {
+      rest();
+      return;
+    }
+    c.style.transition = `transform ${ms}ms ${ease()}, opacity var(--dur-120) linear`;
+    c.style.transform = "none";
+    c.style.opacity = "";
+    for (const el of [prevSeg.current, nextSeg.current]) {
+      if (!el || el.style.display !== "flex") continue;
+      el.style.transition = `max-width ${ms}ms ${ease()}, opacity var(--dur-120) linear`;
+      el.style.maxWidth = "0";
+    }
+    band.current?.removeAttribute("data-band-past");
+    springing.current = window.setTimeout(rest, ms);
+  };
+  /** The switch lands: the tab is focused, and a focus that did not
+      take (refused, or the tab gone meanwhile) leaves the band at rest
+      on what is current. */
+  const arrive = () => {
+    const g = going.current;
+    if (!g) return;
+    window.clearTimeout(g.timer);
+    going.current = null;
+    const { faces: now, active: was, onFocus: focus } = latest.current;
+    if (now.some((f) => f.id === g.id)) focus(g.id);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (latest.current.active === was && !drag.current && !going.current) rest();
+      }),
+    );
+  };
+  /** Letting go switched: the outgoing tab leaves, the incoming one
+      takes the band and glides from the edge it hugged to its rest. */
+  const commit = (to: TabFace, way: number) => {
+    const b = band.current;
+    const c = curSeg.current;
+    const inc = way < 0 ? nextSeg.current : prevSeg.current;
+    if (!b || !c || !inc) return;
+    const ms = glide();
+    const bw = b.clientWidth;
+    if (way < 0) {
+      // From the right: unpinned from the right edge where it stands,
+      // then carried to the left.
+      const from = inc.getBoundingClientRect().left - b.getBoundingClientRect().left;
+      inc.style.transition = "none";
+      inc.style.left = "0";
+      inc.style.right = "auto";
+      inc.style.maxWidth = "none";
+      inc.style.transform = `translateX(${from}px)`;
+      void inc.offsetWidth;
+      inc.style.transition = `transform ${ms}ms ${ease()}`;
+      inc.style.transform = "none";
+    } else {
+      // From the left it is at its rest already: its room opens.
+      inc.style.transition = `max-width ${ms}ms ${ease()}`;
+      inc.style.maxWidth = `${bw}px`;
+    }
+    inc.style.opacity = "";
+    c.style.transition = `transform ${ms}ms ${ease()}`;
+    c.style.transform = `translateX(${way < 0 ? -bw : bw}px)`;
+    c.style.opacity = "";
+    b.removeAttribute("data-band-past");
+    going.current = { id: to.id, timer: window.setTimeout(arrive, ms) };
+  };
   const onPointerDown = (e: PointerEvent) => {
+    // A press while a switch glides lands it now.
+    if (going.current) {
+      arrive();
+      return;
+    }
+    if (drag.current) return;
     drag.current = {
+      pointer: e.pointerId,
       x0: e.clientX,
       y0: e.clientY,
-      start: x.current,
       moved: false,
       // Anywhere on the current segment, its face included (UX-35 §1):
       // a short name left most of the pill deaf to a tap.
       onTitle: e.target instanceof Element && e.target.closest('[data-band-seg="cur"]') !== null,
+      dx: 0,
+      past: false,
+      trail: [{ t: e.timeStamp, x: e.clientX }],
     };
     band.current?.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: PointerEvent) => {
     const d = drag.current;
-    const g = geometry();
-    if (!d || !g) return;
-    const dx = e.clientX - d.x0;
+    const b = band.current;
+    if (!d || !b || e.pointerId !== d.pointer) return;
+    const raw = e.clientX - d.x0;
     // A press that travels, in any direction, is not a tap; only its
-    // sideways part pans the band.
-    if (!d.moved && Math.hypot(dx, e.clientY - d.y0) < 6) return;
+    // sideways part moves the band.
+    if (!d.moved && Math.hypot(raw, e.clientY - d.y0) < TAP_SLOP) return;
+    if (!d.moved && springing.current !== null) rest();
     d.moved = true;
-    // Never past one neighbour: the previous fully in, or the next fully
-    // in — and no neighbour there, no further than the name's own travel.
-    const left = next ? g.home - g.over - g.bw : g.home - g.over;
-    const right = prev ? g.home + g.bw : g.home;
-    put(Math.min(right, Math.max(left, d.start + dx)), false);
+    d.trail = [...d.trail, { t: e.timeStamp, x: e.clientX }].filter((p) => e.timeStamp - p.t <= 2 * FLICK_MS);
+    if (!prev || !next) {
+      // One tab: a rubber band that gives less the further it goes.
+      d.dx = Math.sign(raw) * GIVE * (1 - 1 / ((Math.abs(raw) * 0.55) / GIVE + 1));
+      pull(d.dx, false);
+      return;
+    }
+    const bw = b.clientWidth;
+    d.dx = Math.min(bw, Math.max(-bw, raw));
+    const past = Math.abs(d.dx) >= bw * COMMIT_SHARE;
+    if (past !== d.past) {
+      d.past = past;
+      feel("threshold");
+    }
+    pull(d.dx, past);
   };
-  const onPointerUp = () => {
+  const onPointerUp = (e: PointerEvent) => {
     const d = drag.current;
+    if (!d || e.pointerId !== d.pointer) return;
     drag.current = null;
-    const g = geometry();
-    if (!d || !g) return;
     // **A press that did not move is the title's** (the address editor,
     // the 目录 sheet), wherever on the current segment it began: with the
     // pointer captured by the band the click lands here, not on the
@@ -707,32 +858,34 @@ export function DeckBand({
       if (d.onTitle) onTitle?.();
       return;
     }
-    const nx = x.current;
-    if (prev && nx > g.home + g.bw * 0.5) {
-      put(g.home + g.bw, true);
-      onFocus(prev.id);
+    const way = Math.sign(d.dx);
+    if (!prev || !next || way === 0) {
+      springBack();
       return;
     }
-    if (next && nx < g.home - g.over - g.bw * 0.5) {
-      put(g.home - g.over - g.bw, true);
-      onFocus(next.id);
-      return;
-    }
-    put(Math.min(g.home, Math.max(g.home - g.over, nx)), true);
+    // The flick: the drag's last `FLICK_MS` of movement, and none if the
+    // finger stood still that long before the lift (the lift repeats the
+    // last place later, which is not a slowing down). A flick back
+    // against the drag lets go of it, past the line or not.
+    const last = d.trail[d.trail.length - 1];
+    const trail = e.clientX === last.x ? d.trail : [...d.trail, { t: e.timeStamp, x: e.clientX }];
+    const end = trail[trail.length - 1];
+    const first = trail.find((p) => end.t - p.t <= FLICK_MS) ?? end;
+    const v = e.timeStamp - last.t <= FLICK_MS && end !== first ? (end.x - first.x) / Math.max(1, end.t - first.t) : 0;
+    const flick = Math.abs(v) >= FLICK_SPEED && Math.abs(d.dx) >= FLICK_MIN;
+    if (flick ? Math.sign(v) === way : d.past) commit(way < 0 ? next : prev, way);
+    else springBack();
   };
-  const segment = (f: TabFace, role: "prev" | "cur" | "next") => (
-    <div
-      key={f.id}
-      data-band-seg={role}
-      className={cn(
-        "flex h-full min-w-[var(--band-w)] flex-none items-center gap-in whitespace-nowrap pe-row",
-        // A file going in keeps to the band: its name is cut in the
-        // middle so the count after it always shows (the owner
-        // 2026-10-07 13:05), not panned.
-        f.drop && "w-[var(--band-w)]",
-        role === "cur" ? "text-foreground" : "text-tertiary",
-      )}
-    >
+  /** The touch taken away (the system's gesture, a cancel, the capture
+      lost): never a switch, always back to rest. */
+  const onLost = (e: PointerEvent) => {
+    const d = drag.current;
+    if (!d || e.pointerId !== d.pointer) return;
+    drag.current = null;
+    if (d.moved) springBack();
+  };
+  const body = (f: TabFace, role: "prev" | "cur" | "next") => (
+    <>
       <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
         <TabAvatar f={f} bare="size-tab-face" seat="tab" />
       </span>
@@ -755,6 +908,21 @@ export function DeckBand({
           {f.drop ? <MidName text={f.drop.name} even /> : f.label}
         </span>
       )}
+    </>
+  );
+  /** A neighbour: put away until a drag pulls it in, then as wide as the
+      room the drag opened, anchored to its own edge. A file going in
+      keeps to the band: its name is cut in the middle so the count after
+      it always shows (the owner 2026-10-07 13:05). */
+  const neighbour = (f: TabFace, role: "prev" | "next", ref: typeof prevSeg) => (
+    <div
+      ref={ref}
+      key={role}
+      data-band-seg={role}
+      aria-hidden="true"
+      className={cn("absolute inset-y-0 hidden items-center overflow-hidden text-foreground", role === "prev" ? "left-0" : "right-0")}
+    >
+      <div className={cn("flex h-full flex-none items-center gap-in whitespace-nowrap pe-row", f.drop && "w-[var(--band-w)]")}>{body(f, role)}</div>
     </div>
   );
   return (
@@ -765,16 +933,56 @@ export function DeckBand({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerCancel={onLost}
+      onLostPointerCapture={onLost}
     >
-      <div ref={track} data-deck-band-track className="absolute inset-y-0 left-0 flex items-center will-change-transform">
-        {prev && segment(prev, "prev")}
-        {cur && segment(cur, "cur")}
-        {next && segment(next, "next")}
-      </div>
+      {cur && (
+        <div
+          ref={curSeg}
+          key="cur"
+          data-band-seg="cur"
+          className="absolute inset-0 flex items-center gap-in overflow-hidden whitespace-nowrap pe-row text-foreground will-change-transform"
+        >
+          {body(cur, "cur")}
+        </div>
+      )}
+      {prev && neighbour(prev, "prev", prevSeg)}
+      {next && neighbour(next, "next", nextSeg)}
     </div>
   );
 }
+
+/** The band's drag (`DeckBand`). */
+type BandDrag = {
+  pointer: number;
+  x0: number;
+  y0: number;
+  moved: boolean;
+  onTitle: boolean;
+  /** How far the current tab stands from its rest. */
+  dx: number;
+  /** Past the line: letting go switches. */
+  past: boolean;
+  /** The last `FLICK_MS` of positions, for the flick. */
+  trail: { t: number; x: number }[];
+};
+/** **When letting go switches** (UX-49 §5): a drag across this share of
+    the band — about 100 pt of an iPhone's pill. */
+const COMMIT_SHARE = 0.4;
+/** …or a flick: at least this fast (px per ms, 400 pt/s — Android's
+    pager's fling floor) over the last `FLICK_MS` of the drag, and at
+    least `FLICK_MIN` px from the start. */
+const FLICK_SPEED = 0.4;
+const FLICK_MS = 80;
+const FLICK_MIN = 12;
+/** The cue: what letting go would leave behind is drawn at this. */
+const DIM = 0.4;
+/** The switch's glide to rest and the spring back (「about 0.2 s」). */
+const GLIDE_MS = 200;
+/** One tab: how far the band gives, approached and never reached. */
+const GIVE = 28;
+/** A press that travels less than this is a tap. */
+const TAP_SLOP = 6;
 
 // ⚠️ 墓碑 (UX-25 → UX-33): `usePillSwipe`, a sideways flick on the pill
 // stepping one tab; the band above is the one pill gesture now.

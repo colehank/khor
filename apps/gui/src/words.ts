@@ -185,6 +185,9 @@ export function faceWord(key: string): string {
  */
 export function groupLabel(group: string): string {
   if (group === "pin") return cli.group_pinned;
+  // The khor-wide sessions' group when arranged by machine (the broadcast,
+  // `khor_node::list::GROUP_KHOR`): the khor's own name.
+  if (group === "khor") return category.khor;
   if (group.startsWith("state:")) return word(group.slice("state:".length));
   if (group.startsWith("cat:")) {
     const name = group.slice("cat:".length);

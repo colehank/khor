@@ -6,7 +6,7 @@ pub mod doc;
 
 use std::path::{Path, PathBuf};
 
-pub use doc::{ChatDoc, FileRef, Message, MsgBody, Sender};
+pub use doc::{ChatDoc, Fate, FileRef, Message, MsgBody, Sender, Step};
 
 use crate::store::{Loaded, load};
 
@@ -41,6 +41,42 @@ pub fn valid_channel(name: &str) -> bool {
 /// [`channel_of_machine`].
 pub fn channel_dir(home: &Path, channel: &str) -> Option<PathBuf> {
     valid_channel(channel).then(|| home.join(REL_DIR).join(channel))
+}
+
+/// **Khor-wide conversations** (STORE-BRIEF foundation B): a
+/// conversation that belongs to the whole khor, not to one machine. Its
+/// document is a [`ChatDoc`] every machine keeps and syncs under the
+/// wire name `wide/<name>`, stored here, beside the machines' channels
+/// and never among them — a machine may well be called `all`.
+pub const WIDE_DIR: &str = ".khor/wide";
+
+/// The prefix that names a khor-wide conversation, in a sync's document
+/// name, a session id and the node's board strings alike. A channel
+/// never holds a `/` ([`valid_channel`]), so the two cannot be confused.
+pub const WIDE: &str = "wide/";
+
+/// The broadcast: the group conversation of every machine in the khor.
+pub const ALL: &str = "all";
+
+/// `wide/<name>` → `<name>`, for a valid name.
+pub fn wide_name(board: &str) -> Option<&str> {
+    board.strip_prefix(WIDE).filter(|n| valid_channel(n))
+}
+
+/// A khor-wide conversation's directory, by its board (`wide/<name>`).
+pub fn wide_dir(home: &Path, board: &str) -> Option<PathBuf> {
+    wide_name(board).map(|n| home.join(WIDE_DIR).join(n))
+}
+
+/// The directory behind a board: a machine's channel, or a khor-wide
+/// conversation (`wide/<name>`). The one string the node passes around
+/// for "this conversation" resolves here and nowhere else.
+pub fn board_dir(home: &Path, board: &str) -> Option<PathBuf> {
+    if board.starts_with(WIDE) {
+        wide_dir(home, board)
+    } else {
+        channel_dir(home, board)
+    }
 }
 
 /// The channel name of a machine. One machine, one channel: every device
@@ -128,6 +164,18 @@ mod tests {
             channel_dir(&PathBuf::from("/home/x"), "turing").unwrap(),
             PathBuf::from("/home/x/.khor/chat/turing")
         );
+    }
+
+    /// A khor-wide conversation lives beside the machines' channels,
+    /// never among them: a machine called `all` keeps its own window.
+    #[test]
+    fn a_wide_board_never_lands_among_the_channels() {
+        let home = PathBuf::from("/home/x");
+        assert_eq!(board_dir(&home, "wide/all").unwrap(), PathBuf::from("/home/x/.khor/wide/all"));
+        assert_eq!(board_dir(&home, "all").unwrap(), PathBuf::from("/home/x/.khor/chat/all"));
+        for bad in ["wide/", "wide/a/b", "wide/..", "wide/a b"] {
+            assert!(board_dir(&home, bad).is_none(), "{bad:?} should be refused");
+        }
     }
 
     /// Clean machine names pass through unchanged — and match what the

@@ -255,16 +255,14 @@ usage: khor <verb>
   tell <machine> <words...>
                         leaves a message in that machine's window
                         (always taken literally)
-  send <machine> <file|words...>
-                        sends to that machine: an existing file gets
-                        transferred (a summary arrives first, the
-                        actual transfer waits for the other side's
-                        permission); otherwise it's treated as a
-                        message. If your words happen to match a
-                        filename, use tell instead
-  accept <transfer id>  grants permission and receives the full
-                        transfer (run this on the machine receiving
-                        the file)
+  send <machine> <file|words...> [--into <dir>]
+                        sends to that machine: an existing file goes
+                        straight there (into its receive location, or
+                        the directory on that machine --into names);
+                        otherwise it's treated as a message. If your
+                        words happen to match a filename, use tell
+  retry <transfer id>   sends a failed or cancelled file again (run it
+                        on any machine)
   log <machine>         shows that window's messages
   run [--tui] [--title <name>] -- <command...>
                         a temporary session: lives as long as this
@@ -755,9 +753,9 @@ usage-never = "Usage not checked for this machine yet"
 usage-taken = "Usage from {0} ago"
 usage-unreadable = "{0} entries unreadable, totals don't include them"
 usage-model-unnamed = "Model not recorded"
-summary-sent = "Summary sent, waiting for approval. Transfer ID: {0}"
+summary-sent = "Sent; the other machine is receiving it. Transfer ID: {0}"
 syncing-for-offer = "No record of this transfer on this machine yet, syncing first; {0} machines to ask, up to {1} seconds for each one we can't reach"
-pulled = "Accepted, pulled {0} bytes this round"
+pulled = "Done, pulled {0} bytes this round"
 pulled-to = "Pulled {0} bytes, saved to {1}"
 dir-truncated = "Directory too large, showing only the first {0} entries"
 put-landed = "Wrote {0}, now {1}"
@@ -1081,6 +1079,8 @@ no-such-transfer = "No such transfer: {0}"
 transfer-absent-after-sync = "No such transfer: {0} (every machine on the network has synced a round; this id is most likely wrong)"
 transfer-not-synced-yet = "This transfer hasn't synced to this machine yet: {0}; can't reach {1} machine(s) ({2}) — it may still be there"
 wrong-recipient = "This file was sent to {0}; this machine shouldn't receive it"
+broadcast-title = "Broadcast"
+own-broadcast-file = "This machine sent this file; there is nothing to receive"
 not-a-file-path = "This isn't a file path: {0}"
 cant-remove = "Can't remove {0}: {1}"
 cant-canonicalize = "Can't resolve this path: {0}"
@@ -2213,12 +2213,17 @@ empty-dir = "Empty directory"
 take-file = "Download"
 took-file = "Landed in {0}"
 
-accept-file-working = "Receiving…"
-accept-file = "Accept"
-accept-file-failed = "Couldn't accept"
-file-not-taken = "Not received yet"
-file-being-taken = "The other side is receiving"
-file-taken = "Received"
+# A conversation's file goes directly (STORE-BRIEF phase 2): the chip
+# says how its move stands, the same on every device.
+file-stop = "Cancel Transfer"
+file-stopped = "Cancelled"
+file-failed = "Transfer failed: {0}"
+send-into = "Save to"
+bcast-waiting = "Not received"
+bcast-take = "Receive"
+bcast-taking = "Receiving"
+bcast-landed = "Received"
+bcast-count = "{0} of {1} received"
 send-file = "Send file"
 uploading = "Uploading…"
 send-file-failed = "Couldn't send"

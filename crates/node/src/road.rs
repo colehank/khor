@@ -175,6 +175,25 @@ pub fn job(key: &str) -> (Arc<Job>, bool) {
     (j, true)
 }
 
+/// The job this key names, when there is one; makes none.
+pub fn peek(key: &str) -> Option<Arc<Job>> {
+    jobs().lock().unwrap_or_else(|e| e.into_inner()).get(key).cloned()
+}
+
+/// Drops the job this key names, so the next [`job`] starts a new one
+/// (a retry of a move that ended).
+pub fn forget_job(key: &str) {
+    jobs().lock().unwrap_or_else(|e| e.into_inner()).remove(key);
+}
+
+/// The job key of a conversation file's move, by its message **and the
+/// machine receiving it**: the table is the process's, and a broadcast
+/// file is one message many machines move — two homes in one process
+/// (a test's scratch nodes) must not answer each other's moves.
+pub fn sent_key(msg_id: &str, receiver: &str) -> String {
+    format!("sent-{receiver}-{msg_id}")
+}
+
 /// **The job this key names, cancelled**: its pull stops before the next
 /// slice and answers [`cancelled`]. A key no job has yet is held as a job
 /// already ended so — an ask that arrives after its own cancel then

@@ -883,7 +883,15 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                     .get(&v.session.home.hex())
                     .cloned()
                     .unwrap_or_else(|| v.session.home.hex()),
-                face: faces.get(&v.session.home.hex()).cloned(),
+                // **A khor-wide row wears no machine's face** (the
+                // broadcast, `khor_node::wide`): it is every machine's,
+                // and the machine that derived it is only where it was
+                // read. A blank draws, with the kind's mark on it.
+                face: if v.session.id.0.starts_with(khor_node::wide::WIDE) {
+                    None
+                } else {
+                    faces.get(&v.session.home.hex()).cloned()
+                },
                 hosted,
                 via_face: v.session.via.as_ref().and_then(|d| faces.get(d).cloned()),
                 last: v.session.last,
@@ -1519,8 +1527,16 @@ pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
 }
 
 /// Leaves a line in a machine's window — the call `khor tell` makes.
+///
+/// A line in the broadcast (`wide/all`) nudges a round with every
+/// machine at once (STORE-BRIEF phase 3: 发了就同步), where a machine's
+/// window waits for the beat.
 pub fn tell(root: &Path, machine: &str, text: &str) -> Result<(), String> {
-    open(root)?.tell(machine, text).map(|_| ())
+    open(root)?.tell(machine, text)?;
+    if machine.starts_with(khor_node::wide::WIDE) {
+        sync_soon(root);
+    }
+    Ok(())
 }
 
 /// Whether claude on **this** machine is set up to tell khor what it is
@@ -2037,12 +2053,27 @@ pub struct ChatMsgRow {
     /// never "done". The frontend looks the word up and never derives
     /// one (docs/UX.md 状态呈现).
     pub word: Option<String>,
-    /// The sender's neutral account of the offer, as a delivery key
-    /// (`TransferKind::Delivery`: waiting/fetching/served — 发端中性词批).
-    /// Not a state word: it never joins the six and never wears their
-    /// colors. At most one of `word` and `delivery` is present — the
-    /// seats are exclusive.
-    pub delivery: Option<String>,
+    /// A file message's move as its receiver last wrote it
+    /// (`khor_sync::chat::Fate`), the same on every device: `moving`,
+    /// `landed`, `failed`, `stopped`; `None` until the receiver starts it.
+    pub step: Option<String>,
+    /// Bytes on the receiver so far.
+    #[ts(type = "number")]
+    pub moved: i64,
+    /// Where each file landed on the receiver; empty until it has.
+    pub landed: Vec<String>,
+    /// Why the move failed, in the receiver's sentence.
+    pub why: Option<String>,
+    /// The directory the sender chose on the receiver; `None` for its
+    /// receive location.
+    pub into: Option<String>,
+    /// In the broadcast (`khor_node::wide`), the machines that have this
+    /// file, out of `of` it was offered to; `None` elsewhere. In the
+    /// broadcast `step`, `moved`, `landed` and `why` are **this
+    /// machine's own** answer to the offer, and `None` in `step` on a
+    /// machine that has not answered is 待接收.
+    pub got: Option<u32>,
+    pub of: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -2068,6 +2099,9 @@ pub struct MachineLog {
 /// the channel is this layer's knowledge, not the screen's.
 pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
     let n = open(root)?;
+    if id.starts_with(khor_node::wide::WIDE) {
+        return wide_log(&n, id);
+    }
     let machine = id.strip_prefix("chat/").unwrap_or(id);
     let (log, faces) = n.log_faced(machine)?;
     let me = n.device_str().to_owned();
@@ -2075,7 +2109,7 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
         .messages
         .into_iter()
         .zip(faces)
-        .map(|(m, (face, delivery))| {
+        .map(|(m, face)| {
             let (text, files, unknown) = match m.body {
                 khor_node::MsgBody::Text(t) => (Some(t), None, None),
                 khor_node::MsgBody::Files(fs) => (
@@ -2103,7 +2137,13 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
                 retracted: m.retracted,
                 edited: m.edited,
                 word: face.map(|s| s.key().to_owned()),
-                delivery: delivery.map(|d| d.key().to_owned()),
+                step: m.fate.as_ref().map(|f| f.step.key().to_owned()),
+                moved: m.fate.as_ref().map_or(0, |f| f.moved),
+                landed: m.fate.as_ref().map(|f| f.landed.clone()).unwrap_or_default(),
+                why: m.fate.as_ref().map(|f| f.why.clone()).filter(|w| !w.is_empty()),
+                into: Some(m.into).filter(|d| !d.is_empty()),
+                got: None,
+                of: None,
             }
         })
         .collect();
@@ -2113,13 +2153,92 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
     })
 }
 
-/// Sends a file the sender names by path — `khor send <machine> <file>`
-/// through the same node call (docs/KHOR.md equivalence). The tauri
-/// skin reaches this after its native picker answered with a real local
-/// path; the browser faces reach it after [`save_upload`] turned bytes
-/// into one. Answers the transfer session id, the CLI's own deliverable.
-pub fn send_path(root: &Path, machine: &str, path: &Path) -> Result<String, String> {
-    Ok(open(root)?.send(machine, path)?.0)
+/// The broadcast's readout (`khor_node::wide`), in the same shape: a
+/// file's move is this machine's own answer to the offer, and the count
+/// of the machines that have it rides beside.
+fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
+    let (log, faces) = n.wide_log(id)?;
+    let me = n.device_str().to_owned();
+    let messages = log
+        .messages
+        .into_iter()
+        .zip(faces)
+        .map(|(m, face)| {
+            let (text, files, unknown) = match m.body {
+                khor_node::MsgBody::Text(t) => (Some(t), None, None),
+                khor_node::MsgBody::Files(fs) => (
+                    None,
+                    Some(fs.into_iter().map(|f| ChatFileRow { name: f.name, size: f.size }).collect()),
+                    None,
+                ),
+                khor_node::MsgBody::Unknown(k) => (None, None, Some(k)),
+            };
+            let here = face.as_ref().and_then(|f| f.here.clone());
+            ChatMsgRow {
+                at_ms: m.at,
+                from_me: m.from.id == me,
+                from: m.from.name,
+                id: m.id,
+                text,
+                files,
+                unknown,
+                retracted: m.retracted,
+                edited: m.edited,
+                word: None,
+                step: here.as_ref().map(|f| f.step.key().to_owned()),
+                moved: here.as_ref().map_or(0, |f| f.moved),
+                landed: here.as_ref().map(|f| f.landed.clone()).unwrap_or_default(),
+                why: here.as_ref().map(|f| f.why.clone()).filter(|w| !w.is_empty()),
+                into: None,
+                got: face.as_ref().map(|f| f.got),
+                of: face.as_ref().map(|f| f.of),
+            }
+        })
+        .collect();
+    Ok(MachineLog {
+        messages,
+        broken: log.broken as u64,
+    })
+}
+
+/// Sends a file the sender names by path — `khor send <machine> <file>
+/// [--into <dir>]` through the same node call (docs/KHOR.md
+/// equivalence); `into` is the directory on that machine, empty for its
+/// receive location. The tauri skin reaches this after its native picker
+/// answered with a real local path; the browser faces reach it after
+/// [`save_upload`] turned bytes into one. Answers the transfer session
+/// id, the CLI's own deliverable.
+///
+/// The receiver starts the pull as soon as it reads the message, so a
+/// round goes now, on a thread of its own, not at the next beat.
+pub fn send_path(root: &Path, machine: &str, path: &Path, into: &str) -> Result<String, String> {
+    let id = open(root)?.send(machine, path, into)?.0;
+    sync_soon(root);
+    Ok(id)
+}
+
+/// A round with every machine now, on a thread of its own, not at the
+/// next beat: what a send or a broadcast just wrote should reach the
+/// others while the person is still looking.
+fn sync_soon(root: &Path) {
+    let root = root.to_path_buf();
+    std::thread::spawn(move || {
+        let (Ok(n), Ok(rt)) = (open(&root), tokio::runtime::Builder::new_current_thread().enable_all().build()) else {
+            return;
+        };
+        let _ = rt.block_on(n.sync_now());
+    });
+}
+
+/// The directory on the receiving machine a raw upload names
+/// (`into=`), empty for its receive location.
+pub fn into_arg(query: &str) -> String {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .find(|(k, _)| *k == "into")
+        .and_then(|(_, v)| percent_decode(v))
+        .unwrap_or_default()
 }
 
 /// The most bytes one browser upload may carry: 1 GiB.
@@ -2285,10 +2404,11 @@ pub fn send_upload(
     root: &Path,
     machine: &str,
     name: &str,
+    into: &str,
     body: &mut dyn std::io::Read,
 ) -> Result<String, String> {
     let staged = save_upload(root, name, body)?;
-    match send_path(root, machine, &staged) {
+    match send_path(root, machine, &staged, into) {
         Ok(id) => Ok(id),
         Err(e) => {
             let _ = std::fs::remove_file(&staged);
@@ -2297,17 +2417,25 @@ pub fn send_upload(
     }
 }
 
-/// The waiting file message's 收下 — `khor accept`, through the same
-/// node call (docs/KHOR.md equivalence). Takes the message id the chip
-/// carries; the transfer session id is spelled here because it is the
-/// node's address scheme, not the screen's. Answers where the files
-/// landed, the CLI's own deliverable.
-pub async fn accept_transfer(root: &Path, msg: &str) -> Result<Vec<String>, String> {
+/// A conversation file sent again after it failed or was cancelled —
+/// `khor retry`, through the same node call (docs/KHOR.md equivalence).
+/// Takes the message id the chip carries; the transfer session id is
+/// spelled here because it is the node's address scheme, not the
+/// screen's. Answers where the files landed.
+pub async fn retry_transfer(root: &Path, msg: &str) -> Result<Vec<String>, String> {
     let n = open(root)?;
     let (_, landed) = n
-        .accept(&khor_node::transfer::TransferKind::session_id(msg))
+        .take(&khor_node::transfer::TransferKind::session_id(msg))
         .await?;
     Ok(landed)
+}
+
+/// A conversation file's move cancelled, on its receiver: nothing
+/// partial stays (the chip's ×).
+pub async fn stop_transfer(root: &Path, msg: &str) -> Result<(), String> {
+    open(root)?
+        .stop_take(&khor_node::transfer::TransferKind::session_id(msg))
+        .await
 }
 
 /// The machine card's 在这台开终端 — the GUI face of `open` / `open

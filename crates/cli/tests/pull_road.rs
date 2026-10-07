@@ -1,5 +1,5 @@
 //! **A whole file over a slow road** (round NET-2, piece 6): alpha
-//! offers a file and beta accepts it, then beta previews another of
+//! sends a file and beta pulls it at once (直接传), then beta previews another of
 //! alpha's files whole — both relay-only behind a road that adds
 //! `PULL_RTT_MS` (default 300) of round trip (`scratch::slow_road`).
 //! Timed, so a pull that asks one slice per round trip shows as one.
@@ -26,22 +26,24 @@ async fn a_file_pulls_at_the_roads_pace_not_a_slice_per_round_trip() {
     )
     .await;
 
-    // Eight MiB offered, accepted, landed.
+    // Eight MiB sent and landed. beta's resident starts the pull as the
+    // sync lands the message; the take joins it and answers when it has
+    // landed, so the clock covers the sync and the pull together.
     let payload: Vec<u8> = (0..8u32 << 20).map(|i| (i % 251) as u8).collect();
     let src = p.ra.0.join("big.bin");
     std::fs::write(&src, &payload).unwrap();
-    let tid = p.alpha.send("beta", &src).unwrap();
+    let tid = p.alpha.send("beta", &src, "").unwrap();
+    let began = Instant::now();
     tokio::time::timeout(Duration::from_secs(120), p.beta.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
-    let began = Instant::now();
-    let (moved, _) = tokio::time::timeout(Duration::from_secs(300), p.beta.accept(&tid))
+    let (_, landed) = tokio::time::timeout(Duration::from_secs(300), p.beta.take(&tid))
         .await
-        .expect("accept must not hang")
+        .expect("take must not hang")
         .unwrap();
     let transfer = began.elapsed();
-    assert_eq!(moved, payload.len() as u64);
+    assert_eq!(std::fs::read(&landed[0]).unwrap(), payload);
 
     // Four MiB read whole, the way a preview reads.
     let view = p.ra.0.join("view.bin");

@@ -2251,6 +2251,8 @@ try {
   // **`FACE_ONLY=side` walks the session's 附栏 alone** (UX-30, 2026-10-06).
   // **`FACE_ONLY=tabs` walks the Chrome strip and the new tab alone**
   // (UX-45, 2026-10-07).
+  // **`FACE_ONLY=mchat` walks a conversation's file chip and 「存到」
+  // alone** (STORE-BRIEF phase 2, 2026-10-08).
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   // **`FACE_ONLY=corners` walks every list's row alone** (UX-48,
@@ -2260,7 +2262,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25002,7 +25004,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25429,7 +25431,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25787,7 +25789,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26162,7 +26164,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26894,7 +26896,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27783,7 +27785,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -32976,80 +32978,329 @@ try {
       if (down.offered !== null) fail(`bar t · the phone's share sheet is the offer; the line says nothing more, read ${shown(down.offered)}`);
     }
 
-    // ── u. the deck pill is a band (UX-33 §3): at rest one tab, a drag
-    //       pulls one neighbour in and never more; past half the neighbour
-    //       is current, short of it the band springs back. Eight terminals
-    //       open; the band dragged a long way left (towards the next). ──
+    // ── u. the deck pill is a band (UX-33 §3 → UX-49): at rest one tab; a
+    //       finger pulls one neighbour in, the tabs a ring (one tab gives
+    //       a little and springs back); the incoming tab hugs the edge it
+    //       comes from, so its face shows from the first pixels; letting
+    //       go switches past 40 % of the band or on a flick, and crossing
+    //       that line either way is felt once and seen (the incoming dim
+    //       below it, the outgoing past it); a switch glides to rest, a
+    //       spring back does not; every end of a drag — a lift, a cancel,
+    //       a re-render, the list changing — is one tab at rest. Real
+    //       touches (CDP), so the pointer is a finger's. ──
     {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await wait(300);
-      // term-3 opened after term-2, then term-2 in front: a next neighbour
-      // exists whatever the stops before left open.
-      if (!(await openRow(terms[2].id)) || !(await openRow(terms[3].id)) || !(await openRow(terms[2].id))) {
-        fail("probe dead: bar u · a terminal never opened for the band");
-      } else {
-        await until(3_000, async () => (await count("[data-session-deck] [data-deck-band]")) === 1);
-        const read = () =>
-          page.evaluate(() => {
-            const band = document.querySelector("[data-session-deck] [data-deck-band]");
-            const track = band?.querySelector("[data-deck-band-track]");
-            if (!band || !track) return null;
-            const b = band.getBoundingClientRect();
-            const segs = [...track.querySelectorAll("[data-band-seg]")].map((e) => {
-              const r = e.getBoundingClientRect();
-              return { role: e.getAttribute("data-band-seg"), l: +(r.left - b.left).toFixed(1), r: +(r.right - b.left).toFixed(1), w: +r.width.toFixed(1) };
-            });
-            const x = new DOMMatrixReadOnly(getComputedStyle(track).transform).m41;
-            return { bw: +b.width.toFixed(1), x: +x.toFixed(1), segs, title: document.querySelector("[data-session-deck] [data-deck-title]")?.textContent?.trim() ?? null, inView: segs.filter((s) => s.r > 0.5 && s.l < b.width - 0.5).map((s) => s.role) };
+      /** What `haptic` was asked, in order (UX-49 §5): the dev bridge is
+          the app for `lib/haptics`. */
+      const felt = [];
+      await page.route("**/haptic", (r) => {
+        felt.push(JSON.parse(r.request().postData() || "{}").kind);
+        return r.fulfill({ contentType: "application/json", body: "null" });
+      });
+      const ticks = () => felt.filter((k) => k === "threshold").length;
+      /** Exactly `ids` open, in that order, the last in front. */
+      const openOnly = async (ids) => {
+        await fresh(390, 844);
+        for (const id of ids) if (!(await openRow(id))) return false;
+        return until(3_000, async () => (await count("[data-session-deck] [data-deck-band]")) === 1);
+      };
+      const readBand = () =>
+        page.evaluate(() => {
+          const band = document.querySelector("[data-session-deck] [data-deck-band]");
+          if (!band) return null;
+          const b = band.getBoundingClientRect();
+          const segs = [...band.querySelectorAll("[data-band-seg]")].map((e) => {
+            const r = e.getBoundingClientRect();
+            const cs = getComputedStyle(e);
+            const face = e.querySelector("[data-deck-face]")?.getBoundingClientRect();
+            return {
+              role: e.getAttribute("data-band-seg"),
+              shown: cs.display !== "none" && r.width > 0.5 && r.right > b.left + 0.5 && r.left < b.right - 0.5,
+              l: +(r.left - b.left).toFixed(1),
+              r: +(r.right - b.left).toFixed(1),
+              x: +new DOMMatrixReadOnly(cs.transform === "none" ? undefined : cs.transform).m41.toFixed(1),
+              op: +Number(cs.opacity).toFixed(2),
+              face: face ? { l: +(face.left - b.left).toFixed(1), r: +(face.right - b.left).toFixed(1) } : null,
+              text: e.textContent.trim(),
+            };
           });
-        const rest = await read();
+          return {
+            bw: +b.width.toFixed(1),
+            segs,
+            shown: segs.filter((s) => s.shown).map((s) => s.role),
+            past: band.hasAttribute("data-band-past"),
+            title: band.querySelector("[data-deck-title]")?.textContent?.trim() ?? null,
+          };
+        });
+      const seg = (s, role) => s?.segs.find((x) => x.role === role) ?? null;
+      /** One tab at rest: the current one alone, home, full, no cue. */
+      const atRest = (s, title) => {
+        const c = seg(s, "cur");
+        return !!s && s.shown.join() === "cur" && !!c && Math.abs(c.x) <= 0.5 && Math.abs(c.l) <= 0.5 && c.op === 1 && !s.past && (title === undefined || s.title === title);
+      };
+      const touch = (type, x, y) =>
+        kTouch.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" || type === "touchCancel" ? [] : [{ x, y }] });
+      /** A finger down on the band's middle; `to(dx)` moves it there in
+          steps a finger's speed apart (or at once, `fast`). */
+      const finger = async () => {
         const box = await page.locator("[data-session-deck] [data-deck-band]").boundingBox();
-        const dragTo = async (dx, release) => {
-          const x0 = box.x + box.width / 2;
-          const y = box.y + box.height / 2;
-          await page.mouse.move(x0, y);
-          await page.mouse.down();
-          for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + (dx * i) / 12, y);
-          const held = await read();
-          if (release) {
-            await page.mouse.up();
-            await wait(400);
+        const o = { x: box.x + box.width / 2, y: box.y + box.height / 2, w: box.width, at: 0 };
+        await touch("touchStart", o.x, o.y);
+        o.to = async (dx, fast = false) => {
+          const n = fast ? 2 : 8;
+          const from = o.at;
+          for (let i = 1; i <= n; i++) {
+            await touch("touchMove", o.x + from + ((dx - from) * i) / n, o.y);
+            if (!fast) await wait(16);
           }
-          return held;
+          o.at = dx;
+          if (!fast) await wait(160);
         };
-        // Three widths left: clamped to the next neighbour exactly.
-        const held = await dragTo(-3 * (rest?.bw ?? 300), false);
-        await page.mouse.up();
-        await wait(400);
-        const after = await read();
-        console.log(`bar u · at rest ${shown(rest)}; held three widths left ${shown(held)}; released ${shown(after)}`);
-        if (!rest || rest.inView.join() !== "cur" || rest.title !== terms[2].title) {
-          fail(`bar u · at rest the band shows ${shown(rest?.inView)} with 「${rest?.title}」 — exactly the current tab (UX-33 §3; src/components/SessionBar.tsx DeckBand)`);
-        } else {
-          const next = held.segs.find((s) => s.role === "next");
-          const cur = held.segs.find((s) => s.role === "cur");
-          const prev = held.segs.find((s) => s.role === "prev");
-          // The next one fully in means its left edge at the band's left; the
-          // current one wholly out to the left; the previous further still.
-          if (!next || Math.abs(next.l) > 1 || (cur && cur.r > 0.5) || (prev && prev.r > 0.5)) {
-            fail(`bar u · dragged three widths the band holds ${shown(held.segs)} — one neighbour fully in and no further`);
+        // Held still first, so the lift carries no speed.
+        o.lift = async () => {
+          await wait(150);
+          await touch("touchEnd");
+          await wait(400);
+        };
+        o.flick = async () => {
+          await touch("touchEnd");
+          await wait(400);
+        };
+        o.cancel = async () => {
+          await touch("touchCancel");
+          await wait(400);
+        };
+        return o;
+      };
+      /** The band's frames for the next ~450 ms: each shown segment's
+          role, words and face's left. */
+      const recordFrames = () =>
+        page.evaluate(() => {
+          window.__bandFrames = [];
+          const t0 = performance.now();
+          const tick = () => {
+            const band = document.querySelector("[data-session-deck] [data-deck-band]");
+            if (band) {
+              const b = band.getBoundingClientRect();
+              window.__bandFrames.push(
+                [...band.querySelectorAll("[data-band-seg]")]
+                  .filter((e) => getComputedStyle(e).display !== "none")
+                  .map((e) => ({ role: e.getAttribute("data-band-seg"), text: e.textContent.trim(), face: +((e.querySelector("[data-deck-face]")?.getBoundingClientRect().left ?? NaN) - b.left).toFixed(1) })),
+              );
+            }
+            if (performance.now() - t0 < 450) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+      const framesOf = async (text, roles) =>
+        (await page.evaluate(() => window.__bandFrames ?? [])).map((f) => f.find((s) => s.text === text && roles.includes(s.role))?.face ?? null);
+      /** A full switch, held still before the lift. */
+      const swipe = async (way) => {
+        const f = await finger();
+        await f.to(way * f.w * 0.7);
+        await f.lift();
+        return readBand();
+      };
+      const [t0, t1, t2] = [terms[0], terms[1], terms[2]];
+
+      // 1. One tab: a little give, back home, nothing else.
+      if (!(await openOnly([t0.id]))) fail("probe dead: bar u · one terminal never opened for the band");
+      else {
+        for (const way of [-1, 1]) {
+          const f = await finger();
+          await f.to(way * 120);
+          const held = await readBand();
+          const felt0 = ticks();
+          await f.lift();
+          const after = await readBand();
+          const c = seg(held, "cur");
+          console.log(`bar u · 1 one tab, dragged ${way * 120}: held ${shown({ x: c?.x, shown: held?.shown })}; lifted at rest ${atRest(after, t0.title)}`);
+          if (!c || Math.sign(c.x) !== way || Math.abs(c.x) < 4 || Math.abs(c.x) > 28.5 || held.shown.join() !== "cur") {
+            fail(`bar u · one tab dragged ${way * 120} stands ${shown({ x: c?.x, shown: held?.shown })} — a rubber band of at most 28 px, no other tab (UX-49 §2)`);
           }
-          if (after.title !== terms[3].title || after.inView.join() !== "cur") {
-            fail(`bar u · released past half the band reads ${shown(after)} — the next tab (${terms[3].title}) current, one tab at rest`);
+          if (!atRest(after, t0.title)) fail(`bar u · one tab let go reads ${shown(after)} — back at rest (UX-49 §2)`);
+          if (ticks() !== felt0) fail(`bar u · one tab's rubber band was felt ${ticks() - felt0} time(s) — there is no line to cross`);
+        }
+      }
+
+      // 2. Two tabs: either way is the other one.
+      if (!(await openOnly([t0.id, t1.id]))) fail("probe dead: bar u · two terminals never opened for the band");
+      else {
+        const seen = [];
+        for (const way of [-1, -1, 1, 1]) seen.push((await swipe(way))?.title);
+        console.log(`bar u · 2 two tabs from ${t1.title}: ← ← → → read ${shown(seen)}`);
+        if (shown(seen) !== shown([t0.title, t1.title, t0.title, t1.title])) {
+          fail(`bar u · two tabs swiped ← ← → → from ${t1.title} read ${shown(seen)} — a ring: either way is the other (UX-49 §2)`);
+        }
+      }
+
+      // 3. Three tabs, t2 in front.
+      if (!(await openOnly([t0.id, t1.id, t2.id]))) fail("probe dead: bar u · three terminals never opened for the band");
+      else {
+        const rest0 = await readBand();
+        const bw = rest0?.bw ?? 0;
+        if (!atRest(rest0, t2.title)) fail(`bar u · at rest the band reads ${shown(rest0)} — exactly the current tab (${t2.title})`);
+        // a. The drag starts: the next one (the ring's: t0) hugs the right
+        //    edge — its face in from the first 60 px; then the cue both
+        //    ways, felt once per crossing.
+        const felt0 = ticks();
+        const f = await finger();
+        await f.to(-60);
+        const start = await readBand();
+        await f.to(-0.25 * bw);
+        const below = await readBand();
+        await f.to(-0.6 * bw);
+        const past = await readBand();
+        await f.to(-0.2 * bw);
+        const back = await readBand();
+        const crossings = ticks() - felt0;
+        await recordFrames();
+        const nextAtLift = seg(back, "next");
+        await f.lift();
+        const sprang = await framesOf(t0.title, ["next"]);
+        const after = await readBand();
+        const nx = seg(start, "next");
+        console.log(`bar u · 3a at -60 the next ${shown(nx)}; at -25 % ${shown({ past: below?.past, next: seg(below, "next")?.op, cur: seg(below, "cur")?.op })}; at -60 % ${shown({ past: past?.past, next: seg(past, "next"), cur: seg(past, "cur")?.op })}; back at -20 % ${shown({ past: back?.past, next: seg(back, "next")?.op, cur: seg(back, "cur")?.op })}; felt ${crossings}`);
+        if (!nx?.shown || nx.text !== t0.title || !nx.face || nx.face.l < nx.l - 0.5 || nx.face.r > bw + 0.5 || Math.abs(nx.face.l - (bw - 60)) > 2) {
+          fail(`bar u · 60 px into a drag the next tab reads ${shown(nx)} — ${t0.title}, its face in at the band's right edge as soon as the drag starts (UX-49 §3)`);
+        }
+        const op = (s, role) => seg(s, role)?.op;
+        if (below?.past || op(below, "next") !== 0.4 || op(below, "cur") !== 1) fail(`bar u · below the line the band reads ${shown({ past: below?.past, next: op(below, "next"), cur: op(below, "cur") })} — the incoming dim (0.4), the outgoing full (UX-49 §5)`);
+        if (!past?.past || op(past, "next") !== 1 || op(past, "cur") !== 0.4) fail(`bar u · past the line the band reads ${shown({ past: past?.past, next: op(past, "next"), cur: op(past, "cur") })} — the incoming full, the outgoing dim (UX-49 §5)`);
+        if (back?.past || op(back, "next") !== 0.4 || op(back, "cur") !== 1) fail(`bar u · dragged back under the line the band reads ${shown({ past: back?.past, next: op(back, "next"), cur: op(back, "cur") })} — the cue flips back (UX-49 §5)`);
+        const pn = seg(past, "next");
+        if (!pn || Math.abs(pn.r - bw) > 0.5 || !(pn.l > 1) || Math.abs(pn.face.l - pn.l) > 0.5) {
+          fail(`bar u · past the line the next tab stands ${shown(pn)} in a band of ${bw} — right-aligned, hugging the edge it came from (UX-49 §3)`);
+        }
+        if (crossings !== 2) fail(`bar u · out past the line and back under it was felt ${crossings} time(s) — once per crossing (UX-49 §5; felt ${shown(felt)})`);
+        // b. Let go under the line: back, with no glide — the incoming
+        //    face never moves left of where it stood.
+        const fromAt = nextAtLift?.face?.l ?? NaN;
+        const glided = sprang.filter((v) => v !== null && v < fromAt - 0.5);
+        console.log(`bar u · 3b let go under the line: next's face from ${fromAt} through ${shown(sprang.filter((v) => v !== null))}; at rest ${atRest(after, t2.title)}`);
+        if (!atRest(after, t2.title)) fail(`bar u · let go under the line the band reads ${shown(after)} — back on ${t2.title}, one tab at rest (UX-49 §4)`);
+        if (glided.length) fail(`bar u · springing back the incoming face went left to ${shown(glided)} from ${fromAt} — a spring back has no glide (UX-49 §3)`);
+        if (ticks() !== felt0 + 2) fail("bar u · the lift itself was felt — only crossings are");
+        // c. Past the line and let go: the ring's next (t0) glides from the
+        //    right edge to its rest.
+        {
+          const g = await finger();
+          await g.to(-0.7 * bw);
+          const held = seg(await readBand(), "next");
+          await recordFrames();
+          await g.lift();
+          const path = (await framesOf(t0.title, ["next", "cur"])).filter((v) => v !== null);
+          const done = await readBand();
+          const mid = path.filter((v) => v < (held?.face?.l ?? 0) - 1 && v > 1);
+          const climbs = path.some((v, i) => i > 0 && v > path[i - 1] + 0.5);
+          console.log(`bar u · 3c past the line from ${t2.title}: ${t0.title}'s face ${shown(path)}; then ${shown({ title: done?.title, rest: atRest(done, t0.title) })}`);
+          if (!atRest(done, t0.title)) fail(`bar u · let go past the line from the last tab the band reads ${shown(done)} — the first one (${t0.title}), one tab at rest (UX-49 §2, §4)`);
+          if (!(held?.face?.l > 1) || mid.length < 2 || climbs || Math.abs((path.at(-1) ?? NaN) - (seg(done, "cur")?.face?.l ?? 0)) > 0.5) {
+            fail(`bar u · the switch's face went ${shown(path)} from ${held?.face?.l} — a glide from the right edge to its left rest, in steps (UX-49 §3)`);
           }
         }
-        // A short pull springs back.
-        const base = await read();
-        const short = await dragTo(-(base.bw * 0.3), true);
-        const back = await read();
-        console.log(`bar u · a short pull ${shown(short.inView)} → ${shown(back)}`);
-        if (back.title !== base.title || back.inView.join() !== "cur" || Math.abs(back.x - base.x) > 1) {
-          fail(`bar u · a pull of a third of the band left ${shown(back)} — it springs back to ${shown(base)}`);
+        // d. From the first, the other way: the ring's previous is the last,
+        //    and it hugs the left edge from the start.
+        {
+          const g = await finger();
+          await g.to(60);
+          const pv = seg(await readBand(), "prev");
+          await g.to(0.7 * bw);
+          await g.lift();
+          const done = await readBand();
+          console.log(`bar u · 3d → from ${t0.title}: at +60 the previous ${shown(pv)}; let go ${done?.title}`);
+          if (!pv?.shown || pv.text !== t2.title || !pv.face || Math.abs(pv.face.l) > 1 || pv.face.r > 60.5) {
+            fail(`bar u · 60 px into a drag right the previous tab reads ${shown(pv)} — ${t2.title}, its face at the band's left edge (UX-49 §3)`);
+          }
+          if (!atRest(done, t2.title)) fail(`bar u · a swipe right from the first tab reads ${shown(done)} — the last (${t2.title}) at rest (UX-49 §2)`);
         }
-        // A tap anywhere on the current segment is the title's (UX-35 §1):
-        // on the face, and in the room after a short name — the owner's
-        // 「khor」 pill answered only on its four letters.
-        const spots = await page.evaluate(() => {
+        // e. A flick: 40 px, fast, commits.
+        {
+          const g = await finger();
+          await g.to(-40, true);
+          await g.flick();
+          const done = await readBand();
+          console.log(`bar u · 3e a 40 px flick left from ${t2.title}: ${done?.title}`);
+          if (!atRest(done, t0.title)) fail(`bar u · a 40 px flick from ${t2.title} reads ${shown(done)} — a quick short flick switches (UX-49 §5)`);
+        }
+        // f. A cancelled touch past the line (the system taking it): no
+        //    switch, at rest.
+        {
+          const g = await finger();
+          await g.to(-0.7 * bw);
+          const was = await readBand();
+          await g.cancel();
+          const done = await readBand();
+          console.log(`bar u · 3f cancelled past the line (past ${was?.past}): ${shown({ title: done?.title, rest: atRest(done, t0.title) })}`);
+          if (!was?.past || !atRest(done, t0.title)) fail(`bar u · a touch cancelled past the line reads ${shown(done)} — never a switch, one tab at rest (UX-49 §4)`);
+        }
+        // g. A re-render under the finger (a row's word changes on the
+        //    next poll): the drag goes on and still switches.
+        {
+          const g = await finger();
+          await g.to(-0.3 * bw);
+          t1.word = "busy";
+          await wait(2_600);
+          const held = await readBand();
+          await g.to(-0.7 * bw);
+          await g.lift();
+          const done = await readBand();
+          t1.word = "idle";
+          console.log(`bar u · 3g a re-render held at -30 %: cur at ${seg(held, "cur")?.x}, shown ${shown(held?.shown)}; let go past the line ${done?.title}`);
+          if (Math.abs((seg(held, "cur")?.x ?? 0) + Math.round(0.3 * bw)) > 1.5 || held.shown.join() !== "cur,next") fail(`bar u · a re-render under the finger left the band ${shown(held)} — the drag holds where it was (UX-49 §4)`);
+          if (!atRest(done, t1.title)) fail(`bar u · after a re-render a swipe past the line reads ${shown(done)} — ${t1.title} at rest (UX-49 §4)`);
+        }
+        // h. The list changes under the finger (a session ends: its tab
+        //    goes on the next poll): the band is at rest at once, and the
+        //    lift switches nothing.
+        {
+          const g = await finger();
+          await g.to(-0.6 * bw);
+          const was = await readBand();
+          const gone = barRows.indexOf(t0);
+          barRows.splice(gone, 1);
+          await wait(2_600);
+          const held = await readBand();
+          await g.lift();
+          const done = await readBand();
+          barRows.splice(gone, 0, t0);
+          console.log(`bar u · 3h ${t0.title} ended under a finger past the line (past ${was?.past}): held ${shown({ shown: held?.shown, past: held?.past })}; let go ${shown({ title: done?.title, rest: atRest(done, t1.title) })}`);
+          if (!was?.past || !atRest(held, t1.title)) fail(`bar u · a tab ending under the finger left the band ${shown(held)} — one tab at rest at once (UX-49 §4)`);
+          if (!atRest(done, t1.title)) fail(`bar u · the lift after the list changed reads ${shown(done)} — nothing switched, ${t1.title} at rest (UX-49 §4)`);
+        }
+      }
+
+      // 4. A long name stopped halfway (the owner's bug, UX-49 §4): the
+      //    next one comes in at once, and the lift puts the long one back
+      //    exactly at rest.
+      {
+        const was = t2.title;
+        t2.title = `${was} · a name far longer than the pill has room for`;
+        if (!(await openOnly([t1.id, t2.id]))) fail("probe dead: bar u · the long-named terminal never opened for the band");
+        else {
+          const rest0 = await readBand();
+          const g = await finger();
+          await g.to(-0.3 * rest0.bw);
+          const held = await readBand();
+          await g.lift();
+          const done = await readBand();
+          console.log(`bar u · 4 a long name, stopped at -30 %: held ${shown({ shown: held?.shown, cur: seg(held, "cur")?.x })}; let go ${shown({ cur: seg(done, "cur"), shown: done?.shown })}`);
+          if (!(held?.shown ?? []).includes("next")) fail(`bar u · 30 % into a drag on a long name the band shows ${shown(held?.shown)} — the next tab comes in as the drag starts, not after the name has panned (UX-49 §3)`);
+          if (!atRest(done, t2.title) || Math.abs((seg(done, "cur")?.face?.l ?? NaN) - (seg(rest0, "cur")?.face?.l ?? NaN)) > 0.5) {
+            fail(`bar u · a long name stopped halfway and let go reads ${shown(done)} — exactly at rest, its face where it started (UX-49 §4; SessionBar DeckBand)`);
+          }
+        }
+        t2.title = was;
+      }
+
+      // 5. A tap anywhere on the current segment is the title's (UX-35 §1):
+      //    on the face, and in the room after a short name — the owner's
+      //    「khor」 pill answered only on its four letters.
+      if (await openOnly([t0.id, t1.id])) {
+        // Read again before each tap: a seat beside the band (the key
+        // row's circle) may come in after the first one and narrow it.
+        const spotsNow = () => page.evaluate(() => {
           const band = document.querySelector("[data-session-deck] [data-deck-band]")?.getBoundingClientRect();
           const face = document.querySelector('[data-session-deck] [data-band-seg="cur"] [data-deck-face]')?.getBoundingClientRect();
           const name = document.querySelector("[data-session-deck] [data-deck-title]")?.getBoundingClientRect();
@@ -33066,13 +33317,17 @@ try {
           }
           return up;
         };
+        const spots = await spotsNow();
         const onFace = spots ? await tapOpens(spots.face) : false;
-        const pastName = spots?.after ? await tapOpens(spots.after) : null;
-        console.log(`bar u · a tap on the face opens the sheet: ${onFace}; after the name: ${pastName ?? "no room after the name"}`);
+        await wait(400);
+        const later = await spotsNow();
+        const pastName = later?.after ? await tapOpens(later.after) : null;
+        console.log(`bar u · 5 a tap on the face opens the sheet: ${onFace}; after the name: ${pastName ?? "no room after the name"}`);
         if (!onFace || pastName === false) {
           fail(`bar u · a tap on the band's face ${onFace} / after the name ${pastName} — anywhere on the current segment is the title's press (UX-35 §1; SessionBar DeckBand)`);
         }
-      }
+      } else fail("probe dead: bar u · two terminals never opened for the tap");
+      await page.unroute("**/haptic");
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
@@ -34359,9 +34614,17 @@ try {
         if ((await page.locator('[role="menu"]').count()) === 0) return true;
         return press(`[role="menu"] [data-new-item="${key}"]`);
       };
+      /** The terminal's rejoin fade (`TerminalPane`: the content at
+          `opacity-N` while it rejoins), read off the source so the dark
+          scrim is held to what the terminal draws (UX-49 §1). */
+      const rejoinFade = (() => {
+        const m = readFileSync(join(gui, "src", "views", "TerminalPane.tsx"), "utf8").match(/rejoining && "opacity-(\d+)"/);
+        if (!m) fail("probe dead: side j · TerminalPane's rejoin fade (`rejoining && \"opacity-N\"`) is not where the scrim's check reads it");
+        return m ? Number(m[1]) / 100 : 0.5;
+      })();
       /** The paper and the scrim behind it, as computed. */
       const paper = (sel) =>
-        page.evaluate((s) => {
+        page.evaluate(({ s, fade }) => {
           const el = document.querySelector(s);
           if (!el) return null;
           const c = document.createElement("canvas").getContext("2d");
@@ -34386,6 +34649,28 @@ try {
             p.fillRect(0, 0, 1, 1);
           }
           const over = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+          // The scrim over the page's ink (UX-49 §1): on the dark ground
+          // the ground cannot darken, what it holds can.
+          const ink = getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim();
+          p.fillStyle = app;
+          p.fillRect(0, 0, 1, 1);
+          p.fillStyle = ink;
+          p.fillRect(0, 0, 1, 1);
+          const inkPx = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+          if (scrim) {
+            p.fillStyle = getComputedStyle(scrim).backgroundColor;
+            p.fillRect(0, 0, 1, 1);
+          }
+          const overInk = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+          // The terminal's rejoin fade: the ink at the fade's opacity over
+          // the terminal's ground (`--card`).
+          p.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--card").trim();
+          p.fillRect(0, 0, 1, 1);
+          p.globalAlpha = fade;
+          p.fillStyle = ink;
+          p.fillRect(0, 0, 1, 1);
+          p.globalAlpha = 1;
+          const faded = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
           return {
             ground: norm(cs.backgroundColor),
             rim: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].join(" "),
@@ -34396,8 +34681,11 @@ try {
             scrim: scrim ? norm(getComputedStyle(scrim).backgroundColor) : null,
             app: norm(app),
             over,
+            inkPx,
+            overInk,
+            faded,
           };
-        }, sel);
+        }, { s: sel, fade: rejoinFade });
       const sheetsJ = [
         ["the 附栏", "[data-place-sheet]", async () => (await toSession()) && press("[data-session-deck] button[data-deck-title]")],
         ["the tabs sheet", "[data-tab-sheet]", async () => (await toSession()) && press("[data-session-deck] [data-deck-tabs]")],
@@ -34414,6 +34702,8 @@ try {
       };
       /** How far the scrim moves the app's ground it lies over, in L*. */
       const dims = (p) => +Math.abs(lStar(p.over) - lStar(hex(p.app))).toFixed(1);
+      /** …and how far it darkens the page's ink (UX-49 §1), in L*. */
+      const inkDims = (p) => +(lStar(p.inkPx) - lStar(p.overInk)).toFixed(1);
       const papers = {};
       for (const scheme of ["light", "dark"]) {
         await theme(scheme);
@@ -34448,8 +34738,29 @@ try {
         const dim = Object.fromEntries(Object.entries(all).filter(([, p]) => p).map(([what, p]) => [what, dims(p)]));
         console.log(`side j · 2 ${scheme} scrims ${JSON.stringify(scrims)}, ΔL* over the ground ${JSON.stringify(dim)}`);
         if (scrims.length !== 1) fail(`side j · ${scheme} · the sheets' scrims are ${JSON.stringify(scrims)} — one scrim, the tabs sheet's (UX-44 §2)`);
-        for (const [what, d] of Object.entries(dim)) {
-          if (!(d >= 10)) fail(`side j · ${scheme} · behind ${what} the scrim moves the ground ${ref.app} by ${d} L* — the page behind visibly dimmed (UX-44 §2)`);
+        if (scheme === "light") {
+          // Light: the ground itself goes darker.
+          for (const [what, p] of Object.entries(all)) {
+            if (!p) continue;
+            const d = dims(p);
+            if (!(d >= 10) || !(lStar(p.over) < lStar(hex(p.app)))) fail(`side j · ${scheme} · behind ${what} the scrim moves the ground ${ref.app} by ${d} L* to ${JSON.stringify(p.over)} — the page behind visibly darker (UX-44 §2)`);
+          }
+        } else {
+          // **Dark: the terminal's rejoin fade** (UX-49 §1): the black
+          // ground cannot darken, what stands on it does — the ink under
+          // the scrim is the ink at the fade's opacity over the black.
+          // ⚠️ 墓碑 (UX-44): the ground lifted ≥ 10 L* by a light veil.
+          const darkens = Object.fromEntries(Object.entries(all).filter(([, p]) => p).map(([what, p]) => [what, inkDims(p)]));
+          console.log(`side j · 2 dark the scrim over the ink darkens it by ${JSON.stringify(darkens)} L*`);
+          for (const [what, d] of Object.entries(darkens)) {
+            if (!(d >= 10)) fail(`side j · dark · behind ${what} the scrim moves the page's ink by ${d} L* — it darkens what is behind it (UX-49 §1)`);
+          }
+          for (const [what, p] of Object.entries(all)) {
+            if (!p) continue;
+            const off = Math.max(...p.overInk.map((v, i) => Math.abs(v - p.faded[i])));
+            if (off > 2) fail(`side j · dark · behind ${what} the ink under the scrim is ${JSON.stringify(p.overInk)}, the rejoin fade (opacity ${rejoinFade}) draws it ${JSON.stringify(p.faded)} — the dark scrim darkens as the rejoin does (UX-49 §1)`);
+          }
+          console.log(`side j · 2 dark the ink under the scrim ${JSON.stringify(ref.overInk)}, under the rejoin fade (opacity ${rejoinFade}) ${JSON.stringify(ref.faded)}`);
         }
       }
       await theme("light");
@@ -35182,6 +35493,446 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "store") console.log("store · FACE_ONLY=store: the other sections are skipped");
+
+  // ── a conversation's file goes directly (STORE-BRIEF phase 2, store-e, 2026-10-08) ──
+  //
+  // The owner: 「用户传文件，不指定位置就是默认位置，指定位置就传到指定
+  // 位置。这个是直接传，不用等接收」. A machine's conversation (留言) and an
+  // agent's: no accept step anywhere; the file chip reads the receiver's
+  // record the same on every device; where a file lands is said above the
+  // box and can be changed. Value checks only (30-behavior: layout is the
+  // owner's checklist). New, not a fix: no red first.
+  //   a. 留言's chips, one per step: no `[data-accept-file]`; not started
+  //      and moving show `[data-file-progress]` (floor(moved*100/size))
+  //      and ×; landed, failed and stopped do not;
+  //   b. × posts `stop_transfer` with that message;
+  //   c. a landed chip shows `[data-file-landed=<path>]`, and a press opens
+  //      `[data-file-preview=<path>]`;
+  //   d. failed says the receiver's sentence and 重试 posts
+  //      `retry_transfer`; stopped says the catalog's `file-stopped` and
+  //      has 重试 too;
+  //   e. 「存到」 reads the receiver's receive_at; ＋ (the browser form)
+  //      uploads with no `into=`; 更改… opens 选择目录 with no machine
+  //      popup, and the next upload carries `into=<picked>`; 恢复默认 is
+  //      drawn only then, and takes it back;
+  //   f. the agent conversation: the same line against its machine; a file
+  //      put with no choice carries no `into=`, one put after 更改… carries
+  //      it; the pending chip's path is what the node answered (the landed
+  //      path), and that path is what the agent is told.
+  mchat: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "mchat") break mchat;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const now = Date.now();
+    // The catalog's word, read where it is written, not typed again here.
+    const stoppedWord = /^file-stopped = "(.*)"$/m.exec(readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8"))?.[1] ?? null;
+    const drop = { gate: "/home/gate/khor-drop", peer: "/home/peer/khor-drop" };
+    const base = {
+      kind: "tui", word: "idle", at_ms: now, unread: 0, source: null, pinned: false, stale: false, category: "shell",
+      group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
+    };
+    const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+    const agentRow = {
+      ...base, id: "gui/mchat-agent", kind: "gui", title: "mchat-agent", category: "claude", attachable: false,
+      source: { device: "f".repeat(64), age_ms: 0 },
+    };
+    const msg = (id, name, size, fate = {}) => ({
+      id, at_ms: now - 60_000, from: "gate", from_me: true, text: null, files: [{ name, size }], unknown: null,
+      retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null, ...fate,
+    });
+    const landedAt = `${drop.peer}/land.pdf`;
+    const why = "no such dir: /srv/gone";
+    const said = [
+      msg("m-wait", "wait.bin", 1000),
+      msg("m-move", "move.bin", 1000, { step: "moving", moved: 420 }),
+      msg("m-land", "land.pdf", 30, { step: "landed", moved: 30, landed: [landedAt] }),
+      msg("m-fail", "fail.bin", 50, { step: "failed", why, into: "/srv/gone" }),
+      msg("m-stop", "stop.bin", 50, { step: "stopped", moved: 10 }),
+    ];
+    const asked = { stop: [], retry: [], uploads: [], puts: [], says: [] };
+    const query = (r) => Object.fromEntries(new URL(r.request().url()).searchParams);
+    const routesM = [
+      ["**/sessions", json([chatRow, agentRow])],
+      ["**/devices", (r) => json(devs.map((d) => ({ ...d, receive_dir: null, receive_for: null, receive_why: null, receive_at: drop[d.name] ?? null })))(r)],
+      ["**/machine_log", json({ messages: said, broken: 0 })],
+      ["**/stop_transfer", (r) => (asked.stop.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      ["**/retry_transfer", (r) => (asked.retry.push(r.request().postDataJSON() ?? {}), json([])(r))],
+      ["**/chat_say", (r) => (asked.says.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      // Raw-bytes POSTs with a query string: matched on the path.
+      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json("m-new")(r))],
+      [
+        (u) => u.pathname.endsWith("/chat_put"),
+        (r) => {
+          const q = query(r);
+          asked.puts.push(q);
+          return json(`${q.into ?? drop.peer}/${q.name}`)(r);
+        },
+      ],
+    ];
+    for (const [glob, run] of routesM) await page.route(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const pane = "[data-machine-chat]";
+    /** The 「存到」 line on screen: its path and whether 恢复默认 is drawn. */
+    const into = () =>
+      page.evaluate(() => {
+        const line = [...document.querySelectorAll("[data-send-into]")].find((e) => e.getClientRects().length > 0);
+        if (!line) return null;
+        return {
+          at: line.querySelector("[data-send-into-path]")?.getAttribute("title") ?? null,
+          set: line.getAttribute("data-send-into"),
+          reset: line.querySelectorAll("[data-send-into-reset]").length,
+        };
+      });
+    /** 更改… → 选择目录 → a path → 选择. Answers whether it opened and how
+        many machine popups it offered. */
+    const pickDir = async (path) => {
+      await press("[data-send-into-change]");
+      const up = await until(3_000, async () => (await count("[data-dir-picker]")) === 1);
+      const machines = await count("[data-dir-picker] [data-dir-picker-machines]");
+      await page.locator("input[data-dir-picker-path], [data-dir-picker-path] input").first().fill(path);
+      await press("[data-dir-picker-take]");
+      await until(3_000, async () => (await count("[data-dir-picker]")) === 0);
+      return { up, machines };
+    };
+
+    await open("sessions");
+    await press('[data-side-row="chat/peer"] [data-side-open]');
+    const shown = await until(5_000, async () => (await count(`${pane} [data-msg-files]`)) === said.length);
+
+    // a. the chips
+    const chips = await page.evaluate((p) =>
+      Object.fromEntries(
+        [...document.querySelectorAll(`${p} [data-msg]`)].map((m) => {
+          const c = m.querySelector("[data-msg-files]");
+          return [
+            m.getAttribute("data-msg"),
+            c && {
+              step: c.getAttribute("data-file-step"),
+              progress: c.querySelector("[data-file-progress]")?.getAttribute("data-file-progress") ?? null,
+              stop: c.querySelectorAll("[data-file-stop]").length,
+              landed: [...c.querySelectorAll("[data-file-landed]")].map((e) => e.getAttribute("data-file-landed")),
+              why: c.querySelector("[data-file-why]")?.textContent ?? null,
+              retry: c.querySelectorAll("[data-file-retry]").length,
+            },
+          ];
+        }),
+      ), pane);
+    const accepts = await count("[data-accept-file]");
+    console.log(`mchat a · shown ${shown}, accept buttons ${accepts}, ${JSON.stringify(chips)}`);
+    if (!shown) fail(`mchat a · the conversation drew ${await count(`${pane} [data-msg-files]`)} file chip(s) — ${said.length}`);
+    else {
+      if (accepts !== 0) fail(`mchat a · ${accepts} accept button(s) — a conversation's file goes directly, nobody accepts it`);
+      const w = chips["m-wait"], m = chips["m-move"], l = chips["m-land"], f = chips["m-fail"], s = chips["m-stop"];
+      if (w?.progress !== "0" || w.stop !== 1) fail(`mchat a · not started reads ${JSON.stringify(w)} — the bar at 0 and ×`);
+      if (m?.progress !== "42" || m.stop !== 1) fail(`mchat a · moving 420 of 1000 reads ${JSON.stringify(m)} — the bar at 42 and ×`);
+      for (const [k, c] of [["m-land", l], ["m-fail", f], ["m-stop", s]]) {
+        if (c?.progress !== null || c.stop !== 0) fail(`mchat a · ${k} still shows the bar or × (${JSON.stringify(c)}) — only a move on its way has them`);
+      }
+    }
+
+    // b. × cancels on the receiver
+    await press(`${pane} [data-msg="m-move"] [data-file-stop]`);
+    await until(3_000, async () => asked.stop.length > 0);
+    console.log(`mchat b · stop_transfer ${JSON.stringify(asked.stop)}`);
+    if (asked.stop.length !== 1 || asked.stop[0].msg !== "m-move") fail(`mchat b · × posted ${JSON.stringify(asked.stop)} — stop_transfer once, {msg: "m-move"}`);
+
+    // c. the landed path, pressed
+    {
+      const l = chips["m-land"];
+      if (l?.landed.join() !== landedAt || l.retry !== 0) fail(`mchat c · landed reads ${JSON.stringify(l)} — ${landedAt}, no 重试`);
+      await press(`${pane} [data-msg="m-land"] [data-file-landed]`);
+      const opened = await until(3_000, async () => (await count(`[data-file-preview="${landedAt}"]`)) === 1);
+      console.log(`mchat c · the landed path opened ${opened}`);
+      if (!opened) fail(`mchat c · a press on the landed path opened no [data-file-preview="${landedAt}"]`);
+      await page.keyboard.press("Escape");
+      await until(3_000, async () => (await count("[data-file-preview]")) === 0);
+    }
+
+    // d. failed and stopped, each with 重试
+    {
+      const f = chips["m-fail"], s = chips["m-stop"];
+      await press(`${pane} [data-msg="m-fail"] [data-file-retry]`);
+      await press(`${pane} [data-msg="m-stop"] [data-file-retry]`);
+      await until(3_000, async () => asked.retry.length >= 2);
+      console.log(`mchat d · failed ${JSON.stringify(f)}, stopped ${JSON.stringify(s)}, retry_transfer ${JSON.stringify(asked.retry)}`);
+      if (!f?.why?.includes(why) || f.retry !== 1) fail(`mchat d · failed reads ${JSON.stringify(f)} — the receiver's sentence and 重试`);
+      if (stoppedWord === null) fail("probe dead: mchat d · no file-stopped in crates/catalog/zh.toml");
+      else if (s?.why !== stoppedWord || s.retry !== 1) fail(`mchat d · stopped reads ${JSON.stringify(s)} — ${stoppedWord} and 重试`);
+      if (asked.retry.map((a) => a.msg).join() !== "m-fail,m-stop") fail(`mchat d · 重试 posted ${JSON.stringify(asked.retry)} — retry_transfer for m-fail, then m-stop`);
+    }
+
+    // e. 「存到」 above 留言's box
+    {
+      const file = (name) => ({ name, mimeType: "text/plain", buffer: Buffer.from(name) });
+      const upload = async (name) => {
+        const n = asked.uploads.length;
+        await page.locator(`${pane} [data-file-input]`).setInputFiles(file(name));
+        await until(3_000, async () => asked.uploads.length > n);
+        return asked.uploads[n] ?? null;
+      };
+      const before = await into();
+      const plain = await upload("one.txt");
+      const pick = await pickDir("/srv/inbox");
+      const picked = await into();
+      const there = await upload("two.txt");
+      await press("[data-send-into-reset]");
+      const back = await into();
+      const again = await upload("three.txt");
+      console.log(
+        `mchat e · line ${JSON.stringify(before)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
+          `after ${JSON.stringify(picked)}; there ${JSON.stringify(there)}; reset ${JSON.stringify(back)}; again ${JSON.stringify(again)}`,
+      );
+      if (before?.at !== drop.peer || before.reset !== 0) fail(`mchat e · 「存到」 reads ${JSON.stringify(before)} — peer's receive_at, no 恢复默认`);
+      if (plain?.machine !== "peer" || plain.into !== undefined) fail(`mchat e · ＋ uploaded ${JSON.stringify(plain)} — to peer, no into=`);
+      if (!pick.up) fail("mchat e · 更改… opened no 选择目录");
+      if (pick.machines !== 0) fail("mchat e · 选择目录 offers a machine — the directory is the receiver's");
+      if (picked?.at !== "/srv/inbox" || picked.reset !== 1) fail(`mchat e · after the pick the line reads ${JSON.stringify(picked)} — /srv/inbox, 恢复默认 drawn`);
+      if (there?.into !== "/srv/inbox") fail(`mchat e · the upload after the pick carried ${JSON.stringify(there)} — into=/srv/inbox`);
+      if (back?.at !== drop.peer || back.reset !== 0) fail(`mchat e · 恢复默认 left ${JSON.stringify(back)} — the receive location again`);
+      if (again?.into !== undefined) fail(`mchat e · after 恢复默认 the upload carried ${JSON.stringify(again)} — no into=`);
+    }
+
+    // f. the agent conversation
+    {
+      await open("sessions");
+      await press(`[data-side-row="${agentRow.id}"] [data-side-open]`);
+      const up = await until(5_000, async () => (await page.locator("[data-chat-input]").filter({ visible: true }).count()) === 1);
+      await wait(500);
+      const line = await into();
+      const add = async (name) => {
+        const n = asked.puts.length;
+        await page.locator("[data-chat-file-input]").first().setInputFiles({ name, mimeType: "text/plain", buffer: Buffer.from(name) });
+        await until(3_000, async () => asked.puts.length > n);
+        await until(3_000, async () => (await count(`[data-chat-pending-file="${name}"][data-placed]`)) === 1);
+        return { put: asked.puts[n] ?? null, path: await page.locator(`[data-chat-pending-file="${name}"]`).first().getAttribute("title") };
+      };
+      const plain = await add("a.txt");
+      const pick = await pickDir("/srv/agent");
+      const picked = await into();
+      const there = await add("b.txt");
+      await page.locator("[data-chat-input]").filter({ visible: true }).fill("look");
+      await page.locator("[data-chat-input]").filter({ visible: true }).press("Enter");
+      await until(3_000, async () => asked.says.length > 0);
+      const told = asked.says[0]?.text ?? "";
+      console.log(
+        `mchat f · opened ${up}, line ${JSON.stringify(line)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
+          `after ${JSON.stringify(picked)}; there ${JSON.stringify(there)}; told ${JSON.stringify(told)}`,
+      );
+      if (!up) fail("probe dead: mchat f · the agent conversation drew no box");
+      else {
+        if (line?.at !== drop.peer || line.reset !== 0) fail(`mchat f · 「存到」 reads ${JSON.stringify(line)} — the conversation's machine's receive_at, no 恢复默认`);
+        if (plain.put?.id !== agentRow.id || plain.put.into !== undefined) fail(`mchat f · a file with no choice was put as ${JSON.stringify(plain.put)} — this conversation, no into=`);
+        if (plain.path !== `${drop.peer}/a.txt`) fail(`mchat f · the chip's path is ${plain.path} — what the node answered`);
+        if (!pick.up || pick.machines !== 0) fail(`mchat f · 更改… opened ${JSON.stringify(pick)} — 选择目录, no machine popup`);
+        if (picked?.at !== "/srv/agent" || picked.reset !== 1) fail(`mchat f · after the pick the line reads ${JSON.stringify(picked)}`);
+        if (there.put?.into !== "/srv/agent" || there.path !== "/srv/agent/b.txt") fail(`mchat f · a file after the pick: put ${JSON.stringify(there.put)}, chip ${there.path} — into=/srv/agent, landed there`);
+        if (!told.includes(`@${drop.peer}/a.txt`) || !told.includes("@/srv/agent/b.txt")) fail(`mchat f · the agent was told ${JSON.stringify(told)} — the two landed paths`);
+      }
+    }
+
+    for (const [glob, run] of routesM) await page.unroute(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "mchat") console.log("mchat · FACE_ONLY=mchat: the other sections are skipped");
+
+  // ── the broadcast: the khor's own group conversation (STORE-BRIEF phase 3, store-f, 2026-10-08) ──
+  //
+  // The owner: 「我们新增一个广播类型的session，这个session是向khor内的所有
+  // 机器发文件，但目标机器要接受才下载，也是存到默认位置」 and 「广播 session
+  // 也带文字：全网机器的群聊」. One row on every machine; text and files; a
+  // file is an offer each machine answers for itself. Value checks only
+  // (30-behavior: layout is the owner's checklist). New, not a fix: no red
+  // first.
+  //   a. the row: `wide/all`, kind broadcast, a blank face (no machine's)
+  //      with a kind mark, the newest line under the title, its word and
+  //      age on the right;
+  //   b. opened, it is a conversation: lines with the machine's name over
+  //      them, and no 「存到」 line — an offer lands in each machine's own
+  //      receive location;
+  //   c. an offer this machine has not answered says 待接收 with 接收 and
+  //      no bar; 接收 posts `retry_transfer` with that message;
+  //   d. this machine's own state on the others: moving = 接收中, the bar
+  //      and ×; landed = 已收到 and the path; failed = the sentence and 重试
+  //      (posted); stopped = 已取消 and 接收;
+  //   e. the sender's chip counts the machines that have it (3/5), with
+  //      nothing to accept, stop or retry;
+  //   f. the composer: a line posts `tell` to `wide/all`; ＋ (the browser
+  //      form) uploads to `wide/all` with no `into=`.
+  bcast: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "bcast") break bcast;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const now = Date.now();
+    const zh = readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8");
+    // The catalog's words, read where they are written, not typed again.
+    const word = (k) => new RegExp(`^${k} = "(.*)"$`, "m").exec(zh)?.[1] ?? null;
+    const w = {
+      waiting: word("bcast-waiting"), take: word("bcast-take"), taking: word("bcast-taking"),
+      landed: word("bcast-landed"), stopped: word("file-stopped"), count: word("bcast-count"),
+    };
+    const row = {
+      id: "wide/all", kind: "broadcast", title: "广播", word: "blocked", at_ms: now - 120_000, unread: 2, source: null,
+      pinned: false, stale: false, quiet: false, imported: false, category: "khor", group: "", face: null, hosted: false,
+      attachable: false, last: "lunch at noon", doing: null, via: null, via_face: null, home: "gate", place: null, mux: false,
+    };
+    const msg = (id, from, body, fate = {}) => ({
+      id, at_ms: now - 60_000, from, from_me: from === "gate", text: null, files: null, unknown: null,
+      retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
+      got: null, of: null, ...body, ...fate,
+    });
+    const file = (name, size) => ({ files: [{ name, size }], got: 0, of: 4 });
+    const landedAt = "/home/gate/khor-drop/land.pdf";
+    const why = "the sender's file is gone";
+    const said = [
+      msg("t-peer", "peer", { text: "lunch at noon" }),
+      msg("t-me", "gate", { text: "on my way" }),
+      msg("f-wait", "peer", file("wait.bin", 1000)),
+      msg("f-move", "peer", file("move.bin", 1000), { step: "moving", moved: 250 }),
+      msg("f-land", "peer", file("land.pdf", 30), { step: "landed", moved: 30, landed: [landedAt], got: 1 }),
+      msg("f-fail", "peer", file("fail.bin", 50), { step: "failed", moved: 10, why }),
+      msg("f-stop", "peer", file("stop.bin", 50), { step: "stopped" }),
+      msg("f-mine", "gate", { files: [{ name: "mine.zip", size: 2048 }], got: 3, of: 5 }),
+    ];
+    const asked = { retry: [], stop: [], tells: [], uploads: [] };
+    const query = (r) => Object.fromEntries(new URL(r.request().url()).searchParams);
+    const routesB = [
+      ["**/sessions", json([row])],
+      ["**/devices", (r) => json(devs.map((d) => ({ ...d, receive_dir: null, receive_for: null, receive_why: null, receive_at: null })))(r)],
+      ["**/machine_log", json({ messages: said, broken: 0 })],
+      ["**/retry_transfer", (r) => (asked.retry.push(r.request().postDataJSON() ?? {}), json([])(r))],
+      ["**/stop_transfer", (r) => (asked.stop.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      ["**/tell", (r) => (asked.tells.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json("f-new")(r))],
+    ];
+    for (const [glob, run] of routesB) await page.route(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const pane = "[data-machine-chat]";
+    if (Object.values(w).some((v) => v === null)) fail(`probe dead: bcast · a catalog word is missing in zh.toml: ${JSON.stringify(w)}`);
+
+    // a. the row
+    await open("sessions");
+    const sel = '[data-side-row="wide/all"]';
+    const listed = await until(5_000, async () => (await count(sel)) === 1);
+    const r = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      return {
+        kind: el.querySelector("[data-kind]")?.getAttribute("data-kind") ?? el.getAttribute("data-kind"),
+        blank: el.querySelectorAll("[data-face-blank]").length,
+        faces: el.querySelectorAll("[data-face]").length,
+        mark: el.querySelectorAll("[data-kind-mark]").length,
+        last: el.querySelector("[data-last]")?.textContent ?? null,
+        text: el.textContent,
+      };
+    }, sel);
+    console.log(`bcast a · listed ${listed}, ${JSON.stringify(r)}`);
+    if (!listed || !r) fail("bcast a · no [data-side-row=\"wide/all\"] on the sessions list");
+    else {
+      if (r.kind !== "broadcast") fail(`bcast a · the row's kind reads ${r.kind} — broadcast`);
+      if (r.blank !== 1 || r.faces !== 0) fail(`bcast a · the row wears ${r.faces} machine face(s), ${r.blank} blank — every machine's, so none of theirs`);
+      if (r.mark < 1) fail("bcast a · the row draws no kind mark");
+      if (r.last !== "lunch at noon") fail(`bcast a · the row's second line reads ${JSON.stringify(r.last)} — the newest line`);
+      if (!r.text.includes("广播") || !r.text.includes("待批")) fail(`bcast a · the row reads ${JSON.stringify(r.text)} — 广播 and its word 待批`);
+    }
+
+    // b. opened: a conversation, no 「存到」
+    await press(`${sel} [data-side-open]`);
+    const shown = await until(5_000, async () => (await count(`${pane} [data-msg]`)) === said.length);
+    const lines = await page.evaluate((p) => ({
+      from: [...document.querySelectorAll(`${p} [data-msg="t-peer"] [data-msg-from]`)].map((e) => e.textContent),
+      mine: document.querySelectorAll(`${p} [data-msg="t-me"] [data-msg-from]`).length,
+      into: [...document.querySelectorAll("[data-send-into]")].filter((e) => e.getClientRects().length > 0).length,
+    }), pane);
+    console.log(`bcast b · shown ${shown}, ${JSON.stringify(lines)}`);
+    if (!shown) fail(`bcast b · the broadcast drew ${await count(`${pane} [data-msg]`)} message(s) — ${said.length}`);
+    if (lines.from.join() !== "peer" || lines.mine !== 0) fail(`bcast b · names over the lines read ${JSON.stringify(lines)} — peer over theirs, none over mine`);
+    if (lines.into !== 0) fail("bcast b · a 「存到」 line is drawn — an offer lands in each machine's own receive location");
+
+    // c–e. the chips
+    const chips = await page.evaluate((p) =>
+      Object.fromEntries(
+        [...document.querySelectorAll(`${p} [data-msg]`)].map((m) => {
+          const c = m.querySelector("[data-msg-files]");
+          const t = (s) => c?.querySelector(s)?.textContent ?? null;
+          return [
+            m.getAttribute("data-msg"),
+            c && {
+              waiting: t("[data-bcast-waiting]"), take: t("[data-bcast-take]"), taking: t("[data-bcast-taking]"),
+              landedWord: t("[data-bcast-landed]"), count: c.querySelector("[data-bcast-count]")?.getAttribute("data-bcast-count") ?? null,
+              countText: t("[data-bcast-count]"),
+              progress: c.querySelector("[data-file-progress]")?.getAttribute("data-file-progress") ?? null,
+              stop: c.querySelectorAll("[data-file-stop]").length,
+              landed: [...c.querySelectorAll("[data-file-landed]")].map((e) => e.getAttribute("data-file-landed")),
+              why: t("[data-file-why]"), retry: t("[data-file-retry]"),
+            },
+          ];
+        }),
+      ), pane);
+    console.log(`bcast c-e · ${JSON.stringify(chips)}`);
+    {
+      const c = chips["f-wait"];
+      if (c?.waiting !== w.waiting || c.take !== w.take) fail(`bcast c · an unanswered offer reads ${JSON.stringify(c)} — ${w.waiting} and ${w.take}`);
+      if (c?.progress !== null || c?.stop !== 0) fail(`bcast c · an unanswered offer draws the bar or × (${JSON.stringify(c)}) — nothing moves before 接收`);
+      await press(`${pane} [data-msg="f-wait"] [data-bcast-take]`);
+      await until(3_000, async () => asked.retry.length > 0);
+      if (asked.retry[0]?.msg !== "f-wait") fail(`bcast c · 接收 posted ${JSON.stringify(asked.retry)} — retry_transfer {msg: "f-wait"}`);
+    }
+    {
+      const m = chips["f-move"], l = chips["f-land"], f = chips["f-fail"], s = chips["f-stop"];
+      if (m?.taking !== w.taking || m.progress !== "25" || m.stop !== 1) fail(`bcast d · moving 250 of 1000 reads ${JSON.stringify(m)} — ${w.taking}, the bar at 25 and ×`);
+      if (m?.waiting !== null || m?.take !== null) fail(`bcast d · a move under way still offers ${w.take}`);
+      if (l?.landedWord !== w.landed || l.landed.join() !== landedAt || l.progress !== null) fail(`bcast d · landed reads ${JSON.stringify(l)} — ${w.landed} and ${landedAt}`);
+      if (!f?.why?.includes(why) || f.retry !== "重试") fail(`bcast d · failed reads ${JSON.stringify(f)} — the sentence and 重试`);
+      if (s?.why !== w.stopped || s.retry !== w.take) fail(`bcast d · stopped reads ${JSON.stringify(s)} — ${w.stopped} and ${w.take}`);
+      const n = asked.retry.length;
+      await press(`${pane} [data-msg="f-fail"] [data-file-retry]`);
+      await until(3_000, async () => asked.retry.length > n);
+      if (asked.retry[n]?.msg !== "f-fail") fail(`bcast d · 重试 posted ${JSON.stringify(asked.retry.slice(n))} — retry_transfer {msg: "f-fail"}`);
+      await press(`${pane} [data-msg="f-move"] [data-file-stop]`);
+      await until(3_000, async () => asked.stop.length > 0);
+      if (asked.stop[0]?.msg !== "f-move") fail(`bcast d · × posted ${JSON.stringify(asked.stop)} — stop_transfer {msg: "f-move"}`);
+    }
+    {
+      const c = chips["f-mine"];
+      const want = w.count?.replace("{0}", "3").replace("{1}", "5");
+      if (c?.count !== "3/5" || c.countText !== want) fail(`bcast e · the sender's chip reads ${JSON.stringify(c)} — 3/5, 「${want}」`);
+      if (c && (c.take !== null || c.waiting !== null || c.progress !== null || c.stop !== 0 || c.retry !== null)) fail(`bcast e · the sender's chip offers an act (${JSON.stringify(c)}) — it has nothing to receive`);
+      for (const k of ["t-peer", "t-me"]) if (chips[k] !== null) fail(`bcast e · the line ${k} drew a file chip`);
+    }
+
+    // f. the composer
+    {
+      const box = page.locator(`${pane} [data-chat-composer]`);
+      await box.fill("see you all");
+      await box.press("Enter");
+      await until(3_000, async () => asked.tells.length > 0);
+      const n = asked.uploads.length;
+      await page.locator(`${pane} [data-file-input]`).setInputFiles({ name: "all.txt", mimeType: "text/plain", buffer: Buffer.from("all") });
+      await until(3_000, async () => asked.uploads.length > n);
+      const up = asked.uploads[n] ?? null;
+      console.log(`bcast f · tell ${JSON.stringify(asked.tells)}, upload ${JSON.stringify(up)}`);
+      if (asked.tells[0]?.machine !== "wide/all" || asked.tells[0]?.text !== "see you all") fail(`bcast f · a line posted ${JSON.stringify(asked.tells)} — tell {machine: "wide/all", text}`);
+      if (up?.machine !== "wide/all" || up.into !== undefined || up.name !== "all.txt") fail(`bcast f · ＋ uploaded ${JSON.stringify(up)} — to wide/all, no into=`);
+    }
+
+    for (const [glob, run] of routesB) await page.unroute(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "bcast") console.log("bcast · FACE_ONLY=bcast: the other sections are skipped");
 
   // ── tabs like Chrome's, a new tab and its page (UX-45, 2026-10-07) ──
   //

@@ -111,7 +111,8 @@ export function useStatusBar(rows: SessionRow[]): {
       // read moves between 完成/空闲 and touches neither side, so the
       // strip stays deaf to chatter — it is not a notification centre
       // (the module head's whole point).
-      if (r.kind !== "chat") continue;
+      // The broadcast's pulls are transfers too (STORE-BRIEF phase 3).
+      if (r.kind !== "chat" && r.kind !== "broadcast") continue;
       const before = seen.current.get(r.id);
       seen.current.set(r.id, r.word);
       if (dropped.current.has(r.id)) continue;

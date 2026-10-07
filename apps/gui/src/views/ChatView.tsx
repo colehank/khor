@@ -81,7 +81,7 @@ import { useKeysTo } from "@/hooks/use-keys-to";
 import { useCoarse } from "@/hooks/use-coarse";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
-import { FileCard, FilePreview, MachineFilePick, PendingChips, usePendingFiles } from "@/views/chat-files";
+import { FileCard, FilePreview, MachineFilePick, PendingChips, SendInto, usePendingFiles } from "@/views/chat-files";
 import { LinkHomeProvider, useKnownFiles, useLinkHome, type LinkHome } from "@/views/linkHome";
 import { filesFolderIn, splitAttachments, withAttachments } from "@/lib/paths";
 import { AddSeat, Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
@@ -961,13 +961,17 @@ export function ChatView({
   /** What the session can be set to, as the host last told it —
       `null` until a `settings` frame, which most agents never send. */
   const [settings, setSettings] = useState<Settings | null>(null);
+  /** The directory on the conversation's machine its files go to, picked
+      above the box (「存到」, `SendInto`); `null` is its receive location.
+      Read as each file is added: a file is put there when it is chosen. */
+  const [into, setInto] = useState<string | null>(null);
   /** The files going along with the line being written (round CHAT,
       `chat-files`): each put on the conversation's machine as it is
       chosen, cleared by sending like the text beside them. ⚠️ 墓碑:
       `shots` carried pictures as base64 inside the prompt, gated on the
       agent's capabilities; every file is now a path on the machine, and
       a picture also rides inline where the agent takes pictures. */
-  const files = usePendingFiles(id);
+  const files = usePendingFiles(id, into);
   const [pickOpen, setPickOpen] = useState(false);
   /** A terminal block handed to the next conversation (roadmap 2.3), as
       `[name, text]`: it rides as the prompt's own text, there being no
@@ -2083,6 +2087,12 @@ export function ChatView({
               Each one can be taken back off — the picture is still on
               the clipboard, so this undoes the attaching and not the
               having. */}
+          {/* Where a file put from here lands on the conversation's
+              machine, and the way to choose another directory there
+              (STORE-BRIEF phase 2) — the 留言's line, the same component. */}
+          {home !== null && (
+            <SendInto machine={machine ?? ""} name={home} into={into} onInto={setInto} className="pb-xxs" />
+          )}
           {sending && (
             <div data-chat-sending className="px-2 pb-1 text-caption tabular-nums text-muted-foreground">
               {gui.chat_sending((sending[0] / 1e6).toFixed(1), (sending[1] / 1e6).toFixed(1))}

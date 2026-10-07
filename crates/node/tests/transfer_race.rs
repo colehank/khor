@@ -158,7 +158,7 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
     let payload: Vec<u8> = (0..300_000u32).map(|i| (i % 251) as u8).collect();
     let src = ra.join("aloft.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src).unwrap();
+    let tid = a.send("beta", &src, "").unwrap();
 
     // The race, witnessed. One probe, one id, one instant, two
     // machines: alpha holds the offer and beta does not. The yes is
@@ -179,7 +179,7 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
 
     // No sync_now here on purpose. Every other transfer test calls one
     // at this exact point — that call *is* the workaround this replaces.
-    let (moved, landed) = timeout(Duration::from_secs(90), b.accept(&tid))
+    let (moved, landed) = timeout(Duration::from_secs(90), b.take(&tid))
         .await
         .expect("accept must not hang while it waits out the sync axis")
         .expect("accept must wait for the offer, not refuse it");
@@ -203,7 +203,7 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
     // beta can reach alpha (alpha serves, and its roads are in the
     // table), so beta's round comes back complete: the id is absent,
     // and khor is entitled to say so.
-    let absent = timeout(Duration::from_secs(90), b.accept(&ghost_id()))
+    let absent = timeout(Duration::from_secs(90), b.take(&ghost_id()))
         .await
         .expect("a refused accept must not hang either")
         .unwrap_err();
@@ -218,7 +218,7 @@ async fn accept_waits_out_the_sync_axis_and_says_which_kind_of_miss_it_hit() {
     // therefore cannot be dialled at all. alpha did not learn anything
     // about this id, and must not pretend it did.
     let began = std::time::Instant::now();
-    let pending = timeout(Duration::from_secs(90), a.accept(&ghost_id()))
+    let pending = timeout(Duration::from_secs(90), a.take(&ghost_id()))
         .await
         .expect("a refused accept must not hang either")
         .unwrap_err();
@@ -357,7 +357,7 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
     let payload: Vec<u8> = (0..120_000u32).map(|i| (i % 241) as u8).collect();
     let src = ra.join("routed.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src).unwrap();
+    let tid = a.send("beta", &src, "").unwrap();
 
     // The witness, same shape as the first test: the offer exists where
     // it was written, and the machine about to approve it has never
@@ -369,11 +369,16 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
         "gamma must be behind, or this test routes an offer it already had"
     );
 
-    let (moved, landed) = timeout(Duration::from_secs(120), g.accept(&tid))
+    let (moved, landed) = timeout(Duration::from_secs(120), g.take(&tid))
         .await
-        .expect("a routed accept must not hang while it waits out the sync axis")
-        .expect("a routed accept must wait for the offer, not refuse it");
-    assert_eq!(moved, payload.len() as u64, "the whole payload should move");
+        .expect("a routed take must not hang while it waits out the sync axis")
+        .expect("a routed take must wait for the message, not refuse it");
+    // beta serves, so the sync that brings it the message also starts its
+    // own pull (直接传): the routed take either ran the pull or joined it.
+    assert!(
+        moved == payload.len() as u64 || moved == 0,
+        "the whole payload moved, or the take joined beta's own pull: {moved}"
+    );
     assert!(
         g.transfer_is_here(&tid),
         "gamma must hold the offer now — otherwise its earlier no was the probe"

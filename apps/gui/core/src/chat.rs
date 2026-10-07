@@ -1000,24 +1000,32 @@ mod wait_tests {
 // bytes.
 //
 // A conversation running here keeps the file here; one running on
-// another machine has it delivered there first (`send` + `accept`, the
-// file road's offer mode, `term::deliver_blocking`).
+// another machine has it delivered there first (`send`, the file road's
+// direct mode, waited out by `term::deliver_blocking`). Either way a
+// directory the person chose on that machine (`into`) takes the place of
+// the receive directory, and the path the agent gets is where it landed.
 
 /// Files that are already on this machine (a picker's or a drop's
-/// paths), put where the conversation's machine keeps them. Answers each
-/// one's path **on that machine**, in order.
-pub fn chat_put_paths(root: &Path, id: &str, paths: &[String]) -> Result<Vec<String>, String> {
+/// paths), put where the conversation's machine keeps them, or into the
+/// directory `into` names on it (empty: its receive directory). Answers
+/// each one's path **on that machine**, in order.
+pub fn chat_put_paths(root: &Path, id: &str, paths: &[String], into: &str) -> Result<Vec<String>, String> {
     let n = Node::open(root.to_path_buf())?;
     if let Some(machine) = n.far_machine(&SessionId(id.to_owned()))? {
-        return crate::term::deliver_blocking(root, &machine, paths);
+        return crate::term::deliver_blocking(root, &machine, paths, into);
     }
-    let dir = n.receive_dir()?;
+    let into = khor_node::road::tidy_setting(into)?;
+    let dir = if into.is_empty() {
+        n.receive_dir()?
+    } else {
+        khor_node::drops::named_dir(&khor_node::road::expand(root, &into).display().to_string())?
+    };
     let mut out = Vec::with_capacity(paths.len());
     for p in paths {
         let src = Path::new(p);
         let (digest, size) = khor_node::transfer::digest_file(src)?;
         // The same bytes are the same file: kept, not copied again.
-        if let Some(r) = khor_node::road::receipt(root, &digest) {
+        if let Some(r) = khor_node::road::receipt(root, &digest).filter(|r| r.path.parent() == Some(dir.as_path())) {
             out.push(r.path.display().to_string());
             continue;
         }
@@ -1056,6 +1064,7 @@ pub fn chat_put(
     root: &Path,
     id: &str,
     name: &str,
+    into: &str,
     body: &mut dyn std::io::Read,
 ) -> Result<String, String> {
     let staged = crate::save_upload(root, name, body)?;
@@ -1068,7 +1077,7 @@ pub fn chat_put(
     // Placed here by a copy, or there by a delivery that has finished
     // fetching when it returns (`deliver_blocking` accepts before it
     // answers): either way the staged bytes are read by nobody now.
-    let out = chat_put_paths(root, id, &[named.display().to_string()]);
+    let out = chat_put_paths(root, id, &[named.display().to_string()], into);
     let _ = std::fs::remove_file(&named);
     out?.into_iter().next().ok_or_else(|| "nothing placed".to_owned())
 }
@@ -1090,8 +1099,8 @@ mod put_tests {
         std::fs::write(&src, "# notes\n").unwrap();
         let given = [src.display().to_string()];
 
-        let first = chat_put_paths(&root, "gui/nowhere", &given).expect("placed");
-        let again = chat_put_paths(&root, "gui/nowhere", &given).expect("placed again");
+        let first = chat_put_paths(&root, "gui/nowhere", &given, "").expect("placed");
+        let again = chat_put_paths(&root, "gui/nowhere", &given, "").expect("placed again");
 
         let want = root.join("khor-drop").join("notes.md");
         assert_eq!(first, vec![want.display().to_string()]);
