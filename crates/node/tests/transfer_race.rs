@@ -395,7 +395,7 @@ async fn a_routed_accept_waits_for_the_offer_before_it_knows_where_to_route() {
         payload,
         "bytes verbatim on the recipient"
     );
-    let on_beta = rb.join(".khor").join("chat").join("beta").join("files");
+    let on_beta = rb.join("khor-drop");
     assert!(
         fs::read_dir(&on_beta)
             .unwrap()

@@ -10,7 +10,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use khor_core::State;
-use khor_node::transfer::{partial_path, payload_path};
 use khor_node::{MsgBody, Node, SessionId};
 use khor_sync::chat::{ChatDoc, FileRef, Sender};
 use tokio::time::timeout;
@@ -117,7 +116,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
             .any(|m| matches!(&m.body, MsgBody::Files(f) if f[0].name == "big.bin")),
         "the offer must be a file message naming the file"
     );
-    let files_dir = rb.join(".khor").join("chat").join("beta").join("files");
+    let files_dir = rb.join("khor-drop");
     let payload_bytes_present =
         files_dir.exists() && fs::read_dir(&files_dir).unwrap().next().is_some();
     assert!(!payload_bytes_present, "no byte may move before approval");
@@ -144,14 +143,18 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         unreachable!()
     };
     let f = &files[0];
+    // Where it landed: the receive directory, under its own name, found
+    // again by its digest (`khor_node::road`).
+    let landed = |f: &khor_sync::chat::FileRef| khor_node::road::landed(&rb, &dir, f).expect("landed");
+    assert_eq!(landed(f), rb.join("khor-drop").join("big.bin"));
     assert_eq!(
-        fs::read(payload_path(&dir, f)).unwrap(),
+        fs::read(landed(f)).unwrap(),
         payload,
         "bytes must be verbatim"
     );
     assert_eq!(
         b.transfer_landing(&tid).unwrap(),
-        vec![payload_path(&dir, f)],
+        vec![landed(f)],
         "the landing must be nameable — accept's answer prints it"
     );
 
@@ -204,8 +207,8 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
 
     // Resume: plant a partial of the first 100k — the second pull moves
     // only the missing tail, and the result is still verbatim.
-    fs::remove_file(payload_path(&dir, f)).unwrap();
-    fs::write(partial_path(&dir, f), &payload[..100_000]).unwrap();
+    fs::remove_file(landed(f)).unwrap();
+    fs::write(khor_node::road::partial_of(&rb, &f.digest).unwrap(), &payload[..100_000]).unwrap();
     let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("accept must not hang")
@@ -216,7 +219,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         "a resume moves only the tail"
     );
     assert_eq!(
-        fs::read(payload_path(&dir, f)).unwrap(),
+        fs::read(landed(f)).unwrap(),
         payload,
         "resumed bytes verbatim"
     );
@@ -224,10 +227,10 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     // ── control groups ─────────────────────────────────────
     // A poisoned partial cannot sneak through: right length, wrong bytes
     // — the digest fails, the partial is discarded, a clean retry works.
-    fs::remove_file(payload_path(&dir, f)).unwrap();
+    fs::remove_file(landed(f)).unwrap();
     let mut bad = payload[..100_000].to_vec();
     bad[0] ^= 0xff;
-    fs::write(partial_path(&dir, f), &bad).unwrap();
+    fs::write(khor_node::road::partial_of(&rb, &f.digest).unwrap(), &bad).unwrap();
     let err = timeout(Duration::from_secs(60), b.accept(&tid))
         .await
         .expect("a failing accept must not hang either")
@@ -238,7 +241,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         "wrong bytes must fail the digest: {err}"
     );
     assert!(
-        !partial_path(&dir, f).exists(),
+        !khor_node::road::partial_of(&rb, &f.digest).unwrap().exists(),
         "the poisoned partial must be discarded"
     );
     let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))

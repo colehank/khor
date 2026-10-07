@@ -178,7 +178,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
         payload.len() as u64,
         "the pull should move the whole payload"
     );
-    let landed = fs::read_dir(rb.join(".khor").join("chat").join("beta").join("files"))
+    let landed = fs::read_dir(rb.join("khor-drop"))
         .unwrap()
         .flatten()
         .map(|e| e.path())

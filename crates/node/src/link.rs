@@ -2906,7 +2906,7 @@ impl Node {
                 })
             }
             Request::Fetch { digest, offset } => {
-                self.serve_slice(&digest, offset)
+                self.serve_slice(&remote, &digest, offset)
             }
             Request::Versions { docs, readings } => {
                 self.answer_versions(remote, docs, readings, ep).await
@@ -3794,7 +3794,10 @@ impl Node {
     /// One slice of an offered payload. The offer's recorded size is the
     /// contract: a file that changed size since the offer is refused, not
     /// silently served (the digest would fail far away, much later).
-    fn serve_slice(&self, digest: &str, offset: u64) -> Result<Response, String> {
+    ///
+    /// `remote` is the device fetching: what it fetched is kept as its
+    /// own (`transfer::Offer::to`), never as the offer's.
+    fn serve_slice(&self, remote: &str, digest: &str, offset: u64) -> Result<Response, String> {
         use std::io::{Read, Seek, SeekFrom};
         let mut offer =
             crate::transfer::load_offer(self.root(), digest)?.ok_or(msg::offer_lost())?;
@@ -3815,10 +3818,16 @@ impl Node {
         // (`PULL_AHEAD`), and a middle slice rewriting what it loaded
         // could undo the last slice's `done`.
         let last = offset + want as u64 >= offer.size;
-        if !offer.started || (last && !offer.done) {
-            offer.started = true;
-            offer.done |= last;
-            crate::transfer::save_offer(self.root(), digest, &offer)?;
+        if offer.note_fetch(remote, last) {
+            // Read again under one lock: two receivers fetching at once
+            // each write the record, and one must not write back what it
+            // loaded before the other's mark.
+            static WRITE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+            let _held = WRITE.lock().unwrap_or_else(|p| p.into_inner());
+            let mut now = crate::transfer::load_offer(self.root(), digest)?.unwrap_or_else(|| offer.clone());
+            if now.note_fetch(remote, last) {
+                crate::transfer::save_offer(self.root(), digest, &now)?;
+            }
         }
         Ok(Response::Slice {
             total: offer.size,
@@ -3843,9 +3852,11 @@ impl Node {
         };
         let dir = chat::channel_dir(self.root(), &channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
+        // Found by digest (`road::landed`); a file not landed yet answers
+        // the conversation folder an older khor used, which is not there.
         Ok(files
             .iter()
-            .map(|f| crate::transfer::payload_path(&dir, f))
+            .map(|f| crate::road::landed(self.root(), &dir, f).unwrap_or_else(|| crate::transfer::payload_path(&dir, f)))
             .collect())
     }
 
@@ -6751,16 +6762,17 @@ impl Node {
         dir: &std::path::Path,
     ) -> Result<(u64, std::path::PathBuf), String> {
         let fell = crate::files::landing(path, dir)?;
-        self.pull_into(ep, machine, path, fell, None).await
+        self.pull_into(ep, machine, path, fell, None, None, true).await
     }
 
-    /// The pull into a landing already chosen. `job`, when given, is a
-    /// drop's (`crate::drops`): it is told the bytes as they land, the
-    /// size is held to [`crate::drops::CAP`] from the first slice, and
-    /// a pull that stops for any reason leaves no part file behind —
-    /// a drop is asked again by dropping again, not carried on. A job
-    /// cancelled (`crate::drops::stop`, item 71) stops before its next
-    /// slice.
+    /// The pull into a landing already chosen. `job`, when given, is
+    /// told the bytes as they land, and a job cancelled
+    /// (`crate::road::stop`, item 71) stops before its next slice. The
+    /// size is held to `cap` from the first slice; without `resume` a
+    /// pull that stops for any reason leaves no part file behind — a
+    /// drop is asked again by dropping again, not carried on
+    /// (`crate::road::Parcel`).
+    #[allow(clippy::too_many_arguments)]
     async fn pull_into(
         &self,
         ep: &iroh::Endpoint,
@@ -6768,6 +6780,8 @@ impl Node {
         path: &str,
         fell: crate::files::Landing,
         job: Option<&crate::drops::Job>,
+        cap: Option<u64>,
+        resume: bool,
     ) -> Result<(u64, std::path::PathBuf), String> {
         use std::io::Write;
         let (channel, home) = self.resolve(machine)?;
@@ -6831,11 +6845,9 @@ impl Node {
                         // scp says no size before it lands, so a drop's cap
                         // is held after — and a cancel, which one scp
                         // cannot hear.
-                        .and_then(|moved| match job {
-                            Some(_) if moved > crate::drops::CAP => {
-                                Err(msg::drop_too_big(crate::drops::CAP >> 20, path))
-                            }
-                            Some(_) if is_stopped() => Err(crate::drops::cancelled()),
+                        .and_then(|moved| match cap {
+                            Some(cap) if moved > cap => Err(msg::drop_too_big(cap >> 20, path)),
+                            _ if is_stopped() => Err(crate::drops::cancelled()),
                             _ => Ok(moved),
                         });
                 return match moved {
@@ -6948,13 +6960,12 @@ impl Node {
                     }) => {
                         match contract {
                             None => {
+                                if let Some(cap) = cap
+                                    && total > cap
+                                {
+                                    break 'pull Err(Stop::Spoiled(msg::drop_too_big(cap >> 20, path)));
+                                }
                                 if let Some(job) = job {
-                                    if total > crate::drops::CAP {
-                                        break 'pull Err(Stop::Spoiled(msg::drop_too_big(
-                                            crate::drops::CAP >> 20,
-                                            path,
-                                        )));
-                                    }
                                     job.total.store(total, std::sync::atomic::Ordering::Relaxed);
                                 }
                                 contract = Some((total, at_ms));
@@ -7010,7 +7021,7 @@ impl Node {
                 let _ = std::fs::remove_file(&note_path);
                 Ok((total - resumed_from.min(total), fell.dest))
             }
-            Err(Stop::Unreached(why)) if job.is_none() => Err(why),
+            Err(Stop::Unreached(why)) if resume => Err(why),
             Err(Stop::Unreached(why) | Stop::Spoiled(why)) => {
                 let _ = std::fs::remove_file(&fell.part);
                 let _ = std::fs::remove_file(&note_path);
@@ -7255,17 +7266,17 @@ impl Node {
             return Err(msg::create_token_bad().into());
         }
         let dir = match into {
-            Some(dir) => crate::drops::named_dir(dir)?,
-            None => self.drop_dir()?,
+            Some(dir) => crate::road::Dest::Dir(crate::drops::named_dir(dir)?),
+            None => crate::road::Dest::Receive,
         };
         let (job, fresh) = crate::drops::job(token);
         if fresh {
             match self.me() {
                 Some(node) => {
                     let (ep, channel, path, job) = (ep.clone(), channel.to_owned(), path.to_owned(), job.clone());
-                    tokio::spawn(async move { node.run_drop(&ep, &channel, &path, &dir, &job).await });
+                    tokio::spawn(async move { node.run_drop(&ep, &channel, &path, dir, &job).await });
                 }
-                None => self.run_drop(ep, channel, path, &dir, &job).await,
+                None => self.run_drop(ep, channel, path, dir, &job).await,
             }
         }
         job.state()
@@ -7292,22 +7303,87 @@ impl Node {
         job.state()
     }
 
-    /// One drop's pull, start to end, into `dir`, told to its job.
-    async fn run_drop(&self, ep: &iroh::Endpoint, channel: &str, path: &str, dir: &std::path::Path, job: &crate::drops::Job) {
-        let landed = async {
-            let fell = crate::drops::landing(dir, &crate::drops::name_of(path)?)?;
-            let part = fell.part.clone();
-            let out = self.pull_into(ep, channel, path, fell, Some(job)).await;
-            if out.is_err() {
-                // Whatever stopped it, before the slices or during them:
-                // the part file reserved for it goes too.
-                let _ = std::fs::remove_file(PullNote::path_of(&part));
-                let _ = std::fs::remove_file(&part);
+    /// One drop's pull, start to end, told to its job: the file road's
+    /// direct mode (`crate::road`), capped, never carried on.
+    async fn run_drop(&self, ep: &iroh::Endpoint, channel: &str, path: &str, into: crate::road::Dest, job: &crate::drops::Job) {
+        let parcel = crate::road::Parcel {
+            mode: crate::road::Mode::Direct,
+            source: crate::road::Source::Path {
+                machine: channel.to_owned(),
+                path: path.to_owned(),
+            },
+            into,
+            cap: Some(crate::drops::CAP),
+            resume: false,
+        };
+        let landed = self.land(ep, &parcel, Some(job)).await;
+        job.finish(landed.map(|l| l.path.display().to_string()));
+    }
+
+    /// **The file road's one landing** (`crate::road`, STORE-BRIEF
+    /// foundation A): `parcel`'s bytes pulled onto this machine, into its
+    /// receive directory or the directory named, told to `job` as they
+    /// land. A path is pulled by slices (`FetchPath`) under the parcel's
+    /// cap and resume; an offer by its digest (`Fetch`), verified before
+    /// it gets its name and carried on from its partial. What lands in
+    /// the receive directory is recorded by digest (`road::Receipt`).
+    pub(crate) async fn land(
+        &self,
+        ep: &iroh::Endpoint,
+        parcel: &crate::road::Parcel,
+        job: Option<&crate::road::Job>,
+    ) -> Result<crate::road::Landed, String> {
+        use crate::road::{Dest, Source};
+        let (dir, receive) = match &parcel.into {
+            Dest::Receive => (self.receive_dir()?, true),
+            Dest::Dir(d) => (d.clone(), false),
+        };
+        match &parcel.source {
+            Source::Path { machine, path } => {
+                let fell = crate::drops::landing(&dir, &crate::drops::name_of(path)?)?;
+                let part = fell.part.clone();
+                let out = self.pull_into(ep, machine, path, fell, job, parcel.cap, parcel.resume).await;
+                let (moved, dest) = match out {
+                    Ok(o) => o,
+                    Err(why) => {
+                        // Whatever stopped it, before the slices or during
+                        // them: the part file reserved for it goes too,
+                        // unless the parcel is carried on from.
+                        if !parcel.resume {
+                            let _ = std::fs::remove_file(PullNote::path_of(&part));
+                            let _ = std::fs::remove_file(&part);
+                        }
+                        return Err(why);
+                    }
+                };
+                let digest = if receive {
+                    let (d, from) = (dest.clone(), self.resolve(machine).map(|(_, id)| id.hex()).unwrap_or_default());
+                    let root = self.root().to_path_buf();
+                    let name = crate::drops::name_of(path)?;
+                    let mode = parcel.mode;
+                    tokio::task::spawn_blocking(move || -> Option<String> {
+                        let (digest, size) = crate::transfer::digest_file(&d).ok()?;
+                        let r = crate::road::Receipt { digest: digest.clone(), name, path: d, size, from, at_ms: crate::road::now_ms(), mode };
+                        crate::road::record(&root, &r).ok()?;
+                        Some(digest)
+                    })
+                    .await
+                    .ok()
+                    .flatten()
+                } else {
+                    None
+                };
+                Ok(crate::road::Landed { moved, path: dest, digest })
             }
-            out
+            Source::Offer { from, file } => {
+                let home = self
+                    .devices_loaded()?
+                    .doc
+                    .get(from)
+                    .ok_or(msg::offerer_left_table())?;
+                self.pull_offer(ep, &home, file, &dir, parcel.mode, job).await
+            }
         }
-        .await;
-        job.finish(landed.map(|(_, dest)| dest.display().to_string()));
     }
 
     /// The offer behind `transfer/<msg_id>`, driving the sync axis once
@@ -7443,7 +7519,6 @@ impl Node {
         ep: &iroh::Endpoint,
         id: &crate::SessionId,
     ) -> Result<(u64, Vec<String>), String> {
-        use crate::transfer::{payload_path, pulling_marker};
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(msg::no_such_transfer(&id.0));
         };
@@ -7464,36 +7539,43 @@ impl Node {
             .doc
             .get(&m.from.id)
             .ok_or(msg::offerer_left_table())?;
-        let dir = chat::channel_dir(self.root(), &channel)
-            .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
-        fs::create_dir_all(dir.join("files")).map_err(msg::cant_make_files_dir)?;
 
+        // **The file road's offer mode** (`crate::road`): each file
+        // pulled by its digest into this machine's receive directory.
         let outcome = async {
-            self.line_to(ep, &home, wires::Proto::Main)
-                .await
-                .map_err(|e| match e {
-                    DialFailure::TimedOut => msg::offerer_unreachable_timeout().to_string(),
-                    DialFailure::Refused(why) => msg::offerer_unreachable(why),
-                })?;
             let mut moved = 0u64;
             // Where each file ends up, whether or not this run is what
             // put it there: the asker is pointing something at these
             // paths, and a file that was already here is no less
             // present for having arrived earlier.
             let mut landed = Vec::with_capacity(files.len());
+            let mut reached = false;
             for f in files {
-                let dest = payload_path(&dir, f);
-                if dest.exists() {
-                    landed.push(dest.display().to_string());
-                    continue;
+                let parcel = crate::road::Parcel {
+                    mode: crate::road::Mode::Offer,
+                    source: crate::road::Source::Offer {
+                        from: home.id.clone(),
+                        file: f.clone(),
+                    },
+                    into: crate::road::Dest::Receive,
+                    cap: None,
+                    resume: true,
+                };
+                // The offerer dialled once, before the first file that
+                // has to move — so one that cannot be reached is said
+                // in the offer's own words.
+                if !reached && crate::road::receipt(self.root(), &f.digest).is_none() {
+                    self.line_to(ep, &home, wires::Proto::Main)
+                        .await
+                        .map_err(|e| match e {
+                            DialFailure::TimedOut => msg::offerer_unreachable_timeout().to_string(),
+                            DialFailure::Refused(why) => msg::offerer_unreachable(why),
+                        })?;
+                    reached = true;
                 }
-                let marker = pulling_marker(&dir, f);
-                fs::write(&marker, format!("{}", std::process::id()))
-                    .map_err(msg::cant_mark_pulling)?;
-                let pulled = self.pull_one(ep, &home, &dir, f).await;
-                let _ = fs::remove_file(&marker);
-                moved += pulled?;
-                landed.push(dest.display().to_string());
+                let got = self.land(ep, &parcel, None).await?;
+                moved += got.moved;
+                landed.push(got.path.display().to_string());
             }
             Ok((moved, landed))
         }
@@ -9484,26 +9566,81 @@ fn unreached_words(name: &str, e: DialFailure) -> String {
     }
 }
 
-/// Pulls one payload into its partial, slice by slice, and promotes it to
-/// its real name only after the digest checks out. Returns bytes moved
-/// this run — a resumed pull moves only the missing tail.
 impl Node {
+    /// **An offered file, landed** (the file road's `Source::Offer`): a
+    /// file already received whole is the answer as it is; otherwise its
+    /// bytes are pulled by digest into a partial kept under the store
+    /// (`road::partial_of`), carried on from when one is there, checked
+    /// against the digest, and only then moved into `dir` under its own
+    /// name (a taken one suffixed) with a receipt. Answers bytes moved
+    /// this run — a resumed pull moves only the missing tail.
+    async fn pull_offer(
+        &self,
+        ep: &iroh::Endpoint,
+        home: &DeviceInfo,
+        f: &khor_sync::chat::FileRef,
+        dir: &std::path::Path,
+        mode: crate::road::Mode,
+        job: Option<&crate::road::Job>,
+    ) -> Result<crate::road::Landed, String> {
+        if let Some(r) = crate::road::receipt(self.root(), &f.digest) {
+            return Ok(crate::road::Landed {
+                moved: 0,
+                path: r.path,
+                digest: Some(r.digest),
+            });
+        }
+        let not_digest = || msg::not_a_digest(format_args!("{:?}", f.digest));
+        let partial = crate::road::partial_of(self.root(), &f.digest).ok_or_else(not_digest)?;
+        let marker = crate::road::marker_of(self.root(), &f.digest).ok_or_else(not_digest)?;
+        fs::create_dir_all(crate::road::received_dir(self.root())).map_err(msg::cant_make_files_dir)?;
+        fs::write(&marker, format!("{}", std::process::id())).map_err(msg::cant_mark_pulling)?;
+        let pulled = self.pull_one(ep, home, &partial, f, job).await;
+        let _ = fs::remove_file(&marker);
+        let moved = pulled?;
+        let at = crate::drops::landing(dir, &crate::transfer::safe_name(&f.name))?;
+        let dest = at.dest.clone();
+        crate::road::settle(&partial, &at).map_err(msg::cant_rename)?;
+        crate::road::record(
+            self.root(),
+            &crate::road::Receipt {
+                digest: f.digest.clone(),
+                name: f.name.clone(),
+                path: dest.clone(),
+                size: f.size.max(0) as u64,
+                from: home.id.clone(),
+                at_ms: crate::road::now_ms(),
+                mode,
+            },
+        )?;
+        if let Some(job) = job {
+            job.finish(Ok(dest.display().to_string()));
+        }
+        Ok(crate::road::Landed {
+            moved,
+            path: dest,
+            digest: Some(f.digest.clone()),
+        })
+    }
+
+    /// Pulls one payload into `partial`, slice by slice, and answers once
+    /// the bytes there match the digest — the caller gives it its name.
+    /// A job is told the bytes as they land and stops the pull before its
+    /// next slices when cancelled.
     async fn pull_one(
         &self,
         ep: &iroh::Endpoint,
         home: &DeviceInfo,
-        dir: &std::path::Path,
+        partial: &std::path::Path,
         f: &khor_sync::chat::FileRef,
+        job: Option<&crate::road::Job>,
     ) -> Result<u64, String> {
         use std::io::{Read, Write};
-
-        use crate::transfer::{partial_path, payload_path};
-        let partial = partial_path(dir, f);
         // Resume: the final digest must cover the bytes already on disk, so
         // they run through the hasher before any new slice does.
         let mut hasher = blake3::Hasher::new();
         let mut offset = 0u64;
-        if let Ok(mut existing) = fs::File::open(&partial) {
+        if let Ok(mut existing) = fs::File::open(partial) {
             let mut buf = vec![0u8; 1 << 20];
             loop {
                 let n = existing.read(&mut buf).map_err(msg::cant_read_partial)?;
@@ -9517,15 +9654,22 @@ impl Node {
         let mut out = fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&partial)
+            .open(partial)
             .map_err(msg::cant_open_partial)?;
         let expect = f.size.max(0) as u64;
+        if let Some(job) = job {
+            job.total.store(expect, std::sync::atomic::Ordering::Relaxed);
+            job.moved.store(offset, std::sync::atomic::Ordering::Relaxed);
+        }
         let mut moved = 0u64;
         // The first slice alone (it is the one that marks the offer
         // started over there), then up to `PULL_AHEAD` asked at once and
         // written in order.
         let mut ahead = 1;
         while offset < expect {
+            if job.is_some_and(|j| j.is_stopped()) {
+                return Err(crate::road::cancelled());
+            }
             let offsets: Vec<u64> = (0..ahead)
                 .map(|k| offset + k * proto::SLICE)
                 .take_while(|o| *o < expect)
@@ -9559,6 +9703,9 @@ impl Node {
                 hasher.update(&bytes);
                 offset += bytes.len() as u64;
                 moved += bytes.len() as u64;
+                if let Some(job) = job {
+                    job.moved.store(offset, std::sync::atomic::Ordering::Relaxed);
+                }
             }
             ahead = PULL_AHEAD;
         }
@@ -9569,13 +9716,12 @@ impl Node {
             // A mismatch poisons the partial — deleted here, at the only
             // place that knows. Any other failure leaves it: it is the
             // resume point.
-            let _ = fs::remove_file(&partial);
+            let _ = fs::remove_file(partial);
             return Err(msg::digest_mismatch(
                 &got[..8],
                 f.digest.chars().take(8).collect::<String>(),
             ));
         }
-        fs::rename(&partial, payload_path(dir, f)).map_err(msg::cant_rename)?;
         Ok(moved)
     }
 }
