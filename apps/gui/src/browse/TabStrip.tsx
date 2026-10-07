@@ -318,9 +318,12 @@ function TabOpen({ menu, children }: { menu?: RowAction[]; children: ReactNode }
  * every layout and on the strip's resize, so the run starts from where
  * the pills really were. Reduced motion: no run.
  */
-function useRebalance(host: () => HTMLElement | null, active: string) {
+function useRebalance(host: () => HTMLElement | null, active: string, kick = 0) {
   const was = useRef(new Map<string, number>());
   const last = useRef(active);
+  // **…and when a held row lets go** (UX-45): `kick` counts the releases,
+  // so the tabs grow back into the room over the same beat, not a snap.
+  const kicked = useRef(kick);
   const note = () => {
     const h = host();
     if (!h) return;
@@ -330,8 +333,9 @@ function useRebalance(host: () => HTMLElement | null, active: string) {
     const h = host();
     if (!h) return;
     const before = was.current;
-    const changed = last.current !== active;
+    const changed = last.current !== active || kicked.current !== kick;
     last.current = active;
+    kicked.current = kick;
     note();
     if (!changed || before.size === 0 || stillMotion()) return;
     const ease = getComputedStyle(document.documentElement).getPropertyValue("--ease-move").trim() || "ease";
@@ -434,7 +438,10 @@ export function TabStrip({
   // The front tab's piece slides to the tab brought forward, in the glass
   // capsule (F7.2, `lib/travel`).
   useTravel(below ? "tabs-below" : "tabs", () => (glass ? strip.current : null), active);
-  const widths = useRebalance(() => (glass ? strip.current : null), active);
+  /** How many times a held row has let go (`held`): the re-balance runs
+      on each. */
+  const [released, setReleased] = useState(0);
+  const widths = useRebalance(() => (glass ? strip.current : null), active, released);
   // Whether the strip has given up on its own promise. Measured off the
   // element, not counted from `faces.length` and a width: how many tabs
   // fit depends on the region, which the rail, the window and the
@@ -456,6 +463,11 @@ export function TabStrip({
    * boxes are not this strip's to move.
    */
   const bringFront = useRef(() => {});
+  /** Whether the row is held (`held`, below): a held row keeps its
+      scroll when a tab goes (UX-45), so the next × stays under the
+      pointer — neither the count changing nor the strip resizing brings
+      the front tab back; a new front tab still is. */
+  const holding = useRef(false);
   bringFront.current = () => {
     const el = strip.current;
     const tab = el?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(active)}"]`);
@@ -496,7 +508,7 @@ export function TabStrip({
     // The observer catches the region changing; the dependency catches
     // tabs opening and closing. Neither alone sees both.
     const ro = new ResizeObserver(() => {
-      bringFront.current();
+      if (!holding.current) bringFront.current();
       measure();
     });
     ro.observe(el);
@@ -526,7 +538,13 @@ export function TabStrip({
     };
   }, [faces.length]);
 
-  useLayoutEffect(() => bringFront.current(), [active, faces.length]);
+  const frontWas = useRef(active);
+  useLayoutEffect(() => {
+    const moved = frontWas.current !== active;
+    frontWas.current = active;
+    if (holding.current && !moved) return;
+    bringFront.current();
+  }, [active, faces.length]);
 
   /** Whether the front tab's hint is up (`TabFace.again`). One for the
       strip: only the tab in front ever has one. */
@@ -541,6 +559,7 @@ export function TabStrip({
    * the tabs share the room again. ⌘W and the menu never hold.
    */
   const [held, setHeld] = useState<number | null>(null);
+  holding.current = held !== null;
   useEffect(() => {
     if (faces.length === 0) setHeld(null);
   }, [faces.length]);
@@ -646,7 +665,14 @@ export function TabStrip({
       <div
         data-tab-capsule={glass || undefined}
         data-tabs-held={held !== null || undefined}
-        onPointerLeave={held !== null ? () => setHeld(null) : undefined}
+        onPointerLeave={
+          held !== null
+            ? () => {
+                setHeld(null);
+                setReleased((n) => n + 1);
+              }
+            : undefined
+        }
         className={cn(
           "relative flex min-w-0",
           // At a session's foot the capsule takes the row between the way
