@@ -72,6 +72,8 @@ import { SectionHead } from "@/components/SectionHead";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
 import { SideCut } from "@/components/SideCut";
+// A token count: K / M / B (UX-50), base 1000.
+import { tokens as count } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
 
 /** One (day, model) reading, in whichever road's spelling. */
@@ -134,27 +136,6 @@ function total(r: { input: number; output: number; cached_input: number; cache_w
   return r.input + r.output + r.cached_input + r.cache_write;
 }
 
-/**
- * A count in the units a person reads them in.
- *
- * **Base 1000, not 1024** — these are tokens, and a thousand of them is
- * a thousand. `bytes` next door divides by 1024 because it measures
- * memory; sharing that function would have made 「1.0M tokens」 mean
- * 1,048,576 of them, which is a number nobody wrote down.
- *
- * `d` is the decimals, so `tickSet` can ask for more where an axis's
- * labels would otherwise collide.
- */
-function count(n: number, d = 1): string {
-  const units = ["", "k", "M", "G", "T"];
-  let v = n;
-  let u = 0;
-  while (Math.abs(v) >= 1000 && u + 1 < units.length) {
-    v /= 1000;
-    u += 1;
-  }
-  return u === 0 ? `${Math.round(n)}` : `${v.toFixed(d)}${units[u]}`;
-}
 function pct(v: number, d = 1): string {
   return `${(100 * v).toFixed(d)}%`;
 }
