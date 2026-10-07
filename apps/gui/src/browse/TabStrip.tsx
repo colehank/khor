@@ -38,6 +38,11 @@
 // you all of them and a second way to a thing that is not hidden is
 // clutter (this file's original judgment, kept, with its condition now
 // written down and measured rather than assumed).
+//
+// **The glass strip has left that arrangement** (UX-45, Chrome's): it
+// draws every tab, shrinking the ones not in front down to the face
+// alone (× first, then the name), and scrolls past that, the front tab
+// kept in view; after the last tab a hairline and ＋. No count there.
 import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
@@ -389,7 +394,8 @@ export function TabStrip({
   onNew?: () => void;
   /** Open the switcher. Drawn **only once the strip has stopped showing
       every tab** — see the file head; a landing that has no switcher to
-      open leaves this out and gets the strip alone. */
+      open leaves this out and gets the strip alone. **Not on the glass
+      strip** (UX-45): there every tab is drawn, down to its face. */
   onSwitch?: () => void;
   /** Whether the switcher the count opens is up — the count stays drawn
       while it is, so the press that opened it can close it. */
@@ -673,6 +679,11 @@ export function TabStrip({
         {faces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
+          /** **A wide pill that is not in front sheds as it shrinks**
+              (UX-45, Chrome's strip): its own width decides
+              (`@container/tab`, tokens.css `--container-tab-*`) — the
+              ×, then the name, down to the face alone. */
+          const shed = glass && !below && !on;
           return (
             <div
               key={f.id}
@@ -713,7 +724,9 @@ export function TabStrip({
                 // pressed is a tab that lies about where it is, which is
                 // why the button below reaches into the foot.
                 glass
-                  ? "group relative flex h-glass-tab items-center gap-1 self-center rounded-full pr-0.5 pl-1.5"
+                  ? shed
+                    ? "@container/tab group relative flex h-glass-tab items-center self-center rounded-full"
+                    : "group relative flex h-glass-tab items-center gap-1 self-center rounded-full pr-0.5 pl-1.5"
                   : below
                     ? "group relative flex mb-tab-lip items-center gap-1 self-stretch rounded-b-md pr-0.5 pt-tab-lip pl-2"
                     : "group relative flex mt-tab-lip items-center gap-1 self-stretch rounded-t-md pr-0.5 pb-tab-lip pl-2",
@@ -750,7 +763,11 @@ export function TabStrip({
                       // long name is read whole (up to half the capsule
                       // when it has neighbours).
                       cn("min-w-tab-min shrink-0 grow basis-auto glass-sel text-foreground", faces.length > 1 && "max-w-[50%]")
-                    : "min-w-tab-min shrink grow basis-0 text-muted-foreground hover:bg-fill"
+                    : // **Down to the face alone** (UX-45): a pill gives
+                      // way to a `--glass-tab` circle before the strip
+                      // scrolls; ⚠️ 墓碑 (UX-25): `--tab-w-min` as the floor
+                      // and the count after it.
+                      "min-w-glass-tab shrink grow basis-0 text-muted-foreground hover:bg-fill"
                   : on
                     ? "min-w-tab max-w-tab-on flex-none bg-card text-foreground"
                     : "min-w-tab-min shrink basis-tab text-muted-foreground hover:bg-muted",
@@ -805,6 +822,9 @@ export function TabStrip({
                 className={cn(
                   "flex min-w-0 flex-1 items-center gap-tab-gap self-stretch text-left",
                   glass && "text-tab",
+                  // The pill's own insets, here so the face can centre
+                  // once the name is gone; right only while no × stands.
+                  shed && "pl-1.5 pr-1.5 @min-tab-x/tab:pr-0 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0",
                   // Into the foot, wherever the foot is.
                   !glass && (below ? "-mt-tab-lip pt-tab-lip" : "-mb-tab-lip pb-tab-lip"),
                 )}
@@ -829,7 +849,7 @@ export function TabStrip({
                     arrangement the list rows keep, and for the same
                     reason (`EditableName`'s head). */}
                 {f.rename ? (
-                  <span className="flex min-w-0 flex-1 flex-col justify-center">
+                  <span className={cn("flex min-w-0 flex-1 flex-col justify-center", shed && "@max-tab-face/tab:hidden")}>
                     <EditableName
                       kind={f.rename.kind}
                       id={f.rename.id}
@@ -880,7 +900,7 @@ export function TabStrip({
                   <span
                     data-tab-label
                     data-tab-name
-                    className={cn("flex min-w-0 flex-1 items-center gap-1", glass ? "text-tab" : "text-body")}
+                    className={cn("flex min-w-0 flex-1 items-center gap-1", glass ? "text-tab" : "text-body", shed && "@max-tab-face/tab:hidden")}
                   >
                     {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
@@ -900,10 +920,13 @@ export function TabStrip({
                 </TooltipContent>
               )}
               </Tooltip>
-              {/* **× on every wide pill, always** (UX-39 §7, the owner
-                  2026-10-06 22:45–22:50: 「桌面版的看不见 ×」, 「不悬浮就显
-                  示 ×」): in the seat the act had; ⌘W, the menu and the
-                  sheet still close. The phone's band keeps no ×.
+              {/* **× on every wide pill that has room** (UX-45 narrows UX-39
+                  §7): the front pill always, any other while it is at least
+                  `--container-tab-x` wide — a face-only pill has none, and a
+                  press makes it the front one, which has. Never only on
+                  hover (UX-39 §7, the owner 2026-10-06: 「不悬浮就显示 ×」);
+                  in the seat the act had; ⌘W, the menu and the sheet still
+                  close. The phone's band keeps no ×.
                   ⚠️ 墓碑 (UX-33 §1 → UX-39 §7): the third seat on every
                   wide pill; the wide face's one act is the verbs seat's
                   (or `frontAct`'s, after the capsule). */}
@@ -918,6 +941,7 @@ export function TabStrip({
                     "flex h-full w-tab-close flex-none items-center justify-center hover:bg-muted hover:text-foreground",
                     on ? "text-muted-foreground" : "text-tertiary",
                     glass ? "rounded-full" : "rounded-sm",
+                    shed && "me-0.5 @max-tab-x/tab:hidden",
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -978,7 +1002,7 @@ export function TabStrip({
             </div>
           );
         })}
-        {onNew && (
+        {onNew && !(glass && !below) && (
           <Button
             size="icon"
             variant="ghost"
@@ -996,10 +1020,25 @@ export function TabStrip({
           </Button>
         )}
       </div>
-      {glass && onSwitch && (crowded || switching) && (
+      {/* **After the last tab, a hairline and ＋** (UX-45, Chrome's): in
+          the capsule, outside the scroller, so it stays when the strip
+          scrolls. ＋ makes a new tab whose page is where one chooses.
+          ⚠️ 墓碑 (UX-25 → UX-45): the count here once the strip was
+          crowded, and the switcher it opened — every tab is drawn now,
+          down to its face, and the strip scrolls past that. */}
+      {glass && !below && onNew && (
         <>
           <span aria-hidden="true" className="h-4.5 w-px flex-none bg-border" />
-          <TabCount n={faces.length} onPress={onSwitch} open={switching} bare />
+          <Button
+            size="icon"
+            variant="ghost"
+            data-tab-new
+            aria-label={gui.new_tab}
+            className="min-h-touch min-w-touch flex-none rounded-full"
+            onClick={onNew}
+          >
+            <IconPlus />
+          </Button>
         </>
       )}
       </div>

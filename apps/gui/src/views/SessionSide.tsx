@@ -31,7 +31,7 @@
 import { useMemo, useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
 import type { Avatar } from "@/gen/bindings/Avatar";
-import { SeatPick, SeatTitle } from "@/components/SeatTitle";
+import { SeatBar, SeatPick } from "@/components/SeatTitle";
 import { SessionFace } from "@/components/SessionFace";
 import { SideSeatsProvider } from "@/components/SideHead";
 import { gui } from "@/gen/catalog";
@@ -234,7 +234,8 @@ export function SideBody({
   // session 的头像+标题，右上角是可展开的标题」): the session at the left
   // — its face and title, the subject the 附栏 belongs to — and the
   // seat's icon · noun · ⌄ at the right (`SeatTitle`, a native picker),
-  // the two gaps one token (`gap-in`). The seats' own heads step back
+  // the two gaps one token (`gap-in`) — the seat bar since UX-45
+  // (`SeatBar`: 最近 · 工作区 · 浏览器 · 更多). The seats' own heads step back
   // inside (`SeatHead` draws only the tree's way back to 最近; a page wears
   // the main area's deck at its foot, UX-40 §4). ⚠️ 墓碑: the glass
   // capsule at the column's top (UX-30 §2), the flat row at the sheet's
@@ -249,7 +250,7 @@ export function SideBody({
             <SessionFace face={who.face} word={who.word} kind={who.kind} category={who.category} size="tab" />
             <span className="min-w-0 truncate text-title-md font-title">{who.title}</span>
           </span>
-          <SeatTitle className="flex-none" />
+          <SeatBar />
         </header>
         <div data-side-page className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {children}

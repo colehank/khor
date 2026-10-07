@@ -1314,6 +1314,9 @@
    * 长度」 is about stubs not following their names, and they still do
    * not. */
   --tab-w-min: 104px;
+  /* A kind's tile on a new tab's page (UX-45): the dial's 40 face and a
+   * name of about eight characters under it. */
+  --new-tile: 76px;
   /* How tall the chat box may grow before it starts scrolling itself.
    * Not a control height: those three are what a control *is*, and this
    * is a ceiling a growing box stops at. Without a ceiling a pasted
@@ -2156,6 +2159,14 @@
   /* A menu that opens from glass (更多), iOS's 20. */
   --radius-2xl: 20px;
   --radius-full: 9999px;
+  /* **A wide glass tab sheds as it shrinks** (UX-45, Chrome's strip):
+   * under `tab-x` a pill that is not in front drops its × (no room for
+   * it beside a name), under `tab-face` its name too — the face alone,
+   * a `--glass-tab` circle. Container sizes (`@max-tab-x/tab:`), so
+   * literal: a container query cannot read a variable. 60 is the face's
+   * 18, its two 6s and about two characters; 100 adds the ×'s 24 cell. */
+  --container-tab-face: 60px;
+  --container-tab-x: 100px;
 }
 
 @theme inline {
@@ -2246,6 +2257,7 @@
   --spacing-tab: var(--tab-w);
   --spacing-tab-on: var(--tab-w-on);
   --spacing-tab-min: var(--tab-w-min);
+  --spacing-new-tile: var(--new-tile);
   --spacing-chat-box: var(--chat-box);
   --spacing-top-h: var(--top-h);
   --spacing-drawer-row: var(--drawer-row);

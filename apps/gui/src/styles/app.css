@@ -86,6 +86,7 @@ svg [data-body] {
 }
 
 [data-rail-item][data-on="true"] svg [data-body],
+[data-seat-item][data-on="true"] svg [data-body],
 :is([data-nav-item], [data-nav-more])[data-on="true"] svg [data-body] {
   fill-opacity: 1;
 }

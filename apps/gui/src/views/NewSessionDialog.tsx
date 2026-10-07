@@ -82,7 +82,9 @@ import {
   type DeviceRow,
   type KnownAgent,
 } from "@/api";
+import { FaceMark, type KindMark } from "@/components/FaceMark";
 import { PathField, settledPath } from "@/components/PathField";
+import { sessionKind } from "@/components/SessionFace";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -99,6 +101,7 @@ import { gui } from "@/gen/catalog";
 import { dropHandOff, peekHandOff } from "@/lib/composer-handoff";
 import { useHereHosts } from "@/lib/here";
 import { useSetting } from "@/settings";
+import { cn } from "@/lib/utils";
 import { connectionWord } from "@/words";
 
 /** 类型 — the wizard's second step. Three, and no fourth (the ruling):
@@ -129,7 +132,14 @@ export function NewSessionDialog({
   onOpened,
   machine: picked = "",
   dir: at = "",
+  page = false,
 }: {
+  /** **Drawn as a page, not a dialog** (UX-45): a new tab's page, the
+      same questions and the same create call. `open` is the page being
+      mounted; `onOpenChange(false)` is the tab being let go (a line
+      left), and 创建 hands the session to `onOpened` alone, which turns
+      the tab into it. */
+  page?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The freshly-minted session id — the caller may select its row. */
@@ -375,7 +385,8 @@ export function NewSessionDialog({
       .then((id) => {
         createTokens.delete(key);
         startedAgent.current = kind === "agent";
-        onOpenChange(false);
+        // A page is not closed: its tab becomes the session (UX-45).
+        if (!page) onOpenChange(false);
         onOpened(id);
       })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)))
@@ -401,6 +412,328 @@ export function NewSessionDialog({
       .finally(() => setOpening(false));
   };
 
+  /** **The kinds as a page's choices** (UX-45, the owner: the kinds 新建
+      会话 offers — shell, claude, codex, …): one row of tiles, each the
+      chosen machine's face wearing that kind's mark and its name under
+      it, the picked one a `fill-strong` block. 类型 and 智能体 in one
+      pick, since on a page they are one question: what runs here. */
+  const tileFace = machines.find((d) => d.name === target)?.face ?? null;
+  const tiles: { key: string; label: string; mark: KindMark; on: boolean; pick: () => void }[] = [
+    ...(targetHosts
+      ? [
+          {
+            key: "shell",
+            label: gui.new_session_kind_shell,
+            mark: sessionKind("shell", "shell"),
+            on: kind === "shell",
+            pick: () => setKind("shell"),
+          },
+          ...agentNames.map((name) => ({
+            key: `agent:${name}`,
+            label: name,
+            mark: sessionKind("tui", name),
+            on: kind === "agent" && agent === name,
+            pick: () => {
+              setKind("agent");
+              pick(name);
+            },
+          })),
+        ]
+      : []),
+    { key: "tell", label: gui.message_text, mark: sessionKind("chat", null), on: kind === "tell", pick: () => setKind("tell") },
+  ];
+  const tileRow = (
+    <div data-new-session-tiles role="radiogroup" aria-label={gui.new_session_kind} className="flex flex-wrap gap-in">
+      {tiles.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          role="radio"
+          aria-checked={t.on}
+          data-new-session-tile={t.key}
+          data-on={t.on}
+          onClick={t.pick}
+          className={cn(
+            "flex w-new-tile flex-col items-center gap-xxs rounded-lg py-in text-callout",
+            t.on ? "bg-fill-strong text-foreground" : "text-muted-foreground hover:bg-fill",
+          )}
+        >
+          <FaceMark face={{ machine: tileFace }} mark={t.mark} size="dial" />
+          <span className="max-w-full truncate px-xxs">{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+  const act =
+    kind === "tell" ? (
+      <Button variant="primary" data-tell-send disabled={opening} aria-busy={opening || undefined} onClick={send}>
+        {gui.send_it}
+      </Button>
+    ) : (
+      <Button variant="primary" data-new-session-create disabled={opening} aria-busy={opening || undefined} onClick={create}>
+        {gui.create}
+      </Button>
+    );
+
+  if (page)
+    return (
+      // **A page, top-down** (UX-45): the machine, what runs there (the
+      // tiles), then the name and the directory, and 创建 at the end of
+      // the column — no title (the tab says 新标签页) and no 取消 (the
+      // tab's × lets it go).
+      <div data-new-session-page className="h-full min-h-0 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-measure flex-col gap-group px-page pt-pane pb-nav-room">
+          <FormGrid data-new-session-form>
+          {machines.length > 1 && (
+            <>
+              <FormLabel>{gui.new_session_machine}</FormLabel>
+              <div data-new-session-machines className="flex min-w-0">
+                <PopupButton
+                  look="field"
+                  label={gui.new_session_machine}
+                  value={target}
+                  mark={{ "data-new-session-machine-select": "" }}
+                  // A machine that cannot be reached directly is not
+                  // listed (the audit fix plan F1.9: not greyed).
+                  choices={machines
+                    .filter((d) => d.sponsor === null)
+                    .map((d) => ({
+                      value: d.name,
+                      label: connectionWord(d) ? `${d.name} ${connectionWord(d)}` : d.name,
+                      mark: { "data-new-session-machine": d.name },
+                    }))}
+                  onPick={(name) => {
+                    setMachine(name);
+                    // A path typed for this disk means nothing on
+                    // that one.
+                    setDir("");
+                  }}
+                />
+              </div>
+            </>
+          )}
+          <FormLabel>{gui.new_session_kind}</FormLabel>
+          {tileRow}
+          {kind === "agent" && (
+            <>
+              <div className="col-start-2 flex">
+                {/* **The door onto the snapshot, and not a fourth
+                    segment.** It opens a list; it is not an agent one
+                    could be using. As a segment it would be announced
+                    as a radio, the arrow keys would land on it and
+                    「choose」 opening a panel, and it would look like a
+                    name. So it stands after the control as a plain
+                    button with the ellipsis a door wears (components/
+                    Button). Beside the names rather than behind a
+                    settings page: this is the moment the question
+                    「有别的吗」 is being asked. */}
+                <Button
+                  variant="ghost"
+                  data-new-session-add-agent
+                  data-on={browsing}
+                  aria-expanded={browsing}
+                  onClick={() => (browsing ? setBrowsing(false) : browse())}
+                  // The finger's box is the button's `::after` (`app.css`),
+                  // so the row is as tall as the segments beside it — a
+                  // 44 floor here made 「Run with」's group the loose one.
+                  className="flex-none"
+                >
+                  {gui.new_session_add_agent}
+                </Button>
+              </div>
+              {browsing && (
+                <div data-new-session-registry className="col-start-2 flex min-w-0 flex-col gap-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-caption">{gui.new_session_registry}</span>
+                    {/* **When it was taken, on screen.** A pinned table
+                        with no date reads as「现在有这些」, which is a
+                        claim khor cannot make about a file from one day. */}
+                    {taken && (
+                      <span data-registry-taken className="text-caption text-muted-foreground">
+                        {gui.new_session_registry_taken(taken[0], taken[1])}
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    data-registry-search
+                    placeholder={gui.new_session_search}
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                  <div className="flex max-h-56 min-w-0 flex-col gap-1 overflow-y-auto">
+                    {(snapshot ?? [])
+                      .filter((k) => {
+                        const q = query.trim().toLowerCase();
+                        return (
+                          q === "" ||
+                          `${k.id} ${k.name} ${k.about}`.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((k) => (
+                        <div
+                          key={k.id}
+                          data-registry-row={k.id}
+                          data-registry-startable={k.argv !== null}
+                          className="flex min-w-0 flex-col text-caption"
+                        >
+                          <div className="flex min-w-0 items-baseline gap-2">
+                            <span className="min-w-0 flex-1 truncate">{k.id}</span>
+                            {registered(k.id) ? (
+                              // Shown, not hidden: an entry that vanished
+                              // once attached reads as the snapshot having
+                              // shrunk.
+                              <span data-registry-attached className="shrink-0 text-muted-foreground">
+                                {gui.new_session_attached}
+                              </span>
+                            ) : k.argv === null ? (
+                              // **The other 18.** Not「接不了」—— khor has no
+                              // argv for a platform binary, and that is a
+                              // different sentence with a different next
+                              // step. Said rather than dropped from the
+                              // list, or a person concludes khor cannot
+                              // speak to these at all.
+                              <span data-registry-byhand className="shrink-0 text-muted-foreground">
+                                {gui.new_session_byhand}
+                              </span>
+                            ) : (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                data-registry-attach={k.id}
+                                disabled={attaching !== null}
+                                aria-busy={attaching === k.id || undefined}
+                                onClick={() => attach(k.id)}
+                              >
+                                {gui.new_session_attach}
+                              </Button>
+                            )}
+                          </div>
+                          {/* **What it is, and what khor would run.**
+                              The blurb is the registry's own line, and
+                              the argv is the one thing a person cannot
+                              find out any other way — 「khor 起得来」
+                              without it is a claim they take on trust
+                              (`khor agents known` prints it for the same
+                              reason). Read here, never sent back: the
+                              attach goes out as the id. */}
+                          <span className="min-w-0 truncate text-muted-foreground">
+                            {k.about}
+                          </span>
+                          {k.argv !== null && (
+                            <span
+                              data-registry-argv={k.id}
+                              className="min-w-0 truncate text-muted-foreground"
+                            >
+                              {k.argv}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+              {listed && known.length === 0 && (
+                // Only once the registry has answered that it is empty.
+                // The open position is otherwise invisible to anyone who
+                // never opens a terminal: two names look like the whole
+                // world, and a third is the one thing they cannot guess.
+                <span data-new-session-more-agents className="col-start-2 text-caption text-muted-foreground">
+                  {gui.new_session_more_agents}
+                </span>
+              )}
+            </>
+          )}
+          {kind === "tell" && (
+            // 留言's third step is the line itself — the whole of
+            // `khor tell`, which used to be a dialog of its own. Under
+            // the controls, not beside a label: the kind above already
+            // says what it is.
+            <Input
+              data-tell-text
+              aria-label={gui.message_text}
+              placeholder={gui.chat_input}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && send()}
+              className="col-start-2"
+            />
+          )}
+            {kind === "agent" && (
+              <>
+              {handed && (
+                <>
+                  <FormLabel mark={{ "data-new-session-label": "handed" }}>{gui.new_session_handed}</FormLabel>
+                  <span data-new-session-handed className="min-w-0 truncate text-body" style={{ fontFamily: "var(--font-term)" }}>
+                    {handed}
+                  </span>
+                </>
+              )}
+              {/* **claude's own two forms**, right under its name and
+                  only for it: the ruling keeps claude-in-a-terminal
+                  reachable without making it a fourth kind. ⚠️ 墓碑 (the
+                  owner's progressive disclosure, 2026-10-02; the audit
+                  fix plan F1.9): greyed for the others — a control that
+                  cannot be used is not drawn. */}
+              {agent === "claude" && (
+                <>
+                  <FormLabel mark={{ "data-new-session-label": "form" }}>{gui.new_session_form}</FormLabel>
+                  <div data-new-session-forms className="flex min-w-0">
+                    <SegmentedControl<"chat" | "term">
+                      label={gui.new_session_form}
+                      value={form}
+                      onChange={setForm}
+                      options={[
+                        { key: "chat", label: gui.view_chat, mark: { "data-new-session-chat": "" } },
+                        { key: "term", label: gui.view_terminal, mark: { "data-new-session-term": "" } },
+                      ]}
+                    />
+                  </div>
+                </>
+              )}
+              </>
+            )}
+          {kind !== "tell" && (
+            <>
+              <FormLabel htmlFor="khor-new-session-name">{gui.new_session_name}</FormLabel>
+              <Input
+                id="khor-new-session-name"
+                data-new-session-name
+                placeholder={gui.new_session_name_hint}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && create()}
+              />
+              {/* **One box, completing as it is typed in** (2026-09-27).
+                  It had 常去的地方 under it and a 「挑…」 picker beside it;
+                  the ruling took both — nothing is offered before a
+                  character is typed, and what is offered after is the
+                  chosen machine's own directories (`PathField`). **Not a
+                  `label` around it**: the completions are buttons, and a
+                  button inside a label is a control inside a control. */}
+              <FormLabel>{gui.new_session_dir}</FormLabel>
+              <div className="flex min-w-0 flex-col">
+                <PathField
+                  data-new-session-dir
+                  aria-label={gui.new_session_dir}
+                  machine={chosen}
+                  value={dir}
+                  onValueChange={setDir}
+                  onSubmit={create}
+                />
+              </div>
+            </>
+          )}
+          {error && (
+            <p data-new-session-error className="col-span-2 text-callout text-destructive">
+              {error}
+            </p>
+          )}
+          </FormGrid>
+          <div className="flex justify-end">{act}</div>
+        </div>
+      </div>
+    );
+
   return (
     <>
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -425,17 +758,6 @@ export function NewSessionDialog({
             all — and `truncate` never fires because nothing above it
             agreed to shrink. */}
         <FormGrid data-new-session-form>
-          {/* **在哪台, first — before the directory, because the
-              directory is a fact about the machine.** The whole net's
-              machines, this one marked; picking one makes the box,
-              its completions and the agent all that machine's. Drawn
-              only when there is a choice to make. **A popup, not a
-              row of choices**: machines are a list that grows, and the
-              system's menu is what holds a long one (components/
-              PopupButton). A satellite is offered greyed: it has no
-              khor of its own to host an agent (`open --on` reaches it
-              over ssh for a shell), and a choice that cannot be taken
-              says so more plainly than a refusal after the fact. */}
           {machines.length > 1 && (
             <>
               <FormLabel>{gui.new_session_machine}</FormLabel>
@@ -526,20 +848,6 @@ export function NewSessionDialog({
               )}
               <FormLabel mark={{ "data-new-session-label": "agent" }}>{gui.new_session_agent_pick}</FormLabel>
               <div data-new-session-agents className="flex min-w-0 flex-wrap items-center gap-in">
-                {/* Vendor names are proper nouns with no catalog entry
-                    (words.ts's rule), and a registered agent wears the
-                    name its owner gave it — so every choice here is a
-                    name, never a translated word. khor's own two lead
-                    because they need no registering; the rest follow in
-                    the registry's order, which is alphabetical, so two
-                    machines paint the same row.
-
-                    **Segments while the list is short, the system's
-                    menu once it is not** (components/SegmentedControl:
-                    ≤ ~4 fixed choices → segmented, a list that grows →
-                    popup). The registry is an open position, so the
-                    same row turns into a popup the day a fifth agent is
-                    attached; every choice keeps its anchor either way. */}
                 {agentNames.length <= SEGMENTS_MAX ? (
                   <SegmentedControl
                     label={gui.new_session_agent_pick}
@@ -758,15 +1066,7 @@ export function NewSessionDialog({
           <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
             {gui.delete_keep}
           </Button>
-          {kind === "tell" ? (
-            <Button variant="primary" data-tell-send disabled={opening} aria-busy={opening || undefined} onClick={send}>
-              {gui.send_it}
-            </Button>
-          ) : (
-            <Button variant="primary" data-new-session-create disabled={opening} aria-busy={opening || undefined} onClick={create}>
-              {gui.create}
-            </Button>
-          )}
+          {act}
         </DialogFooter>
       </DialogContent>
     </Dialog>

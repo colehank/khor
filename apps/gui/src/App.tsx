@@ -81,7 +81,7 @@ import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
-import { useSessionTabs } from "@/hooks/use-session-tabs";
+import { isNewTab, newTabId, useSessionTabs } from "@/hooks/use-session-tabs";
 import { tabsLimitOf } from "@/browse/tab-limit";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
@@ -147,6 +147,7 @@ import { SessionScreen, VerbSeat } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionDialog } from "@/views/NewSessionDialog";
+import { newTabKind } from "@/components/SessionFace";
 
 /**
  * The four landings, all present from the first day.
@@ -1705,9 +1706,27 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, selected, landing, screen, narrow, hidden],
   );
+  /** **＋ makes a new tab** (UX-45): in front at once, its page the
+      new-session choices (`NewSessionDialog` `page`); made, it becomes
+      that session (`sessionTabs.become`), closed first, it is gone. */
+  const openNewTab = () => {
+    setMorePage(null);
+    setLanding("sessions");
+    sessionTabs.open(newTabId());
+    setScreen("detail");
+  };
   const tabFaces: TabFace[] = useMemo(
     () =>
       openTabs.map((id) => {
+        if (isNewTab(id))
+          return {
+            id,
+            label: gui.new_tab,
+            face: null,
+            mark: newTabKind(),
+            path: "",
+            menu: [{ key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) }],
+          };
         const r = rows.find((row) => row.id === id);
         // **Pressed again, the tab in front opens or closes its 附栏**
         // (UX-30; ⚠️ 墓碑 2026-09-29 → 10-06: it showed or hid the day —
@@ -2488,7 +2507,22 @@ export default function App() {
       </SessionSide>
     ) : undefined;
 
-  const detail = sessions ? (
+  const detail = sessions && isNewTab(selected) ? (
+    // A new tab's page (UX-45): the wizard's questions laid out in the
+    // tab, one per new tab.
+    <NewSessionDialog
+      key={selected}
+      page
+      open
+      onOpenChange={(o) => {
+        if (!o && selected) sessionTabs.close(selected);
+      }}
+      onOpened={(id) => {
+        justOpened.current.set(id, Date.now());
+        if (selected) sessionTabs.become(selected, id);
+      }}
+    />
+  ) : sessions ? (
     // The conversation in this pane is painted inside the workspace it
     // is running in, as far as its paths are concerned (2026-09-18
     // ruling 54). **Null where the row has no directory**, which is
@@ -2854,9 +2888,8 @@ export default function App() {
         if (openTabs.length === 1) setScreen("list");
         sessionTabs.close(id);
       }}
-      // Once the strip scrolls, its count opens the switcher — the
-      // narrow shell's own screen, with its 「‹」 back to this one.
-      onNew={() => openNewSession()}
+      // ＋ in the tabs sheet: a new tab, its page the choices (UX-45).
+      onNew={openNewTab}
       newLabel={gui.new_session}
       onBack={() => setScreen("list")}
       caption={stale ? gui.backend_unreachable : undefined}
@@ -3715,6 +3748,8 @@ export default function App() {
                       setScreen("detail");
                     }}
                     onClose={sessionTabs.close}
+                    // ＋ after the last tab: a new tab (UX-45).
+                    onNew={openNewTab}
                     stripData={{ "data-session-tabs": "", "aria-label": gui.session_tabs }}
                     // 过期 / 离线 on B's R0: after the strip, which then
                     // compresses its tabs into what is left.
