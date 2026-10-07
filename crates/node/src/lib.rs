@@ -2066,6 +2066,10 @@ impl Node {
     /// the sponsor's scp, and only the sponsor has the road
     /// (一期单 sponsor; docs/NET.md 卫星).
     pub fn satellite_host_here(&self, machine: &str) -> Result<Option<String>, String> {
+        // The broadcast is no machine, satellite or not.
+        if machine.starts_with(khor_sync::chat::WIDE) {
+            return Ok(None);
+        }
         let (channel, _) = self.resolve(machine)?;
         let Some(d) = self.devices_loaded()?.doc.by_name(&channel) else {
             return Ok(None);

@@ -3623,8 +3623,16 @@ fn tell(rest: &[String]) -> Result<(), String> {
     if text.is_empty() {
         return Err(usage_text().into());
     }
-    let id = node()?.tell(machine, &text.join(" "))?;
+    let n = node()?;
+    let id = n.tell(machine, &text.join(" "))?;
     println!("{id}");
+    // A line in the broadcast goes to every machine now, not at the next
+    // beat (STORE-BRIEF phase 3). Best effort, as `send`'s round.
+    if machine.starts_with("wide/")
+        && let Ok(rt) = rt()
+    {
+        let _ = rt.block_on(n.sync_now());
+    }
     Ok(())
 }
 
