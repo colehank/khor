@@ -500,6 +500,19 @@ function creditsPct(c: QuotaCredits | null): number | null {
   return Math.min(100, (c.used / c.monthly_limit) * 100);
 }
 
+/**
+ * Whether the subscription's extra usage has a real reading to draw.
+ *
+ * **Switched on, and at least one figure the endpoint stated** (owner,
+ * 2026-10-07:「额外用量和已用，没有真实读数就不画」). Off, unreadable or
+ * unknown, the whole block is absent — no 「不可用」, no reason, no 「—」:
+ * a block that only says 「there is nothing here」 is a line a person
+ * reads to learn nothing.
+ */
+function creditsShown(c: QuotaCredits | null): c is QuotaCredits {
+  return c !== null && c.enabled && (c.used != null || c.balance != null || c.monthly_limit != null);
+}
+
 /** One thing a subscription's dial is made of: a window, or credits
     when credits has a ceiling.
 
@@ -784,12 +797,10 @@ function subLine(r: Row): string {
   return [kindWord(r.kind), who].join(" · ");
 }
 
-/** The `disabled_reason` key as a status word — never a sentence
-    (2026-09-06: 「只留数,不留句子」). A key this build never heard of
-    is shown as itself, the same bargain `troubleWord` makes. */
-function creditWord(key: string): string {
-  return key === "out_of_credits" ? gui.quota_credits_out : key;
-}
+/* ⚠️ **Tombstone: `creditWord` is gone, 2026-10-07.** It turned
+   `disabled_reason` into a status word beside 「不可用」; the owner ruled
+   that extra usage which is off draws nothing at all (`creditsShown`),
+   so there is no reason left to word. */
 
 function axisWord(axis: string): string {
   switch (axis) {
@@ -1630,34 +1641,25 @@ export function QuotaLanding({
           no mark (`creditsPct`).
           The dl is the account detail's, reused: one shape for
           「figures about an account」 on this page, not a second. */}
-      {current.credits && (
+      {/* **Drawn only with a real reading** (`creditsShown`, owner
+          2026-10-07). The name's own row carries what was spent, so
+          已用 is a figure and never a label over nothing.
+          ⚠️ **Tombstone: until that day this block drew whenever the
+          endpoint sent `extra_usage`** — 「额外用量 · 不可用 · 额度已用完」
+          over a spend, for a switch that was off. The words
+          `quota-credits-on` / `quota-credits-off` went with it. */}
+      {creditsShown(current.credits) && (
         <dl
           data-quota-credits
           className="grid grid-cols-[auto_1fr] gap-x-row gap-y-1 text-callout"
         >
           <dt className="text-muted-foreground">{gui.quota_credits}</dt>
-          <dd data-quota-credits-on={current.credits.enabled}>
-            {current.credits.enabled ? gui.quota_credits_on : gui.quota_credits_off}
-            {/* The reason only where there is one to give, and it is
-                the endpoint's key turned into a sentence — a key khor
-                has never heard of is printed as itself rather than
-                swallowed, because a person can act on a reason they
-                can read. */}
-            {!current.credits.enabled && current.credits.disabled_reason
-              ? ` · ${creditWord(current.credits.disabled_reason)}`
-              : ""}
+          {/* **`!= null`, not truthiness**: a spend of exactly 0 is a
+              fact worth drawing, and `0 &&` would hide it. With no
+              spend stated the name stands over the rows below it. */}
+          <dd data-quota-credits-used className="tabular-nums">
+            {current.credits.used != null ? money(current.credits.used, current.credits.currency) : ""}
           </dd>
-          {/* **`!= null`, not truthiness**: a balance of exactly 0 is a
-              fact worth drawing, and `0 &&` would hide precisely the
-              reader who most needs to see it. */}
-          {current.credits.used != null && (
-            <>
-              <dt className="text-muted-foreground">{gui.accounts_spent}</dt>
-              <dd data-quota-credits-used className="tabular-nums">
-                {money(current.credits.used, current.credits.currency)}
-              </dd>
-            </>
-          )}
           {current.credits.balance != null && (
             <>
               <dt className="text-muted-foreground">{gui.accounts_remaining}</dt>

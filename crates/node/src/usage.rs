@@ -69,7 +69,18 @@
 //! Same judgment as [`crate::adaptor::Found`]: whose tokens these were is
 //! the name of whoever recognised them, so [`Meters::tally_in`] attaches
 //! it and a meter has nowhere to write it. A field a meter filled in would
-//! be a field a meter could fill in wrongly.
+//! be a field a meter could fill in wrongly. The one thing a meter does
+//! say is whether a third party answered ([`Kept::third_party`]), and the
+//! category is still made here, from that and the meter's name
+//! ([`category`]).
+//!
+//! # What outlives the vendor's housekeeping
+//!
+//! The vendors delete their own old files, and the answer for a past day
+//! must not shrink when they do. A registry given a ledger
+//! ([`Meters::with_ledger`]) writes down what it counted and answers a
+//! past period from whichever says more, the files or the ledger — the
+//! rules, and why they cannot overstate, are in [`ledger`].
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -97,7 +108,40 @@ pub struct Kept {
     /// beside it: see `khor_core::UsageModelDay::model` for what the
     /// absence is allowed to mean downstream.
     pub model: Option<std::sync::Arc<str>>,
+    /// Whether the record says, on its face, that somebody other than
+    /// the vendor answered it — an agent pointed at a third-party API
+    /// through a base URL setting. `false` is "nothing here says so",
+    /// which is every meter but claude's today ([`claude::official_id`]
+    /// has the one test khor can make).
+    ///
+    /// **A flag the meter sets, and still not a category it picks**: the
+    /// category is stamped in [`Meters::tally_in`] off this and the
+    /// meter's name ([`category`]), for the reason the module head gives.
+    pub third_party: bool,
 }
+
+/// The category a record is filed under: the vendor's name, or the
+/// vendor's name marked as answered elsewhere.
+///
+/// **Its own category rather than a field on the row** (owner, 2026-10-07:
+/// the subscription's chart counts only the vendor's own replies). The
+/// subscription's chart reads one category by the vendor's name
+/// (`UsageHalf`'s `fromUsage`), so a reply a third-party API answered
+/// leaves that chart by not wearing the name — and still shows up,
+/// under its own name, everywhere the question is "what did the agents
+/// on this machine do" (`khor usage`). A field would have been a second
+/// filter every reader had to remember; an older peer would not have
+/// sent it, and a face that forgot it would have been wrong in silence.
+pub fn category(vendor: &str, third_party: bool) -> String {
+    if third_party {
+        format!("{vendor}{THIRD_PARTY}")
+    } else {
+        vendor.to_owned()
+    }
+}
+
+/// What [`category`] appends for a record a third party answered.
+pub const THIRD_PARTY: &str = "-third-party";
 
 /// How many distinct model names [`interned`] will hold.
 ///
@@ -209,12 +253,25 @@ pub struct Meters {
     /// question is answerable without asking anybody to run anything a
     /// particular way.
     passes: AtomicU64,
+    /// What this registry has already counted, kept on disk so a
+    /// transcript the vendor deletes does not take its history with it
+    /// ([`ledger`]). `None` reads the files and nothing else — every test
+    /// of the meters, and [`Meters::at`] until somebody says where.
+    ledger: Option<ledger::Ledger>,
 }
 
 /// An answer, and what the tree looked like when it was given.
 struct Cached {
     tree: Shape,
     usage: Usage,
+    /// When the oldest part of this answer the ledger has not recorded
+    /// yet becomes old enough to record ([`ledger::Ledger::merge`]).
+    ///
+    /// **Without it an unchanged tree would never be recorded**: the
+    /// answer is kept until the files move, and an agent that stopped
+    /// at six in the evening moves no file until somebody uses it again
+    /// — by which time the vendor may have deleted the transcript.
+    due: Option<jiff::Timestamp>,
 }
 
 /// A tree, cheaply: how many files, how many bytes, and the newest one.
@@ -240,6 +297,7 @@ impl Meters {
             meters: Vec::new(),
             cached: Mutex::new(None),
             passes: AtomicU64::new(0),
+            ledger: None,
         }
     }
 
@@ -270,12 +328,20 @@ impl Meters {
             meters,
             cached: Mutex::new(None),
             passes: AtomicU64::new(0),
+            ledger: None,
         }
     }
 
     /// Adds one meter. How a test names its own vendor.
     pub fn with(mut self, meter: Box<dyn Meter>) -> Meters {
         self.meters.push(meter);
+        self
+    }
+
+    /// Keeps what this registry counts in a ledger at `path`, and answers
+    /// from it where the files no longer reach ([`ledger`]).
+    pub fn with_ledger(mut self, path: PathBuf) -> Meters {
+        self.ledger = Some(ledger::Ledger::at(path));
         self
     }
 
@@ -332,16 +398,19 @@ impl Meters {
     pub fn tally(&self) -> Usage {
         let zone = jiff::tz::TimeZone::system();
         let tree = self.shape();
+        let now = jiff::Timestamp::now();
         let mut cached = self.cached.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(had) = cached.as_ref()
             && had.tree == tree
+            && had.due.is_none_or(|due| now < due)
         {
             return had.usage.clone();
         }
-        let usage = self.tally_in(&zone);
+        let (usage, due) = self.fold(&zone, now);
         *cached = Some(Cached {
             tree,
             usage: usage.clone(),
+            due,
         });
         usage
     }
@@ -383,6 +452,17 @@ impl Meters {
     /// answer is due, and it is the seam a test uses to pin a zone, since
     /// an assertion about which day a timestamp falls on is otherwise an
     /// assertion about where the machine running the tests happens to be.
+    pub fn tally_in(&self, zone: &jiff::tz::TimeZone) -> Usage {
+        self.tally_at(zone, jiff::Timestamp::now())
+    }
+
+    /// [`Meters::tally_in`] as it would answer at `now`. The seam a test
+    /// uses to say how old the records are, which decides what the
+    /// ledger has recorded ([`ledger::Ledger::merge`]).
+    pub fn tally_at(&self, zone: &jiff::tz::TimeZone, now: jiff::Timestamp) -> Usage {
+        self.fold(zone, now).0
+    }
+
     /// # One map, two lists, and why that is not tidiness
     ///
     /// The finer cut is the one that is folded, and the day list is
@@ -394,20 +474,62 @@ impl Meters {
     /// remembering. Two independent folds would be the shape where a
     /// filter added to one of them silently shrinks a denominator, and
     /// every percentage drawn from it still looks right.
-    pub fn tally_in(&self, zone: &jiff::tz::TimeZone) -> Usage {
+    ///
+    /// # Buckets first, days last
+    ///
+    /// The records are folded into fifteen-minute buckets of UTC time
+    /// before any calendar is applied ([`ledger::BUCKET_S`] says why that
+    /// size cuts every zone's days exactly). It is the shape the ledger
+    /// keeps, so the files and the ledger meet on one key and a past
+    /// bucket the files no longer reach is answered from the ledger
+    /// whatever zone is asking.
+    fn fold(
+        &self,
+        zone: &jiff::tz::TimeZone,
+        now: jiff::Timestamp,
+    ) -> (Usage, Option<jiff::Timestamp>) {
         self.passes.fetch_add(1, Ordering::Relaxed);
-        let mut rows: HashMap<(String, &'static str, Option<std::sync::Arc<str>>), Tokens> =
+        let mut buckets: HashMap<(i64, &'static str, Option<std::sync::Arc<str>>, bool), Tokens> =
             HashMap::new();
         let mut unreadable = 0u64;
         for m in &self.meters {
             let tally = m.tally();
             unreadable = unreadable.saturating_add(tally.unreadable);
             for k in tally.kept {
-                let day = k.at.to_zoned(zone.clone()).date().to_string();
-                rows.entry((day, m.vendor(), k.model))
+                buckets
+                    .entry((ledger::bucket_of(k.at), m.vendor(), k.model, k.third_party))
                     .or_default()
                     .add(k.tokens);
             }
+        }
+        // The ledger's key only now, once per bucket rather than once
+        // per record: the records are tens of thousands, the buckets a
+        // few thousand.
+        let fresh: ledger::Book = buckets
+            .into_iter()
+            .map(|((bucket, vendor, model, third_party), tokens)| {
+                let key = ledger::Key {
+                    vendor: interned(vendor),
+                    model,
+                    third_party,
+                };
+                ((bucket, key), tokens)
+            })
+            .collect();
+        let (book, due) = match &self.ledger {
+            Some(ledger) => ledger.merge(fresh, now),
+            None => (fresh, None),
+        };
+        let mut rows: HashMap<(String, String, Option<String>), Tokens> = HashMap::new();
+        for ((bucket, key), tokens) in book {
+            let day = ledger::start_of(bucket)
+                .to_zoned(zone.clone())
+                .date()
+                .to_string();
+            let model = key.model.map(|m| m.to_string());
+            rows.entry((day, category(&key.vendor, key.third_party), model))
+                .or_default()
+                .add(tokens);
         }
         let mut models: Vec<khor_core::UsageModelDay> = rows
             .into_iter()
@@ -423,8 +545,8 @@ impl Meters {
             .map(
                 |((day, category, model), tokens)| khor_core::UsageModelDay {
                     day,
-                    category: category.to_owned(),
-                    model: model.map(|m| m.to_string()),
+                    category,
+                    model,
                     tokens,
                 },
             )
@@ -461,12 +583,13 @@ impl Meters {
                 }),
             }
         }
-        Usage {
+        let usage = Usage {
             days,
             unreadable,
             models,
             today: Some(today_in(zone).to_string()),
-        }
+        };
+        (usage, due)
     }
 }
 
@@ -491,15 +614,23 @@ impl Meters {
 ///
 /// The map only grows, which is bounded in production (one home) and
 /// costs a test suite one entry per temp directory it opens.
-pub fn meters_for(home: &Path) -> std::sync::Arc<Meters> {
-    static ALL: std::sync::OnceLock<Mutex<HashMap<PathBuf, std::sync::Arc<Meters>>>> =
-        std::sync::OnceLock::new();
+///
+/// **Keyed by the ledger too**, because the two are separate settings:
+/// two khor homes reading one vendor home (`KHOR_VENDOR_HOME`) keep a
+/// ledger each, and one registry shared between them would write both
+/// homes' history into whichever ledger it was built with.
+pub fn meters_for(home: &Path, ledger: &Path) -> std::sync::Arc<Meters> {
+    static ALL: std::sync::OnceLock<
+        Mutex<HashMap<(PathBuf, PathBuf), std::sync::Arc<Meters>>>,
+    > = std::sync::OnceLock::new();
     let mut all = ALL
         .get_or_init(|| Mutex::new(HashMap::new()))
         .lock()
         .unwrap_or_else(|p| p.into_inner());
-    all.entry(home.to_path_buf())
-        .or_insert_with(|| std::sync::Arc::new(Meters::at(home)))
+    all.entry((home.to_path_buf(), ledger.to_path_buf()))
+        .or_insert_with(|| {
+            std::sync::Arc::new(Meters::at(home).with_ledger(ledger.to_path_buf()))
+        })
         .clone()
 }
 
@@ -1051,6 +1182,21 @@ pub mod claude {
     //! summing the repeats, and maximising the fields one by one — are
     //! exactly what the rule above refuses, and both are held by a test
     //! that has been made to fail.
+    //!
+    //! Measured again 2026-10-07 on 52 629 September replies: every
+    //! `message.id` maps to exactly one `requestId` and back, so the rule
+    //! stands. Claude Code's own `/stats` sums every line and reads 1.7 to
+    //! 2.4 times higher; that is the line-summing this rule refuses, not a
+    //! number to agree with.
+    //!
+    //! # Whose reply it was
+    //!
+    //! A session pointed at a third-party API writes into the same
+    //! transcripts, and its replies are not the subscription's (owner,
+    //! 2026-10-07). [`official_id`] tells them apart and the record carries
+    //! the answer as [`Kept::third_party`]; it is filed under its own
+    //! category ([`super::category`]) and its own ledger key, so neither
+    //! the subscription's chart nor the ledger ever mixes the two.
 
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -1130,6 +1276,7 @@ pub mod claude {
             return Read::Unreadable;
         };
         let tokens = tokens_of(usage);
+        let third_party = !official_id(id);
         match best.get(id) {
             // The same message written again, no further along than last
             // time.
@@ -1147,11 +1294,46 @@ pub mod claude {
                         at,
                         tokens,
                         model: super::model_of(message, "model"),
+                        third_party,
                     },
                 );
             }
         }
         Read::Fine
+    }
+
+    /// Whether a message id has the shape Anthropic's own API gives one.
+    ///
+    /// **Why the id and not the model name or a setting.** A session
+    /// pointed at a third-party API (`ANTHROPIC_BASE_URL`) writes into the
+    /// same transcripts as every other, and nothing in the file names the
+    /// URL it went to. The id is what the answering server wrote, and the
+    /// two kinds of server write it differently. Measured on this machine
+    /// 2026-10-07, every assistant line with usage: 178 258 ids are
+    /// `msg_01` and 22 more letters or digits, 28 in all, under official
+    /// model names; 130 are 28 characters with two random ones after
+    /// `msg_` (`msg_yH…`, `msg_fk…`) under vendor model names
+    /// (`claude-fable-5-1-medium`). Bedrock and Vertex ids
+    /// (`msg_bdrk_…`, `msg_vrtx_…`) fail the test too, and they are not
+    /// the subscription either.
+    ///
+    /// **The narrowest rule the sample holds**: the prefix, the length,
+    /// and nothing but letters and digits after it. The model name is not
+    /// asked, because a vendor may pass the official name through.
+    ///
+    /// # Which way this one can be wrong
+    ///
+    /// **Toward the subscription, rarely**: a vendor whose random id
+    /// happens to start `01` passes — one in 62² = 3844 of its replies.
+    /// An official reply cannot fail the test unless Anthropic changes
+    /// the shape, and then every reply leaves the subscription's chart at
+    /// once, which is loud. **And the id cannot tell a subscription from
+    /// an Anthropic API key**: both are answered by Anthropic and both
+    /// are `msg_01…`.
+    pub fn official_id(id: &str) -> bool {
+        id.len() == 28
+            && id.starts_with("msg_01")
+            && id.as_bytes()[6..].iter().all(u8::is_ascii_alphanumeric)
     }
 
     impl Meter for Claude {
@@ -1357,6 +1539,7 @@ pub mod codex {
             at,
             tokens,
             model: roll.model.clone(),
+            third_party: false,
         });
         Read::Fine
     }
@@ -1554,6 +1737,7 @@ pub mod gemini {
                         at,
                         tokens,
                         model: super::model_of(v, "model"),
+                        third_party: false,
                     },
                 );
             }
@@ -1801,6 +1985,7 @@ pub mod pi {
                         at,
                         tokens,
                         model: super::model_of(message, "model"),
+                        third_party: false,
                     },
                 );
             }
@@ -2060,6 +2245,7 @@ pub mod roo {
                 at,
                 tokens,
                 model: None,
+                third_party: false,
             });
         }
         (kept, unreadable)
@@ -2211,6 +2397,7 @@ pub mod qwen {
             at,
             tokens,
             model: super::model_of(v, "model"),
+            third_party: false,
         });
         Read::Fine
     }
@@ -2332,6 +2519,7 @@ pub mod junie {
                     at,
                     tokens,
                     model: super::model_of(row, "model"),
+                    third_party: false,
                 }),
                 None => missed = true,
             }
@@ -2621,6 +2809,7 @@ pub mod amp {
                         at,
                         tokens: r.tokens,
                         model: Some(super::interned(&r.model)),
+                        third_party: false,
                     })
                 })
                 .collect();
@@ -2656,6 +2845,7 @@ pub mod amp {
                     at,
                     tokens: r.tokens,
                     model: Some(super::interned(&r.model)),
+                    third_party: false,
                 })
             })
             .collect();
@@ -2802,6 +2992,7 @@ pub mod openclaw {
             at,
             tokens,
             model: None,
+            third_party: false,
         });
         Read::Fine
     }
@@ -2825,6 +3016,8 @@ pub mod openclaw {
         }
     }
 }
+
+pub mod ledger;
 
 #[cfg(test)]
 mod tests;

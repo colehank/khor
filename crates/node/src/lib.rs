@@ -1057,7 +1057,14 @@ impl Node {
         // opens a node per call, so a registry built here per node would
         // be a cold one every time — and cold is eighteen seconds
         // (`usage::meters_for`).
-        let usage = usage::meters_for(&adaptor::vendor_home(&root));
+        //
+        // The ledger is this khor home's, not the vendor home's: it is
+        // khor's own record of what it counted, and it outlives the
+        // transcripts it was counted from (`usage::ledger`).
+        let usage = usage::meters_for(
+            &adaptor::vendor_home(&root),
+            &root.join(".khor").join(usage::ledger::FILE),
+        );
         // Read before `root` moves into the struct, not after — the
         // list is settled once, when the node opens, and every caller
         // that wants a changed list gets it by opening another node.
