@@ -25002,11 +25002,19 @@ try {
       add("unpushed", { ...none, branch: "exp/sweep", ahead: 7 }),
       ...OPS.map((op) => add(`op-${op}`, { ...none, operation: op, conflicted: op === "bisect" ? 0 : 1 })),
     ];
+    // A second plain folder whose newest file was made rather than edited
+    // (UX-51, `NewestFile.added`); gate's notes is the edited one.
+    const made = { device: "e".repeat(64), machine: "gate", path: "/home/gate/made", name: "made", pinned: false, newest: { path: "fresh.txt", at_ms: Date.now() - 3 * 60_000, added: true } };
+    extra.push(made);
     wsRows.push(...extra);
-    // What each row must say on its right, word by word, and in which ink.
+    // What each row must say on its right, word by word, and in which ink;
+    // and a plain folder's sentence, both verbs.
     const words = await page.evaluate(async () => {
       const { gui } = await import("/src/gen/catalog.ts");
-      return { merge: gui.ws_op_merge, rebase: gui.ws_op_rebase, "cherry-pick": gui.ws_op_cherry_pick, revert: gui.ws_op_revert, bisect: gui.ws_op_bisect };
+      return {
+        merge: gui.ws_op_merge, rebase: gui.ws_op_rebase, "cherry-pick": gui.ws_op_cherry_pick, revert: gui.ws_op_revert, bisect: gui.ws_op_bisect,
+        changed: gui.ws_newest_changed("drafts/plan.md"), added: gui.ws_newest_added("fresh.txt"),
+      };
     });
     const R = "git-remote", S = "git-stash", C = "git-conflict", A = "git-added", M = "git-modified", U = "git-untracked";
     const want = {
@@ -25072,6 +25080,14 @@ try {
                   sub: r.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
                   where: r.querySelector("[data-side-sub] [data-ws-where]")?.getAttribute("title") ?? null,
                   newest: r.querySelector("[data-side-sub] [data-ws-newest]")?.getAttribute("title") ?? null,
+                  // The sentence as read: the words around the file, and
+                  // the whole file (`PathCut` keeps it as its title).
+                  sentence: (() => {
+                    const line = r.querySelector("[data-side-sub] [data-ws-newest-line]");
+                    if (!line) return null;
+                    const said = [...line.childNodes].map((n) => (n.nodeType === 3 ? n.textContent : n.getAttribute?.("title") ?? "")).join("");
+                    return { verb: line.getAttribute("data-ws-newest-line"), said, pathWhole: (() => { const p = line.querySelector("[data-ws-newest]"); return p ? p.scrollWidth <= p.clientWidth + 1 : null; })() };
+                  })(),
                   subject: r.querySelector("[data-side-sub] [data-ws-subject]")?.textContent?.trim() ?? null,
                   top: corner ? [...corner.querySelectorAll("[data-ws-op], [data-ws-symbol]")].map((t) => t.textContent.trim()) : null,
                   topText: corner?.textContent?.trim() ?? null,
@@ -25111,7 +25127,7 @@ try {
       await until(5_000, async () => (await page.locator("[data-ws-row] [data-ws-git]").filter({ visible: true }).count()) >= 9);
       const rows = await readWsRows();
       console.log(`corners d · ${posture} · workspace rows: ${JSON.stringify(Object.fromEntries(Object.entries(rows).map(([k, r]) => [k, { branch: r.branch?.said, top: r.top, bottom: r.bottom, sub: r.sub }])))}`);
-      if (!rows.notes || Object.keys(want).some((k) => !rows[k])) {
+      if (!rows.notes || !rows.made || Object.keys(want).some((k) => !rows[k])) {
         fail(`probe dead: corners d · ${posture} · the workspaces list drew ${JSON.stringify(Object.keys(rows))}`);
         continue;
       }
@@ -25139,6 +25155,17 @@ try {
       }
       if (rows.notes.aside !== 0 || rows.notes.newest !== "drafts/plan.md" || rows.notes.where !== null || rows.notes.subject !== null || rows.notes.top !== null || rows.notes.bottom !== "2 小时") {
         fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时」 under that (UX-48)`);
+      }
+      // UX-51 (the owner 2026-10-08): the second line is a sentence — an
+      // edited file 「最近修改了 …」, a made one 「最近新建了 …」.
+      const sentences = { notes: [rows.notes.sentence, "changed", words.changed], made: [rows.made.sentence, "added", words.added] };
+      for (const [name, [got, verb, said]] of Object.entries(sentences)) {
+        if (got?.verb !== verb || got?.said !== said) {
+          fail(`corners d · ${posture} · the plain folder ${name} reads ${JSON.stringify(got)} — 「${said}」 (UX-51, NewestFile.added)`);
+        }
+      }
+      if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟") {
+        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟」 under that (UX-48)`);
       }
       // The long row: the counts whole inside the corner, the name whole,
       // the branch cut — in the middle on a phone row, its head and its

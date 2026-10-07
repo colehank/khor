@@ -298,6 +298,12 @@ pub struct NewestFile {
     /// Its modification time, ms since the epoch.
     #[ts(type = "number")]
     pub at_ms: i64,
+    /// **Made rather than edited** (UX-51, the owner 2026-10-08: the row
+    /// says 「最近新建了」 or 「最近修改了」): its birth time is known and
+    /// within a minute of `at_ms`. False where the file system keeps no
+    /// birth time, and from an older resident. Tail field.
+    #[serde(default)]
+    pub added: bool,
 }
 
 /// **A checkout's git state, as a prompt's git segment says it** (UX-48,

@@ -44,6 +44,7 @@ import { ago, axisOf, groupLabel, valueOf } from "@/words";
 import { PathCut } from "@/components/PathCut";
 import type { GitOperation } from "@/gen/bindings/GitOperation";
 import type { GitSegment } from "@/gen/bindings/GitSegment";
+import type { NewestFile } from "@/gen/bindings/NewestFile";
 import { MidName } from "@/browse/TabStrip";
 
 /** One row's identity, the same pair the table is keyed by: two
@@ -615,7 +616,7 @@ export function WorkspacesList({
       // plain folder's path as its second line. And (UX-48) the branch
       // and counts as one string at the top right, 「main ⇡861 *1 !1 ?2」.
       sub: !repo ? (
-        r.newest ? <PathCut data-ws-newest text={r.newest.path} /> : undefined
+        r.newest ? <NewestLine newest={r.newest} /> : undefined
       ) : seg?.subject ? (
         <span data-ws-subject className="block min-w-0 truncate">
           {seg.subject}
@@ -757,6 +758,26 @@ function BranchAside({ seg }: { seg: GitSegment }) {
   return (
     <span data-ws-branch={branchOf(seg)} className="block min-w-0">
       <MidName text={branchOf(seg)} even />
+    </span>
+  );
+}
+
+/** **A plain folder's second line, as a sentence** (UX-51, the owner
+    2026-10-08): 「最近新建了 <file>」 when its birth time says the file
+    was made (`NewestFile.added`), else 「最近修改了 <file>」. The words
+    are the catalog's around the file; only the path is cut, from its
+    start (`PathCut`), so the verb always stands. */
+function NewestLine({ newest }: { newest: NewestFile }) {
+  const say = newest.added ? gui.ws_newest_added : gui.ws_newest_changed;
+  // The catalog's sentence with a control character in the file's
+  // place, split there: the words before and after it.
+  const slot = "\u0001";
+  const [before, after = ""] = say(slot).split(slot);
+  return (
+    <span data-ws-newest-line={newest.added ? "added" : "changed"} className="flex min-w-0 whitespace-pre">
+      {before}
+      <PathCut data-ws-newest text={newest.path} className="flex-1" />
+      {after}
     </span>
   );
 }

@@ -131,6 +131,27 @@ pub fn touched(dir: &Path) -> i64 {
     newest
 }
 
+/// How close a file's birth time must be to its modification time for
+/// [`was_added`] to call it made rather than edited.
+pub const ADDED_WITHIN_MS: i64 = 60_000;
+
+/// **Whether a file was made rather than edited** (UX-51): its birth
+/// time (macOS `st_birthtime`, Linux `statx`'s btime) within
+/// [`ADDED_WITHIN_MS`] of its modification time. False where the file
+/// system keeps no birth time — an unknown is read as an edit.
+pub fn was_added(path: &Path) -> bool {
+    let ms = |t: std::time::SystemTime| {
+        t.duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .ok()
+    };
+    let Ok(m) = std::fs::metadata(path) else { return false };
+    match (m.created().ok().and_then(ms), m.modified().ok().and_then(ms)) {
+        (Some(born), Some(changed)) => (changed - born).abs() <= ADDED_WITHIN_MS,
+        _ => false,
+    }
+}
+
 /// How many entries [`newest_file`] looks at before it answers what it
 /// has: a folder holding a dump of files still answers at once.
 pub const MOST_NEWEST: usize = 4_000;
@@ -318,5 +339,25 @@ mod tests {
         assert_eq!(newest_file(&tmp), Some(("notes/b.md".to_owned(), 2_000_000)));
         stamp(&tmp.join("a.txt"), 3_000);
         assert_eq!(newest_file(&tmp), Some(("a.txt".to_owned(), 3_000_000)), "the top level counts the same");
+    }
+
+    /// **Made or edited** (UX-51): a file just written is made; one whose
+    /// modification time is an hour past its birth was edited since. Where
+    /// the file system keeps no birth time both read as edited.
+    #[test]
+    fn a_file_is_added_while_its_birth_and_its_change_are_a_minute_apart() {
+        let tmp = root("was-added");
+        let f = tmp.join("new.txt");
+        std::fs::write(&f, "x").unwrap();
+        let born = std::fs::metadata(&f).unwrap().created().ok();
+        assert_eq!(was_added(&f), born.is_some(), "just written: made, where a birth time is kept");
+        if let Some(b) = born {
+            std::fs::File::open(&f)
+                .unwrap()
+                .set_modified(b + std::time::Duration::from_secs(3600))
+                .unwrap();
+            assert!(!was_added(&f), "an hour later: edited");
+        }
+        assert!(!was_added(&tmp.join("gone.txt")), "no file: not added");
     }
 }
