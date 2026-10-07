@@ -462,6 +462,13 @@ pub struct DeviceRow {
     /// older khor refuses the op, and no rows is not the same fact as
     /// no directories.
     pub watched: Option<WatchedReading>,
+    /// Where files sent to it should land, as set on its row — `None`
+    /// for the default (STORE-BRIEF phase 1). What 存储's location row
+    /// shows and changes.
+    pub receive_dir: Option<String>,
+    /// Where they land now, absolute, as the machine itself resolved the
+    /// setting — `None` from a khor that predates it. What 存储 lists.
+    pub receive_at: Option<String>,
     /// Where this machine sits when the network is drawn as a mandala
     /// (`khor_core::map`).
     ///
@@ -1248,6 +1255,8 @@ fn rows_of_devices(
             // without waiting for the write to be read back.
             hosts: if d.id == me { n.hosts() } else { d.hosts },
             watch: d.watch,
+            receive_dir: d.receive_dir,
+            receive_at: d.receive_at,
             label: d.label,
             id: d.id,
             name: d.name,
@@ -1340,6 +1349,13 @@ pub fn pin_device(root: &Path, machine: &str, on: bool) -> Result<(), String> {
 /// answers the list as kept, which the editor repaints from.
 pub fn set_watch(root: &Path, machine: &str, paths: &[String]) -> Result<Vec<String>, String> {
     open(root)?.set_watch(machine, paths)
+}
+
+/// Sets where files sent to a machine land (存储's location row); empty
+/// takes it back to the default. The refusal is the node's sentence;
+/// answers the setting as kept.
+pub fn set_receive_dir(root: &Path, machine: &str, dir: &str) -> Result<String, String> {
+    open(root)?.set_receive_dir(machine, dir)
 }
 
 /// Shows a machine the door — the call `khor forget <machine>` makes,

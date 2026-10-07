@@ -48,6 +48,7 @@ pub mod preview;
 pub mod proto;
 pub mod quota;
 pub mod reactor;
+pub mod road;
 pub(crate) mod roads;
 pub mod satellite;
 pub mod serves;
@@ -1168,6 +1169,9 @@ impl Node {
         // which `Node::avatar_style` reads as the factory default.
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
+        // **Where this machine's received files land, said on its row**
+        // (STORE-BRIEF phase 1), read without making anything.
+        self.receive_place(false)?;
         Ok(())
     }
 

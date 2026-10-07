@@ -2296,6 +2296,10 @@ drop-serve-gone = "本机的 khor 服务中途退出，文件没有放完"
 # nothing of it — the pill is the session's again — so this is what a
 # log or the CLI reads.
 drop-cancelled = "传入已取消，没有粘贴"
+# Where a machine's received files land (STORE-BRIEF phase 1): the
+# setting refused, and a setting the machine could not use.
+receive-dir-not-absolute = "接收位置须是绝对路径或以 ~/ 开头：{0}"
+receive-dir-unusable = "接收位置 {0} 不可用（{1}），文件存到了默认位置"
 # VS Code on a machine (工作区批5). **Says what is missing, not what to
 # do about it**: khor does not ship VS Code and telling somebody to go
 # install it is not khor's sentence to write — the button simply is not

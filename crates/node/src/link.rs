@@ -7019,10 +7019,10 @@ impl Node {
         }
     }
 
-    /// Where a file dropped onto a terminal lands on this machine
-    /// (`crate::drops::dir_for`).
-    pub fn drop_dir(&self) -> std::path::PathBuf {
-        crate::drops::dir_for(self.root())
+    /// Where a file dropped onto a terminal lands on this machine: its
+    /// receive directory (`Node::receive_dir`).
+    pub fn drop_dir(&self) -> Result<std::path::PathBuf, String> {
+        self.receive_dir()
     }
 
     /// **Puts a file where a session's machine can read it** (item 60,
@@ -7256,7 +7256,7 @@ impl Node {
         }
         let dir = match into {
             Some(dir) => crate::drops::named_dir(dir)?,
-            None => self.drop_dir(),
+            None => self.drop_dir()?,
         };
         let (job, fresh) = crate::drops::job(token);
         if fresh {

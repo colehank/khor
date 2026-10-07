@@ -152,6 +152,21 @@ const F_SAT_TMUX: &str = "sat_tmux";
 /// the trade `addrs` already made. An older khor replicates the register
 /// untouched and never reads it.
 const F_WATCH: &str = "watch";
+/// Where files sent to this machine land (STORE-BRIEF phase 1): a
+/// directory, absolute or `~`-led, and empty or absent for the default
+/// (`~/khor-drop`; on a phone, the app's Documents). Anyone may write it,
+/// `watch`'s rule: it is a fact about the machine that whoever looks at it
+/// decides, and it reads the same on every screen. Only the machine itself
+/// resolves it (`~` is its home, and only it can tell whether the
+/// directory is usable), and says where it resolved to in `F_RECEIVE_AT`.
+/// An older khor replicates the register untouched and never reads it.
+const F_RECEIVE_DIR: &str = "receive_dir";
+/// Where this machine's received files land **now**, absolute, as the
+/// machine itself last resolved `F_RECEIVE_DIR` — the setting expanded,
+/// or the default when the setting is unusable. Written by the machine
+/// alone; another screen lists this directory and compares it with the
+/// setting to say when the setting did not take.
+const F_RECEIVE_AT: &str = "receive_at";
 /// The name a person gave this machine, overriding the one it reports
 /// about itself (`F_NAME`).
 ///
@@ -284,6 +299,12 @@ pub struct DeviceInfo {
     /// The roads this machine reports to the others (`F_ROAD`), as
     /// `(to, the register's JSON)`: opaque here, read by `khor_node`.
     pub roads: Vec<(String, String)>,
+    /// Where files sent to it should land, as set (`F_RECEIVE_DIR`):
+    /// `None` for the default.
+    pub receive_dir: Option<String>,
+    /// Where they land now, as the machine itself resolved it
+    /// (`F_RECEIVE_AT`): `None` from a khor that predates the setting.
+    pub receive_at: Option<String>,
 }
 
 impl DeviceInfo {
@@ -500,6 +521,34 @@ impl DeviceDoc {
         Ok(())
     }
 
+    /// Sets where files sent to a machine land, for everyone; empty takes
+    /// the setting back to the default. Anyone may, for anyone,
+    /// `set_watch`'s rule; the caller has already tidied the value
+    /// (`khor_node` refuses a relative path). Unchanged means unwritten.
+    pub fn set_receive_dir(&self, id: &str, dir: &str) -> Result<(), String> {
+        self.set_str_once(id, F_RECEIVE_DIR, dir)
+    }
+
+    /// Records where a machine's received files land now — written by
+    /// that machine alone, after it resolved the setting.
+    pub fn set_receive_at(&self, id: &str, path: &str) -> Result<(), String> {
+        self.set_str_once(id, F_RECEIVE_AT, path)
+    }
+
+    /// One string register, written only when it changes; empty is
+    /// stored rather than deleted (`F_LABEL`'s reason) unless it was
+    /// never written at all.
+    fn set_str_once(&self, id: &str, field: &str, v: &str) -> Result<(), String> {
+        match self.flat_str(id, field) {
+            Some(was) if was == v => return Ok(()),
+            None if v.is_empty() && self.field(id, field).is_none() => return Ok(()),
+            _ => {}
+        }
+        self.write_field(id, field, v)?;
+        self.inner.commit();
+        Ok(())
+    }
+
     /// Marks a row as a satellite: spoken for by `sponsor`, reached over
     /// ssh at `ssh_host`, with tmux present or not as probed
     /// (附属机器批). One call rather than three setters because the
@@ -652,6 +701,12 @@ impl DeviceDoc {
                     .filter(|l| !l.trim().is_empty()),
                 hosts: !matches!(self.flat(&id, F_HOSTS), Some(LoroValue::Bool(false))),
                 roads: self.roads_raw(&id),
+                receive_dir: self
+                    .str_field(&id, F_RECEIVE_DIR)
+                    .filter(|d| !d.trim().is_empty()),
+                receive_at: self
+                    .str_field(&id, F_RECEIVE_AT)
+                    .filter(|d| !d.trim().is_empty()),
                 id,
             })
             .collect();
@@ -915,6 +970,29 @@ mod tests {
             "clearing travels back"
         );
         assert_eq!(d_items(&a), 1);
+    }
+
+    /// The receive location travels like the watch list, an upsert
+    /// leaves it alone, and empty takes it back to the default; where the
+    /// machine says its files land rides beside it, apart.
+    #[test]
+    fn a_receive_dir_travels_and_an_upsert_does_not_touch_it() {
+        let a = DeviceDoc::new(1).unwrap();
+        let b = DeviceDoc::new(2).unwrap();
+        a.upsert("cc", "turing", &[]).unwrap();
+        assert_eq!(a.get("cc").unwrap().receive_dir, None, "unset is the default");
+        a.set_receive_dir("cc", "~/inbox").unwrap();
+        a.set_receive_at("cc", "/home/t/inbox").unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        let got = b.get("cc").unwrap();
+        assert_eq!(got.receive_dir.as_deref(), Some("~/inbox"));
+        assert_eq!(got.receive_at.as_deref(), Some("/home/t/inbox"));
+        b.upsert("cc", "turing", &["10.0.0.9:11204".into()]).unwrap();
+        assert_eq!(b.get("cc").unwrap().receive_dir.as_deref(), Some("~/inbox"), "an upsert must not clear it");
+        b.set_receive_dir("cc", "").unwrap();
+        a.merge(&b.changes_since(&Default::default()).unwrap()).unwrap();
+        assert_eq!(a.get("cc").unwrap().receive_dir, None, "clearing travels back");
+        assert_eq!(a.get("cc").unwrap().receive_at.as_deref(), Some("/home/t/inbox"));
     }
 
     fn d_items(d: &DeviceDoc) -> usize {
