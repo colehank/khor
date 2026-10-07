@@ -438,16 +438,23 @@ impl RemoteStateActor {
                 .register_and_configure_path(conn_id, conn_state, &path);
 
             if let Some(path_remote) = path_remote
-                && !path_remote.is_relay()
                 && conn.side().is_client()
             {
                 // We may have raced this with a relay address.  Try and add any
                 // relay addresses we have back.
+                //
+                // khor patch 6 (vendor/iroh/KHOR.md): and any custom transport
+                // address, whichever path won the race.  Upstream opens only
+                // relays here, so a custom address dialled together with a
+                // relay was never opened once the relay answered first.
+                let path0_relay = path_remote.is_relay();
                 let relays = self
                     .state
                     .paths
                     .addrs()
-                    .filter(|addr| addr.is_relay())
+                    .filter(|addr| {
+                        (addr.is_relay() && !path0_relay) || matches!(addr, transports::Addr::Custom(_))
+                    })
                     .map(|addr| transports::FourTuple::from_remote(addr.clone()))
                     .collect::<Vec<_>>();
                 for open_addr in relays {
