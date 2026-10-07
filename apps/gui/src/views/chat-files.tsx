@@ -4,8 +4,8 @@
 // # Where a file goes, and what the agent is told
 //
 // A file from the device — a phone's photo, a Mac's desktop file, a drop —
-// is put on the machine the conversation runs on, in that machine's chat
-// files folder (`<khor home>/.khor/chat/<machine>/files/<digest8>-<name>`,
+// is put on the machine the conversation runs on, in that machine's
+// receive directory (`~/khor-drop` unless set in 存储, under its own name,
 // `khor_gui_core::chat::chat_put`), the very folder a `khor send` to that
 // machine lands in. A file already on that machine (「这台机器上的文件」) is
 // not copied at all. Either way the agent is told the **path**, one line

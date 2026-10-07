@@ -1170,8 +1170,11 @@ impl Node {
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
         // **Where this machine's received files land, said on its row**
-        // (STORE-BRIEF phase 1), read without making anything.
-        self.receive_place(false)?;
+        // (STORE-BRIEF phase 1), read without making anything; and the
+        // files conversations landed before there was a receive
+        // directory, moved into it once (`road::move_chat_files`).
+        let (dir, _) = self.receive_place(false)?;
+        road::move_chat_files(&self.root, &dir);
         Ok(())
     }
 
