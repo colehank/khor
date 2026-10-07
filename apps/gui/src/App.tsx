@@ -2378,7 +2378,7 @@ export default function App() {
   const sheetToday = (row: SessionRow) => <DayToday runs={dayOf(row.id)} totals={dayTotals} />;
   const sideOn = selectedRow !== null && sessions && (narrow ? placeSheet !== null : side.open);
   useEffect(() => setSideBrowsing(sideOn && side.seat === "browser"), [sideOn, side.seat]);
-  const recent = useSideRecent(sideOn && side.seat === "recent");
+  const [recent, forgetRecentRow] = useSideRecent(sideOn && side.seat === "recent");
   /** 最近's rows open in place (§4): a page in the column's browser, a
       workspace as the column's listing, a file as its file page. */
   const openRecent = (it: RecentItem) => {
@@ -2412,6 +2412,7 @@ export default function App() {
             faceOf={faceOf}
             onOpen={openRecent}
             onOpenMain={openRecentMain}
+            onForget={forgetRecentRow}
           />
         );
       case "workspace": {

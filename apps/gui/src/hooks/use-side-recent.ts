@@ -16,9 +16,9 @@
 // the record holds (kind `file`, opened from a session's terminal or its
 // 附栏) join the list with their own time; a workspace a session went to
 // takes the session from the directory's record.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { fetchPageIcons, fetchRecents, fetchWorkspaces } from "@/api";
+import { fetchPageIcons, fetchRecents, fetchWorkspaces, forgetRecent } from "@/api";
 import type { WorkspaceRow } from "@/gen/bindings/WorkspaceRow";
 import { storedTabs, fileOf } from "@/views/WorkspacePane";
 
@@ -44,9 +44,18 @@ function originOf(url: string): string {
   }
 }
 
+/** The record a row stands on, as the node keys it: a workspace row in a
+    session's slice is there by the directory's record (`dirFrom`). */
+const RECORD = { page: "page", workspace: "dir", file: "file" } as const;
+
 /** The rows, newest first; `null` until the first answer. Asked when
-    `on` turns true (the seat shown) and again each time it does. */
-export function useSideRecent(on: boolean): RecentItem[] | null {
+    `on` turns true (the seat shown) and again each time it does. And
+    **the forget** (UX-44 §3, 删除 on a row): the record goes — the node's
+    tombstone (`forget_recent`, `khor_sync::recents`), for every device
+    and every session's slice, since the record is one per place — and
+    the file, page or directory itself is untouched. The row leaves at
+    once; a refusal puts it back and rejects. */
+export function useSideRecent(on: boolean): [RecentItem[] | null, (it: RecentItem) => Promise<void>] {
   const [items, setItems] = useState<RecentItem[] | null>(null);
   useEffect(() => {
     if (!on) return;
@@ -131,5 +140,14 @@ export function useSideRecent(on: boolean): RecentItem[] | null {
       live = false;
     };
   }, [on]);
-  return items;
+  const forget = useCallback(async (it: RecentItem) => {
+    setItems((was) => was?.filter((x) => x.key !== it.key) ?? was);
+    try {
+      await forgetRecent(RECORD[it.kind], it.machine, it.kind === "page" ? it.url : it.path);
+    } catch (e) {
+      setItems((was) => (was === null || was.some((x) => x.key === it.key) ? was : [...was, it].sort((a, b) => (b.at ?? -1) - (a.at ?? -1))));
+      throw e;
+    }
+  }, []);
+  return [items, forget];
 }
