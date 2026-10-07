@@ -964,7 +964,23 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> 
 /// 目录」): the files land there on the session's machine in place of
 /// its `~/khor-drop`, and a file already on that machine is copied
 /// there.
+///
+/// **Cancelled** ([`term_drop_cancel`], item 71, the pill's ×): the
+/// drop stops before its next file and its pull before the next slice,
+/// and **nothing is pasted** — not even the files that had already
+/// landed, which stay where they landed. It answers the cancel, which
+/// the face does not show.
 pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>) -> Result<(), String> {
+    // Held from the first line, before anything that takes time: a
+    // cancel finds the drop as soon as the face has asked for it.
+    let held = Held::begin(id);
+    let text = drop_text(root, id, paths, from, into, &held)?;
+    term_paste(id, &text)
+}
+
+/// [`term_drop`] up to its paste: the files put where the session reads
+/// them, their paths quoted as one paste — or the cancel, if one came.
+fn drop_text(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>, held: &Held) -> Result<String, String> {
     let n = Node::open(root.to_path_buf())?;
     let to = n.far_machine(&SessionId(id.to_owned()))?.unwrap_or_default();
     let from = from.unwrap_or_default();
@@ -972,12 +988,13 @@ pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, in
         paths
             .iter()
             .map(|p| match staged_dir(root, p) {
+                _ if held.stopped() => Err(khor_node::drops::cancelled()),
                 Some(_) => land_staged(root, p),
                 None => Ok(p.clone()),
             })
             .collect::<Result<Vec<_>, _>>()
     } else {
-        drop_blocking(root, id, from, &to, into, paths)
+        drop_blocking(root, id, from, &to, into, paths, &held.stopped)
     };
     for p in paths {
         if let Some(dir) = staged_dir(root, p) {
@@ -985,12 +1002,14 @@ pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, in
         }
     }
     let here = here?;
-    let text = here
+    if held.stopped() {
+        return Err(khor_node::drops::cancelled());
+    }
+    Ok(here
         .iter()
         .map(|p| shell_quote(p))
         .collect::<Vec<_>>()
-        .join(" ");
-    term_paste(id, &text)
+        .join(" "))
 }
 
 /// Where a face's picked files wait to be dropped ([`term_drop_stage`]):
@@ -1001,7 +1020,9 @@ fn stage_root(root: &Path) -> std::path::PathBuf {
 }
 
 /// How long a staged file is kept for a drop that never came (a face
-/// that staged one file of three and then failed on the next).
+/// that staged one file of three and then failed on the next). A drop
+/// cancelled while it staged does not wait for this: its staged files
+/// go with the cancel ([`term_drop_cancel`]).
 const STAGED_FOR: std::time::Duration = std::time::Duration::from_secs(3600);
 
 /// The staging directory `path` sits in, when it is a file
@@ -1083,28 +1104,103 @@ fn land_staged(root: &Path, staged: &str) -> Result<String, String> {
     moved.map(|()| at.dest.display().to_string())
 }
 
-/// Each terminal's drop under way, as the share of it landed (0 to 1).
-fn dropping() -> &'static Mutex<HashMap<String, f32>> {
-    static DROPPING: OnceLock<Mutex<HashMap<String, f32>>> = OnceLock::new();
+/// One terminal's drop under way: the share of it landed (0 to 1), and
+/// whether it was cancelled.
+struct Dropping {
+    share: f32,
+    stopped: Arc<AtomicBool>,
+}
+
+/// Each terminal's drop under way.
+fn dropping() -> &'static Mutex<HashMap<String, Dropping>> {
+    static DROPPING: OnceLock<Mutex<HashMap<String, Dropping>>> = OnceLock::new();
     DROPPING.get_or_init(Default::default)
+}
+
+/// A drop's place in [`dropping`], for as long as [`term_drop`] runs:
+/// there from its first line, gone when it returns, however it returns.
+struct Held {
+    id: String,
+    stopped: Arc<AtomicBool>,
+}
+
+impl Held {
+    fn begin(id: &str) -> Held {
+        let stopped = Arc::new(AtomicBool::new(false));
+        plock(dropping()).insert(
+            id.to_owned(),
+            Dropping {
+                share: 0.0,
+                stopped: stopped.clone(),
+            },
+        );
+        Held {
+            id: id.to_owned(),
+            stopped,
+        }
+    }
+
+    fn stopped(&self) -> bool {
+        self.stopped.load(Ordering::Relaxed)
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        let mut all = plock(dropping());
+        // Its own entry only: a face never starts a second drop on one
+        // terminal before the first is over, and this keeps it so.
+        if all.get(&self.id).is_some_and(|d| Arc::ptr_eq(&d.stopped, &self.stopped)) {
+            all.remove(&self.id);
+        }
+    }
 }
 
 /// **How far this terminal's drop has got** (item 60), for its pill's
 /// line: the share landed, whole files and the bytes of the one under
 /// way, or `None` when nothing is being dropped.
 pub fn term_drop_progress(id: &str) -> Option<f32> {
-    plock(dropping()).get(id).copied()
+    plock(dropping()).get(id).map(|d| d.share)
+}
+
+/// **The drop under way on terminal `id`, cancelled** (item 71, the
+/// owner 2026-10-07: the pill's × while files go in). It stops before
+/// its next file, the pull under way stops at its next slice on
+/// whichever machine runs it, and [`term_drop`] pastes nothing. With no
+/// drop on `id` it does nothing.
+///
+/// `staged` are files a face staged for a drop it will now never ask
+/// for — the phone's picks, cancelled while they were being staged —
+/// which go now rather than waiting out [`STAGED_FOR`]. Only what
+/// [`term_drop_stage`] made is taken for one.
+pub fn term_drop_cancel(root: &Path, id: &str, staged: &[String]) {
+    if let Some(d) = plock(dropping()).get(id) {
+        d.stopped.store(true, Ordering::Relaxed);
+    }
+    for p in staged {
+        if let Some(dir) = staged_dir(root, p) {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }
 
 /// The files of one drop put on the session's machine, one after
-/// another, answering where each landed over there. Its own thread and
-/// runtime, for [`reach_blocking`]'s reason.
-fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, into: Option<&str>, paths: &[String]) -> Result<Vec<String>, String> {
+/// another, answering where each landed over there; `stopped` ends it
+/// before the next file and the pull under way at its next slice. Its
+/// own thread and runtime, for [`reach_blocking`]'s reason.
+fn drop_blocking(
+    root: &Path,
+    id: &str,
+    from: &str,
+    to: &str,
+    into: Option<&str>,
+    paths: &[String],
+    stopped: &Arc<AtomicBool>,
+) -> Result<Vec<String>, String> {
     let (root, id, from, to, paths) = (root.to_path_buf(), id.to_owned(), from.to_owned(), to.to_owned(), paths.to_vec());
     let into = into.map(str::to_owned);
-    plock(dropping()).insert(id.clone(), 0.0);
-    let gone = id.clone();
-    let out = std::thread::spawn(move || -> Result<Vec<String>, String> {
+    let stopped = stopped.clone();
+    std::thread::spawn(move || -> Result<Vec<String>, String> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -1113,18 +1209,30 @@ fn drop_blocking(root: &Path, id: &str, from: &str, to: &str, into: Option<&str>
         let count = paths.len().max(1) as f32;
         let mut landed = Vec::with_capacity(paths.len());
         for (i, p) in paths.iter().enumerate() {
-            let at = rt.block_on(n.drop_file(&from, p, &to, into.as_deref(), |s| {
-                let part = if s.total > 0 { s.moved as f32 / s.total as f32 } else { 0.0 };
-                plock(dropping()).insert(id.clone(), (i as f32 + part.min(1.0)) / count);
-            }))?;
+            if stopped.load(Ordering::Relaxed) {
+                return Err(khor_node::drops::cancelled());
+            }
+            let at = rt.block_on(n.drop_file_until(
+                &from,
+                p,
+                &to,
+                into.as_deref(),
+                |s| {
+                    let part = if s.total > 0 { s.moved as f32 / s.total as f32 } else { 0.0 };
+                    if let Some(d) = plock(dropping()).get_mut(&id)
+                        && Arc::ptr_eq(&d.stopped, &stopped)
+                    {
+                        d.share = (i as f32 + part.min(1.0)) / count;
+                    }
+                },
+                || stopped.load(Ordering::Relaxed),
+            ))?;
             landed.push(at);
         }
         Ok(landed)
     })
     .join()
-    .map_err(|_| khor_catalog::msg::deliver_thread_died().to_owned());
-    plock(dropping()).remove(&gone);
-    out?
+    .map_err(|_| khor_catalog::msg::deliver_thread_died().to_owned())?
 }
 
 /// **⌘K, kept where the bytes are** (audit/term-attach.md): this
@@ -1879,6 +1987,48 @@ mod stage_tests {
         assert_eq!(staged_dir(&root, &base.join("a.txt").display().to_string()), None);
         assert_eq!(staged_dir(&root, &root.join("x/a.txt").display().to_string()), None);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **A cancelled drop pastes nothing** (item 71): cancelled while it
+    /// ran, it answers the cancel instead of the paste's text, lands no
+    /// file it had not landed yet, and its staged files go.
+    #[test]
+    fn a_cancelled_drop_pastes_nothing() {
+        let root = fresh("cancel");
+        let a = term_drop_stage(&root, "a.png", &mut &b"one"[..]).unwrap();
+        let b = term_drop_stage(&root, "b.png", &mut &b"two"[..]).unwrap();
+        let held = Held::begin("stage-test/cancel");
+        assert_eq!(term_drop_progress("stage-test/cancel"), Some(0.0), "held from the start");
+        term_drop_cancel(&root, "stage-test/cancel", &[]);
+        let out = drop_text(&root, "stage-test/cancel", &[a.clone(), b.clone()], None, None, &held);
+        assert_eq!(out, Err(khor_node::drops::cancelled()), "the cancel, not a paste");
+        assert!(!Path::new(&a).exists() && !Path::new(&b).exists(), "the staged files went");
+        assert!(!khor_node::drops::dir_for(&root).join("a.png").exists(), "nothing landed");
+        drop(held);
+        assert_eq!(term_drop_progress("stage-test/cancel"), None, "gone when it returns");
+        // Uncancelled, the same road gives the paste.
+        let c = term_drop_stage(&root, "c.png", &mut &b"three"[..]).unwrap();
+        let held = Held::begin("stage-test/cancel");
+        let text = drop_text(&root, "stage-test/cancel", &[c], None, None, &held).unwrap();
+        assert_eq!(text, khor_node::drops::dir_for(&root).join("c.png").display().to_string());
+    }
+
+    /// **A cancel with no drop does nothing** — it does not wait for
+    /// the next drop on that terminal — and a cancel while the face was
+    /// still staging takes the files it had staged.
+    #[test]
+    fn a_cancel_with_no_drop_does_nothing_but_take_what_was_staged() {
+        let root = fresh("cancel-none");
+        term_drop_cancel(&root, "stage-test/none", &[]);
+        let held = Held::begin("stage-test/none");
+        assert!(!held.stopped(), "the next drop is not born cancelled");
+        drop(held);
+        let a = term_drop_stage(&root, "a.png", &mut &b"one"[..]).unwrap();
+        let beside = root.join("keep.txt");
+        std::fs::write(&beside, b"x").unwrap();
+        term_drop_cancel(&root, "stage-test/none", &[a.clone(), beside.display().to_string()]);
+        assert!(!Path::new(&a).parent().unwrap().exists(), "the staged file's directory went");
+        assert!(beside.exists(), "a path the face did not stage is not taken for one");
     }
 
     /// Over the drop's cap: refused with the cap in the sentence, and

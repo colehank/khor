@@ -1068,6 +1068,15 @@ fn term_drop_progress(id: String) -> Option<f32> {
     khor_gui_core::term::term_drop_progress(&id)
 }
 
+/// The drop under way on a terminal, cancelled (item 71, the pill's ×):
+/// nothing is pasted, and `staged` — picks the face staged for a drop it
+/// will not ask for — go now (`term::term_drop_cancel`). Memory and a
+/// few directories, so on the main thread like the progress.
+#[tauri::command]
+fn term_drop_cancel(id: String, staged: Option<Vec<String>>) {
+    khor_gui_core::term::term_drop_cancel(&Node::root_from_env(), &id, &staged.unwrap_or_default())
+}
+
 #[tauri::command]
 fn term_resize(id: String, cols: u16, rows: u16) -> Result<(), String> {
     khor_gui_core::term::term_resize(&id, cols, rows)
@@ -4375,6 +4384,7 @@ pub fn run() {
             term_key,
             term_drop,
             term_drop_progress,
+            term_drop_cancel,
             term_resize,
             term_leave,
             recents,

@@ -720,6 +720,18 @@ pub fn answer(
             Ok("null".to_owned())
         }
         "term_drop_progress" => to_json(&crate::term::term_drop_progress(&arg("id")?)),
+        // The pill's × while files go in (item 71). Behind the bridge it
+        // reaches a drop under way because `term_drop` runs on a thread
+        // of its own there (`bin/bridge.rs`).
+        "term_drop_cancel" => {
+            let staged: Vec<String> = args
+                .get("staged")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_owned)).collect())
+                .unwrap_or_default();
+            crate::term::term_drop_cancel(root, &arg("id")?, &staged);
+            Ok("null".to_owned())
+        }
         "term_resize" => {
             crate::term::term_resize(&arg("id")?, num("cols")? as u16, num("rows")? as u16)?;
             Ok("null".to_owned())

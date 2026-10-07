@@ -2885,10 +2885,17 @@ export function TerminalPane({
   activeRef.current = active;
   const dropping = useRef(false);
   /** `paths` may first have to be made: files picked on a phone are
-      staged here before the drop (`dropFiles`), under the same line.
-      `names` are what the pill says, in the order they go in. */
+      staged here before the drop (`dropFiles`), under the same line,
+      and the maker is told whether the drop was cancelled meanwhile
+      (`null`: nothing to drop). `names` are what the pill says, in the
+      order they go in. */
   const dropFrom = useCallback(
-    (paths: string[] | (() => Promise<string[]>), names: string[], from: string | null, into: string | null = null) => {
+    (
+      paths: string[] | ((gone: () => boolean) => Promise<string[] | null>),
+      names: string[],
+      from: string | null,
+      into: string | null = null,
+    ) => {
       if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return;
       dropping.current = true;
       setDropWhy(null);
@@ -2910,16 +2917,18 @@ export function TerminalPane({
         setDropShare(null);
         setDropNames(null);
       };
-      // **Cancelled** (the pill's ×): the pill is the session's again at
-      // once; whatever is staged is not dropped, a pull under way stops
-      // and pastes nothing. A new drop waits for this one to settle.
+      // **Cancelled** (the pill's ×, item 71): the pill is the session's
+      // again at once, with no word in the corner; a pull under way stops
+      // and `term_drop` pastes nothing; files being staged stop after the
+      // one going up, and what was staged goes (`dropFiles`). A new drop
+      // waits for this one to settle.
       dropCancel.current = () => {
         cancelled = true;
         settle();
         void termDropCancel(id).catch(() => {});
       };
-      Promise.resolve(Array.isArray(paths) ? paths : paths())
-        .then((made) => (cancelled ? null : termDrop(id, made, from, into)))
+      Promise.resolve(Array.isArray(paths) ? paths : paths(() => cancelled))
+        .then((made) => (cancelled || made === null ? null : termDrop(id, made, from, into)))
         .then(() => pollNow.current())
         .catch((err: unknown) => {
           if (!cancelled) setDropWhy(String((err as { message?: string })?.message ?? err));
@@ -2950,16 +2959,26 @@ export function TerminalPane({
         return;
       }
       dropFrom(
-        async () => {
+        async (gone) => {
           const staged: string[] = [];
-          for (const f of files) staged.push(await termDropStage(f));
+          for (const f of files) {
+            if (gone()) break;
+            staged.push(await termDropStage(f));
+          }
+          // **Cancelled while staging** (item 71): stopped after the file
+          // that was going up, and what was staged is not dropped — it
+          // goes now, not an hour later with the stale ones.
+          if (gone()) {
+            void termDropCancel(id, staged).catch(() => {});
+            return null;
+          }
           return staged;
         },
         files.map((f) => f.name),
         null,
       );
     },
-    [dropFrom],
+    [dropFrom, id],
   );
   const dropRef = useRef(drop);
   dropRef.current = drop;
