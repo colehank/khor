@@ -10,6 +10,10 @@
  * a page in the column's browser. The main area is the session, always;
  * the one way there is a double-click, or the row menu's 「在主区打开」.
  *
+ * **删除 forgets a row** (UX-44 §3): slid left under a finger (a full
+ * swipe at once), or the menu's last item under a mouse. Only the record
+ * goes; what it pointed at is untouched.
+ *
  * **This session's slice, and only it** (UX-37 §1, UX-39 §3): what was
  * opened from this session — from its terminal's paths and URLs, or from
  * this 附栏 while the session was in front — as the record says
@@ -63,6 +67,7 @@ export function SideRecent({
   faceOf,
   onOpen,
   onOpenMain,
+  onForget,
 }: {
   /** `null` until the first answer. */
   items: RecentItem[] | null;
@@ -74,6 +79,8 @@ export function SideRecent({
   faceOf: (device: string) => Avatar | null;
   onOpen: (it: RecentItem) => void;
   onOpenMain: (it: RecentItem) => void;
+  /** 删除 on a row: the record only (`use-side-recent`'s forget). */
+  onForget: (it: RecentItem) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
   const shown = items?.filter((it) => it.session === slice) ?? null;
@@ -91,7 +98,15 @@ export function SideRecent({
     // record holds (no workspace root) has its own visit's.
     corners: { bottom: (it.kind !== "file" || it.root === "") && it.at !== null ? <span data-recent-at>{ago(it.at)}</span> : undefined },
     find: `${nameOf(it)} ${asideOf(it)}`,
-    menu: [{ key: "open-main", label: gui.open_in_main, run: () => onOpenMain(it) }],
+    menu: [
+      { key: "open-main", label: gui.open_in_main, run: () => onOpenMain(it) },
+      // **删除 forgets the record, nothing else** (UX-44 §3): the file,
+      // the page, the directory stay where they are. Asked nothing — what
+      // goes is a line of memory, and going there again brings it back.
+      // The menu is the mouse's way (the Mac column); a finger slides.
+      { key: "forget", label: gui.delete, destructive: true, run: () => onForget(it) },
+    ],
+    swipe: { key: "forget", label: gui.delete, run: () => onForget(it) },
     onOpen: () => onOpen(it),
     rowData: { "data-recent-row": it.key, "data-recent-kind": it.kind },
   }));

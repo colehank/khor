@@ -29,9 +29,9 @@ import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { FaceMark, type FaceOf, type KindMark } from "@/components/FaceMark";
 import { IconChevronRight } from "@/components/icons";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
+import { SwipeRow, useSwipeRows } from "@/components/SwipeRow";
 import { useNarrow } from "@/hooks/use-narrow";
 import { walkList } from "@/lib/shortcuts";
-import { useRowSwipe } from "@/hooks/use-row-swipe";
 import { cn } from "@/lib/utils";
 import { gui } from "@/gen/catalog";
 import { useSetting } from "@/settings";
@@ -89,6 +89,13 @@ export type SideRow = {
   /** Folded behind the line at the foot until asked for. */
   old?: boolean;
   menu: RowAction[];
+  /** **The row's trailing swipe** (UX-44 §3): on a finger, a slide left
+      shows this one act in red at the row's end, and a full swipe does it
+      at once. Given, it is all the slide offers (the menu keeps the
+      rest); absent, the slide offers the menu's pin and its destructive
+      item and a full swipe only reveals (F7.5). The menu says the same
+      act for the mouse. */
+  swipe?: RowAction;
   /** Where pressing the row goes; absent leaves it a drawing. */
   onOpen?: () => void;
   /** Anchors a column's older gates still read, on the row and on the
@@ -260,10 +267,11 @@ export function SideList({
   // 「带省略号表示还会再问一次」): 「删除…」 while the window will come
   // up, the plain word once 不再提醒 has taken it away — it is the same
   // press either way, and only one of the two labels is true at a time.
-  /** What a slid row offers (F7.5): its pin and its destructive item,
-      as the menu has them (and through the same ask). */
+  /** What a slid row offers: its own swipe act (UX-44 §3), else its pin
+      and its destructive item as the menu has them, through the same ask
+      (F7.5). Narrow only. */
   const swipeOf = (r: SideRow): RowAction[] =>
-    menuOf(r).filter((a) => a.key === "pin" || a.destructive);
+    !narrow ? [] : r.swipe ? [{ ...r.swipe, destructive: true }] : menuOf(r).filter((a) => a.key === "pin" || a.destructive);
   const menuOf = (r: SideRow): RowAction[] =>
     r.menu.map((a) =>
       a.ask === undefined || !asking
@@ -281,10 +289,10 @@ export function SideList({
       .map((r) => r.id)
       .join("\n"),
   );
-  // Slide a row left for its pin and its delete (F7.5, narrow).
+  // Slide a row left for what it offers (F7.5, UX-44 §3; narrow).
   // On only while the rows are drawn: the loading and empty faces are
   // other elements, and the list box comes and goes with them.
-  useRowSwipe(box, narrow && shown.length > 0 && !(loading && rows.length === 0));
+  useSwipeRows(box, narrow && shown.length > 0 && !(loading && rows.length === 0));
 
   // **What matched is marked in the rows** (the audit fix plan F3.4;
   // N20): every place the typed word stands in a row's title or second
@@ -501,9 +509,10 @@ export function SideList({
           </button>
         )}
         {open && (
-          <div
+          <SwipeRow
+            actions={swipeOf(r)}
+            full={r.swipe !== undefined}
             data-side-row={r.id}
-            data-row-swipe={narrow && swipeOf(r).length > 0 ? "" : undefined}
             data-side-pinned={r.pinned}
             data-side-in={r.group}
             data-side-menu={r.menu.length > 0}
@@ -529,50 +538,12 @@ export function SideList({
                 it**: the trigger carries the long press's
                 `onPointerDown`, and a press handler on a bare `<div>` is
                 a target only a pointer can find. On the button, focus
-                reaches it and the keyboard's Menu key opens it. */}
-            {narrow && swipeOf(r).length > 0 ? (
-              <>
-                {/* **Slid left, the row shows what can be done to it**
-                    (F7.5; `hooks/use-row-swipe`): the menu's own items,
-                    in its words, revealed from the right edge. */}
-                <div data-row-face className="flex min-w-0 flex-1 items-center">
-                  {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
-                  {r.after}
-                </div>
-                <div data-row-actions>
-                  <div data-row-actions-inner className="flex h-full">
-                    {swipeOf(r).map((a) => (
-                      <button
-                        key={a.key}
-                        type="button"
-                        data-row-action={a.key}
-                        data-destructive={a.destructive || undefined}
-                        onClick={(e) => {
-                          const row = e.currentTarget.closest<HTMLElement>("[data-row-swipe]");
-                          row?.removeAttribute("data-row-revealed");
-                          row?.style.removeProperty("--row-reveal");
-                          void Promise.resolve().then(a.run).catch(() => {});
-                        }}
-                        className="min-w-(--row-action-w) flex-none px-in text-callout"
-                      >
-                        {/* Without the menu's ellipsis (UX-10; ux-9 I9): on a
-                            swipe button 「删除…」 promised a form, and what
-                            follows is the action sheet, not more input
-                            (HIG Menus: the ellipsis is for an item that
-                            needs more input before it runs). */}
-                        {a.label.replace(/…$/, "")}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
-                {r.after}
-              </>
-            )}
-          </div>
+                reaches it and the keyboard's Menu key opens it. Slid
+                left, the row shows what can be done to it
+                (`components/SwipeRow`). */}
+            {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
+            {r.after}
+          </SwipeRow>
         )}
       </Fragment>
     );
