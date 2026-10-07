@@ -3683,9 +3683,24 @@ files-session = "会话所在"
 # session machine's ~/khor-drop/, or the shell's current directory.
 files-to-term = "放到终端"
 files-to-cwd = "放到当前目录"
-# The 工作区 seat's pinned row to the session machine's ~/khor-drop/, shown
-# while it holds something (item 60 part 5).
-drops-row = "放进来的"
+# ⚠️ 墓碑 (STORE-BRIEF phase 1): `drops-row`「放进来的」, the 工作区 seat's
+# row to ~/khor-drop/. Received files are 存储's now.
+# 存储 (STORE-BRIEF phase 1; 更多, and the 附栏's 更多): one machine's
+# received files in its receive location, newest first, and where that
+# location is. The page's own name borrows `settings-store`; its rows
+# borrow `web-open`, `tab-copy-path` and `chat-file-open`.
+store-search = "搜索收到的文件"
+store-empty = "还没有收到的文件"
+store-place = "接收位置"
+# Under the path when nobody set one.
+store-place-default = "默认位置"
+store-place-change = "更改…"
+store-place-reset = "恢复默认"
+# Set from here, not yet seen by that machine: it takes it on as soon as
+# a sync brings it the change.
+store-place-pending = "{0} 同步后生效"
+# A row that says nothing about where that machine's files land.
+store-place-unknown = "{0} 没有报告接收位置"
 # The terminal's reload circle beside ‹: join the session again.
 term-reload = "刷新"
 # The browsing landing's three page controls. **They are not the rail's
