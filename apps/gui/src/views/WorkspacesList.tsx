@@ -698,22 +698,21 @@ export function WorkspacesList({
 /** **The workspace row's git status, as a prompt's symbols** (the lab
     draft, the owner 2026-10-08, powerlevel10k's marks and order): ⇣
     behind ⇡ ahead, * stashes, ~ conflicted, + staged, ! edited, ?
-    untracked — each only when it is not zero. `tone` is the ink each one
-    wears: `act` (the destructive red: something stands half done),
-    `edit` (the git amber: work not committed), `way` (the primary ink:
-    commits to move), `quiet` (the secondary ink). The branch is not here:
+    untracked — each only when it is not zero, each in its own ink
+    (`ink`, a colour custom property: the git file letters' where one
+    fits, a lab draft where none does — app.css). The branch is not here:
     it stands after the title (`BranchAside`). */
-export type SegmentSymbol = { key: string; text: string; tone: "act" | "edit" | "way" | "quiet" };
+export type SegmentSymbol = { key: string; text: string; ink: string };
 export function segmentSymbols(seg: GitSegment): SegmentSymbol[] {
   // ⇣⇡ touch, as powerlevel10k draws them; the rest stand apart.
   const way = `${seg.behind ? `⇣${seg.behind}` : ""}${seg.ahead ? `⇡${seg.ahead}` : ""}`;
   const all: SegmentSymbol[] = [
-    { key: "way", text: way, tone: "way" },
-    { key: "stashes", text: seg.stashes ? `*${seg.stashes}` : "", tone: "quiet" },
-    { key: "conflicted", text: seg.conflicted ? `~${seg.conflicted}` : "", tone: "act" },
-    { key: "staged", text: seg.staged ? `+${seg.staged}` : "", tone: "edit" },
-    { key: "unstaged", text: seg.unstaged ? `!${seg.unstaged}` : "", tone: "edit" },
-    { key: "untracked", text: seg.untracked ? `?${seg.untracked}` : "", tone: "quiet" },
+    { key: "way", text: way, ink: "--draft-git-remote" },
+    { key: "stashes", text: seg.stashes ? `*${seg.stashes}` : "", ink: "--draft-git-stash" },
+    { key: "conflicted", text: seg.conflicted ? `~${seg.conflicted}` : "", ink: "--git-conflict" },
+    { key: "staged", text: seg.staged ? `+${seg.staged}` : "", ink: "--git-added" },
+    { key: "unstaged", text: seg.unstaged ? `!${seg.unstaged}` : "", ink: "--git-modified" },
+    { key: "untracked", text: seg.untracked ? `?${seg.untracked}` : "", ink: "--draft-git-untracked" },
   ];
   return all.filter((x) => x.text !== "");
 }
@@ -745,13 +744,6 @@ export function segmentText(seg: GitSegment): string {
     .join(" ");
 }
 
-const TONE: Record<SegmentSymbol["tone"], string> = {
-  act: "text-destructive",
-  edit: "text-git-modified",
-  way: "text-foreground",
-  quiet: "text-muted-foreground",
-};
-
 /** The branch after the title, in the secondary ink one size down (the
     title's aside), cut in the middle before the title or the symbols
     give anything (`MidName`'s even cut). */
@@ -771,12 +763,12 @@ function GitSegmentWord({ seg }: { seg: GitSegment }) {
   return (
     <span data-ws-git data-corner-keep className="flex flex-none items-baseline gap-xxs whitespace-nowrap">
       {seg.operation && (
-        <span data-ws-op={seg.operation} className="text-destructive">
+        <span data-ws-op={seg.operation} className="text-git-conflict">
           {OPERATION_WORD[seg.operation]}
         </span>
       )}
       {symbols.map((x) => (
-        <span key={x.key} data-ws-symbol={x.key} className={TONE[x.tone]}>
+        <span key={x.key} data-ws-symbol={x.key} style={{ color: `var(${x.ink})` }}>
           {x.text}
         </span>
       ))}
