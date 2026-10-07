@@ -195,9 +195,9 @@ export function SessionPlaceSheet({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        {/* The page behind turns grey (UX-39 §1): a scrim that shows on
-            both grounds, the token's. */}
-        <DialogOverlay className="bg-(--sheet-scrim)" />
+        {/* The page behind turns grey (UX-39 §1): the one scrim every
+            sheet and dialog wears (UX-44 §2), `DialogOverlay`'s own. */}
+        <DialogOverlay />
         <DialogPrimitive.Content
           ref={setEl}
           data-place-sheet
@@ -221,7 +221,9 @@ export function SessionPlaceSheet({
             e.preventDefault();
             el?.focus({ preventScroll: true });
           }}
-          className="fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden rounded-t-(--menu-r) border-t bg-background shadow-(--shadow-float) outline-none"
+          // The paper (ground, rim, corners, shadow) is every sheet's, written
+          // once in `app.css` (UX-44 §1).
+          className="fixed inset-x-0 bottom-0 z-50 flex flex-col overflow-hidden outline-none"
         >
           <DialogPrimitive.Title className="sr-only">{gui.session_side}</DialogPrimitive.Title>
           {/* The grabber's band: where a pull is the sheet's at once. */}

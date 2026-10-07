@@ -229,11 +229,16 @@
   --on-destructive: #ffffff;
   --destructive-foreground: var(--on-destructive);
   --border: rgba(26, 26, 20, 0.12);
-  /* **The sheet's scrim** (UX-39): what the page behind a bottom sheet
-     turns while it is up — darker on the light ground, *lighter* on the
+  /* **The one scrim** (UX-39; UX-44 §2): what the page behind every sheet
+     and every dialog turns while it is up — the 附栏's, the tabs sheet's,
+     a form's, a question's. Darker on the light ground, *lighter* on the
      dark one, so a black terminal reads as grey and the sheet, in the
-     app's own ground, stands off it. `bg-black/50` was invisible on black. */
-  --sheet-scrim: rgba(26, 26, 20, 0.32);
+     app's own ground, stands off it. Light is the tabs sheet's dimming
+     (the owner, 2026-10-07: 「都用标签列表的深灰」), black at half;
+     ⚠️ 墓碑 (UX-39 → UX-44): ink at .32, the 附栏's alone, beside the
+     dialogs' `bg-black/50`. On dark, black at half is invisible on the
+     black ground, so dark keeps the lighter veil. */
+  --sheet-scrim: rgba(0, 0, 0, 0.5);
   --input: rgba(26, 26, 20, 0.12);
   /* The focus ring, ink for the same reason and to the same reading.
    *
