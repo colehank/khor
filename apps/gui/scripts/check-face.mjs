@@ -34101,7 +34101,12 @@ try {
   //      tree-changed reads at once; here (`unavailable`) the window's
   //      focus reads again; a far machine's dirs_wait answer reads; a new
   //      receive location is watched instead of the old; a location on a
-  //      network mount (`unreported`) reads again on focus.
+  //      network mount (`unreported`) reads again on focus;
+  //   h. under a finger the list pulls to refresh as the other lists do
+  //      (`usePullRefresh`): a pull past the arm on a watched machine
+  //      whose watch says nothing reads its location at once (one ls),
+  //      the spinner turns (`data-pull` armed → syncing) and the file
+  //      nobody announced is listed.
   store: {
   if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "store") break store;
   {
@@ -34496,6 +34501,62 @@ try {
       for (const e of [...watch.pending]) e.release([]);
       await press("[data-more-close]");
       await wait(400);
+    }
+
+    // h. pull to refresh, under a finger
+    {
+      const finger = await page.context().newCDPSession(page);
+      await finger.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+      const opened = await openMore("store");
+      await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+      const peerDir = places.peer.receive_at;
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await until(3_000, async () => (await read(box))?.machine === "peer" && ((await read(box))?.rows ?? []).length > 0);
+      const held = await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(peerDir)));
+      await wait(800);
+      // A file the watch never says: only the pull can bring it.
+      files[peerDir].push({ name: "pulled.txt", dir: false, size: 10, at_ms: Date.now() });
+      await page.evaluate(() => {
+        const seen = [];
+        window.__pullSeen = seen;
+        const spin = document.querySelector("[data-more-page='store'] [data-store] > [data-pull]");
+        if (!spin) return;
+        new MutationObserver(() => seen.push(spin.getAttribute("data-pull"))).observe(spin, { attributes: true, attributeFilter: ["data-pull"] });
+      });
+      const from = lsCount[peerDir] ?? 0;
+      const b = await page.evaluate(() => {
+        const r = document.querySelector("[data-more-page='store'] [data-store] [data-nav-clear]")?.getBoundingClientRect();
+        return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + 30) } : null;
+      });
+      if (b) {
+        await finger.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: b.x, y: b.y }] });
+        for (let i = 1; i <= 8; i += 1) {
+          await finger.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: b.x, y: b.y + 25 * i }] });
+          await wait(30);
+        }
+        await finger.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      }
+      const listed = await until(2_000, async () => ((await read(box))?.rows ?? []).includes("pulled.txt"));
+      await wait(1_000);
+      const reads = (lsCount[peerDir] ?? 0) - from;
+      const seen = await page.evaluate(() => window.__pullSeen ?? []);
+      await finger.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await finger.detach();
+      console.log(`store h · coarse ${coarse}, opened ${opened}, held ${held}, pull states ${seen.join(" → ")}, ${reads} ls, listed ${listed}`);
+      if (!coarse) fail("probe void: store h · the touch override did not take — no finger on the glass");
+      else if (!opened || !b) fail("probe dead: store h · 存储 did not open on the narrow face");
+      else {
+        if (!held) fail("store h · no dirs_wait held on peer's receive location — the pull is checked against a watch that says nothing");
+        if (!seen.includes("armed") || !seen.includes("syncing")) fail(`store h · the pull went ${seen.join(" → ") || "nowhere"} — armed past the threshold, then syncing (usePullRefresh)`);
+        if (reads !== 1 || !listed) fail(`store h · a pull read peer's location ${reads} time(s), pulled.txt listed ${listed} — once, at once, whatever the watch says`);
+      }
+      for (const e of [...watch.pending]) e.release([]);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(600);
     }
 
     for (const e of [...watch.pending]) e.release([]);

@@ -31,7 +31,10 @@
  * location on a network mount another host writes into too
  * (`unreported`: turing and hinton share an NFS home) — the page also
  * reads again when the window comes back to the front and, slowly, while
- * it stays open. A new receive location is a new watch.
+ * it stays open. A new receive location is a new watch. And under a
+ * finger the list pulls to refresh like every other list
+ * (`usePullRefresh`): a pull reads the location now, whatever the watch
+ * says.
  *
  * The same page is the 附栏's 更多 → 存储 seat (`bare`): no head of its
  * own there — the 附栏's one head says who and which seat — and where it
@@ -41,12 +44,13 @@
  * ⚠️ 墓碑 (STORE-BRIEF phase 1): 「放进来的」, a row above the 工作区
  * seat's tree opening `~/khor-drop` as a tree of its own.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { dirsWait, fetchLs, setReceiveDir, type DeviceRow } from "@/api";
 import { DirPicker } from "@/components/DirPicker";
 import { GlassCircle } from "@/components/Glass";
 import { IconBack } from "@/components/icons";
+import { PullSpinner } from "@/components/ListPane";
 import { PathCut } from "@/components/PathCut";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { fileKind } from "@/components/SessionFace";
@@ -58,6 +62,7 @@ import { PopupButton } from "@/components/ui/popup-button";
 import type { DirRow } from "@/gen/bindings/DirRow";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
+import { usePullRefresh } from "@/hooks/use-pull-refresh";
 import type { StoreSpot } from "@/hooks/use-session-side";
 import { onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { FilePage } from "@/views/FilePage";
@@ -190,6 +195,23 @@ export function StorePage({
     };
   }, [name, dir, hidden]);
 
+  /** Pulled down under a finger: read now and hold the spinner until
+      the answer is in (`ListPane`'s pull, on this page's own list). */
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const pull = usePullRefresh(scroller, () =>
+    dir === null
+      ? Promise.resolve()
+      : fetchLs(name, dir).then(
+          (l) => {
+            setListed({ dir, rows: l.entries });
+            setFailed(null);
+          },
+          (e: unknown) => setFailed(String(e instanceof Error ? e.message : e)),
+        ),
+  );
+  const pulling = pull.state !== "idle" || pull.pull > 0;
+  const dragging = pull.state === "pulling" || pull.state === "armed";
+
   // A delete, a rename, a save or a drop landing anywhere in khor in
   // this directory — at once, unless the watch is about to say so.
   useEffect(
@@ -293,7 +315,17 @@ export function StorePage({
   const machines = devices;
 
   return (
-    <div data-store data-store-machine={name} className="flex min-h-0 flex-1 flex-col">
+    <div
+      data-store
+      data-store-machine={name}
+      // A pull moves the page's parts, never its box (`app.css`
+      // `[data-pull-host]`), as a pane's does.
+      data-pull-host={pulling ? "" : undefined}
+      data-pull-drag={dragging ? "" : undefined}
+      className="relative flex min-h-0 flex-1 flex-col"
+      style={{ "--pull": `${pull.pull}px` } as CSSProperties}
+    >
+      <PullSpinner {...pull} />
       <SideFind
         label={gui.store_search}
         query={query}
@@ -318,7 +350,7 @@ export function StorePage({
           ) : undefined
         }
       />
-      <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={setScroller} data-nav-clear className="min-h-0 flex-1 overflow-y-auto">
         <div data-store-place data-store-pending={pending || undefined} className="flex flex-col gap-xxs border-b px-(--page-inset) py-in">
           <div className="flex min-w-0 items-center gap-row">
             <div className="flex min-w-0 flex-1 flex-col">

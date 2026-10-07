@@ -239,9 +239,10 @@ export function ListPane({
  * The spinner a pull shows above the pane's title (the audit fix plan
  * F6.5): the family's reload mark, turning with the pull and spinning
  * while the shell asks — and no word on screen. The four moments are
- * said to a screen reader only, in the catalog's words.
+ * said to a screen reader only, in the catalog's words. Also 存储's
+ * (`StorePage`), which pulls the same way without being a pane.
  */
-function PullSpinner({
+export function PullSpinner({
   state,
   pull,
   at,
