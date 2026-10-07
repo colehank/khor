@@ -604,6 +604,31 @@ export function SideList({
  * which no flex rule can hand a sibling. The title's aside is not counted:
  * it is cut first, to nothing.
  */
+/**
+ * **How wide a name's words are as laid out**, cut or not — never its
+ * box. A title with no aside is a block (`data-side-title`), which the
+ * row stretches to its whole column, so the box's width (and its
+ * `scrollWidth`) is whatever the corners left it: measured that way the
+ * corners' room was their own width rounded down, and a state with a
+ * fractional width ("39%" beside its ring) lost the fraction (UX-48,
+ * the face gate's `corners` c). Text runs are measured instead: a range
+ * over a text node is as wide as its glyphs, overflow included.
+ */
+function wordsWidth(el: HTMLElement): number {
+  const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  let left = Infinity;
+  let right = -Infinity;
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    range.selectNodeContents(n);
+    const b = range.getBoundingClientRect();
+    if (b.width === 0) continue;
+    left = Math.min(left, b.left);
+    right = Math.max(right, b.right);
+  }
+  return right > left ? right - left : 0;
+}
+
 function Corners({ top, bottom }: { top?: ReactNode; bottom?: ReactNode }) {
   const box = useRef<HTMLSpanElement | null>(null);
   const fit = useCallback(() => {
@@ -619,7 +644,7 @@ function Corners({ top, bottom }: { top?: ReactNode; bottom?: ReactNode }) {
       Number.parseFloat(cs.columnGap || "0") -
       // The name's own text: a row's title cuts itself (`truncate` on
       // its own box), so the outer box only reports what it was given.
-      Math.max(name.scrollWidth, ...[...name.querySelectorAll<HTMLElement>("*")].map((e) => e.scrollWidth));
+      Math.ceil(wordsWidth(name));
     const time = el.querySelector<HTMLElement>('[data-corner="bottom"]')?.scrollWidth ?? 0;
     const keep = el.querySelector<HTMLElement>("[data-corner-keep]")?.scrollWidth ?? 0;
     el.style.maxWidth = `${Math.max(time, keep, room)}px`;
