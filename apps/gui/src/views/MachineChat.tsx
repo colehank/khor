@@ -62,6 +62,16 @@ function fmtSize(n: number): string {
  * loud (上传中…), and a refusal — the size cap included — lands as the
  * backend's own sentence where the act was started (the pin's rule).
  */
+/**
+ * **The broadcast** (`wide/all`, STORE-BRIEF phase 3) is painted here
+ * too: the khor's own group conversation, the same stream and the same
+ * composer, the machine name on each line from another machine. Its
+ * file is an offer each machine answers on its own, so the chip says
+ * *this machine's* state — 待接收 with 接收, the bar with ×, 已收到 with
+ * the path, the failure with 重试 — and on the machine that sent it, how
+ * many machines have it. There is no 「存到」: an offer lands in each
+ * machine's own receive location.
+ */
 export function MachineChat({ id }: { id: string }) {
   const [log, setLog] = useState<MachineLog | null>(null);
   const [draft, setDraft] = useState("");
@@ -99,6 +109,9 @@ export function MachineChat({ id }: { id: string }) {
 
   // The channel is the row's title-independent name; the id carries
   // it (`chat/<channel>`), and peeling it here mirrors the read side.
+  // The broadcast's id is its own name to every call (`tell`, the
+  // uploads, the readout): the core layer knows the board.
+  const wide = id.startsWith("wide/");
   const machine = id.startsWith("chat/") ? id.slice(5) : id;
 
   const send = () => {
@@ -125,19 +138,26 @@ export function MachineChat({ id }: { id: string }) {
       location. Kept while this conversation is open. */
   const [into, setInto] = useState<string | null>(null);
   /** Whether the receiver is this machine (its files are already on
-      this disk). */
-  const [here, setHere] = useState(false);
+      this disk). In the broadcast it always is: a chip shows this
+      machine's own landing. */
+  const [here, setHere] = useState(wide);
+  /** The API's spelling of the machine a landed path is on. */
+  const [landsOn, setLandsOn] = useState(wide ? "" : machine);
   useEffect(() => {
     let live = true;
     setInto(null);
     fetchDevices().then(
-      (rows) => live && setHere(!!rows.find((r) => r.name === machine)?.me),
+      (rows) => {
+        if (!live) return;
+        if (wide) return setLandsOn(rows.find((r) => r.me)?.name ?? "");
+        setHere(!!rows.find((r) => r.name === machine)?.me);
+      },
       () => {},
     );
     return () => {
       live = false;
     };
-  }, [machine]);
+  }, [machine, wide]);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const fileOutcome = (p: Promise<unknown>) =>
     p.then(
@@ -201,8 +221,9 @@ export function MachineChat({ id }: { id: string }) {
             key={m.id}
             m={m}
             stamp={stampFor(m, i === 0 ? null : log.messages[i - 1])}
-            machine={machine}
+            machine={landsOn}
             here={here}
+            wide={wide}
             onChanged={refresh}
           />
         ))}
@@ -230,15 +251,18 @@ export function MachineChat({ id }: { id: string }) {
           conversation's arrangement. */}
       <BarSeat at="under">
       {/* Where a file sent from here lands: the receiver's receive
-          location, or a directory picked on it. ＋ sends there at once. */}
-      <div className="flex-none px-row pt-in">
-        <SendInto machine={machine} name={machine} into={into} onInto={setInto} className="mx-auto w-full max-w-measure" />
-      </div>
+          location, or a directory picked on it. ＋ sends there at once.
+          Not in the broadcast: each machine's own location. */}
+      {!wide && (
+        <div className="flex-none px-row pt-in">
+          <SendInto machine={machine} name={machine} into={into} onInto={setInto} className="mx-auto w-full max-w-measure" />
+        </div>
+      )}
       {/* **The conversation's capsule** (`Composer`, the redesign,
           2026-10-02): ＋ to send a file, the text, and send once there is
           something to send. No mode and no interrupt — a note has no
           agent on the other end. */}
-      <div className="flex-none px-row pt-xxs pb-in">
+      <div className={cn("flex-none px-row pb-in", wide ? "pt-in" : "pt-xxs")}>
       <div className="mx-auto flex w-full max-w-measure text-read">
         <Composer
           lead={
@@ -348,12 +372,14 @@ function MsgLine({
   stamp,
   machine,
   here,
+  wide,
   onChanged,
 }: {
   m: ChatMsgRow;
   stamp: string | null;
   machine: string;
   here: boolean;
+  wide: boolean;
   onChanged: () => void;
 }) {
   return (
@@ -386,7 +412,7 @@ function MsgLine({
             {m.text}
           </div>
         ) : m.files !== null ? (
-          <FileChip m={m} machine={machine} here={here} onChanged={onChanged} />
+          <FileChip m={m} machine={machine} here={here} wide={wide} onChanged={onChanged} />
         ) : (
           // A body kind this build cannot read — said out loud rather
           // than rendered blank (`MsgBody::Unknown`'s rule).
@@ -410,11 +436,14 @@ function FileChip({
   m,
   machine,
   here,
+  wide,
   onChanged,
 }: {
   m: ChatMsgRow;
   machine: string;
   here: boolean;
+  /** A broadcast offer: the state is this machine's own answer. */
+  wide: boolean;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -427,7 +456,11 @@ function FileChip({
   }, [failed]);
   const size = (m.files ?? []).reduce((n, f) => n + f.size, 0);
   // Not started yet is on its way too: the receiver starts it by itself.
-  const moving = !m.retracted && (m.step === null || m.step === "moving");
+  // Not in the broadcast: there it waits for this machine's 接收, and
+  // the machine that sent it has nothing to move.
+  const sent = wide && m.from_me;
+  const waiting = wide && !sent && !m.retracted && m.step === null;
+  const moving = !sent && !m.retracted && (m.step === "moving" || (!wide && m.step === null));
   const pct = size > 0 ? Math.min(100, Math.floor((m.moved * 100) / size)) : 0;
   const act = (p: Promise<unknown>) => {
     setBusy(true);
@@ -466,6 +499,28 @@ function FileChip({
           </div>
         </div>
       ))}
+      {sent && m.got !== null && m.of !== null && (
+        // The sender's chip counts the machines that have it, read off
+        // the records the receivers wrote.
+        <span data-bcast-count={`${m.got}/${m.of}`} className="text-caption tabular-nums text-muted-foreground">
+          {gui.bcast_count(m.got, m.of)}
+        </span>
+      )}
+      {waiting && (
+        <div className="flex items-center justify-between gap-2">
+          <span data-bcast-waiting className="text-caption text-muted-foreground">
+            {gui.bcast_waiting}
+          </span>
+          <Button size="sm" data-bcast-take disabled={busy} aria-busy={busy || undefined} onClick={() => act(retryTransfer(m.id))}>
+            {gui.bcast_take}
+          </Button>
+        </div>
+      )}
+      {moving && wide && (
+        <span data-bcast-taking className="text-caption text-muted-foreground">
+          {gui.bcast_taking}
+        </span>
+      )}
       {moving && (
         <div className="flex items-center gap-2">
           <div
@@ -493,6 +548,11 @@ function FileChip({
           </Button>
         </div>
       )}
+      {wide && m.step === "landed" && (
+        <span data-bcast-landed className="text-caption text-muted-foreground">
+          {gui.bcast_landed}
+        </span>
+      )}
       {m.step === "landed" &&
         m.landed.map((p) => (
           <button
@@ -514,7 +574,9 @@ function FileChip({
             {m.step === "failed" ? gui.file_failed(m.why ?? "") : gui.file_stopped}
           </span>
           <Button size="sm" data-file-retry disabled={busy} aria-busy={busy || undefined} onClick={() => act(retryTransfer(m.id))}>
-            {gui.region_retry}
+            {/* A cancelled offer is received again; anything else that
+                broke is tried again. */}
+            {wide && m.step === "stopped" ? gui.bcast_take : gui.region_retry}
           </Button>
         </div>
       )}

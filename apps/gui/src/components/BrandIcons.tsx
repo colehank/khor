@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 
 import type { SystemKind } from "@/gen/bindings/SystemKind";
-import { IconChat, IconDevices, IconFile, IconFinder, IconLink, IconTerminal } from "./icons";
+import { IconChat, IconDevices, IconFile, IconFinder, IconLink, IconNetwork, IconTerminal } from "./icons";
 
 /**
  * **Identity marks**: what a session *is*, not how it is doing. Ported
@@ -146,6 +146,10 @@ export function sessionMark(kind: string, category: string | null): ComponentTyp
   switch (kind) {
     case "chat":
       return IconChat;
+    // The khor's own group conversation: the network's mark, on a blank
+    // face — it is every machine's, so it wears none of theirs.
+    case "broadcast":
+      return IconNetwork;
     case "transfer":
       return IconFile;
     case "borrow":
