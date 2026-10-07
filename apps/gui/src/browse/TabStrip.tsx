@@ -48,7 +48,7 @@ import type { EditItem } from "@/hooks/use-read-first";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { SessionFace } from "@/components/SessionFace";
 import { FaceMark, type KindMark } from "@/components/FaceMark";
-import { IconBack, IconCheck, IconClose, IconPlus, IconReload, IconArrow } from "@/components/icons";
+import { IconBack, IconCheck, IconClose, IconPlus, IconReload, IconUpload } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { PaneBar } from "@/components/PaneBar";
 import { RegionLead } from "@/components/Region";
@@ -201,10 +201,13 @@ export type TabFace = {
     (`SessionFace` `tab`, halo and corner inside the tab's box); the
     switcher's rows are list rows and keep a row's. */
 export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "tab" | "row" }) {
+  // **A file going in** (item 71): the upload mark in the face's seat,
+  // the seat's whole size as the face was; in full ink whatever the
+  // tab's, as a face is never dimmed.
   if (f.drop)
     return (
-      <span data-tab-dropping className={cn(bare, "grid flex-none place-items-center rounded-full bg-fill-strong text-foreground")}>
-        <IconArrow to="up" className="size-3.5" />
+      <span data-tab-dropping className={cn(bare, "grid flex-none place-items-center text-foreground")}>
+        <IconUpload className="size-full" />
       </span>
     );
   if (f.session) return <SessionFace face={f.face} {...f.session} size={seat} />;
