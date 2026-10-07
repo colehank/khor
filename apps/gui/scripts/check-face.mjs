@@ -6380,7 +6380,9 @@ try {
         onStrip: document.querySelector("[data-ws-tab-strip]")?.contains(e) === true,
       })),
       eyes: document.querySelectorAll("[data-file-face-switch]").length,
-      // The row of two buttons from before ruling 47, gone whole.
+      // The row of two buttons from before ruling 47, gone whole. Its
+      // name is the row's alone: a file's kind face (UX-45) is
+      // `data-file-kind-face` (fix-a), so this counts the row, not a tab.
       oldRow: document.querySelectorAll("[data-file-face]").length,
       // The columns' switches are R0's (2026-09-28), one capsule, never
       // on the strip.
@@ -10972,15 +10974,48 @@ try {
       if (moved.doc !== 0 || moved.rail !== railWas) {
         fail(`the wheel over the strip moved the page (${JSON.stringify(moved)}) — 滚到头不带动整页`);
       }
+      // **The tab in front, scrolled past the edge, picked again from its
+      // list row** is read back wholly inside (fix-a): a pick is a pick
+      // whether or not it changes the front. This is the stop the next
+      // one fell back to once every pill was one width (UX-45): the
+      // strip opened scrolled to its end, the wheel took it to the start,
+      // and the only tab past the edge was the one in front.
+      const front = after?.tabs.find((t) => t.on)?.id ?? "";
+      await page.evaluate((front) => {
+        const el = document.querySelector("[data-session-tabs] [data-tab-strip]");
+        const t = el?.querySelector(`[data-tab="${CSS.escape(front)}"]`);
+        if (!el || !t) return;
+        const box = el.getBoundingClientRect();
+        // To whichever end leaves it out of view.
+        el.scrollLeft = t.getBoundingClientRect().left - box.left + el.scrollLeft > el.clientWidth / 2 ? 0 : el.scrollWidth;
+      }, front);
+      await wait(200);
+      const away = await stripOf("[data-session-tabs]");
+      if (!away?.clipped.includes(front)) {
+        fail(`probe dead: scrolled the strip and ${front} (in front) is still in view — nothing to bring back`);
+      } else {
+        await press(`[data-list] [data-row="${front}"] [data-row-open]`);
+        await wait(400);
+        const back = await stripOf("[data-session-tabs]");
+        console.log(`tabs 4T · ${front} in front, scrolled to ${away.left}, picked again: scroll ${back?.left}, clipped ${JSON.stringify(back?.clipped)}`);
+        if (!back || back.clipped.includes(front)) {
+          fail(`picked ${front} (in front, scrolled past the edge) from the list and it stays past the strip's edge — 选中一枚时把它滚进视野 (src/browse/TabStrip.tsx seek)`);
+        }
+      }
       // A tab **past the edge now and not in front**, put in front from
       // its list row, is read back on the strip wholly inside.
-      const now = (await stripOf("[data-session-tabs]")) ?? over;
-      const first = now.tabs.find((t) => !t.on && now.clipped.includes(t.id))?.id ?? now.tabs[now.tabs.length - 1].id;
-      await press(`[data-list] [data-row="${first}"] [data-row-open]`);
-      await wait(400);
-      const picked = await stripOf("[data-session-tabs]");
-      if (!picked || picked.clipped.includes(first)) {
-        fail(`put ${first} in front from the list and it sits past the strip's edge — 选中一枚时把它滚进视野`);
+      const now = await stripOf("[data-session-tabs]");
+      const first = now?.tabs.find((t) => !t.on && now.clipped.includes(t.id))?.id ?? null;
+      if (first === null) {
+        fail(`probe dead: no tab past the strip's edge but the one in front (${JSON.stringify(now?.clipped)}) — nothing to put in front`);
+      } else {
+        await press(`[data-list] [data-row="${first}"] [data-row-open]`);
+        await wait(400);
+        const picked = await stripOf("[data-session-tabs]");
+        console.log(`tabs 4T · ${first} put in front from the list: scroll ${now.left} → ${picked?.left}, clipped ${JSON.stringify(picked?.clipped)}`);
+        if (!picked || picked.clipped.includes(first)) {
+          fail(`put ${first} in front from the list and it sits past the strip's edge — 选中一枚时把它滚进视野`);
+        }
       }
     }
 
@@ -28750,7 +28785,7 @@ try {
       else {
         const faces = await page.evaluate(() =>
           [...document.querySelectorAll("[data-ws-tab-strip] [data-tab]")].map((t) => ({
-            file: !!t.querySelector("[data-file-face]"),
+            file: !!t.querySelector("[data-file-kind-face]"),
             machine: !!t.querySelector("[data-face]"),
           })),
         );
@@ -32621,7 +32656,7 @@ try {
             kind: e.dataset.recentKind,
             at: e.querySelector("[data-recent-at]")?.textContent ?? null,
             // UX-45: a file's face is its kind alone, no machine's face.
-            fileFace: !!e.querySelector("[data-file-face]"),
+            fileFace: !!e.querySelector("[data-file-kind-face]"),
             machineFace: !!e.querySelector("[data-face]"),
           })),
         };
@@ -33966,7 +34001,7 @@ try {
   //      the pointer each time (ux-q; red on the old code: the scroll
   //      clamped 1046 → 980 → 914 → 848 and the row slid right);
   //   f. a file's face is its kind alone: the workspace strip's file tab
-  //      and the phone's file page pill wear `[data-file-face]` with no
+  //      and the phone's file page pill wear `[data-file-kind-face]` with no
   //      machine face inside, a session tab keeps its machine face and
   //      its kind's mark (最近's file rows: side c);
   //   g. `MidName`: a name whose whole width fits its box is shown whole,
@@ -34346,7 +34381,7 @@ try {
       await until(3_000, async () => (await count("[data-ws-tab-strip] [data-tab]")) > 0);
       const faces = await page.evaluate(() => {
         const tabs = [...document.querySelectorAll("[data-ws-tab-strip] [data-tab]")];
-        return tabs.map((t) => ({ file: !!t.querySelector("[data-file-face]"), machine: !!t.querySelector("[data-face]") }));
+        return tabs.map((t) => ({ file: !!t.querySelector("[data-file-kind-face]"), machine: !!t.querySelector("[data-face]") }));
       });
       console.log(`tabs f · the workspace strip's faces ${JSON.stringify(faces)} (opened ${opened && file})`);
       if (!file || faces.length === 0) fail("probe dead: tabs f · no file tab in the workspace strip");
@@ -34354,7 +34389,7 @@ try {
       await withTabs(ids.slice(0, 2));
       const session = await page.evaluate(() => {
         const t = document.querySelector("[data-session-tabs] [data-tab]");
-        return { file: !!t?.querySelector("[data-file-face]"), mark: !!t?.querySelector("[data-side-face] [data-kind-mark]") };
+        return { file: !!t?.querySelector("[data-file-kind-face]"), mark: !!t?.querySelector("[data-side-face] [data-kind-mark]") };
       });
       if (session.file || !session.mark) fail(`tabs f · a session tab wears ${JSON.stringify(session)} — the machine's face with its kind's mark, as before`);
     }
@@ -34540,7 +34575,7 @@ try {
       await wait(500);
       const pill = await page.evaluate(() => {
         const p = [...document.querySelectorAll("[data-file-pill]")].find((e) => e.checkVisibility());
-        return p ? { file: !!p.querySelector("[data-file-face]"), machine: !!p.querySelector("[data-face]") } : null;
+        return p ? { file: !!p.querySelector("[data-file-kind-face]"), machine: !!p.querySelector("[data-face]") } : null;
       });
       console.log(`tabs f · the phone's file pill ${JSON.stringify(pill)}`);
       if (!pill) fail("probe dead: tabs f · no file page's pill on the phone");

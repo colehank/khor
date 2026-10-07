@@ -190,10 +190,12 @@ export function FaceMark({
   // machine under it and no corner — every tab, pill and row that shows
   // a file. The row's text names the machine. Directories and pages
   // keep the assembly. ⚠️ 墓碑 (UX-32 for files): the kind as the mark
-  // on the machine's face.
+  // on the machine's face. `data-file-kind-face`, not `data-file-face`:
+  // that name is the retired 源码/预览 row's, and a gate still counts it
+  // to keep the row gone (fix-a).
   if (mark?.key === "file")
     return (
-      <span data-side-face data-file-face className={cn("relative grid flex-none place-items-center", s.face, className)}>
+      <span data-side-face data-file-kind-face className={cn("relative grid flex-none place-items-center", s.face, className)}>
         {mark.glyph(size === "tab" ? "size-full" : "size-[70%]")}
       </span>
     );

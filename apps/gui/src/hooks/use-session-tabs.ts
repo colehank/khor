@@ -69,6 +69,11 @@ export type SessionTabs = {
   open: (id: string) => void;
   /** Bring an open tab to the front; a no-op for an id that is not open. */
   focus: (id: string) => void;
+  /** How many times `open` or `focus` has been asked, the tab in front
+      included (fix-a): the strip brings the front tab into view on each,
+      so a pick that changes nothing still shows the tab it named
+      (`TabStrip` `seek`). */
+  picks: number;
   /** Close one tab (the neighbour on the right takes the front, falling
       back to the left at the end — the browser convention). */
   close: (id: string) => void;
@@ -99,6 +104,7 @@ export function useSessionTabs(
   const touched = useRef(new Map<string, number>());
   const rules = useRef({ limit, keep });
   rules.current = { limit, keep };
+  const [picks, setPicks] = useState(0);
 
   useEffect(() => {
     if (!wrote.current) {
@@ -114,6 +120,7 @@ export function useSessionTabs(
 
   const open = useCallback((id: string) => {
     touched.current.set(id, Date.now());
+    setPicks((n) => n + 1);
     setState((was) => {
       if (was.tabs.includes(id)) return { ...was, active: id };
       const now = [...was.tabs, id];
@@ -127,6 +134,7 @@ export function useSessionTabs(
 
   const focus = useCallback((id: string) => {
     touched.current.set(id, Date.now());
+    setPicks((n) => n + 1);
     setState((was) => (was.tabs.includes(id) ? { ...was, active: id } : was));
   }, []);
 
@@ -161,5 +169,5 @@ export function useSessionTabs(
     });
   }, []);
 
-  return { tabs: state.tabs, active: state.active, open, focus, close, drop, become };
+  return { tabs: state.tabs, active: state.active, open, focus, picks, close, drop, become };
 }
