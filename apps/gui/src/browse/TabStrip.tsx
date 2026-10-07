@@ -217,6 +217,11 @@ export function TabAvatar({ f, bare, seat }: { f: TabFace; bare: string; seat: "
       </span>
     );
   if (f.session) return <SessionFace face={f.face} {...f.session} size={seat} />;
+  // **A file's face is its kind, alone** (UX-45, the owner 2026-10-07:
+  // 「全都只有文件类型」): the icon the tree draws, no machine face under
+  // it — on the strip, the phone deck's pill, the 附栏's docked page.
+  // ⚠️ 墓碑 (UX-32 for files): the kind as the mark on the machine's face.
+  if (f.mark?.key === "file") return <span data-tab-file-face className={cn(bare, "grid flex-none place-items-center")}>{f.mark.glyph("size-full")}</span>;
   // A browsing page: the machine it goes through, wearing its kind's
   // mark the way a session's tab does (the redesign, 2026-10-02).
   if (f.mark) return <FaceMark face={{ machine: f.face }} mark={f.mark} size={seat} />;
@@ -237,6 +242,8 @@ function PreviewMark() {
  */
 export function MidName({ text, after = "", even = false }: { text: string; after?: string; even?: boolean }) {
   const KEEP = 5;
+  /** The fewest characters of the head a middle cut may leave. */
+  const HEAD = 3;
   const [sizer, setSizer] = useState<HTMLSpanElement | null>(null);
   const [shown, setShown] = useState(text);
   // **Cut by measure** (2026-10-03): the head used to be a CSS `truncate`
@@ -252,34 +259,57 @@ export function MidName({ text, after = "", even = false }: { text: string; afte
       return;
     }
     const fit = () => {
-      const room = sizer.clientWidth;
+      const room = sizer.getBoundingClientRect().width;
       if (room <= 0) return;
-      const wide = measurer(fontOf(sizer));
-      if (wide(text + after) <= room - 1) {
+      // **A name that fits is never cut** (UX-45, the owner 2026-10-07:
+      // 「frontier_diagno…cs.py」 in a tab it fitted). Asked of the layout
+      // itself — the full name overflowing its box or not — rather than
+      // of a measure against a rounded width with a pixel taken off,
+      // which cut names that fitted to the fraction.
+      if (sizer.scrollWidth <= sizer.clientWidth) {
         setShown(text);
         return;
       }
+      const wide = measurer(fontOf(sizer));
+      const fits = (s: string) => wide(s + after) <= room;
       const chars = [...text];
+      /** The plain end cut, 「fron…」: when not even a few characters of
+          the head stand before the tail. **Never a tail with no head**
+          (the owner: 「…ue.p」 said nothing). */
+      const endCut = () => {
+        let n = chars.length - 1;
+        while (n > 1 && !fits(`${chars.slice(0, n).join("")}…`)) n -= 1;
+        setShown(`${chars.slice(0, n).join("")}…`);
+      };
       // **`even`: as much of the end as of the start**, Finder's middle
       // cut — for a name with no extension to keep (a file going in,
       // the owner 2026-10-07 13:15), where a fixed tail of wide
       // characters left no start at all.
       if (even) {
         let n = chars.length - 1;
-        const cut = (k: number) => `${chars.slice(0, Math.ceil(k / 2)).join("")}…${chars.slice(chars.length - Math.floor(k / 2)).join("")}${after}`;
-        while (n > 0 && wide(cut(n)) > room - 1) n -= 1;
-        setShown(cut(n).slice(0, cut(n).length - after.length));
+        const cut = (k: number) => `${chars.slice(0, Math.ceil(k / 2)).join("")}…${chars.slice(chars.length - Math.floor(k / 2)).join("")}`;
+        while (n > 0 && !fits(cut(n))) n -= 1;
+        if (Math.ceil(n / 2) < HEAD) endCut();
+        else setShown(cut(n));
         return;
       }
-      const tail = chars.slice(-KEEP).join("");
-      let lo = 0;
-      let hi = chars.length - KEEP;
-      while (lo < hi) {
-        const mid = Math.ceil((lo + hi) / 2);
-        if (wide(`${chars.slice(0, mid).join("")}…${tail}${after}`) <= room - 1) lo = mid;
-        else hi = mid - 1;
+      // The middle cut, the tail shortened first (down to two) before the
+      // head is let go below `HEAD` characters.
+      for (let keep = KEEP; keep >= 2; keep -= 1) {
+        const tail = chars.slice(-keep).join("");
+        let lo = 0;
+        let hi = chars.length - keep;
+        while (lo < hi) {
+          const mid = Math.ceil((lo + hi) / 2);
+          if (fits(`${chars.slice(0, mid).join("")}…${tail}`)) lo = mid;
+          else hi = mid - 1;
+        }
+        if (lo >= HEAD) {
+          setShown(`${chars.slice(0, lo).join("")}…${tail}`);
+          return;
+        }
       }
-      setShown(`${chars.slice(0, lo).join("")}…${tail}`);
+      endCut();
     };
     fit();
     const watch = new ResizeObserver(fit);
