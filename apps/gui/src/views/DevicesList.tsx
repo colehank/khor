@@ -288,7 +288,8 @@ export function DevicesList({
     // the unreadable / not-connected words and the last-heard time under
     // it. And (UX-48, the lead 2026-10-07) the offline word on every idle
     // row: idle is not unreachable. (UX-50) the latency first in the
-    // second line and the middle dots between its readings.
+    // second line and the middle dots between its readings; a fourth
+    // reading (disk beside GPU) — at most three, the owner 2026-10-08.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
     const down = !d.me && d.hop === "quiet" && isDown(d.down_ms);
     const live = d.me || d.hop === "direct" || d.hop === "relay";
@@ -313,20 +314,23 @@ export function DevicesList({
           ? lasted(d.heard_ms)
           : null;
     // **UX-50** (the owner 2026-10-08): the latency is the title line's,
-    // after the name; under the name CPU, memory, disk, GPU in that order,
-    // each a label and a value with a gap between them and no middle dot.
-    // The disk is
-    // `vitals.disk`, the volume khor's home is on — the one the card's disk
-    // ring reads, so the two never disagree. When they do not fit, whole
-    // items go from the end (`Whole`); CPU stays.
+    // after the name; under the name at most three readings, each a label
+    // and a value with a gap between them and no middle dot: CPU, memory,
+    // then the GPU on a machine that has one, else the disk (`vitals.disk`,
+    // the volume khor's home is on — the one the card's disk ring reads, so
+    // the two never disagree). When they do not fit, whole items go from
+    // the end (`Whole`); CPU stays.
     const v = live ? d.vitals?.vitals : undefined;
     const lat = live && !d.me ? rtt : null;
     const share = (f: { used: number; total: number }) => Math.round((f.used / f.total) * 100);
     const readings = [
       v ? { key: "cpu", label: cli.vitals_name_cpu, value: Math.round(v.cpu_pct) } : null,
       v && v.mem.total > 0 ? { key: "mem", label: cli.vitals_name_mem, value: share(v.mem) } : null,
-      v?.disk && v.disk.total > 0 ? { key: "disk", label: cli.vitals_name_disk, value: share(v.disk) } : null,
-      v?.gpu ? { key: "gpu", label: cli.vitals_name_gpu, value: Math.round(v.gpu.util_pct) } : null,
+      v?.gpu
+        ? { key: "gpu", label: cli.vitals_name_gpu, value: Math.round(v.gpu.util_pct) }
+        : v?.disk && v.disk.total > 0
+          ? { key: "disk", label: cli.vitals_name_disk, value: share(v.disk) }
+          : null,
     ].filter((w): w is { key: string; label: string; value: number } => w !== null);
     return {
       id: d.id,

@@ -24500,11 +24500,12 @@ try {
   //
   //   a. machines — direct / relay (`[hop]`) over how long the wire has
   //      been on that road (`since_ms`); the latency after the name, one
-  //      size down in the secondary ink (UX-50); under the name CPU,
-  //      memory, disk, GPU (GPU only where there is one), each a label in
-  //      the secondary ink and a tabular value in the primary, `gap-row`
-  //      apart with no middle dot; at a narrowing width whole items drop
-  //      from the end, CPU never (measured); `machine-here` with nothing
+  //      size down in the secondary ink (UX-50); under the name at most
+  //      three readings — CPU, memory, then GPU on a machine that has one,
+  //      else disk — each a label in the secondary ink and a tabular value
+  //      in the primary, `gap-row` apart with no middle dot; all three at
+  //      the list's own width; at a narrowing width whole items drop from
+  //      the end, CPU never (measured on both kinds of machine); `machine-here` with nothing
   //      under it; `row-offline` over how long unheard (`heard_ms`) with
   //      no readings and no latency; `machine-paused` with no time;
   //   b. terminal sessions — the command alone under the name, idle or
@@ -24652,7 +24653,9 @@ try {
               }),
           ),
         );
-      const ORDER = ["cpu", "mem", "disk", "gpu"];
+      // The third reading is the machine's: GPU where it has one (peer),
+      // else the disk (elder) — at most three (the owner 2026-10-08).
+      const ORDERS = { peer: ["cpu", "mem", "gpu"], elder: ["cpu", "mem", "disk"] };
       /** The shown items are the line's first few in the owner's order —
           what dropping from the end leaves — CPU among them. */
       const prefix = (shown, all) => shown.length >= 1 && shown[0] === "cpu" && shown.every((k, i) => k === all[i]);
@@ -24689,8 +24692,8 @@ try {
         // The readings: label secondary, value primary and tabular, a gap
         // and no middle dot; whole items only.
         for (const [name, all, words] of [
-          ["peer", ORDER, ["CPU 41%", "内存 81%", "磁盘 80%", "GPU 67%"]],
-          ["elder", ORDER.slice(0, 3), ["CPU 5%", "内存 13%", "磁盘 10%"]],
+          ["peer", ORDERS.peer, ["CPU 41%", "内存 81%", "GPU 67%"]],
+          ["elder", ORDERS.elder, ["CPU 5%", "内存 13%", "磁盘 10%"]],
         ]) {
           const m = more[name];
           const n = m.shown.length;
@@ -24707,57 +24710,56 @@ try {
           ) {
             fail(`corners a · ${posture} · ${name}'s readings read ${JSON.stringify(m)} — ${JSON.stringify(words)} in that order (the first ${n} shown), each label in the secondary ink and its value in the primary, tabular, 12 px (gap-row) apart, no 「·」, none cut (UX-50)`);
           }
+          // At the list's own width (`--list-w`) all three fit.
+          if (posture === "wide" && n !== 3) {
+            fail(`corners a · wide · ${name} shows ${JSON.stringify(m.shown)} at the list's own width — all three readings fit there (UX-50)`);
+          }
         }
         if (p.sub.includes("ms") || p.top !== "直连" || p.bottom !== "3 分钟" || more.peer.state !== "direct") {
           fail(`corners a · ${posture} · peer reads ${JSON.stringify({ ...p, ...more.peer })} — no latency under the name (it is the title line's), 直连 over 「3 分钟」 (UX-48, UX-50)`);
         }
-        if (more.elder.keys.includes("gpu") || e.sub.includes("ms") || e.top !== "中继" || e.bottom !== "2 小时" || more.elder.state !== "relay") {
-          fail(`corners a · ${posture} · elder reads ${JSON.stringify({ ...e, ...more.elder })} — no GPU (it has none), no latency under the name, 中继 over 「2 小时」 (UX-48, UX-50)`);
+        if (more.elder.keys.includes("gpu") || more.peer.keys.includes("disk") || e.sub.includes("ms") || e.top !== "中继" || e.bottom !== "2 小时" || more.elder.state !== "relay") {
+          fail(`corners a · ${posture} · elder reads ${JSON.stringify({ ...e, ...more.elder })} — no GPU (it has none), and no disk on peer (its GPU is its third), no latency under the name, 中继 over 「2 小时」 (UX-48, UX-50)`);
         }
         if (g.top !== "本机" || g.bottom !== null || more.gate.aside !== null || more.gate.lat !== null || more.gate.state !== "here") {
           fail(`corners a · ${posture} · this machine reads ${JSON.stringify({ ...g, ...more.gate })} — 本机, no latency of its own (UX-48)`);
         }
       }
-      // The drop order, measured (UX-50): peer's row narrowed step by step
-      // at the wide window, from as wide as the list can be dragged
-      // (`--list-w-max`, the row that much wider than at `--list-w`),
-      // where all four fit. At every width the shown readings are the
-      // first few of CPU, memory, disk, GPU; they only ever shrink as the
-      // row does; each of GPU, disk and memory is seen to go, in that
-      // order; CPU never; and no shown item, nor the latency, is cut.
-      {
+      // The drop order, measured (UX-50): each machine's row narrowed step
+      // by step at the wide window, from its width at the list's own width
+      // (`--list-w`), where all three fit. At every width the shown
+      // readings are the first few of that machine's three; they only ever
+      // shrink as the row does; the third is seen to go, then memory; CPU
+      // never; and no shown item, nor the latency, is cut. The widths
+      // where each goes are logged for the report.
+      for (const name of ["peer", "elder"]) {
+        const all = ORDERS[name];
         await land(POSTURES[0][1], "devices");
-        await until(5_000, async () => ((await readings()).peer?.keys.length ?? 0) === 4);
+        await until(5_000, async () => ((await readings())[name]?.keys.length ?? 0) === 3);
         const steps = [];
-        const { start, more: room } = await page.evaluate(() => {
-          const css = getComputedStyle(document.documentElement);
-          return {
-            start: document.querySelector('[data-side-row][data-device="peer"]')?.getBoundingClientRect().width ?? 0,
-            more: parseFloat(css.getPropertyValue("--list-w-max")) - parseFloat(css.getPropertyValue("--list-w")),
-          };
-        });
-        for (let w = Math.floor(start + room); w >= 160; w -= 2) {
-          await page.evaluate((px) => {
-            const row = document.querySelector('[data-side-row][data-device="peer"]');
+        const start = await page.evaluate((n) => document.querySelector(`[data-side-row][data-device="${n}"]`)?.getBoundingClientRect().width ?? 0, name);
+        for (let w = Math.floor(start); w >= 120; w -= 2) {
+          await page.evaluate(([n, px]) => {
+            const row = document.querySelector(`[data-side-row][data-device="${n}"]`);
             if (row) row.style.width = `${px}px`;
-          }, w);
+          }, [name, w]);
           await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
-          const m = (await readings()).peer;
+          const m = (await readings())[name];
           if (!m) break;
           steps.push({ w, shown: m.shown, cut: m.cut, lat: m.aside?.words ?? null, latCut: m.aside?.cut ?? null });
           if (m.shown.length === 1) break;
         }
-        await page.evaluate(() => {
-          const row = document.querySelector('[data-side-row][data-device="peer"]');
+        await page.evaluate((n) => {
+          const row = document.querySelector(`[data-side-row][data-device="${n}"]`);
           if (row) row.style.width = "";
-        });
+        }, name);
         const counts = steps.map((x) => x.shown.length);
-        console.log(`corners a · wide · peer's row (${Math.floor(start)} px at the list's own width) narrowed from ${Math.floor(start + room)} px: ${JSON.stringify(steps.filter((x, i) => i === 0 || x.shown.length !== steps[i - 1].shown.length || x.lat !== steps[i - 1].lat))}`);
-        const bad = steps.filter((x) => !prefix(x.shown, ORDER) || x.cut?.length !== 0 || x.latCut);
+        console.log(`corners a · wide · ${name}'s row narrowed from ${Math.floor(start)} px (the list's own width): ${JSON.stringify(steps.filter((x, i) => i === 0 || x.shown.length !== steps[i - 1].shown.length || x.lat !== steps[i - 1].lat))}`);
+        const bad = steps.filter((x) => !prefix(x.shown, all) || x.cut?.length !== 0 || x.latCut);
         const grew = counts.some((c, i) => i > 0 && c > counts[i - 1]);
-        const seen = counts[0] === 4 && [3, 2, 1].every((c) => counts.includes(c));
+        const seen = counts[0] === 3 && [2, 1].every((c) => counts.includes(c));
         if (steps.length === 0 || bad.length || grew || !seen) {
-          fail(`corners a · wide · narrowing peer's row reads ${JSON.stringify(bad.length ? bad : steps)} — GPU goes first, then 磁盘, then 内存, whole; CPU stays; nothing cut (UX-50, DevicesList Whole)`);
+          fail(`corners a · wide · narrowing ${name}'s row reads ${JSON.stringify(bad.length ? bad : steps)} — ${all[2] === "gpu" ? "GPU" : "磁盘"} goes first, then 内存, whole; CPU stays; nothing cut (UX-50, DevicesList Whole)`);
         }
       }
       // Offline: elder unreachable — no live wire, the last attempt failed
