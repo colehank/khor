@@ -30436,6 +30436,53 @@ try {
         await wait(400);
       }
 
+      // ── z. no cursor on screen: a tap toggles the keyboard (item 74) ──
+      // The owner's ruling, in 自动: a full-screen program that hid its
+      // cursor (`top`) has no input area, so a tap anywhere raises the
+      // keyboard when it is down and lowers it when it is up; a program
+      // taking the mouse still gets the tap; with a cursor shown a tap off
+      // the input area with the keyboard down still does nothing.
+      {
+        const mode = () => page.evaluate(() => document.querySelector("[data-terminal]").__xterm.textarea.getAttribute("inputmode"));
+        const down = () =>
+          page.evaluate(() => {
+            window.__khorKeyboard?.(null);
+            document.querySelector("[data-terminal]").__xterm.textarea.setAttribute("inputmode", "none");
+          });
+        const tapAt = async (fx, fy) => {
+          const s = await rect("[data-terminal] .xterm-screen");
+          const p = { x: Math.round(s.left + s.width * fx), y: Math.round(s.top + s.height * fy) };
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [p] });
+          await wait(60);
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          // Apart from the next tap: two close together are a double tap.
+          await wait(500);
+        };
+        await program("\x1b[?1049h\x1b[2J\x1b[Htop - 21:00:00 up 3 days\r\nPID USER %CPU COMMAND\x1b[?25l");
+        await down();
+        await tapAt(0.5, 0.6);
+        const raised = await mode();
+        await page.evaluate(() => window.__khorKeyboard?.(true));
+        await tapAt(0.3, 0.4);
+        const lowered = await mode();
+        await down();
+        await program("\x1b[?1000h\x1b[?1006h");
+        const reports = await sends(() => tapAt(0.6, 0.5));
+        const raisedMouse = await mode();
+        // The cursor shown on the last row: a tap high above it is off the input area.
+        await program("\x1b[?1000l\x1b[?1006l\x1b[?25h\x1b[99;1H");
+        await down();
+        await tapAt(0.5, 0.15);
+        const shownCursor = await mode();
+        await program("\x1b[?1049l");
+        await down();
+        console.log(`bar z · no cursor: a tap with the keyboard down → ${shown(raised)}, up → ${shown(lowered)}; with the mouse taken → ${shown(raisedMouse)} and the program got ${shown(reports)}; cursor shown, a tap off the input area, keyboard down → ${shown(shownCursor)}`);
+        if (raised !== "text") fail(`bar z · no cursor, keyboard down: a tap asked ${shown(raised)} — it raises the keyboard (item 74)`);
+        if (lowered !== "none") fail(`bar z · no cursor, keyboard up: a tap left ${shown(lowered)} — it lowers the keyboard (item 74)`);
+        if (raisedMouse !== "text" || !reports.includes("\x1b[<0;")) fail(`bar z · no cursor, a program taking the mouse: the tap asked ${shown(raisedMouse)} and the program got ${shown(reports)} — both the click and the keyboard (item 74)`);
+        if (shownCursor !== "none") fail(`bar z · a cursor shown: a tap off the input area with the keyboard down asked ${shown(shownCursor)} — nothing changes there (item 49)`);
+      }
+
       // e, for the conversations under a finger.
       for (const [what, id, box] of [
         ["a machine conversation", chatRow.id, "[data-chat-composer]"],

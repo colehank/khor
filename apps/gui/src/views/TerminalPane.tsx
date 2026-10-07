@@ -101,7 +101,7 @@ import { searchable, useFindHow, type FindHow } from "@/lib/term-find";
 import { covers, pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { programOf } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
-import { tapAsks, termWake, useTermWake } from "@/lib/term-tap";
+import { tapAsks, termWake, useTermWake, watchesCursor } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { dropsComposition } from "@/lib/term-compose-drop";
 import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
@@ -575,7 +575,9 @@ function settledCursor(
  * `screen` raises it anywhere; `auto` raises it on the input area
  * (`inInput`, judged against the cursor of the last whole frame) and
  * lowers it — or the key panel — anywhere else on the screen (item 49,
- * `lib/term-tap`'s `tapAsks`); `button` leaves it to the bar's switch.
+ * `lib/term-tap`'s `tapAsks`), and with no cursor shown (`?25l`, `top`)
+ * a tap anywhere raises what is down and lowers what is up (item 74);
+ * `button` leaves it to the bar's switch.
  * Only a touch on the screen itself counts: the floats over it (回到底部,
  * a question's buttons) are their own presses. xterm's own mousedown focuses a
  * field that is already focused, and a program that took the mouse still
@@ -599,6 +601,7 @@ function tapsAskFirst(
 ): () => void {
   const field = term.textarea;
   if (!field) return () => {};
+  const cursor0 = watchesCursor(term);
   let startX = 0;
   let startY = 0;
   let still = false;
@@ -626,9 +629,10 @@ function tapsAskFirst(
         return;
       }
       // ⚠️ Tombstone (item 28 → item 49): 「点别处不动」, a tap never lowered.
-      const asks = tapAsks(wake, wake === "auto" && !!at && inInput(term, marks, at.row, at.col, cursor()));
-      if (asks === "raise" && !keyboardUp(field)) raiseKeyboard(field);
-      if (asks === "lower") {
+      const asks = tapAsks(wake, wake === "auto" && !!at && inInput(term, marks, at.row, at.col, cursor()), !cursor0.shown());
+      const up = keyboardUp(field) || keyPanelUp();
+      if ((asks === "raise" || (asks === "toggle" && !up)) && !keyboardUp(field)) raiseKeyboard(field);
+      if (asks === "lower" || (asks === "toggle" && up)) {
         if (keyboardUp(field)) lowerKeyboard(field);
         lowerKeyPanel();
       }
@@ -651,6 +655,7 @@ function tapsAskFirst(
   box.addEventListener("touchend", lifted);
   field.addEventListener("focusout", left);
   return () => {
+    cursor0.dispose();
     box.removeEventListener("touchstart", began);
     box.removeEventListener("touchmove", moved);
     box.removeEventListener("touchend", lifted);
