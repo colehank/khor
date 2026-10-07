@@ -282,9 +282,11 @@ usage = """
                         经那台机器的网接一根管子到这个主机的这个端口，接在标准输入输出上。
                         给 ssh 当 ProxyCommand：
                         ssh -o ProxyCommand='khor pipe --via 实验室 %h %p' 内网机
-  carry <机器> <SSH主机> [--port <端口>] [--via <跳板机>] [--password] | carry <机器> --off
+  carry <机器> <SSH主机> [--port <端口>] [--via <跳板机>]
+      [--password | --key <密钥文件> [--passphrase]] | carry <机器> --off
                         连不上互联网的 khor 主机，经本机到它的 SSH 登录转连；
-                        别的机器经本机连到它
+                        别的机器经本机连到它。登录方式同 add：密码和口令从
+                        标准输入读取，只存进本机的系统钥匙串
   tabs [ls] | open [-m 机器] <网址> | close|focus|pin|unpin <序号|id>
                         浏览器这块屏幕上开着的标签页。**本机的，不同步**：
                         开着什么是这块屏幕的事，别的机器不看（常去的地方才跟着人走）。
@@ -2316,6 +2318,7 @@ add-why-cant-place = "无法在 {0} 上安装 khor：{1}"
 add-why-no-resident = "无法在 {0} 上持续运行 khor：会话结束后它就停止了"
 add-why-start-failed = "khor 无法在 {0} 上启动：{1}"
 add-why-no-pair = "{0} 上的 khor 未在 {1} 秒内连接回来"
+add-why-no-relay = "{0} 无法连接任何中继，经 SSH 转连也没有连上"
 add-no-asset-here = "本机也无法获取 {0}"
 promote-stayed-satellite = "未能安装 khor，它仍是 SSH 主机：{0}"
 sat-not-in-known-hosts = "known_hosts 中没有 {0} 的主机密钥。先用 ssh 连接一次并确认指纹，再回来添加"

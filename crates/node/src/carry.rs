@@ -91,8 +91,11 @@ impl Node {
     }
 
     /// **`khor carry <machine> <ssh host>`**: this machine carries the
-    /// member over ssh by `road` from now on; `None` stops it.
-    pub fn set_carried(&self, machine: &str, road: Option<&Dest>) -> Result<String, String> {
+    /// member over ssh by `road` from now on; `None` stops it. `secret`,
+    /// when given, is the road's password or key passphrase, kept in this
+    /// machine's secret store as `khor add` keeps one (round ROAD-4); the
+    /// sweep drops it once this machine no longer carries the row.
+    pub fn set_carried(&self, machine: &str, road: Option<&Dest>, secret: Option<&str>) -> Result<String, String> {
         let (channel, id) = self.resolve(machine)?;
         let id = id.hex();
         let loaded = self.devices_loaded()?;
@@ -105,11 +108,28 @@ impl Node {
         if row.sponsor.is_some() {
             return Err(msg::carry_is_satellite(row.shown()));
         }
+        let kept = match (road, secret) {
+            (Some(r), Some(s)) if r.asks() => {
+                crate::secret::keep(self.root(), &r.secret_key(), s, crate::now_ms())?;
+                Some(r.secret_key())
+            }
+            _ => None,
+        };
         let me = self.device_str().to_owned();
         let carrier = road.map(|_| me.as_str());
-        loaded.doc.set_carried(&id, carrier, road.map(Dest::as_row).as_ref())?;
-        let mut store = loaded.store;
-        store.flush(&loaded.doc)?;
+        let written = loaded
+            .doc
+            .set_carried(&id, carrier, road.map(Dest::as_row).as_ref())
+            .and_then(|()| {
+                let mut store = loaded.store;
+                store.flush(&loaded.doc)
+            });
+        if let Err(e) = written {
+            if let Some(k) = kept {
+                let _ = crate::secret::drop_kept(self.root(), &k);
+            }
+            return Err(e);
+        }
         Ok(match road {
             Some(r) => msg::carry_set(&channel, r),
             None => msg::carry_unset(&channel),
@@ -352,6 +372,36 @@ mod tests {
     fn the_carrier_backs_off_to_a_minute() {
         let s = |n| backoff(n).as_secs();
         assert_eq!([s(0), s(1), s(2), s(3), s(4), s(5), s(9)], [2, 4, 8, 16, 32, 60, 60]);
+    }
+
+    /// Round ROAD-4: a member this machine carries logs in by its road as
+    /// a satellite does, so the secret that road asks for is kept from
+    /// the sweep — and is not once another machine carries it.
+    #[test]
+    fn a_carried_members_secret_is_kept_from_the_sweep() {
+        let dir = std::env::temp_dir().join(format!("khor-carry-secret-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let n = crate::Node::open_as(dir.clone(), "carrier").unwrap();
+        let me = n.device_str().to_owned();
+        let member = "cd".repeat(32);
+        let road = Dest::new("box", None)
+            .on_port(Some(2222))
+            .with_identity(Some("/k"))
+            .with_passphrase(true);
+        let carried_by = |carrier: &str| {
+            let loaded = n.devices_loaded().unwrap();
+            loaded.doc.upsert(&member, "box", &[]).unwrap();
+            loaded.doc.set_carried(&member, Some(carrier), Some(&road.as_row())).unwrap();
+            let mut store = loaded.store;
+            store.flush(&loaded.doc).unwrap();
+            n.devices().unwrap()
+        };
+        let kept = n.secrets_in_use(&carried_by(&me));
+        assert!(kept.contains("box:2222"), "carried here: {kept:?}");
+        let other = "ef".repeat(32);
+        assert!(n.secrets_in_use(&carried_by(&other)).is_empty(), "another machine keeps its own");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

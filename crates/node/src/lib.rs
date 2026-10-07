@@ -3657,16 +3657,36 @@ impl Node {
         Ok(name)
     }
 
+    /// Whether this machine logs in to `d` over ssh by the road on its
+    /// row: it sponsors the satellite, or carries the member (round
+    /// ROAD-4) — the rows whose kept secret stays.
+    pub(crate) fn logs_in_to(&self, d: &khor_sync::devices::DeviceInfo) -> bool {
+        let me = Some(self.device_str());
+        d.sponsor.as_deref() == me || (d.sponsor.is_none() && d.carrier.as_deref() == me)
+    }
+
+    /// The names of the secrets this machine's ssh roads still ask for:
+    /// what the sweep keeps ([`crate::secret::sweep`]).
+    pub(crate) fn secrets_in_use(&self, devs: &[khor_sync::devices::DeviceInfo]) -> std::collections::HashSet<String> {
+        devs.iter()
+            .filter(|d| self.logs_in_to(d))
+            .filter_map(satellite::Dest::of)
+            .filter(satellite::Dest::asks)
+            .map(|to| to.secret_key())
+            .collect()
+    }
+
     /// [`Node::forget_device`] by id: 转正 drops the satellite row while
     /// the new member wears the same name, so a name would be ambiguous.
     pub(crate) fn forget_id(&self, id: &str) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
-        // A satellite of this machine that logged in with a password or
-        // a key's passphrase: the secret goes with it (docs/NET.md 添加机器
-        // 认证方式). Removed on another machine, the sponsor's sweep
-        // drops it instead (`satellite_sampler`).
+        // A satellite of this machine, or a member it carries, that
+        // logged in with a password or a key's passphrase: the secret
+        // goes with it (docs/NET.md 添加机器 认证方式). Removed on another
+        // machine, the sponsor's sweep drops it instead
+        // (`satellite_sampler`).
         if let Some(row) = loaded.doc.get(id)
-            && row.sponsor.as_deref() == Some(self.device_str())
+            && self.logs_in_to(&row)
             && let Some(to) = satellite::Dest::of(&row)
             && to.asks()
         {
@@ -3886,15 +3906,9 @@ impl Node {
             let Ok(devs) = self.devices() else { continue };
             // The sweep (docs/NET.md 添加机器 认证方式): a password or
             // passphrase kept for a satellite whose row left the table —
-            // removed here or on any other machine — goes now.
-            let live: std::collections::HashSet<String> = devs
-                .iter()
-                .filter(|d| d.sponsor.as_deref() == Some(self.device_str()))
-                .filter_map(satellite::Dest::of)
-                .filter(satellite::Dest::asks)
-                .map(|to| to.secret_key())
-                .collect();
-            let _ = crate::secret::sweep(&self.root, &live, now_ms());
+            // removed here or on any other machine — goes now. A member
+            // this machine carries logs in by its road too (round ROAD-4).
+            let _ = crate::secret::sweep(&self.root, &self.secrets_in_use(&devs), now_ms());
             for d in devs {
                 if d.sponsor.as_deref() != Some(self.device_str()) {
                     continue;

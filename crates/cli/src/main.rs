@@ -356,6 +356,13 @@ const VERBS: &[Verb] = &[
         run: carry_in,
         reach: Reach::Inner,
     },
+    // What `khor add` asks the machine it adds before 配对 (round
+    // ROAD-4): whether it reaches a relay at all.
+    Verb {
+        word: "_relay-check",
+        run: relay_check,
+        reach: Reach::Inner,
+    },
     // `ls` reads and the other three write this machine's own tab
     // table, so the word is an act — the rule is per word, not per
     // invocation (`ws` above). **Nothing here goes out on the wire**:
@@ -723,6 +730,10 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
     (
         "_carry",
         "internal: the far end of a carrier's ssh session (`khor_node::carry`), stdin and stdout are the link",
+    ),
+    (
+        "_relay-check",
+        "internal: what `khor add` runs over its ssh before 配对 (`khor_node::join::reaches_a_relay`), relay urls on stdin",
     ),
     (
         "_verbs",
@@ -2141,31 +2152,49 @@ fn pipe(rest: &[String]) -> Result<(), String> {
     out
 }
 
-/// `khor carry <machine> <ssh host> [--port N] [--via jump] [--password]`
-/// (round ROAD-2): this machine carries a khor host that reaches nothing
-/// else over its ssh login to it; `--off` stops (`khor_node::carry`).
+/// `khor carry <machine> <ssh host> [--port N] [--via jump] [--password |
+/// --key <path> [--passphrase]]` (round ROAD-2): this machine carries a
+/// khor host that reaches nothing else over its ssh login to it; `--off`
+/// stops (`khor_node::carry`). The login flags are `add`'s, and so is
+/// where a secret goes (round ROAD-4): read from standard input, kept in
+/// this machine's secret store, the key file only a path on the row.
 fn carry(rest: &[String]) -> Result<(), String> {
-    let n = node()?;
     match rest {
         [machine, off] if off == "--off" => {
-            println!("{}", n.set_carried(machine, None)?);
+            println!("{}", node()?.set_carried(machine, None, None)?);
             Ok(())
         }
         [machine, host, flags @ ..] => {
-            let (mut port, mut jump, mut password) = (None, None, false);
+            let (mut port, mut jump, mut password, mut key, mut passphrase) = (None, None, false, None, false);
             let mut it = flags.iter();
             while let Some(f) = it.next() {
                 match f.as_str() {
                     "--port" => port = Some(it.next().and_then(|p| p.parse().ok()).ok_or_else(usage_text)?),
                     "--via" => jump = Some(it.next().ok_or_else(usage_text)?.clone()),
                     "--password" => password = true,
+                    "--key" => key = Some(it.next().ok_or_else(usage_text)?.clone()),
+                    "--passphrase" => passphrase = true,
                     _ => return Err(usage_text().into()),
                 }
             }
+            // `add`'s rule: a password or a key, never both; a
+            // passphrase is a key file's.
+            if (password && (passphrase || key.is_some())) || (passphrase && key.is_none()) {
+                return Err(usage_text().into());
+            }
+            let secret = if password {
+                Some(read_password(cli::password_prompt())?)
+            } else if passphrase {
+                Some(read_password(cli::passphrase_prompt())?)
+            } else {
+                None
+            };
             let road = khor_node::satellite::Dest::new(host.clone(), jump.as_deref())
                 .on_port(port)
-                .with_password(password);
-            println!("{}", n.set_carried(machine, Some(&road))?);
+                .with_password(password)
+                .with_identity(key.as_deref())
+                .with_passphrase(passphrase);
+            println!("{}", node()?.set_carried(machine, Some(&road), secret.as_deref())?);
             Ok(())
         }
         _ => Err(usage_text().into()),
@@ -2183,6 +2212,27 @@ fn carry_in(rest: &[String]) -> Result<(), String> {
     let out = rt.block_on(n.carry_in(carrier, tokio::io::stdin(), tokio::io::stdout()));
     rt.shutdown_background();
     out
+}
+
+/// `khor _relay-check`: the relay urls on standard input, one a line;
+/// prints `yes` when this machine reaches any of them, `no` when none
+/// answers (`khor_node::join::far_reaches_a_relay` reads it).
+fn relay_check(rest: &[String]) -> Result<(), String> {
+    use std::io::Read;
+    if !rest.is_empty() {
+        return Err(usage_text().into());
+    }
+    let mut text = String::new();
+    std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
+    let urls: Vec<String> = text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
+    if urls.is_empty() {
+        return Err(usage_text().into());
+    }
+    let rt = rt()?;
+    let yes = rt.block_on(khor_node::join::reaches_a_relay(urls));
+    rt.shutdown_background();
+    println!("{}", if yes { "yes" } else { "no" });
+    Ok(())
 }
 
 /// Shows a machine the door, network-wide.
@@ -2394,8 +2444,22 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
         // which no table holds: an idle wire writes no road.
         let lines: Vec<(String, String, Option<u16>)> = if me {
             let ms = |m: u32| m.min(u32::from(u16::MAX)) as u16;
+            // Its satellites, by its own ssh, and the others' through
+            // their sponsors — composed from the same live wires; a
+            // carried member it has no road of its own to, through its
+            // carrier (round ROAD-4), in place of the idle wire.
+            let own = own_roads(links, n.my_satellite_roads());
+            let composed: Vec<khor_node::Road> = n
+                .with_satellite_roads(&d.id, own.clone())
+                .into_iter()
+                .filter(|r| {
+                    all.iter().any(|s| s.id == r.to && s.sponsor.is_some())
+                        || (r.via.is_some() && !own.iter().any(|o| o.to == r.to))
+                })
+                .collect();
             links
                 .iter()
+                .filter(|(to, _)| !composed.iter().any(|r| &r.to == to))
                 .map(|(to, l)| {
                     let (word, at) = match (l.hop, l.down_ms) {
                         (khor_node::Hop::Direct, _) => (way(khor_node::RoadKind::Direct, None), l.rtt_ms),
@@ -2406,12 +2470,9 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
                     (to.clone(), word, at.map(ms))
                 })
                 .chain(
-                    // Its satellites, by its own ssh, and the others' through
-                    // their sponsors — composed from the same live wires.
-                    n.with_satellite_roads(&d.id, own_roads(links, n.my_satellite_roads()))
-                        .into_iter()
-                        .filter(|r| all.iter().any(|s| s.id == r.to && s.sponsor.is_some()))
-                        .map(|r| (r.to.clone(), format!("{}{}", way(r.road, r.relay.as_deref()), legs(&r)), r.ms)),
+                    composed
+                        .iter()
+                        .map(|r| (r.to.clone(), format!("{}{}", way(r.road, r.relay.as_deref()), legs(r)), r.ms)),
                 )
                 .collect()
         } else {

@@ -468,7 +468,8 @@ vendor/iroh 的 `reqwest_client_builder` 打了 `.no_proxy()`（补丁 2，`vend
 
 ### khor 走 ssh：连不上互联网的 khor 主机，经能登录它的机器转连（2026-10-08，ROAD-2 轮）
 
-`khor carry <机器> <SSH主机> [--port N] [--via 跳板] [--password]`（关：`khor carry <机器> --off`）。
+`khor carry <机器> <SSH主机> [--port N] [--via 跳板] [--password | --key 密钥文件 [--passphrase]]`
+（关：`khor carry <机器> --off`）。
 那台机器装着 khor、常驻在跑，但到不了互联网和任何中继；本机能 ssh 登录它。从此本机（转连的
 那台，行上的 `carrier`）一直挂着 `ssh <路> khor _carry <本机 id>`，ssh 的标准输入输出就是一条
 iroh 路（`khor_net::carry`，iroh 的 `unstable-custom-transports`）。
@@ -476,7 +477,9 @@ iroh 路（`khor_net::carry`，iroh 的 `unstable-custom-transports`）。
 - 那头的 `khor _carry` 像 `khor pipe` 一样经一次性回环口和暗号把标准输入输出交给自己的常驻，常驻
   把它当成到转连那台的路。iroh 的握手两端照做，ssh 和 sshd 只看见密文。
 - 路就是 `khor add` 记下的那条：端口、跳板、密钥或密码（askpass）都照用；断了按 2、4、8……最多
-  60 秒重连，连上过一分钟的从头数。
+  60 秒重连，连上过一分钟的从头数。`khor carry` 的登录参数和 `khor add` 一样（ROAD-4 轮）：密钥文件
+  只记路径；密码和口令从标准输入读，只存进本机的系统钥匙串。转连的那台和卫星的担保机一样留着它，
+  不再转连（`--off`、行删了）后由每分钟的清扫删掉。
 - **只有转连的那台有这条路。** 别的机器经它转发去够（下一节）。
 - 走这条路时连接读数是「经 SSH」（`Hop::Ssh`），设备表里转连那台到它的路是 `ssh`。
 - 选路（`khor_net::carry::RoadOrder`）：直连、转连、中继依次；直连随时可以升上去；转连和中继之间，
@@ -487,6 +490,14 @@ iroh 路（`khor_net::carry`，iroh 的 `unstable-custom-transports`）。
   `khor pair -` 经这条路再配一次（最多两次）；配上了就在它的行上写 `carrier` = 本机，从此照常转连，
   步骤「配对」后面写「经 SSH 转连」。都不成才退回 SSH 主机（`Node::pair_carried`，测试
   `a_machine_that_cannot_connect_back_pairs_over_the_ssh_it_was_added_by`）。
+- **够不着中继就不等那 60 秒**（ROAD-4 轮）：「启动」之后、配对之前，开关开着时先经同一条 ssh 问对面
+  `khor _relay-check`：本机的中继各发一个 GET，有一个答了说 yes，都没答说 no（10 秒为限，
+  `join::RELAY_ASK`）。说 no 就直接走上面的转连配对；说 yes 或没说清，照常先等普通配对。
+  同一局域网里没有中继的机器因此也是转连的成员，行上记着 `carrier`；iroh 找到直连时选路照样升上去
+  （选路规则见上；局域网上没有实测）。
+- **别的机器只读设备表时也写「通过 <转连那台>」**（ROAD-4 轮）：像卫星经担保机那样，一台机器到被转连
+  成员没有自己的路时，由它到转连那台的路加上转连那台的 `ssh` 路拼出来（`roadbook::in_the_middle`、
+  `through_sponsors`）。自己有路（直连、中继、转发、连不上）时用自己的。
 - 开关：`khor config set ssh-carry on|off`（默认开，重启常驻生效）。两个开关都关时这个传输根本不注册。
 - 测试：`crates/net/tests/carry.rs`（内存里的一条流），`crates/cli/tests/carry.rs`（真的非特权 sshd，
   被转连那台挂在不存在的中继和不存在的代理后面）。

@@ -242,10 +242,13 @@ usage: khor <verb>
                         network, on stdin and stdout. For ssh's
                         ProxyCommand:
                         ssh -o ProxyCommand='khor pipe --via lab %h %p' box
-  carry <machine> <ssh host> [--port <port>] [--via <jump>] [--password] | carry <machine> --off
+  carry <machine> <ssh host> [--port <port>] [--via <jump>]
+      [--password | --key <key file> [--passphrase]] | carry <machine> --off
                         connect a khor host with no internet through this
                         machine's ssh login to it; others reach it through
-                        this machine
+                        this machine. Logs in as add does: a password or
+                        passphrase is read from standard input and kept
+                        only in this machine's system keychain
   tabs [ls] | open [-m machine] <url> | close|focus|pin|unpin <n|id>
                         the browsing tabs this screen has open. **Local,
                         never replicated**: what is open belongs to this
@@ -1461,6 +1464,7 @@ add-why-cant-place = "Couldn't install khor on {0}: {1}"
 add-why-no-resident = "khor can't keep running on {0}: it stopped when the session ended"
 add-why-start-failed = "khor couldn't start on {0}: {1}"
 add-why-no-pair = "khor on {0} didn't connect back within {1} seconds"
+add-why-no-relay = "{0} can't reach any relay, and connecting it through SSH didn't work either"
 add-no-asset-here = "This machine can't get {0} either"
 promote-stayed-satellite = "Couldn't install khor; it's still an SSH host: {0}"
 sat-not-in-known-hosts = "known_hosts has no host key for {0}. Connect with ssh once and accept the fingerprint, then add it again"

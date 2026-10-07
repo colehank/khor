@@ -20,7 +20,9 @@ use scratch::*;
 use tokio::time::timeout;
 
 /// The scratch ssh world: sshd on `port`, its wrapper, a client config
-/// with one host, `member`, whose far HOME is `far_home`.
+/// with one host, `member`, whose far HOME is `far_home`. A `far.env` in
+/// `dir`, when there, is sourced by the wrapper: what the far login's
+/// environment adds ([`FAR_CUT_OFF`]).
 fn ssh_world(dir: &Path, port: u16, far_home: &Path) {
     std::fs::create_dir_all(dir).unwrap();
     let keygen = |name: &str| {
@@ -42,6 +44,7 @@ fn ssh_world(dir: &Path, port: u16, far_home: &Path) {
         format!(
             "#!/bin/sh\nexport HOME='{h}' KHOR_NO_MDNS=1 KHOR_WEB_PORT=0 TMUX_TMPDIR='{d}/tmux' KHOR_TMUX_SOCKET=khor-carry LC_ALL=C\n\
              case \"$HOME\" in '{scratch_root}'/*) ;; *) echo 'scratch HOME not set' >&2; exit 97 ;; esac\n\
+             [ -f '{d}/far.env' ] && . '{d}/far.env'\n\
              exec sh -c \"$SSH_ORIGINAL_COMMAND\"\n"
         ),
     )
@@ -85,6 +88,10 @@ const CUT_OFF: &[(&str, &str)] = &[
     ("https_proxy", "http://127.0.0.1:9"),
 ];
 
+/// The far login behind the same dead proxy, for `khor _relay-check`.
+const FAR_CUT_OFF: &str = "export HTTP_PROXY=http://127.0.0.1:9 http_proxy=http://127.0.0.1:9 \
+                           HTTPS_PROXY=http://127.0.0.1:9 https_proxy=http://127.0.0.1:9\n";
+
 async fn until<F, Fut>(within: Duration, what: &str, mut f: F) -> Duration
 where
     F: FnMut() -> Fut,
@@ -112,7 +119,9 @@ async fn a_machine_that_reaches_nothing_is_carried_over_ssh() {
     let port = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
     ssh_world(&world, port, &rb.0);
     let ssh_dir = world.display().to_string();
-    let _a = serve_with(&ra.0, "alpha", &[("KHOR_SSH_DIR", &ssh_dir)]);
+    // A scratch secret store for every askpass and sweep alpha runs.
+    let secrets = rr.0.join("secrets").display().to_string();
+    let _a = serve_with(&ra.0, "alpha", &[("KHOR_SSH_DIR", &ssh_dir), ("KHOR_SECRET_DIR", &secrets)]);
     let b = serve(&rb.0, "beta");
     stood_up(&[&ra.0, &rb.0]).await;
     let alpha = khor_node::Node::open_as(ra.0.clone(), "alpha").unwrap();
@@ -203,6 +212,32 @@ async fn a_machine_that_reaches_nothing_is_carried_over_ssh() {
     .await;
     eprintln!("[carry] reached again {back:?} after beta's resident came back");
     drop(sshd);
+
+    // Round ROAD-4: `add`'s login flags. The key file is only a path on
+    // the row; the passphrase, read from standard input, is kept in the
+    // (scratch) store under the road's name, never on the row.
+    let bad = khor(&ra.0).args(["carry", "beta", "member", "--password", "--key", "k"]).output().unwrap();
+    assert!(!bad.status.success(), "a password and a key at once is refused");
+    let key = world.join("client_key").display().to_string();
+    let mut keyed = khor(&ra.0)
+        .args(["carry", "beta", "member", "--key", &key, "--passphrase"])
+        .env("KHOR_SECRET_DIR", &secrets)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        use std::io::Write;
+        keyed.stdin.take().unwrap().write_all(b"scratch-pass\n").unwrap();
+    }
+    let out = keyed.wait_with_output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let row = alpha.devices().unwrap().into_iter().find(|d| d.id == b_id).expect("beta's row");
+    assert_eq!(row.ssh_identity.as_deref(), Some(key.as_str()), "the key file, as a path");
+    assert!(row.ssh_passphrase && !row.ssh_password);
+    let door: String = "member".bytes().map(|b| format!("{b:02x}")).collect();
+    assert!(Path::new(&secrets).join(door).exists(), "the passphrase is kept under the road's name");
 
     // Off: alpha stops carrying, and beta is out of reach again.
     let out = khor(&ra.0).args(["carry", "beta", "--off"]).output().unwrap();
@@ -298,6 +333,11 @@ async fn a_third_machine_reaches_a_carried_member_through_its_carrier() {
     })
     .await;
     eprintln!("[hop] beta's road to gamma reached alpha's table {wrote:?} after gamma was carried");
+    // Round ROAD-4: a reader of the table alone, for a machine with no
+    // road of its own to gamma, composes one through its carrier.
+    let composed = alpha.with_satellite_roads(&a_id, vec![khor_node::Road::own(b_id.clone(), khor_node::RoadKind::Direct, None, Some(1))]);
+    let g = composed.iter().find(|r| r.to == c_id).expect("a road to gamma through beta");
+    assert_eq!((g.road, g.via.as_deref()), (khor_node::RoadKind::Direct, Some(b_id.as_str())));
 
     // Control: no hop asked, no road.
     let control = timeout(Duration::from_secs(20), alpha.ls_of("gamma", "/")).await;
@@ -380,16 +420,29 @@ async fn a_machine_that_cannot_connect_back_pairs_over_the_ssh_it_was_added_by()
     let b_id = khor_node::Node::open_as(rb.0.clone(), "beta").unwrap().device_str().to_owned();
     let a_id = alpha.device_str().to_owned();
 
-    let (home, id) = (ra.0.clone(), b_id.clone());
-    let started = Instant::now();
-    let paired = std::thread::spawn(move || {
+    let (home, id, far_env) = (ra.0.clone(), b_id.clone(), world.join("far.env"));
+    let (reaches, cut, paired, started) = std::thread::spawn(move || {
         // ssh here reads the scratch client config, as alpha's resident's does.
         unsafe { std::env::set_var("KHOR_SSH_DIR", &ssh_dir) };
         let n = khor_node::Node::open_as(home, "alpha").unwrap();
-        n.pair_carried(&khor_node::satellite::Dest::new("member", None), &id)
+        let to = khor_node::satellite::Dest::new("member", None);
+        // Round ROAD-4, what `khor add` asks before 配对: control, the
+        // far login reaches alpha's relay; then, behind the dead proxy,
+        // it reaches none, and says so inside the bound.
+        let reaches = n.far_reaches_a_relay(&to);
+        std::fs::write(&far_env, FAR_CUT_OFF).unwrap();
+        let asked = Instant::now();
+        let cut = n.far_reaches_a_relay(&to);
+        let cut = (cut, asked.elapsed());
+        let started = Instant::now();
+        (reaches, cut, n.pair_carried(&to, &id), started)
     })
     .join()
     .unwrap();
+    eprintln!("[carry] the far side said it reaches no relay in {:?}", cut.1);
+    assert_eq!(reaches, Some(true), "control: the far login reaches alpha's relay");
+    assert_eq!(cut.0, Some(false), "behind the dead proxy it reaches none");
+    assert!(cut.1 < khor_node::join::RELAY_ASK, "and says so inside the bound");
     let log = |p: &Path| std::fs::read_to_string(p).unwrap_or_default();
     assert!(
         paired,

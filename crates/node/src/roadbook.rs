@@ -334,20 +334,25 @@ impl crate::Node {
     /// `x_roads` are `x`'s own (live for this machine, the table's for
     /// another); a satellite sponsored by another machine is reached
     /// through that sponsor ([`through_sponsors`]).
+    ///
+    /// **A carried member the same way, through its carrier** (round
+    /// ROAD-4), when `x` has no road of its own to it: the carrier's
+    /// second leg is its `ssh` register, so a screen that reads only the
+    /// table says 「通过 <carrier>」 where it said 未连.
     pub fn with_satellite_roads(&self, x: &str, x_roads: Vec<Road>) -> Vec<Road> {
         let all = self.devices().unwrap_or_default();
         let me = self.device_str();
-        let sats: Vec<(String, String)> = all
+        let middles: Vec<(String, String)> = all
             .iter()
-            .filter_map(|d| Some((d.id.clone(), d.sponsor.clone()?)))
+            .filter_map(|d| Some((d.id.clone(), in_the_middle(d)?.to_owned())))
             .collect();
-        through_sponsors(x, x_roads, &sats, |sponsor, sat| {
-            if sponsor == me {
-                return self.satellite_road(sat);
+        through_sponsors(x, x_roads, &middles, |middle, s| {
+            if middle == me && all.iter().any(|d| d.id == s && d.sponsor.is_some()) {
+                return self.satellite_road(s);
             }
             all.iter()
-                .find(|d| d.id == sponsor)
-                .and_then(|d| roads_in(d).into_iter().find(|r| r.to == sat))
+                .find(|d| d.id == middle)
+                .and_then(|d| roads_in(d).into_iter().find(|r| r.to == s))
         })
     }
 
@@ -364,11 +369,21 @@ impl crate::Node {
 /// a broken road.
 pub const SAT_FRESH: Duration = Duration::from_millis(crate::satellite::SAMPLE_EVERY.as_millis() as u64 * 5 / 2);
 
-/// **Roads to satellites through their sponsors**, added to `x`'s own.
-/// For each satellite `s` whose sponsor `p` is not `x`: the first leg is
-/// `x`'s road to `p`, the second `p`'s ssh road to `s` (`second`). A
-/// road is written only when both legs are known, or one is known
-/// broken: a leg nobody has a reading for is no word, as an idle wire is.
+/// The machine in the middle of every road to `d` from the others: a
+/// satellite's sponsor, or a carried member's carrier (round ROAD-4).
+pub fn in_the_middle(d: &khor_sync::devices::DeviceInfo) -> Option<&str> {
+    d.sponsor
+        .as_deref()
+        .or_else(|| d.carrier.as_deref().filter(|c| *c != d.id))
+}
+
+/// **Roads to satellites through their sponsors**, added to `x`'s own —
+/// and to carried members through their carriers ([`in_the_middle`]).
+/// For each `s` whose middle `p` is not `x`: the first leg is `x`'s road
+/// to `p`, the second `p`'s ssh road to `s` (`second`). A road is written
+/// only when both legs are known, or one is known broken: a leg nobody
+/// has a reading for is no word, as an idle wire is. A road `x` has of
+/// its own wins, and `x` has none to itself.
 pub fn through_sponsors(
     x: &str,
     mut x_roads: Vec<Road>,
@@ -376,7 +391,7 @@ pub fn through_sponsors(
     second: impl Fn(&str, &str) -> Option<Road>,
 ) -> Vec<Road> {
     for (s, p) in sats {
-        if p == x || x_roads.iter().any(|r| &r.to == s) {
+        if p == x || s == x || x_roads.iter().any(|r| &r.to == s) {
             continue;
         }
         let first = x_roads.iter().find(|r| &r.to == p).cloned();
@@ -617,5 +632,9 @@ mod tests {
         assert!(through_sponsors("x", to_p(RoadKind::Direct), &sats, unread).iter().all(|r| r.to != "s"));
         assert!(through_sponsors("x", vec![], &sats, up).iter().all(|r| r.to != "s"), "no road to the sponsor read");
         assert!(through_sponsors("p", vec![], &sats, up).is_empty(), "the sponsor's own road is its ssh, not this");
+        assert!(
+            through_sponsors("s", to_p(RoadKind::Direct), &sats, up).iter().all(|r| r.to != "s"),
+            "no road to itself: a carried member's own row reads its roads, not one through its carrier"
+        );
     }
 }

@@ -45,6 +45,19 @@ const INSTALL_SH: &str = include_str!("../../../scripts/install.sh");
 /// satellite is for.
 pub const PAIR_WAIT: Duration = Duration::from_secs(60);
 
+/// How long the far side may take to say whether it reaches a relay
+/// (round ROAD-4): ssh's login, then one GET to each relay at once,
+/// each inside `doctor`'s three seconds.
+pub const RELAY_ASK: Duration = Duration::from_secs(10);
+
+/// **`khor _relay-check`, the far side of [`Node::far_reaches_a_relay`]**:
+/// whether this machine reaches any of `urls`, by the same GET and the
+/// same proxy rule as iroh's own relay connection
+/// (`doctor::any_relay_answers`).
+pub async fn reaches_a_relay(urls: Vec<String>) -> bool {
+    crate::doctor::any_relay_answers(urls).await
+}
+
 /// The steps the person watches, in order (the GUI draws one line each).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -325,7 +338,9 @@ impl Node {
     /// when the row does (`Node::forget_id`, and the sponsor's sweep for
     /// a row removed elsewhere, [`crate::secret::sweep`]); a member is
     /// reached over iroh, so the secret is dropped the moment the add
-    /// succeeds, and so is one whose add failed.
+    /// succeeds, and so is one whose add failed — unless this machine
+    /// now carries the member over that same ssh (round ROAD-4), which
+    /// keeps it as a satellite's is kept.
     pub fn add_over_ssh(
         &self,
         to: &Dest,
@@ -348,7 +363,10 @@ impl Node {
             return Err(e);
         }
         let added = self.add_road(&to, name, satellite_only, on);
-        if !matches!(added, Ok(Added { member: false, .. })) {
+        let logs_in = added.as_ref().is_ok_and(|a| {
+            !a.member || self.devices().is_ok_and(|all| all.iter().any(|d| d.id == a.id && self.logs_in_to(d)))
+        });
+        if !logs_in {
             crate::secret::drop_kept(self.root(), &key)?;
         }
         added
@@ -515,24 +533,34 @@ impl Node {
         };
         on(Step::Start, Mark::Done(keeper.clone().unwrap_or_default()));
 
-        // 配对: the ticket goes down the pair command's stdin.
+        // 配对: the ticket goes down the pair command's stdin — unless
+        // khor inside ssh is on and the far side reaches none of this
+        // machine's relays (round ROAD-4): that pairing cannot arrive, so
+        // it is not waited out ([`PAIR_WAIT`]) before the carry.
         on(Step::Pair, Mark::Live);
-        let ticket = self.invite().map_err(Stop::Fatal)?;
-        let (ok, _, _) = run(
-            to,
-            "env -u KHOR_HOME \"$HOME/.local/bin/khor\" pair -",
-            format!("{ticket}\n").as_bytes(),
-            PAIR_WAIT,
-        )
-        .map_err(Stop::Fatal)?;
-        drop(ticket);
-        let joined = ok && self.wait_for_row(&id, Duration::from_secs(10));
+        let no_relay = self.carry_on() && self.far_reaches_a_relay(to) == Some(false);
+        let joined = !no_relay && {
+            let ticket = self.invite().map_err(Stop::Fatal)?;
+            let (ok, _, _) = run(
+                to,
+                "env -u KHOR_HOME \"$HOME/.local/bin/khor\" pair -",
+                format!("{ticket}\n").as_bytes(),
+                PAIR_WAIT,
+            )
+            .map_err(Stop::Fatal)?;
+            drop(ticket);
+            ok && self.wait_for_row(&id, Duration::from_secs(10))
+        };
         // **khor inside ssh before SSH 主机** (round ROAD-3): khor runs
         // there but cannot connect back over iroh, so this machine carries
         // it over the ssh it already holds and the pairing rides that.
         let carried = !joined && self.carry_on() && self.pair_carried(to, &id);
         if !joined && !carried {
-            let why = msg::add_why_no_pair(host, PAIR_WAIT.as_secs());
+            let why = if no_relay {
+                msg::add_why_no_relay(host)
+            } else {
+                msg::add_why_no_pair(host, PAIR_WAIT.as_secs())
+            };
             on(Step::Pair, Mark::Failed(why.clone()));
             return Err(Stop::Fallback(why));
         }
@@ -695,6 +723,32 @@ impl Node {
             }
         }
         false
+    }
+
+    /// **Whether the far side reaches any relay this machine is on**
+    /// (round ROAD-4), asked over the add's own ssh: `khor _relay-check`
+    /// there sends one GET to each at once ([`reaches_a_relay`]). The
+    /// plain pairing dials this machine through its relay, so a far side
+    /// that reaches none of them does not arrive. `None` when it could
+    /// not say: no relay here, no answer within [`RELAY_ASK`], or a khor
+    /// there without the verb.
+    pub fn far_reaches_a_relay(&self, to: &Dest) -> Option<bool> {
+        if self.relays().is_empty() {
+            return None;
+        }
+        let urls: String = self.relays().iter().map(|u| format!("{u}\n")).collect();
+        let (ok, out, _) = run(
+            to,
+            "env -u KHOR_HOME \"$HOME/.local/bin/khor\" _relay-check",
+            urls.as_bytes(),
+            RELAY_ASK,
+        )
+        .ok()?;
+        match (ok, out.trim()) {
+            (true, "yes") => Some(true),
+            (true, "no") => Some(false),
+            _ => None,
+        }
     }
 
     /// Whether `id` shows up in this machine's table within `wait` — the
