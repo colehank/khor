@@ -3654,9 +3654,6 @@ keys-group-symbol = "符号"
 keys-group-function = "功能键"
 keys-edit-row = "编辑这一行"
 term-key-row = "终端键行"
-# The key panel's foot (UX-31): the cap that brings the system keyboard
-# back in the panel's place, where iOS keeps its own keyboard switch.
-key-keyboard = "键盘"
 # The key row's 📎 (UX-41, item 60 part 3): a panel in the keyboard's place
 # that puts files into the terminal as paths.
 key-attach-name = "放文件进终端"

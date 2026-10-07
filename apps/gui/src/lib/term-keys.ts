@@ -187,8 +187,10 @@ export const KEYS: KeyDef[] = [
   { name: "newline", cap: gui.key_newline, label: gui.key_newline_name, group: "function", repeats: true, send: (t) => shiftEnter(t) },
   ...F_KEYS.map(([cap, send]): KeyDef => ({ name: cap.toLowerCase(), cap, group: "function", send: (_, m) => send(m) })),
   { name: "paste", cap: gui.key_paste, group: null },
-  // 📎 (UX-41): the files panel in the keyboard's place (`TermFiles`).
-  { name: "attach", cap: gui.key_attach_name, group: null },
+  // ⚠️ 墓碑 (the owner 2026-10-07 12:30): 📎 as a key of the row, scrolled
+  // with the rest and listed in the editor. It is the row's own seat now,
+  // pinned at its left end (`views/TermKeys` `AttachKey`); a stored row
+  // naming it drops the name as any unknown one.
 ];
 
 export const KEY_BY_NAME = new Map(KEYS.map((k) => [k.name, k]));
@@ -206,13 +208,13 @@ export type RowSeat = { name: string; on: boolean };
 /** The row as it was before it could be edited (2026-10-02): the escape
     and the modifier, what moves through a form, paste, then the
     characters a shell lives on. Every other key follows, off. */
-const DEFAULT_ON = ["esc", "ctrl", "tab", "backtab", "attach", "paste", "/", "-", "|", ":"];
+const DEFAULT_ON = ["esc", "ctrl", "tab", "backtab", "paste", "/", "-", "|", ":"];
 
-/** **Keys that came after a row was stored, drawn on** (UX-41): the
-    owner's row was stored before 📎 existed, and a key appended off is a
-    key nobody finds. Each goes in on, before the key named (inside the
-    row's first screenful), or last. */
-const LATER_ON: Record<string, string> = { attach: "paste" };
+/** **Keys that came after a row was stored, drawn on** (UX-41): a key
+    appended off is a key nobody finds. Each goes in on, before the key
+    named (inside the row's first screenful), or last. Empty since 📎
+    left the row for its own seat. */
+const LATER_ON: Record<string, string> = {};
 
 export function defaultRow(): RowSeat[] {
   const on = DEFAULT_ON.map((name) => ({ name, on: true }));

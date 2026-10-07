@@ -10,8 +10,8 @@
 //   height (`lib/viewport`'s `holdFoot`), the keyboard is put away, and
 //   the panel is drawn in the band it leaves — the shell above is
 //   stamped the same before and after;
-// - panel up, 「…」 again (over a panel that replaced the keyboard) or
-//   its 「键盘」 key: the keyboard is asked for from inside the press
+// - panel up, 「…」 again (over a panel that replaced the keyboard; 📎
+//   again over its own): the keyboard is asked for from inside the press
 //   (iOS raises one only for a gesture), and the panel stays drawn under
 //   it until the keyboard has settled up, then the hold is released at
 //   the same height — nothing above moves. A keyboard that never comes
@@ -28,6 +28,7 @@
 // keyboard, which is the whole of why this is a panel and not a sheet.
 import { useSyncExternalStore } from "react";
 
+import { forgetKeyRowChoice } from "@/lib/key-row-open";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { footHeld, holdFoot, keyboardCover, keyboardHeight, keyboardShown } from "@/lib/viewport";
 
@@ -130,9 +131,11 @@ function raise(field: HTMLElement) {
   changed();
 }
 
-/** The panel's 「键盘」 key: the keyboard is asked for, the panel stays
-    until it shows. */
-export function swapToKeyboard(field: HTMLElement) {
+/** The panel's own key pressed again over a panel that replaced the
+    keyboard: the keyboard is asked for, the panel stays until it shows.
+    ⚠️ 墓碑 (the owner 2026-10-07): a 「键盘」 key at the panel's foot
+    did this too, out of a thumb's reach. */
+function swapToKeyboard(field: HTMLElement) {
   if (!up || swapping) return;
   raiseKeyboard(field);
   watching?.();
@@ -148,9 +151,12 @@ export function swapToKeyboard(field: HTMLElement) {
 
 /** The swipe's lowering, and a tap off the input area's in 自动 (item
     49): the panel goes to the foot, never back to a keyboard — a person
-    wanting the screen. */
+    wanting the screen; the key row goes with it, as it goes with a
+    lowered keyboard. */
 export function lowerKeyPanel() {
-  if (up) release();
+  if (!up) return;
+  release();
+  forgetKeyRowChoice();
 }
 
 /** The panel's view is gone (the row collapsed, the page left): the

@@ -28326,7 +28326,33 @@ try {
           );
         }
       }
+      // 📎 is the row's own seat at its left end, on while its panel is
+      // up, and pressed again it puts the panel away (the owner
+      // 2026-10-07 12:30: it never lit, and the way back was a 「键盘」
+      // key by the home indicator).
+      const seat = await page.evaluate(() => {
+        const a = [...document.querySelectorAll('[data-term-key="attach"]')].find((b) => b.offsetParent);
+        const row = a?.closest("[data-term-keys]");
+        return {
+          on: a?.getAttribute("data-on") ?? null,
+          first: row?.firstElementChild === a,
+          inScroll: !!a?.closest("[data-term-keys-scroll]"),
+          foot: document.querySelectorAll("[data-key-panel-keyboard]").length,
+        };
+      });
       await page.locator('[data-term-key="attach"]').filter({ visible: true }).first().click();
+      const away = await until(2_000, async () => (await page.locator("[data-key-panel]").count()) === 0);
+      const offAfter = await page.evaluate(() => {
+        const keys = [...document.querySelectorAll('[data-term-key="attach"]')];
+        return keys.length ? (keys.find((b) => b.offsetParent) ?? keys[0]).getAttribute("data-on") : "no key";
+      });
+      console.log(`term vi · 📎 seat ${JSON.stringify(seat)}; pressed again, panel away ${away}, on ${offAfter}`);
+      if (seat.on !== "true" || !seat.first || seat.inScroll || seat.foot !== 0 || !away || offAfter !== null) {
+        fail(
+          `term vi · 📎 ${JSON.stringify(seat)}, pressed again away ${away} on ${offAfter} — wanted it first in the row outside the scroll, ` +
+            "on while its panel is up, the panel with no 「键盘」 key, and a second press putting the panel away and the key off",
+        );
+      }
       const machinesHere = await panelFor("tui/face-term");
       console.log(`term vi · 📎 on a local row: ${JSON.stringify(machinesHere)}`);
       if (!Array.isArray(machinesHere)) {
@@ -30451,8 +30477,9 @@ try {
       const panel = await read();
       // The report's shot (FACE_SHOTS): the panel in the keyboard's band.
       if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-key-panel.png") });
-      // 「键盘」: the keyboard asked for, the panel stays until it shows.
-      await press("[data-key-panel-keyboard]");
+      // 「…」 again: the keyboard asked for, the panel stays until it
+      // shows (⚠️ 墓碑: a 「键盘」 key at the panel's foot).
+      await press('[data-term-key="more"]');
       await wait(200);
       const asked = await read();
       await page.evaluate(() => window.__keyboard(300));
@@ -30471,7 +30498,7 @@ try {
       await wait(400);
       const down = await read();
       console.log(
-        `bar u · typing ${JSON.stringify(typing)}; 「…」 at once ${JSON.stringify(atOnce)}; panel ${JSON.stringify(panel)}; 「键盘」 asked ${JSON.stringify(asked)}; back ${JSON.stringify(back)}; pty resizes over the swaps ${swapSizes}; down ${JSON.stringify(down)}`,
+        `bar u · typing ${JSON.stringify(typing)}; 「…」 at once ${JSON.stringify(atOnce)}; panel ${JSON.stringify(panel)}; 「…」 again ${JSON.stringify(asked)}; back ${JSON.stringify(back)}; pty resizes over the swaps ${swapSizes}; down ${JSON.stringify(down)}`,
       );
       if (!typing.stamped || typing.keys !== 1 || typing.more !== "false") {
         fail(`probe dead: bar u · with the keyboard up the row reads ${JSON.stringify(typing)} — the key row and its 「…」 are not there to press`);

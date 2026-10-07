@@ -9,12 +9,14 @@
 // (docs/UX.md): a Mac window dragged narrow has a real keyboard and no
 // row, an iPad on the wide face has the row under its terminal.
 //
-// **Three parts.** The caps a person chose (`lib/term-keys`, default the
-// row of 2026-10-02) scroll sideways; after them, pinned, the cursor pad
-// (`views/CursorPad`) and 「…」, **a panel in the keyboard's place** with
-// every key, the row's editor and the keyboard's own settings
+// **Four parts.** Pinned at the left end, 📎, the files panel (`AttachKey`,
+// the owner 2026-10-07 12:30). The caps a person chose (`lib/term-keys`,
+// default the row of 2026-10-02) scroll sideways; after them, pinned, the
+// cursor pad (`views/CursorPad`) and 「…」, **a panel in the keyboard's
+// place** with every key, the row's editor and the keyboard's own settings
 // (`KeyPanel`, `lib/key-panel`; UX-31 — it was a sheet, which took the
-// focus and dropped the keyboard).
+// focus and dropped the keyboard). 📎 and 「…」 are one band's two
+// panels: each is on while its own is up, and pressed again puts it away.
 //
 // **Real bytes, the terminal's own road.** A key here is handed to xterm
 // as if typed (`Terminal.input`, `wasUserInput`), so it leaves through
@@ -51,7 +53,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
 import { afterKey, GROUPS, KEYS, KEY_BY_NAME, pressLatch, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
-import { keyPanelGone, swapToKeyboard, toggleKeyPanel, useKeyPanel, useKeyPanelKind } from "@/lib/key-panel";
+import { keyPanelGone, toggleKeyPanel, useKeyPanel, useKeyPanelKind, type PanelKind } from "@/lib/key-panel";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { useHeldKey } from "@/lib/key-repeat";
 import { pasteInto } from "@/lib/term-paste";
@@ -82,11 +84,6 @@ const lockedOf = (k: KeyDef, mods: Mods) => (k.name === "ctrl" || k.name === "al
 function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void, images: (files: File[]) => void) {
   if (k.name === "ctrl" || k.name === "alt") {
     onMods(pressLatch(mods, k.name, performance.now()));
-    return;
-  }
-  if (k.name === "attach") {
-    // 📎 (UX-41): the files panel where the keyboard is.
-    if (t.textarea) toggleKeyPanel(t.textarea, "files");
     return;
   }
   if (k.name === "paste") {
@@ -124,7 +121,7 @@ function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: 
       {...hold}
       className={cn(CAP_BOX, k.repeats && "select-none [-webkit-touch-callout:none]", className)}
     >
-      <span className={capFace(held, locked)}>{k.name === "attach" ? <IconAttach className="size-5" /> : k.cap}</span>
+      <span className={capFace(held, locked)}>{k.cap}</span>
     </button>
   );
 }
@@ -157,11 +154,13 @@ export function TermKeys({
       role="toolbar"
       aria-label={gui.term_keys}
       // The canvas's key row (the redesign, 2026-10-02): rounded caps on a
-      // `fill`, a row's inset at each end. The caps scroll sideways; the
-      // cursor pad and 「…」 stay at the right end, outside them.
-      className="flex h-key-row flex-none items-center gap-1.5 pr-row"
+      // `fill`, a row's inset at each end. The caps scroll sideways; 📎
+      // stays at the left end, the cursor pad and 「…」 at the right,
+      // outside them.
+      className="flex h-key-row flex-none items-center gap-1.5 px-row"
     >
-      <div data-term-keys-scroll className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch overflow-x-auto pl-row">
+      <AttachKey term={term} />
+      <div data-term-keys-scroll className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch overflow-x-auto">
         {shown.map((k) => (
           <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
         ))}
@@ -169,6 +168,42 @@ export function TermKeys({
       <CursorKey term={term} mods={mods} onMods={onMods} />
       <KeyPanel term={term} mods={mods} onMods={onMods} files={files} />
     </div>
+  );
+}
+
+/** The press of a panel's own key: its panel up, turned to, or put away
+    (`lib/key-panel`). */
+function panelKey(term: RefObject<Terminal | null>, want: PanelKind) {
+  const el = term.current?.textarea;
+  if (el) toggleKeyPanel(el, want);
+}
+
+/**
+ * **📎, pinned at the row's left end** (the owner 2026-10-07 12:30: 「回形
+ * 针常驻最左边」). The files panel (`TermFiles`, UX-41) in the keyboard's
+ * band, the band 「…」 uses; on while it is up, the way 「…」 is, and
+ * pressed again it puts the panel away. ⚠️ 墓碑: a key of the editable
+ * row, scrolled with the rest and never lit.
+ */
+function AttachKey({ term }: { term: RefObject<Terminal | null> }) {
+  const raised = useKeyPanel();
+  const kind = useKeyPanelKind();
+  const on = raised && kind === "files";
+  return (
+    <button
+      type="button"
+      data-term-key="attach"
+      data-on={on || undefined}
+      aria-label={gui.key_attach_name}
+      aria-expanded={on}
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={() => panelKey(term, "files")}
+      className={CAP_BOX}
+    >
+      <span className={capFace(on, on)}>
+        <IconAttach className="size-5" />
+      </span>
+    </button>
   );
 }
 
@@ -180,9 +215,11 @@ export function TermKeys({
  * there sends the key the way the row does and leaves the panel up, so
  * several go in a row. Under the keys, the keyboard's own matters and
  * nothing else: 键盘唤醒, Option as Meta, and 编辑这一行, which turns the
- * panel into the row's editor in place (`KeyRowList`). At its foot the
- * 「键盘」 key brings the system keyboard back in the panel's place.
+ * panel into the row's editor in place (`KeyRowList`). 「…」 pressed
+ * again puts it away: back to the keyboard it replaced, else down.
  * Nothing here takes the focus: the terminal keeps it throughout.
+ * ⚠️ 墓碑 (the owner 2026-10-07 12:30: 「不要在最下面搞个键盘，用户点不
+ * 到」): a 「键盘」 key at the panel's foot, by the home indicator.
  * ⚠️ 墓碑 (2026-10-03): a bottom sheet (`KeySheet`), which took the focus
  * — the keyboard dropped under it, and its drop closed the sheet.
  */
@@ -202,7 +239,6 @@ function KeyPanel({
   /** 「…」 is on only while the keys are the panel up (📎 has the files). */
   const up = raised && kind === "keys";
   const [editing, setEditing] = useState(false);
-  const field = () => term.current?.textarea ?? null;
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
     if (t) pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles);
@@ -221,10 +257,7 @@ function KeyPanel({
         aria-label={gui.key_more}
         aria-expanded={up}
         onMouseDown={(e) => e.preventDefault()}
-        onClick={() => {
-          const el = field();
-          if (el) toggleKeyPanel(el, "keys");
-        }}
+        onClick={() => panelKey(term, "keys")}
         className={CAP_BOX}
       >
         <span className={capFace(up, up)}>
@@ -244,7 +277,7 @@ function KeyPanel({
             // foot, as tall as the foot the panel holds (`--kb`,
             // `lib/viewport`), under the shell that ends above it. The
             // home indicator's room is its own, as a keyboard's is.
-            className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--kb)] flex-col border-t bg-background font-sans text-foreground"
+            className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--kb)] flex-col border-t bg-background pb-safe-bottom font-sans text-foreground"
           >
             {kind === "files" ? (
               <TermFiles road={files} />
@@ -322,25 +355,6 @@ function KeyPanel({
                 <KeyboardMatters onEdit={() => setEditing(true)} />
               </div>
             )}
-            {/* **The way back to the keyboard**, where iOS keeps its own
-                keyboard switch: the foot's left end. */}
-            <div data-key-panel-foot className="flex flex-none items-center px-row py-xxs pb-[calc(var(--spacing-xxs)+var(--safe-bottom))]">
-              <button
-                type="button"
-                data-key-panel-keyboard
-                aria-label={gui.keyboard_show}
-                onClick={() => {
-                  const el = field();
-                  if (el) swapToKeyboard(el);
-                }}
-                className={CAP_BOX}
-              >
-                <span className={cn(capFace(false), "gap-xxs")}>
-                  <IconKeyboard className="size-5" />
-                  {gui.key_keyboard}
-                </span>
-              </button>
-            </div>
           </div>,
           document.body,
         )}
@@ -400,8 +414,8 @@ const nameOf = (k: KeyDef) => k.label ?? k.cap;
  * **The row's editor** (2026-10-03): every key the panel offers, and 粘贴,
  * each with a switch (in the row or not) and a grip to move it — iOS's
  * own list for this, the one 外观's navigation order already is. Kept at
- * once (`lib/term-keys`); the row follows. The cursor pad and 「…」 are
- * the row's own and not listed. A sheet from 外观 → 终端; in place inside
+ * once (`lib/term-keys`); the row follows. 📎, the cursor pad and 「…」
+ * are the row's own and not listed. A sheet from 外观 → 终端; in place inside
  * the key panel (`KeyRowList`, UX-31).
  */
 export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {

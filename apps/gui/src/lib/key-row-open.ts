@@ -24,7 +24,7 @@ import { useEffect, useState, useSyncExternalStore, type RefObject } from "react
 
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { useTermKeysHw } from "@/lib/term-keys-hw";
-import { keyboardShown } from "@/lib/viewport";
+import { footHeld, keyboardShown } from "@/lib/viewport";
 
 const CHANGED = "khor:key-row-open";
 
@@ -46,6 +46,14 @@ function choose(to: boolean | null) {
 function subscribe(run: () => void) {
   window.addEventListener(CHANGED, run);
   return () => window.removeEventListener(CHANGED, run);
+}
+
+/** **The row's choice forgotten, as a keyboard going forgets it**: khor's
+    panel lowered by a swipe or a tap off the input area (item 49, a
+    person wanting the screen) takes the row with it. Its own key pressed
+    again does not come here: the row stays as it was. */
+export function forgetKeyRowChoice() {
+  if (chosen !== null) choose(null);
 }
 
 const softUp = () => document.documentElement.hasAttribute("data-keyboard") || keyboardShown();
@@ -105,7 +113,13 @@ export function useKeyRowOpen(field: RefObject<HTMLElement | null>): { open: boo
   // The keyboard came or went: a toggle made before is spent — except a
   // row opened by hand before typing, which typing does not close (a
   // hardware keyboard's default may be collapsed; a soft one's is open).
-  const now = soft || asked;
+  // **khor's panel is neither a keyboard coming nor one going** (the
+  // owner 2026-10-07 12:30: 📎 pressed again put the panel away and the
+  // row with it). The panel's hold stamps the root as a keyboard would,
+  // so the shell does not move; read as typing, its release lowered a
+  // keyboard that was never up and dropped the row opened from the deck.
+  // While the foot is held, the row stays as it was.
+  const now = footHeld() === null ? soft || asked : typing;
   useEffect(() => {
     if (now === typing) return;
     typing = now;
