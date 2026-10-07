@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 
 import { IconSearch } from "@/components/icons";
 import { Input } from "@/components/ui/input";
+import { endsOnEnter } from "@/lib/field-swipe";
 
 export function SideFind({
   label,
@@ -34,11 +35,20 @@ export function SideFind({
           data-side-find-field
           data-search-field
           type="search"
+          // The answers are already on screen: the return key ends the
+          // box, and the keyboard goes (UX-43 §3).
+          enterKeyHint="search"
           aria-label={label}
           placeholder={label}
           value={query}
           onChange={(e) => onQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Escape" && query !== "" && (e.stopPropagation(), onQuery(""))}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && query !== "") {
+              e.stopPropagation();
+              onQuery("");
+            }
+            endsOnEnter(e);
+          }}
           className="min-h-touch pl-7"
         />
       </div>

@@ -359,6 +359,7 @@ function RenameDialog({
         </DialogHeader>
         <Input
           autoFocus
+          enterKeyHint="done"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && go()}

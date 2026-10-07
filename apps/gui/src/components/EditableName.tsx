@@ -325,6 +325,9 @@ export function EditableName({
         autoFocus
         value={draft}
         aria-label={gui.rename}
+        // Enter takes the name and the box goes (UX-43 §3: the
+        // keyboard's return key says so).
+        enterKeyHint="done"
         onClick={(e) => e.stopPropagation()}
         onDoubleClick={(e) => e.stopPropagation()}
         onChange={(e) => {

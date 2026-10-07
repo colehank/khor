@@ -67,6 +67,7 @@ import {
   storedWords,
 } from "@/lib/session-filter";
 import { band } from "@/lib/scroll-edge";
+import { endsOnEnter } from "@/lib/field-swipe";
 import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { basename } from "@/words";
@@ -1758,13 +1759,19 @@ export function WorkspacePane({
                   data-tree-search
                   data-search-field
                   type="search"
+                  // The return key ends the box under a finger, and the
+                  // keyboard goes (UX-43 §3).
+                  enterKeyHint="search"
                   aria-label={gui.tree_search}
                   placeholder={gui.tree_search}
                   value={hunt}
                   onChange={(e) => setHunt(e.target.value)}
                   // Esc is the other way back to the tree, and it is the
                   // one a hand already on the keyboard reaches for.
-                  onKeyDown={(e) => e.key === "Escape" && dropHunt()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") dropHunt();
+                    endsOnEnter(e);
+                  }}
                   // `min-h-touch` for `PaneBar`'s reason, written down
                   // there: the vendored control's own `h-ctl-md` cannot
                   // be lifted off by `cn()`, so a floor is what beats it
