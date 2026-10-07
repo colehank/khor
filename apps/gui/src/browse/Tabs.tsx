@@ -40,10 +40,13 @@ export function Tabs({
   frame = true,
   caption,
   frontAct = false,
+  seek,
   children,
 }: {
   /** The front tab's act at the capsule's end (`TabStrip` `frontAct`). */
   frontAct?: boolean;
+  /** A count of picks, the tab in front included (`TabStrip` `seek`). */
+  seek?: number;
   /** A stale region's one line at R0's right end, after the strip
       (`Region caption`; components/RegionState). Framed strips only. */
   caption?: ReactNode;
@@ -74,6 +77,7 @@ export function Tabs({
     <div {...stripData} className="flex min-w-0 flex-1 flex-col">
       <TabStrip
         frontAct={frontAct}
+        seek={seek}
         faces={faces}
         active={active}
         onFocus={onFocus}

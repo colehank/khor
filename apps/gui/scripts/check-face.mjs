@@ -147,15 +147,16 @@ try {
       `terminal`, `session`, `workspace`, `connection`, `security`,
       `about`). Wide, every key is a row of 更多's list. Narrow, the seven
       are 设置's card; 我的 khor (`me`) and 诊断 (`doctor`) are 更多's own
-      menu items on the bottom bar. ⚠️ 墓碑: `settings` (通用), `network`
+      menu items on the bottom bar, and 存储 (`store`, STORE-BRIEF phase
+      1) beside them. ⚠️ 墓碑: `settings` (通用), `network`
       (网络) and `identity` (这台机器) were pages until UX-16. */
   const openMore = async (key) => {
     let opened;
-    if ((await narrowNow()) && (key === "me" || key === "doctor")) {
+    if ((await narrowNow()) && (key === "me" || key === "doctor" || key === "store")) {
       for (let i = 0; i < 6 && !(await page.locator("[data-float-nav]").first().isVisible().catch(() => false)); i++) {
         if (!(await tap("[data-file-back], [data-back], [data-ws-back], [data-more-back]"))) break;
       }
-      opened = (await tap("[data-nav-more]")) && (await tap(key === "me" ? "[data-nav-me]" : "[data-nav-doctor]"));
+      opened = (await tap("[data-nav-more]")) && (await tap(`[data-nav-${key}]`));
     } else {
       opened = (await toMore()) && (await tap(`[data-more-open="${key}"]`));
     }
@@ -2257,7 +2258,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "corners"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -6414,7 +6415,9 @@ try {
         onStrip: document.querySelector("[data-ws-tab-strip]")?.contains(e) === true,
       })),
       eyes: document.querySelectorAll("[data-file-face-switch]").length,
-      // The row of two buttons from before ruling 47, gone whole.
+      // The row of two buttons from before ruling 47, gone whole. Its
+      // name is the row's alone: a file's kind face (UX-45) is
+      // `data-file-kind-face` (fix-a), so this counts the row, not a tab.
       oldRow: document.querySelectorAll("[data-file-face]").length,
       // The columns' switches are R0's (2026-09-28), one capsule, never
       // on the strip.
@@ -11018,15 +11021,48 @@ try {
       if (moved.doc !== 0 || moved.rail !== railWas) {
         fail(`the wheel over the strip moved the page (${JSON.stringify(moved)}) — 滚到头不带动整页`);
       }
+      // **The tab in front, scrolled past the edge, picked again from its
+      // list row** is read back wholly inside (fix-a): a pick is a pick
+      // whether or not it changes the front. This is the stop the next
+      // one fell back to once every pill was one width (UX-45): the
+      // strip opened scrolled to its end, the wheel took it to the start,
+      // and the only tab past the edge was the one in front.
+      const front = after?.tabs.find((t) => t.on)?.id ?? "";
+      await page.evaluate((front) => {
+        const el = document.querySelector("[data-session-tabs] [data-tab-strip]");
+        const t = el?.querySelector(`[data-tab="${CSS.escape(front)}"]`);
+        if (!el || !t) return;
+        const box = el.getBoundingClientRect();
+        // To whichever end leaves it out of view.
+        el.scrollLeft = t.getBoundingClientRect().left - box.left + el.scrollLeft > el.clientWidth / 2 ? 0 : el.scrollWidth;
+      }, front);
+      await wait(200);
+      const away = await stripOf("[data-session-tabs]");
+      if (!away?.clipped.includes(front)) {
+        fail(`probe dead: scrolled the strip and ${front} (in front) is still in view — nothing to bring back`);
+      } else {
+        await press(`[data-list] [data-row="${front}"] [data-row-open]`);
+        await wait(400);
+        const back = await stripOf("[data-session-tabs]");
+        console.log(`tabs 4T · ${front} in front, scrolled to ${away.left}, picked again: scroll ${back?.left}, clipped ${JSON.stringify(back?.clipped)}`);
+        if (!back || back.clipped.includes(front)) {
+          fail(`picked ${front} (in front, scrolled past the edge) from the list and it stays past the strip's edge — 选中一枚时把它滚进视野 (src/browse/TabStrip.tsx seek)`);
+        }
+      }
       // A tab **past the edge now and not in front**, put in front from
       // its list row, is read back on the strip wholly inside.
-      const now = (await stripOf("[data-session-tabs]")) ?? over;
-      const first = now.tabs.find((t) => !t.on && now.clipped.includes(t.id))?.id ?? now.tabs[now.tabs.length - 1].id;
-      await press(`[data-list] [data-row="${first}"] [data-row-open]`);
-      await wait(400);
-      const picked = await stripOf("[data-session-tabs]");
-      if (!picked || picked.clipped.includes(first)) {
-        fail(`put ${first} in front from the list and it sits past the strip's edge — 选中一枚时把它滚进视野`);
+      const now = await stripOf("[data-session-tabs]");
+      const first = now?.tabs.find((t) => !t.on && now.clipped.includes(t.id))?.id ?? null;
+      if (first === null) {
+        fail(`probe dead: no tab past the strip's edge but the one in front (${JSON.stringify(now?.clipped)}) — nothing to put in front`);
+      } else {
+        await press(`[data-list] [data-row="${first}"] [data-row-open]`);
+        await wait(400);
+        const picked = await stripOf("[data-session-tabs]");
+        console.log(`tabs 4T · ${first} put in front from the list: scroll ${now.left} → ${picked?.left}, clipped ${JSON.stringify(picked?.clipped)}`);
+        if (!picked || picked.clipped.includes(first)) {
+          fail(`put ${first} in front from the list and it sits past the strip's edge — 选中一枚时把它滚进视野`);
+        }
       }
     }
 
@@ -24861,7 +24897,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25288,7 +25324,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25646,7 +25682,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26017,7 +26053,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26749,7 +26785,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27638,7 +27674,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -29161,7 +29197,7 @@ try {
       else {
         const faces = await page.evaluate(() =>
           [...document.querySelectorAll("[data-ws-tab-strip] [data-tab]")].map((t) => ({
-            file: !!t.querySelector("[data-file-face]"),
+            file: !!t.querySelector("[data-file-kind-face]"),
             machine: !!t.querySelector("[data-face]"),
           })),
         );
@@ -29964,6 +30000,12 @@ try {
   //      there is room and the short hash where there is not; a line not
   //      committed says the catalog's word; the caret moving moves it.
   //   b. **The workspace list drills down** (UX-23 §2): see the stop.
+  //   e. **A level the watch cannot fully hear** (store-c): the watch
+  //      answers its tree's root `unreported` (a network mount another
+  //      host writes into too); a file that host wrote, which the watch
+  //      never says, is listed once the window comes back to the front.
+  //      The control: the same tree watched in full reads nothing on
+  //      focus.
   //
   // `FACE_ONLY=ws` runs this section alone.
   ws: {
@@ -30251,6 +30293,75 @@ try {
       if (!saved) fail("ws d · ✓ pressed did not save: the front act never went back to ↻");
       await page.unroute("**/write_text", wroteD);
       await page.setViewportSize({ width: 1400, height: 900 });
+    }
+
+    // e. a level the watch cannot fully hear (store-c)
+    {
+      const unreported = new Set();
+      const pendingE = [];
+      let seqE = 1;
+      /** ls calls on `dir` so far (the fixture's `askedLs`). */
+      const lsOf = (dir) => askedLs.filter((a) => a.path === dir).length;
+      const waitE = (r) => {
+        const { dirs = [], since = 0, wait_ms: hold = 0 } = r.request().postDataJSON() ?? {};
+        const answer = (changed) =>
+          r
+            .fulfill({ contentType: "application/json", body: JSON.stringify({ seq: Math.max(seqE, since), dirs: changed, unavailable: false, unreported: dirs.filter((d) => unreported.has(d)) }) })
+            .catch(() => {});
+        // Not held: what changed since the counter the tree holds — all
+        // of them to a tree that holds none, nothing to one caught up.
+        if (hold === 0) return answer(since < seqE ? dirs : []);
+        return new Promise((done) => {
+          const entry = {
+            release: () => {
+              clearTimeout(t);
+              pendingE.splice(pendingE.indexOf(entry), 1);
+              done(answer([]));
+            },
+          };
+          const t = setTimeout(entry.release, Math.min(hold, 20_000));
+          pendingE.push(entry);
+        });
+      };
+      await page.route("**/dirs_wait", waitE);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const treeOpen = (await open("workspaces")) && (await press("[data-ws-row]"));
+      await until(5_000, async () => (await page.locator("[data-ws-tree] [data-file-tree] [data-file]").count()) > 0);
+      const root = await page.evaluate(() => document.querySelector("[data-ws-tree] [data-file-tree]")?.getAttribute("data-tree-root") ?? null);
+      const focus = () => page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      const names = () => page.evaluate(() => [...document.querySelectorAll('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file]')].map((e) => e.getAttribute("data-file")));
+      // Control: watched in full, a focus asks nothing.
+      await wait(1_500);
+      let from = lsOf(root);
+      await focus();
+      await wait(1_000);
+      const heardFocus = lsOf(root) - from;
+      // The root on a network mount: the next answer says so.
+      unreported.add(root);
+      seqE += 1;
+      for (const e of [...pendingE]) e.release();
+      await wait(800);
+      // A file another host wrote into the shared mount: the listing has
+      // it (the fixture's `made`), the watch never says it.
+      const wrote = { path: `${root}/from-turing.txt`, kind: "file", machine: "" };
+      made.push(wrote);
+      from = lsOf(root);
+      await focus();
+      const seen = await until(3_000, async () => (await names()).includes("from-turing.txt"));
+      const unheardFocus = lsOf(root) - from;
+      console.log(`ws e · tree ${treeOpen} at ${root}; watched in full a focus read ${heardFocus}; unreported a focus read ${unheardFocus}, the other host's file listed ${seen}`);
+      if (!treeOpen || !root) fail("probe dead: ws e · the workspace's tree did not open");
+      else {
+        if (heardFocus !== 0) fail(`ws e · a tree its watch hears in full was read ${heardFocus} time(s) on focus — it is told, not asked`);
+        if (!seen || unheardFocus < 1) fail(`ws e · a root the watch says it cannot fully hear (unreported) read ${unheardFocus} time(s) on focus, the other host's file listed ${seen} — read again on the window's return (store-c)`);
+      }
+      made.splice(made.indexOf(wrote), 1);
+      for (const e of [...pendingE]) e.release();
+      await page.unroute("**/dirs_wait", waitE);
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
     }
   }
   }
@@ -30758,6 +30869,141 @@ try {
         window.localStorage.setItem("khor.term-wake", "auto");
         window.dispatchEvent(new CustomEvent("khor:term-wake", { detail: "auto" }));
       });
+
+      // ── y. with the keyboard up, selecting does not lower it (item 73) ──
+      // The owner's ruling: a long press and a drag leave the field focused
+      // and the keyboard up, the selection is in xterm's cells with two
+      // handles, a keyboard change under it does not refit the grid, and
+      // the menu's 拷贝 copies the cells' text (then the held refit runs).
+      // With the keyboard down item 54 is as it was: the field rests let
+      // go, and a press makes no selection of khor's.
+      {
+        await program("\x1b[2J\x1b[Hselect me here\r\nsecond line words\r\n");
+        const cell = (row, col) =>
+          page.evaluate(({ row, col }) => {
+            const t = document.querySelector("[data-terminal]").__xterm;
+            const s = t.element.querySelector(".xterm-screen").getBoundingClientRect();
+            return { x: Math.round(s.left + (col + 0.5) * (s.width / t.cols)), y: Math.round(s.top + (row - t.buffer.active.viewportY + 0.5) * (s.height / t.rows)) };
+          }, { row, col });
+        const look = () =>
+          page.evaluate(() => {
+            const t = document.querySelector("[data-terminal]").__xterm;
+            return {
+              focused: document.activeElement === t.textarea,
+              cells: t.getSelection(),
+              rows: t.rows,
+              handles: [...document.querySelectorAll("[data-term-handle]")].filter((h) => h.style.display !== "none").length,
+              copied: window.__copied73 ?? [],
+            };
+          });
+        await page.evaluate(() => {
+          window.__copied73 = [];
+          Object.defineProperty(navigator.clipboard, "writeText", { configurable: true, value: async (s) => void window.__copied73.push(s) });
+          const f = document.querySelector("[data-terminal]").__xterm.textarea;
+          f.setAttribute("inputmode", "text");
+          f.focus();
+          window.__khorKeyboard?.(true);
+        });
+        await wait(600);
+        const top = await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.buffer.active.viewportY);
+        const a = await cell(top, 2);
+        const b = await cell(top + 1, 5);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [a] });
+        await wait(550);
+        const pressed = await look();
+        for (let i = 1; i <= 4; i += 1) {
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: a.x + Math.round(((b.x - a.x) * i) / 4), y: a.y + Math.round(((b.y - a.y) * i) / 4) }] });
+          await wait(30);
+        }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await wait(200);
+        const dragged = await look();
+        // The keyboard goes under it: the box changes, the grid holds.
+        const size = page.viewportSize();
+        await page.evaluate(() => window.__khorKeyboard?.(false));
+        await page.setViewportSize({ width: size.width, height: size.height + 120 });
+        await wait(900);
+        const under = await look();
+        await page.evaluate(() => window.__khorEditMenu?.("copy"));
+        await wait(900);
+        const copied = await look();
+        console.log(
+          `bar y · keyboard up: press → field ${pressed.focused ? "kept" : "let go"}, cells ${shown(pressed.cells)}, ${pressed.handles} handles; drag → ${shown(dragged.cells)}; the box 120 taller under it → rows ${dragged.rows} → ${under.rows}, cells ${shown(under.cells)}; 拷贝 → ${shown(copied.copied.at(-1))}, rows then ${copied.rows}`,
+        );
+        if (!pressed.focused || pressed.cells !== "select" || pressed.handles !== 2) fail(`bar y · keyboard up, a long press: field focused ${pressed.focused}, cells ${shown(pressed.cells)}, ${pressed.handles} handles — the word in the cells, the field kept, two handles (item 73)`);
+        if (!dragged.focused || dragged.cells !== "select me here\nsecond") fail(`bar y · keyboard up, a drag on from the press: field focused ${dragged.focused}, cells ${shown(dragged.cells)} — "select me here\\nsecond"`);
+        if (under.rows !== dragged.rows || under.cells !== dragged.cells) fail(`bar y · the box changed under the selection and the grid refitted (${dragged.rows} → ${under.rows} rows, cells ${shown(under.cells)}) — no refit while a selection is up`);
+        if (copied.copied.at(-1) !== "select me here\nsecond" || copied.cells !== "" || copied.handles !== 0) fail(`bar y · 拷贝 copied ${shown(copied.copied.at(-1))} and left cells ${shown(copied.cells)}, ${copied.handles} handles — the cells' text, the selection ended`);
+        if (copied.rows === under.rows) fail(`bar y · the refit held under the selection never ran once it ended (${copied.rows} rows)`);
+        await page.setViewportSize(size);
+        // Keyboard down: item 54's rest, and no selection of khor's.
+        await page.evaluate(() => {
+          window.__khorKeyboard?.(null);
+          // As `lowerKeyboard` does: the field refocused with no keyboard.
+          const f = document.querySelector("[data-terminal]").__xterm.textarea;
+          f.setAttribute("inputmode", "none");
+          f.blur();
+          f.focus();
+        });
+        await wait(900);
+        const rest = await look();
+        const c = await cell(await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.buffer.active.viewportY), 2);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [c] });
+        await wait(550);
+        const downPress = await look();
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await wait(200);
+        console.log(`bar y · keyboard down: at rest the field is ${rest.focused ? "held" : "let go"}; a press → cells ${shown(downPress.cells)}, ${downPress.handles} handles`);
+        if (rest.focused || downPress.cells !== "" || downPress.handles !== 0) fail(`bar y · keyboard down, item 54 changed: field at rest ${rest.focused ? "held" : "let go"}, a press made cells ${shown(downPress.cells)} with ${downPress.handles} handles — iOS's selection there, the field let go`);
+        await wait(400);
+      }
+
+      // ── z. no cursor on screen: a tap toggles the keyboard (item 74) ──
+      // The owner's ruling, in 自动: a full-screen program that hid its
+      // cursor (`top`) has no input area, so a tap anywhere raises the
+      // keyboard when it is down and lowers it when it is up; a program
+      // taking the mouse still gets the tap; with a cursor shown a tap off
+      // the input area with the keyboard down still does nothing.
+      {
+        const mode = () => page.evaluate(() => document.querySelector("[data-terminal]").__xterm.textarea.getAttribute("inputmode"));
+        const down = () =>
+          page.evaluate(() => {
+            window.__khorKeyboard?.(null);
+            document.querySelector("[data-terminal]").__xterm.textarea.setAttribute("inputmode", "none");
+          });
+        const tapAt = async (fx, fy) => {
+          const s = await rect("[data-terminal] .xterm-screen");
+          const p = { x: Math.round(s.left + s.width * fx), y: Math.round(s.top + s.height * fy) };
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [p] });
+          await wait(60);
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+          // Apart from the next tap: two close together are a double tap.
+          await wait(500);
+        };
+        await program("\x1b[?1049h\x1b[2J\x1b[Htop - 21:00:00 up 3 days\r\nPID USER %CPU COMMAND\x1b[?25l");
+        await down();
+        await tapAt(0.5, 0.6);
+        const raised = await mode();
+        await page.evaluate(() => window.__khorKeyboard?.(true));
+        await tapAt(0.3, 0.4);
+        const lowered = await mode();
+        await down();
+        await program("\x1b[?1000h\x1b[?1006h");
+        const reports = await sends(() => tapAt(0.6, 0.5));
+        const raisedMouse = await mode();
+        // The cursor shown on the last row: a tap high above it is off the input area.
+        await program("\x1b[?1000l\x1b[?1006l\x1b[?25h\x1b[99;1H");
+        await down();
+        await tapAt(0.5, 0.15);
+        const shownCursor = await mode();
+        await program("\x1b[?1049l");
+        await down();
+        console.log(`bar z · no cursor: a tap with the keyboard down → ${shown(raised)}, up → ${shown(lowered)}; with the mouse taken → ${shown(raisedMouse)} and the program got ${shown(reports)}; cursor shown, a tap off the input area, keyboard down → ${shown(shownCursor)}`);
+        if (raised !== "text") fail(`bar z · no cursor, keyboard down: a tap asked ${shown(raised)} — it raises the keyboard (item 74)`);
+        if (lowered !== "none") fail(`bar z · no cursor, keyboard up: a tap left ${shown(lowered)} — it lowers the keyboard (item 74)`);
+        if (raisedMouse !== "text" || !reports.includes("\x1b[<0;")) fail(`bar z · no cursor, a program taking the mouse: the tap asked ${shown(raisedMouse)} and the program got ${shown(reports)} — both the click and the keyboard (item 74)`);
+        if (shownCursor !== "none") fail(`bar z · a cursor shown: a tap off the input area with the keyboard down asked ${shown(shownCursor)} — nothing changes there (item 49)`);
+      }
 
       // e, for the conversations under a finger.
       for (const [what, id, box] of [
@@ -32890,10 +33136,10 @@ try {
     const col = "[data-session-side]";
     const seatOn = () => page.evaluate((c) => document.querySelector(c)?.getAttribute("data-col-seat-on") ?? null, col);
     /** A seat, by the head's seat bar (UX-45): 最近 · 工作区 · 浏览器 in
-        the bar, 机器 · 额度 in 更多's menu. ⚠️ 墓碑 (UX-39 §2): the seat's
+        the bar, 机器 · 额度 · 存储 in 更多's menu. ⚠️ 墓碑 (UX-39 §2): the seat's
         native picker, picked by `selectOption`. */
     const pick = async (seat) => {
-      if (seat === "machine" || seat === "quota") {
+      if (seat === "machine" || seat === "quota" || seat === "store") {
         await press(`${col} [data-side-head] [data-seat-more]`);
         await until(2_000, async () => (await count(`[data-seat-more-menu] [data-seat-more-item="${seat}"]`)) === 1);
         await press(`[data-seat-more-menu] [data-seat-more-item="${seat}"]`);
@@ -33003,9 +33249,10 @@ try {
         if (seat === "machine" && s.name !== "peer") fail(`side b · 机器's first line is ${JSON.stringify(s.name)} — the machine's name (UX-39 §3)`);
         if (seat === "quota" && s.name !== null && s.name !== "claude code") fail(`side b · 额度's first line is ${JSON.stringify(s.name)} — the account's name (UX-39 §3)`);
       }
-      // Every seat its own glyph (UX-39 §2): the bar's three and the menu's two.
+      // Every seat its own glyph (UX-39 §2): the bar's three and the menu's
+      // three (存储 joined 机器 and 额度 there, STORE-BRIEF phase 1).
       await press(`${col} [data-side-head] [data-seat-more]`);
-      await until(2_000, async () => (await count("[data-seat-more-menu] [data-seat-more-item]")) === 2);
+      await until(2_000, async () => (await count("[data-seat-more-menu] [data-seat-more-item]")) === 3);
       const glyphs = await page.evaluate((c) => {
         const bar = [...document.querySelectorAll(`${c} [data-seat-bar] [data-seat-item]:not([data-seat-item="more"]) svg`)];
         const menu = [...document.querySelectorAll("[data-seat-more-menu] [data-seat-more-item] svg")];
@@ -33014,8 +33261,8 @@ try {
       await page.keyboard.press("Escape");
       await wait(300);
       console.log(`side b · 更多 ${JSON.stringify(glyphs)}`);
-      if (glyphs.menu.join(" ") !== "machine quota") fail(`side b · 更多's menu holds ${JSON.stringify(glyphs.menu)} — 机器 and 额度 (UX-45)`);
-      if (glyphs.distinct !== 5) fail(`side b · the five seats wear ${glyphs.distinct} distinct glyph(s) — each its own`);
+      if (glyphs.menu.join(" ") !== "machine quota store") fail(`side b · 更多's menu holds ${JSON.stringify(glyphs.menu)} — 机器, 额度 and 存储 (UX-45, STORE-BRIEF phase 1)`);
+      if (glyphs.distinct !== 6) fail(`side b · the six seats wear ${glyphs.distinct} distinct glyph(s) — each its own`);
     }
 
     // c. 最近: 过去24小时 first, then this session's slice
@@ -33042,7 +33289,7 @@ try {
             top: e.querySelectorAll('[data-corner="top"]').length,
             bottom: e.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
             // UX-45: a file's face is its kind alone, no machine's face.
-            fileFace: !!e.querySelector("[data-file-face]"),
+            fileFace: !!e.querySelector("[data-file-kind-face]"),
             machineFace: !!e.querySelector("[data-face]"),
           })),
         };
@@ -33108,58 +33355,30 @@ try {
       if (ceiling.root !== pin.path) fail(`side d · the 工作区 seat's ceiling is ${ceiling.root} — the workspace holding the session's directory, ${pin.path} (UX-39 §5)`);
       if (ceiling.up !== 0) fail(`side d · the 工作区 seat offers ${ceiling.up} way(s) above its ceiling — nothing above the workspace`);
       if (ceiling.tree !== 1) fail("side d · the 工作区 seat is not the workspace's tree (FileTree)");
-      // 「放进来的」 (item 60 part 5): with peer's ~/khor-drop holding a
-      // file, a row above the tree opens it as a tree of its own with ‹
-      // back to the workspace; with it empty or absent, no row.
+      // ⚠️ 墓碑 (item 60 part 5 → STORE-BRIEF phase 1, the owner
+      // 2026-10-07: 「工作区不显示"放进来的"」): 「放进来的」, a row above
+      // the tree opening ~/khor-drop. With peer's ~/khor-drop holding a
+      // file, the seat draws no such row: received files are 存储's
+      // (`FACE_ONLY=store`).
       {
-        let held = true;
         const dropLs = async (r) => {
           const { path } = r.request().postDataJSON() ?? {};
           const answer = (body) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
           if (path === "") return answer({ path: "/home/peer", entries: [{ name: "khor-drop", dir: true, size: 0, at_ms: 0 }], truncated: false });
-          if (path === "/home/peer/khor-drop") {
-            return answer({ path, entries: held ? [{ name: "IMG 1.png", dir: false, size: 3, at_ms: 0 }] : [], truncated: false });
-          }
+          if (path === "/home/peer/khor-drop") return answer({ path, entries: [{ name: "IMG 1.png", dir: false, size: 3, at_ms: 0 }], truncated: false });
           return r.fallback();
         };
         await page.route("**/ls", dropLs);
-        const again = async () => {
-          await pick("recent");
-          await pick("workspace");
-          await wait(700);
-        };
-        await again();
-        const row = await count(`${col} [data-side-drops]`);
-        let inside = null;
-        let back = null;
-        if (row === 1) {
-          await press(`${col} [data-side-drops]`);
-          await wait(600);
-          inside = await page.evaluate(
-            (c) => ({
-              root: document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null,
-              back: document.querySelectorAll(`${c} [data-side-workspace] [data-seat-back]`).length,
-              row: document.querySelectorAll(`${c} [data-side-drops]`).length,
-            }),
-            col,
-          );
-          if (inside.back === 1) await press(`${col} [data-side-workspace] [data-seat-back]`);
-          await wait(400);
-          back = await page.evaluate((c) => document.querySelector(`${c} [data-side-workspace]`)?.getAttribute("data-root") ?? null, col);
-        }
-        held = false;
-        await again();
-        const empty = await count(`${col} [data-side-drops]`);
+        await pick("recent");
+        await pick("workspace");
+        await wait(1_200);
+        const row = await page.evaluate(
+          (c) => [...document.querySelectorAll(`${c} [data-side-workspace] button`)].filter((b) => b.textContent === "放进来的").length,
+          col,
+        );
         await page.unroute("**/ls", dropLs);
-        await again();
-        console.log(`side d · 放进来的: row ${row}, inside ${JSON.stringify(inside)}, back to ${back}, row while empty ${empty}`);
-        if (row !== 1 || inside?.root !== "/home/peer/khor-drop" || inside.back !== 1 || inside.row !== 0 || back !== pin.path) {
-          fail(
-            `side d · 放进来的 read row ${row}, inside ${JSON.stringify(inside)}, back to ${back} — one row while ~/khor-drop holds a file, ` +
-              `opening it as its own tree with ‹ back to the workspace ${pin.path} (item 60 part 5)`,
-          );
-        }
-        if (empty !== 0) fail(`side d · 放进来的 drawn ${empty} time(s) while ~/khor-drop is empty — not drawn (progressive disclosure)`);
+        console.log(`side d · 放进来的 rows with ~/khor-drop holding a file: ${row}`);
+        if (row !== 0) fail(`side d · the 工作区 seat draws 放进来的 ${row} time(s) — it is gone; received files are 存储's (STORE-BRIEF phase 1)`);
       }
       // A file from the tree: ‹ (the deck's, UX-40 §4) goes back to the tree.
       await press(`${col} [data-side-workspace] [data-file-tree] [data-file]`);
@@ -33442,9 +33661,10 @@ try {
     //    1. a session never opened lands on 最近;
     //    2. a file opened from the tree: shut and opened, its page is there;
     //       its ‹ is the tree's, and the tree comes back the same way;
-    //    3. every place comes back — 「放进来的」, the browser's list, a
-    //       page, 机器, 额度 — and the seat bar's 最近 reaches 最近 from
-    //       each; a file opened from 最近 comes back with its ‹ to 最近;
+    //    3. every place comes back — the browser's list, a page, 机器,
+    //       额度, a file open in 存储 — and the seat bar's 最近 reaches 最近
+    //       from each; a file opened from 最近 comes back with its ‹ to 最近
+    //       (⚠️ 墓碑, STORE-BRIEF phase 1: 「放进来的」 was one of them);
     //    4. two sessions keep two places;
     //    5. the file deleted in the main area's tree (khor's own act):
     //       opened again, 最近 at once; deleted outside khor (the listing
@@ -33462,6 +33682,8 @@ try {
       let slowLs = false;
       const tabsLBody = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ tabs: tabsL, active: tabsL.some((t) => t.id === activeL) ? activeL : (tabsL[0]?.id ?? "") }) });
       const routesL = {
+        // 存储's seat lists this machine's receive location.
+        "**/devices": (r) => json(devs.map((d) => (d.me ? { ...d, receive_dir: null, receive_at: drop, receive_for: null, receive_why: null } : d)))(r),
         "**/ls": async (r) => {
           const { path } = r.request().postDataJSON() ?? {};
           if (slowLs) await wait(2_500);
@@ -33514,6 +33736,7 @@ try {
             recent: vis("[data-side-recent]").length,
             list: vis("[data-switch-tab]").length,
             deck: vis("[data-session-deck]").length,
+            store: box.querySelector("[data-store-file]")?.getAttribute("data-store-file") ?? null,
           };
         }, col);
       /** Shut, opened again, read. */
@@ -33547,12 +33770,6 @@ try {
       // 3. every other place, and the bar's 最近 from each
       const places = {};
       const leave = {
-        drops: async () => {
-          await pick("workspace");
-          await until(3_000, async () => (await count(`${col} [data-side-drops]`)) === 1);
-          await press(`${col} [data-side-drops]`);
-          await wait(500);
-        },
         list: () => pick("browser"),
         page: async () => {
           await pick("browser");
@@ -33562,13 +33779,21 @@ try {
         },
         machine: () => pick("machine"),
         quota: () => pick("quota"),
+        // 存储, a file open in it (STORE-BRIEF phase 1; replaces
+        // 「放进来的」 here).
+        store: async () => {
+          await pick("store");
+          await until(3_000, async () => (await seen(`${col} [data-store-row="IMG 1.png"]`)) === 1);
+          await press(`${col} [data-store-row="IMG 1.png"] [data-side-open]`);
+          await until(3_000, async () => (await seen(`${col} [data-store-file]`)) === 1);
+        },
       };
       for (const [what, go] of Object.entries(leave)) {
         await go();
         const left = await where();
         const back = await again("tui/side-1");
-        await wait(what === "drops" ? 700 : 0);
-        places[what] = { left: left?.seat, back: what === "drops" ? await where() : back, recent: await toRecentByBar() };
+        await wait(what === "store" ? 700 : 0);
+        places[what] = { left: left?.seat, back: what === "store" ? await where() : back, recent: await toRecentByBar() };
       }
       // …a file opened from 最近: back with its ‹ to 最近
       await press(`${col} [data-recent-row][data-recent-kind="file"] [data-side-open]`);
@@ -33655,12 +33880,12 @@ try {
       if (out.fileBack?.tree !== 1 || out.fileBack.file !== null) fail(`side l · ‹ on the file come back to reads ${say(out.fileBack)} — the tree (UX-47)`);
       if (out.tree?.seat !== "workspace" || out.tree.tree !== 1 || out.tree.file !== null || out.tree.root !== root) fail(`side l · the tree left, shut and opened, reads ${say(out.tree)} — the tree at ${root} (UX-47)`);
       if (!out.treeToRecent) fail("side l · from the tree come back to, the seat bar's 最近 did not reach 最近 (UX-47)");
-      const want = { drops: "workspace", list: "browser", page: "browser", machine: "machine", quota: "quota" };
+      const want = { list: "browser", page: "browser", machine: "machine", quota: "quota", store: "store" };
       for (const [what, p] of Object.entries(places)) {
         const b = p.back;
         const right =
           b?.seat === want[what] &&
-          (what !== "drops" || b.root === drop) &&
+          (what !== "store" || b.store === `${drop}/IMG 1.png`) &&
           (what !== "list" || (b.list === 1 && b.deck === 0)) &&
           (what !== "page" || b.deck === 1);
         if (p.left !== want[what] || !right) fail(`side l · left on ${what} (${p.left}), shut and opened it reads ${say(b)} — where it was left (UX-47)`);
@@ -34354,6 +34579,501 @@ try {
   }
   if (process.env.FACE_ONLY === "side") console.log("side · FACE_ONLY=side: the other sections are skipped");
 
+  // ── 存储 (STORE-BRIEF phase 1, store-b, 2026-10-07) ─────────────────
+  //
+  // The owner: 「工作区不显示"放进来的"，这些上传的文件，统一到更多里，有个
+  // 存储吧」. One page of 更多 (wide and narrow) and a seat under the
+  // 附栏's 更多: a machine's received files in its receive location,
+  // newest first, as list rows; a switcher of machines (this one first);
+  // 删除 through the file trees' ask; the location changed through 选择
+  // 目录 and taken back to the default; where the machine resolved it and
+  // why, and a setting it has not seen yet. Value checks only
+  // (30-behavior: layout is the owner's checklist). New, not a fix: no
+  // red first.
+  //   a. wide 更多 → 存储: a row of 更多's list, the page in the board;
+  //      files only, newest first, no dotfile, no › on a row; the box
+  //      filters, and a word nothing matches says 没有匹配项;
+  //   b. the switcher: this machine first; peer's list is its own
+  //      directory's, and its setting not yet seen says so; elder's
+  //      fallback says the machine's own sentence;
+  //   c. 删除… asks (the trees' window) and removes that path;
+  //   d. 更改… opens 选择目录 with no machine popup, sends the path for the
+  //      machine on screen; 恢复默认 sends empty;
+  //   e. narrow: 更多's menu → 存储, ‹ in the head, rows there too;
+  //   f. the 附栏: 更多 → 存储 is a seat, a file opens in place, and shut
+  //      and opened the 附栏 is back on that file (UX-47); ‹ is the list;
+  //   g. read again only on a change (store-c): no ls while nothing
+  //      changes, here or on a watched machine; a level announced through
+  //      tree-changed reads at once; here (`unavailable`) the window's
+  //      focus reads again; a far machine's dirs_wait answer reads; a new
+  //      receive location is watched instead of the old; a location on a
+  //      network mount (`unreported`) reads again on focus;
+  //   h. under a finger the list pulls to refresh as the other lists do
+  //      (`usePullRefresh`): a pull past the arm on a watched machine
+  //      whose watch says nothing reads its location at once (one ls),
+  //      the spinner turns (`data-pull` armed → syncing) and the file
+  //      nobody announced is listed.
+  store: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "store") break store;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const now = Date.now();
+    const places = {
+      gate: { receive_dir: null, receive_at: "/home/gate/khor-drop", receive_for: null, receive_why: null },
+      // Set from here, not yet seen by peer: still landing in its default.
+      peer: { receive_dir: "~/in", receive_at: "/home/peer/khor-drop", receive_for: null, receive_why: null },
+      elder: {
+        receive_dir: "/mnt/gone",
+        receive_at: "/home/elder/khor-drop",
+        receive_for: "/mnt/gone",
+        receive_why: "接收位置 /mnt/gone 不可用（Permission denied），文件存到了默认位置",
+      },
+    };
+    const files = {
+      "/home/gate/khor-drop": [
+        { name: "old.txt", dir: false, size: 12, at_ms: now - 86_400_000 },
+        { name: ".khor-probe-1", dir: false, size: 0, at_ms: now },
+        { name: "newest.png", dir: false, size: 2_048, at_ms: now - 60_000 },
+        { name: "a folder", dir: true, size: 0, at_ms: now - 30_000 },
+        { name: "middle.pdf", dir: false, size: 1_200_000, at_ms: now - 3_600_000 },
+      ],
+      "/home/peer/khor-drop": [{ name: "from peer.md", dir: false, size: 30, at_ms: now - 5_000 }],
+      "/home/elder/khor-drop": [],
+    };
+    const asked = { set: [], removed: [] };
+    // **The watch** (store-c): this machine cannot be watched; any other
+    // holds each question until `change` releases it or its wait is up.
+    const watch = { asked: [], pending: [], seq: 1, unreported: new Set() };
+    const lsCount = {};
+    const change = (dir) => {
+      watch.seq += 1;
+      for (const e of [...watch.pending]) if (e.dirs.includes(dir)) e.release([dir]);
+    };
+    const routesS = {
+      "**/dirs_wait": (r) => {
+        const { machine, dirs = [], since = 0, wait_ms: hold = 0 } = r.request().postDataJSON() ?? {};
+        watch.asked.push({ machine, dirs, since, hold });
+        if (machine === "gate") return json({ seq: since, dirs, unavailable: true, unreported: [] })(r);
+        const answer = (changed) =>
+          json({ seq: watch.seq, dirs: changed, unavailable: false, unreported: dirs.filter((d) => watch.unreported.has(d)) })(r).catch(() => {});
+        if (hold === 0) return answer(dirs);
+        return new Promise((done) => {
+          const entry = {
+            dirs,
+            release: (changed) => {
+              clearTimeout(t);
+              watch.pending = watch.pending.filter((e) => e !== entry);
+              done(answer(changed));
+            },
+          };
+          const t = setTimeout(() => entry.release([]), Math.min(hold, 20_000));
+          watch.pending.push(entry);
+        });
+      },
+      "**/devices": (r) => json(devs.map((d) => ({ ...d, ...places[d.name] })))(r),
+      "**/set_receive_dir": (r) => {
+        const { machine, dir } = r.request().postDataJSON() ?? {};
+        asked.set.push({ machine, dir });
+        const p = places[machine];
+        if (p) {
+          p.receive_dir = dir === "" ? null : dir;
+          // This machine takes it on at once (`Node::set_receive_dir`).
+          if (machine === "gate") Object.assign(p, { receive_for: p.receive_dir, receive_at: p.receive_dir ?? "/home/gate/khor-drop", receive_why: null });
+        }
+        return json(dir)(r);
+      },
+      "**/ls": (r) => {
+        const { path } = r.request().postDataJSON() ?? {};
+        if (files[path] === undefined) return r.fallback();
+        lsCount[path] = (lsCount[path] ?? 0) + 1;
+        return json({ path, entries: files[path], truncated: false })(r);
+      },
+      "**/remove": (r) => {
+        const p = r.request().postDataJSON()?.path ?? "";
+        const dir = p.slice(0, p.lastIndexOf("/"));
+        if (files[dir] === undefined) return r.fallback();
+        asked.removed.push(p);
+        files[dir] = files[dir].filter((e) => e.name !== p.slice(dir.length + 1));
+        return json(null)(r);
+      },
+    };
+    for (const [glob, run] of Object.entries(routesS)) await page.route(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const box = "[data-more-page='store']";
+    /** The page's list, as drawn. */
+    const read = (scope) =>
+      page.evaluate((s) => {
+        const root = document.querySelector(s);
+        if (!root) return null;
+        const rows = [...root.querySelectorAll("[data-store-row]")];
+        return {
+          machine: root.querySelector("[data-store]")?.getAttribute("data-store-machine") ?? null,
+          dir: root.querySelector("[data-store-dir]")?.getAttribute("data-store-dir") ?? null,
+          rows: rows.map((r) => r.getAttribute("data-store-row")),
+          chevrons: rows.filter((r) => r.querySelector("[data-side-text] > svg")).length,
+          note: root.querySelector("[data-store-note]")?.textContent ?? null,
+          pending: root.querySelector("[data-store-place]")?.hasAttribute("data-store-pending") ?? false,
+          reset: root.querySelectorAll("[data-store-reset]").length,
+          find: root.querySelectorAll("[data-side-find] input").length,
+          empty: root.querySelector("[data-empty-state]")?.textContent ?? null,
+          picks: [...(root.querySelector("[data-store-machine-pick]")?.querySelectorAll("option") ?? [])].map((o) => o.value),
+        };
+      }, scope);
+
+    // a. wide: 更多 → 存储
+    const opened = (await tap("[data-rail-more]")) && (await tap("[data-rail-more-menu] [data-nav-store]"));
+    await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+    const wide = await read(box);
+    const listRow = await count("[data-more-list] [data-more-open='store']");
+    console.log(`store a · opened ${opened}, 更多's row ${listRow}, ${JSON.stringify(wide)}`);
+    if (!opened || !wide) fail("store a · 更多 → 存储 opened no page (data-more-page=store)");
+    else {
+      if (listRow !== 1) fail(`store a · 更多's list has ${listRow} 存储 row(s) — one, beside 诊断`);
+      if (wide.machine !== "gate" || wide.dir !== "/home/gate/khor-drop") fail(`store a · the page opened on ${wide.machine} at ${wide.dir} — this machine, its receive_at`);
+      if (wide.rows.join(" | ") !== "newest.png | middle.pdf | old.txt") fail(`store a · the rows read ${wide.rows.join(" | ")} — files only, newest first, no dotfile`);
+      if (wide.chevrons !== 0) fail(`store a · ${wide.chevrons} row(s) end in a › — content rows wear none (UX-44 §4)`);
+      if (wide.find !== 1) fail("store a · no find box over the list");
+      if (wide.note !== "默认位置") fail(`store a · under an unset location the page says ${JSON.stringify(wide.note)} — 默认位置`);
+      if (wide.reset !== 0) fail("store a · 恢复默认 drawn with nothing set (progressive disclosure)");
+      if (wide.picks[0] !== "gate" || wide.picks.length < 2) fail(`store a · the switcher lists ${wide.picks.join(", ")} — this machine first, every machine`);
+      await page.locator(`${box} [data-side-find] input`).fill("mid");
+      await wait(300);
+      const found = (await read(box))?.rows ?? [];
+      await page.locator(`${box} [data-side-find] input`).fill("zzz");
+      await wait(300);
+      const none = (await read(box))?.empty ?? null;
+      await page.locator(`${box} [data-side-find] input`).fill("");
+      await wait(300);
+      if (found.join(" ") !== "middle.pdf") fail(`store a · 「mid」 left ${found.join(", ")} — middle.pdf`);
+      if (none !== "没有匹配项") fail(`store a · a word nothing matches says ${JSON.stringify(none)} — 没有匹配项`);
+    }
+
+    // b. the switcher
+    {
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await until(3_000, async () => (await read(box))?.machine === "peer");
+      await wait(500);
+      const peer = await read(box);
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("elder");
+      await until(3_000, async () => (await read(box))?.machine === "elder");
+      await wait(500);
+      const elder = await read(box);
+      console.log(`store b · peer ${JSON.stringify(peer)} · elder ${JSON.stringify(elder)}`);
+      if (peer?.dir !== "/home/peer/khor-drop" || peer.rows.join() !== "from peer.md") fail(`store b · peer reads ${JSON.stringify(peer)} — its own receive_at and file`);
+      if (!peer?.pending || !(peer.note ?? "").includes("同步后生效")) fail(`store b · peer's setting not yet seen reads ${JSON.stringify(peer?.note)} — 「peer 同步后生效」`);
+      if (peer?.reset !== 1) fail("store b · peer has a setting and no 恢复默认");
+      if (elder?.note !== places.elder.receive_why) fail(`store b · elder fell back and the page says ${JSON.stringify(elder?.note)} — the machine's own sentence`);
+      if (elder?.empty !== "还没有收到的文件") fail(`store b · elder's empty directory says ${JSON.stringify(elder?.empty)} — 还没有收到的文件`);
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("gate");
+      await until(3_000, async () => (await read(box))?.machine === "gate");
+      await wait(500);
+    }
+
+    // c. 删除… asks, then removes
+    {
+      await page.locator(`${box} [data-store-row="old.txt"] [data-side-open]`).click({ button: "right" });
+      const menu = await until(3_000, async () => (await count('[data-row-menu] [data-menu-item="remove"]')) === 1);
+      const items = await page.evaluate(() => [...document.querySelectorAll("[data-row-menu] [data-menu-item]")].map((e) => e.getAttribute("data-menu-item")));
+      if (menu) await page.locator('[data-row-menu] [data-menu-item="remove"]').click();
+      const asking = await until(3_000, async () => (await count("[data-remove-go]")) === 1);
+      if (asking) await press("[data-remove-go]");
+      await until(3_000, async () => !((await read(box))?.rows ?? []).includes("old.txt"));
+      const after = (await read(box))?.rows ?? [];
+      console.log(`store c · menu ${items.join(", ")}, asked ${asking}, removed ${JSON.stringify(asked.removed)}, rows ${after.join(", ")}`);
+      if (items.join(" ") !== "open copy-path reveal remove") fail(`store c · a row's menu is ${items.join(", ")} — 打开, 复制路径, 在文件视图中打开, 删除…`);
+      if (!asking) fail("store c · 删除 asked nothing — the file trees' window comes first");
+      if (asked.removed.join() !== "/home/gate/khor-drop/old.txt" || after.includes("old.txt")) fail(`store c · removed ${JSON.stringify(asked.removed)}, rows ${after.join(", ")} — that path, and the row gone`);
+    }
+
+    // d. 更改… and 恢复默认
+    {
+      await press(`${box} [data-store-change]`);
+      const up = await until(3_000, async () => (await count("[data-dir-picker]")) === 1);
+      const machines = await count("[data-dir-picker] [data-dir-picker-machines]");
+      await page.locator("input[data-dir-picker-path], [data-dir-picker-path] input").first().fill("/srv/inbox");
+      await press("[data-dir-picker-take]");
+      await until(3_000, async () => (await count("[data-dir-picker]")) === 0);
+      await until(5_000, async () => ((await read(box))?.reset ?? 0) === 1);
+      const set = await read(box);
+      await press(`${box} [data-store-reset]`);
+      await until(5_000, async () => ((await read(box))?.reset ?? 1) === 0);
+      const back = await read(box);
+      console.log(`store d · picker ${up} (machine popups ${machines}), sent ${JSON.stringify(asked.set)}, set ${JSON.stringify(set)}, back ${JSON.stringify(back)}`);
+      if (!up) fail("store d · 更改… opened no 选择目录");
+      if (machines !== 0) fail("store d · 选择目录 offers a machine — the location is the machine on screen's");
+      if (asked.set[0]?.machine !== "gate" || asked.set[0]?.dir !== "/srv/inbox") fail(`store d · the picker sent ${JSON.stringify(asked.set[0])} — gate, /srv/inbox`);
+      if (set?.dir !== "/srv/inbox" || set.reset !== 1 || set.note !== null) fail(`store d · after the change the page reads ${JSON.stringify(set)} — /srv/inbox, 恢复默认 drawn, nothing else said`);
+      if (asked.set[1]?.machine !== "gate" || asked.set[1]?.dir !== "") fail(`store d · 恢复默认 sent ${JSON.stringify(asked.set[1])} — gate, empty`);
+      if (back?.dir !== "/home/gate/khor-drop" || back.reset !== 0) fail(`store d · after 恢复默认 the page reads ${JSON.stringify(back)} — the default`);
+    }
+    await press("[data-more-close]");
+    await wait(400);
+
+    // e. narrow
+    {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await wait(900);
+      const opened = await openMore("store");
+      await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+      const narrow = await read(box);
+      const head = await count("[data-more-back]");
+      console.log(`store e · opened ${opened}, back ${head}, ${JSON.stringify(narrow)}`);
+      if (!opened || !narrow) fail("store e · 更多 → 存储 opened no page on the narrow face");
+      else {
+        if (head !== 1) fail("store e · the narrow page has no ‹ in its head");
+        if (narrow.rows.join(" | ") !== "newest.png | middle.pdf") fail(`store e · narrow rows read ${narrow.rows.join(" | ")}`);
+        if (narrow.chevrons !== 0) fail(`store e · ${narrow.chevrons} narrow row(s) end in a ›`);
+        await press(`${box} [data-store-row="newest.png"] [data-side-open]`);
+        const inPlace = await until(3_000, async () => (await count(`${box} [data-store-file]`)) === 1);
+        const headGone = (await count("[data-more-back]")) === 0;
+        await press(`${box} [data-file-back]`);
+        const backList = await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+        if (!inPlace || !headGone || !backList) fail(`store e · a row opened the file in place ${inPlace}, the head stood aside ${headGone}, ‹ came back to the list ${backList}`);
+        await press("[data-more-back]");
+      }
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(900);
+    }
+
+    // f. the 附栏's seat
+    {
+      const base = {
+        kind: "tui", word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "shell",
+        group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
+      };
+      const storeRows = [{ ...base, id: "tui/store-1", title: "store-1" }];
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json(storeRows));
+      const termRoutes = {
+        "**/term_open": json(null),
+        "**/term_attach": json({ bytes: "", seq: 0 }),
+        "**/term_stream": json({ bytes: "", seq: 0, gone: false, reset: false }),
+        "**/term_resize": json(null),
+        "**/term_leave": json(null),
+        "**/term_key": json(null),
+        "**/recents": json([]),
+        "**/day_strips": json({}),
+      };
+      for (const [glob, run] of Object.entries(termRoutes)) await page.route(glob, run);
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      await open("sessions");
+      const col = "[data-session-side]";
+      const front = '[data-session-tabs] [data-tab-open="tui/store-1"]';
+      await press('[data-side-row="tui/store-1"] [data-side-open]');
+      await until(5_000, async () => (await count(front)) === 1);
+      await wait(800);
+      await press(front);
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(600);
+      await press(`${col} [data-side-head] [data-seat-more]`);
+      const item = await until(2_000, async () => (await count('[data-seat-more-menu] [data-seat-more-item="store"]')) === 1);
+      if (item) await press('[data-seat-more-menu] [data-seat-more-item="store"]');
+      await until(3_000, async () => (await count(`${col} [data-store-row]`)) > 0);
+      const seat = await read(col);
+      const on = await page.evaluate((c) => document.querySelector(c)?.getAttribute("data-col-seat-on") ?? null, col);
+      const moreLit = await page.evaluate((c) => document.querySelector(`${c} [data-seat-more]`)?.getAttribute("data-on") ?? null, col);
+      await press(`${col} [data-store-row="middle.pdf"] [data-side-open]`);
+      const inPlace = await until(3_000, async () => (await count(`${col} [data-store-file="/home/gate/khor-drop/middle.pdf"]`)) === 1);
+      await press(front);
+      await until(2_000, async () => (await count(col)) === 0);
+      await press(front);
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(700);
+      const back = {
+        seat: await page.evaluate((c) => document.querySelector(c)?.getAttribute("data-col-seat-on") ?? null, col),
+        file: await count(`${col} [data-store-file="/home/gate/khor-drop/middle.pdf"]`),
+      };
+      await press(`${col} [data-file-back]`);
+      const list = await until(3_000, async () => (await count(`${col} [data-store-row]`)) > 0);
+      console.log(`store f · menu item ${item}, seat ${on} (更多 lit ${moreLit}), ${JSON.stringify(seat)}, file in place ${inPlace}, shut and opened ${JSON.stringify(back)}, ‹ to the list ${list}`);
+      if (!item) fail("store f · the 附栏's 更多 has no 存储");
+      if (on !== "store" || seat?.machine !== "gate") fail(`store f · the seat is ${on} on ${seat?.machine} — 存储, this machine`);
+      if (moreLit !== "true") fail("store f · 更多 is not lit while 存储 is the seat");
+      if ((seat?.rows ?? []).join(" | ") !== "newest.png | middle.pdf") fail(`store f · the seat lists ${(seat?.rows ?? []).join(" | ")}`);
+      if (!inPlace) fail("store f · a row did not open the file in place in the 附栏");
+      if (back.seat !== "store" || back.file !== 1) fail(`store f · shut and opened the 附栏 reads ${JSON.stringify(back)} — 存储, on the file it was left on (UX-47)`);
+      if (!list) fail("store f · ‹ on the file did not come back to 存储's list");
+      await press(front);
+      for (const [glob, run] of Object.entries(termRoutes)) await page.unroute(glob, run);
+      await page.unroute("**/sessions");
+      await page.route("**/sessions", json(rows));
+    }
+
+    // g. read again only on a change (store-c)
+    {
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const here = "/home/gate/khor-drop";
+      const opened = (await tap("[data-rail-more]")) && (await tap("[data-rail-more-menu] [data-nav-store]"));
+      await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+      const rowsNow = async () => (await read(box))?.rows ?? [];
+      const has = (name, ms = 1_500) => until(ms, async () => (await rowsNow()).includes(name));
+      const calls = (dir) => lsCount[dir] ?? 0;
+      /** ls calls on `dir` over `ms` of nothing happening. */
+      const quiet = async (dir, ms) => {
+        const from = calls(dir);
+        await wait(ms);
+        return calls(dir) - from;
+      };
+      const focus = () => page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      const announce = (dir) =>
+        page.evaluate((d) => window.dispatchEvent(new CustomEvent("khor:tree-changed", { detail: { machine: "gate", here: true, dir: d } })), dir);
+      const stamp = (name) => ({ name, dir: false, size: 10, at_ms: Date.now() });
+
+      // This machine: nothing asked while nothing changes (the old beat
+      // was 5 s; this watches 6).
+      await wait(1_500);
+      const hereQuiet = await quiet(here, 6_000);
+      // A drop landing here says its level: read at once.
+      files[here].push(stamp("landed.txt"));
+      let from = calls(here);
+      await announce(here);
+      const landed = await has("landed.txt");
+      const landedReads = calls(here) - from;
+      // A file nothing in khor announced: the window's return reads it.
+      files[here].push(stamp("focused.txt"));
+      await focus();
+      const focused = await has("focused.txt");
+
+      // A far machine, watched: nothing asked while nothing changes, and
+      // the window's return asks nothing either.
+      const peerDir = places.peer.receive_at;
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await until(3_000, async () => (await read(box))?.machine === "peer" && (await rowsNow()).length > 0);
+      const held = await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(peerDir)));
+      await wait(500);
+      const peerQuiet = await quiet(peerDir, 6_000);
+      from = calls(peerDir);
+      await focus();
+      await wait(800);
+      const peerFocus = calls(peerDir) - from;
+      // Its watch answers: read.
+      files[peerDir].push(stamp("far.txt"));
+      from = calls(peerDir);
+      change(peerDir);
+      const far = await has("far.txt");
+      const farReads = calls(peerDir) - from;
+
+      // Its receive location moves (a sync brings the new receive_at):
+      // the new one is watched, and its answers read.
+      const moved = "/home/peer/inbox";
+      files[moved] = [stamp("moved.md")];
+      places.peer.receive_at = moved;
+      const shown = await until(15_000, async () => (await read(box))?.dir === moved);
+      const rearmed = await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(moved)));
+      const oldLeft = watch.asked.filter((a) => a.dirs.includes(peerDir)).length;
+      await wait(1_000);
+      const oldAfter = watch.asked.filter((a) => a.dirs.includes(peerDir)).length;
+      files[moved].push(stamp("after-move.md"));
+      change(moved);
+      const afterMove = await has("after-move.md");
+      places.peer.receive_at = peerDir;
+
+      // A location on a network mount: the watch says another host's
+      // changes go unheard there, so the window's return reads again.
+      const elderDir = places.elder.receive_at;
+      watch.unreported.add(elderDir);
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("elder");
+      await until(3_000, async () => (await read(box))?.machine === "elder");
+      await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(elderDir)));
+      await wait(500);
+      files[elderDir].push(stamp("from turing.txt"));
+      await focus();
+      const nfs = await has("from turing.txt");
+      watch.unreported.delete(elderDir);
+
+      console.log(
+        `store g · opened ${opened}; here: quiet ${hereQuiet} ls in 6 s, announced ${landed} (${landedReads} ls), focus ${focused}; ` +
+          `peer: held ${held}, quiet ${peerQuiet}, focus ${peerFocus}, answer ${far} (${farReads} ls); ` +
+          `moved: shown ${shown}, re-armed ${rearmed}, old asked ${oldLeft}→${oldAfter}, read ${afterMove}; elder on NFS: focus ${nfs}`,
+      );
+      if (!opened) fail("store g · 更多 → 存储 did not open");
+      if (hereQuiet !== 0) fail(`store g · this machine's list was read ${hereQuiet} time(s) in 6 s of nothing changing — read only on a change (store-c)`);
+      if (!landed || landedReads !== 1) fail(`store g · a level announced through tree-changed read ${landedReads} time(s), row there ${landed} — once, at once`);
+      if (!focused) fail("store g · this machine cannot be watched, and the window's focus did not read the list again");
+      if (!held) fail("store g · no dirs_wait held on peer's receive location");
+      if (peerQuiet !== 0) fail(`store g · a watched machine's list was read ${peerQuiet} time(s) in 6 s of nothing changing`);
+      if (peerFocus !== 0) fail(`store g · focus read a watched machine's list ${peerFocus} time(s) — its watch hears every change`);
+      if (!far || farReads !== 1) fail(`store g · peer's dirs_wait answer read ${farReads} time(s), row there ${far} — once`);
+      if (!shown || !rearmed) fail(`store g · a new receive location shown ${shown}, watched ${rearmed}`);
+      if (oldAfter !== oldLeft) fail(`store g · the old location was asked ${oldAfter - oldLeft} more time(s) after the move — the watch moves with it`);
+      if (!afterMove) fail("store g · an answer about the new location did not read it");
+      if (!nfs) fail("store g · a location the watch cannot fully hear (unreported) was not read again on focus");
+      for (const e of [...watch.pending]) e.release([]);
+      await press("[data-more-close]");
+      await wait(400);
+    }
+
+    // h. pull to refresh, under a finger
+    {
+      const finger = await page.context().newCDPSession(page);
+      await finger.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const coarse = await page.evaluate(() => matchMedia("(pointer: coarse)").matches);
+      const opened = await openMore("store");
+      await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
+      const peerDir = places.peer.receive_at;
+      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await until(3_000, async () => (await read(box))?.machine === "peer" && ((await read(box))?.rows ?? []).length > 0);
+      const held = await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(peerDir)));
+      await wait(800);
+      // A file the watch never says: only the pull can bring it.
+      files[peerDir].push({ name: "pulled.txt", dir: false, size: 10, at_ms: Date.now() });
+      await page.evaluate(() => {
+        const seen = [];
+        window.__pullSeen = seen;
+        const spin = document.querySelector("[data-more-page='store'] [data-store] > [data-pull]");
+        if (!spin) return;
+        new MutationObserver(() => seen.push(spin.getAttribute("data-pull"))).observe(spin, { attributes: true, attributeFilter: ["data-pull"] });
+      });
+      const from = lsCount[peerDir] ?? 0;
+      const b = await page.evaluate(() => {
+        const r = document.querySelector("[data-more-page='store'] [data-store] [data-nav-clear]")?.getBoundingClientRect();
+        return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + 30) } : null;
+      });
+      if (b) {
+        await finger.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: b.x, y: b.y }] });
+        for (let i = 1; i <= 8; i += 1) {
+          await finger.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: b.x, y: b.y + 25 * i }] });
+          await wait(30);
+        }
+        await finger.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      }
+      const listed = await until(2_000, async () => ((await read(box))?.rows ?? []).includes("pulled.txt"));
+      await wait(1_000);
+      const reads = (lsCount[peerDir] ?? 0) - from;
+      const seen = await page.evaluate(() => window.__pullSeen ?? []);
+      await finger.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      await finger.detach();
+      console.log(`store h · coarse ${coarse}, opened ${opened}, held ${held}, pull states ${seen.join(" → ")}, ${reads} ls, listed ${listed}`);
+      if (!coarse) fail("probe void: store h · the touch override did not take — no finger on the glass");
+      else if (!opened || !b) fail("probe dead: store h · 存储 did not open on the narrow face");
+      else {
+        if (!held) fail("store h · no dirs_wait held on peer's receive location — the pull is checked against a watch that says nothing");
+        if (!seen.includes("armed") || !seen.includes("syncing")) fail(`store h · the pull went ${seen.join(" → ") || "nowhere"} — armed past the threshold, then syncing (usePullRefresh)`);
+        if (reads !== 1 || !listed) fail(`store h · a pull read peer's location ${reads} time(s), pulled.txt listed ${listed} — once, at once, whatever the watch says`);
+      }
+      for (const e of [...watch.pending]) e.release([]);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(600);
+    }
+
+    for (const e of [...watch.pending]) e.release([]);
+    for (const [glob, run] of Object.entries(routesS)) await page.unroute(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "store") console.log("store · FACE_ONLY=store: the other sections are skipped");
+
   // ── tabs like Chrome's, a new tab and its page (UX-45, 2026-10-07) ──
   //
   // The owner aligned the draft on the lab (「做吧」): every wide glass
@@ -34397,7 +35117,7 @@ try {
   //      the pointer each time (ux-q; red on the old code: the scroll
   //      clamped 1046 → 980 → 914 → 848 and the row slid right);
   //   f. a file's face is its kind alone: the workspace strip's file tab
-  //      and the phone's file page pill wear `[data-file-face]` with no
+  //      and the phone's file page pill wear `[data-file-kind-face]` with no
   //      machine face inside, a session tab keeps its machine face and
   //      its kind's mark (最近's file rows: side c);
   //   g. `MidName`: a name whose whole width fits its box is shown whole,
@@ -34777,7 +35497,7 @@ try {
       await until(3_000, async () => (await count("[data-ws-tab-strip] [data-tab]")) > 0);
       const faces = await page.evaluate(() => {
         const tabs = [...document.querySelectorAll("[data-ws-tab-strip] [data-tab]")];
-        return tabs.map((t) => ({ file: !!t.querySelector("[data-file-face]"), machine: !!t.querySelector("[data-face]") }));
+        return tabs.map((t) => ({ file: !!t.querySelector("[data-file-kind-face]"), machine: !!t.querySelector("[data-face]") }));
       });
       console.log(`tabs f · the workspace strip's faces ${JSON.stringify(faces)} (opened ${opened && file})`);
       if (!file || faces.length === 0) fail("probe dead: tabs f · no file tab in the workspace strip");
@@ -34785,7 +35505,7 @@ try {
       await withTabs(ids.slice(0, 2));
       const session = await page.evaluate(() => {
         const t = document.querySelector("[data-session-tabs] [data-tab]");
-        return { file: !!t?.querySelector("[data-file-face]"), mark: !!t?.querySelector("[data-side-face] [data-kind-mark]") };
+        return { file: !!t?.querySelector("[data-file-kind-face]"), mark: !!t?.querySelector("[data-side-face] [data-kind-mark]") };
       });
       if (session.file || !session.mark) fail(`tabs f · a session tab wears ${JSON.stringify(session)} — the machine's face with its kind's mark, as before`);
     }
@@ -34971,7 +35691,7 @@ try {
       await wait(500);
       const pill = await page.evaluate(() => {
         const p = [...document.querySelectorAll("[data-file-pill]")].find((e) => e.checkVisibility());
-        return p ? { file: !!p.querySelector("[data-file-face]"), machine: !!p.querySelector("[data-face]") } : null;
+        return p ? { file: !!p.querySelector("[data-file-kind-face]"), machine: !!p.querySelector("[data-face]") } : null;
       });
       console.log(`tabs f · the phone's file pill ${JSON.stringify(pill)}`);
       if (!pill) fail("probe dead: tabs f · no file page's pill on the phone");

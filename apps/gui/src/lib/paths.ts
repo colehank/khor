@@ -62,20 +62,26 @@ export function baseName(path: string): string {
 }
 
 /** A name as the person gave it, from a path this machine landed: the
-    landing folder prefixes the first 8 of the content's digest
-    (`<digest8>-<name>`, `khor_node::transfer::payload_path`), which is
-    the folder's business and not the reader's. */
+    conversation folder a khor before the receive directory used prefixes
+    the first 8 of the content's digest (`<digest8>-<name>`,
+    `khor_node::transfer::payload_path`), which is the folder's business
+    and not the reader's. A file in the receive directory already wears
+    its own name. */
 export function shownName(path: string): string {
   const b = baseName(path);
   return /^[0-9a-f]{8}-./.test(b) && path.includes("/.khor/chat/") ? b.slice(9) : b;
 }
 
 /** The folder a machine keeps a conversation's files in, as some path in
-    this text spells it (`<khor home>/.khor/chat/<machine>/files`,
-    `khor_node::transfer::files_dir`), or `null` where none does. Read
-    off the paths themselves, because only the machine knows its own
-    khor home. */
+    this text spells it, or `null` where none does: the receive directory
+    a file was handed in (the folder of the first attachment line, `@`
+    then an absolute path — `khor_gui_core::chat::chat_put` lands it
+    there), or the folder a khor before the receive directory used
+    (`<khor home>/.khor/chat/<machine>/files`). Read off the paths
+    themselves, because only the machine knows where its files land. */
 export function filesFolderIn(text: string): string | null {
   const hit = /(\/[^\s@]*?\/\.khor\/chat\/[^/\s]+\/files)\/[^/\s]/.exec(text);
-  return hit ? hit[1] : null;
+  if (hit) return hit[1];
+  const handed = splitAttachments(text).paths.find((p) => p.startsWith("/"));
+  return handed ? handed.slice(0, handed.lastIndexOf("/")) || "/" : null;
 }

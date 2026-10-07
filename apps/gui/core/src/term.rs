@@ -1100,11 +1100,12 @@ pub fn term_drop_stage(root: &Path, name: &str, body: &mut dyn std::io::Read) ->
     Ok(path.display().to_string())
 }
 
-/// A staged file for a session on this machine: moved into its
-/// `~/khor-drop` under the drop's naming (a taken name suffixed).
+/// A staged file for a session on this machine: moved into its receive
+/// directory (`Node::receive_dir`) under the drop's naming (a taken name
+/// suffixed).
 fn land_staged(root: &Path, staged: &str) -> Result<String, String> {
     let name = khor_node::drops::name_of(staged)?;
-    let at = khor_node::drops::landing(&khor_node::drops::dir_for(root), &name)?;
+    let at = khor_node::drops::landing(&Node::open(root.to_path_buf())?.receive_dir()?, &name)?;
     let moved = std::fs::rename(staged, &at.dest).map_err(|e| e.to_string());
     let _ = std::fs::remove_file(&at.part);
     moved.map(|()| at.dest.display().to_string())

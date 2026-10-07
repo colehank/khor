@@ -29,10 +29,10 @@
 // read the same session's state, and both must turn on one press.
 import { useSyncExternalStore } from "react";
 
-/** The five seats of the 附栏: the seat bar's first three, then the two
-    under its 更多 (`SeatBar`, UX-45). */
-export type SideSeat = "recent" | "workspace" | "browser" | "machine" | "quota";
-export const SIDE_SEATS: readonly SideSeat[] = ["recent", "workspace", "browser", "machine", "quota"];
+/** The six seats of the 附栏: the seat bar's first three, then the three
+    under its 更多 (`SeatBar`, UX-45; 存储, STORE-BRIEF phase 1). */
+export type SideSeat = "recent" | "workspace" | "browser" | "machine" | "quota" | "store";
+export const SIDE_SEATS: readonly SideSeat[] = ["recent", "workspace", "browser", "machine", "quota", "store"];
 
 export type SidePref = {
   open: boolean;
@@ -122,9 +122,13 @@ export function useSessionSide(session: string | null): SidePref {
 }
 
 /** Where the 工作区 seat stands inside its tree (`SideWorkspace`): the
-    file open over it, and 「放进来的」 open as a tree of its own, with
-    its own spot. */
-export type WsSpot = { file: string | null; drops: WsSpot | null };
+    file open over it. ⚠️ 墓碑 (STORE-BRIEF phase 1): `drops`, 「放进来的」
+    open as a tree of its own — received files are 存储's now. */
+export type WsSpot = { file: string | null };
+
+/** Where 存储 stands (`StorePage`): the machine shown, by its API name,
+    and the file open over its list. */
+export type StoreSpot = { machine: string; file: string | null };
 
 /** **Where the 附栏 was left** (UX-47): the seat, and what was open in
     it — the shell's own pieces of the 附栏's state, as they stood. */
@@ -146,6 +150,8 @@ export type SidePlace = {
   page: string | null;
   /** 额度: the list, or the account's page. */
   quota: "list" | "detail";
+  /** 存储: the machine and the file open, as it last said. */
+  store: StoreSpot | null;
 };
 
 /** Not a store anyone renders from: written while the 附栏 is open,
@@ -170,8 +176,7 @@ export function sidePlaces(): [string, SidePlace][] {
   return [...places];
 }
 
-/** The file a place shows, if any: inside 「放进来的」 its own. */
+/** The file a place shows, if any. */
 export function placeFile(spot: WsSpot | null): string | null {
-  if (spot === null) return null;
-  return spot.drops !== null ? placeFile(spot.drops) : spot.file;
+  return spot === null ? null : spot.file;
 }

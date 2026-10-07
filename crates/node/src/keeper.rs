@@ -102,9 +102,11 @@ const SHIELD_ENV: &str = "KHOR_SHIELD";
 
 /// Whether this path lives on a filesystem where replacing a file can
 /// hurt processes already running from it (#76). Unknown reads as
-/// local: the shield is medicine, not a default.
+/// local: the shield is medicine, not a default. The same mounts are the
+/// ones whose changes made by another host no watcher here is told of,
+/// which a directory watch says (`crate::watch::serve`).
 #[cfg(target_os = "linux")]
-fn on_network_fs(path: &std::path::Path) -> bool {
+pub(crate) fn on_network_fs(path: &std::path::Path) -> bool {
     use std::os::unix::ffi::OsStrExt;
     let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
         return false;
@@ -121,7 +123,7 @@ fn on_network_fs(path: &std::path::Path) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn on_network_fs(path: &std::path::Path) -> bool {
+pub(crate) fn on_network_fs(path: &std::path::Path) -> bool {
     use std::os::unix::ffi::OsStrExt;
     let Ok(c) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
         return false;
@@ -135,7 +137,7 @@ fn on_network_fs(path: &std::path::Path) -> bool {
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn on_network_fs(_path: &std::path::Path) -> bool {
+pub(crate) fn on_network_fs(_path: &std::path::Path) -> bool {
     false
 }
 

@@ -10,12 +10,18 @@
 //   click move the cursor in with `click_events=1`, which fish 4
 //   announces); a phone also has to decide the keyboard there.
 //   ⚠️ Tombstone (10-05, item 28): 「点别处不动」, a tap never lowered.
+//   **With no cursor on screen** (a full-screen program that hid it, as
+//   `top` does: `?25l`) there is no input area to aim at, so a tap
+//   anywhere raises the keyboard when it is down and lowers it when it is
+//   up (item 74, the owner's ruling). A program that takes the mouse still
+//   gets the tap.
 // - `screen`: any tap raises it (item 5's "on"); a tap never lowers.
 // - `button`: only the bar's keyboard switch moves it (item 5's "off").
 //
 // Only under a finger: a Mac's click focuses the terminal either way. This
 // device's, in its `localStorage` like the terminal's other settings; the
 // old switch's stored answer is carried over once.
+import type { Terminal } from "@xterm/xterm";
 import { useEffect, useState } from "react";
 
 export type Wake = "auto" | "screen" | "button";
@@ -50,11 +56,40 @@ export function termWake(): Wake {
 
 /** **What a tap on the terminal asks of the keyboard** (item 49), given
     the mode and whether it landed on the input area; the caller raises
-    only what is down and lowers only what is up. */
-export function tapAsks(wake: Wake, onInput: boolean): "raise" | "lower" | null {
+    only what is down and lowers only what is up. With no cursor on
+    screen, `auto` asks to `toggle` (item 74): raise what is down, lower
+    what is up. */
+export function tapAsks(wake: Wake, onInput: boolean, noCursor = false): "raise" | "lower" | "toggle" | null {
   if (wake === "screen") return "raise";
-  if (wake === "auto") return onInput ? "raise" : "lower";
+  if (wake === "auto") return noCursor ? "toggle" : onInput ? "raise" : "lower";
   return null;
+}
+
+/** **Whether the program shows a cursor** (item 74): DECTCEM, `?25h` /
+    `?25l`, read as xterm parses it (xterm keeps it to itself), back to
+    shown on a reset (RIS, DECSTR). xterm still acts on every one. */
+export function watchesCursor(term: Terminal): { shown: () => boolean; dispose: () => void } {
+  let shown = true;
+  const set = (on: boolean) => (params: (number | number[])[]) => {
+    if (params.some((p) => (Array.isArray(p) ? p[0] : p) === 25)) shown = on;
+    return false;
+  };
+  const reset = () => {
+    shown = true;
+    return false;
+  };
+  const watching = [
+    term.parser.registerCsiHandler({ prefix: "?", final: "h" }, set(true)),
+    term.parser.registerCsiHandler({ prefix: "?", final: "l" }, set(false)),
+    term.parser.registerEscHandler({ final: "c" }, reset),
+    term.parser.registerCsiHandler({ intermediates: "!", final: "p" }, reset),
+  ];
+  return {
+    shown: () => shown,
+    dispose: () => {
+      for (const w of watching) w.dispose();
+    },
+  };
 }
 
 export function setTermWake(wake: Wake) {

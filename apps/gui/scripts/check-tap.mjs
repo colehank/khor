@@ -10,6 +10,11 @@
 // `tapAsks`) — in 自动 the input area raises and anywhere else lowers
 // (the 10-05 「点别处不动」 is overturned); 屏幕 raises anywhere and never
 // lowers; 按钮 leaves the keyboard to its switch.
+//
+// Item 74: with no cursor on screen (`?25l`, as `top` does) a tap in 自动
+// raises what is down and lowers what is up (`toggle`), wherever it lands;
+// whether the cursor is shown is read as xterm parses DECTCEM
+// (`watchesCursor`), and a reset (RIS, DECSTR) shows it again.
 import { build } from "esbuild";
 import { fileURLToPath } from "node:url";
 
@@ -22,7 +27,7 @@ const alias = {
 };
 const out = await build({
   stdin: {
-    contents: `import { Terminal } from "@xterm/xterm"; import { inInput } from "@/lib/term-marks"; import { tapAsks } from "@/lib/term-tap"; globalThis.lab = { Terminal, inInput, tapAsks };`,
+    contents: `import { Terminal } from "@xterm/xterm"; import { inInput } from "@/lib/term-marks"; import { tapAsks, watchesCursor } from "@/lib/term-tap"; globalThis.lab = { Terminal, inInput, tapAsks, watchesCursor };`,
     resolveDir: gui,
     loader: "ts",
   },
@@ -35,7 +40,7 @@ const out = await build({
   plugins: [alias],
 });
 await import(`data:text/javascript;base64,${Buffer.from(out.outputFiles[0].text).toString("base64")}`);
-const { Terminal, inInput, tapAsks } = globalThis.lab;
+const { Terminal, inInput, tapAsks, watchesCursor } = globalThis.lab;
 
 let bad = 0;
 const fail = (m) => {
@@ -111,6 +116,45 @@ for (const [wake, onInput, want] of [
   if (got !== want) fail(`49: a tap in ${wake} ${onInput ? "on" : "off"} the input area asks ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 }
 console.log("tap gate: 49: auto raises on the input area and lowers off it; screen raises anywhere; button asks nothing");
+
+// Item 74: with no cursor on screen, auto toggles wherever the tap lands;
+// the other modes are as they were.
+for (const [wake, want] of [
+  ["auto", "toggle"],
+  ["screen", "raise"],
+  ["button", null],
+]) {
+  for (const onInput of [true, false]) {
+    const got = tapAsks(wake, onInput, true);
+    if (got !== want) fail(`74: with no cursor a tap in ${wake} ${onInput ? "on" : "off"} the input area asks ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+  }
+}
+// …and the cursor is read as xterm parses DECTCEM, back on a reset.
+{
+  const t = new Terminal({ cols: 40, rows: ROWS, allowProposedApi: true });
+  const seen = watchesCursor(t);
+  const after = async (bytes) => {
+    await new Promise((r) => t.write(bytes, r));
+    return seen.shown();
+  };
+  const steps = [
+    ["", true],
+    ["\x1b[?1049h\x1b[?25l", false],
+    ["\x1b[?25h", true],
+    ["\x1b[?1;25l", false],
+    ["\x1bc", true],
+    ["\x1b[?25l\x1b[!p", true],
+  ];
+  const got = [];
+  for (const [bytes, want] of steps) {
+    const now = await after(bytes);
+    got.push(now);
+    if (now !== want) fail(`74: after ${JSON.stringify(bytes)} the cursor reads ${now ? "shown" : "hidden"}, want ${want ? "shown" : "hidden"}`);
+  }
+  seen.dispose();
+  t.dispose();
+  console.log(`tap gate: 74: no cursor → auto toggles; DECTCEM read as ${JSON.stringify(got)}`);
+}
 
 if (bad) process.exit(1);
 console.log("tap gate: a tap raises from the box and two rows beyond it, from a bare cursor row and one beyond it, and from a shell prompt's blank below; off the input area in auto it lowers");

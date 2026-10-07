@@ -29,6 +29,16 @@
 //!   stream started after `since` counts as changed — nobody was watching
 //!   it then — and so does every one when the machine cannot watch, which
 //!   the answer says (`unavailable`), so the face goes back to asking.
+//!
+//! # What a watch cannot hear
+//!
+//! A directory on a network mount (NFS, SMB, …) is watched like any
+//! other, and the watcher hears what this host does there — but not what
+//! another host sharing the mount does (turing and hinton share an NFS
+//! home: a file turing writes into it is never an event on hinton). So
+//! the far half says which of the directories it took sit on such a
+//! mount (`unreported`, store-c), and a face holding one of them asks it
+//! again now and then instead of trusting a quiet answer.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -106,10 +116,16 @@ pub(crate) async fn serve(dirs: Vec<String>, mut send: iroh::endpoint::SendStrea
                 taken.push(dir);
             }
         }
+        let unreported = taken
+            .iter()
+            .filter(|d| crate::keeper::on_network_fs(std::path::Path::new(d.as_str())))
+            .cloned()
+            .collect();
         if write_frame(
             &mut send,
             &Response::Watching {
                 dirs: taken.clone(),
+                unreported,
             },
         )
         .await
@@ -181,13 +197,18 @@ pub(crate) async fn serve(dirs: Vec<String>, mut send: iroh::endpoint::SendStrea
 }
 
 /// What a face is told (`Watches::wait`): the counter now, the
-/// directories that changed since the one it gave, and whether that
-/// machine cannot be watched (the face then asks, as before).
+/// directories that changed since the one it gave, whether that machine
+/// cannot be watched (the face then asks, as before), and which of the
+/// directories asked about are watched on a network mount, where another
+/// host's changes go unheard (module head; the face asks those again now
+/// and then).
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DirChanges {
     pub seq: u64,
     pub dirs: Vec<String>,
     pub unavailable: bool,
+    #[serde(default)]
+    pub unreported: Vec<String>,
 }
 
 /// One directory a face asked about.
@@ -198,6 +219,8 @@ struct Dir {
     wanted: Instant,
     /// Which stream carries it.
     stream: u64,
+    /// On a network mount (`Response::Watching`'s `unreported`).
+    unreported: bool,
 }
 
 #[derive(Default)]
@@ -276,6 +299,7 @@ impl Watches {
                             from: None,
                             wanted: now,
                             stream: n,
+                            unreported: false,
                         },
                     );
                 }
@@ -295,6 +319,7 @@ impl Watches {
                         seq: m.seq,
                         dirs: dirs.to_vec(),
                         unavailable: true,
+                        unreported: Vec::new(),
                     };
                 }
                 let lost = since < m.log_floor;
@@ -318,10 +343,16 @@ impl Watches {
                 let over = tokio::time::Instant::now() >= deadline;
                 if (!changed.is_empty() && starting.is_empty()) || over {
                     changed.extend(starting);
+                    let unreported = dirs
+                        .iter()
+                        .filter(|d| m.dirs.get(*d).is_some_and(|dir| dir.unreported))
+                        .cloned()
+                        .collect();
                     return DirChanges {
                         seq: m.seq,
                         dirs: changed,
                         unavailable: false,
+                        unreported,
                     };
                 }
             }
@@ -331,15 +362,17 @@ impl Watches {
 
     /// Stream `n` of machine `id` took these directories (and not the
     /// others it was asked for, which are dropped: a directory that is
-    /// gone, or not a directory).
-    fn took(&self, id: &str, n: u64, taken: &[String]) {
+    /// gone, or not a directory); `unreported` are the ones on a network
+    /// mount.
+    fn took(&self, id: &str, n: u64, taken: &[String], unreported: &[String]) {
         let mut all = self.machines.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(m) = all.get_mut(id) {
             m.seq += 1;
             let at = m.seq;
             m.dirs.retain(|d, dir| dir.stream != n || taken.contains(d));
-            for dir in m.dirs.values_mut().filter(|dir| dir.stream == n) {
+            for (d, dir) in m.dirs.iter_mut().filter(|(_, dir)| dir.stream == n) {
                 dir.from = Some(at);
+                dir.unreported = unreported.contains(d);
             }
         }
         self.arrived.notify_waiters();
@@ -394,7 +427,7 @@ pub(crate) async fn run(
         send.write_all(&ask).await.map_err(|_| false)?;
         send.finish().map_err(|_| false)?;
         match read_frame(&mut recv).await.map_err(|_| false)? {
-            Response::Watching { dirs } => watches.took(&id, n, &dirs),
+            Response::Watching { dirs, unreported } => watches.took(&id, n, &dirs, &unreported),
             // An older khor refuses the frame (it does not know the
             // question), and one that cannot watch says so: either way
             // this machine's tree is asked, as before.
@@ -438,10 +471,11 @@ mod tests {
         let first = w.wait("m", &dirs, 0, Duration::from_millis(50), open).await;
         assert!(first.dirs.len() == 2 && !first.unavailable);
         assert_eq!(started, 1, "one stream for both");
-        w.took("m", 0, &dirs);
+        w.took("m", 0, &dirs, &[]);
         // Everything is news to a face that holds nothing.
         let all = w.wait("m", &dirs, 0, Duration::from_millis(50), |_, _| unreachable!()).await;
         assert_eq!(all.dirs.len(), 2);
+        assert!(all.unreported.is_empty(), "a local disk hears every change");
         let since = all.seq;
         // Quiet: nothing changed since.
         let quiet = w.wait("m", &dirs, since, Duration::from_millis(50), |_, _| unreachable!()).await;
@@ -466,9 +500,14 @@ mod tests {
             })
             .await;
         assert_eq!(again.dirs.len(), 2, "watched again: not known, so changed");
-        w.took("m", 1, &dirs);
+        // Taken again, `/b` now on a network mount: said with every answer
+        // that asks about it, and only it.
+        w.took("m", 1, &dirs, &["/b".to_owned()]);
         let after = w.wait("m", &dirs, one.seq, Duration::from_millis(50), |_, _| unreachable!()).await;
         assert_eq!(after.dirs.len(), 2, "watched again only since after `since`: both may have changed");
+        assert_eq!(after.unreported, vec!["/b".to_owned()]);
+        let only_a = w.wait("m", &dirs[..1], after.seq, Duration::from_millis(20), |_, _| unreachable!()).await;
+        assert!(only_a.unreported.is_empty(), "not asked about, not said");
         // A machine that cannot watch.
         w.ended("m", 1, true);
         let no = w.wait("m", &dirs, after.seq, Duration::from_millis(50), |_, _| unreachable!()).await;

@@ -48,6 +48,7 @@ pub mod preview;
 pub mod proto;
 pub mod quota;
 pub mod reactor;
+pub mod road;
 pub(crate) mod roads;
 pub mod satellite;
 pub mod serves;
@@ -1168,6 +1169,14 @@ impl Node {
         // which `Node::avatar_style` reads as the factory default.
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
+        // **Where this machine's received files land, said on its row**
+        // (STORE-BRIEF phase 1): a setting changed while this machine was
+        // away is taken on in full now; otherwise read without making
+        // anything. Then the files conversations landed before there was
+        // a receive directory, moved into it once (`road::move_chat_files`).
+        self.follow_receive_dir()?;
+        let (dir, _) = self.receive_place(false)?;
+        road::move_chat_files(&self.root, &dir);
         Ok(())
     }
 
@@ -4016,15 +4025,26 @@ impl Node {
             digest: digest.clone(),
         };
         let told = self.chat.send_files(&channel, home, &[f])?;
+        let path = path.canonicalize().map_err(msg::cant_canonicalize)?;
+        // The same file offered again — to another machine, or again to
+        // the same one — keeps what each receiver already did with it:
+        // the state is per receiver (`transfer::Offer::to`).
+        let to = transfer::load_offer(&self.root, &digest)
+            .ok()
+            .flatten()
+            .filter(|o| o.path == path && o.size == size)
+            .map(|o| o.to)
+            .unwrap_or_default();
         transfer::save_offer(
             &self.root,
             &digest,
             &transfer::Offer {
-                path: path.canonicalize().map_err(msg::cant_canonicalize)?,
+                path,
                 name,
                 size,
                 started: false,
                 done: false,
+                to,
             },
         )?;
         // **Offering is not looking, so no watermark moves here** — and
@@ -4123,7 +4143,8 @@ impl Node {
     /// order: two calls would let a message land between them and put
     /// every face off by one.
     pub fn log_faced(&self, machine: &str) -> Result<FacedLog, String> {
-        let (channel, _) = self.resolve(machine)?;
+        let (channel, home) = self.resolve(machine)?;
+        let receiver = home.hex();
         let log = self.chat.log(&channel)?;
         let dir = khor_sync::chat::channel_dir(&self.root, &channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
@@ -4147,7 +4168,7 @@ impl Node {
             .map(|m| {
                 (
                     self.transfer.message_face(&channel, &dir, m, watermark),
-                    self.transfer.message_delivery(m),
+                    self.transfer.message_delivery(m, &receiver),
                 )
             })
             .collect();
@@ -5296,7 +5317,7 @@ impl KindSurface for ChatKind {
             // message-based word already covers 完成/未看, because a
             // file message lands like any message.
             if let Some(dir) = channel_dir(node.root(), &d.name)
-                && let Some((word, at)) = node.transfer.urgency(&d.name, &dir, &msgs)
+                && let Some((word, at)) = node.transfer.urgency(&d.name, &dir, &msgs, &d.id)
                 && word.rank() < row.state.state.rank()
             {
                 row.state = khor_core::StateStamp {
@@ -5388,7 +5409,7 @@ impl KindSurface for TransferKind {
         let (files, dir) = self.files_of(node, id)?;
         Ok(files
             .iter()
-            .filter_map(|f| transfer::mtime_ms(&transfer::payload_path(&dir, f)))
+            .filter_map(|f| road::landed(&node.root, &dir, f).and_then(|p| transfer::mtime_ms(&p)))
             .max()
             .unwrap_or(0))
     }

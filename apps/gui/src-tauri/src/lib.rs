@@ -512,6 +512,11 @@ fn set_watch(machine: String, paths: Vec<String>) -> Result<Vec<String>, String>
     khor_gui_core::set_watch(&Node::root_from_env(), &machine, &paths)
 }
 
+#[tauri::command]
+fn set_receive_dir(machine: String, dir: String) -> Result<String, String> {
+    khor_gui_core::set_receive_dir(&Node::root_from_env(), &machine, &dir)
+}
+
 /// `machine` is a device id and **empty is this one** — 「头像设置这, 要
 /// 支持对每台机器的修改」 (the user, 2026-09-20), so the editor opens on
 /// whichever machine was pressed rather than always on this one.
@@ -946,6 +951,30 @@ fn edit_menu(items: Vec<(String, String)>) {
     edit_menu::offer(items);
     #[cfg(not(target_os = "ios"))]
     let _ = items;
+}
+
+/// **The system's edit menu at a selection khor drew** (item 73,
+/// `edit_menu::show_at`): with the soft keyboard up the terminal selects
+/// in its own cells, so iOS has no selection to hang its menu on. `x y w h`
+/// is the selection's box in the page's CSS px from the document's
+/// origin; `copy` is what 拷贝 writes. Queued on UIKit's thread.
+#[tauri::command]
+fn edit_menu_at(app: tauri::AppHandle, x: f64, y: f64, w: f64, h: f64, items: Vec<(String, String)>, copy: Option<String>) {
+    #[cfg(target_os = "ios")]
+    if let Some(face) = phone_page::face(&app) {
+        let _ = face.with_webview(move |wv| edit_menu::show_at(wv.inner(), [x, y, w, h], items, copy));
+    }
+    #[cfg(not(target_os = "ios"))]
+    let _ = (app, x, y, w, h, items, copy);
+}
+
+/// Puts `edit_menu_at`'s menu away (the selection ended another way).
+#[tauri::command]
+fn edit_menu_hide(app: tauri::AppHandle) {
+    #[cfg(target_os = "ios")]
+    let _ = app.run_on_main_thread(edit_menu::hide_at);
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
 }
 
 /// **A haptic with a meaning** (UX-10; ux-9 B5, `lib/haptics`): the
@@ -4312,6 +4341,7 @@ pub fn run() {
             pin_device,
             forget_device,
             set_watch,
+            set_receive_dir,
             face_choices,
             restyle,
             hooks_state,
@@ -4346,6 +4376,8 @@ pub fn run() {
             term_wait,
             bell_haptic,
             edit_menu,
+            edit_menu_at,
+            edit_menu_hide,
             joy_haptic,
             haptic,
             open_settings,

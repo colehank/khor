@@ -915,6 +915,12 @@ export const forgetDevice = (machine: string) => call<string>("forget_device", {
     answers the list as kept. */
 export const setWatch = (machine: string, paths: string[]) =>
   call<string[]>("set_watch", { machine, paths });
+/** Where files sent to a machine land (存储's location row), for
+    everyone; `""` takes it back to the default (`~/khor-drop`). The node
+    refuses a relative path in its own sentence and answers the setting
+    as kept. */
+export const setReceiveDir = (machine: string, dir: string) =>
+  call<string>("set_receive_dir", { machine, dir });
 /** What a machine wears and every option painted as it would look —
     derived by the node, one call for the whole editor.
 
@@ -1829,8 +1835,22 @@ export const faceNote = (line: string) => call<null>("face_note", { line });
 /** **khor's items in the system's edit menu** (item 54,
     `src-tauri/src/edit_menu.rs`): `[id, title]` pairs the next menu over
     a selection adds; none clears them. Only the phone app has the menu. */
-export const editMenu = (items: [string, string][]) =>
-  inApp ? call<null>("edit_menu", { items }) : Promise.resolve(null);
+export const editMenu = (items: [string, string][]) => uikit("edit_menu", { items });
+/** **The system's edit menu at a selection khor drew** (item 73): with
+    the keyboard up the terminal selects in its own cells, and the menu is
+    shown at `rect` (CSS px from the document's origin) with `items`;
+    `copy` is what its 拷贝 writes to the pasteboard, natively. */
+export const editMenuAt = (rect: { x: number; y: number; w: number; h: number }, items: [string, string][], copy: string) =>
+  uikit("edit_menu_at", { ...rect, items, copy });
+/** Puts `editMenuAt`'s menu away. */
+export const editMenuHide = () => uikit("edit_menu_hide", {});
+/** A call that is UIKit's, in this app, whatever node answers the rest:
+    the dev bridge beside the app (a simulator walk) does not have it. */
+async function uikit(cmd: string, args: Record<string, unknown>): Promise<null> {
+  if (!inApp) return null;
+  const { invoke } = await import("@tauri-apps/api/core");
+  return invoke<null>(cmd, args);
+}
 /** A bell felt: a light haptic tap on a phone (roadmap 4.2). */
 export const bellHaptic = () => call<null>("bell_haptic");
 /** The cursor joystick, felt (item 23, `joy_haptic`): `prepare` at

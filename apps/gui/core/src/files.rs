@@ -318,13 +318,17 @@ pub async fn stat_text(root: &Path, machine: &str, path: &str) -> Result<FileSta
 /// (`Node::dirs_changed`, round NET-4): the far machine watches them and
 /// the resident holds the answer. `unavailable` when it cannot be
 /// watched (this machine, a satellite, an older khor, no resident) —
-/// the tree then asks its levels, as before.
+/// the tree then asks its levels, as before. `unreported`: the asked
+/// levels watched on a network mount, where a change another host makes
+/// is never heard (`khor_node::watch`); a face asks those again now and
+/// then rather than trust a quiet answer.
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct DirWatch {
     #[ts(type = "number")]
     pub seq: u64,
     pub dirs: Vec<String>,
     pub unavailable: bool,
+    pub unreported: Vec<String>,
 }
 
 pub async fn dirs_wait(
@@ -342,6 +346,7 @@ pub async fn dirs_wait(
         seq: c.seq,
         dirs: c.dirs,
         unavailable: c.unavailable,
+        unreported: c.unreported,
     })
 }
 

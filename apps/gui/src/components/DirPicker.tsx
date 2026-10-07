@@ -40,12 +40,16 @@ export function DirPicker({
   open,
   onOpenChange,
   machine: start = "",
+  fixed = false,
   onPick,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Which machine to open on; `""` is this one. */
   machine?: string;
+  /** The machine is the question's, not the person's to change (存储's
+      receive location: a directory on the machine on screen). */
+  fixed?: boolean;
   /** Answered with the pick. **Rejecting is how the caller says it did
       not take**: the dialog stays open and shows what came back, which
       is where the person pressing is looking (`RowMenu`). Resolving
@@ -117,7 +121,7 @@ export function DirPicker({
               listed: `Ls` routes through the sponsor, so completion
               reaches them too. **A popup, the wizard's control**: the
               machines are a list that grows (components/PopupButton). */}
-          {machines.length > 1 && (
+          {machines.length > 1 && !fixed && (
             <>
               <FormLabel>{gui.new_session_machine}</FormLabel>
               <div data-dir-picker-machines className="flex min-w-0">

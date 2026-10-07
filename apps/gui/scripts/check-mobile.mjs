@@ -160,7 +160,7 @@ const QUICK = new Set([
   "tabs_close", "tabs_pin", "tabs_save", "ws_rm", "ws_pin", "pin_account", "rename_account",
   "update_account", "register_account", "remove_account", "seen", "rename_session",
   "rename_machine", "relays", "set_relays", "tell", "pin_session", "pin_device", "forget_device",
-  "set_watch", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
+  "set_watch", "set_receive_dir", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
   "history", "history_follow", "machine_log", "import_candidates", "import_sessions", "agents",
   "agents_known", "agents_known_taken", "register_known_agent", "agent_seen", "invite",
   "pending_list", "root_words", "set_paused", "set_machine_paused", "config", "set_config",
@@ -189,6 +189,8 @@ const QUICK = new Set([
   "face_note", "notify_finished", "bell_haptic", "joy_haptic", "haptic",
   // What the next edit menu over a selection adds (item 54): memory.
   "edit_menu",
+  // The system's edit menu at a selection khor drew (item 73): queued on UIKit's thread.
+  "edit_menu_at", "edit_menu_hide",
 ]);
 // The ones that waited on the main thread on 2026-10-02, named so the
 // red says which: each must be `async`.

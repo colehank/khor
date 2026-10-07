@@ -144,6 +144,9 @@ const LIVE = {
   // landings' glyphs: a ring of r 8.5 — the rack's 17 across — computed
   // rather than scanned (ink = 17 + the line, at the round share).
   recent: fit(1.98, 1.98, 20.05), // round
+  // 存储's tray (store-c, 2026-10-07), on the 24 canvas: the rack's 17
+  // across, scanned at 480 with the line.
+  store: fit(1.43, 0.91, 21.14), // square
 } as const;
 
 /**
@@ -353,6 +356,28 @@ export function IconRecent({ className }: IconProps) {
     <RailGlyph className={className} live={LIVE.recent}>
       <circle cx="12" cy="12" r="8.5" />
       <path d="M12 7.4V12.3L15.1 14.1" />
+    </RailGlyph>
+  );
+}
+
+/**
+ * 存储 = an inbox tray with an arrow coming down into it (store-c, the
+ * owner 2026-10-07: the received files' place needs a glyph of its own).
+ * The tray is the solid piece: its floor, with the lip dipping where
+ * things land, and two walls rising from it as line. The arrow is line
+ * and stops in the well, the family's gap clear of the lip, so nothing
+ * overlaps and nothing needs cutting. `IconShare` read the other way: an
+ * arrow leaving an open tray is handing something out.
+ */
+export function IconStore({ className }: IconProps) {
+  return (
+    <RailGlyph className={className} live={LIVE.store}>
+      <path d="M3.5 14.2V10.6M20.5 14.2V10.6" />
+      <path
+        data-body
+        d="M3.5 14.2H8.3l1.3 2.1h4.8l1.3-2.1h4.8v2.7a2.6 2.6 0 0 1-2.6 2.6H6.1a2.6 2.6 0 0 1-2.6-2.6Z"
+      />
+      <path d="M12 3.4V14M8.9 10.9 12 14l3.1-3.1" />
     </RailGlyph>
   );
 }

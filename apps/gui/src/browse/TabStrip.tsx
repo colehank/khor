@@ -400,7 +400,14 @@ export function TabStrip({
   head,
   tail,
   frontAct = false,
+  seek = 0,
 }: {
+  /** **A count of picks, the tab in front included** (fix-a): each new
+      value brings the front tab into view, like a change of `active`.
+      A person who wheeled the strip away from the tab in front and then
+      picks that same tab from the list asked to see it; `active` alone
+      cannot say so, as it does not change. Absent, only `active` does. */
+  seek?: number;
   /** **The front tab's act at the capsule's end, and none on the pills**
       (UX-39, the owner 2026-10-06 22:35: a ↻ on every pill and one more
       at the strip's end was 「有点奇怪」). On the wide face a tab is a
@@ -451,7 +458,8 @@ export function TabStrip({
   /**
    * **The tab in front is scrolled into view** whenever it changes — a
    * click, a shortcut, a pick from a menu, a new one (第三轮 第 2
-   * 条) — and when the strip itself changes width, which is how a tab
+   * 条) — whenever it is picked again (`seek`), and when the strip
+   * itself changes width, which is how a tab
    * that was in view ends up past the edge without anybody touching it.
    * Measured against the strip rather than with `scrollIntoView`, which
    * also scrolls every ancestor that can scroll, and the shell's own
@@ -542,9 +550,11 @@ export function TabStrip({
       needs, so the next tab's × lands under the pointer at the end too. */
   const room = useRef<HTMLDivElement>(null);
   const frontWas = useRef(active);
+  const seekWas = useRef(seek);
   useLayoutEffect(() => {
-    const moved = frontWas.current !== active;
+    const moved = frontWas.current !== active || seekWas.current !== seek;
     frontWas.current = active;
+    seekWas.current = seek;
     const el = strip.current;
     if (holding.current && el && room.current && kept.current) {
       room.current.style.width = "0";
@@ -554,7 +564,7 @@ export function TabStrip({
     }
     if (holding.current && !moved) return;
     bringFront.current();
-  }, [active, faces.length]);
+  }, [active, faces.length, seek]);
 
   /** Whether the front tab's hint is up (`TabFace.again`). One for the
       strip: only the tab in front ever has one. */
