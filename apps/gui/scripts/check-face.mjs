@@ -1251,8 +1251,10 @@ try {
   const tabRows = [
     // Titles a page would give itself, unlike its address: 4W reads the
     // sidebar's title off `title` and its subtitle off the address.
-    { id: "t0", device: pin.device, url: "https://khor.example/zero", title: "Khor Zero Page", pinned: true },
-    { id: "t1", device: pin.device, url: "https://khor.example/one", title: "Khor One Page", pinned: false },
+    // `touched` (UX-48, `Tab::touched`): when it was last put in front,
+    // the row's bottom-right.
+    { id: "t0", device: pin.device, url: "https://khor.example/zero", title: "Khor Zero Page", pinned: true, touched: Date.now() - 5 * 60_000 },
+    { id: "t1", device: pin.device, url: "https://khor.example/one", title: "Khor One Page", pinned: false, touched: Date.now() - 2 * 3600_000 },
   ];
   let tabFront = "t1";
   let minted = 0;
@@ -1357,9 +1359,29 @@ try {
   // has, so a face that asked about it would paint *this* machine's
   // branch and mtime under another machine's path. Section 4f below
   // asserts that nothing was asked.
+  //
+  // **The repository carries its git segment** (UX-48, `WorkspaceRow.git`,
+  // `khor_core::GitSegment`), the way its resident keeps it: the row's
+  // right says 「main ⇡861 *1 !1 ?2」 and how long that has held, its
+  // second line HEAD's subject. The folders and the quiet machine carry
+  // none — a plain folder has no segment, and elder never said.
+  const workGit = {
+    branch: "main",
+    head: "1a2b3c4d",
+    subject: "rows: the four corners by the owner's rule",
+    ahead: 861,
+    behind: 0,
+    stashes: 1,
+    conflicted: 0,
+    staged: 0,
+    unstaged: 1,
+    untracked: 2,
+    capped: false,
+    since_ms: Date.now() - 5 * 60_000,
+  };
   const wsRows = [
     { device: "e".repeat(64), machine: "gate", path: "/home/gate/notes", name: "notes", pinned: false },
-    { device: pin.device, machine: "peer", path: pin.path, name: "work", pinned: true },
+    { device: pin.device, machine: "peer", path: pin.path, name: "work", pinned: true, git: workGit },
     { device: "d".repeat(64), machine: "elder", path: "/srv/elder/app", name: "app", pinned: false },
     { device: "c".repeat(64), machine: "", path: "/home/ghost/left", name: "left", pinned: false },
   ];
@@ -2228,12 +2250,14 @@ try {
   // (UX-45, 2026-10-07).
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
+  // **`FACE_ONLY=corners` walks every list's row alone** (UX-48,
+  // 2026-10-07: the owner's four slots on every list).
   // **`FACE_ONLY=walk` walks this block alone** — sections 1 to 10,
   // where the 额度 page's checks live (quota-a, 2026-10-07): no switch
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "corners"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -5565,11 +5589,9 @@ try {
   if (!corners) {
     fail("probe dead: the workspace landing drew no rows (src/views/WorkspacesList.tsx)");
   } else {
-    // Give the two per-row questions a moment to land; the assertions
-    // below are about what arrives, not about how fast.
-    await until(5_000, async () =>
-      (await page.locator("[data-ws-touched]").first().innerText()).trim() !== "",
-    );
+    // Give the per-row question (is it a repository) a moment to land;
+    // the assertions below are about what arrives, not about how fast.
+    await until(5_000, async () => (await page.locator("[data-ws-row] [data-ws-held]").count()) > 0);
     const seen = await page.$$eval("[data-ws-row]", (rows) =>
       rows.map((el) => ({
         pinned: el.getAttribute("data-ws-pinned"),
@@ -5577,19 +5599,29 @@ try {
         // The whole value, not the drawn cut: `PathCut` draws the tail
         // that fits and keeps the path as its title and for a reader.
         where: el.querySelector("[data-ws-where]")?.getAttribute("title") ?? null,
+        subject: el.querySelector("[data-ws-subject]")?.textContent?.trim() ?? null,
         // **An empty corner is not drawn** (UX-15, the owner 2026-10-05:
         // 「空的格子不画」): absent reads as blank. ⚠️ 墓碑: the two corner
         // anchors were always drawn, empty where there was nothing to say.
         git: el.querySelector("[data-ws-git]")?.textContent?.trim() ?? "",
-        touched: el.querySelector("[data-ws-touched]")?.textContent?.trim() ?? "",
+        // UX-48: how long the segment has held. ⚠️ 墓碑: `[data-ws-touched]`,
+        // the tree's last change.
+        held: el.querySelector("[data-ws-held]")?.textContent?.trim() ?? "",
       })),
     );
     console.log(`workspaces: ${JSON.stringify(seen)}`);
-    for (const corner of ["name", "where"]) {
-      if (seen.some((r) => r[corner] === null)) {
+    // **UX-48** (the owner 2026-10-07): the second line is HEAD's subject
+    // for a repository and the path for a plain folder — one or the other,
+    // never both. ⚠️ 墓碑 (UX-15): every row's aside was `machine:path`.
+    if (seen.some((r) => r.name === null)) {
+      fail("a workspace row has no name — the anchor is the fact (src/views/WorkspacesList.tsx)");
+    }
+    for (const r of seen) {
+      const repo = r.name === "work";
+      if (repo ? r.subject === null || r.where !== null : r.where === null || r.subject !== null) {
         fail(
-          `a workspace row has no ${corner} corner — the anchor is the fact, and a corner that is not ` +
-            "there cannot be read as empty either (src/views/WorkspacesList.tsx)",
+          `the ${r.name} row's second line reads where ${JSON.stringify(r.where)}, subject ${JSON.stringify(r.subject)} — ` +
+            "a repository says HEAD's subject, a folder its path (UX-48, src/views/WorkspacesList.tsx)",
         );
       }
     }
@@ -5600,17 +5632,17 @@ try {
       );
     }
     const gate = seen.find((r) => r.name === "notes");
-    if (gate?.git !== "") {
+    if (gate?.git !== "" || gate?.held !== "") {
       fail(
-        `a directory that is no repository drew 「${gate?.git}」 in its git corner — nothing is the ` +
+        `a directory that is no repository drew 「${gate?.git}」/「${gate?.held}」 on its right — nothing is the ` +
           "only honest answer there, since 干净 and 读不了 look alike (src/views/WorkspacesList.tsx)",
       );
     }
     const peer = seen.find((r) => r.name === "work");
-    if (!peer?.git?.startsWith("main")) {
+    if (peer?.git !== "main ⇡861 *1 !1 ?2" || peer?.subject !== workGit.subject || !peer?.held) {
       fail(
-        `the repository row drew 「${peer?.git}」 where its branch goes — without the positive half ` +
-          "the assertion above passes on a corner that never draws anything (src/views/WorkspacesList.tsx)",
+        `the repository row reads ${JSON.stringify(peer)} — 「main ⇡861 *1 !1 ?2」 on its right over how long, ` +
+          `「${workGit.subject}」 under its name (UX-48, src/views/WorkspacesList.tsx)`,
       );
     }
     const elder = seen.find((r) => r.name === "app");
@@ -5619,12 +5651,14 @@ try {
         "the row whose machine could not answer is gone from the list — a refusal painted as an " +
           "absence sends somebody to look anywhere but at that machine (src/views/WorkspacesList.tsx)",
       );
-    } else if (elder.touched !== "" || elder.git !== "") {
+    } else if (elder.held !== "" || elder.git !== "") {
       fail(
-        `the unreachable machine's row drew 「${elder.git}」/「${elder.touched}」 — a machine that ` +
+        `the unreachable machine's row drew 「${elder.git}」/「${elder.held}」 — a machine that ` +
           "said nothing must leave the corners blank (src/views/WorkspacesList.tsx)",
       );
-    } else if (elder.where !== "elder:/srv/elder/app") {
+    } else if (elder.where !== "/srv/elder/app") {
+      // UX-48: the path alone — the face says which machine.
+      // ⚠️ 墓碑 (UX-15): 「elder:/srv/elder/app」.
       fail(
         `…and it must still say where it is, not 「${elder.where}」 — the row is openable and the ` +
           "path is what makes it identifiable (src/views/WorkspacesList.tsx)",
@@ -5638,9 +5672,9 @@ try {
           "that can only be taken off from here, and hiding it makes it permanent " +
           "(src/views/WorkspacesList.tsx)",
       );
-    } else if (ghostRow.git !== "" || ghostRow.touched !== "") {
+    } else if (ghostRow.git !== "" || ghostRow.held !== "") {
       fail(
-        `the nameless row drew 「${ghostRow.git}」/「${ghostRow.touched}」 — there is no machine to ` +
+        `the nameless row drew 「${ghostRow.git}」/「${ghostRow.held}」 — there is no machine to ` +
           "have answered, so whatever is in those corners came from the wrong disk " +
           "(src/views/WorkspacesList.tsx)",
       );
@@ -7408,6 +7442,9 @@ try {
       path: "/home/peer/evolving-graph-frontier",
       name: "evolving-graph-frontier",
       pinned: false,
+      // UX-48: the branch is the segment's (`WorkspaceRow.git`), and its
+      // counts stay whole while the branch gives way.
+      git: { ...workGit, branch: "feature/evolving-graph-frontier" },
     };
     const wideList = (r) =>
       r.fulfill({ contentType: "application/json", body: JSON.stringify([...wsRows, wide]) });
@@ -7513,9 +7550,12 @@ try {
         return {
           row: Math.round(row.getBoundingClientRect().width * 10) / 10,
           name: cut("[data-ws-name]"),
-          git: cut("[data-ws-git]"),
-          where: cut("[data-ws-where]"),
-          touched: cut("[data-ws-touched]"),
+          git: cut("[data-ws-branch]"),
+          counts: cut("[data-ws-counts]"),
+          // UX-48: how long the segment has held. ⚠️ 墓碑: the path aside
+          // (`[data-ws-where]`, a folder's second line now) and
+          // `[data-ws-touched]`.
+          touched: cut("[data-ws-held]"),
         };
       }, wide.name);
       console.log(`ws corners: ${JSON.stringify(corners)}`);
@@ -7548,14 +7588,20 @@ try {
               "the name loses a character (src/views/WorkspacesList.tsx)",
           );
         }
-        // The second line holds the same shape the other way round: the
-        // path may be cut, the time may not — an 「ago」 with its tail
-        // missing is a different amount of time.
-        if (corners.touched !== null && corners.touched.wants > corners.touched.has + 1) {
+        // The right column holds the same shape: the branch may be cut,
+        // the time may not — an 「ago」 with its tail missing is a
+        // different amount of time — and nor may the segment's counts
+        // (UX-48, `data-corner-keep`): 「⇡86」 is another number.
+        if (corners.touched === null || corners.touched.wants > corners.touched.has + 1) {
           fail(
-            `「${corners.touched.said}」 was cut from ${corners.touched.wants} to ${corners.touched.has} ` +
-              "— a shortened 上次改动 reads as a different length of time, so it is the path beside " +
-              "it that folds (src/views/WorkspacesList.tsx)",
+            `the segment's time reads ${JSON.stringify(corners.touched)} — drawn and whole: a shortened ` +
+              "time reads as a different length of time, so it is the branch that folds (src/views/WorkspacesList.tsx)",
+          );
+        }
+        if (corners.counts === null || corners.counts.said !== "⇡861 *1 !1 ?2" || corners.counts.wants > corners.counts.has + 1) {
+          fail(
+            `the segment's counts read ${JSON.stringify(corners.counts)} — 「⇡861 *1 !1 ?2」 whole beside a cut branch ` +
+              "(UX-48, data-corner-keep; src/components/SideList.tsx Corners)",
           );
         }
       }
@@ -11098,9 +11144,9 @@ try {
           const has = (a) =>
             a === "kind-mark"
               ? !!row.querySelector("[data-side-mark]") ||
-                row.querySelector("[data-side-title] > *")?.firstElementChild?.tagName.toLowerCase() === "svg" ||
-                // UX-15: 额度's mark opens the title's aside (「Claude 订阅」).
-                row.querySelector("[data-side-aside] > *")?.firstElementChild?.tagName.toLowerCase() === "svg"
+                // ⚠️ 墓碑 (UX-48): the quota row's mark opening the title's aside
+                // (UX-15) — no list row has an aside; it is the face's mark.
+                row.querySelector("[data-side-title] > *")?.firstElementChild?.tagName.toLowerCase() === "svg"
               : row.hasAttribute(a) || !!row.querySelector(`[${a}]`);
           return parts.filter(has);
         },
@@ -11330,13 +11376,11 @@ try {
       [...document.querySelectorAll("[data-browse-tabs] [data-side-row]")].map((r) => ({
         id: r.getAttribute("data-side-row"),
         title: (r.querySelector("[data-side-title]")?.textContent ?? "").trim(),
-        // The whole value: the host is drawn by `PathCut`, cut at its
-        // start where it does not fit, and kept whole as its title.
-        sub: (
-          r.querySelector("[data-side-sub] [title]")?.getAttribute("title") ??
-          r.querySelector("[data-side-sub]")?.textContent ??
-          ""
-        ).trim(),
+        // UX-48: where it is, the address without its scheme
+        // (`[data-tab-where]`). ⚠️ 墓碑 (F2.4): the host by `PathCut`.
+        sub: (r.querySelector("[data-side-sub] [data-tab-where]")?.textContent ?? "").trim(),
+        top: r.querySelectorAll('[data-corner="top"]').length,
+        opened: (r.querySelector('[data-corner="bottom"] [data-tab-opened]')?.textContent ?? "").trim(),
       })),
     );
     console.log(`browse 4W · rows: ${JSON.stringify(rows)}`);
@@ -11349,18 +11393,16 @@ try {
       if (r.title !== t.title) {
         fail(`tab ${t.id}'s sidebar title reads ${JSON.stringify(r.title)}, the page's title is ${JSON.stringify(t.title)} — 「标题是网页的标题而非网址」`);
       }
-      // **The host, under the page's title** (the redesign F2: 「Browser
-      // rows: page title over host, one line when equal」): no scheme,
-      // and no path — the page's own title says which page.
-      const host = (() => {
-        try {
-          return new URL(t.url).host;
-        } catch {
-          return t.url;
-        }
-      })();
-      if (/^https?:\/\//.test(r.sub) || (r.sub !== host && r.title !== host)) {
-        fail(`tab ${t.id}'s subtitle reads ${JSON.stringify(r.sub)}, not its host ${JSON.stringify(host)} — 「副标题是现在的网址, 但不用显示http(s)://」, the host since the redesign`);
+      // **The address, under the page's title** (UX-48, the owner
+      // 2026-10-07: bottom-left where it is): no scheme (round four), always;
+      // no state on the right; how long ago it was opened under it.
+      // ⚠️ 墓碑 (F2.4): the host alone, and only where the title differs.
+      const where = t.url.replace(/^https?:\/\//i, "");
+      if (r.sub !== where) {
+        fail(`tab ${t.id}'s subtitle reads ${JSON.stringify(r.sub)}, not its address ${JSON.stringify(where)} — 「副标题是现在的网址, 但不用显示http(s)://」 (UX-48)`);
+      }
+      if (r.top !== 0 || !/\d/.test(r.opened)) {
+        fail(`tab ${t.id}'s right reads top ${r.top}, bottom ${JSON.stringify(r.opened)} — no state, how long ago it was opened under it (UX-48, BrowseLanding)`);
       }
     }
     const pins = await page.locator('[data-browse-landing="page"] [data-pin-web]').count();
@@ -11711,7 +11753,8 @@ try {
               corner: row.querySelector("[data-side-mark]")?.getAttribute("data-side-mark") ?? null,
               glyph: row.querySelector("[data-side-mark] svg")?.getAttribute("data-icon") ?? null,
               sub: row.querySelector("[data-side-sub]")?.textContent ?? "",
-              aside: row.querySelector("[data-side-aside]")?.textContent ?? "",
+              aside: row.querySelector("[data-side-aside]")?.textContent ?? null,
+              title: row.querySelector("[data-side-title]")?.textContent ?? "",
             },
           ]),
         ),
@@ -11735,10 +11778,12 @@ try {
       if (seen.elder?.corner === "macos" && seen.elder?.glyph !== "finder") {
         fail(`the elder row (macOS) wears 「${seen.elder?.glyph}」 where the Mac wears the Finder (UX-27)`);
       }
-      // UX-15: the model is the title's aside (「左上身份 · 型号」);
-      // ⚠️ 墓碑: 「型号文字进机器行的副标题」, the second line until 10-05.
-      if (!seen.peer?.aside.includes("SYS-4028GR-TR") || seen.peer?.sub.includes("SYS-4028GR-TR")) {
-        fail(`the peer row reads aside ${JSON.stringify(seen.peer?.aside)}, second line ${JSON.stringify(seen.peer?.sub)} — the model is the name's aside (UX-15)`);
+      // UX-48 (the owner 2026-10-07): top-left the name alone — the
+      // model is the machine page's, not the row's.
+      // ⚠️ 墓碑: the model as the name's aside (UX-15), and before 10-05
+      // the model as the row's second line.
+      if (seen.peer?.aside !== null || seen.peer?.title.trim() !== "peer" || seen.peer?.sub.includes("SYS-4028GR-TR")) {
+        fail(`the peer row reads title ${JSON.stringify(seen.peer?.title)}, aside ${JSON.stringify(seen.peer?.aside)}, second line ${JSON.stringify(seen.peer?.sub)} — the name alone, no model (UX-48)`);
       }
     }
     if (peer?.vitals?.vitals) {
@@ -11750,72 +11795,12 @@ try {
     await wait(900);
   }
 
-  // ── 4M′) UX-15: the machine row's four corners (the owner, 2026-10-05:
-  //        「左上身份、左下在做什么、右上状态、右下状态的时间；空的格子
-  //        不画」). peer answers in 23 ms with 41% CPU; elder said
-  //        nothing for 20 hours; gate is this machine. The latency light
-  //        is never the colour alone. New, not a fix: no red first. ──
-  {
-    const peer = devs.find((d) => d.name === "peer");
-    const elder = devs.find((d) => d.name === "elder");
-    const keep = [peer && { ...peer }, elder && { ...elder }, peer?.vitals?.vitals?.cpu_pct];
-    if (peer) {
-      peer.rtt_ms = 23;
-      if (peer.vitals?.vitals) peer.vitals.vitals.cpu_pct = 41.2;
-    }
-    if (elder) {
-      elder.rtt_ms = null;
-      elder.hop = "quiet";
-      elder.heard_ms = Date.now() - 20 * 3600_000;
-      // Unreachable, not idle (round NET-13): the last attempt failed.
-      elder.down_ms = 5_000;
-    }
-    await page.setViewportSize({ width: 1400, height: 900 });
-    await page.reload({ waitUntil: "load" });
-    await wait(900);
-    await open("devices");
-    await until(5_000, async () => (await page.locator("[data-side-row][data-device]").count()) >= 3);
-    await wait(400);
-    const rows = await page.evaluate(() =>
-      Object.fromEntries(
-        [...document.querySelectorAll("[data-side-row][data-device]")].map((row) => [
-          row.getAttribute("data-device"),
-          {
-            sub: row.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
-            top: row.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
-            light: row.querySelector("[data-row-latency]")?.getAttribute("data-row-latency") ?? null,
-            // The light's band (UX-26, `lib/latency`): 23 ms is `fast`, no road `none`.
-            band: row.querySelector("[data-row-latency]")?.getAttribute("data-lat") ?? null,
-            bottom: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
-            road: row.querySelectorAll("[data-row-connection]").length,
-          },
-        ]),
-      ),
-    );
-    console.log(`UX-15 · machine rows: ${JSON.stringify(rows)}`);
-    const p = rows.peer;
-    const e = rows.elder;
-    const g = rows.gate;
-    if (!p || p.top !== "23 ms" || p.light !== "on" || p.bottom !== null || !p.sub.includes("CPU 41%")) {
-      fail(`UX-15 · peer reads ${JSON.stringify(p)} — 「CPU 41%」 under its name, the light on and 「23 ms」 at the right (the owner's unit), nothing under it while connected`);
-    }
-    if (!e || e.top !== "无法获取" || e.light !== "off" || !(e.bottom ?? "").includes("20 小时")) {
-      fail(`UX-15 · elder reads ${JSON.stringify(e)} — the light off beside 无法获取, and when it was last heard under it`);
-    }
-    if (!g || g.top !== "本机" || g.bottom !== null) fail(`UX-15 · this machine reads ${JSON.stringify(g)} — 本机, nothing under it`);
-    if (p?.band !== "fast" || e?.band !== "none") {
-      fail(`UX-26 · the row's light wears bands ${JSON.stringify([p?.band, e?.band])} — 23 ms is 「fast」 (under 30), no road 「none」 (lib/latency)`);
-    }
-    if (Object.values(rows).some((r) => r.road !== 0)) fail("UX-15 · a machine row still prints how it is reached — 连接方式 is the machine page's");
-    for (const [d, k] of [[peer, keep[0]], [elder, keep[1]]]) {
-      if (!d || !k) continue;
-      for (const f of ["rtt_ms", "hop", "heard_ms", "down_ms"]) if (!(f in k)) delete d[f];
-      Object.assign(d, k);
-    }
-    if (peer?.vitals?.vitals) peer.vitals.vitals.cpu_pct = keep[2];
-    await page.reload({ waitUntil: "load" });
-    await wait(900);
-  }
+  // ── 4M′) ⚠️ 墓碑 (UX-48): UX-15's machine row four corners — the CPU
+  //        under the name, the latency light and its number at the right,
+  //        `day-unreachable` over when it was last heard, `machine-here`
+  //        alone. The owner's
+  //        rule of 2026-10-07 moved every slot; the rows are read in
+  //        section `corners` a (FACE_ONLY=corners), wide and narrow. ──
 
   // ── 4P) 第五轮 第 10 条:按机器暂停的菜单项 (docs/SHELL.md) ──────────
   //
@@ -11876,7 +11861,10 @@ try {
         const el = document.querySelector('[data-side-row][data-device="peer"]');
         return {
           paused: el?.getAttribute("data-paused") ?? null,
-          mark: el?.querySelectorAll("[data-row-paused]").length ?? 0,
+          // UX-48: `machine-paused` is the row's state, top-right, with no time
+          // under it. ⚠️ 墓碑: `[data-row-paused]` led the second line.
+          mark: el?.querySelector('[data-corner="top"] [data-row-state="paused"]')?.textContent?.trim() ?? null,
+          held: el?.querySelectorAll('[data-corner="bottom"]').length ?? null,
           opacity: el ? Number(getComputedStyle(el).opacity) : null,
           // The picked row is the open one's block and is not greyed
           // (`SideList` `dim && !selected`); the word still says it.
@@ -11889,7 +11877,7 @@ try {
       if (!pausedAsked.some((a) => a.machine === "peer" && a.on === true)) {
         fail(`pressing 暂停 on peer asked the node ${JSON.stringify(pausedAsked)} — it has to name that machine`);
       }
-      if (row.paused !== "true" || row.mark !== 1 || (!row.picked && !(row.opacity < 1))) {
+      if (row.paused !== "true" || row.mark !== "已暂停" || row.held !== 0 || (!row.picked && !(row.opacity < 1))) {
         fail(`a paused machine's row reads ${JSON.stringify(row)} — 「暂停中的行变灰并标『已暂停』」`);
       }
       if (!afterKeys.includes("resume") || afterKeys.includes("pause")) {
@@ -15305,11 +15293,16 @@ try {
     //   **Both rows, the same shape on each** — a check on the
     //   subscription alone would pass a build that still special-cased
     //   accounts.
+    //
+    //   ⚠️ 墓碑 (UX-48, the owner 2026-10-07): kind · provider, then (UX-15)
+    //   what is left · when it resets, split on the dot into two. The line is
+    //   now how long until the fullest window resets, one phrase on both
+    //   kinds of row; the plan and the kind are on neither.
     const billLine = (await page.locator('[data-quota-row="acc-fill"] [data-quota-sub-line]').textContent())?.trim();
-    const twoParts = (line) => (line ?? "").split("·").map((x) => x.trim()).filter(Boolean);
-    if (twoParts(rowPlan.line).length !== 2 || twoParts(billLine).length !== 2) {
+    const resets = /^\d+ (秒|分钟|小时|天)后重置$/;
+    if (!resets.test(rowPlan.line ?? "") || !resets.test(billLine ?? "")) {
       fail(
-        `the sub-lines are ${JSON.stringify([rowPlan.line, billLine])} — 类型 · 提供商 on every row, whichever kind it is`,
+        `the sub-lines are ${JSON.stringify([rowPlan.line, billLine])} — 「N 小时后重置」 on every row with a reset, whichever kind it is (UX-48)`,
       );
     } else if (rowPlan.line?.includes(quotaPlan)) {
       fail(
@@ -24204,8 +24197,17 @@ try {
     }
 
     // (14) the workspace rows' right column, selected or not.
+    // A second repository with a segment (UX-48: only a repository draws
+    // the right column now, and the open one needs a closed one to be
+    // compared with); taken off the fixture again below.
+    const sideRepo = { device: pin.device, machine: "peer", path: "/home/peer/side", name: "side", pinned: false, git: { ...workGit, ahead: 3 } };
+    wsRows.push(sideRepo);
     await open("workspaces");
-    await until(5_000, async () => (await page.locator("[data-ws-row]").count()) >= 3);
+    await hide(true);
+    await wait(80);
+    await hide(false);
+    await until(8_000, async () => (await page.locator('[data-ws-row] [data-ws-name]:text-is("side")').count()) === 1);
+    await until(5_000, async () => (await page.locator("[data-ws-row] [data-ws-git]").count()) >= 2);
     await openWs();
     // Up to the rows (UX-23: the open workspace's column is its tree).
     if (await page.locator("[data-ws-list-back]").count()) await press("[data-ws-list-back]");
@@ -24216,9 +24218,11 @@ try {
       [...document.querySelectorAll("[data-ws-line]")].map((line) => ({
         on: line.querySelector('[data-ws-row][data-selected="true"]') !== null,
         git: +(line.querySelector("[data-ws-git]")?.getBoundingClientRect().right ?? NaN).toFixed(1),
-        touched: +(line.querySelector("[data-ws-touched]")?.getBoundingClientRect().right ?? NaN).toFixed(1),
+        // UX-48: how long the segment has held. ⚠️ 墓碑: `[data-ws-touched]`.
+        touched: +(line.querySelector("[data-ws-held]")?.getBoundingClientRect().right ?? NaN).toFixed(1),
       })),
     );
+    wsRows.splice(wsRows.indexOf(sideRepo), 1);
     console.log(`lists (14) · workspace right column edges: ${JSON.stringify(cols)}`);
     // **An empty corner is not drawn** (UX-15): a plain folder has no
     // branch, a quiet machine no time; the edges are compared where both
@@ -24422,6 +24426,411 @@ try {
     return press(tailRail(tab));
   };
 
+  // ── every list's row (UX-48, the owner 2026-10-07) ──────────────────
+  //
+  // The owner's row rule, every list: the face at the far left; top-left
+  // the title alone; bottom-left (`data-side-sub`) the latest thing known;
+  // top-right (`data-corner="top"`) the state; bottom-right
+  // (`data-corner="bottom"`) how long that state has held — one `span`
+  // ladder, bare (no `card-age` suffix). A slot with nothing true to say is
+  // not drawn.
+  // Read at the wide window and at the phone's width, per list:
+  //
+  //   a. machines — direct / relay (`[hop]`) over how long the wire has
+  //      been on that road (`since_ms`), the readings under the name
+  //      (latency, CPU, memory, GPU only where there is one);
+  //      `machine-here` with nothing under it; `row-offline` over how long
+  //      unheard (`heard_ms`) with no readings; `machine-paused` with no
+  //      time;
+  //   b. terminal sessions — the command alone under the name, idle or
+  //      running: no `row-running` sentence, no exit code, no time in the
+  //      line (the
+  //      state word over its age is the row's `trailing`, unchanged);
+  //   c. quota — when the fullest window resets under the name, the
+  //      reading's age bare at the bottom-right, nothing where none;
+  //   d. workspaces — a repository's prompt segment top-right
+  //      (「main ⇡861 *1 !1 ?2」, 「@1a2b3c4d +3」 detached) over how long
+  //      it has held, HEAD's subject under the name; a plain folder its
+  //      path and nothing on the right; on a narrow row with a long branch
+  //      the counts whole and the branch cut;
+  //   e. browser — the address without its scheme under the title, no
+  //      state, how long ago it was opened.
+  //
+  // (The side column's recent rows are read in section side c, where its fixture
+  // lives.) New, not a fix: no red first (30-behavior). Only what a
+  // machine measures: words, presence, widths.
+  //
+  // `FACE_ONLY=corners` runs this section alone.
+  corners: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "corners") break corners;
+  const POSTURES = [
+    ["wide", { width: 1400, height: 900 }],
+    ["narrow", { width: 390, height: 844 }],
+  ];
+  /** Every drawn row a list holds, keyed by `attr`, slot by slot. A list
+      kept mounted behind a pushed page is laid out at nothing: skipped. */
+  const slots = (sel, attr) =>
+    page.evaluate(
+      ([s, a]) =>
+        Object.fromEntries(
+          [...document.querySelectorAll(s)]
+            .filter((r) => r.getBoundingClientRect().width > 0)
+            .map((r) => [
+              r.getAttribute(a),
+              {
+                title: r.querySelector("[data-side-title]")?.textContent?.trim() ?? null,
+                aside: r.querySelectorAll("[data-side-aside]").length,
+                sub: r.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
+                top: r.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
+                bottom: r.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
+                opacity: +getComputedStyle(r).opacity,
+              },
+            ]),
+        ),
+      [sel, attr],
+    );
+  const land = async (size, tab) => {
+    await page.setViewportSize(size);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open(tab);
+  };
+  /** A bare duration off the one ladder (`words.ts` `span`). */
+  const BARE = /^\d+ (秒|分钟|小时|天)$/;
+
+  // a. machines.
+  {
+    const peer = devs.find((d) => d.name === "peer");
+    const elder = devs.find((d) => d.name === "elder");
+    const keep = [peer && { ...peer }, elder && { ...elder }];
+    const keepVitals = [peer?.vitals?.vitals && { ...peer.vitals.vitals }, elder?.vitals?.vitals && { ...elder.vitals.vitals }];
+    const restore = () => {
+      for (const [d, k] of [[peer, keep[0]], [elder, keep[1]]]) {
+        if (!d || !k) continue;
+        for (const f of Object.keys(d)) if (!(f in k)) delete d[f];
+        Object.assign(d, k);
+      }
+      if (peer?.vitals?.vitals && keepVitals[0]) peer.vitals.vitals = keepVitals[0];
+      if (elder?.vitals?.vitals && keepVitals[1]) elder.vitals.vitals = keepVitals[1];
+    };
+    if (!peer?.vitals?.vitals || !elder?.vitals?.vitals) {
+      fail("probe dead: corners a · peer or elder carries no vitals in the fixture");
+    } else {
+      Object.assign(peer, { hop: "direct", rtt_ms: 23, since_ms: 3 * 60_000, heard_ms: 2_000, down_ms: null, paused: false });
+      peer.vitals.vitals = { ...peer.vitals.vitals, cpu_pct: 41.2 };
+      // No GPU on elder: its readings stop at memory.
+      Object.assign(elder, { hop: "relay", rtt_ms: 140, since_ms: 2 * 3600_000, heard_ms: 2_000, down_ms: null, paused: false });
+      elder.vitals.vitals = { ...elder.vitals.vitals, gpu: null };
+      const readings = () =>
+        page.evaluate(() =>
+          Object.fromEntries(
+            [...document.querySelectorAll("[data-side-row][data-device]")]
+              .filter((r) => r.getBoundingClientRect().width > 0)
+              .map((r) => [
+                r.getAttribute("data-device"),
+                {
+                  keys: [...r.querySelectorAll("[data-row-readings] [data-row-reading]")].map((e) => e.getAttribute("data-row-reading")),
+                  lat: r.querySelector('[data-row-reading="rtt"] [data-lat]')?.getAttribute("data-lat") ?? null,
+                  state: r.querySelector("[data-row-state]")?.getAttribute("data-row-state") ?? null,
+                  held: r.querySelectorAll("[data-row-held]").length,
+                  // ⚠️ 墓碑 (UX-15): the latency corner, the last-heard
+                  // time, the doing line, the paused word in the sub line.
+                  gone: r.querySelectorAll("[data-row-latency], [data-row-heard], [data-row-doing], [data-row-paused], [data-row-model]").length,
+                },
+              ]),
+          ),
+        );
+      for (const [posture, size] of POSTURES) {
+        await land(size, "devices");
+        await until(5_000, async () => Object.keys(await slots("[data-side-row][data-device]", "data-device")).length >= 3);
+        await until(3_000, async () => (await slots("[data-side-row][data-device]", "data-device")).peer?.bottom === "3 分钟");
+        const rows = await slots("[data-side-row][data-device]", "data-device");
+        const more = await readings();
+        console.log(`corners a · ${posture} · machines: ${JSON.stringify(rows)} ${JSON.stringify(more)}`);
+        const [p, e, g] = [rows.peer, rows.elder, rows.gate];
+        if (!p || !e || !g) {
+          fail(`probe dead: corners a · ${posture} · the devices column drew ${JSON.stringify(Object.keys(rows))}`);
+          continue;
+        }
+        for (const [name, r] of Object.entries(rows)) {
+          if (r.aside !== 0 || r.title !== name || more[name]?.gone !== 0) {
+            fail(`corners a · ${posture} · the ${name} row reads ${JSON.stringify({ ...r, ...more[name] })} — the name alone top-left, none of UX-15's slots (UX-48)`);
+          }
+        }
+        if (p.sub !== "23 ms · CPU 41% · 内存 81% · GPU 67%" || p.top !== "直连" || p.bottom !== "3 分钟" || more.peer.state !== "direct" || more.peer.lat !== "fast") {
+          fail(`corners a · ${posture} · peer reads ${JSON.stringify({ ...p, ...more.peer })} — 「23 ms · CPU 41% · 内存 81% · GPU 67%」 under its name, 直连 over 「3 分钟」, the latency dot fast (UX-48)`);
+        }
+        if (e.sub !== "140 ms · CPU 5% · 内存 13%" || more.elder.keys.includes("gpu") || e.top !== "中继" || e.bottom !== "2 小时" || more.elder.state !== "relay") {
+          fail(`corners a · ${posture} · elder reads ${JSON.stringify({ ...e, ...more.elder })} — 「140 ms · CPU 5% · 内存 13%」 with no GPU (it has none), 中继 over 「2 小时」 (UX-48)`);
+        }
+        if (g.top !== "本机" || g.bottom !== null || more.gate.keys.includes("rtt") || more.gate.state !== "here") {
+          fail(`corners a · ${posture} · this machine reads ${JSON.stringify({ ...g, ...more.gate })} — 本机, nothing under it, no latency of its own (UX-48)`);
+        }
+      }
+      // Offline: elder unheard for 20 hours, no live wire, nothing failed.
+      Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: null, heard_ms: 20 * 3600_000, down_ms: null, last_rtt_ms: 140 });
+      // Paused: peer, live, stopped by this machine.
+      Object.assign(peer, { paused: true });
+      for (const [posture, size] of POSTURES) {
+        await land(size, "devices");
+        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "离线");
+        const rows = await slots("[data-side-row][data-device]", "data-device");
+        const more = await readings();
+        console.log(`corners a · ${posture} · offline elder, paused peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
+        const [e, p] = [rows.elder, rows.peer];
+        if (!e || e.top !== "离线" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || more.elder.state !== "offline") {
+          fail(`corners a · ${posture} · an offline elder reads ${JSON.stringify({ ...e, ...more.elder })} — 离线 over 「20 小时」 (how long unheard), no readings under its name (UX-48)`);
+        }
+        if (!p || p.top !== "已暂停" || p.bottom !== null || more.peer.state !== "paused" || more.peer.held !== 0) {
+          fail(`corners a · ${posture} · a paused peer reads ${JSON.stringify({ ...p, ...more.peer })} — 已暂停 top-right, no time under it (UX-48)`);
+        }
+      }
+      // A state that changes in place gets the room it needs: the corner
+      // is as wide as the state wants, not as wide as it last was. peer
+      // goes from 直连 to 已暂停 between two polls, with no reload.
+      restore();
+      Object.assign(peer, { hop: "direct", rtt_ms: 23, since_ms: 3 * 60_000, paused: false });
+      await land(POSTURES[0][1], "devices");
+      await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).peer?.top === "直连");
+      peer.paused = true;
+      await until(8_000, async () => (await slots("[data-side-row][data-device]", "data-device")).peer?.top === "已暂停");
+      const fits = await page.evaluate(() => {
+        const row = document.querySelector('[data-side-row][data-device="peer"]');
+        const corner = row?.querySelector('[data-corner="top"]')?.getBoundingClientRect();
+        const word = row?.querySelector("[data-row-state]")?.getBoundingClientRect();
+        return corner && word && { word: [+word.left.toFixed(1), +word.right.toFixed(1)], corner: [+corner.left.toFixed(1), +corner.right.toFixed(1)] };
+      });
+      console.log(`corners a · wide · a state changed in place: ${JSON.stringify(fits)}`);
+      if (!fits || fits.word[1] > fits.corner[1] + 0.05 || fits.word[0] < fits.corner[0] - 0.05) {
+        fail(`corners a · wide · peer's state, paused in place, reads ${JSON.stringify(fits)} — whole inside its corner; the corner kept the width of the word before it (src/components/SideList.tsx Corners)`);
+      }
+      restore();
+    }
+  }
+
+  // b. terminal sessions: the command alone.
+  {
+    const doing = (patch) => ({
+      command: null,
+      running: false,
+      started_ms: 0,
+      ended_ms: null,
+      exit: null,
+      cwd: "/tmp",
+      title: null,
+      full_screen: false,
+      progress: null,
+      progress_failed: false,
+      notice: null,
+      notice_ms: 0,
+      pane_unmarked: false,
+      bell_ms: 0,
+      ...patch,
+    });
+    const term = (n, id, d) => ({ ...row(n, "idle"), id, kind: "shell", category: "shell", title: id.split("/")[1], hosted: true, attachable: true, doing: d });
+    const now = Date.now();
+    const TERMS = [
+      // An idle shell after `ls`, which exited 0 a minute ago.
+      term(41, "shell/corners-ran", doing({ command: "ls", running: false, started_ms: now - 61_000, ended_ms: now - 60_000, exit: 0 })),
+      // …one whose last command failed, so an exit code exists to leak.
+      term(42, "shell/corners-failed", doing({ command: "make", running: false, started_ms: now - 30_000, ended_ms: now - 20_000, exit: 2 })),
+      // …and one running for three minutes.
+      { ...term(43, "shell/corners-running", doing({ command: "pytest tests/", running: true, started_ms: now - 180_000 })), word: "busy" },
+    ];
+    const termRows = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(TERMS) });
+    await page.route("**/sessions", termRows);
+    for (const [posture, size] of POSTURES) {
+      await land(size, "sessions");
+      await until(5_000, async () => (await page.locator('[data-side-row="shell/corners-running"]').filter({ visible: true }).count()) === 1);
+      const rows = await slots("[data-side-row]", "data-side-row");
+      const lines = await page.evaluate(() =>
+        Object.fromEntries(
+          [...document.querySelectorAll("[data-side-row]")]
+            .filter((r) => r.getBoundingClientRect().width > 0)
+            .map((r) => [
+              r.getAttribute("data-side-row"),
+              {
+                doing: r.querySelector("[data-doing]")?.getAttribute("data-doing") ?? null,
+                command: r.querySelector("[data-doing] [data-doing-command]")?.textContent ?? null,
+                exit: r.querySelectorAll("[data-exit]").length,
+              },
+            ]),
+        ),
+      );
+      console.log(`corners b · ${posture} · terminal rows: ${JSON.stringify(TERMS.map((t) => ({ id: t.id, ...rows[t.id], ...lines[t.id] })))}`);
+      for (const [id, want, how] of [
+        ["shell/corners-ran", "ls", "ran"],
+        ["shell/corners-failed", "make", "ran"],
+        ["shell/corners-running", "pytest tests/", "running"],
+      ]) {
+        const r = rows[id];
+        const l = lines[id];
+        if (!r || !l) {
+          fail(`probe dead: corners b · ${posture} · no ${id} row in the sessions list`);
+          continue;
+        }
+        // ⚠️ 墓碑 (UX-48): the running sentence with its time and the ran
+        // sentence with its exit code (row-running, row-ran).
+        if (r.sub !== want || l.command !== want || l.doing !== how || l.exit !== 0 || /正在运行|退出/.test(r.sub)) {
+          fail(`corners b · ${posture} · ${id}'s second line reads ${JSON.stringify({ sub: r.sub, ...l })} — the command alone, 「${want}」 (UX-48, DoingLine)`);
+        }
+      }
+    }
+    await page.unroute("**/sessions", termRows);
+  }
+
+  // c. quota.
+  for (const [posture, size] of POSTURES) {
+    await land(size, "quota");
+    await until(8_000, async () => (await page.locator("[data-quota-row]").filter({ visible: true }).count()) > 1);
+    const rows = await slots("[data-quota-row]", "data-quota-row");
+    console.log(`corners c · ${posture} · quota rows: ${JSON.stringify(rows)}`);
+    const sub = rows["acc-sub-here"];
+    const bill = rows["acc-fill"];
+    const none = rows["acc-thousands"];
+    if (!sub || !bill || !none) {
+      fail(`probe dead: corners c · ${posture} · the quota list drew ${JSON.stringify(Object.keys(rows))}`);
+      continue;
+    }
+    for (const [id, r] of Object.entries(rows)) {
+      if (r.aside !== 0) fail(`corners c · ${posture} · the ${id} row still draws an aside — the name alone top-left (UX-48; ⚠️ 墓碑 row-kind-sub)`);
+    }
+    // The fullest whole-plan window of the subscription is the week, which
+    // resets in a day less a moment; the bill's own reset is a day off too.
+    // ⚠️ 墓碑 (UX-15): what is left · the weekday it resets (row-window).
+    if (sub.sub !== "23 小时后重置" || bill.sub !== "23 小时后重置") {
+      fail(`corners c · ${posture} · the second lines read ${JSON.stringify([sub.sub, bill.sub])} — 「23 小时后重置」, the time to the fullest window's reset (UX-48)`);
+    }
+    if (none.sub !== "") fail(`corners c · ${posture} · a row with no reset time reads ${JSON.stringify(none.sub)} under its name — nothing (UX-48)`);
+    // The subscription read two minutes ago: bare. ⚠️ 墓碑: `card-age`,
+    // `accounts-just-now`.
+    if (sub.bottom !== "2 分钟") {
+      fail(`corners c · ${posture} · the subscription's bottom-right reads ${JSON.stringify(sub.bottom)} — 「2 分钟」, how old the reading is, bare (UX-48)`);
+    }
+    // A reading this machine takes as it is shown has no age to say.
+    if (bill.bottom !== null) fail(`corners c · ${posture} · a reading taken here says ${JSON.stringify(bill.bottom)} at its bottom-right — nothing (UX-48)`);
+    // With no time under it to hold the corner open, the ring's reading is
+    // still whole inside its corner (section 8 · what a ring may hold).
+    const spill = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-quota-row]")]
+        .filter((r) => r.getBoundingClientRect().width > 0)
+        .flatMap((r) => {
+          const corner = r.querySelector('[data-corner="top"]')?.getBoundingClientRect();
+          const word = r.querySelector("[data-quota-ring-word], [data-quota-state]")?.getBoundingClientRect();
+          if (!corner || !word) return [];
+          const over = +Math.max(word.right - corner.right, corner.left - word.left).toFixed(2);
+          return over > 0.05 ? [[r.getAttribute("data-quota-row"), over]] : [];
+        }),
+    );
+    if (spill.length) fail(`corners c · ${posture} · a ring's reading spills out of its corner: ${JSON.stringify(spill)} (src/components/SideList.tsx Corners)`);
+  }
+
+  // d. workspaces.
+  {
+    const detached = {
+      device: pin.device,
+      machine: "peer",
+      path: "/home/peer/detached",
+      name: "detached",
+      pinned: false,
+      git: { ...workGit, branch: null, head: "1a2b3c4d", subject: "a detached checkout", ahead: 0, stashes: 0, staged: 3, unstaged: 0, untracked: 0 },
+    };
+    const long = {
+      device: pin.device,
+      machine: "peer",
+      path: "/home/peer/long",
+      name: "long",
+      pinned: false,
+      git: { ...workGit, branch: "feature/an-exceptionally-long-branch-name-that-cannot-fit-a-phone-row" },
+    };
+    wsRows.push(detached, long);
+    for (const [posture, size] of POSTURES) {
+      await land(size, "workspaces");
+      await until(8_000, async () => (await page.locator('[data-ws-row] [data-ws-name]:text-is("long")').filter({ visible: true }).count()) === 1);
+      // Wait for the per-row question that says each is a repository.
+      await until(5_000, async () => (await page.locator("[data-ws-row] [data-ws-git]").filter({ visible: true }).count()) >= 3);
+      const rows = await page.evaluate(() =>
+        Object.fromEntries(
+          [...document.querySelectorAll("[data-ws-row]")]
+            .filter((r) => r.getBoundingClientRect().width > 0)
+            .map((r) => {
+              const c = r.querySelector('[data-corner="top"]');
+              const counts = r.querySelector("[data-ws-counts]");
+              const branch = r.querySelector("[data-ws-branch]");
+              const box = (e) => e && { left: +e.getBoundingClientRect().left.toFixed(1), right: +e.getBoundingClientRect().right.toFixed(1), scroll: e.scrollWidth, client: e.clientWidth };
+              return [
+                r.querySelector("[data-ws-name]")?.textContent?.trim(),
+                {
+                  sub: r.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
+                  where: r.querySelector("[data-side-sub] [data-ws-where]")?.getAttribute("title") ?? null,
+                  subject: r.querySelector("[data-side-sub] [data-ws-subject]")?.textContent?.trim() ?? null,
+                  top: c?.textContent?.trim() ?? null,
+                  bottom: r.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
+                  aside: r.querySelectorAll("[data-side-aside]").length,
+                  corner: box(c),
+                  counts: box(counts),
+                  branch: box(branch),
+                },
+              ];
+            }),
+        ),
+      );
+      console.log(`corners d · ${posture} · workspace rows: ${JSON.stringify(rows)}`);
+      const { work, detached: det, long: lng, notes } = rows;
+      if (!work || !det || !lng || !notes) {
+        fail(`probe dead: corners d · ${posture} · the workspaces list drew ${JSON.stringify(Object.keys(rows))}`);
+        continue;
+      }
+      for (const [name, r] of Object.entries(rows)) {
+        if (r.aside !== 0) fail(`corners d · ${posture} · the ${name} row draws an aside — the name alone top-left (UX-48; ⚠️ 墓碑 the path aside)`);
+      }
+      if (work.top !== "main ⇡861 *1 !1 ?2" || work.subject !== workGit.subject || work.sub !== workGit.subject || !BARE.test(work.bottom ?? "")) {
+        fail(`corners d · ${posture} · the repository reads ${JSON.stringify(work)} — 「main ⇡861 *1 !1 ?2」 over how long, HEAD's subject under its name (UX-48)`);
+      }
+      if (det.top !== "@1a2b3c4d +3" || det.subject !== "a detached checkout") {
+        fail(`corners d · ${posture} · a detached HEAD reads ${JSON.stringify(det)} — 「@1a2b3c4d +3」, HEAD's own id (UX-48)`);
+      }
+      if (notes.where !== "/home/gate/notes" || notes.subject !== null || notes.top !== null || notes.bottom !== null) {
+        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(notes)} — its path under its name, nothing on the right (UX-48)`);
+      }
+      // The counts kept whole, inside the corner; the branch cut first.
+      const c = lng.counts;
+      const whole = c && c.scroll <= c.client + 1 && lng.corner && c.left >= lng.corner.left - 0.5 && c.right <= lng.corner.right + 0.5;
+      if (!whole || !(lng.top ?? "").endsWith("⇡861 *1 !1 ?2")) {
+        fail(`corners d · ${posture} · a long branch's counts read ${JSON.stringify({ top: lng.top, counts: c, corner: lng.corner })} — whole, inside the corner (UX-48, data-corner-keep)`);
+      }
+      if (posture === "narrow" && !(lng.branch && lng.branch.scroll > lng.branch.client + 1)) {
+        fail(`corners d · narrow · the long branch is not cut (${JSON.stringify(lng.branch)}) — on a phone row it gives way before the counts (UX-48)`);
+      }
+    }
+    wsRows.splice(wsRows.indexOf(detached), 1);
+    wsRows.splice(wsRows.indexOf(long), 1);
+  }
+
+  // e. browser.
+  for (const [posture, size] of POSTURES) {
+    await land(size, "browser");
+    await until(5_000, async () => (await page.locator("[data-browse-tabs] [data-side-row]").filter({ visible: true }).count()) > 0);
+    const rows = await slots("[data-browse-tabs] [data-side-row]", "data-side-row");
+    console.log(`corners e · ${posture} · browser rows: ${JSON.stringify(rows)}`);
+    for (const t of tabRows.filter((x) => x.url && x.touched)) {
+      const r = rows[t.id];
+      if (!r) {
+        fail(`probe dead: corners e · ${posture} · tab ${t.id} is not in the list`);
+        continue;
+      }
+      if (r.sub !== t.url.replace(/^https?:\/\//i, "") || r.top !== null || !BARE.test(r.bottom ?? "")) {
+        fail(`corners e · ${posture} · tab ${t.id} reads ${JSON.stringify(r)} — its address without the scheme, no state, how long ago it was opened (UX-48)`);
+      }
+    }
+  }
+
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await page.reload({ waitUntil: "load" });
+  await wait(900);
+  if (process.env.FACE_ONLY === "corners") console.log("corners · FACE_ONLY=corners: the other sections are skipped");
+  }
+
   // ── 机器、工作区两栏能筛 (2026-09-29) ─────────────────────────────
   //
   // The owner: 「所有的session list应该都可以filter吧？」 — and of the
@@ -24452,7 +24861,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -24879,7 +25288,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25237,7 +25646,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -25461,16 +25870,14 @@ try {
   const titles = await page.evaluate(() =>
     [...document.querySelectorAll("[data-quota-row]")].map((row) => {
       // UX-32 (the owner 2026-10-06): the provider's mark is the face's
-      // (`[data-side-mark]`, on the home machine's face), and the aside
-      // is the words alone — 「Claude 订阅」 after the account's own name.
+      // (`[data-side-mark]`, on the home machine's face). UX-48 (10-07):
+      // the name alone top-left, no aside.
       // ⚠️ 墓碑: the mark opened the title (2026-09-30), then the aside
-      // (UX-15).
-      const what = row.querySelector("[data-quota-what]");
+      // (UX-15); the aside's words, `row-kind-sub` (`[data-quota-what]`).
       return {
         id: row.getAttribute("data-quota-row"),
         mark: row.querySelector("[data-side-face] [data-side-mark]")?.getAttribute("data-side-mark") ?? null,
-        glyphs: what?.querySelectorAll("svg, img").length ?? 0,
-        what: what?.textContent?.trim() ?? null,
+        aside: row.querySelectorAll("[data-side-aside], [data-quota-what]").length,
         editable: row.querySelectorAll("[data-editable-name]").length,
       };
     }),
@@ -25481,7 +25888,7 @@ try {
     if (!t.mark?.startsWith("provider:")) {
       fail(`entity e · the ${t.id} row's face wears ${JSON.stringify(t.mark)}, not the provider's mark — the base is the machine, the mark the provider (UX-32)`);
     }
-    if (t.glyphs !== 0 || !t.what) fail(`entity e · the ${t.id} row's aside is ${JSON.stringify(t.what)} with ${t.glyphs} glyph(s) — words alone, 「Claude 订阅」 (UX-32)`);
+    if (t.aside !== 0) fail(`entity e · the ${t.id} row draws ${t.aside} aside(s) — the name alone top-left (UX-48)`);
   }
   const editable = titles.find((t) => t.id === "acc-fill");
   if (!editable || editable.editable !== 1) {
@@ -25552,15 +25959,17 @@ try {
       await landOn("devices");
       await until(5_000, async () => (await page.locator('[data-side-row][data-device="elder"]').count()) > 0);
       await wait(300);
+      // UX-48: idle or unreachable, the machine row says `row-offline` over how long
+      // it has not been heard, and no readings under its name — the two
+      // differ by the dimming alone. ⚠️ 墓碑 (NET-13): the last reading's
+      // band at half ink beside 「23 ms」 (idle), the grey light beside
+      // `day-unreachable` (down) — `[data-row-latency]`.
       const machine = await page.evaluate(() => {
         const row = document.querySelector('[data-side-row][data-device="elder"]');
-        const light = row?.querySelector("[data-row-latency]");
-        const dot = light?.querySelector("span[aria-hidden]");
         return (
           row && {
-            light: light?.getAttribute("data-row-latency") ?? null,
-            band: light?.getAttribute("data-lat") ?? null,
-            dot: dot ? +getComputedStyle(dot).opacity : null,
+            state: row.querySelector("[data-row-state]")?.getAttribute("data-row-state") ?? null,
+            sub: row.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
             top: row.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
             bottom: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
             opacity: +getComputedStyle(row).opacity,
@@ -25572,7 +25981,9 @@ try {
     if (!elder) {
       fail("probe dead: entity g · no elder in the device table");
     } else {
-      Object.assign(elder, { hop: "quiet", rtt_ms: null, relay: null, heard_ms: Date.now() - 3 * 60_000, down_ms: null, last_rtt_ms: 23 });
+      // `heard_ms` is how long ago (`khor_core::Link::heard_ms`), not a
+      // moment.
+      Object.assign(elder, { hop: "quiet", rtt_ms: null, relay: null, heard_ms: 3 * 60_000, down_ms: null, last_rtt_ms: 23 });
       const idle = await read();
       Object.assign(elder, { down_ms: 5_000 });
       const down = await read();
@@ -25583,17 +25994,17 @@ try {
         if (is.far !== null || is.opacity < 0.99) {
           fail(`entity g · an idle machine's session row reads ${JSON.stringify(is)} — drawn as any other: no 「无法获取」, undimmed (NET-13)`);
         }
-        if (im.light !== "idle" || im.band !== "fast" || im.top !== "23 ms" || !(im.dot > 0.4 && im.dot < 0.6) || im.opacity < 0.99) {
-          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — its last reading 「23 ms」 in its band at half ink, undimmed (NET-13)`);
+        if (im.state !== "offline" || im.top !== "离线" || im.sub !== "" || im.opacity < 0.99) {
+          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — 离线, no readings under its name, undimmed (NET-13, UX-48)`);
         }
         if (!(ds.far ?? "").includes("无法获取") || !(ds.opacity < 0.7)) {
           fail(`entity g · an unreachable machine's session row reads ${JSON.stringify(ds)} — dimmed, 「无法获取 · …」 (NET-13)`);
         }
-        if (dm.light !== "off" || dm.band !== "none" || dm.top !== "无法获取" || !(dm.opacity < 0.7)) {
-          fail(`entity g · an unreachable machine's row reads ${JSON.stringify(dm)} — the grey light beside 无法获取, dimmed (NET-13)`);
+        if (dm.state !== "offline" || dm.top !== "离线" || dm.sub !== "" || !(dm.opacity < 0.7)) {
+          fail(`entity g · an unreachable machine's row reads ${JSON.stringify(dm)} — 离线, no readings, dimmed (NET-13, UX-48)`);
         }
-        if (!(im.bottom ?? "").includes("3 分钟") || !(dm.bottom ?? "").includes("3 分钟")) {
-          fail(`entity g · when it was last heard is not under either light (${JSON.stringify([im.bottom, dm.bottom])})`);
+        if (im.bottom !== "3 分钟" || dm.bottom !== "3 分钟") {
+          fail(`entity g · how long it has not been heard is not under either 离线 (${JSON.stringify([im.bottom, dm.bottom])}) — 「3 分钟」, bare (UX-48)`);
         }
       }
       for (const f of Object.keys(elder)) if (!(f in keep)) delete elder[f];
@@ -25606,7 +26017,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26338,7 +26749,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27227,7 +27638,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk", "corners"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -32620,6 +33031,16 @@ try {
           rows: [...document.querySelectorAll(`${c} [data-recent-row]`)].map((e) => ({
             kind: e.dataset.recentKind,
             at: e.querySelector("[data-recent-at]")?.textContent ?? null,
+            // UX-48: where it is under the name (the page's address, the
+            // path), no state on the right. ⚠️ 墓碑: the machine (and the
+            // folder) as the name's aside.
+            where:
+              e.querySelector("[data-side-sub] [data-recent-where][title]")?.getAttribute("title") ??
+              e.querySelector("[data-side-sub] [data-recent-where]")?.textContent?.trim() ??
+              null,
+            aside: e.querySelectorAll("[data-side-aside]").length,
+            top: e.querySelectorAll('[data-corner="top"]').length,
+            bottom: e.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
             // UX-45: a file's face is its kind alone, no machine's face.
             fileFace: !!e.querySelector("[data-file-face]"),
             machineFace: !!e.querySelector("[data-face]"),
@@ -32628,6 +33049,16 @@ try {
       }, col);
       console.log(`side c · 最近 ${JSON.stringify(shape)}`);
       for (const r of shape.rows) {
+        if (!r.where || r.aside !== 0 || r.top !== 0) {
+          fail(`side c · 最近's ${r.kind} row reads ${JSON.stringify(r)} — where it is under its name, no aside, no state on the right (UX-48)`);
+        }
+        const want = { page: "https://example.com/docs", workspace: pin.path, file: `${pin.path}/notes.md` }[r.kind];
+        if (r.where !== want) {
+          fail(`side c · 最近's ${r.kind} row says ${JSON.stringify(r.where)} under its name — ${JSON.stringify(want)}, where it is (UX-48)`);
+        }
+        if (r.kind !== "file" && !/^\d+ (秒|分钟|小时|天)$/.test(r.bottom ?? "")) {
+          fail(`side c · 最近's ${r.kind} row's bottom-right reads ${JSON.stringify(r.bottom)} — how long ago it was opened, bare (UX-48)`);
+        }
         if (r.kind === "file" && (!r.fileFace || r.machineFace)) fail(`side c · 最近's file row wears ${JSON.stringify(r)} — a file's face is its kind alone (UX-45)`);
         if (r.kind !== "file" && r.fileFace) fail(`side c · 最近's ${r.kind} row wears a file's face — only a file does (UX-45)`);
       }
