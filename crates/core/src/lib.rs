@@ -1465,14 +1465,23 @@ pub struct Load {
 
 /// Tokens spent, in the four kinds a vendor bills separately.
 ///
-/// **There is no total here, and that is a judgment rather than an
-/// omission.** Measured on this machine 2026-08-17 across every claude
+/// **The total is the sum of all four** — new input, output, cache reads
+/// and cache writes (owner, 2026-10-07:「我们的总量也要等于新读入、输出、
+/// 读缓存、写缓存四项之和」). Wherever a face says 总量, it is that sum
+/// and nothing narrower.
+///
+/// **The four stay separate here all the same, and the sum is not a
+/// field.** Measured on this machine 2026-08-17 across every claude
 /// transcript on disk: 32.2 million output tokens against 16.2 **billion**
-/// cached input. A single sum would be 99.8% cache reads, so it would move
-/// with how often a conversation was resumed and barely at all with how
-/// much work was done — a number that looks like an answer and tracks the
-/// wrong thing. Whoever paints this picks the kinds worth showing; nobody
-/// downstream is handed a total that hides which is which.
+/// cached input, so the total is almost entirely cache reads — it moves
+/// with how often a conversation was resumed as much as with how much
+/// work was done. That is why a reader still gets the kinds: the total
+/// says how much went through, and only the four say what it was.
+///
+/// ⚠️ **Tombstone (2026-10-07): this comment used to argue against any
+/// total**, on the measurement above, and the face's 总量 was input plus
+/// output. The owner ruled the other way; the measurement stays because
+/// it is still true and still the reason the kinds are kept apart.
 ///
 /// The four are what both vendors bill separately today, spelled so that
 /// one name means one thing on every vendor (`khor_node::usage` does the

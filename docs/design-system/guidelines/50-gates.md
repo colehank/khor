@@ -131,6 +131,7 @@
   路只核到源码级。真答它要起 app,而这仓所有浏览器守门跑的都是网页脸,
   够不着原生子 webview。
 - **动了列表的筛选**(`src/lib/list-filter.ts`、`lib/session-filter.ts`、`DevicesList` / `WorkspacesList` / `QuotaLanding` 的轴、`PaneBar` 的筛选菜单、`Omnibox` 的小标签) → `FACE_ONLY=filter npm run face`,再跑一遍整个 `npm run face`(会话那几节和额度的 8a 筛选在走查里,不在这一段);
+- **动了额度页**(`views/QuotaLanding`、`views/UsageHalf`) → `FACE_ONLY=walk npm run face`(只跑走查那一大段,额度的几节都在里面,没有更小的切口),节点那一半(`khor_node::usage` 与账本)→ `cargo test -p khor-node --lib usage` + `cargo test -p khor-node --test usage`;
 - **动了导轨** → 加 `npm run rail`;
 - **动了第一行**(`--pane-head`、`--tab-lip`、`src-tauri/src/traffic.rs`、标签条的签与脚、R0 的标题) → `npm run boot` + `FACE_ONLY=row npm run face`,构建后加 `npm run native`;
 - **动了 R0 的第二行或名字旁边的字**(`PageSubtitle` / `PageTitleAside` 的座位、各页写进去的事实) → `FACE_ONLY=row npm run face`(行距与中线),再跑整个 `npm run face`(4l 读工作区那两处的字,额度那一节在 R0 里读套餐与读数年龄);摆放看 `30-behavior` 的真 app 清单;

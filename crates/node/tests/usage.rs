@@ -278,3 +278,30 @@ fn the_network_wide_answer_states_this_machines_day_and_not_nobodys() {
         "…and it says so beside no spending at all, which is where a day is easiest to drop"
     );
 }
+
+/// **A node keeps its ledger in its own home, and a deleted transcript
+/// stays on its chart** (`khor_node::usage::ledger`).
+///
+/// Through `Node`, because that is where the ledger's place is decided
+/// — under the khor home's `.khor`, beside the rest of what this node
+/// keeps — and a registry built anywhere else would be a ledger nobody
+/// reads. The transcript is August's, long settled, so the first answer
+/// writes it down; the file is then deleted the way the vendor deletes
+/// old ones, and the next answer still has it.
+#[test]
+fn a_node_keeps_what_it_counted_after_the_transcript_is_gone() {
+    let r = root("ledger");
+    spend(&r, "msg_01LedgerLedgerLedgerLedg", 4242);
+    let node = Node::open_as(r.to_path_buf(), "solo").unwrap();
+    assert_eq!(output_of(&node.usage()), 4242);
+    let ledger = r.join(".khor").join(khor_node::usage::ledger::FILE);
+    assert!(ledger.exists(), "the ledger is in this node's own home");
+
+    std::fs::remove_file(r.join(".claude/projects/p/s.jsonl")).unwrap();
+    let after = node.usage();
+    assert_eq!(output_of(&after), 4242, "the vendor deleted the file, not the history");
+    assert!(
+        after.days.iter().all(|d| d.category == "claude"),
+        "an official id is the subscription's: {after:?}"
+    );
+}

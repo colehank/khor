@@ -103,7 +103,7 @@ export type UsageRow = {
  * reading above zero from printing as zero**.
  */
 const AXES = {
-  total: { word: () => gui.usage_axis_total, of: (r: Agg) => r.input + r.output, tick: count },
+  total: { word: () => gui.usage_axis_total, of: (r: Agg) => total(r), tick: count },
   input: { word: () => gui.usage_axis_input, of: (r: Agg) => r.input, tick: count },
   output: { word: () => gui.usage_axis_output, of: (r: Agg) => r.output, tick: count },
   read: { word: () => gui.usage_axis_read, of: (r: Agg) => r.cached_input, tick: count, cache: true },
@@ -114,6 +114,25 @@ const AXES = {
 } as const;
 type AxisKey = keyof typeof AXES;
 const AXIS_KEYS = Object.keys(AXES) as AxisKey[];
+
+/**
+ * **总量 is all four kinds**: new input, output, cache reads and cache
+ * writes (owner, 2026-10-07:「我们的总量也要等于新读入、输出、读缓存、写缓存
+ * 四项之和」). One function, so the axis, the columns, the bars, the
+ * table and the sum under it cannot add up different things.
+ *
+ * ⚠️ **Tombstone: it was input plus output until that day**, on the
+ * argument `khor_core::Tokens` used to make — that cache reads are most
+ * of the sum. They still are, and that is what the four columns beside
+ * it are for.
+ *
+ * Where the source does not report the cache (`cacheKnown` false) the
+ * two cache kinds arrive as 0, so the total is what was reported and
+ * nothing is invented for the rest.
+ */
+function total(r: { input: number; output: number; cached_input: number; cache_write: number }): number {
+  return r.input + r.output + r.cached_input + r.cache_write;
+}
 
 /**
  * A count in the units a person reads them in.
@@ -295,8 +314,10 @@ function aggregate(rows: UsageRow[], days: string[], cacheKnown: boolean): Agg[]
     by.set(r.model, got);
     // **A day counts as 「ran」 when something came out of it**, not when
     // a row exists: a row of four zeroes is a day the source mentioned,
-    // not a day the model worked.
-    if (r.output > 0 || r.cached_input > 0 || r.input > 0) {
+    // not a day the model worked. All four kinds, the same `total` the
+    // columns stack: a model whose day was only a cache write is in the
+    // column, so it has to be in the table under it.
+    if (total(r) > 0) {
       const list = ran.get(r.model) ?? [];
       if (!list.includes(r.day)) list.push(r.day);
       ran.set(r.model, list);
@@ -318,7 +339,7 @@ function aggregate(rows: UsageRow[], days: string[], cacheKnown: boolean): Agg[]
       days: live.length,
     });
   }
-  return out.sort((x, y) => y.input + y.output - (x.input + x.output));
+  return out.sort((x, y) => total(y) - total(x));
 }
 
 /**
@@ -532,7 +553,7 @@ function Trend({
   const stack = [...agg].reverse();
   const cell = useMemo(() => {
     const m = new Map<string, number>();
-    for (const r of rows) m.set(`${r.day}\u0000${r.model}`, (m.get(`${r.day}\u0000${r.model}`) ?? 0) + r.input + r.output);
+    for (const r of rows) m.set(`${r.day}\u0000${r.model}`, (m.get(`${r.day}\u0000${r.model}`) ?? 0) + total(r));
     return m;
   }, [rows]);
   const at = (day: string, model: string | null) => cell.get(`${day}\u0000${model}`) ?? 0;
@@ -555,7 +576,7 @@ function Trend({
   const cx = (i: number) => PLOT.padL + stepW * (i + 0.5);
   const busiest = totals.reduce((a, v, i) => (v > totals[a] ? i : a), 0);
 
-  const modelRuler = ruler(agg.map((r) => r.input + r.output));
+  const modelRuler = ruler(agg.map(total));
 
   return (
     <section data-usage-zone="trend" className="flex flex-col gap-in border-t pt-row">
@@ -759,7 +780,7 @@ function Trend({
           {agg.map((r, k) => {
             const step2 = iw / agg.length;
             const bx = PLOT.padL + step2 * (k + 0.5);
-            const v = r.input + r.output;
+            const v = total(r);
             const top = PLOT.padT + ih - ih * modelRuler.at(v);
             return (
               <g key={String(r.model)} data-usage-bar={r.model ?? ""} data-usage-bar-value={v}>
@@ -984,7 +1005,7 @@ function Stats({
     { key: "model", word: gui.accounts_models, text: (r) => r.word },
     { key: "input", word: gui.usage_axis_input, of: (r) => r.input },
     { key: "output", word: gui.usage_axis_output, of: (r) => r.output },
-    { key: "total", word: gui.usage_axis_total, of: (r) => r.input + r.output },
+    { key: "total", word: gui.usage_axis_total, of: total },
     ...(cacheKnown
       ? [
           { key: "read", word: gui.usage_axis_read, of: (r: Agg) => r.cached_input },
@@ -1307,7 +1328,7 @@ function Stats({
       </SideCut>
       <dl data-usage-sums className="grid grid-cols-2 gap-x-row gap-y-in border-t pt-in sm:grid-cols-4">
         {[
-          [count(sum.input + sum.output), gui.usage_axis_total],
+          [count(total(sum)), gui.usage_axis_total],
           [cacheKnown ? pct(sum.cached_input / Math.max(sum.input + sum.cached_input + sum.cache_write, 1)) : "—", gui.usage_axis_rate],
           [String(agg.length), gui.accounts_models],
           [String(days.length), gui.usage_sum_days],
@@ -1409,6 +1430,13 @@ function berth(
  * this draws. **Two, and this chart is attributed to whichever row the
  * reader opened** — an open question, not a solved one, and worth
  * naming here because nothing on the screen would look wrong.
+ *
+ * **Only the vendor's own replies** (owner, 2026-10-07). A session
+ * pointed at a third-party API writes into the same transcripts; the
+ * node files its replies under `<vendor>-third-party`
+ * (`khor_node::usage::category`), so the exact match below leaves them
+ * out — they are not this subscription's. A peer older than that rule
+ * still files them under the vendor's name, and nothing here can tell.
  */
 export function fromUsage(
   usage: Usage | null,

@@ -3328,6 +3328,11 @@ fn bytes(n: u64) -> String {
 /// days in which nothing was spent is an answer, and a version that
 /// printed the seven most recent days *with* spending would answer a
 /// month-old question while claiming to answer this week's.
+///
+/// **Replies a third-party API answered are listed, under their own
+/// category** (`claude-third-party`, `khor_node::usage::category`). This
+/// is "what did the agents on each machine do", and they did that work;
+/// the subscription's chart is the one place they are left out.
 fn usage(rest: &[String]) -> Result<(), String> {
     let days = match rest {
         [] => USAGE_DAYS,
@@ -3410,9 +3415,10 @@ fn usage(rest: &[String]) -> Result<(), String> {
 /// reads, and one day cannot show a trend.
 const USAGE_DAYS: usize = 7;
 
-/// One day's four numbers. **No total** — the reason is on
-/// `khor_core::Tokens`, and it is that a sum here would be almost
-/// entirely cache reads.
+/// One day's four numbers, and no total beside them. The total is their
+/// sum (`khor_core::Tokens`, owner 2026-10-07), so a reader of this line
+/// has it already; printing it would be a fifth column that is almost
+/// entirely the third.
 fn tokens_line(t: &Tokens) -> String {
     [
         cli::tokens_input(count(t.input)),

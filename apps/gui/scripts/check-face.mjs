@@ -2228,6 +2228,10 @@ try {
   // (UX-45, 2026-10-07).
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
+  // **`FACE_ONLY=walk` walks this block alone** — sections 1 to 10,
+  // where the 额度 page's checks live (quota-a, 2026-10-07): no switch
+  // above isolates that page, and this is the smallest cut that runs
+  // all of it without the sections after.
   walk: {
   if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break walk;
 
@@ -15317,37 +15321,32 @@ try {
       );
     }
 
-    //   **The credits: shown, and not shown as a window.** Three
-    //   claims, and the third is the one a careless build fails:
-    //   `balance` and `monthly_limit` are null in this fixture and must
-    //   draw *no row at all* — the wrong implementation draws an empty
-    //   one, which reads as「your balance is nothing」.
-    if (planOnDetail !== 1) {
-      fail(`probe dead: the subscription detail draws ${planOnDetail} 信用额 blocks, so nothing below is measuring one`);
-    } else {
-      const credits = await page.locator("[data-quota-detail] [data-quota-credits]").evaluate((dl) => ({
-        text: dl.textContent ?? "",
-        pairs: dl.querySelectorAll("dt").length,
-        used: dl.querySelector("[data-quota-credits-used]")?.textContent ?? null,
-        balance: dl.querySelector("[data-quota-credits-balance]") !== null,
-        on: dl.querySelector("[data-quota-credits-on]")?.getAttribute("data-quota-credits-on") ?? null,
-      }));
-      if (!credits.used?.includes("9.21") || credits.on !== "false") {
-        fail(`the 信用额 block says used=${JSON.stringify(credits.used)} on=${JSON.stringify(credits.on)} for a spent-out fixture`);
-      }
-      if (credits.balance || credits.pairs !== 2) {
-        fail(
-          `the 信用额 block drew ${credits.pairs} rows and balance=${credits.balance} — the fixture reports no balance and no monthly limit, and a row for a figure nobody stated reads as a zero`,
-        );
-      }
-      //   …and it is not on the ring: the layers were already checked
-      //   above against the *windows*, so a credits figure that leaked
-      //   into `ringWindows` would have shown up there. The one thing
-      //   left to say is that the row's summary is a window, not money.
-      const summary = await page.locator('[data-quota-row][data-quota-kind="sub"]').textContent();
-      if (summary?.includes("9.21")) {
-        fail(`the subscription row's summary names the credits (${JSON.stringify(summary)}) — money is not a window`);
-      }
+    //   **The credits: absent when switched off** (owner, 2026-10-07:
+    //   「额外用量和已用，没有真实读数就不画」). This fixture is the real
+    //   capture — `enabled: false`, `out_of_credits`, a spend of 9.21 —
+    //   and the whole block must be gone: no 「不可用」, no reason, no
+    //   spend under a switch that is off.
+    //   ⚠️ **Rewritten that day**: this arm used to require the block,
+    //   reading `used` 9.21 beside `data-quota-credits-on="false"`. The
+    //   switched-on arms below (capped, uncapped) still measure the block
+    //   that draws, and the uncapped one is its probe.
+    //   Read as figures and the endpoint's key, not as catalog words:
+    //   the spend and the reason are what the old block printed, and
+    //   neither may reach the glass from anywhere on this card.
+    const offWords = ["out_of_credits", "9.21"];
+    const detailText = (await page.locator("[data-quota-detail]").first().textContent().catch(() => "")) ?? "";
+    if (planOnDetail !== 0) {
+      fail(`the subscription detail draws ${planOnDetail} 额外用量 blocks for extra usage that is switched off`);
+    } else if (offWords.some((w) => detailText.includes(w))) {
+      fail(
+        `the subscription detail still says ${JSON.stringify(offWords.filter((w) => detailText.includes(w)))} for extra usage that is switched off`,
+      );
+    }
+    //   …and it is not on the ring or the row's summary: money is not a
+    //   window.
+    const summary = await page.locator('[data-quota-row][data-quota-kind="sub"]').textContent();
+    if (summary?.includes("9.21")) {
+      fail(`the subscription row's summary names the credits (${JSON.stringify(summary)}) — money is not a window`);
     }
 
     //   **A ring with no ceiling is a full ring** (2026-09-06 user
@@ -16344,6 +16343,8 @@ try {
         pips: (lead?.querySelectorAll("[data-dial-pip]") ?? []).length,
         parts: (detail?.querySelectorAll("[data-quota-part]") ?? []).length,
         used: detail?.querySelector("[data-quota-credits-used]")?.textContent ?? null,
+        pairs: (detail?.querySelectorAll("[data-quota-credits] dt") ?? []).length,
+        balance: detail?.querySelector("[data-quota-credits-balance]") !== null,
       };
     });
     if (uncapped.pips !== quotaWindows.length || uncapped.parts !== quotaWindows.length) {
@@ -16353,6 +16354,13 @@ try {
     } else if (!uncapped.used?.includes("9.21")) {
       fail(
         `probe dead: the uncapped credits' spend reads ${JSON.stringify(uncapped.used)} — if the figures are not on the glass, 「no pip」 is measuring a block that never drew`,
+      );
+    } else if (uncapped.balance || uncapped.pairs !== 1) {
+      //   `balance` and `monthly_limit` are null here and must draw *no
+      //   row at all* — an empty one reads as 「your balance is nothing」.
+      //   (Moved here from the switched-off arm, 2026-10-07.)
+      fail(
+        `the 额外用量 block drew ${uncapped.pairs} rows and balance=${uncapped.balance} — the fixture reports a spend and nothing else, so one row: the name and the spend`,
       );
     }
 
@@ -16952,7 +16960,12 @@ try {
       const span = Math.max(...ys) - Math.min(...ys) || 1;
       return Math.max(...ys.map((y, k) => Math.abs(y - (b0 + b1 * xs[k])))) / span;
     };
-    const rowOf = (m) => usageModels.filter((x) => (x.model ?? "") === m).reduce((a, x) => a + x.tokens.input + x.tokens.output, 0);
+    //   The area is 总量, and 总量 is all four kinds (owner 2026-10-07;
+    //   it was input plus output before).
+    const rowOf = (m) =>
+      usageModels
+        .filter((x) => (x.model ?? "") === m)
+        .reduce((a, x) => a + x.tokens.input + x.tokens.output + x.tokens.cached_input + x.tokens.cache_write, 0);
     const reads = back.points.map((p) => rowOf(p.model));
     if (back.points.length < 3 || new Set(reads).size < 3) {
       fail(`probe dead: ${back.points.length} dots over ${new Set(reads).size} distinct readings — a line needs points that differ`);
@@ -24439,7 +24452,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -24866,7 +24879,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25224,7 +25237,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -25593,7 +25606,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26325,7 +26338,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27214,7 +27227,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "tabs", "walk"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
