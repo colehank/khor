@@ -15,6 +15,11 @@
 // The content says where its last line ends by marking that element
 // `data-fold-foot` (a terminal marks xterm's screen, whose height is its
 // rows); a content with no mark leaves the capsule centred in the band.
+//
+// **The lift is said on the content too** (ux-q): what floats at the
+// content's foot over the capsule — the terminal's way-back float,
+// 「回到底部」 — rises by what the capsule rose, so it keeps the gap it had
+// above the capsule (`app.css`).
 
 /** How far (px) the capsule rises from the centre of its room, so that
     its centre is midway between `foot` (the last line's bottom) and the
@@ -45,7 +50,8 @@ function shownFoot(content: HTMLElement): HTMLElement | null {
 
 /**
  * Keep the folded capsule seated (`--fold-lift` on `room`, the folded
- * bar's `[data-deck-fold]`, read by `app.css`) while it is up. Placed again
+ * bar's `[data-deck-fold]`, and on `content`, both read by `app.css`)
+ * while it is up. Placed again
  * whenever the grid refits (a font size, the fold's own refit, a
  * rotation) or the content's box moves (the keyboard going): the foot and
  * the content are watched for size, the window for a resize. Returns the
@@ -62,6 +68,11 @@ export function seatFold(room: HTMLElement, content: HTMLElement): () => void {
     }
     const lift = foot ? foldLift(room.getBoundingClientRect(), footBottom(foot, content)) : 0;
     room.style.setProperty("--fold-lift", `${lift}px`);
+    // What the capsule actually rose by: `app.css` lifts it only with
+    // nothing seated under the deck.
+    const strip = room.querySelector<HTMLElement>("[data-deck-strip]");
+    const rose = strip ? parseFloat(getComputedStyle(strip).bottom) || 0 : 0;
+    content.style.setProperty("--fold-lift", `${rose}px`);
   };
   const watch = new ResizeObserver(place);
   watch.observe(content);
@@ -72,5 +83,6 @@ export function seatFold(room: HTMLElement, content: HTMLElement): () => void {
     watch.disconnect();
     window.removeEventListener("resize", place);
     room.style.removeProperty("--fold-lift");
+    content.style.removeProperty("--fold-lift");
   };
 }

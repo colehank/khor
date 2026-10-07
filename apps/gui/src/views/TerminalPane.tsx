@@ -3376,7 +3376,9 @@ export function TerminalPane({
             termRef.current?.focus();
           }}
           // The same floating language as the find bar above it —
-          // it was a pill with a shadow of its own (2026-09-28).
+          // it was a pill with a shadow of its own (2026-09-28). Over the
+          // folded capsule it rises as the capsule does (`app.css`,
+          // `--fold-lift`; ux-q).
           className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-lg border bg-popover px-3 py-1 text-caption shadow-(--shadow-float)"
         >
           {freshBelow ? (
