@@ -981,8 +981,10 @@ fn edit_menu_hide(app: tauri::AppHandle) {
 /// system's own generators, each for what Apple documents it for —
 /// `selection` (UISelectionFeedbackGenerator) when a picked value moves,
 /// `success` / `warning` (UINotificationFeedbackGenerator) when a task
-/// completes or is refused. On UIKit's thread; a word this build does
-/// not know plays nothing. A Mac has no engine for it.
+/// completes or is refused, `threshold` (a light UIImpactFeedbackGenerator)
+/// when a drag crosses the line where letting go acts (UX-49, the deck
+/// pill's swipe). On UIKit's thread; a word this build does not know plays
+/// nothing. A Mac has no engine for it.
 #[tauri::command]
 fn haptic(app: tauri::AppHandle, kind: String) {
     #[cfg(target_os = "ios")]
@@ -994,10 +996,16 @@ fn haptic(app: tauri::AppHandle, kind: String) {
         #[allow(deprecated)]
         let _ = app.run_on_main_thread(move || {
             use objc2::{MainThreadMarker, MainThreadOnly as _};
-            use objc2_ui_kit::{UINotificationFeedbackGenerator, UINotificationFeedbackType, UISelectionFeedbackGenerator};
+            use objc2_ui_kit::{
+                UIImpactFeedbackGenerator, UIImpactFeedbackStyle, UINotificationFeedbackGenerator, UINotificationFeedbackType,
+                UISelectionFeedbackGenerator,
+            };
             let Some(mtm) = MainThreadMarker::new() else { return };
             match kind.as_str() {
                 "selection" => UISelectionFeedbackGenerator::init(UISelectionFeedbackGenerator::alloc(mtm)).selectionChanged(),
+                "threshold" => {
+                    UIImpactFeedbackGenerator::initWithStyle(UIImpactFeedbackGenerator::alloc(mtm), UIImpactFeedbackStyle::Light).impactOccurred()
+                }
                 "success" | "warning" => {
                     let g = UINotificationFeedbackGenerator::init(UINotificationFeedbackGenerator::alloc(mtm));
                     g.notificationOccurred(if kind == "success" {

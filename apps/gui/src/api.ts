@@ -1859,9 +1859,11 @@ export const bellHaptic = () => call<null>("bell_haptic");
 export const joyHaptic = (kind: "prepare" | "tick" | "turn" | "end") => call<null>("joy_haptic", { kind });
 /** **A haptic with a meaning** (UX-10; ux-9 B5): the system's own
     patterns, played on a phone — `selection` when a picked value moves,
-    `success` when a task completes, `warning` when the act was refused.
-    The app's only; nothing for a browser to reach (`lib/haptics`). */
-export const haptic = (kind: "selection" | "success" | "warning") => call<null>("haptic", { kind });
+    `success` when a task completes, `warning` when the act was refused,
+    `threshold` when a drag crosses the line where letting go acts (a
+    light impact, UX-49). The app's only; nothing for a browser to reach
+    (`lib/haptics`). */
+export const haptic = (kind: "selection" | "success" | "warning" | "threshold") => call<null>("haptic", { kind });
 /** Opens the settings window, or brings it forward on `pane` (UX-10). */
 export const openSettings = (pane?: string) => call<null>("open_settings", { pane: pane ?? null });
 /** The settings window's title, its pane's name (HIG Settings). */

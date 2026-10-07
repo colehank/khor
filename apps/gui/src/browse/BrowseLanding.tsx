@@ -668,9 +668,12 @@ export function BrowseLanding({
       const screen = document.querySelector<HTMLElement>("[data-session-screen]");
       if (!screen) return;
       if (t.startsWith("swipe:")) {
+        // The tabs are a ring, as the DOM band's (UX-49 §2): past the
+        // last is the first. One tab: nothing to go to.
         const by = Number(t.slice("swipe:".length));
+        const n = tabs.tabs.length;
         const at = tabs.tabs.findIndex((x) => x.id === nativeTab);
-        const next = tabs.tabs[at + by];
+        const next = at < 0 || n < 2 ? undefined : tabs.tabs[(at + by + n) % n];
         if (next) tabs.focus(next.id);
         return;
       }

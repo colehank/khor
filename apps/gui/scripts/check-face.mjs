@@ -32976,80 +32976,329 @@ try {
       if (down.offered !== null) fail(`bar t · the phone's share sheet is the offer; the line says nothing more, read ${shown(down.offered)}`);
     }
 
-    // ── u. the deck pill is a band (UX-33 §3): at rest one tab, a drag
-    //       pulls one neighbour in and never more; past half the neighbour
-    //       is current, short of it the band springs back. Eight terminals
-    //       open; the band dragged a long way left (towards the next). ──
+    // ── u. the deck pill is a band (UX-33 §3 → UX-49): at rest one tab; a
+    //       finger pulls one neighbour in, the tabs a ring (one tab gives
+    //       a little and springs back); the incoming tab hugs the edge it
+    //       comes from, so its face shows from the first pixels; letting
+    //       go switches past 40 % of the band or on a flick, and crossing
+    //       that line either way is felt once and seen (the incoming dim
+    //       below it, the outgoing past it); a switch glides to rest, a
+    //       spring back does not; every end of a drag — a lift, a cancel,
+    //       a re-render, the list changing — is one tab at rest. Real
+    //       touches (CDP), so the pointer is a finger's. ──
     {
       if (await count("[data-session-bar] [data-back]")) await press("[data-session-bar] [data-back]");
       await wait(300);
-      // term-3 opened after term-2, then term-2 in front: a next neighbour
-      // exists whatever the stops before left open.
-      if (!(await openRow(terms[2].id)) || !(await openRow(terms[3].id)) || !(await openRow(terms[2].id))) {
-        fail("probe dead: bar u · a terminal never opened for the band");
-      } else {
-        await until(3_000, async () => (await count("[data-session-deck] [data-deck-band]")) === 1);
-        const read = () =>
-          page.evaluate(() => {
-            const band = document.querySelector("[data-session-deck] [data-deck-band]");
-            const track = band?.querySelector("[data-deck-band-track]");
-            if (!band || !track) return null;
-            const b = band.getBoundingClientRect();
-            const segs = [...track.querySelectorAll("[data-band-seg]")].map((e) => {
-              const r = e.getBoundingClientRect();
-              return { role: e.getAttribute("data-band-seg"), l: +(r.left - b.left).toFixed(1), r: +(r.right - b.left).toFixed(1), w: +r.width.toFixed(1) };
-            });
-            const x = new DOMMatrixReadOnly(getComputedStyle(track).transform).m41;
-            return { bw: +b.width.toFixed(1), x: +x.toFixed(1), segs, title: document.querySelector("[data-session-deck] [data-deck-title]")?.textContent?.trim() ?? null, inView: segs.filter((s) => s.r > 0.5 && s.l < b.width - 0.5).map((s) => s.role) };
+      /** What `haptic` was asked, in order (UX-49 §5): the dev bridge is
+          the app for `lib/haptics`. */
+      const felt = [];
+      await page.route("**/haptic", (r) => {
+        felt.push(JSON.parse(r.request().postData() || "{}").kind);
+        return r.fulfill({ contentType: "application/json", body: "null" });
+      });
+      const ticks = () => felt.filter((k) => k === "threshold").length;
+      /** Exactly `ids` open, in that order, the last in front. */
+      const openOnly = async (ids) => {
+        await fresh(390, 844);
+        for (const id of ids) if (!(await openRow(id))) return false;
+        return until(3_000, async () => (await count("[data-session-deck] [data-deck-band]")) === 1);
+      };
+      const readBand = () =>
+        page.evaluate(() => {
+          const band = document.querySelector("[data-session-deck] [data-deck-band]");
+          if (!band) return null;
+          const b = band.getBoundingClientRect();
+          const segs = [...band.querySelectorAll("[data-band-seg]")].map((e) => {
+            const r = e.getBoundingClientRect();
+            const cs = getComputedStyle(e);
+            const face = e.querySelector("[data-deck-face]")?.getBoundingClientRect();
+            return {
+              role: e.getAttribute("data-band-seg"),
+              shown: cs.display !== "none" && r.width > 0.5 && r.right > b.left + 0.5 && r.left < b.right - 0.5,
+              l: +(r.left - b.left).toFixed(1),
+              r: +(r.right - b.left).toFixed(1),
+              x: +new DOMMatrixReadOnly(cs.transform === "none" ? undefined : cs.transform).m41.toFixed(1),
+              op: +Number(cs.opacity).toFixed(2),
+              face: face ? { l: +(face.left - b.left).toFixed(1), r: +(face.right - b.left).toFixed(1) } : null,
+              text: e.textContent.trim(),
+            };
           });
-        const rest = await read();
+          return {
+            bw: +b.width.toFixed(1),
+            segs,
+            shown: segs.filter((s) => s.shown).map((s) => s.role),
+            past: band.hasAttribute("data-band-past"),
+            title: band.querySelector("[data-deck-title]")?.textContent?.trim() ?? null,
+          };
+        });
+      const seg = (s, role) => s?.segs.find((x) => x.role === role) ?? null;
+      /** One tab at rest: the current one alone, home, full, no cue. */
+      const atRest = (s, title) => {
+        const c = seg(s, "cur");
+        return !!s && s.shown.join() === "cur" && !!c && Math.abs(c.x) <= 0.5 && Math.abs(c.l) <= 0.5 && c.op === 1 && !s.past && (title === undefined || s.title === title);
+      };
+      const touch = (type, x, y) =>
+        kTouch.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" || type === "touchCancel" ? [] : [{ x, y }] });
+      /** A finger down on the band's middle; `to(dx)` moves it there in
+          steps a finger's speed apart (or at once, `fast`). */
+      const finger = async () => {
         const box = await page.locator("[data-session-deck] [data-deck-band]").boundingBox();
-        const dragTo = async (dx, release) => {
-          const x0 = box.x + box.width / 2;
-          const y = box.y + box.height / 2;
-          await page.mouse.move(x0, y);
-          await page.mouse.down();
-          for (let i = 1; i <= 12; i++) await page.mouse.move(x0 + (dx * i) / 12, y);
-          const held = await read();
-          if (release) {
-            await page.mouse.up();
-            await wait(400);
+        const o = { x: box.x + box.width / 2, y: box.y + box.height / 2, w: box.width, at: 0 };
+        await touch("touchStart", o.x, o.y);
+        o.to = async (dx, fast = false) => {
+          const n = fast ? 2 : 8;
+          const from = o.at;
+          for (let i = 1; i <= n; i++) {
+            await touch("touchMove", o.x + from + ((dx - from) * i) / n, o.y);
+            if (!fast) await wait(16);
           }
-          return held;
+          o.at = dx;
+          if (!fast) await wait(160);
         };
-        // Three widths left: clamped to the next neighbour exactly.
-        const held = await dragTo(-3 * (rest?.bw ?? 300), false);
-        await page.mouse.up();
-        await wait(400);
-        const after = await read();
-        console.log(`bar u · at rest ${shown(rest)}; held three widths left ${shown(held)}; released ${shown(after)}`);
-        if (!rest || rest.inView.join() !== "cur" || rest.title !== terms[2].title) {
-          fail(`bar u · at rest the band shows ${shown(rest?.inView)} with 「${rest?.title}」 — exactly the current tab (UX-33 §3; src/components/SessionBar.tsx DeckBand)`);
-        } else {
-          const next = held.segs.find((s) => s.role === "next");
-          const cur = held.segs.find((s) => s.role === "cur");
-          const prev = held.segs.find((s) => s.role === "prev");
-          // The next one fully in means its left edge at the band's left; the
-          // current one wholly out to the left; the previous further still.
-          if (!next || Math.abs(next.l) > 1 || (cur && cur.r > 0.5) || (prev && prev.r > 0.5)) {
-            fail(`bar u · dragged three widths the band holds ${shown(held.segs)} — one neighbour fully in and no further`);
+        // Held still first, so the lift carries no speed.
+        o.lift = async () => {
+          await wait(150);
+          await touch("touchEnd");
+          await wait(400);
+        };
+        o.flick = async () => {
+          await touch("touchEnd");
+          await wait(400);
+        };
+        o.cancel = async () => {
+          await touch("touchCancel");
+          await wait(400);
+        };
+        return o;
+      };
+      /** The band's frames for the next ~450 ms: each shown segment's
+          role, words and face's left. */
+      const recordFrames = () =>
+        page.evaluate(() => {
+          window.__bandFrames = [];
+          const t0 = performance.now();
+          const tick = () => {
+            const band = document.querySelector("[data-session-deck] [data-deck-band]");
+            if (band) {
+              const b = band.getBoundingClientRect();
+              window.__bandFrames.push(
+                [...band.querySelectorAll("[data-band-seg]")]
+                  .filter((e) => getComputedStyle(e).display !== "none")
+                  .map((e) => ({ role: e.getAttribute("data-band-seg"), text: e.textContent.trim(), face: +((e.querySelector("[data-deck-face]")?.getBoundingClientRect().left ?? NaN) - b.left).toFixed(1) })),
+              );
+            }
+            if (performance.now() - t0 < 450) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+        });
+      const framesOf = async (text, roles) =>
+        (await page.evaluate(() => window.__bandFrames ?? [])).map((f) => f.find((s) => s.text === text && roles.includes(s.role))?.face ?? null);
+      /** A full switch, held still before the lift. */
+      const swipe = async (way) => {
+        const f = await finger();
+        await f.to(way * f.w * 0.7);
+        await f.lift();
+        return readBand();
+      };
+      const [t0, t1, t2] = [terms[0], terms[1], terms[2]];
+
+      // 1. One tab: a little give, back home, nothing else.
+      if (!(await openOnly([t0.id]))) fail("probe dead: bar u · one terminal never opened for the band");
+      else {
+        for (const way of [-1, 1]) {
+          const f = await finger();
+          await f.to(way * 120);
+          const held = await readBand();
+          const felt0 = ticks();
+          await f.lift();
+          const after = await readBand();
+          const c = seg(held, "cur");
+          console.log(`bar u · 1 one tab, dragged ${way * 120}: held ${shown({ x: c?.x, shown: held?.shown })}; lifted at rest ${atRest(after, t0.title)}`);
+          if (!c || Math.sign(c.x) !== way || Math.abs(c.x) < 4 || Math.abs(c.x) > 28.5 || held.shown.join() !== "cur") {
+            fail(`bar u · one tab dragged ${way * 120} stands ${shown({ x: c?.x, shown: held?.shown })} — a rubber band of at most 28 px, no other tab (UX-49 §2)`);
           }
-          if (after.title !== terms[3].title || after.inView.join() !== "cur") {
-            fail(`bar u · released past half the band reads ${shown(after)} — the next tab (${terms[3].title}) current, one tab at rest`);
+          if (!atRest(after, t0.title)) fail(`bar u · one tab let go reads ${shown(after)} — back at rest (UX-49 §2)`);
+          if (ticks() !== felt0) fail(`bar u · one tab's rubber band was felt ${ticks() - felt0} time(s) — there is no line to cross`);
+        }
+      }
+
+      // 2. Two tabs: either way is the other one.
+      if (!(await openOnly([t0.id, t1.id]))) fail("probe dead: bar u · two terminals never opened for the band");
+      else {
+        const seen = [];
+        for (const way of [-1, -1, 1, 1]) seen.push((await swipe(way))?.title);
+        console.log(`bar u · 2 two tabs from ${t1.title}: ← ← → → read ${shown(seen)}`);
+        if (shown(seen) !== shown([t0.title, t1.title, t0.title, t1.title])) {
+          fail(`bar u · two tabs swiped ← ← → → from ${t1.title} read ${shown(seen)} — a ring: either way is the other (UX-49 §2)`);
+        }
+      }
+
+      // 3. Three tabs, t2 in front.
+      if (!(await openOnly([t0.id, t1.id, t2.id]))) fail("probe dead: bar u · three terminals never opened for the band");
+      else {
+        const rest0 = await readBand();
+        const bw = rest0?.bw ?? 0;
+        if (!atRest(rest0, t2.title)) fail(`bar u · at rest the band reads ${shown(rest0)} — exactly the current tab (${t2.title})`);
+        // a. The drag starts: the next one (the ring's: t0) hugs the right
+        //    edge — its face in from the first 60 px; then the cue both
+        //    ways, felt once per crossing.
+        const felt0 = ticks();
+        const f = await finger();
+        await f.to(-60);
+        const start = await readBand();
+        await f.to(-0.25 * bw);
+        const below = await readBand();
+        await f.to(-0.6 * bw);
+        const past = await readBand();
+        await f.to(-0.2 * bw);
+        const back = await readBand();
+        const crossings = ticks() - felt0;
+        await recordFrames();
+        const nextAtLift = seg(back, "next");
+        await f.lift();
+        const sprang = await framesOf(t0.title, ["next"]);
+        const after = await readBand();
+        const nx = seg(start, "next");
+        console.log(`bar u · 3a at -60 the next ${shown(nx)}; at -25 % ${shown({ past: below?.past, next: seg(below, "next")?.op, cur: seg(below, "cur")?.op })}; at -60 % ${shown({ past: past?.past, next: seg(past, "next"), cur: seg(past, "cur")?.op })}; back at -20 % ${shown({ past: back?.past, next: seg(back, "next")?.op, cur: seg(back, "cur")?.op })}; felt ${crossings}`);
+        if (!nx?.shown || nx.text !== t0.title || !nx.face || nx.face.l < nx.l - 0.5 || nx.face.r > bw + 0.5 || Math.abs(nx.face.l - (bw - 60)) > 2) {
+          fail(`bar u · 60 px into a drag the next tab reads ${shown(nx)} — ${t0.title}, its face in at the band's right edge as soon as the drag starts (UX-49 §3)`);
+        }
+        const op = (s, role) => seg(s, role)?.op;
+        if (below?.past || op(below, "next") !== 0.4 || op(below, "cur") !== 1) fail(`bar u · below the line the band reads ${shown({ past: below?.past, next: op(below, "next"), cur: op(below, "cur") })} — the incoming dim (0.4), the outgoing full (UX-49 §5)`);
+        if (!past?.past || op(past, "next") !== 1 || op(past, "cur") !== 0.4) fail(`bar u · past the line the band reads ${shown({ past: past?.past, next: op(past, "next"), cur: op(past, "cur") })} — the incoming full, the outgoing dim (UX-49 §5)`);
+        if (back?.past || op(back, "next") !== 0.4 || op(back, "cur") !== 1) fail(`bar u · dragged back under the line the band reads ${shown({ past: back?.past, next: op(back, "next"), cur: op(back, "cur") })} — the cue flips back (UX-49 §5)`);
+        const pn = seg(past, "next");
+        if (!pn || Math.abs(pn.r - bw) > 0.5 || !(pn.l > 1) || Math.abs(pn.face.l - pn.l) > 0.5) {
+          fail(`bar u · past the line the next tab stands ${shown(pn)} in a band of ${bw} — right-aligned, hugging the edge it came from (UX-49 §3)`);
+        }
+        if (crossings !== 2) fail(`bar u · out past the line and back under it was felt ${crossings} time(s) — once per crossing (UX-49 §5; felt ${shown(felt)})`);
+        // b. Let go under the line: back, with no glide — the incoming
+        //    face never moves left of where it stood.
+        const fromAt = nextAtLift?.face?.l ?? NaN;
+        const glided = sprang.filter((v) => v !== null && v < fromAt - 0.5);
+        console.log(`bar u · 3b let go under the line: next's face from ${fromAt} through ${shown(sprang.filter((v) => v !== null))}; at rest ${atRest(after, t2.title)}`);
+        if (!atRest(after, t2.title)) fail(`bar u · let go under the line the band reads ${shown(after)} — back on ${t2.title}, one tab at rest (UX-49 §4)`);
+        if (glided.length) fail(`bar u · springing back the incoming face went left to ${shown(glided)} from ${fromAt} — a spring back has no glide (UX-49 §3)`);
+        if (ticks() !== felt0 + 2) fail("bar u · the lift itself was felt — only crossings are");
+        // c. Past the line and let go: the ring's next (t0) glides from the
+        //    right edge to its rest.
+        {
+          const g = await finger();
+          await g.to(-0.7 * bw);
+          const held = seg(await readBand(), "next");
+          await recordFrames();
+          await g.lift();
+          const path = (await framesOf(t0.title, ["next", "cur"])).filter((v) => v !== null);
+          const done = await readBand();
+          const mid = path.filter((v) => v < (held?.face?.l ?? 0) - 1 && v > 1);
+          const climbs = path.some((v, i) => i > 0 && v > path[i - 1] + 0.5);
+          console.log(`bar u · 3c past the line from ${t2.title}: ${t0.title}'s face ${shown(path)}; then ${shown({ title: done?.title, rest: atRest(done, t0.title) })}`);
+          if (!atRest(done, t0.title)) fail(`bar u · let go past the line from the last tab the band reads ${shown(done)} — the first one (${t0.title}), one tab at rest (UX-49 §2, §4)`);
+          if (!(held?.face?.l > 1) || mid.length < 2 || climbs || Math.abs((path.at(-1) ?? NaN) - (seg(done, "cur")?.face?.l ?? 0)) > 0.5) {
+            fail(`bar u · the switch's face went ${shown(path)} from ${held?.face?.l} — a glide from the right edge to its left rest, in steps (UX-49 §3)`);
           }
         }
-        // A short pull springs back.
-        const base = await read();
-        const short = await dragTo(-(base.bw * 0.3), true);
-        const back = await read();
-        console.log(`bar u · a short pull ${shown(short.inView)} → ${shown(back)}`);
-        if (back.title !== base.title || back.inView.join() !== "cur" || Math.abs(back.x - base.x) > 1) {
-          fail(`bar u · a pull of a third of the band left ${shown(back)} — it springs back to ${shown(base)}`);
+        // d. From the first, the other way: the ring's previous is the last,
+        //    and it hugs the left edge from the start.
+        {
+          const g = await finger();
+          await g.to(60);
+          const pv = seg(await readBand(), "prev");
+          await g.to(0.7 * bw);
+          await g.lift();
+          const done = await readBand();
+          console.log(`bar u · 3d → from ${t0.title}: at +60 the previous ${shown(pv)}; let go ${done?.title}`);
+          if (!pv?.shown || pv.text !== t2.title || !pv.face || Math.abs(pv.face.l) > 1 || pv.face.r > 60.5) {
+            fail(`bar u · 60 px into a drag right the previous tab reads ${shown(pv)} — ${t2.title}, its face at the band's left edge (UX-49 §3)`);
+          }
+          if (!atRest(done, t2.title)) fail(`bar u · a swipe right from the first tab reads ${shown(done)} — the last (${t2.title}) at rest (UX-49 §2)`);
         }
-        // A tap anywhere on the current segment is the title's (UX-35 §1):
-        // on the face, and in the room after a short name — the owner's
-        // 「khor」 pill answered only on its four letters.
-        const spots = await page.evaluate(() => {
+        // e. A flick: 40 px, fast, commits.
+        {
+          const g = await finger();
+          await g.to(-40, true);
+          await g.flick();
+          const done = await readBand();
+          console.log(`bar u · 3e a 40 px flick left from ${t2.title}: ${done?.title}`);
+          if (!atRest(done, t0.title)) fail(`bar u · a 40 px flick from ${t2.title} reads ${shown(done)} — a quick short flick switches (UX-49 §5)`);
+        }
+        // f. A cancelled touch past the line (the system taking it): no
+        //    switch, at rest.
+        {
+          const g = await finger();
+          await g.to(-0.7 * bw);
+          const was = await readBand();
+          await g.cancel();
+          const done = await readBand();
+          console.log(`bar u · 3f cancelled past the line (past ${was?.past}): ${shown({ title: done?.title, rest: atRest(done, t0.title) })}`);
+          if (!was?.past || !atRest(done, t0.title)) fail(`bar u · a touch cancelled past the line reads ${shown(done)} — never a switch, one tab at rest (UX-49 §4)`);
+        }
+        // g. A re-render under the finger (a row's word changes on the
+        //    next poll): the drag goes on and still switches.
+        {
+          const g = await finger();
+          await g.to(-0.3 * bw);
+          t1.word = "busy";
+          await wait(2_600);
+          const held = await readBand();
+          await g.to(-0.7 * bw);
+          await g.lift();
+          const done = await readBand();
+          t1.word = "idle";
+          console.log(`bar u · 3g a re-render held at -30 %: cur at ${seg(held, "cur")?.x}, shown ${shown(held?.shown)}; let go past the line ${done?.title}`);
+          if (Math.abs((seg(held, "cur")?.x ?? 0) + Math.round(0.3 * bw)) > 1.5 || held.shown.join() !== "cur,next") fail(`bar u · a re-render under the finger left the band ${shown(held)} — the drag holds where it was (UX-49 §4)`);
+          if (!atRest(done, t1.title)) fail(`bar u · after a re-render a swipe past the line reads ${shown(done)} — ${t1.title} at rest (UX-49 §4)`);
+        }
+        // h. The list changes under the finger (a session ends: its tab
+        //    goes on the next poll): the band is at rest at once, and the
+        //    lift switches nothing.
+        {
+          const g = await finger();
+          await g.to(-0.6 * bw);
+          const was = await readBand();
+          const gone = barRows.indexOf(t0);
+          barRows.splice(gone, 1);
+          await wait(2_600);
+          const held = await readBand();
+          await g.lift();
+          const done = await readBand();
+          barRows.splice(gone, 0, t0);
+          console.log(`bar u · 3h ${t0.title} ended under a finger past the line (past ${was?.past}): held ${shown({ shown: held?.shown, past: held?.past })}; let go ${shown({ title: done?.title, rest: atRest(done, t1.title) })}`);
+          if (!was?.past || !atRest(held, t1.title)) fail(`bar u · a tab ending under the finger left the band ${shown(held)} — one tab at rest at once (UX-49 §4)`);
+          if (!atRest(done, t1.title)) fail(`bar u · the lift after the list changed reads ${shown(done)} — nothing switched, ${t1.title} at rest (UX-49 §4)`);
+        }
+      }
+
+      // 4. A long name stopped halfway (the owner's bug, UX-49 §4): the
+      //    next one comes in at once, and the lift puts the long one back
+      //    exactly at rest.
+      {
+        const was = t2.title;
+        t2.title = `${was} · a name far longer than the pill has room for`;
+        if (!(await openOnly([t1.id, t2.id]))) fail("probe dead: bar u · the long-named terminal never opened for the band");
+        else {
+          const rest0 = await readBand();
+          const g = await finger();
+          await g.to(-0.3 * rest0.bw);
+          const held = await readBand();
+          await g.lift();
+          const done = await readBand();
+          console.log(`bar u · 4 a long name, stopped at -30 %: held ${shown({ shown: held?.shown, cur: seg(held, "cur")?.x })}; let go ${shown({ cur: seg(done, "cur"), shown: done?.shown })}`);
+          if (!(held?.shown ?? []).includes("next")) fail(`bar u · 30 % into a drag on a long name the band shows ${shown(held?.shown)} — the next tab comes in as the drag starts, not after the name has panned (UX-49 §3)`);
+          if (!atRest(done, t2.title) || Math.abs((seg(done, "cur")?.face?.l ?? NaN) - (seg(rest0, "cur")?.face?.l ?? NaN)) > 0.5) {
+            fail(`bar u · a long name stopped halfway and let go reads ${shown(done)} — exactly at rest, its face where it started (UX-49 §4; SessionBar DeckBand)`);
+          }
+        }
+        t2.title = was;
+      }
+
+      // 5. A tap anywhere on the current segment is the title's (UX-35 §1):
+      //    on the face, and in the room after a short name — the owner's
+      //    「khor」 pill answered only on its four letters.
+      if (await openOnly([t0.id, t1.id])) {
+        // Read again before each tap: a seat beside the band (the key
+        // row's circle) may come in after the first one and narrow it.
+        const spotsNow = () => page.evaluate(() => {
           const band = document.querySelector("[data-session-deck] [data-deck-band]")?.getBoundingClientRect();
           const face = document.querySelector('[data-session-deck] [data-band-seg="cur"] [data-deck-face]')?.getBoundingClientRect();
           const name = document.querySelector("[data-session-deck] [data-deck-title]")?.getBoundingClientRect();
@@ -33066,13 +33315,17 @@ try {
           }
           return up;
         };
+        const spots = await spotsNow();
         const onFace = spots ? await tapOpens(spots.face) : false;
-        const pastName = spots?.after ? await tapOpens(spots.after) : null;
-        console.log(`bar u · a tap on the face opens the sheet: ${onFace}; after the name: ${pastName ?? "no room after the name"}`);
+        await wait(400);
+        const later = await spotsNow();
+        const pastName = later?.after ? await tapOpens(later.after) : null;
+        console.log(`bar u · 5 a tap on the face opens the sheet: ${onFace}; after the name: ${pastName ?? "no room after the name"}`);
         if (!onFace || pastName === false) {
           fail(`bar u · a tap on the band's face ${onFace} / after the name ${pastName} — anywhere on the current segment is the title's press (UX-35 §1; SessionBar DeckBand)`);
         }
-      }
+      } else fail("probe dead: bar u · two terminals never opened for the tap");
+      await page.unroute("**/haptic");
     }
     await kTouch.send("Emulation.setTouchEmulationEnabled", { enabled: false });
 
@@ -34359,9 +34612,17 @@ try {
         if ((await page.locator('[role="menu"]').count()) === 0) return true;
         return press(`[role="menu"] [data-new-item="${key}"]`);
       };
+      /** The terminal's rejoin fade (`TerminalPane`: the content at
+          `opacity-N` while it rejoins), read off the source so the dark
+          scrim is held to what the terminal draws (UX-49 §1). */
+      const rejoinFade = (() => {
+        const m = readFileSync(join(gui, "src", "views", "TerminalPane.tsx"), "utf8").match(/rejoining && "opacity-(\d+)"/);
+        if (!m) fail("probe dead: side j · TerminalPane's rejoin fade (`rejoining && \"opacity-N\"`) is not where the scrim's check reads it");
+        return m ? Number(m[1]) / 100 : 0.5;
+      })();
       /** The paper and the scrim behind it, as computed. */
       const paper = (sel) =>
-        page.evaluate((s) => {
+        page.evaluate(({ s, fade }) => {
           const el = document.querySelector(s);
           if (!el) return null;
           const c = document.createElement("canvas").getContext("2d");
@@ -34386,6 +34647,28 @@ try {
             p.fillRect(0, 0, 1, 1);
           }
           const over = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+          // The scrim over the page's ink (UX-49 §1): on the dark ground
+          // the ground cannot darken, what it holds can.
+          const ink = getComputedStyle(document.documentElement).getPropertyValue("--foreground").trim();
+          p.fillStyle = app;
+          p.fillRect(0, 0, 1, 1);
+          p.fillStyle = ink;
+          p.fillRect(0, 0, 1, 1);
+          const inkPx = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+          if (scrim) {
+            p.fillStyle = getComputedStyle(scrim).backgroundColor;
+            p.fillRect(0, 0, 1, 1);
+          }
+          const overInk = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
+          // The terminal's rejoin fade: the ink at the fade's opacity over
+          // the terminal's ground (`--card`).
+          p.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--card").trim();
+          p.fillRect(0, 0, 1, 1);
+          p.globalAlpha = fade;
+          p.fillStyle = ink;
+          p.fillRect(0, 0, 1, 1);
+          p.globalAlpha = 1;
+          const faded = [...p.getImageData(0, 0, 1, 1).data.slice(0, 3)];
           return {
             ground: norm(cs.backgroundColor),
             rim: [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].join(" "),
@@ -34396,8 +34679,11 @@ try {
             scrim: scrim ? norm(getComputedStyle(scrim).backgroundColor) : null,
             app: norm(app),
             over,
+            inkPx,
+            overInk,
+            faded,
           };
-        }, sel);
+        }, { s: sel, fade: rejoinFade });
       const sheetsJ = [
         ["the 附栏", "[data-place-sheet]", async () => (await toSession()) && press("[data-session-deck] button[data-deck-title]")],
         ["the tabs sheet", "[data-tab-sheet]", async () => (await toSession()) && press("[data-session-deck] [data-deck-tabs]")],
@@ -34414,6 +34700,8 @@ try {
       };
       /** How far the scrim moves the app's ground it lies over, in L*. */
       const dims = (p) => +Math.abs(lStar(p.over) - lStar(hex(p.app))).toFixed(1);
+      /** …and how far it darkens the page's ink (UX-49 §1), in L*. */
+      const inkDims = (p) => +(lStar(p.inkPx) - lStar(p.overInk)).toFixed(1);
       const papers = {};
       for (const scheme of ["light", "dark"]) {
         await theme(scheme);
@@ -34448,8 +34736,29 @@ try {
         const dim = Object.fromEntries(Object.entries(all).filter(([, p]) => p).map(([what, p]) => [what, dims(p)]));
         console.log(`side j · 2 ${scheme} scrims ${JSON.stringify(scrims)}, ΔL* over the ground ${JSON.stringify(dim)}`);
         if (scrims.length !== 1) fail(`side j · ${scheme} · the sheets' scrims are ${JSON.stringify(scrims)} — one scrim, the tabs sheet's (UX-44 §2)`);
-        for (const [what, d] of Object.entries(dim)) {
-          if (!(d >= 10)) fail(`side j · ${scheme} · behind ${what} the scrim moves the ground ${ref.app} by ${d} L* — the page behind visibly dimmed (UX-44 §2)`);
+        if (scheme === "light") {
+          // Light: the ground itself goes darker.
+          for (const [what, p] of Object.entries(all)) {
+            if (!p) continue;
+            const d = dims(p);
+            if (!(d >= 10) || !(lStar(p.over) < lStar(hex(p.app)))) fail(`side j · ${scheme} · behind ${what} the scrim moves the ground ${ref.app} by ${d} L* to ${JSON.stringify(p.over)} — the page behind visibly darker (UX-44 §2)`);
+          }
+        } else {
+          // **Dark: the terminal's rejoin fade** (UX-49 §1): the black
+          // ground cannot darken, what stands on it does — the ink under
+          // the scrim is the ink at the fade's opacity over the black.
+          // ⚠️ 墓碑 (UX-44): the ground lifted ≥ 10 L* by a light veil.
+          const darkens = Object.fromEntries(Object.entries(all).filter(([, p]) => p).map(([what, p]) => [what, inkDims(p)]));
+          console.log(`side j · 2 dark the scrim over the ink darkens it by ${JSON.stringify(darkens)} L*`);
+          for (const [what, d] of Object.entries(darkens)) {
+            if (!(d >= 10)) fail(`side j · dark · behind ${what} the scrim moves the page's ink by ${d} L* — it darkens what is behind it (UX-49 §1)`);
+          }
+          for (const [what, p] of Object.entries(all)) {
+            if (!p) continue;
+            const off = Math.max(...p.overInk.map((v, i) => Math.abs(v - p.faded[i])));
+            if (off > 2) fail(`side j · dark · behind ${what} the ink under the scrim is ${JSON.stringify(p.overInk)}, the rejoin fade (opacity ${rejoinFade}) draws it ${JSON.stringify(p.faded)} — the dark scrim darkens as the rejoin does (UX-49 §1)`);
+          }
+          console.log(`side j · 2 dark the ink under the scrim ${JSON.stringify(ref.overInk)}, under the rejoin fade (opacity ${rejoinFade}) ${JSON.stringify(ref.faded)}`);
         }
       }
       await theme("light");
