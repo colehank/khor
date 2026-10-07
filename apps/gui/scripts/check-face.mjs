@@ -33153,7 +33153,8 @@ try {
     //       page under it visibly dimmed — ΔL* of the scrim over the
     //       ground (red before: the 附栏's ink at .32 beside the forms'
     //       black at half, which on the dark ground changes nothing);
-    //    3. a row of 最近 and of 浏览器 deletes on a full swipe and on the
+    //    3. a row of 最近 (「删除」) and of 浏览器 (「关闭」, the menu's word)
+    //       goes on a full swipe and on the
     //       revealed button, a vertical drag opens no row and closes an
     //       open one (red before: 最近 had nothing to slide, 浏览器 slid to
     //       its pin); 最近's delete forgets the record (`forget_recent`),
@@ -33324,7 +33325,7 @@ try {
       const shown = (sel) =>
         page.evaluate((s) => {
           const r = document.querySelector(s);
-          return r ? { revealed: r.hasAttribute("data-row-revealed"), by: r.style.getPropertyValue("--row-reveal") || "0px", acts: [...r.querySelectorAll("[data-row-action]")].map((b) => b.getAttribute("data-row-action")).join(" ") } : null;
+          return r ? { revealed: r.hasAttribute("data-row-revealed"), by: r.style.getPropertyValue("--row-reveal") || "0px", acts: [...r.querySelectorAll("[data-row-action]")].map((b) => b.getAttribute("data-row-action")).join(" "), says: [...r.querySelectorAll("[data-row-action]")].map((b) => b.textContent.trim()).join(" ") } : null;
         }, sel);
       const chevrons = (scope) => page.evaluate((s) => document.querySelectorAll(`${s} [data-side-text] > svg, ${s} [data-side-drill]`).length, scope);
       /** Up, in the row, not out of it; left by `by`; right of the back swipe's edge. */
@@ -33347,7 +33348,7 @@ try {
         await wait(700);
         return true;
       };
-      const swipeRows = async (what, rowSel, key, ids, gone) => {
+      const swipeRows = async (what, rowSel, key, word, ids, gone) => {
         const [a, b, c] = ids.map((id) => `[data-place-sheet] ${rowSel}="${id}"]`);
         const out = {};
         await lift(a);
@@ -33367,9 +33368,9 @@ try {
         out.done = gone();
         console.log(`side j · 3 ${what} ${JSON.stringify(out)}`);
         if (out.vertical?.revealed || out.vertical?.by !== "0px") fail(`side j · a vertical drag on a ${what} row left it ${JSON.stringify(out.vertical)} — it scrolls, it opens no row (UX-44 §3)`);
-        if (!out.opened?.revealed || out.opened.acts !== key) fail(`side j · a ${what} row slid 110 reads ${JSON.stringify(out.opened)} — open, a red 删除 alone (UX-44 §3)`);
+        if (!out.opened?.revealed || out.opened.acts !== key || out.opened.says !== word) fail(`side j · a ${what} row slid 110 reads ${JSON.stringify(out.opened)} — open, a red 「${word}」 alone (UX-44 §3)`);
         else if (out.afterScroll?.revealed) fail(`side j · a vertical drag elsewhere left the open ${what} row ${JSON.stringify(out.afterScroll)} — a scroll closes it (UX-44 §3)`);
-        if (!out.tapped || !out.buttonGone) fail(`side j · the revealed 删除 on a ${what} row ${out.tapped ? "was pressed and the row stayed" : "was not there to press"} (UX-44 §3)`);
+        if (!out.tapped || !out.buttonGone) fail(`side j · the revealed 「${word}」 on a ${what} row ${out.tapped ? "was pressed and the row stayed" : "was not there to press"} (UX-44 §3)`);
         if (!out.fullGone) fail(`side j · a full swipe across a ${what} row left it in the list — it deletes at once (UX-44 §3)`);
         return out;
       };
@@ -33380,7 +33381,7 @@ try {
         const keysR = await page.evaluate(() => [...document.querySelectorAll("[data-place-sheet] [data-recent-row]")].map((r) => r.getAttribute("data-recent-row")));
         const kinds = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("[data-place-sheet] [data-recent-row]")].map((r) => [r.getAttribute("data-recent-row"), r.getAttribute("data-recent-kind")])));
         const recentChev = await chevrons("[data-place-sheet] [data-side-recent]");
-        await swipeRows("最近", "[data-recent-row", "forget", keysR, () => forgot.map((f) => `${f.kind} ${f.place}`));
+        await swipeRows("最近", "[data-recent-row", "forget", "删除", keysR, () => forgot.map((f) => `${f.kind} ${f.place}`));
         // The record each row stands on, its own place: a page's address,
         // a directory's or a file's path.
         const want = [keysR[0], keysR[2]].map((k) => {
@@ -33395,7 +33396,7 @@ try {
         await until(3_000, async () => (await count("[data-place-sheet] [data-switch-tab]")) === 3);
         await wait(400);
         const pageChev = await chevrons("[data-place-sheet]");
-        await swipeRows("浏览器", "[data-switch-tab", "close", ["j1", "j2", "j3"], () => closedJ);
+        await swipeRows("浏览器", "[data-switch-tab", "close", "关闭", ["j1", "j2", "j3"], () => closedJ);
         if (JSON.stringify(closedJ) !== JSON.stringify(["j1", "j3"])) fail(`side j · 浏览器's deletes closed ${JSON.stringify(closedJ)} — j1 by the button, j3 by the full swipe (UX-44 §3)`);
         await shutJ("[data-place-sheet]");
         await open("sessions");

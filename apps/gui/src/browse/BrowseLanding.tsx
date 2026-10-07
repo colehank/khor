@@ -410,11 +410,12 @@ export function BrowseLanding({
       find: `${label} ${t.title} ${t.path}`,
       selected: on,
       menu: menuOf(t),
-      // **Slid left, 删除 closes the page** (UX-44 §3), in the 附栏's
-      // list: the catalog's one 删除 that a browsing tab answers by being
-      // closed (`delete`'s note). A full swipe closes it at once. The menu
-      // keeps its 关闭 for the mouse — the same act (2026-10-02).
-      swipe: bare ? { key: "close", label: gui.delete, run: () => tabs.close(t.id) } : undefined,
+      // **Slid left, 关闭 closes the page** (UX-44 §3), in the 附栏's
+      // list, in red at the row's end; a full swipe closes it at once. The
+      // menu's own word (the lead, 2026-10-07: a page is closed, not
+      // deleted — the owner's 2026-10-02 ruling), so finger and mouse say
+      // one act one way. ⚠️ 墓碑: 「删除」 on this swipe, the first cut.
+      swipe: bare ? { key: "close", label: gui.close, run: () => tabs.close(t.id) } : undefined,
       onOpen: () => {
         tabs.focus(t.id);
         opened();
