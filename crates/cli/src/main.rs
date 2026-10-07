@@ -370,8 +370,8 @@ const VERBS: &[Verb] = &[
         reach: Reach::Act,
     },
     Verb {
-        word: "accept",
-        run: accept,
+        word: "retry",
+        run: retry,
         reach: Reach::Act,
     },
     Verb {
@@ -3648,7 +3648,12 @@ fn send(rest: &[String]) -> Result<(), String> {
         return Err(usage_text().into());
     }
     let candidate = std::path::Path::new(&tail[0]);
-    if tail.len() == 1 && candidate.is_file() {
+    // `--into <dir>`: the directory on the receiving machine.
+    let into = match &tail[1..] {
+        [flag, dir] if flag == "--into" && candidate.is_file() => Some(dir.as_str()),
+        _ => None,
+    };
+    if (tail.len() == 1 || into.is_some()) && candidate.is_file() {
         let n = node()?;
         // A satellite has no khor to receive an offer: the file goes
         // over the sponsor's own scp, whole, and the verb says what
@@ -3659,8 +3664,14 @@ fn send(rest: &[String]) -> Result<(), String> {
             println!("{}", msg::sat_sent(machine, moved));
             return Ok(());
         }
-        let id = n.send(machine, candidate)?;
+        let id = n.send(machine, candidate, into.unwrap_or(""))?;
         println!("{}", cli::summary_sent(&id.0));
+        // The receiver starts the pull as soon as it reads the message:
+        // a round now, not at the next beat. Best effort — the message is
+        // written either way and reaches it with the next round.
+        if let Ok(rt) = rt() {
+            let _ = rt.block_on(n.sync_now());
+        }
         return Ok(());
     }
     let id = node()?.tell(machine, &tail.join(" "))?;
@@ -3668,18 +3679,19 @@ fn send(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// The landing prints for the same reason `pull`'s does: the payload's
-/// path was chosen silently, and a file that arrived somewhere unsaid
-/// is a file someone will go looking for.
-fn accept(rest: &[String]) -> Result<(), String> {
+/// A conversation file that failed or was cancelled, sent again: its
+/// receiver pulls it now and the landing prints, for the same reason
+/// `pull`'s does — a file that arrived somewhere unsaid is a file
+/// someone will go looking for.
+fn retry(rest: &[String]) -> Result<(), String> {
     let [id] = rest else {
         return Err(usage_text().into());
     };
     let n = node()?;
     let sid = SessionId(id.clone());
     // The summary travels the CRDT, so `khor send` over there and `khor
-    // accept` over here are a race, and accept now waits the sync axis
-    // out rather than refusing (`Node::accept`). Announced before it
+    // retry` over here are a race, and retry waits the sync axis out
+    // rather than refusing (`Node::take`). Announced before it
     // goes quiet: a verb that sits silent through a round gets killed
     // and re-run — the guessing this replaces.
     //
@@ -3703,10 +3715,10 @@ fn accept(rest: &[String]) -> Result<(), String> {
             cli::syncing_for_offer(asking, khor_node::link::dial_budget_seconds())
         );
     }
-    let (moved, landed) = rt()?.block_on(n.accept(&sid))?;
+    let (moved, landed) = rt()?.block_on(n.take(&sid))?;
     // Where the files are is the **receiving** machine's answer, not a
     // path worked out here. This verb routes when the row belongs to
-    // another machine (`accept_with`), and the path this end would
+    // another machine (`take_with`), and the path this end would
     // compute is a real-looking one under this root that nothing was
     // ever written to. `transfer_landing` remains only as the fallback
     // for a resident serve too old to say (`proto::Response::Acted`) —

@@ -115,13 +115,13 @@ fn main() {
                 khor_gui_core::chat_put_args(&query)
                     .ok_or_else(|| "chat_put needs id and name query args".to_owned())
                     .and_then(|(id, name)| {
-                        khor_gui_core::chat::chat_put(&root, &id, &name, req.as_reader())
+                        khor_gui_core::chat::chat_put(&root, &id, &name, &khor_gui_core::into_arg(&query), req.as_reader())
                     })
             } else {
                 khor_gui_core::upload_args(&query)
                     .ok_or_else(|| "upload needs machine and name query args".to_owned())
                     .and_then(|(machine, name)| {
-                        khor_gui_core::send_upload(&root, &machine, &name, req.as_reader())
+                        khor_gui_core::send_upload(&root, &machine, &name, &khor_gui_core::into_arg(&query), req.as_reader())
                     })
             };
             let (code, payload) = match outcome {

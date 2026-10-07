@@ -1,7 +1,9 @@
 //! Real-connection acceptance for the transfer kind (docs/NET.md): the
-//! summary travels the CRDT, the payload moves only on approval, a
-//! partial resumes instead of restarting, and the digest is the last
-//! word — with controls, every await under a timeout.
+//! summary travels the CRDT, the receiver pulls the payload with nobody
+//! asked (STORE-BRIEF phase 2: 直接传), into its receive location or a
+//! directory the sender chose; a partial resumes instead of restarting,
+//! a cancel keeps nothing, and the digest is the last word — with
+//! controls, every await under a timeout.
 
 mod util;
 
@@ -64,7 +66,7 @@ async fn wait_for_endpoint_file(root: &Path) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
+async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
     let ra = root("a");
     let rb = root("b");
     let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
@@ -82,9 +84,9 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     let payload: Vec<u8> = (0..1_600_000u32).map(|i| (i % 251) as u8).collect();
     let src = ra.join("big.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src).unwrap();
+    let tid = a.send("beta", &src, "").unwrap();
 
-    // The summary reaches beta on a sync; not one payload byte does.
+    // The summary reaches beta on a sync.
     timeout(Duration::from_secs(45), b.sync_now())
         .await
         .expect("sync must not hang")
@@ -105,7 +107,12 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         .find(|v| v.session.id.0 == "chat/beta")
         .expect("the machine's chat row exists")
         .session;
-    assert_eq!(row.state.state, State::Blocked, "no approval yet = 待批");
+    assert_ne!(row.state.state, State::Blocked, "a file on its way waits on nobody: never 待批");
+    assert_eq!(
+        b.log_faced("beta").unwrap().1.last().copied().flatten(),
+        Some(State::Busy),
+        "its chip says 忙碌 until it lands"
+    );
     // The file's name is in the message now, not in a row title: the row
     // belongs to the conversation and is titled after the machine.
     let offered = b.log("beta").unwrap();
@@ -116,15 +123,11 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
             .any(|m| matches!(&m.body, MsgBody::Files(f) if f[0].name == "big.bin")),
         "the offer must be a file message naming the file"
     );
-    let files_dir = rb.join("khor-drop");
-    let payload_bytes_present =
-        files_dir.exists() && fs::read_dir(&files_dir).unwrap().next().is_some();
-    assert!(!payload_bytes_present, "no byte may move before approval");
-
-    // Approval pulls all slices, verifies, lands.
-    let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
+    // beta has no resident here to start the pull by itself, so the
+    // move is asked for: all slices pulled, verified, landed.
+    let (moved, _) = timeout(Duration::from_secs(60), b.take(&tid))
         .await
-        .expect("accept must not hang")
+        .expect("take must not hang")
         .unwrap();
     assert_eq!(
         moved,
@@ -155,12 +158,17 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     assert_eq!(
         b.transfer_landing(&tid).unwrap(),
         vec![landed(f)],
-        "the landing must be nameable — accept's answer prints it"
+        "the landing must be nameable — retry's answer prints it"
     );
+    // The message carries the landing, for every device to read.
+    let fate = m.fate.clone().expect("the receiver wrote how the move stands");
+    assert_eq!(fate.step, khor_sync::chat::Step::Landed);
+    assert_eq!(fate.landed, vec![landed(f).display().to_string()]);
+    assert_eq!(fate.moved, payload.len() as i64);
 
-    // 答了才清: the landing answers the ask, so the conversation's row
-    // stops saying 待批 (传输并入对话批 — the pressure was on this row,
-    // so this row is where it lifts).
+    // The landing lifts the pressure off the conversation's row
+    // (传输并入对话批 — the pressure was on this row, so this row is
+    // where it lifts).
     let chat_row = |n: &Node| {
         n.sessions()
             .unwrap()
@@ -169,7 +177,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
             .expect("the machine's chat row exists")
             .session
     };
-    assert_ne!(chat_row(&b).state.state, State::Blocked, "答了才清");
+    assert_ne!(chat_row(&b).state.state, State::Busy, "landed presses nothing");
 
     // **The unread word is deliberately not asserted here, and that is a
     // finding rather than a gap.** Measured on this very flow
@@ -189,9 +197,8 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     // the deliverable; `b.seen` on this row is untestable until it is
     // settled, because the row is already at zero.
 
-    // The sender's seat: its own row must never say 待批 — the approval
-    // waited on is the far machine's, and a badge this end cannot clear
-    // by answering would break 角标可归零 (docs/SESSION.md).
+    // The sender's seat: its own row never says 待批 — nobody waits on
+    // anybody's approval for a conversation's file any more.
     let a_row = a
         .sessions()
         .unwrap()
@@ -202,16 +209,16 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     assert_ne!(
         a_row.state.state,
         State::Blocked,
-        "the sender's seat has nothing to approve"
+        "nothing to approve on either seat"
     );
 
     // Resume: plant a partial of the first 100k — the second pull moves
     // only the missing tail, and the result is still verbatim.
     fs::remove_file(landed(f)).unwrap();
     fs::write(khor_node::road::partial_of(&rb, &f.digest).unwrap(), &payload[..100_000]).unwrap();
-    let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
+    let (moved, _) = timeout(Duration::from_secs(60), b.take(&tid))
         .await
-        .expect("accept must not hang")
+        .expect("take must not hang")
         .unwrap();
     assert_eq!(
         moved,
@@ -231,9 +238,9 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     let mut bad = payload[..100_000].to_vec();
     bad[0] ^= 0xff;
     fs::write(khor_node::road::partial_of(&rb, &f.digest).unwrap(), &bad).unwrap();
-    let err = timeout(Duration::from_secs(60), b.accept(&tid))
+    let err = timeout(Duration::from_secs(60), b.take(&tid))
         .await
-        .expect("a failing accept must not hang either")
+        .expect("a failing take must not hang either")
         .unwrap_err();
     let probe = khor_catalog::msg::digest_mismatch('\u{0}', '\u{0}');
     assert!(
@@ -244,9 +251,12 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         !khor_node::road::partial_of(&rb, &f.digest).unwrap().exists(),
         "the poisoned partial must be discarded"
     );
-    let (moved, _) = timeout(Duration::from_secs(60), b.accept(&tid))
+    let failed = b.log("beta").unwrap().messages.into_iter().find(|x| x.id == m.id).unwrap().fate.unwrap();
+    assert_eq!(failed.step, khor_sync::chat::Step::Failed, "a failure is on the message");
+    assert!(!failed.why.is_empty(), "with its sentence: {failed:?}");
+    let (moved, _) = timeout(Duration::from_secs(60), b.take(&tid))
         .await
-        .expect("accept must not hang")
+        .expect("take must not hang")
         .unwrap();
     assert_eq!(
         moved,
@@ -257,15 +267,15 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
     // A source tampered after the offer is refused before bytes move.
     let src2 = ra.join("small.bin");
     fs::write(&src2, b"0123456789").unwrap();
-    let tid2 = a.send("beta", &src2).unwrap();
+    let tid2 = a.send("beta", &src2, "").unwrap();
     fs::write(&src2, b"0123456789ABC").unwrap();
     timeout(Duration::from_secs(20), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
-    let err = timeout(Duration::from_secs(60), b.accept(&tid2))
+    let err = timeout(Duration::from_secs(60), b.take(&tid2))
         .await
-        .expect("a refused accept must not hang either")
+        .expect("a refused take must not hang either")
         .unwrap_err();
     assert_eq!(
         err,
@@ -291,6 +301,7 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
                     size: 10,
                     digest: "ee".repeat(32),
                 }],
+                "",
             )
             .unwrap();
         let block = far.changes_since(&Default::default()).unwrap();
@@ -304,15 +315,124 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
         b.transfer_is_here(&ghost),
         "the ghost summary must be readable on beta"
     );
-    let err = timeout(Duration::from_secs(60), b.accept(&ghost))
+    let err = timeout(Duration::from_secs(60), b.take(&ghost))
         .await
-        .expect("a refused accept must not hang either")
+        .expect("a refused take must not hang either")
         .unwrap_err();
     assert_eq!(
         err,
         khor_catalog::msg::offer_lost(),
         "an unrecorded digest is refused by name"
     );
+
+    serve.abort();
+}
+
+/// The message with this transfer id, as `n` reads it.
+fn message(n: &Node, machine: &str, tid: &SessionId) -> khor_sync::chat::Message {
+    let id = tid.0.strip_prefix("transfer/").unwrap();
+    n.log(machine).unwrap().messages.into_iter().find(|m| m.id == id).expect("the message is here")
+}
+
+/// **A directory the sender chose on the receiver** is where the file
+/// lands, and the message says so; a chosen directory that is not there
+/// fails in a plain sentence on the message, and nothing lands elsewhere.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_chosen_directory_is_where_it_lands() {
+    let ra = root("into-a");
+    let rb = root("into-b");
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let ticket = a.invite().unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    timeout(Duration::from_secs(45), b.pair(&ticket)).await.expect("pairing must not hang").unwrap();
+
+    let chosen = rb.join("projects").join("in");
+    fs::create_dir_all(&chosen).unwrap();
+    let src = ra.join("notes.md");
+    fs::write(&src, b"# notes\n").unwrap();
+    let tid = a.send("beta", &src, &chosen.display().to_string()).unwrap();
+    timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
+    assert_eq!(message(&b, "beta", &tid).into, chosen.display().to_string(), "the target travels on the message");
+    let (_, landed) = timeout(Duration::from_secs(60), b.take(&tid)).await.expect("take must not hang").unwrap();
+    let want = chosen.join("notes.md");
+    assert_eq!(landed, vec![want.display().to_string()]);
+    assert_eq!(fs::read(&want).unwrap(), b"# notes\n");
+    assert!(!rb.join("khor-drop").join("notes.md").exists(), "not in the default as well");
+    assert_eq!(message(&b, "beta", &tid).fate.unwrap().landed, landed);
+
+    // The same bytes sent again to the default: copied from where they
+    // are, nothing pulled.
+    let tid = a.send("beta", &src, "").unwrap();
+    timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
+    let (moved, landed) = timeout(Duration::from_secs(60), b.take(&tid)).await.expect("take must not hang").unwrap();
+    assert_eq!((moved, landed), (0, vec![rb.join("khor-drop").join("notes.md").display().to_string()]));
+
+    // A directory that is not there: a plain failure on the message.
+    let gone = rb.join("nowhere");
+    let src2 = ra.join("b.txt");
+    fs::write(&src2, b"bee").unwrap();
+    let tid = a.send("beta", &src2, &gone.display().to_string()).unwrap();
+    timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
+    let err = timeout(Duration::from_secs(60), b.take(&tid)).await.expect("take must not hang").unwrap_err();
+    assert_eq!(err, khor_catalog::msg::no_such_dir(gone.display()));
+    let fate = message(&b, "beta", &tid).fate.unwrap();
+    assert_eq!((fate.step, fate.why), (khor_sync::chat::Step::Failed, err));
+    assert!(!gone.exists(), "nothing made where nobody asked");
+
+    serve.abort();
+}
+
+/// **A cancel keeps nothing** (STORE-BRIEF phase 2): a pull stopped
+/// while it moves ends before its next slices, its partial goes, the
+/// message says 取消 for every device, and a retry starts it again.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_cancelled_pull_leaves_nothing_and_a_retry_lands_it() {
+    let ra = root("stop-a");
+    let rb = root("stop-b");
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let ticket = a.invite().unwrap();
+    let b = std::sync::Arc::new(Node::open_as(rb.to_path_buf(), "beta").unwrap());
+    timeout(Duration::from_secs(45), b.pair(&ticket)).await.expect("pairing must not hang").unwrap();
+
+    let payload: Vec<u8> = (0..64_000_000u32).map(|i| (i % 253) as u8).collect();
+    let src = ra.join("large.bin");
+    fs::write(&src, &payload).unwrap();
+    let tid = a.send("beta", &src, "").unwrap();
+    timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
+    let digest = blake3::hash(&payload).to_hex().to_string();
+    let key = khor_node::road::sent_key(tid.0.strip_prefix("transfer/").unwrap());
+
+    let pulling = {
+        let (b, tid) = (b.clone(), tid.clone());
+        tokio::spawn(async move { b.take(&tid).await })
+    };
+    // The cancel lands once bytes are moving, as a person's × would.
+    timeout(Duration::from_secs(60), async {
+        loop {
+            if khor_node::road::peek(&key).is_some_and(|j| j.moved.load(std::sync::atomic::Ordering::Relaxed) > 0) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    })
+    .await
+    .expect("the pull must start");
+    khor_node::road::stop(&key);
+    let err = timeout(Duration::from_secs(60), pulling).await.expect("a cancelled pull must end").unwrap().unwrap_err();
+    assert_eq!(err, khor_node::road::cancelled());
+    assert!(!khor_node::road::partial_of(&rb, &digest).unwrap().exists(), "no partial kept");
+    assert!(!rb.join("khor-drop").join("large.bin").exists(), "nothing landed");
+    assert_eq!(message(&b, "beta", &tid).fate.unwrap().step, khor_sync::chat::Step::Stopped);
+
+    let (moved, landed) = timeout(Duration::from_secs(120), b.take(&tid)).await.expect("a retry must not hang").unwrap();
+    assert_eq!(moved, payload.len() as u64, "a retry after a cancel starts from nothing");
+    assert_eq!(fs::read(&landed[0]).unwrap(), payload);
 
     serve.abort();
 }

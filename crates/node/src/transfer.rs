@@ -1,10 +1,12 @@
 //! The transfer kind: bytes ride point-to-point, never the CRDT
 //! (docs/NET.md 同步). A file message in a machine's window is the
-//! summary — it travels the chat CRDT to everyone; this kind turns it
-//! into a session row and moves the payload only after the user's
-//! approval (docs/SESSION.md 传输: 摘要到了,等你许可收全量).
+//! summary — it travels the chat CRDT to everyone, and the receiver
+//! pulls the payload as soon as it reads it, nobody asked (STORE-BRIEF
+//! phase 2: 直接传); how that move stands rides the message itself
+//! (`khor_sync::chat::Fate`). The sender keeps an [`Offer`] per file: the
+//! path it serves the bytes from, and what each receiver fetched.
 //!
-//! Disk layout: an accepted payload lands in the receiving machine's
+//! Disk layout: a received payload lands in the receiving machine's
 //! receive directory under its own name, found again by its digest
 //! (`crate::road`'s receipts); its partial and the pid of a live pull sit
 //! under `.khor/received/`. A khor before the receive directory landed it
@@ -18,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use khor_catalog::msg;
 use khor_core::{SessionId, State};
-use khor_sync::chat::{FileRef, Message, MsgBody};
+use khor_sync::chat::{FileRef, Message, MsgBody, Step};
 
 /// Where an offered payload is read from, recorded at send time.
 /// Machine-local — the path means nothing on any other device. Keyed by
@@ -187,29 +189,6 @@ pub fn safe_name(name: &str) -> String {
 
 // ── the row ─────────────────────────────────────────────────
 
-/// The sender's neutral account of one offer (发端中性词批): what has
-/// happened to it, never what anyone must do. Keys cross to the faces
-/// (`key`), words are looked up at the last moment (zh.toml's rule).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Delivery {
-    /// Nobody has taken the offer up yet.
-    Waiting,
-    /// The far side is pulling bytes right now.
-    Fetching,
-    /// The whole payload was served.
-    Served,
-}
-
-impl Delivery {
-    pub fn key(&self) -> &'static str {
-        match self {
-            Delivery::Waiting => "waiting",
-            Delivery::Fetching => "fetching",
-            Delivery::Served => "served",
-        }
-    }
-}
-
 pub struct TransferKind {
     root: PathBuf,
     device_str: String,
@@ -236,67 +215,35 @@ impl TransferKind {
     /// (docs/UX.md 状态呈现: the word comes from here or not at all).
     ///
     /// Beyond the pressure `urgency` reports, the receiver's settled
-    /// states come through too (完成/空闲 once the payload landed):
-    /// on a chip "no word" must mean "not my seat", never "done" —
-    /// those are different answers to a person deciding whether to act.
-    /// `None`: a text message, a retracted one, or **any sender-seat
-    /// message** — the sender's chip speaks [`Delivery`], a neutral
-    /// fact, not a state word (发端中性词批; it used to say 忙碌 while
-    /// the fetch ran, which `Delivery::Fetching` replaces).
+    /// states come through too (完成/空闲 once the file landed): on a
+    /// chip "no word" must mean "not my seat", never "done".
+    /// `None`: a text message, a retracted one, or any message this
+    /// machine did not receive — every device shows the move itself
+    /// from the message's own record (`khor_sync::chat::Fate`); the
+    /// state word is the receiver's alone.
     ///
     /// `watermark` is the conversation's own seen mark
-    /// (`khor_sync::seen`), and it is what lets the settled half say
-    /// 空闲 at all. **It used to be hardcoded to 0 here**, which made
-    /// 完成 the only settled word a chip could ever wear: a file you
-    /// received and then looked at went on shouting 完成 for good, and
-    /// a state word that is always true is worth exactly what a badge
-    /// that never reaches zero is worth (docs/UX.md 角标).
-    pub fn message_face(
-        &self,
-        channel: &str,
-        channel_dir: &Path,
-        m: &Message,
-        watermark: i64,
-    ) -> Option<State> {
+    /// (`khor_sync::seen`): 完成 exactly when the row counts that message
+    /// unread, 空闲 exactly when it does not — the message's own stamp
+    /// against the watermark, both on the senders' clocks.
+    pub fn message_face(&self, channel: &str, m: &Message, watermark: i64) -> Option<State> {
         let MsgBody::Files(files) = &m.body else {
             return None;
         };
-        if m.retracted || files.is_empty() {
+        if m.retracted || files.is_empty() || channel != self.name || m.from.id == self.device_str {
             return None;
         }
-        let i_sent = m.from.id == self.device_str;
-        let i_receive = channel == self.name && !i_sent;
-        if !i_receive {
-            return None;
-        }
-        let (state, _) = self.receiver_face(channel_dir, &files[0], m.at, watermark);
-        Some(state)
-    }
-
-    /// Where the handover stands, said from the sender's seat as a
-    /// neutral fact (发端中性词批): the offer has not been taken up,
-    /// is being fetched, or was served whole. **Not a state word** — it
-    /// never joins the six, never ranks, never presses the row: 待批
-    /// stays the receiver's alone (`urgency`'s iron rule, untouched;
-    /// the row-level 忙碌 while bytes flow also stays `urgency`'s).
-    /// `None` for every seat but the sender's.
-    ///
-    /// `receiver` is the device id of the machine the message was sent
-    /// to (the channel's): the offer is read for that machine alone.
-    pub fn message_delivery(&self, m: &Message, receiver: &str) -> Option<Delivery> {
-        let MsgBody::Files(files) = &m.body else {
-            return None;
-        };
-        if m.retracted || files.is_empty() || m.from.id != self.device_str {
-            return None;
-        }
-        Some(
-            match load_offer(&self.root, &files[0].digest).ok().flatten().map(|o| o.fetched_by(receiver)) {
-                Some(f) if f.done => Delivery::Served,
-                Some(f) if f.started => Delivery::Fetching,
-                _ => Delivery::Waiting,
-            },
-        )
+        let settled = if m.at > watermark { State::Done } else { State::Idle };
+        Some(match m.fate.as_ref().map(|f| f.step) {
+            // Not started yet: the receiver starts it by itself, nobody
+            // asked (STORE-BRIEF phase 2) — so it is on its way.
+            None | Some(Step::Moving) => State::Busy,
+            // 断了可续: a retry carries on from the bytes kept.
+            Some(Step::Failed) => State::Errored,
+            Some(Step::Landed) => settled,
+            // Cancelled on purpose: nothing is owed and nothing is new.
+            Some(Step::Stopped) => State::Idle,
+        })
     }
 
     /// The most pressing live word among one channel's file messages,
@@ -305,34 +252,21 @@ impl TransferKind {
     /// its own — the pressure lands on the row that carries the
     /// message).
     ///
-    /// What counts as pressure, by seat:
-    /// - **receiver** (this machine was sent the file): 待批 while the
-    ///   payload waits on this machine's approval, 忙碌 while a pull
-    ///   runs, 中断 on a resumable break. 待批 comes from this seat and
-    ///   no other — the approval asked for is *this* machine's, which
-    ///   is the word's whole definition (docs/SESSION.md 六词).
-    /// - **sender**: 忙碌 while the far side is fetching. The wait for
-    ///   the far side's approval is *their* 待批, never ours — a badge
-    ///   this machine cannot clear by answering would break 角标可归零.
-    ///   (The retired transfer row said 待批 from either seat; on its
-    ///   own row that was a fact about the transfer, on the machine's
-    ///   row it would be a debt the wrong person is billed for.)
-    /// - settled transfers (payload landed, or the offer served whole)
-    ///   press nothing: 完成/未看 is already the chat row's own
-    ///   message-based reading — a file message lands like any message.
+    /// What counts as pressure, read off each message's record
+    /// (`khor_sync::chat::Fate`), by seat:
+    /// - **receiver** (this machine was sent the file): 忙碌 while it
+    ///   moves (or has not started), 中断 when it broke and a retry
+    ///   carries on.
+    /// - **sender**: 忙碌 while it moves.
+    /// - nothing is 待批 any more (STORE-BRIEF phase 2: 直接传，不用等
+    ///   接收). ⚠️ 墓碑: the receiver's 待批 while a file waited on its
+    ///   收下.
+    /// - landed or cancelled files press nothing: 完成/未看 is already
+    ///   the chat row's own message-based reading.
     ///
     /// `None` when nothing is in flight; the caller keeps the row's own
-    /// word. Ties go to the most pressing rank, stamped with the moment
-    /// that made it true.
-    ///
-    /// `receiver` is the channel's device id, [`Self::message_delivery`]'s.
-    pub fn urgency(
-        &self,
-        channel: &str,
-        channel_dir: &Path,
-        msgs: &[Message],
-        receiver: &str,
-    ) -> Option<(State, i64)> {
+    /// word. Ties go to the most pressing rank, stamped with the message.
+    pub fn urgency(&self, channel: &str, msgs: &[Message]) -> Option<(State, i64)> {
         let mut best: Option<(State, i64)> = None;
         for m in msgs {
             let MsgBody::Files(files) = &m.body else {
@@ -343,78 +277,20 @@ impl TransferKind {
             }
             let i_sent = m.from.id == self.device_str;
             let i_receive = channel == self.name && !i_sent;
-            let f = &files[0];
-            let pressed = if i_receive {
-                // Watermark 0: this branch keeps only the pressing words
-                // below, and the settled pair (完成/空闲) is the one thing
-                // the watermark decides — so nothing here can read it.
-                // The row's own message-based reading owns that half.
-                let (state, at) = self.receiver_face(channel_dir, f, m.at, 0);
-                match state {
-                    State::Blocked | State::Busy | State::Errored => Some((state, at)),
-                    _ => None,
-                }
-            } else if i_sent {
-                match load_offer(&self.root, &f.digest).ok().flatten().map(|o| o.fetched_by(receiver)) {
-                    Some(o) if o.started && !o.done => Some((State::Busy, m.at)),
-                    _ => None,
-                }
-            } else {
-                None
+            let step = m.fate.as_ref().map(|f| f.step);
+            let pressed = match step {
+                None | Some(Step::Moving) if i_receive => Some(State::Busy),
+                Some(Step::Moving) if i_sent => Some(State::Busy),
+                Some(Step::Failed) if i_receive => Some(State::Errored),
+                _ => None,
             };
-            if let Some((state, at)) = pressed
+            if let Some(state) = pressed
                 && best.is_none_or(|(b, _)| state.rank() < b.rank())
             {
-                best = Some((state, at));
+                best = Some((state, m.at));
             }
         }
         best
-    }
-
-    /// The receiver's view rides the payload on disk: what is there
-    /// decides the word, and the file's own mtime dates it.
-    ///
-    /// **Two clocks meet here, and only one of them may decide 看过没
-    /// 看过.** The landing mtime is this machine's clock; the watermark
-    /// is on the senders' clocks (`khor_sync::seen`), and the message's
-    /// stamp is the only thing in this function that shares that clock.
-    /// So the settled pair asks `msg_at > watermark` — *the row's own
-    /// question about this very message* — and never the mtime against
-    /// the watermark, which would be two clocks compared as one and
-    /// would answer differently on a machine running a second behind.
-    /// The mtime stays where it belongs: as the *when* of the state, the
-    /// moment the file actually landed here.
-    ///
-    /// One rule, therefore, and not two: a chip says 完成 exactly when
-    /// the row counts that message unread, and 空闲 exactly when it does
-    /// not. A second way of deciding "looked at" is how a chip and the
-    /// row it sits in come to disagree in front of the person.
-    fn receiver_face(
-        &self,
-        channel_dir: &Path,
-        f: &FileRef,
-        msg_at: i64,
-        watermark: i64,
-    ) -> (State, i64) {
-        if let Some(done) = crate::road::landed(&self.root, channel_dir, f) {
-            let at = mtime_ms(&done).unwrap_or(msg_at);
-            let state = if msg_at > watermark {
-                State::Done
-            } else {
-                State::Idle
-            };
-            return (state, at);
-        }
-        let partial = crate::road::partial_of(&self.root, &f.digest);
-        if let Some(partial) = partial.filter(|p| p.exists()) {
-            let at = mtime_ms(&partial).unwrap_or(msg_at);
-            if crate::road::marker_of(&self.root, &f.digest).is_some_and(|m| marker_pid_alive(&m)) {
-                return (State::Busy, at);
-            }
-            // 断了可续 — the partial is the resume point, not garbage.
-            return (State::Errored, at);
-        }
-        (State::Blocked, msg_at)
     }
 
     /// Clears what an unfinished pull of this transfer left (the partial
@@ -448,16 +324,6 @@ pub fn mtime_ms(p: &Path) -> Option<i64> {
     Some(d.as_millis() as i64)
 }
 
-fn marker_pid_alive(marker: &Path) -> bool {
-    let Ok(text) = fs::read_to_string(marker) else {
-        return false;
-    };
-    let Ok(pid) = text.trim().parse::<u32>() else {
-        return false;
-    };
-    crate::link::pid_alive(pid)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,7 +348,19 @@ mod tests {
             body: MsgBody::Files(vec![f]),
             retracted: false,
             edited: false,
+            into: String::new(),
+            fate: None,
         }
+    }
+
+    fn fated(mut m: Message, step: Step) -> Message {
+        m.fate = Some(khor_sync::chat::Fate {
+            step,
+            moved: 0,
+            landed: Vec::new(),
+            why: String::new(),
+        });
+        m
     }
 
     fn kind(root: &Path) -> TransferKind {
@@ -518,146 +396,51 @@ mod tests {
         Scratch(p)
     }
 
-    /// The receiver's pressure, walked over disk states (传输并入对话批
-    /// reshaped the retired row-walk test — same disk states, the word
-    /// now lands on the chat row): nothing = 待批, live pull = 忙碌,
-    /// partial without a live pull = 中断, and a landed payload presses
-    /// **nothing** — 完成/未看 is the chat row's own message-based
-    /// reading, so a settled transfer must not keep shouting.
+    /// **The receiver's pressure, walked over the message's record**
+    /// (STORE-BRIEF phase 2): not started and moving = 忙碌, broken =
+    /// 中断, landed or cancelled press nothing — and nothing is ever
+    /// 待批: a conversation's file waits on nobody.
     #[test]
-    fn a_receivers_pressure_walks_blocked_busy_errored_then_settles() {
+    fn a_receivers_pressure_walks_busy_errored_then_settles_and_never_blocks() {
         let root = tmp("faces");
-        let ch = root.join("ch");
-        fs::create_dir_all(ch.join("files")).unwrap();
         let k = kind(&root);
-        let f = file_ref("report.pdf");
-        let m = [msg("m1", "far", f.clone())];
-
-        let word = |k: &TransferKind| k.urgency("mybox", &ch, &m, "me").map(|(w, _)| w);
-        assert_eq!(
-            word(&k),
-            Some(State::Blocked),
-            "no payload = waiting for THIS machine"
-        );
-
-        let (partial, marker) = (
-            crate::road::partial_of(&root, &f.digest).unwrap(),
-            crate::road::marker_of(&root, &f.digest).unwrap(),
-        );
-        fs::create_dir_all(partial.parent().unwrap()).unwrap();
-        fs::write(&partial, b"he").unwrap();
-        fs::write(&marker, format!("{}", std::process::id())).unwrap();
-        assert_eq!(word(&k), Some(State::Busy), "a live pull (this pid) = busy");
-
-        fs::remove_file(&marker).unwrap();
-        assert_eq!(
-            word(&k),
-            Some(State::Errored),
-            "a partial with no live pull = resumable"
-        );
-
-        fs::remove_file(&partial).unwrap();
-        let landed = root.join("khor-drop").join("report.pdf");
-        fs::create_dir_all(landed.parent().unwrap()).unwrap();
-        fs::write(&landed, b"hello").unwrap();
-        crate::road::record(
-            &root,
-            &crate::road::Receipt {
-                digest: f.digest.clone(),
-                name: f.name.clone(),
-                path: landed,
-                size: 5,
-                from: "far".into(),
-                at_ms: 1,
-                mode: crate::road::Mode::Offer,
-            },
-        )
-        .unwrap();
-        assert_eq!(
-            word(&k),
-            None,
-            "a landed payload presses nothing; the message itself is the news"
-        );
+        let m = msg("m1", "far", file_ref("report.pdf"));
+        let word = |m: Message| k.urgency("mybox", &[m]).map(|(w, _)| w);
+        assert_eq!(word(m.clone()), Some(State::Busy), "not started = on its way, not waiting on anyone");
+        assert_eq!(word(fated(m.clone(), Step::Moving)), Some(State::Busy));
+        assert_eq!(word(fated(m.clone(), Step::Failed)), Some(State::Errored), "a retry carries on");
+        assert_eq!(word(fated(m.clone(), Step::Landed)), None, "the message itself is the news");
+        assert_eq!(word(fated(m.clone(), Step::Stopped)), None);
+        let face = |m: &Message, wm| k.message_face("mybox", m, wm);
+        assert_eq!(face(&m, 0), Some(State::Busy));
+        assert_eq!(face(&fated(m.clone(), Step::Landed), 0), Some(State::Done));
+        assert_eq!(face(&fated(m.clone(), Step::Landed), 2000), Some(State::Idle), "looked at");
+        assert_eq!(k.message_face("otherbox", &m, 0), None, "not this machine's file");
     }
 
-    /// **待批 comes from the seat whose approval is being waited on,
-    /// and no other.** The sender's offer with no fetch yet presses
-    /// nothing — the wait is the far side's 待批 (the retired row said
-    /// 待批 from either seat; folded onto the machine's row that would
-    /// bill the debt to the wrong person). Fetching presses 忙碌; a
-    /// served offer presses nothing; a third party presses nothing.
+    /// The sender's seat presses only while the bytes move; a third
+    /// party presses nothing.
     #[test]
-    fn the_senders_seat_never_presses_blocked() {
+    fn the_senders_seat_presses_only_while_it_moves() {
         let root = tmp("sender");
-        let ch = root.join("ch");
-        fs::create_dir_all(&ch).unwrap();
         let k = kind(&root);
-        let f = file_ref("data.bin");
-        let mine = [msg("m1", &"me".repeat(32), f.clone())];
-        let word = |k: &TransferKind, m: &[Message]| k.urgency("otherbox", &ch, m, "other-id").map(|(w, _)| w);
-
-        assert_eq!(
-            word(&k, &mine),
-            None,
-            "an unanswered offer is the far side's 待批, never the sender's"
-        );
-
-        save_offer(
-            &root,
-            &f.digest,
-            &Offer {
-                path: "/tmp/x".into(),
-                name: f.name.clone(),
-                size: 5,
-                started: true,
-                done: false,
-                to: Default::default(),
-            },
-        )
-        .unwrap();
-        assert_eq!(
-            word(&k, &mine),
-            Some(State::Busy),
-            "bytes flowing = busy on the sender too"
-        );
-
-        save_offer(
-            &root,
-            &f.digest,
-            &Offer {
-                path: "/tmp/x".into(),
-                name: f.name.clone(),
-                size: 5,
-                started: true,
-                done: true,
-                to: Default::default(),
-            },
-        )
-        .unwrap();
-        assert_eq!(word(&k, &mine), None, "a served offer presses nothing");
-
-        let theirs = [msg("m2", "someone-else", f.clone())];
-        assert_eq!(
-            word(&k, &theirs),
-            None,
-            "neither sender nor recipient = no pressure"
-        );
+        let mine = msg("m1", &"me".repeat(32), file_ref("data.bin"));
+        let word = |m: Message| k.urgency("otherbox", &[m]).map(|(w, _)| w);
+        assert_eq!(word(mine.clone()), None, "not started is the receiver's to start");
+        assert_eq!(word(fated(mine.clone(), Step::Moving)), Some(State::Busy));
+        assert_eq!(word(fated(mine.clone(), Step::Failed)), None);
+        assert_eq!(word(fated(mine.clone(), Step::Landed)), None);
+        assert_eq!(word(fated(msg("m2", "someone-else", file_ref("x")), Step::Moving)), None, "neither end");
     }
 
     /// **One file sent to two machines is two deliveries** (STORE-BRIEF
-    /// foundation A): the first receiver fetching it whole leaves the
-    /// second's offer waiting, on the message to each and on each row.
+    /// foundation A): the sender's record of what it served is kept per
+    /// receiver — what phase 3's broadcast counts.
     #[test]
     fn one_file_sent_to_two_receivers_is_two_deliveries() {
-        let root = tmp("two");
-        let ch = root.join("ch");
-        fs::create_dir_all(&ch).unwrap();
-        let k = kind(&root);
-        let f = file_ref("data.bin");
-        let m = msg("m1", &"me".repeat(32), f.clone());
         let mut offer = Offer {
             path: "/tmp/x".into(),
-            name: f.name.clone(),
+            name: "data.bin".into(),
             size: 5,
             started: false,
             done: false,
@@ -665,20 +448,9 @@ mod tests {
         };
         assert!(offer.note_fetch("alpha", false));
         assert!(!offer.note_fetch("alpha", false), "nothing new, nothing written");
-        save_offer(&root, &f.digest, &offer).unwrap();
-        assert_eq!(k.message_delivery(&m, "alpha"), Some(Delivery::Fetching));
-        assert_eq!(k.message_delivery(&m, "beta"), Some(Delivery::Waiting));
         assert!(offer.note_fetch("alpha", true));
-        save_offer(&root, &f.digest, &offer).unwrap();
-        assert_eq!(k.message_delivery(&m, "alpha"), Some(Delivery::Served));
-        assert_eq!(k.message_delivery(&m, "beta"), Some(Delivery::Waiting), "beta has fetched nothing");
-        let busy = |r: &str| k.urgency("box", &ch, std::slice::from_ref(&m), r).map(|(w, _)| w);
-        assert_eq!((busy("alpha"), busy("beta")), (None, None));
-        offer.note_fetch("beta", false);
-        save_offer(&root, &f.digest, &offer).unwrap();
-        assert_eq!(busy("beta"), Some(State::Busy));
-        assert_eq!(busy("alpha"), None, "alpha's is served");
-
+        assert_eq!(offer.fetched_by("alpha"), Fetched { started: true, done: true });
+        assert_eq!(offer.fetched_by("beta"), Fetched::default(), "beta has fetched nothing");
         // An offer recorded before receivers were told apart reads as one.
         let old: Offer = serde_json::from_str(r#"{"path":"/x","name":"a","size":5,"started":true,"done":true}"#).unwrap();
         assert_eq!(old.fetched_by("anyone"), Fetched { started: true, done: true });

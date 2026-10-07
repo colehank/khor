@@ -3051,9 +3051,11 @@ async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
     let (Some(id), Some(name)) = (header("x-khor-chat"), header("x-khor-name")) else {
         return Err("chat_put needs the x-khor-chat and x-khor-name headers".to_owned());
     };
+    // The directory on the conversation's machine, when the person chose one.
+    let into = header("x-khor-into").unwrap_or_default();
     let bytes = bytes.clone();
     tokio::task::spawn_blocking(move || {
-        khor_gui_core::chat::chat_put(&Node::root_from_env(), &id, &name, &mut bytes.as_slice())
+        khor_gui_core::chat::chat_put(&Node::root_from_env(), &id, &name, &into, &mut bytes.as_slice())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3086,30 +3088,38 @@ async fn term_drop_stage(request: tauri::ipc::Request<'_>) -> Result<String, Str
 /// Files this machine already has (a drop, a picker's paths), put where
 /// the agent conversation's machine keeps files (round CHAT).
 #[tauri::command]
-async fn chat_put_paths(id: String, paths: Vec<String>) -> Result<Vec<String>, String> {
+async fn chat_put_paths(id: String, paths: Vec<String>, into: Option<String>) -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(move || {
-        khor_gui_core::chat::chat_put_paths(&Node::root_from_env(), &id, &paths)
+        khor_gui_core::chat::chat_put_paths(&Node::root_from_env(), &id, &paths, into.as_deref().unwrap_or(""))
     })
     .await
     .map_err(|e| e.to_string())?
 }
 
-/// The waiting file message's 收下 — `khor accept`, same core call.
+/// A conversation file sent again after it failed or was cancelled —
+/// `khor retry`, same core call.
 #[tauri::command]
-async fn accept_transfer(msg: String) -> Result<Vec<String>, String> {
-    khor_gui_core::accept_transfer(&Node::root_from_env(), &msg).await
+async fn retry_transfer(msg: String) -> Result<Vec<String>, String> {
+    khor_gui_core::retry_transfer(&Node::root_from_env(), &msg).await
+}
+
+/// A conversation file's move cancelled on its receiver (the chip's ×).
+#[tauri::command]
+async fn stop_transfer(msg: String) -> Result<(), String> {
+    khor_gui_core::stop_transfer(&Node::root_from_env(), &msg).await
 }
 
 /// A path this machine already has, straight to `khor send`'s call —
 /// what a tauri file drop hands over, and what the bridge answers for
 /// browser verification. The picker flow is `pick_and_send` below.
 #[tauri::command]
-async fn send_path(machine: String, path: String) -> Result<String, String> {
+async fn send_path(machine: String, path: String, into: Option<String>) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         khor_gui_core::send_path(
             &Node::root_from_env(),
             &machine,
             std::path::Path::new(&path),
+            into.as_deref().unwrap_or(""),
         )
     })
     .await
@@ -3128,7 +3138,7 @@ async fn send_path(machine: String, path: String) -> Result<String, String> {
 /// path, and driving the plugin from here keeps the frontend free of
 /// the plugin's JS package and its capability grant.
 #[tauri::command]
-async fn pick_and_send(app: tauri::AppHandle, machine: String) -> Result<Option<String>, String> {
+async fn pick_and_send(app: tauri::AppHandle, machine: String, into: Option<String>) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
     let Some(picked) = app.dialog().file().blocking_pick_file() else {
         return Ok(None);
@@ -3136,7 +3146,7 @@ async fn pick_and_send(app: tauri::AppHandle, machine: String) -> Result<Option<
     let path = picked.into_path().map_err(|e| e.to_string())?;
     // Digesting a large file is real work; off the async runtime.
     tokio::task::spawn_blocking(move || {
-        khor_gui_core::send_path(&Node::root_from_env(), &machine, &path)
+        khor_gui_core::send_path(&Node::root_from_env(), &machine, &path, into.as_deref().unwrap_or(""))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -4410,7 +4420,8 @@ pub fn run() {
             open_session,
             open_on,
             machine_log,
-            accept_transfer,
+            retry_transfer,
+            stop_transfer,
             send_path,
             pick_and_send,
             chat_put,

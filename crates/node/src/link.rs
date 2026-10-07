@@ -1036,6 +1036,8 @@ impl Node {
         // the tasks it spawns that outlive one call (`Node::me`).
         let _ = node.me.set(std::sync::Arc::downgrade(&node));
         node.set_ears(&ep);
+        // Conversation files that arrived while no resident ran start now.
+        node.take_arrived();
         // The satellite sampler (附属机器批): its own task on its own
         // minute beat — a sample is an ssh dial, and the 5s pump must
         // not inherit that weight.
@@ -1696,8 +1698,8 @@ impl Node {
             ipc::Op::SyncNow => ipc::Reply::Synced {
                 outcomes: self.sync_peers(ep, true).await,
             },
-            ipc::Op::Accept { session } => {
-                match self.accept_with(ep, &crate::SessionId(session)).await {
+            ipc::Op::Take { session, action } => {
+                match self.take_with(ep, &crate::SessionId(session), &action).await {
                     Ok((moved, landed)) => ipc::Reply::Accepted { moved, landed },
                     Err(why) => ipc::Reply::Refused { why },
                 }
@@ -2902,6 +2904,9 @@ impl Node {
                 if doc == "devices" && !changes.is_empty() {
                     self.follow_after_sync();
                 }
+                if !changes.is_empty() && self.is_own_chat(&doc) {
+                    self.take_arrived();
+                }
                 Ok(Response::Synced {
                     version: reply.version,
                     changes: reply.changes,
@@ -3251,9 +3256,9 @@ impl Node {
             }
             Request::Act { session, action } => {
                 match action.as_str() {
-                    "accept" => {
+                    "take" | "stop" => {
                         let (moved, landed) =
-                            self.accept_local(ep, &crate::SessionId(session)).await?;
+                            self.take_local(ep, &crate::SessionId(session), &action).await?;
                         Ok(Response::Acted { moved, landed })
                     }
                     // Closing is the third leg of 在任意设备开: a
@@ -3863,20 +3868,36 @@ impl Node {
             .collect())
     }
 
-    /// Approves a transfer and pulls its payload from home. Resumes from
-    /// an existing partial; verifies the blake3 digest before the payload
-    /// gets its real name. Routed through the resident serve when one
-    /// holds the key.
+    /// **A conversation file landed now** (STORE-BRIEF phase 2): its
+    /// receiver pulls it at once into the directory the message names
+    /// (its receive location when none) — the same move the receiver
+    /// starts by itself when the message arrives. Asked here, it is a
+    /// retry: a move that failed or was cancelled starts again (from the
+    /// bytes a failure kept), one running is waited for, one landed is
+    /// answered. Asked from any machine; routed to the receiver, through
+    /// the resident serve when one holds the key.
     ///
     /// Returns bytes actually moved this run, and where the files are
     /// **on the machine that received them** — which is this one only
     /// when the transfer was addressed here. See
     /// [`crate::proto::Response::Acted`] for why the paths travel
     /// instead of being worked out at this end.
-    pub async fn accept(&self, id: &crate::SessionId) -> Result<(u64, Vec<String>), String> {
+    pub async fn take(&self, id: &crate::SessionId) -> Result<(u64, Vec<String>), String> {
+        self.take_act(id, "take").await
+    }
+
+    /// Cancels a conversation file's move on its receiver: the pull ends
+    /// before its next slice and nothing partial stays. Asked from any
+    /// machine.
+    pub async fn stop_take(&self, id: &crate::SessionId) -> Result<(), String> {
+        self.take_act(id, "stop").await.map(|_| ())
+    }
+
+    async fn take_act(&self, id: &crate::SessionId, action: &str) -> Result<(u64, Vec<String>), String> {
         if let Some(reply) = self
-            .via_serve(ipc::Op::Accept {
+            .via_serve(ipc::Op::Take {
                 session: id.0.clone(),
+                action: action.to_owned(),
             })
             .await
         {
@@ -3889,7 +3910,7 @@ impl Node {
         let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
             .await
             .map_err(|e| e.to_string())?;
-        let outcome = self.accept_with(&ep, id).await;
+        let outcome = self.take_with(&ep, id, action).await;
         ep.close().await;
         outcome
     }
@@ -7477,22 +7498,23 @@ impl Node {
         ))
     }
 
-    /// Accept on an endpoint the caller owns: pulls locally when this
-    /// machine is the recipient, otherwise routes the action to the
-    /// recipient's serve — 动作从哪台设备发都行 (docs/SESSION.md).
-    async fn accept_with(
+    /// A take or a stop on an endpoint the caller owns: run here when
+    /// this machine is the receiver, otherwise routed to the receiver's
+    /// serve — 动作从哪台设备发都行 (docs/SESSION.md).
+    async fn take_with(
         &self,
         ep: &iroh::Endpoint,
         id: &crate::SessionId,
+        action: &str,
     ) -> Result<(u64, Vec<String>), String> {
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(msg::no_such_transfer(&id.0));
         };
-        // Which machine to route to is read off the offer, so the wait
+        // Which machine to route to is read off the message, so the wait
         // has to happen before the fork, not inside one arm of it.
         let (channel, _) = self.transfer_after_sync(ep, id, msg_id).await?;
         if channel == self.name() {
-            return self.accept_local(ep, id).await;
+            return self.take_local(ep, id, action).await;
         }
         let target = self
             .devices_loaded()?
@@ -7505,7 +7527,7 @@ impl Node {
                 &target,
                 &Request::Act {
                     session: id.0.clone(),
-                    action: "accept".into(),
+                    action: action.to_owned(),
                 },
             )
             .await?;
@@ -7516,79 +7538,239 @@ impl Node {
         }
     }
 
-    /// The pull itself, only ever on the recipient machine. Never
+    /// The take or the stop itself, only ever on the receiver. Never
     /// re-routes an incoming Act — what lands wrong is refused, or two
     /// serves could bounce one forever.
-    async fn accept_local(
+    async fn take_local(
         &self,
         ep: &iroh::Endpoint,
         id: &crate::SessionId,
+        action: &str,
     ) -> Result<(u64, Vec<String>), String> {
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(msg::no_such_transfer(&id.0));
         };
-        // Also here, not only in `accept_with`: an incoming Act lands
-        // straight on this one (`handle`), and the recipient of a routed
-        // accept can be behind on the very offer it is being asked to
-        // approve. Costs nothing on the way through — the lookup that
-        // already succeeded upstream succeeds again before any dial.
+        // Also here, not only in `take_with`: an incoming Act lands
+        // straight on this one (`handle`), and the receiver can be behind
+        // on the very message it is asked about.
         let (channel, m) = self.transfer_after_sync(ep, id, msg_id).await?;
         if channel != self.name() {
             return Err(msg::wrong_recipient(&channel));
         }
-        let crate::MsgBody::Files(files) = &m.body else {
-            return Err(msg::no_such_transfer(&id.0));
-        };
-        let home = self
-            .devices_loaded()?
-            .doc
-            .get(&m.from.id)
-            .ok_or(msg::offerer_left_table())?;
+        if action == "stop" {
+            self.stop_sent(&channel, &m)?;
+            return Ok((0, Vec::new()));
+        }
+        self.run_take(ep, &channel, &m, true).await
+    }
 
-        // **The file road's offer mode** (`crate::road`): each file
-        // pulled by its digest into this machine's receive directory.
-        let outcome = async {
+    /// Whether a synced document is this machine's own conversation.
+    fn is_own_chat(&self, doc: &str) -> bool {
+        doc.strip_prefix("chat/")
+            .is_some_and(|ch| self.resolve(self.name()).is_ok_and(|(own, _)| own == ch))
+    }
+
+    /// **The conversation files that arrived for this machine, pulled
+    /// now** (STORE-BRIEF phase 2: 直接传，不用等接收): every file
+    /// message in this machine's own conversation that another machine
+    /// sent and whose move has not started is landed, each on a task of
+    /// its own. Called by the resident when it starts and whenever a sync
+    /// moves its conversation. A move that failed or was cancelled is
+    /// not started again here — that is a person's retry.
+    pub(crate) fn take_arrived(&self) {
+        let (Some(n), Some(ep)) = (self.me(), self.current_ears()) else {
+            return;
+        };
+        let Ok((channel, _)) = self.resolve(self.name()) else {
+            return;
+        };
+        let Ok(log) = self.chat.log(&channel) else {
+            return;
+        };
+        for m in log.messages {
+            let new = matches!(&m.body, crate::MsgBody::Files(fs) if !fs.is_empty())
+                && !m.retracted
+                && m.fate.is_none()
+                && m.from.id != self.device_str();
+            if !new {
+                continue;
+            }
+            let (n, ep, channel) = (n.clone(), ep.clone(), channel.clone());
+            tokio::spawn(async move {
+                if let Err(why) = n.run_take(&ep, &channel, &m, false).await {
+                    eprintln!("{why}");
+                }
+            });
+        }
+    }
+
+    /// One conversation file's move on its receiver, told to the
+    /// message for every device to read (`khor_sync::chat::Fate`) and to
+    /// a job keyed by the message (`road::job`), so a second ask joins
+    /// the running one instead of pulling twice. `asked`: a person asked
+    /// (a retry, a delivery waiting on it) — an ended move starts again
+    /// and a running one is waited for; otherwise (the move starting by
+    /// itself) a move that has a job already is left alone.
+    pub(crate) async fn run_take(
+        &self,
+        ep: &iroh::Endpoint,
+        channel: &str,
+        m: &chat::Message,
+        asked: bool,
+    ) -> Result<(u64, Vec<String>), String> {
+        use khor_sync::chat::{Fate, Step};
+        let crate::MsgBody::Files(files) = &m.body else {
+            return Err(msg::no_such_transfer(&m.id));
+        };
+        let key = crate::road::sent_key(&m.id);
+        let (mut job, fresh) = crate::road::job(&key);
+        if !fresh {
+            if !asked {
+                return Ok((0, Vec::new()));
+            }
+            match job.state() {
+                Ok(s) if s.done && s.dest.lines().all(|p| std::path::Path::new(p).is_file()) => {
+                    return Ok((0, s.dest.lines().map(str::to_owned).collect()));
+                }
+                Ok(s) if !s.done => return wait_for(&job).await,
+                // Ended without landing, or what landed is gone since: a
+                // retry is a new move.
+                _ => {
+                    crate::road::forget_job(&key);
+                    job = crate::road::job(&key).0;
+                }
+            }
+        }
+        // Landed already (a retry pressed after it arrived): the answer
+        // as it stands, while every file is still where it landed.
+        if let Some(f) = m.fate.as_ref().filter(|f| f.step == Step::Landed && f.landed.len() == files.len())
+            && f.landed.iter().all(|p| std::path::Path::new(p).is_file())
+        {
+            job.finish(Ok(f.landed.join("\n")));
+            return Ok((0, f.landed.clone()));
+        }
+        let size: i64 = files.iter().map(|f| f.size.max(0)).sum();
+        let tell = |step: Step, moved: i64, landed: Vec<String>, why: String| {
+            let fate = Fate { step, moved, landed, why };
+            if let Err(e) = self.chat.set_fate(channel, &m.id, &fate) {
+                eprintln!("{e}");
+            }
+        };
+        tell(Step::Moving, 0, Vec::new(), String::new());
+        let pull = async {
+            let into = if m.into.is_empty() {
+                crate::road::Dest::Receive
+            } else {
+                let dir = crate::road::expand(self.root(), &m.into);
+                if !dir.is_dir() {
+                    return Err(msg::no_such_dir(dir.display()));
+                }
+                crate::road::Dest::Dir(dir)
+            };
+            let home = self
+                .devices_loaded()?
+                .doc
+                .get(&m.from.id)
+                .ok_or(msg::offerer_left_table())?;
             let mut moved = 0u64;
-            // Where each file ends up, whether or not this run is what
-            // put it there: the asker is pointing something at these
-            // paths, and a file that was already here is no less
-            // present for having arrived earlier.
             let mut landed = Vec::with_capacity(files.len());
-            let mut reached = false;
             for f in files {
                 let parcel = crate::road::Parcel {
-                    mode: crate::road::Mode::Offer,
+                    mode: crate::road::Mode::Direct,
                     source: crate::road::Source::Offer {
                         from: home.id.clone(),
                         file: f.clone(),
                     },
-                    into: crate::road::Dest::Receive,
+                    into: into.clone(),
                     cap: None,
                     resume: true,
                 };
-                // The offerer dialled once, before the first file that
-                // has to move — so one that cannot be reached is said
-                // in the offer's own words.
-                if !reached && crate::road::receipt(self.root(), &f.digest).is_none() {
-                    self.line_to(ep, &home, wires::Proto::Main)
-                        .await
-                        .map_err(|e| match e {
-                            DialFailure::TimedOut => msg::offerer_unreachable_timeout().to_string(),
-                            DialFailure::Refused(why) => msg::offerer_unreachable(why),
-                        })?;
-                    reached = true;
-                }
-                let got = self.land(ep, &parcel, None).await?;
+                let got = self.land(ep, &parcel, Some(&job)).await?;
                 moved += got.moved;
                 landed.push(got.path.display().to_string());
             }
-            Ok((moved, landed))
+            Ok::<_, String>((moved, landed))
+        };
+        // The progress beat: the bytes on this machine, written to the
+        // message at most once a second and only when the percent moved,
+        // so a long pull costs the document at most a hundred small ops.
+        tokio::pin!(pull);
+        let mut beat = tokio::time::interval(Duration::from_secs(1));
+        let mut said = 0i64;
+        let outcome = loop {
+            tokio::select! {
+                out = &mut pull => break out,
+                _ = beat.tick() => {
+                    let now = job.moved.load(std::sync::atomic::Ordering::Relaxed) as i64;
+                    if size > 0 && now * 100 / size != said * 100 / size {
+                        said = now;
+                        tell(Step::Moving, now, Vec::new(), String::new());
+                    }
+                }
+            }
+        };
+        match &outcome {
+            Ok((_, landed)) => {
+                tell(Step::Landed, size, landed.clone(), String::new());
+                job.finish(Ok(landed.join("\n")));
+            }
+            Err(_) if job.is_stopped() => {
+                // A cancel keeps nothing: the bytes so far go with it.
+                for f in files {
+                    for p in [crate::road::partial_of(self.root(), &f.digest), crate::road::marker_of(self.root(), &f.digest)]
+                        .into_iter()
+                        .flatten()
+                    {
+                        let _ = fs::remove_file(p);
+                    }
+                }
+                tell(Step::Stopped, 0, Vec::new(), String::new());
+                job.finish(Err(crate::road::cancelled()));
+            }
+            Err(why) => {
+                let moved = job.moved.load(std::sync::atomic::Ordering::Relaxed) as i64;
+                tell(Step::Failed, moved, Vec::new(), why.clone());
+                job.finish(Err(why.clone()));
+            }
         }
-        .await;
-        if outcome.is_ok() {
-            self.emit_row_of(&crate::transfer::TransferKind::session_id(&m.id))?;
+        let _ = self.emit_row_of(&crate::transfer::TransferKind::session_id(&m.id));
+        // Everyone else reads the new state at once, not at the next beat.
+        self.nudge(ep);
+        if job.is_stopped() && outcome.is_err() {
+            return Err(crate::road::cancelled());
         }
         outcome
+    }
+
+    /// A cancel on the receiver: the running pull stops before its next
+    /// slice and cleans up after itself (`run_take`); a move that has not
+    /// started is marked cancelled so it does not start by itself.
+    fn stop_sent(&self, channel: &str, m: &chat::Message) -> Result<(), String> {
+        use khor_sync::chat::{Fate, Step};
+        let key = crate::road::sent_key(&m.id);
+        let (job, fresh) = crate::road::job(&key);
+        let ended = job.state();
+        if !fresh && ended.as_ref().is_ok_and(|s| !s.done) {
+            job.stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+            return Ok(());
+        }
+        if fresh || ended.is_err() {
+            job.stopped.store(true, std::sync::atomic::Ordering::Relaxed);
+            job.finish(Err(crate::road::cancelled()));
+        }
+        if m.fate.as_ref().is_none_or(|f| f.step != Step::Landed) {
+            self.chat.set_fate(
+                channel,
+                &m.id,
+                &Fate {
+                    step: Step::Stopped,
+                    moved: 0,
+                    landed: Vec::new(),
+                    why: String::new(),
+                },
+            )?;
+        }
+        Ok(())
     }
 
     /// Winds this machine's khor down: the serve (keeper and inner
@@ -8556,6 +8738,9 @@ impl Node {
                     moved += n;
                     if name == "devices" && n > 0 {
                         self.follow_after_sync();
+                    }
+                    if n > 0 && self.is_own_chat(&name) {
+                        self.take_arrived();
                     }
                 }
                 Err(why) if doc_must_sync(&name) => return Err(why),
@@ -9569,6 +9754,18 @@ impl Drop for RetireUnheard<'_> {
     }
 }
 
+/// A conversation file's running move, waited out: where it landed, or
+/// why it did not.
+async fn wait_for(job: &crate::road::Job) -> Result<(u64, Vec<String>), String> {
+    loop {
+        match job.state() {
+            Ok(s) if s.done => return Ok((0, s.dest.lines().map(str::to_owned).collect())),
+            Ok(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+            Err(why) => return Err(why),
+        }
+    }
+}
+
 /// A dial's failure as the sentence a person reads.
 fn unreached_words(name: &str, e: DialFailure) -> String {
     match e {
@@ -9595,9 +9792,23 @@ impl Node {
         job: Option<&crate::road::Job>,
     ) -> Result<crate::road::Landed, String> {
         if let Some(r) = crate::road::receipt(self.root(), &f.digest) {
+            if r.path.parent() == Some(dir) {
+                return Ok(crate::road::Landed {
+                    moved: 0,
+                    path: r.path,
+                    digest: Some(r.digest),
+                });
+            }
+            // The same bytes are here already, elsewhere: copied into the
+            // directory asked for, nothing pulled.
+            let at = crate::drops::landing(dir, &crate::transfer::safe_name(&f.name))?;
+            let dest = at.dest.clone();
+            let copied = fs::copy(&r.path, &at.part).and_then(|_| fs::rename(&at.part, &at.dest));
+            let _ = fs::remove_file(&at.part);
+            copied.map_err(|e| msg::cant_read(r.path.display(), e))?;
             return Ok(crate::road::Landed {
                 moved: 0,
-                path: r.path,
+                path: dest,
                 digest: Some(r.digest),
             });
         }

@@ -322,10 +322,7 @@ pub(crate) struct HostedBorrow {
 /// What `Node::log_faced` returns: a channel's log, and one transfer
 /// face per message aligned by index. A `type` only, to keep
 /// `clippy::type_complexity` off that signature.
-pub type FacedLog = (
-    chat::ChannelLog,
-    Vec<(Option<khor_core::State>, Option<transfer::Delivery>)>,
-);
+pub type FacedLog = (chat::ChannelLog, Vec<Option<khor_core::State>>);
 
 /// The pipes this node is holding open, by whatever it keys them under:
 /// where the near side listens, which far port it was built for, and the
@@ -4009,10 +4006,13 @@ impl Node {
         Some((report.usage, now_ms().saturating_sub(report.at_ms)))
     }
 
-    /// Offers a file to a machine's window: the summary (name, size,
-    /// digest) travels the CRDT to everyone; the bytes wait here for the
-    /// far side's approval. Returns the transfer session id.
-    pub fn send(&self, machine: &str, path: &Path) -> Result<SessionId, String> {
+    /// Sends a file to a machine's window: the summary (name, size,
+    /// digest, and `into`, the directory over there — empty for its
+    /// receive location) travels the CRDT to everyone, and the receiver
+    /// pulls the bytes from here as soon as it reads it, nobody asked
+    /// (STORE-BRIEF phase 2: 直接传). Returns the transfer session id.
+    pub fn send(&self, machine: &str, path: &Path, into: &str) -> Result<SessionId, String> {
+        let into = road::tidy_setting(into)?;
         let (channel, home) = self.resolve(machine)?;
         let name = path
             .file_name()
@@ -4024,7 +4024,7 @@ impl Node {
             size: size as i64,
             digest: digest.clone(),
         };
-        let told = self.chat.send_files(&channel, home, &[f])?;
+        let told = self.chat.send_files(&channel, home, &[f], &into)?;
         let path = path.canonicalize().map_err(msg::cant_canonicalize)?;
         // The same file offered again — to another machine, or again to
         // the same one — keeps what each receiver already did with it:
@@ -4143,11 +4143,8 @@ impl Node {
     /// order: two calls would let a message land between them and put
     /// every face off by one.
     pub fn log_faced(&self, machine: &str) -> Result<FacedLog, String> {
-        let (channel, home) = self.resolve(machine)?;
-        let receiver = home.hex();
+        let (channel, _) = self.resolve(machine)?;
         let log = self.chat.log(&channel)?;
-        let dir = khor_sync::chat::channel_dir(&self.root, &channel)
-            .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
         // The row's own seen mark, read once for the whole readout: the
         // chips answer 完成/空闲 with the same watermark the row counts
         // unread against, so a chip and the row it sits in cannot
@@ -4158,19 +4155,12 @@ impl Node {
             .seen_loaded()?
             .doc
             .watermark(&format!("chat/{channel}"));
-        // Per message, both readings: the receiver's state word and the
-        // sender's neutral delivery fact — at most one of the two is
-        // `Some` (the seats are exclusive), and the pane paints
-        // whichever it got.
+        // The receiver's state word per message; every seat reads the
+        // move itself off the message's own record.
         let faces = log
             .messages
             .iter()
-            .map(|m| {
-                (
-                    self.transfer.message_face(&channel, &dir, m, watermark),
-                    self.transfer.message_delivery(m, &receiver),
-                )
-            })
+            .map(|m| self.transfer.message_face(&channel, m, watermark))
             .collect();
         Ok((log, faces))
     }
@@ -5316,8 +5306,7 @@ impl KindSurface for ChatKind {
             // may say which word). More pressing wins; the row's own
             // message-based word already covers 完成/未看, because a
             // file message lands like any message.
-            if let Some(dir) = channel_dir(node.root(), &d.name)
-                && let Some((word, at)) = node.transfer.urgency(&d.name, &dir, &msgs, &d.id)
+            if let Some((word, at)) = node.transfer.urgency(&d.name, &msgs)
                 && word.rank() < row.state.state.rank()
             {
                 row.state = khor_core::StateStamp {

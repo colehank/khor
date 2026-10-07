@@ -100,6 +100,7 @@ fn a_huge_attachment_only_costs_its_metadata() {
             size: 209_715_200,
             digest: "b3:9f2c".repeat(6),
         }],
+        "",
     )
     .unwrap();
 
@@ -313,4 +314,39 @@ fn sharing_one_peer_between_two_writers_silently_loses_a_message() {
         1,
         "a shared peer loses a line — this test guards the fact, not the behaviour:\n{text}"
     );
+}
+
+/// **A file message carries its own road** (STORE-BRIEF phase 2): the
+/// sender's target and the receiver's account travel with the message,
+/// so a third device reads the same state as the two ends.
+#[test]
+fn a_file_message_carries_its_target_and_its_fate_to_every_device() {
+    let sender = ChatDoc::new(1).unwrap();
+    let receiver = ChatDoc::new(2).unwrap();
+    let third = ChatDoc::new(3).unwrap();
+    let f = FileRef {
+        name: "a.txt".into(),
+        size: 5,
+        digest: "ab".repeat(32),
+    };
+    let id = sender.send_files(&me("s"), &[f], "/data/in").unwrap();
+    receiver.merge(&sender.snapshot().unwrap()).unwrap();
+    let got = &receiver.messages()[0];
+    assert_eq!((got.into.as_str(), got.fate.clone()), ("/data/in", None), "not started yet");
+
+    let moving = Fate { step: Step::Moving, moved: 2, landed: vec![], why: String::new() };
+    receiver.set_fate(&id, &moving).unwrap();
+    let before = receiver.version();
+    receiver.set_fate(&id, &moving).unwrap();
+    assert_eq!(receiver.version(), before, "the same account twice writes nothing");
+    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/data/in/a.txt".into()], why: String::new() };
+    receiver.set_fate(&id, &landed).unwrap();
+
+    third.merge(&receiver.snapshot().unwrap()).unwrap();
+    let seen = &third.messages()[0];
+    assert_eq!(seen.fate.as_ref(), Some(&landed));
+    assert_eq!(seen.into, "/data/in");
+    let plain = sender.send_files(&me("s"), &[FileRef { name: "b".into(), size: 1, digest: String::new() }], "").unwrap();
+    let m = sender.messages().into_iter().find(|m| m.id == plain).unwrap();
+    assert_eq!(m.into, "", "the default is no key at all");
 }

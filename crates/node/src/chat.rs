@@ -203,19 +203,21 @@ impl ChatKind {
         )
     }
 
-    /// Sends file summaries — names, sizes, digests. The bytes never
-    /// enter the document; they travel a transfer after approval.
+    /// Sends file summaries — names, sizes, digests, and the directory
+    /// on the receiver (`into`, empty for its receive location). The
+    /// bytes never enter the document; the receiver pulls them at once.
     pub fn send_files(
         &self,
         channel: &str,
         home: DeviceId,
         files: &[khor_sync::chat::FileRef],
+        into: &str,
     ) -> Result<Told, String> {
         let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
         self.push(
             channel,
             home,
-            |doc| doc.send_files(&self.me, files),
+            |doc| doc.send_files(&self.me, files, into),
             serde_json::json!({ "files": names, "from": self.me.name }),
         )
     }
@@ -252,6 +254,14 @@ impl ChatKind {
             row,
             event,
         })
+    }
+
+    /// Writes how a file message's move stands (its receiver only).
+    pub fn set_fate(&self, channel: &str, msg_id: &str, fate: &khor_sync::chat::Fate) -> Result<(), String> {
+        let loaded = self.load(channel)?;
+        let mut store = loaded.store;
+        loaded.doc.set_fate(msg_id, fate)?;
+        store.flush(&loaded.doc).map(|_| ())
     }
 
     pub fn log(&self, channel: &str) -> Result<ChannelLog, String> {

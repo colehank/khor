@@ -84,7 +84,7 @@ async fn wait_for_endpoint_file(root: &Path) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
+async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() {
     let ra = root("a");
     let rb = root("b");
     let rg = root("g");
@@ -119,7 +119,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
     let payload: Vec<u8> = (0..400_000u32).map(|i| (i % 249) as u8).collect();
     let src = ra.join("plan.pdf");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src).unwrap();
+    let tid = a.send("beta", &src, "").unwrap();
     timeout(Duration::from_secs(PATIENCE), b.sync_now())
         .await
         .expect("sync must not hang")
@@ -168,68 +168,56 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
         view.source
     );
 
-    // gamma approves; the pull runs on beta, the payload comes off alpha.
-    let (moved, said) = timeout(Duration::from_secs(60), g.accept(&tid))
-        .await
-        .expect("a routed accept must not hang")
-        .unwrap();
-    assert_eq!(
-        moved,
-        payload.len() as u64,
-        "the pull should move the whole payload"
-    );
-    let landed = fs::read_dir(rb.join("khor-drop"))
-        .unwrap()
-        .flatten()
-        .map(|e| e.path())
-        .find(|p| !p.file_name().unwrap().to_string_lossy().starts_with('.'))
-        .expect("the payload should land on beta");
-    assert_eq!(
-        fs::read(&landed).unwrap(),
-        payload,
-        "bytes verbatim on the recipient"
-    );
-    // The path came back across two hops to a machine that has no such
-    // file and no such directory — so this compares what the wire said
-    // against what is on beta's disk, which is the only way to tell a
-    // travelled answer from one gamma computed under its own root.
-    assert_eq!(
-        said,
-        vec![landed.display().to_string()],
-        "the recipient's own path must travel back to the device that asked"
-    );
+    // Nobody approves anything: beta's resident pulls the payload off
+    // alpha as the sync lands the message (STORE-BRIEF phase 2: 直接传).
+    let landed = timeout(Duration::from_secs(60), async {
+        loop {
+            let found = fs::read_dir(rb.join("khor-drop"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path())
+                .find(|p| !p.file_name().unwrap().to_string_lossy().starts_with('.'));
+            if let Some(p) = found.filter(|p| fs::metadata(p).is_ok_and(|m| m.len() == payload.len() as u64)) {
+                break p;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("the payload should land on beta with nobody asked");
+    assert_eq!(fs::read(&landed).unwrap(), payload, "bytes verbatim on the recipient");
 
-    // Approving twice is idempotent — the second run moves nothing.
-    let (again, said_again) = timeout(Duration::from_secs(60), g.accept(&tid))
-        .await
-        .expect("a repeated accept must not hang")
-        .unwrap();
-    assert_eq!(again, 0, "a payload already landed moves nothing");
-    // …and still says where it is. A file that arrived on an earlier
-    // run is no less present, and a caller pointing something at it
-    // would otherwise be told nothing on every run but the first.
-    assert_eq!(
-        said_again, said,
-        "an already-landed payload still names its path"
-    );
-
-    // **The outcome does not travel to the third device any more, and
-    // that is the design rather than a loss.** This block used to sync
-    // gamma again and read the word off the transfer's own row — a row
-    // that WAS reportable. Since 传输并入对话批 (`419e5ad`) the word
-    // lives on a chat row, and chat rows are never reported: the
-    // document replicates, so every device derives its own
-    // (`ChatKind::reportable` returns false, with that reason on it).
-    // What landed on beta's disk is beta's own business.
-    //
-    // So gamma learns the outcome exactly one way, and it already did,
-    // above: `accept` answered with the bytes moved and the recipient's
-    // own paths. Re-asserting it after a sync would be asserting that a
-    // sync changed nothing.
+    // **Every device reads the same state**: beta wrote the landing on
+    // the message, and a sync carries it to gamma, which has no such
+    // file and no such directory.
+    let read_fate = |n: &Node| {
+        let id = tid.0.strip_prefix("transfer/").unwrap();
+        n.log("beta").unwrap().messages.into_iter().find(|m| m.id == id).and_then(|m| m.fate)
+    };
+    timeout(Duration::from_secs(60), async {
+        while read_fate(&b).is_none_or(|f| f.step != khor_sync::chat::Step::Landed) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("beta records the landing");
     timeout(Duration::from_secs(PATIENCE), g.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
+    let seen = read_fate(&g).expect("the landing travels to the third device");
+    assert_eq!(seen.step, khor_sync::chat::Step::Landed);
+    assert_eq!(seen.landed, vec![landed.display().to_string()], "beta's own path, read on gamma");
+
+    // A take from gamma routes to beta and answers where it is — the
+    // recipient's own path, across two hops — moving nothing again.
+    let (again, said) = timeout(Duration::from_secs(60), g.take(&tid))
+        .await
+        .expect("a routed take must not hang")
+        .unwrap();
+    assert_eq!(again, 0, "a payload already landed moves nothing");
+    assert_eq!(said, vec![landed.display().to_string()]);
     assert!(
         g.sessions()
             .unwrap()
@@ -278,7 +266,7 @@ async fn a_third_device_sees_the_row_and_its_approval_runs_on_the_recipient() {
             &beta_info.addrs,
             &Request::Act {
                 session: tid.0.clone(),
-                action: "accept".into(),
+                action: "take".into(),
             },
         ),
     )

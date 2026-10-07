@@ -279,11 +279,11 @@ usage = """
   import [<序号|id>...]  不带参数列出可导入的会话（外面开的智能体、tmux 会话、
                         ACP 对话），带序号；带序号或 id 就把它们导进列表
   tell <机器> <话...>    给机器的窗口留言（永远当字面的话）
-  send <机器> <文件|话...>
-                        给那台机器：是个存在的文件就传文件（摘要先到，
-                        对方许可后才传），不是就当留言；
-                        话恰好和文件同名时用 tell
-  accept <传输号>        许可并收下全量（在收文件的那台机器上跑）
+  send <机器> <文件|话...> [--into <目录>]
+                        给那台机器：是个存在的文件就直接传过去（落在它的
+                        接收位置，或 --into 指定的那台机器上的目录），
+                        不是就当留言；话恰好和文件同名时用 tell
+  retry <传输号>         重新传一个失败或取消的文件（哪台机器上跑都行）
   log <机器>            看那个窗口的消息
   run [--tui] [--title 名] -- <命令...>
                         临时 session：跟着这个终端活，全程网里可见
@@ -1026,7 +1026,7 @@ usage-unreadable = "有 {0} 条读不出来，总数少算了那些"
 # what drift looks like across two — and this word answers the same
 # question on both screens.
 usage-model-unnamed = "未记录模型"
-summary-sent = "摘要已发，等对方许可。传输号：{0}"
+summary-sent = "已发送，对方正在接收。传输号：{0}"
 # Said before accept goes quiet, and only when this machine does not
 # have the offer yet. A verb that sits silent gets killed and re-run,
 # which is exactly the ten-second guessing this was written to end — so
@@ -1036,7 +1036,7 @@ summary-sent = "摘要已发，等对方许可。传输号：{0}"
 # `khor_node::link::dial_budget_seconds`); neither is a guess, and a
 # printed worst case that is not true would be worse than no line.
 syncing-for-offer = "本机还没有这笔传输的记录，先同步一轮；需要询问 {0} 台机器，无法联系的每台最多等待 {1} 秒"
-pulled = "收下了，这一趟拉了 {0} 字节"
+pulled = "传完了，这一趟拉了 {0} 字节"
 pulled-to = "拉了 {0} 字节，落在 {1}"
 # The no-silent-caps rule at the CLI: a listing cut at the cap must say
 # so, or a directory's first page reads as the whole of it.
