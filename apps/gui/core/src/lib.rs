@@ -469,6 +469,13 @@ pub struct DeviceRow {
     /// Where they land now, absolute, as the machine itself resolved the
     /// setting — `None` from a khor that predates it. What 存储 lists.
     pub receive_at: Option<String>,
+    /// The setting `receive_at` answers, as the machine last resolved it
+    /// in full — `None` for the default. A `receive_dir` that differs is
+    /// one the machine has not seen yet, and 存储 says so.
+    pub receive_for: Option<String>,
+    /// Why the setting fell back to the default, in the machine's own
+    /// sentence; `None` when it took.
+    pub receive_why: Option<String>,
     /// Where this machine sits when the network is drawn as a mandala
     /// (`khor_core::map`).
     ///
@@ -1257,6 +1264,8 @@ fn rows_of_devices(
             watch: d.watch,
             receive_dir: d.receive_dir,
             receive_at: d.receive_at,
+            receive_for: d.receive_for,
+            receive_why: d.receive_why,
             label: d.label,
             id: d.id,
             name: d.name,

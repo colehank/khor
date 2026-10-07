@@ -2899,6 +2899,9 @@ impl Node {
                     &have,
                     &changes
                 ))?;
+                if doc == "devices" && !changes.is_empty() {
+                    self.follow_after_sync();
+                }
                 Ok(Response::Synced {
                     version: reply.version,
                     changes: reply.changes,
@@ -8547,7 +8550,12 @@ impl Node {
                 .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
                 .await);
             match synced {
-                Ok(n) => moved += n,
+                Ok(n) => {
+                    moved += n;
+                    if name == "devices" && n > 0 {
+                        self.follow_after_sync();
+                    }
+                }
                 Err(why) if doc_must_sync(&name) => return Err(why),
                 Err(_) => {}
             }
@@ -8876,6 +8884,7 @@ impl Node {
             let mut loaded = self.devices_loaded()?;
             moved += self.rounds(line, "devices", &mut loaded).await?;
         }
+        self.follow_after_sync();
         {
             let mut loaded = self.seen_loaded()?;
             moved += self.rounds(line, "seen", &mut loaded).await?;

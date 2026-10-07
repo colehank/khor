@@ -316,3 +316,47 @@ async fn a_payload_moves_only_on_approval_resumes_and_verifies() {
 
     serve.abort();
 }
+
+/// **A receive location set from another machine is taken on when the
+/// sync brings it** (the lead, 2026-10-07): beta sets alpha's, beta's
+/// sync pushes it, and alpha's resident resolves it then — the directory
+/// made and `receive_at` reported — without alpha receiving anything. A
+/// second sync carries the answer back to beta. (It watches the effect:
+/// a round's quota reading also opens a node on alpha, and every open
+/// follows the setting too, so this stays green with the sync hooks
+/// alone taken out.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_receive_dir_set_elsewhere_is_resolved_on_sync() {
+    let ra = root("follow-a");
+    let rb = root("follow-b");
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let alpha = a.device_str().to_owned();
+    let ticket = a.invite().unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    timeout(Duration::from_secs(45), b.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+
+    b.set_receive_dir("alpha", "~/inbox").unwrap();
+    timeout(Duration::from_secs(45), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    let want = ra.join("inbox").display().to_string();
+    let mine = |n: &Node| n.devices().unwrap().into_iter().find(|d| d.id == alpha).unwrap();
+    assert_eq!(mine(&a).receive_at.as_deref(), Some(want.as_str()), "alpha resolved it as the sync arrived");
+    assert_eq!(mine(&a).receive_for.as_deref(), Some("~/inbox"));
+    assert!(ra.join("inbox").is_dir(), "and made it");
+
+    timeout(Duration::from_secs(45), b.sync_now())
+        .await
+        .expect("sync must not hang")
+        .unwrap();
+    assert_eq!(mine(&b).receive_at.as_deref(), Some(want.as_str()), "beta reads where alpha's files land now");
+
+    serve.abort();
+}

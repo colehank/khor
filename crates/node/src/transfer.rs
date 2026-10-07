@@ -10,7 +10,8 @@
 //! under `.khor/received/`. A khor before the receive directory landed it
 //! in the channel's `files/<digest8>-<name>` ([`payload_path`]), which is
 //! still read for a file that has not moved. `close` on a transfer row
-//! deletes just that transfer's payload.
+//! clears only an unfinished pull; a landed file is the person's
+//! (deleted from 存储 or a file tree, 2026-10-07).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -416,14 +417,15 @@ impl TransferKind {
         (State::Blocked, msg_at)
     }
 
-    /// Deletes this transfer's received payload (verified and partial
-    /// both). The summary stays in the CRDT — the row falls back to 待批
-    /// and the payload can be pulled again.
+    /// Clears what an unfinished pull of this transfer left (the partial
+    /// and the pid marker). **The landed file stays, with its receipt**
+    /// (the lead, 2026-10-07): it sits in the visible receive directory
+    /// and belongs to the person, who deletes it from 存储 or a file tree
+    /// — closing a row is not deleting a file. ⚠️ 墓碑 (STORE-BRIEF phase
+    /// 1, store-a): close deleted the landed file too, the habit of the
+    /// days it lay hidden under the conversation's folder.
     pub fn close_payload(&self, channel_dir: &Path, f: &FileRef) -> Result<(), String> {
-        let landed = crate::road::landed(&self.root, channel_dir, f);
         for p in [
-            landed,
-            Some(payload_path(channel_dir, f)),
             Some(partial_path(channel_dir, f)),
             Some(pulling_marker(channel_dir, f)),
             crate::road::partial_of(&self.root, &f.digest),
@@ -436,7 +438,6 @@ impl TransferKind {
                 fs::remove_file(&p).map_err(msg::cant_delete)?;
             }
         }
-        crate::road::forget(&self.root, &f.digest);
         Ok(())
     }
 }

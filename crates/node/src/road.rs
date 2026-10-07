@@ -311,25 +311,75 @@ impl crate::Node {
 
     /// [`Self::receive_dir`] with the reason a setting did not take, and
     /// `make` false for a read that creates nothing. Reports the answer on
-    /// this machine's row when it changed.
+    /// this machine's row when it changed: where (`receive_at`) always,
+    /// and — only after a full resolution — which setting that answers
+    /// and why it fell back (`receive_for`, `receive_why`). A read of a
+    /// setting already resolved in full answers what the row says, so it
+    /// cannot undo a fallback that only making the directory found.
     pub fn receive_place(&self, make: bool) -> Result<(PathBuf, Option<String>), String> {
         let loaded = self.devices_loaded()?;
-        let setting = loaded.doc.get(&self.device_str).and_then(|d| d.receive_dir);
+        let me = loaded.doc.get(&self.device_str);
+        let setting = me.as_ref().and_then(|d| d.receive_dir.clone());
+        let taken = me.as_ref().and_then(|d| d.receive_for.clone());
+        if !make && taken == setting {
+            if let Some(at) = me.as_ref().and_then(|d| d.receive_at.clone()) {
+                return Ok((PathBuf::from(at), me.and_then(|d| d.receive_why)));
+            }
+        }
         let (dir, why) = resolve(&self.root, setting.as_deref(), make);
         let at = dir.display().to_string();
-        if loaded.doc.get(&self.device_str).and_then(|d| d.receive_at).as_deref() != Some(at.as_str()) {
+        let mut wrote = false;
+        if me.as_ref().and_then(|d| d.receive_at.as_deref()) != Some(at.as_str()) {
             loaded.doc.set_receive_at(&self.device_str, &at)?;
+            wrote = true;
+        }
+        if make && (taken != setting || me.as_ref().and_then(|d| d.receive_why.clone()) != why) {
+            loaded
+                .doc
+                .set_receive_resolved(&self.device_str, setting.as_deref().unwrap_or(""), why.as_deref().unwrap_or(""))?;
+            wrote = true;
+        }
+        if wrote {
             let mut store = loaded.store;
             store.flush(&loaded.doc)?;
         }
         Ok((dir, why))
     }
 
+    /// **A setting changed elsewhere is taken on as soon as it is seen**
+    /// (the lead, 2026-10-07): when this machine's own `receive_dir` is
+    /// not the one it last resolved in full — set from another machine
+    /// and arrived on a sync — it resolves it now (makes the directory,
+    /// probes it, reports where and why), not at its next receive. The
+    /// default needs nothing: unset and never resolved are one state.
+    pub fn follow_receive_dir(&self) -> Result<(), String> {
+        let me = self.devices_loaded()?.doc.get(&self.device_str);
+        let setting = me.as_ref().and_then(|d| d.receive_dir.clone());
+        let taken = me.and_then(|d| d.receive_for);
+        if setting != taken {
+            let (_, why) = self.receive_place(true)?;
+            if let Some(why) = why {
+                eprintln!("{why}");
+            }
+        }
+        Ok(())
+    }
+
+    /// [`Self::follow_receive_dir`] once a sync has moved the device
+    /// table: best effort — the sync itself went through, so a failure
+    /// here is said, not handed back to it.
+    pub(crate) fn follow_after_sync(&self) {
+        if let Err(why) = self.follow_receive_dir() {
+            eprintln!("{why}");
+        }
+    }
+
     /// Sets where files sent to `machine` land, for everyone; empty takes
     /// it back to the default. Refused here, at the one write entry
     /// ([`tidy_setting`]), so the CLI and the face say one sentence.
     /// Answers the setting as kept. This machine's own takes at once;
-    /// another machine resolves it when it next receives or starts.
+    /// another machine resolves it as soon as a sync brings it the change
+    /// ([`Self::follow_receive_dir`]), or when it next starts.
     pub fn set_receive_dir(&self, machine: &str, dir: &str) -> Result<String, String> {
         let kept = tidy_setting(dir)?;
         let (_, home) = self.resolve(machine)?;
@@ -562,6 +612,53 @@ mod tests {
         assert_eq!(at, root.join("khor-drop"));
         assert!(why.is_some(), "a file is not a directory, and it is said");
         assert!(root.join("khor-drop").is_dir());
+    }
+
+    /// **A setting written elsewhere is taken on when it is seen** (the
+    /// lead, 2026-10-07): a change to this machine's own register that no
+    /// local call made — as a sync brings it — is resolved in full by
+    /// `follow_receive_dir`: made, reported with the setting it answers,
+    /// and a fallback reported with its reason; a read after that does not
+    /// undo the fallback.
+    #[test]
+    fn a_setting_from_elsewhere_is_resolved_when_followed() {
+        let root = crate::testdir::TempTree::fresh("road-follow");
+        let n = crate::Node::open(root.to_path_buf()).unwrap();
+        let me = n.device_str().to_owned();
+        let row = |n: &crate::Node| n.devices_loaded().unwrap().doc.get(&me).unwrap();
+        let write = |dir: &str| {
+            let loaded = n.devices_loaded().unwrap();
+            loaded.doc.set_receive_dir(&me, dir).unwrap();
+            let mut store = loaded.store;
+            store.flush(&loaded.doc).unwrap();
+        };
+        n.follow_receive_dir().unwrap();
+        assert_eq!(row(&n).receive_for, None, "the default needs nothing");
+        assert!(!root.join("khor-drop").exists(), "and makes nothing");
+
+        write("~/inbox");
+        n.follow_receive_dir().unwrap();
+        let got = row(&n);
+        assert_eq!(got.receive_at.as_deref(), Some(root.join("inbox").display().to_string().as_str()));
+        assert_eq!((got.receive_for.as_deref(), got.receive_why), (Some("~/inbox"), None));
+        assert!(root.join("inbox").is_dir(), "made at once, not at the next receive");
+
+        std::fs::write(root.join("plain"), b"x").unwrap();
+        let plain = root.join("plain").display().to_string();
+        write(&plain);
+        n.follow_receive_dir().unwrap();
+        let got = row(&n);
+        assert_eq!(got.receive_at.as_deref(), Some(root.join("khor-drop").display().to_string().as_str()));
+        assert_eq!(got.receive_for.as_deref(), Some(plain.as_str()));
+        assert!(got.receive_why.is_some(), "the fallback says why");
+        let (at, why) = n.receive_place(false).unwrap();
+        assert_eq!(at, root.join("khor-drop"), "a read does not undo the fallback");
+        assert!(why.is_some());
+
+        write("");
+        n.follow_receive_dir().unwrap();
+        let got = row(&n);
+        assert_eq!((got.receive_for, got.receive_why), (None, None), "back to the default");
     }
 
     #[test]

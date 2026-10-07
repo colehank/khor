@@ -487,6 +487,50 @@ fn an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it() {
     );
 }
 
+/// **Closing a transfer is not deleting a file** (the lead, 2026-10-07):
+/// the landed file sits in the visible receive directory and is the
+/// person's, so `close` leaves it and its receipt and clears only what an
+/// unfinished pull left.
+#[test]
+fn closing_a_transfer_keeps_the_landed_file() {
+    let r = root("close-keeps");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let far = ChatDoc::new(0xFAFB).unwrap();
+    let who = Sender {
+        id: "dev-far".into(),
+        name: "far".into(),
+    };
+    let f = khor_node_test_fileref();
+    far.send_files(&who, std::slice::from_ref(&f)).unwrap();
+    let msg_id = far.messages().last().expect("the offer is in the doc").id.clone();
+    let dir = channel_dir(&r, n.name()).unwrap();
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("u-000000000000fafb-00000000.loro"), far.changes_since(&Default::default()).unwrap()).unwrap();
+
+    let landed = n.receive_dir().unwrap().join("drop.bin");
+    fs::write(&landed, b"bytes!").unwrap();
+    crate::road::record(
+        &r,
+        &crate::road::Receipt {
+            digest: f.digest.clone(),
+            name: f.name.clone(),
+            path: landed.clone(),
+            size: 6,
+            from: "dev-far".into(),
+            at_ms: 1,
+            mode: crate::road::Mode::Offer,
+        },
+    )
+    .unwrap();
+    let partial = crate::road::partial_of(&r, &f.digest).unwrap();
+    fs::write(&partial, b"by").unwrap();
+
+    n.close(&SessionId(format!("transfer/{msg_id}"))).unwrap();
+    assert!(landed.exists(), "the landed file is the person's: close must leave it");
+    assert!(crate::road::receipt(&r, &f.digest).is_some(), "and its receipt, so the chip still finds it");
+    assert!(!partial.exists(), "what an unfinished pull left goes");
+}
+
 /// The file ref the incoming-offer test plants.
 fn khor_node_test_fileref() -> khor_sync::chat::FileRef {
     khor_sync::chat::FileRef {

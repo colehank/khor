@@ -167,6 +167,16 @@ const F_RECEIVE_DIR: &str = "receive_dir";
 /// alone; another screen lists this directory and compares it with the
 /// setting to say when the setting did not take.
 const F_RECEIVE_AT: &str = "receive_at";
+/// The setting `F_RECEIVE_AT` was last resolved for, written by the
+/// machine beside it — empty for the default. A setting that differs is
+/// one the machine has not taken on yet: it resolves it as soon as it
+/// sees the change on a sync (the lead, 2026-10-07), and a screen can say
+/// so until then.
+const F_RECEIVE_FOR: &str = "receive_for";
+/// Why the setting did not take, in the machine's own sentence, when it
+/// fell back to the default; empty when it took. Written by the machine
+/// with `F_RECEIVE_FOR`.
+const F_RECEIVE_WHY: &str = "receive_why";
 /// The name a person gave this machine, overriding the one it reports
 /// about itself (`F_NAME`).
 ///
@@ -305,6 +315,12 @@ pub struct DeviceInfo {
     /// Where they land now, as the machine itself resolved it
     /// (`F_RECEIVE_AT`): `None` from a khor that predates the setting.
     pub receive_at: Option<String>,
+    /// The setting `receive_at` answers (`F_RECEIVE_FOR`): `None` for the
+    /// default, or for a machine that never resolved one.
+    pub receive_for: Option<String>,
+    /// Why the setting fell back to the default (`F_RECEIVE_WHY`): `None`
+    /// when it took.
+    pub receive_why: Option<String>,
 }
 
 impl DeviceInfo {
@@ -535,6 +551,14 @@ impl DeviceDoc {
         self.set_str_once(id, F_RECEIVE_AT, path)
     }
 
+    /// Records which setting a machine last resolved in full (empty for
+    /// the default) and why it fell back, empty when it took — written by
+    /// that machine alone, beside `set_receive_at`.
+    pub fn set_receive_resolved(&self, id: &str, setting: &str, why: &str) -> Result<(), String> {
+        self.set_str_once(id, F_RECEIVE_FOR, setting)?;
+        self.set_str_once(id, F_RECEIVE_WHY, why)
+    }
+
     /// One string register, written only when it changes; empty is
     /// stored rather than deleted (`F_LABEL`'s reason) unless it was
     /// never written at all.
@@ -706,6 +730,12 @@ impl DeviceDoc {
                     .filter(|d| !d.trim().is_empty()),
                 receive_at: self
                     .str_field(&id, F_RECEIVE_AT)
+                    .filter(|d| !d.trim().is_empty()),
+                receive_for: self
+                    .str_field(&id, F_RECEIVE_FOR)
+                    .filter(|d| !d.trim().is_empty()),
+                receive_why: self
+                    .str_field(&id, F_RECEIVE_WHY)
                     .filter(|d| !d.trim().is_empty()),
                 id,
             })
@@ -993,6 +1023,16 @@ mod tests {
         a.merge(&b.changes_since(&Default::default()).unwrap()).unwrap();
         assert_eq!(a.get("cc").unwrap().receive_dir, None, "clearing travels back");
         assert_eq!(a.get("cc").unwrap().receive_at.as_deref(), Some("/home/t/inbox"));
+        // What the machine resolved, and why it fell back, ride beside.
+        a.set_receive_resolved("cc", "~/inbox", "no room").unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        let got = b.get("cc").unwrap();
+        assert_eq!(got.receive_for.as_deref(), Some("~/inbox"));
+        assert_eq!(got.receive_why.as_deref(), Some("no room"));
+        a.set_receive_resolved("cc", "", "").unwrap();
+        b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+        let got = b.get("cc").unwrap();
+        assert_eq!((got.receive_for, got.receive_why), (None, None), "cleared, both read as absent");
     }
 
     fn d_items(d: &DeviceDoc) -> usize {
