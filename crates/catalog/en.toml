@@ -892,6 +892,9 @@ reach-entrance = "Entrance: {0} ({1} ms)"
 reach-no-entrance = "No machine can connect to it"
 reach-disagree = "These machines' known_hosts hold different keys for this name: they mean different machines"
 reach-known-as = "This key belongs to {0}"
+# Round ROAD-1: roads with legs in `khor devices --roads`.
+roads-ssh = "ssh"
+roads-broken = "broken at {0} → {1}"
 
 [msg]
 watch-path-relative = "Watched directory must be an absolute path: {0}"

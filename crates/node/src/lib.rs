@@ -74,7 +74,7 @@ pub use khor_core::avatar::{
     Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    CpuDay, Fill, Hop, Link, Load, ReachOutcome, ReachSeen, ReachView, Road, RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
+    CpuDay, Fill, Hop, Leg, Link, Load, ReachOutcome, ReachSeen, ReachView, Road, RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
     WireCounts,
     UsageDay, Vitals, kind,
 };

@@ -1380,6 +1380,36 @@ fn sha256_b64_to_hex(b64: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// **A sponsor's road to its satellite** (round ROAD-1): `ssh` while
+    /// the last sample is fresh, `none` once it is not, and through the
+    /// sponsor from anywhere else — on a scratch store, no ssh at all.
+    #[test]
+    fn a_sponsors_road_to_its_satellite_follows_the_last_sample() {
+        let dir = std::env::temp_dir().join(format!("khor-sat-road-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let n = crate::Node::open_as(dir.clone(), "sponsor").unwrap();
+        let me = n.device_str().to_owned();
+        let sat = "ab".repeat(32);
+        {
+            let loaded = n.devices_loaded().unwrap();
+            loaded.doc.upsert(&sat, "box", &[]).unwrap();
+            loaded.doc.set_satellite(&sat, &me, "box", false).unwrap();
+            let mut store = loaded.store;
+            store.flush(&loaded.doc).unwrap();
+        }
+        assert_eq!(n.satellite_road(&sat), None, "never sampled: no reading");
+        n.cache_peer_vitals_aged(&sat, &parse_vitals(""), 1_000).unwrap();
+        assert_eq!(n.satellite_road(&sat), Some(khor_core::RoadKind::Ssh));
+        let mine = n.my_satellite_roads();
+        assert_eq!(mine.len(), 1);
+        assert_eq!((mine[0].to.as_str(), mine[0].road), (sat.as_str(), khor_core::RoadKind::Ssh));
+        n.cache_peer_vitals_aged(&sat, &parse_vitals(""), crate::roadbook::SAT_FRESH.as_millis() as u64 + 1_000)
+            .unwrap();
+        assert_eq!(n.satellite_road(&sat), Some(khor_core::RoadKind::None), "a stale sample is a broken ssh");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// The fingerprint-to-id math on a fixed digest: 32 bytes in, the
     /// device table's 64-hex shape out — and the two malformed shapes
     /// (bad base64, wrong length) mint nothing rather than a wrong id.

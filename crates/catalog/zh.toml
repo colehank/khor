@@ -1298,6 +1298,9 @@ reach-entrance = "入口：{0}（{1} 毫秒）"
 reach-no-entrance = "没有一台机器连得上它"
 reach-disagree = "几台机器的 known_hosts 给这个名字记着不同的钥匙：它们说的不是同一台机器"
 reach-known-as = "这把钥匙是 {0} 的"
+# Round ROAD-1: roads with legs in `khor devices --roads`.
+roads-ssh = "ssh"
+roads-broken = "断在 {0} → {1}"
 
 [msg]
 # ── the watch list (关注目录) ──

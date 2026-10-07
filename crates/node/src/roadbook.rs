@@ -34,7 +34,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use khor_core::{Road, RoadKind};
+use khor_core::{Leg, Road, RoadKind};
 
 /// How long a new kind of road must hold before it is written.
 pub(crate) const SETTLE: Duration = Duration::from_secs(12);
@@ -97,7 +97,7 @@ impl RoadBook {
     /// One beat's reading of the road to `to`; the road to write, when
     /// one is due.
     pub(crate) fn note(&mut self, to: &str, seen: Seen, now: Instant) -> Option<Road> {
-        let road = |s: &Seen| Road { to: to.to_owned(), road: s.road, relay: s.relay.clone(), ms: s.ms };
+        let road = |s: &Seen| Road::own(to, s.road, s.relay.clone(), s.ms);
         let Some(w) = self.written.get(to) else {
             // Never written: the first reading that holds is the first
             // write, by the same settling rule — but `none` only once it
@@ -174,6 +174,20 @@ impl crate::Node {
             if let Some(mine) = all.iter().find(|d| d.id == me) {
                 book.start_from(&roads_in(mine), now);
             }
+            // **A sponsor's road to each of its satellites** (round ROAD-1):
+            // its ssh, up while the last sample is fresh. Never sampled
+            // yet is no reading, as an idle wire is.
+            for d in all.iter().filter(|d| d.sponsor.as_deref() == Some(me.as_str())) {
+                match self.satellite_road(&d.id) {
+                    Some(road) => {
+                        let seen = Seen { road, relay: None, ms: None };
+                        if let Some(w) = book.note(&d.id, seen, now) {
+                            due.push(w);
+                        }
+                    }
+                    None => book.idle(&d.id),
+                }
+            }
             for d in all.iter().filter(|d| d.id != me && d.sponsor.is_none()) {
                 let r = self.wires.link(&d.id);
                 let road = match r.road {
@@ -215,12 +229,91 @@ impl crate::Node {
         }
     }
 
+    /// This sponsor's road to satellite `sat`: `ssh` while its last
+    /// sample is younger than [`SAT_FRESH`], `none` once older; `None`
+    /// before the first sample.
+    pub fn satellite_road(&self, sat: &str) -> Option<RoadKind> {
+        let (_, age_ms) = self.vitals_of(sat)?;
+        Some(if Duration::from_millis(age_ms) < SAT_FRESH { RoadKind::Ssh } else { RoadKind::None })
+    }
+
+    /// **This machine's roads to its own satellites**, read live (the
+    /// sampler's age), as [`Self::satellite_road`] says them.
+    pub fn my_satellite_roads(&self) -> Vec<Road> {
+        let me = self.device_str();
+        self.devices()
+            .unwrap_or_default()
+            .iter()
+            .filter(|d| d.sponsor.as_deref() == Some(me))
+            .filter_map(|d| Some(Road::own(&d.id, self.satellite_road(&d.id)?, None, None)))
+            .collect()
+    }
+
+    /// **`x`'s roads with its roads to satellites added** (round ROAD-1):
+    /// `x_roads` are `x`'s own (live for this machine, the table's for
+    /// another); a satellite sponsored by another machine is reached
+    /// through that sponsor ([`through_sponsors`]).
+    pub fn with_satellite_roads(&self, x: &str, x_roads: Vec<Road>) -> Vec<Road> {
+        let all = self.devices().unwrap_or_default();
+        let me = self.device_str();
+        let sats: Vec<(String, String)> = all
+            .iter()
+            .filter_map(|d| Some((d.id.clone(), d.sponsor.clone()?)))
+            .collect();
+        through_sponsors(x, x_roads, &sats, |sponsor, sat| {
+            if sponsor == me {
+                return self.satellite_road(sat).map(|road| Road::own(sat, road, None, None));
+            }
+            all.iter()
+                .find(|d| d.id == sponsor)
+                .and_then(|d| roads_in(d).into_iter().find(|r| r.to == sat))
+        })
+    }
+
     /// The roads `d` reports, as the table holds them (round NET-12): for
     /// another machine's row. This machine's own roads are its live
     /// wires (`Node::links`), never this.
     pub fn roads_of(&self, d: &khor_sync::devices::DeviceInfo) -> Vec<Road> {
         roads_in(d)
     }
+}
+
+/// How old a satellite's last sample may be and its ssh still count as
+/// up: two and a half of the sampler's rounds, so one slow round is not
+/// a broken road.
+pub const SAT_FRESH: Duration = Duration::from_millis(crate::satellite::SAMPLE_EVERY.as_millis() as u64 * 5 / 2);
+
+/// **Roads to satellites through their sponsors**, added to `x`'s own.
+/// For each satellite `s` whose sponsor `p` is not `x`: the first leg is
+/// `x`'s road to `p`, the second `p`'s ssh road to `s` (`second`). A
+/// road is written only when both legs are known, or one is known
+/// broken: a leg nobody has a reading for is no word, as an idle wire is.
+pub fn through_sponsors(
+    x: &str,
+    mut x_roads: Vec<Road>,
+    sats: &[(String, String)],
+    second: impl Fn(&str, &str) -> Option<Road>,
+) -> Vec<Road> {
+    for (s, p) in sats {
+        if p == x || x_roads.iter().any(|r| &r.to == s) {
+            continue;
+        }
+        let first = x_roads.iter().find(|r| &r.to == p).cloned();
+        let second = second(p, s);
+        let broken = |from: &str, to: &str| Road {
+            via: Some(p.clone()),
+            broken: Some(Leg { from: from.to_owned(), to: to.to_owned() }),
+            ..Road::own(s, RoadKind::None, None, None)
+        };
+        let road = match (first, second.map(|r| r.road)) {
+            (Some(f), _) if f.road == RoadKind::None => broken(x, p),
+            (_, Some(RoadKind::None)) => broken(p, s),
+            (Some(f), Some(RoadKind::Ssh)) => Road { to: s.clone(), via: Some(p.clone()), ..f },
+            _ => continue,
+        };
+        x_roads.push(road);
+    }
+    x_roads
 }
 
 fn roads_in(d: &khor_sync::devices::DeviceInfo) -> Vec<Road> {
@@ -254,7 +347,7 @@ mod tests {
     fn a_kind_is_written_once_it_has_held() {
         let t0 = Instant::now();
         let mut b = RoadBook::default();
-        b.start_from(&[Road { to: "a".into(), road: RoadKind::Direct, relay: None, ms: Some(20) }], t0);
+        b.start_from(&[Road::own("a", RoadKind::Direct, None, Some(20))], t0);
         let s = |n: u64| t0 + Duration::from_secs(n);
         assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(1)), None);
         assert_eq!(b.note("a", seen(RoadKind::Direct, Some(20)), s(5)), None, "flapped back: nothing");
@@ -275,7 +368,7 @@ mod tests {
     fn a_round_trip_is_written_by_a_quarter_at_most_every_ten_minutes() {
         let t0 = Instant::now();
         let mut b = RoadBook::default();
-        b.start_from(&[Road { to: "a".into(), road: RoadKind::Direct, relay: None, ms: Some(38) }], t0);
+        b.start_from(&[Road::own("a", RoadKind::Direct, None, Some(38))], t0);
         let m = |n: u64| t0 + Duration::from_secs(n * 60);
         assert_eq!(b.note("a", seen(RoadKind::Direct, Some(50)), m(5)), None, "38 -> 50 inside the floor: no");
         assert_eq!(b.note("a", seen(RoadKind::Direct, Some(41)), m(11)), None, "38 -> 41: no");
@@ -311,7 +404,7 @@ mod tests {
         let t0 = Instant::now();
         let s = |n: u64| t0 + Duration::from_secs(n);
         let mut b = RoadBook::default();
-        b.start_from(&[Road { to: "a".into(), road: RoadKind::Direct, relay: None, ms: Some(20) }], t0);
+        b.start_from(&[Road::own("a", RoadKind::Direct, None, Some(20))], t0);
         assert_eq!(b.note("a", seen(RoadKind::Relay, Some(90)), s(1)), None);
         // The wire closes idle for a minute: nothing is noted, so nothing
         // can be written — and the relay reading 60 s ago held nothing.
@@ -322,8 +415,38 @@ mod tests {
 
     #[test]
     fn a_register_reads_back_as_the_road_it_was() {
-        let r = Road { to: "ab".into(), road: RoadKind::Relay, relay: Some("relay.khor.cloud".into()), ms: Some(180) };
+        let r = Road::own("ab", RoadKind::Relay, Some("relay.khor.cloud".into()), Some(180));
         assert_eq!(from_json("ab", &to_json(&r)), Some(r));
+        let ssh = Road::own("ab", RoadKind::Ssh, None, None);
+        assert_eq!(from_json("ab", &to_json(&ssh)), Some(ssh), "a sponsor's road to its satellite");
         assert_eq!(from_json("ab", "{\"road\":\"sideways\"}"), None, "a kind this build does not know");
+    }
+
+    /// A satellite is reached through its sponsor: both legs up is the
+    /// first leg's road with `via`; either leg down names that leg; a
+    /// leg nobody has read is no road at all.
+    #[test]
+    fn a_satellite_is_reached_through_its_sponsor_and_a_break_names_its_leg() {
+        let sats = vec![("s".to_owned(), "p".to_owned())];
+        let up = |_: &str, _: &str| Some(Road::own("s", RoadKind::Ssh, None, None));
+        let down = |_: &str, _: &str| Some(Road::own("s", RoadKind::None, None, None));
+        let unread = |_: &str, _: &str| None;
+        let to_p = |k| vec![Road::own("p", k, None, Some(9))];
+
+        let r = through_sponsors("x", to_p(RoadKind::Relay), &sats, up);
+        let s = r.iter().find(|r| r.to == "s").expect("a road to the satellite");
+        assert_eq!((s.road, s.via.as_deref(), s.ms, &s.broken), (RoadKind::Relay, Some("p"), Some(9), &None));
+
+        let r = through_sponsors("x", to_p(RoadKind::None), &sats, up);
+        let s = r.iter().find(|r| r.to == "s").unwrap();
+        assert_eq!((s.road, s.broken.as_ref().map(|l| (l.from.as_str(), l.to.as_str()))), (RoadKind::None, Some(("x", "p"))));
+
+        let r = through_sponsors("x", to_p(RoadKind::Direct), &sats, down);
+        let s = r.iter().find(|r| r.to == "s").unwrap();
+        assert_eq!(s.broken.as_ref().map(|l| (l.from.as_str(), l.to.as_str())), Some(("p", "s")));
+
+        assert!(through_sponsors("x", to_p(RoadKind::Direct), &sats, unread).iter().all(|r| r.to != "s"));
+        assert!(through_sponsors("x", vec![], &sats, up).iter().all(|r| r.to != "s"), "no road to the sponsor read");
+        assert!(through_sponsors("p", vec![], &sats, up).is_empty(), "the sponsor's own road is its ssh, not this");
     }
 }

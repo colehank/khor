@@ -1014,6 +1014,32 @@ pub struct Road {
     /// only by more than a quarter, at most once in ten minutes.
     #[serde(default)]
     pub ms: Option<u16>,
+    /// **The machine this road goes through** (round ROAD-1), when it
+    /// does not reach `to` itself: a satellite's sponsor, which runs ssh
+    /// for it. `road`, `relay` and `ms` are then the first leg's, to
+    /// `via`. `None` for a road of its own. At most one: khor's roads
+    /// have at most one forwarding hop.
+    #[serde(default)]
+    pub via: Option<String>,
+    /// **Which leg broke**, when `road` is `none` on a road with legs:
+    /// its two ends by device id. `None` on a road of its own, whose one
+    /// leg is the road.
+    #[serde(default)]
+    pub broken: Option<Leg>,
+}
+
+impl Road {
+    /// A road of its own: no hop, nothing broken.
+    pub fn own(to: impl Into<String>, road: RoadKind, relay: Option<String>, ms: Option<u16>) -> Self {
+        Road { to: to.into(), road, relay, ms, via: None, broken: None }
+    }
+}
+
+/// One leg of a road, by its two ends' device ids.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Leg {
+    pub from: String,
+    pub to: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -1023,6 +1049,10 @@ pub enum RoadKind {
     Relay,
     /// No live wire: unreachable from that machine.
     None,
+    /// **A sponsor's road to its satellite** (round ROAD-1): its ssh to it
+    /// answered the last sample (docs/NET.md 卫星). An older khor does not
+    /// know the word and reads the register as no road.
+    Ssh,
 }
 
 /// **One machine's try at an address a person gave** (round ROAD-1,

@@ -1352,10 +1352,14 @@ fn rows_of_devices(
             // This machine's from its live wires, first-hand, the same
             // readings `rtt_ms` and `relay` are; another machine's as it
             // wrote them into the table (round NET-12).
+            // Satellites through their sponsors (round ROAD-1): this
+            // machine's ssh to its own read live, the rest composed.
             roads: if d.id == me {
-                own_roads(&links)
+                let mut own = own_roads(&links);
+                own.extend(n.my_satellite_roads());
+                n.with_satellite_roads(&d.id, own)
             } else {
-                n.roads_of(&d)
+                n.with_satellite_roads(&d.id, n.roads_of(&d))
             },
             face: n.face_of(&d),
             pinned: d.pinned,
@@ -1407,16 +1411,16 @@ fn own_roads(links: &[(String, khor_node::Link)]) -> Vec<khor_node::Road> {
                 (_, Some(_)) => RoadKind::None,
                 _ => return None,
             };
-            Some(khor_node::Road {
-                to: to.clone(),
+            Some(khor_node::Road::own(
+                to.clone(),
                 road,
-                relay: if road == RoadKind::Relay { l.relay.clone() } else { None },
-                ms: if road == RoadKind::None {
+                if road == RoadKind::Relay { l.relay.clone() } else { None },
+                if road == RoadKind::None {
                     None
                 } else {
                     l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16)
                 },
-            })
+            ))
         })
         .collect()
 }

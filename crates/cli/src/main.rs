@@ -2297,6 +2297,18 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
         },
         // `none` is unreachable, never idle (round NET-13).
         khor_node::RoadKind::None => khor_catalog::hop::word(khor_node::Link::DOWN_KEY).to_owned(),
+        khor_node::RoadKind::Ssh => cli::roads_ssh().to_owned(),
+    };
+    // A road with legs (round ROAD-1): which machine it goes through, and
+    // which leg broke.
+    let legs = |r: &khor_node::Road| {
+        let via = r.via.as_deref().map(|v| format!(" {}", cli::via_sponsor(name(v)))).unwrap_or_default();
+        let broke = r
+            .broken
+            .as_ref()
+            .map(|l| format!(" {}", cli::roads_broken(name(&l.from), name(&l.to))))
+            .unwrap_or_default();
+        format!("{via}{broke}")
     };
     for d in all.iter().filter(|d| d.sponsor.is_none()) {
         let me = d.id == n.device_str();
@@ -2315,11 +2327,19 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
                     };
                     (to.clone(), word, at.map(ms))
                 })
+                .chain(
+                    // Its satellites, by its own ssh, and the others' through
+                    // their sponsors — composed from the same live wires.
+                    n.with_satellite_roads(&d.id, own_roads(links, n.my_satellite_roads()))
+                        .into_iter()
+                        .filter(|r| all.iter().any(|s| s.id == r.to && s.sponsor.is_some()))
+                        .map(|r| (r.to.clone(), format!("{}{}", way(r.road, r.relay.as_deref()), legs(&r)), r.ms)),
+                )
                 .collect()
         } else {
-            n.roads_of(d)
+            n.with_satellite_roads(&d.id, n.roads_of(d))
                 .into_iter()
-                .map(|r| (r.to.clone(), way(r.road, r.relay.as_deref()), r.ms))
+                .map(|r| (r.to.clone(), format!("{}{}", way(r.road, r.relay.as_deref()), legs(&r)), r.ms))
                 .collect()
         };
         let here = if me { cli::this_machine() } else { "" };
@@ -2332,6 +2352,26 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
             println!("  → {}\t{word}\t{ms}", name(&to));
         }
     }
+}
+
+/// This machine's roads off its live wires (`none` only for a wire that
+/// failed; an idle one is no road), with its ssh roads to its satellites.
+fn own_roads(links: &[(String, khor_node::Link)], sats: Vec<khor_node::Road>) -> Vec<khor_node::Road> {
+    use khor_node::{Hop, Road, RoadKind};
+    let mut out: Vec<Road> = links
+        .iter()
+        .filter_map(|(to, l)| {
+            let road = match (l.hop, l.down_ms) {
+                (Hop::Direct, _) => RoadKind::Direct,
+                (Hop::Relay, _) => RoadKind::Relay,
+                (_, Some(_)) => RoadKind::None,
+                _ => return None,
+            };
+            Some(Road::own(to.clone(), road, l.relay.clone(), l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16)))
+        })
+        .collect();
+    out.extend(sats);
+    out
 }
 
 /// How many rows `khor top` prints. The card asks for its own count;
