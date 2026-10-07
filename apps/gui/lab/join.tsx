@@ -51,6 +51,8 @@ const faces: Record<string, any> = {
   "gpu-box": av("#3a5a40", "#dad7cd", "#a3b18a"),
   bastion: av("#5a4a6b", "#d7cdda", "#a38ab1"),
   "lab-gw": av("#6b5a2a", "#dad2a6", "#b8a67a"),
+  "gpu-box-2": av("#2a6b5a", "#a6dad2", "#7ab8a6"),
+  "aliyun-bj": av("#6b2a4a", "#dab0c8", "#b87a9a"),
 };
 
 /** Host lines of the user's ssh config (read-only; patterns skipped). */
@@ -439,6 +441,7 @@ function JumpPage({ form, set }: { form: Form; set: (f: Partial<Form>) => void }
           {khorMachines.map((m) => (
             <Row key={m} lead={<Face name={m} />} title={m} checked={form.via === `khor:${m}`} onPress={() => pick(`khor:${m}`)} />
           ))}
+          <Row title="复制 SSH 配置…" note="不添加机器，只经 khor 主机用 ssh 连接" chevron onPress={() => go("3e")} />
         </Group>
         <Group head="通过 SSH 跳板机">
           {sshHosts
@@ -505,6 +508,38 @@ function AuthPage({ form, set }: { form: Form; set: (f: Partial<Form>) => void }
   );
 }
 
+/** road-a's `proxyLine(machine, host, port)` → `ProxyLine`, faked: for
+    a person who only wants to ssh through a khor machine. khor never
+    writes the ssh config; it hands over the line and the command. */
+function ProxyPage({ form }: { form: Form }) {
+  const via = viaKhor(form.via) ?? "turing";
+  const line = { config_line: `ProxyCommand khor pipe --via ${via} %h %p`, command: `ssh -o ProxyCommand='khor pipe --via ${via} %h %p' ${form.host}` };
+  const Copyable = ({ text }: { text: string }) => (
+    <Row>
+      <span data-selectable className="min-w-0 flex-1 font-mono text-mono [overflow-wrap:anywhere] text-foreground">
+        {text}
+      </span>
+      <Button className="flex-none">复制</Button>
+    </Row>
+  );
+  return (
+    <>
+      <Head title={`通过 ${via} 连接`} />
+      <Body>
+        <Group head="SSH 配置中的一行" foot={`加在 Host ${form.host} 下。khor 不修改你的 SSH 配置`}>
+          <Copyable text={line.config_line} />
+        </Group>
+        <Group head="或直接运行">
+          <Copyable text={line.command} />
+        </Group>
+      </Body>
+      <DialogFooter>
+        <Button onClick={() => go("3b")}>返回</Button>
+      </DialogFooter>
+    </>
+  );
+}
+
 // ---- 4 · 连通性检测 ----------------------------------------------------------
 
 /** road-a's ReachReport, faked. */
@@ -512,33 +547,53 @@ type ReachRow = {
   id: string;
   shown: string;
   here: boolean;
-  outcome: "reached" | "refused" | "timeout" | "no-name" | "unasked" | "predates";
+  /** `silent`: connected, but no `SSH-` first line — kept with its ms
+      and address, never the entrance, drawn as 无法连接 with its why. */
+  outcome: "reached" | "refused" | "timeout" | "no-name" | "unasked" | "predates" | "silent";
   ms: number | null;
   addr: string | null;
   banner: string | null;
   host_key: string | null;
   why: string | null;
 };
-const report = {
+type Report = {
+  host: string;
+  port: number;
+  /** When keys disagree, only among rows holding this machine's own
+      key; `null` when this machine holds none — the person picks. */
+  entrance: string | null;
+  disagree: boolean;
+  known_as: string | null;
+  rows: ReachRow[];
+};
+/** The key this machine's known_hosts holds for the host (lab-only: the
+    real report says it through `entrance`). */
+const mineKey = "SHA256:q3Vf…9kLw";
+const report: Report = {
   host: "gpu-box",
   port: 22,
   entrance: "c".repeat(64),
   disagree: true,
-  known_as: null as string | null,
+  known_as: null,
   rows: [
     { id: "a".repeat(64), shown: "MacLab", here: true, outcome: "timeout", ms: null, addr: null, banner: null, host_key: null, why: "连接超时" },
     { id: "c".repeat(64), shown: "turing", here: false, outcome: "reached", ms: 3, addr: "10.0.0.7:22", banner: "OpenSSH_9.6", host_key: "SHA256:q3Vf…9kLw", why: null },
     { id: "d".repeat(64), shown: "hinton", here: false, outcome: "reached", ms: 41, addr: "10.0.0.7:22", banner: "OpenSSH_9.6", host_key: "SHA256:q3Vf…9kLw", why: null },
     { id: "e".repeat(64), shown: "lecun", here: false, outcome: "reached", ms: 38, addr: "192.168.1.7:22", banner: "OpenSSH_8.9", host_key: "SHA256:Zt0p…aa1M", why: null },
-  ] as ReachRow[],
+    { id: "f".repeat(64), shown: "aliyun", here: false, outcome: "silent", ms: 2, addr: "198.18.0.12:22", banner: null, host_key: null, why: "已连接，但没有 SSH 应答，可能是代理返回的虚假地址" },
+  ],
 };
-/** The key most machines recorded; a row holding another is the odd one. */
-const usualKey = "SHA256:q3Vf…9kLw";
+/** The same probe from a machine that never logged in to the host: the
+    keys disagree and none is this machine's, so nothing is the entrance. */
+const unsureReport: Report = { ...report, entrance: null };
 
-function Reachers({ form, set }: { form: Form; set: (f: Partial<Form>) => void }) {
+function Reachers({ form, set, report }: { form: Form; set: (f: Partial<Form>) => void; report: Report }) {
   // Expanded: the one row whose address, banner and key are shown.
   const [open, setOpen] = useState<string | null>(null);
-  const odd = report.rows.find((r) => report.disagree && r.host_key !== null && r.host_key !== usualKey);
+  // Without an entrance there is no key to call right: every reached row
+  // shows its key, none in the failed ink, and the person picks.
+  const unsure = report.disagree && report.entrance === null;
+  const odd = unsure ? undefined : report.rows.find((r) => report.disagree && r.host_key !== null && r.host_key !== mineKey);
   return (
     <>
       <Head title="连通性检测" />
@@ -548,7 +603,11 @@ function Reachers({ form, set }: { form: Form; set: (f: Partial<Form>) => void }
         </p>
         <Group
           mark="reach"
-          foot={odd && `${odd.shown} 记录的主机密钥与其他机器记录的不一致，可能不是同一台主机`}
+          foot={
+            unsure
+              ? "各机器记录的主机密钥不一致，本机没有该主机的记录。核对密钥后选择一台机器"
+              : odd && `${odd.shown} 记录的主机密钥与其他机器记录的不一致，可能不是同一台主机`
+          }
         >
           {report.rows.map((r) => {
             const ok = r.outcome === "reached";
@@ -571,7 +630,7 @@ function Reachers({ form, set }: { form: Form; set: (f: Partial<Form>) => void }
                 note={
                   !ok ? (
                     r.why
-                  ) : isOdd || shown ? (
+                  ) : isOdd || shown || unsure ? (
                     <span className="font-mono text-caption">
                       {shown && `${r.addr} · ${r.banner} · `}
                       <span className={isOdd ? "text-destructive" : undefined}>{r.host_key}</span>
@@ -742,16 +801,40 @@ function Passphrase({ form }: { form: Form }) {
 
 // ---- 8 · the machine page's road -------------------------------------------
 
-/** The road a machine is reached on, hop by hop; a broken segment is the
-    one dashed in the failed ink. The sentence under it stays calm. */
-function Road({ machine, road, hops, broken, why, sat }: {
+/** road-a's `Road.broken`: which leg of the road failed. A jump host
+    is not a machine in the table, so its end is `null`. */
+type Leg = { from: string | null; to: string | null; leg: "to-sponsor" | "to-jump" | "jump-to-target" | "ssh" | "auth" };
+
+/** The leg's place on the drawn road (which dash), and its sentence. */
+function legOf(b: Leg, hops: string[], jump: string | undefined): { at: number; why: string } {
+  const last = hops.length - 1;
+  switch (b.leg) {
+    case "to-sponsor":
+      return { at: 1, why: `本机无法连接 ${b.to}` };
+    case "to-jump":
+      return { at: hops.indexOf(jump ?? ""), why: `本机无法连接跳板机 ${jump}` };
+    case "jump-to-target":
+      return { at: last, why: `跳板机无法连接目标主机：${jump} 无法连接 ${b.to}` };
+    case "ssh":
+      return { at: last, why: `${b.from} 无法通过 SSH 连接 ${b.to}` };
+    case "auth":
+      return { at: last, why: `${b.to} 不接受 ${b.from} 的密钥` };
+  }
+}
+
+/** The road a machine is reached on, hop by hop; a broken leg is the
+    one dashed in the failed ink. The sentence under it stays calm, with
+    ssh's own words after it. */
+function Road({ machine, road, hops, jump, broken, said, sat }: {
   machine: string;
   road: string;
   hops: string[];
-  broken?: number;
-  why?: string;
+  jump?: string;
+  broken?: Leg;
+  said?: string;
   sat?: boolean;
 }) {
+  const leg = broken && legOf(broken, hops, jump);
   return (
     <section data-road-machine={machine} className="flex flex-col gap-in border-t pt-base first:border-t-0 first:pt-0">
       <div className="flex min-h-ctl-lg items-center gap-row">
@@ -771,22 +854,27 @@ function Road({ machine, road, hops, broken, why, sat }: {
               {i > 0 && (
                 <span
                   aria-hidden
-                  className={cn("h-0 w-6 flex-none border-t", broken === i ? "border-dashed border-destructive" : "border-tertiary")}
+                  className={cn("h-0 w-6 flex-none border-t", leg?.at === i ? "border-dashed border-destructive" : "border-tertiary")}
                 />
               )}
-              <span className={broken !== undefined && i >= broken ? "text-muted-foreground" : "text-foreground"}>{h}</span>
+              <span className={leg && i >= leg.at ? "text-muted-foreground" : "text-foreground"}>{h}</span>
             </span>
           ))}
         </span>
       </div>
-      {why && <div className="ps-[calc(4rem+var(--gap-row))] text-callout text-muted-foreground">{why}</div>}
+      {leg && (
+        <div data-road-broken={broken?.leg} className="ps-[calc(4rem+var(--gap-row))] text-callout text-muted-foreground">
+          {leg.why}
+          {said && `（${said}）`}
+        </div>
+      )}
     </section>
   );
 }
 
 function MachinePage() {
   return (
-    <main className="mx-auto flex max-w-detail flex-col gap-base px-pane pt-24 pb-pane">
+    <main className="mx-auto flex max-w-detail flex-col gap-base px-pane pt-24 pb-pane [[data-narrow]_&]:pt-56">
       <Road machine="hinton" road="直连 · 31 ms" hops={["本机", "hinton"]} />
       <Road machine="lecun" road="中继 · 140 ms" hops={["本机", "中继 北京", "lecun"]} />
       <Road machine="turing" road="通过 hinton" hops={["本机", "hinton", "turing"]} />
@@ -795,16 +883,30 @@ function MachinePage() {
         road="SSH 主机 · 通过 bastion"
         sat
         hops={["本机", "bastion", "gpu-box"]}
-        broken={2}
-        why="跳板机无法连接目标主机：bastion 无法连接 gpu-box（Connection timed out）"
+        jump="bastion"
+        broken={{ from: null, to: "gpu-box", leg: "jump-to-target" }}
+        said="Connection timed out"
       />
       <Road
         machine="lab-gw"
         road="SSH 主机 · 通过 bastion"
         sat
         hops={["本机", "bastion", "lab-gw"]}
-        broken={1}
-        why="本机无法连接跳板机 bastion（Connection refused）"
+        jump="bastion"
+        broken={{ from: "本机", to: null, leg: "to-jump" }}
+        said="Connection refused"
+      />
+      <Road
+        machine="gpu-box-2"
+        road="SSH 主机 · 由 turing 连接"
+        hops={["本机", "turing", "gpu-box-2"]}
+        broken={{ from: "turing", to: "gpu-box-2", leg: "auth" }}
+      />
+      <Road
+        machine="aliyun-bj"
+        road="SSH 主机 · 由 hinton 连接"
+        hops={["本机", "hinton", "aliyun-bj"]}
+        broken={{ from: "本机", to: "hinton", leg: "to-sponsor" }}
       />
     </main>
   );
@@ -821,7 +923,9 @@ const screens: Screen[] = [
   ["3b", "跳板机", (f, s) => <JumpPage form={f} set={s} />],
   ["3c", "认证方式", (f, s) => <AuthPage form={f} set={s} />],
   ["3d", "通过 khor 主机", (f, s) => <AuthPage form={{ ...f, via: "khor:turing", auth: "key" }} set={s} />],
-  ["4", "连通性检测", (f, s) => <Reachers form={f} set={s} />],
+  ["3e", "SSH 配置", (f) => <ProxyPage form={{ ...f, via: "khor:turing" }} />],
+  ["4", "连通性检测", (f, s) => <Reachers form={f} set={s} report={report} />],
+  ["4b", "密钥不一致", (f, s) => <Reachers form={f} set={s} report={unsureReport} />],
   ["5", "安装中", (f) => <Installing form={f} />],
   ["6", "安装未成功", (f) => <Fallback form={f} />],
   ["6s", "仅 SSH", (f) => <Fallback form={f} alone />],
