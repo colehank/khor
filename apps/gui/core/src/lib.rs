@@ -1417,30 +1417,7 @@ fn rows_of_devices(
 /// its own edges, never this machine's own row read back from the table
 /// (round NET-12, `khor_node::roadbook`).
 fn own_roads(links: &[(String, khor_node::Link)]) -> Vec<khor_node::Road> {
-    use khor_node::{Hop, RoadKind};
-    links
-        .iter()
-        .filter_map(|(to, l)| {
-            // `none` is unreachable (round NET-13); an idle wire is no road
-            // at all, as the table would hold none for it.
-            let road = match (l.hop, l.down_ms) {
-                (Hop::Direct, _) => RoadKind::Direct,
-                (Hop::Relay, _) => RoadKind::Relay,
-                (_, Some(_)) => RoadKind::None,
-                _ => return None,
-            };
-            Some(khor_node::Road::own(
-                to.clone(),
-                road,
-                if road == RoadKind::Relay { l.relay.clone() } else { None },
-                if road == RoadKind::None {
-                    None
-                } else {
-                    l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16)
-                },
-            ))
-        })
-        .collect()
+    khor_node::roadbook::own_roads(links)
 }
 
 /// What every machine in the network has spent, by day and by vendor —

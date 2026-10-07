@@ -208,3 +208,134 @@ async fn a_machine_that_reaches_nothing_is_carried_over_ssh() {
     let out = khor(&ra.0).args(["carry", "beta", "--off"]).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
 }
+
+/// Round ROAD-3 T6: **the peer hop.** Gamma is cut off as beta is above
+/// and carried by beta over ssh; alpha has no road to gamma of its own.
+/// Alpha reaches it through beta: beta's roadbook says it reaches gamma
+/// (`ssh`), alpha reaches beta, and beta splices alpha's stream to its
+/// own stream to gamma. Control: with alpha's `peer-hop` off, gamma
+/// stays out of reach though beta's road is in the table.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_third_machine_reaches_a_carried_member_through_its_carrier() {
+    if !Path::new("/usr/sbin/sshd").exists() {
+        eprintln!("no /usr/sbin/sshd here: skipped");
+        return;
+    }
+    let (ra, rb, rc, rr) = (scratch("hop-a"), scratch("hop-b"), scratch("hop-c"), scratch("hop-r"));
+    let (_relay, url) = local_relay(&rr.0);
+    for r in [&ra, &rb, &rc] {
+        home_on(&r.0, &url);
+    }
+    let world = rr.0.join("ssh-world");
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    ssh_world(&world, port, &rc.0);
+    let ssh_dir = world.display().to_string();
+    // The control first: alpha asks for no hop (read live, so it can be
+    // turned on below without a restart; the transport is registered
+    // because `ssh-carry` is on).
+    let out = khor(&ra.0).args(["config", "set", "peer-hop", "off"]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let _a = serve(&ra.0, "alpha");
+    let _b = serve_with(&rb.0, "beta", &[("KHOR_SSH_DIR", &ssh_dir)]);
+    let c = serve(&rc.0, "gamma");
+    stood_up(&[&ra.0, &rb.0, &rc.0]).await;
+    let alpha = khor_node::Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let beta = khor_node::Node::open_as(rb.0.clone(), "beta").unwrap();
+    let gamma = khor_node::Node::open_as(rc.0.clone(), "gamma").unwrap();
+    for joiner in [&beta, &gamma] {
+        let ticket = alpha.invite().unwrap();
+        timeout(Duration::from_secs(90), joiner.pair(&ticket))
+            .await
+            .expect("pairing must not hang")
+            .expect("pairing succeeds");
+    }
+    let ids = [&alpha, &beta, &gamma].map(|n| n.device_str().to_owned());
+    let [a_id, b_id, c_id] = ids.clone();
+    for n in [&alpha, &beta, &gamma] {
+        until(Duration::from_secs(60), "every machine knows the other two", || async {
+            let known = n.devices().unwrap_or_default();
+            ids.iter().all(|id| known.iter().any(|d| &d.id == id))
+        })
+        .await;
+    }
+
+    // Gamma, cut off, and carried by beta.
+    let pid = serve_pid(&rc.0).unwrap();
+    drop(c);
+    signal(pid, "-TERM");
+    until(Duration::from_secs(20), "gamma's resident stops", || async {
+        !Command::new("kill").args(["-0", &pid.to_string()]).status().is_ok_and(|s| s.success())
+    })
+    .await;
+    let _ = std::fs::remove_file(rc.0.join(".khor/endpoint.json"));
+    home_on(&rc.0, "http://127.0.0.1:9");
+    let _c = serve_with(&rc.0, "gamma", CUT_OFF);
+    stood_up(&[&rc.0]).await;
+    let _sshd = Reaped(
+        Command::new("/usr/sbin/sshd")
+            .args(["-D", "-e", "-f"])
+            .arg(world.join("sshd_config"))
+            .stderr(std::fs::File::create(world.join("sshd.log")).unwrap())
+            .spawn()
+            .unwrap(),
+    );
+    until(Duration::from_secs(10), "sshd listens", || async {
+        tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok()
+    })
+    .await;
+    let out = khor(&rb.0).args(["carry", "gamma", "member"]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    until(Duration::from_secs(60), "beta lists gamma over its ssh", || async {
+        beta.ls_of("gamma", "/").await.is_ok()
+    })
+    .await;
+    // Beta's road to gamma in the table, as alpha reads it.
+    let wrote = until(Duration::from_secs(90), "alpha reads beta's ssh road to gamma", || async {
+        let all = alpha.devices().unwrap_or_default();
+        all.iter()
+            .find(|d| d.id == b_id)
+            .is_some_and(|b| alpha.roads_of(b).iter().any(|r| r.to == c_id && r.road == khor_node::RoadKind::Ssh))
+    })
+    .await;
+    eprintln!("[hop] beta's road to gamma reached alpha's table {wrote:?} after gamma was carried");
+
+    // Control: no hop asked, no road.
+    let control = timeout(Duration::from_secs(20), alpha.ls_of("gamma", "/")).await;
+    assert!(
+        control.as_ref().map_or(true, |r| r.is_err()),
+        "control: with peer-hop off alpha must not reach gamma"
+    );
+
+    let out = khor(&ra.0).args(["config", "set", "peer-hop", "on"]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let started = Instant::now();
+    while alpha.ls_of("gamma", "/").await.is_err() {
+        if started.elapsed() > Duration::from_secs(60) {
+            let log = |p: &Path| std::fs::read_to_string(p).unwrap_or_default();
+            panic!(
+                "alpha never listed gamma through beta\n-- alpha --\n{}\n-- beta --\n{}\n-- gamma --\n{}",
+                log(&ra.0.join("serve.log")),
+                log(&rb.0.join("serve.log")),
+                log(&rc.0.join("serve.log"))
+            );
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    eprintln!("[hop] alpha reached gamma through beta {:?} after peer-hop on", started.elapsed());
+    until_reads(&alpha, &c_id, Hop::Forwarded, Duration::from_secs(20)).await;
+    // Gamma's own resident reaches alpha back over the same hop.
+    until(Duration::from_secs(60), "gamma lists alpha through beta", || async {
+        gamma.ls_of("alpha", "/").await.is_ok()
+    })
+    .await;
+    until_reads(&gamma, &a_id, Hop::Forwarded, Duration::from_secs(20)).await;
+    // Alpha writes its road to gamma with the middle named.
+    let named = until(Duration::from_secs(60), "alpha's road to gamma names beta", || async {
+        let all = alpha.devices().unwrap_or_default();
+        all.iter().find(|d| d.id == a_id).is_some_and(|me| {
+            alpha.roads_of(me).iter().any(|r| r.to == c_id && r.via.as_deref() == Some(b_id.as_str()))
+        })
+    })
+    .await;
+    eprintln!("[hop] alpha's register named beta as the middle {named:?} after it settled");
+}

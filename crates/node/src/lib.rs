@@ -31,6 +31,7 @@ pub mod git;
 pub mod gui_host;
 pub mod hardware;
 pub mod history;
+pub(crate) mod hop;
 pub mod host;
 pub mod ipc;
 pub mod keeper;

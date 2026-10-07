@@ -1269,7 +1269,7 @@ impl Node {
                             let remote = conn.remote_id().to_string();
                             let _ = done_tx.send(Some(true));
                             if conn.alpn() == endpoint::TUNNEL_ALPN {
-                                let _ = n.serve_tunnel(conn).await;
+                                let _ = n.serve_tunnel(conn, e).await;
                             } else {
                                 let _ = n.handle(conn, remote, e, done).await;
                             }
@@ -2447,6 +2447,19 @@ impl Node {
         proto: wires::Proto,
         by: Option<std::time::Instant>,
     ) -> Result<Line, DialFailure> {
+        self.line_to_inner(ep, d, proto, by, true).await
+    }
+
+    /// [`Node::line_to_by`]; `may_hop` false for the wires a hop itself
+    /// rides (`crate::hop`), so a hop never asks for another.
+    pub(crate) async fn line_to_inner(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        proto: wires::Proto,
+        by: Option<std::time::Instant>,
+        may_hop: bool,
+    ) -> Result<Line, DialFailure> {
         if crate::pause::peer_on(self.root(), &d.id) {
             self.wires.retire_peer(&d.id, wires::Retired::Paused);
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
@@ -2464,6 +2477,11 @@ impl Node {
         let _one = lock.lock().await;
         if let Some(conn) = self.wires.live(&d.id, proto) {
             return Ok(line(conn));
+        }
+        // The peer hop (round ROAD-3): a road through a third machine,
+        // ready before the dial so it races from the first packet.
+        if may_hop {
+            self.hop_ahead(ep, d).await;
         }
         match self.dial(ep, &d.id, &d.addrs, proto.alpn(), by).await {
             Ok(conn) => {
@@ -2598,6 +2616,7 @@ impl Node {
         if self.wires.live(&d.id, wires::Proto::Main).is_some() {
             return Early::NotTaken;
         }
+        self.hop_ahead(ep, d).await;
         let Ok(mut addr) = endpoint::dial_addr(&d.id, &d.addrs, self.relays()) else {
             return Early::NotTaken;
         };
@@ -2739,15 +2758,27 @@ impl Node {
     /// table mid-session must stop being answered, and reading the doc
     /// each time is what makes the removal bite. The verdict is handed to
     /// `serve_stream`, which puts it on the wire as the status byte.
-    async fn serve_tunnel(&self, conn: iroh::endpoint::Connection) -> Result<(), String> {
+    async fn serve_tunnel(
+        self: std::sync::Arc<Self>,
+        conn: iroh::endpoint::Connection,
+        ep: std::sync::Arc<iroh::Endpoint>,
+    ) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
-        while let Ok((send, recv)) = conn.accept_bi().await {
+        while let Ok((send, mut recv)) = conn.accept_bi().await {
             // A machine this one has paused is treated as a stranger
             // here, per stream, so a pause bites on a tunnel already up.
             let paired =
                 !crate::pause::peer_on(self.root(), &remote) && self.admit(&remote).is_ok();
+            let (node, ep, remote) = (self.clone(), ep.clone(), remote.clone());
             tokio::spawn(async move {
-                let _ = crate::tunnel::serve_stream(send, recv, paired).await;
+                let Ok(target) = crate::tunnel::read_target(&mut recv).await else { return };
+                // A hop's ask rides the exit's stream (round ROAD-3).
+                match crate::hop::Ask::of(&target) {
+                    Some(ask) => node.serve_hop(ep, &remote, ask, send, recv, paired).await,
+                    None => {
+                        let _ = crate::tunnel::serve_target(send, recv, &target, paired).await;
+                    }
+                }
             });
         }
         Ok(())
@@ -8447,6 +8478,7 @@ impl Node {
                             last_rtt_ms: None,
                             since_ms: None,
                             last_hop: None,
+                            via: None,
                         },
                     )
                 })
@@ -8492,6 +8524,13 @@ impl Node {
                     khor_net::path::PathKind::Carried => Some(self.carried_hop(&d.id)),
                     _ => None,
                 });
+                // The middle of a peer hop (round ROAD-3).
+                let via = match d.id.parse().ok().and_then(|p| self.carry.carrier(&p)) {
+                    Some(khor_net::carry::Carrier::Hop { via }) if hop == khor_core::Hop::Forwarded => {
+                        Some(via.to_string())
+                    }
+                    _ => None,
+                };
                 let ms = |d: Duration| u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
                 // Whole milliseconds, never 0 for a wire that has one: a
                 // loopback wire's 0.3 ms reads as 1 ms, not as nothing.
@@ -8507,6 +8546,7 @@ impl Node {
                         last_rtt_ms: r.last_rtt.map(whole),
                         since_ms: last_hop.and(r.since).map(ms),
                         last_hop,
+                        via,
                     },
                 )
             })
@@ -9781,6 +9821,7 @@ mod last_links {
                             last_rtt_ms: l.last_rtt_ms.or(l.rtt_ms),
                             since_ms: l.since_ms.map(|s| s.saturating_add(since)),
                             last_hop: l.last_hop,
+                            via: l.via.clone(),
                         },
                     )
                 })

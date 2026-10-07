@@ -2435,19 +2435,7 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
 /// This machine's roads off its live wires (`none` only for a wire that
 /// failed; an idle one is no road), with its ssh roads to its satellites.
 fn own_roads(links: &[(String, khor_node::Link)], sats: Vec<khor_node::Road>) -> Vec<khor_node::Road> {
-    use khor_node::{Hop, Road, RoadKind};
-    let mut out: Vec<Road> = links
-        .iter()
-        .filter_map(|(to, l)| {
-            let road = match (l.hop, l.down_ms) {
-                (Hop::Direct, _) => RoadKind::Direct,
-                (Hop::Relay, _) => RoadKind::Relay,
-                (_, Some(_)) => RoadKind::None,
-                _ => return None,
-            };
-            Some(Road::own(to.clone(), road, l.relay.clone(), l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16)))
-        })
-        .collect();
+    let mut out = khor_node::roadbook::own_roads(links);
     out.extend(sats);
     out
 }
@@ -3337,6 +3325,7 @@ mod top_table {
             last_rtt_ms: Some(23),
             since_ms: None,
             last_hop: None,
+            via: None,
         };
         let down = khor_node::Link { down_ms: Some(4_000), ..idle.clone() };
         assert_eq!(super::link_words(idle, false), khor_catalog::hop::word("quiet"));

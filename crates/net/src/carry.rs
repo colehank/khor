@@ -148,6 +148,16 @@ impl Links {
         self.lock().iter().map(|(id, l)| (*id, l.carrier)).collect()
     }
 
+    /// Ends the link to `peer` if it is still a stream of `carrier`: its
+    /// queue closes, so its writer and then its task end. A newer link of
+    /// another kind is left alone.
+    pub fn detach(&self, peer: &EndpointId, carrier: Carrier) {
+        let mut map = self.lock();
+        if map.get(peer).is_some_and(|l| l.carrier == carrier) {
+            map.remove(peer);
+        }
+    }
+
     /// Frames dropped on a full queue since this table was made.
     pub fn dropped(&self) -> u64 {
         self.0.dropped.load(Relaxed)

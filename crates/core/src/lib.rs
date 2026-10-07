@@ -407,6 +407,11 @@ pub struct Link {
     /// started, and from an older resident. Tail field.
     #[serde(default)]
     pub last_hop: Option<Hop>,
+    /// **The middle, when the wire goes through one** (round ROAD-3, the
+    /// peer hop): `hop` is then [`Hop::Forwarded`]. `None` otherwise, and
+    /// from an older resident. Tail field.
+    #[serde(default)]
+    pub via: Option<String>,
 }
 
 impl Link {

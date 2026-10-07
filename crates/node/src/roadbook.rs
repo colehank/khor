@@ -62,6 +62,9 @@ pub(crate) struct Seen {
     /// ROAD-1): part of the kind, so a jump that comes back and a target
     /// that goes down is a change.
     pub broken: Option<Leg>,
+    /// The middle of a peer hop (round ROAD-3): `road` and `relay` are
+    /// then the first leg's, to it. Part of the kind, as `broken` is.
+    pub via: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +73,7 @@ struct Written {
     relay: Option<String>,
     ms: Option<u16>,
     broken: Option<Leg>,
+    via: Option<String>,
     /// When `ms` was last written. A value found in the table at start
     /// counts as written then, so a restart does not rewrite every round
     /// trip at once.
@@ -80,7 +84,7 @@ struct Written {
 #[derive(Debug, Default)]
 pub(crate) struct RoadBook {
     written: HashMap<String, Written>,
-    waiting: HashMap<String, (RoadKind, Option<String>, Option<Leg>, Instant)>,
+    waiting: HashMap<String, (RoadKind, Option<String>, Option<Leg>, Option<String>, Instant)>,
     started: bool,
     /// What ssh's words said broke on each satellite's last failed
     /// sample (`satellite::broken`), by satellite id; cleared by a sample
@@ -98,7 +102,14 @@ impl RoadBook {
         for r in held {
             self.written.insert(
                 r.to.clone(),
-                Written { road: r.road, relay: r.relay.clone(), ms: r.ms, broken: r.broken.clone(), ms_at: now },
+                Written {
+                    road: r.road,
+                    relay: r.relay.clone(),
+                    ms: r.ms,
+                    broken: r.broken.clone(),
+                    via: r.via.clone(),
+                    ms_at: now,
+                },
             );
         }
     }
@@ -106,7 +117,11 @@ impl RoadBook {
     /// One beat's reading of the road to `to`; the road to write, when
     /// one is due.
     pub(crate) fn note(&mut self, to: &str, seen: Seen, now: Instant) -> Option<Road> {
-        let road = |s: &Seen| Road { broken: s.broken.clone(), ..Road::own(to, s.road, s.relay.clone(), s.ms) };
+        let road = |s: &Seen| Road {
+            broken: s.broken.clone(),
+            via: s.via.clone(),
+            ..Road::own(to, s.road, s.relay.clone(), s.ms)
+        };
         let Some(w) = self.written.get(to) else {
             // Never written: the first reading that holds is the first
             // write, by the same settling rule — but `none` only once it
@@ -114,7 +129,7 @@ impl RoadBook {
             let hold = if seen.road == RoadKind::None { FIRST_NONE } else { SETTLE };
             return self.settle(to, &seen, now, hold).then(|| self.wrote(to, &seen, now, road(&seen)));
         };
-        if w.road != seen.road || w.relay != seen.relay || w.broken != seen.broken {
+        if w.road != seen.road || w.relay != seen.relay || w.broken != seen.broken || w.via != seen.via {
             return self.settle(to, &seen, now, SETTLE).then(|| self.wrote(to, &seen, now, road(&seen)));
         }
         self.waiting.remove(to);
@@ -150,13 +165,16 @@ impl RoadBook {
     /// Whether `seen`'s kind has now held for `hold`.
     fn settle(&mut self, to: &str, seen: &Seen, now: Instant, hold: Duration) -> bool {
         match self.waiting.get(to) {
-            Some((road, relay, broken, since))
-                if *road == seen.road && *relay == seen.relay && *broken == seen.broken =>
+            Some((road, relay, broken, via, since))
+                if *road == seen.road && *relay == seen.relay && *broken == seen.broken && *via == seen.via =>
             {
                 now.duration_since(*since) >= hold
             }
             _ => {
-                self.waiting.insert(to.to_owned(), (seen.road, seen.relay.clone(), seen.broken.clone(), now));
+                self.waiting.insert(
+                    to.to_owned(),
+                    (seen.road, seen.relay.clone(), seen.broken.clone(), seen.via.clone(), now),
+                );
                 false
             }
         }
@@ -166,7 +184,14 @@ impl RoadBook {
         self.waiting.remove(to);
         self.written.insert(
             to.to_owned(),
-            Written { road: seen.road, relay: seen.relay.clone(), ms: seen.ms, broken: seen.broken.clone(), ms_at: now },
+            Written {
+                road: seen.road,
+                relay: seen.relay.clone(),
+                ms: seen.ms,
+                broken: seen.broken.clone(),
+                via: seen.via.clone(),
+                ms_at: now,
+            },
         );
         road
     }
@@ -200,7 +225,7 @@ impl crate::Node {
             for d in all.iter().filter(|d| d.sponsor.as_deref() == Some(me.as_str())) {
                 match self.satellite_road_in(&book, &d.id) {
                     Some(r) => {
-                        let seen = Seen { road: r.road, relay: None, ms: None, broken: r.broken };
+                        let seen = Seen { road: r.road, relay: None, ms: None, broken: r.broken, via: None };
                         if let Some(w) = book.note(&d.id, seen, now) {
                             due.push(w);
                         }
@@ -209,7 +234,18 @@ impl crate::Node {
                 }
             }
             for d in all.iter().filter(|d| d.id != me && d.sponsor.is_none()) {
-                let r = self.wires.link(&d.id);
+                let mut r = self.wires.link(&d.id);
+                // Through a middle (the peer hop, round ROAD-3): the road
+                // is the first leg's, to the middle, with `via`.
+                let via = match d.id.parse().ok().and_then(|p| self.carry.carrier(&p)) {
+                    Some(khor_net::carry::Carrier::Hop { via }) if r.road == Some(khor_net::path::PathKind::Carried) => {
+                        let first = self.wires.link(&via.to_string());
+                        r.road = first.road.filter(|k| *k != khor_net::path::PathKind::Carried);
+                        r.relay = first.relay;
+                        Some(via.to_string())
+                    }
+                    _ => None,
+                };
                 let road = match r.road {
                     Some(khor_net::path::PathKind::Direct) => RoadKind::Direct,
                     Some(khor_net::path::PathKind::Relay) => RoadKind::Relay,
@@ -227,6 +263,7 @@ impl crate::Node {
                 let seen = Seen {
                     road,
                     broken: None,
+                    via,
                     relay: if road == RoadKind::Relay { r.relay } else { None },
                     ms: if road == RoadKind::None {
                         None
@@ -366,6 +403,45 @@ pub fn through_sponsors(
     x_roads
 }
 
+/// **This machine's own roads, from its live wires** (`Node::links`), as
+/// the table would hold them: what the CLI and the app draw for this
+/// machine's row. An idle wire is no road; `none` is unreachable (round
+/// NET-13). Its own ssh session to a member it carries is `ssh` (round
+/// ROAD-2); a wire through a middle is the first leg's road, to the
+/// middle, with `via` (round ROAD-3).
+pub fn own_roads(links: &[(String, khor_core::Link)]) -> Vec<Road> {
+    use khor_core::Hop;
+    links
+        .iter()
+        .filter_map(|(to, l)| {
+            let (hop, relay, via) = match (l.hop, &l.via) {
+                (Hop::Forwarded, Some(v)) => {
+                    let (_, first) = links.iter().find(|(id, _)| id == v)?;
+                    (first.hop, first.relay.clone(), Some(v.clone()))
+                }
+                _ => (l.hop, l.relay.clone(), None),
+            };
+            let road = match (hop, l.down_ms) {
+                (Hop::Direct, _) => RoadKind::Direct,
+                (Hop::Relay, _) => RoadKind::Relay,
+                (Hop::Ssh, _) if via.is_none() => RoadKind::Ssh,
+                (_, Some(_)) => RoadKind::None,
+                _ => return None,
+            };
+            let ms = l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16);
+            Some(Road {
+                via,
+                ..Road::own(
+                    to.clone(),
+                    road,
+                    if road == RoadKind::Relay { relay } else { None },
+                    if road == RoadKind::None { None } else { ms },
+                )
+            })
+        })
+        .collect()
+}
+
 fn roads_in(d: &khor_sync::devices::DeviceInfo) -> Vec<Road> {
     d.roads.iter().filter_map(|(to, json)| from_json(to, json)).collect()
 }
@@ -373,7 +449,7 @@ fn roads_in(d: &khor_sync::devices::DeviceInfo) -> Vec<Road> {
 /// A road as its register holds it (`khor_sync::devices`' `F_ROAD`):
 /// the object without `to`, which is the key.
 pub(crate) fn to_json(r: &Road) -> String {
-    serde_json::json!({ "road": r.road, "relay": r.relay, "ms": r.ms, "broken": r.broken }).to_string()
+    serde_json::json!({ "road": r.road, "relay": r.relay, "ms": r.ms, "via": r.via, "broken": r.broken }).to_string()
 }
 
 /// A register back into a road; `None` for one this build cannot read.
@@ -388,7 +464,7 @@ mod tests {
     use super::*;
 
     fn seen(road: RoadKind, ms: Option<u16>) -> Seen {
-        Seen { road, relay: None, ms, broken: None }
+        Seen { road, relay: None, ms, broken: None, via: None }
     }
 
     /// A flap inside the settling window writes nothing; a kind that
@@ -463,6 +539,35 @@ mod tests {
         assert!(b.note("a", seen(RoadKind::Relay, Some(90)), s(73)).is_some(), "and is written once it held");
     }
 
+    /// This machine's row: a hop is drawn as its first leg with the
+    /// middle named; its own ssh to a member it carries is `ssh`.
+    #[test]
+    fn a_hop_is_drawn_as_its_first_leg_through_the_middle() {
+        use khor_core::{Hop, Link};
+        let link = |hop, via: Option<&str>| Link {
+            hop,
+            heard_ms: Some(1),
+            rtt_ms: Some(7),
+            relay: Some("r.example".into()),
+            down_ms: None,
+            last_rtt_ms: None,
+            since_ms: None,
+            last_hop: None,
+            via: via.map(str::to_owned),
+        };
+        let links = vec![
+            ("b".to_owned(), link(Hop::Relay, None)),
+            ("y".to_owned(), link(Hop::Forwarded, Some("b"))),
+            ("m".to_owned(), link(Hop::Ssh, None)),
+            ("q".to_owned(), link(Hop::Idle, None)),
+        ];
+        let roads = own_roads(&links);
+        let y = roads.iter().find(|r| r.to == "y").expect("the hop's road");
+        assert_eq!((y.road, y.via.as_deref(), y.relay.as_deref(), y.ms), (RoadKind::Relay, Some("b"), Some("r.example"), Some(7)));
+        assert_eq!(roads.iter().find(|r| r.to == "m").map(|r| r.road), Some(RoadKind::Ssh));
+        assert!(roads.iter().all(|r| r.to != "q"), "idle is no road");
+    }
+
     #[test]
     fn a_register_reads_back_as_the_road_it_was() {
         let r = Road::own("ab", RoadKind::Relay, Some("relay.khor.cloud".into()), Some(180));
@@ -474,6 +579,8 @@ mod tests {
             ..Road::own("ab", RoadKind::None, None, None)
         };
         assert_eq!(from_json("ab", &to_json(&auth)), Some(auth), "the leg that broke rides the register");
+        let hop = Road { via: Some("m".into()), ..Road::own("ab", RoadKind::Direct, None, Some(4)) };
+        assert_eq!(from_json("ab", &to_json(&hop)), Some(hop), "a peer hop's middle rides it too");
         assert_eq!(from_json("ab", "{\"road\":\"sideways\"}"), None, "a kind this build does not know");
     }
 
