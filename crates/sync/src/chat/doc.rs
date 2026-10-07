@@ -12,7 +12,22 @@
 //! writes how the move stands (`step`, `moved`, `why`) and where each
 //! file landed (`landed` on each file's map). Every device reads the
 //! same record, so every device shows the same state.
+//!
+//! **A khor-wide conversation has many receivers** (STORE-BRIEF phase 3,
+//! the broadcast): a file there is an offer every machine answers on its
+//! own, so its record is one fate per receiver — a key `fate:<device
+//! id>` on the message map, holding the same four facts as one plain
+//! value. Each receiver writes only its own key, so two machines landing
+//! the same file at once never touch each other's record. Not a nested
+//! map: two machines creating one child container at once would race,
+//! and the loser's whole record would vanish.
+//!
+//! **The document's head** (foundation B): a root map `head` that names
+//! the machine running a khor-wide session (`home`), empty for one every
+//! machine answers itself (the broadcast). The khor agent's conversation
+//! is the first that will name one.
 
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,6 +38,10 @@ use crate::glue;
 
 /// The one place this list is named.
 const MSGS: &str = "msgs";
+/// The document's head: facts about the conversation itself.
+const HEAD: &str = "head";
+/// A receiver's own fate key on a message map, followed by its device id.
+const FATE_OF: &str = "fate:";
 
 /// Who spoke. The name travels with the message: history shows the name
 /// at the time of writing, and must not rewrite itself on a later rename.
@@ -119,6 +138,10 @@ pub struct Message {
     pub into: String,
     /// A file message's move, as its receiver wrote it.
     pub fate: Option<Fate>,
+    /// In a khor-wide conversation, each receiver's own account of its
+    /// move, by device id; a machine that has not answered the offer is
+    /// absent.
+    pub fates: BTreeMap<String, Fate>,
 }
 
 /// One conversation.
@@ -281,6 +304,42 @@ impl ChatDoc {
         Ok(())
     }
 
+    /// Writes one receiver's account of a file message's move, in a
+    /// khor-wide conversation (the module head): its own key only, and
+    /// nothing when it says what the key already holds.
+    pub fn set_fate_of(&self, id: &str, receiver: &str, fate: &Fate) -> Result<(), String> {
+        let m = self.find(id).ok_or_else(|| msg::no_such_message(id))?;
+        let key = format!("{FATE_OF}{receiver}");
+        let value: std::collections::HashMap<String, LoroValue> = [
+            ("step".to_owned(), LoroValue::from(fate.step.key())),
+            ("moved".to_owned(), LoroValue::from(fate.moved)),
+            ("why".to_owned(), LoroValue::from(fate.why.as_str())),
+            ("landed".to_owned(), LoroValue::from(fate.landed.clone())),
+        ]
+        .into_iter()
+        .collect();
+        m.insert(&key, value).map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// The machine that runs this conversation, by device id; `None`
+    /// when every machine answers for itself (the module head).
+    pub fn home(&self) -> Option<String> {
+        str_of(&self.inner.get_map(HEAD), "home").filter(|h| !h.is_empty())
+    }
+
+    /// Names the machine that runs this conversation; empty clears it.
+    /// Moving a home is writing another id here.
+    pub fn set_home(&self, device: &str) -> Result<(), String> {
+        self.inner
+            .get_map(HEAD)
+            .insert("home", device)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
     /// Retracts a message. Soft delete: sets a flag, keeps the slot.
     /// Hard removal breaks context (replies point at nothing) and turns
     /// un-retract into a reinsert-at-position problem. This is not
@@ -439,7 +498,45 @@ fn read_msg(m: &LoroMap) -> Message {
         edited: bool_of(m, "edited"),
         into: str_of(m, "into").unwrap_or_default(),
         fate: read_fate(m),
+        fates: read_fates(m),
     }
+}
+
+/// Every receiver's `fate:<device>` key (the module head).
+fn read_fates(m: &LoroMap) -> BTreeMap<String, Fate> {
+    let mut out = BTreeMap::new();
+    m.for_each(|k, v| {
+        let Some(device) = k.strip_prefix(FATE_OF) else {
+            return;
+        };
+        let Ok(LoroValue::Map(f)) = v.into_value() else {
+            return;
+        };
+        let text = |k: &str| match f.get(k) {
+            Some(LoroValue::String(s)) => s.to_string(),
+            _ => String::new(),
+        };
+        let Some(step) = Step::from_key(&text("step")) else {
+            return;
+        };
+        let moved = match f.get("moved") {
+            Some(LoroValue::I64(n)) => *n,
+            Some(LoroValue::Double(d)) => *d as i64,
+            _ => 0,
+        };
+        let landed = match f.get("landed") {
+            Some(LoroValue::List(l)) => l
+                .iter()
+                .filter_map(|p| match p {
+                    LoroValue::String(s) => Some(s.to_string()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        out.insert(device.to_owned(), Fate { step, moved, landed, why: text("why") });
+    });
+    out
 }
 
 fn read_fate(m: &LoroMap) -> Option<Fate> {

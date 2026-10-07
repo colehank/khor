@@ -63,6 +63,7 @@ pub mod tunnel;
 pub mod usage;
 pub mod vitals;
 pub mod watch;
+pub mod wide;
 pub mod workspace;
 pub(crate) mod wsfacts;
 pub(crate) mod wires;
@@ -118,7 +119,7 @@ use khor_sync::agents::{AgentDoc, agents_dir};
 /// One conversation an agent said it has, as khor remembers it
 /// (`khor_sync::agents::Seen`).
 pub use khor_sync::agents::{Answer as AgentAnswer, Seen as AgentSeen};
-use khor_sync::chat::{ChatDoc, Sender, channel_dir, channel_of_machine};
+use khor_sync::chat::{ChatDoc, Sender, channel_of_machine};
 use khor_sync::devices::{DeviceDoc, devices_dir};
 
 /// What asking an agent for its sessions answered
@@ -2469,8 +2470,8 @@ impl Node {
             .map_err(|e| msg::no_such_session_because(&id.0, e))
     }
 
-    fn kinds(&self) -> [&dyn KindSurface; 3] {
-        [&self.chat, &self.transfer, &self.live]
+    fn kinds(&self) -> [&dyn KindSurface; 4] {
+        [&self.chat, &self.transfer, &self.live, &wide::WideKind]
     }
 
     /// The list: one row per session, each answering the five questions.
@@ -4011,42 +4012,17 @@ impl Node {
     /// receive location) travels the CRDT to everyone, and the receiver
     /// pulls the bytes from here as soon as it reads it, nobody asked
     /// (STORE-BRIEF phase 2: 直接传). Returns the transfer session id.
+    ///
+    /// The broadcast (`wide/all`) takes a file the same way, as an offer
+    /// every machine answers on its own ([`Self::wide_send`]).
     pub fn send(&self, machine: &str, path: &Path, into: &str) -> Result<SessionId, String> {
+        if machine.starts_with(khor_sync::chat::WIDE) {
+            return self.wide_send(machine, path);
+        }
         let into = road::tidy_setting(into)?;
         let (channel, home) = self.resolve(machine)?;
-        let name = path
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .ok_or_else(|| msg::not_a_file_path(path.display()))?;
-        let (digest, size) = transfer::digest_file(path)?;
-        let f = FileRef {
-            name: name.clone(),
-            size: size as i64,
-            digest: digest.clone(),
-        };
+        let f = self.offer_file(path)?;
         let told = self.chat.send_files(&channel, home, &[f], &into)?;
-        let path = path.canonicalize().map_err(msg::cant_canonicalize)?;
-        // The same file offered again — to another machine, or again to
-        // the same one — keeps what each receiver already did with it:
-        // the state is per receiver (`transfer::Offer::to`).
-        let to = transfer::load_offer(&self.root, &digest)
-            .ok()
-            .flatten()
-            .filter(|o| o.path == path && o.size == size)
-            .map(|o| o.to)
-            .unwrap_or_default();
-        transfer::save_offer(
-            &self.root,
-            &digest,
-            &transfer::Offer {
-                path,
-                name,
-                size,
-                started: false,
-                done: false,
-                to,
-            },
-        )?;
         // **Offering is not looking, so no watermark moves here** — and
         // this is the one place the person and the machine come apart.
         //
@@ -4084,6 +4060,46 @@ impl Node {
         Ok(TransferKind::session_id(&told.msg_id))
     }
 
+    /// A file made ready to be fetched from here: its digest, and the
+    /// offer record that serves its bytes (`transfer::Offer`) — the part
+    /// of a send that is the same whoever receives it.
+    pub(crate) fn offer_file(&self, path: &Path) -> Result<FileRef, String> {
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .ok_or_else(|| msg::not_a_file_path(path.display()))?;
+        let (digest, size) = transfer::digest_file(path)?;
+        let f = FileRef {
+            name: name.clone(),
+            size: size as i64,
+            digest: digest.clone(),
+        };
+        let path = path.canonicalize().map_err(msg::cant_canonicalize)?;
+        // The same file offered again — to another machine, or again to
+        // the same one — keeps what each receiver already did with it:
+        // the state is per receiver (`transfer::Offer::to`).
+        let to = transfer::load_offer(&self.root, &digest)
+            .ok()
+            .flatten()
+            .filter(|o| o.path == path && o.size == size)
+            .map(|o| o.to)
+            .unwrap_or_default();
+        transfer::save_offer(
+            &self.root,
+            &digest,
+            &transfer::Offer {
+                path,
+                name,
+                size,
+                started: false,
+                done: false,
+                to,
+            },
+        )?;
+        Ok(f)
+    }
+
+
     /// The file message behind `transfer/<msg_id>`, with its channel.
     pub(crate) fn find_transfer(&self, msg_id: &str) -> Result<(String, Message), String> {
         for d in self.devices()? {
@@ -4094,6 +4110,18 @@ impl Node {
                 .find(|m| m.id == msg_id && matches!(m.body, MsgBody::Files(_)))
             {
                 return Ok((d.name, m));
+            }
+        }
+        // A broadcast file: its board is the khor-wide conversation.
+        for board in self.known_wide() {
+            if let Some(m) = self
+                .chat
+                .log(&board)?
+                .messages
+                .into_iter()
+                .find(|m| m.id == msg_id && matches!(m.body, MsgBody::Files(_)))
+            {
+                return Ok((board, m));
             }
         }
         Err(msg::no_such_transfer(format_args!("transfer/{msg_id}")))
@@ -4120,7 +4148,12 @@ impl Node {
     }
 
     /// Tells a machine's window a line. Returns the message id.
+    /// The broadcast (`wide/all`) is told the same way
+    /// ([`Self::wide_tell`]).
     pub fn tell(&self, machine: &str, text: &str) -> Result<String, String> {
+        if machine.starts_with(khor_sync::chat::WIDE) {
+            return self.wide_tell(machine, text);
+        }
         let (channel, home) = self.resolve(machine)?;
         let told = self.chat.tell(&channel, home, text)?;
         // Telling implies looking: own words never count as unread — on
@@ -4133,6 +4166,9 @@ impl Node {
 
     /// A channel's readout, oldest first.
     pub fn log(&self, machine: &str) -> Result<chat::ChannelLog, String> {
+        if machine.starts_with(khor_sync::chat::WIDE) {
+            return self.chat.log(wide::board(machine)?);
+        }
         let (channel, _) = self.resolve(machine)?;
         self.chat.log(&channel)
     }
@@ -5419,7 +5455,7 @@ impl TransferKind {
             return Err(msg::no_such_transfer(&id.0));
         };
         let (channel, m) = node.find_transfer(msg_id)?;
-        let dir = channel_dir(node.root(), &channel)
+        let dir = khor_sync::chat::board_dir(node.root(), &channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
         let MsgBody::Files(files) = m.body else {
             return Err(msg::no_such_transfer(&id.0));

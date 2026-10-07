@@ -46,14 +46,25 @@ macro_rules! with_doc {
                     let $loaded = &mut l;
                     $body
                 }
-                None => Err(msg::unknown_doc(name)),
+                // A khor-wide conversation (`wide/<name>`, foundation B):
+                // the same document shape, kept beside the channels.
+                None => match chat::wide_dir($node.root(), name) {
+                    Some(dir) => {
+                        let mut l = chat::open_channel(&dir, $node.writer_peer())?;
+                        let $loaded = &mut l;
+                        $body
+                    }
+                    None => Err(msg::unknown_doc(name)),
+                },
             },
         }
     }};
 }
 
 /// The documents a round syncs, in the order it syncs them; chat
-/// channels follow (`Node::known_channels`). The first three and every
+/// channels follow (`Node::known_channels`), then the khor-wide
+/// conversations (`Node::known_wide`, best effort like the tables after
+/// the first three: a peer that predates them refuses them by name). The first three and every
 /// channel must sync for the round to count; the rest are best effort —
 /// a peer that predates a table refuses it by name, and that must not
 /// cost the rounds behind it.
@@ -3858,7 +3869,7 @@ impl Node {
         let crate::MsgBody::Files(files) = &m.body else {
             return Err(msg::no_such_transfer(&id.0));
         };
-        let dir = chat::channel_dir(self.root(), &channel)
+        let dir = chat::board_dir(self.root(), &channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))?;
         // Found by digest (`road::landed`); a file not landed yet answers
         // the conversation folder an older khor used, which is not there.
@@ -7513,7 +7524,9 @@ impl Node {
         // Which machine to route to is read off the message, so the wait
         // has to happen before the fork, not inside one arm of it.
         let (channel, _) = self.transfer_after_sync(ep, id, msg_id).await?;
-        if channel == self.name() {
+        // A broadcast file is taken by whichever machine asks for it: each
+        // one answers the offer for itself (STORE-BRIEF phase 3).
+        if channel == self.name() || channel.starts_with(chat::WIDE) {
             return self.take_local(ep, id, action).await;
         }
         let target = self
@@ -7554,8 +7567,13 @@ impl Node {
         // straight on this one (`handle`), and the receiver can be behind
         // on the very message it is asked about.
         let (channel, m) = self.transfer_after_sync(ep, id, msg_id).await?;
-        if channel != self.name() {
+        let wide = channel.starts_with(chat::WIDE);
+        if channel != self.name() && !wide {
             return Err(msg::wrong_recipient(&channel));
+        }
+        // The machine that offered it has the bytes already.
+        if wide && m.from.id == self.device_str() {
+            return Err(msg::own_broadcast_file().to_owned());
         }
         if action == "stop" {
             self.stop_sent(&channel, &m)?;
@@ -7605,7 +7623,8 @@ impl Node {
     }
 
     /// One conversation file's move on its receiver, told to the
-    /// message for every device to read (`khor_sync::chat::Fate`) and to
+    /// message for every device to read (`khor_sync::chat::Fate`; in the
+    /// broadcast, under this machine's own key, as an accepted offer) and to
     /// a job keyed by the message (`road::job`), so a second ask joins
     /// the running one instead of pulling twice. `asked`: a person asked
     /// (a retry, a delivery waiting on it) — an ended move starts again
@@ -7622,7 +7641,7 @@ impl Node {
         let crate::MsgBody::Files(files) = &m.body else {
             return Err(msg::no_such_transfer(&m.id));
         };
-        let key = crate::road::sent_key(&m.id);
+        let key = crate::road::sent_key(&m.id, self.device_str());
         let (mut job, fresh) = crate::road::job(&key);
         if !fresh {
             if !asked {
@@ -7643,7 +7662,7 @@ impl Node {
         }
         // Landed already (a retry pressed after it arrived): the answer
         // as it stands, while every file is still where it landed.
-        if let Some(f) = m.fate.as_ref().filter(|f| f.step == Step::Landed && f.landed.len() == files.len())
+        if let Some(f) = self.chat.fate_here(channel, m).filter(|f| f.step == Step::Landed && f.landed.len() == files.len())
             && f.landed.iter().all(|p| std::path::Path::new(p).is_file())
         {
             job.finish(Ok(f.landed.join("\n")));
@@ -7676,7 +7695,12 @@ impl Node {
             let mut landed = Vec::with_capacity(files.len());
             for f in files {
                 let parcel = crate::road::Parcel {
-                    mode: crate::road::Mode::Direct,
+                    // A broadcast file waited for this machine's yes.
+                    mode: if channel.starts_with(chat::WIDE) {
+                        crate::road::Mode::Offer
+                    } else {
+                        crate::road::Mode::Direct
+                    },
                     source: crate::road::Source::Offer {
                         from: home.id.clone(),
                         file: f.clone(),
@@ -7734,6 +7758,9 @@ impl Node {
             }
         }
         let _ = self.emit_row_of(&crate::transfer::TransferKind::session_id(&m.id));
+        if channel.starts_with(chat::WIDE) {
+            let _ = self.emit_row_of(&crate::SessionId(channel.to_owned()));
+        }
         // Everyone else reads the new state at once, not at the next beat.
         self.nudge(ep);
         if job.is_stopped() && outcome.is_err() {
@@ -7747,7 +7774,7 @@ impl Node {
     /// started is marked cancelled so it does not start by itself.
     fn stop_sent(&self, channel: &str, m: &chat::Message) -> Result<(), String> {
         use khor_sync::chat::{Fate, Step};
-        let key = crate::road::sent_key(&m.id);
+        let key = crate::road::sent_key(&m.id, self.device_str());
         let (job, fresh) = crate::road::job(&key);
         let ended = job.state();
         if !fresh && ended.as_ref().is_ok_and(|s| !s.done) {
@@ -7758,7 +7785,7 @@ impl Node {
             job.stopped.store(true, std::sync::atomic::Ordering::Relaxed);
             job.finish(Err(crate::road::cancelled()));
         }
-        if m.fate.as_ref().is_none_or(|f| f.step != Step::Landed) {
+        if self.chat.fate_here(channel, m).is_none_or(|f| f.step != Step::Landed) {
             self.chat.set_fate(
                 channel,
                 &m.id,
@@ -8768,6 +8795,7 @@ impl Node {
     fn opening(&self, d: &DeviceInfo) -> Result<(Vec<String>, Request), String> {
         let mut names: Vec<String> = ROUND_DOCS.iter().map(|n| (*n).to_owned()).collect();
         names.extend(self.known_channels()?.into_iter().map(|ch| format!("chat/{ch}")));
+        names.extend(self.known_wide());
         let mut docs = Vec::with_capacity(names.len());
         for name in &names {
             let digest = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>(version_digest(
@@ -9177,6 +9205,14 @@ impl Node {
                 .rounds(line, &format!("chat/{ch}"), &mut loaded)
                 .await?;
         }
+        for board in self.known_wide() {
+            if let Some(dir) = chat::wide_dir(self.root(), &board) {
+                let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
+                if let Ok(n) = self.rounds(line, &board, &mut loaded).await {
+                    moved += n;
+                }
+            }
+        }
         // Remember what the far side reports about its own sessions:
         // when it goes unreachable, its last word plus the report's age
         // is all the UI may honestly show. Best effort — a failure here
@@ -9327,6 +9363,22 @@ impl Node {
             }
         }
         Ok(set)
+    }
+
+    /// The khor-wide conversations worth syncing, by board name
+    /// (`wide/<name>`): the broadcast always — every machine keeps it,
+    /// written to or not — plus any already on disk.
+    pub(crate) fn known_wide(&self) -> BTreeSet<String> {
+        let mut set = BTreeSet::from([format!("{}{}", chat::WIDE, chat::ALL)]);
+        if let Ok(rd) = fs::read_dir(self.root().join(chat::WIDE_DIR)) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if chat::valid_channel(&name) {
+                    set.insert(format!("{}{name}", chat::WIDE));
+                }
+            }
+        }
+        set
     }
 
     /// The addresses a **live** serve says this machine has, or `None`

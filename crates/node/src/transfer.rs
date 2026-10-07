@@ -350,6 +350,7 @@ mod tests {
             edited: false,
             into: String::new(),
             fate: None,
+            fates: Default::default(),
         }
     }
 

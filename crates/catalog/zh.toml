@@ -1608,6 +1608,10 @@ no-such-transfer = "没有这个传输：{0}"
 transfer-absent-after-sync = "没有这个传输：{0}（网里每台机器都同步过一轮了，这个号多半是错的）"
 transfer-not-synced-yet = "这笔传输尚未同步到本机：{0}；有 {1} 台机器无法联系（{2}），它可能还在那边"
 wrong-recipient = "这个文件是发给 {0} 的，不应由这台机器接收"
+# 广播（STORE-BRIEF 第三阶段）：全网机器的群聊，行名就是这个词。广播里的文件
+# 是邀约，每台机器自己接收；发出它的那台本来就有，没有什么要收。
+broadcast-title = "广播"
+own-broadcast-file = "这个文件是本机发出的，本机不用接收"
 not-a-file-path = "这不是一个文件路径：{0}"
 # 删不掉 (工作区批④). **One key for every reason**, unlike the pairs
 # above that split a refusal by whose fault it was: here the operating
@@ -4440,6 +4444,15 @@ file-stop = "取消传输"
 file-stopped = "已取消"
 file-failed = "传输失败：{0}"
 send-into = "存到"
+# The broadcast's file chip (STORE-BRIEF phase 3): a file there is an
+# offer each machine answers on its own. This machine's own state: not
+# received yet (with 接收), being received (the bar), received (the
+# path). The sender's chip counts the machines that have it.
+bcast-waiting = "待接收"
+bcast-take = "接收"
+bcast-taking = "接收中"
+bcast-landed = "已收到"
+bcast-count = "{0}/{1} 台已收到"
 # The composer's other verb (GUI 发文件批): hand a file to `send`. The
 # label names the action; in the app a native picker answers with a
 # real path, in a browser the bytes upload to the sending machine first

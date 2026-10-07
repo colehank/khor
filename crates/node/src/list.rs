@@ -81,6 +81,10 @@ pub const GROUP_PINNED: &str = "pin";
 pub const GROUP_CATEGORY: &str = "cat:";
 /// Prefix for a machine group; the rest is that machine's name.
 pub const GROUP_DEVICE: &str = "dev:";
+/// The group a khor-wide session lands in when the list is arranged by
+/// machine (`crate::wide`): it belongs to no one machine, so it leads
+/// them under the khor's own name.
+pub const GROUP_KHOR: &str = "khor";
 /// Prefix for a state group; the rest is one of the six word keys.
 pub const GROUP_STATE: &str = "state:";
 /// Prefix for a place group; the rest is the project root's path.
@@ -165,6 +169,9 @@ fn place_of(
             // 认不出就不落词); the face names it "could not tell".
             _ => (GROUP_CATEGORY.to_owned(), (2, String::new())),
         },
+        Arrange::Device if view.session.id.0.starts_with(khor_sync::chat::WIDE) => {
+            (GROUP_KHOR.to_owned(), (1, String::new()))
+        }
         Arrange::Device => match device_name(&view.session.home) {
             Some(name) => (format!("{GROUP_DEVICE}{name}"), (1, name)),
             None => {
@@ -372,6 +379,19 @@ mod tests {
     /// **A pin leads in every mode.** The row picked here is the oldest
     /// and 失败 — last in recent order and last by rank — so nothing but
     /// the pin could have put it on top.
+    /// A khor-wide row belongs to no machine: arranged by machine, it
+    /// leads them under the khor's own group, not under the machine that
+    /// derived it.
+    #[test]
+    fn a_khor_wide_row_leads_the_machines_in_its_own_group() {
+        let mut rows = sample();
+        rows.push(view("wide/all", 1, State::Idle, Some("khor"), 2));
+        let out = arrange(rows, Arrange::Device, &names);
+        assert_eq!(out[0].view.session.id.0, "wide/all");
+        assert_eq!(out[0].group, GROUP_KHOR);
+        assert!(out[1..].iter().all(|r| r.group.starts_with(GROUP_DEVICE)));
+    }
+
     #[test]
     fn a_pinned_row_leads_in_every_mode() {
         for mode in Arrange::ALL {

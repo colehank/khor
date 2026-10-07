@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use khor_catalog::msg;
 use khor_core::{DeviceId, Event, Kind, Millis, Session, SessionId, State, StateStamp, kind};
-use khor_sync::chat::{ChatDoc, Message, Sender, channel_dir, open_channel};
+use khor_sync::chat::{ChatDoc, Fate, Message, Sender, board_dir, open_channel};
 use khor_sync::store::Loaded;
 
 /// One channel's readout.
@@ -50,8 +50,11 @@ impl ChatKind {
         }
     }
 
+    /// A board's directory: a machine's channel, or a khor-wide
+    /// conversation (`wide/<name>`, `khor_sync::chat::board_dir`). Every
+    /// method here takes either; only the row and the fate differ.
     fn dir(&self, channel: &str) -> Result<PathBuf, String> {
-        channel_dir(&self.root, channel)
+        board_dir(&self.root, channel)
             .ok_or_else(|| msg::bad_channel_name(format_args!("{channel:?}")))
     }
 
@@ -59,7 +62,11 @@ impl ChatKind {
         open_channel(&self.dir(channel)?, self.peer)
     }
 
+    /// A khor-wide board is its own session id (`wide/all`).
     fn session_id(channel: &str) -> SessionId {
+        if channel.starts_with(khor_sync::chat::WIDE) {
+            return SessionId(channel.to_owned());
+        }
         SessionId(format!("chat/{channel}"))
     }
 
@@ -91,7 +98,7 @@ impl ChatKind {
     /// both (`row_and_log`). Handed a document it would re-derive the
     /// message list a second time, which is the cheap half of the same
     /// mistake `row` used to make with the expensive one.
-    fn row_from(&self, channel: &str, home: DeviceId, msgs: &[Message], watermark: i64) -> Session {
+    pub(crate) fn row_from(&self, channel: &str, home: DeviceId, msgs: &[Message], watermark: i64) -> Session {
         let unread = msgs
             .iter()
             .filter(|m| m.at > watermark && !self.i_offered(m))
@@ -256,12 +263,28 @@ impl ChatKind {
         })
     }
 
-    /// Writes how a file message's move stands (its receiver only).
-    pub fn set_fate(&self, channel: &str, msg_id: &str, fate: &khor_sync::chat::Fate) -> Result<(), String> {
+    /// Writes how a file message's move stands on this machine (its
+    /// receiver): on the message in a machine's conversation, which has
+    /// one receiver; under this machine's own key in a khor-wide one,
+    /// which has many (`ChatDoc::set_fate_of`).
+    pub fn set_fate(&self, channel: &str, msg_id: &str, fate: &Fate) -> Result<(), String> {
         let loaded = self.load(channel)?;
         let mut store = loaded.store;
-        loaded.doc.set_fate(msg_id, fate)?;
+        if channel.starts_with(khor_sync::chat::WIDE) {
+            loaded.doc.set_fate_of(msg_id, &self.me.id, fate)?;
+        } else {
+            loaded.doc.set_fate(msg_id, fate)?;
+        }
         store.flush(&loaded.doc).map(|_| ())
+    }
+
+    /// How a file message's move stands on this machine, read the way
+    /// [`Self::set_fate`] writes it.
+    pub fn fate_here(&self, channel: &str, m: &Message) -> Option<Fate> {
+        if channel.starts_with(khor_sync::chat::WIDE) {
+            return m.fates.get(&self.me.id).cloned();
+        }
+        m.fate.clone()
     }
 
     pub fn log(&self, channel: &str) -> Result<ChannelLog, String> {

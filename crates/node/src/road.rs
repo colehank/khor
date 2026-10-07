@@ -186,9 +186,12 @@ pub fn forget_job(key: &str) {
     jobs().lock().unwrap_or_else(|e| e.into_inner()).remove(key);
 }
 
-/// The job key of a conversation file's move, by its message.
-pub fn sent_key(msg_id: &str) -> String {
-    format!("sent-{msg_id}")
+/// The job key of a conversation file's move, by its message **and the
+/// machine receiving it**: the table is the process's, and a broadcast
+/// file is one message many machines move — two homes in one process
+/// (a test's scratch nodes) must not answer each other's moves.
+pub fn sent_key(msg_id: &str, receiver: &str) -> String {
+    format!("sent-{receiver}-{msg_id}")
 }
 
 /// **The job this key names, cancelled**: its pull stops before the next

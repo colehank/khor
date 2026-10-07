@@ -406,7 +406,7 @@ async fn a_cancelled_pull_leaves_nothing_and_a_retry_lands_it() {
     let tid = a.send("beta", &src, "").unwrap();
     timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
     let digest = blake3::hash(&payload).to_hex().to_string();
-    let key = khor_node::road::sent_key(tid.0.strip_prefix("transfer/").unwrap());
+    let key = khor_node::road::sent_key(tid.0.strip_prefix("transfer/").unwrap(), b.device_str());
 
     let pulling = {
         let (b, tid) = (b.clone(), tid.clone());
