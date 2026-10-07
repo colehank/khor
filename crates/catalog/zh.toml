@@ -2292,6 +2292,10 @@ drop-into = "正在传入 {0}"
 drop-into-of = "正在传入 {0}（{1}/{2} 已完成）"
 drop-predates = "那台机器上的 khor 版本较旧，无法接收放进来的文件"
 drop-serve-gone = "本机的 khor 服务中途退出，文件没有放完"
+# A drop the person cancelled (the pill's ×, item 71): the face says
+# nothing of it — the pill is the session's again — so this is what a
+# log or the CLI reads.
+drop-cancelled = "传入已取消，没有粘贴"
 # VS Code on a machine (工作区批5). **Says what is missing, not what to
 # do about it**: khor does not ship VS Code and telling somebody to go
 # install it is not khor's sentence to write — the button simply is not

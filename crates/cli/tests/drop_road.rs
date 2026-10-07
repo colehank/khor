@@ -268,3 +268,94 @@ async fn a_drop_into_the_shells_directory_lands_there() {
     assert_eq!(names(&work), ["far.txt", "notes-2.txt", "notes-3.txt", "notes.txt"], "no part file left");
     assert!(names(&alpha_drop).is_empty() && names(&beta_drop).is_empty(), "nothing in the drop directories");
 }
+
+/// **A drop cancelled mid-pull** (item 71, the pill's ×): the pull
+/// stops at its next slice wherever it runs, its part file goes, nothing
+/// lands, and the asker answers the cancel at once. Behind a slow road,
+/// so the pull is still going when the cancel comes.
+///
+/// - **Far**: beta's file onto alpha — alpha pulls, beta orders, and the
+///   cancel is an order to alpha (`Request::DropStop`).
+/// - **Here**: alpha's file onto beta — beta's own resident pulls, and
+///   the cancel is told to it by token (`ipc::Op::DropStop`).
+///
+/// Then the same file dropped again lands whole: a cancel ends one job.
+#[tokio::test(flavor = "multi_thread", worker_threads = 6)]
+async fn a_cancelled_drop_stops_its_pull_and_leaves_nothing() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let (p, _road) = pair_on(
+        "drop-stop",
+        Some(Impair {
+            rtt: Duration::from_millis(200),
+            loss_pct: 0,
+            stall: Duration::ZERO,
+        }),
+    )
+    .await;
+    let (alpha_drop, beta_drop) = (p.ra.0.join("khor-drop"), p.rb.0.join("khor-drop"));
+    let payload: Vec<u8> = (0..(24u32 << 20)).map(|i| (i % 249) as u8).collect();
+    let on_beta = p.rb.0.join("big on beta.bin");
+    std::fs::write(&on_beta, &payload).unwrap();
+    let on_alpha = p.ra.0.join("big on alpha.bin");
+    std::fs::write(&on_alpha, &payload).unwrap();
+
+    /// A drop cancelled once some of it has landed: what it answered, and
+    /// how far it had got when the cancel came.
+    async fn cancelled(n: &khor_node::Node, from: &str, path: &str, to: &str) -> (Result<String, String>, u64) {
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut at = 0;
+        let flag = stop.clone();
+        let out = timeout(
+            Duration::from_secs(120),
+            n.drop_file_until(
+                from,
+                path,
+                to,
+                None,
+                |s| {
+                    if s.moved > 0 && !stop.load(Ordering::Relaxed) {
+                        at = s.moved;
+                        stop.store(true, Ordering::Relaxed);
+                    }
+                },
+                move || flag.load(Ordering::Relaxed),
+            ),
+        )
+        .await
+        .expect("a cancelled drop must not hang");
+        (out, at)
+    }
+    /// The drop directory once nothing is left in it, or what is.
+    async fn emptied(dir: &Path) -> Vec<String> {
+        let began = std::time::Instant::now();
+        while !names(dir).is_empty() && began.elapsed() < Duration::from_secs(20) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        names(dir)
+    }
+    let total = payload.len() as u64;
+
+    // Far.
+    let (out, at) = cancelled(&p.beta, "", &on_beta.display().to_string(), "alpha").await;
+    assert_eq!(out, Err(khor_node::drops::cancelled()), "the asker answers the cancel");
+    assert!(at > 0 && at < total, "cancelled mid-pull: {at} of {total}");
+    assert_eq!(emptied(&alpha_drop).await, Vec::<String>::new(), "alpha's pull stopped: no part file, no file");
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert_eq!(names(&alpha_drop), Vec::<String>::new(), "and nothing lands after");
+
+    // Here.
+    let (out, at) = cancelled(&p.beta, "alpha", &on_alpha.display().to_string(), "").await;
+    assert_eq!(out, Err(khor_node::drops::cancelled()));
+    assert!(at > 0 && at < total, "cancelled mid-pull: {at} of {total}");
+    assert_eq!(emptied(&beta_drop).await, Vec::<String>::new(), "beta's own pull stopped: no part file, no file");
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    assert_eq!(names(&beta_drop), Vec::<String>::new(), "and nothing lands after");
+
+    // Dropped again, uncancelled: whole, under its own name.
+    let (out, _) = dropped(&p.beta, "", &on_beta.display().to_string(), "alpha").await;
+    let dest = out.expect("a later drop of the same file lands");
+    assert_eq!(Path::new(&dest), alpha_drop.join("big on beta.bin"));
+    assert_eq!(std::fs::read(&dest).unwrap(), payload, "byte for byte");
+}
