@@ -368,6 +368,7 @@ pub enum Op {
         host: String,
         port: Option<u16>,
         jump: Option<String>,
+        identity: Option<String>,
         name: Option<String>,
         satellite_only: bool,
     },

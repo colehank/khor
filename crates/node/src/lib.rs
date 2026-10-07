@@ -3649,14 +3649,16 @@ impl Node {
     /// the new member wears the same name, so a name would be ambiguous.
     pub(crate) fn forget_id(&self, id: &str) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
-        // A satellite of this machine that logged in with a password:
-        // the password goes with it (docs/NET.md 添加机器 认证方式).
+        // A satellite of this machine that logged in with a password or
+        // a key's passphrase: the secret goes with it (docs/NET.md 添加机器
+        // 认证方式). Removed on another machine, the sponsor's sweep
+        // drops it instead (`satellite_sampler`).
         if let Some(row) = loaded.doc.get(id)
-            && row.ssh_password
             && row.sponsor.as_deref() == Some(self.device_str())
             && let Some(to) = satellite::Dest::of(&row)
+            && to.asks()
         {
-            crate::secret::forget(&to.secret_key())?;
+            crate::secret::drop_kept(&self.root, &to.secret_key())?;
         }
         loaded.doc.set_gone(id, true)?;
         // On the machine holding the root the removal is also a
@@ -3870,6 +3872,17 @@ impl Node {
         loop {
             tick.tick().await;
             let Ok(devs) = self.devices() else { continue };
+            // The sweep (docs/NET.md 添加机器 认证方式): a password or
+            // passphrase kept for a satellite whose row left the table —
+            // removed here or on any other machine — goes now.
+            let live: std::collections::HashSet<String> = devs
+                .iter()
+                .filter(|d| d.sponsor.as_deref() == Some(self.device_str()))
+                .filter_map(satellite::Dest::of)
+                .filter(satellite::Dest::asks)
+                .map(|to| to.secret_key())
+                .collect();
+            let _ = crate::secret::sweep(&self.root, &live, now_ms());
             for d in devs {
                 if d.sponsor.as_deref() != Some(self.device_str()) {
                     continue;
