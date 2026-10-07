@@ -447,11 +447,11 @@ export function SideList({
         </span>
         {r.trailing}
         {r.corners && (r.corners.top || r.corners.bottom) && <Corners top={r.corners.top} bottom={r.corners.bottom} />}
-        {/* A row that opens a page says so on the narrow face, where the
-            page is the next screen (F2.1). */}
-        {narrow && r.onOpen && (
-          <IconChevronRight data-side-drill className="size-affordance flex-none text-tertiary" />
-        )}
+        {/* ⚠️ 墓碑 (F2.1 → UX-44 §4, the owner 2026-10-07: 「这个app所有
+            的list统一，不要有右侧的">"，WeChat、telegram等app都是没有的」):
+            a › at the row's end on the narrow face, saying the row opens a
+            page. A content row opens what it names; only a settings row
+            keeps its ›. */}
         </span>
       </button>
     );

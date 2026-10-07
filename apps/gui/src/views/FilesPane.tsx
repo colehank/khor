@@ -26,8 +26,7 @@ import { EmptyState } from "@/components/RegionState";
 import { fetchLs, type DirListing } from "@/api";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconChevronRight, IconFiles } from "@/components/icons";
-import { useNarrow } from "@/hooks/use-narrow";
+import { IconBack, IconFiles } from "@/components/icons";
 import { RowMenu } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -163,8 +162,6 @@ export function FilesPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [machine, path, again]);
 
-
-  const narrow = useNarrow();
   const up = () => {
     if (!listing) return;
     onPath(listing.path.slice(0, listing.path.lastIndexOf("/")) || "/");
@@ -311,7 +308,9 @@ export function FilesPane({
                     </span>
                     <span className="min-w-0 flex-1 truncate">{e.name}</span>
                     <Mark mark={marks?.get(full)} dir />
-                    {narrow && <IconChevronRight className="size-affordance flex-none text-tertiary" />}
+                    {/* ⚠️ 墓碑 (UX-44 §4): a › after a folder's name on the
+                        narrow face. A listing's row opens what it names;
+                        no list row wears one (WeChat's, Telegram's). */}
                   </button>
                   </RowMenu>
                   {/* ⚠️ 墓碑: a pin button stood here, writing 「置顶的目录」
