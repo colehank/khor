@@ -1636,12 +1636,11 @@ quota-group-none = "No grouping"
 accounts-log-capped = "Only fetched the most recent {0} entries"
 
 machine-here = "This machine"
-# **The list rows' four corners** (UX-48): a machine's readings under its
-# name, its connection on the right, or Offline.
+# **The list rows' four corners** (UX-48): a machine's connection on the
+# right, or Offline. UX-50: the latency after the name; under it CPU, Memory,
+# Disk, GPU, each a label (vitals-name-*) and a value.
 row-offline = "Offline"
-row-cpu = "CPU {0}%"
-row-mem = "Mem {0}%"
-row-gpu = "GPU {0}%"
+row-pct = "{0}%"
 # Unspaced: conn-relay-ms already says "{0} ms" and the catalog refuses one text
 # under two names.
 row-rtt = "{0}ms"

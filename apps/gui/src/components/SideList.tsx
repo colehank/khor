@@ -61,9 +61,10 @@ export type SideRow = {
   halo?: string;
   title: ReactNode;
   /** **The title line's aside** (UX-15, the owner 2026-10-05): small
-      muted words after the name — a machine's model, an account's kind,
-      a workspace's place — cut before the name is (`PageTitleAside`'s
-      rule on the page head). Absent draws the name alone. */
+      muted words after the name — today a machine's latency (UX-50); once
+      a machine's model, an account's kind, a workspace's place — cut
+      before the name is (`PageTitleAside`'s rule on the page head). Absent
+      draws the name alone. */
   aside?: ReactNode;
   /** **The right two corners** (UX-15: 「左上身份、左下在做什么、右上状态、
       右下状态的时间；空的格子不画」): the state over its time, caption,
