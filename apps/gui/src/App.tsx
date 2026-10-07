@@ -1384,7 +1384,10 @@ export default function App() {
     // Every one of these opens a dialog, so each wears the ellipsis
     // (components/Button:「还会再问一次的动作，文案带省略号」) — the
     // `-ask` keys; the dialog's own title keeps the bare word.
-    { key: "new", label: gui.new_session_ask, onSelect: () => openNewSession() },
+    // ＋'s 新会话 is a new tab (UX-45, the owner 2026-10-07): in front at
+    // once, its page the choices — the strip's ＋, and ⌘N / ⌘T with it.
+    // ⚠️ 墓碑: the 新建会话 dialog from here.
+    { key: "new", label: gui.new_session_ask, onSelect: () => openNewTab() },
     // What khor found and has not put on the list (docs/SHELL.md 第八轮).
     { key: "import", label: gui.import_sessions_ask, onSelect: () => setDialog("import") },
   ];
@@ -1710,10 +1713,25 @@ export default function App() {
       new-session choices (`NewSessionDialog` `page`); made, it becomes
       that session (`sessionTabs.become`), closed first, it is gone. */
   const openNewTab = () => {
+    const id = newTabId();
+    newTabFrom.current.set(id, { front: selected, list: narrow && !(landing === "sessions" && screen === "detail") });
     setMorePage(null);
     setLanding("sessions");
-    sessionTabs.open(newTabId());
+    sessionTabs.open(id);
     setScreen("detail");
+  };
+  /** Where each new tab was opened from, for its 取消 (UX-45): the tab
+      that was in front, and whether the narrow face stood on the list. */
+  const newTabFrom = useRef(new Map<string, { front: string | null; list: boolean }>());
+  /** **取消 on a new tab** (UX-45, the owner 2026-10-07): the tab goes and
+      the one that was in front comes back — or the list, where it was
+      opened from the list or nothing was in front. */
+  const cancelNewTab = (id: string) => {
+    const from = newTabFrom.current.get(id);
+    newTabFrom.current.delete(id);
+    sessionTabs.close(id);
+    if (from?.front && from.front !== id && openTabs.includes(from.front)) sessionTabs.focus(from.front);
+    if (!from?.front || from.list) setScreen("list");
   };
   const tabFaces: TabFace[] = useMemo(
     () =>
@@ -2515,7 +2533,7 @@ export default function App() {
       page
       open
       onOpenChange={(o) => {
-        if (!o && selected) sessionTabs.close(selected);
+        if (!o && selected) cancelNewTab(selected);
       }}
       onOpened={(id) => {
         justOpened.current.set(id, Date.now());
@@ -2536,7 +2554,8 @@ export default function App() {
       openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}
       onBack={() => setScreen("list")}
-      onNew={() => openNewSession()}
+      // The empty pane's 新会话…: a new tab, as ＋'s (UX-45).
+      onNew={() => openNewTab()}
       // The way to the other open tabs on the face that has no strip:
       // the count is the button (`TabCount`), and pressing it swaps
       // this pane for the switcher. Wide has the strip above the pane,

@@ -475,12 +475,26 @@ export function NewSessionDialog({
       </Button>
     );
 
+  /** The page's one act is 创建 whatever the kind (UX-45): 留言 makes
+      nothing on the node — every machine already has its conversation
+      (`chat/<name>`, one row per machine) — so 创建 turns the tab into it. */
+  const pageAct = (
+    <Button
+      variant="primary"
+      data-new-session-create
+      disabled={opening}
+      aria-busy={opening || undefined}
+      onClick={() => (kind === "tell" ? onOpened(`chat/${target}`) : create())}
+    >
+      {gui.create}
+    </Button>
+  );
+
   if (page)
     return (
       // **A page, top-down** (UX-45): the machine, what runs there (the
-      // tiles), then the name and the directory, and 创建 at the end of
-      // the column — no title (the tab says 新标签页) and no 取消 (the
-      // tab's × lets it go).
+      // tiles), then the name and the directory, and 取消 · 创建 at the
+      // end of the column — no title (the tab says 新标签页).
       <div data-new-session-page className="h-full min-h-0 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-measure flex-col gap-group px-page pt-pane pb-nav-room">
           <FormGrid data-new-session-form>
@@ -643,21 +657,9 @@ export function NewSessionDialog({
               )}
             </>
           )}
-          {kind === "tell" && (
-            // 留言's third step is the line itself — the whole of
-            // `khor tell`, which used to be a dialog of its own. Under
-            // the controls, not beside a label: the kind above already
-            // says what it is.
-            <Input
-              data-tell-text
-              aria-label={gui.message_text}
-              placeholder={gui.chat_input}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && send()}
-              className="col-start-2"
-            />
-          )}
+          {/* ⚠️ 墓碑 (UX-45, the owner 2026-10-07): 留言's line and 发送
+              on the page. 留言 is chosen like any kind and 创建 opens
+              that machine's conversation, where the line is written. */}
             {kind === "agent" && (
               <>
               {handed && (
@@ -729,7 +731,15 @@ export function NewSessionDialog({
             </p>
           )}
           </FormGrid>
-          <div className="flex justify-end">{act}</div>
+          {/* 取消 beside 创建 (UX-45, the owner 2026-10-07: on the phone a
+              tab has no × to close it by): the new tab goes, and the tab
+              that was in front comes back. */}
+          <div className="flex justify-end gap-in">
+            <Button data-dialog-cancel data-new-tab-cancel onClick={() => onOpenChange(false)}>
+              {gui.delete_keep}
+            </Button>
+            {pageAct}
+          </div>
         </div>
       </div>
     );
