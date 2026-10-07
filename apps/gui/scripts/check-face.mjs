@@ -1365,7 +1365,9 @@ try {
   // `khor_core::GitSegment`), the way its resident keeps it: the row's
   // right says 「main ⇡861 *1 !1 ?2」 and how long that has held, its
   // second line HEAD's subject. The folders and the quiet machine carry
-  // none — a plain folder has no segment, and elder never said.
+  // none — a plain folder has no segment, and elder never said. The plain
+  // folder on gate names its newest file instead (UX-48,
+  // `WorkspaceRow.newest`): "drafts/plan.md", changed 2 hours ago.
   const workGit = {
     branch: "main",
     head: "1a2b3c4d",
@@ -1381,7 +1383,7 @@ try {
     since_ms: Date.now() - 5 * 60_000,
   };
   const wsRows = [
-    { device: "e".repeat(64), machine: "gate", path: "/home/gate/notes", name: "notes", pinned: false },
+    { device: "e".repeat(64), machine: "gate", path: "/home/gate/notes", name: "notes", pinned: false, newest: { path: "drafts/plan.md", at_ms: Date.now() - 2 * 3600_000 } },
     { device: pin.device, machine: "peer", path: pin.path, name: "work", pinned: true, git: workGit },
     { device: "d".repeat(64), machine: "elder", path: "/srv/elder/app", name: "app", pinned: false },
     { device: "c".repeat(64), machine: "", path: "/home/ghost/left", name: "left", pinned: false },
@@ -5600,6 +5602,7 @@ try {
         // The whole value, not the drawn cut: `PathCut` draws the tail
         // that fits and keeps the path as its title and for a reader.
         where: el.querySelector("[data-ws-where]")?.getAttribute("title") ?? null,
+        newest: el.querySelector("[data-ws-newest]")?.getAttribute("title") ?? null,
         subject: el.querySelector("[data-ws-subject]")?.textContent?.trim() ?? null,
         // **An empty corner is not drawn** (UX-15, the owner 2026-10-05:
         // 「空的格子不画」): absent reads as blank. ⚠️ 墓碑: the two corner
@@ -5612,17 +5615,21 @@ try {
     );
     console.log(`workspaces: ${JSON.stringify(seen)}`);
     // **UX-48** (the owner 2026-10-07): the second line is HEAD's subject
-    // for a repository and the path for a plain folder — one or the other,
-    // never both. ⚠️ 墓碑 (UX-15): every row's aside was `machine:path`.
+    // for a repository and the newest file for a plain folder that named
+    // one (gate's notes) — one or the other, never both, and never the
+    // path. Tombstone (UX-15): every row's aside was `machine:path`;
+    // (UX-48, the lead 2026-10-07) a plain folder's path as its second
+    // line.
     if (seen.some((r) => r.name === null)) {
       fail("a workspace row has no name — the anchor is the fact (src/views/WorkspacesList.tsx)");
     }
     for (const r of seen) {
       const repo = r.name === "work";
-      if (repo ? r.subject === null || r.where !== null : r.where === null || r.subject !== null) {
+      const newest = r.name === "notes" ? "drafts/plan.md" : null;
+      if (r.where !== null || (repo ? r.subject === null || r.newest !== null : r.newest !== newest || r.subject !== null)) {
         fail(
-          `the ${r.name} row's second line reads where ${JSON.stringify(r.where)}, subject ${JSON.stringify(r.subject)} — ` +
-            "a repository says HEAD's subject, a folder its path (UX-48, src/views/WorkspacesList.tsx)",
+          `the ${r.name} row's second line reads where ${JSON.stringify(r.where)}, newest ${JSON.stringify(r.newest)}, subject ${JSON.stringify(r.subject)} — ` +
+            "a repository says HEAD's subject, a folder its newest file when its machine said one, neither its path (UX-48, src/views/WorkspacesList.tsx)",
         );
       }
     }
@@ -5632,11 +5639,13 @@ try {
           "times say (src/views/WorkspacesList.tsx)",
       );
     }
+    // A plain folder has no state: no git segment top-right; bottom-right
+    // how long ago its newest file changed (UX-48), bare.
     const gate = seen.find((r) => r.name === "notes");
-    if (gate?.git !== "" || gate?.held !== "") {
+    if (gate?.git !== "" || gate?.held !== "2 小时") {
       fail(
-        `a directory that is no repository drew 「${gate?.git}」/「${gate?.held}」 on its right — nothing is the ` +
-          "only honest answer there, since 干净 and 读不了 look alike (src/views/WorkspacesList.tsx)",
+        `a directory that is no repository drew 「${gate?.git}」/「${gate?.held}」 on its right — no state (干净 and 读不了 look alike), ` +
+          "and under it 「2 小时」, how long ago its newest file changed (UX-48, src/views/WorkspacesList.tsx)",
       );
     }
     const peer = seen.find((r) => r.name === "work");
@@ -5657,12 +5666,15 @@ try {
         `the unreachable machine's row drew 「${elder.git}」/「${elder.held}」 — a machine that ` +
           "said nothing must leave the corners blank (src/views/WorkspacesList.tsx)",
       );
-    } else if (elder.where !== "/srv/elder/app") {
-      // UX-48: the path alone — the face says which machine.
+    } else if (elder.where !== null || elder.newest !== null) {
+      // UX-48 (the lead, 2026-10-07): a plain folder's second line is its
+      // newest file, which a machine that said nothing has not named; the
+      // path is not drawn — the name and the face say which row it is.
       // ⚠️ 墓碑 (UX-15): 「elder:/srv/elder/app」.
+      // Tombstone (UX-48 first cut): the path.
       fail(
-        `…and it must still say where it is, not 「${elder.where}」 — the row is openable and the ` +
-          "path is what makes it identifiable (src/views/WorkspacesList.tsx)",
+        `…and its second line reads where 「${elder.where}」, newest 「${elder.newest}」 — nothing: its machine named no file, ` +
+          "and the path is not drawn (UX-48, src/views/WorkspacesList.tsx)",
       );
     }
     const ghost = wsRows.find((w) => w.machine === "");
@@ -5679,10 +5691,10 @@ try {
           "have answered, so whatever is in those corners came from the wrong disk " +
           "(src/views/WorkspacesList.tsx)",
       );
-    } else if (ghostRow.where !== ghost.path) {
+    } else if (ghostRow.where !== null || ghostRow.newest !== null) {
       fail(
-        `…and with no machine to name it must say just the path, not 「${ghostRow.where}」 ` +
-          "(src/views/WorkspacesList.tsx)",
+        `…and with no machine to name a file its second line must be empty, not where 「${ghostRow.where}」, newest 「${ghostRow.newest}」 ` +
+          "(UX-48, src/views/WorkspacesList.tsx)",
       );
     }
     console.log(
@@ -12553,16 +12565,18 @@ try {
       } else if (
         more.pages.join(",") !==
         (posture === "wide"
-          ? "me,appearance,terminal,session,workspace,connection,security,about,doctor"
+          ? "me,appearance,terminal,session,workspace,connection,security,about,store,doctor"
           : "appearance,terminal,session,workspace,connection,security,about")
       ) {
+        // The storage page sits before the doctor's since the storage lane
+        // (store-b steps 4-5).
         // **UX-16** (the more lane, the owner 2026-10-05): wide, 我的 khor
         // at the head, 设置's seven, then 诊断; narrow, 设置's list is the
         // seven alone (我的 khor and 诊断 are 更多's menu items). ⚠️ 墓碑:
         // 这台机器 · 通用 · 外观 · 网络 · 安全 · 身份 · 诊断 (round 17).
         fail(
           `${posture}: More lists ${JSON.stringify(more.pages)} — ${posture === "wide" ? "我的 khor, then " : ""}` +
-            "外观 / 终端 / 会话 / 工作区 / 连接 / 安全 / 关于" + (posture === "wide" ? ", then 诊断" : "") + ", in that order (UX-16; src/App.tsx)",
+            "外观 / 终端 / 会话 / 工作区 / 连接 / 安全 / 关于" + (posture === "wide" ? ", then 存储, 诊断" : "") + ", in that order (UX-16; src/App.tsx)",
         );
       }
       // Wide: the page is on screen beside the list, and it is a detail
@@ -23010,7 +23024,16 @@ try {
       if (shotsAt) await page.screenshot({ path: join(shotsAt, "ux19-menu.png") });
       const menu = await page.evaluate(() =>
         [...document.querySelectorAll("[data-rail-more-menu] [role=menuitem]")].map(
-          (e) => e.getAttribute("data-nav-me") !== null ? "me" : e.getAttribute("data-nav-settings") !== null ? "settings" : e.getAttribute("data-nav-doctor") !== null ? "doctor" : e.getAttribute("data-more-landing"),
+          (e) =>
+            e.getAttribute("data-nav-me") !== null
+              ? "me"
+              : e.getAttribute("data-nav-settings") !== null
+                ? "settings"
+                : e.getAttribute("data-nav-doctor") !== null
+                  ? "doctor"
+                  : e.getAttribute("data-nav-store") !== null
+                    ? "store"
+                    : e.getAttribute("data-more-landing"),
         ),
       );
       await page.keyboard.press("Escape");
@@ -23024,7 +23047,8 @@ try {
         fail(`UX-39 §8 · 更多's circle is ${row.moreLeft} / ${row.moreRight} off the search circle's column — the same x (±1)`);
       }
       if (row.after === null || row.after < 0) fail(`UX-39 §8 · 更多's circle starts ${row.after} after the capsule's end — after it, not over it`);
-      if (menu.join(",") !== "me,browser,settings,doctor") fail(`UX-39 §8 · 更多's menu reads ${JSON.stringify(menu)} — 我的 khor, 浏览器, 设置, 诊断`);
+      // The storage page joined the menu with the storage lane (store-b steps 4-5).
+      if (menu.join(",") !== "me,browser,store,settings,doctor") fail(`UX-39 §8 · 更多's menu reads ${JSON.stringify(menu)} — 我的 khor, 浏览器, 存储, 设置, 诊断`);
       // The settings window (`?face=settings`) is the settings page alone.
       // It shares this origin's storage, and a window that narrow puts the
       // list away — so what the walk left is put back after it.
@@ -24568,6 +24592,7 @@ try {
                   keys: [...r.querySelectorAll("[data-row-readings] [data-row-reading]")].map((e) => e.getAttribute("data-row-reading")),
                   lat: r.querySelector('[data-row-reading="rtt"] [data-lat]')?.getAttribute("data-lat") ?? null,
                   state: r.querySelector("[data-row-state]")?.getAttribute("data-row-state") ?? null,
+                  road: r.querySelector("[data-row-state]")?.getAttribute("data-row-road") ?? null,
                   held: r.querySelectorAll("[data-row-held]").length,
                   // ⚠️ 墓碑 (UX-15): the latency corner, the last-heard
                   // time, the doing line, the paused word in the sub line.
@@ -24603,8 +24628,10 @@ try {
           fail(`corners a · ${posture} · this machine reads ${JSON.stringify({ ...g, ...more.gate })} — 本机, nothing under it, no latency of its own (UX-48)`);
         }
       }
-      // Offline: elder unheard for 20 hours, no live wire, nothing failed.
-      Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: null, heard_ms: 20 * 3600_000, down_ms: null, last_rtt_ms: 140 });
+      // Offline: elder unreachable — no live wire, the last attempt failed
+      // (`down_ms`), unheard for 20 hours. The road it last used is not
+      // said: unreachable wins.
+      Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: 26 * 3600_000, last_hop: "relay", heard_ms: 20 * 3600_000, down_ms: 4_000, last_rtt_ms: 140 });
       // Paused: peer, live, stopped by this machine.
       Object.assign(peer, { paused: true });
       for (const [posture, size] of POSTURES) {
@@ -24614,11 +24641,32 @@ try {
         const more = await readings();
         console.log(`corners a · ${posture} · offline elder, paused peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
         const [e, p] = [rows.elder, rows.peer];
-        if (!e || e.top !== "离线" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || more.elder.state !== "offline") {
-          fail(`corners a · ${posture} · an offline elder reads ${JSON.stringify({ ...e, ...more.elder })} — 离线 over 「20 小时」 (how long unheard), no readings under its name (UX-48)`);
+        if (!e || e.top !== "离线" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || more.elder.state !== "offline" || more.elder.road !== null || !(e.opacity < 0.99)) {
+          fail(`corners a · ${posture} · an unreachable elder reads ${JSON.stringify({ ...e, ...more.elder })} — 离线 over 「20 小时」 (how long unheard), no readings under its name, dimmed (UX-48)`);
         }
         if (!p || p.top !== "已暂停" || p.bottom !== null || more.peer.state !== "paused" || more.peer.held !== 0) {
           fail(`corners a · ${posture} · a paused peer reads ${JSON.stringify({ ...p, ...more.peer })} — 已暂停 top-right, no time under it (UX-48)`);
+        }
+      }
+      // Idle: no live wire and nothing failed — not offline (the lead,
+      // 2026-10-07). elder last used the relay, which settled 5 hours ago:
+      // the relay word over 5 hours, undimmed, no readings. peer never connected
+      // since the resident started: no state and no time at all.
+      restore();
+      Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: 5 * 3600_000, last_hop: "relay", heard_ms: 3 * 3600_000, down_ms: null, last_rtt_ms: 140 });
+      Object.assign(peer, { hop: "quiet", rtt_ms: null, since_ms: null, last_hop: null, heard_ms: null, down_ms: null, last_rtt_ms: null, paused: false });
+      for (const [posture, size] of POSTURES) {
+        await land(size, "devices");
+        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "中继");
+        const rows = await slots("[data-side-row][data-device]", "data-device");
+        const more = await readings();
+        console.log(`corners a · ${posture} · idle elder (last road relay), never-connected peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
+        const [e, p] = [rows.elder, rows.peer];
+        if (!e || e.top !== "中继" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || more.elder.state !== "idle" || more.elder.road !== "relay" || e.opacity < 0.99) {
+          fail(`corners a · ${posture} · an idle elder reads ${JSON.stringify({ ...e, ...more.elder })} — the road it last used, 中继, over 「5 小时」 (since that road settled), no readings, undimmed; never 离线 (UX-48)`);
+        }
+        if (!p || p.top !== null || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== null || p.opacity < 0.99) {
+          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — nothing top-right or bottom-right, no readings, undimmed (UX-48)`);
         }
       }
       // A state that changes in place gets the room it needs: the corner
@@ -24799,6 +24847,7 @@ try {
                 {
                   sub: r.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
                   where: r.querySelector("[data-side-sub] [data-ws-where]")?.getAttribute("title") ?? null,
+                  newest: r.querySelector("[data-side-sub] [data-ws-newest]")?.getAttribute("title") ?? null,
                   subject: r.querySelector("[data-side-sub] [data-ws-subject]")?.textContent?.trim() ?? null,
                   top: c?.textContent?.trim() ?? null,
                   bottom: r.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
@@ -24826,8 +24875,8 @@ try {
       if (det.top !== "@1a2b3c4d +3" || det.subject !== "a detached checkout") {
         fail(`corners d · ${posture} · a detached HEAD reads ${JSON.stringify(det)} — 「@1a2b3c4d +3」, HEAD's own id (UX-48)`);
       }
-      if (notes.where !== "/home/gate/notes" || notes.subject !== null || notes.top !== null || notes.bottom !== null) {
-        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(notes)} — its path under its name, nothing on the right (UX-48)`);
+      if (notes.newest !== "drafts/plan.md" || notes.where !== null || notes.subject !== null || notes.top !== null || notes.bottom !== "2 小时") {
+        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(notes)} — its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时」 under that — how long ago the file changed (UX-48)`);
       }
       // The counts kept whole, inside the corner; the branch cut first.
       const c = lng.counts;
@@ -24859,6 +24908,57 @@ try {
         fail(`corners e · ${posture} · tab ${t.id} reads ${JSON.stringify(r)} — its address without the scheme, no state, how long ago it was opened (UX-48)`);
       }
     }
+  }
+
+  // f. the storage page (UX-48, the lead 2026-10-07): the file's name; under it the
+  // machine it came from (its receipt's sender, `DirRow.from`); no state;
+  // how long ago it was received — the receipt's time, not the file's
+  // mtime (a copy keeps its source's) — bare. A file with no receipt
+  // names no sender and is dated by its mtime. Newest received first.
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const drop = "/home/gate/khor-drop";
+    const peerId = devs.find((d) => d.name === "peer")?.id ?? null;
+    const now = Date.now();
+    const entries = [
+      { name: "by hand.txt", dir: false, size: 12, at_ms: now - 2 * 86_400_000, from: null, received_ms: null },
+      { name: "from peer.png", dir: false, size: 2_048, at_ms: now - 30 * 86_400_000, from: peerId, received_ms: now - 3 * 3600_000 },
+    ];
+    const routesF = {
+      "**/devices": (r) => json(devs.map((d) => (d.name === "gate" ? { ...d, receive_dir: null, receive_at: drop, receive_for: null, receive_why: null } : d)))(r),
+      "**/ls": (r) => ((r.request().postDataJSON() ?? {}).path === drop ? json({ path: drop, entries, truncated: false })(r) : r.fallback()),
+      "**/dirs_wait": (r) => {
+        const { since = 0, dirs = [] } = r.request().postDataJSON() ?? {};
+        return json({ seq: since, dirs, unavailable: true, unreported: [] })(r);
+      },
+    };
+    for (const [glob, run] of Object.entries(routesF)) await page.route(glob, run);
+    const list = "[data-more-page='store'] [data-store-row]";
+    for (const [posture, size] of POSTURES) {
+      await page.setViewportSize(size);
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const opened = await openMore("store");
+      await until(5_000, async () => Object.keys(await slots(list, "data-store-row")).length >= 2);
+      const rows = await slots(list, "data-store-row");
+      const order = Object.keys(rows);
+      console.log(`corners f · ${posture} · 存储 rows: ${JSON.stringify(rows)}`);
+      const [got, mine] = [rows["from peer.png"], rows["by hand.txt"]];
+      if (!opened || !got || !mine) {
+        fail(`probe dead: corners f · ${posture} · 存储 opened ${opened} and drew ${JSON.stringify(order)}`);
+        continue;
+      }
+      if (got.title !== "from peer.png" || got.aside !== 0 || got.sub !== "peer" || got.top !== null || got.bottom !== "3 小时") {
+        fail(`corners f · ${posture} · a received file reads ${JSON.stringify(got)} — its name, 「peer」 (where it came from) under it, nothing top-right, 「3 小时」 (since it was received, not its mtime) (UX-48)`);
+      }
+      if (mine.sub !== "" || mine.top !== null || mine.bottom !== "2 天") {
+        fail(`corners f · ${posture} · a file with no receipt reads ${JSON.stringify(mine)} — no sender, nothing top-right, 「2 天」 by its mtime (UX-48)`);
+      }
+      if (order.join(" | ") !== "from peer.png | by hand.txt") {
+        fail(`corners f · ${posture} · 存储 lists ${order.join(" | ")} — newest received first (UX-48)`);
+      }
+    }
+    for (const [glob, run] of Object.entries(routesF)) await page.unroute(glob, run);
   }
 
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -25995,8 +26095,12 @@ try {
       await landOn("devices");
       await until(5_000, async () => (await page.locator('[data-side-row][data-device="elder"]').count()) > 0);
       await wait(300);
-      // UX-48: idle or unreachable, the machine row says `row-offline` over how long
-      // it has not been heard, and no readings under its name — the two
+      // UX-48: unreachable, the machine row says `row-offline` over how
+      // long it has not been heard, dimmed; idle, the road it last used
+      // over how long since that road settled, undimmed (the lead,
+      // 2026-10-07: offline only when unreachable); either way no readings
+      // under its name. Tombstone (UX-48 first cut): offline on the idle
+      // row too, the two
       // differ by the dimming alone. ⚠️ 墓碑 (NET-13): the last reading's
       // band at half ink beside 「23 ms」 (idle), the grey light beside
       // `day-unreachable` (down) — `[data-row-latency]`.
@@ -26019,7 +26123,7 @@ try {
     } else {
       // `heard_ms` is how long ago (`khor_core::Link::heard_ms`), not a
       // moment.
-      Object.assign(elder, { hop: "quiet", rtt_ms: null, relay: null, heard_ms: 3 * 60_000, down_ms: null, last_rtt_ms: 23 });
+      Object.assign(elder, { hop: "quiet", rtt_ms: null, relay: null, heard_ms: 3 * 60_000, down_ms: null, last_rtt_ms: 23, last_hop: "relay", since_ms: 40 * 60_000 });
       const idle = await read();
       Object.assign(elder, { down_ms: 5_000 });
       const down = await read();
@@ -26030,8 +26134,8 @@ try {
         if (is.far !== null || is.opacity < 0.99) {
           fail(`entity g · an idle machine's session row reads ${JSON.stringify(is)} — drawn as any other: no 「无法获取」, undimmed (NET-13)`);
         }
-        if (im.state !== "offline" || im.top !== "离线" || im.sub !== "" || im.opacity < 0.99) {
-          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — 离线, no readings under its name, undimmed (NET-13, UX-48)`);
+        if (im.state !== "idle" || im.top !== "中继" || im.bottom !== "40 分钟" || im.sub !== "" || im.opacity < 0.99) {
+          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — 中继 (the road it last used) over 「40 分钟」, never 离线, no readings under its name, undimmed (NET-13, UX-48)`);
         }
         if (!(ds.far ?? "").includes("无法获取") || !(ds.opacity < 0.7)) {
           fail(`entity g · an unreachable machine's session row reads ${JSON.stringify(ds)} — dimmed, 「无法获取 · …」 (NET-13)`);
@@ -26039,8 +26143,8 @@ try {
         if (dm.state !== "offline" || dm.top !== "离线" || dm.sub !== "" || !(dm.opacity < 0.7)) {
           fail(`entity g · an unreachable machine's row reads ${JSON.stringify(dm)} — 离线, no readings, dimmed (NET-13, UX-48)`);
         }
-        if (im.bottom !== "3 分钟" || dm.bottom !== "3 分钟") {
-          fail(`entity g · how long it has not been heard is not under either 离线 (${JSON.stringify([im.bottom, dm.bottom])}) — 「3 分钟」, bare (UX-48)`);
+        if (dm.bottom !== "3 分钟") {
+          fail(`entity g · how long it has not been heard is not under 离线 (${JSON.stringify(dm.bottom)}) — 「3 分钟」, bare (UX-48)`);
         }
       }
       for (const f of Object.keys(elder)) if (!(f in keep)) delete elder[f];
