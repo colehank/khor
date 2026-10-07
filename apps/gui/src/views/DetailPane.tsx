@@ -41,7 +41,7 @@ const TerminalPane = lazy(() => loadTerminal().then((m) => ({ default: m.Termina
  * The conversion itself did not go away — it moved to the row's own
  * menu (`SessionsList`, 转成对话 / 转成终端), beside the other things
  * that change a session rather than look at one. The form is also
- * chosen when a session is made (`NewSessionDialog`), which is the
+ * chosen when a session is made (`NewSessionPage`), which is the
  * other half of the same answer: **a face khor picked for you is the
  * face its host is actually running.**
  *

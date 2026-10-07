@@ -764,16 +764,17 @@ export function TabStrip({
                 glass && !below
                   ? // **One width, front or not** (UX-45, the owner
                     // 2026-10-07 「等宽先看看」, Chrome's): every pill is
-                    // `--tab-w-even` and they shrink together, down to a
-                    // `--glass-tab` circle (the face alone), before the
-                    // strip scrolls; the front one is told by its lit glass
-                    // only. ⚠️ 墓碑 (UX-39 §7, suspended for this look): the
+                    // `--tab-w-even` and they shrink together, down to
+                    // `--tab-w-floor` — the face and the × (the owner: a
+                    // crowded strip still owes the front tab its ×) — and
+                    // past that the strip scrolls; the front one is told
+                    // by its lit glass only. ⚠️ 墓碑 (UX-39 §7, suspended for this look): the
                     // front pill grown to its whole name, up to half the
                     // capsule, the rest an equal share. ⚠️ 墓碑 (UX-25):
                     // `--tab-w-min` as the floor and the count after it.
                     // A width, not a basis: the pill is a size container, so
                     // only a stated width gives the row its length.
-                    cn("w-tab-even min-w-glass-tab shrink grow-0", on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill")
+                    cn("w-tab-even min-w-tab-floor shrink grow-0", on ? "glass-sel text-foreground" : "text-muted-foreground hover:bg-fill")
                   : glass
                   ? on
                     ? cn("min-w-tab-min shrink-0 grow basis-auto glass-sel text-foreground", faces.length > 1 && "max-w-[50%]")
@@ -834,7 +835,13 @@ export function TabStrip({
                   glass && "text-tab",
                   // The pill's own insets, here so the face can centre
                   // once the name is gone; right only while no × stands.
-                  shed && "pl-1.5 pr-1.5 @min-tab-x/tab:pr-0 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0",
+                  // The front pill always keeps its ×'s seat; another
+                  // centres its face while its × is away (under the
+                  // pointer it shows, and the face steps to the start).
+                  shed &&
+                    (on
+                      ? "pl-1.5"
+                      : "pl-1.5 pr-1.5 group-hover:pr-0 @min-tab-x/tab:pr-0 @max-tab-face/tab:justify-center @max-tab-face/tab:px-0 @max-tab-face/tab:group-hover:justify-start @max-tab-face/tab:group-hover:pl-1.5"),
                   // Into the foot, wherever the foot is.
                   !glass && (below ? "-mt-tab-lip pt-tab-lip" : "-mb-tab-lip pb-tab-lip"),
                 )}
@@ -962,10 +969,10 @@ export function TabStrip({
                     "flex h-full w-tab-close flex-none items-center justify-center hover:bg-muted hover:text-foreground",
                     on ? "text-muted-foreground" : "text-tertiary",
                     glass ? "rounded-full" : "rounded-sm",
-                    // Too narrow for it, × shows under the pointer (UX-45);
-                    // never on the face alone, where a press must bring
-                    // the tab forward.
-                    shed && "me-0.5 @max-tab-x/tab:hidden @max-tab-x/tab:group-hover:flex @max-tab-face/tab:group-hover:hidden",
+                    // The front pill's × at every width; another's at rest
+                    // while it has `--container-tab-x`, under the pointer
+                    // down to the floor (UX-45, the owner 2026-10-07).
+                    shed && (on ? "me-0.5" : "me-0.5 @max-tab-x/tab:hidden @max-tab-x/tab:group-hover:flex"),
                   )}
                   onClick={(e) => {
                     e.stopPropagation();
