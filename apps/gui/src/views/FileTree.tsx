@@ -181,6 +181,9 @@ export function FileTree({
   const watching = useRef<boolean | null>(null);
   /** The watch's counter this tree has caught up to. */
   const seq = useRef(trees.get(treeKey(machine, root))?.seq ?? 0);
+  /** The listings came from `trees`, from an earlier mount: what was
+      there may have changed since, watched or not. */
+  const fromKept = useRef(trees.has(treeKey(machine, root)));
   const hidden = useHidden();
   /** …and the ones that refused, in the node's own sentence. Kept apart
       from the listings for `WorkspacePane`'s reason: 「could not read」
@@ -383,7 +386,11 @@ export function FileTree({
           if (w.unavailable) {
             // Cannot be watched: what came from `trees` is asked again
             // once, and the tree asks as it always did from here.
-            if (watching.current === null && seq.current > 0) refresh(dirs);
+            // **Whatever its counter** (ux-43 finding 3): an unwatched
+            // machine never gets one past 0, and its kept tree was shown
+            // as it was at the last mount, a change outside khor never
+            // seen on the next open.
+            if (watching.current === null && fromKept.current) refresh(dirs);
             watching.current = false;
             return;
           }

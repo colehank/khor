@@ -1810,7 +1810,7 @@ export const notifyFinished = (title: string, body: string) => call<null>("notif
     into a command (`khor_gui_core::term::term_drop`). `into`: the
     shell's current directory, where 「放到当前目录」 lands them. */
 export const termDrop = (id: string, paths: string[], from?: string | null, into?: string | null) =>
-  call<null>("term_drop", { id, paths, from: from ?? null, into: into ?? null });
+  call<string[]>("term_drop", { id, paths, from: from ?? null, into: into ?? null });
 /** **The drop under way on session `id`, cancelled** (the owner
     2026-10-07 12:50, item 71): the pull stops, its part file goes,
     nothing is pasted; with no drop under way, nothing happens.

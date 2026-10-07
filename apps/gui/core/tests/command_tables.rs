@@ -105,6 +105,22 @@ fn served_commands() -> BTreeSet<String> {
 /// (`khor-cli`'s `NOT_IN_USAGE`, same judgment). Delete a line here and
 /// that command goes red, which is the point.
 const ONE_SIDED: &[(&str, &str)] = &[
+    // ── a picked file's bytes, and the phone's edit menu, 2026-10-07 ──
+    //
+    // **Served, just not as an arm.** A picked file arrives as raw bytes
+    // (item 60 part 3), so the bridge answers `/term_drop_stage?name=…`
+    // on its own route before the JSON arms (`lib.rs`), where this finder
+    // does not look. And the system edit menu's items over a terminal
+    // selection (item 54) belong to the phone's native menu, which a
+    // browser tab does not have.
+    (
+        "term_drop_stage",
+        "a picked file's raw bytes: the bridge serves it on its own route ahead of the JSON arms",
+    ),
+    (
+        "edit_menu",
+        "the phone's own edit menu over a selection, which a browser tab does not have",
+    ),
     // ── the root's words, written down 2026-09-30 (docs/CONNECT.md 身份)
     //
     // **A secret, not a window** — the second entry here that is about

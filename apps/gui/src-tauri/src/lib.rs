@@ -1057,7 +1057,7 @@ fn term_key(id: String, keys: String) -> Result<(), String> {
 /// `into` is the shell's current directory for 「放到当前目录」 (part 5);
 /// absent, they land in that machine's `~/khor-drop`.
 #[tauri::command]
-async fn term_drop(id: String, paths: Vec<String>, from: Option<String>, into: Option<String>) -> Result<(), String> {
+async fn term_drop(id: String, paths: Vec<String>, from: Option<String>, into: Option<String>) -> Result<Vec<String>, String> {
     off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref(), into.as_deref())).await
 }
 

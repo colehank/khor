@@ -970,17 +970,22 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String]) -> 
 /// and **nothing is pasted** — not even the files that had already
 /// landed, which stay where they landed. It answers the cancel, which
 /// the face does not show.
-pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>) -> Result<(), String> {
+///
+/// **Answers where the files landed** (absolute, on the session's
+/// machine), so the face can tell that machine's file trees which levels
+/// changed (UX-43 §1).
+pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>) -> Result<Vec<String>, String> {
     // Held from the first line, before anything that takes time: a
     // cancel finds the drop as soon as the face has asked for it.
     let held = Held::begin(id);
-    let text = drop_text(root, id, paths, from, into, &held)?;
-    term_paste(id, &text)
+    let (landed, text) = drop_text(root, id, paths, from, into, &held)?;
+    term_paste(id, &text)?;
+    Ok(landed)
 }
 
 /// [`term_drop`] up to its paste: the files put where the session reads
-/// them, their paths quoted as one paste — or the cancel, if one came.
-fn drop_text(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>, held: &Held) -> Result<String, String> {
+/// them, and their paths quoted as one paste — or the cancel, if one came.
+fn drop_text(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>, held: &Held) -> Result<(Vec<String>, String), String> {
     let n = Node::open(root.to_path_buf())?;
     let to = n.far_machine(&SessionId(id.to_owned()))?.unwrap_or_default();
     let from = from.unwrap_or_default();
@@ -1005,11 +1010,12 @@ fn drop_text(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: 
     if held.stopped() {
         return Err(khor_node::drops::cancelled());
     }
-    Ok(here
+    let text = here
         .iter()
         .map(|p| shell_quote(p))
         .collect::<Vec<_>>()
-        .join(" "))
+        .join(" ");
+    Ok((here, text))
 }
 
 /// Where a face's picked files wait to be dropped ([`term_drop_stage`]):
@@ -2009,8 +2015,11 @@ mod stage_tests {
         // Uncancelled, the same road gives the paste.
         let c = term_drop_stage(&root, "c.png", &mut &b"three"[..]).unwrap();
         let held = Held::begin("stage-test/cancel");
-        let text = drop_text(&root, "stage-test/cancel", &[c], None, None, &held).unwrap();
-        assert_eq!(text, khor_node::drops::dir_for(&root).join("c.png").display().to_string());
+        let (landed, text) = drop_text(&root, "stage-test/cancel", &[c], None, None, &held).unwrap();
+        let at = khor_node::drops::dir_for(&root).join("c.png").display().to_string();
+        assert_eq!(text, at);
+        // Where it landed, for the face's trees (UX-43 §1).
+        assert_eq!(landed, vec![at]);
     }
 
     /// **A cancel with no drop does nothing** — it does not wait for

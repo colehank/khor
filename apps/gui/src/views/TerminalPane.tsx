@@ -79,6 +79,7 @@ import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from
 import { RegionState, useWaited, WAIT_SAY_MS, Waiting } from "@/components/RegionState";
 import { gui, menu, msg } from "@/gen/catalog";
 import { baseName } from "@/lib/paths";
+import { levelOf, treeChanged } from "@/lib/tree-changed";
 import { ago } from "@/words";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
@@ -2929,7 +2930,13 @@ export function TerminalPane({
       };
       Promise.resolve(Array.isArray(paths) ? paths : paths(() => cancelled))
         .then((made) => (cancelled || made === null ? null : termDrop(id, made, from, into)))
-        .then(() => pollNow.current())
+        .then((landed) => {
+          // **The session's machine's trees are told** (UX-43 §1): each
+          // level a file landed in — its `~/khor-drop`, or the shell's
+          // directory — reads again wherever a tree holds it.
+          for (const dir of new Set((landed ?? []).map(levelOf))) treeChanged({ machine: machine ?? "", here: machine == null, dir });
+          pollNow.current();
+        })
         .catch((err: unknown) => {
           if (!cancelled) setDropWhy(String((err as { message?: string })?.message ?? err));
         })
@@ -2939,7 +2946,7 @@ export function TerminalPane({
           dropping.current = false;
         });
     },
-    [id],
+    [id, machine],
   );
   // `into`: the shell's current directory (「放到当前目录」, part 5).
   const drop = useCallback(
