@@ -250,6 +250,12 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "widen",
         "grows the app's own window when a column opens; a page in a browser has no window of its own",
     ),
+    // Its other half since UX-46 (2026-10-07): the window keeps the
+    // account of what it grew by and gives that back, by column.
+    (
+        "unwiden",
+        "gives back what `widen` took for a column; a page in a browser grew no window to give back",
+    ),
     // ── the editor's own window, written down 2026-09-17 ──────────
     //
     // **The third fact about windows on this list, and the plainest.**
