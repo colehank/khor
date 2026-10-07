@@ -12,9 +12,8 @@ import {
   type ChatMsgRow,
   type MachineLog,
 } from "@/api";
-import { DirPicker } from "@/components/DirPicker";
 import { PathCut } from "@/components/PathCut";
-import { FilePreview } from "@/views/chat-files";
+import { FilePreview, SendInto } from "@/views/chat-files";
 import { StatusWord } from "@/components/StatusWord";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
@@ -125,18 +124,14 @@ export function MachineChat({ id }: { id: string }) {
   /** The directory picked on the receiver; `null` is its receive
       location. Kept while this conversation is open. */
   const [into, setInto] = useState<string | null>(null);
-  const [picking, setPicking] = useState(false);
-  /** The receiver's receive location as its row reports it, and whether
-      it is this machine (its files are already on this disk). */
-  const [place, setPlace] = useState<{ at: string | null; here: boolean }>({ at: null, here: false });
+  /** Whether the receiver is this machine (its files are already on
+      this disk). */
+  const [here, setHere] = useState(false);
   useEffect(() => {
     let live = true;
     setInto(null);
     fetchDevices().then(
-      (rows) => {
-        const d = rows.find((r) => r.name === machine);
-        if (live) setPlace({ at: d?.receive_at ?? null, here: !!d?.me });
-      },
+      (rows) => live && setHere(!!rows.find((r) => r.name === machine)?.me),
       () => {},
     );
     return () => {
@@ -207,7 +202,7 @@ export function MachineChat({ id }: { id: string }) {
             m={m}
             stamp={stampFor(m, i === 0 ? null : log.messages[i - 1])}
             machine={machine}
-            here={place.here}
+            here={here}
             onChanged={refresh}
           />
         ))}
@@ -236,21 +231,9 @@ export function MachineChat({ id }: { id: string }) {
       <BarSeat at="under">
       {/* Where a file sent from here lands: the receiver's receive
           location, or a directory picked on it. ＋ sends there at once. */}
-      <div data-send-into={into ?? ""} className="flex-none px-row pt-in">
-        <div className="mx-auto flex w-full max-w-measure min-w-0 items-center gap-in text-caption text-muted-foreground">
-          <span className="flex-none">{gui.send_into}</span>
-          <PathCut data-send-into-path text={into ?? place.at ?? "~/khor-drop"} className="min-w-0 flex-1" />
-          <Button size="sm" variant="ghost" data-send-into-change onClick={() => setPicking(true)}>
-            {gui.store_place_change}
-          </Button>
-          {into !== null && (
-            <Button size="sm" variant="ghost" data-send-into-reset onClick={() => setInto(null)}>
-              {gui.store_place_reset}
-            </Button>
-          )}
-        </div>
+      <div className="flex-none px-row pt-in">
+        <SendInto machine={machine} name={machine} into={into} onInto={setInto} className="mx-auto w-full max-w-measure" />
       </div>
-      <DirPicker open={picking} onOpenChange={setPicking} machine={machine} fixed onPick={(p) => setInto(p.path)} />
       {/* **The conversation's capsule** (`Composer`, the redesign,
           2026-10-02): ＋ to send a file, the text, and send once there is
           something to send. No mode and no interrupt — a note has no

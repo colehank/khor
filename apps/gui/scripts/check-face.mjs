@@ -2227,6 +2227,8 @@ try {
   // **`FACE_ONLY=side` walks the session's 附栏 alone** (UX-30, 2026-10-06).
   // **`FACE_ONLY=tabs` walks the Chrome strip and the new tab alone**
   // (UX-45, 2026-10-07).
+  // **`FACE_ONLY=mchat` walks a conversation's file chip and 「存到」
+  // alone** (STORE-BRIEF phase 2, 2026-10-08).
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   // **`FACE_ONLY=walk` walks this block alone** — sections 1 to 10,
@@ -2234,7 +2236,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "mchat", "tabs"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -24488,7 +24490,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "mchat", "tabs", "walk"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -24915,7 +24917,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "mchat", "tabs", "walk"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -25273,7 +25275,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "mchat", "tabs", "walk"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -25642,7 +25644,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "mchat", "tabs", "walk"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -26374,7 +26376,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "mchat", "tabs", "walk"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27263,7 +27265,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "mchat", "tabs", "walk"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -34642,6 +34644,254 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "store") console.log("store · FACE_ONLY=store: the other sections are skipped");
+
+  // ── a conversation's file goes directly (STORE-BRIEF phase 2, store-e, 2026-10-08) ──
+  //
+  // The owner: 「用户传文件，不指定位置就是默认位置，指定位置就传到指定
+  // 位置。这个是直接传，不用等接收」. A machine's conversation (留言) and an
+  // agent's: no accept step anywhere; the file chip reads the receiver's
+  // record the same on every device; where a file lands is said above the
+  // box and can be changed. Value checks only (30-behavior: layout is the
+  // owner's checklist). New, not a fix: no red first.
+  //   a. 留言's chips, one per step: no `[data-accept-file]`; not started
+  //      and moving show `[data-file-progress]` (floor(moved*100/size))
+  //      and ×; landed, failed and stopped do not;
+  //   b. × posts `stop_transfer` with that message;
+  //   c. a landed chip shows `[data-file-landed=<path>]`, and a press opens
+  //      `[data-file-preview=<path>]`;
+  //   d. failed says the receiver's sentence and 重试 posts
+  //      `retry_transfer`; stopped says the catalog's `file-stopped` and
+  //      has 重试 too;
+  //   e. 「存到」 reads the receiver's receive_at; ＋ (the browser form)
+  //      uploads with no `into=`; 更改… opens 选择目录 with no machine
+  //      popup, and the next upload carries `into=<picked>`; 恢复默认 is
+  //      drawn only then, and takes it back;
+  //   f. the agent conversation: the same line against its machine; a file
+  //      put with no choice carries no `into=`, one put after 更改… carries
+  //      it; the pending chip's path is what the node answered (the landed
+  //      path), and that path is what the agent is told.
+  mchat: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "mchat") break mchat;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const now = Date.now();
+    // The catalog's word, read where it is written, not typed again here.
+    const stoppedWord = /^file-stopped = "(.*)"$/m.exec(readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8"))?.[1] ?? null;
+    const drop = { gate: "/home/gate/khor-drop", peer: "/home/peer/khor-drop" };
+    const base = {
+      kind: "tui", word: "idle", at_ms: now, unread: 0, source: null, pinned: false, stale: false, category: "shell",
+      group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
+    };
+    const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+    const agentRow = {
+      ...base, id: "gui/mchat-agent", kind: "gui", title: "mchat-agent", category: "claude", attachable: false,
+      source: { device: "f".repeat(64), age_ms: 0 },
+    };
+    const msg = (id, name, size, fate = {}) => ({
+      id, at_ms: now - 60_000, from: "gate", from_me: true, text: null, files: [{ name, size }], unknown: null,
+      retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null, ...fate,
+    });
+    const landedAt = `${drop.peer}/land.pdf`;
+    const why = "no such dir: /srv/gone";
+    const said = [
+      msg("m-wait", "wait.bin", 1000),
+      msg("m-move", "move.bin", 1000, { step: "moving", moved: 420 }),
+      msg("m-land", "land.pdf", 30, { step: "landed", moved: 30, landed: [landedAt] }),
+      msg("m-fail", "fail.bin", 50, { step: "failed", why, into: "/srv/gone" }),
+      msg("m-stop", "stop.bin", 50, { step: "stopped", moved: 10 }),
+    ];
+    const asked = { stop: [], retry: [], uploads: [], puts: [], says: [] };
+    const query = (r) => Object.fromEntries(new URL(r.request().url()).searchParams);
+    const routesM = [
+      ["**/sessions", json([chatRow, agentRow])],
+      ["**/devices", (r) => json(devs.map((d) => ({ ...d, receive_dir: null, receive_for: null, receive_why: null, receive_at: drop[d.name] ?? null })))(r)],
+      ["**/machine_log", json({ messages: said, broken: 0 })],
+      ["**/stop_transfer", (r) => (asked.stop.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      ["**/retry_transfer", (r) => (asked.retry.push(r.request().postDataJSON() ?? {}), json([])(r))],
+      ["**/chat_say", (r) => (asked.says.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      // Raw-bytes POSTs with a query string: matched on the path.
+      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json("m-new")(r))],
+      [
+        (u) => u.pathname.endsWith("/chat_put"),
+        (r) => {
+          const q = query(r);
+          asked.puts.push(q);
+          return json(`${q.into ?? drop.peer}/${q.name}`)(r);
+        },
+      ],
+    ];
+    for (const [glob, run] of routesM) await page.route(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const pane = "[data-machine-chat]";
+    /** The 「存到」 line on screen: its path and whether 恢复默认 is drawn. */
+    const into = () =>
+      page.evaluate(() => {
+        const line = [...document.querySelectorAll("[data-send-into]")].find((e) => e.getClientRects().length > 0);
+        if (!line) return null;
+        return {
+          at: line.querySelector("[data-send-into-path]")?.getAttribute("title") ?? null,
+          set: line.getAttribute("data-send-into"),
+          reset: line.querySelectorAll("[data-send-into-reset]").length,
+        };
+      });
+    /** 更改… → 选择目录 → a path → 选择. Answers whether it opened and how
+        many machine popups it offered. */
+    const pickDir = async (path) => {
+      await press("[data-send-into-change]");
+      const up = await until(3_000, async () => (await count("[data-dir-picker]")) === 1);
+      const machines = await count("[data-dir-picker] [data-dir-picker-machines]");
+      await page.locator("input[data-dir-picker-path], [data-dir-picker-path] input").first().fill(path);
+      await press("[data-dir-picker-take]");
+      await until(3_000, async () => (await count("[data-dir-picker]")) === 0);
+      return { up, machines };
+    };
+
+    await open("sessions");
+    await press('[data-side-row="chat/peer"] [data-side-open]');
+    const shown = await until(5_000, async () => (await count(`${pane} [data-msg-files]`)) === said.length);
+
+    // a. the chips
+    const chips = await page.evaluate((p) =>
+      Object.fromEntries(
+        [...document.querySelectorAll(`${p} [data-msg]`)].map((m) => {
+          const c = m.querySelector("[data-msg-files]");
+          return [
+            m.getAttribute("data-msg"),
+            c && {
+              step: c.getAttribute("data-file-step"),
+              progress: c.querySelector("[data-file-progress]")?.getAttribute("data-file-progress") ?? null,
+              stop: c.querySelectorAll("[data-file-stop]").length,
+              landed: [...c.querySelectorAll("[data-file-landed]")].map((e) => e.getAttribute("data-file-landed")),
+              why: c.querySelector("[data-file-why]")?.textContent ?? null,
+              retry: c.querySelectorAll("[data-file-retry]").length,
+            },
+          ];
+        }),
+      ), pane);
+    const accepts = await count("[data-accept-file]");
+    console.log(`mchat a · shown ${shown}, accept buttons ${accepts}, ${JSON.stringify(chips)}`);
+    if (!shown) fail(`mchat a · the conversation drew ${await count(`${pane} [data-msg-files]`)} file chip(s) — ${said.length}`);
+    else {
+      if (accepts !== 0) fail(`mchat a · ${accepts} accept button(s) — a conversation's file goes directly, nobody accepts it`);
+      const w = chips["m-wait"], m = chips["m-move"], l = chips["m-land"], f = chips["m-fail"], s = chips["m-stop"];
+      if (w?.progress !== "0" || w.stop !== 1) fail(`mchat a · not started reads ${JSON.stringify(w)} — the bar at 0 and ×`);
+      if (m?.progress !== "42" || m.stop !== 1) fail(`mchat a · moving 420 of 1000 reads ${JSON.stringify(m)} — the bar at 42 and ×`);
+      for (const [k, c] of [["m-land", l], ["m-fail", f], ["m-stop", s]]) {
+        if (c?.progress !== null || c.stop !== 0) fail(`mchat a · ${k} still shows the bar or × (${JSON.stringify(c)}) — only a move on its way has them`);
+      }
+    }
+
+    // b. × cancels on the receiver
+    await press(`${pane} [data-msg="m-move"] [data-file-stop]`);
+    await until(3_000, async () => asked.stop.length > 0);
+    console.log(`mchat b · stop_transfer ${JSON.stringify(asked.stop)}`);
+    if (asked.stop.length !== 1 || asked.stop[0].msg !== "m-move") fail(`mchat b · × posted ${JSON.stringify(asked.stop)} — stop_transfer once, {msg: "m-move"}`);
+
+    // c. the landed path, pressed
+    {
+      const l = chips["m-land"];
+      if (l?.landed.join() !== landedAt || l.retry !== 0) fail(`mchat c · landed reads ${JSON.stringify(l)} — ${landedAt}, no 重试`);
+      await press(`${pane} [data-msg="m-land"] [data-file-landed]`);
+      const opened = await until(3_000, async () => (await count(`[data-file-preview="${landedAt}"]`)) === 1);
+      console.log(`mchat c · the landed path opened ${opened}`);
+      if (!opened) fail(`mchat c · a press on the landed path opened no [data-file-preview="${landedAt}"]`);
+      await page.keyboard.press("Escape");
+      await until(3_000, async () => (await count("[data-file-preview]")) === 0);
+    }
+
+    // d. failed and stopped, each with 重试
+    {
+      const f = chips["m-fail"], s = chips["m-stop"];
+      await press(`${pane} [data-msg="m-fail"] [data-file-retry]`);
+      await press(`${pane} [data-msg="m-stop"] [data-file-retry]`);
+      await until(3_000, async () => asked.retry.length >= 2);
+      console.log(`mchat d · failed ${JSON.stringify(f)}, stopped ${JSON.stringify(s)}, retry_transfer ${JSON.stringify(asked.retry)}`);
+      if (!f?.why?.includes(why) || f.retry !== 1) fail(`mchat d · failed reads ${JSON.stringify(f)} — the receiver's sentence and 重试`);
+      if (stoppedWord === null) fail("probe dead: mchat d · no file-stopped in crates/catalog/zh.toml");
+      else if (s?.why !== stoppedWord || s.retry !== 1) fail(`mchat d · stopped reads ${JSON.stringify(s)} — ${stoppedWord} and 重试`);
+      if (asked.retry.map((a) => a.msg).join() !== "m-fail,m-stop") fail(`mchat d · 重试 posted ${JSON.stringify(asked.retry)} — retry_transfer for m-fail, then m-stop`);
+    }
+
+    // e. 「存到」 above 留言's box
+    {
+      const file = (name) => ({ name, mimeType: "text/plain", buffer: Buffer.from(name) });
+      const upload = async (name) => {
+        const n = asked.uploads.length;
+        await page.locator(`${pane} [data-file-input]`).setInputFiles(file(name));
+        await until(3_000, async () => asked.uploads.length > n);
+        return asked.uploads[n] ?? null;
+      };
+      const before = await into();
+      const plain = await upload("one.txt");
+      const pick = await pickDir("/srv/inbox");
+      const picked = await into();
+      const there = await upload("two.txt");
+      await press("[data-send-into-reset]");
+      const back = await into();
+      const again = await upload("three.txt");
+      console.log(
+        `mchat e · line ${JSON.stringify(before)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
+          `after ${JSON.stringify(picked)}; there ${JSON.stringify(there)}; reset ${JSON.stringify(back)}; again ${JSON.stringify(again)}`,
+      );
+      if (before?.at !== drop.peer || before.reset !== 0) fail(`mchat e · 「存到」 reads ${JSON.stringify(before)} — peer's receive_at, no 恢复默认`);
+      if (plain?.machine !== "peer" || plain.into !== undefined) fail(`mchat e · ＋ uploaded ${JSON.stringify(plain)} — to peer, no into=`);
+      if (!pick.up) fail("mchat e · 更改… opened no 选择目录");
+      if (pick.machines !== 0) fail("mchat e · 选择目录 offers a machine — the directory is the receiver's");
+      if (picked?.at !== "/srv/inbox" || picked.reset !== 1) fail(`mchat e · after the pick the line reads ${JSON.stringify(picked)} — /srv/inbox, 恢复默认 drawn`);
+      if (there?.into !== "/srv/inbox") fail(`mchat e · the upload after the pick carried ${JSON.stringify(there)} — into=/srv/inbox`);
+      if (back?.at !== drop.peer || back.reset !== 0) fail(`mchat e · 恢复默认 left ${JSON.stringify(back)} — the receive location again`);
+      if (again?.into !== undefined) fail(`mchat e · after 恢复默认 the upload carried ${JSON.stringify(again)} — no into=`);
+    }
+
+    // f. the agent conversation
+    {
+      await open("sessions");
+      await press(`[data-side-row="${agentRow.id}"] [data-side-open]`);
+      const up = await until(5_000, async () => (await page.locator("[data-chat-input]").filter({ visible: true }).count()) === 1);
+      await wait(500);
+      const line = await into();
+      const add = async (name) => {
+        const n = asked.puts.length;
+        await page.locator("[data-chat-file-input]").first().setInputFiles({ name, mimeType: "text/plain", buffer: Buffer.from(name) });
+        await until(3_000, async () => asked.puts.length > n);
+        await until(3_000, async () => (await count(`[data-chat-pending-file="${name}"][data-placed]`)) === 1);
+        return { put: asked.puts[n] ?? null, path: await page.locator(`[data-chat-pending-file="${name}"]`).first().getAttribute("title") };
+      };
+      const plain = await add("a.txt");
+      const pick = await pickDir("/srv/agent");
+      const picked = await into();
+      const there = await add("b.txt");
+      await page.locator("[data-chat-input]").filter({ visible: true }).fill("look");
+      await page.locator("[data-chat-input]").filter({ visible: true }).press("Enter");
+      await until(3_000, async () => asked.says.length > 0);
+      const told = asked.says[0]?.text ?? "";
+      console.log(
+        `mchat f · opened ${up}, line ${JSON.stringify(line)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
+          `after ${JSON.stringify(picked)}; there ${JSON.stringify(there)}; told ${JSON.stringify(told)}`,
+      );
+      if (!up) fail("probe dead: mchat f · the agent conversation drew no box");
+      else {
+        if (line?.at !== drop.peer || line.reset !== 0) fail(`mchat f · 「存到」 reads ${JSON.stringify(line)} — the conversation's machine's receive_at, no 恢复默认`);
+        if (plain.put?.id !== agentRow.id || plain.put.into !== undefined) fail(`mchat f · a file with no choice was put as ${JSON.stringify(plain.put)} — this conversation, no into=`);
+        if (plain.path !== `${drop.peer}/a.txt`) fail(`mchat f · the chip's path is ${plain.path} — what the node answered`);
+        if (!pick.up || pick.machines !== 0) fail(`mchat f · 更改… opened ${JSON.stringify(pick)} — 选择目录, no machine popup`);
+        if (picked?.at !== "/srv/agent" || picked.reset !== 1) fail(`mchat f · after the pick the line reads ${JSON.stringify(picked)}`);
+        if (there.put?.into !== "/srv/agent" || there.path !== "/srv/agent/b.txt") fail(`mchat f · a file after the pick: put ${JSON.stringify(there.put)}, chip ${there.path} — into=/srv/agent, landed there`);
+        if (!told.includes(`@${drop.peer}/a.txt`) || !told.includes("@/srv/agent/b.txt")) fail(`mchat f · the agent was told ${JSON.stringify(told)} — the two landed paths`);
+      }
+    }
+
+    for (const [glob, run] of routesM) await page.unroute(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "mchat") console.log("mchat · FACE_ONLY=mchat: the other sections are skipped");
 
   // ── tabs like Chrome's, a new tab and its page (UX-45, 2026-10-07) ──
   //

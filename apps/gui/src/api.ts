@@ -1249,15 +1249,20 @@ export const chatSay = (
     conversation runs on, in that machine's chat files folder
     (`khor_gui_core::chat::chat_put`). Answers its path **there** — what
     the agent is told. The bytes ride raw: the bridge's and the web
-    face's body route, the app's raw invoke body. */
-export const chatPut = async (id: string, file: File): Promise<string> => {
+    face's body route, the app's raw invoke body. `into`: a directory
+    on that machine the person chose; `null` is its receive location. */
+export const chatPut = async (id: string, file: File, into: string | null = null): Promise<string> => {
   if (inApp && !bridge) {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<string>("chat_put", new Uint8Array(await file.arrayBuffer()), {
-      headers: { "x-khor-chat": encodeURIComponent(id), "x-khor-name": encodeURIComponent(file.name) },
+      headers: {
+        "x-khor-chat": encodeURIComponent(id),
+        "x-khor-name": encodeURIComponent(file.name),
+        ...(into ? { "x-khor-into": encodeURIComponent(into) } : {}),
+      },
     });
   }
-  const q = `id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}`;
+  const q = `id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}${into ? `&into=${encodeURIComponent(into)}` : ""}`;
   const url = bridge ? `http://127.0.0.1:${bridge}/chat_put?${q}` : `/api/chat_put?${q}`;
   const r = await reach(url, {
     method: "POST",
@@ -1268,9 +1273,10 @@ export const chatPut = async (id: string, file: File): Promise<string> => {
   return answer<string>(r);
 };
 /** Files this machine already has (a drop's paths, the app only), put
-    where the conversation's machine keeps them. Answers their paths
-    there, in order. */
-export const chatPutPaths = (id: string, paths: string[]) => call<string[]>("chat_put_paths", { id, paths });
+    where the conversation's machine keeps them (or in `into` there).
+    Answers their paths there, in order. */
+export const chatPutPaths = (id: string, paths: string[], into: string | null = null) =>
+  call<string[]>("chat_put_paths", { id, paths, into });
 export const chatAnswer = (id: string, ask: number, option: string | null) =>
   call<null>("chat_answer", { id, ask, option });
 export const chatReplay = (id: string) => call<null>("chat_replay", { id });
