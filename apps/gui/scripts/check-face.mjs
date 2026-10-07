@@ -29589,6 +29589,12 @@ try {
   //      there is room and the short hash where there is not; a line not
   //      committed says the catalog's word; the caret moving moves it.
   //   b. **The workspace list drills down** (UX-23 §2): see the stop.
+  //   e. **A level the watch cannot fully hear** (store-c): the watch
+  //      answers its tree's root `unreported` (a network mount another
+  //      host writes into too); a file that host wrote, which the watch
+  //      never says, is listed once the window comes back to the front.
+  //      The control: the same tree watched in full reads nothing on
+  //      focus.
   //
   // `FACE_ONLY=ws` runs this section alone.
   ws: {
@@ -29876,6 +29882,75 @@ try {
       if (!saved) fail("ws d · ✓ pressed did not save: the front act never went back to ↻");
       await page.unroute("**/write_text", wroteD);
       await page.setViewportSize({ width: 1400, height: 900 });
+    }
+
+    // e. a level the watch cannot fully hear (store-c)
+    {
+      const unreported = new Set();
+      const pendingE = [];
+      let seqE = 1;
+      /** ls calls on `dir` so far (the fixture's `askedLs`). */
+      const lsOf = (dir) => askedLs.filter((a) => a.path === dir).length;
+      const waitE = (r) => {
+        const { dirs = [], since = 0, wait_ms: hold = 0 } = r.request().postDataJSON() ?? {};
+        const answer = (changed) =>
+          r
+            .fulfill({ contentType: "application/json", body: JSON.stringify({ seq: Math.max(seqE, since), dirs: changed, unavailable: false, unreported: dirs.filter((d) => unreported.has(d)) }) })
+            .catch(() => {});
+        // Not held: what changed since the counter the tree holds — all
+        // of them to a tree that holds none, nothing to one caught up.
+        if (hold === 0) return answer(since < seqE ? dirs : []);
+        return new Promise((done) => {
+          const entry = {
+            release: () => {
+              clearTimeout(t);
+              pendingE.splice(pendingE.indexOf(entry), 1);
+              done(answer([]));
+            },
+          };
+          const t = setTimeout(entry.release, Math.min(hold, 20_000));
+          pendingE.push(entry);
+        });
+      };
+      await page.route("**/dirs_wait", waitE);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const treeOpen = (await open("workspaces")) && (await press("[data-ws-row]"));
+      await until(5_000, async () => (await page.locator("[data-ws-tree] [data-file-tree] [data-file]").count()) > 0);
+      const root = await page.evaluate(() => document.querySelector("[data-ws-tree] [data-file-tree]")?.getAttribute("data-tree-root") ?? null);
+      const focus = () => page.evaluate(() => window.dispatchEvent(new Event("focus")));
+      const names = () => page.evaluate(() => [...document.querySelectorAll('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file]')].map((e) => e.getAttribute("data-file")));
+      // Control: watched in full, a focus asks nothing.
+      await wait(1_500);
+      let from = lsOf(root);
+      await focus();
+      await wait(1_000);
+      const heardFocus = lsOf(root) - from;
+      // The root on a network mount: the next answer says so.
+      unreported.add(root);
+      seqE += 1;
+      for (const e of [...pendingE]) e.release();
+      await wait(800);
+      // A file another host wrote into the shared mount: the listing has
+      // it (the fixture's `made`), the watch never says it.
+      const wrote = { path: `${root}/from-turing.txt`, kind: "file", machine: "" };
+      made.push(wrote);
+      from = lsOf(root);
+      await focus();
+      const seen = await until(3_000, async () => (await names()).includes("from-turing.txt"));
+      const unheardFocus = lsOf(root) - from;
+      console.log(`ws e · tree ${treeOpen} at ${root}; watched in full a focus read ${heardFocus}; unreported a focus read ${unheardFocus}, the other host's file listed ${seen}`);
+      if (!treeOpen || !root) fail("probe dead: ws e · the workspace's tree did not open");
+      else {
+        if (heardFocus !== 0) fail(`ws e · a tree its watch hears in full was read ${heardFocus} time(s) on focus — it is told, not asked`);
+        if (!seen || unheardFocus < 1) fail(`ws e · a root the watch says it cannot fully hear (unreported) read ${unheardFocus} time(s) on focus, the other host's file listed ${seen} — read again on the window's return (store-c)`);
+      }
+      made.splice(made.indexOf(wrote), 1);
+      for (const e of [...pendingE]) e.release();
+      await page.unroute("**/dirs_wait", waitE);
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
     }
   }
   }

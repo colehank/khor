@@ -110,6 +110,10 @@ const treeKey = (machine: string, root: string) => `${machine}\u0000${root}`;
 
 /** How long one watch question is held when nothing changes. */
 const WATCH_HOLD_MS = 20_000;
+/** How often a level the watch cannot fully hear (`unreported`) is
+    asked again while the tree is on screen — 存储's beat (`StorePage`).
+    The window coming back to the front asks at once. */
+const UNHEARD_MS = 60_000;
 
 export function FileTree({
   machine,
@@ -179,6 +183,11 @@ export function FileTree({
       until the first answer, then a fact. Read by the asks after khor's
       own changes — a watched tree is told, not re-asked. */
   const watching = useRef<boolean | null>(null);
+  /** The levels the watch says it cannot fully hear (`unreported`, a
+      network mount another host writes into too — turing and hinton
+      share an NFS home): asked again on the window's return and on a
+      slow beat, since a quiet answer about them is not a fact. */
+  const unheard = useRef<Set<string>>(new Set());
   /** The watch's counter this tree has caught up to. */
   const seq = useRef(trees.get(treeKey(machine, root))?.seq ?? 0);
   /** The listings came from `trees`, from an earlier mount: what was
@@ -392,9 +401,11 @@ export function FileTree({
             // seen on the next open.
             if (watching.current === null && fromKept.current) refresh(dirs);
             watching.current = false;
+            unheard.current = new Set();
             return;
           }
           watching.current = true;
+          unheard.current = new Set(w.unreported);
           first = false;
           seq.current = w.seq;
           if (w.dirs.length > 0) refresh(w.dirs.filter((d) => listings.has(d)));
@@ -412,6 +423,27 @@ export function FileTree({
     // through this effect re-running when they change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [machine, hidden, want, listings.size]);
+
+  // **What the watch cannot hear** (store-c): while the tree is on
+  // screen, its `unreported` levels are asked again when the window
+  // comes back to the front and on a slow beat — only those, and only
+  // ones this tree has asked about.
+  useEffect(() => {
+    if (hidden) return;
+    const again = () => {
+      if (document.hidden) return;
+      const dirs = [...unheard.current].filter((d) => asked.current.has(d));
+      if (dirs.length > 0) refresh(dirs);
+    };
+    const slow = window.setInterval(again, UNHEARD_MS);
+    window.addEventListener("focus", again);
+    return () => {
+      window.clearInterval(slow);
+      window.removeEventListener("focus", again);
+    };
+    // `refresh` only touches refs and a setter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hidden]);
 
   /** Ask that directory again. Everything below it goes too: a listing
       for a path under one that just changed is an answer about a tree
@@ -618,7 +650,7 @@ export function FileTree({
 
   const rootError = failed.get(root);
   return (
-    <section data-file-tree className="flex h-full min-w-0 flex-col">
+    <section data-file-tree data-tree-root={root} className="flex h-full min-w-0 flex-col">
       <div data-files-list className="min-h-0 flex-1 overflow-y-auto">
         {rootError !== undefined ? (
           // **The one thing this must never be is blank** — the node's
