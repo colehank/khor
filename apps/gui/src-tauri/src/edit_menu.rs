@@ -142,6 +142,194 @@ extern "C-unwind" fn build_menu(this: &AnyObject, _cmd: Sel, builder: *mut AnyOb
     }
 }
 
+// ── the menu at a selection khor drew (item 73) ──
+//
+// With the soft keyboard up the terminal selects in xterm's own cells and
+// keeps the focus (`lib/term-select`), so no text selection is there for
+// iOS to hang its menu on. The same system menu is shown at the selection
+// by a `UIEditMenuInteraction` of khor's own on the web view's scroll
+// view (iOS 16): its delegate answers only khor's items, never the
+// suggested ones (they are the focused field's: 粘贴 into the hidden
+// field, 全选). Presenting it moves no first responder: the keyboard stays.
+
+const AT_DELEGATE: &std::ffi::CStr = c"KhorEditMenuAtDelegate";
+
+/// What the menu at a point carries: the items, the text its 拷贝 writes,
+/// and the selection's box in the scroll view's points.
+struct At {
+    items: Vec<(String, String)>,
+    copy: Option<String>,
+    rect: [f64; 4],
+    web: usize,
+}
+
+static AT: Mutex<Option<At>> = Mutex::new(None);
+
+/// The interaction, made once and kept (`Retained::into_raw`): the
+/// delegate it holds weakly is kept the same way.
+static AT_INTERACTION: Mutex<usize> = Mutex::new(0);
+
+/// Shows the system's edit menu over `rect` (the page's CSS px, from the
+/// document's origin) with `items`; `copy` is what 拷贝 writes.
+pub fn show_at(webview: *mut std::ffi::c_void, rect: [f64; 4], items: Vec<(String, String)>, copy: Option<String>) {
+    if webview.is_null() {
+        return;
+    }
+    let shown = std::panic::catch_unwind(|| unsafe {
+        // SAFETY: the live WKWebView `with_webview` handed over, on the
+        // main thread; every selector is documented UIKit
+        // (`UIEditMenuInteraction`, `UIEditMenuConfiguration`,
+        // `UIScrollView`).
+        let web = &*(webview as *mut AnyObject);
+        let scroll: *mut AnyObject = msg_send![web, scrollView];
+        let Some(scroll) = scroll.as_ref() else { return false };
+        let zoom: f64 = msg_send![scroll, zoomScale];
+        let [x, y, w, h] = rect;
+        let rect = [x * zoom, y * zoom, w * zoom, h * zoom];
+        if let Ok(mut at) = AT.lock() {
+            *at = Some(At { items, copy, rect, web: webview as usize });
+        }
+        let Some(interaction) = interaction_on(scroll) else { return false };
+        let none: *mut AnyObject = std::ptr::null_mut();
+        let point = objc2_foundation::NSPoint::new(rect[0] + rect[2] / 2.0, rect[1]);
+        let config: *mut AnyObject = msg_send![class!(UIEditMenuConfiguration), configurationWithIdentifier: none, sourcePoint: point];
+        if config.is_null() {
+            return false;
+        }
+        let _: () = msg_send![interaction, presentEditMenuWithConfiguration: config];
+        true
+    });
+    if !matches!(shown, Ok(true)) {
+        eprintln!("no edit menu at the terminal's selection: UIEditMenuInteraction is not there");
+    }
+}
+
+/// Puts the menu at a point away, if it is up.
+pub fn hide_at() {
+    let held = AT_INTERACTION.lock().map(|i| *i).unwrap_or(0);
+    if held == 0 {
+        return;
+    }
+    // SAFETY: main thread; `held` is the interaction `interaction_on`
+    // made and keeps for the process's life.
+    let _ = std::panic::catch_unwind(|| unsafe {
+        let _: () = msg_send![held as *mut AnyObject, dismissMenu];
+    });
+}
+
+/// The interaction on `scroll`, made and added the first time.
+///
+/// # Safety
+/// Main thread; `scroll` is the web view's live scroll view.
+unsafe fn interaction_on(scroll: &AnyObject) -> Option<*mut AnyObject> {
+    let mut held = AT_INTERACTION.lock().ok()?;
+    if *held != 0 {
+        return Some(*held as *mut AnyObject);
+    }
+    let class = match AnyClass::get(AT_DELEGATE) {
+        Some(c) => c,
+        None => {
+            let mut b = ClassBuilder::new(AT_DELEGATE, class!(NSObject))?;
+            if let Some(p) = objc2::runtime::AnyProtocol::get(c"UIEditMenuInteractionDelegate") {
+                b.add_protocol(p);
+            }
+            // SAFETY: `editMenuInteraction:menuForConfiguration:suggestedActions:`
+            // takes three objects and returns one; `…targetRectForConfiguration:`
+            // takes two and returns a CGRect. These are those signatures.
+            unsafe {
+                b.add_method(
+                    sel!(editMenuInteraction:menuForConfiguration:suggestedActions:),
+                    menu_at as extern "C-unwind" fn(_, _, _, _, _) -> _,
+                );
+                b.add_method(
+                    sel!(editMenuInteraction:targetRectForConfiguration:),
+                    target_at as extern "C-unwind" fn(_, _, _, _) -> _,
+                );
+            }
+            b.register()
+        }
+    };
+    // SAFETY: documented UIKit; the delegate and the interaction are kept
+    // for the process's life (`into_raw` of a +1 object: never released).
+    unsafe {
+        let delegate: *mut AnyObject = msg_send![class, new];
+        if delegate.is_null() {
+            return None;
+        }
+        let alloc: *mut AnyObject = msg_send![class!(UIEditMenuInteraction), alloc];
+        let interaction: *mut AnyObject = msg_send![alloc, initWithDelegate: delegate];
+        if interaction.is_null() {
+            return None;
+        }
+        let _: () = msg_send![scroll, addInteraction: interaction];
+        *held = interaction as usize;
+        Some(interaction)
+    }
+}
+
+extern "C-unwind" fn menu_at(
+    _this: &AnyObject,
+    _cmd: Sel,
+    _interaction: *mut AnyObject,
+    _config: *mut AnyObject,
+    _suggested: *mut AnyObject,
+) -> *mut AnyObject {
+    let (items, web) = match AT.lock().ok().as_deref() {
+        Some(Some(at)) => (at.items.clone(), at.web),
+        _ => return std::ptr::null_mut(),
+    };
+    // SAFETY: UIKit calls this on the main thread; documented UIKit only.
+    unsafe {
+        let children: *mut AnyObject = msg_send![class!(NSMutableArray), array];
+        let none: *mut AnyObject = std::ptr::null_mut();
+        for (id, title) in items {
+            let handler = RcBlock::new(move |_action: *mut AnyObject| {
+                if id == "copy" {
+                    copy_at();
+                }
+                pick(web, &id)
+            });
+            let title = NSString::from_str(&title);
+            let action: *mut AnyObject = msg_send![
+                class!(UIAction),
+                actionWithTitle: &*title,
+                image: none,
+                identifier: none,
+                handler: &*handler
+            ];
+            if !action.is_null() {
+                let _: () = msg_send![children, addObject: action];
+            }
+        }
+        msg_send![class!(UIMenu), menuWithChildren: children]
+    }
+}
+
+extern "C-unwind" fn target_at(_this: &AnyObject, _cmd: Sel, _interaction: *mut AnyObject, _config: *mut AnyObject) -> objc2_foundation::NSRect {
+    let [x, y, w, h] = match AT.lock().ok().as_deref() {
+        Some(Some(at)) => at.rect,
+        _ => [0.0; 4],
+    };
+    objc2_foundation::NSRect::new(objc2_foundation::NSPoint::new(x, y), objc2_foundation::NSSize::new(w, h))
+}
+
+/// 拷贝 at khor's selection: the cells' text the page handed over, onto
+/// the pasteboard natively (a page's clipboard write outside a gesture
+/// is refused).
+fn copy_at() {
+    let Some(text) = AT.lock().ok().and_then(|at| at.as_ref().and_then(|a| a.copy.clone())) else {
+        return;
+    };
+    // SAFETY: main thread (a menu action); documented UIKit.
+    unsafe {
+        let board: *mut AnyObject = msg_send![class!(UIPasteboard), generalPasteboard];
+        if let Some(board) = board.as_ref() {
+            let text = NSString::from_str(&text);
+            let _: () = msg_send![board, setString: &*text];
+        }
+    }
+}
+
 /// The chosen item, told to the page: `window.__khorEditMenu(id, text,
 /// image)`, with the pasteboard's text for 粘贴, else its picture.
 fn pick(web: usize, id: &str) {

@@ -189,6 +189,8 @@ const QUICK = new Set([
   "face_note", "notify_finished", "bell_haptic", "joy_haptic", "haptic",
   // What the next edit menu over a selection adds (item 54): memory.
   "edit_menu",
+  // The system's edit menu at a selection khor drew (item 73): queued on UIKit's thread.
+  "edit_menu_at", "edit_menu_hide",
 ]);
 // The ones that waited on the main thread on 2026-10-02, named so the
 // red says which: each must be `async`.

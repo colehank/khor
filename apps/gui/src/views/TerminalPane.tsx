@@ -120,8 +120,8 @@ import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
 import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
 import { keyboardShown, viewportMoving } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
-import { nativeSelects, selectionHolds, type Picked, type Selects } from "@/lib/term-select";
-import { offerEditMenu, type EditItem } from "@/lib/edit-menu";
+import { nativeSelects, selectionHolds, selectionUp, type MenuBox, type Picked, type Selects } from "@/lib/term-select";
+import { hideEditMenuAt, offerEditMenu, showEditMenuAt, type EditItem } from "@/lib/edit-menu";
 import { pastedFrom, pastedImage, pasteInto } from "@/lib/term-paste";
 
 /** The 16 ANSI colours, the one palette a terminal owns regardless of
@@ -1756,7 +1756,9 @@ export function TerminalPane({
     // clipboard (the terminal audit, item 53). iTerm2's find leaves the
     // clipboard alone.
     const selected = term.onSelectionChange(() => {
-      if (searchSelects.current) return;
+      // Nor khor's own selection under a finger (item 73): the lift
+      // copies nothing (⚠️ 墓碑 T-20); its menu's 拷贝 does.
+      if (searchSelects.current || selectionUp()) return;
       const s = copyable(term.getSelection());
       if (s) navigator.clipboard?.writeText(s).catch(() => {});
     });
@@ -2489,12 +2491,24 @@ export function TerminalPane({
       const b = blockAt(marks, row);
       return !!b && onPromptOf(b, row) && actsFor(b).length > 0;
     };
-    const itemsFor = (p: Picked) => {
+    // `at`: khor's own selection, with the keyboard up (item 73): the
+    // menu is shown there, and carries 拷贝 itself (iOS's menu has its own).
+    const itemsFor = (p: Picked, at?: MenuBox) => {
       const items: EditItem[] = [];
       // A chosen item ends the selection: the terminal has its keys back.
-      const done = () => window.getSelection()?.removeAllRanges();
+      const done = () => selectsNow?.end();
+      if (at)
+        items.push({
+          id: "copy",
+          title: menu.copy,
+          run: () => {
+            done();
+            // The app wrote the pasteboard natively; this is the browser's.
+            void navigator.clipboard?.writeText(p.text).catch(() => {});
+          },
+        });
       const open = (run: () => void) =>
-        items.unshift({
+        items.splice(at ? 1 : 0, 0, {
           id: "open",
           title: gui.web_open,
           run: () => {
@@ -2502,6 +2516,7 @@ export function TerminalPane({
             run();
           },
         });
+      const offer = () => (at ? showEditMenuAt(at, items.slice(), p.text) : offerEditMenu(items.slice()));
       const url = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(p.text) ? p.text : urlAt(term, p.from.row, p.from.col);
       if (url) open(() => (/^file:/i.test(url) ? fileLink(url) : follow(url, machine)));
       items.push({
@@ -2513,18 +2528,28 @@ export function TerminalPane({
           else if (image) dropFilesRef.current([pastedImage(image)]);
         },
       });
-      offerEditMenu(items.slice());
+      offer();
       if (url || viaHistory()) return;
       // A path under the selection: listed on the machine, so a moment
       // later; the menu shown after it carries 打开.
       void pathsOn(term, here, cwdAt, p.from.row).then((found) => {
         const hit = found.find((f) => covers(f, p.from.row, p.from.col));
-        if (!hit || !selectsNow?.layer.isConnected) return;
+        if (!hit || !selectsNow?.layer.isConnected || (at && !selectionUp())) return;
         open(() => openPath(hit.target));
-        offerEditMenu(items.slice());
+        offer();
       });
     };
     const viaHistory = () => !!tmuxHistory?.over();
+    // **No refit while a selection is up** (item 73): a keyboard that
+    // rose or fell under it would cost it; the refit runs when it ends.
+    let fitOwed = false;
+    const refit = () => {
+      if (selectionUp()) {
+        fitOwed = true;
+        return;
+      }
+      fit.fit();
+    };
     selectsNow = window.matchMedia("(pointer: coarse)").matches
       ? nativeSelects({
           live: term,
@@ -2542,7 +2567,16 @@ export function TerminalPane({
             else if (up) holdFocus(f, true);
             else lowerKeyboard(f);
           },
-          picked: (p) => (p ? itemsFor(p) : offerEditMenu([])),
+          picked: (p, at) => {
+            if (p) return itemsFor(p, at);
+            offerEditMenu([]);
+            hideEditMenuAt();
+            // A refit held while it was up (the keyboard moved under it).
+            if (fitOwed) {
+              fitOwed = false;
+              window.requestAnimationFrame(() => !stopped && refit());
+            }
+          },
         })
       : null;
     (box as HTMLDivElement & { __selects?: Selects | null }).__selects = selectsNow;
@@ -2702,7 +2736,7 @@ export function TerminalPane({
         // steps were spaced.
         const fitWhenStill = () => {
           if (viewportMoving(KEYBOARD_STILL_MS)) still = window.setTimeout(fitWhenStill, KEYBOARD_STILL_MS);
-          else fit.fit();
+          else refit();
         };
         still = window.setTimeout(fitWhenStill, KEYBOARD_STILL_MS);
         return;
@@ -2710,7 +2744,7 @@ export function TerminalPane({
       if (raf) return;
       raf = window.requestAnimationFrame(() => {
         raf = 0;
-        fit.fit();
+        refit();
       });
     });
     observer.observe(box);

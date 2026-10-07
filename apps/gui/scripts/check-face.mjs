@@ -30348,6 +30348,94 @@ try {
         window.dispatchEvent(new CustomEvent("khor:term-wake", { detail: "auto" }));
       });
 
+      // ── y. with the keyboard up, selecting does not lower it (item 73) ──
+      // The owner's ruling: a long press and a drag leave the field focused
+      // and the keyboard up, the selection is in xterm's cells with two
+      // handles, a keyboard change under it does not refit the grid, and
+      // the menu's 拷贝 copies the cells' text (then the held refit runs).
+      // With the keyboard down item 54 is as it was: the field rests let
+      // go, and a press makes no selection of khor's.
+      {
+        await program("\x1b[2J\x1b[Hselect me here\r\nsecond line words\r\n");
+        const cell = (row, col) =>
+          page.evaluate(({ row, col }) => {
+            const t = document.querySelector("[data-terminal]").__xterm;
+            const s = t.element.querySelector(".xterm-screen").getBoundingClientRect();
+            return { x: Math.round(s.left + (col + 0.5) * (s.width / t.cols)), y: Math.round(s.top + (row - t.buffer.active.viewportY + 0.5) * (s.height / t.rows)) };
+          }, { row, col });
+        const look = () =>
+          page.evaluate(() => {
+            const t = document.querySelector("[data-terminal]").__xterm;
+            return {
+              focused: document.activeElement === t.textarea,
+              cells: t.getSelection(),
+              rows: t.rows,
+              handles: [...document.querySelectorAll("[data-term-handle]")].filter((h) => h.style.display !== "none").length,
+              copied: window.__copied73 ?? [],
+            };
+          });
+        await page.evaluate(() => {
+          window.__copied73 = [];
+          Object.defineProperty(navigator.clipboard, "writeText", { configurable: true, value: async (s) => void window.__copied73.push(s) });
+          const f = document.querySelector("[data-terminal]").__xterm.textarea;
+          f.setAttribute("inputmode", "text");
+          f.focus();
+          window.__khorKeyboard?.(true);
+        });
+        await wait(600);
+        const top = await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.buffer.active.viewportY);
+        const a = await cell(top, 2);
+        const b = await cell(top + 1, 5);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [a] });
+        await wait(550);
+        const pressed = await look();
+        for (let i = 1; i <= 4; i += 1) {
+          await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: a.x + Math.round(((b.x - a.x) * i) / 4), y: a.y + Math.round(((b.y - a.y) * i) / 4) }] });
+          await wait(30);
+        }
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await wait(200);
+        const dragged = await look();
+        // The keyboard goes under it: the box changes, the grid holds.
+        const size = page.viewportSize();
+        await page.evaluate(() => window.__khorKeyboard?.(false));
+        await page.setViewportSize({ width: size.width, height: size.height + 120 });
+        await wait(900);
+        const under = await look();
+        await page.evaluate(() => window.__khorEditMenu?.("copy"));
+        await wait(900);
+        const copied = await look();
+        console.log(
+          `bar y · keyboard up: press → field ${pressed.focused ? "kept" : "let go"}, cells ${shown(pressed.cells)}, ${pressed.handles} handles; drag → ${shown(dragged.cells)}; the box 120 taller under it → rows ${dragged.rows} → ${under.rows}, cells ${shown(under.cells)}; 拷贝 → ${shown(copied.copied.at(-1))}, rows then ${copied.rows}`,
+        );
+        if (!pressed.focused || pressed.cells !== "select" || pressed.handles !== 2) fail(`bar y · keyboard up, a long press: field focused ${pressed.focused}, cells ${shown(pressed.cells)}, ${pressed.handles} handles — the word in the cells, the field kept, two handles (item 73)`);
+        if (!dragged.focused || dragged.cells !== "select me here\nsecond") fail(`bar y · keyboard up, a drag on from the press: field focused ${dragged.focused}, cells ${shown(dragged.cells)} — "select me here\\nsecond"`);
+        if (under.rows !== dragged.rows || under.cells !== dragged.cells) fail(`bar y · the box changed under the selection and the grid refitted (${dragged.rows} → ${under.rows} rows, cells ${shown(under.cells)}) — no refit while a selection is up`);
+        if (copied.copied.at(-1) !== "select me here\nsecond" || copied.cells !== "" || copied.handles !== 0) fail(`bar y · 拷贝 copied ${shown(copied.copied.at(-1))} and left cells ${shown(copied.cells)}, ${copied.handles} handles — the cells' text, the selection ended`);
+        if (copied.rows === under.rows) fail(`bar y · the refit held under the selection never ran once it ended (${copied.rows} rows)`);
+        await page.setViewportSize(size);
+        // Keyboard down: item 54's rest, and no selection of khor's.
+        await page.evaluate(() => {
+          window.__khorKeyboard?.(null);
+          // As `lowerKeyboard` does: the field refocused with no keyboard.
+          const f = document.querySelector("[data-terminal]").__xterm.textarea;
+          f.setAttribute("inputmode", "none");
+          f.blur();
+          f.focus();
+        });
+        await wait(900);
+        const rest = await look();
+        const c = await cell(await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.buffer.active.viewportY), 2);
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [c] });
+        await wait(550);
+        const downPress = await look();
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await wait(200);
+        console.log(`bar y · keyboard down: at rest the field is ${rest.focused ? "held" : "let go"}; a press → cells ${shown(downPress.cells)}, ${downPress.handles} handles`);
+        if (rest.focused || downPress.cells !== "" || downPress.handles !== 0) fail(`bar y · keyboard down, item 54 changed: field at rest ${rest.focused ? "held" : "let go"}, a press made cells ${shown(downPress.cells)} with ${downPress.handles} handles — iOS's selection there, the field let go`);
+        await wait(400);
+      }
+
       // e, for the conversations under a finger.
       for (const [what, id, box] of [
         ["a machine conversation", chatRow.id, "[data-chat-composer]"],

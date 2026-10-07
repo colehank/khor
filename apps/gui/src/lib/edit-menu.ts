@@ -6,7 +6,8 @@
 // the one chosen — 粘贴 with the pasteboard's text (else its picture),
 // read natively, since a page reading the clipboard outside a gesture
 // gets iOS's own paste prompt instead.
-import { editMenu } from "@/api";
+import { editMenu, editMenuAt, editMenuHide } from "@/api";
+import type { MenuBox } from "@/lib/term-select";
 
 /** A picture iOS's pasteboard held for 粘贴 when it held no text: its
     type and its bytes in base64 (item 60 part 4). */
@@ -21,6 +22,24 @@ export function offerEditMenu(items: EditItem[]) {
   const same = items.length === offered.length && items.every((it, i) => it.id === offered[i].id && it.title === offered[i].title);
   offered = items;
   if (!same) void editMenu(items.map((it) => [it.id, it.title])).catch(() => {});
+}
+
+/** **The system's menu at a selection khor drew** (item 73: with the
+    keyboard up the terminal selects in its own cells, and iOS has no
+    selection to show its menu at). Shown at `at` with `items`; `copy` is
+    what 拷贝 writes, natively. A chosen item comes back as above. */
+let shownAt = false;
+export function showEditMenuAt(at: MenuBox, items: EditItem[], copy: string) {
+  offered = items;
+  shownAt = true;
+  void editMenuAt(at, items.map((it) => [it.id, it.title]), copy).catch(() => {});
+}
+
+/** Puts it away, if it is up. */
+export function hideEditMenuAt() {
+  if (!shownAt) return;
+  shownAt = false;
+  void editMenuHide().catch(() => {});
 }
 
 declare global {
