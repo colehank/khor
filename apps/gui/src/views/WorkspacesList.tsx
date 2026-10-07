@@ -42,7 +42,9 @@ import { useHidden } from "@/hooks/use-hidden";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { ago, axisOf, groupLabel, valueOf } from "@/words";
 import { PathCut } from "@/components/PathCut";
+import type { GitOperation } from "@/gen/bindings/GitOperation";
 import type { GitSegment } from "@/gen/bindings/GitSegment";
+import { MidName } from "@/browse/TabStrip";
 
 /** One row's identity, the same pair the table is keyed by: two
     machines can hold the same path, and the machine is half the answer.
@@ -617,8 +619,11 @@ export function WorkspacesList({
           {seg.subject}
         </span>
       ) : undefined,
+      // The lab draft (the owner 2026-10-08): the branch after the name,
+      // like a machine's latency after its; top-right only the symbols.
+      aside: repo && seg && branchOf(seg) ? <BranchAside seg={seg} /> : undefined,
       corners: {
-        top: repo && seg ? <GitSegmentWord seg={seg} /> : undefined,
+        top: repo && seg && (seg.operation || segmentSymbols(seg).length > 0) ? <GitSegmentWord seg={seg} /> : undefined,
         bottom:
           repo && seg && seg.since_ms > 0 ? (
             <span data-ws-held>{ago(seg.since_ms)}</span>
@@ -690,43 +695,91 @@ export function WorkspacesList({
 /* ⚠️ 墓碑 (UX-15): `YieldingCorner` — the branch gives way before the name
    — lived here; it is `SideList`'s corners' rule now, for every list. */
 
-/** **The prompt's git segment as one string** (UX-48, powerlevel10k's
-    order and marks): the branch, or `@` and HEAD's short id when
-    detached; then ⇣ behind ⇡ ahead, * stashes, ~ conflicted, + staged,
-    ! edited, ? untracked — each only when it is not zero. */
-export function segmentParts(seg: GitSegment): { head: string; counts: string } {
-  const head = seg.branch ?? (seg.head ? `@${seg.head}` : "");
+/** **The workspace row's git status, as a prompt's symbols** (the lab
+    draft, the owner 2026-10-08, powerlevel10k's marks and order): ⇣
+    behind ⇡ ahead, * stashes, ~ conflicted, + staged, ! edited, ?
+    untracked — each only when it is not zero. `tone` is the ink each one
+    wears: `act` (the destructive red: something stands half done),
+    `edit` (the git amber: work not committed), `way` (the primary ink:
+    commits to move), `quiet` (the secondary ink). The branch is not here:
+    it stands after the title (`BranchAside`). */
+export type SegmentSymbol = { key: string; text: string; tone: "act" | "edit" | "way" | "quiet" };
+export function segmentSymbols(seg: GitSegment): SegmentSymbol[] {
+  // ⇣⇡ touch, as powerlevel10k draws them; the rest stand apart.
   const way = `${seg.behind ? `⇣${seg.behind}` : ""}${seg.ahead ? `⇡${seg.ahead}` : ""}`;
-  const counts = [
-    way,
-    seg.stashes ? `*${seg.stashes}` : "",
-    seg.conflicted ? `~${seg.conflicted}` : "",
-    seg.staged ? `+${seg.staged}` : "",
-    seg.unstaged ? `!${seg.unstaged}` : "",
-    seg.untracked ? `?${seg.untracked}` : "",
-  ].filter(Boolean);
-  return { head, counts: counts.join(" ") };
+  const all: SegmentSymbol[] = [
+    { key: "way", text: way, tone: "way" },
+    { key: "stashes", text: seg.stashes ? `*${seg.stashes}` : "", tone: "quiet" },
+    { key: "conflicted", text: seg.conflicted ? `~${seg.conflicted}` : "", tone: "act" },
+    { key: "staged", text: seg.staged ? `+${seg.staged}` : "", tone: "edit" },
+    { key: "unstaged", text: seg.unstaged ? `!${seg.unstaged}` : "", tone: "edit" },
+    { key: "untracked", text: seg.untracked ? `?${seg.untracked}` : "", tone: "quiet" },
+  ];
+  return all.filter((x) => x.text !== "");
+}
+
+/** The word before the symbols while git is in the middle of something. */
+const OPERATION_WORD: Record<GitOperation, string> = {
+  merge: gui.ws_op_merge,
+  rebase: gui.ws_op_rebase,
+  "cherry-pick": gui.ws_op_cherry_pick,
+  revert: gui.ws_op_revert,
+  bisect: gui.ws_op_bisect,
+};
+
+/** The branch's place after the title: the branch, or `@` and HEAD's
+    short id when detached. */
+export function branchOf(seg: GitSegment): string {
+  return seg.branch ?? (seg.head ? `@${seg.head}` : "");
 }
 
 export function segmentText(seg: GitSegment): string {
-  const { head, counts } = segmentParts(seg);
-  return [head, counts].filter(Boolean).join(" ");
+  return [
+    branchOf(seg),
+    seg.operation ? OPERATION_WORD[seg.operation] : "",
+    segmentSymbols(seg)
+      .map((x) => x.text)
+      .join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
-/** The segment on the row's top-right: the branch gives way, the counts
-    never do (`data-corner-keep`, which `SideList`'s corner keeps whole). */
-function GitSegmentWord({ seg }: { seg: GitSegment }) {
-  const { head, counts } = segmentParts(seg);
+const TONE: Record<SegmentSymbol["tone"], string> = {
+  act: "text-destructive",
+  edit: "text-git-modified",
+  way: "text-foreground",
+  quiet: "text-muted-foreground",
+};
+
+/** The branch after the title, in the secondary ink one size down (the
+    title's aside), cut in the middle before the title or the symbols
+    give anything (`MidName`'s even cut). */
+function BranchAside({ seg }: { seg: GitSegment }) {
   return (
-    <span data-ws-git className="flex min-w-0 items-baseline">
-      <span data-ws-branch className="min-w-0 truncate">
-        {head}
-      </span>
-      {counts && (
-        <span data-ws-counts data-corner-keep className="flex-none whitespace-pre">
-          {` ${counts}`}
+    <span data-ws-branch className="block min-w-0">
+      <MidName text={branchOf(seg)} even />
+    </span>
+  );
+}
+
+/** The row's top-right: the operation's word, then the symbols, all kept
+    whole (`data-corner-keep`); not drawn for a clean checkout. */
+function GitSegmentWord({ seg }: { seg: GitSegment }) {
+  const symbols = segmentSymbols(seg);
+  if (!seg.operation && symbols.length === 0) return null;
+  return (
+    <span data-ws-git data-corner-keep className="flex flex-none items-baseline gap-xxs whitespace-nowrap">
+      {seg.operation && (
+        <span data-ws-op={seg.operation} className="text-destructive">
+          {OPERATION_WORD[seg.operation]}
         </span>
       )}
+      {symbols.map((x) => (
+        <span key={x.key} data-ws-symbol={x.key} className={TONE[x.tone]}>
+          {x.text}
+        </span>
+      ))}
     </span>
   );
 }

@@ -394,6 +394,15 @@ input[type="search"]::-webkit-search-decoration {
 [data-side-row][data-selected="true"]:not([data-narrow] *) [data-word-text] {
   color: var(--foreground) !important;
 }
+/* DRAFT (the workspace row lab, lane ux-v, 2026-10-08; not a token yet):
+   a workspace row's red symbols keep their red when the row is picked,
+   and light `--destructive` on `--fill-strong` reads 4.41. This is the
+   same hue and chroma in OKLCH (29°, .15), lightness .52 → .50: 4.86 on
+   the picked row, 5.93 on the ground. Dark's red reads 5.48 there and
+   is left alone. */
+:root:not([data-theme="dark"]) [data-side-row][data-selected="true"]:not([data-narrow] *) [data-ws-git] {
+  --destructive: #a8352a;
+}
 /* **The hairlines touching a selected or pressed row are not drawn**
    (UX-24, the owner 2026-10-05, UITableView's rule): its own foot and the
    foot of the row above it. The grey block then stands between rows, not
