@@ -717,6 +717,17 @@ impl DeviceDoc {
                 self.write_field(id, F_SSH_PASSWORD, road.password)?;
                 dirty = true;
             }
+            // A key file and its passphrase (redesign-join round 3), as
+            // `set_satellite` keeps them.
+            let identity = road.identity.unwrap_or("");
+            if self.flat_str(id, F_SSH_IDENTITY).as_deref().unwrap_or("") != identity {
+                self.write_field(id, F_SSH_IDENTITY, identity)?;
+                dirty = true;
+            }
+            if self.bool_field(id, F_SSH_PASSPHRASE) != road.passphrase {
+                self.write_field(id, F_SSH_PASSPHRASE, road.passphrase)?;
+                dirty = true;
+            }
             if self.flat_str(id, F_SSH_HOST).as_deref() != Some(road.host) {
                 self.write_field(id, F_SSH_HOST, road.host)?;
                 dirty = true;

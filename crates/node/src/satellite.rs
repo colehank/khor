@@ -1731,6 +1731,8 @@ mod tests {
                         port: None,
                         jump: None,
                         password: false,
+                        identity: None,
+                        passphrase: false,
                     },
                     false,
                 )
