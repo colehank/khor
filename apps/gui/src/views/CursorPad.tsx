@@ -222,7 +222,8 @@ export function CursorKey({ term, mods, onMods }: { term: RefObject<Terminal | n
           repeating ? "text-[var(--rail-on-ink)]" : "text-foreground",
         )}
       >
-        {way ? <IconArrow to={way} className="size-5" /> : <IconMove className="size-5" />}
+        {/* The neighbours' ink (`--key-pad-glyph`, item 72). */}
+        {way ? <IconArrow to={way} className="size-key-pad-glyph" /> : <IconMove className="size-key-pad-glyph" />}
       </span>
     </button>
   );

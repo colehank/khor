@@ -2319,6 +2319,7 @@
   --spacing-slider-half: var(--slider-half);
   --spacing-key-cap-w: var(--key-cap-w);
   --spacing-key-pad-w: var(--key-pad-w);
+  --spacing-key-pad-glyph: var(--key-pad-glyph);
   --spacing-tab-lip: var(--tab-lip);
   --spacing-tab-gap: var(--tab-gap);
   /* The narrow session page's foot (2026-10-02): `h-key-row` on the
@@ -2824,6 +2825,14 @@
   /* The cursor pad, pinned second from the row's right end: wider than
      a cap so it reads as a pad (the owner, 2026-10-03). */
   --key-pad-w: 56px;
+  /* Its mark, the four-way arrows and the one arrow a locked drag shows
+     (item 72, the owner 2026-10-07: 「按钮很大，但摇杆的icon有点小」).
+     Sized by ink, not by box: the arrows are a bare glyph, 0.72 of their
+     box (icons.tsx `LIVE`), so at the caps' `size-5` they painted 14.4
+     beside 📎's 18.4 and 「…」's 18.0. At 26 they paint 18.7 — the
+     neighbours' ink, with the same 8–9 of air above and below in the 36
+     cap. ⚠️ 墓碑: `size-5`, the caps' box, 20. */
+  --key-pad-glyph: 26px;
   /* 外观's sliders: iOS's 28 knob on a 4 track. */
   --slider-knob: 28px;
   --slider-half: calc(var(--slider-knob) / 2);
