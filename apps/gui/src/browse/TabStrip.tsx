@@ -226,7 +226,7 @@ function PreviewMark() {
  * `notes-final.md`, and a file's extension. Short names are one span, so
  * nothing about them changes.
  */
-export function MidName({ text, after = "" }: { text: string; after?: string }) {
+export function MidName({ text, after = "", even = false }: { text: string; after?: string; even?: boolean }) {
   const KEEP = 5;
   const [sizer, setSizer] = useState<HTMLSpanElement | null>(null);
   const [shown, setShown] = useState(text);
@@ -251,6 +251,17 @@ export function MidName({ text, after = "" }: { text: string; after?: string }) 
         return;
       }
       const chars = [...text];
+      // **`even`: as much of the end as of the start**, Finder's middle
+      // cut — for a name with no extension to keep (a file going in,
+      // the owner 2026-10-07 13:15), where a fixed tail of wide
+      // characters left no start at all.
+      if (even) {
+        let n = chars.length - 1;
+        const cut = (k: number) => `${chars.slice(0, Math.ceil(k / 2)).join("")}…${chars.slice(chars.length - Math.floor(k / 2)).join("")}${after}`;
+        while (n > 0 && wide(cut(n)) > room - 1) n -= 1;
+        setShown(cut(n).slice(0, cut(n).length - after.length));
+        return;
+      }
       const tail = chars.slice(-KEEP).join("");
       let lo = 0;
       let hi = chars.length - KEEP;
@@ -265,7 +276,7 @@ export function MidName({ text, after = "" }: { text: string; after?: string }) 
     const watch = new ResizeObserver(fit);
     watch.observe(sizer);
     return () => watch.disconnect();
-  }, [sizer, text, after]);
+  }, [sizer, text, after, even]);
   if (text.length <= KEEP * 2) return <span className="min-w-0 truncate">{text + after}</span>;
   return (
     <span data-mid-name className="relative flex min-w-0">
@@ -847,7 +858,7 @@ export function TabStrip({
                           of the slope — the one italic in the app. */}
                       {f.rang && <BellMark />}
                       {f.preview && <PreviewMark />}
-                      {f.drop ? <MidName text={f.drop.name} after={f.drop.count} /> : <MidName text={f.label} />}
+                      {f.drop ? <MidName text={f.drop.name} after={f.drop.count} even /> : <MidName text={f.label} />}
                     </span>
                     {/* **Both lines start on one edge**, which is the
                         glyph's right side: the icon is beside the pair
@@ -869,7 +880,7 @@ export function TabStrip({
                   >
                     {f.rang && <BellMark />}
                     {f.preview && <PreviewMark />}
-                    {f.drop ? <MidName text={f.drop.name} after={f.drop.count} /> : <MidName text={f.label} />}
+                    {f.drop ? <MidName text={f.drop.name} after={f.drop.count} even /> : <MidName text={f.label} />}
                   </span>
                 )}
               </button>

@@ -2284,11 +2284,10 @@ write-predates = "那台机器上的 khor 版本较旧，无法保存"
 # The cap is the owner's, for now; the number rides in {0} so the
 # sentence never disagrees with the code.
 drop-too-big = "文件超过 {0} MB，暂不支持放进会话：{1}"
-# The tab pill while files go into the session (the owner 2026-10-07
-# 13:05): the pill writes the file's name and, with several, how many
-# are done of all after it; the long form is the hover title and the
-# tabs sheet's.
-drop-count = "({0}/{1})"
+# Files going into the session (the owner 2026-10-07 13:15): the pill
+# writes only the file's name, no extension, no count; this long form,
+# with how many are done of all, is the hover title and the tabs
+# sheet's.
 drop-into = "正在传入 {0}"
 drop-into-of = "正在传入 {0}（{1}/{2} 已完成）"
 drop-predates = "那台机器上的 khor 版本较旧，无法接收放进来的文件"

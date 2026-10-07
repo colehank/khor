@@ -1361,7 +1361,6 @@ git-history-satellite = "This machine is reached over ssh — khor can't read it
 chat-ended = "This conversation has ended"
 write-predates = "That machine's khor is too old — it can't save the file back"
 drop-too-big = "The file is over {0} MB, too big to drop into a session for now: {1}"
-drop-count = " ({0}/{1})"
 drop-into = "Putting in {0}"
 drop-into-of = "Putting in {0} ({1}/{2} done)"
 drop-predates = "That machine's khor is too old to take a dropped file"

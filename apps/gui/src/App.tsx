@@ -289,8 +289,15 @@ const MORE_GLYPH: Record<Exclude<MorePage, "me">, (p: { className?: string }) =>
   doctor: IconPulse,
 };
 
-/** 「（1/3）」 after a dropping file's name, nothing for one file. */
-const dropCount = (d: { done: number; total: number }) => (d.total > 1 ? msg.drop_count(d.done, d.total) : "");
+/** **A dropping file's name on the pill: no extension, no count** (the
+    owner 2026-10-07 13:15): the line is the whole drop's, files after
+    the first are seen going by, and the long form (正在传入, done of
+    all) is the hover title's and the tabs sheet's. A dot-file keeps its
+    name. */
+const stemOf = (name: string) => {
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+};
 
 export default function App() {
   const narrow = useNarrow();
@@ -1732,14 +1739,14 @@ export default function App() {
               id,
               // An unnamed shell's tab follows what runs in it (roadmap
               // 2.5, `termName`); a name somebody gave stays.
-              label: dropping ? dropping.name + dropCount(dropping) : termName(r),
+              label: dropping ? stemOf(dropping.name) : termName(r),
               // The long form: the hover title, the tabs sheet's row.
               title: dropping
                 ? dropping.total > 1
                   ? msg.drop_into_of(dropping.name, dropping.done, dropping.total)
                   : msg.drop_into(dropping.name)
                 : undefined,
-              drop: dropping ? { name: dropping.name, count: dropCount(dropping) } : undefined,
+              drop: dropping ? { name: stemOf(dropping.name), count: "" } : undefined,
               face: r.face,
               path: r.doing?.cwd ?? r.place ?? "",
               // **One line, the title** (UX-20, the owner 2026-10-05): where
