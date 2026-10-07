@@ -9,7 +9,8 @@
  * directory (`holding`), or that directory itself when no workspace
  * does; git's letters come from one status read, folded up the tree the
  * way the landing folds them. A file opens in place as the file page
- * with the main area's deck (`FilePage docked`, UX-40 §4), and ‹ there is
+ * with the main area's deck (`FilePage`, UX-40 §4; it folds as the main
+ * area's does, UX-43 §4), and ‹ there is
  * the way back to the tree — or to 最近, for the file a row of 最近 opened.
  *
  * **Find and make** (UX-40 §1): the find row under the 附栏's head is the
@@ -286,7 +287,6 @@ export function SideWorkspace({
             path={file}
             here={here}
             git
-            docked
             goLine={goLine?.path === file ? goLine : null}
             draft={drafts.get(file)}
             onDraft={(d) =>

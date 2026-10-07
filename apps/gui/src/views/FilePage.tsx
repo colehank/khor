@@ -5,7 +5,7 @@
  *
  * The phone's file — out of a workspace's tree or a machine's files —
  * a machine's in-place file on every platform, and a file opened in the
- * session's 附栏 on both faces (`docked`, UX-40 §4). Nothing at the top:
+ * session's 附栏 on both faces (UX-40 §4). Nothing at the top:
  * the file starts under the status bar. At the bottom the content pages'
  * deck (UX-14, the owner 2026-10-05): ‹ · a pill with the name, the
  * preview eye where the file renders, and ✓ while the buffer differs from
@@ -412,17 +412,18 @@ export function FilePage({
   history = false,
   tabs,
   moreActs,
-  docked = false,
 }: {
-  /** **Inside the session's 附栏, with the main area's deck** (UX-40 §4,
-      the owner 2026-10-07 02:10: 「打开一个文件或地址，是不是得和主区一样，
-      下方有一个自己的甲板，而不是在左上角点返回和显示标题」): the same
-      deck at the sheet's foot (the Mac column's too), never folded — the
-      sheet is small already. The 附栏's one head stays above the file;
-      nothing else at its top. ⚠️ 墓碑 (UX-37 §6 → UX-40): `bare`, the
-      page with no deck — ‹ · the name · ✓ · the preview switch · 「…」 in
-      a head at the page's top (`SeatHead`). */
-  docked?: boolean;
+  /* **Inside the session's 附栏 this is the same page, with the main
+     area's deck** (UX-40 §4, the owner 2026-10-07 02:10: 「打开一个文件或
+     地址，是不是得和主区一样，下方有一个自己的甲板，而不是在左上角点返回和
+     显示标题」): the deck at the sheet's foot (the Mac column's too),
+     folding as the main area's does (UX-43 §4) into its capsule at the
+     sheet's foot, inside the paper. The 附栏's one head stays above the
+     file; nothing else at its top. ⚠️ 墓碑 (UX-37 §6 → UX-40): `bare`,
+     the page with no deck — ‹ · the name · ✓ · the preview switch · 「…」
+     in a head at the page's top (`SeatHead`). ⚠️ 墓碑 (UX-40 §4 → UX-43
+     §4): `docked`, which kept the deck from ever folding there — the
+     lead's default, not the owner's. */
   /** Acts the page's host adds at the head of 「…」 (UX-30 §4: the
       session's 附栏 offers 「在主区打开」, the one way out of the column). */
   moreActs?: { key: string; label: string; run: () => void }[];
@@ -606,7 +607,7 @@ export function FilePage({
       <div
         ref={box}
         className="flex min-h-0 flex-1 flex-col"
-        onScrollCapture={docked ? undefined : scrolled}
+        onScrollCapture={scrolled}
         onFocusCapture={hold}
       >
         {rev !== null ? (
