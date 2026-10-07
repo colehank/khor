@@ -31,6 +31,19 @@
 //   rows are one line), as xterm's double and triple click do on the Mac.
 // - A long press on a block's prompt keeps opening the block's menu (2.3):
 //   those rows are left out of the selection.
+// - **With the soft keyboard up, selecting does not lower it** (item 73,
+//   the owner's ruling). Yielding the focus lowers the keyboard, the grid
+//   refits and the selection was lost, and iOS's own selection cannot
+//   start or live in the page while the field holds the focus (measured,
+//   `term-73.md`). So with the keyboard up the selection is khor's own, in
+//   xterm's cells, and the focus never moves: a long press takes the word,
+//   a drag on from it extends it, two handles adjust it, and the system's
+//   edit menu is shown at it natively (`edit_menu_at`: 拷贝, 打开, 粘贴).
+//   The lift copies nothing here either. With the keyboard down the
+//   selection is iOS's, as above.
+// - **The grid does not refit while a selection is up** (`selectionUp`):
+//   the pane holds a refit until it ends, so a keyboard change never
+//   costs the selection.
 import type { Terminal } from "@xterm/xterm";
 
 /** xterm's own default `wordSeparator` (a double-click's word). */
@@ -57,6 +70,41 @@ export type Picked = { from: Cell; to: Cell; text: string };
     before they take the focus back (`tapsAskFirst`'s `left`). */
 let holding = false;
 export const selectionHolds = () => holding;
+
+/** Whether a selection is up in a terminal under a finger, iOS's or
+    khor's own: the pane holds its refit and its copy-on-select. */
+let upNow = false;
+export const selectionUp = () => upNow;
+
+/** The selection's box on screen, in CSS px from the document's origin,
+    where the menu at khor's own selection is shown. */
+export type MenuBox = { x: number; y: number; w: number; h: number };
+
+/** A handle's hit box (iOS's 44 pt) and its knob. */
+const HANDLE_HIT = 44;
+const HANDLE_KNOB = 10;
+/** The bar's width, iOS's. */
+const HANDLE_BAR = 2;
+
+/** The text a copy takes from the cells `from`…`to` of a terminal: rows
+    the grid wrapped are one line, each line's trailing blanks trimmed. */
+export function cellsText(term: Terminal, from: Cell, to: Cell): string {
+  const buffer = term.buffer.active;
+  const lines: string[] = [];
+  let line = "";
+  for (let r = from.row; r <= to.row; r++) {
+    const l = buffer.getLine(r);
+    if (r > from.row && !l?.isWrapped) {
+      lines.push(line);
+      line = "";
+    }
+    line += l?.translateToString(false, r === from.row ? from.col : 0, r === to.row ? to.col + 1 : term.cols) ?? "";
+  }
+  lines.push(line);
+  return lines.map((s) => s.replace(/[ \t]+$/, "")).join("\n");
+}
+
+const before = (a: Cell, b: Cell) => a.row < b.row || (a.row === b.row && a.col < b.col);
 
 /**
  * **The layer over the grid**: one row element per screen row, one box per
@@ -247,6 +295,8 @@ export type Selects = {
   tapEnds: (x: number, y: number) => boolean;
   /** The layer, for the gates. */
   layer: HTMLElement;
+  /** Ends the selection that is up (a menu item was chosen). */
+  end: () => void;
   dispose: () => void;
 };
 
@@ -273,8 +323,10 @@ export function nativeSelects(o: {
   /** Gives the terminal the focus back with the keyboard as it was:
       `up` raises it, which only a gesture can. */
   refocus: (up: boolean, inGesture: boolean) => void;
-  /** Told the selection whenever it changes, `null` when it goes. */
-  picked: (p: Picked | null) => void;
+  /** Told the selection whenever it changes, `null` when it goes. khor's
+      own selection (the keyboard up) is told when it settles, with the
+      box the menu is shown at. */
+  picked: (p: Picked | null, at?: MenuBox) => void;
 }): Selects {
   const layer = document.createElement("div");
   layer.setAttribute("data-term-select", "");
@@ -367,6 +419,8 @@ export function nativeSelects(o: {
     } else home();
   };
   const typed = () => {
+    // Typing over khor's own selection ends it (Esc never reaches here).
+    if (own) ownEnd();
     if (field()?.getAttribute("inputmode") === "none") settle();
   };
   // The key panel put away leaves the field focused with no keyboard:
@@ -388,6 +442,7 @@ export function nativeSelects(o: {
   let held = false;
   const giveBack = (inGesture: boolean) => {
     selecting = false;
+    upNow = false;
     o.picked(null);
     // A keyboard that was up comes back up, a key panel's field gets its
     // focus back; otherwise the terminal stays at rest.
@@ -395,9 +450,12 @@ export function nativeSelects(o: {
     else holding = true;
   };
   const changed = () => {
+    // khor's own selection is in xterm's cells; the page's is empty.
+    if (own) return;
     const p = pickedIn(layer);
     if (p) {
       selecting = true;
+      upNow = true;
       holding = true;
       o.picked(p);
     } else if (selecting && !pressing) {
@@ -409,8 +467,174 @@ export function nativeSelects(o: {
   };
   document.addEventListener("selectionchange", changed);
 
-  // **The press.** With the keyboard down iOS does the rest. With it (or
-  // the key panel) up the field holds the focus, so a press held 400 ms lets it go and
+  // ── **khor's own selection, with the keyboard up** (item 73) ──
+  // In xterm's cells (`term.select`), so the field keeps the focus and the
+  // keyboard stays. `fixed` is the end that stays while the other moves:
+  // the word's far end under a press's drag, the other handle under a
+  // handle's.
+  let own: { term: Terminal; fixed: Cell; from: Cell; to: Cell } | null = null;
+  /** What a finger is doing to it: a press's drag, or a handle's (with
+      the finger's offset from the end it holds). */
+  let dragging: { by: "press"; word: { from: Cell; to: Cell } } | { by: "handle"; dy: number } | null = null;
+  // A tap that ended it is the selection's, not xterm's (`forward`).
+  let swallowUntil = 0;
+  const handles = (["start", "end"] as const).map((side) => {
+    const h = document.createElement("div");
+    h.setAttribute("data-term-handle", side);
+    h.setAttribute("aria-hidden", "true");
+    // The system's own handles (a bar the line's height, a knob above the
+    // start and below the end) in the system's colour: the selection with
+    // the keyboard down is iOS's, and the two look the same.
+    h.style.cssText = `position:absolute;z-index:11;display:none;width:${HANDLE_HIT}px;touch-action:none;-webkit-user-select:none;user-select:none`;
+    const bar = document.createElement("div");
+    bar.style.cssText = `position:absolute;left:${(HANDLE_HIT - HANDLE_BAR) / 2}px;top:${HANDLE_HIT / 2}px;width:${HANDLE_BAR}px;background:#007aff;background:-apple-system-blue`;
+    const knob = document.createElement("div");
+    knob.style.cssText = `position:absolute;left:${(HANDLE_HIT - HANDLE_KNOB) / 2}px;width:${HANDLE_KNOB}px;height:${HANDLE_KNOB}px;border-radius:50%;background:#007aff;background:-apple-system-blue`;
+    h.append(bar, knob);
+    (o.scroller.parentElement ?? o.host).appendChild(h);
+    return { side, h, bar, knob };
+  });
+  /** A cell's box on screen (client px), or null off the screen. */
+  const cellBox = (t: Terminal, c: Cell) => {
+    const screen = t.element?.querySelector(".xterm-screen");
+    if (!screen) return null;
+    const s = screen.getBoundingClientRect();
+    const y = c.row - t.buffer.active.viewportY;
+    if (y < 0 || y >= t.rows) return null;
+    const cw = s.width / t.cols;
+    const ch = s.height / t.rows;
+    const w = t.buffer.active.getLine(c.row)?.getCell(c.col)?.getWidth() || 1;
+    return { left: s.left + c.col * cw, top: s.top + y * ch, right: s.left + (c.col + w) * cw, bottom: s.top + (y + 1) * ch };
+  };
+  const place = () => {
+    for (const { side, h, bar, knob } of handles) {
+      const box = own && cellBox(own.term, side === "start" ? own.from : own.to);
+      if (!own || !box) {
+        h.style.display = "none";
+        continue;
+      }
+      const p = (h.offsetParent ?? h.parentElement!).getBoundingClientRect();
+      const ch = box.bottom - box.top;
+      const x = side === "start" ? box.left : box.right;
+      h.style.display = "block";
+      h.style.left = `${x - HANDLE_HIT / 2 - p.left}px`;
+      h.style.top = `${box.top - HANDLE_HIT / 2 - p.top}px`;
+      h.style.height = `${ch + HANDLE_HIT}px`;
+      bar.style.height = `${ch}px`;
+      knob.style.top = side === "start" ? `${HANDLE_HIT / 2 - HANDLE_KNOB + 1}px` : `${HANDLE_HIT / 2 + ch - 1}px`;
+    }
+  };
+  /** The selection's box, from the document's origin, for the menu. */
+  const menuBox = (): MenuBox | undefined => {
+    if (!own) return undefined;
+    const t = own.term;
+    const screen = t.element?.querySelector(".xterm-screen")?.getBoundingClientRect();
+    if (!screen) return undefined;
+    const vy = t.buffer.active.viewportY;
+    const ch = screen.height / t.rows;
+    const top = Math.max(own.from.row - vy, 0);
+    const bottom = Math.min(own.to.row - vy + 1, t.rows);
+    if (bottom <= top) return undefined;
+    const one = own.from.row === own.to.row;
+    const a = cellBox(t, own.from);
+    const b = cellBox(t, own.to);
+    const left = one && a ? a.left : screen.left;
+    const right = one && b ? b.right : screen.right;
+    return { x: left + window.scrollX, y: screen.top + top * ch + window.scrollY, w: right - left, h: (bottom - top) * ch };
+  };
+  const ownPicked = (): Picked | null => (own ? { from: own.from, to: own.to, text: cellsText(own.term, own.from, own.to) } : null);
+  /** Selects `fixed`…`moving` (either order) in xterm's cells. */
+  const ownSet = (t: Terminal, fixed: Cell, moving: Cell) => {
+    const [from, to] = before(moving, fixed) ? [moving, fixed] : [fixed, moving];
+    own = { term: t, fixed, from, to };
+    upNow = true;
+    const cols = t.cols;
+    t.select(from.col, from.row, to.row * cols + to.col - (from.row * cols + from.col) + 1);
+    place();
+  };
+  /** Settled (a lift): the menu at it. */
+  const ownSettled = () => {
+    const p = ownPicked();
+    if (p) o.picked(p, menuBox());
+  };
+  const ownEnd = () => {
+    if (!own) return;
+    const t = own.term;
+    own = null;
+    dragging = null;
+    upNow = selecting;
+    t.clearSelection();
+    place();
+    o.picked(null);
+    // The keyboard may have gone meanwhile: the field rests as it would.
+    if (document.activeElement === field()) focused();
+    dirty();
+  };
+  /** The cell under a point, held to the screen's edges. */
+  const cellNear = (t: Terminal, x: number, y: number): Cell | null => {
+    const screen = t.element?.querySelector(".xterm-screen");
+    if (!screen) return null;
+    const r = screen.getBoundingClientRect();
+    return cellAtPoint(t, Math.min(Math.max(x, r.left), r.right - 1), Math.min(Math.max(y, r.top), r.bottom - 1));
+  };
+  const ownWatch = (t: Terminal) => [
+    t.onRender(() => own && place()),
+    t.onScroll(() => own && place()),
+    // xterm let it go itself (the screen switched, the buffer trimmed).
+    t.onSelectionChange(() => {
+      if (own && own.term === t && !t.hasSelection()) ownEnd();
+    }),
+  ];
+  const ownWatching = ownWatch(o.live);
+  let ownWatched: Terminal | null = null;
+  const ownBegin = (t: Terminal, span: { from: Cell; to: Cell }) => {
+    if (t !== o.live && t !== ownWatched) {
+      ownWatching.push(...ownWatch(t));
+      ownWatched = t;
+    }
+    ownSet(t, span.from, span.to);
+  };
+  // A handle's drag: its own touches, past everything the pane hears.
+  for (const { side, h } of handles) {
+    h.addEventListener(
+      "touchstart",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!own || e.touches.length !== 1) return;
+        const box = cellBox(own.term, side === "start" ? own.from : own.to);
+        dragging = { by: "handle", dy: box ? e.touches[0].clientY - (box.top + box.bottom) / 2 : 0 };
+        own.fixed = side === "start" ? own.to : own.from;
+        o.picked(null);
+      },
+      { passive: false },
+    );
+    h.addEventListener(
+      "touchmove",
+      (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const f = e.touches[0];
+        if (!own || !f || dragging?.by !== "handle") return;
+        const at = cellNear(own.term, f.clientX, f.clientY - dragging.dy);
+        if (at) ownSet(own.term, own.fixed, at);
+      },
+      { passive: false },
+    );
+    const lift = (e: TouchEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (dragging?.by !== "handle") return;
+      dragging = null;
+      ownSettled();
+    };
+    h.addEventListener("touchend", lift, { passive: false });
+    h.addEventListener("touchcancel", lift, { passive: false });
+  }
+
+  // **The press.** With the keyboard down iOS does the rest. With it up
+  // the selection is khor's own (above). Under the key panel the field
+  // holds the focus, so a press held 400 ms lets it go and
   // selects the word under the finger itself: iOS's handles, its menu on
   // a tap on the selection. A block's prompt row opens the block's menu
   // instead (2.3), and is left out of the selection.
@@ -426,8 +650,9 @@ export function nativeSelects(o: {
     y0 = e.touches[0].clientY;
     if (selecting) return;
     yielded = false;
-    draw();
-    wasUp = o.keyboardUp();
+    if (!own) draw();
+    // Over khor's own selection the keyboard is as it was when it began.
+    wasUp = own ? true : o.keyboardUp();
     held = !wasUp && o.keeps();
     timer = window.setTimeout(() => {
       if (selecting) return;
@@ -438,7 +663,15 @@ export function nativeSelects(o: {
         o.claim(at.row, x0, y0);
         return;
       }
-      if (!wasUp && !held) return;
+      if (wasUp) {
+        // The keyboard up: khor's own, and the focus stays (item 73).
+        o.picked(null);
+        const word = wordAround(t, at);
+        ownBegin(t, word);
+        dragging = { by: "press", word };
+        return;
+      }
+      if (!held) return;
       yielded = true;
       away();
       const word = wordAround(t, at);
@@ -447,11 +680,29 @@ export function nativeSelects(o: {
   };
   const move = (e: TouchEvent) => {
     const t = e.touches[0];
+    if (own && dragging?.by === "press") {
+      // A drag on from the press extends it, word's far end held; the
+      // scroller, the swipe and the fold do not hear it.
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const at = t && cellNear(own.term, t.clientX, t.clientY);
+      const word = dragging.word;
+      if (at) ownSet(own.term, before(at, word.from) ? word.to : word.from, at);
+      return;
+    }
     if (t && Math.hypot(t.clientX - x0, t.clientY - y0) > PRESS_SLOP) window.clearTimeout(timer);
   };
-  const end = () => {
+  const end = (e: TouchEvent) => {
     window.clearTimeout(timer);
     pressing = false;
+    if (own && dragging?.by === "press") {
+      // The press's lift: the menu, and no tap, click or copy after it.
+      dragging = null;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      ownSettled();
+      return;
+    }
     if (selecting || !yielded) return;
     yielded = false;
     // The keyboard was up and nothing was selected: it comes back, inside
@@ -464,7 +715,8 @@ export function nativeSelects(o: {
     if (selecting) changed();
   };
   o.scroller.addEventListener("touchstart", start, { capture: true, passive: true });
-  o.scroller.addEventListener("touchmove", move, { capture: true, passive: true });
+  // Not passive: a press's drag over khor's own selection is held back.
+  o.scroller.addEventListener("touchmove", move, { capture: true, passive: false });
   o.scroller.addEventListener("touchend", end, { capture: true });
   o.scroller.addEventListener("touchcancel", end, { capture: true });
   document.addEventListener("touchend", lifted, true);
@@ -478,6 +730,9 @@ export function nativeSelects(o: {
     if (!screen || !e.isTrusted) return;
     e.stopPropagation();
     if (e.type === "mousedown") e.preventDefault();
+    // Over khor's own selection a tap is the selection's (`tapEnds`), and
+    // xterm's mousedown would clear it.
+    if (own || performance.now() < swallowUntil) return;
     screen.dispatchEvent(new MouseEvent(e.type, e));
   };
   for (const type of ["mousedown", "mouseup", "click"]) layer.addEventListener(type, forward as EventListener);
@@ -519,10 +774,25 @@ export function nativeSelects(o: {
   };
   const key = (e: KeyboardEvent) => {
     if (!visible() || MODIFIERS.includes(e.key)) return;
+    if (own) {
+      // Esc ends it and is not sent; any other key ends it and goes on to
+      // the field — handed there if the keyboard went down under it and
+      // the field rested meanwhile.
+      if (e.metaKey) return;
+      const esc = e.key === "Escape";
+      if (esc) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+      ownEnd();
+      if (!esc && document.activeElement !== field()) route(e);
+      return;
+    }
     if (selecting) {
       if (e.metaKey) return;
       window.getSelection()?.removeAllRanges();
       selecting = false;
+      upNow = false;
       o.picked(null);
       if (e.key === "Escape") {
         e.preventDefault();
@@ -556,6 +826,32 @@ export function nativeSelects(o: {
   let upBefore = false;
   const tapEnds = (x: number, y: number): boolean => {
     const now = performance.now();
+    if (own) {
+      // A tap on khor's own selection shows its menu again (the third of
+      // a triple tap takes the line); elsewhere it ends it. The keyboard
+      // is as it was: the focus never moved.
+      const again = now - lastTap < MULTI_TAP_MS && Math.hypot(x - lastX, y - lastY) < MULTI_TAP_SLOP;
+      lastTap = now;
+      lastX = x;
+      lastY = y;
+      const t = own.term;
+      const at = cellAtPoint(t, x, y);
+      if (again && taps === 2 && at) {
+        taps = 3;
+        ownBegin(t, lineAround(t, at.row));
+        ownSettled();
+        return true;
+      }
+      taps = 1;
+      const inside = !!at && !before(at, own.from) && !before(own.to, at);
+      if (inside) ownSettled();
+      else {
+        swallowUntil = now + 500;
+        ownEnd();
+        upBefore = o.keyboardUp();
+      }
+      return true;
+    }
     if (!selecting && now - lostAt < 400) {
       lostAt = -Infinity;
       if (wasUp) o.refocus(true, true);
@@ -572,6 +868,12 @@ export function nativeSelects(o: {
       if (!at || (t === o.live && o.claimable(at.row))) return false;
       const span = taps === 2 ? wordAround(t, at) : lineAround(t, at.row);
       if (taps === 2) wasUp = upBefore;
+      if (wasUp) {
+        // The keyboard was up: khor's own, the focus stays (item 73).
+        ownBegin(t, span);
+        ownSettled();
+        return true;
+      }
       away();
       if (!selectCells(layer, span.from, span.to)) {
         giveBack(true);
@@ -596,7 +898,14 @@ export function nativeSelects(o: {
   return {
     tapEnds,
     layer,
+    end: () => {
+      if (own) ownEnd();
+      else window.getSelection()?.removeAllRanges();
+    },
     dispose: () => {
+      ownEnd();
+      for (const d of ownWatching) d.dispose();
+      for (const { h } of handles) h.remove();
       window.clearTimeout(timer);
       window.clearTimeout(restTimer);
       window.cancelAnimationFrame(resting0);

@@ -18,6 +18,13 @@
 //      typing; a press on a block's prompt opens the block's menu and
 //      keeps the field. Double tap takes a word, triple tap the wrapped
 //      line, both by xterm's separators.
+//   d. **With the keyboard up the focus never moves** (item 73, inside c):
+//      a press takes the word in xterm's cells and leaves the field
+//      focused, with two handles; a drag on from it extends it; the end
+//      handle moves the end; the lift tells the pane the cells' text and
+//      the box its menu is shown at; a tap on it shows the menu again, a
+//      tap away or Esc ends it, nothing refocused, nothing sent; double
+//      and triple taps the same, in the cells.
 import { chromium } from "playwright-core";
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
@@ -123,7 +130,7 @@ const misplaced = () =>
 
 const wire = () =>
   page.evaluate(() => {
-    window.calls = { refocus: [], picked: [], claimed: [] };
+    window.calls = { refocus: [], picked: [], claimed: [], at: [] };
     window.field = window.t.textarea;
     window.field.focus();
     window.up = false;
@@ -140,7 +147,10 @@ const wire = () =>
         window.calls.refocus.push([up, inGesture]);
         window.field.focus();
       },
-      picked: (p) => window.calls.picked.push(p && p.text),
+      picked: (p, at) => {
+        window.calls.picked.push(p && p.text);
+        if (at) window.calls.at.push(at);
+      },
     });
     // The layer is drawn at a touch's start, as on the phone.
     const scroller = document.querySelector("#scroller");
@@ -212,9 +222,11 @@ const cellPoint = (row, col) =>
     const s = window.t.element.querySelector(".xterm-screen").getBoundingClientRect();
     return { x: s.left + (col + 0.5) * (s.width / window.t.cols), y: s.top + (row + 0.5) * (s.height / window.t.rows) };
   }, { row, col });
+// A touch's moves and lift go to where it began, as on a phone.
 const touch = (type, p) =>
   page.evaluate(({ type, p }) => {
-    const target = document.elementFromPoint(p.x, p.y);
+    if (type === "touchstart") window.touchAt = document.elementFromPoint(p.x, p.y);
+    const target = window.touchAt;
     const t = new Touch({ identifier: 1, target, clientX: p.x, clientY: p.y });
     target.dispatchEvent(new TouchEvent(type, { touches: type === "touchend" ? [] : [t], changedTouches: [t], bubbles: true, cancelable: true }));
   }, { type, p });
@@ -266,33 +278,129 @@ await wire();
   if (b.selected !== "" || b.sent !== "a\rb") fail(`c · typing over a selection did not end it and reach the terminal (${JSON.stringify(b)})`);
 }
 {
-  // Keyboard up: the field holds the focus; a press held 400 ms lets it
-  // go and selects the word under the finger.
+  // **Keyboard up: khor's own selection, the focus never moves** (item 73).
+  // A press held 400 ms takes the word in xterm's cells and keeps the
+  // field; a drag on from it extends it; the handles adjust it; the lift
+  // tells the pane with the box the menu is shown at; the text is the
+  // cells'. A tap on it shows the menu again, a tap away ends it, and
+  // neither touches the focus.
   await page.evaluate(() => {
     window.getSelection().removeAllRanges();
     window.field.setAttribute("inputmode", "text");
     window.field.focus();
     window.up = true;
+    window.calls.refocus.length = 0;
   });
   await page.waitForTimeout(600);
   const held0 = await state();
   if (!held0.focused) fail(`c · with the keyboard up the field did not keep the focus (${JSON.stringify(held0)})`);
+  const own = () =>
+    page.evaluate(() => ({
+      focused: document.activeElement === window.field,
+      cells: window.t.getSelection(),
+      dom: String(window.getSelection()),
+      handles: [...document.querySelectorAll("[data-term-handle]")].filter((h) => h.style.display !== "none").length,
+      up: window.lab.select.selectionUp(),
+      at: window.calls.at.at(-1) ?? null,
+      picked: window.calls.picked.at(-1),
+      refocus: window.calls.refocus.slice(),
+    }));
   const p = await cellPoint(0, 2);
   await touch("touchstart", p);
   await page.waitForTimeout(450);
-  const held = await state();
+  const pressed = await own();
   await touch("touchend", p);
-  await page.waitForTimeout(100);
-  const up = await state();
-  if (held.focused || up.selected !== "plain" || up.picked.at(-1) !== "plain") fail(`c · keyboard up, a press held 400 ms did not let the field go and take the word (${JSON.stringify(up)})`);
-  // A tap elsewhere ends it and raises the keyboard again, inside the tap.
+  await page.waitForTimeout(50);
+  const lifted = await own();
+  console.log(`select gate: c · keyboard up: press → field ${pressed.focused ? "kept" : "let go"}, cells ${JSON.stringify(pressed.cells)}, ${pressed.handles} handles; lift → told ${JSON.stringify(lifted.picked)} at ${lifted.at ? "a box" : "nothing"}`);
+  if (!pressed.focused || pressed.cells !== "plain" || pressed.dom !== "" || pressed.handles !== 2 || !pressed.up) {
+    fail(`c · keyboard up, a press held 400 ms did not take the word in the cells with the field kept and two handles (${JSON.stringify(pressed)}) — the keyboard would fall`);
+  }
+  if (lifted.picked !== "plain" || !lifted.at || lifted.at.w <= 0 || lifted.at.h <= 0) fail(`c · keyboard up, the lift did not tell the pane the word and the menu's box (${JSON.stringify(lifted)})`);
+  // A tap on it: the menu again; a tap away: gone, the focus as it was.
+  const n = await page.evaluate(() => window.calls.at.length);
+  const onIt = await page.evaluate(({ x, y }) => window.sel.tapEnds(x, y), p);
+  const again = await page.evaluate(() => window.calls.at.length);
+  await page.waitForTimeout(400);
   const away = await cellPoint(3, 1);
   const took = await page.evaluate(({ x, y }) => window.sel.tapEnds(x, y), away);
-  const back = await state();
-  console.log(`select gate: c · keyboard up: press → ${held.focused ? "kept" : "let go"}, selection ${JSON.stringify(up.selected)}; tap away → ${took ? "taken" : "not taken"}, refocus ${JSON.stringify(back.refocus.at(-1))}`);
-  if (!took || !back.focused || back.selected !== "" || JSON.stringify(back.refocus.at(-1)) !== "[true,true]") {
-    fail(`c · a tap outside the selection did not end it and give the field back with the keyboard up (${JSON.stringify(back)})`);
+  const gone = await own();
+  console.log(`select gate: c · keyboard up: tap on it → ${again > n ? "menu" : "nothing"}; tap away → ${took ? "taken" : "not taken"}, cells ${JSON.stringify(gone.cells)}, field ${gone.focused ? "kept" : "let go"}`);
+  if (!onIt || again <= n) fail(`c · keyboard up, a tap on the selection did not show its menu again`);
+  if (!took || gone.cells !== "" || gone.handles !== 0 || gone.up || !gone.focused || gone.refocus.length || gone.picked !== null) {
+    fail(`c · keyboard up, a tap away did not end it with the focus untouched (${JSON.stringify(gone)})`);
   }
+  // A drag on from the press extends it, over the wrapped line, and the
+  // text told is the cells' (wrapped rows joined, blanks trimmed).
+  const rows = await page.evaluate(() => {
+    const b = window.t.buffer.active;
+    let wrapped = -1;
+    let padded = -1;
+    for (let y = 0; y < window.t.rows; y++) {
+      if (wrapped < 0 && b.getLine(y + 1)?.isWrapped) wrapped = y;
+      if (b.getLine(y)?.translateToString(true).trimEnd() === "padded") padded = y;
+    }
+    return { wrapped, padded };
+  });
+  const path = "/home/gate/a/very/long/path/that/the/grid/wraps/over/the/edge/of/the/screen/name.rs:12:3";
+  {
+    const a = await cellPoint(rows.wrapped, 3);
+    const b = await cellPoint(rows.padded, 5);
+    await touch("touchstart", a);
+    await page.waitForTimeout(450);
+    const word = await own();
+    for (let i = 1; i <= 4; i++) await touch("touchmove", { x: a.x + ((b.x - a.x) * i) / 4, y: a.y + ((b.y - a.y) * i) / 4 });
+    await touch("touchend", b);
+    await page.waitForTimeout(50);
+    const out = await own();
+    console.log(`select gate: c · keyboard up: press on the wrapped path, drag to 「padded」 → told ${JSON.stringify(out.picked)}`);
+    if (word.cells.replace(/\n/g, "") !== path) fail(`c · keyboard up, the press took ${JSON.stringify(word.cells)}, not the wrapped word`);
+    if (out.picked !== `${path} tail\npadded` || !out.focused) fail(`c · keyboard up, a drag on from the press told ${JSON.stringify(out.picked)}, not the cells' text ${JSON.stringify(`${path} tail\npadded`)}`);
+  }
+  // The end handle, dragged back to 「pad」.
+  {
+    const h = await page.evaluate(() => {
+      const r = document.querySelector('[data-term-handle="end"]').getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.bottom - 10 };
+    });
+    const to = await cellPoint(rows.padded, 2);
+    const dy = h.y - (await cellPoint(rows.padded, 5)).y;
+    await touch("touchstart", h);
+    await touch("touchmove", { x: to.x, y: to.y + dy });
+    await touch("touchend", { x: to.x, y: to.y + dy });
+    await page.waitForTimeout(50);
+    const out = await own();
+    console.log(`select gate: c · keyboard up: the end handle to 「pad」 → told ${JSON.stringify(out.picked)}`);
+    if (out.picked !== `${path} tail\npad` || !out.focused) fail(`c · keyboard up, the end handle's drag told ${JSON.stringify(out.picked)}, not ${JSON.stringify(`${path} tail\npad`)}`);
+  }
+  // Esc ends it and is not sent; the field keeps the focus.
+  {
+    const sent0 = (await state()).sent;
+    await keyOnPage("Escape", 27);
+    await page.waitForTimeout(50);
+    const out = await own();
+    const sent = (await state()).sent;
+    if (out.cells !== "" || out.handles || sent !== sent0 || !out.focused) fail(`c · keyboard up, Esc did not end khor's selection, or was sent (${JSON.stringify(out)}, sent ${JSON.stringify(sent.slice(sent0.length))})`);
+  }
+  // Double tap a word, triple tap the line, the focus kept.
+  {
+    const q = await cellPoint(rows.wrapped, 3);
+    await page.waitForTimeout(400);
+    let r;
+    for (let i = 0; i < 2; i++) r = await page.evaluate(({ x, y }) => window.sel.tapEnds(x, y), q);
+    const two = await own();
+    r = await page.evaluate(({ x, y }) => window.sel.tapEnds(x, y), q);
+    const three = await own();
+    console.log(`select gate: c · keyboard up: double tap → ${JSON.stringify(two.picked)}; triple tap → ${JSON.stringify(three.picked)}`);
+    if (two.picked !== path || !two.focused || two.dom !== "") fail(`c · keyboard up, a double tap told ${JSON.stringify(two.picked)} (field ${two.focused}), not the word in the cells`);
+    if (!r || three.picked !== `${path} tail` || !three.focused) fail(`c · keyboard up, a triple tap told ${JSON.stringify(three.picked)}, not the line`);
+    await page.evaluate(() => window.sel.end());
+  }
+  // Under the key panel (no keyboard, the field focused): item 54's road.
+  await page.evaluate(() => {
+    window.up = false;
+    window.field.setAttribute("inputmode", "none");
+  });
 }
 {
   // Double tap: a word by xterm's separators; triple tap: the wrapped line.
