@@ -27,5 +27,8 @@
 embed_plist::embed_info_plist!("../Info.plist");
 
 fn main() {
+    // ssh asking for a kept password (`khor_node::secret`): the app is
+    // its own askpass, answered before any window.
+    khor_node::secret::answer_askpass_if_asked();
     khor_gui::run()
 }

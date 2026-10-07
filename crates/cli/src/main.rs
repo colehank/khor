@@ -62,6 +62,9 @@ use khor_node::{
 mod relay;
 
 fn main() {
+    // ssh asking for a kept password (`khor_node::secret`): answered
+    // before anything else, and the process ends there.
+    khor_node::secret::answer_askpass_if_asked();
     // 语言, before the first word this process can print (docs/MORE.md
     // 语言). A stored choice wins, `auto` reads the environment, and
     // anything that is not zh* — 「read nothing at all」 included — is
@@ -5234,11 +5237,20 @@ fn pair(rest: &[String]) -> Result<(), String> {
 fn add(rest: &[String]) -> Result<(), String> {
     let mut words = Vec::new();
     let mut via = None;
+    let mut port = None;
+    let mut password = false;
+    let mut from = None;
     let mut satellite_only = false;
     let mut it = rest.iter();
     while let Some(w) = it.next() {
         match w.as_str() {
             "--via" => via = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
+            "--port" => {
+                let p = it.next().ok_or_else(|| usage_text().to_owned())?;
+                port = Some(p.parse::<u16>().map_err(|_| usage_text().to_owned())?);
+            }
+            "--password" => password = true,
+            "-m" => from = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
             "--satellite" => satellite_only = true,
             _ => words.push(w.clone()),
         }
@@ -5248,11 +5260,50 @@ fn add(rest: &[String]) -> Result<(), String> {
         [host, name] => (host, Some(name.as_str())),
         _ => return Err(usage_text().into()),
     };
+    let password = if password { Some(read_password()?) } else { None };
     let n = node()?;
-    let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref());
-    let added = n.add_over_ssh(&to, name, satellite_only, &mut tell_step)?;
-    say_added(&n, &added);
+    let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref()).on_port(port);
+    // From another khor machine (通过 khor 主机): it is the sponsor and
+    // runs the add; this one tells its steps as they come.
+    if let Some(m) = from.filter(|m| m != n.name()) {
+        let to = to.with_password(password.is_some());
+        let added = rt()?.block_on(n.add_on(&m, &to, name, satellite_only, tell_step))?;
+        say_added(&n, &added, &m);
+        return Ok(());
+    }
+    let added = n.add_over_ssh(&to, name, satellite_only, password.as_deref(), &mut tell_step)?;
+    say_added(&n, &added, n.name());
     Ok(())
+}
+
+/// `--password`'s password: one line of standard input, never an
+/// argument (an argument is in `ps`). From a terminal the echo is off
+/// while it is typed.
+fn read_password() -> Result<String, String> {
+    use std::io::IsTerminal;
+    let tty = std::io::stdin().is_terminal();
+    let stty = |arg: &str| {
+        let _ = std::process::Command::new("stty")
+            .arg(arg)
+            .stdin(std::process::Stdio::inherit())
+            .status();
+    };
+    if tty {
+        eprint!("{}: ", cli::password_prompt());
+        stty("-echo");
+    }
+    let mut line = String::new();
+    let read = std::io::stdin().read_line(&mut line);
+    if tty {
+        stty("echo");
+        eprintln!();
+    }
+    read.map_err(|e| e.to_string())?;
+    let p = line.trim_end_matches(['\n', '\r']).to_owned();
+    if p.is_empty() {
+        return Err(msg::password_not_given().to_owned());
+    }
+    Ok(p)
 }
 
 /// 转正 (docs/NET.md 卫星): a satellite of this machine becomes a member.
@@ -5285,7 +5336,7 @@ fn tell_step(step: khor_node::join::Step, mark: khor_node::join::Mark) {
     }
 }
 
-fn say_added(n: &khor_node::Node, added: &khor_node::join::Added) {
+fn say_added(n: &khor_node::Node, added: &khor_node::join::Added, sponsor: &str) {
     if added.member {
         println!("{}", cli::added_member(&added.name));
         return;
@@ -5293,7 +5344,7 @@ fn say_added(n: &khor_node::Node, added: &khor_node::join::Added) {
     if let Some(why) = &added.why {
         println!("{}", cli::added_satellite(why));
     }
-    println!("{}", cli::adopted(&added.name, n.name()));
+    println!("{}", cli::adopted(&added.name, sponsor));
     // On the roster only once the root holder signs it (docs/CONNECT.md
     // 卫星也进名单); until then it waits, and it still works from here.
     if n.standing_of(&added.id) == khor_node::Standing::Pending {

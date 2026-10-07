@@ -700,6 +700,10 @@ const PULL_AHEAD: u64 = 8;
 /// frame.
 pub const DROP_ASK_EVERY: Duration = Duration::from_millis(250);
 
+/// How often a routed add's asker reads the run again
+/// ([`Node::add_on`]): a step is seconds long, a mark is a line.
+pub const ADD_ASK_EVERY: Duration = Duration::from_millis(500);
+
 /// How often a drop's asker looks whether it was cancelled between its
 /// asks (`Node::drop_file_until`, item 71): the order to stop goes out
 /// within this of the ×, not a whole ask later.
@@ -2051,6 +2055,28 @@ impl Node {
                 Ok(()) => ipc::Reply::Noted,
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::AddOn {
+                machine,
+                token,
+                host,
+                port,
+                jump,
+                name,
+                satellite_only,
+            } => {
+                let req = Request::AddOverSsh {
+                    token,
+                    host,
+                    port,
+                    jump,
+                    name,
+                    satellite_only,
+                };
+                match self.add_ask_with(ep, &machine, &req).await {
+                    Ok(run) => ipc::Reply::Adding { run },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
         }
     }
 
@@ -3637,6 +3663,29 @@ impl Node {
             Request::Probe { host, port } => Ok(Response::Probed {
                 seen: crate::reach::probe_here(&host, port).await,
             }),
+            Request::AddOverSsh {
+                token,
+                host,
+                port,
+                jump,
+                name,
+                satellite_only,
+            } => {
+                // An add another machine asked this one to run as the
+                // sponsor (通过 khor 主机), on a thread of its own so it
+                // outlives this ask; every ask answers its marks so far.
+                if !crate::once::valid(&token) {
+                    return Err(msg::create_token_bad().into());
+                }
+                let (run, fresh) = crate::join::run_for(&token);
+                if fresh {
+                    let node = self.me().ok_or_else(|| msg::add_on_needs_serve(self.name()))?;
+                    let to = crate::satellite::Dest::new(host, jump.as_deref()).on_port(port);
+                    crate::join::start(node, run.clone(), to, name, satellite_only);
+                }
+                let run = run.lock().unwrap_or_else(|p| p.into_inner()).clone();
+                Ok(Response::Adding { run })
+            }
             Request::FetchPath { path, offset } => {
                 // Off the reactor with Ls, for Ls's reason.
                 let (total, at_ms, bytes) =
@@ -7219,6 +7268,108 @@ impl Node {
             .await?
         {
             Response::DropStopped => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// **Adds the machine at `to` from `machine`** (添加机器 通过 khor
+    /// 主机, 2026-10-08 owner ruling b): that machine becomes the sponsor
+    /// and runs the add over its own ssh road ([`crate::join`]); this
+    /// one asks it every [`ADD_ASK_EVERY`] and hands each new mark to
+    /// `on` as it comes. Key login only: a password is kept only on the
+    /// machine that runs ssh and never crosses the wire, so a password
+    /// road is refused here in one sentence.
+    pub async fn add_on(
+        &self,
+        machine: &str,
+        to: &crate::satellite::Dest,
+        name: Option<&str>,
+        satellite_only: bool,
+        mut on: impl FnMut(crate::join::Step, crate::join::Mark),
+    ) -> Result<crate::join::Added, String> {
+        if to.password {
+            return Err(msg::add_on_no_password(machine));
+        }
+        let req = Request::AddOverSsh {
+            token: fresh_hex()?,
+            host: to.host.clone(),
+            port: to.port,
+            jump: to.jump.clone(),
+            name: name.map(str::to_owned),
+            satellite_only,
+        };
+        let op = || match req.clone() {
+            Request::AddOverSsh {
+                token,
+                host,
+                port,
+                jump,
+                name,
+                satellite_only,
+            } => ipc::Op::AddOn {
+                machine: machine.to_owned(),
+                token,
+                host,
+                port,
+                jump,
+                name,
+                satellite_only,
+            },
+            _ => unreachable!("built above"),
+        };
+        // Through the resident when there is one, else on an endpoint of
+        // this call's, kept for the whole add.
+        let mut ep: Option<iroh::Endpoint> = None;
+        let mut seen = 0;
+        let out = loop {
+            let answer = match &ep {
+                Some(e) => self.add_ask_with(e, machine, &req).await,
+                None => match self.via_serve(op()).await {
+                    Some(reply) => match reply {
+                        Ok(ipc::Reply::Adding { run }) => Ok(run),
+                        Ok(ipc::Reply::Refused { why }) => Err(why),
+                        Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+                        Err(e) => Err(e),
+                    },
+                    None => {
+                        let e = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        let a = self.add_ask_with(&e, machine, &req).await;
+                        ep = Some(e);
+                        a
+                    }
+                },
+            };
+            let run = match answer {
+                Ok(run) => run,
+                Err(why) => break Err(why),
+            };
+            for (s, m) in run.marks.iter().skip(seen) {
+                on(*s, m.clone());
+            }
+            seen = run.marks.len();
+            if let Some(done) = run.done {
+                break done;
+            }
+            tokio::time::sleep(ADD_ASK_EVERY).await;
+        };
+        if let Some(e) = ep {
+            e.close().await;
+        }
+        out
+    }
+
+    /// One ask of a routed add on an endpoint the caller owns.
+    async fn add_ask_with(&self, ep: &iroh::Endpoint, machine: &str, req: &Request) -> Result<crate::join::Run, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Err(msg::add_on_self().to_owned());
+        }
+        match self.ask(ep, &channel, req).await? {
+            Response::Adding { run } => Ok(run),
+            Response::Refused { why } if why.contains("AddOverSsh") => Err(msg::add_on_predates(&channel)),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }

@@ -119,8 +119,9 @@
 
 ## 添加机器：经 ssh 装成成员，留不住才作卫星（2026-10-08，join-a）
 
-`khor add <ssh主机> [名字] [--via <跳板>] [--satellite]`（取代 `khor adopt`；v1 前不留旧词）。
-`khor_node::join`。
+`khor add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [--password] [--satellite]`（取代
+`khor adopt`；v1 前不留旧词）。`khor_node::join`。界面上成员叫「khor 主机」、卫星叫「SSH 主机」，
+转正叫「安装 khor」（2026-10-08 负责人定的正式用词）；代码里的名字不变。
 
 - **默认是成员**：本机经 ssh 跑四步——连接（一条连接看清那台：系统、tmux、哪些东西本来就在）、
   放 khor（`install.sh` 经 ssh 的标准输入跑，`KHOR_NO_SERVE`；版本是本机自己的
@@ -138,13 +139,27 @@
   要手动 `khor-serve-up`。
 - **经由**：`--via` 每条 ssh 和 scp 都带上跳板，写成 `ProxyCommand=ssh -o BatchMode=yes -W %h:%p
   <跳板>`——`-J` 起的第二个 ssh 不继承 `-o`，实测会对跳板要三次密码。不改用户的 ssh 配置；
-  跳板记在卫星那一行、ssh 地址旁边（`ssh_jump`）。经一台 khor 机器添加 = 在那台上跑 add，它当 sponsor。
+  跳板记在卫星那一行、ssh 地址旁边（`ssh_jump`）。经一台 khor 机器添加（`-m <机器>`，界面「通过 khor
+  主机」）= 在那台上跑 add，它当 sponsor：本机发 `Request::AddOverSsh`（按 token，像投递），那台
+  在自己的线程里跑，本机每 500 ms 再问一次，拿回到目前为止的每一步（`join::Run`）。只能用密钥。
 - **哪一段断了**：读 ssh 自己的话（`satellite::broken`，OpenSSH 10.3 实测）：`ssh: connect to host`
   / `Could not resolve hostname` / 跳板拒钥匙，且外层说 `UNKNOWN port 65535` = 本机到跳板；
   `channel 0: open failed` / `stdio forwarding failed` = 跳板到目标；没有 UNKNOWN 的
   `Permission denied (…)` = 目标只认密码。代理上的 banner 超时分不出哪边，原话照给。
-- **只认密码**：一句话加修法 `ssh-copy-id [-o ProxyJump=<跳板>] <主机>`；app 的动作开一个 khor
-  终端跑它（`satellite::copy_id_argv`）。khor 从不经手密码。
+- **端口**：`--port` 每条 ssh 和 scp 都带 `-o Port=<端口>`（两者共用这一种写法，`-p` 和 `-P`
+  正好相反），命令行压过用户配置；不填就是 22 或用户配置里的值。记在卫星那一行（`ssh_port`）；
+  非 22 的端口在 known_hosts 里是 `[主机]:端口`，取身份时照这样找。
+- **认证方式：密钥或密码**（2026-10-08 负责人「密码可以保持」）。密钥是上面的 BatchMode 路；
+  不认密钥时一句话加修法 `ssh-copy-id [-p <端口>] [-o ProxyJump=<跳板>] <主机>`，app 的动作开一个
+  khor 终端跑它（`satellite::copy_id_argv`）。密码（`--password`，从标准输入读）**只存进跑 ssh 的
+  那台机器的系统钥匙串**：macOS 钥匙串，Linux 经 `secret-tool` 的 Secret Service；没有就一句话
+  拒绝，不存别处。从不进同步的文档、线路、日志和票；行上只记 `ssh_password`（走哪条路），不记
+  密码。ssh 经 `SSH_ASKPASS`（`SSH_ASKPASS_REQUIRE=force`）向 khor 自己要：`SSH_ASKPASS` 指向本
+  程序，`KHOR_ASKPASS` 指明哪台，每个 khor 的 `main` 先 `secret::answer_askpass_if_asked`。只答
+  密码提示、只答父进程是 ssh 的；主机密钥的 yes/no 不答（归 known_hosts），每次要一次性验证码
+  的主机一句话说不支持。一次机会（`NumberOfPasswordPrompts=1`），错了就说密码不对。跳板仍只走
+  密钥。**密码只留到用不着**：卫星一直要 ssh，行在密码在，行撤了（`forget_id`）密码一起删；成员
+  走 iroh，加成了就删；没加成也删。经 khor 主机添加时不能用密码（密码不上线路）。
 - **转正**：`khor promote <卫星>` 走同一条安装路；成了，卫星那一行按 id 撤掉、名字带到新机器上；
   没成，撤掉放上去的东西，它还是原来那颗卫星。
 

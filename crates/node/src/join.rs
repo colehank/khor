@@ -29,6 +29,7 @@
 //! `ps` on both machines).
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use khor_catalog::{cli, msg};
@@ -45,7 +46,7 @@ const INSTALL_SH: &str = include_str!("../../../scripts/install.sh");
 pub const PAIR_WAIT: Duration = Duration::from_secs(60);
 
 /// The steps the person watches, in order (the GUI draws one line each).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Step {
     Connect,
@@ -58,7 +59,7 @@ pub enum Step {
 }
 
 /// Where a step is: under way, done (with what it did), or failed (why).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Mark {
     Live,
@@ -67,7 +68,7 @@ pub enum Mark {
 }
 
 /// What an add ended as.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Added {
     pub id: String,
     pub name: String,
@@ -82,6 +83,55 @@ pub struct Added {
     /// For a satellite: whether tmux is there (a terminal on it can be
     /// kept).
     pub tmux: bool,
+}
+
+/// An add another machine asked this one to run (通过 khor 主机;
+/// `proto::Request::AddOverSsh`): its marks so far and, once it is over,
+/// how it ended. Read by token, like a drop's job.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Run {
+    pub marks: Vec<(Step, Mark)>,
+    pub done: Option<Result<Added, String>>,
+}
+
+/// The runs this machine holds, by token. A finished run is kept for a
+/// few more asks (the asker's last read), then the oldest go.
+static RUNS: LazyLock<Mutex<Vec<(String, Arc<Mutex<Run>>)>>> = LazyLock::new(|| Mutex::new(Vec::new()));
+
+/// How many finished runs are kept for their askers.
+const RUNS_KEPT: usize = 8;
+
+/// The run `token` names, and whether this ask is the one that makes it.
+pub(crate) fn run_for(token: &str) -> (Arc<Mutex<Run>>, bool) {
+    let mut runs = RUNS.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((_, r)) = runs.iter().find(|(t, _)| t == token) {
+        return (r.clone(), false);
+    }
+    let finished = runs
+        .iter()
+        .filter(|(_, r)| r.lock().unwrap_or_else(|p| p.into_inner()).done.is_some())
+        .count();
+    if finished >= RUNS_KEPT
+        && let Some(i) = runs
+            .iter()
+            .position(|(_, r)| r.lock().unwrap_or_else(|p| p.into_inner()).done.is_some())
+    {
+        runs.remove(i);
+    }
+    let r = Arc::new(Mutex::new(Run::default()));
+    runs.push((token.to_owned(), r.clone()));
+    (r, true)
+}
+
+/// Starts `to`'s add on a thread of its own as the run `run` (this
+/// machine the sponsor), so it outlives the ask that started it.
+pub(crate) fn start(node: Arc<Node>, run: Arc<Mutex<Run>>, to: Dest, name: Option<String>, satellite_only: bool) {
+    std::thread::spawn(move || {
+        let out = node.add_over_ssh(&to, name.as_deref(), satellite_only, None, &mut |s, m| {
+            run.lock().unwrap_or_else(|p| p.into_inner()).marks.push((s, m));
+        });
+        run.lock().unwrap_or_else(|p| p.into_inner()).done = Some(out);
+    });
 }
 
 /// What one look at the machine found, over one connection — the
@@ -201,8 +251,8 @@ fn own_asset() -> Option<&'static str> {
 /// One ssh run with `stdin` fed and both outputs kept, bounded by
 /// `wait` (killed past it — by its own pid).
 fn run(to: &Dest, command: &str, stdin: &[u8], wait: Duration) -> Result<(bool, String, String), String> {
-    let mut child = Command::new("ssh")
-        .args(to.road())
+    let mut child = to
+        .command("ssh")
         .args(["-o", "ConnectTimeout=8"])
         .arg(&to.host)
         .arg(command)
@@ -262,10 +312,43 @@ fn last_line(text: &str) -> String {
 impl Node {
     /// Adds the machine at `to` — a full member unless `satellite_only`,
     /// a satellite when it cannot be one (the module head). `name` is
-    /// what the row is called; the host when `None`. `on` hears every
-    /// step as it starts and ends. Errors are sentences; one that is a
-    /// password-only door reads as such ([`satellite::broken`]).
+    /// what the row is called; the host when `None`. `password`, when
+    /// given, is kept in this machine's secret store and ssh logs in
+    /// with it ([`crate::secret`]). `on` hears every step as it starts
+    /// and ends. Errors are sentences; one that is a password-only door
+    /// reads as such ([`satellite::broken`]).
+    ///
+    /// **The password stays only while something needs it**: a
+    /// satellite is reached over ssh for as long as it is one, so its
+    /// row says `ssh_password` and the password goes when the row does
+    /// (`Node::forget_id`); a member is reached over iroh, so the
+    /// password is dropped the moment the add succeeds, and so is one
+    /// whose add failed.
     pub fn add_over_ssh(
+        &self,
+        to: &Dest,
+        name: Option<&str>,
+        satellite_only: bool,
+        password: Option<&str>,
+        on: &mut dyn FnMut(Step, Mark),
+    ) -> Result<Added, String> {
+        let Some(password) = password else {
+            return self.add_road(to, name, satellite_only, on);
+        };
+        let to = to.clone().with_password(true);
+        let key = to.secret_key();
+        if let Err(e) = crate::secret::put(&key, password) {
+            on(Step::Connect, Mark::Failed(e.clone()));
+            return Err(e);
+        }
+        let added = self.add_road(&to, name, satellite_only, on);
+        if !matches!(added, Ok(Added { member: false, .. })) {
+            crate::secret::forget(&key)?;
+        }
+        added
+    }
+
+    fn add_road(
         &self,
         to: &Dest,
         name: Option<&str>,

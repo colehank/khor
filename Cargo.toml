@@ -119,6 +119,10 @@ sysinfo = { version = "0.39", default-features = false, features = ["system", "d
 # core-foundation-sys, mach2 and libc, all of which were already here.
 io-kit-sys = "0.5"
 core-foundation = "0.10"
+# The macOS Keychain, for the one password khor keeps: an ssh host the
+# person chose to log in to with one (crates/node/src/secret.rs). MIT or
+# Apache-2.0; already in the tree through rustls-native-certs.
+security-framework = "3"
 # GPU use on Linux with NVIDIA hardware. NVML is loaded at run time with
 # `libloading`, so khor links against nothing: on a machine with no
 # driver the load fails and the field stays absent, which is the same

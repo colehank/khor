@@ -733,6 +733,24 @@ pub enum Request {
     /// this name, and the asker's row for it reads `predates` — a word
     /// the screen says, never a machine drawn as unable to reach.
     Probe { host: String, port: u16 },
+    /// **Add a machine over ssh from here** (添加机器 通过 khor 主机,
+    /// 2026-10-08 owner ruling b): the answering machine runs
+    /// [`crate::join`]'s add as the sponsor, over its own ssh road, and
+    /// the asker watches. Named by `token` like a drop: the first ask
+    /// starts the run, every ask answers its marks so far and, once
+    /// over, how it ended ([`Response::Adding`]). Key login only — a
+    /// password does not cross the wire.
+    ///
+    /// **A new variant**: a khor that predates it refuses the frame by
+    /// this name, and the asker says `msg::add_on_predates`.
+    AddOverSsh {
+        token: String,
+        host: String,
+        port: Option<u16>,
+        jump: Option<String>,
+        name: Option<String>,
+        satellite_only: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1083,6 +1101,8 @@ pub enum Response {
     DropStopped,
     /// [`Request::Probe`]'s try.
     Probed { seen: khor_core::ReachSeen },
+    /// [`Request::AddOverSsh`]'s run as it stands.
+    Adding { run: crate::join::Run },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1203,6 +1223,8 @@ impl Request {
                 | Request::DropStop { .. }
                 // One more connect to an address a person gave.
                 | Request::Probe { .. }
+                // Asked twice, it answers the one run (by token).
+                | Request::AddOverSsh { .. }
         )
     }
 

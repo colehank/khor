@@ -371,6 +371,17 @@ pub enum Op {
     /// that says the cookie first (`crate::pipe`). Answered
     /// [`Reply::Piping`]. Tail-appended.
     PipeOn { machine: String, target: String },
+    /// [`crate::proto::Request::AddOverSsh`] asked of `machine` by the
+    /// resident. Answered with [`Reply::Adding`]. Tail-appended.
+    AddOn {
+        machine: String,
+        token: String,
+        host: String,
+        port: Option<u16>,
+        jump: Option<String>,
+        name: Option<String>,
+        satellite_only: bool,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -473,6 +484,7 @@ impl Op {
             Op::DropStop { .. } => ("DropStop", DEADLINE_FAR),
             Op::ReachProbe { .. } => ("ReachProbe", DEADLINE_FAR),
             Op::PipeOn { .. } => ("PipeOn", DEADLINE_FAR),
+            Op::AddOn { .. } => ("AddOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -685,6 +697,8 @@ pub enum Reply {
     /// Tail-appended with [`Op::PipeOn`]: where to connect, and the
     /// cookie to say first.
     Piping { addr: String, cookie: String },
+    /// Tail-appended with [`Op::AddOn`].
+    Adding { run: crate::join::Run },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

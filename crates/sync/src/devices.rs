@@ -141,6 +141,15 @@ const F_SSH_HOST: &str = "ssh_host";
 /// destination for the same reason: khor never writes the user's ssh
 /// config, so the row is where the road is kept (docs/NET.md 卫星 经由).
 const F_SSH_JUMP: &str = "ssh_jump";
+/// The ssh port in front of that destination as the person typed it in
+/// khor, decimal (empty = none: 22, or whatever the sponsor's ssh config
+/// says). Beside the jump for the jump's reason.
+const F_SSH_PORT: &str = "ssh_port";
+/// Whether the sponsor logs in to it with a password. The password
+/// itself is only ever in the sponsor's OS secret store
+/// (`khor_node::secret`); the row says which road to take, never what
+/// opens it.
+const F_SSH_PASSWORD: &str = "ssh_password";
 /// Whether the satellite had tmux when it was adopted (or last probed)
 /// — what decides if a terminal on it can be made persistent. Stored as
 /// a bool register but read three-valued: "unprobed" must not read as
@@ -263,6 +272,17 @@ fn fkey(id: &str, field: &str) -> String {
     k
 }
 
+/// A satellite's ssh road as its row keeps it: the destination, its
+/// port and jump when the person gave them, and whether the sponsor logs
+/// in with a password (kept in the sponsor's secret store, never here).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SshRoad<'a> {
+    pub host: &'a str,
+    pub port: Option<u16>,
+    pub jump: Option<&'a str>,
+    pub password: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceInfo {
     /// The public key, hex — the machine id (docs/NET.md).
@@ -295,6 +315,11 @@ pub struct DeviceInfo {
     pub ssh_host: Option<String>,
     /// The jump in front of `ssh_host`, `None` for a direct road.
     pub ssh_jump: Option<String>,
+    /// The port of `ssh_host` when the person gave one, `None` for 22
+    /// or the sponsor's ssh config.
+    pub ssh_port: Option<u16>,
+    /// The sponsor logs in with a password from its own secret store.
+    pub ssh_password: bool,
     /// `Some(true)` = tmux was there at the last probe, `Some(false)` =
     /// probed and absent, `None` = never probed (an adoption from an
     /// older khor). Three states on purpose: unprobed must not read as
@@ -593,14 +618,23 @@ impl DeviceDoc {
         &self,
         id: &str,
         sponsor: &str,
-        ssh_host: &str,
-        ssh_jump: Option<&str>,
+        road: &SshRoad<'_>,
         tmux: bool,
     ) -> Result<(), String> {
         let mut dirty = false;
-        let jump = ssh_jump.unwrap_or("");
+        let ssh_host = road.host;
+        let jump = road.jump.unwrap_or("");
         if self.flat_str(id, F_SSH_JUMP).as_deref().unwrap_or("") != jump {
             self.write_field(id, F_SSH_JUMP, jump)?;
+            dirty = true;
+        }
+        let port = road.port.map(|p| p.to_string()).unwrap_or_default();
+        if self.flat_str(id, F_SSH_PORT).unwrap_or_default() != port {
+            self.write_field(id, F_SSH_PORT, port)?;
+            dirty = true;
+        }
+        if self.bool_field(id, F_SSH_PASSWORD) != road.password {
+            self.write_field(id, F_SSH_PASSWORD, road.password)?;
             dirty = true;
         }
         if self.flat_str(id, F_SPONSOR).as_deref() != Some(sponsor) {
@@ -726,6 +760,8 @@ impl DeviceDoc {
                 sponsor: self.str_field(&id, F_SPONSOR),
                 ssh_host: self.str_field(&id, F_SSH_HOST),
                 ssh_jump: self.str_field(&id, F_SSH_JUMP).filter(|j| !j.is_empty()),
+                ssh_port: self.str_field(&id, F_SSH_PORT).and_then(|p| p.parse().ok()),
+                ssh_password: self.bool_field(&id, F_SSH_PASSWORD),
                 sat_tmux: match self.field(&id, F_SAT_TMUX) {
                     Some(LoroValue::Bool(b)) => Some(b),
                     _ => None,
@@ -1588,7 +1624,17 @@ mod tests {
             .upsert("5a".repeat(32).as_str(), "gpu-box", &[])
             .unwrap();
         sponsor
-            .set_satellite("5a".repeat(32).as_str(), "aa", "gpubox", Some("bastion"), true)
+            .set_satellite(
+                "5a".repeat(32).as_str(),
+                "aa",
+                &SshRoad {
+                    host: "gpubox",
+                    port: Some(2222),
+                    jump: Some("bastion"),
+                    password: true,
+                },
+                true,
+            )
             .unwrap();
 
         let far = DeviceDoc::new(2).unwrap();
@@ -1604,6 +1650,8 @@ mod tests {
             "…with the ssh destination"
         );
         assert_eq!(sat.ssh_jump.as_deref(), Some("bastion"), "…and its jump");
+        assert_eq!(sat.ssh_port, Some(2222), "…and its port");
+        assert!(sat.ssh_password, "…and that it logs in with a password");
         assert_eq!(sat.sat_tmux, Some(true), "…and the tmux probe");
         let plain = far.get("aa").expect("the sponsor itself crossed");
         assert_eq!(
