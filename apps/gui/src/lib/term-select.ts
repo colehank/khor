@@ -775,14 +775,17 @@ export function nativeSelects(o: {
   const key = (e: KeyboardEvent) => {
     if (!visible() || MODIFIERS.includes(e.key)) return;
     if (own) {
-      // The field has the focus: Esc ends it and is not sent; any other
-      // key ends it and goes on to the field.
+      // Esc ends it and is not sent; any other key ends it and goes on to
+      // the field — handed there if the keyboard went down under it and
+      // the field rested meanwhile.
       if (e.metaKey) return;
-      if (e.key === "Escape") {
+      const esc = e.key === "Escape";
+      if (esc) {
         e.preventDefault();
         e.stopImmediatePropagation();
       }
       ownEnd();
+      if (!esc && document.activeElement !== field()) route(e);
       return;
     }
     if (selecting) {
