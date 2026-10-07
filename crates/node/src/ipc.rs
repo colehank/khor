@@ -365,6 +365,12 @@ pub enum Op {
     /// (`proto::Request::Probe`). Answered [`Reply::ReachProbe`].
     /// Tail-appended.
     ReachProbe { host: String, port: u16 },
+    /// **A pipe to `target` (`host:port`) through `machine`'s network**
+    /// (round ROAD-1, `khor pipe`): the resident dials the exit's stream
+    /// and binds a loopback port that hands it to the one connection
+    /// that says the cookie first (`crate::pipe`). Answered
+    /// [`Reply::Piping`]. Tail-appended.
+    PipeOn { machine: String, target: String },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -466,6 +472,7 @@ impl Op {
             Op::DropInto { .. } => ("DropInto", DEADLINE_FAR),
             Op::DropStop { .. } => ("DropStop", DEADLINE_FAR),
             Op::ReachProbe { .. } => ("ReachProbe", DEADLINE_FAR),
+            Op::PipeOn { .. } => ("PipeOn", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -675,6 +682,9 @@ pub enum Reply {
     DropFile { state: crate::drops::DropState },
     /// Tail-appended with [`Op::ReachProbe`].
     ReachProbe { view: khor_core::ReachView },
+    /// Tail-appended with [`Op::PipeOn`]: where to connect, and the
+    /// cookie to say first.
+    Piping { addr: String, cookie: String },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

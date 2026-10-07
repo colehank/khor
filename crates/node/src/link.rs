@@ -1876,6 +1876,10 @@ impl Node {
                 Ok(changes) => ipc::Reply::DirsChanged { changes },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::PipeOn { machine, target } => match self.pipe_hosted(ep, &machine, &target).await {
+                Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::ReachProbe { host, port } => match self.reach_probe_with(ep, &host, port).await {
                 Ok(view) => ipc::Reply::ReachProbe { view },
                 Err(why) => ipc::Reply::Refused { why },
@@ -3985,7 +3989,7 @@ impl Node {
 
     /// Resolves a machine and opens the tunnel connection to it on `ep`.
     /// The one recipe both borrow dialers share.
-    async fn dial_tunnel(
+    pub(crate) async fn dial_tunnel(
         &self,
         ep: &iroh::Endpoint,
         machine: &str,

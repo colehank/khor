@@ -268,6 +268,10 @@ usage = """
                         22），报可达与否、毫秒、对方的第一行（ssh 的版本行）、
                         它自己 known_hosts 里这个名字的钥匙；最快连上的是入口。
                         只连这一个地址，不扫描，不取钥匙
+  pipe --via <机器> <主机> <端口>
+                        经那台机器的网接一根管子到这个主机的这个端口，接在标准输入输出上。
+                        给 ssh 当 ProxyCommand：
+                        ssh -o ProxyCommand='khor pipe --via 实验室 %h %p' 内网机
   tabs [ls] | open [-m 机器] <网址> | close|focus|pin|unpin <序号|id>
                         浏览器这块屏幕上开着的标签页。**本机的，不同步**：
                         开着什么是这块屏幕的事，别的机器不看（常去的地方才跟着人走）。
@@ -1966,6 +1970,7 @@ reach-timeout = "{0} 在 {1} 秒内没有回应"
 reach-paused = "{0} 已暂停，没有问它"
 reach-predates = "{0} 的 khor 版本较旧，不认识这个请求"
 reach-no-host = "要给一个地址"
+pipe-via-satellite = "{0} 是卫星，不是 khor，经不了它；它的 ssh 用 ssh -J 跳"
 self-moved = "khor 程序已不在 {0}（已升级或移动），需重启 serve"
 # What the scheduler is told about itself, appended to the vendor's own
 # system prompt (docs/AGENT.md). Short on purpose: the tools carry their

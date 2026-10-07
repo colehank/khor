@@ -43,6 +43,7 @@ pub mod modes;
 pub(crate) mod once;
 pub mod pause;
 pub mod pictures;
+pub mod pipe;
 pub mod place;
 pub mod preview;
 pub mod proto;

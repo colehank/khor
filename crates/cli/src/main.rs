@@ -333,6 +333,13 @@ const VERBS: &[Verb] = &[
         run: reach,
         reach: Reach::Act,
     },
+    // Opens a connection from another machine's network to an address of
+    // the caller's choosing, and carries whatever goes through it.
+    Verb {
+        word: "pipe",
+        run: pipe,
+        reach: Reach::Act,
+    },
     // `ls` reads and the other three write this machine's own tab
     // table, so the word is an act — the rule is per word, not per
     // invocation (`ws` above). **Nothing here goes out on the wire**:
@@ -2081,6 +2088,28 @@ fn reach(rest: &[String]) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// `khor pipe --via <machine> <host> <port>` (round ROAD-1): stdin and
+/// stdout spliced to `host:port` as that machine's network reaches it —
+/// ssh's `ProxyCommand` (`khor_node::pipe`). Prints nothing of its own on
+/// stdout: every byte there is the far end's.
+fn pipe(rest: &[String]) -> Result<(), String> {
+    let [flag, via, host, port] = rest else {
+        return Err(usage_text().into());
+    };
+    if flag != "--via" {
+        return Err(usage_text().into());
+    }
+    let port: u16 = port.parse().map_err(|_| usage_text())?;
+    let n = node()?;
+    let rt = rt()?;
+    let out = rt.block_on(n.pipe_via(via, host, port, tokio::io::stdin(), tokio::io::stdout()));
+    // stdin is read on a blocking thread that never returns while ssh
+    // holds it open; waiting for it would keep the pipe up after the
+    // far end hung up.
+    rt.shutdown_background();
+    out
 }
 
 /// Shows a machine the door, network-wide.

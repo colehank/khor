@@ -231,6 +231,11 @@ usage: khor <verb>
                         key its own known_hosts holds for the name; the
                         fastest is the entrance. One address only: no
                         scan, no key fetch
+  pipe --via <machine> <host> <port>
+                        a byte pipe to host:port through that machine's
+                        network, on stdin and stdout. For ssh's
+                        ProxyCommand:
+                        ssh -o ProxyCommand='khor pipe --via lab %h %p' box
   tabs [ls] | open [-m machine] <url> | close|focus|pin|unpin <n|id>
                         the browsing tabs this screen has open. **Local,
                         never replicated**: what is open belongs to this
@@ -1239,6 +1244,7 @@ reach-timeout = "{0} didn't answer within {1} s"
 reach-paused = "{0} is paused, so it wasn't asked"
 reach-predates = "{0} runs an older khor that doesn't know this request"
 reach-no-host = "Give an address"
+pipe-via-satellite = "{0} is a satellite, not khor, so a pipe can't go through it; jump through its ssh with ssh -J"
 self-moved = "khor's own binary is no longer at {0} (upgraded or moved) — restart serve"
 agent-brief = """You're attached to khor: a network connecting all of this person's machines.\
 khor's tools are your hands — devices/sessions/ls are for looking, use them freely;\
