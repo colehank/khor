@@ -3980,6 +3980,9 @@ export default function App() {
                   <Tabs
                     faces={tabFaces}
                     active={selected ?? ""}
+                    // A pick from the list, a shortcut or the strip brings
+                    // the front tab into view, the one in front included.
+                    seek={sessionTabs.picks}
                     onFocus={(id) => {
                       sessionTabs.focus(id);
                       setScreen("detail");
