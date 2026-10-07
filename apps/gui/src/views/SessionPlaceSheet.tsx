@@ -9,9 +9,10 @@
  * **One sheet of paper** (UX-39 §1, the owner 2026-10-06 21:10: 「展开
  * 了就是 app 的颜色，不要额外颜色」): the app's own ground, a top rim and
  * the sheet's corners, the grabber inside the paper, and the page behind
- * greyed by `--sheet-scrim` (darker on light, lighter on dark — a black
- * terminal reads as grey). ⚠️ 墓碑 (UX-37 §2 → UX-39 §1): `popover` as
- * the sheet's surface, `bg-black/50` as its scrim.
+ * dimmed by `--sheet-scrim` (darker in both themes; on dark, the
+ * terminal's rejoin fade, UX-49 §1). ⚠️ 墓碑 (UX-37 §2 → UX-39 §1):
+ * `popover` as the sheet's surface, `bg-black/50` as its scrim.
+ * ⚠️ 墓碑 (UX-44 → UX-49): lighter on dark, a black terminal read as grey.
  *
  * **Two detents** (UX-37 §3, the owner 2026-10-06, agreed on
  * `audit/session-sheet-demo.html`): the pill opens

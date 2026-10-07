@@ -10,16 +10,20 @@
 // - `success` — a task they started completed: a pairing took
 //   (UINotificationFeedbackGenerator.success);
 // - `warning` — the act was refused and said why: a join or a delete
-//   the other side turned down (…warning).
+//   the other side turned down (…warning);
+// - `threshold` — a drag crossed the line where letting go acts, either
+//   way: the deck pill's swipe between tabs (UX-49 §5; a light
+//   UIImpactFeedbackGenerator, the snap HIG gives impacts to).
 //
 // The terminal's bell keeps its own light impact (`bell_haptic`). Only
-// under a finger and only in the app: a Mac has no engine to reach, a
+// under a finger and only in the app — or the dev bridge beside it, where
+// a gate can count what was asked: a Mac has no engine to reach, a
 // browser no command.
-import { haptic, inApp } from "@/api";
+import { haptic, onWebFace } from "@/api";
 
-export type Feel = "selection" | "success" | "warning";
+export type Feel = "selection" | "success" | "warning" | "threshold";
 
 export function feel(kind: Feel): void {
-  if (!inApp || !window.matchMedia("(pointer: coarse)").matches) return;
+  if (onWebFace || !window.matchMedia("(pointer: coarse)").matches) return;
   haptic(kind).catch(() => {});
 }
