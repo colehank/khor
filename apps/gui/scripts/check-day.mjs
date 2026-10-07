@@ -403,7 +403,9 @@ try {
         });
         return el ? (el.innerText ?? "").trim() : null;
       });
-      if (t) return t;
+      // The hover wears the tab's name first and the act under it (UX-45:
+      // the front pill may be cut); the act is its last line.
+      if (t) return t.split("\n").pop().trim();
       await sleep(60);
     }
     return null;
