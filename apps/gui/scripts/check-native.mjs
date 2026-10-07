@@ -55,7 +55,8 @@
 // the system's input stream, so a press that arrives while somebody else's
 // window is in front is dropped rather than typed into it — and the gate
 // then reads it as a red, not as a keystroke in the owner's khor.
-// `NATIVE_ONLY=keys` or `NATIVE_ONLY=theme` runs one phase.
+// `NATIVE_ONLY=keys` or `NATIVE_ONLY=theme` runs one phase; `NATIVE_ONLY=room`
+// runs the window's room alone (UX-46, `roomPhase`), which the others skip.
 //
 // macOS only (everywhere else there is no material and no AppKit title
 // bar). Needs the built binaries: `npm run build`, then
@@ -487,6 +488,149 @@ async function keysPhase(pid) {
   else console.log("keys: ⌘W with no tab open: the window stays");
 }
 
+// ── the room phase (UX-46 §2) ─────────────────────────────────────────
+
+/**
+ * **The window comes back to its size, exactly** (UX-46, the owner
+ * 2026-10-07: 「打开多大，关闭了不影响原来的大小是要做好的…本来的窗口还变
+ * 了」). The session's 附栏 grows the window by its width (UX-39 §9) and
+ * every road that closes it must put the frame back: the front tab
+ * pressed again, another landing, the tab closed. A window the person
+ * only moved while it was open keeps their move and gets its pressed
+ * size back; one they resized keeps their size (the lead's ruling,
+ * 2026-10-07); a window against the screen's right edge grows leftward and
+ * comes back the same way. Read as the window's frame, by pid, before
+ * and after each road (`native-probe window`, points); the presses are
+ * accessibility's (`axpress`), posted to the scratch app, and the moves
+ * and sizes are what a person dragging it does (`move`, `resize`).
+ *
+ * The session is a tmux session on the scratch server, which the scratch
+ * node lists like any other. `NATIVE_ONLY=room` runs this phase alone.
+ */
+async function roomPhase(pid) {
+  const P = String(pid);
+  const tokens = readFileSync(join(gui, "src", "styles", "tokens.css"), "utf8");
+  const col = Number(tokens.match(/--session-side-w: (\d+)px;/)?.[1]);
+  if (!Number.isFinite(col)) throw new Error("probe dead: tokens.css no longer spells --session-side-w the way this gate reads it");
+  const frame = () => {
+    const [, x, y, w, h] = run("window", P).split(" ").map(Number);
+    return { x, y, w, h };
+  };
+  const fmt = (f) => `${f.x},${f.y} ${f.w}×${f.h}`;
+  const press = async (name, ...how) => {
+    const ok = run("axpress", P, name, ...how) === "1";
+    await wait(1500);
+    return ok;
+  };
+  const moveTo = async (x, y) => {
+    run("move", P, String(x), String(y));
+    await wait(900);
+  };
+  const sizeTo = async (w, h) => {
+    run("resize", P, String(w), String(h));
+    await wait(900);
+  };
+  const [sx, sy, sw] = run("screen").split(" ").map(Number);
+  const name = "room";
+  execFileSync("tmux", ["new-session", "-d", "-s", name, "-x", "120", "-y", "40"], { env });
+  front(pid);
+  // The row, listed by the scratch node's next poll; pressed, its tab.
+  let listed = false;
+  for (let i = 0; i < 30 && !listed; i++) {
+    listed = run("axpress", P, name) === "1";
+    if (!listed) await wait(1000);
+  }
+  if (!listed) throw new Error(`probe dead: room · no row 「${name}」 to open — the scratch node did not list the tmux session`);
+  await wait(1500);
+  const tab = () => press(name, "expanded");
+  if (!(await tab())) throw new Error(`probe dead: room · no front tab 「${name}」 that opens the 附栏`);
+  const near = (a, b) => Math.abs(a - b) <= 1;
+  const same = (a, b) => near(a.x, b.x) && near(a.y, b.y) && near(a.w, b.w) && near(a.h, b.h);
+  const home = async () => {
+    await sizeTo(1080, 720);
+    await moveTo(sx + 120, sy + 60);
+  };
+  // The press above opened it; a second closes it. Start from closed.
+  await tab();
+  await home();
+  const rows = [];
+  const road = async (what, close, want) => {
+    const f0 = frame();
+    if (!(await tab())) {
+      fail(`room · ${what}: the front tab could not be pressed`);
+      return;
+    }
+    const f1 = frame();
+    const was = await close(f0, f1);
+    const f2 = frame();
+    const expected = want(was ?? f0, f1);
+    rows.push(`${what}: ${fmt(f0)} → open ${fmt(f1)} → closed ${fmt(f2)}`);
+    console.log(`room · ${what}: before ${fmt(f0)}, open ${fmt(f1)}, closed ${fmt(f2)}${same(f2, expected) ? "" : ` — want ${fmt(expected)}`}`);
+    if (!near(f1.w, f0.w + col) || !near(f1.h, f0.h) || !near(f1.y, f0.y)) {
+      fail(`room · ${what}: opening made the window ${fmt(f1)} from ${fmt(f0)} — ${col} wider, nothing else (UX-39 §9)`);
+    }
+    if (!same(f2, expected)) fail(`room · ${what}: closed, the window is ${fmt(f2)}, want ${fmt(expected)} (UX-46 §2)`);
+  };
+  // 1. the front tab pressed again
+  await road("the tab again", () => tab(), (f0) => f0);
+  // 2. another landing, then back to the session (closed there)
+  await road(
+    "another landing",
+    async () => {
+      await press(said("gui.devices-tab"));
+      await press(said("gui.sessions-tab"));
+    },
+    (f0) => f0,
+  );
+  // 3. the tab closed, then the session opened again from its row
+  await road(
+    "the tab closed",
+    async () => {
+      await press(said("gui.close"));
+    },
+    (f0) => f0,
+  );
+  await press(name);
+  // 4. moved while open: their move kept, the column off
+  await road(
+    "moved while open",
+    async (f0) => {
+      await moveTo(f0.x + 60, f0.y + 40);
+      await tab();
+    },
+    (f0) => ({ x: f0.x + 60, y: f0.y + 40, w: f0.w, h: f0.h }),
+  );
+  await home();
+  // 5. resized while open: their size stands, the close leaves it alone
+  await road(
+    "resized while open",
+    async (f0, f1) => {
+      await sizeTo(f1.w + 100, f0.h - 60);
+      await tab();
+    },
+    (f0, f1) => ({ x: f1.x, y: f1.y, w: f1.w + 100, h: f0.h - 60 }),
+  );
+  await home();
+  // 6. against the screen's right edge: 100 to the right, the rest leftward
+  await moveTo(sx + sw - 1080 - 100, sy + 60);
+  {
+    const f0 = frame();
+    await tab();
+    const f1 = frame();
+    await tab();
+    const f2 = frame();
+    rows.push(`at the right edge: ${fmt(f0)} → open ${fmt(f1)} → closed ${fmt(f2)}`);
+    console.log(`room · at the right edge: before ${fmt(f0)}, open ${fmt(f1)}, closed ${fmt(f2)}`);
+    if (!near(f1.x + f1.w, sx + sw) || !near(f1.w, f0.w + col)) {
+      fail(`room · at the right edge the window opened to ${fmt(f1)} from ${fmt(f0)} — to the screen's edge, the rest leftward (UX-46 §2)`);
+    }
+    if (!same(f2, f0)) fail(`room · at the right edge, closed, the window is ${fmt(f2)}, want ${fmt(f0)} (UX-46 §2)`);
+  }
+  await home();
+  execFileSync("tmux", ["kill-session", "-t", name], { env });
+  return rows;
+}
+
 /** Launches the scratch app and waits for its window; the window's
     `[id, x, y, w, h]`. */
 const launch = async () => {
@@ -609,6 +753,11 @@ try {
   };
 
   const only = process.env.NATIVE_ONLY ?? "";
+  if (only === "room") {
+    const rows = await roomPhase(child.pid);
+    if (!bad) console.log(`native gate (room): the window came back on every road —\n  ${rows.join("\n  ")}`);
+    process.exit(bad ? 1 : 0);
+  }
   if (only !== "keys") {
     await step("dark", "at launch");
     typeAtLaunch(child.pid);

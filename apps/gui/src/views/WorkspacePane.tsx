@@ -24,6 +24,7 @@ import {
   launchOn,
   searchIn,
   widenWindow,
+  giveBackWindow,
   type Found,
   type SearchHit,
   type GitStatus,
@@ -385,14 +386,24 @@ export function WorkspacePane({
   // is declared from an effect, and an effect that flips is an effect
   // that undoes itself the second time React runs it.
   const setSessions = sidePane.show;
-  /** How many pixels this pane has grown the window by for the sessions
-      column, so closing it gives back **what it took** rather than what
-      the column happens to be wide now.
+  /** Whether this pane holds room in the window for the sessions column.
+      **The window keeps the account of how much** (UX-46, `widenWindow`):
+      the frame it grew from comes back exactly on the close. ⚠️ 墓碑
+      (2026-09-16 → UX-46): `grew`, the pixels asked for, given back as a
+      negative — less than that was granted against the screen's edge,
+      and the window came back narrower each time.
 
-      A ref and not state: nothing on the glass is derived from it, and
-      a render per press for a number only the next press reads would be
-      a render that changes nothing. */
-  const grew = useRef(0);
+      A ref and not state: nothing on the glass is derived from it. */
+  const grew = useRef(false);
+  // **Leaving the workspace gives the room back** (UX-46 §2): the column
+  // goes with the page, and nothing else would ever ask for it — the
+  // window stayed grown by a column no longer there.
+  useEffect(
+    () => () => {
+      if (grew.current) void giveBackWindow("ws-sessions");
+    },
+    [],
+  );
   /* ⚠️ **Tombstone: `grewCode` held the same count for the editor's
      column** (2026-09-16 ruling 45 → 2026-09-17 ruling 46). The editor
      was a column for one batch and is a window of its own now, so
@@ -411,11 +422,13 @@ export function WorkspacePane({
    * sessions are the one press here that really adds a column, and a
    * column is what needs the room.
    *
-   * **It gives back what it took.** The width is remembered at the
-   * moment of the press rather than measured again on the way out: the
-   * seam is draggable, so the column a person closes may not be the
-   * width it opened at, and giving back the new number would walk the
-   * window sideways a few pixels per press.
+   * **It gives back what it took.** Not a width measured again on the
+   * way out — the seam is draggable, so the column a person closes may
+   * not be the width it opened at — but the window's own frame from the
+   * press, which the app keeps (UX-46, `widenWindow` / `giveBackWindow`):
+   * exactly that frame when nobody touched the window meanwhile, the
+   * pressed size where it stands when somebody only moved it, and their
+   * size left alone when somebody resized it.
    *
    * Narrow does none of this (33): there the column is a screen, and a
    * window that could grow is not the situation. The web face does none
@@ -434,9 +447,9 @@ export function WorkspacePane({
       // follows it in. The other order would leave a gap where it was
       // for a frame.
       setSessions(false);
-      if (grew.current > 0) {
-        void widenWindow(-grew.current);
-        grew.current = 0;
+      if (grew.current) {
+        grew.current = false;
+        void giveBackWindow("ws-sessions");
       }
       return;
     }
@@ -458,8 +471,8 @@ export function WorkspacePane({
     // the window cannot grow, the column takes its room off the middle
     // one as every face did before ruling 25, which is the honest
     // answer rather than a column that refuses to open.
-    grew.current = Math.round(sidePane.width);
-    void widenWindow(grew.current).then(() => setSessions(true));
+    grew.current = true;
+    void widenWindow("ws-sessions", sidePane.width).then(() => setSessions(true));
   };
   // (The toolbar buttons' look, `toolClass`, went with them: the switches
   // are glass now, below.)

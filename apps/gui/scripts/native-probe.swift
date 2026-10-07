@@ -21,6 +21,18 @@
 //   resize <pid> <w> <h>         → sets that process's main window's size
 //                                  through accessibility (what the green
 //                                  button and tiling do); prints the AX result
+//   move <pid> <x> <y>           → sets that process's main window's origin
+//                                  (points, top-left) through accessibility, as a
+//                                  person dragging it would; prints the AX result
+//   axpress <pid> <name> [expanded]
+//                                → presses the first page control whose title,
+//                                  description or text starts with that name
+//                                  (AXPress) — with `expanded`, only one that
+//                                  says it opens something (aria-expanded: the
+//                                  tab in front); prints "1" pressed, "0" not found
+//   screen                       → "<x> <y> <w> <h>" of the main screen's visible
+//                                  frame (points, top-left; the menu bar and the
+//                                  Dock left out)
 //
 // **Posted to the pid, never to the HID stream** (the keys and menus half
 // of the gate, 2026-09-28): a key sent through the system goes to whatever
@@ -271,7 +283,78 @@ case "resize":
   print(AXUIElementSetAttributeValue(w, kAXSizeAttribute as CFString, v).rawValue)
   spin(0.5)
 
+case "move":
+  // Somebody moving the window while a column is open (UX-46 §2): the
+  // close keeps their move and takes only the column off.
+  let pid = Int32(args[2])!
+  var at = CGPoint(x: Double(args[3])!, y: Double(args[4])!)
+  let app = AXUIElementCreateApplication(pid)
+  var wins: CFTypeRef?
+  guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &wins) == .success,
+        let list = wins as? [AXUIElement], let w = list.first,
+        let v = AXValueCreate(.cgPoint, &at) else { print("-1"); exit(0) }
+  print(AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, v).rawValue)
+  spin(0.5)
+
+case "axpress":
+  // A press on one page control, by the name a person reads on it — through
+  // accessibility, to the pid, like every press here (WebKit answers
+  // AXPress with a click on the element). Buttons and links in the page
+  // only. Prints "1" pressed, "0" not found.
+  let pid = Int32(args[2])!
+  let needle = args[3]
+  let expanding = args.count > 4 && args[4] == "expanded"
+  let app = AXUIElementCreateApplication(pid)
+  func attr(_ el: AXUIElement, _ name: String) -> AnyObject? {
+    var v: AnyObject?
+    return AXUIElementCopyAttributeValue(el, name as CFString, &v) == .success ? v : nil
+  }
+  func kids(_ el: AXUIElement) -> [AXUIElement] { (attr(el, kAXChildrenAttribute) as? [AXUIElement]) ?? [] }
+  /// The text a person reads on it: its own title or description, else
+  /// the static text inside it.
+  func said(_ el: AXUIElement) -> [String] {
+    var out = [attr(el, kAXTitleAttribute) as? String, attr(el, kAXDescriptionAttribute) as? String].compactMap { $0 }
+    var queue = kids(el)
+    var n = 0
+    while !queue.isEmpty && n < 40 {
+      let k = queue.removeFirst()
+      n += 1
+      if (attr(k, kAXRoleAttribute) as? String) == "AXStaticText", let t = attr(k, kAXValueAttribute) as? String { out.append(t) }
+      queue.append(contentsOf: kids(k))
+    }
+    return out
+  }
+  var found: AXUIElement? = nil
+  for _ in 0..<6 where found == nil {
+    var queue = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+    var seen = 0
+    while !queue.isEmpty && found == nil && seen < 6000 {
+      let el = queue.removeFirst()
+      seen += 1
+      let role = attr(el, kAXRoleAttribute) as? String
+      if role == "AXButton" || role == "AXLink" || role == "AXRadioButton" || role == "AXPopUpButton",
+         !expanding || attr(el, "AXExpanded") != nil,
+         said(el).contains(where: { $0.hasPrefix(needle) }) {
+        found = el
+        break
+      }
+      queue.append(contentsOf: kids(el))
+    }
+    if found == nil { spin(0.5) }
+  }
+  guard let el = found else { print("0"); exit(0) }
+  _ = AXUIElementPerformAction(el, kAXPressAction as CFString)
+  spin(0.3)
+  print("1")
+
+case "screen":
+  // AppKit's origin is the main screen's bottom-left; the window list's
+  // (and `window` above) is its top-left.
+  guard let main = NSScreen.screens.first else { print("0 0 0 0"); exit(0) }
+  let v = main.visibleFrame
+  print(Int(v.minX), Int(main.frame.height - v.maxY), Int(v.width), Int(v.height))
+
 default:
-  FileHandle.standardError.write("usage: window <pid> | activate <pid> | activate-finder | measure <png> <w> <x,y>... | key <pid> <code> [mods] | axmenu <pid> <role> | menus <pid> | menubar <pid> | pick <pid> <menu> <item> | resize <pid> <w> <h>\n".data(using: .utf8)!)
+  FileHandle.standardError.write("usage: window <pid> | activate <pid> | activate-finder | measure <png> <w> <x,y>... | key <pid> <code> [mods] | axmenu <pid> <role> | menus <pid> | menubar <pid> | pick <pid> <menu> <item> | resize <pid> <w> <h> | move <pid> <x> <y> | axpress <pid> <name> [expanded] | screen\n".data(using: .utf8)!)
   exit(2)
 }

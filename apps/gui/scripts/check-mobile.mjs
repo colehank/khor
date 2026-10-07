@@ -180,7 +180,7 @@ const QUICK = new Set([
   "reveal_here",
   // The system's: windows, menus, the theme, a link handed to the OS.
   "set_window_theme", "menu_state", "open_link", "reveal", "show_menu", "size_menu", "menu_pick",
-  "hide_menu", "widen", "move_page", "hide_page", "show_page", "close_page", "page_step",
+  "hide_menu", "widen", "unwiden", "move_page", "hide_page", "show_page", "close_page", "page_step",
   // The phone's native deck over its page, and the ground under its folded capsule (UIKit, queued).
   "page_deck", "page_ground",
   "window_minimize", "window_maximize_toggle", "window_close", "name_settings",

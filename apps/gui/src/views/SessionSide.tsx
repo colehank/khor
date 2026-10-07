@@ -9,9 +9,8 @@
  * and nothing in here is designed twice. It stands beside the tab strip,
  * from the window's first row (UX-39 §6), on the app's own ground. At its
  * top one head (`SideBody`): the session's face and title at the left,
- * the seat's icon · noun · ⌄ at the right — the menu of the five seats,
- * 最近 · 工作区 · 浏览器 · 机器 · 额度 (`SeatTitle`) — and under it the
- * seat's page. The seat's content is composed by the shell (`App`), which
+ * the seat bar at the right — 最近 · 工作区 · 浏览器 · 更多, 更多 holding
+ * 机器 and 额度 (UX-45, `SeatBar`) — and under it the seat's page. The seat's content is composed by the shell (`App`), which
  * owns the state those pages read; this file is the box, the head, and
  * the seam.
  *
@@ -25,8 +24,9 @@
  * width from the session beside it (the terminal refits as it goes);
  * under the floor it folds the column away, the same gesture the list
  * pane's seam makes (`use-list-width`); double-click is the default
- * width; ← → Home walk the stops from a keyboard. Width and open state
- * are one memory per session (`use-session-side`).
+ * width; ← → Home walk the stops from a keyboard. The width is one
+ * memory per session; open is the session in front's alone and closes
+ * when it is left (UX-46, `use-session-side`).
  */
 import { useMemo, useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
