@@ -51,6 +51,7 @@ pub mod reactor;
 pub mod road;
 pub(crate) mod roads;
 pub mod satellite;
+pub mod join;
 pub mod serves;
 pub mod roadbook;
 pub mod tabs;
@@ -2026,12 +2027,12 @@ impl Node {
     /// the satellite's own side — it has no side.
     pub fn adopt_satellite(
         &self,
-        host: &str,
+        host: &satellite::Dest,
         name: Option<&str>,
     ) -> Result<(String, String, bool), String> {
         let probe = satellite::probe(host)?;
-        let id = satellite::fingerprint_id(host)?;
-        let name = name.unwrap_or(host);
+        let id = satellite::fingerprint_id(&host.host)?;
+        let name = name.unwrap_or(&host.host);
         let name = channel_of_machine(name)
             .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
         self.enter_satellite(&id, &name, host, probe.tmux)?;
@@ -2046,12 +2047,14 @@ impl Node {
         &self,
         id: &str,
         name: &str,
-        host: &str,
+        host: &satellite::Dest,
         tmux: bool,
     ) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
         loaded.doc.upsert(id, name, &[])?;
-        loaded.doc.set_satellite(id, self.device_str(), host, tmux)?;
+        loaded
+            .doc
+            .set_satellite(id, self.device_str(), &host.host, host.jump.as_deref(), tmux)?;
         loaded.doc.set_gone(id, false)?;
         self.enroll_satellite(&loaded.doc, id, name)?;
         let mut store = loaded.store;
@@ -2065,7 +2068,7 @@ impl Node {
     /// sponsor when it is somebody else's satellite — a file push runs
     /// the sponsor's scp, and only the sponsor has the road
     /// (一期单 sponsor; docs/NET.md 卫星).
-    pub fn satellite_host_here(&self, machine: &str) -> Result<Option<String>, String> {
+    pub fn satellite_host_here(&self, machine: &str) -> Result<Option<satellite::Dest>, String> {
         // The broadcast is no machine, satellite or not.
         if machine.starts_with(khor_sync::chat::WIDE) {
             return Ok(None);
@@ -2074,7 +2077,7 @@ impl Node {
         let Some(d) = self.devices_loaded()?.doc.by_name(&channel) else {
             return Ok(None);
         };
-        let Some(sp) = d.sponsor else { return Ok(None) };
+        let Some(sp) = d.sponsor.clone() else { return Ok(None) };
         if sp != self.device_str() {
             let sponsor_name = self
                 .devices_loaded()?
@@ -2084,8 +2087,7 @@ impl Node {
                 .unwrap_or(sp);
             return Err(msg::sat_send_elsewhere(&channel, sponsor_name));
         }
-        d.ssh_host
-            .map(Some)
+        crate::satellite::Dest::of(&d).map(Some)
             .ok_or_else(|| msg::sat_no_ssh_host(&channel))
     }
 
@@ -2094,7 +2096,7 @@ impl Node {
     /// message and no transfer: the far side has no khor to approve or
     /// receive anything, so the bytes just go, and the verb reports
     /// what moved (一期: sponsor 本机才有这条路).
-    pub fn send_to_satellite(&self, host: &str, path: &Path) -> Result<u64, String> {
+    pub fn send_to_satellite(&self, host: &satellite::Dest, path: &Path) -> Result<u64, String> {
         satellite::push_file(host, path)
     }
 
@@ -3638,15 +3640,22 @@ impl Node {
         if home == self.device() {
             return Err(msg::cant_forget_self(self.shown_name()));
         }
+        self.forget_id(&home.hex())?;
+        Ok(name)
+    }
+
+    /// [`Node::forget_device`] by id: 转正 drops the satellite row while
+    /// the new member wears the same name, so a name would be ambiguous.
+    pub(crate) fn forget_id(&self, id: &str) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
-        loaded.doc.set_gone(&home.hex(), true)?;
+        loaded.doc.set_gone(id, true)?;
         // On the machine holding the root the removal is also a
         // revocation (docs/CONNECT.md 名单是信任的唯一出处); anywhere else
         // it waits in `khor pending` for the holder.
-        self.revoke_if_holder(&loaded.doc, &home.hex())?;
+        self.revoke_if_holder(&loaded.doc, id)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
-        Ok(name)
+        Ok(())
     }
 
     /// The rows only this device can derive — what `Request::Sessions`
@@ -3855,7 +3864,7 @@ impl Node {
                 if d.sponsor.as_deref() != Some(self.device_str()) {
                     continue;
                 }
-                let Some(host) = d.ssh_host.clone() else {
+                let Some(host) = satellite::Dest::of(&d) else {
                     continue;
                 };
                 // Off the runtime: a sample is an ssh dial plus a

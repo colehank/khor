@@ -422,14 +422,21 @@ usage: khor <verb>
                         the end of their line)
   invite                issues a one-time pairing ticket (requires
                         serve running)
-  pair <ticket>         joins the network with a ticket
-  adopt <ssh host> [name]
-                        brings an ssh-only machine into the network (a
-                        satellite): identity comes from your
-                        known_hosts, everything runs on its behalf
-                        through this machine; to remove it, use
-                        forget. Requires passwordless ssh (one that
-                        prompts for a password can't connect)
+  pair <ticket|->       joins the network with a ticket; - reads it
+                        from standard input
+  add <ssh host> [name] [--via <jump>] [--satellite]
+                        adds a machine over ssh: by default puts khor on
+                        it as a member (user-level resident, no root);
+                        when it can't stay one, takes back what was put
+                        there and adds it as a satellite. --satellite
+                        goes straight to a satellite (nothing installed,
+                        everything runs through this machine). --via
+                        sends every ssh through that jump without
+                        touching your ssh config. Requires passwordless
+                        ssh; identity comes from your known_hosts
+  promote <satellite>   makes a satellite of this machine a full member:
+                        khor goes on it, its name carries over, the
+                        satellite row goes
   pending [--json]      what waits for the root holder: machines paired
                         in that have no certificate yet, satellites
                         adopted by a machine without the root, machines
@@ -655,6 +662,23 @@ pending-kind-leave = "removal"
 approved = "Approved \"{0}\"; roster version {1}"
 revoked-ok = "Revoked \"{0}\"; roster version {1}"
 pair-pending-hint = "Paired, but this machine has no certificate yet: the root holder was not part of this pairing. The network recognizes it once khor approve runs on the machine holding the root"
+# 添加机器 (`khor add`, `khor promote`): the steps as the terminal
+# prints them, what each did, and the outcome.
+add-step-connect = "Connect"
+add-step-place = "Put khor there"
+add-step-start = "Start"
+add-step-pair = "Pair"
+add-step-undo = "Take back what was put there"
+add-step-satellite = "Add as a satellite"
+add-placed-fetched = "{0}, downloaded there"
+add-placed-pushed = "{0}, sent from this machine"
+keeper-launchd = "Keeps running after logout; launchd starts it at boot"
+keeper-boot = "Keeps running after logout; systemd starts it at boot"
+keeper-login = "Keeps running after logout; after a reboot it starts at the next login"
+keeper-none = "Keeps running after logout; after a reboot run khor-serve-up"
+added-member = "Added {0}: khor is on it and it's online by itself"
+added-satellite = "{0}; what was put there is gone, added as a satellite instead"
+promoted = "{0} is a full member now: khor is on it, its satellite row is gone"
 adopt-pending-hint = "Satellite brought in, but not on the roster yet: this machine does not hold the root. Run khor approve on the machine that does"
 doctor-roster-stale = "The roster is {0} days past fresh (signed {1} days ago): the root holder has been away a long time, and no new certificate is accepted"
 doctor-roster-none = "Knows the root key, but holds no roster that verifies"
@@ -1336,10 +1360,28 @@ upload-needs-machine-and-name = "Uploads need machine and name as query paramete
 web-door-shut = "This address needs a key. On that machine, run khor web and open the link it prints once — this browser will be remembered after that"
 ssh-wont-run = "Can't run ssh: {0}"
 sat-cant-reach = "ssh can't reach {0} (passwordless required): {1}"
+# Which segment of a road through a jump broke (`satellite::broken`),
+# with ssh's own last line.
+sat-to-jump-broken = "This machine can't reach the jump {0}: {1}"
+sat-jump-to-target-broken = "The jump {0} can't reach {1}: {2}"
+# BatchMode stopped at the target's door. khor never takes a password;
+# {1} is the command that puts this machine's key there.
+sat-password-only = "{0} only takes a password, and khor never handles passwords. Run {1} once in a terminal, then add it again"
+# 添加机器 over ssh (`khor_node::join`). Why a member attempt became a
+# satellite, one sentence each; {0} is the host.
+add-timed-out = "No answer in {0} seconds"
+add-why-bin-ro = "{0}'s ~/.local/bin can't be written"
+add-why-no-build = "khor has no build for a machine like {0} yet"
+add-why-cant-place = "khor couldn't be put on {0}: {1}"
+add-why-no-resident = "{0} can't keep khor running: it stopped when the session ended"
+add-why-start-failed = "khor wouldn't start on {0}: {1}"
+add-why-no-pair = "khor on {0} didn't call back within {1} seconds"
+add-no-asset-here = "This machine can't get {0} either"
+promote-stayed-satellite = "Not promoted; it's still a satellite: {0}"
 sat-not-in-known-hosts = "known_hosts has no public key for {0}. ssh to it yourself once (accept the fingerprint), then come back and adopt it"
 not-my-satellite = "{0} isn't a satellite this machine adopted — its readings belong to its sponsor"
 sat-not-sampled-yet = "No reading sampled yet (the sponsor samples once a minute)"
-sat-no-ssh-host = "{0} is a satellite, but its table has no ssh address on record; re-adopt it on the sponsor machine"
+sat-no-ssh-host = "{0} is a satellite, but its table has no ssh address on record; add it again with khor add --satellite on the sponsor machine"
 sat-send-elsewhere = "{0} is a satellite that speaks through {1}; send files with khor send on {1}"
 sat-no-tools = "{0} has neither sha256sum/shasum nor base64; saving there needs it to verify its own copy — without that, nothing is written"
 sat-sent = "Sent to {0}'s home directory, {1} bytes"

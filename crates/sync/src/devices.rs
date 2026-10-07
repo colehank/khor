@@ -136,6 +136,11 @@ const F_SPONSOR: &str = "sponsor";
 /// it replicates anyway because it is a decision, not a credential, and
 /// the sponsor must still know it after its own restart.
 const F_SSH_HOST: &str = "ssh_host";
+/// The ssh jump in front of that destination, as the person picked it in
+/// khor (a Host alias or user@host; empty = none). Beside the
+/// destination for the same reason: khor never writes the user's ssh
+/// config, so the row is where the road is kept (docs/NET.md 卫星 经由).
+const F_SSH_JUMP: &str = "ssh_jump";
 /// Whether the satellite had tmux when it was adopted (or last probed)
 /// — what decides if a terminal on it can be made persistent. Stored as
 /// a bool register but read three-valued: "unprobed" must not read as
@@ -288,6 +293,8 @@ pub struct DeviceInfo {
     /// on the sponsor (whose ssh config defines it); carried on the row
     /// so the sponsor still knows it after a restart.
     pub ssh_host: Option<String>,
+    /// The jump in front of `ssh_host`, `None` for a direct road.
+    pub ssh_jump: Option<String>,
     /// `Some(true)` = tmux was there at the last probe, `Some(false)` =
     /// probed and absent, `None` = never probed (an adoption from an
     /// older khor). Three states on purpose: unprobed must not read as
@@ -587,9 +594,15 @@ impl DeviceDoc {
         id: &str,
         sponsor: &str,
         ssh_host: &str,
+        ssh_jump: Option<&str>,
         tmux: bool,
     ) -> Result<(), String> {
         let mut dirty = false;
+        let jump = ssh_jump.unwrap_or("");
+        if self.flat_str(id, F_SSH_JUMP).as_deref().unwrap_or("") != jump {
+            self.write_field(id, F_SSH_JUMP, jump)?;
+            dirty = true;
+        }
         if self.flat_str(id, F_SPONSOR).as_deref() != Some(sponsor) {
             self.write_field(id, F_SPONSOR, sponsor)?;
             dirty = true;
@@ -712,6 +725,7 @@ impl DeviceDoc {
                 pinned: self.bool_field(&id, F_PINNED),
                 sponsor: self.str_field(&id, F_SPONSOR),
                 ssh_host: self.str_field(&id, F_SSH_HOST),
+                ssh_jump: self.str_field(&id, F_SSH_JUMP).filter(|j| !j.is_empty()),
                 sat_tmux: match self.field(&id, F_SAT_TMUX) {
                     Some(LoroValue::Bool(b)) => Some(b),
                     _ => None,
@@ -1574,7 +1588,7 @@ mod tests {
             .upsert("5a".repeat(32).as_str(), "gpu-box", &[])
             .unwrap();
         sponsor
-            .set_satellite("5a".repeat(32).as_str(), "aa", "gpubox", true)
+            .set_satellite("5a".repeat(32).as_str(), "aa", "gpubox", Some("bastion"), true)
             .unwrap();
 
         let far = DeviceDoc::new(2).unwrap();
@@ -1589,6 +1603,7 @@ mod tests {
             Some("gpubox"),
             "…with the ssh destination"
         );
+        assert_eq!(sat.ssh_jump.as_deref(), Some("bastion"), "…and its jump");
         assert_eq!(sat.sat_tmux, Some(true), "…and the tmux probe");
         let plain = far.get("aa").expect("the sponsor itself crossed");
         assert_eq!(
