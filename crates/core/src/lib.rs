@@ -307,6 +307,13 @@ pub struct NewestFile {
     /// Its modification time, ms since the epoch.
     #[ts(type = "number")]
     pub at_ms: i64,
+    /// **Made rather than edited** (UX-51, the owner 2026-10-08: the row
+    /// says the catalog's `ws-newest-added`, else `ws-newest-changed`):
+    /// its birth time is known and
+    /// within a minute of `at_ms`. False where the file system keeps no
+    /// birth time, and from an older resident. Tail field.
+    #[serde(default)]
+    pub added: bool,
 }
 
 /// **A checkout's git state, as a prompt's git segment says it** (UX-48,
@@ -338,6 +345,24 @@ pub struct GitSegment {
     /// the latest moment git's own files say it could have.
     #[ts(type = "number")]
     pub since_ms: i64,
+    /// **What git is in the middle of** (UX-51, the owner
+    /// 2026-10-08): a merge, rebase, cherry-pick, revert or bisect that
+    /// has started and not been concluded; `None` otherwise. Tail field.
+    #[serde(default)]
+    pub operation: Option<GitOperation>,
+}
+
+/// An operation a checkout is in the middle of — the word a prompt shows
+/// before its counts (`MERGING`, `REBASE-i`, …). `git am` is not one of
+/// them: it has no word on the row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum GitOperation {
+    Merge,
+    Rebase,
+    CherryPick,
+    Revert,
+    Bisect,
 }
 
 impl GitSegment {

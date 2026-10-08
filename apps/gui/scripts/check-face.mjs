@@ -1362,9 +1362,9 @@ try {
   // asserts that nothing was asked.
   //
   // **The repository carries its git segment** (UX-48, `WorkspaceRow.git`,
-  // `khor_core::GitSegment`), the way its resident keeps it: the row's
-  // right says 「main ⇡861 *1 !1 ?2」 and how long that has held, its
-  // second line HEAD's subject. The folders and the quiet machine carry
+  // `khor_core::GitSegment`), the way its resident keeps it: the branch
+  // after its name, 「⇡861 *1 !1 ?2」 on its right (UX-51) and how long
+  // that has held, its second line HEAD's subject. The folders and the quiet machine carry
   // none — a plain folder has no segment, and elder never said. The plain
   // folder on gate names its newest file instead (UX-48,
   // `WorkspaceRow.newest`): "drafts/plan.md", changed 2 hours ago.
@@ -1381,6 +1381,7 @@ try {
     untracked: 2,
     capped: false,
     since_ms: Date.now() - 5 * 60_000,
+    operation: null,
   };
   const wsRows = [
     { device: "e".repeat(64), machine: "gate", path: "/home/gate/notes", name: "notes", pinned: false, newest: { path: "drafts/plan.md", at_ms: Date.now() - 2 * 3600_000 } },
@@ -5609,7 +5610,10 @@ try {
         // **An empty corner is not drawn** (UX-15, the owner 2026-10-05:
         // 「空的格子不画」): absent reads as blank. ⚠️ 墓碑: the two corner
         // anchors were always drawn, empty where there was nothing to say.
-        git: el.querySelector("[data-ws-git]")?.textContent?.trim() ?? "",
+        // UX-51: the symbols, one word each; the branch after the name.
+        // ⚠️ 墓碑 (UX-48): 「main ⇡861 *1 !1 ?2」 as one string on the right.
+        git: [...el.querySelectorAll("[data-ws-git] [data-ws-op], [data-ws-git] [data-ws-symbol]")].map((t) => t.textContent.trim()).join(" "),
+        branch: el.querySelector("[data-side-aside] [data-ws-branch]")?.getAttribute("data-ws-branch") ?? null,
         // UX-48: how long the segment has held. ⚠️ 墓碑: `[data-ws-touched]`,
         // the tree's last change.
         held: el.querySelector("[data-ws-held]")?.textContent?.trim() ?? "",
@@ -5644,17 +5648,17 @@ try {
     // A plain folder has no state: no git segment top-right; bottom-right
     // how long ago its newest file changed (UX-48), bare.
     const gate = seen.find((r) => r.name === "notes");
-    if (gate?.git !== "" || gate?.held !== "2 小时") {
+    if (gate?.git !== "" || gate?.branch !== null || gate?.held !== "2 小时") {
       fail(
         `a directory that is no repository drew 「${gate?.git}」/「${gate?.held}」 on its right — no state (干净 and 读不了 look alike), ` +
           "and under it 「2 小时」, how long ago its newest file changed (UX-48, src/views/WorkspacesList.tsx)",
       );
     }
     const peer = seen.find((r) => r.name === "work");
-    if (peer?.git !== "main ⇡861 *1 !1 ?2" || peer?.subject !== workGit.subject || !peer?.held) {
+    if (peer?.git !== "⇡861 *1 !1 ?2" || peer?.branch !== "main" || peer?.subject !== workGit.subject || !peer?.held) {
       fail(
-        `the repository row reads ${JSON.stringify(peer)} — 「main ⇡861 *1 !1 ?2」 on its right over how long, ` +
-          `「${workGit.subject}」 under its name (UX-48, src/views/WorkspacesList.tsx)`,
+        `the repository row reads ${JSON.stringify(peer)} — 「main」 after its name, 「⇡861 *1 !1 ?2」 on its right over how long, ` +
+          `「${workGit.subject}」 under its name (UX-51, src/views/WorkspacesList.tsx)`,
       );
     }
     const elder = seen.find((r) => r.name === "app");
@@ -5663,7 +5667,7 @@ try {
         "the row whose machine could not answer is gone from the list — a refusal painted as an " +
           "absence sends somebody to look anywhere but at that machine (src/views/WorkspacesList.tsx)",
       );
-    } else if (elder.held !== "" || elder.git !== "") {
+    } else if (elder.held !== "" || elder.git !== "" || elder.branch !== null) {
       fail(
         `the unreachable machine's row drew 「${elder.git}」/「${elder.held}」 — a machine that ` +
           "said nothing must leave the corners blank (src/views/WorkspacesList.tsx)",
@@ -7567,8 +7571,25 @@ try {
         return {
           row: Math.round(row.getBoundingClientRect().width * 10) / 10,
           name: cut("[data-ws-name]"),
-          git: cut("[data-ws-branch]"),
-          counts: cut("[data-ws-counts]"),
+          // UX-51: the branch is the title's aside, cut in the middle by
+          // measure (`MidName`): what is drawn against the whole branch.
+          git: (() => {
+            const el = row.querySelector("[data-side-aside] [data-ws-branch]");
+            if (el === null) return null;
+            const mid = el.querySelector("[data-mid-name]");
+            const said = (mid ? mid.children[1] : el).textContent.trim();
+            const whole = el.getAttribute("data-ws-branch");
+            return { said, whole, has: Math.round(el.getBoundingClientRect().width * 10) / 10, cut: said !== whole };
+          })(),
+          counts: (() => {
+            const el = row.querySelector("[data-ws-git]");
+            if (el === null) return null;
+            return {
+              said: [...el.querySelectorAll("[data-ws-symbol]")].map((t) => t.textContent.trim()).join(" "),
+              wants: Math.round(el.scrollWidth * 10) / 10,
+              has: Math.round(el.getBoundingClientRect().width * 10) / 10,
+            };
+          })(),
           // UX-48: how long the segment has held. ⚠️ 墓碑: the path aside
           // (`[data-ws-where]`, a folder's second line now) and
           // `[data-ws-touched]`.
@@ -7589,7 +7610,7 @@ try {
         // and the claim are about one thing, the gate has to be widened
         // until it is about the other.
         const nameCut = corners.name.wants > corners.name.has + 1;
-        const gitCut = corners.git.wants > corners.git.has + 1;
+        const gitCut = corners.git.cut;
         if (!nameCut && !gitCut) {
           fail(
             `probe void: the name 「${corners.name.said}」 and the branch 「${corners.git.said}」 both ` +
@@ -7600,8 +7621,8 @@ try {
         if (nameCut) {
           fail(
             `the name wanted ${corners.name.wants} and got ${corners.name.has} while the branch ` +
-              `「${corners.git.said}」 was given ${corners.git.has} of the ${corners.git.wants} it ` +
-              "wanted — 「优先折叠 branch 名,保留工作区名」: the branch gives way to nothing before " +
+              `「${corners.git.whole}」 was given ${corners.git.has} and drew 「${corners.git.said}」 — ` +
+              "「优先折叠 branch 名,保留工作区名」: the branch gives way to nothing before " +
               "the name loses a character (src/views/WorkspacesList.tsx)",
           );
         }
@@ -7618,7 +7639,7 @@ try {
         if (corners.counts === null || corners.counts.said !== "⇡861 *1 !1 ?2" || corners.counts.wants > corners.counts.has + 1) {
           fail(
             `the segment's counts read ${JSON.stringify(corners.counts)} — 「⇡861 *1 !1 ?2」 whole beside a cut branch ` +
-              "(UX-48, data-corner-keep; src/components/SideList.tsx Corners)",
+              "(UX-48 → UX-51, data-corner-keep; src/components/SideList.tsx Corners)",
           );
         }
       }
@@ -24516,11 +24537,13 @@ try {
   //      state word over its age is the row's `trailing`, unchanged);
   //   c. quota — when the fullest window resets under the name, the
   //      reading's age bare at the bottom-right, nothing where none;
-  //   d. workspaces — a repository's prompt segment top-right
-  //      (「main ⇡861 *1 !1 ?2」, 「@1a2b3c4d +3」 detached) over how long
-  //      it has held, HEAD's subject under the name; a plain folder its
-  //      path and nothing on the right; on a narrow row with a long branch
-  //      the counts whole and the branch cut;
+  //   d. workspaces — the branch after the name (secondary ink, a size
+  //      down, `@1a2b3c4d` detached, cut in the middle on a phone row),
+  //      the git symbols top-right in their inks (UX-51: 「⇡861 *1 !1 ?2」,
+  //      an operation's word first, nothing for a clean checkout) over how
+  //      long it has held, HEAD's subject under the name, contrast ≥ 4.5
+  //      on the ground and the picked row in both themes; a plain folder
+  //      its newest file and nothing on the right;
   //   e. browser — the address without its scheme under the title, no
   //      state, how long ago it was opened.
   //
@@ -24950,87 +24973,266 @@ try {
     if (spill.length) fail(`corners c · ${posture} · a ring's reading spills out of its corner: ${JSON.stringify(spill)} (src/components/SideList.tsx Corners)`);
   }
 
-  // d. workspaces.
+  // d. workspaces (UX-48 → UX-51, the owner 2026-10-08): the branch after
+  // the name — the title's aside, the secondary ink, a size down, cut in
+  // the middle on a narrow row while the name and the symbols stay whole
+  // (`@` and the short id when detached); top-right only the symbols, an
+  // operation's word before them, not drawn for a clean checkout; each
+  // symbol in its git ink, ≥ 4.5 on the ground and on the picked row in
+  // both themes. A branch never pushed counts its commits (⇡) and a
+  // checkout with no remote at all counts none: the node decides both
+  // (`khor_node::git::unpushed`, the cargo test `a_segment_names_an_
+  // operation_and_counts_what_no_remote_has`); here the face draws ⇡7.
   {
-    const detached = {
+    const add = (name, git) => ({
       device: pin.device,
       machine: "peer",
-      path: "/home/peer/detached",
-      name: "detached",
+      path: `/home/peer/${name}`,
+      name,
       pinned: false,
-      git: { ...workGit, branch: null, head: "1a2b3c4d", subject: "a detached checkout", ahead: 0, stashes: 0, staged: 3, unstaged: 0, untracked: 0 },
+      git: { ...workGit, subject: `the ${name} checkout`, operation: null, ...git },
+    });
+    const none = { ahead: 0, behind: 0, stashes: 0, conflicted: 0, staged: 0, unstaged: 0, untracked: 0 };
+    const OPS = ["merge", "rebase", "cherry-pick", "revert", "bisect"];
+    const extra = [
+      add("detached", { ...none, branch: null, head: "1a2b3c4d", staged: 3 }),
+      add("long", { branch: "feature/an-exceptionally-long-branch-name-that-cannot-fit-a-phone-row" }),
+      add("clean", { ...none }),
+      add("every", { branch: "dev", behind: 2, ahead: 4, stashes: 1, conflicted: 1, staged: 2, unstaged: 3, untracked: 4 }),
+      add("unpushed", { ...none, branch: "exp/sweep", ahead: 7 }),
+      ...OPS.map((op) => add(`op-${op}`, { ...none, operation: op, conflicted: op === "bisect" ? 0 : 1 })),
+    ];
+    // A second plain folder whose newest file was made rather than edited
+    // (UX-51, `NewestFile.added`); gate's notes is the edited one.
+    const made = { device: "e".repeat(64), machine: "gate", path: "/home/gate/made", name: "made", pinned: false, newest: { path: "fresh.txt", at_ms: Date.now() - 3 * 60_000, added: true } };
+    // …and one whose file's name is too long for a phone row: the verb
+    // stands, the name is cut in the middle.
+    const longFile = { device: "e".repeat(64), machine: "gate", path: "/home/gate/longfile", name: "longfile", pinned: false, newest: { path: "experiments/attention-sweep-results-final-version-two.ipynb", at_ms: Date.now() - 4 * 60_000, added: false } };
+    extra.push(made, longFile);
+    wsRows.push(...extra);
+    // What each row must say on its right, word by word, and in which ink;
+    // and a plain folder's sentence, both verbs.
+    const words = await page.evaluate(async () => {
+      const { gui } = await import("/src/gen/catalog.ts");
+      return {
+        merge: gui.ws_op_merge, rebase: gui.ws_op_rebase, "cherry-pick": gui.ws_op_cherry_pick, revert: gui.ws_op_revert, bisect: gui.ws_op_bisect,
+        changed: gui.ws_newest_changed("drafts/plan.md"), added: gui.ws_newest_added("fresh.txt"),
+        changedSlot: gui.ws_newest_changed("\u0001"),
+      };
+    });
+    const R = "git-remote", S = "git-stash", C = "git-conflict", A = "git-added", M = "git-modified", U = "git-untracked";
+    const want = {
+      work: { branch: "main", top: [["⇡861", R], ["*1", S], ["!1", M], ["?2", U]] },
+      detached: { branch: "@1a2b3c4d", top: [["+3", A]] },
+      long: { branch: extra[1].git.branch, top: [["⇡861", R], ["*1", S], ["!1", M], ["?2", U]] },
+      clean: { branch: "main", top: null },
+      every: { branch: "dev", top: [["⇣2⇡4", R], ["*1", S], ["~1", C], ["+2", A], ["!3", M], ["?4", U]] },
+      unpushed: { branch: "exp/sweep", top: [["⇡7", R]] },
+      ...Object.fromEntries(OPS.map((op) => [`op-${op}`, { branch: "main", top: [[words[op], C], ...(op === "bisect" ? [] : [["~1", C]])] }])),
     };
-    const long = {
-      device: pin.device,
-      machine: "peer",
-      path: "/home/peer/long",
-      name: "long",
-      pinned: false,
-      git: { ...workGit, branch: "feature/an-exceptionally-long-branch-name-that-cannot-fit-a-phone-row" },
-    };
-    wsRows.push(detached, long);
-    for (const [posture, size] of POSTURES) {
-      await land(size, "workspaces");
-      await until(8_000, async () => (await page.locator('[data-ws-row] [data-ws-name]:text-is("long")').filter({ visible: true }).count()) === 1);
-      // Wait for the per-row question that says each is a repository.
-      await until(5_000, async () => (await page.locator("[data-ws-row] [data-ws-git]").filter({ visible: true }).count()) >= 3);
-      const rows = await page.evaluate(() =>
-        Object.fromEntries(
-          [...document.querySelectorAll("[data-ws-row]")]
-            .filter((r) => r.getBoundingClientRect().width > 0)
+    /** Every drawn workspace row: its corners, its branch and every word
+        on its right with the ink it is painted in, the ink its token
+        names, and the contrast against what stands behind it. */
+    const readWsRows = () =>
+      page.evaluate(() => {
+        const rgba = (c) => {
+          const m = /rgba?\(([^)]+)\)/.exec(c);
+          if (!m) return [0, 0, 0, 0];
+          const v = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+          return [v[0], v[1], v[2], v[3] ?? 1];
+        };
+        const over = (top, under) => {
+          const a = top[3];
+          return [0, 1, 2].map((i) => top[i] * a + under[i] * (1 - a)).concat(1);
+        };
+        // What stands behind an element: every ground from the root down.
+        const behind = (el) => {
+          const chain = [];
+          for (let n = el.parentElement; n; n = n.parentElement) chain.push(rgba(getComputedStyle(n).backgroundColor));
+          return chain.reverse().reduce((under, top) => over(top, under), [255, 255, 255, 1]);
+        };
+        const lum = (c) => {
+          const f = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+          return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+        };
+        const ratio = (fg, bg) => {
+          const [x, y] = [lum(fg), lum(bg)].sort((p, q) => q - p);
+          return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100;
+        };
+        const tokenInk = (name) => {
+          const probe = document.createElement("span");
+          probe.style.color = `var(--${name})`;
+          document.body.appendChild(probe);
+          const c = getComputedStyle(probe).color;
+          probe.remove();
+          return c;
+        };
+        return Object.fromEntries(
+          [...document.querySelectorAll("[data-side-row]")]
+            .filter((r) => r.querySelector("[data-ws-row]") && r.getBoundingClientRect().width > 0)
             .map((r) => {
-              const c = r.querySelector('[data-corner="top"]');
-              const counts = r.querySelector("[data-ws-counts]");
-              const branch = r.querySelector("[data-ws-branch]");
+              const branch = r.querySelector("[data-side-aside] [data-ws-branch]");
+              const mid = branch?.querySelector("[data-mid-name]");
+              const name = r.querySelector("[data-side-name]") ?? r.querySelector("[data-side-title]");
+              const git = r.querySelector("[data-ws-git]");
+              const corner = r.querySelector('[data-corner="top"]');
               const box = (e) => e && { left: +e.getBoundingClientRect().left.toFixed(1), right: +e.getBoundingClientRect().right.toFixed(1), scroll: e.scrollWidth, client: e.clientWidth };
               return [
                 r.querySelector("[data-ws-name]")?.textContent?.trim(),
                 {
+                  selected: r.getAttribute("data-selected") === "true",
                   sub: r.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
                   where: r.querySelector("[data-side-sub] [data-ws-where]")?.getAttribute("title") ?? null,
                   newest: r.querySelector("[data-side-sub] [data-ws-newest]")?.getAttribute("title") ?? null,
+                  // The sentence as read: the words around the file, and
+                  // the whole file (`PathCut` keeps it as its title).
+                  sentence: (() => {
+                    const line = r.querySelector("[data-side-sub] [data-ws-newest-line]");
+                    if (!line) return null;
+                    const said = [...line.childNodes].map((n) => (n.nodeType === 3 ? n.textContent : n.getAttribute?.("title") ?? "")).join("");
+                    const mid = line.querySelector("[data-ws-newest] [data-mid-name]");
+                    const drawn = [...line.childNodes].map((n) => (n.nodeType === 3 ? n.textContent : (mid ? mid.children[1].textContent : n.textContent))).join("");
+                    return { verb: line.getAttribute("data-ws-newest-line"), said, drawn };
+                  })(),
                   subject: r.querySelector("[data-side-sub] [data-ws-subject]")?.textContent?.trim() ?? null,
-                  top: c?.textContent?.trim() ?? null,
+                  top: corner ? [...corner.querySelectorAll("[data-ws-op], [data-ws-symbol]")].map((t) => t.textContent.trim()) : null,
+                  topText: corner?.textContent?.trim() ?? null,
                   bottom: r.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
                   aside: r.querySelectorAll("[data-side-aside]").length,
-                  corner: box(c),
-                  counts: box(counts),
-                  branch: box(branch),
+                  branch: branch && {
+                    whole: branch.getAttribute("data-ws-branch"),
+                    said: (mid ? mid.children[1] : branch).textContent.trim(),
+                    ink: getComputedStyle(branch).color,
+                    secondary: tokenInk("muted-foreground"),
+                    size: parseFloat(getComputedStyle(branch).fontSize),
+                    titleSize: parseFloat(getComputedStyle(name).fontSize),
+                    contrast: ratio(over(rgba(getComputedStyle(branch).color), behind(branch)), behind(branch)),
+                  },
+                  nameWhole: name ? name.scrollWidth <= name.clientWidth + 1 : null,
+                  inks: git
+                    ? [...git.querySelectorAll("[data-ws-op], [data-ws-symbol]")].map((t) => ({
+                        said: t.textContent.trim(),
+                        token: t.getAttribute("data-ws-ink"),
+                        ink: getComputedStyle(t).color,
+                        tokenInk: tokenInk(t.getAttribute("data-ws-ink")),
+                        contrast: ratio(over(rgba(getComputedStyle(t).color), behind(t)), behind(t)),
+                      }))
+                    : [],
+                  corner: box(corner),
+                  counts: box(git),
                 },
               ];
             }),
-        ),
-      );
-      console.log(`corners d · ${posture} · workspace rows: ${JSON.stringify(rows)}`);
-      const { work, detached: det, long: lng, notes } = rows;
-      if (!work || !det || !lng || !notes) {
+        );
+      });
+    const nameOf = (n) => `[data-ws-row]:has([data-ws-name]:text-is("${n}"))`;
+    for (const [posture, size] of POSTURES) {
+      await land(size, "workspaces");
+      await until(8_000, async () => (await page.locator('[data-ws-row] [data-ws-name]:text-is("op-bisect")').filter({ visible: true }).count()) === 1);
+      // Wait for the per-row question that says each is a repository.
+      await until(5_000, async () => (await page.locator("[data-ws-row] [data-ws-git]").filter({ visible: true }).count()) >= 9);
+      const rows = await readWsRows();
+      console.log(`corners d · ${posture} · workspace rows: ${JSON.stringify(Object.fromEntries(Object.entries(rows).map(([k, r]) => [k, { branch: r.branch?.said, top: r.top, bottom: r.bottom, sub: r.sub }])))}`);
+      if (!rows.notes || !rows.made || !rows.longfile || Object.keys(want).some((k) => !rows[k])) {
         fail(`probe dead: corners d · ${posture} · the workspaces list drew ${JSON.stringify(Object.keys(rows))}`);
         continue;
       }
-      for (const [name, r] of Object.entries(rows)) {
-        if (r.aside !== 0) fail(`corners d · ${posture} · the ${name} row draws an aside — the name alone top-left (UX-48; ⚠️ 墓碑 the path aside)`);
+      for (const [name, w] of Object.entries(want)) {
+        const r = rows[name];
+        // TL: the name, then the branch as its aside; BL HEAD's subject.
+        const subject = name === "work" ? workGit.subject : `the ${name} checkout`;
+        if (r.aside !== 1 || r.branch?.whole !== w.branch || r.subject !== subject || r.where !== null || r.newest !== null) {
+          fail(`corners d · ${posture} · the ${name} row reads branch ${JSON.stringify(r.branch)}, sub ${JSON.stringify(r.sub)} — 「${w.branch}」 after its name, HEAD's subject under it (UX-51)`);
+        }
+        // TR: the operation's word and the symbols, word by word, each in
+        // its token's ink — or nothing at all for a clean checkout.
+        const said = r.inks.map((x) => [x.said, x.token]);
+        if (JSON.stringify(w.top === null ? null : said) !== JSON.stringify(w.top) || (w.top === null) !== (r.top === null)) {
+          fail(`corners d · ${posture} · the ${name} row's top-right reads ${JSON.stringify(r.top === null ? null : said)} — ${JSON.stringify(w.top)} (UX-51: only the symbols, the operation's word first; a clean checkout draws none)`);
+        }
+        const offInk = r.inks.filter((x) => x.ink !== x.tokenInk);
+        if (offInk.length) fail(`corners d · ${posture} · the ${name} row paints ${JSON.stringify(offInk)} — each symbol in its own token's ink (UX-51)`);
+        if (!BARE.test(r.bottom ?? "")) fail(`corners d · ${posture} · the ${name} row's bottom-right reads ${JSON.stringify(r.bottom)} — how long the segment has held, bare (UX-48)`);
+        // The branch: the secondary ink, a size under the title's.
+        const b = r.branch;
+        if (b && (b.ink !== b.secondary || !(b.size < b.titleSize))) {
+          fail(`corners d · ${posture} · the ${name} row's branch is ${b.ink} at ${b.size} beside a ${b.titleSize} title — the secondary ink ${b.secondary}, a size down (UX-51)`);
+        }
       }
-      if (work.top !== "main ⇡861 *1 !1 ?2" || work.subject !== workGit.subject || work.sub !== workGit.subject || !BARE.test(work.bottom ?? "")) {
-        fail(`corners d · ${posture} · the repository reads ${JSON.stringify(work)} — 「main ⇡861 *1 !1 ?2」 over how long, HEAD's subject under its name (UX-48)`);
+      if (rows.notes.aside !== 0 || rows.notes.newest !== "drafts/plan.md" || rows.notes.where !== null || rows.notes.subject !== null || rows.notes.top !== null || rows.notes.bottom !== "2 小时") {
+        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时」 under that (UX-48)`);
       }
-      if (det.top !== "@1a2b3c4d +3" || det.subject !== "a detached checkout") {
-        fail(`corners d · ${posture} · a detached HEAD reads ${JSON.stringify(det)} — 「@1a2b3c4d +3」, HEAD's own id (UX-48)`);
+      // UX-51 (the owner 2026-10-08): the second line is a sentence — an
+      // edited file 「最近修改了 …」, a made one 「最近新建了 …」.
+      const sentences = { notes: [rows.notes.sentence, "changed", words.changed], made: [rows.made.sentence, "added", words.added] };
+      for (const [name, [got, verb, said]] of Object.entries(sentences)) {
+        if (got?.verb !== verb || got?.said !== said) {
+          fail(`corners d · ${posture} · the plain folder ${name} reads ${JSON.stringify(got)} — 「${said}」 (UX-51, NewestFile.added)`);
+        }
       }
-      if (notes.newest !== "drafts/plan.md" || notes.where !== null || notes.subject !== null || notes.top !== null || notes.bottom !== "2 小时") {
-        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(notes)} — its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时」 under that — how long ago the file changed (UX-48)`);
+      // A long file name: the verb whole, the name cut in the middle — its
+      // start and its end both the file's (narrow; wide may fit it).
+      {
+        const got = rows.longfile?.sentence;
+        const [before, after] = words.changedSlot.split("\u0001");
+        const full = longFile.newest.path;
+        const name = got ? got.drawn.slice(before.length, got.drawn.length - after.length) : "";
+        const at = name.indexOf("…");
+        const ok = got && got.drawn.startsWith(before) && got.drawn.endsWith(after) && (posture === "wide" && at < 0 ? name === full : at > 0 && full.startsWith(name.slice(0, at)) && full.endsWith(name.slice(at + 1)) && name.slice(at + 1).length > 0);
+        if (!ok) fail(`corners d · ${posture} · a long file's sentence draws ${JSON.stringify(got)} — 「${before}」 whole, then the file cut in the middle (UX-51)`);
       }
-      // The counts kept whole, inside the corner; the branch cut first.
+      if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟") {
+        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟」 under that (UX-48)`);
+      }
+      // The long row: the counts whole inside the corner, the name whole,
+      // the branch cut — in the middle on a phone row, its head and its
+      // tail both standing (`MidName` even).
+      const lng = rows.long;
       const c = lng.counts;
       const whole = c && c.scroll <= c.client + 1 && lng.corner && c.left >= lng.corner.left - 0.5 && c.right <= lng.corner.right + 0.5;
-      if (!whole || !(lng.top ?? "").endsWith("⇡861 *1 !1 ?2")) {
-        fail(`corners d · ${posture} · a long branch's counts read ${JSON.stringify({ top: lng.top, counts: c, corner: lng.corner })} — whole, inside the corner (UX-48, data-corner-keep)`);
+      if (!whole || lng.nameWhole !== true) {
+        fail(`corners d · ${posture} · the long row's counts ${JSON.stringify({ counts: c, corner: lng.corner })}, name whole ${lng.nameWhole} — both whole; the branch gives way (UX-51, data-corner-keep)`);
       }
-      if (posture === "narrow" && !(lng.branch && lng.branch.scroll > lng.branch.client + 1)) {
-        fail(`corners d · narrow · the long branch is not cut (${JSON.stringify(lng.branch)}) — on a phone row it gives way before the counts (UX-48)`);
+      if (posture === "narrow") {
+        const { said, whole: full } = lng.branch ?? {};
+        const at = (said ?? "").indexOf("…");
+        const head = at > 0 ? said.slice(0, at) : "";
+        const tail = at > 0 ? said.slice(at + 1) : "";
+        if (!(at > 0 && tail.length > 0 && full.startsWith(head) && full.endsWith(tail))) {
+          fail(`corners d · narrow · the long branch draws ${JSON.stringify(said)} of ${JSON.stringify(full)} — cut in the middle, its start and its end standing (UX-51)`);
+        }
       }
     }
-    wsRows.splice(wsRows.indexOf(detached), 1);
-    wsRows.splice(wsRows.indexOf(long), 1);
+    // Contrast, both themes, on the ground and on the picked row: every
+    // symbol's ink and the branch's, as painted.
+    await land(POSTURES[0][1], "workspaces");
+    await until(8_000, async () => (await page.locator("[data-ws-row] [data-ws-git]").filter({ visible: true }).count()) >= 9);
+    await press(nameOf("every"));
+    // Up to the rows (UX-23: the open workspace's column is its tree).
+    await until(3_000, async () => (await page.locator("[data-ws-list-back]").count()) > 0);
+    if (await page.locator("[data-ws-list-back]").count()) await press("[data-ws-list-back]");
+    await until(5_000, async () => (await page.locator('[data-ws-row][data-selected="true"]').count()) === 1);
+    await page.mouse.move(2, 2);
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === scheme);
+      await wait(200);
+      const rows = await readWsRows();
+      const picked = Object.entries(rows).filter(([, r]) => r.selected);
+      const low = Object.entries(rows).flatMap(([name, r]) => [
+        ...r.inks.filter((x) => x.contrast < 4.5).map((x) => ({ name, ...x, selected: r.selected })),
+        ...(r.branch && r.branch.contrast < 4.5 ? [{ name, said: r.branch.said, contrast: r.branch.contrast, selected: r.selected }] : []),
+      ]);
+      const worst = (sel) => Math.min(...Object.values(rows).filter((r) => r.selected === sel).flatMap((r) => r.inks.map((x) => x.contrast)));
+      console.log(`corners d · ${scheme} · the git inks' worst contrast: ground ${worst(false)}, picked row ${worst(true)}`);
+      if (picked.length !== 1 || picked[0][0] !== "every" || picked[0][1].inks.length !== 6) {
+        fail(`probe dead: corners d · ${scheme} · the picked rows are ${JSON.stringify(picked.map(([n]) => n))} — 「every」 with its six symbols was to be measured on its fill`);
+      }
+      if (low.length) fail(`corners d · ${scheme} · under 4.5: ${JSON.stringify(low)} (UX-51; tokens.css 「Three more for a workspace row's git symbols」)`);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+    await until(5_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light");
+    for (const r of extra) wsRows.splice(wsRows.indexOf(r), 1);
   }
 
   // e. browser.

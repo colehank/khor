@@ -137,6 +137,7 @@ fn compute(path: &str, changed_ms: i64, was: Option<&WorkspaceFact>) -> Workspac
             untracked: s.untracked,
             capped: s.more,
             since_ms: 0,
+            operation: s.operation,
         };
         let since_ms = match was.and_then(|w| w.git.as_ref()) {
             Some(w) if w.same(&fresh) => w.since_ms,
@@ -157,7 +158,11 @@ fn compute(path: &str, changed_ms: i64, was: Option<&WorkspaceFact>) -> Workspac
         newest: (!checkout)
             .then(|| crate::workspace::newest_file(dir))
             .flatten()
-            .map(|(path, at_ms)| khor_core::NewestFile { path, at_ms }),
+            .map(|(path, at_ms)| khor_core::NewestFile {
+                added: crate::workspace::was_added(&dir.join(&path)),
+                path,
+                at_ms,
+            }),
     }
 }
 

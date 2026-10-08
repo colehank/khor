@@ -41,8 +41,10 @@ import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { ago, axisOf, groupLabel, valueOf } from "@/words";
-import { PathCut } from "@/components/PathCut";
+import type { GitOperation } from "@/gen/bindings/GitOperation";
 import type { GitSegment } from "@/gen/bindings/GitSegment";
+import type { NewestFile } from "@/gen/bindings/NewestFile";
+import { MidName } from "@/browse/TabStrip";
 
 /** One row's identity, the same pair the table is keyed by: two
     machines can hold the same path, and the machine is half the answer.
@@ -598,27 +600,32 @@ export function WorkspacesList({
         </span>
       ),
       name: r.name,
-      // **UX-48** (the owner 2026-10-07, every list): top-left the name
-      // alone; bottom-left HEAD's subject; top-right the prompt's git
-      // segment ("main ⇡861 *1 !1 ?2", the branch cut first on a narrow
-      // row, the counts whole); bottom-right how long that segment has
-      // held. A plain folder has no state: bottom-left its most recently
+      // **UX-48 → UX-51** (the owner 2026-10-07 / 10-08): top-left the
+      // name, then the branch in the title's aside (`BranchAside`);
+      // bottom-left HEAD's subject; top-right only the git symbols, an
+      // operation's word before them (`GitSegmentWord`), not drawn for a
+      // clean checkout; bottom-right how long that segment has held. A
+      // plain folder has no state: bottom-left its most recently
       // modified file (its name, the path under the folder when nested,
       // `WorkspaceRow.newest`), bottom-right how long ago that file
       // changed.
       // Tombstone (UX-15): the machine and path as the name's aside, the
       // change count under it, the branch alone on the right and the
       // tree's last change under it. And (UX-48, the lead 2026-10-07) a
-      // plain folder's path as its second line.
+      // plain folder's path as its second line. And (UX-48) the branch
+      // and counts as one string at the top right, 「main ⇡861 *1 !1 ?2」.
       sub: !repo ? (
-        r.newest ? <PathCut data-ws-newest text={r.newest.path} /> : undefined
+        r.newest ? <NewestLine newest={r.newest} /> : undefined
       ) : seg?.subject ? (
         <span data-ws-subject className="block min-w-0 truncate">
           {seg.subject}
         </span>
       ) : undefined,
+      // The branch after the name, as a machine's latency once stood
+      // after its (UX-51).
+      aside: repo && seg && branchOf(seg) ? <BranchAside seg={seg} /> : undefined,
       corners: {
-        top: repo && seg ? <GitSegmentWord seg={seg} /> : undefined,
+        top: repo && seg && (seg.operation || segmentSymbols(seg).length > 0) ? <GitSegmentWord seg={seg} /> : undefined,
         bottom:
           repo && seg && seg.since_ms > 0 ? (
             <span data-ws-held>{ago(seg.since_ms)}</span>
@@ -690,43 +697,121 @@ export function WorkspacesList({
 /* ⚠️ 墓碑 (UX-15): `YieldingCorner` — the branch gives way before the name
    — lived here; it is `SideList`'s corners' rule now, for every list. */
 
-/** **The prompt's git segment as one string** (UX-48, powerlevel10k's
-    order and marks): the branch, or `@` and HEAD's short id when
-    detached; then ⇣ behind ⇡ ahead, * stashes, ~ conflicted, + staged,
-    ! edited, ? untracked — each only when it is not zero. */
-export function segmentParts(seg: GitSegment): { head: string; counts: string } {
-  const head = seg.branch ?? (seg.head ? `@${seg.head}` : "");
+/** **The workspace row's git status, as a prompt's symbols** (UX-51,
+    the owner 2026-10-08; powerlevel10k's marks and order): ⇣ behind ⇡
+    ahead, * stashes, ~ conflicted, + staged, ! edited, ? untracked —
+    each only when it is not zero, each in its own ink of the git family
+    (`ink`, the token's name; tokens.css 「Three more for a workspace
+    row's git symbols」). The branch is not here: it stands after the
+    title (`BranchAside`). */
+export type SegmentSymbol = {
+  key: string;
+  text: string;
+  ink: "git-remote" | "git-stash" | "git-conflict" | "git-added" | "git-modified" | "git-untracked";
+};
+export function segmentSymbols(seg: GitSegment): SegmentSymbol[] {
+  // ⇣⇡ touch, as powerlevel10k draws them; the rest stand apart.
   const way = `${seg.behind ? `⇣${seg.behind}` : ""}${seg.ahead ? `⇡${seg.ahead}` : ""}`;
-  const counts = [
-    way,
-    seg.stashes ? `*${seg.stashes}` : "",
-    seg.conflicted ? `~${seg.conflicted}` : "",
-    seg.staged ? `+${seg.staged}` : "",
-    seg.unstaged ? `!${seg.unstaged}` : "",
-    seg.untracked ? `?${seg.untracked}` : "",
-  ].filter(Boolean);
-  return { head, counts: counts.join(" ") };
+  const all: SegmentSymbol[] = [
+    { key: "way", text: way, ink: "git-remote" },
+    { key: "stashes", text: seg.stashes ? `*${seg.stashes}` : "", ink: "git-stash" },
+    { key: "conflicted", text: seg.conflicted ? `~${seg.conflicted}` : "", ink: "git-conflict" },
+    { key: "staged", text: seg.staged ? `+${seg.staged}` : "", ink: "git-added" },
+    { key: "unstaged", text: seg.unstaged ? `!${seg.unstaged}` : "", ink: "git-modified" },
+    { key: "untracked", text: seg.untracked ? `?${seg.untracked}` : "", ink: "git-untracked" },
+  ];
+  return all.filter((x) => x.text !== "");
+}
+
+/** The word before the symbols while git is in the middle of something. */
+const OPERATION_WORD: Record<GitOperation, string> = {
+  merge: gui.ws_op_merge,
+  rebase: gui.ws_op_rebase,
+  "cherry-pick": gui.ws_op_cherry_pick,
+  revert: gui.ws_op_revert,
+  bisect: gui.ws_op_bisect,
+};
+
+/** The branch's place after the title: the branch, or `@` and HEAD's
+    short id when detached. */
+export function branchOf(seg: GitSegment): string {
+  return seg.branch ?? (seg.head ? `@${seg.head}` : "");
 }
 
 export function segmentText(seg: GitSegment): string {
-  const { head, counts } = segmentParts(seg);
-  return [head, counts].filter(Boolean).join(" ");
+  return [
+    branchOf(seg),
+    seg.operation ? OPERATION_WORD[seg.operation] : "",
+    segmentSymbols(seg)
+      .map((x) => x.text)
+      .join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
-/** The segment on the row's top-right: the branch gives way, the counts
-    never do (`data-corner-keep`, which `SideList`'s corner keeps whole). */
-function GitSegmentWord({ seg }: { seg: GitSegment }) {
-  const { head, counts } = segmentParts(seg);
+/** The branch after the title, in the secondary ink one size down (the
+    title's aside), cut in the middle before the title or the symbols
+    give anything (`MidName`'s even cut). */
+function BranchAside({ seg }: { seg: GitSegment }) {
   return (
-    <span data-ws-git className="flex min-w-0 items-baseline">
-      <span data-ws-branch className="min-w-0 truncate">
-        {head}
+    <span data-ws-branch={branchOf(seg)} className="block min-w-0">
+      <MidName text={branchOf(seg)} even />
+    </span>
+  );
+}
+
+/** **A plain folder's second line, as a sentence** (UX-51, the owner
+    2026-10-08): the catalog's `ws_newest_added` when the file's birth
+    time says it was made (`NewestFile.added`), else `ws_newest_changed`
+    — only those two verbs. The words are the catalog's around the file;
+    only the file is cut, in the middle (`MidName`, its extension kept),
+    so the verb always stands. The whole path is the title. */
+function NewestLine({ newest }: { newest: NewestFile }) {
+  const say = newest.added ? gui.ws_newest_added : gui.ws_newest_changed;
+  // The catalog's sentence with a control character in the file's
+  // place, split there: the words before and after it.
+  const slot = "\u0001";
+  const [before, after = ""] = say(slot).split(slot);
+  return (
+    <span data-ws-newest-line={newest.added ? "added" : "changed"} className="flex min-w-0 whitespace-pre">
+      {before}
+      <span data-ws-newest title={newest.path} className="block min-w-0 flex-1">
+        <MidName text={newest.path} />
       </span>
-      {counts && (
-        <span data-ws-counts data-corner-keep className="flex-none whitespace-pre">
-          {` ${counts}`}
+      {after}
+    </span>
+  );
+}
+
+/** Each ink as a class Tailwind can see written out whole. */
+const INK: Record<SegmentSymbol["ink"], string> = {
+  "git-remote": "text-git-remote",
+  "git-stash": "text-git-stash",
+  "git-conflict": "text-git-conflict",
+  "git-added": "text-git-added",
+  "git-modified": "text-git-modified",
+  "git-untracked": "text-git-untracked",
+};
+
+/** The row's top-right: the operation's word (in the conflict's ink:
+    something stands half done), then the symbols, all kept whole
+    (`data-corner-keep`); not drawn for a clean checkout. */
+function GitSegmentWord({ seg }: { seg: GitSegment }) {
+  const symbols = segmentSymbols(seg);
+  if (!seg.operation && symbols.length === 0) return null;
+  return (
+    <span data-ws-git data-corner-keep className="flex flex-none items-baseline gap-xxs whitespace-nowrap">
+      {seg.operation && (
+        <span data-ws-op={seg.operation} data-ws-ink="git-conflict" className="text-git-conflict">
+          {OPERATION_WORD[seg.operation]}
         </span>
       )}
+      {symbols.map((x) => (
+        <span key={x.key} data-ws-symbol={x.key} data-ws-ink={x.ink} className={INK[x.ink]}>
+          {x.text}
+        </span>
+      ))}
     </span>
   );
 }
