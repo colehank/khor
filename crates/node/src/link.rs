@@ -1221,9 +1221,12 @@ impl Node {
                         eprintln!("{}", msg::serve_ears_closed(&stamp));
                         continue;
                     };
-                    // Paused: dropped without an answer, so the far side
-                    // sees what a machine that is not there looks like —
-                    // which is the state somebody asked for.
+                    // Paused, or resting in the background: the incoming
+                    // is dropped, and a dropped noq `Incoming` is a
+                    // **refusal** (CONNECTION_REFUSED) — the far side
+                    // learns at once that this machine is not taking
+                    // connections, rather than waiting out its dial.
+                    // Not silence: that would be `Incoming::ignore`.
                     if paused.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     if resting.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     let n = node.clone();
