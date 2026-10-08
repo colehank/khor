@@ -25,7 +25,7 @@
 // Registration happens here too, and the form says the two things a
 // person cannot guess: the key stays on this machine, and the two
 // vendors' usage is an **admin** key's to read.
-import { useContext, useEffect, useRef, useMemo, useState } from "react";
+import { useContext, useEffect, useRef, useMemo, useState, type ReactNode } from "react";
 
 import {
   fetchQuotaBoard,
@@ -38,12 +38,13 @@ import {
   type DeviceRow,
   type QuotaCredits,
   type QuotaWindow,
+  type Strain,
   type Usage,
 } from "@/api";
 import { EmptyState, RegionState } from "@/components/RegionState";
 import { DetailFrame } from "@/components/DetailFrame";
 import { Bar } from "@/components/Bar";
-import { IconBack } from "@/components/icons";
+import { IconBack, IconReload } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
@@ -60,7 +61,8 @@ import { providerKind } from "@/components/SessionFace";
 import { EditableName } from "@/components/EditableName";
 import { SideList, type SideRow } from "@/components/SideList";
 import { rowWindow } from "@/lib/row-facts";
-import { DIAL_CARD_RATIO, DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, Glyph, type Pip } from "@/components/Face";
+import { DIAL_CARD_RATIO, DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, hugRatio, sizeForCroppedHeight, type Pip } from "@/components/Face";
+import { useCoarse } from "@/hooks/use-coarse";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -80,7 +82,7 @@ import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
-import { QUOTA_AXES, agoOf, groupLabel, lasting, until } from "@/words";
+import { QUOTA_AXES, agoOf, groupLabel, money, moneyIn, until, untilBare } from "@/words";
 
 /** How often the board is asked for. The node caches every reading for
     five minutes and cools a failed account for ten (`accounts` module
@@ -273,23 +275,8 @@ function markOf(unit: string | null): string {
  * only band it changes is 10–99.99, which used to draw `12.34` and now
  * draws `12$`.
  */
-function ringWord(n: number, mark: string): string {
-  const whole = Math.round(n);
-  const fits = (s: string) => s.length <= RING_CHARS;
-  if (fits(`${whole}${mark}`)) return `${whole}${mark}`;
-  // Not enough room: buy some by shortening the **magnitude**, which is
-  // what `1.1k` was asked for.
-  const short = whole < 1_000_000 ? `${Math.round(n / 1_000)}k` : `${Math.round(n / 1_000_000)}m`;
-  if (fits(`${short}${mark}`)) return `${short}${mark}`;
-  // ⚠️ **And when even that does not fit, the mark is what goes — not
-  // the digits.** Since 2026-09-07 the mark is free text (「直接输入
-  // 符号」), so it can be longer than the whole budget, and a step down
-  // in magnitude cannot pay for it: `124` under a `USDT` would become
-  // `0kUSDT`, then `0k`, and **a reading of 124 would be drawn as
-  // zero**. The magnitude is the part a person is reading, so it keeps
-  // its own full form and the column beside it spells the unit out.
-  return fits(`${whole}`) ? `${whole}` : short;
-}
+/* ⚠️ 墓碑 (WORDS-1008 → UX-53): `ringWord`, this page's own short money
+   for the dial's middle. It is `words.ts` `moneyIn` now. */
 
 /**
  * The figure a column shows, with its unit spelled out in full.
@@ -331,11 +318,8 @@ function ringWord(n: number, mark: string): string {
  * **Nothing here may grow into a conversion**: no rates, no sources,
  * no arithmetic. That is a different feature and a different ruling.
  */
-function money(n: number, unit: string | null): string {
-  const figure = n >= 100 ? n.toFixed(0) : n.toFixed(2);
-  if (!unit) return figure;
-  return /^\p{L}/u.test(unit) ? `${figure} ${unit}` : `${figure}${unit}`;
-}
+/* ⚠️ 墓碑 (WORDS-1008 → UX-53): `money`, this page's own; `words.ts`
+   `money` is the one formatter (「$457 / $1,000」). */
 
 /* ⚠️ **Tombstone: `SPAN_MINUTES` and `ringWindows` are gone,
    2026-09-07 — and with them the rule 「一个模型的份额不是第三个长度,
@@ -589,8 +573,8 @@ function centre(r: AccountRing): string {
   // translate into one; the mark is the person's, defaulted here and
   // nowhere upstream.
   const mark = markOf(r.unit);
-  if (reading.spent != null) return ringWord(reading.spent, mark);
-  if (reading.remaining != null) return ringWord(reading.remaining, mark);
+  if (reading.spent != null) return moneyIn(reading.spent, mark, RING_CHARS);
+  if (reading.remaining != null) return moneyIn(reading.remaining, mark, RING_CHARS);
   return "";
 }
 
@@ -684,6 +668,135 @@ function arcOf(r: Row): number | null {
 function centreOf(r: Row): string {
   if (r.account) return centre(r.account);
   return r.fill == null ? "" : `${Math.round(r.fill * 100)}%`;
+}
+
+/**
+ * **Near and over, by the node's two steps** — 90 and 95, `khor_core`'s
+ * `Fill::strain`, said once more here because a window's share arrives as
+ * a percentage with no strain of its own (the account's `strain` is its
+ * whole-plan fill's). The gauge, the bar and the number of one window read
+ * it the same way (UX-53).
+ */
+function pctStrain(pct: number): Strain | null {
+  return pct >= 95 ? "critical" : pct >= 90 ? "tight" : null;
+}
+
+/** A wallet's top-right: what it has left, or what it has spent when
+    that is all the endpoint says (the lead, 2026-10-08: no ring, the
+    balance). */
+function walletWord(r: Row): string | null {
+  const a = r.account;
+  if (!a) return null;
+  if (a.reading.remaining != null) return money(a.reading.remaining, markOf(a.unit));
+  if (a.reading.spent != null) return money(a.reading.spent, markOf(a.unit));
+  return null;
+}
+
+/** One line of the account page's lead: a window, the budget, extra usage. */
+type Line = Dial;
+/** One figure under the lines: a word and its money. */
+type Figure = { key: string; word: string; value: ReactNode };
+
+/** Extra usage, as figures: what was spent against its ceiling, and what
+    is left. Drawn only with a real reading (`creditsShown`). */
+function creditFigures(c: QuotaCredits): Figure[] {
+  const out: Figure[] = [];
+  if (c.used != null) {
+    out.push({
+      key: "credits-used",
+      word: gui.quota_credits,
+      value: c.monthly_limit != null ? gui.accounts_of(money(c.used, c.currency), money(c.monthly_limit, c.currency)) : money(c.used, c.currency),
+    });
+  } else if (c.monthly_limit != null) {
+    out.push({ key: "credits-monthly", word: gui.quota_credits_monthly, value: money(c.monthly_limit, c.currency) });
+  }
+  if (c.balance != null) out.push({ key: "credits-balance", word: gui.accounts_remaining, value: money(c.balance, c.currency) });
+  return out;
+}
+
+/** An API account's money, as figures: every fact the old two-column
+    list held, one line (UX-53: 「去掉重复和次要的字」 — the labels it
+    shared with the bar are gone, the facts are not). */
+function billFigures(acc: AccountRing): Figure[] {
+  const r = acc.reading;
+  const mark = markOf(acc.unit);
+  const out: Figure[] = [];
+  if (r.spent != null) {
+    const spent = r.limit != null ? gui.accounts_of(money(r.spent, mark), money(r.limit, mark)) : money(r.spent, mark);
+    out.push({ key: "spent", word: gui.accounts_spent, value: r.unlimited ? `${spent} · ${gui.accounts_unlimited}` : spent });
+  }
+  if (r.remaining != null) {
+    out.push({ key: "remaining", word: gui.accounts_remaining, value: money(r.remaining, mark) });
+    // The wallet's one line: the endpoint answers a balance and nothing
+    // else — said as what the provider gave, never what khor cannot draw.
+    if (r.spent == null) out.push({ key: "balance-only", word: gui.accounts_balance_only, value: "" });
+  }
+  if (BUDGETED.includes(r.provider) && r.limit == null && !r.unlimited) {
+    out.push({ key: "no-budget", word: gui.accounts_budget, value: gui.accounts_no_budget });
+  }
+  // A reset with no line to ride (no fraction) is a figure of its own.
+  if (r.fill == null && r.resets_at != null) out.push({ key: "resets", word: gui.accounts_resets, value: <Resets at={r.resets_at} /> });
+  // 到期, only where there is one (a token that never expires is `null`).
+  if (r.expires_at != null) out.push({ key: "expires", word: gui.accounts_expires, value: until(r.expires_at * 1000) });
+  // **本月 and 累计 only beside each other** — one alone is the ambiguity
+  // of which 「已用」 it is again.
+  if (r.spent_this_month != null && r.spent_all_time != null) {
+    out.push({ key: "month", word: gui.accounts_this_month, value: money(r.spent_this_month, mark) });
+    out.push({ key: "all-time", word: gui.accounts_all_time, value: money(r.spent_all_time, mark) });
+  }
+  return out;
+}
+
+/**
+ * **↻ and the time** — a reset, beside a window's name and at the row's
+ * left-bottom (UX-53, the owner 2026-10-08: 「重制用一个刷新 icon，不必写
+ * 俩字」): `IconReload` at the text's size in the secondary ink, then the
+ * two units bare (`untilBare`); the glyph carries the direction, and the
+ * whole sentence stays for a reader that cannot see it (「2 小时 14 分后
+ * 重置」, `gui.quota_resets(until(…))`).
+ */
+function Resets({ at, mark }: { at: number; mark?: Record<string, string> }) {
+  const said = gui.quota_resets(until(at * 1000));
+  return (
+    <span
+      data-quota-resets={at}
+      {...mark}
+      role="img"
+      aria-label={said}
+      title={said}
+      // `align-top`: an inline-flex box on its baseline grew the row's
+      // second line by 2 px (1.5 under a finger), and the gauge beside the
+      // two lines is cut to their leading (ux-q3, `check-face` quota a).
+      className="inline-flex min-w-0 items-center gap-xxs align-top text-callout text-muted-foreground tabular-nums"
+    >
+      <IconReload className="size-[1em] flex-none" />
+      <span aria-hidden="true" className="truncate">
+        {untilBare(at * 1000)}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * **The row's gauge: the account page's dial, as tall as the row's two
+ * lines** (UX-53, the owner: 「按照页面里的仪表盘画」) — the same 210°
+ * arc, pips and ink, the card's stroke scaled with it, so it is one
+ * drawing at two sizes. The heights are the two lines' leading under a
+ * mouse (headline 18 + callout 16) and under a finger (22 + 19);
+ * `check-face`'s quota section measures the gauge against the words
+ * beside it, so a leading that moves turns it red.
+ */
+const ROW_GAUGE_H = { mouse: 34, finger: 41 } as const;
+function RowGauge({ fraction, strain, pips }: { fraction: number; strain: Strain | null; pips: Pip[] }) {
+  const h = useCoarse() ? ROW_GAUGE_H.finger : ROW_GAUGE_H.mouse;
+  const stroke0 = (DIAL_CARD_STROKE * h) / 102;
+  const size = sizeForCroppedHeight(h, stroke0);
+  const stroke = (DIAL_CARD_STROKE * size) / DIAL_CARD_SIZE;
+  return (
+    <span data-quota-gauge className="flex flex-none items-center self-center">
+      <Face size={size} stroke={stroke} ratio={hugRatio(size, stroke)} crop fraction={fraction} strain={strain} pips={pips} />
+    </span>
+  );
 }
 
 // ⚠️ 墓碑: `SUB_ID` (「sub:local」), the probed subscription row's id,
@@ -1283,54 +1396,25 @@ export function QuotaLanding({
   const side: SideRow[] = grouped.map((r) => {
     const on = current?.id === r.id;
     const win = rowWindow({ windows: r.windows, fill: r.fill, resets_at: r.account?.reading.resets_at ?? null });
-    // Bottom-left (UX-48): how long until the window the row speaks for
-    // starts again — the fullest one, the ring on the right.
-    const resets = win && win.resets_at !== null ? gui.quota_resets(until(win.resets_at * 1000)) : null;
     const trouble = r.account?.reading.trouble ?? null;
-    const state = trouble ? gui.day_unreachable : win && win.left <= 0 ? gui.quota_credits_out : null;
+    // **The window the row speaks for is the fullest** (`rowWindow`: the
+    // one that stops the work first), and the gauge, the number and the
+    // reset are all its — one reading, said three ways.
+    const pct = win ? Math.round((1 - win.left) * 100) : null;
+    const strain = pct === null ? null : pctStrain(pct);
+    const over = pct !== null && pct >= 100;
+    const wallet = pct === null && !trouble ? walletWord(r) : null;
     return {
       id: r.id,
       group: groupOf(r),
       pinned: !!r.account?.pinned,
       // **The base is the machine the account lives on, the mark the
       // provider** (UX-32, the owner 2026-10-06): the one assembly every
-      // row wears. The home is the reading's (`AccountReading.home`, the
-      // device id the key stays on); a home this face has no row for —
-      // a machine since forgotten — draws the blank.
-      // ⚠️ 墓碑 (2026-09-07 → UX-32): the machine card's dial, one size
-      // down, as the row's face (`{ art }`); it is the right-top now.
+      // row wears. A home this face has no row for draws the blank.
       face: { machine: devices.find((d) => d.id === r.account?.reading.home)?.face ?? null },
       mark: providerKind(r.provider),
-      // **The kind's mark opens the title** (2026-09-30, the owner: 「额度
-      // 页 list 里，把类型的头像做成标题的开头，如 f"{icon} Claude Code
-      // 订阅"」): the provider's glyph, then the name, on one line and one
-      // baseline — what this reading is *of*, said where the eye starts.
-      // The glyph's box stands on the baseline (`items-baseline`) and is
-      // let down 0.15em, so it sits across the line the way an SF Symbol
-      // does beside text — centred on the caps, not perched above them
-      // (bottom-on-baseline read as a superscript at 14 beside 13).
-      //
-      // ⚠️ 墓碑 (2026-09-28 → 09-30): the same glyph stood in a corner
-      // *beside* the dial (`FaceMark` `beside`), because on the dial it
-      // sat on the reading's last glyph (「39%」「124$」, audit 第 8 条).
-      // Beside, it widened every face by a corner and still read as the
-      // dial's, not the row's; in the title it is neither on the number
-      // nor in its way, and `beside` retired with it.
-      //
-      // **The title is somebody's own word** (「标题是用户可以自己起的」),
-      // so the line under it carries what the row *is*: 类型 · 提供商 —
-      // and it renames the session row's way: double-click, type, Enter
-      // (`EditableName`, `nested` inside the button that opens the row).
-      // **One rule for the four lists** (UX-15, the owner 2026-10-05):
-      // left-top the account's name, and as its aside what it is —
-      // 「Claude 订阅」 / 「OpenAI API」; left-bottom what is left and when
-      // it resets; right-top **the ring, as the state** (UX-32: it is a
-      // reading, and readings sit right) with the reading beside it, or
-      // the state word when it is not normal; right-bottom when this
-      // was read (moved down from the top).
-      // ⚠️ 墓碑: the mark opened the title (2026-09-30), then the aside
-      // (UX-15); it is the face's mark now. The second line was 「类型 ·
-      // 提供商」 (`subLine`, still the filter's words).
+      // **The title is somebody's own word** (「标题是用户可以自己起的」):
+      // it renames the session row's way — double-click, type, Enter.
       title: (
         <span data-quota-name className="block min-w-0">
           <EditableName
@@ -1344,25 +1428,57 @@ export function QuotaLanding({
         </span>
       ),
       name: r.name,
-      // **UX-48** (the owner 2026-10-07, every list): top-left the name
-      // alone; bottom-left the time to the next reset; top-right the
-      // fullest ring's state; bottom-right how long ago it was read.
-      // ⚠️ 墓碑: 「Claude 订阅」 as the name's aside, and 「剩 40% · 周四
-      // 14:00 重置」 under it (UX-15).
-      sub: resets ? <span data-quota-sub-line className="tabular-nums">{resets}</span> : undefined,
-      corners: {
-        // The ring is the heading's glyph (`Glyph`: the same 210° gauge
-        // one size down, the strain's colour), the number the dial's
-        // centre reading without its unit's sign; a trouble leaves the
-        // ring off (no reading to draw) and says the word.
-        top: (
-          <span data-quota-ring className="inline-flex items-center gap-xxs">
-            {!trouble && <Glyph fraction={arcOf(r)} strain={r.account?.strain ?? null} />}
-            {state ? <span data-quota-state>{state}</span> : <span data-quota-ring-word>{centreOf(r)}</span>}
-          </span>
+      // **UX-53** (the owner 2026-10-08): left-bottom ↻ and how long until
+      // that window starts again — 「↻ 3 天 4 小时」, the account page's own
+      // spelling; the words stay for a reader (`Resets`).
+      // ⚠️ 墓碑: 「3 天 4 小时后重置」 in words (UX-48 → WORDS-1008).
+      sub: win && win.resets_at !== null ? <Resets at={win.resets_at} mark={{ "data-quota-sub-line": "" }} /> : undefined,
+      // **Left of the rightmost column, the account page's gauge, as tall
+      // as the row's two lines** (the owner: 「这个环位置没问题，但是按照
+      // 页面里的仪表盘画」). A trouble has no reading to draw, and a wallet
+      // has no fraction (the lead, 2026-10-08): neither draws one.
+      // ⚠️ 墓碑 (UX-32 → UX-53): a 16 px glyph beside the number, in the
+      // top-right corner.
+      trailing:
+        pct === null ? undefined : (
+          <RowGauge fraction={pct / 100} strain={strain} pips={r.kind === "sub" ? subDials(r).map((d): Pip => ({ word: d.word, v: d.pct })) : []} />
         ),
-        // A reading this machine takes as it is shown has no age to say.
-        bottom: r.age_ms === null ? undefined : <span data-quota-age-cell>{lasting(r.age_ms)}</span>,
+      corners: {
+        // **Top-right only the percentage** (「右上干脆只写百分比」), kept
+        // whole and **as wide as the age's floor under it** (4.6em, 「59 分钟前」),
+        // so every row's gauge stands at one x whether or not it has an
+        // age to say (ux-q3: at 5ch a row read here, with no age, put its
+        // gauge 26 px right of a peer's — `check-face` quota a); over the
+        // limit, the strain ink in the over weight — no red (the lead,
+        // 2026-10-08). A wallet says its balance; a trouble its word.
+        top: trouble ? (
+          <span data-quota-state>{gui.day_unreachable}</span>
+        ) : pct !== null ? (
+          <span
+            data-quota-pct={pct}
+            data-corner-keep
+            // A width, not a `min-w`: the corner gives its children
+            // `min-w-0` (`[&>*]:min-w-0`, so a branch can be cut), which
+            // overrode the floor this had — 5ch then — and left the share
+            // 24 px wide (ux-q3).
+            className={cn("inline-block w-[4.6em] flex-none text-right", over ? "font-title text-strain" : "text-foreground")}
+          >
+            {`${pct}%`}
+          </span>
+        ) : wallet ? (
+          <span data-quota-balance data-corner-keep className="text-foreground">
+            {wallet}
+          </span>
+        ) : undefined,
+        // **Right-bottom: how long ago it was read** (WORDS-1008, 「3 分钟
+        // 前」), at least 「59 分钟前」 wide for the same one x. A reading
+        // this machine takes as it is shown has no age to say.
+        bottom:
+          r.age_ms === null ? undefined : (
+            <span data-quota-age-cell className="inline-block min-w-[4.6em] text-right">
+              {agoOf(r.age_ms)}
+            </span>
+          ),
       },
       find: `${r.name} ${subLine(r)}`,
       selected: on,
@@ -1466,426 +1582,161 @@ export function QuotaLanding({
   // — the windows card and the money card, one under the other.
   const isSub = current?.kind === "sub";
   const dials = current && isSub ? subDials(current) : [];
+  // **Every model id on the board**, every account's: the series colours
+  // are handed out over it, so one id is one colour on every page (UX-53,
+  // `lib/model-band`). **The board alone**, which is in hand before any
+  // page draws: a model only a subscription's transcripts carry takes the
+  // slot after the board's on that chart (`bandsFor`'s `strangers`).
+  // ⚠️ 墓碑 (ux-q3): the transcripts' models folded in too — they arrive
+  // only once a subscription is opened (`fetchUsage`), so every API
+  // account's colours moved the moment one was (`check-face` quota d).
+  const boardModels = useMemo(() => (board ?? []).flatMap((a) => a.reading.model_tokens.map((m) => m.model)), [board]);
+  /** **The account page's lead** (UX-53, the owner 2026-10-08: 「窗口简洁
+      一点」「点击去不要环和 bar 换行」「重置写在 5H 这种左侧的标题旁边」
+      「重制用一个刷新 icon」): one line per window — its name and ↻ the
+      time, the bar, the percentage — beside the dial on the wide face;
+      **no dial on a phone** (the lead's A), where each line carries its
+      own number and the dial's room is the bars'. Nothing wraps: the bar
+      gives way, never a word.
+      ⚠️ 墓碑: the dial over a column of 「name · N 小时后重置 / bar / %」
+      that stacked under it on a phone (F4.4), and before that per-window
+      dials (2026-09-07). */
+  const lead = (fraction: number | null, strain: Strain | null, pips: Pip[], centreWord: string, lines: Line[], figures: Figure[]) => (
+    <div data-quota-lead className="flex flex-nowrap items-center gap-x-group">
+      {!narrow && (
+        // On the page's left line (`FlushInk`): the dial's first mark,
+        // not its box (the redesign, 2026-10-02).
+        <FlushInk>
+          <Face size={DIAL_CARD_SIZE} stroke={DIAL_CARD_STROKE} ratio={DIAL_CARD_RATIO} crop fraction={fraction} strain={strain} pips={pips}>
+            {centreWord}
+          </Face>
+        </FlushInk>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col gap-row">
+        {lines.length > 0 && (
+          <div data-quota-parts className="grid min-w-0 grid-cols-[auto_minmax(1.5rem,1fr)_auto] items-center gap-x-in gap-y-in">
+            {lines.map((l) => (
+              // `contents`, so the three cells line up in the grid while
+              // the line still has an element of its own to be named by.
+              <div key={l.id} data-quota-part={l.id} data-quota-window={l.window ? l.id : undefined} className="contents">
+                <span data-quota-part-title className="flex min-w-0 items-baseline gap-in whitespace-nowrap">
+                  <span data-quota-window-name className="text-body">
+                    {l.word}
+                  </span>
+                  {l.resets_at !== null && <Resets at={l.resets_at} />}
+                </span>
+                {/* The machine card's bar, the same component; the strain
+                    ink from 90%, as the gauge (a window, never money). */}
+                <Bar pct={l.pct} strain={l.window ? pctStrain(l.pct) : null} />
+                <span
+                  data-quota-window-pct
+                  className={cn("min-w-[4ch] text-right text-body tabular-nums", l.window && l.pct >= 100 && "font-title text-strain")}
+                >
+                  {`${Math.round(l.pct)}%`}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+        {figures.length > 0 && (
+          // **The money, one line of figures under the bars**: what a bar
+          // cannot say (已用 $142.30 / $200 · 剩余 $57.70 …), a word in the
+          // secondary ink and its figure in the ink.
+          <p data-quota-figures className="flex flex-wrap gap-x-base gap-y-xxs text-callout text-muted-foreground tabular-nums">
+            {figures.map((f) => (
+              <span key={f.key} data-quota-figure={f.key} className="whitespace-nowrap">
+                {f.word} <span className="text-foreground">{f.value}</span>
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+    </div>
+  );
   const subDetail = current && isSub && (
     <DetailFrame data-quota-detail={current.id} className="flex flex-col gap-row py-row">
-      {/* No head: the name is R0's, the plan and the age are R0's
-          caption (`ReadCaption`). */}
-      {/* **The dial, and what it is made of beside it.** Every window
-          used to be a ring of its own, side by side — which drew the
-          same quantity at four radii and left 「哪个最先卡住我」 to be
-          worked out by comparing four circles. One dial answers that
-          (the arc and the number are the whole-plan window's —
-          `headline`), and the rim carries a mark per window at its own
-          angle: **as many pips as there are lines in the list beside
-          it, one for one**. Two windows at the same percent are two
-          marks on one spot, which is a true drawing of two windows that
-          are equally full.
-          Credits is in this list when it has a ceiling to fill against
-          — then it is a pip like any other; when it has none it is a
-          figure below and no mark, because a mark needs an angle and an
-          angle needs a denominator (`creditsPct`). */}
-      {/* **Narrow: the windows under the dial, full width** (the audit fix
-          plan F4.4; N09): beside it, the names were cut to 「5…」「7..」. */}
-      <div
-        data-quota-lead
-        className={cn("flex gap-x-group gap-y-row", narrow ? "flex-col items-stretch" : "flex-wrap items-center")}
-      >
-        {/* ⚠️ **Tombstone: this dial was a button for about an hour,
-            and before that there was a row of words under the list.
-            Neither is here now, and the story is worth keeping because
-            it is three judgments about three different things — not
-            somebody changing their mind.**
-
-            1. The first ruling had two sentences that disagree:「底下
-               『展开』」and「和机器卡按表盘开抽屉是同一个动作」. The
-               first was built. **Nobody went back to ask**, and that is
-               the part to learn from.
-            2. Looking at the built thing, the user ruled:「点击环本身
-               展开,和机器页一样,而不是现在的一排字!」 — the words went,
-               the dial became the handle (`02066e9`).
-            3. Looking at *that*, the user ruled:「直接就展开,不用用户
-               点击」, with the reason:「左多环右展开 bar 来铺宽度空间」.
-
-            **Each ruling is about what was in front of them**: a mock, a
-            row of words, a card with half its width empty. The third one
-            makes the first two moot — a drawer that is always open needs
-            no handle — so the handle is gone rather than disabled.
-
-            What is left is the dial, drawn and not pressed. */}
-        {/* On the page's left line (`FlushInk`): the dial's first mark,
-            not its box (the redesign, 2026-10-02). */}
-        <FlushInk>
-        <Face
-          size={DIAL_CARD_SIZE}
-          stroke={DIAL_CARD_STROKE}
-          ratio={DIAL_CARD_RATIO}
-          crop
-          fraction={arcOf(current)}
-          pips={dials.map((d): Pip => ({ word: d.word, v: d.pct }))}
-        >
-          {centreOf(current)}
-        </Face>
-        </FlushInk>
-        {/* **The right column, and everything in it is a fact about
-            this subscription** — the windows, then the credits. They
-            are one column rather than two blocks stacked under the card
-            because that is the half the dial does not fill
-            (2026-09-07:「表盘 | 事实」).
-            ⚠️ **`flex-1` is load-bearing, and its absence is invisible.**
-            Without it this column is sized to its content, the bars'
-            `1fr` track resolves to **zero**, and every bar measures 0px
-            wide — which on a screenshot reads as 「the bars have not
-            been added yet」, not as 「the layout is broken」. Measured
-            2026-09-07: 0px before, and it was the measurement that
-            found it, not the picture. */}
-        <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {/* **Name, bar, number — and the bar is why this is the shape**
-            (2026-09-07:「左多环右展开 bar 来铺宽度空间」,「类似机器卡片
-            的环 bar 组合」). The machine card pairs a dial with rows of
-            exactly this, for exactly this reason: **a bar is the one
-            reading that grows sideways**, so a card with width to spare
-            spends it on the readings instead of leaving it blank.
-            The reset rides the name in muted ink rather than taking a
-            column of its own — the same seat the machine card gives a
-            volume's mount point beside its path. A column for it would
-            push the bar into a gutter, and the bar is the point. */}
-        <dl
-          data-quota-parts
-          className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-row gap-y-1.5 text-callout"
-        >
-          {dials.map((d) => (
-            // `contents`, so the three cells line up in the grid while
-            // the window still has an element of its own to be named
-            // by — a gate that reads the *name* rather than the block
-            // needs somewhere to hang the name (measuring the block and
-            // splitting on whitespace reads 「39%7」).
-            <div
-              key={d.id}
-              data-quota-part={d.id}
-              data-quota-window={d.window ? d.id : undefined}
-              className="contents"
-            >
-              {/* ⚠️ **`data-quota-window-name` is on the word, not on
-                  this cell.** The cell holds the reset line too, and a
-                  measure that reads the cell gets 「7 天窗口23 小时后重
-                  置」 — the same 「39%7」 the older comment on this block
-                  warns about, re-made the moment the reset moved in
-                  here. Caught by that very gate, 2026-09-07. */}
-              <dt className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-body">
-                <span data-quota-window-name className="whitespace-nowrap">{d.word}</span>
-                {d.resets_at !== null && (
-                  <span className="flex-none text-callout text-muted-foreground">
-                    {gui.quota_resets(until(d.resets_at * 1000))}
-                  </span>
-                )}
-              </dt>
-              {/* **The machine card's bar, the same component**
-                  (`components/Bar`) — 「类似机器卡片的环 bar 组合」 read
-                  literally. **No `strain`**: a quota at 80% is a fact,
-                  not a warning (that component's head carries why, so
-                  the next reader does not take the missing argument for
-                  an oversight). */}
-              <Bar pct={d.pct} />
-              <dd data-quota-window-pct className="min-w-[4ch] text-right font-title tabular-nums">
-                {Math.round(d.pct)}%
-              </dd>
-            </div>
-          ))}
-        </dl>
-        {/* ⚠️ **Tombstone: the row of words under this list is gone,
-            2026-09-07** —「点击环本身展开,和机器页一样,而不是现在的一排
-            字!」. It was a `<button>` saying 展开每个窗口 / 收起.
-            **Its two words are not gone with it**: they are the dial's
-            `aria-label` now, saying the same thing to a reader who
-            cannot see the arrow. What was removed is a *second
-            vocabulary for one gesture* — the machine card already had
-            this gesture and it is the dial there, so a card that
-            answered it with a line of text was teaching the same act
-            twice.
-            **How this came to be built the other way is worth keeping**:
-            the ruling behind it was two sentences —「底下『展开』」and
-            「和机器卡按表盘开抽屉是同一个动作」— and they disagree. The
-            first was implemented. That was not a mistake in the doing;
-            it was a judgment with two readings that nobody went back to
-            ask about. */}
-      {/* **The credits' figures, and credits is still not a window.**
-          A window is a fraction of a period that refills by itself;
-          this is money, it does not refill and it has no reset — which
-          is why it has no reset line in the list above and why nothing
-          here calls it one (`Dial.window`).
-          ⚠️ **What changed on 2026-09-07 is narrower than it looks**:
-          credits now takes a pip *when the endpoint gave it a
-          ceiling*, because at that point it is a fraction like the
-          others and the user asked for one mark per part. With no
-          ceiling it is exactly what it always was — these figures and
-          no mark (`creditsPct`).
-          The dl is the account detail's, reused: one shape for
-          「figures about an account」 on this page, not a second. */}
-      {/* **Drawn only with a real reading** (`creditsShown`, owner
-          2026-10-07). The name's own row carries what was spent, so
-          已用 is a figure and never a label over nothing.
-          ⚠️ **Tombstone: until that day this block drew whenever the
-          endpoint sent `extra_usage`** — 「额外用量 · 不可用 · 额度已用完」
-          over a spend, for a switch that was off. The words
-          `quota-credits-on` / `quota-credits-off` went with it. */}
-      {creditsShown(current.credits) && (
-        <dl
-          data-quota-credits
-          className="grid grid-cols-[auto_1fr] gap-x-row gap-y-1 text-callout"
-        >
-          <dt className="text-muted-foreground">{gui.quota_credits}</dt>
-          {/* **`!= null`, not truthiness**: a spend of exactly 0 is a
-              fact worth drawing, and `0 &&` would hide it. With no
-              spend stated the name stands over the rows below it. */}
-          <dd data-quota-credits-used className="tabular-nums">
-            {current.credits.used != null ? money(current.credits.used, current.credits.currency) : ""}
-          </dd>
-          {current.credits.balance != null && (
-            <>
-              <dt className="text-muted-foreground">{gui.accounts_remaining}</dt>
-              <dd data-quota-credits-balance className="tabular-nums">
-                {money(current.credits.balance, current.credits.currency)}
-              </dd>
-            </>
-          )}
-          {current.credits.monthly_limit != null && (
-            <>
-              <dt className="text-muted-foreground">{gui.quota_credits_monthly}</dt>
-              <dd className="tabular-nums">
-                {money(current.credits.monthly_limit, current.credits.currency)}
-              </dd>
-            </>
-          )}
-        </dl>
+      {/* No head: the name is R0's, the plan and the age are R0's caption
+          (`ReadCaption`). The dial's arc is the window that speaks for the
+          whole plan (`Row.fill`), its pips one per line beside it. */}
+      {lead(
+        arcOf(current),
+        current.account?.strain ?? null,
+        dials.map((d): Pip => ({ word: d.word, v: d.pct })),
+        centreOf(current),
+        dials.map((d) => ({ id: d.id, word: d.word, pct: d.pct, resets_at: d.resets_at, window: d.window })),
+        creditsShown(current.credits) ? creditFigures(current.credits) : [],
       )}
-        </div>
-      </div>
-      {/* ⚠️ **Tombstone: the row of per-window dials that used to hang
-          under this card is gone, 2026-09-07** —「左多环右展开 bar 来铺
-          宽度空间」. It drew each window as its own 88px dial, in a strip
-          below; the same windows are the bars on the right now.
-
-          **The reason is width, and it is a real one.** Those dials sat
-          under a card whose right half was empty, so the card was tall
-          and narrow while the room went unused. Bars grow sideways —
-          that is what makes them the shape for「fill the width」, and it
-          is the same pairing the machine card makes (a dial, and rows of
-          `name | bar | number` beside it).
-
-          **Nothing was lost with them**: every window is still a line
-          over there, with its own name, its own reset and its own
-          number, and still a pip on the rim of the dial to the left. */}
-      {/* **The lower half — the same subscription in tokens.** The card
-          above is money and windows; this is what was spent to fill
-          them. It draws nothing while the answer is out and a sentence
-          when there is none, so the seam below never becomes an empty
-          chart (`UsageHalf`). */}
+      {/* **The lower half — the same subscription in tokens.** It draws
+          nothing while the answer is out and a sentence when there is
+          none, so the seam below never becomes an empty chart. */}
       {(() => {
         const u = fromUsage(usage, current.provider);
-        return <UsageHalf rows={u.rows} why={u.why} today={u.today} cacheKnown={u.cacheKnown} source="transcript" />;
+        return <UsageHalf rows={u.rows} why={u.why} today={u.today} cacheKnown={u.cacheKnown} source="transcript" board={boardModels} />;
       })()}
     </DetailFrame>
   );
 
   const detail = acc && current && !isSub && (
     <DetailFrame data-quota-detail={acc.reading.account} className="flex flex-col gap-row py-row">
-      {/* No head: the name is R0's, the plan and the age are R0's
-          caption (`ReadCaption`). */}
-      {/* **The same two columns the subscription's card has**: the dial
-          on the left, this reading's own figures on the right
-          (2026-09-07:「首节表盘 | 事实两栏,单读数的卡右边不许空」).
-          Stacked, the figures sat under a dial with half a card of white
-          space beside it — and a card whose right half is empty reads as
-          a card that failed to load something.
-          **No pips**: an account is one reading and has no parts, and a
-          rim with no marks is the honest drawing of that. */}
-      <div data-quota-lead className="flex flex-wrap items-center gap-x-group gap-y-row">
-        <FlushInk>
-        <Face
-          size={DIAL_CARD_SIZE}
-          stroke={DIAL_CARD_STROKE}
-          ratio={DIAL_CARD_RATIO}
-          crop
-          fraction={arcOf(current)}
-          strain={acc.strain}
-        >
-          {centre(acc)}
-        </Face>
-        </FlushInk>
-        <dl data-quota-figures className="grid min-w-0 grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-callout">
-        {acc.reading.trouble ? (
-          <>
-            <dt className="text-muted-foreground">{gui.accounts_state}</dt>
-            <dd data-quota-trouble={acc.reading.trouble}>{troubleWord(acc.reading.trouble, acc.reading.provider)}</dd>
-          </>
-        ) : (
-          <>
-            {acc.reading.spent != null && (
-              <>
-                <dt className="text-muted-foreground">{gui.accounts_spent}</dt>
-                <dd data-quota-spent className="tabular-nums">
-                  {acc.reading.limit != null
-                    ? gui.accounts_of(
-                        money(acc.reading.spent, null),
-                        money(acc.reading.limit, markOf(acc.unit)),
-                      )
-                    : money(acc.reading.spent, markOf(acc.unit))}
-                  {acc.reading.unlimited ? ` · ${gui.accounts_unlimited}` : ""}
-                </dd>
-              </>
-            )}
-            {acc.reading.remaining != null && (
-              <>
-                <dt className="text-muted-foreground">{gui.accounts_remaining}</dt>
-                <dd data-quota-remaining className="tabular-nums">
-                  {money(acc.reading.remaining, markOf(acc.unit))}
-                  {/* **The wallet's one line, and why it is the only
-                      one.** DeepSeek and Moonshot answer a balance and
-                      nothing else — no spend, no ceiling, no day
-                      buckets — so this card has one figure and the
-                      sentence says that is the endpoint's doing, not a
-                      reading khor failed to take. **It says what the
-                      provider gave, never what khor cannot draw**: the
-                      second half would be explaining our own plumbing,
-                      which is the family this page deleted a round of.
-                      Only where there is no spend beside it — an
-                      OpenRouter key reports both, and there the balance
-                      is one figure among several. */}
-                  {acc.reading.spent == null && (
-                    <span data-quota-balance-only className="ml-2 text-muted-foreground">
-                      {gui.accounts_balance_only}
-                    </span>
-                  )}
-                </dd>
-              </>
-            )}
-            {BUDGETED.includes(acc.reading.provider) &&
-              acc.reading.limit == null &&
-              !acc.reading.unlimited && (
-                <>
-                  <dt className="text-muted-foreground">{gui.accounts_budget}</dt>
-                  <dd className="text-muted-foreground">{gui.accounts_no_budget}</dd>
-                </>
-              )}
-            {acc.reading.resets_at != null && (
-              <>
-                <dt className="text-muted-foreground">{gui.accounts_resets}</dt>
-                <dd>{until(acc.reading.resets_at * 1000)}</dd>
-              </>
-            )}
-            {/* **到期, and only where there is one.** A token that never
-                expires carries `null` here, not a zero — the two
-                sentinels the endpoint uses (`0` on the wire, `-1` in its
-                own table) are turned away at the parser, because either
-                of them drawn straight is 1970-01-01: a date that looks
-                entirely real. */}
-            {acc.reading.expires_at != null && (
-              <>
-                <dt className="text-muted-foreground">{gui.accounts_expires}</dt>
-                <dd data-quota-expires>{until(acc.reading.expires_at * 1000)}</dd>
-              </>
-            )}
-            {/* **模型, and the list is already the answer.** Whether the
-                limit is switched on was decided at the parser — the
-                endpoint keeps the old names after it is switched off,
-                and 「limited to these」 versus 「not limited」 are
-                opposite sentences made of the same real model names. An
-                empty list is 「no limit in force」 and draws nothing. */}
-            {acc.reading.models.length > 0 && (
-              <>
-                <dt className="text-muted-foreground">{gui.accounts_models}</dt>
-                <dd data-quota-models className="flex flex-wrap gap-1">
-                  {acc.reading.models.map((m) => (
-                    <span key={m} className="rounded bg-secondary px-1.5 font-mono text-caption">
-                      {m}
-                    </span>
-                  ))}
-                </dd>
-              </>
-            )}
-            {/* **Two periods, each under its own word.** Which of these
-                reached the screen used to depend on whether the key had
-                a cap, so 「已用」 meant this month on one account and all
-                time on another with nothing saying which. Drawn only
-                beside each other — one of them alone is the ambiguity
-                again. */}
-            {acc.reading.spent_this_month != null && acc.reading.spent_all_time != null && (
-              <>
-                <dt className="text-muted-foreground">{gui.accounts_this_month}</dt>
-                <dd data-quota-month className="tabular-nums">
-                  {money(acc.reading.spent_this_month, markOf(acc.unit))}
-                </dd>
-                <dt className="text-muted-foreground">{gui.accounts_all_time}</dt>
-                <dd data-quota-all-time className="tabular-nums">
-                  {money(acc.reading.spent_all_time, markOf(acc.unit))}
-                </dd>
-              </>
-            )}
-          </>
-        )}
-        {/* ⚠️ **The reading's age left this list on 2026-09-07** and is
-            on the card's head instead, where the machine card puts the
-            same fact (`card-version` · `card-age`). Two cards, one
-            place. It is not gone — a figure that says nothing about
-            *when* is the thing this page must never draw — and the
-            `accounts-read-by` label went with it, because the head
-            carries no labels. */}
-        </dl>
-      </div>
-      {/* **What the provider billed, in tokens.** Most accounts have no
-          such report and say so rather than drawing an empty chart; see
-          `fromReading`.
-
-          ⚠️ **Tombstone: the by-day *spend* chart left this card on
-          2026-09-10** (「取消现在那个多出的最近1天那的bar图.就绘制花掉的
-          token」). Two bar charts of the same shape sat here, one above
-          the other — money per day, then tokens per day — and the card
-          read as two products however carefully the second was matched
-          to the first. The money is not lost: the dial above is money
-          and the row's own column is money.
-
-          **The cut-log line stayed, and keeping it here is the point.**
-          `days` and `model_tokens` come out of the *same*
-          `/api/log/token` answer (`crates/node/src/accounts.rs`), so a
-          log the provider truncated truncates **this** chart too.
-          Dropping the sentence along with the chart it used to sit
-          under would leave a reader believing a picture of one day is a
-          picture of the window — 「看图的人不能以为自己看的是 7 天」,
-          2026-09-07. */}
+      {/* No head: the name is R0's, the plan and the age are R0's caption
+          (`ReadCaption`). The same lead as the subscription's: one line
+          for the fraction where there is one — the budget, or a new-api
+          token's own quota — with ↻ its reset, and the money under it.
+          **No pips**: an account is one reading and has no parts. */}
+      {acc.reading.trouble ? (
+        <p data-quota-trouble={acc.reading.trouble} className="text-body">
+          {troubleWord(acc.reading.trouble, acc.reading.provider)}
+        </p>
+      ) : (
+        lead(
+          arcOf(current),
+          acc.strain,
+          [],
+          centre(acc),
+          acc.reading.fill != null
+            ? [
+                {
+                  id: "fill",
+                  word: BUDGETED.includes(acc.reading.provider) ? gui.accounts_budget : gui.accounts_spent,
+                  pct: acc.reading.fill * 100,
+                  resets_at: acc.reading.resets_at,
+                  window: true,
+                },
+              ]
+            : [],
+          billFigures(acc),
+        )
+      )}
+      {/* **The models the key is limited to, where a limit is in force**
+          — the parser decided it; an empty list draws nothing. */}
+      {acc.reading.models.length > 0 && (
+        <p data-quota-models className="flex flex-wrap items-baseline gap-1 text-callout text-muted-foreground">
+          {gui.accounts_models}
+          {acc.reading.models.map((m) => (
+            <span key={m} className="rounded bg-secondary px-1.5 font-mono text-caption text-foreground">
+              {m}
+            </span>
+          ))}
+        </p>
+      )}
       {(() => {
         const u = fromReading(acc.reading);
         return (
           <>
+            {/* A log the provider truncated truncates this chart too —
+                「看图的人不能以为自己看的是 7 天」 (2026-09-07). */}
             {acc.reading.log_capped != null && u.rows !== null && (
               <div data-quota-days-capped className="text-caption text-muted-foreground">
                 {gui.accounts_log_capped(acc.reading.log_capped)}
               </div>
             )}
-            <UsageHalf rows={u.rows} why={u.why} today={null} cacheKnown={u.cacheKnown} source="vendor" />
+            <UsageHalf rows={u.rows} why={u.why} today={null} cacheKnown={u.cacheKnown} source="vendor" board={boardModels} />
           </>
         );
       })()}
-      {/* ⚠️ **Tombstone: the 撤掉 button left this card on 2026-09-07**
-          (「卡上不放按钮(撤掉、编辑都不要):右键列表里的条目弹 置顶 /
-          编辑 / 删除」). It is the row's menu now, beside 置顶 and 编辑,
-          which is where the machine list and the session list already
-          put the same three gestures.
-          **It is not that a button is worse than a menu.** It is that
-          the card is the *reading* and the row is the *thing*: an act
-          on the registration belongs on the registration, and a card
-          with a verb on it makes a person aim at the reading to change
-          the account. The phone half decides it outright — a control
-          that only appears beside a card is one a narrow face has no
-          room for. */}
     </DetailFrame>
   );
 
-  // Never read yet: the skeleton, not a blank (components/RegionState).
-  // Read and empty: one sentence and its one button (components/EmptyState).
-  // **R0's right end** (components/RegionState): stale — the shell
-  // cannot reach khor, or this landing's own poll was refused over a
-  // board already read — says so; otherwise the open account's plan and
-  // the age of its reading (`ReadCaption`).
   /** 过期 / 离线: the last board stays and R0's right end says so. */
   const staleSay =
     stale || (error && board !== null) ? (

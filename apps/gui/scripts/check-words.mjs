@@ -33,8 +33,9 @@
 //      and the row's state is `connectionKeyWord(connectionKey(d))`, not
 //      a second ladder (`views/DevicesList`);
 //   7. **money is one formatter**: no file but `words.ts` defines a
-//      `money` (or the ring's `ringWord`) of its own — the quota page is
-//      named as pending on ux-q2 (`PENDING`), printed every run;
+//      `money` (or the ring's `ringWord`) of its own — a page waiting on
+//      a lane is named in `PENDING` and printed every run (none since
+//      UX-53);
 //   8. **the direction is not trimmed off** `until` / `ago`'s answer
 //      (`untilBare` is the bare two-unit form).
 //
@@ -92,12 +93,14 @@ const files = [];
 const WORDS = "src/words.ts";
 /**
  * **Waiting on a lane, by name, with what is left** — never a quiet pass.
- * The quota page is ux-q2's to rewrite (its rows, its account page, its
- * caption; the lead, 2026-10-08), so its own two money formatters stay
- * until that rewrite lands on `money` / `moneyIn` / `until` / `untilBare`.
- * Each entry is printed on every run; drop it when the rewrite lands.
+ * Each entry is printed on every run; drop it when the lane lands.
+ * ⚠️ 墓碑: the quota page's own `money` and `ringWord`, pending on ux-q2
+ * until UX-53 put its rows, account page and caption on `money` /
+ * `moneyIn` / `agoOf` / `untilBare`.
  */
-const PENDING = new Map([["src/views/QuotaLanding.tsx", "ux-q2: money / ringWord → words.ts money / moneyIn; the age cell's bare lasting → agoOf"]]);
+// UX-53 (ux-q2, 2026-10-08): the quota page took words.ts money / moneyIn,
+// agoOf and untilBare; nothing is pending.
+const PENDING = new Map();
 const words = files.find((f) => f.path === WORDS);
 if (!words) fail("probe dead: src/words.ts is not there");
 /** Code without its comments, so a tombstone naming a retired key is not

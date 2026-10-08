@@ -689,10 +689,39 @@
   --model-fable: #6f7d47;
   --model-sonnet: #7d2540;
   --model-haiku: #a5620f;
-  --model-spare: #08763d;
-  /* The long tail, folded into one band. See above for why it has no
-     hue. */
+  /* ⚠️ 墓碑 (UX-53): `--model-spare` #08763d, the one hue a model outside
+     the families got — every further one went grey. */
+  /* The unnamed row (「nobody said which model」), and only that: a named
+     model is a family or a series slot below. */
   --model-tail: #a1a19c;
+  /* **A family's oldest generation** (`lib/model-band` mixes the steps
+     between the hue and this): here the design's 58% toward the paper. */
+  --model-opus-old: #a8aac1;
+  --model-fable-old: #bcc2a8;
+  --model-sonnet-old: #c29da6;
+  --model-haiku-old: #d3b791;
+
+  /* ── a model outside the four families (UX-53, 2026-10-08) ─────────
+   *
+   * The owner: 「非订阅的，不同 model id 的颜色都是灰色」. Six slots, handed
+   * out over every model id on the 额度 board by name, so one id wears
+   * one slot on every page (`lib/model-band`). Searched in OKLCH, then
+   * validated (Machado 2009 at full severity, OKLab ΔE×100) on this
+   * theme's paper #f4f4ef: contrast 3.42–7.50; neighbours ≥ 14.9 for a
+   * red or green deficiency, slots 1–4 all-pairs ≥ 13.5; full colour
+   * vision all-pairs ≥ 17.3. Every slot keeps ≥ 35° (HSL) off 待批's
+   * cold blue (`avatar.rs` BLOCKED_KEEPOUT). Which slots sit by which
+   * family is `CLOSE` in `lib/model-band`. */
+  --model-series-1: #0b663c;
+  --model-series-2: #4c68eb;
+  --model-series-3: #9a8202;
+  --model-series-4: #d34198;
+  --model-series-5: #be1506;
+  --model-series-6: #7223aa;
+  /* The usage chart's median rule and its word (UX-53, 「中位颜色看不
+     清」): the ink, on a halo of the paper, so it reads across any band
+     at ink-on-paper — 13.6 here. ⚠️ 墓碑: `currentColor` at 0.45 / 0.6. */
+  --chart-median: var(--foreground);
 
   /* The day strip's 不知道 — **no signal**, not a seventh word
    * (`khor_core::DayCell`). Deliberately a tint of the page's own ink
@@ -2149,8 +2178,24 @@
   --model-fable: #a8bd6f;
   --model-sonnet: #a36979;
   --model-haiku: #e0a15a;
-  --model-spare: #51b983;
   --model-tail: #6d6d69;
+  /* Each family's oldest stops where it still reads 3:1 on the black
+     paper (UX-53; at the old 58% opus-4-8 read 1.74 — 「看不见」): opus
+     29%, fable 49%, sonnet 26%, haiku 48% toward black. */
+  --model-opus-old: #575974;
+  --model-fable-old: #566039;
+  --model-sonnet-old: #794e5a;
+  --model-haiku-old: #74542f;
+  /* The six slots stepped for #000: contrast 3.88–7.52; neighbours ≥
+     13.3 for a red or green deficiency, slots 1–4 all-pairs ≥ 12.6; full
+     colour vision all-pairs ≥ 17.2. */
+  --model-series-1: #0eb16a;
+  --model-series-2: #4761e4;
+  --model-series-3: #85700b;
+  --model-series-4: #be2b86;
+  --model-series-5: #f0503d;
+  --model-series-6: #b46df4;
+  --chart-median: var(--foreground);
 
   --badge: #d4756b;
   --on-badge: #1a1a14;

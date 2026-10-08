@@ -145,7 +145,7 @@ function sizeForWidth(w: number, stroke: number): number {
   return (lo + hi) / 2;
 }
 
-function sizeForCroppedHeight(h: number, stroke: number): number {
+export function sizeForCroppedHeight(h: number, stroke: number): number {
   let lo = 1;
   let hi = 1000;
   for (let i = 0; i < 50; i++) {
