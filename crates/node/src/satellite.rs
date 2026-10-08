@@ -1511,6 +1511,10 @@ fn sh_quote(s: &str) -> String {
 /// truncated by luck. `base64 -d` is coreutils on Linux and BSD on
 /// macOS; both take `-d`, and a machine without it answers `nob64`
 /// rather than writing something wrong.
+///
+/// The temporary carries the shell's pid (`$$`, save-a 2026-10-08):
+/// the editor saves on its own now, and two saves of one file meeting
+/// over two ssh sessions must not truncate each other's temporary.
 const WRITE_SH: &str = r#"
 set -u
 f=$KHOR_FILE
@@ -1521,7 +1525,7 @@ if [ -z "$now" ]; then now=$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1); fi
 if [ -z "$now" ]; then echo "nosha"; exit 0; fi
 if [ "$now" != "$want" ]; then echo "moved"; exit 0; fi
 command -v base64 >/dev/null 2>&1 || { echo "nob64"; exit 0; }
-tmp=$(dirname "$f")/.khor-save-$(basename "$f")
+tmp=$(dirname "$f")/.khor-save-$(basename "$f").$$
 printf %s "$KHOR_B64" | base64 -d > "$tmp" || { rm -f "$tmp"; echo "nowrite"; exit 0; }
 mv -f "$tmp" "$f" || { rm -f "$tmp"; echo "nowrite"; exit 0; }
 at=$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null)

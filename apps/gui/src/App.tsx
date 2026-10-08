@@ -117,6 +117,7 @@ import {
   storedWords,
 } from "@/lib/session-filter";
 import { draftCount, watchDrafts } from "@/lib/drafts";
+import { discardAll, flushAll } from "@/lib/save-road";
 import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { band } from "@/lib/scroll-edge";
 import { levelOf, onTreeChanged, sameMachine } from "@/lib/tree-changed";
@@ -251,6 +252,27 @@ const SYNC_WAIT_MS = 6_000;
     patience (`ipc::FACE_BEAT` × 3), so one lost beat never drops the
     pump to its quiet pace. */
 const FACE_BEAT_MS = 10_000;
+/** How long the quit waits, after the last unsaved file's write was
+    answered, for the panes to take their drafts off (save-a). A draft
+    goes when its view re-renders on the landing — a beat, not a wait. */
+const QUIT_SETTLE_MS = 600;
+
+/** Resolves as soon as no file is unsaved, or after `ms`. */
+function settled(ms: number): Promise<void> {
+  return new Promise((done) => {
+    if (draftCount() === 0) return done();
+    const stop = watchDrafts((n) => {
+      if (n !== 0) return;
+      stop();
+      clearTimeout(id);
+      done();
+    });
+    const id = setTimeout(() => {
+      stop();
+      done();
+    }, ms);
+  });
+}
 
 /** Each landing's stored ticks, one entry per pane (`lib/session-filter`)
     — sessions, machines, workspaces and 额度 each tick their own axes.
@@ -456,13 +478,28 @@ export default function App() {
   useEffect(() => {
     // The settings window holds no drafts and closes as any window does.
     if (settingsFace) return;
+    // **Unsaved edits are written first** (save-a): every open file's
+    // pending text goes, and the window closes when nothing is left
+    // unsaved. Only what could not be saved asks — that is the warning.
+    let flushing = false;
     const stop = onQuitRequested(() => {
-      const n = draftCount();
-      if (n === 0) return false;
-      setQuitting(n);
+      if (draftCount() === 0) return false;
+      if (flushing) return true;
+      flushing = true;
+      void flushAll()
+        .then(() => settled(QUIT_SETTLE_MS))
+        .then(() => {
+          flushing = false;
+          const n = draftCount();
+          if (n === 0) quitNow();
+          else setQuitting(n);
+        });
       return true;
     });
     const leaving = (e: BeforeUnloadEvent) => {
+      // A browser will not wait; the writes go, and it asks if any
+      // file still has something unwritten.
+      void flushAll();
       if (draftCount() === 0) return;
       e.preventDefault();
       // Deprecated and still required: some engines only ask when this
@@ -3065,6 +3102,9 @@ export default function App() {
         onSave={() => undefined}
         onDrop={() => {
           setQuitting(null);
+          // Nothing more is written on the way out (save-a): the
+          // window being hidden as it closes would flush otherwise.
+          discardAll();
           quitNow();
         }}
         onKeep={() => setQuitting(null)}

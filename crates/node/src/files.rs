@@ -197,12 +197,39 @@ pub fn digest(bytes: &[u8]) -> String {
 ///
 /// Answers the new [`digest`] and the new mtime, so a writer can keep
 /// editing without reading the file back.
+///
+/// # Two saves of one path at once (save-a, 2026-10-08)
+///
+/// The editor saves on its own now (a second after the typing stops,
+/// and on leaving the file), so two writers reaching one path in the
+/// same moment is an ordinary day: two windows, two devices, the app
+/// and `khor` on the command line. Each `WritePath` that reaches this
+/// node runs on a blocking thread of its own, so they really do run
+/// side by side.
+///
+/// **The check and the rename are one step per path in this process**
+/// ([`Saving`]). Without it two writers holding the same digest both
+/// passed the check and the later rename silently replaced the earlier
+/// save — exactly the overwrite `was` exists to refuse. With it the
+/// second one finds the first one's bytes and is refused.
+///
+/// **Each writer has its own temporary** (`.khor-save-<name>.<pid>-<n>`).
+/// They shared one name until this round, and `File::create` truncates:
+/// a second writer emptied the first one's temporary under it, and the
+/// first one's rename could put a half-written file in place. The pid is
+/// for the other process (the command line's `khor`), which this lock
+/// does not reach.
+///
+/// What no lock here can close is another program writing between the
+/// check and the rename; that window is the length of one write of at
+/// most [`crate::proto::SLICE`] bytes and an fsync.
 pub fn write_whole(path: &str, bytes: &[u8], was: &str) -> Result<(u64, String), String> {
     use std::io::Write;
     let p = std::path::Path::new(path);
     if !p.is_absolute() {
         return Err(msg::path_not_absolute(path));
     }
+    let _saving = Saving::hold(p);
     // One frame is the ceiling and the caller is expected to know it —
     // this is the wire's limit worn where the bytes land, so a path
     // that reached here another way cannot get past it either.
@@ -230,7 +257,11 @@ pub fn write_whole(path: &str, bytes: &[u8], was: &str) -> Result<(u64, String),
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| msg::not_a_file_path(path))?;
-    let part = dir.join(format!(".khor-save-{name}"));
+    let part = dir.join(format!(
+        ".khor-save-{name}.{}-{}",
+        std::process::id(),
+        PART.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     // Scoped so the handle is closed before the rename: on Windows a
     // rename over an open file fails, and this module is compiled for
     // five platforms.
@@ -257,6 +288,45 @@ pub fn write_whole(path: &str, bytes: &[u8], was: &str) -> Result<(u64, String),
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
     Ok((at_ms, digest(bytes)))
+}
+
+/// Numbers each [`write_whole`] temporary in this process.
+static PART: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The paths a [`write_whole`] is between its check and its rename on,
+/// in this process, and the bell that rings when one is let go.
+static SAVING: std::sync::LazyLock<(
+    std::sync::Mutex<std::collections::HashSet<std::path::PathBuf>>,
+    std::sync::Condvar,
+)> = std::sync::LazyLock::new(Default::default);
+
+/// One path held for one save; let go on drop, which is also how a
+/// save that returned early or panicked lets the next one in.
+struct Saving(std::path::PathBuf);
+
+impl Saving {
+    fn hold(p: &std::path::Path) -> Saving {
+        let (set, bell) = &*SAVING;
+        // A poisoned lock is a panic in another save; the set it guards
+        // is still a set, and refusing every later save for it would be
+        // worse than the panic.
+        let mut held = set.lock().unwrap_or_else(|e| e.into_inner());
+        while held.contains(p) {
+            held = bell.wait(held).unwrap_or_else(|e| e.into_inner());
+        }
+        held.insert(p.to_path_buf());
+        Saving(p.to_path_buf())
+    }
+}
+
+impl Drop for Saving {
+    fn drop(&mut self) {
+        let (set, bell) = &*SAVING;
+        set.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.0);
+        bell.notify_all();
+    }
 }
 
 /// Where a pulled file lands and how it gets there: written beside its
@@ -1017,6 +1087,115 @@ mod write_tests {
         let err = write_whole(path.to_str().unwrap(), &big, "").expect_err("over the ceiling");
         assert!(err.contains(&crate::proto::SLICE.to_string()), "{err}");
         assert!(!path.exists(), "and no file was started");
+    }
+
+    /// **Many writers, one digest, one path, all at once** (save-a): the
+    /// editor saves on its own now, so two saves of one file meeting is
+    /// an ordinary day. Every writer read the same file; exactly one may
+    /// land, the rest are refused, and what is on the disk is that one
+    /// writer's bytes whole — never a mix, never a truncated temporary
+    /// renamed into place, and nothing left beside it.
+    ///
+    /// The bodies are large (a few hundred KB, under one frame) so a
+    /// write takes long enough for the threads to overlap.
+    #[test]
+    fn writers_racing_on_one_digest_land_exactly_one_whole() {
+        let dir = tmp("racing");
+        let path = dir.join("a.txt");
+        std::fs::write(&path, b"start\n").unwrap();
+        let was = digest(b"start\n");
+        let p = path.to_str().unwrap().to_owned();
+        let n = 8;
+        let size = (crate::proto::SLICE as usize / 2).min(200_000);
+        let bodies: Vec<Vec<u8>> = (0..n).map(|i| vec![b'a' + i as u8; size]).collect();
+        let start = std::sync::Arc::new(std::sync::Barrier::new(n));
+        let runs: Vec<_> = bodies
+            .iter()
+            .cloned()
+            .map(|body| {
+                let (p, was, start) = (p.clone(), was.clone(), start.clone());
+                std::thread::spawn(move || {
+                    start.wait();
+                    write_whole(&p, &body, &was)
+                })
+            })
+            .collect();
+        let outs: Vec<_> = runs.into_iter().map(|t| t.join().unwrap()).collect();
+        let landed: Vec<usize> = (0..n).filter(|&i| outs[i].is_ok()).collect();
+        assert_eq!(landed.len(), 1, "exactly one writer lands: {outs:?}");
+        let on_disk = std::fs::read(&path).unwrap();
+        assert_eq!(on_disk, bodies[landed[0]], "and the file is that writer's bytes, whole");
+        assert_eq!(outs[landed[0]].as_ref().unwrap().1, digest(&on_disk));
+        let left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(left, vec!["a.txt".to_owned()], "no temporary left beside it");
+    }
+
+    /// The editor's own road: each save pins to the digest the last one
+    /// answered, so a run of saves of one buffer all land, in order, and
+    /// a save pinned to a digest two saves back is refused rather than
+    /// winding the file back.
+    #[test]
+    fn a_chain_of_saves_lands_and_a_stale_link_is_refused() {
+        let dir = tmp("chain");
+        let path = dir.join("a.txt");
+        let p = path.to_str().unwrap();
+        std::fs::write(&path, b"0\n").unwrap();
+        let d0 = digest(b"0\n");
+        let (_, d1) = write_whole(p, b"0\n1\n", &d0).expect("first save");
+        let (_, d2) = write_whole(p, b"0\n1\n2\n", &d1).expect("second save");
+        assert_eq!(std::fs::read(&path).unwrap(), b"0\n1\n2\n");
+        write_whole(p, b"0\nstale\n", &d1).expect_err("pinned to a digest the file left behind");
+        assert_eq!(std::fs::read(&path).unwrap(), b"0\n1\n2\n", "and nothing moved");
+        write_whole(p, b"0\n1\n2\n3\n", &d2).expect("the current link still lands");
+    }
+
+    /// **Two editors of one file, each saving its own edits on its own
+    /// clock**: the second to save after the first has landed is
+    /// refused, every time, however the saves interleave — that refusal
+    /// is what lets the face stop and ask instead of overwriting.
+    #[test]
+    fn two_editors_saving_in_turn_never_overwrite_each_other() {
+        let dir = tmp("two");
+        let path = dir.join("a.txt");
+        let p = path.to_str().unwrap().to_owned();
+        std::fs::write(&path, b"base\n").unwrap();
+        let base = digest(b"base\n");
+        let start = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let run = |who: u8| {
+            let (p, base, start) = (p.clone(), base.clone(), start.clone());
+            std::thread::spawn(move || {
+                start.wait();
+                // Each editor saves five times, pinned to its own last
+                // answer — the face's chain.
+                let mut was = base;
+                let mut landed = Vec::new();
+                for i in 0..5u8 {
+                    let body = vec![who, i, b'\n'];
+                    match write_whole(&p, &body, &was) {
+                        Ok((_, d)) => {
+                            was = d;
+                            landed.push(body);
+                        }
+                        Err(_) => break,
+                    }
+                }
+                landed
+            })
+        };
+        let (a, b) = (run(b'a'), run(b'b'));
+        let (a, b) = (a.join().unwrap(), b.join().unwrap());
+        // One of the two got the file first; the other was refused on
+        // its first save and wrote nothing at all.
+        assert!(
+            a.is_empty() != b.is_empty(),
+            "exactly one editor's chain lands: a {a:?}, b {b:?}"
+        );
+        let won = if a.is_empty() { &b } else { &a };
+        assert_eq!(won.len(), 5, "and that one's whole chain lands");
+        assert_eq!(&std::fs::read(&path).unwrap(), won.last().unwrap());
     }
 }
 

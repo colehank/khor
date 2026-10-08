@@ -3622,18 +3622,28 @@ file-merge = "合并（冲突处由你决定）"
 file-merged-clean = "已合并对方的修改，是否保存仍由你决定"
 # 合完了,有打架的地方。数字要说出来:标记在文里,不数一遍人就得自己找。
 file-merged-clashes = "已合并，{0} 处冲突已在文中标出，等你处理"
+# **文件自己保存了**(save-a, 2026-10-08,负责人:「编辑文件要实时保存,保存按钮
+# 只是作为一个额外的确定」)。停手一秒写一次,离开文件时立刻写;写法还是
+# 「盘上还是读到的那份才写」。下面三句是这条路不顺的时候说的。
+#
+# 盘上的文件在别处被改了(另一个程序、另一台机器、git checkout):自动保存
+# 停在这里,一句话说清,后面跟三个出口(上面的 file-take-theirs 等)。
+# **不说「冲突」**:冲突是合并之后两边改了同一行,这里还没合并。
+file-clash = "此文件已在别处修改，自动保存已暂停"
+# 写不出去(机器连不上、没有权限、盘满了):改动留在编辑器里,过一会儿自动
+# 再试。{0} 是那台机器自己说的原因。
+file-unsaved-why = "未保存，稍后自动重试：{0}"
+# 按 ✓ 或 ⌘S 之后,按钮自己说一声,一秒半后回到原样。**只在按钮上**:
+# 2026-09-16 撤掉的是文件上方那条「存好了」的栏,它推正文;这个词不占一行。
+file-saved = "已保存"
 # A file khor only has the beginning of cannot be edited, because what
 # a save writes back is what is on screen. Said beside the cut line
 # rather than as a second strip — it is the same fact, and 「只读了开头」
 # already told half of it.
 file-read-only = "只读"
-# The gutter goes quiet while a file is unsaved, and this is why.
-# **Drawn stale it would be wrong, not merely old**: the bars name line
-# numbers, and one typed line moves every line under it — so a bar that
-# stayed put would point at code it is not about. Recomputing per
-# keystroke is a round trip per keystroke, which is not a thing khor
-# will do to somebody else's machine.
-git-stale = "保存后才能显示改动位置"
+# **`git-stale` 撤掉了**(save-a, 2026-10-08):「保存后才能显示改动位置」,
+# 文件未存、改动条暂时不画时说的。文件停手一秒就自己存了,这句话会在每次
+# 停顿时闪一下;存不下去的时候 file-unsaved-why 自己会说。
 # **`git-was` 撤掉了**(2026-09-16):原来那块「HEAD 里原来是」的标题,在
 # 文件底下的面板上。面板没了——「点击后,不要在下面一行显示情况。就地显示。
 # 跟 vscode 一样」——旧的几行现在就躺在替掉它们的那几行正上方,一片红底
