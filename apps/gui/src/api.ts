@@ -60,6 +60,7 @@ import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { Found } from "./gen/bindings/Found";
 import { termSizeHint } from "./lib/term-size-hint";
+import { CONFIG_TOLD, LOCK_TOLD, tellOthers } from "./lib/other-windows";
 import type { HistoryRow } from "./gen/bindings/HistoryRow";
 import type { SearchHit } from "./gen/bindings/SearchHit";
 import type { RecentRow } from "./gen/bindings/RecentRow";
@@ -1176,22 +1177,31 @@ export const doctorFix = (key: string) => call<string>("doctor_fix", { key });
 export const fetchConfig = () => call<ConfigRow[]>("config");
 /** Sets one, and answers **the whole list again** so no page ever paints
     from a copy it patched itself. Refused by name for an unknown key,
-    and by a second sentence for a value outside that key's ladder. */
+    and by a second sentence for a value outside that key's ladder.
+    Every other window of the app is told to read the store again
+    (`lib/other-windows`): the Mac's 设置 is a window of its own. */
 export const setConfig = (name: string, value: string) =>
-  call<ConfigRow[]>("set_config", { name, value });
+  call<ConfigRow[]>("set_config", { name, value }).then(told(CONFIG_TOLD));
 /** 安全 (docs/MORE.md): how this machine's faces are set to lock. **No
     node is opened on the other side** — the lock file is read straight
     off the store — so the shell can ask this before it draws anything,
     which is what lets a locked face come up locked rather than flashing
     a conversation first. */
 export const fetchLock = () => call<LockFacts>("lock_state");
-export const setLock = (on: boolean) => call<LockFacts>("set_lock", { on });
+export const setLock = (on: boolean) => call<LockFacts>("set_lock", { on }).then(told(LOCK_TOLD));
 /** An empty PIN clears it, and clearing turns the lock off in the same
     move — splitting those is how a machine claims to be locked with no
     key to it. */
-export const setLockPin = (pin: string) => call<LockFacts>("set_lock_pin", { pin });
+export const setLockPin = (pin: string) => call<LockFacts>("set_lock_pin", { pin }).then(told(LOCK_TOLD));
 export const setLockTimeout = (minutes: number) =>
-  call<LockFacts>("set_lock_timeout", { minutes });
+  call<LockFacts>("set_lock_timeout", { minutes }).then(told(LOCK_TOLD));
+/** Passes an answer through, once the other windows have been told. */
+function told<T>(key: string): (answer: T) => T {
+  return (answer) => {
+    tellOthers(key);
+    return answer;
+  };
+}
 /** Whether this is the PIN. **`false` is a wrong PIN, not a failure**:
     only khor being unable to read its own record rejects. */
 export const unlock = (pin: string) => call<boolean>("unlock", { pin });

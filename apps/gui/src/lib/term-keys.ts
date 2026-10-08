@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
 
 import { gui } from "@/gen/catalog";
+import { heardFrom } from "@/lib/other-windows";
 import { kittyNamed, kittyTyped, shiftEnter } from "@/lib/term-kitty";
 
 /** The latched modifiers the next key goes out with, and which of them
@@ -270,6 +271,13 @@ export function setKeyRow(row: RowSeat[]) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: row }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(STORE, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: keyRow() }));
+});
 
 export function useKeyRow(): RowSeat[] {
   const [row, setRow] = useState(keyRow);

@@ -19,6 +19,7 @@
 import { useEffect, useState } from "react";
 
 import type { SessionRow } from "@/api";
+import { heardFrom } from "@/lib/other-windows";
 
 export const FINISHED_CHOICES = [0, 10, 30, 60, 300] as const;
 
@@ -46,6 +47,13 @@ export function setFinishedAfter(secs: number) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: secs }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(KEY, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: finishedAfter() }));
+});
 
 export function useFinishedAfter(): number {
   const [n, setN] = useState(finishedAfter);

@@ -24,6 +24,8 @@
 import type { Terminal } from "@xterm/xterm";
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 export type Wake = "auto" | "screen" | "button";
 export const WAKES: Wake[] = ["auto", "screen", "button"];
 
@@ -101,6 +103,13 @@ export function setTermWake(wake: Wake) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: wake }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(KEY, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: termWake() }));
+});
 
 export function useTermWake(): Wake {
   const [w, setW] = useState(termWake);

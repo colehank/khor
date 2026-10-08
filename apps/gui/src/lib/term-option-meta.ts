@@ -7,6 +7,8 @@
 // once. This device's, in its `localStorage`.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 const KEY = "khor.term-option-meta";
 const CHANGED = "khor:term-option-meta";
 let session: boolean | null = null;
@@ -29,6 +31,13 @@ export function setTermOptionMeta(on: boolean) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: on }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(KEY, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: termOptionMeta() }));
+});
 
 export function useTermOptionMeta(): boolean {
   const [on, setOn] = useState(termOptionMeta);

@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { fetchLock, unlock as askUnlock, type LockFacts } from "@/api";
+import { heardFrom, LOCK_TOLD } from "@/lib/other-windows";
 
 /** Idle is measured off the things a person does, not off a clock that
     only a visible tab can hear: a window left on a desk fires this, and
@@ -156,6 +157,9 @@ export function useLock(): Lock {
   }, []);
 
   const reread = useCallback(() => setAsked((n) => n + 1), []);
+  // 安全 in another window (the Mac's settings window): the lock turned on
+  // there arms this window's idle timer now, not at the next launch.
+  useEffect(() => heardFrom(LOCK_TOLD, reread), [reread]);
 
   return { facts, settled, locked, open, opened, now, reread };
 }

@@ -5,6 +5,8 @@
 // This device's, in its `localStorage`.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 const KEY = "khor.term-joy-haptic";
 const CHANGED = "khor:term-joy-haptic";
 let session: boolean | null = null;
@@ -27,6 +29,13 @@ export function setTermJoyHaptic(on: boolean) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: on }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(KEY, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: termJoyHaptic() }));
+});
 
 export function useTermJoyHaptic(): boolean {
   const [on, setOn] = useState(termJoyHaptic);

@@ -24,6 +24,8 @@
 //   a file under khor's home served to the app and the web face alike.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 /** Today's stack, before a choice: the system's monospace faces. */
 const SYSTEM = `"SF Mono", SFMono-Regular, Menlo, Consolas`;
 /** The bundled symbol faces (`app.css` `@font-face`). */
@@ -220,18 +222,33 @@ export function wearTermFont() {
   for (const [face, glyph] of [[SYMBOLS, ""], [SYMBOLS_TEXT, "⏺"]]) {
     void document.fonts?.load(`${MEASURE_AT}px "${face}"`, glyph).catch(() => {});
   }
-  void all().then(async (fonts) => {
-    for (const f of fonts) {
-      try {
-        await register(f);
-      } catch {
-        // A file that stopped parsing is simply not offered.
-        continue;
-      }
-    }
-    added = fonts.filter((f) => faces.has(f.family)).map(({ family, file }) => ({ family, file }));
-    tell();
+  void registerAdded().then(tell);
+  // **Chosen in another window of this app** (the Mac's settings window,
+  // `lib/other-windows`). The choice is worn here and every open terminal
+  // told — after this page has the faces the store keeps: a font added
+  // there is a FontFace of that page's document, and this one has to
+  // register it from IndexedDB to draw it.
+  heardFrom(KEY, () => {
+    void registerAdded().then(() => {
+      wear(storedChoice());
+      tell();
+    });
   });
+}
+
+/** The added fonts in IndexedDB, each registered once in this page. */
+async function registerAdded() {
+  const fonts = await all();
+  for (const f of fonts) {
+    if (faces.has(f.family)) continue;
+    try {
+      await register(f);
+    } catch {
+      // A file that stopped parsing is simply not offered.
+      continue;
+    }
+  }
+  added = fonts.filter((f) => faces.has(f.family)).map(({ family, file }) => ({ family, file }));
 }
 
 export function setTermFont(choice: string) {

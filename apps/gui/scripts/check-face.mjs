@@ -2265,7 +2265,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25376,7 +25376,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25805,7 +25805,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26163,7 +26163,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26538,7 +26538,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27270,7 +27270,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28163,7 +28163,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -37780,6 +37780,298 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "caret") console.log("caret · FACE_ONLY=caret: the other sections are skipped");
+
+  // ── a setting set in another window is worn by this one (fix-d) ─────
+  //
+  // fix-c's caret d, for every other setting the Mac's settings window
+  // writes (2026-10-08). 设置 there is a page of its own on the same
+  // store; each face setting told its readers through an event on its
+  // own window, so the main window wore the old value until the next
+  // launch. A second page of this origin (the frame fix-c's d makes)
+  // writes what the settings window's row writes, and this page's visible
+  // effect follows within three seconds, and follows the key's removal
+  // back to the default:
+  //   a. an open terminal: 光标 (shape, blink), 历史行数, Option 当 Meta
+  //      and 终端字体 reach xterm's options;
+  //   b. the rows in this page (the web face draws 设置 in the window):
+  //      终端字体 (and the root's `--font-term`), 导航顺序 (and the strip's
+  //      order), 光标, 闪烁, 历史行数, 预测输入, 响铃, 命令分隔线,
+  //      Option 当 Meta, 完成通知; and 响铃 once more after this page set
+  //      it itself — the session's copy must not outlive the other
+  //      window's write;
+  //   c. with a finger (the rows a phone draws): 唤醒键盘, 外接键盘时显示
+  //      辅助键, 摇杆震动, and the key row's editor;
+  //   d. the store's settings: 主题 and 界面语言 (`khor config`) and the
+  //      lock, after the other window says it changed them — and this
+  //      page says so when it changes one itself.
+  // Red first: every one of them stood still.
+  //
+  // `FACE_ONLY=follow` runs this section alone.
+  follow: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "follow") break follow;
+  {
+    const FACE_KEYS = [
+      "khor.term-font",
+      "khor.term-cursor",
+      "khor.term-history",
+      "khor.term-option-meta",
+      "khor.term-predict",
+      "khor.term-bell",
+      "khor.term-block-lines",
+      "khor.nav-order",
+      "khor.finished-after",
+      "khor.term-wake",
+      "khor.term-keys-hw",
+      "khor.term-joy-haptic",
+      "khor.term-key-row",
+    ];
+    const CONFIG_TOLD = "khor.told.config";
+    const LOCK_TOLD = "khor.told.lock";
+    // fix-c's second window: an empty frame the page makes (about:blank
+    // inherits its maker's origin and store), made again after a reload.
+    const write = (key, value) =>
+      page.evaluate(
+        ([key, value]) => {
+          let fr = document.getElementById("follow-other");
+          if (!fr) {
+            fr = document.createElement("iframe");
+            fr.id = "follow-other";
+            fr.style.display = "none";
+            document.body.appendChild(fr);
+          }
+          const store = fr.contentWindow.localStorage;
+          if (value === null) store.removeItem(key);
+          else store.setItem(key, value);
+        },
+        [key, value],
+      );
+    const stamp = (key) => write(key, `${Date.now()}-gate`);
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    /** Another window writes `key`; `read` must come to `want`, and back
+        to what it read before when the key is removed. */
+    const follows = async (where, key, value, read, want, file) => {
+      const before = await read();
+      await write(key, value);
+      const took = await until(3_000, async () => same(await read(), want));
+      const now = await read();
+      await write(key, null);
+      const back = await until(3_000, async () => same(await read(), before));
+      console.log(`follow · ${where}: ${JSON.stringify(before)} → ${JSON.stringify(now)}, back ${back}`);
+      if (!took) fail(`follow · ${where}: another window wrote ${key} = ${value} and this one still shows ${JSON.stringify(now)}, not ${JSON.stringify(want)} — the settings window's row reaches the main window only at the next launch (${file})`);
+      else if (!back) fail(`follow · ${where}: another window removed ${key} and this one kept ${JSON.stringify(now)} (${file})`);
+    };
+    const fresh = async () => {
+      await page.evaluate((keys) => {
+        for (const k of keys) localStorage.removeItem(k);
+      }, FACE_KEYS);
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    };
+    const switchOf = (name) => () =>
+      page.evaluate((n) => document.querySelector(`[data-setting-row-name="${n}"] [role="switch"]`)?.getAttribute("aria-checked") ?? null, name);
+    const selectOf = (name) => () => page.evaluate((n) => document.querySelector(`[data-setting-select="${n}"]`)?.value ?? null, name);
+
+    // a. an open terminal.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    const termRow = {
+      id: "tui/face-follow",
+      kind: "tui",
+      title: "face-follow",
+      word: "idle",
+      at_ms: Date.now(),
+      unread: 0,
+      source: null,
+      pinned: false,
+      stale: false,
+      category: "shell",
+      group: "",
+      face: null,
+      hosted: true,
+      attachable: true,
+      last: null,
+      via: null,
+      via_face: null,
+      home: "gate",
+      place: "/home/gate/work",
+      mux: false,
+    };
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", json([termRow]));
+    await page.route("**/term_open", json(null));
+    await page.route("**/term_attach", json({ bytes: "", seq: 0 }));
+    await page.route("**/term_stream", json({ bytes: "", seq: 0, gone: false, reset: false }));
+    await page.route("**/term_key", json(null));
+    await page.evaluate(() => window.localStorage.removeItem("khor.sessions.tabs"));
+    await fresh();
+    await page.locator('[data-rail-item][data-landing="devices"]').click();
+    await wait(200);
+    await page.locator('[data-rail-item][data-landing="sessions"]').click();
+    const opener = page.locator("[data-list] [data-row-open]").first();
+    await until(3_000, async () => (await opener.count()) > 0);
+    if ((await opener.count()) > 0) await opener.click();
+    const termUp = await until(5_000, async () => page.evaluate(() => !!document.querySelector("[data-terminal]")?.__xterm?.textarea));
+    if (!termUp) fail("probe dead: follow a · opening the routed terminal drew no xterm");
+    else {
+      const xterm = (pick) => () =>
+        page.evaluate((pick) => {
+          const o = document.querySelector("[data-terminal]").__xterm.options;
+          return pick === "font" ? o.fontFamily.split(",")[0] : pick === "cursor" ? [o.cursorStyle, o.cursorBlink] : o[pick];
+        }, pick);
+      await follows("a · the terminal's cursor", "khor.term-cursor", JSON.stringify({ shape: "bar", blink: true }), xterm("cursor"), ["bar", true], "src/lib/term-cursor.ts");
+      await follows("a · the terminal's history", "khor.term-history", "2000", xterm("scrollback"), 2000, "src/lib/term-history.ts");
+      await follows("a · the terminal's Option as Meta", "khor.term-option-meta", "on", xterm("macOptionIsMeta"), true, "src/lib/term-option-meta.ts");
+      await follows("a · the terminal's font", "khor.term-font", "Menlo", xterm("font"), '"Menlo"', "src/lib/term-font.ts");
+    }
+    await page.unroute("**/term_open");
+    await page.unroute("**/term_attach");
+    await page.unroute("**/term_stream");
+    await page.unroute("**/term_key");
+    await page.unroute("**/sessions");
+    await page.route("**/sessions", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(rows) }));
+
+    // b. the rows in this page, and what 外观's draw beyond themselves.
+    await fresh();
+    if (!(await openMore("appearance"))) fail("probe dead: follow b · 设置 › 外观 never opened");
+    else {
+      const order = () =>
+        page.evaluate(() => [
+          [...document.querySelectorAll("[data-rail-item][data-landing]")].map((e) => e.getAttribute("data-landing")),
+          [...document.querySelectorAll("[data-nav-order-row]")].map((e) => e.getAttribute("data-nav-order-row")),
+        ]);
+      const [strip, listed] = await order();
+      const turned = [...listed].reverse();
+      await follows("b · 导航顺序", "khor.nav-order", JSON.stringify(turned), order, [turned.slice(0, strip.length), turned], "src/lib/nav-order.ts");
+    }
+    if (!(await openMore("terminal"))) fail("probe dead: follow b · 设置 › 终端 never opened");
+    else {
+      const font = () =>
+        page.evaluate(() => [
+          document.documentElement.style.getPropertyValue("--font-term").split(",")[0],
+          document.querySelector("[data-term-font]")?.getAttribute("aria-label")?.split(": ")[1] ?? null,
+        ]);
+      if ((await font())[1] === null) fail("probe dead: follow b · 终端 drew no 终端字体 row");
+      else await follows("b · 终端字体", "khor.term-font", "Menlo", font, ['"Menlo"', "Menlo"], "src/lib/term-font.ts");
+      for (const [where, key, value, read, want, file] of [
+        ["光标", "khor.term-cursor", JSON.stringify({ shape: "underline", blink: false }), selectOf("term-cursor"), "underline", "term-cursor"],
+        ["光标闪烁", "khor.term-cursor", JSON.stringify({ shape: "block", blink: true }), switchOf("term-cursor-blink"), "true", "term-cursor"],
+        ["历史行数", "khor.term-history", "20000", selectOf("term-history"), "20000", "term-history"],
+        ["预测输入", "khor.term-predict", "off", switchOf("term-predict"), "false", "term-predict-setting"],
+        ["响铃", "khor.term-bell", "off", switchOf("term-bell"), "false", "term-bell"],
+        ["命令分隔线", "khor.term-block-lines", "on", switchOf("term-block-lines"), "true", "term-block-lines"],
+        ["Option 当 Meta", "khor.term-option-meta", "on", switchOf("term-option-meta"), "true", "term-option-meta"],
+      ]) {
+        await follows(`b · ${where}`, key, value, read, want, `src/lib/${file}.ts`);
+      }
+      // 响铃 again, after this page set it itself: its session's copy
+      // (kept for a face whose storage refuses) must not outlive the
+      // other window's write.
+      const bell = switchOf("term-bell");
+      await page.locator('[data-setting-row-name="term-bell"] [role="switch"]').click();
+      await wait(200);
+      const mine = await bell();
+      await write("khor.term-bell", "on");
+      const took = await until(3_000, async () => (await bell()) === "true");
+      console.log(`follow · b · 响铃 set here (${mine}), then on in another window: ${await bell()}`);
+      if (mine !== "false") fail(`probe dead: follow b · pressing this page's 响铃 left it ${mine}`);
+      else if (!took) fail("follow · b · this page turned 响铃 off, another window turned it on, and this one still says off — the session's copy outlived the store (src/lib/term-bell.ts)");
+      await write("khor.term-bell", null);
+    }
+    if (!(await openMore("session"))) fail("probe dead: follow b · 设置 › 会话 never opened");
+    else await follows("b · 完成通知", "khor.finished-after", "60", selectOf("finished-notify"), "60", "src/lib/finished.ts");
+
+    // c. with a finger: the rows only a phone draws.
+    const fingerOn = await page.context().newCDPSession(page);
+    await fingerOn.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await fresh();
+    if (!(await page.evaluate(() => matchMedia("(pointer: coarse)").matches))) fail("probe void: follow c · the touch override did not take");
+    else if (!(await openMore("terminal"))) fail("probe dead: follow c · 设置 › 终端 never opened with a finger");
+    else {
+      await follows("c · 唤醒键盘", "khor.term-wake", "button", selectOf("term-wake"), "button", "src/lib/term-tap.ts");
+      await follows("c · 外接键盘时显示辅助键", "khor.term-keys-hw", "on", switchOf("term-keys-hw"), "true", "src/lib/term-keys-hw.ts");
+      await follows("c · 摇杆震动", "khor.term-joy-haptic", "off", switchOf("term-joy-haptic"), "false", "src/lib/term-joy-haptic.ts");
+      await page.locator('[data-setting-row-name="term-key-row"]').click();
+      const seats = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll("[data-key-row-editor] [data-key-row-seat]")].map((e) => [
+            e.getAttribute("data-key-row-seat"),
+            e.querySelector('[role="switch"]')?.getAttribute("aria-checked") === "true",
+          ]),
+        );
+      // Logged as the seats that are on.
+      const onSeats = async () => (await seats()).filter(([, on]) => on).map(([name]) => name);
+      const up = await until(3_000, async () => (await seats()).length > 0);
+      if (!up) fail("probe dead: follow c · the key row's editor never opened");
+      else {
+        const was = await seats();
+        const flipped = was.map(([name, on], i) => [name, i === 0 ? !on : on]);
+        const want = flipped.filter(([, on]) => on).map(([name]) => name);
+        await follows("c · 键行", "khor.term-key-row", JSON.stringify(flipped.map(([name, on]) => ({ name, on }))), onSeats, want, "src/lib/term-keys.ts");
+        await page.keyboard.press("Escape");
+        await wait(300);
+      }
+    }
+    await fingerOn.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+    await fingerOn.detach();
+    await page.setViewportSize({ width: 1400, height: 900 });
+
+    // d. the store's settings, which are not in this face's storage.
+    await fresh();
+    const theme = () => page.evaluate(() => document.documentElement.getAttribute("data-theme"));
+    const lang = () => page.evaluate(() => document.documentElement.lang);
+    const told = (key) => page.evaluate((k) => localStorage.getItem(k), key);
+    const storeFollows = async (where, set, key, read, want, unset, file) => {
+      const before = await read();
+      set();
+      await stamp(key);
+      const took = await until(3_000, async () => (await read()) === want);
+      const now = await read();
+      unset();
+      await stamp(key);
+      const back = await until(3_000, async () => (await read()) === before);
+      console.log(`follow · ${where}: ${before} → ${now}, back ${back}`);
+      if (!took) fail(`follow · ${where}: another window changed it in the store and said so, and this one still shows ${now}, not ${want} (${file})`);
+      else if (!back) fail(`follow · ${where}: another window put it back and this one kept ${now} (${file})`);
+    };
+    const wasLang = await lang();
+    await storeFollows("d · 主题", () => (configValues.theme = "dark"), CONFIG_TOLD, theme, "dark", () => (configValues.theme = "auto"), "src/hooks/use-settings.ts");
+    await storeFollows("d · 界面语言", () => (configValues.lang = wasLang === "zh" ? "en" : "zh"), CONFIG_TOLD, lang, wasLang === "zh" ? "en" : "zh", () => (configValues.lang = "auto"), "src/hooks/use-settings.ts");
+    if (!(await openMore("security"))) fail("probe dead: follow d · 设置 › 安全 never opened");
+    else {
+      const lockSwitch = switchOf("lock");
+      await storeFollows("d · 锁定", () => (lockOn = true), LOCK_TOLD, lockSwitch, "true", () => (lockOn = false), "src/hooks/use-lock.ts");
+      // …and this page says so when it changes the lock itself.
+      const lockWas = await told(LOCK_TOLD);
+      await page.locator('[data-setting-row-name="lock"] [role="switch"]').click();
+      const toldLock = await until(3_000, async () => (await told(LOCK_TOLD)) !== lockWas);
+      await page.locator('[data-setting-row-name="lock"] [role="switch"]').click();
+      await until(3_000, async () => (await lockSwitch()) === "false");
+      if (!toldLock) fail("follow · d · this page turned the lock on and told no other window (src/api.ts setLock)");
+    }
+    if (!(await openMore("appearance"))) fail("probe dead: follow d · 设置 › 外观 never opened");
+    else {
+      const configWas = await told(CONFIG_TOLD);
+      const pick = page.locator('[data-setting-select="theme"]');
+      const chosen = (await pick.count()) > 0;
+      if (chosen) await pick.first().selectOption("dark");
+      const toldConfig = chosen && (await until(3_000, async () => (await told(CONFIG_TOLD)) !== configWas));
+      if (chosen) await pick.first().selectOption("auto");
+      console.log(`follow · d · 主题 chosen here: told the others ${toldConfig}`);
+      if (!chosen) fail("probe dead: follow d · 外观 drew no 主题 row");
+      else if (!toldConfig) fail("follow · d · this page chose 主题 and told no other window (src/api.ts setConfig)");
+    }
+    configValues.theme = "auto";
+    configValues.lang = "auto";
+    lockOn = false;
+    await page.evaluate((keys) => {
+      for (const k of keys) localStorage.removeItem(k);
+    }, [...FACE_KEYS, CONFIG_TOLD, LOCK_TOLD]);
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "follow") console.log("follow · FACE_ONLY=follow: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

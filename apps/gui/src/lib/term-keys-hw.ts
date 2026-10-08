@@ -7,6 +7,8 @@
 // its `localStorage`.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 const KEY = "khor.term-keys-hw";
 const CHANGED = "khor:term-keys-hw";
 let session: boolean | null = null;
@@ -29,6 +31,13 @@ export function setTermKeysHw(on: boolean) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: on }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(KEY, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: termKeysHw() }));
+});
 
 export function useTermKeysHw(): boolean {
   const [on, setOn] = useState(termKeysHw);
