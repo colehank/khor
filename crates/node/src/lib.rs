@@ -412,6 +412,9 @@ pub struct Node {
     pub(crate) face_seen: Arc<Mutex<Option<std::time::Instant>>>,
     /// When a round out of turn last started, in ms (`link::Node::nudge`).
     pub(crate) nudged: Arc<std::sync::atomic::AtomicU64>,
+    /// When a machine page last asked for a round with each machine, by
+    /// id (`ipc::Op::Visit`, `link::Node::visit_due`).
+    pub(crate) visited: Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
     /// When this node last vouched for itself to each machine, by id
     /// (`link::Node::vouch_to`, round NET-10).
     pub(crate) vouched: Arc<Mutex<std::collections::HashMap<String, std::time::Instant>>>,
@@ -1106,6 +1109,7 @@ impl Node {
             resting: Arc::default(),
             face_seen: Arc::default(),
             nudged: Arc::default(),
+            visited: Arc::default(),
             vouched: Arc::default(),
             reached_at: Arc::default(),
             ears_homed: Arc::default(),

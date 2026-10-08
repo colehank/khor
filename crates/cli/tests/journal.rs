@@ -254,3 +254,72 @@ async fn measure_one_side_losing_its_relay() {
         }
     }
 }
+
+/// **A person's act dials past the wait** (NET-STABLE 第二步): alpha's
+/// resident is stopped, so beta is left waiting on it — its relay said it
+/// left (ten minutes), or its dials failed (the backoff). A face arriving
+/// at beta, and alpha's page opened there, each dial alpha at once.
+/// Measured before the fix: the face's round skipped alpha, and nothing
+/// dialled it in the 15 s this test waits.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_face_arriving_and_a_page_opened_dial_past_the_wait() {
+    use khor_node::journal::{By, What};
+    let mut p = pair("journal-p").await;
+    let alpha_id = p.alpha.device_str().to_owned();
+    until_reads(&p.beta, &alpha_id, Hop::Direct, Duration::from_secs(60)).await;
+    drop(p.a.take());
+    until_reads(&p.beta, &alpha_id, Hop::Idle, Duration::from_secs(60)).await;
+    // Past whatever round was under way when alpha went.
+    tokio::time::sleep(Duration::from_secs(12)).await;
+    let dial_after = |since: u64| {
+        khor_node::journal::read(&p.rb.0, Some(&alpha_id), since)
+            .into_iter()
+            .find_map(|e| match e.what {
+                // When it started: an entry is written as its dial ends.
+                What::Dial { by: By::Forced, ms, .. } if e.at.saturating_sub(ms) + 100 >= since => {
+                    Some(e.at.saturating_sub(ms).saturating_sub(since))
+                }
+                _ => None,
+            })
+    };
+    let now_ms = || {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+    };
+
+    let page = now_ms();
+    p.beta.visit("alpha").await.unwrap();
+    let began = Instant::now();
+    let mut paged = None;
+    while paged.is_none() && began.elapsed() < Duration::from_secs(15) {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        paged = dial_after(page);
+    }
+    eprintln!("[journal] alpha's page opened at beta: a dial started {paged:?} ms after");
+
+    // The page's dial over (its 10 s budget), so the face's is its own.
+    tokio::time::sleep(Duration::from_secs(11)).await;
+    p.beta.face_is_here(false).await.unwrap();
+    let face = now_ms();
+    p.beta.face_is_here(true).await.unwrap();
+    let began = Instant::now();
+    let mut faced = None;
+    while faced.is_none() && began.elapsed() < Duration::from_secs(15) {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        faced = dial_after(face);
+    }
+    eprintln!("[journal] a face arrived at beta: a dial to alpha started {faced:?} ms after");
+    // Both measured before either is judged: the numbers are the point.
+    assert!(paged.is_some_and(|ms| ms < 2_000), "the page's dial: {paged:?}");
+    assert!(faced.is_some_and(|ms| ms < 2_000), "the face's dial: {faced:?}");
+
+    let all = khor_node::journal::read(&p.rb.0, Some(&alpha_id), 0);
+    for by in ["page", "face"] {
+        assert!(
+            all.iter().any(|e| matches!(&e.what, What::Person { by: b } if b == by)),
+            "the {by} is journalled"
+        );
+    }
+}

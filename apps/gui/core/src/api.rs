@@ -455,6 +455,10 @@ pub fn answer(
             rt.block_on(crate::face_here(root, matches!(args.get("visible"), Some(serde_json::Value::Bool(true)))))?;
             Ok("null".to_owned())
         }
+        "visit" => {
+            rt.block_on(crate::visit(root, &arg("machine")?))?;
+            Ok("null".to_owned())
+        }
         "set_preferred_relay" => {
             let url = args.get("url").and_then(|v| v.as_str()).map(str::to_owned);
             crate::set_preferred_relay(root, url)?;

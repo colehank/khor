@@ -188,6 +188,10 @@ pub enum What {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         why: Option<String>,
     },
+    /// A person's act that dials past the backoff (NET-STABLE 第二步):
+    /// `face`, a face arriving (this machine's line); `page`, a machine's
+    /// page opened (that machine's).
+    Person { by: String },
 }
 
 /// One line of the journal.
@@ -457,6 +461,8 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         What::Hop { via: None, tried } => msg::journal_hop_none(tried),
         What::Carry { up: true, .. } => msg::journal_carry_up().to_owned(),
         What::Carry { up: false, why } => msg::journal_carry_down(scrub(why.as_deref().unwrap_or(""))),
+        What::Person { by } if by == "page" => msg::journal_person_page().to_owned(),
+        What::Person { .. } => msg::journal_person_face().to_owned(),
     }
 }
 

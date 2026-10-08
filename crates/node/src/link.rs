@@ -1841,12 +1841,29 @@ impl Node {
                 *self.face_seen.lock().unwrap_or_else(|p| p.into_inner()) =
                     visible.then(std::time::Instant::now);
                 // A face arriving gets the round it would otherwise wait up
-                // to QUIET_PACE for.
-                if visible && !was {
-                    self.nudge(ep);
+                // to QUIET_PACE for — **past every backoff** (NET-STABLE
+                // 第二步): a person looking is the moment a machine left
+                // waiting reads 未连接 to somebody, and the restart they
+                // would reach for is exactly this round.
+                if visible && !was && self.nudge(ep, true) {
+                    self.wires.note(None, crate::journal::What::Person { by: "face".into() });
                 }
                 ipc::Reply::Noted
             }
+            ipc::Op::Visit { machine } => match self.resolve(&machine) {
+                Ok((_, home)) => {
+                    let id = home.hex();
+                    if self.visit_due(&id) {
+                        self.wires.note(Some(&id), crate::journal::What::Person { by: "page".into() });
+                        if let Some(n) = self.me() {
+                            let e = ep.clone();
+                            tokio::spawn(async move { n.visit_now(&e, &id).await });
+                        }
+                    }
+                    ipc::Reply::Noted
+                }
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::LetGo { machine } => match self.resolve(&machine) {
                 Ok((_, home)) => {
                     self.wires.let_go(&home.hex());
@@ -3100,7 +3117,7 @@ impl Node {
             // NET-6): most often it is a machine paired a moment ago
             // through another, whose row this one has not been sent yet
             // — and with no face here the next round is QUIET_PACE away.
-            self.nudge(ep);
+            self.nudge(ep, false);
             return Err(e);
         }
         match req {
@@ -3154,7 +3171,7 @@ impl Node {
                 // Everybody else learns of the new machine now, not at
                 // the next quiet beat (the stranger's knock above is the
                 // other half).
-                self.nudge(ep);
+                self.nudge(ep, false);
                 Ok(Response::Paired {
                     name: self.name().to_owned(),
                     devices: B64.encode(loaded.doc.snapshot()?),
@@ -3167,7 +3184,7 @@ impl Node {
                 self.take_vouch(remote, &name, &addrs, &roster)?;
                 // Its row is here now: the round that brings the rest
                 // starts from this side too, not at the next quiet beat.
-                self.nudge(ep);
+                self.nudge(ep, false);
                 Ok(Response::Vouched)
             }
             Request::Sync { doc, have, changes } => {
@@ -8147,7 +8164,7 @@ impl Node {
             let _ = self.emit_row_of(&crate::SessionId(channel.to_owned()));
         }
         // Everyone else reads the new state at once, not at the next beat.
-        self.nudge(ep);
+        self.nudge(ep, false);
         if job.is_stopped() && outcome.is_err() {
             return Err(crate::road::cancelled());
         }
@@ -8818,23 +8835,38 @@ impl Node {
     /// knocking — the three moments the quiet pace would otherwise make
     /// somebody wait up to [`QUIET_PACE`] for what a round brings. The
     /// limit keeps a stranger who knocks on every beat from buying more
-    /// than the pace a face gets.
-    pub(crate) fn nudge(&self, ep: &iroh::Endpoint) {
+    /// than the pace a face gets. `force` dials the backed-off too (a
+    /// face arriving); answers whether a round was started.
+    pub(crate) fn nudge(&self, ep: &iroh::Endpoint, force: bool) -> bool {
         use std::sync::atomic::Ordering::Relaxed;
         let now = crate::now_ms();
         let last = self.nudged.load(Relaxed);
         if now.saturating_sub(last) < SYNC_EVERY.as_millis() as u64
             || self.nudged.compare_exchange(last, now, Relaxed, Relaxed).is_err()
         {
-            return;
+            return false;
         }
-        if let Some(n) = self.me() {
-            let e = ep.clone();
-            tokio::spawn(async move {
-                n.wires.counts.pump_rounds.fetch_add(1, Relaxed);
-                let _ = n.sync_peers(&e, false).await;
-            });
+        let Some(n) = self.me() else { return false };
+        let e = ep.clone();
+        tokio::spawn(async move {
+            n.wires.counts.pump_rounds.fetch_add(1, Relaxed);
+            let _ = n.sync_peers(&e, force).await;
+        });
+        true
+    }
+
+    /// Whether a machine page's [`ipc::Op::Visit`] for `id` may start a
+    /// round: at most one a [`SYNC_EVERY`] per machine, so a page flicked
+    /// open and shut buys no more than the pump's own pace.
+    fn visit_due(&self, id: &str) -> bool {
+        let mut visited = self.visited.lock().unwrap_or_else(|p| p.into_inner());
+        let now = std::time::Instant::now();
+        visited.retain(|_, at| now.saturating_duration_since(*at) < SYNC_EVERY);
+        if visited.contains_key(id) {
+            return false;
         }
+        visited.insert(id.to_owned(), now);
+        true
     }
 
     /// The workspaces this machine keeps facts for, made the table's own
@@ -8872,6 +8904,22 @@ impl Node {
     /// Nothing to tell without a resident.
     pub async fn face_is_here(&self, visible: bool) -> Result<(), RoadsUnread> {
         match self.via_serve(ipc::Op::FaceHere { visible }).await {
+            Some(Ok(ipc::Reply::Noted)) => Ok(()),
+            None => Err(RoadsUnread::NoServe),
+            Some(_) => Err(RoadsUnread::Unanswered),
+        }
+    }
+
+    /// A machine's page was opened (`ipc::Op::Visit`): the resident has a
+    /// round with it now, past its backoff. Nothing to tell without a
+    /// resident.
+    pub async fn visit(&self, machine: &str) -> Result<(), RoadsUnread> {
+        match self
+            .via_serve(ipc::Op::Visit {
+                machine: machine.to_owned(),
+            })
+            .await
+        {
             Some(Ok(ipc::Reply::Noted)) => Ok(()),
             None => Err(RoadsUnread::NoServe),
             Some(_) => Err(RoadsUnread::Unanswered),

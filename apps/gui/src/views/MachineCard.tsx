@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import type { Road } from "@/gen/bindings/Road";
 import type { JournalLine } from "@/gen/bindings/JournalLine";
-import { fetchAbout, fetchLoad, fetchRevealHere, inApp, journal, journalReport, reveal, setWatch } from "@/api";
+import { fetchAbout, fetchLoad, fetchRevealHere, inApp, journal, journalReport, reveal, setWatch, visitMachine } from "@/api";
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
 import { DetailFrame } from "@/components/DetailFrame";
 import { MachineFace } from "@/components/SessionFace";
@@ -112,6 +112,15 @@ export function MachineCard({
   // no face (UX-39 §3, the owner 2026-10-06 21:05: 「都不可返回」); the
   // 附栏's head above says 机器 with the seat's own icon.
   const inSide = useContext(SeatPick) !== null;
+  // **Opening a machine's page is a round with it, past its backoff**
+  // (NET-STABLE 第二步): a machine left waiting after a failed dial read
+  // 未连接 until its wait ran out, and restarting the app was the cure
+  // people found. Once per opening; the resident paces it per machine.
+  const visitName = row && !row.me ? row.name : null;
+  useEffect(() => {
+    if (visitName === null) return;
+    visitMachine(visitName).catch(() => {});
+  }, [visitName]);
   return (
     <section data-machine-card className="flex h-full min-w-0 flex-col">
       {/* **A strip only where something has to live in it.** Back exists

@@ -474,6 +474,13 @@ async fn face_here(visible: bool) -> Result<(), String> {
     khor_gui_core::face_here(&Node::root_from_env(), visible).await
 }
 
+/// A machine's page was opened (`khor_gui_core::visit`): a round with it
+/// now, past its backoff. Async: it is a question to the resident.
+#[tauri::command]
+async fn visit(machine: String) -> Result<(), String> {
+    khor_gui_core::visit(&Node::root_from_env(), &machine).await
+}
+
 /// The 网络 page's 连接 group (`khor_gui_core::connections`).
 #[tauri::command]
 async fn connections() -> Result<khor_gui_core::Connections, String> {
@@ -4556,6 +4563,7 @@ pub fn run() {
             open_copy_id,
             pick_key_file,
             face_here,
+            visit,
             set_preferred_relay,
             tell,
             pin_session,

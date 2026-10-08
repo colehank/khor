@@ -424,6 +424,18 @@ pub async fn face_here(root: &Path, visible: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// A machine's page was opened (`Node::visit`): the resident has a round
+/// with it now, past its backoff (NET-STABLE 第二步). With no resident
+/// there is nobody to tell, and that is not an error.
+pub async fn visit(root: &Path, machine: &str) -> Result<(), String> {
+    let at = root.to_path_buf();
+    let n = tokio::task::spawn_blocking(move || open(&at))
+        .await
+        .map_err(|e| e.to_string())??;
+    let _ = n.visit(machine).await;
+    Ok(())
+}
+
 /// The connections, read off the resident (`Node::connections`).
 pub async fn connections(root: &Path) -> Result<Connections, String> {
     let at = root.to_path_buf();
