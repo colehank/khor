@@ -2809,6 +2809,7 @@ impl Node {
                 at_ms: v.session.state.at.0 as i64,
                 category: v.session.category.clone(),
                 agent: None,
+                command: v.session.doing.as_ref().and_then(|d| d.command.clone()),
             })
             .collect();
         let me = self.device_str().to_owned();
@@ -2838,6 +2839,7 @@ impl Node {
                         .map_or(0, |t| t.as_millisecond()),
                     category: None,
                     agent: Some(name.clone()),
+                    command: None,
                 });
             }
         }
@@ -5613,6 +5615,12 @@ pub struct Candidate {
     pub category: Option<String>,
     /// The ACP agent it belongs to, for a conversation.
     pub agent: Option<String>,
+    /// What runs in it now, as the row's own reading says
+    /// ([`khor_core::Doing::command`]): for a tmux session the pane in
+    /// front's program, or the command as typed where its shell marks.
+    /// The import panel finds a session by it (IMPORT-BRIEF). `None` at
+    /// a prompt, and for an agent, whose row says the agent instead.
+    pub command: Option<String>,
 }
 
 /// Whether a row is on the session list (docs/SHELL.md 第八轮). A

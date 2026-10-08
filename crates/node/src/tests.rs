@@ -3683,6 +3683,12 @@ fn what_is_on_the_list_is_the_users_choice() {
         candidates.iter().any(|c| c.id == found && c.form == "tui"),
         "{candidates:?}"
     );
+    // An agent's row names the agent, not a command (IMPORT-BRIEF): the
+    // panel shows a command on a terminal's row only.
+    assert_eq!(
+        candidates.iter().find(|c| c.id == found).unwrap().command,
+        None
+    );
     // What khor starts is on the list the moment it is.
     let started = n.open_ephemeral("shell", "started").unwrap();
     assert!(ids(&n).contains(&started.0));

@@ -318,12 +318,32 @@ input[type="search"]::-webkit-search-decoration {
 }
 
 /* The browser's machine chips over the keyboard (UX-42 row 13) scroll
-   sideways the same way. */
-[data-page-chips] {
+   sideways the same way, and so do 导入's (IMPORT-BRIEF). */
+:is([data-page-chips], [data-import-chips]) {
   scrollbar-width: none;
 }
-[data-page-chips]::-webkit-scrollbar {
+:is([data-page-chips], [data-import-chips])::-webkit-scrollbar {
   display: none;
+}
+
+/* **导入's list keeps one height while it is filtered** (IMPORT-BRIEF):
+   a dialog that shrank and grew with every letter typed would move its
+   rows under the pointer. Wide, the list is a box sized by the window —
+   the dialog stands at 16vh and the rest of it is about 31rem with the
+   ACP section, so the list takes what is left, between ten rows' worth
+   and four. On the phone the sheet stands at its full height and only
+   the list scrolls, under the field and the chips. */
+[data-import-dialog] [data-import-rows] {
+  height: clamp(10rem, calc(84vh - 31rem), 30rem);
+}
+[data-narrow] [data-slot="dialog-content"][data-form][data-import-dialog] {
+  height: calc(100dvh - var(--sheet-kb) - 2rem);
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+[data-narrow] [data-import-dialog] [data-import-rows] {
+  height: auto;
+  flex: 1 1 0;
 }
 
 /* **Chrome never pans the screen** (the owner, 2026-10-05, iPhone build

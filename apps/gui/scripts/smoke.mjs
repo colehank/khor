@@ -4744,10 +4744,20 @@ for line in sys.stdin:
   if (forms[tmuxRowId] !== "shell" || forms["tui/imp01"] !== "tui" || forms[acpRow] !== "gui") {
     throw new Error(`the panel names the forms ${JSON.stringify(forms)} — a terminal, a watched agent, a conversation`);
   }
-  for (const id of [tmuxRowId, "tui/imp01", acpRow]) {
+  // **A tap imports it and opens it** (IMPORT-BRIEF): the panel goes
+  // with each, so it is opened again for the next.
+  for (const [i, id] of [tmuxRowId, "tui/imp01", acpRow].entries()) {
+    if (i > 0) {
+      await plusAct("import");
+      await until(`${id} in the import panel again`, 20_000, async () =>
+        (await page.locator(`[data-import-row="${id}"]`).count()) === 1,
+      );
+    }
     await page.locator(`[data-import-row="${id}"]`).click();
+    await until(`the import panel gone after a tap on ${id}`, 20_000, async () =>
+      (await page.locator("[data-import-dialog]").count()) === 0,
+    );
   }
-  await page.locator("[data-import-go]").click();
   await until("the three on beta's list, each in its own form", 30_000, async () => {
     const kinds = await page.locator("[data-row]").evaluateAll((els) =>
       Object.fromEntries(els.map((el) => [el.getAttribute("data-row"), el.getAttribute("data-kind")])),

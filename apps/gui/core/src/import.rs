@@ -24,6 +24,9 @@ pub struct CandidateRow {
     pub at_ms: i64,
     pub category: Option<String>,
     pub agent: Option<String>,
+    /// What runs in it now (`Candidate::command`): the search reads it,
+    /// and a terminal's row shows it.
+    pub command: Option<String>,
 }
 
 pub fn import_candidates(root: &Path) -> Result<Vec<CandidateRow>, String> {
@@ -48,6 +51,7 @@ pub fn import_candidates(root: &Path) -> Result<Vec<CandidateRow>, String> {
             at_ms: c.at_ms,
             category: c.category,
             agent: c.agent,
+            command: c.command,
         })
         .collect())
 }
