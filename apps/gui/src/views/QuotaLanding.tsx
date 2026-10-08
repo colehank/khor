@@ -80,7 +80,7 @@ import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
-import { QUOTA_AXES, groupLabel, lasting, until } from "@/words";
+import { QUOTA_AXES, agoOf, groupLabel, lasting, until } from "@/words";
 
 /** How often the board is asked for. The node caches every reading for
     five minutes and cools a failed account for ten (`accounts` module
@@ -2183,7 +2183,7 @@ function ReadCaption({ row }: { row: Row }) {
         </>
       )}
       <span data-quota-age={row.age_ms ?? 0}>
-        {row.age_ms === null ? gui.accounts_read_here : gui.accounts_read_from(reader, lasting(row.age_ms))}
+        {row.age_ms === null ? gui.accounts_read_here : gui.accounts_read_from(reader, agoOf(row.age_ms))}
       </span>
     </>
   );

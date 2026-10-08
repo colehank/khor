@@ -7,6 +7,7 @@ import * as React from "react";
 import { keyboardCover } from "@/lib/viewport";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
+import { Fault } from "@/components/Fault";
 import { cn } from "@/lib/utils";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -178,7 +179,9 @@ function DialogContent({
             where a finger pulls it down to put it away. Drawn only on
             the narrow face. */}
         {form && <div data-sheet-grabber aria-hidden="true" />}
-        {children}
+        {/* A dialog that fails to draw says so inside its own frame
+            (`components/Fault`), and Esc still puts it away. */}
+        <Fault name="dialog">{children}</Fault>
         {form && <DialogPrimitive.Close ref={close} hidden tabIndex={-1} aria-hidden="true" />}
         {/* ⚠️ 墓碑 (2026-09-30): the sheet's close mark stood here, a 16
             cross in the corner grown to a finger's box. A dialog has no

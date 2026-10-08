@@ -52,6 +52,7 @@ import { keptGet, keptSet, useKept } from "@/lib/kept";
 import { YIELD_MS } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import { ScanLayer } from "@/views/PairDialogs";
+import { latency } from "@/words";
 
 /** The pages of the sheet. `run` is an add (or 安装 khor) under way. */
 type Page = "pick" | "ticket" | "ssh" | "jump" | "auth" | "proxy" | "reach" | "run" | "login" | "passphrase";
@@ -1183,7 +1184,7 @@ function Reachers({
                     ok ? (
                       <>
                         {r.id === report.entrance && <span className="me-in text-foreground">{gui.reach_best}</span>}
-                        {gui.row_rtt(r.ms ?? 0)}
+                        {latency(r.ms ?? 0)}
                       </>
                     ) : (
                       gui.accounts_trouble_unreachable
