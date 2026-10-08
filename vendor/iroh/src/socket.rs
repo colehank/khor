@@ -363,6 +363,8 @@ pub(crate) struct Socket {
     relay_departed: tokio::sync::broadcast::Sender<EndpointId>,
     /// khor patch 8: the rounds of hole punching started (`Endpoint::holepunch_rounds`).
     holepunch_rounds: tokio::sync::broadcast::Sender<remote_map::HolepunchRound>,
+    /// khor patch 10: this endpoint's addresses as remotes observed them.
+    peer_observed: remote_map::PeerObserved,
     /// Currently bound IP addresses of all sockets
     #[cfg(not(wasm_browser))]
     ip_bind_addrs: Vec<SocketAddr>,
@@ -989,6 +991,8 @@ impl EndpointInner {
 
         // khor patch 8: kept here, handed out by `holepunch_rounds`.
         let (holepunch_rounds, _) = tokio::sync::broadcast::channel(64);
+        // khor patch 10: what remotes observed, read in `update_direct_addresses`.
+        let peer_observed: remote_map::PeerObserved = Default::default();
         let remote_map = {
             RemoteMap::new(
                 metrics.socket.clone(),
@@ -997,6 +1001,7 @@ impl EndpointInner {
                 shutdown_token.child_token(),
                 path_selector,
                 holepunch_rounds.clone(),
+                peer_observed.clone(),
                 span.clone(),
             )
         };
@@ -1021,6 +1026,7 @@ impl EndpointInner {
             home_relay_watch,
             relay_departed,
             holepunch_rounds,
+            peer_observed,
             #[cfg(not(wasm_browser))]
             ip_bind_addrs: transports.ip_bind_addrs(),
             tls_config: tls_config.clone(),
@@ -1889,6 +1895,17 @@ impl Actor {
 
         self.collect_local_addresses(&mut addrs);
 
+        // khor patch 10: what remotes saw on direct paths, after the local
+        // addresses so an address that is both stays `Local`.
+        if let Ok(mut seen) = self.sock.peer_observed.lock() {
+            seen.retain(|_, at| at.elapsed() < remote_map::PEER_OBSERVED_FOR);
+            for addr in seen.keys() {
+                addrs
+                    .entry(*addr)
+                    .or_insert((DirectAddrType::PeerObserved, None));
+            }
+        }
+
         // Add configured external addresses.
         for addr in self.sock.configured_addrs.read().expect("poisoned").iter() {
             addrs.entry(*addr).or_insert((DirectAddrType::Config, None));
@@ -2117,6 +2134,10 @@ pub enum DirectAddrType {
     /// configure the router to forward this port to the iroh endpoint.  This indicates a
     /// situation like this, which still uses QAD to discover the public address.
     Qad4LocalPort,
+    /// khor patch 10: an address a remote endpoint reported seeing this
+    /// endpoint's packets come from, on a direct path (QUIC observed
+    /// address reports, the mechanism QAD runs on a relay).
+    PeerObserved,
     /// An address explicitly provided by the user via configuration.
     Config,
 }
@@ -2129,6 +2150,7 @@ impl Display for DirectAddrType {
             DirectAddrType::Qad => write!(f, "qad"),
             DirectAddrType::Portmapped => write!(f, "portmap"),
             DirectAddrType::Qad4LocalPort => write!(f, "qad4localport"),
+            DirectAddrType::PeerObserved => write!(f, "observed"),
             DirectAddrType::Config => write!(f, "config"),
         }
     }

@@ -12,7 +12,26 @@
 
 ## 补丁
 
-八处。
+十处。
+
+### 10. `src/socket/remote_map/remote_state.rs`、`src/socket.rs`：对端看到的地址（2026-10-09，NET-DIRECT）
+
+QUIC 的 observed address 报告（QAD 在中继上用的就是它）iroh 默认两边都关，开了收到也不管
+（`NoqPathEvent::ObservedAddr => {}`）。于是一台机器只能从答 QAD 的中继得知自己的公网地址；khor 自己的中继
+都不答。补丁：直连路径（`to_transport_tuple(..).is_ip()`）上收到的对端观察地址记进一张共享表
+（`PeerObserved`，十分钟有效，最多 8 个，回环和未指定地址不收），`update_direct_addresses` 在本机网卡地址之后
+把它们作为 `DirectAddrType::PeerObserved` 加进直接地址——从此作为打洞候选给出去、也随行发布。中继和转连路径
+上的观察地址是映射地址，不收。khor 这边 `endpoint::transport()` 打开收发两向的报告；旧版对端不协商、不发，
+不受影响。改动约 50 行。验证：回环上看不到（对端看到的是回环，不收），要在机群上看连接记录「本机地址变为」
+里多出的地址。上游没有对应 PR，升级 iroh 时要重新打。
+
+### 9. `src/socket/remote_map/remote_state.rs`、`src/address_lookup.rs`：打洞只给发布过滤留下的地址（2026-10-09，NET-DIRECT）
+
+上游 `local_candidates` 把所有直接地址都作为打洞候选（QNT ADD_ADDRESS）给对端，代理 TUN 的 198.18.0.1 也在
+里面（MacLab 10-09 的连接记录）。补丁：先过端点的发布过滤（`AddressLookupServices::filtered`，就是 khor
+`endpoint::unroutable` 那条），发布什么就给什么。改动约 25 行。测试：`crates/net/src/endpoint.rs` 的
+`a_punching_round_offers_no_unroutable_address`（读补丁 8 的打洞轮；在有 198.18.0.1 的机器上对照：iroh 的
+直接地址里有，打洞候选里没有）。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 8. `src/socket/remote_map/remote_state.rs`、`src/socket/remote_map.rs`、`src/socket.rs`、`src/endpoint.rs`：每一轮打洞（2026-10-09，NET-DIRECT 第一步）
 
