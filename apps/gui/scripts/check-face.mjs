@@ -34506,8 +34506,8 @@ try {
         if (r.where !== want) {
           fail(`side c · 最近's ${r.kind} row says ${JSON.stringify(r.where)} under its name — ${JSON.stringify(want)}, where it is (UX-48)`);
         }
-        if (r.kind !== "file" && !/^\d+ (秒|分钟|小时|天)$/.test(r.bottom ?? "")) {
-          fail(`side c · 最近's ${r.kind} row's bottom-right reads ${JSON.stringify(r.bottom)} — how long ago it was opened, bare (UX-48)`);
+        if (r.kind !== "file" && !/^\d+ (秒|分钟|小时|天)前$/.test(r.bottom ?? "")) {
+          fail(`side c · 最近's ${r.kind} row's bottom-right reads ${JSON.stringify(r.bottom)} — when it was opened, 「2 分钟前」 (UX-48, WORDS-1008: a when-corner says 前)`);
         }
         if (r.kind === "file" && (!r.fileFace || r.machineFace)) fail(`side c · 最近's file row wears ${JSON.stringify(r)} — a file's face is its kind alone (UX-45)`);
         if (r.kind !== "file" && r.fileFace) fail(`side c · 最近's ${r.kind} row wears a file's face — only a file does (UX-45)`);
