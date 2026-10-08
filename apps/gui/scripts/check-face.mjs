@@ -37451,6 +37451,9 @@ try {
     // f.
     if ((await toDevices()) && (await tap('[data-device="gpu-box"]'))) {
       await until(3_000, async () => (await count("[data-road-line]")) === 1);
+      // The line can draw from the row before its roads land: under the
+      // full run's load the read took longer and the probe saw no leg yet.
+      await until(5_000, async () => (await count("[data-road-line] [data-road-said]")) === 1);
       const road = await page.evaluate(() => {
         const line = document.querySelector("[data-road-line]");
         return {
