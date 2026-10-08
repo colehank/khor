@@ -16,7 +16,7 @@ import { closeWarning } from "@/views/DetailPane";
 import { sieve } from "@/lib/list-filter";
 import { isDown } from "@/lib/topology";
 import { SESSION_SIEVE } from "@/lib/session-filter";
-import { AXES, ago, agoOf, groupLabel, placeLabels, quietFor } from "@/words";
+import { AXES, agoOf, groupLabel, lasting, placeLabels, quietFor } from "@/words";
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -388,7 +388,9 @@ export function SessionsList({
           (r.quiet ? (
             <span data-quiet-note>{quietFor(r.at_ms)}</span>
           ) : (
-            <span className="tabular-nums">{ago(r.at_ms)}</span>
+            // How long the state has lasted (the list standard, 10-07): a
+            // duration, bare — 「4 小时」, never 前 (WORDS-1008, the lead).
+            <span className="tabular-nums">{lasting(Date.now() - r.at_ms)}</span>
           ))}
       </span>
     ),

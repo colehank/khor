@@ -5652,10 +5652,10 @@ try {
     // A plain folder has no state: no git segment top-right; bottom-right
     // how long ago its newest file changed (UX-48), bare.
     const gate = seen.find((r) => r.name === "notes");
-    if (gate?.git !== "" || gate?.branch !== null || gate?.held !== "2 小时前") {
+    if (gate?.git !== "" || gate?.branch !== null || gate?.held !== "2 小时") {
       fail(
         `a directory that is no repository drew 「${gate?.git}」/「${gate?.held}」 on its right — no state (干净 and 读不了 look alike), ` +
-          "and under it 「2 小时前」, when its newest file changed (UX-48, WORDS-1008, src/views/WorkspacesList.tsx)",
+          "and under it 「2 小时」, how long its line has not changed — a duration, bare (UX-48, WORDS-1008, src/views/WorkspacesList.tsx)",
       );
     }
     const peer = seen.find((r) => r.name === "work");
@@ -25204,8 +25204,8 @@ try {
           fail(`corners d · ${posture} · the ${name} row's branch is ${b.ink} at ${b.size} beside a ${b.titleSize} title — the secondary ink ${b.secondary}, a size down (UX-51)`);
         }
       }
-      if (rows.notes.aside !== 0 || rows.notes.newest !== "drafts/plan.md" || rows.notes.where !== null || rows.notes.subject !== null || rows.notes.top !== null || rows.notes.bottom !== "2 小时前") {
-        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时前」 under that (UX-48, WORDS-1008)`);
+      if (rows.notes.aside !== 0 || rows.notes.newest !== "drafts/plan.md" || rows.notes.where !== null || rows.notes.subject !== null || rows.notes.top !== null || rows.notes.bottom !== "2 小时") {
+        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时」 under that, bare (UX-48, WORDS-1008)`);
       }
       // UX-51 (the owner 2026-10-08): the second line is a sentence — an
       // edited file 「最近修改了 …」, a made one 「最近新建了 …」.
@@ -25226,8 +25226,8 @@ try {
         const ok = got && got.drawn.startsWith(before) && got.drawn.endsWith(after) && (posture === "wide" && at < 0 ? name === full : at > 0 && full.startsWith(name.slice(0, at)) && full.endsWith(name.slice(at + 1)) && name.slice(at + 1).length > 0);
         if (!ok) fail(`corners d · ${posture} · a long file's sentence draws ${JSON.stringify(got)} — 「${before}」 whole, then the file cut in the middle (UX-51)`);
       }
-      if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟前") {
-        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟前」 under that (UX-48, WORDS-1008)`);
+      if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟") {
+        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟」 under that, bare (UX-48, WORDS-1008)`);
       }
       // The long row: the counts whole inside the corner, the name whole,
       // the branch cut — in the middle on a phone row, its head and its
