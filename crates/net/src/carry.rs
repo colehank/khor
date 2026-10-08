@@ -97,6 +97,9 @@ struct Inner {
     addrs: n0_watcher::Watchable<Vec<CustomAddr>>,
     serial: AtomicU64,
     dropped: AtomicU64,
+    /// The carrier each machine's link was last attached on, kept after
+    /// the link ends ([`Links::last_carrier`]).
+    last: Mutex<HashMap<EndpointId, Carrier>>,
 }
 
 /// **This machine's carried links**, one per far machine. Cheap to clone;
@@ -124,6 +127,7 @@ impl Links {
             addrs: n0_watcher::Watchable::new(vec![addr_of(&me)]),
             serial: AtomicU64::new(1),
             dropped: AtomicU64::new(0),
+            last: Mutex::default(),
         }))
     }
 
@@ -141,6 +145,18 @@ impl Links {
     /// What the link to `peer` is a stream of, when one is up.
     pub fn carrier(&self, peer: &EndpointId) -> Option<Carrier> {
         self.lock().get(peer).map(|l| l.carrier)
+    }
+
+    /// **What the link to `peer` rides, or rode when it ended**: the word
+    /// for a connection iroh still has on its carried path between the
+    /// link ending and iroh choosing another road. Read as [`carrier`]
+    /// was, a hop whose middle stopped answering read as ssh for those
+    /// two seconds, on the face and in the row (net-e, 2026-10-09).
+    ///
+    /// [`carrier`]: Links::carrier
+    pub fn last_carrier(&self, peer: &EndpointId) -> Option<Carrier> {
+        self.carrier(peer)
+            .or_else(|| self.0.last.lock().unwrap_or_else(|p| p.into_inner()).get(peer).copied())
     }
 
     /// Every machine with a link up, and what it rides.
@@ -177,6 +193,7 @@ impl Links {
         let (out, out_rx) = mpsc::channel::<Bytes>(QUEUE);
         let serial = self.0.serial.fetch_add(1, Relaxed);
         self.lock().insert(peer, Link { out, carrier, serial });
+        self.0.last.lock().unwrap_or_else(|p| p.into_inner()).insert(peer, carrier);
         let (done, gone) = oneshot::channel();
         let links = self.clone();
         tokio::spawn(async move {
@@ -474,5 +491,23 @@ mod tests {
         assert_eq!(id_of(&addr_of(&id)), Some(id));
         assert_eq!(id_of(&CustomAddr::from((7u64, &id.as_bytes()[..]))), None, "another transport's");
         assert_eq!(id_of(&CustomAddr::from((CARRY, &[1u8, 2][..]))), None);
+    }
+
+    /// A hop whose link ended still reads as the hop until iroh leaves the
+    /// carried path, never as ssh (net-e: the three-node test read 「Ssh」
+    /// for two seconds after the middle stopped).
+    #[tokio::test]
+    async fn an_ended_link_is_remembered_by_what_it_rode() {
+        let links = Links::new(iroh::SecretKey::generate().public());
+        let (peer, via) = (iroh::SecretKey::generate().public(), iroh::SecretKey::generate().public());
+        assert_eq!(links.last_carrier(&peer), None);
+        let (here, there) = tokio::io::duplex(64);
+        let (r, w) = tokio::io::split(here);
+        let attached = links.attach(peer, Carrier::Hop { via }, r, w);
+        assert_eq!(links.last_carrier(&peer), Some(Carrier::Hop { via }));
+        drop(there);
+        attached.ended().await;
+        assert_eq!(links.carrier(&peer), None, "the link is gone");
+        assert_eq!(links.last_carrier(&peer), Some(Carrier::Hop { via }), "and is remembered as the hop");
     }
 }

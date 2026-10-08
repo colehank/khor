@@ -342,6 +342,21 @@ fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup, id: iroh::EndpointI
 /// The environment switch that binds with relays only ([`builder`]).
 pub const RELAY_ONLY_ENV: &str = "KHOR_RELAY_ONLY";
 
+/// The environment switch that binds UDP on this one address only, say
+/// `127.0.0.1` or `::1` ([`bind_pinned`]); iroh then offers exactly it.
+///
+/// **For scratch nodes, not for people.** Three nodes on one machine all
+/// go direct to each other. One bound on `127.0.0.1` and another on
+/// `::1` share no road, so the two meet on the relay alone, while a third
+/// bound on both wildcards reaches each directly — the shape of a peer
+/// hop (`crates/cli/tests/hop.rs`). Never set by khor.
+pub const BIND_IP_ENV: &str = "KHOR_BIND_IP";
+
+/// The one address [`BIND_IP_ENV`] names, if it names one.
+fn bind_ip() -> Option<std::net::IpAddr> {
+    std::env::var(BIND_IP_ENV).ok()?.trim().parse().ok()
+}
+
 /// The environment switch that binds with no mDNS service: the node
 /// neither announces itself on the segment nor listens for others.
 ///
@@ -448,7 +463,10 @@ pub async fn bind_pinned(
             .add_custom_transport(links.transport())
             .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()));
     }
-    if (v4, v6) != (0, 0) && std::env::var_os(RELAY_ONLY_ENV).is_none() {
+    if let Some(ip) = bind_ip().filter(|_| std::env::var_os(RELAY_ONLY_ENV).is_none()) {
+        let port = if ip.is_ipv4() { v4 } else { v6 };
+        b = b.clear_ip_transports().bind_addr(std::net::SocketAddr::new(ip, port))?;
+    } else if (v4, v6) != (0, 0) && std::env::var_os(RELAY_ONLY_ENV).is_none() {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
         b = b
             .clear_ip_transports()

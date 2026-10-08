@@ -8748,7 +8748,7 @@ impl Node {
                     _ => None,
                 });
                 // The middle of a peer hop (round ROAD-3).
-                let via = match d.id.parse().ok().and_then(|p| self.carry.carrier(&p)) {
+                let via = match d.id.parse().ok().and_then(|p| self.carry.last_carrier(&p)) {
                     Some(khor_net::carry::Carrier::Hop { via }) if hop == khor_core::Hop::Forwarded => {
                         Some(via.to_string())
                     }
