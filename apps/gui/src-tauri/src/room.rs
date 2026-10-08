@@ -128,12 +128,68 @@ fn frame_of(window: &tauri::Window) -> Result<Frame, String> {
     Ok(Frame { x: at.x as f64, y: at.y as f64, w: size.width as f64, h: size.height as f64 })
 }
 
-/// Puts the window's outer frame at `to`. tauri sets the **inner** size,
-/// so the frame's own margins (the title bar where the content does not
-/// run under it) are taken off first — zero on the Mac's overlay title
-/// bar, measured 2026-09-09 (`PageBox`'s `view`), and not on every
-/// platform.
-fn place(window: &tauri::Window, to: Frame) -> Result<(), String> {
+/// Puts the window's outer frame at `to`, and answers whether it is
+/// there **now** — whether a [`frame_of`] read straight after sees it.
+///
+/// **On the Mac, in one synchronous `setFrame:display:`** (fix-c,
+/// 2026-10-08, the owner: 「点击收起的时候，原窗口宽度和侧栏宽度一起没
+/// 变」). tauri's `set_size` and `set_position` reach tao, which hands
+/// both to `dispatch_async` on the main queue — and a command without
+/// `async` already runs on the main thread, so neither had happened when
+/// [`widen`] read the frame back to note where the window stood. The
+/// note said `to` = `from`; the close found the window wider than that,
+/// took it for one the person had resized (their size stands), and left
+/// it grown with the session stretched across the column's room. Every
+/// open, every road. One `setFrame:` also moves and sizes the window as
+/// one change, where the two queued calls were two.
+///
+/// Elsewhere (and off the main thread) tauri's two calls, which answer
+/// `false`: the caller notes the frame it asked for rather than a read
+/// that may still be the old one.
+fn place(window: &tauri::Window, to: Frame) -> Result<bool, String> {
+    #[cfg(target_os = "macos")]
+    if place_now(window, to)? {
+        return Ok(true);
+    }
+    place_queued(window, to)?;
+    Ok(false)
+}
+
+/// `setFrame:display:` on the window's NSWindow, on the main thread or
+/// not at all (`false`). AppKit's frame is in points from the bottom of
+/// the primary screen; the top it is measured from is read off this
+/// window's own two frames (tao's top-left one and AppKit's), so the
+/// conversion is tao's own and no screen is asked.
+#[cfg(target_os = "macos")]
+fn place_now(window: &tauri::Window, to: Frame) -> Result<bool, String> {
+    use objc2::runtime::AnyObject;
+    use objc2::{msg_send, MainThreadMarker};
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+    if MainThreadMarker::new().is_none() {
+        return Ok(false);
+    }
+    let ns = window.ns_window().map_err(|e| e.to_string())? as *mut AnyObject;
+    if ns.is_null() {
+        return Ok(false);
+    }
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let at = window.outer_position().map_err(|e| e.to_string())?;
+    // SAFETY: a live NSWindow (tauri's), messaged on the main thread.
+    unsafe {
+        let now: NSRect = msg_send![ns, frame];
+        let top = at.y as f64 / scale + now.origin.y + now.size.height;
+        let h = to.h / scale;
+        let r = NSRect::new(NSPoint::new(to.x / scale, top - to.y / scale - h), NSSize::new(to.w / scale, h));
+        let _: () = msg_send![ns, setFrame: r, display: true];
+    }
+    Ok(true)
+}
+
+/// tauri sets the **inner** size, so the frame's own margins (the title
+/// bar where the content does not run under it) are taken off first —
+/// zero on the Mac's overlay title bar, measured 2026-09-09 (`PageBox`'s
+/// `view`), and not on every platform.
+fn place_queued(window: &tauri::Window, to: Frame) -> Result<(), String> {
     use tauri::{PhysicalPosition, PhysicalSize};
     let outer = window.outer_size().map_err(|e| e.to_string())?;
     let inner = window.inner_size().map_err(|e| e.to_string())?;
@@ -175,10 +231,13 @@ pub(crate) fn widen(window: &tauri::Window, column: String, w: f64) -> Result<f6
     let Some(mut g) = grow(from, area, w * scale, scale) else {
         return Ok(0.0);
     };
-    place(window, g.to)?;
-    // What the window really stands at: the window manager may round or
-    // clamp, and the close compares against this.
-    if let Ok(now) = frame_of(window) {
+    // What the window really stands at, where it is there to be read:
+    // the window manager may round or clamp, and the close compares
+    // against this. Where the move is still queued a read is the old
+    // frame (`place`), and the frame asked for is the better note.
+    if place(window, g.to)?
+        && let Ok(now) = frame_of(window)
+    {
         g.to = now;
     }
     let grew = g.right + g.left;

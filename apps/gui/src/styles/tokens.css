@@ -2209,6 +2209,22 @@
    * floor's 64 and about three characters; 120 about five more. */
   --container-tab-face: 96px;
   --container-tab-x: 120px;
+  /* **`mono`, the one monospace size** (its history is at `--text-read`
+   * in the `inline` block below). **Here and not there, because the file
+   * page sets it again under itself** (文件字号, `lib/file-size`): in the
+   * `inline` block `text-mono` was compiled to `var(--fs-mono)` /
+   * `var(--lh-mono)`, so the page's own `--text-mono` never reached the
+   * sheet or its editor — only the per-line `min-h-[var(--text-mono--
+   * line-height)]` read it. At any step above the base each painted line
+   * grew to the step's leading while the editor's rows stayed at the
+   * root's, and the caret climbed off its letter by the difference on
+   * every line (the owner, 2026-10-08: 「文件编辑的光标始终不能和文字对
+   * 齐」; 3 px a line at 115 %, a row and a half by line 10). `static`
+   * keeps the utility reading the variable, so a size set on a subtree
+   * is the size that subtree draws. */
+  --text-mono: var(--fs-mono);
+  --text-mono--line-height: var(--lh-mono);
+  --text-mono--font-weight: 400;
 }
 
 @theme inline {
@@ -2547,10 +2563,10 @@
    * The leading keeps the rule that made it 22: **a whole number of
    * pixels** (WebKit snaps a textarea's rows and not a pre's; `check-wk`
    * lays the pair out and goes red on a fraction), so 13 × 1.5 = 19.5 is
-   * written 20. */
-  --text-mono: var(--fs-mono);
-  --text-mono--line-height: var(--lh-mono);
-  --text-mono--font-weight: 400;
+   * written 20.
+   *
+   * **Its three lines are in the `@theme static` block above, not here**
+   * (fix-c, 2026-10-08). */
 
   /* ── ink weights ─────────────────────────────────────
    * Three pressures of the same pen, named for what a line *does* —

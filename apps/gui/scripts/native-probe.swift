@@ -305,6 +305,11 @@ case "axpress":
   let needle = args[3]
   let expanding = args.count > 4 && args[4] == "expanded"
   let app = AXUIElementCreateApplication(pid)
+  // **WebKit builds the page's tree only for a client that asks** (fix-c,
+  // 2026-10-08): without this the window answered six elements and no
+  // page control at all, which is the room phase's whole 「probe dead: no
+  // row」 since it was written. VoiceOver's own switch, set on the app.
+  AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
   func attr(_ el: AXUIElement, _ name: String) -> AnyObject? {
     var v: AnyObject?
     return AXUIElementCopyAttributeValue(el, name as CFString, &v) == .success ? v : nil
@@ -334,7 +339,10 @@ case "axpress":
       let role = attr(el, kAXRoleAttribute) as? String
       if role == "AXButton" || role == "AXLink" || role == "AXRadioButton" || role == "AXPopUpButton",
          !expanding || attr(el, "AXExpanded") != nil,
-         said(el).contains(where: { $0.hasPrefix(needle) }) {
+         // WebKit answers AXExpanded on every button, `aria-expanded` or
+         // not, so `expanded` is the one control named exactly that — the
+         // front tab — and not the list's row, whose name only starts so.
+         said(el).contains(where: { expanding ? $0.trimmingCharacters(in: .whitespacesAndNewlines) == needle : $0.hasPrefix(needle) }) {
         found = el
         break
       }
