@@ -25,8 +25,8 @@
  * under the floor it folds the column away, the same gesture the list
  * pane's seam makes (`use-list-width`); double-click is the default
  * width; ← → Home walk the stops from a keyboard. The width is one
- * memory per session; open is the session in front's alone and closes
- * when it is left (UX-46, `use-session-side`).
+ * memory per session, and so is open: each pill opens or closes its own
+ * as it comes to the front (fix-e, `use-session-side`).
  */
 import { useMemo, useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 

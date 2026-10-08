@@ -1,14 +1,19 @@
 // The session's 附栏 (UX-30): whether it is open beside this session, how
 // wide it was dragged, and which seat it is on.
 //
-// **Open belongs to the session in front, and to nothing else** (UX-46,
-// the owner 2026-10-07: 「这个侧栏应该是只属于 session，该关闭的」): one
-// session at most has it open, leaving that session — another landing,
-// another tab, the session closed — closes it (`App`), and coming back
-// finds it closed; the press opens it again where it was left (UX-47,
-// below). ⚠️ 墓碑 (UX-30 → UX-46): 「open」 remembered per session on
-// this device, so a session someone had docked a phone beside came back
-// docked, and the column outlived its session on every other landing.
+// **Open is remembered per session, for the app's lifetime** (fix-e, the
+// owner 2026-10-08: 「要记住每一个药丸的侧边展开情况, 从一个没有展开的到
+// 展开的, 要自动展开」): each pill keeps its own open or closed, in memory
+// only — the same lifetime as where it was left (UX-47, below). The column
+// is drawn for the session in front, on the sessions landing, when that
+// session's own memory says open (`App`): another tab in front shows that
+// tab's memory, and another landing draws none, leaving each memory as it
+// was. The press, the seam and closing the tab are what close one (the tab
+// closed forgets it, `keepSidesOf`). ⚠️ 墓碑 (UX-46 → fix-e): one session
+// at most had it open, and leaving that session — another landing,
+// another tab — closed it, so coming back found it closed. ⚠️ 墓碑 (UX-30
+// → UX-46): 「open」 written to this device's storage, so a session came
+// back docked after a restart.
 //
 // **The width is remembered per session** (`localStorage`, beside
 // `use-list-width`'s and `use-day-shown`'s keys): a viewer's own
@@ -72,15 +77,7 @@ function current(session: string): SidePref {
   return p;
 }
 
-/** The one session whose 附栏 is open, if any. */
-let openFor: string | null = null;
-
 export function setSessionSide(session: string, patch: Partial<SidePref>): void {
-  // Opening one closes any other: the 附栏 is the session in front's.
-  if (patch.open === true && openFor !== null && openFor !== session) {
-    live.set(openFor, { ...current(openFor), open: false });
-  }
-  if (patch.open !== undefined) openFor = patch.open ? session : openFor === session ? null : openFor;
   const next = { ...current(session), ...patch };
   live.set(session, next);
   if (patch.w !== undefined) {
@@ -93,15 +90,14 @@ export function setSessionSide(session: string, patch: Partial<SidePref>): void 
   for (const tell of heard) tell();
 }
 
-/** The session whose 附栏 is open, or `null`. */
-export function sessionSideOpen(): string | null {
-  return openFor;
-}
-
-/** Closes the 附栏, whichever session it was open beside (`App`, when
-    that session is left). */
-export function closeSessionSide(): void {
-  if (openFor !== null) setSessionSide(openFor, { open: false });
+/** **A pill closed takes its 附栏's open with it** (`App`, as the tabs
+    change): every session remembered open that is not among `tabs` is
+    closed, so the same session opened again as a tab starts closed. Where
+    it was left (`sidePlace`) stays, as it always has. */
+export function keepSidesOf(tabs: readonly string[]): void {
+  const gone = [...live].filter(([s, p]) => p.open && !tabs.includes(s)).map(([s]) => s);
+  for (const s of gone) live.set(s, { ...current(s), open: false });
+  if (gone.length) for (const tell of heard) tell();
 }
 
 function listen(tell: () => void): () => void {

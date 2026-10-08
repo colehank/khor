@@ -535,7 +535,7 @@ async function roomPhase(pid) {
   // **Opened through khor, not tmux** (fix-c, 2026-10-08): the scratch
   // node lists the sessions khor made, and a bare `tmux new-session` on
   // its server was never a row — the other half of 「no row 「room」」.
-  const opened = execFileSync(cliBin, ["open", "-d", "--title", name, "--", "cat"], { env, encoding: "utf8" }).trim();
+  const opened = execFileSync(cliBin, ["open", "-d", "--title", name, "--", "cat"], { env, encoding: "utf8", cwd: gui }).trim();
   front(pid);
   // The row, listed by the scratch node's next poll; pressed, its tab.
   let listed = false;
@@ -578,15 +578,24 @@ async function roomPhase(pid) {
   };
   // 1. the front tab pressed again
   await road("the tab again", () => tab(), (f0) => f0);
-  // 2. another landing, then back to the session (closed there)
-  await road(
-    "another landing",
-    async () => {
-      await press(said("gui.devices-tab"));
-      await press(said("gui.sessions-tab"));
-    },
-    (f0) => f0,
-  );
+  // 2. another landing gives the room back; back on the session its pill
+  //    remembers the 附栏 open (fix-e), and the press closes it there
+  {
+    const f0 = frame();
+    await tab();
+    const f1 = frame();
+    await press(said("gui.devices-tab"));
+    const fL = frame();
+    await press(said("gui.sessions-tab"));
+    const fR = frame();
+    await tab();
+    const f2 = frame();
+    rows.push(`another landing: ${fmt(f0)} → open ${fmt(f1)} → 机器 ${fmt(fL)} → 会话 ${fmt(fR)} → closed ${fmt(f2)}`);
+    console.log(`room · another landing: before ${fmt(f0)}, open ${fmt(f1)}, on 机器 ${fmt(fL)}, back on 会话 ${fmt(fR)}, closed ${fmt(f2)}`);
+    if (!same(fL, f0)) fail(`room · another landing: on 机器 the window is ${fmt(fL)}, want ${fmt(f0)} — leaving the session gives the room back (UX-46 §2)`);
+    if (!same(fR, f1)) fail(`room · another landing: back on 会话 the window is ${fmt(fR)}, want ${fmt(f1)} — the pill remembers its 附栏 open and it opens again (fix-e)`);
+    if (!same(f2, f0)) fail(`room · another landing: closed, the window is ${fmt(f2)}, want ${fmt(f0)} (UX-46 §2)`);
+  }
   // 3. the tab closed, then the session opened again from its row
   await road(
     "the tab closed",
@@ -632,8 +641,175 @@ async function roomPhase(pid) {
     if (!same(f2, f0)) fail(`room · at the right edge, closed, the window is ${fmt(f2)}, want ${fmt(f0)} (UX-46 §2)`);
   }
   await home();
+  await landingRoads();
+  await pillRoads();
+  await home();
   execFileSync(cliBin, ["close", opened.split(/\s+/).pop()], { env, stdio: "ignore" });
   return rows;
+
+  /**
+   * **The landings answer with the 附栏 open** (fix-e, the owner
+   * 2026-10-08: 「侧边展开的时候, 不能通过导航到别的页面, 这时候的行为应该是
+   * 侧边收起, 到别的页面」). Left, the session's name is off the page (its
+   * row and its tab are the sessions landing's) and the window is back.
+   * The owner's case is the third road: a file open in the 附栏's 工作区,
+   * whose page handed its draft up on every render — an update a frame,
+   * and the landing's switch (a transition) never got to finish. The
+   * roads above left with the 附栏 on 最近, which is why they were green.
+   */
+  async function landingRoads() {
+    // Where the page is: the landing's own title (its list head, a
+    // static text; the strip's glyphs are named, not written). The
+    // session's name is no answer — 机器's card lists its sessions.
+    // Read as the title appearing: absent before the press, there after.
+    const titled = (word) => JSON.parse(run("axtext", P, said(word))).length > 0;
+    // The control: with the 附栏 closed a press leaves the session.
+    const before = titled("gui.devices-tab");
+    const ctl = !before && (await press(said("gui.devices-tab"))) && titled("gui.devices-tab");
+    await press(said("gui.sessions-tab"));
+    if (!ctl || titled("gui.devices-tab")) throw new Error(`probe dead: room · a press on 机器 with the 附栏 closed: 「${said("gui.devices-tab")}」 titled before ${before}, the press did not bring it, or 会话 did not take it away`);
+    // **A file open in the 附栏** is the owner's case: its page handed its
+    // draft up on every render, an update a frame, and the landing's
+    // switch (a transition) never got to finish (fix-e). The session's
+    // directory is this one (`khor open` ran here), so its tree holds
+    // package.json.
+    const side = said("gui.session-side");
+    const fileOpen = async () => {
+      if (run("axpress", P, said("gui.workspaces-tab"), `in=${side}`) !== "1") return false;
+      await wait(2000);
+      if (run("axpress", P, "package.json", `in=${side}`) !== "1") return false;
+      await wait(2000);
+      return true;
+    };
+    for (const [what, to, prep] of [
+      ["机器", "gui.devices-tab", null],
+      ["额度", "gui.accounts-tab", null],
+      ["机器, a file open in the 附栏", "gui.devices-tab", fileOpen],
+    ]) {
+      const f0 = frame();
+      await tab();
+      const f1 = frame();
+      if (prep && !(await prep())) {
+        fail(`probe dead: room · ${what}: could not open package.json in the 附栏's 工作区`);
+        await tab();
+        continue;
+      }
+      const was = titled(to);
+      const pressed = await press(said(to));
+      const left = !was && titled(to);
+      const fL = frame();
+      await press(said("gui.sessions-tab"));
+      // Back on the session its pill remembers open; closed by the press.
+      if (frame().w > f0.w + 1) await tab();
+      const f2 = frame();
+      rows.push(`${what}, the 附栏 open: ${fmt(f0)} → open ${fmt(f1)} → ${left ? "left" : "STAYED"} ${fmt(fL)} → closed ${fmt(f2)}`);
+      console.log(`room · ${what}, the 附栏 open: before ${fmt(f0)}, open ${fmt(f1)}, ${left ? "left the session" : "still on the session"}, window ${fmt(fL)}, closed ${fmt(f2)}`);
+      if (!pressed) fail(`room · ${what}: no 「${said(to)}」 to click`);
+      else if (!left) fail(`room · a press on 「${said(to)}」 with the 附栏 open (${what}) did nothing — it goes there, the 附栏 put away (fix-e)`);
+      if (left && !same(fL, f0)) fail(`room · ${what}: the window is ${fmt(fL)} there, want ${fmt(f0)} — the room given back (UX-46 §2)`);
+      if (!same(f2, f0)) fail(`room · ${what}: closed, the window is ${fmt(f2)}, want ${fmt(f0)}`);
+    }
+  }
+
+  /**
+   * **Each pill remembers its 附栏** (fix-e, the owner 2026-10-08: 「要记
+   * 住每一个药丸的侧边展开情况, 从一个没有展开的到展开的, 要自动展开」). A
+   * second session beside the first; the window's frame says which way
+   * each switch went — closed to open widens, open to closed gives back,
+   * open to open keeps it — and the pair stays balanced over rapid
+   * switching, a tab closed while open, another landing, a hand resize
+   * and the screen's right edge.
+   */
+  async function pillRoads() {
+    const other = "other";
+    const made = execFileSync(cliBin, ["open", "-d", "--title", other, "--", "cat"], { env, encoding: "utf8" }).trim();
+    let listed = false;
+    for (let i = 0; i < 30 && !listed; i++) {
+      listed = run("axpress", P, other) === "1";
+      if (!listed) await wait(1000);
+    }
+    if (!listed) throw new Error(`probe dead: room · no row 「${other}」 to open`);
+    await wait(1500);
+    const to = async (who) => {
+      if (run("axpress", P, who) !== "1") fail(`room · pills: no 「${who}」 to switch to`);
+      await wait(1500);
+    };
+    const toggle = (who) => press(who, "expanded");
+    const steps = [];
+    const at = (what, want) => {
+      const f = frame();
+      const ok = same(f, want);
+      steps.push(`${what} ${fmt(f)}${ok ? "" : ` (want ${fmt(want)})`}`);
+      if (!ok) fail(`room · pills: ${what} — the window is ${fmt(f)}, want ${fmt(want)} (fix-e)`);
+      return f;
+    };
+    await home();
+    // Both closed to start; `other` is in front.
+    const f0 = frame();
+    const wide = { ...f0, w: f0.w + col };
+    if (!(await toggle(other))) throw new Error(`probe dead: room · pills: no front tab 「${other}」`);
+    at("other opened", wide);
+    await to(name);
+    at("→ room (closed)", f0);
+    await to(other);
+    at("→ other (open, opens by itself)", wide);
+    await to(name);
+    await toggle(name);
+    at("room opened", wide);
+    await to(other);
+    at("→ other (both open)", wide);
+    await to(name);
+    at("→ room (both open)", wide);
+    // Rapid: four switches without waiting for the window, ending on other.
+    for (const who of [other, name, other, name, other]) run("axpress", P, who);
+    await wait(2500);
+    at("rapid, both open, ending on other", wide);
+    await toggle(other);
+    at("other closed", f0);
+    for (const who of [name, other, name, other, name, other]) run("axpress", P, who);
+    await wait(2500);
+    at("rapid, ending on other (closed)", f0);
+    for (const who of [name, other, name]) run("axpress", P, who);
+    await wait(2500);
+    at("rapid, ending on room (open)", wide);
+    // Another landing and back: the room given back, then taken again.
+    await press(said("gui.devices-tab"));
+    at("room open → 机器", f0);
+    await press(said("gui.sessions-tab"));
+    at("→ 会话, room in front (remembered open)", wide);
+    // The tab closed while open: other (closed) comes to the front.
+    await press(said("gui.close"));
+    at("room's tab closed while open → other (closed)", f0);
+    await to(name);
+    at("room opened again as a tab: closed (its pill was closed)", f0);
+    // Resized by hand while open: their size stands across the switches.
+    await toggle(name);
+    const f1 = frame();
+    await sizeTo(f1.w + 100, f1.h);
+    const mine = frame();
+    await to(other);
+    at("resized while open → other (closed): their size", mine);
+    await to(name);
+    at("→ room (open): grown again from their size", { ...mine, w: mine.w + col });
+    await toggle(name);
+    at("room closed: their size", mine);
+    // At the screen's right edge: grown leftward, back exactly on a switch.
+    await home();
+    await moveTo(sx + sw - 1080 - 100, sy + 60);
+    const e0 = frame();
+    await toggle(name);
+    const e1 = frame();
+    if (!near(e1.x + e1.w, sx + sw) || !near(e1.w, e0.w + col)) fail(`room · pills: at the right edge the window opened to ${fmt(e1)} from ${fmt(e0)}`);
+    await to(other);
+    at("right edge, room open → other (closed)", e0);
+    await to(name);
+    at("→ room (open) at the right edge", e1);
+    await toggle(name);
+    at("room closed at the right edge", e0);
+    rows.push(`pills: ${steps.join("; ")}`);
+    console.log(`room · pills:\n    ${steps.join("\n    ")}`);
+    execFileSync(cliBin, ["close", made.split(/\s+/).pop()], { env, stdio: "ignore" });
+  }
 }
 
 /** Launches the scratch app and waits for its window; the window's

@@ -81,11 +81,10 @@ import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui, msg } from "@/gen/catalog";
 import { lasted } from "@/words";
 import {
-  closeSessionSide,
   forgetSidePlace,
   keepSidePlace,
+  keepSidesOf,
   placeFile,
-  sessionSideOpen,
   setSessionSide,
   sidePlace,
   sidePlaces,
@@ -1986,6 +1985,11 @@ export default function App() {
       点开了一个文件或什么，返回应该是返回到 Recent」): the page a row of
       最近 opens wears ‹ back to 最近; a seat entered by the menu does not. */
   const [sideFrom, setSideFrom] = useState<"recent" | null>(null);
+  /** Whose 附栏 the shell's pieces of it (`sideFrom`, `sideBrowse`,
+      `sideQuota`, the resume spots) describe: set with them as a place is
+      put back or a road opens it, so a place is never kept under the name
+      of a session whose pieces have not arrived yet (fix-e). */
+  const [piecesOf, setPiecesOf] = useState<string | null>(null);
   const backToRecent = () => {
     setSideFrom(null);
     setSideBrowse({ page: false });
@@ -1997,6 +2001,7 @@ export default function App() {
     // the 附栏: what was opened from 最近 before it shut does not carry
     // over into the place it now keeps (UX-47).
     if (sideOpenFor.current !== selectedRow.id) setSideFrom(null);
+    setPiecesOf(selectedRow.id);
     if (!narrow) return setSessionSide(selectedRow.id, { open: true, seat });
     setSessionSide(selectedRow.id, { seat });
     setPlaceSheet((was) => was ?? { dir: null, session: selectedRow.id });
@@ -2432,19 +2437,25 @@ export default function App() {
       UX-30 §6): the same seats, risen from the bottom. The
       sheet's lifetime is this state; the seat is the session's memory. */
   const [placeSheet, setPlaceSheet] = useState<{ dir: string | null; session: string } | null>(null);
-  /** **The 附栏 is its session's alone** (UX-46 §1, the owner 2026-10-07:
-      「在跳转到别的目录的时候仍然存在，这个侧栏应该是只属于 session，该关闭
-      的」): leaving the session — another landing, another tab, the session
-      closed — closes it, the column and the phone's sheet alike; back on
-      the session it is closed, and the press opens it where it was left
-      (UX-47). ⚠️ 墓碑 (UX-30 → UX-46): the column standing on every
-      landing beside whatever was there, and each session reopening
-      docked. */
-  useEffect(() => {
-    const open = sessionSideOpen();
-    if (open !== null && (!sessions || open !== selected)) closeSessionSide();
+  /** **Each pill remembers its 附栏** (fix-e, the owner 2026-10-08: 「要记
+      住每一个药丸的侧边展开情况, 从一个没有展开的到展开的, 要自动展开」):
+      a tab in front whose 附栏 was left open opens it again, where it was
+      left (UX-47), and one left closed shows none; another landing draws
+      none and forgets nothing, so coming back to the session is coming
+      back to its pill. The window's room follows (`sideWanted` below):
+      closed to open widens, open to closed gives back, open to open keeps
+      the room it has. The phone's sheet is each opening's glance, and
+      goes. ⚠️ 墓碑 (UX-46 §1 → fix-e): leaving the session — another
+      landing, another tab — closed it, and coming back found it closed. */
+  // A layout effect: the place is back before the column is painted, so
+  // a tab switched to never shows the last one's page for a frame.
+  useLayoutEffect(() => {
     setPlaceSheet(null);
+    if (!narrow && sessions && selected !== null && side.open) resumeSide(selected);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, sessions]);
+  // A tab closed forgets its 附栏's open (`keepSidesOf`).
+  useEffect(() => keepSidesOf(openTabs), [openTabs]);
   /**
    * **Opened again, the 附栏 is where it was left** (UX-47, the owner
    * 2026-10-07, replacing UX-40 §3's 「每次打开都是显示最近」): per
@@ -2471,6 +2482,7 @@ export default function App() {
       (p.seat !== "workspace" || (p.files !== null && known(p.files.machine))) &&
       (p.seat !== "browser" || p.page === null || pageTabs.tabs.some((t) => t.id === p.page && t.session === session)) &&
       (p.seat !== "store" || p.store === null || known(p.store.machine));
+    setPiecesOf(session);
     if (!standing || p === null) {
       forgetSidePlace(session);
       toSlices();
@@ -2522,7 +2534,7 @@ export default function App() {
   /** The session whose 附栏 is up now — the column or the phone's sheet —
       for an answer that arrives after it may have gone. */
   const sideOpenFor = useRef<string | null>(null);
-  sideOpenFor.current = narrow ? (placeSheet?.session ?? null) : sessionSideOpen();
+  sideOpenFor.current = narrow ? (placeSheet?.session ?? null) : sessions && side.open ? selected : null;
   /** Whether a file is still there: its directory, read. `null` when the
       machine did not answer — not gone, only not known. */
   const fileThere = (machine: string, path: string): Promise<boolean | null> =>
@@ -2567,6 +2579,10 @@ export default function App() {
   const pageFront = pageTabs.current.id;
   useEffect(() => {
     if (!sideOn || !selectedRow || sideOpenFor.current !== selectedRow.id) return;
+    // The pieces are another session's until its place has been put
+    // back (`resumeSide`): a tab switched to an open 附栏 renders once
+    // with the last one's 浏览器 page, 额度 screen and road from 最近.
+    if (!narrow && piecesOf !== selectedRow.id) return;
     const files = sideFiles?.session === selectedRow.id ? sideFiles : null;
     keepSidePlace(selectedRow.id, {
       seat: side.seat,
@@ -2583,7 +2599,7 @@ export default function App() {
       store: sideStore?.session === selectedRow.id ? sideStore.spot : null,
     } satisfies SidePlace);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideOn, selectedRow?.id, side.seat, sideFrom, sideFiles, sideSpot, sideBrowse.page, pageFront, sideQuota, sideStore]);
+  }, [sideOn, selectedRow?.id, side.seat, sideFrom, sideFiles, sideSpot, sideBrowse.page, pageFront, sideQuota, sideStore, piecesOf]);
   const [recent, forgetRecentRow] = useSideRecent(sideOn && side.seat === "recent");
   /** 最近's rows open in place (§4): a page in the column's browser, a
       workspace as the column's listing, a file as its file page. */
