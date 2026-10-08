@@ -40,7 +40,7 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
-import { ago, axisOf, groupLabel, valueOf } from "@/words";
+import { ago, axisOf, groupLabel, lasting, valueOf } from "@/words";
 import type { GitOperation } from "@/gen/bindings/GitOperation";
 import type { GitSegment } from "@/gen/bindings/GitSegment";
 import type { NewestFile } from "@/gen/bindings/NewestFile";
@@ -628,7 +628,8 @@ export function WorkspacesList({
         top: repo && seg && (seg.operation || segmentSymbols(seg).length > 0) ? <GitSegmentWord seg={seg} /> : undefined,
         bottom:
           repo && seg && seg.since_ms > 0 ? (
-            <span data-ws-held>{ago(seg.since_ms)}</span>
+            // How long the segment has held — a duration, bare (WORDS-1008).
+            <span data-ws-held>{lasting(Date.now() - seg.since_ms)}</span>
           ) : !repo && r.newest && r.newest.at_ms > 0 ? (
             <span data-ws-held>{ago(r.newest.at_ms)}</span>
           ) : undefined,

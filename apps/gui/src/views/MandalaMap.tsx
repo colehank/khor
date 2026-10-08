@@ -10,7 +10,7 @@ import { PageSubtitle } from "@/components/Region";
 import { cli, gui, hop, state } from "@/gen/catalog";
 import { lastSeenMs, topology, unreachable, type RelayNode, type Road, type Segment } from "@/lib/topology";
 import { cn } from "@/lib/utils";
-import { ageIfOld, hopWord, span } from "@/words";
+import { downWord, hopWord, latency, readingAge } from "@/words";
 
 /**
  * The network as an ego graph: this machine in the middle, everyone
@@ -177,7 +177,7 @@ export function MandalaMap({
   // always coincide (its docs/MAP.md), and so does this: `me` picks the
   // machine, `seat` says where it goes, and neither is read off the
   // other.
-  const topo = topology(rows, gui.conn_relay_ms, hopWord);
+  const topo = topology(rows, latency, hopWord);
   const { me, others, relays, segments } = topo;
   // **Where each edge is drawn, worked out from what is on the square**
   // (2026-09-28 UI 审计): every edge used to run centre to centre under
@@ -466,7 +466,7 @@ function Seat({
 }) {
   if (!row) return null;
   const reached = row.vitals !== null;
-  const aged = row.vitals ? ageIfOld(row.vitals.age_ms) : null;
+  const aged = row.vitals ? readingAge(row.vitals.age_ms) : null;
   const body = (
     <>
       {/* The face fills a box the fluid size owns (file head): the
@@ -532,11 +532,23 @@ function Seat({
             className="max-w-full truncate text-caption text-muted-foreground"
             style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
           >
-            {lastSeenMs(row) === null ? gui.day_unreachable : gui.map_last_seen(span(lastSeenMs(row) ?? 0))}
+            {downWord(lastSeenMs(row))}
+          </span>
+        )}
+        {/* **Paused is said on the map too** (WORDS-1008): 已暂停, not
+            「尚无读数」 for a machine this one stopped talking to. */}
+        {!row.me && !away && row.paused && (
+          <span
+            data-seat-paused
+            className="max-w-full truncate text-caption text-muted-foreground"
+            style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
+          >
+            {gui.machine_paused}
           </span>
         )}
         {!row.me &&
           !away &&
+          !row.paused &&
           (reached ? (
             aged !== null && (
               <span
@@ -544,7 +556,7 @@ function Seat({
                 className="max-w-full truncate text-caption text-muted-foreground"
                 style={{ fontSize: TEXT_FINE, lineHeight: TEXT_RATIO }}
               >
-                {cli.vitals_taken(aged)}
+                {aged}
               </span>
             )
           ) : (

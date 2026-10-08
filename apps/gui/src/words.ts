@@ -65,7 +65,14 @@ export function hopWord(key: string): string {
 export function linkWord(key: string, heardMs: number | null | undefined, downMs?: number | null): string {
   const road = hopWord(key === "quiet" && isDown(downMs) ? "down" : key);
   if (key !== "quiet" || heardMs == null) return road;
-  return gui.link_last_heard(road, span(heardMs));
+  return gui.link_last_heard(road, agoOf(heardMs));
+}
+
+/** **不通, with when it was last heard** (WORDS-1008: 「不通 · 上次 27 分钟
+    前」; never 离线 or 无法获取): the map's caption under an unreachable
+    seat and the overview's word, from the same key the rows use. */
+export function downWord(heardMs: number | null | undefined): string {
+  return heardMs == null ? hopWord("down") : gui.link_last_heard(hopWord("down"), agoOf(heardMs));
 }
 
 
@@ -90,8 +97,9 @@ export function connectionWord(row: {
   hop: string | null;
   heard_ms?: number | null;
   down_ms?: number | null;
+  paused?: boolean;
 }): string | null {
-  if (!row.me && !row.sponsor && row.hop) return linkWord(row.hop, row.heard_ms, row.down_ms);
+  if (!row.paused && !row.me && !row.sponsor && row.hop) return linkWord(row.hop, row.heard_ms, row.down_ms);
   return connectionKeyWord(connectionKey(row));
 }
 
@@ -111,7 +119,12 @@ export function connectionKey(row: {
   sponsor: string | null;
   hop: string | null;
   down_ms?: number | null;
+  paused?: boolean;
 }): string {
+  // **Paused wins** (WORDS-1008: 已暂停, the map says it too): this
+  // machine stopped talking to it, whatever its wire last did — and the
+  // filter's 已暂停 is this key, so the tick and the row cannot differ.
+  if (row.paused) return "paused";
   if (row.me) return "here";
   if (row.sponsor) return `via:${row.sponsor}`;
   if (row.hop === "quiet" && isDown(row.down_ms)) return "down";
@@ -120,6 +133,7 @@ export function connectionKey(row: {
 
 /** The word for a `connectionKey`, `null` for the empty one. */
 export function connectionKeyWord(key: string): string | null {
+  if (key === "paused") return gui.machine_paused;
   if (key === "here") return gui.machine_here;
   if (key.startsWith("via:")) return cli.via_sponsor(key.slice("via:".length));
   if (key !== "") return hopWord(key);
@@ -319,15 +333,41 @@ export function valueOf(key: string, axes: readonly string[] = AXES): string {
   return a ? key.slice(a.length) : key;
 }
 
-/** How long something lasted, in the catalog's units (a bare duration
-    off the same ladder `ago` uses). */
-export function lasted(ms: number): string {
-  return span(ms);
+// ── Time (WORDS-1008, the owner 2026-10-08) ─────────────────────────
+//
+// **One way to say a time, and the direction is always said.** 「连不上
+// 叫不通; MDH这个只在需要缩写的地方吧……普通的还是2秒前这样.重置如2小时13
+// 分后重置」. Three shapes, and every time on the face is one of them:
+//
+// - **a moment in the past** — 「2 秒前」「3 分钟前」「4 小时前」 (`ago`,
+//   `agoOf`): list corners, last heard, last answered, a reading's age;
+// - **a moment ahead** — 「2 小时 13 分后」 (`until`): two units where the
+//   second matters, never rounded down to one (a reset in 2 h 13 min was
+//   「2 小时后」 and read as two hours early);
+// - **a duration** — 「4 小时」 bare (`lasting`, `stretch`): how long a
+//   state has held, how long a process ran, how long something waited.
+//
+// The ladder itself (`span`) does not leave this file: a bare number of
+// hours handed to a page is the ambiguity the owner pointed at (a session
+// row's 「4 小时」 that was 4 hours *ago*). **A catalog sentence never
+// carries the direction itself** (no 「{0}前」 in `[gui]`): it takes what
+// `ago` / `until` said, so 前 and 后 are written in exactly two keys
+// (`time-ago`, `time-in`). The `[cli]` sentences that do carry it are the
+// terminal's, and the face reaches them only through here
+// (`readingAge`). `check-words` holds all of this.
+//
+// M / H / D are not here: they are for names and tight labels (「5H 窗
+// 口」, an axis), never for an age or a deadline.
+
+/** A moment in the past, said with its direction: 「3 分钟前」. */
+export function ago(atMs: number): string {
+  return agoOf(Date.now() - atMs);
 }
 
-/** How long ago, in the catalog's units. */
-export function ago(ms: number): string {
-  return span(Date.now() - ms);
+/** An age (how long ago, in ms) said with its direction: 「3 分钟前」.
+    For the answers that carry an age rather than a moment. */
+export function agoOf(ageMs: number): string {
+  return gui.time_ago(span(ageMs));
 }
 
 /**
@@ -343,14 +383,22 @@ export function ago(ms: number): string {
  * `0 秒前的读数` under a seat that had just replied, which reads as a
  * fault rather than as freshness. Past the rung the age starts carrying
  * something (khor has missed a round it meant to take), so it appears,
- * and it appears in the same words everything else uses for a duration.
+ * and it appears in the same words everything else uses for an age.
  *
  * The caller decides what silence means for its own picture; on the map
  * it means the caption is one line shorter for every machine that is
  * answering, which is most of them, most of the time.
  */
 export function ageIfOld(ageMs: number): string | null {
-  return ageMs < SECONDS_TIER ? null : span(ageMs);
+  return ageMs < SECONDS_TIER ? null : agoOf(ageMs);
+}
+
+/** A reading's age as the map's caption says it (「3 分钟前的读数」), or
+    nothing while it is fresh (`ageIfOld`). The sentence is the
+    terminal's own (`[cli] vitals-taken` carries its 前), so it is said
+    here and nowhere else. */
+export function readingAge(ageMs: number): string | null {
+  return ageMs < SECONDS_TIER ? null : cli.vitals_taken(span(ageMs));
 }
 
 /** The first rung of `span`'s ladder — where seconds become minutes. */
@@ -364,24 +412,22 @@ export function quietFor(atMs: number): string {
 }
 
 /**
- * How long until a moment, in the same words `ago` uses for how long
- * since one.
+ * A moment ahead, said with its direction and to two units:
+ * 「2 小时 13 分后」, 「3 天 5 小时后」, 「40 分钟后」.
  *
- * **The ladder is shared rather than written twice.** Two copies would
- * be two places to change 「分钟」, and the direction is the only thing
- * that differs — which is the argument, not the vocabulary.
+ * **Never rounded down to one unit** (the owner: 「重置如2小时13分后重
+ * 置」): one unit floored made 23 h 59 min say 「23 小时」 and 1 day 23 h
+ * say 「1 天」.
  */
-export function until(ms: number): string {
-  return span(ms - Date.now());
+export function until(atMs: number): string {
+  return gui.time_in(pair(atMs - Date.now()));
 }
 
 /**
- * How long something has been going on — the same ladder `ago` and
- * `until` use, with no direction attached.
- *
- * **Shared rather than written a fourth time.** 「分钟」 lives in one
- * place; what differs between these callers is which two moments they
- * subtract, and that is the argument.
+ * How long something has been going on or lasted — a **duration**, bare:
+ * 「4 小时」. A state held in a row's bottom-right corner, a process's run
+ * time, a wait. Never an age or a deadline: those say which way
+ * (`ago`, `until`).
  */
 export function lasting(ms: number): string {
   return span(ms);
@@ -407,8 +453,10 @@ export function stretch(ms: number): string {
   return rest === 0 ? count.hours(h) : `${count.hours(h)} ${count.minutes(rest)}`;
 }
 
-/** A duration in the coarsest unit that still says something. */
-export function span(ms: number): string {
+/** A duration in the coarsest unit that still says something. **Not
+    exported**: a bare number of hours is the ambiguity this section
+    exists to end — a page asks for `ago`, `until` or `lasting`. */
+function span(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   if (s < 60) return count.seconds(s);
   const m = Math.floor(s / 60);
@@ -416,4 +464,88 @@ export function span(ms: number): string {
   const h = Math.floor(m / 60);
   if (h < 24) return count.hours(h);
   return count.days(Math.floor(h / 24));
+}
+
+/** A time ahead to two units where the second matters: 「2 小时 13 分」,
+    「3 天 4 小时」; alone, 「45 分钟」「2 小时」「3 天」. Whole minutes,
+    never under one (a reset is not said in seconds); the pair's words
+    are the catalog's (`time-hours-minutes`, `time-days-hours`; the
+    lead's pick, 2026-10-08, with the 额度 lab's ux-q2). */
+function pair(ms: number): string {
+  const m = Math.max(1, Math.floor(ms / 60_000));
+  if (m < 60) return count.minutes(m);
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 === 0 ? count.hours(h) : gui.time_hours_minutes(h, m % 60);
+  const d = Math.floor(h / 24);
+  return h % 24 === 0 ? count.days(d) : gui.time_days_hours(d, h % 24);
+}
+
+// ── Other units (WORDS-1008) ─────────────────────────────────────────
+
+/** A latency: always 「23 ms」, never 毫秒 (the owner, 2026-10-05). The
+    one place the face words one. */
+export function latency(ms: number): string {
+  return gui.row_rtt(Math.round(ms));
+}
+
+/**
+ * **Money, symbol first** (WORDS-1008: 「$9.21 / $20」「$457 / $1,000」
+ * 「¥12K」), the one formatter for every figure the face shows in money.
+ *
+ * `unit` is whatever its caller holds and is **not interpreted**: the mark
+ * an account's owner typed, or the code an endpoint reported (the quota
+ * page's rule — a label, never a rate; nothing here converts). A mark
+ * that is a symbol stands before the figure, touching it (`$9.21`); one
+ * that starts with a letter is a word and follows it with a space
+ * (`124 USDT`), since 「USDT124」 reads as one token. No unit, the bare
+ * figure.
+ *
+ * The figure: whole amounts whole (`$20`), others to the cent under 100
+ * (`$9.21`) and to the unit from 100 (`$457`), thousands grouped
+ * (`$1,000`).
+ */
+export function money(n: number, unit: string | null): string {
+  return dress(amount(n), unit);
+}
+
+/**
+ * Money in at most `room` characters — a ring's middle (`RING_CHARS`): the
+ * shortest true form that fits. Whole units (`$124`), then the token
+ * count's K / M / B (`¥12K`, `$1.2K`; `lib/tokens`' letters), then without
+ * its decimal (`$1K`) — and when even that does not fit, **the mark goes,
+ * never the digits**: a free-text mark (`USDT`) can be longer than the
+ * whole room, and a reading of 124 must not be drawn as zero to keep it.
+ */
+export function moneyIn(n: number, unit: string | null, room: number): string {
+  const whole = Math.abs(n) < 1000 ? `${Math.round(n)}` : null;
+  const forms = [
+    ...(whole === null ? [] : [dress(whole, unit), whole]),
+    dress(glance(n, 1), unit),
+    dress(glance(n, 0), unit),
+    glance(n, 1),
+    glance(n, 0),
+  ];
+  return forms.find((f) => f.length <= room) ?? forms[forms.length - 1];
+}
+
+function dress(figure: string, unit: string | null): string {
+  if (!unit || unit.trim() === "") return figure;
+  return /^\p{L}/u.test(unit) ? `${figure} ${unit}` : `${unit}${figure}`;
+}
+
+function amount(n: number): string {
+  const whole = Number.isInteger(n) || Math.abs(n) >= 100;
+  return n.toLocaleString("en-US", whole ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/** K / M / B past a thousand, `d` decimals under ten of them. */
+function glance(n: number, d: number): string {
+  const steps = [["B", 1e9], ["M", 1e6], ["K", 1e3]] as const;
+  for (const [mark, size] of steps) {
+    if (Math.abs(n) >= size) {
+      const v = n / size;
+      return `${Math.abs(v) < 10 && d > 0 ? v.toFixed(d).replace(/\.0+$/, "") : Math.round(v)}${mark}`;
+    }
+  }
+  return `${Math.round(n)}`;
 }

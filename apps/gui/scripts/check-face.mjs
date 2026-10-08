@@ -5652,10 +5652,10 @@ try {
     // A plain folder has no state: no git segment top-right; bottom-right
     // how long ago its newest file changed (UX-48), bare.
     const gate = seen.find((r) => r.name === "notes");
-    if (gate?.git !== "" || gate?.branch !== null || gate?.held !== "2 小时") {
+    if (gate?.git !== "" || gate?.branch !== null || gate?.held !== "2 小时前") {
       fail(
         `a directory that is no repository drew 「${gate?.git}」/「${gate?.held}」 on its right — no state (干净 and 读不了 look alike), ` +
-          "and under it 「2 小时」, how long ago its newest file changed (UX-48, src/views/WorkspacesList.tsx)",
+          "and under it 「2 小时前」, when its newest file changed (UX-48, WORDS-1008, src/views/WorkspacesList.tsx)",
       );
     }
     const peer = seen.find((r) => r.name === "work");
@@ -15379,10 +15379,10 @@ try {
     //   now how long until the fullest window resets, one phrase on both
     //   kinds of row; the plan and the kind are on neither.
     const billLine = (await page.locator('[data-quota-row="acc-fill"] [data-quota-sub-line]').textContent())?.trim();
-    const resets = /^\d+ (秒|分钟|小时|天)后重置$/;
+    const resets = /^\d+ (分钟|小时|天)( \d+ (分|小时))?后重置$/;
     if (!resets.test(rowPlan.line ?? "") || !resets.test(billLine ?? "")) {
       fail(
-        `the sub-lines are ${JSON.stringify([rowPlan.line, billLine])} — 「N 小时后重置」 on every row with a reset, whichever kind it is (UX-48)`,
+        `the sub-lines are ${JSON.stringify([rowPlan.line, billLine])} — 「N 小时 M 分后重置」 on every row with a reset, whichever kind it is (UX-48, WORDS-1008)`,
       );
     } else if (rowPlan.line?.includes(quotaPlan)) {
       fail(
@@ -24804,13 +24804,13 @@ try {
       Object.assign(peer, { paused: true });
       for (const [posture, size] of POSTURES) {
         await land(size, "devices");
-        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "离线");
+        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "不通");
         const rows = await slots("[data-side-row][data-device]", "data-device");
         const more = await readings();
         console.log(`corners a · ${posture} · offline elder, paused peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
         const [e, p] = [rows.elder, rows.peer];
-        if (!e || e.top !== "离线" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.lat !== null || more.elder.state !== "offline" || more.elder.road !== null || !(e.opacity < 0.99)) {
-          fail(`corners a · ${posture} · an unreachable elder reads ${JSON.stringify({ ...e, ...more.elder })} — 离线 over 「20 小时」 (how long unheard), no readings under its name, no latency after it, dimmed (UX-48, UX-50)`);
+        if (!e || e.top !== "不通" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.lat !== null || more.elder.state !== "offline" || more.elder.road !== null || !(e.opacity < 0.99)) {
+          fail(`corners a · ${posture} · an unreachable elder reads ${JSON.stringify({ ...e, ...more.elder })} — 不通 over 「20 小时」 (how long unheard), no readings under its name, no latency after it, dimmed (UX-48, UX-50, WORDS-1008: never 离线)`);
         }
         if (!p || p.top !== "已暂停" || p.bottom !== null || more.peer.state !== "paused" || more.peer.held !== 0) {
           fail(`corners a · ${posture} · a paused peer reads ${JSON.stringify({ ...p, ...more.peer })} — 已暂停 top-right, no time under it (UX-48)`);
@@ -24818,23 +24818,25 @@ try {
       }
       // Idle: no live wire and nothing failed — not offline (the lead,
       // 2026-10-07). elder last used the relay, which settled 5 hours ago:
-      // the relay word over 5 hours, undimmed, no readings. peer never connected
-      // since the resident started: no state and no time at all.
+      // 未连 over 5 hours, undimmed, no readings — the last road is the
+      // detail's, not the row's (WORDS-1008: the filter said 未连 for the row
+      // that said 中继). peer never connected since the resident started: 未连
+      // and no time at all.
       restore();
       Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: 5 * 3600_000, last_hop: "relay", heard_ms: 3 * 3600_000, down_ms: null, last_rtt_ms: 140 });
       Object.assign(peer, { hop: "quiet", rtt_ms: null, since_ms: null, last_hop: null, heard_ms: null, down_ms: null, last_rtt_ms: null, paused: false });
       for (const [posture, size] of POSTURES) {
         await land(size, "devices");
-        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "中继");
+        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "未连");
         const rows = await slots("[data-side-row][data-device]", "data-device");
         const more = await readings();
         console.log(`corners a · ${posture} · idle elder (last road relay), never-connected peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
         const [e, p] = [rows.elder, rows.peer];
-        if (!e || e.top !== "中继" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.state !== "idle" || more.elder.road !== "relay" || e.opacity < 0.99) {
-          fail(`corners a · ${posture} · an idle elder reads ${JSON.stringify({ ...e, ...more.elder })} — the road it last used, 中继, over 「5 小时」 (since that road settled), no readings, undimmed; never 离线 (UX-48)`);
+        if (!e || e.top !== "未连" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.state !== "idle" || more.elder.road !== null || e.opacity < 0.99) {
+          fail(`corners a · ${posture} · an idle elder reads ${JSON.stringify({ ...e, ...more.elder })} — 未连 over 「5 小时」 (since that road settled), no last road on the row, no readings, undimmed; never 不通 (UX-48, WORDS-1008)`);
         }
-        if (!p || p.top !== null || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== null || p.opacity < 0.99) {
-          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — nothing top-right or bottom-right, no readings, undimmed (UX-48)`);
+        if (!p || p.top !== "未连" || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== "idle" || p.opacity < 0.99) {
+          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — 未连 and no time, no readings, undimmed (UX-48, WORDS-1008: the filter's word)`);
         }
       }
       // A state that changes in place gets the room it needs: the corner
@@ -24982,8 +24984,10 @@ try {
     // The fullest whole-plan window of the subscription is the week, which
     // resets in a day less a moment; the bill's own reset is a day off too.
     // ⚠️ 墓碑 (UX-15): what is left · the weekday it resets (row-window).
-    if (sub.sub !== "23 小时后重置" || bill.sub !== "23 小时后重置") {
-      fail(`corners c · ${posture} · the second lines read ${JSON.stringify([sub.sub, bill.sub])} — 「23 小时后重置」, the time to the fullest window's reset (UX-48)`);
+    // Two units, never rounded down to one (WORDS-1008: 「2 小时 13 分后重置」).
+    const dayLess = /^23 小时 \d+ 分后重置$/;
+    if (!dayLess.test(sub.sub ?? "") || !dayLess.test(bill.sub ?? "")) {
+      fail(`corners c · ${posture} · the second lines read ${JSON.stringify([sub.sub, bill.sub])} — 「23 小时 59 分后重置」, the time to the fullest window's reset, two units (UX-48, WORDS-1008)`);
     }
     if (none.sub !== "") fail(`corners c · ${posture} · a row with no reset time reads ${JSON.stringify(none.sub)} under its name — nothing (UX-48)`);
     // The subscription's reading is as old as the fixture made it
@@ -25200,8 +25204,8 @@ try {
           fail(`corners d · ${posture} · the ${name} row's branch is ${b.ink} at ${b.size} beside a ${b.titleSize} title — the secondary ink ${b.secondary}, a size down (UX-51)`);
         }
       }
-      if (rows.notes.aside !== 0 || rows.notes.newest !== "drafts/plan.md" || rows.notes.where !== null || rows.notes.subject !== null || rows.notes.top !== null || rows.notes.bottom !== "2 小时") {
-        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时」 under that (UX-48)`);
+      if (rows.notes.aside !== 0 || rows.notes.newest !== "drafts/plan.md" || rows.notes.where !== null || rows.notes.subject !== null || rows.notes.top !== null || rows.notes.bottom !== "2 小时前") {
+        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时前」 under that (UX-48, WORDS-1008)`);
       }
       // UX-51 (the owner 2026-10-08): the second line is a sentence — an
       // edited file 「最近修改了 …」, a made one 「最近新建了 …」.
@@ -25222,8 +25226,8 @@ try {
         const ok = got && got.drawn.startsWith(before) && got.drawn.endsWith(after) && (posture === "wide" && at < 0 ? name === full : at > 0 && full.startsWith(name.slice(0, at)) && full.endsWith(name.slice(at + 1)) && name.slice(at + 1).length > 0);
         if (!ok) fail(`corners d · ${posture} · a long file's sentence draws ${JSON.stringify(got)} — 「${before}」 whole, then the file cut in the middle (UX-51)`);
       }
-      if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟") {
-        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟」 under that (UX-48)`);
+      if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟前") {
+        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟前」 under that (UX-48, WORDS-1008)`);
       }
       // The long row: the counts whole inside the corner, the name whole,
       // the branch cut — in the middle on a phone row, its head and its
@@ -25332,11 +25336,11 @@ try {
         fail(`probe dead: corners f · ${posture} · 存储 opened ${opened} and drew ${JSON.stringify(order)}`);
         continue;
       }
-      if (got.title !== "from peer.png" || got.aside !== 0 || got.sub !== "peer" || got.top !== null || got.bottom !== "3 小时") {
-        fail(`corners f · ${posture} · a received file reads ${JSON.stringify(got)} — its name, 「peer」 (where it came from) under it, nothing top-right, 「3 小时」 (since it was received, not its mtime) (UX-48)`);
+      if (got.title !== "from peer.png" || got.aside !== 0 || got.sub !== "peer" || got.top !== null || got.bottom !== "3 小时前") {
+        fail(`corners f · ${posture} · a received file reads ${JSON.stringify(got)} — its name, 「peer」 (where it came from) under it, nothing top-right, 「3 小时前」 (when it was received, not its mtime) (UX-48, WORDS-1008)`);
       }
-      if (mine.sub !== "" || mine.top !== null || mine.bottom !== "2 天") {
-        fail(`corners f · ${posture} · a file with no receipt reads ${JSON.stringify(mine)} — no sender, nothing top-right, 「2 天」 by its mtime (UX-48)`);
+      if (mine.sub !== "" || mine.top !== null || mine.bottom !== "2 天前") {
+        fail(`corners f · ${posture} · a file with no receipt reads ${JSON.stringify(mine)} — no sender, nothing top-right, 「2 天前」 by its mtime (UX-48, WORDS-1008)`);
       }
       if (order.join(" | ") !== "from peer.png | by hand.txt") {
         fail(`corners f · ${posture} · 存储 lists ${order.join(" | ")} — newest received first (UX-48)`);
@@ -25373,8 +25377,9 @@ try {
   //   f. the narrow list screen has the same button and it works;
   //   g. the workspaces overview beside the list is not narrowed.
   //
-  // Axes: machines — 连接方式 (`link:`), 系统 (`sys:`), 状态 (`state:`,
-  // 已暂停 alone, on offer only while a machine is paused); workspaces —
+  // Axes: machines — 连接方式 (`link:`, the row's top-right word, 已暂停
+  // among them, on offer only while a machine is paused — WORDS-1008), 系统
+  // (`sys:`); workspaces —
   // 机器 (`dev:`, by id; `""` where the machine left the table) and 类型
   // (`kind:`, the corner: `branch` / `folder`). New, not a fix: no red
   // first (30-behavior 「先红后绿只用于修 bug」).
@@ -25550,7 +25555,9 @@ try {
       await wait(400);
       await check("every chip taken out", { rows: all, chips: [] });
       // (d) 已暂停: on offer only while something is paused, and still on
-      // offer — so it can be undone — once its last row has gone.
+      // offer — so it can be undone — once its last row has gone. A
+      // connection word since WORDS-1008 (the row says 已暂停 top-right, so
+      // the tick is `link:`; ⚠️ 墓碑: its own `state:` axis).
       gatePaused = true;
       const paused = await until(8_000, async () =>
         (await page.locator('[data-list] [data-side-row][data-device="gate"][data-paused="true"]').count()) === 1,
@@ -25559,22 +25566,22 @@ try {
         fail("probe dead: lists · this machine never came back paused from the fixture");
       } else {
         const withPause = await offered();
-        if (!withPause["state:paused"]) {
+        if (!withPause["link:paused"]) {
           fail(`lists · machines · a paused machine is on the list and the menu offers ${JSON.stringify(Object.keys(withPause))} — no 已暂停`);
         }
-        await toggle("state:paused");
-        await check("状态 = 已暂停", { rows: ["gate"], chips: ["state:paused"] });
+        await toggle("link:paused");
+        await check("连接方式 = 已暂停", { rows: ["gate"], chips: ["link:paused"] });
         gatePaused = false;
         await until(8_000, async () => (await names()).length === 0);
-        await check("已暂停, and nothing paused any more", { rows: [], chips: ["state:paused"] });
+        await check("已暂停, and nothing paused any more", { rows: [], chips: ["link:paused"] });
         const stillOffered = await offered();
-        if (!stillOffered["state:paused"]) {
+        if (!stillOffered["link:paused"]) {
           fail("lists · machines · 已暂停 is ticked and left the menu when its last row did — the tick can no longer be undone");
         }
-        await toggle("state:paused");
+        await toggle("link:paused");
         await check("已暂停 unticked", { rows: all, chips: [] });
         const after = await offered();
-        if (after["state:paused"]) {
+        if (after["link:paused"]) {
           fail("lists · machines · 已暂停 is still offered with no machine paused and nothing ticked");
         }
       }
@@ -26518,19 +26525,19 @@ try {
       if (!is || !im || !ds || !dm) fail(`probe dead: entity g · a row to read is missing (${JSON.stringify({ idle, down })})`);
       else {
         if (is.far !== null || is.opacity < 0.99) {
-          fail(`entity g · an idle machine's session row reads ${JSON.stringify(is)} — drawn as any other: no 「无法获取」, undimmed (NET-13)`);
+          fail(`entity g · an idle machine's session row reads ${JSON.stringify(is)} — drawn as any other: no 「不通」, undimmed (NET-13)`);
         }
-        if (im.state !== "idle" || im.top !== "中继" || im.bottom !== "40 分钟" || im.sub !== "" || im.opacity < 0.99) {
-          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — 中继 (the road it last used) over 「40 分钟」, never 离线, no readings under its name, undimmed (NET-13, UX-48)`);
+        if (im.state !== "idle" || im.top !== "未连" || im.bottom !== "40 分钟" || im.sub !== "" || im.opacity < 0.99) {
+          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — 未连 over 「40 分钟」, never 不通, no readings under its name, undimmed (NET-13, UX-48, WORDS-1008)`);
         }
-        if (!(ds.far ?? "").includes("无法获取") || !(ds.opacity < 0.7)) {
-          fail(`entity g · an unreachable machine's session row reads ${JSON.stringify(ds)} — dimmed, 「无法获取 · …」 (NET-13)`);
+        if (!(ds.far ?? "").startsWith("不通 · ") || !(ds.far ?? "").endsWith("前") || !(ds.opacity < 0.7)) {
+          fail(`entity g · an unreachable machine's session row reads ${JSON.stringify(ds)} — dimmed, 「不通 · 3 分钟前」 (NET-13, WORDS-1008)`);
         }
-        if (dm.state !== "offline" || dm.top !== "离线" || dm.sub !== "" || !(dm.opacity < 0.7)) {
-          fail(`entity g · an unreachable machine's row reads ${JSON.stringify(dm)} — 离线, no readings, dimmed (NET-13, UX-48)`);
+        if (dm.state !== "offline" || dm.top !== "不通" || dm.sub !== "" || !(dm.opacity < 0.7)) {
+          fail(`entity g · an unreachable machine's row reads ${JSON.stringify(dm)} — 不通, no readings, dimmed (NET-13, UX-48, WORDS-1008)`);
         }
         if (dm.bottom !== "3 分钟") {
-          fail(`entity g · how long it has not been heard is not under 离线 (${JSON.stringify(dm.bottom)}) — 「3 分钟」, bare (UX-48)`);
+          fail(`entity g · how long it has not been heard is not under 不通 (${JSON.stringify(dm.bottom)}) — 「3 分钟」, bare (UX-48)`);
         }
       }
       for (const f of Object.keys(elder)) if (!(f in keep)) delete elder[f];
@@ -27042,7 +27049,7 @@ try {
           return { who: el.closest("[data-seat]").getAttribute("data-seat").slice(0, 4), x: (b.l + b.r) / 2, y: (b.t + b.b) / 2, rad: (b.r - b.l) / 2 };
         });
         const texts = [
-          ...map.querySelectorAll("[data-seat-name], [data-seat-age], [data-seat-never], [data-seat-blocked], [data-edge-word]"),
+          ...map.querySelectorAll("[data-seat-name], [data-seat-age], [data-seat-never], [data-seat-paused], [data-seat-blocked], [data-edge-word]"),
         ]
           .filter((el) => el.getBoundingClientRect().width > 0)
           .map((el) => ({

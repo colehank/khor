@@ -109,7 +109,7 @@ function placeRelay(rows: readonly DeviceRow[], me: DeviceRow | null): { left: n
 }
 
 /**
- * The graph. `ms` words a latency (`gui.conn_relay_ms`) and `way` a road
+ * The graph. `ms` words a latency (`latency`) and `way` a road
  * (`hopWord`); they are handed in so this file reads no catalog.
  */
 export function topology(

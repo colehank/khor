@@ -80,7 +80,7 @@ import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui, msg } from "@/gen/catalog";
-import { lasted } from "@/words";
+import { lasting } from "@/words";
 import {
   closeSessionSide,
   forgetSidePlace,
@@ -526,7 +526,7 @@ export default function App() {
     const said = window as unknown as { __finished?: Finished[] };
     if (done.length) said.__finished = [...(said.__finished ?? []), ...done];
     for (const f of done) {
-      const took = lasted(f.ms);
+      const took = lasting(f.ms);
       const body =
         f.notice ??
         (f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took));

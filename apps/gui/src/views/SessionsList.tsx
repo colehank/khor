@@ -16,7 +16,7 @@ import { closeWarning } from "@/views/DetailPane";
 import { sieve } from "@/lib/list-filter";
 import { isDown } from "@/lib/topology";
 import { SESSION_SIEVE } from "@/lib/session-filter";
-import { AXES, ago, groupLabel, placeLabels, quietFor } from "@/words";
+import { AXES, ago, agoOf, groupLabel, placeLabels, quietFor } from "@/words";
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -329,7 +329,7 @@ export function SessionsList({
     // and says it; the row says what is happening, nothing else.
     sub: away ? (
       <span data-row-far className="block min-w-0 truncate">
-        {gui.row_unreachable(gui.card_age(ago(Date.now() - away.age)))}
+        {gui.row_unreachable(agoOf(away.age))}
       </span>
     ) : r.doing?.command ? (
       // A terminal whose shell marks its commands says what it runs

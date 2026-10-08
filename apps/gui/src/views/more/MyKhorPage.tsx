@@ -86,7 +86,7 @@ import { CopyId } from "@/views/DetailPane";
 import { MachineEditDialog } from "@/views/MachineEditDialog";
 import { RelayAddDialog } from "@/views/NetSettings";
 import { RootWordsDialog } from "@/views/PairDialogs";
-import { span } from "@/words";
+import { agoOf, downWord, latency } from "@/words";
 
 type View = "map" | "matrix";
 
@@ -133,7 +133,7 @@ function roadWord(l: Link | null): string {
   if (l === null) return gui.filter_unknown;
   if (l.road === "none") return gui.dial_key_none;
   const way = wayWord(l);
-  return l.ms === null ? way : `${way} · ${gui.row_rtt(l.ms)}`;
+  return l.ms === null ? way : `${way} · ${latency(l.ms)}`;
 }
 
 /** The way alone, for the card's head. */
@@ -861,7 +861,7 @@ function Dial({
             ) : (
               <>
                 <Light band={p!.band} half={idle} />
-                {off ? (seen === null ? gui.day_unreachable : gui.card_age(span(seen))) : idle ? (seen === null ? hop.quiet : gui.card_age(span(seen))) : (model ?? "")}
+                {off ? downWord(seen) : idle ? (seen === null ? hop.quiet : agoOf(seen)) : (model ?? "")}
               </>
             )}
           </span>
@@ -954,7 +954,7 @@ function Dial({
                         className="text-caption tabular-nums"
                         style={{ fill: BAND_INK[bd] }}
                       >
-                        {gui.row_rtt(link.ms)}
+                        {latency(link.ms)}
                       </text>
                     )
                   )}
@@ -1139,11 +1139,11 @@ function MachineCard({
         aside={model}
         sub={
           off ? (
-            <span data-dial-last-answer>{seen === null ? gui.day_unreachable : gui.dial_last_answer(span(seen))}</span>
+            <span data-dial-last-answer>{seen === null ? hop.down : gui.dial_last_answer(agoOf(seen))}</span>
           ) : (
             <>
               <Light band={b} half={idle} />
-              <span data-dial-card-road>{link.ms === null ? wayWord(link) : `${gui.row_rtt(link.ms)} · ${wayWord(link)}`}</span>
+              <span data-dial-card-road>{link.ms === null ? wayWord(link) : `${latency(link.ms)} · ${wayWord(link)}`}</span>
             </>
           )
         }
@@ -1325,7 +1325,7 @@ function Matrix({
                       <span>{gui.dial_key_none}</span>
                     ) : (
                       <>
-                        <span>{l.ms === null ? "" : gui.row_rtt(l.ms)}</span>
+                        <span>{l.ms === null ? "" : latency(l.ms)}</span>
                         <small className="max-w-full truncate text-caption opacity-75">
                           {l.road === "idle" ? hop.quiet : l.road === "direct" ? hop.direct : (l.relay ?? hop.relay)}
                         </small>

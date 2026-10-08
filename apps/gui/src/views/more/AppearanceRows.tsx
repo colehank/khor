@@ -31,7 +31,7 @@ import { setTermKeysHw, useTermKeysHw } from "@/lib/term-keys-hw";
 import { setTermBlockLines, useTermBlockLines } from "@/lib/term-block-lines";
 import { setTermPredict, useTermPredict } from "@/lib/term-predict-setting";
 import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
-import { lasted } from "@/words";
+import { lasting } from "@/words";
 import { NAV_SHOWN, rememberNavOrder, useNavOrder, type NavKey } from "@/lib/nav-order";
 import { FONT_MAX_MB, addFontFile, fontsHere, removeFont, setTermFont, stackOf, useTermFont } from "@/lib/term-font";
 import { TERM_MAX, TERM_MIN, UI_STEPS, setTypeSize, useTypeSize } from "@/lib/type-size";
@@ -377,7 +377,7 @@ export function FinishedNotifyRow() {
       value={String(finishedAfter)}
       choices={FINISHED_CHOICES.map((n) => ({
         value: String(n),
-        label: n === 0 ? gui.finished_notify_off : gui.finished_notify_after(lasted(n * 1000)),
+        label: n === 0 ? gui.finished_notify_off : gui.finished_notify_after(lasting(n * 1000)),
       }))}
       onPick={(n) => setFinishedAfter(Number(n))}
     />
