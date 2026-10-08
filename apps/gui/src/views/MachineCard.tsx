@@ -2,6 +2,7 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExtern
 import { createPortal } from "react-dom";
 
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
+import type { Road } from "@/gen/bindings/Road";
 import { fetchAbout, fetchLoad, inApp, setWatch } from "@/api";
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
 import { DetailFrame } from "@/components/DetailFrame";
@@ -79,9 +80,17 @@ export function MachineCard({
   onUninstallHooks,
   actions,
   body,
+  rows = [],
+  onPromote,
 }: {
   row: DeviceRow | null;
   narrow: boolean;
+  /** The machine table: this machine's row says by its roads how `row`
+      is reached, and the others name the machines a road passes (round
+      join-d, the road line). */
+  rows?: DeviceRow[];
+  /** 安装 khor on an SSH 主机 this machine sponsors (`Node::promote`). */
+  onPromote?: (row: DeviceRow) => void;
   /** **What the head's switches put in place of the dashboard** (the
       redesign, 2026-10-02): the machine's sessions or its files, drawn by
       the shell, which holds the rows and the switches. Absent, the
@@ -187,6 +196,8 @@ export function MachineCard({
           hooksFailed={hooksFailed}
           onInstallHooks={onInstallHooks}
           onUninstallHooks={onUninstallHooks}
+          rows={rows}
+          onPromote={onPromote}
         />
       )}
     </section>
@@ -267,8 +278,12 @@ function Body({
   hooksFailed,
   onInstallHooks,
   onUninstallHooks,
+  rows,
+  onPromote,
 }: {
   row: DeviceRow;
+  rows: DeviceRow[];
+  onPromote?: (row: DeviceRow) => void;
   /** The narrow face has no R0, so the model R0 says is the strip's to
       say there (`Strip`). A fact about the screen, like the way back. */
   sayModel: boolean;
@@ -308,7 +323,8 @@ function Body({
         <div data-nav-clear className="min-h-0 flex-1 overflow-y-auto py-4">
           {/* The pane's width, capped and centred (`DetailFrame`, UX-22). */}
           <DetailFrame className="flex flex-col gap-row">
-            <Strip row={row} sayModel={sayModel} />
+            <Strip row={row} rows={rows} sayModel={sayModel} />
+            <RoadLine row={row} rows={rows} onPromote={onPromote} />
             {never ? (
               <RegionState state="loading-never" />
             ) : (
@@ -447,7 +463,91 @@ function isFar(row: DeviceRow): boolean {
   return !row.me && row.hop === "quiet" && isDown(row.down_ms);
 }
 
-function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
+/** This machine's road to `row`, as its own row carries it
+    (`DeviceRow.roads`: live wires, and the roads to SSH 主机 and carried
+    machines composed through the machine in the middle). */
+function roadTo(me: DeviceRow | null, row: DeviceRow): Road | null {
+  return me?.roads.find((r) => r.to === row.id) ?? null;
+}
+
+/** A road's `via` is a machine id; the name a person reads. */
+function nameOf(id: string, rows: DeviceRow[]): string {
+  const r = rows.find((x) => x.id === id);
+  return r?.me ? gui.machine_here : (r?.shown ?? id.slice(0, 8));
+}
+
+/**
+ * **The road line** (round join-d, the lab's screen 8): the stops this
+ * machine's road to `row` passes — 本机, the machine or jump host in the
+ * middle, the relay — with the broken leg, when the road names one
+ * (`Road.broken`), dashed in the failed ink and said in a calm sentence
+ * under it. Drawn only where there is a middle or a break: a plain
+ * direct road is the strip's 连接 cell and nothing more. An SSH 主机 this
+ * machine sponsors carries 安装 khor… at the line's end.
+ */
+function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[]; onPromote?: (row: DeviceRow) => void }) {
+  const me = rows.find((r) => r.me) ?? null;
+  if (row.me || !me) return null;
+  const road = roadTo(me, row);
+  const sponsor = row.sponsor && row.sponsor !== me.name ? row.sponsor : null;
+  const via = road?.via ? nameOf(road.via, rows) : null;
+  const hops: string[] = [gui.machine_here];
+  if (row.sponsor) {
+    if (sponsor) hops.push(sponsor);
+    if (row.ssh_jump) hops.push(row.ssh_jump);
+  } else if (via) hops.push(via);
+  else if (road?.road === "relay" && road.relay) hops.push(road.relay);
+  hops.push(row.shown);
+  const b = road?.broken ?? null;
+  const last = hops.length - 1;
+  const leg = !b
+    ? null
+    : b.leg === "to-sponsor"
+      ? { at: 1, why: gui.leg_to_sponsor(sponsor ?? b.to ?? "") }
+      : b.leg === "to-jump"
+        ? { at: Math.max(1, hops.indexOf(row.ssh_jump ?? "")), why: gui.leg_to_jump(row.ssh_jump ?? "") }
+        : b.leg === "jump-to-target"
+          ? { at: last, why: gui.leg_jump_to_target(row.ssh_jump ?? "", row.shown) }
+          : b.leg === "auth"
+            ? { at: last, why: gui.leg_auth(row.shown, sponsor ?? gui.machine_here) }
+            : { at: last, why: gui.leg_ssh(sponsor ?? gui.machine_here, row.shown) };
+  const mine = !!row.sponsor && row.sponsor === me.name && !!onPromote;
+  if (hops.length < 3 && !leg && !mine) return null;
+  return (
+    <div data-road-line className="flex flex-col gap-xxs border-b pb-base">
+      <div className="flex min-h-ctl-md items-center gap-row">
+        <span className="flex-none text-caption text-muted-foreground">{gui.road_line}</span>
+        <span data-road className="flex min-w-0 flex-1 flex-wrap items-center gap-in text-body">
+          {hops.map((h, i) => (
+            <span key={`${i}-${h}`} className="flex items-center gap-in">
+              {i > 0 && (
+                <span
+                  aria-hidden
+                  data-road-leg={leg?.at === i ? "broken" : undefined}
+                  className={cn("h-0 w-6 flex-none border-t", leg?.at === i ? "border-dashed border-destructive" : "border-tertiary")}
+                />
+              )}
+              <span className={leg && i >= leg.at ? "text-muted-foreground" : "text-foreground"}>{h}</span>
+            </span>
+          ))}
+        </span>
+        {mine && (
+          <Button data-promote className="flex-none" onClick={() => onPromote!(row)}>
+            {gui.promote_ask}
+          </Button>
+        )}
+      </div>
+      {leg && (
+        <div data-road-broken={b!.leg} className="text-callout text-muted-foreground">
+          {leg.why}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; sayModel: boolean }) {
+  const me = rows.find((r) => r.me) ?? null;
   const far = isFar(row);
   const v = row.vitals?.vitals ?? null;
   const age = row.vitals?.age_ms ?? 0;
@@ -492,7 +592,18 @@ function Strip({ row, sayModel }: { row: DeviceRow; sayModel: boolean }) {
   const road = row.me ? (
     <span data-machine-here>{gui.machine_here}</span>
   ) : row.sponsor ? (
-    <span data-via-sponsor={row.sponsor}>{cli.via_sponsor(row.sponsor)}</span>
+    // An SSH 主机: the kind, then what stands between (round join-d): its
+    // jump, else the sponsor when that is not this machine.
+    <span data-via-sponsor={row.sponsor}>
+      {[
+        gui.add_ssh_host,
+        row.ssh_jump ? gui.add_step_via(row.ssh_jump) : row.sponsor !== me?.name ? gui.add_step_via(row.sponsor) : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")}
+    </span>
+  ) : roadTo(me, row)?.via ? (
+    <span data-road-via={roadTo(me, row)!.via!}>{gui.add_step_via(nameOf(roadTo(me, row)!.via!, rows))}</span>
   ) : row.hop ? (
     <span data-hop={row.hop}>{linkWord(row.hop, row.heard_ms)}</span>
   ) : null;

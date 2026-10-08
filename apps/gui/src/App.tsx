@@ -155,7 +155,8 @@ import { MachineWeb } from "@/views/MachineWeb";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
-import { AloneNote, InviteDialog, JoinDialog } from "@/views/PairDialogs";
+import { AddMachineDialog } from "@/views/AddMachine";
+import { AloneNote } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region, RegionLead } from "@/components/Region";
@@ -202,7 +203,7 @@ type NewTabAt = { machine?: string; dir?: string; inPlace?: boolean };
     leaving a line is the wizard's first kind (`NewSessionPage`), one door
     for every kind of session; `new` left on 2026-10-07 (UX-45): 新建会话
     is a new tab's page. */
-type PlusDialog = "import" | "invite" | "join" | "ws-add" | null;
+type PlusDialog = "import" | "add" | "add-ticket" | "ws-add" | null;
 
 const POLL_MS = 2000;
 /**
@@ -670,6 +671,9 @@ export default function App() {
   const [words, setWords] = useState<Record<Landing, string[]>>(storedWordsAll);
   const [arrangeBy, setArrangeBy] = useState<string>(storedArrange);
   const [dialog, setDialog] = useState<PlusDialog>(null);
+  /** 安装 khor on this SSH 主机 (the machine page's act): the add dialog
+      runs it (round join-d). */
+  const [promoting, setPromoting] = useState<string | null>(null);
   /* ⚠️ 墓碑 (UX-45): `newSessionOn` / `newSessionAt`, the dialog's
      machine and directory; a new tab carries its own (`newTabs`). */
   /** Bumped when this shell has changed the workspace table from
@@ -1415,8 +1419,8 @@ export default function App() {
     { key: "import", label: gui.import_sessions_ask, onSelect: () => setDialog("import") },
   ];
   const deviceActions: PaneAction[] = [
-    { key: "invite", label: gui.make_a_ticket_ask, onSelect: () => setDialog("invite") },
-    { key: "join", label: gui.join_with_a_ticket_ask, onSelect: () => setDialog("join") },
+    // 添加机器 (round join-d): the one entry, both kinds of machine.
+    { key: "add", label: gui.add_machine_ask, onSelect: () => setDialog("add") },
   ];
 
   // **The floating navigation** (the redesign, 2026-10-02). Its seats
@@ -2241,7 +2245,7 @@ export default function App() {
           />
         )}
         {devicesRead && devices.length === 1 && (sessions || landing === "devices") && !queries[landing] && (
-          <AloneNote onInvite={() => setDialog("invite")} onJoin={() => setDialog("join")} />
+          <AloneNote onAdd={() => setDialog("add")} />
         )}
       </>
     </ListPane>
@@ -2987,6 +2991,8 @@ export default function App() {
     <MachineCard
       row={openDevice}
       narrow={narrow}
+      rows={devices}
+      onPromote={(r) => setPromoting(r.name)}
       // An open file is left first (`MachineFiles`, one back button).
       onBack={() => (fileBack ? fileBack.go() : setScreen("list"))}
       hooks={hooks}
@@ -3075,17 +3081,28 @@ export default function App() {
           setWsAdded((n) => n + 1);
         }}
       />
-      <InviteDialog open={dialog === "invite"} onOpenChange={(o) => setDialog(o ? "invite" : null)} machines={devices} />
       {/* The machine page's VS Code: its consent and its refusal. */}
       {machineCode.dialog}
-      <JoinDialog
-        open={dialog === "join"}
-        onOpenChange={(o) => setDialog(o ? "join" : null)}
-        onJoined={() => {
+      <AddMachineDialog
+        open={dialog === "add" || dialog === "add-ticket" || promoting !== null}
+        onOpenChange={(o) => {
+          if (o) return;
+          setDialog(null);
+          setPromoting(null);
+        }}
+        machines={devices}
+        start={dialog === "add-ticket" ? "ticket" : "pick"}
+        promote={promoting}
+        onAdded={() => {
           fetchDevices()
             .then(setDevices)
             .catch(() => {});
           refresh().catch(() => {});
+        }}
+        onOpenSession={(id) => {
+          setLanding("sessions");
+          sessionTabs.open(id);
+          setScreen("detail");
         }}
       />
       {/* (The root's words were asked for here, once, on the machine that
@@ -3337,8 +3354,7 @@ export default function App() {
         }}
         onPin={onPinDevice}
         onForget={onForgetDevice}
-        onInvite={() => setDialog("invite")}
-        onJoin={() => setDialog("join")}
+        onAdd={(start) => setDialog(start === "ticket" ? "add-ticket" : "add")}
         onOpenRelays={() => {
           if (trafficLights && !settingsFace) {
             openSettings("connection").catch(() => {});

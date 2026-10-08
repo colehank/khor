@@ -572,6 +572,10 @@ pub struct DeviceRow {
     /// road", this answers "whose road": a satellite has none of its
     /// own, so faces print 「经 <sponsor>」 in the road's place.
     pub sponsor: Option<String>,
+    /// An SSH 主机's jump host, as its row keeps it (`ssh_jump`, round
+    /// join-a): the machine page draws it as the road's middle stop.
+    /// `None` for a direct ssh road and for every khor 主机.
+    pub ssh_jump: Option<String>,
     /// The directories this machine is asked to keep an eye on — the
     /// setting, as kept on its row in the device table (2026-09-06
     /// 关注目录). What the editor on the card starts from.
@@ -1318,6 +1322,7 @@ fn rows_of_devices(
     Ok(all
         .into_iter()
         .map(|d| DeviceRow {
+            ssh_jump: d.ssh_jump.clone(),
             sponsor: d
                 .sponsor
                 .as_ref()
