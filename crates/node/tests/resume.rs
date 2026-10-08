@@ -374,13 +374,20 @@ async fn a_backgrounded_resident_does_not_redial_until_it_resumes() {
         .expect("a round must come back")
         .unwrap();
 
+    assert_eq!(link::resting(&ra.0).await, Some(false), "awake before it suspends");
+    assert_eq!(link::resting(&rb.0).await, None, "beta's serve is not resumable");
     assert!(link::suspending(&ra.0).await, "alpha's resident suspends");
+    assert_eq!(link::resting(&ra.0).await, Some(true), "and says it is resting");
     let before = a.wire_counts().await.unwrap().dialed;
     tokio::time::sleep(link::SYNC_EVERY * 2 + Duration::from_secs(1)).await;
     let during = a.wire_counts().await.unwrap().dialed;
     assert_eq!(during, before, "a backgrounded resident dialled");
 
-    let out = link::resume(&ra.0).expect("resumable").synced().await.unwrap();
+    // Asked right after a resume is sent, before its ears are bound: the
+    // question waits behind it, so the phone does not resume twice.
+    let resuming = link::resume(&ra.0).expect("resumable");
+    assert_eq!(link::resting(&ra.0).await, Some(false), "a resume just sent reads as awake");
+    let out = resuming.synced().await.unwrap();
     assert!(beta_heard(&out), "the resume's round reaches beta: {out:?}");
     assert!(a.wire_counts().await.unwrap().dialed > during, "and that round dialled");
 }

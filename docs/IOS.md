@@ -124,8 +124,10 @@ a 不画；b 用话拒绝；c 坏了或说了假话。第二步之后没有 c。
 
 iOS 在 app 离开屏幕几秒后挂起它，节点手里的东西都聋了：中继的连接、对端的 QUIC 连接，真机上连 socket 都会被系统收回。桌面的常驻聋了两分钟就退出（`DEAF_EXIT`）、keeper 再起一个；**手机没有谁来再起**，退出在系统看来就是闪退。所以手机的节点**就地换耳朵**：
 
-- **信号**：UIKit 的 `applicationWillEnterForeground`，tauri 以 `WindowEvent::Resumed` 交给每个窗口（`src-tauri/src/lib.rs` 的 `on_window_event`）。**不是** `RunEvent::Resumed`——那个名字一样，是事件循环每次从 poll 醒来，一直在发。选原生的而不是页面的 `visibilitychange`：它早（页面还没跑一行，节点已经在换了）、不靠页面活着。只在真的去过后台才发（拉下通知中心再收起不算）。⚠️ 它来自 app delegate：Info.plist 一旦打开 UIScene 生命周期（`UIApplicationSceneManifest`），这个调用挪到 tao 留空的 scene delegate 上，这里就再也听不到——`gen/apple` 没开。
-- **按顺序做什么**（`khor_gui_core::rejoin::resume` → `khor_node::link::resume`）：
+- **信号**（2026-10-08 ios-rest 车道改过，见下）：UIKit 自己的三条通知，从默认通知中心听（`src-tauri/src/lib.rs` 的 `watch_the_front`）：`UIApplicationDidEnterBackgroundNotification` 放掉所有连接（`link::suspending`），`UIApplicationWillEnterForegroundNotification` 换新耳朵（`link::resume`），`UIApplicationDidBecomeActiveNotification` 时问常驻一句「你在歇着吗」（`link::resting`），在歇着也换新耳朵——兜底，不管是什么让它歇着的。决定是一个小函数 `lifecycle_act`，三件事交给一条线程按系统说的顺序做（`front_worker`）：放掉答完了才轮到后面的恢复；「在歇着吗」和恢复走同一扇门，排在刚发出的恢复后面，所以回前台紧接着变活跃只换一次耳朵。选原生的而不是页面的 `visibilitychange`：它早（页面还没跑一行，节点已经在换了）、不靠页面活着。**不是** `RunEvent::Resumed`——那是事件循环每次从 poll 醒来，一直在发。
+- **为什么不用 tauri 的 `WindowEvent::Suspended` / `Resumed`**：tao 0.35 把 `Suspended` 接在 `applicationWillResignActive` 上，`Resumed` 接在 `applicationWillEnterForeground` 上，`applicationDidEnterBackground` 留空。两半不成对：**拉下通知中心或控制中心、系统弹窗（权限请求）、Face ID、来电横幅**都会「将失去活跃」而不去后台——节点歇下了，却没有谁叫醒它，直到下一次真的去后台再回来。这期间别的机器拨进手机，常驻把进来的连接丢掉（`link.rs`：歇着时 `continue`），noq 丢掉一个 `Incoming` 就是答 CONNECTION_REFUSED。负责人看到的就是这个：从手机往 Mac 拖一张图，Mac 照规矩回头拉文件（`Request::DropFile`，收的那头拨手机），得到「无法连接 localhost：server refused to accept a new connection」（`localhost` 是手机在设备表里给自己起的名字）。门：`lib.rs` 的单测 `the_phone_lets_go_in_the_background_and_wakes_in_front`；`cargo test -p khor-node --test resume` 的歇着那条量 `link::resting` 的三个答（醒着、歇着、刚发出恢复就是醒着）。安卓没有 UIKit，照旧用 tauri 的窗口事件（那边是成对的），走同一条线程。
+- ⚠️ **不要为此打开 UIScene 生命周期**（`UIApplicationSceneManifest`）：tao 的 scene delegate 是空的，`gen/apple` 没开。三条 `UIApplication…Notification` 在两种生命周期下系统都发，但别的东西（tao 的窗口事件）会跟着变。
+- **按顺序做什么**（`khor_node::link::resume`，等的那段是 `khor_gui_core::rejoin::resumed`）：
   1. 常驻 serve（手机上是 `Node::serve_resumable`）**绑一个新端点**，同一把钥匙；旧端点在后台关掉；挂在旧端点上的都放掉——留着的连接（`wires`）、远端会话前面的管子（`reaches`）、远端编辑器前面的管子（`codes`）。不靠 iroh 的 `network_change`：它只在网卡变了时才动，而回到前台的手机多半还在原来那张网上。
   2. 新地址写回设备表自己那一行和 `endpoint.json`；同步计时清零。
   3. 耳朵好了就**叫醒所有在等重连的远端终端和对话**（见下），然后**马上同步一轮**，不等下一拍。
