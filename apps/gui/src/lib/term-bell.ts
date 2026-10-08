@@ -5,6 +5,8 @@
 // bell is silent everywhere. This device's, in its `localStorage`.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 const KEY = "khor.term-bell";
 const CHANGED = "khor:term-bell";
 let session: boolean | null = null;
@@ -27,6 +29,13 @@ export function setTermBell(on: boolean) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: on }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(KEY, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: termBell() }));
+});
 
 export function useTermBell(): boolean {
   const [on, setOn] = useState(termBell);

@@ -18,6 +18,8 @@
 // storage simply keeps the default.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 /** The five landings, by key. */
 export type NavKey = "sessions" | "devices" | "workspaces" | "browser" | "quota";
 
@@ -53,6 +55,10 @@ export function rememberNavOrder(order: NavKey[]) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: order }));
 }
+
+// Reordered in another window of this app (the Mac's settings window,
+// `lib/other-windows`): this window's strip takes it at once.
+heardFrom(KEY, () => window.dispatchEvent(new CustomEvent(CHANGED, { detail: storedNavOrder() })));
 
 /** The order, live: the settings rows and the navigation are not each
     other's children, and a reorder shows on the bar at once. */
