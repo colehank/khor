@@ -24686,6 +24686,9 @@ try {
   };
   /** A bare duration off the one ladder (`words.ts` `span`). */
   const BARE = /^\d+ (秒|分钟|小时|天)$/;
+  // A corner that says *when* something happened says which way
+  // (WORDS-1008): the browser's, 最近's, 存储's.
+  const AGO = /^\d+ (秒|分钟|小时|天)前$/;
 
   // a. machines.
   {
@@ -24907,8 +24910,9 @@ try {
       // 2026-10-07). elder last used the relay, which settled 5 hours ago:
       // 未连 over 5 hours, undimmed, no readings — the last road is the
       // detail's, not the row's (WORDS-1008: the filter said 未连 for the row
-      // that said 中继). peer never connected since the resident started: 未连
-      // and no time at all.
+      // that said 中继). peer never connected since the resident started and
+      // the page is inside its dial budget: not named yet (`fetchDevices`),
+      // nothing at all.
       restore();
       Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: 5 * 3600_000, last_hop: "relay", heard_ms: 3 * 3600_000, down_ms: null, last_rtt_ms: 140 });
       Object.assign(peer, { hop: "quiet", rtt_ms: null, since_ms: null, last_hop: null, heard_ms: null, down_ms: null, last_rtt_ms: null, paused: false });
@@ -24922,8 +24926,8 @@ try {
         if (!e || e.top !== "未连" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.state !== "idle" || more.elder.road !== null || e.opacity < 0.99) {
           fail(`corners a · ${posture} · an idle elder reads ${JSON.stringify({ ...e, ...more.elder })} — 未连 over 「5 小时」 (since that road settled), no last road on the row, no readings, undimmed; never 不通 (UX-48, WORDS-1008)`);
         }
-        if (!p || p.top !== "未连" || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== "idle" || p.opacity < 0.99) {
-          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — 未连 and no time, no readings, undimmed (UX-48, WORDS-1008: the filter's word)`);
+        if (!p || p.top !== null || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== null || p.opacity < 0.99) {
+          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — not named yet inside the dial budget: nothing top-right or bottom-right, no readings, undimmed (UX-48, api.ts fetchDevices)`);
         }
       }
       // A state that changes in place gets the room it needs: the corner
@@ -25379,8 +25383,8 @@ try {
         fail(`probe dead: corners e · ${posture} · tab ${t.id} is not in the list`);
         continue;
       }
-      if (r.sub !== t.url.replace(/^https?:\/\//i, "") || r.top !== null || !BARE.test(r.bottom ?? "")) {
-        fail(`corners e · ${posture} · tab ${t.id} reads ${JSON.stringify(r)} — its address without the scheme, no state, how long ago it was opened (UX-48)`);
+      if (r.sub !== t.url.replace(/^https?:\/\//i, "") || r.top !== null || !AGO.test(r.bottom ?? "")) {
+        fail(`corners e · ${posture} · tab ${t.id} reads ${JSON.stringify(r)} — its address without the scheme, no state, when it was opened, 「5 分钟前」 (UX-48, WORDS-1008)`);
       }
     }
   }
