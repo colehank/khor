@@ -31103,7 +31103,7 @@ try {
       await page.keyboard.type("i");
       const d0 = writes.length;
       const leftAt = Date.now();
-      await page.locator('[data-file-tree] [data-depth="0"][data-file="debug.log"] > button').click();
+      await page.locator('[data-file-tree] [data-depth="0"][data-file="debug.log"] > button').first().click();
       await until(2_000, async () => writes.slice(d0).some(oneRs));
       const d = writes.slice(d0).find(oneRs);
       console.log(`save d · leaving: one.rs written ${d ? d.at - leftAt : "never"} ms after another file was opened, ending ${JSON.stringify(d?.text.slice(-2))}`);
