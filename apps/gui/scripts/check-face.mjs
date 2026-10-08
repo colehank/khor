@@ -2273,6 +2273,8 @@ try {
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   // **`FACE_ONLY=caret` walks the editor's caret and 字号 alone** (fix-c,
   // 2026-10-08).
+  // **`FACE_ONLY=import` walks 导入 as a search alone** (imp-a,
+  // 2026-10-09, IMPORT-BRIEF).
   // **`FACE_ONLY=corners` walks every list's row alone** (UX-48,
   // 2026-10-07: the owner's four slots on every list).
   // **`FACE_ONLY=walk` walks this block alone** — sections 1 to 10,
@@ -2280,7 +2282,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25463,7 +25465,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25892,7 +25894,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26250,7 +26252,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26625,7 +26627,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27357,7 +27359,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28250,7 +28252,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -30293,7 +30295,7 @@ try {
     if (await press("[data-side-head] [data-pane-new]")) {
       if ((await count('[role="menu"]')) > 0) await press('[role="menu"] [data-new-item="import"]');
       await wait(800);
-      if (!(await count("[data-import-note]"))) fail("probe dead: phone b · 导入 never opened");
+      if (!(await count("[data-import-field]"))) fail("probe dead: phone b · 导入 never opened");
       if (await count("[data-import-agents]")) fail("phone b · 导入 offers to ask the agents on a phone");
       await press("[data-dialog-cancel]");
     }
@@ -38611,6 +38613,238 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "follow") console.log("follow · FACE_ONLY=follow: the other sections are skipped");
+
+  // ── 导入 is a search (imp-a, 2026-10-09, IMPORT-BRIEF) ───────────────
+  //
+  // The owner: 「现在，导入的时候，逻辑混乱，用户可能不期望按目录选，而可以
+  // 搜索机器上的会话，我们也要支持tmux感知到的会话」; drawn in the 1458 lab
+  // and approved (「做吧」). Over fixture candidates on three machines —
+  // this one, a reachable peer, and one that cannot be reached (不通) —
+  // at 1400 wide and 390 narrow, in both themes:
+  //   a. it opens with the search field focused, the candidates of the
+  //      reachable machines newest first, and no directory filter;
+  //   b. typing filters at once, case aside, over the title, the
+  //      directory, the machine and the running command; a word nothing
+  //      holds says 「没有匹配项」 in the list's place, and the list keeps
+  //      its height while it filters; the clear mark empties the field;
+  //   c. the machines are chips: 「全部」 pressed by default, the machine
+  //      out of reach marked 不通 and its rows not in 「全部」; a machine's
+  //      chip narrows to it, two are an or, 「全部」 puts it back;
+  //   d. the running command is drawn on a terminal's row only;
+  //   e. a tap imports that one row and closes the panel (the shell opens
+  //      it): one `import_sessions` with that id alone, no 「导入 N 个」;
+  //   f. nothing to import: one sentence, no chips, no note;
+  //   g. the panel stays inside the window — wide, its foot (取消) on
+  //      screen; narrow, the sheet does not scroll and the list does.
+  //
+  // `FACE_ONLY=import` runs this section alone.
+  import: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "import") break import;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const me = devs.find((d) => d.me);
+    const peer = devs.find((d) => d.name === "peer");
+    const far = { ...peer, id: "c".repeat(64), name: "lecun", shown: "lecun", hop: "quiet", down_ms: 60_000, heard_ms: 600_000 };
+    const rowsI = [...devs, far];
+    const now = Date.now();
+    const cand = (id, form, d, title, place, ago, extra = {}) => ({
+      id,
+      form,
+      machine: d.shown,
+      device: d.id,
+      title,
+      place,
+      at_ms: now - ago,
+      category: form === "shell" ? "shell" : form === "tui" ? "claude" : null,
+      agent: form === "gui" ? "stub" : null,
+      command: null,
+      ...extra,
+    });
+    const MIN = 60_000;
+    const CANDS = [
+      cand("tui/imp-agent", "tui", peer, "把导入改成搜索", "/home/u/khor", 2 * MIN),
+      cand("shell/imp-sweep", "shell", me, "gpu-sweep-attention-heads-lr3e-4-warmup2k", "/home/u/sweeps", 9 * MIN, { command: "python" }),
+      cand("shell/imp-notes", "shell", peer, "notes", "/home/u/notes", 14 * MIN),
+      cand("shell/imp-far", "shell", far, "eval-nightly", "/home/u/eval", 20 * MIN, { command: "bash" }),
+      // An agent's command is not drawn even where the node sent one.
+      cand("tui/imp-agent-cmd", "tui", me, "排查 NFS 挂载掉线的原因", "/home/u/fleet", 30 * MIN, { command: "claude" }),
+      // Enough to scroll a phone's sheet.
+      ...Array.from({ length: 12 }, (_, i) =>
+        cand(`shell/imp-fill-${i}`, "shell", me, `filler-${i}`, "/tmp/filler", (40 + i) * MIN),
+      ),
+    ];
+    const reachableN = CANDS.filter((c) => c.device !== far.id).length;
+    let cands = CANDS;
+    const sentI = [];
+    const routesI = {
+      "**/devices": (r) => json(rowsI)(r),
+      "**/import_candidates": (r) => json(cands)(r),
+      "**/agents": (r) => json([])(r),
+      "**/import_sessions": (r) => {
+        const body = r.request().postDataJSON() ?? {};
+        sentI.push(body);
+        return json(body.ids ?? [])(r);
+      },
+    };
+    for (const [glob, go] of Object.entries(routesI)) await page.route(glob, go);
+    const rowIds = () => page.locator("[data-import-row]").evaluateAll((els) => els.map((e) => e.getAttribute("data-import-row")));
+    const typeIn = async (text) => {
+      await page.locator("[data-import-field]").fill(text);
+      await wait(150);
+    };
+    const openImport = async () => {
+      if (!(await open("sessions"))) return false;
+      if (!(await tap("[data-side-head] [data-pane-new]"))) return false;
+      if ((await count('[role="menu"]')) > 0 && !(await tap('[role="menu"] [data-new-item="import"]'))) return false;
+      return until(5_000, async () => (await count("[data-import-row], [data-import-empty]")) > 0);
+    };
+    for (const [w, h, scheme] of [[1400, 900, "light"], [1400, 900, "dark"], [390, 844, "light"], [390, 844, "dark"]]) {
+      const where = `import · ${w} ${scheme}`;
+      cands = CANDS;
+      await page.setViewportSize({ width: w, height: h });
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      if (!(await openImport())) {
+        fail(`probe dead: ${where} · 导入 never drew a row`);
+        continue;
+      }
+      await wait(300);
+      // a.
+      const a = await page.evaluate(() => ({
+        focused: document.activeElement?.hasAttribute("data-import-field") ?? false,
+        places: document.querySelectorAll("[data-import-place-select], [data-import-filters]").length,
+        boxes: document.querySelectorAll("[data-import-dialog] input[type=checkbox]").length,
+        go: document.querySelectorAll("[data-import-go]").length,
+      }));
+      const first = await rowIds();
+      const want = CANDS.filter((c) => c.device !== far.id).map((c) => c.id);
+      console.log(`${where} a · ${JSON.stringify({ ...a, rows: first.length })}`);
+      if (!a.focused) fail(`${where} a · the search field does not have the focus as 导入 opens`);
+      if (a.places || a.boxes || a.go) fail(`${where} a · the old form is still drawn: ${JSON.stringify(a)} — no directory filter, no boxes, no 「导入 N 个」`);
+      if (JSON.stringify(first) !== JSON.stringify(want)) fail(`${where} a · the rows are ${JSON.stringify(first)}, wanted the reachable machines' newest first ${JSON.stringify(want)}`);
+
+      // b.
+      const listH = () => page.locator("[data-import-rows]").evaluate((e) => Math.round(e.getBoundingClientRect().height));
+      const h0 = await listH();
+      const b = {};
+      for (const [word, ids] of [
+        ["PYTHON", ["shell/imp-sweep"]],
+        ["sweeps", ["shell/imp-sweep"]],
+        ["peer", ["tui/imp-agent", "shell/imp-notes"]],
+        ["导入", ["tui/imp-agent"]],
+        ["peer notes", ["shell/imp-notes"]],
+      ]) {
+        await typeIn(word);
+        const got = await rowIds();
+        b[word] = got.length;
+        if (JSON.stringify(got) !== JSON.stringify(ids)) fail(`${where} b · 「${word}」 lists ${JSON.stringify(got)}, wanted ${JSON.stringify(ids)}`);
+      }
+      const hits = await page.locator("[data-import-row] mark[data-import-hit]").count();
+      if (hits === 0) fail(`${where} b · the typed words are not drawn in the rows that matched`);
+      await typeIn("zzz-nothing");
+      const nomatch = await page.evaluate(() => ({
+        rows: document.querySelectorAll("[data-import-row]").length,
+        said: (document.querySelector("[data-import-nomatch]")?.textContent ?? "").trim(),
+      }));
+      const h1 = await listH();
+      if (nomatch.rows !== 0 || nomatch.said !== "没有匹配项") fail(`${where} b · a word nothing holds shows ${JSON.stringify(nomatch)} — 「没有匹配项」 in the list's place`);
+      if (Math.abs(h1 - h0) > 1) fail(`${where} b · the list was ${h0} tall and is ${h1} with no match — it keeps its height while it filters`);
+      await tap("[data-import-clear]");
+      const cleared = await page.locator("[data-import-field]").inputValue();
+      if (cleared !== "" || (await rowIds()).length !== reachableN) fail(`${where} b · the clear mark left 「${cleared}」 and ${(await rowIds()).length} rows`);
+      console.log(`${where} b · ${JSON.stringify({ ...b, hits, h0, h1 })}`);
+
+      // c.
+      const chips = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-import-chip]")].map((e) => ({
+          name: e.getAttribute("data-import-chip"),
+          on: e.getAttribute("aria-pressed") === "true",
+          away: e.hasAttribute("data-away"),
+          text: (e.textContent ?? "").trim(),
+        })),
+      );
+      const chip = (n) => chips.find((c) => c.name === n);
+      console.log(`${where} c · ${JSON.stringify(chips)}`);
+      if (!chip("") || !chip("")?.on || chip("")?.text !== "全部") fail(`${where} c · 「全部」 is not the first chip, pressed: ${JSON.stringify(chip(""))}`);
+      if (!chip("gate") || !chip("peer") || chip("gate")?.on || chip("peer")?.on) fail(`${where} c · the reachable machines' chips are not there, unpressed`);
+      if (!chip("lecun")?.away || !chip("lecun")?.text.includes("不通") || chip("lecun")?.on) fail(`${where} c · the machine out of reach is not marked 不通 and off: ${JSON.stringify(chip("lecun"))}`);
+      await tap('[data-import-chip="peer"]');
+      const onlyPeer = await rowIds();
+      await tap('[data-import-chip="lecun"]');
+      const peerOrFar = await rowIds();
+      const allOff = await page.locator('[data-import-chip=""]').getAttribute("aria-pressed");
+      await tap('[data-import-chip=""]');
+      const back = await rowIds();
+      if (JSON.stringify(onlyPeer) !== JSON.stringify(["tui/imp-agent", "shell/imp-notes"])) fail(`${where} c · peer's chip lists ${JSON.stringify(onlyPeer)}`);
+      if (JSON.stringify(peerOrFar) !== JSON.stringify(["tui/imp-agent", "shell/imp-notes", "shell/imp-far"])) fail(`${where} c · peer's and lecun's chips list ${JSON.stringify(peerOrFar)} — an or`);
+      if (allOff !== "false") fail(`${where} c · 「全部」 stays pressed with two machines picked`);
+      if (back.length !== reachableN) fail(`${where} c · 「全部」 did not put the reachable machines back (${back.length})`);
+
+      // d.
+      const d = await page.evaluate(() =>
+        [...document.querySelectorAll("[data-import-row]")]
+          .filter((e) => e.querySelector("[data-import-command]"))
+          .map((e) => [e.getAttribute("data-import-form"), (e.querySelector("[data-import-command]")?.textContent ?? "").trim()]),
+      );
+      if (JSON.stringify(d) !== JSON.stringify([["shell", "python"]])) fail(`${where} d · commands are drawn on ${JSON.stringify(d)} — a terminal's row only`);
+
+      // g.
+      const g = await page.evaluate(() => {
+        const box = document.querySelector("[data-import-dialog]").getBoundingClientRect();
+        const content = document.querySelector("[data-import-dialog]");
+        const list = document.querySelector("[data-import-rows]");
+        const foot = document.querySelector("[data-import-dialog] [data-dialog-cancel]").getBoundingClientRect();
+        const was = list.scrollTop;
+        list.scrollTop = 120;
+        const moved = list.scrollTop > was;
+        list.scrollTop = was;
+        return {
+          inside: box.left >= -0.5 && box.right <= innerWidth + 0.5 && box.bottom <= innerHeight + 0.5,
+          foot: foot.bottom <= innerHeight + 0.5 && foot.top >= 0,
+          sheetScrolls: content.scrollHeight > content.clientHeight + 1,
+          listScrolls: moved,
+        };
+      });
+      console.log(`${where} g · ${JSON.stringify(g)}`);
+      if (!g.inside || !g.foot) fail(`${where} g · the panel or its 取消 is past the window's edge: ${JSON.stringify(g)}`);
+      if (w < 760 && (g.sheetScrolls || !g.listScrolls)) fail(`${where} g · on the phone the sheet scrolls (${g.sheetScrolls}) or the list does not (${g.listScrolls}) — only the list scrolls`);
+
+      // e.
+      const before = sentI.length;
+      await tap('[data-import-row="shell/imp-notes"]');
+      const closed = await until(5_000, async () => (await count("[data-import-dialog]")) === 0);
+      const sent = sentI.slice(before);
+      if (!closed) fail(`${where} e · a tap on a row left the panel up`);
+      if (JSON.stringify(sent) !== JSON.stringify([{ ids: ["shell/imp-notes"] }])) fail(`${where} e · a tap sent ${JSON.stringify(sent)} — import_sessions with that one id`);
+      await page.keyboard.press("Escape");
+      await wait(200);
+
+      // f.
+      cands = [];
+      if (!(await openImport())) {
+        fail(`probe dead: ${where} f · 导入 with nothing to import never drew`);
+        continue;
+      }
+      const f = await page.evaluate(() => ({
+        said: [...document.querySelectorAll("[data-import-empty] span")].map((e) => (e.textContent ?? "").trim()),
+        chips: document.querySelectorAll("[data-import-chip]").length,
+        note: document.querySelectorAll("[data-import-note]").length,
+      }));
+      console.log(`${where} f · ${JSON.stringify(f)}`);
+      if (f.said[0] !== "没有可导入的会话" || f.chips || f.note) fail(`${where} f · nothing to import reads ${JSON.stringify(f)} — one sentence, no chips, no note`);
+      await page.keyboard.press("Escape");
+      await wait(200);
+    }
+    for (const [glob, go] of Object.entries(routesI)) await page.unroute(glob, go);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "import") console.log("import · FACE_ONLY=import: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

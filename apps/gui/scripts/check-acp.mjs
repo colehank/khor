@@ -947,10 +947,9 @@ try {
       await wait(600);
     }
     if (resumeId) {
+      // A tap imports it and opens it (IMPORT-BRIEF).
       await page.locator(`[data-import-row="acp:${registered[0].name}:${resumeId}"]`).click();
-      await wait(300);
-      await page.locator("[data-import-go]").click();
-      await wait(600);
+      await wait(900);
     }
     const out = await page.evaluate((door) => {
       const box = document.querySelector("[data-agent-seen]");

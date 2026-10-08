@@ -3232,15 +3232,19 @@ new-session-byhand = "需自行安装，再用命令行接入"
 # 2026-09-22 那一节挪进导入(docs/SHELL.md 第八轮:一个动作一个位置),标题换成 import-agents;
 # 底下「问一次」和三句回答的键照旧用。
 # 导入(docs/SHELL.md 第八轮):「+」的第二项,和它打开的那个面板。
+# 2026-10-09 起是一次搜索(IMPORT-BRIEF,负责人:「用户可能不期望按目录选,而可以搜索机器上的
+# 会话」):上面一个框、一排机器标签、点一行就导入并打开。
 import-sessions = "导入"
 import-title = "导入会话"
-import-note = "khor 找到的、尚未加入列表的会话。导入后会出现在列表中；从列表删除时，原会话不受影响。"
+import-search = "搜索可导入的会话"
+# 机器标签的第一枚:每台连得上的机器。
+import-all = "全部"
+import-note = "点一行即导入并打开；从列表删除时，原会话不受影响"
 import-empty = "没有可导入的会话"
-import-all-machines = "所有机器"
-import-all-places = "所有目录"
-import-go = "导入 {0} 个"
-import-form-tui = "智能体·终端形态（观察）"
-import-form-gui = "智能体·对话形态"
+import-empty-hint = "各台机器上的 tmux 会话和终端里的智能体会出现在这里"
+# ⚠️ 墓碑(2026-10-09,IMPORT-BRIEF):import-all-machines「所有机器」、import-all-places「所有目录」
+# (两个弹出按钮,目录那个整个撤了,机器换成一排标签)、import-go「导入 {0} 个」(勾选后一起导入,
+# 现在点一行就导入一个)、import-form-tui / import-form-gui(副标题里的形态词,行首的字形已经说了)。
 import-agents = "ACP 智能体记下的对话"
 # 删除一行导入的会话:只是从列表拿掉(第八轮 第 3 条)。
 close-warn-imported = "只从列表中移除，原会话不受影响，之后还能再导入"
@@ -4061,7 +4065,7 @@ search-clear = "清除"
 need-path = "先填写目录"
 need-pin = "先输入 PIN"
 need-text = "先写下要说的话"
-need-pick = "先选择要导入的会话"
+# ⚠️ 墓碑(2026-10-09):need-pick「先选择要导入的会话」——导入不再先勾后导,点一行就导入。
 need-ticket = "先输入邀请码"
 need-relay = "先填写中继地址"
 need-account-name = "先为这个账号命名"
