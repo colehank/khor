@@ -543,6 +543,13 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
           {leg.why}
         </div>
       )}
+      {/* ssh's own words under the sentence, as its sponsor read them
+          (round join-e, `Leg.said`): the lab's 「Connection timed out」. */}
+      {leg && b!.said && (
+        <div data-road-said className="text-callout text-muted-foreground">
+          {b!.said}
+        </div>
+      )}
     </div>
   );
 }

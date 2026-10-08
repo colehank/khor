@@ -3927,7 +3927,7 @@ impl Node {
                         drop(book);
                         let _ = self.cache_peer_vitals(&d.id, &v);
                     }
-                    Ok(Err((_, broke))) => book.sampled(&d.id, Some(broke)),
+                    Ok(Err((_, broke, said))) => book.sampled(&d.id, Some((broke, said))),
                     Err(_) => {}
                 }
             }

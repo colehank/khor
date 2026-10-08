@@ -1057,6 +1057,13 @@ pub struct Leg {
     pub from: Option<String>,
     pub to: Option<String>,
     pub leg: LegKind,
+    /// **ssh's own words** for why (round join-e), as the sponsor read
+    /// them off its last failed sample (`khor_node::satellite::words`):
+    /// one short line, no address prefix, never a key or a secret — the
+    /// machine page shows them under its sentence. `None` where ssh said
+    /// nothing worth carrying, and on khor's own legs.
+    #[serde(default)]
+    pub said: Option<String>,
 }
 
 /// Which leg, read off the wire or off ssh's own words

@@ -362,26 +362,65 @@ pub fn refusal(to: &Dest, said: &str) -> Option<Refusal> {
     }
 }
 
+/// ssh's last meaningful line. The proxy's own close is noise once the
+/// segment is named; the jump's own refusal is the line that says why
+/// (`channel 0: open failed: connect failed: Connection refused`), not
+/// the `stdio forwarding failed` after it.
+fn last_line(said: &str) -> Option<&str> {
+    let lines: Vec<&str> = said
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.contains("UNKNOWN port 65535"))
+        .collect();
+    lines.iter().find(|l| l.contains("open failed")).or(lines.last()).copied()
+}
+
+/// How long ssh's words may run on the machine page.
+const WORDS_MAX: usize = 80;
+
+/// What marks a line that carries a key, never written into the table.
+const KEYISH: [&str; 5] = ["SHA256:", "MD5:", "AAAA", "-----BEGIN", "@@@"];
+
+/// **ssh's own words for a broken leg** (round join-e), written with the
+/// road (`Leg::said`) for the machine page's line under its sentence —
+/// the lab's 「（Connection timed out）」. The reason at the end of the
+/// last meaningful line, after ssh's own `ssh: connect to host … port
+/// …:` and `user@host:` prefixes; one line, at most [`WORDS_MAX`]
+/// characters. The device table is read by every machine, so `None`
+/// for khor's askpass words and for a line that carries a key (a
+/// fingerprint, a key blob, the host-key warning's box).
+pub fn words(said: &str) -> Option<String> {
+    if said.contains(crate::secret::ASKPASS_NOT_A_PASSWORD) || said.contains(crate::secret::ASKPASS_NONE_KEPT) {
+        return None;
+    }
+    let line = last_line(said)?;
+    if KEYISH.iter().any(|k| line.contains(k)) {
+        return None;
+    }
+    let why: String = line
+        .rsplit(": ")
+        .next()
+        .unwrap_or(line)
+        .trim()
+        .trim_end_matches('.')
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect();
+    if why.is_empty() {
+        return None;
+    }
+    if why.chars().count() <= WORDS_MAX {
+        return Some(why);
+    }
+    Some(why.chars().take(WORDS_MAX - 1).chain(['…']).collect())
+}
+
 /// The sentence for an ssh that failed: the broken segment named when
 /// ssh's words say which, else ssh's words as they are. ssh's last
 /// meaningful line rides along, never a password prompt — BatchMode.
 pub(crate) fn cant_reach(to: &Dest, said: &str) -> String {
     let said = said.trim();
-    // The proxy's own close is noise once the segment is named.
-    let words: Vec<&str> = said
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.contains("UNKNOWN port 65535"))
-        .collect();
-    // The jump's own refusal is the line that says why (`channel 0:
-    // open failed: connect failed: Connection refused`), not the
-    // `stdio forwarding failed` after it.
-    let last = words
-        .iter()
-        .find(|l| l.contains("open failed"))
-        .or(words.last())
-        .copied()
-        .unwrap_or(said);
+    let last = last_line(said).unwrap_or(said);
     if said.contains(crate::secret::ASKPASS_NOT_A_PASSWORD) {
         return msg::sat_one_time_code(&to.host);
     }
@@ -1305,20 +1344,20 @@ fn plus_side(head: &str) -> Option<(u32, u32)> {
 /// with `version: None`: no khor runs there, and saying so is the row's
 /// honest gap, never a guessed number.
 pub fn sample(host: &Dest) -> Result<khor_core::Vitals, String> {
-    sample_read(host).map_err(|(why, _)| why)
+    sample_read(host).map_err(|(why, ..)| why)
 }
 
 /// [`sample`], with which segment broke when ssh's words say
-/// ([`broken`]): what the sponsor's road to its satellite names
-/// (round ROAD-1).
-pub fn sample_read(host: &Dest) -> Result<khor_core::Vitals, (String, Option<Broken>)> {
+/// ([`broken`]) and the words themselves ([`words`]): what the sponsor's
+/// road to its satellite names (round ROAD-1, join-e).
+pub fn sample_read(host: &Dest) -> Result<khor_core::Vitals, (String, Option<Broken>, Option<String>)> {
     let out = ssh_base(host)
         .arg(SAMPLE_SH)
         .output()
-        .map_err(|e| (msg::ssh_wont_run(e), None))?;
+        .map_err(|e| (msg::ssh_wont_run(e), None, None))?;
     if !out.status.success() {
         let said = String::from_utf8_lossy(&out.stderr);
-        return Err((cant_reach(host, &said), broken(host, &said)));
+        return Err((cant_reach(host, &said), broken(host, &said), words(&said)));
     }
     Ok(parse_vitals(&String::from_utf8_lossy(&out.stdout)))
 }
@@ -1845,10 +1884,11 @@ mod tests {
         assert_eq!(r.broken.map(|l| l.leg), Some(khor_core::LegKind::Ssh), "ssh said nothing that names a leg");
         // ssh's words on the last failed sample name the leg; a jump's
         // far end is no device.
-        n.roadbook.lock().unwrap().sampled(&sat, Some(Some(Broken::ToJump)));
+        n.roadbook.lock().unwrap().sampled(&sat, Some((Some(Broken::ToJump), Some("Connection refused".into()))));
         let leg = n.satellite_road(&sat).unwrap().broken.unwrap();
         assert_eq!((leg.leg, leg.from.as_deref(), leg.to), (khor_core::LegKind::ToJump, Some(me.as_str()), None));
-        n.roadbook.lock().unwrap().sampled(&sat, Some(Some(Broken::PasswordOnly)));
+        assert_eq!(leg.said.as_deref(), Some("Connection refused"), "ssh's words ride the leg");
+        n.roadbook.lock().unwrap().sampled(&sat, Some((Some(Broken::PasswordOnly), None)));
         assert_eq!(n.satellite_road(&sat).unwrap().broken.map(|l| l.leg), Some(khor_core::LegKind::Auth));
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1873,6 +1913,32 @@ mod tests {
         assert_eq!(broken(&via, "Connection timed out during banner exchange\r\nConnection to UNKNOWN port 65535 timed out"), None);
         // The jump's refusal is the line quoted, not the noise after it.
         assert!(cant_reach(&via, on_down).contains("channel 0: open failed: connect failed: Connection refused"));
+    }
+
+    /// ssh's words as a leg carries them (round join-e): the reason
+    /// alone, one line, short, and nothing that names a key.
+    #[test]
+    fn a_legs_words_are_the_reason_alone() {
+        let on_down = "channel 0: open failed: connect failed: Connection refused\r\nstdio forwarding failed\r\nConnection closed by UNKNOWN port 65535\r\n";
+        assert_eq!(words(on_down).as_deref(), Some("Connection refused"));
+        assert_eq!(words("ssh: connect to host 10.0.0.5 port 22: Connection timed out\r\n").as_deref(), Some("Connection timed out"));
+        assert_eq!(
+            words("zgh@127.0.0.1: Permission denied (publickey,password).\r\n").as_deref(),
+            Some("Permission denied (publickey,password)")
+        );
+        assert_eq!(
+            words("Connection timed out during banner exchange\r\nConnection to UNKNOWN port 65535 timed out").as_deref(),
+            Some("Connection timed out during banner exchange")
+        );
+        assert_eq!(words(""), None);
+        // A host key's warning, a fingerprint, khor's own askpass: none.
+        assert_eq!(words("Host key for gpu-box has changed\nED25519 key fingerprint is SHA256:abc."), None);
+        assert_eq!(words("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"), None);
+        assert_eq!(words(crate::secret::ASKPASS_NONE_KEPT), None);
+        let long = format!("ssh: {}", "x".repeat(200));
+        let w = words(&long).unwrap();
+        assert_eq!(w.chars().count(), WORDS_MAX);
+        assert!(w.ends_with('…') && !w.contains('\n'));
     }
 
     /// The jump rides every command as an explicit ProxyCommand with

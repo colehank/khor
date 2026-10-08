@@ -89,7 +89,8 @@ pub(crate) struct RoadBook {
     /// What ssh's words said broke on each satellite's last failed
     /// sample (`satellite::broken`), by satellite id; cleared by a sample
     /// that came back.
-    sat_broken: HashMap<String, Option<crate::satellite::Broken>>,
+    /// ssh's own words beside it (`satellite::words`, round join-e).
+    sat_broken: HashMap<String, (Option<crate::satellite::Broken>, Option<String>)>,
 }
 
 impl RoadBook {
@@ -148,8 +149,8 @@ impl RoadBook {
     }
 
     /// A satellite's sample came back (`None`) or failed, with what
-    /// ssh's words said broke (`Some(reading)`).
-    pub(crate) fn sampled(&mut self, sat: &str, failed: Option<Option<crate::satellite::Broken>>) {
+    /// ssh's words said broke and the words themselves (`Some(reading)`).
+    pub(crate) fn sampled(&mut self, sat: &str, failed: Option<(Option<crate::satellite::Broken>, Option<String>)>) {
         match failed {
             None => self.sat_broken.remove(sat),
             Some(b) => self.sat_broken.insert(sat.to_owned(), b),
@@ -295,7 +296,8 @@ impl crate::Node {
     /// This sponsor's road to satellite `sat`: `ssh` while its last
     /// sample is younger than [`SAT_FRESH`], `none` once older — with
     /// the leg that broke, as ssh's words on the last failed sample read
-    /// (`satellite::broken`); `None` before the first sample.
+    /// (`satellite::broken`), with ssh's words (`satellite::words`);
+    /// `None` before the first sample.
     pub fn satellite_road(&self, sat: &str) -> Option<Road> {
         let book = self.roadbook.lock().unwrap_or_else(|p| p.into_inner());
         self.satellite_road_in(&book, sat)
@@ -309,11 +311,12 @@ impl crate::Node {
         let me = Some(self.device_str().to_owned());
         let them = Some(sat.to_owned());
         use crate::satellite::Broken;
-        let leg = match book.sat_broken.get(sat).copied().flatten() {
-            Some(Broken::ToJump) => Leg { from: me, to: None, leg: LegKind::ToJump },
-            Some(Broken::JumpToTarget) => Leg { from: None, to: them, leg: LegKind::JumpToTarget },
-            Some(Broken::PasswordOnly) => Leg { from: me, to: them, leg: LegKind::Auth },
-            None => Leg { from: me, to: them, leg: LegKind::Ssh },
+        let (broke, said) = book.sat_broken.get(sat).cloned().unwrap_or_default();
+        let leg = match broke {
+            Some(Broken::ToJump) => Leg { from: me, to: None, leg: LegKind::ToJump, said },
+            Some(Broken::JumpToTarget) => Leg { from: None, to: them, leg: LegKind::JumpToTarget, said },
+            Some(Broken::PasswordOnly) => Leg { from: me, to: them, leg: LegKind::Auth, said },
+            None => Leg { from: me, to: them, leg: LegKind::Ssh, said },
         };
         Some(Road { broken: Some(leg), ..Road::own(sat, RoadKind::None, None, None) })
     }
@@ -403,12 +406,12 @@ pub fn through_sponsors(
         };
         let road = match (first, second) {
             (Some(f), _) if f.road == RoadKind::None => {
-                broken(Leg { from: Some(x.to_owned()), to: Some(p.clone()), leg: LegKind::ToSponsor })
+                broken(Leg { from: Some(x.to_owned()), to: Some(p.clone()), leg: LegKind::ToSponsor, said: None })
             }
             // The sponsor's own reading of its ssh says which leg; a
             // sponsor that wrote none says only that its ssh broke.
             (_, Some(r)) if r.road == RoadKind::None => broken(
-                r.broken.unwrap_or(Leg { from: Some(p.clone()), to: Some(s.clone()), leg: LegKind::Ssh }),
+                r.broken.unwrap_or(Leg { from: Some(p.clone()), to: Some(s.clone()), leg: LegKind::Ssh, said: None }),
             ),
             (Some(f), Some(r)) if r.road == RoadKind::Ssh => Road { to: s.clone(), via: Some(p.clone()), ..f },
             _ => continue,
@@ -590,7 +593,7 @@ mod tests {
         let ssh = Road::own("ab", RoadKind::Ssh, None, None);
         assert_eq!(from_json("ab", &to_json(&ssh)), Some(ssh), "a sponsor's road to its satellite");
         let auth = Road {
-            broken: Some(Leg { from: Some("p".into()), to: Some("ab".into()), leg: LegKind::Auth }),
+            broken: Some(Leg { from: Some("p".into()), to: Some("ab".into()), leg: LegKind::Auth, said: None }),
             ..Road::own("ab", RoadKind::None, None, None)
         };
         assert_eq!(from_json("ab", &to_json(&auth)), Some(auth), "the leg that broke rides the register");
@@ -617,14 +620,14 @@ mod tests {
         let r = through_sponsors("x", to_p(RoadKind::None), &sats, up);
         let s = r.iter().find(|r| r.to == "s").unwrap();
         assert_eq!(s.road, RoadKind::None);
-        assert_eq!(s.broken, Some(Leg { from: Some("x".into()), to: Some("p".into()), leg: LegKind::ToSponsor }));
+        assert_eq!(s.broken, Some(Leg { from: Some("x".into()), to: Some("p".into()), leg: LegKind::ToSponsor, said: None }));
 
         let r = through_sponsors("x", to_p(RoadKind::Direct), &sats, down);
         let s = r.iter().find(|r| r.to == "s").unwrap();
-        assert_eq!(s.broken, Some(Leg { from: Some("p".into()), to: Some("s".into()), leg: LegKind::Ssh }));
+        assert_eq!(s.broken, Some(Leg { from: Some("p".into()), to: Some("s".into()), leg: LegKind::Ssh, said: None }));
         // The sponsor's own reading names a jump's leg, whose far end is
         // no device.
-        let jump = Leg { from: Some("p".into()), to: None, leg: LegKind::ToJump };
+        let jump = Leg { from: Some("p".into()), to: None, leg: LegKind::ToJump, said: None };
         let at_jump = |_: &str, _: &str| Some(Road { broken: Some(jump.clone()), ..Road::own("s", RoadKind::None, None, None) });
         let r = through_sponsors("x", to_p(RoadKind::Direct), &sats, at_jump);
         assert_eq!(r.iter().find(|r| r.to == "s").unwrap().broken, Some(jump));
