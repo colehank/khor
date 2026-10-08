@@ -89,9 +89,50 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
             eprintln!("{} {mark} {}\t{}", l.when, l.machine, l.text);
         }
     }
+    use khor_node::journal::What;
+    // **The relay back is the network back** (NET-STABLE 第二步): once
+    // both homes are connected again, a dial goes through within seconds
+    // — not after the backoff the outage left. Measured before the fix: a
+    // 240 s outage, relay back at 16:33:37, the dial at 16:34:50.
+    let homes_back = [&ra.0, &rb.0]
+        .iter()
+        .map(|h| {
+            khor_node::journal::read(h, None, 0)
+                .iter()
+                .rev()
+                .find(|e| e.peer.is_none() && matches!(&e.what, What::Home { state, .. } if state == "connected"))
+                .map(|e| e.at)
+                .expect("each home relay connected again")
+        })
+        .max()
+        .unwrap();
+    let dialled_back = [&ra.0, &rb.0]
+        .iter()
+        .filter_map(|h| {
+            khor_node::journal::read(h, None, 0)
+                .into_iter()
+                .filter(|e| e.peer.is_some() && matches!(e.what, What::Dial { won: Some(_), .. }))
+                .map(|e| e.at)
+                .filter(|at| *at + 1_000 >= homes_back)
+                .min()
+        })
+        .min()
+        .expect("a dial after the relay came back");
+    let late = dialled_back.saturating_sub(homes_back);
+    eprintln!("[journal] the later home relay connected again; the first dial through came {late} ms after");
+    assert!(late < 5_000, "the dial came {late} ms after the relay was back");
+    // On the side that forgave: the other may have been dialled first.
+    assert!(
+        [&ra.0, &rb.0].iter().any(|h| {
+            khor_node::journal::read(h, None, 0)
+                .iter()
+                .any(|e| matches!(&e.what, What::Network { source } if source == "relay"))
+        }),
+        "the relay coming back is journalled"
+    );
+
     let raw = khor_node::journal::read(&rb.0, Some(&alpha_id), 0);
     let has = |f: &dyn Fn(&khor_node::journal::What) -> bool| raw.iter().any(|e| f(&e.what));
-    use khor_node::journal::What;
     assert!(has(&|w| matches!(w, What::Started)), "the resident's start");
     assert!(
         has(&|w| matches!(w, What::Dial { won: Some(_), .. })),

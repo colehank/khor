@@ -86,6 +86,10 @@ pub enum Change {
     Path,
     /// The resident's wall clock ran ahead of its monotonic one.
     Clock,
+    /// The home relay was down since `down_at` and is connected again
+    /// ([`watch_ears`]): the dials that failed since may have failed
+    /// only because it was.
+    Relay { down_at: std::time::Instant },
 }
 
 impl Change {
@@ -94,6 +98,7 @@ impl Change {
             Change::Wake => "wake",
             Change::Path => "path",
             Change::Clock => "clock",
+            Change::Relay { .. } => "relay",
         }
     }
 }
@@ -425,6 +430,7 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         What::Network { source } => msg::journal_network(match source.as_str() {
             "wake" => msg::journal_net_wake(),
             "path" => msg::journal_net_path(),
+            "relay" => msg::journal_net_relay(),
             _ => msg::journal_net_clock(),
         }),
         What::Addrs { addrs } if addrs.is_empty() => msg::journal_addrs_none().to_owned(),
@@ -483,7 +489,16 @@ pub fn when(at: u64) -> String {
 /// which no khor code is told of) and its home relay's connection state.
 /// Both are iroh's watchers: each line is written when iroh changes the
 /// value, nothing is polled.
-pub(crate) fn watch_ears(ep: &Arc<iroh::Endpoint>, wires: Arc<crate::wires::Wires>) {
+///
+/// **And what the resident is told** (`changed`, NET-STABLE 第二步): the
+/// home relay connected again after it was down is
+/// [`Change::Relay`] — measured, a 240 s outage left both sides in their
+/// backoff for 70 s after the relay was back, and a restart was the cure.
+pub(crate) fn watch_ears(
+    ep: &Arc<iroh::Endpoint>,
+    wires: Arc<crate::wires::Wires>,
+    changed: impl Fn(Change) + Send + 'static,
+) {
     use iroh::Watcher;
     let mut addrs = ep.watch_addr();
     let mut home = ep.home_relay_status();
@@ -523,8 +538,14 @@ pub(crate) fn watch_ears(ep: &Arc<iroh::Endpoint>, wires: Arc<crate::wires::Wire
         };
         let mut was_ips = ips(&addrs.get());
         let mut was_home: Vec<(String, String, Option<String>)> = Vec::new();
+        // Since when the home relay has been down; `None` while it is up
+        // or has never been.
+        let mut down_at: Option<std::time::Instant> = None;
         wires.note(None, What::Addrs { addrs: was_ips.clone() });
         for (url, state, error) in homes(&home.get()) {
+            if state == "disconnected" {
+                down_at.get_or_insert_with(std::time::Instant::now);
+            }
             wires.note(None, What::Home { url: Some(url.clone()), state: state.clone(), error: error.clone() });
             was_home.push((url, state, error));
         }
@@ -544,6 +565,7 @@ pub(crate) fn watch_ears(ep: &Arc<iroh::Endpoint>, wires: Arc<crate::wires::Wire
                     let now = homes(&now);
                     if now.is_empty() && !was_home.is_empty() {
                         wires.note(None, What::Home { url: None, state: "disconnected".into(), error: None });
+                        down_at.get_or_insert_with(std::time::Instant::now);
                     }
                     // **Only up and down**: iroh's reconnect walks
                     // connecting → failed many times a second at the start
@@ -558,6 +580,14 @@ pub(crate) fn watch_ears(ep: &Arc<iroh::Endpoint>, wires: Arc<crate::wires::Wire
                             wires.note(None, What::Home { url: Some(url.clone()), state: state.clone(), error: error.clone() });
                             was_home.retain(|(u, ..)| u != url);
                             was_home.push((url.clone(), state.clone(), error.clone()));
+                            if state == "connected" {
+                                // Down, then up: not the first connect.
+                                if let Some(at) = down_at.take() {
+                                    changed(Change::Relay { down_at: at });
+                                }
+                            } else {
+                                down_at.get_or_insert_with(std::time::Instant::now);
+                            }
                         }
                     }
                     was_home.retain(|(u, ..)| now.iter().any(|(n, ..)| n == u));

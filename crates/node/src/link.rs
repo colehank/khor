@@ -522,6 +522,65 @@ enum Wake {
     },
 }
 
+/// **One round for a network change at a time** (NET-STABLE 第二步).
+/// Changes come in bursts — a Wi-Fi switch is addresses going, the
+/// relay dropping, addresses coming, the relay back — and each used to
+/// start a round of its own. Now a change asked for while a round is
+/// under way is owed one more round after it, and every change asked
+/// for meanwhile is that same one: at most one in flight and one owed.
+#[derive(Clone, Default)]
+struct NetRound(std::sync::Arc<std::sync::Mutex<NetRoundState>>);
+
+#[derive(Default)]
+struct NetRoundState {
+    running: bool,
+    /// The round owed after this one: whether it is forced, and how long
+    /// it waits first.
+    owed: Option<(bool, Duration)>,
+}
+
+impl NetRound {
+    /// A round after `settle`, past every machine's backoff when `force`.
+    fn ask(
+        &self,
+        node: &std::sync::Arc<Node>,
+        ep: &std::sync::Arc<iroh::Endpoint>,
+        deaf: &std::sync::Arc<std::sync::Mutex<DeafWatch>>,
+        force: bool,
+        settle: Duration,
+    ) {
+        {
+            let mut s = self.0.lock().unwrap_or_else(|p| p.into_inner());
+            if s.running {
+                let (f, w) = s.owed.unwrap_or((false, Duration::ZERO));
+                s.owed = Some((f || force, w.max(settle)));
+                return;
+            }
+            s.running = true;
+        }
+        let (me, n, e, deaf) = (self.clone(), node.clone(), ep.clone(), deaf.clone());
+        tokio::spawn(async move {
+            let (mut force, mut settle) = (force, settle);
+            loop {
+                tokio::time::sleep(settle).await;
+                let out = n.sync_peers(&e, force).await;
+                let heard = if n.self_admitted() { out.as_slice() } else { &[] };
+                // Never a panic here: it would leave `running` set, and
+                // no change would get a round again.
+                let _ = deaf.lock().unwrap_or_else(|p| p.into_inner()).observe(heard);
+                let mut s = me.0.lock().unwrap_or_else(|p| p.into_inner());
+                match s.owed.take() {
+                    Some((f, w)) => (force, settle) = (f, w),
+                    None => {
+                        s.running = false;
+                        return;
+                    }
+                }
+            }
+        });
+    }
+}
+
 type Doors = std::sync::Mutex<
     std::collections::HashMap<std::path::PathBuf, tokio::sync::mpsc::UnboundedSender<Wake>>,
 >;
@@ -938,7 +997,11 @@ impl Node {
     }
 
     /// The endpoint the resident answers on from now (`Node::ears`).
-    fn set_ears(&self, ep: &std::sync::Arc<iroh::Endpoint>) {
+    fn set_ears(
+        &self,
+        ep: &std::sync::Arc<iroh::Endpoint>,
+        wake: &tokio::sync::mpsc::UnboundedSender<Wake>,
+    ) {
         *self.ears.lock().unwrap_or_else(|p| p.into_inner()) = Some(ep.clone());
         // New ears have homed nowhere yet (round NET-11, `ears_heard`).
         self.ears_homed.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -957,7 +1020,10 @@ impl Node {
             }
         });
         if self.wires.journal.get().is_some() {
-            crate::journal::watch_ears(ep, self.wires.clone());
+            let wake = wake.clone();
+            crate::journal::watch_ears(ep, self.wires.clone(), move |change| {
+                let _ = wake.send(Wake::Network(change));
+            });
         }
     }
 
@@ -1084,7 +1150,12 @@ impl Node {
         if node.wires.journal.set(crate::journal::Journal::open(node.root())).is_ok() {
             node.wires.note(None, crate::journal::What::Started);
         }
-        node.set_ears(&ep);
+        // [`resume`]'s door into this loop, and the deaf watch's own. Only
+        // a resumable serve is listed where [`resume`] looks; the sender
+        // kept here is also how the watch asks this loop for new ears,
+        // and how the wire watch and the ears' watch below report a wake.
+        let (wake, mut woken) = tokio::sync::mpsc::unbounded_channel::<Wake>();
+        node.set_ears(&ep, &wake);
         // Conversation files that arrived while no resident ran start now.
         node.take_arrived();
         // The satellite sampler (附属机器批): its own task on its own
@@ -1155,11 +1226,7 @@ impl Node {
             });
         }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
-        // [`resume`]'s door into this loop, and the deaf watch's own. Only
-        // a resumable serve is listed where [`resume`] looks; the sender
-        // kept here is also how the watch asks this loop for new ears,
-        // and how the wire watch below reports a wake.
-        let (wake, mut woken) = tokio::sync::mpsc::unbounded_channel::<Wake>();
+        let net_round = NetRound::default();
         let _listed = resumable.then(|| Listed::new(node.root(), wake.clone()));
         // **The wire watch** (`crate::wires`): once a second, what each
         // wire has heard, which road it is on, and the silent ones
@@ -1372,27 +1439,39 @@ impl Node {
                     // A network change while backgrounded is the resume's
                     // to deal with: it gives new ears and a round.
                     Wake::Network(_) if resting.load(std::sync::atomic::Ordering::Relaxed) => {}
+                    // **The home relay is back** (NET-STABLE 第二步): the
+                    // machines whose dials failed while it was gone are
+                    // dialled now rather than after their wait — measured,
+                    // 70 s of it after a 240 s outage. Nothing else: the
+                    // relay coming back says nothing about the wires on
+                    // other roads, and iroh has not pinged them, so they
+                    // are not judged; nothing forgiven, nothing to do.
+                    Wake::Network(change @ crate::journal::Change::Relay { down_at }) => {
+                        if node.wires.forgive_failed_since(down_at) > 0 {
+                            node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
+                            net_round.ask(&node, &ep, &deaf, false, Duration::ZERO);
+                        }
+                    }
                     Wake::Network(change) => {
                         node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
                         node.wires.network_changed();
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("{}", msg::serve_network_changed(&stamp));
-                        let n = node.clone();
                         let e = ep.clone();
-                        let deaf = deaf.clone();
-                        tokio::spawn(async move {
-                            e.network_change().await;
-                            // Once the wires that are going to answer have
-                            // answered, and the rest are retired: a visit
-                            // to everyone, the backed-off included — the
-                            // network they failed on is not this one.
-                            // The judging is per wire on its own patience;
-                            // the floor is when the fast ones are known.
-                            tokio::time::sleep(wires::Patience::for_rtt(Duration::ZERO).after_change + wires::TICK).await;
-                            let out = n.sync_peers(&e, true).await;
-                            let heard = if n.self_admitted() { out.as_slice() } else { &[] };
-                            let _ = deaf.lock().expect("deaf watch poisoned").observe(heard);
-                        });
+                        tokio::spawn(async move { e.network_change().await });
+                        // Once the wires that are going to answer have
+                        // answered, and the rest are retired: a visit to
+                        // everyone, the backed-off included — the network
+                        // they failed on is not this one. The judging is
+                        // per wire on its own patience; the floor is when
+                        // the fast ones are known.
+                        net_round.ask(
+                            &node,
+                            &ep,
+                            &deaf,
+                            true,
+                            wires::Patience::for_rtt(Duration::ZERO).after_change + wires::TICK,
+                        );
                     }
                     Wake::Resume { ears, synced } => {
                         resting.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -1423,7 +1502,7 @@ impl Node {
                     match fresh {
                         Ok(fresh) => {
                             let old = std::mem::replace(&mut ep, fresh);
-                            node.set_ears(&ep);
+                            node.set_ears(&ep, &wake);
                             hearing = true;
                             // Closed off the loop: a graceful close waits
                             // on its connections, and the new ears are

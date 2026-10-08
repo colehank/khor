@@ -844,6 +844,24 @@ impl Wires {
         }
     }
 
+    /// **The home relay is back after being down since `at`** (NET-STABLE
+    /// 第二步): the waits of the machines whose dials failed since are
+    /// forgiven — they may have failed only because the relay was gone.
+    /// A machine whose wait began before is left to it: a relay that
+    /// drops for a moment is not a reason to redial every machine that
+    /// is off (NET-6's cost). Answers how many it forgave.
+    pub(crate) fn forgive_failed_since(&self, at: Instant) -> usize {
+        let mut n = 0;
+        for slot in self.slots.lock().unwrap_or_else(|p| p.into_inner()).values_mut() {
+            if slot.retry_at.is_some() && slot.last_failure.as_ref().is_some_and(|(_, when)| *when >= at) {
+                slot.failures = 0;
+                slot.retry_at = None;
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// The network under this machine changed, or it woke from sleep:
     /// any wire not heard within its [`Patience::after_change`] from now is
     /// presumed to have died with the old network ([`Self::tick`] judges).
