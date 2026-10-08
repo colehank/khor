@@ -324,26 +324,25 @@ function rowOf(a: Acct, on: boolean, open: () => void): SideRow {
 
 function Lines({ a }: { a: Acct }) {
   if (a.lines.length === 0) return null;
+  // The owner (2026-10-08): 「重置写在 5H 这种左侧的标题旁边」 — the reset
+  // rides its window's title in secondary ink; no reset column, and no
+  // column heads (a bar filled to the number beside it says 「used」).
   return (
-    <div data-quota-lines className="grid min-w-0 flex-1 grid-cols-[auto_minmax(1.5rem,1fr)_auto_auto] items-center gap-x-in gap-y-in">
-      {/* The two columns' names, once: what the number is and what the
-          time is — so neither line has to say 「已用」 or 「后重置」. */}
-      <span />
-      <span />
-      <span className="text-right text-caption text-tertiary">已用</span>
-      <span className="text-right text-caption text-tertiary">重置</span>
+    <div data-quota-lines className="grid min-w-0 flex-1 grid-cols-[auto_minmax(1.5rem,1fr)_auto] items-center gap-x-in gap-y-in">
       {a.lines.map((l) => {
         const s = strainOf(l.pct);
         const over = l.pct >= 100;
         return (
           <div key={l.id} data-quota-line={l.id} className="contents">
-            <span className="whitespace-nowrap text-body">{l.word}</span>
+            <span data-quota-line-title className="flex items-baseline gap-in whitespace-nowrap">
+              <span className="text-body">{l.word}</span>
+              {l.resets && (
+                <span className="text-callout text-muted-foreground tabular-nums">{`${ahead(l.resets - NOW)}后重置`}</span>
+              )}
+            </span>
             <Bar pct={l.pct} strain={l.id === "credits" ? null : s} />
             <span className={cn("text-right text-body tabular-nums whitespace-nowrap", over && "font-semibold text-strain")}>
               {`${l.pct}%`}
-            </span>
-            <span className="text-right text-callout text-muted-foreground tabular-nums whitespace-nowrap">
-              {l.resets ? ahead(l.resets - NOW) : ""}
             </span>
           </div>
         );
