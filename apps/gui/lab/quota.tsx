@@ -358,7 +358,10 @@ function Page({ a, narrow, onBack }: { a: Acct; narrow: boolean; onBack?: () => 
   const pips: Pip[] = a.lines.filter((l) => l.id !== "credits").map((l) => ({ word: l.word, v: l.pct }));
   // Narrow: the dial one size down, so it and the lines stay on one row
   // at 375 (the owner: 「点击去不要环和 bar 换行」).
-  const dial = narrow ? { size: 76, stroke: 4 } : { size: DIAL_CARD_SIZE, stroke: DIAL_CARD_STROKE };
+  // Below 380 (a 375 phone) one step further, so the bar keeps 36 beside
+  // 「2 小时 14 分」 (the lead's pick ①, 2026-10-08).
+  const slim = useMedia("(max-width: 379px)");
+  const dial = narrow ? { size: slim ? 60 : 76, stroke: slim ? 3.5 : 4 } : { size: DIAL_CARD_SIZE, stroke: DIAL_CARD_STROKE };
   return (
     <div data-quota-page className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* R0, drawn plainly for the lab: the vendor's mark, the name, and
@@ -433,6 +436,17 @@ function Page({ a, narrow, onBack }: { a: Acct; narrow: boolean; onBack?: () => 
 }
 
 // ---- the lab --------------------------------------------------------------
+
+function useMedia(q: string): boolean {
+  const [on, setOn] = useState(() => window.matchMedia(q).matches);
+  useEffect(() => {
+    const m = window.matchMedia(q);
+    const said = () => setOn(m.matches);
+    m.addEventListener("change", said);
+    return () => m.removeEventListener("change", said);
+  }, [q]);
+  return on;
+}
 
 function useNarrowStamp(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
