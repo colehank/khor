@@ -18,8 +18,8 @@ pub(crate) use self::remote_state::PathStateReceiver;
 use self::remote_state::RemoteStateActor;
 pub(super) use self::remote_state::RemoteStateMessage;
 pub use self::remote_state::{
-    Path, PathEvent, PathEventStream, PathList, PathListIter, PathListStream, RemoteInfo,
-    TransportAddrInfo, TransportAddrUsage,
+    HolepunchRound, Path, PathEvent, PathEventStream, PathList, PathListIter, PathListStream,
+    RemoteInfo, TransportAddrInfo, TransportAddrUsage,
 };
 #[cfg(feature = "unstable-custom-transports")]
 pub use self::remote_state::{
@@ -195,6 +195,8 @@ struct Tasks {
     poll_cleanup_waker: Option<Waker>,
     /// The path selector used by all [`RemoteStateActor`]s spawned by this map.
     path_selector: Arc<dyn PathSelector>,
+    /// khor patch 8: handed to every [`RemoteStateActor`].
+    rounds: tokio::sync::broadcast::Sender<HolepunchRound>,
     /// The tracing span for this endpoint, to be used as parent span for `RemoteStateActor` tasks.
     span: Span,
 }
@@ -207,6 +209,7 @@ impl RemoteMap {
         address_lookup: address_lookup::AddressLookupServices,
         shutdown_token: CancellationToken,
         path_selector: Arc<dyn PathSelector>,
+        rounds: tokio::sync::broadcast::Sender<HolepunchRound>,
         span: Span,
     ) -> Self {
         Self {
@@ -220,6 +223,7 @@ impl RemoteMap {
                 tasks: Default::default(),
                 poll_cleanup_waker: None,
                 path_selector,
+                rounds,
                 span,
             },
         }
@@ -382,6 +386,7 @@ impl Tasks {
             self.metrics.clone(),
             self.address_lookup.clone(),
             self.path_selector.clone(),
+            self.rounds.clone(),
         )
         .start(
             initial_msgs,
@@ -448,6 +453,7 @@ mod tests {
             address_lookup::AddressLookupServices::default(),
             shutdown_token.clone(),
             Arc::new(BiasedRttPathSelector::default()),
+            tokio::sync::broadcast::channel(1).0,
             Span::none(),
         );
         let guards = (watchable, shutdown_token.clone().drop_guard());

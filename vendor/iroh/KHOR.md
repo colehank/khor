@@ -12,7 +12,18 @@
 
 ## 补丁
 
-七处。
+八处。
+
+### 8. `src/socket/remote_map/remote_state.rs`、`src/socket/remote_map.rs`、`src/socket.rs`、`src/endpoint.rs`：每一轮打洞（2026-10-09，NET-DIRECT 第一步）
+
+`Endpoint::holepunch_rounds()`：iroh 每开始一轮打洞（`do_holepunching`，连接加入、任一方候选变化、
+没有 10 ms 以内的直连时每 60 秒）就广播一个 `HolepunchRound`：对谁、本机给出的候选、对方给出的候选。
+上游只有 tracing 事件 `iroh::_events::qnt::init`。khor 这边 `journal::watch_ears` 订阅，写成连接记录的
+「打洞」一行（候选变了就写，不变时最多十分钟一行，带上这期间的轮数），`--report` 据此说「为什么不是直连」。
+打没打通看随后有没有直连路径打开（`Connection::path_events`，`roads::follow`）。改动约 30 行：
+`RemoteMap::new` 多一个参数（broadcast 发送端），`RemoteStateActor` 存一份。
+测试：`crates/node/src/journal.rs` 的 `rounds_are_written_on_change_and_then_sparingly`（只测节流）。
+上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 7. `src/endpoint.rs`：带来源的直接地址（2026-10-08，NET-STABLE 第二步）
 

@@ -83,6 +83,19 @@ const OPEN_PATH_RETRY_DELAY: Duration = Duration::from_millis(333);
 /// bound the oldest entry is dropped, being the one least likely to still be reachable.
 const MAX_PENDING_OPEN_PATHS: usize = 64;
 
+/// khor patch 8 (vendor/iroh/KHOR.md): one hole-punching round this
+/// endpoint started toward `remote`, with the candidates on both sides.
+/// Upstream says so only as the tracing event `iroh::_events::qnt::init`.
+#[derive(Debug, Clone)]
+pub struct HolepunchRound {
+    /// The remote endpoint.
+    pub remote: EndpointId,
+    /// This endpoint's candidates, as offered to the remote.
+    pub local: Vec<SocketAddr>,
+    /// The remote's candidates, as it offered them.
+    pub remote_candidates: Vec<SocketAddr>,
+}
+
 /// A stream of events from all paths for all connections.
 ///
 /// The connection is identified using [`ConnId`].  The event `Err` variant happens when the
@@ -181,6 +194,9 @@ struct State {
 
     /// The path selector used to pick the preferred path among the candidates.
     path_selector: Arc<dyn PathSelector>,
+
+    /// khor patch 8: every round started, told to `Endpoint::holepunch_rounds`.
+    rounds: tokio::sync::broadcast::Sender<HolepunchRound>,
 }
 
 impl RemoteStateActor {
@@ -192,6 +208,7 @@ impl RemoteStateActor {
         metrics: Arc<SocketMetrics>,
         address_lookup: AddressLookupServices,
         path_selector: Arc<dyn PathSelector>,
+        rounds: tokio::sync::broadcast::Sender<HolepunchRound>,
     ) -> Self {
         Self {
             connections: FxHashMap::default(),
@@ -212,6 +229,7 @@ impl RemoteStateActor {
                 pending_open_paths: VecDeque::new(),
                 address_lookup_stream: None,
                 path_selector,
+                rounds,
             },
         }
     }
@@ -972,7 +990,7 @@ impl State {
                 let remote_candidates = remote_candidates
                     .iter()
                     .map(|addr| SocketAddr::new(addr.ip().to_canonical(), addr.port()))
-                    .collect();
+                    .collect::<BTreeSet<SocketAddr>>();
                 event!(
                     target: "iroh::_events::qnt::init",
                     Level::DEBUG,
@@ -980,6 +998,12 @@ impl State {
                     ?local_candidates,
                     ?remote_candidates,
                 );
+                // khor patch 8: no subscriber is no error.
+                let _ = self.rounds.send(HolepunchRound {
+                    remote: self.endpoint_id,
+                    local: local_candidates.iter().copied().collect(),
+                    remote_candidates: remote_candidates.iter().copied().collect(),
+                });
                 self.last_holepunch = Some(HolepunchAttempt {
                     when: Instant::now(),
                     local_candidates,

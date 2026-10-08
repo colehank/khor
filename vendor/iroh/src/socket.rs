@@ -361,6 +361,8 @@ pub(crate) struct Socket {
     home_relay_watch: HomeRelayWatcher,
     /// khor patch 4: the relays' `EndpointGone`s (`Endpoint::relay_departures`).
     relay_departed: tokio::sync::broadcast::Sender<EndpointId>,
+    /// khor patch 8: the rounds of hole punching started (`Endpoint::holepunch_rounds`).
+    holepunch_rounds: tokio::sync::broadcast::Sender<remote_map::HolepunchRound>,
     /// Currently bound IP addresses of all sockets
     #[cfg(not(wasm_browser))]
     ip_bind_addrs: Vec<SocketAddr>,
@@ -509,6 +511,13 @@ impl Socket {
     /// khor patch 4: see `Endpoint::relay_departures`.
     pub(crate) fn relay_departures(&self) -> tokio::sync::broadcast::Receiver<EndpointId> {
         self.relay_departed.subscribe()
+    }
+
+    /// khor patch 8: see `Endpoint::holepunch_rounds`.
+    pub(crate) fn holepunch_rounds(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<remote_map::HolepunchRound> {
+        self.holepunch_rounds.subscribe()
     }
 
     /// Stores a new set of direct addresses.
@@ -978,6 +987,8 @@ impl EndpointInner {
 
         let direct_addrs = DiscoveredDirectAddrs::default();
 
+        // khor patch 8: kept here, handed out by `holepunch_rounds`.
+        let (holepunch_rounds, _) = tokio::sync::broadcast::channel(64);
         let remote_map = {
             RemoteMap::new(
                 metrics.socket.clone(),
@@ -985,6 +996,7 @@ impl EndpointInner {
                 address_lookup.clone(),
                 shutdown_token.child_token(),
                 path_selector,
+                holepunch_rounds.clone(),
                 span.clone(),
             )
         };
@@ -1008,6 +1020,7 @@ impl EndpointInner {
             local_addrs_watch: transports.local_addrs_watch(),
             home_relay_watch,
             relay_departed,
+            holepunch_rounds,
             #[cfg(not(wasm_browser))]
             ip_bind_addrs: transports.ip_bind_addrs(),
             tls_config: tls_config.clone(),

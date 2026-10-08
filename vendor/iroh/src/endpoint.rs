@@ -51,8 +51,8 @@ use self::hooks::EndpointHooksList;
 pub use super::socket::{
     BindError, DirectAddr, DirectAddrType,
     remote_map::{
-        Path, PathEvent, PathEventStream, PathList, PathListIter, PathListStream, RemoteInfo,
-        TransportAddrInfo, TransportAddrUsage,
+        HolepunchRound, Path, PathEvent, PathEventStream, PathList, PathListIter,
+        PathListStream, RemoteInfo, TransportAddrInfo, TransportAddrUsage,
     },
     transports::LocalTransportAddr,
 };
@@ -1423,6 +1423,16 @@ impl Endpoint {
     /// a relay are told; a peer reached directly says nothing here.
     pub fn relay_departures(&self) -> tokio::sync::broadcast::Receiver<EndpointId> {
         self.inner.relay_departures()
+    }
+
+    /// **Every round of hole punching this endpoint starts** (khor patch 8,
+    /// vendor/iroh/KHOR.md): toward whom, and the candidates on both sides.
+    /// A round runs when a connection is added, when either side's
+    /// candidates change, and every 60 s while no direct path of 10 ms or
+    /// less carries the connection. Whether it landed is a direct path
+    /// opening afterwards ([`Connection::path_events`]).
+    pub fn holepunch_rounds(&self) -> tokio::sync::broadcast::Receiver<HolepunchRound> {
+        self.inner.holepunch_rounds()
     }
 
     /// Returns a [`Watcher`] for any net report runs from this [`Endpoint`].
