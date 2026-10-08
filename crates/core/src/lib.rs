@@ -3062,6 +3062,16 @@ pub struct Doing {
     #[serde(default)]
     #[ts(type = "number")]
     pub bell_ms: u64,
+    /// **What the finished command last said** (the terminal row, the
+    /// owner 2026-10-08): the last non-empty line of that command's own
+    /// output — the bytes between its start and end marks, the ring's
+    /// `at..end_at`, read by the ledger as they pass
+    /// (`khor_node::commands`): escapes dropped, a line rewritten with
+    /// `\r` as its last rewrite, cut to 200 characters. `None` while it
+    /// runs, when it printed nothing, for a full-screen program and
+    /// through a tmux client. Tail field.
+    #[serde(default)]
+    pub last_line: Option<String>,
 }
 
 #[cfg(test)]

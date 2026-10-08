@@ -164,6 +164,19 @@ pub const MOST_NEWEST: usize = 4_000;
 /// is no file to name. Ties go to the path that sorts first, so the
 /// answer does not flicker between equal times.
 pub fn newest_file(dir: &Path) -> Option<(String, i64)> {
+    look_folder(dir).0
+}
+
+/// [`newest_file`], with the relative path of every file it looked at —
+/// what a later reading compares against to tell a file made since from
+/// one rewritten in place (UX-51, `wsfacts`).
+pub fn look_folder(dir: &Path) -> (Option<(String, i64)>, std::collections::HashSet<String>) {
+    let mut names = std::collections::HashSet::new();
+    let best = newest_into(dir, &mut names);
+    (best, names)
+}
+
+fn newest_into(dir: &Path, names: &mut std::collections::HashSet<String>) -> Option<(String, i64)> {
     fn mtime(m: &std::fs::Metadata) -> i64 {
         m.modified()
             .ok()
@@ -174,6 +187,7 @@ pub fn newest_file(dir: &Path) -> Option<(String, i64)> {
     let mut best: Option<(String, i64)> = None;
     let mut seen = 0usize;
     let mut take = |path: String, at: i64| {
+        names.insert(path.clone());
         let better = match &best {
             None => true,
             Some((p, t)) => at > *t || (at == *t && path < *p),

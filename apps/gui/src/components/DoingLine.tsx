@@ -10,14 +10,53 @@ import type { RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { askNewSession, askOpenDir } from "@/lib/composer-handoff";
 
+// **Once it has finished, what it said** (the terminal row, the
+// owner 2026-10-08: 「a finished command still showing its command line
+// reads as still running」): the last non-empty line of its own output,
+// in the terminal's type; with nothing printed, the command and how it
+// ended in words (`row-ran-ok` / `row-ran-failed`, no exit code). A
+// command stopped by the person (130, ^C) or by a closed pipe (141) did
+// not fail and did not succeed: the command alone, as before. Running,
+// full-screen and a ledger with no end: the command, as before. No
+// failure ink here — the row's state word says it (State::Failed).
 export function DoingLine({ doing }: { doing: Doing }) {
   if (!doing.command) return null;
+  const ended = !doing.running && doing.ended_ms !== null && !doing.full_screen;
+  const said = ended ? doing.last_line : null;
+  const how = ended && !said && doing.exit !== null && !QUIET_EXITS.includes(doing.exit) ? (doing.exit === 0 ? "ok" : "failed") : null;
   return (
-    <span data-doing={doing.running ? "running" : "ran"} className="block min-w-0">
-      <span data-doing-command className="block min-w-0 truncate font-term">
-        {doing.command}
-      </span>
+    <span data-doing={doing.running ? "running" : "ran"} data-doing-shows={said ? "output" : how ? `ran-${how}` : "command"} className="block min-w-0">
+      {said ? (
+        <span data-doing-last className="block min-w-0 truncate font-term">
+          {said}
+        </span>
+      ) : how ? (
+        <RanSentence command={doing.command} failed={how === "failed"} />
+      ) : (
+        <span data-doing-command className="block min-w-0 truncate font-term">
+          {doing.command}
+        </span>
+      )}
       {doing.running && doing.progress !== null && <ProgressLine doing={doing} />}
+    </span>
+  );
+}
+
+/** Exit codes that are not a failure: ^C (130) and a closed pipe (141). */
+export const QUIET_EXITS = [130, 141];
+
+/** "<command> succeeded / failed": the catalog's sentence around the
+    command, the command in the terminal's type and cut first. */
+function RanSentence({ command, failed }: { command: string; failed: boolean }) {
+  const slot = "\u0001";
+  const [before, after = ""] = (failed ? gui.row_ran_failed : gui.row_ran_ok)(slot).split(slot);
+  return (
+    <span data-doing-ran={failed ? "failed" : "ok"} className="flex min-w-0 whitespace-pre">
+      {before}
+      <span data-doing-command className="min-w-0 truncate font-term">
+        {command}
+      </span>
+      <span className="flex-none">{after}</span>
     </span>
   );
 }

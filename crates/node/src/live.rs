@@ -2087,6 +2087,20 @@ impl LiveKind {
                 }
             }
         }
+        // **A shell whose last command failed reads 失败** (the terminal
+        // row, the owner 2026-10-08), alive: `dead` stays false, so
+        // nothing offers a restart. Until its next command starts or the
+        // row is looked at past the command's end ([`failed_command`]).
+        for r in out.iter_mut() {
+            if let Some(at) = failed_command(r, watermark(&r.id.0)) {
+                r.state = StateStamp {
+                    state: State::Failed,
+                    at: Millis(at),
+                };
+                r.unread = 0;
+                r.dead = false;
+            }
+        }
         out.retain(|r| !folded.contains(&r.id));
         Seated {
             rows: out,
@@ -2542,6 +2556,27 @@ fn face(dir: &Path, meta: &Meta, state: &LiveState) -> (State, i64, bool, bool) 
         Backing::Running => (state.word, state.at_ms, false, false),
         Backing::Unpronounceable => (state.word, state.at_ms, false, true),
     }
+}
+
+/// Exit codes that are not a failure: the person's ^C (130) and a
+/// closed pipe (141, `cmd | head`).
+pub const QUIET_EXITS: [i32; 2] = [130, 141];
+
+/// **When a shell row's last command failed, if it still says so**: a
+/// terminal row whose shell sits at its prompt (空闲), whose last command
+/// ended with a code that is a failure (not 0, not [`QUIET_EXITS`]), and
+/// which nobody has looked at since that end (`seen`, the row's
+/// watermark). The answer is the end, the stamp the row then wears — so
+/// looking at the row covers it and the word goes back to 空闲. A command
+/// that starts is running, and the next end decides again.
+fn failed_command(r: &Session, seen: i64) -> Option<u64> {
+    if r.kind.0 != khor_core::kind::SHELL || r.state.state != State::Idle {
+        return None;
+    }
+    let d = r.doing.as_ref()?;
+    let code = d.exit?;
+    let end = d.ended_ms?;
+    (!d.running && code != 0 && !QUIET_EXITS.contains(&code) && end as i64 > seen).then_some(end)
 }
 
 /// 完成 clears to 空闲 once the seen watermark covers it, and it is the
@@ -4156,6 +4191,50 @@ mod tests {
         saved(khor_core::Doing { command: Some("make".into()), exit: Some(0), cwd: Some("/w/proj".into()), ..Default::default() });
         let r = row();
         assert_eq!(r.doing.and_then(|d| d.command).as_deref(), Some("make"));
+        drop(host);
+    }
+
+    /// **A shell whose last command failed reads 失败, alive** (the
+    /// terminal row, the owner 2026-10-08): from its prompt, after a
+    /// non-zero end nobody has looked at; not after ^C (130) or a closed
+    /// pipe (141), not once the row is looked at past the end, not while
+    /// the next command runs; never `dead`.
+    #[test]
+    fn a_shell_whose_last_command_failed_reads_failed_until_looked_at() {
+        let root = tmp("cmd-failed");
+        let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32]));
+        let id = sid("shell/cmdfailed");
+        k.register(&id, "shell", "shell", None, None).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        let host = FakeHost::up();
+        host.serve(&dir, host.pid());
+        k.report(&id, State::Idle, Source::Reported).unwrap();
+        let ended = |exit: i32, running: bool| {
+            let doing = khor_core::Doing {
+                command: Some("make test".into()),
+                running,
+                started_ms: 5_000,
+                ended_ms: (!running).then_some(9_000),
+                exit: (!running).then_some(exit),
+                ..Default::default()
+            };
+            crate::commands::write_saved(&dir, &crate::commands::Saved { doing, ..Default::default() })
+        };
+        let row = |seen: i64| {
+            let r = k.rows(|_| seen).into_iter().find(|r| r.id == id).expect("the row");
+            (r.state.state, r.state.at.0, r.dead)
+        };
+        ended(2, false);
+        assert_eq!(row(0), (State::Failed, 9_000, false), "failed, alive, stamped at its end");
+        assert_eq!(row(9_000).0, State::Idle, "looked at past its end");
+        ended(130, false);
+        assert_eq!(row(0).0, State::Idle, "^C is not a failure");
+        ended(141, false);
+        assert_eq!(row(0).0, State::Idle, "a closed pipe is not a failure");
+        ended(0, false);
+        assert_eq!(row(0).0, State::Idle);
+        ended(0, true);
+        assert_eq!(row(0).0, State::Idle, "the next command running: the failure is over");
         drop(host);
     }
 

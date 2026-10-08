@@ -56,6 +56,7 @@ fn ran(n: u64, text: &str, cwd: &str, exit: i32) -> Command {
         at: 0,
         end_at: None,
         pane: None,
+        last_line: None,
     }
 }
 

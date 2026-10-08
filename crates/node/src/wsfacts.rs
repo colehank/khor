@@ -56,6 +56,10 @@ enum Said {
 
 struct Entry {
     fact: WorkspaceFact,
+    /// Every file the last reading of a plain folder looked at (UX-51):
+    /// a newest file not among them was made since. `None` before the
+    /// first reading and for a checkout.
+    names: Option<HashSet<String>>,
     last: Option<Instant>,
     /// Kept for as long as the workspace is: dropping it stops the watch.
     /// Only Linux reads it again (a new directory is one more watch).
@@ -117,7 +121,21 @@ fn now_ms() -> i64 {
 /// or the facts file a resident before it wrote: an unchanged git
 /// segment keeps its date; a changed one is dated now; one never seen is
 /// dated by git's own files ([`crate::git::last_moved`]).
-fn compute(path: &str, changed_ms: i64, was: Option<&WorkspaceFact>) -> WorkspaceFact {
+///
+/// `seen` is every file this resident's last reading of a plain folder
+/// looked at; the answer carries this reading's, for the next. **A
+/// newest file is made (`NewestFile::added`) only when it was not among
+/// them and its birth time is within a minute of its change** (UX-51):
+/// an editor's atomic save (a new file renamed over the old) is a new
+/// birth under a name that was there, and reads as an edit. A first
+/// reading has nothing to compare and says edited; a newest file that
+/// has not moved keeps what was said of it.
+fn compute(
+    path: &str,
+    changed_ms: i64,
+    was: Option<&WorkspaceFact>,
+    seen: Option<&HashSet<String>>,
+) -> (WorkspaceFact, Option<HashSet<String>>) {
     let dir = Path::new(path);
     let checkout = crate::git::is_checkout(dir);
     let read = checkout.then(|| crate::git::segment(dir).ok()).flatten();
@@ -146,24 +164,32 @@ fn compute(path: &str, changed_ms: i64, was: Option<&WorkspaceFact>) -> Workspac
         };
         khor_core::GitSegment { since_ms, ..fresh }
     });
-    WorkspaceFact {
+    // A plain folder's row says its newest file (UX-48); a checkout's
+    // says HEAD's subject instead.
+    let (found, names) = if checkout {
+        (None, None)
+    } else {
+        let (found, names) = crate::workspace::look_folder(dir);
+        (found, Some(names))
+    };
+    let newest = found.map(|(file, at_ms)| {
+        let before = was.and_then(|w| w.newest.as_ref());
+        let added = match before {
+            Some(b) if b.path == file && b.at_ms == at_ms => b.added,
+            _ => seen.is_some_and(|s| !s.contains(&file)) && crate::workspace::was_added(&dir.join(&file)),
+        };
+        khor_core::NewestFile { path: file, at_ms, added }
+    });
+    let fact = WorkspaceFact {
         path: path.to_owned(),
         branch: git.as_ref().and_then(|g| g.branch.clone()),
         git,
         changed,
         changed_capped,
         changed_ms,
-        // A plain folder's row says its newest file (UX-48); a checkout's
-        // says HEAD's subject instead.
-        newest: (!checkout)
-            .then(|| crate::workspace::newest_file(dir))
-            .flatten()
-            .map(|(path, at_ms)| khor_core::NewestFile {
-                added: crate::workspace::was_added(&dir.join(&path)),
-                path,
-                at_ms,
-            }),
-    }
+        newest,
+    };
+    (fact, names)
 }
 
 /// Whether `path` is inside one of the skipped directories under `ws`.
@@ -241,13 +267,14 @@ impl WsFacts {
         #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
         let (watcher, _dirs) = self.watch(&path);
         let was = read(&self.root, &self.me).and_then(|k| k.facts.into_iter().find(|f| f.path == path));
-        let fact = compute(&path, dated, was.as_ref());
+        let (fact, names) = compute(&path, dated, was.as_ref(), None);
         {
             let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
             entries.insert(
                 path,
                 Entry {
                     fact,
+                    names,
                     last: Some(Instant::now()),
                     #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
                     watcher,
@@ -350,10 +377,10 @@ impl WsFacts {
     /// Reads one workspace again, unless it was read less than [`EVERY`]
     /// ago — then once that much has passed.
     fn recompute(self: Arc<Self>, ws: String) {
-        let (since, dated, was) = {
+        let (since, dated, was, seen) = {
             let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
             let Some(e) = entries.get(&ws) else { return };
-            (e.last.map(|l| l.elapsed()), e.fact.changed_ms, e.fact.clone())
+            (e.last.map(|l| l.elapsed()), e.fact.changed_ms, e.fact.clone(), e.names.clone())
         };
         if let Some(since) = since
             && since < EVERY
@@ -369,7 +396,7 @@ impl WsFacts {
             e.last = Some(Instant::now());
         }
         tokio::task::spawn_blocking(move || {
-            let fresh = compute(&ws, dated, Some(&was));
+            let (fresh, names) = compute(&ws, dated, Some(&was), seen.as_ref());
             let moved = {
                 let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
                 match entries.get_mut(&ws) {
@@ -381,6 +408,7 @@ impl WsFacts {
                         };
                         let moved = e.fact != fresh;
                         e.fact = fresh;
+                        e.names = names;
                         moved
                     }
                     None => false,
@@ -416,12 +444,49 @@ mod tests {
         let plain = root.join("plain");
         std::fs::create_dir_all(plain.join("sub")).unwrap();
         std::fs::write(plain.join("sub").join("n.txt"), "x").unwrap();
-        let f = compute(&plain.display().to_string(), 0, None);
+        let (f, _) = compute(&plain.display().to_string(), 0, None, None);
         assert_eq!(f.git, None);
         assert_eq!(f.newest.map(|n| n.path), Some("sub/n.txt".to_owned()));
         let repo = root.join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
         std::fs::write(repo.join("x.txt"), "x").unwrap();
-        assert_eq!(compute(&repo.display().to_string(), 0, None).newest, None, "a checkout says HEAD's subject instead");
+        assert_eq!(compute(&repo.display().to_string(), 0, None, None).0.newest, None, "a checkout says HEAD's subject instead");
+    }
+
+    /// **新建了 only for a file that was not there at the last reading**
+    /// (UX-51, the lead 2026-10-08): a first reading says edited; a file
+    /// made since says made (where a birth time is kept); an atomic save
+    /// — a new file renamed over one that was there, a fresh birth under
+    /// an old name — says edited; a reading where the newest file has not
+    /// moved keeps what was said of it.
+    #[test]
+    fn a_newest_file_is_made_only_when_it_was_not_there_before() {
+        let root = crate::testdir::TempTree::fresh("wsfacts-added");
+        let plain = root.join("plain");
+        std::fs::create_dir_all(&plain).unwrap();
+        let at = |secs: u64| std::time::SystemTime::now() - std::time::Duration::from_secs(secs);
+        std::fs::write(plain.join("a.txt"), "a").unwrap();
+        std::fs::File::open(plain.join("a.txt")).unwrap().set_modified(at(3600)).unwrap();
+        std::fs::write(plain.join("old.txt"), "o").unwrap();
+        let path = plain.display().to_string();
+        let added = |f: &WorkspaceFact| f.newest.as_ref().map(|n| (n.path.clone(), n.added));
+        let (first, seen) = compute(&path, 0, None, None);
+        assert_eq!(added(&first), Some(("old.txt".into(), false)), "a first reading has nothing to compare: edited");
+        let births = std::fs::metadata(plain.join("old.txt")).unwrap().created().is_ok();
+
+        std::fs::write(plain.join("b.txt"), "b").unwrap();
+        let (second, seen) = compute(&path, 0, Some(&first), seen.as_ref());
+        assert_eq!(added(&second), Some(("b.txt".into(), births)), "made since the last reading");
+
+        let (again, seen) = compute(&path, 0, Some(&second), seen.as_ref());
+        assert_eq!(added(&again), added(&second), "nothing moved: what was said stands");
+
+        // An editor's atomic save of a.txt: a new file renamed over it.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(plain.join(".a.txt.tmp"), "a2").unwrap();
+        std::fs::rename(plain.join(".a.txt.tmp"), plain.join("a.txt")).unwrap();
+        std::fs::File::open(plain.join("a.txt")).unwrap().set_modified(at(0) + std::time::Duration::from_secs(5)).unwrap();
+        let (saved, _) = compute(&path, 0, Some(&again), seen.as_ref());
+        assert_eq!(added(&saved), Some(("a.txt".into(), false)), "a fresh birth under a name that was there: edited");
     }
 }
