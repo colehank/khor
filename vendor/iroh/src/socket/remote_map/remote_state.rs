@@ -409,7 +409,20 @@ impl RemoteStateActor {
                 self.handle_msg_add_connection(handle, tx);
             }
             RemoteStateMessage::ResolveRemote(addrs, tx) => {
+                // khor patch 12: a custom (carried) address handed in while
+                // connections are live is opened on them now. Upstream
+                // only records it, and a connection that settled on the
+                // relay never learnt of a road khor carried afterwards.
+                // `open_path_ensure` leaves a path that is already open.
+                let custom: Vec<transports::FourTuple> =
+                    to_transports_addr(self.state.endpoint_id, addrs.iter().cloned())
+                        .filter(|a| matches!(a, transports::Addr::Custom(_)))
+                        .map(transports::FourTuple::from_remote)
+                        .collect();
                 self.state.handle_msg_resolve_remote(addrs, tx);
+                for open_addr in &custom {
+                    self.open_path_on_all_conns(open_addr);
+                }
             }
             RemoteStateMessage::RemoteInfo(tx) => {
                 let addrs = self.state.paths.to_remote_addrs();

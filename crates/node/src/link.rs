@@ -1672,6 +1672,10 @@ impl Node {
                         if !n.resting.load(std::sync::atomic::Ordering::Relaxed) {
                             let book = n.clone();
                             let _ = tokio::task::spawn_blocking(move || book.note_roads()).await;
+                            // Each relay wire held against the hops by their
+                            // measured legs (NET-DIRECT step 4); every 30 s,
+                            // not every beat.
+                            n.compare_roads(&e).await;
                         }
                         if !round { return }
                         // Every machine at once, each on its own wire and

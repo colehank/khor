@@ -1435,6 +1435,15 @@ impl Endpoint {
         self.inner.holepunch_rounds()
     }
 
+    /// **Hands iroh more roads to a remote without dialling it** (khor
+    /// patch 12, vendor/iroh/KHOR.md): the addresses are recorded as a
+    /// dial's would be, and a custom (carried) one is opened at once on
+    /// every live client connection to that remote, so the path selector
+    /// can move a connection onto a road that came up after it settled.
+    pub async fn offer_addrs(&self, addr: EndpointAddr) {
+        let _ = self.inner.resolve_remote(addr).await;
+    }
+
     /// Returns a [`Watcher`] for any net report runs from this [`Endpoint`].
     ///
     /// <div class="warning">

@@ -64,6 +64,39 @@ const TRIES: usize = 2;
 /// How often X looks whether direct has taken over from its hop.
 const LOOK_EVERY: Duration = Duration::from_secs(5);
 
+/// How often the resident holds each relay wire against the hops
+/// ([`Node::compare_roads`]).
+const COMPARE_EVERY: std::time::Duration = Duration::from_secs(30);
+
+/// How long a middle whose hop lost to the relay is not tried again for
+/// that machine: the legs' written round trips said it would win and the
+/// measurement end to end said not, so asking again at once would flap.
+const LOST_FOR: Duration = Duration::from_secs(10 * 60);
+
+static LAST_COMPARE: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// Per (machine, middle): when a hop through it lost to the relay.
+static LOST: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<(String, String), std::time::Instant>>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn lost(to: &str, via: &str) {
+    LOST.lock().unwrap_or_else(|p| p.into_inner()).insert((to.to_owned(), via.to_owned()), std::time::Instant::now());
+}
+
+fn was_lost(to: &str, via: &str) -> bool {
+    LOST.lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&(to.to_owned(), via.to_owned()))
+        .is_some_and(|t| t.elapsed() < LOST_FOR)
+}
+
+/// Whether a hop of `hop_ms` (its legs added) is worth opening against a
+/// relay measured at `relay_ms`: faster by [`khor_net::carry::SWITCH_MARGIN`].
+pub(crate) fn beats(hop_ms: u32, relay_ms: u32) -> bool {
+    let margin = u32::try_from(khor_net::carry::SWITCH_MARGIN.as_millis()).unwrap_or(10);
+    hop_ms.saturating_add(margin) <= relay_ms
+}
+
 /// A tunnel stream's first words, when they ask for a hop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Ask {
@@ -110,6 +143,19 @@ pub(crate) fn middles(
     mine: impl Fn(&str) -> Option<Road>,
     theirs: impl Fn(&str) -> Option<Road>,
 ) -> Vec<String> {
+    middles_with_cost(me, to, rows, mine, theirs).into_iter().map(|(b, _)| b).collect()
+}
+
+/// [`middles`] with each one's cost: its two legs' round trips added, in
+/// ms (`u16::MAX` for a leg with none written) — the measure a hop is
+/// held against the relay by ([`Node::compare_roads`]).
+pub(crate) fn middles_with_cost(
+    me: &str,
+    to: &str,
+    rows: &[(String, bool, bool)],
+    mine: impl Fn(&str) -> Option<Road>,
+    theirs: impl Fn(&str) -> Option<Road>,
+) -> Vec<(String, u32)> {
     let mut found: Vec<(bool, u32, String)> = rows
         .iter()
         .filter(|(id, sat, paused)| id != me && id != to && !sat && !paused)
@@ -126,7 +172,7 @@ pub(crate) fn middles(
         })
         .collect();
     found.sort();
-    found.into_iter().map(|(_, _, b)| b).collect()
+    found.into_iter().map(|(_, ms, b)| (b, ms)).collect()
 }
 
 impl Node {
@@ -194,7 +240,17 @@ impl Node {
             |b| self.road_for_hop(b, &mine),
             |b| all.iter().find(|d| d.id == b).and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id)),
         );
-        let Ok(peer) = y.id.parse::<EndpointId>() else { return };
+        self.open_hop(ep, y, &all, &picked).await;
+    }
+
+    /// **Opens a hop to `y` through the first of `picked` that answers**
+    /// (at most [`TRIES`], within [`HOP_WITHIN`]), hands iroh the carried
+    /// address (vendor/iroh patch 12: opened at once on a live connection)
+    /// and watches it: the hop is let go once direct, or the relay, has
+    /// carried the connection for two looks — the selector
+    /// (`carry::RoadOrder`) found it no faster. `true` when a hop is up.
+    async fn open_hop(&self, ep: &iroh::Endpoint, y: &crate::DeviceInfo, all: &[crate::DeviceInfo], picked: &[String]) -> bool {
+        let Ok(peer) = y.id.parse::<EndpointId>() else { return false };
         let tries = async {
             for b in picked.iter().take(TRIES) {
                 let Some(middle) = all.iter().find(|d| &d.id == b) else { continue };
@@ -218,7 +274,7 @@ impl Node {
             if tried > 0 {
                 self.wires.note(Some(&y.id), crate::journal::What::Hop { via: None, tried });
             }
-            return;
+            return false;
         };
         self.wires.note(
             Some(&y.id),
@@ -228,6 +284,9 @@ impl Node {
             },
         );
         let attached = self.carry.attach(peer, Carrier::Hop { via }, recv, send);
+        if let Some(addr) = self.carried_addr(&y.id) {
+            ep.offer_addrs(iroh::EndpointAddr::from_parts(peer, [addr])).await;
+        }
         let (links, wires, id) = (self.carry.clone(), self.wires.clone(), y.id.clone());
         tokio::spawn(async move {
             let ended = attached.ended();
@@ -238,14 +297,80 @@ impl Node {
                     () = &mut ended => return,
                     () = tokio::time::sleep(LOOK_EVERY) => {}
                 }
-                // Direct took over and held two looks: the middle is let
-                // go, so it carries nothing it need not.
-                held = if wires.link(&id).road == Some(khor_net::path::PathKind::Direct) { held + 1 } else { 0 };
+                // Direct took over, or the relay kept it (the hop is no
+                // faster), for two looks: the middle is let go, so it
+                // carries nothing it need not.
+                let road = wires.link(&id).road;
+                held = if matches!(road, Some(khor_net::path::PathKind::Direct | khor_net::path::PathKind::Relay)) {
+                    held + 1
+                } else {
+                    0
+                };
                 if held >= 2 {
+                    if road == Some(khor_net::path::PathKind::Relay) {
+                        lost(&id, &via.to_string());
+                    }
                     links.detach(&peer, Carrier::Hop { via });
                 }
             }
         });
+        true
+    }
+
+    /// **The road choice by measured legs** (NET-DIRECT step 4), every
+    /// [`COMPARE_EVERY`] from the resident's beat: for each machine whose
+    /// live wire is on the relay, the best middle's two legs added
+    /// ([`middles_with_cost`]: this machine's live round trip to the
+    /// middle, the middle's written one onward) against the relay's
+    /// measured round trip. A hop at least [`khor_net::carry::SWITCH_MARGIN`]
+    /// faster is opened; iroh then measures it end to end and the selector
+    /// keeps whichever is faster, and a hop that loses is let go
+    /// ([`Node::open_hop`]) and not tried through that middle again for
+    /// [`LOST_FOR`]. Direct needs nothing here: iroh's punching runs under
+    /// every road and takes over when it opens.
+    pub(crate) async fn compare_roads(&self, ep: &iroh::Endpoint) {
+        {
+            let mut last = LAST_COMPARE.lock().unwrap_or_else(|p| p.into_inner());
+            if last.is_some_and(|t| t.elapsed() < COMPARE_EVERY) {
+                return;
+            }
+            *last = Some(std::time::Instant::now());
+        }
+        if !self.hop_on() || self.carrying().is_none() {
+            return;
+        }
+        let Ok(all) = self.devices() else { return };
+        let me = self.device_str().to_owned();
+        let mine = all.iter().find(|d| d.id == me).map(|d| self.roads_of(d)).unwrap_or_default();
+        let rows: Vec<(String, bool, bool)> = all
+            .iter()
+            .map(|d| (d.id.clone(), d.sponsor.is_some(), crate::pause::peer_on(self.root(), &d.id)))
+            .collect();
+        for y in all.iter().filter(|d| d.id != me && d.sponsor.is_none()) {
+            let Ok(peer) = y.id.parse::<EndpointId>() else { continue };
+            if self.carry.has(&peer) || crate::pause::peer_on(self.root(), &y.id) {
+                continue;
+            }
+            let r = self.wires.link(&y.id);
+            let (Some(khor_net::path::PathKind::Relay), Some(rtt)) = (r.road, r.rtt) else { continue };
+            let relay_ms = u32::try_from(rtt.as_millis()).unwrap_or(u32::MAX);
+            let picked: Vec<String> = middles_with_cost(
+                &me,
+                &y.id,
+                &rows,
+                |b| self.road_for_hop(b, &mine),
+                |b| all.iter().find(|d| d.id == b).and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id)),
+            )
+            .into_iter()
+            .filter(|(b, ms)| {
+                beats(*ms, relay_ms) && !was_lost(&y.id, b)
+            })
+            .map(|(b, _)| b)
+            .collect();
+            if !picked.is_empty() {
+                self.open_hop(ep, y, &all, &picked).await;
+            }
+        }
     }
 
     /// **One hop ask on a tunnel stream** (B's or Y's half), after the
@@ -309,6 +434,9 @@ impl Node {
                     return;
                 }
                 let attached = self.carry.attach(x, Carrier::Hop { via: from_id }, recv, send);
+                if let Some(addr) = self.carried_addr(&asker) {
+                    ep.offer_addrs(iroh::EndpointAddr::from_parts(x, [addr])).await;
+                }
                 self.wires.forgive(&asker);
                 attached.ended().await;
             }
@@ -357,6 +485,31 @@ mod tests {
     /// The roadbook rules: both legs known, neither a hop; direct first
     /// leg first; the relay as a first leg only to a middle that carries
     /// the far end over ssh.
+    /// NET-DIRECT step 4, MacLab's night of 10-09: the iPhone on the relay
+    /// at 58 ms, turing reached directly at 3 ms and writing a direct road
+    /// to the iPhone at 26 ms — the hop costs 29 ms and is opened; at a
+    /// relay of 35 ms it would save under 10 ms and is not.
+    #[test]
+    fn a_hop_is_worth_opening_when_its_legs_beat_the_relay_by_ten_ms() {
+        let rows: Vec<(String, bool, bool)> =
+            ["maclab", "iphone", "turing", "hinton"].iter().map(|s| (s.to_string(), false, false)).collect();
+        let mine = |b: &str| match b {
+            "turing" => Some(Road::own(b, RoadKind::Direct, None, Some(3))),
+            "hinton" => Some(Road::own(b, RoadKind::Direct, None, Some(2))),
+            _ => None,
+        };
+        let theirs = |b: &str| match b {
+            "turing" => Some(Road::own("iphone", RoadKind::Direct, None, Some(26))),
+            "hinton" => Some(Road::own("iphone", RoadKind::Relay, Some("101.200.80.77:3340".into()), Some(37))),
+            _ => None,
+        };
+        let found = middles_with_cost("maclab", "iphone", &rows, mine, theirs);
+        assert_eq!(found, vec![("turing".to_owned(), 29)], "hinton reaches the iPhone only by relay: no middle");
+        assert!(beats(29, 58));
+        assert!(!beats(29, 35), "6 ms is not worth a middle");
+        assert!(beats(29, 39));
+    }
+
     #[test]
     fn a_middle_reaches_both_ends_and_is_one_hop() {
         let rows: Vec<(String, bool, bool)> = ["x", "y", "b", "c", "d", "sat", "off"]

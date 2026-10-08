@@ -68,16 +68,15 @@ async fn a_carried_link_is_a_road_both_ways() {
     b.close().await;
 }
 
-/// Round ROAD-3 (T6): **the relay answers first, and the carried road
-/// still takes the connection.** iroh 1.2 opens extra paths after the
-/// handshake only for relays (when path 0 is not one); a carried address
-/// on the same dial was never opened once the relay won the race, so the
-/// owner's order (carried before the relay) could not hold. Patched in
-/// `vendor/iroh` (KHOR.md, patch 6). Then: past the opening race the
-/// connection stays carried, and when the carried link breaks the relay
-/// takes over without the connection closing.
+/// Round ROAD-3 (T6): **the relay answers first, and the carried road is
+/// opened all the same.** iroh 1.2 opens extra paths after the handshake
+/// only for relays (when path 0 is not one); a carried address on the same
+/// dial was never opened once the relay won the race. Patched in
+/// `vendor/iroh` (KHOR.md, patch 6). Then (NET-DIRECT step 4) the faster
+/// of the two carries it: here the relay, as the carried link is slow.
+/// The other way round is `carry::tests` (`choose`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn the_carried_road_is_opened_and_kept_when_the_relay_answers_first() {
+async fn the_carried_road_is_opened_when_the_relay_answers_first_and_the_faster_carries() {
     use iroh_relay::server::{RelayConfig, Server, ServerConfig};
     for k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"] {
         unsafe { std::env::remove_var(k) };
@@ -151,9 +150,9 @@ async fn the_carried_road_is_opened_and_kept_when_the_relay_answers_first() {
         first.iter().any(|p| p.selected && p.relay),
         "the relay answered first (the race this is about): {first:?}"
     );
-    let settled = tokio::time::timeout(Duration::from_secs(5), async {
+    let opened = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if khor_net::path::classify(&conn) == khor_net::path::PathKind::Carried {
+            if khor_net::path::path_facts(&conn).iter().any(|p| p.carried) {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -161,23 +160,21 @@ async fn the_carried_road_is_opened_and_kept_when_the_relay_answers_first() {
     })
     .await;
     assert!(
-        settled.is_ok(),
-        "the carried road is opened and takes over in the opening race: {:?}",
+        opened.is_ok(),
+        "the carried road is opened though the relay answered first: {:?}",
         khor_net::path::path_facts(&conn)
     );
-    // Held past the opening race, though the relay is faster.
-    tokio::time::sleep(khor_net::carry::OPENING + Duration::from_secs(1)).await;
+    // Both measured: the relay (loopback) beats the carried road (240 ms a
+    // round trip) by far more than the margin, so the relay carries it.
+    tokio::time::sleep(Duration::from_secs(3)).await;
     assert_eq!(echo(conn.clone()).await.as_deref(), Some(&b"ping"[..]));
-    assert_eq!(khor_net::path::classify(&conn), khor_net::path::PathKind::Carried, "never down to the relay for being faster");
-
-    // The carried link breaks: the relay takes over, same connection.
+    assert_eq!(
+        khor_net::path::classify(&conn),
+        khor_net::path::PathKind::Relay,
+        "the faster road carries it: {:?}",
+        khor_net::path::path_facts(&conn)
+    );
     drop((up_a, up_b));
-    la.attach(b_id, Carrier::Ssh, tokio::io::empty(), tokio::io::sink());
-    lb.attach(a_id, Carrier::Ssh, tokio::io::empty(), tokio::io::sink());
-    let back = tokio::time::timeout(Duration::from_secs(30), echo(conn.clone())).await;
-    assert_eq!(back.ok().flatten().as_deref(), Some(&b"ping"[..]), "the relay carries it on");
-    assert!(conn.close_reason().is_none());
-    assert_eq!(khor_net::path::classify(&conn), khor_net::path::PathKind::Relay);
     conn.close(0u32.into(), b"done");
     a.close().await;
     b.close().await;

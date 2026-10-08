@@ -12,7 +12,15 @@
 
 ## 补丁
 
-十一处。
+十二处。
+
+### 12. `src/socket/remote_map/remote_state.rs`、`src/endpoint.rs`：连接活着时交来的转连地址当场打开（2026-10-09，NET-DIRECT 第四步）
+
+上游收到新地址（`ResolveRemote`，`connect` 时发）只记下，不在已有连接上开路；补丁 6 只在连接加入时补开自定义
+地址。于是一条已经落在中继上的连接，永远用不上之后才搭起来的转发（经第三台机器）。补丁：`ResolveRemote` 里的
+自定义地址在每条活着的客户端连接上 `open_path_ensure`（已开的不重复开）；`Endpoint::offer_addrs(EndpointAddr)`
+不拨号、只交地址。khor 这边 `hop::compare_roads` 搭起转发后调用它，由 `RoadOrder` 按往返决定走不走。
+改动约 25 行。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 11. `src/net_report.rs`：增量报告量不到家中继时不换家（2026-10-09，NET-DIRECT）
 
@@ -71,9 +79,9 @@ QUIC 的 observed address 报告（QAD 在中继上用的就是它）iroh 默认
 「先转发、后中继」（`carry::RoadOrder` 的开局三秒）就落空。补丁：不论路径 0 是什么，已知的
 自定义地址都补开；中继仍只在路径 0 不是中继时补。改动约 10 行。
 测试：`crates/net/tests/carry.rs` 的
-`the_carried_road_is_opened_and_kept_when_the_relay_answers_first`（回环中继加一条每字节慢
-120 ms 的链路：中继先答，补丁前路径一直是中继，补丁后开局内换到链路上、过了开局不回中继、
-链路断了中继接着用同一条连接）。上游没有对应 PR，升级 iroh 时要重新打。
+`the_carried_road_is_opened_when_the_relay_answers_first_and_the_faster_carries`（回环中继加一条每字节慢
+120 ms 的链路：中继先答，补丁前这条链路从没被打开，补丁后它被打开；2026-10-09 起选路按往返挑，
+这条慢链路打开后由更快的中继接着走）。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 5. `src/net_report.rs`：中继的接班者（2026-10-04，NET-7 轮）
 
