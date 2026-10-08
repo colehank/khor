@@ -98,7 +98,7 @@ function Hit({ text, words }: { text: string; words: string[] }) {
     const piece = text.slice(i, j);
     parts.push(
       on[i] ? (
-        <mark key={i} data-import-hit className="bg-transparent font-semibold text-foreground">
+        <mark key={i} data-import-hit className="bg-transparent font-title text-foreground">
           {piece}
         </mark>
       ) : (
@@ -332,8 +332,9 @@ export function ImportDialog({
               aria-label={gui.devices_tab}
               className="-mx-pane flex flex-none gap-in overflow-x-auto px-pane py-xxs"
             >
+              {/* 「全部」: the catalog's one word for it (`sessions-all`). */}
               <Chip on={picked.size === 0} onClick={() => press(null)} mark={{ "data-import-chip": "" }}>
-                <span className="px-xxs whitespace-nowrap">{gui.import_all}</span>
+                <span className="px-xxs whitespace-nowrap">{gui.sessions_all}</span>
               </Chip>
               {machines.map((m) => (
                 <Chip

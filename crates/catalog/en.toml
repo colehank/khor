@@ -1902,7 +1902,6 @@ new-session-byhand = "Install it yourself, then connect it from the command line
 import-sessions = "Import"
 import-title = "Import sessions"
 import-search = "Search sessions to import"
-import-all = "All"
 import-note = "Choose one to import and open it; deleting it from the list later leaves the session itself untouched."
 import-empty = "Nothing to import"
 import-empty-hint = "tmux sessions and agents in terminals on your machines show up here"

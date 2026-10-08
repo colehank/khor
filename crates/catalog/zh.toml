@@ -3257,8 +3257,6 @@ new-session-byhand = "需自行安装，再用命令行接入"
 import-sessions = "导入"
 import-title = "导入会话"
 import-search = "搜索可导入的会话"
-# 机器标签的第一枚:每台连得上的机器。
-import-all = "全部"
 import-note = "点一行即导入并打开；从列表删除时，原会话不受影响"
 import-empty = "没有可导入的会话"
 import-empty-hint = "各台机器上的 tmux 会话和终端里的智能体会出现在这里"
