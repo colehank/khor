@@ -2275,6 +2275,11 @@ try {
   // 2026-10-08).
   // **`FACE_ONLY=import` walks 导入 as a search alone** (imp-a,
   // 2026-10-09, IMPORT-BRIEF).
+  // **`FACE_ONLY=afix` walks the UX audit's four bugs alone** (afix-a,
+  // 2026-10-08).
+  // **`FACE_ONLY=quota` walks the 额度 page at three widths and two
+  // themes alone** (UX-53, ux-q3, 2026-10-08); the page's older checks
+  // stay in this block (`walk`).
   // **`FACE_ONLY=corners` walks every list's row alone** (UX-48,
   // 2026-10-07: the owner's four slots on every list).
   // **`FACE_ONLY=walk` walks this block alone** — sections 1 to 10,
@@ -2282,7 +2287,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -5740,7 +5745,7 @@ try {
     if (gate?.git !== "" || gate?.branch !== null || gate?.held !== "2 小时") {
       fail(
         `a directory that is no repository drew 「${gate?.git}」/「${gate?.held}」 on its right — no state (干净 and 读不了 look alike), ` +
-          "and under it 「2 小时」, how long ago its newest file changed (UX-48, src/views/WorkspacesList.tsx)",
+          "and under it 「2 小时」, how long its line has not changed — a duration, bare (UX-48, WORDS-1008, src/views/WorkspacesList.tsx)",
       );
     }
     const peer = seen.find((r) => r.name === "work");
@@ -12029,7 +12034,8 @@ try {
           // under it. ⚠️ 墓碑: `[data-row-paused]` led the second line.
           mark: el?.querySelector('[data-corner="top"] [data-row-state="paused"]')?.textContent?.trim() ?? null,
           held: el?.querySelectorAll('[data-corner="bottom"]').length ?? null,
-          opacity: el ? Number(getComputedStyle(el).opacity) : null,
+          // Greyed is the face's (afix-a, `SideList` `dim`).
+          opacity: el ? Number(getComputedStyle(el.querySelector("[data-side-face-slot]") ?? el).opacity) : null,
           // The picked row is the open one's block and is not greyed
           // (`SideList` `dim && !selected`); the word still says it.
           picked: el?.getAttribute("data-selected") === "true",
@@ -15223,15 +15229,15 @@ try {
   if (quotaRows !== listed) {
     fail(`\u989d\u5ea6 draws ${quotaRows} rows for ${board.length} routed accounts and one subscription`);
   }
-  // The share beside the row's ring at its right-top (UX-32: the ring is
-  // the state, a reading, and readings sit right), with its sign — there
-  // is room beside a 16 glyph. ⚠️ 墓碑 (2026-10-03 → UX-32): inside the
-  // row's dial without the sign, three digits at 12 being what its bowl
-  // held.
-  const fillRing = (await page.locator('[data-quota-row="acc-fill"] [data-quota-ring]').count()) === 1;
-  const fillDial = (await page.locator('[data-quota-row="acc-fill"] [data-quota-ring-word]').textContent().catch(() => null))?.trim() ?? null;
+  // The share at the row's right-top, alone (UX-53, 「右上干脆只写百分
+  // 比」), with the account page's gauge left of it (`[data-quota-gauge]`).
+  // ⚠️ 墓碑 (UX-32 → UX-53): a 16 glyph beside the share at the right-top
+  // (`data-quota-ring`, `data-quota-ring-word`); before that (2026-10-03)
+  // inside the row's dial without the sign.
+  const fillRing = (await page.locator('[data-quota-row="acc-fill"] [data-quota-gauge] [data-dial-face]').count()) === 1;
+  const fillDial = (await page.locator('[data-quota-row="acc-fill"] [data-quota-pct]').textContent().catch(() => null))?.trim() ?? null;
   if (!fillRing || fillDial !== "45%") {
-    fail(`the fraction row's ring does not say its share at the right-top — ring ${fillRing}, got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
+    fail(`the fraction row does not draw its gauge with its share at the right-top — gauge ${fillRing}, got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
   }
   // The refused account: the trouble on the glass is a sentence, not
   // the wire key. Clicking the row is also the finder proving itself —
@@ -15420,10 +15426,17 @@ try {
         // here is「the row has none」and not「the marker was renamed」.
         chipOnRow: row?.querySelectorAll("[data-quota-plan]").length ?? null,
         line: line?.textContent?.trim() ?? null,
+        // What a reader hears (UX-53: ↻ and the bare time on the glass,
+        // the whole 「…后重置」 for a reader that cannot see the glyph).
+        said: line?.getAttribute("aria-label") ?? null,
+        glyph: line?.querySelector("svg") ? 1 : 0,
         // The mark of a truncated line: more text than there is room
         // for. One pixel of slack for sub-pixel layout. `textContent`
-        // cannot see an ellipsis — the browser truncates in layout.
-        cut: line ? line.scrollWidth > line.clientWidth + 1 : null,
+        // cannot see an ellipsis — the browser truncates in layout. The
+        // time is the part that cuts (`Resets`), so it is read too.
+        cut: line
+          ? [line, ...line.querySelectorAll("span")].some((e) => e.scrollWidth > e.clientWidth + 1)
+          : null,
       };
     });
     //   ⚠️ **Rewritten 2026-09-27: the plan is read off R0's caption.**
@@ -15434,7 +15447,9 @@ try {
     //   (2026-09-30: under the name now, still in R0 — read off R0.)
     const headChips = await page.locator("[data-region-head] [data-quota-plan]").count();
     const headChip = (await page.locator("[data-region-head] [data-quota-plan]").textContent().catch(() => null))?.trim();
-    const planOnDetail = await page.locator("[data-quota-detail] [data-quota-credits]").count();
+    // The credits' figures (UX-53: one line of figures under the bars,
+    // `[data-quota-figure="credits-…"]`; ⚠️ 墓碑: the `data-quota-credits` dl).
+    const planOnDetail = await page.locator('[data-quota-detail] [data-quota-figure^="credits"]').count();
     if (headChips !== 1 || headChip !== quotaPlan) {
       fail(
         `R0 draws ${headChips} plans reading ${JSON.stringify(headChip)}, not one saying ${JSON.stringify(quotaPlan)}`,
@@ -15464,11 +15479,21 @@ try {
     //   what is left · when it resets, split on the dot into two. The line is
     //   now how long until the fullest window resets, one phrase on both
     //   kinds of row; the plan and the kind are on neither.
-    const billLine = (await page.locator('[data-quota-row="acc-fill"] [data-quota-sub-line]').textContent())?.trim();
-    const resets = /^\d+ (秒|分钟|小时|天)后重置$/;
-    if (!resets.test(rowPlan.line ?? "") || !resets.test(billLine ?? "")) {
+    //   ⚠️ 墓碑 (UX-53, the owner 2026-10-08: 「重制用一个刷新 icon，不必写俩
+    //   字」): 「N 小时 M 分后重置」 in words on the glass. Now ↻ and the bare
+    //   two units (`untilBare`); the sentence is the line's aria-label.
+    const billSub = page.locator('[data-quota-row="acc-fill"] [data-quota-sub-line]');
+    const billLine = (await billSub.textContent().catch(() => null))?.trim();
+    const billSaid = await billSub.getAttribute("aria-label").catch(() => null);
+    const bareTime = /^\d+ (分钟|小时|天)( \d+ (分|小时))?$/;
+    const resets = /^\d+ (分钟|小时|天)( \d+ (分|小时))?后重置$/;
+    if (!bareTime.test(rowPlan.line ?? "") || !bareTime.test(billLine ?? "") || !rowPlan.glyph) {
       fail(
-        `the sub-lines are ${JSON.stringify([rowPlan.line, billLine])} — 「N 小时后重置」 on every row with a reset, whichever kind it is (UX-48)`,
+        `the sub-lines are ${JSON.stringify([rowPlan.line, billLine])} (↻ ${rowPlan.glyph}) — ↻ and 「N 小时 M 分」 on every row with a reset, whichever kind it is (UX-53, WORDS-1008)`,
+      );
+    } else if (!resets.test(rowPlan.said ?? "") || !resets.test(billSaid ?? "")) {
+      fail(
+        `the sub-lines say ${JSON.stringify([rowPlan.said, billSaid])} to a reader — 「N 小时 M 分后重置」, the direction the ↻ carries on the glass (UX-53, \`Resets\`)`,
       );
     } else if (rowPlan.line?.includes(quotaPlan)) {
       fail(
@@ -15519,46 +15544,36 @@ try {
     //   did** (2026-09-07:「环全部和机器卡对齐」).
     //
     //   Three rows, three answers, and **all three are needed**: an
-    //   implementation that draws everything full passes on `acc-number`
-    //   alone, and one that draws nothing full passes on `acc-trouble`
-    //   alone. The fixture has a fraction (0.45), a reading with no
-    //   denominator (a spend, no limit) and a refusal, so each wrong
-    //   rule is caught by one of the other two.
-    //   The row's ring is the heading glyph since UX-32 (`Face.tsx`
-    //   `Glyph`, `[data-ring-glyph]` at the row's right-top): the same
-    //   210° geometry, so the angle reads the same way off its own two
-    //   paths (`data-glyph-track`, `data-glyph-fill`). A trouble row draws
-    //   no ring at all and reads 「no dial」 → null below.
+    //   implementation that draws a gauge on every row passes on
+    //   `acc-fill` alone, and one that draws none passes on the other two.
+    //   ⚠️ **Rewritten for UX-53, and the product changed**: a reading with
+    //   no ceiling drew a whole ring (2026-09-06); the lead ruled on
+    //   2026-10-08 that a wallet draws no ring and says its money at the
+    //   right-top instead (`[data-quota-balance]`), so `acc-number` (a spend,
+    //   no limit) now answers 「no gauge, a word」 like the refusal does, and
+    //   the two are told apart by which word. The row's gauge is the account
+    //   page's `Face` (`[data-quota-gauge] [data-dial-face]`): its track is
+    //   the first path, its arc `data-ring-fill`, the same 210° geometry.
+    //   ⚠️ 墓碑 (UX-32 → UX-53): the heading glyph at the right-top
+    //   (`[data-ring-glyph]`, `data-glyph-track`, `data-glyph-fill`).
     const arcs = await page.locator("[data-quota-row]").evaluateAll((rows) =>
       rows.map((row) => {
         const id = row.getAttribute("data-quota-row");
-        const svg = row.querySelector("[data-quota-ring] [data-ring-glyph]");
-        if (!svg && row.querySelector("[data-quota-state]")) return { id, drawn: null };
-        const arc = svg?.querySelector("[data-glyph-fill]");
+        const svg = row.querySelector("[data-quota-gauge] [data-dial-face]");
+        const word = row.querySelector("[data-quota-balance]") ? "balance" : row.querySelector("[data-quota-state]") ? "state" : null;
+        if (!svg) return { id, drawn: word ?? "no gauge, no word" };
+        const arc = svg.querySelector("[data-ring-fill]");
         // The track is always drawn, so its absence means the dial
-        // itself never rendered — a different failure from「no arc」and
-        // it must not read as one.
-        if (!svg || svg.querySelectorAll("path").length === 0) return { id, drawn: "no dial" };
-        if (!arc) return { id, drawn: null };
+        // itself never rendered — a different failure from「no arc」.
+        const track = svg.querySelector("path:not([data-ring-fill]):not([data-dial-span])");
+        if (!track) return { id, drawn: "no dial" };
+        if (!arc) return { id, drawn: "bare track" };
         // **The centre is read off the track that was drawn, not off
-        // the box.**
-        //
-        // ⚠️ It used to be `[vb[2] / 2, vb[3] * 0.6]`, and the comment
-        // above it said the centre was 「never assumed」 — **while
-        // assuming `cy = 0.6 × the box's height`, which held only
-        // while the box's height was `size`.** Cropping the box
-        // vertically (2026-09-07) made that false and this gate read
-        // 1.13 and 0.37 for arcs that were perfectly correct: a
-        // plausible wrong number, which is the failure the old comment
-        // was written about, arriving through the half it did not
-        // cover.
-        //
+        // the box** (2026-09-07: a cropped box broke `cy = 0.6 × h`).
         // The track is one arc of known radius starting at `ARC0`
-        // (−195°), so its own `d` gives the centre with nothing
-        // assumed about the box at all: `M x0 y0 A r r …`, and
-        // `centre = start − r·(cos ARC0, sin ARC0)`.
-        const track = svg.querySelector("[data-glyph-track]");
-        const td = /M([-\d.]+)\s+([-\d.]+)\s*A([-\d.]+)/.exec(track?.getAttribute("d") ?? "");
+        // (−195°), so its own `d` gives the centre: `M x0 y0 A r r …`,
+        // and `centre = start − r·(cos ARC0, sin ARC0)`.
+        const td = /M([-\d.]+)\s+([-\d.]+)\s*A([-\d.]+)/.exec(track.getAttribute("d") ?? "");
         if (!td) return { id, drawn: "no track" };
         const [x0, y0, r] = [Number(td[1]), Number(td[2]), Number(td[3])];
         const A0 = (-195 * Math.PI) / 180;
@@ -15568,14 +15583,16 @@ try {
         let deg = (Math.atan2(y - cy, x - cx) * 180) / Math.PI;
         while (deg < -195) deg += 360;
         while (deg > 165) deg -= 360;
-        return { id, drawn: Number(((deg + 195) / 210).toFixed(2)) };
+        return { id, drawn: Number(((deg + 195) / 210).toFixed(2)), word };
       }),
     );
     const arcOf = (id) => arcs.find((a) => a.id === id)?.drawn ?? null;
-    if (arcOf("acc-fill") !== 0.45 || arcOf("acc-number") !== 1 || arcOf("acc-trouble") !== null) {
+    if (arcOf("acc-fill") !== 0.45 || arcOf("acc-number") !== "balance" || arcOf("acc-trouble") !== "state") {
       fail(
-        `the arcs read ${JSON.stringify(arcs)} — a fraction draws itself (0.45), a reading with no ceiling draws a whole ring (1), and only 问不出来 leaves bare track (null)`,
+        `the rows read ${JSON.stringify(arcs)} — a fraction draws its gauge (0.45), a reading with no ceiling draws none and says its money (balance), and 问不出来 draws none and says so (state) (UX-53, src/views/QuotaLanding.tsx)`,
       );
+    } else if (arcs.some((a) => typeof a.drawn === "number" && a.word !== null)) {
+      fail(`a row draws a gauge and a money or state word at once: ${JSON.stringify(arcs)} — the right-top is the share beside a gauge (UX-53)`);
     }
 
     //   ── 8·a truncated log says so, beside the chart it truncates ──
@@ -15636,50 +15653,52 @@ try {
     //   Every row, because the band that broke was 10–99.99 (`12.34`,
     //   five characters) and it is one account among several — a check
     //   on 「the first row」 would have passed while that one overflowed.
-    //   **Beside the ring since UX-32** (the owner 2026-10-06): the
-    //   reading stands at the row's right-top next to a 16 glyph, so the
-    //   fit is no longer a ring's bowl but the corner cell — the word is
-    //   whole, on one line, and the four-character rule still holds the
-    //   word short. ⚠️ 墓碑: the middle of the row's dial, measured
-    //   against the rim's inner diameter.
+    //   **The right-top corner cell since UX-32**, and since UX-53 the
+    //   word there is the share alone (`[data-quota-pct]`, beside the
+    //   gauge left of the corner), a wallet's money (`[data-quota-balance]`,
+    //   no gauge) or a state word: whole, on one line, inside its corner;
+    //   the four-character rule holds the share (「100%」 is its longest).
+    //   ⚠️ 墓碑: the middle of the row's dial, measured against the rim's
+    //   inner diameter; then (UX-32) a word beside a 16 glyph
+    //   (`data-quota-ring-word`).
     const middles = await page.evaluate(() => {
       return [...document.querySelectorAll("[data-quota-row]")].map((r) => {
-        const cell = r.querySelector("[data-quota-ring]");
-        const t = cell?.querySelector("[data-quota-ring-word]");
-        const ring = cell?.querySelector("[data-ring-glyph]");
+        const cell = r.querySelector('[data-corner="top"]');
+        const t = cell?.querySelector("[data-quota-pct], [data-quota-balance], [data-quota-state]");
         const b = t?.getBoundingClientRect();
         const c = cell?.getBoundingClientRect();
+        const lh = t ? Number.parseFloat(getComputedStyle(t).lineHeight) || 20 : 20;
         return {
           id: r.getAttribute("data-quota-row"),
           text: t?.textContent ?? "",
+          pct: t?.hasAttribute("data-quota-pct") ?? false,
           chars: (t?.textContent ?? "").length,
-          // Spilling = the word's box past its cell's, or wrapped to a
-          // second line (taller than one line of caption).
-          over: b && c ? +Math.max(b.right - c.right, c.left - b.left, b.height - 20).toFixed(1) : -1,
+          // Spilling = the word's box past its cell's, its words past its
+          // box, or wrapped to a second line (taller than one line).
+          over: b && c ? +Math.max(b.right - c.right, c.left - b.left, b.height - lh - 1, t.scrollWidth - t.clientWidth - 1).toFixed(1) : -1,
           w: b ? +b.width.toFixed(1) : -1,
-          ring: !!ring,
-          state: !!r.querySelector("[data-quota-state]"),
+          gauge: !!r.querySelector("[data-quota-gauge]"),
         };
       });
     });
     console.log(
-      `ring words: ${middles.map((m) => `${m.id} "${m.text}" ${m.w} ring ${m.ring} state ${m.state}`).join(" · ")}`,
+      `row words: ${middles.map((m) => `${m.id} "${m.text}" ${m.w} gauge ${m.gauge}`).join(" · ")}`,
     );
-    const tooLong = middles.filter((m) => m.text && m.chars > 4);
+    const tooLong = middles.filter((m) => m.pct && m.chars > 4);
     const spilling = middles.filter((m) => m.over > 0);
-    const bare = middles.filter((m) => !m.ring && !m.state);
+    const bare = middles.filter((m) => m.text === "");
     if (middles.length === 0) {
-      fail("probe dead: no row drew a ring cell, so nothing below measures a reading");
+      fail("probe dead: no row drew a corner, so nothing below measures a reading");
     } else if (tooLong.length > 0) {
       fail(
-        `a ring's reading reads ${JSON.stringify(tooLong.map((m) => m.text))} — four characters is the rule (「保持在 4 位字符以内」)`,
+        `a row's share reads ${JSON.stringify(tooLong.map((m) => m.text))} — four characters is the rule (「保持在 4 位字符以内」)`,
       );
     } else if (spilling.length > 0) {
       fail(
-        `a ring's reading spills out of its cell: ${JSON.stringify(spilling.map((m) => [m.text, m.over]))} — one line, whole, beside the ring (UX-32)`,
+        `a row's right-top word spills out of its corner: ${JSON.stringify(spilling.map((m) => [m.text, m.over]))} — one line, whole (UX-53)`,
       );
     } else if (bare.length > 0) {
-      fail(`${JSON.stringify(bare.map((m) => m.id))} draw neither a ring nor a state word at the right-top — the ring is the state (UX-32)`);
+      fail(`${JSON.stringify(bare.map((m) => m.id))} say nothing at the right-top — the share, a wallet's money or a state word (UX-53)`);
     }
 
     //   ── 8·the dial's box holds the drawing, not a margin ───────
@@ -15833,14 +15852,15 @@ try {
       fail(
         `a reading with no ceiling reads ${JSON.stringify(without)} in the middle — 「没有额度的环,显示金额」`,
       );
-    } else if (without !== "12$") {
+    } else if (without !== "$12") {
       //   ⚠️ **Was `includes("12.34")`, and the product changed**: a
       //   ring's middle is at most four characters now (「保持在 4 位
       //   字符以内」), so 12.34 rounds to whole units and wears its
       //   sign. **Equality, not `includes`** — the ruling is about the
       //   shortening, and a substring check passes on the long form.
+      //   The sign first since WORDS-1008 (「钱的符号在前」, `moneyIn`).
       fail(
-        `a reading with no ceiling reads ${JSON.stringify(without)} where the fixture spent 12.34 — four characters means 「12$」`,
+        `a reading with no ceiling reads ${JSON.stringify(without)} where the fixture spent 12.34 — four characters, the sign first, means 「$12」`,
       );
     }
 
@@ -15867,7 +15887,9 @@ try {
       return await page.evaluate((row) => {
         const at = (sel) =>
           document.querySelector(`[data-quota-detail="${row}"] ${sel}`)?.textContent?.trim() ?? null;
-        return { mid: at("[data-quota-lead] text"), col: at("[data-quota-spent]") };
+        // The spend is a figure under the bars since UX-53 (its word,
+        // then the money in the ink); ⚠️ 墓碑: `[data-quota-spent]`, a dd.
+        return { mid: at("[data-quota-lead] text"), col: at('[data-quota-figure="spent"] > span') };
       }, row);
     };
     const unset = await unitOf("acc-number");
@@ -15877,7 +15899,7 @@ try {
     const shown = JSON.stringify({ unset, asDollar, asYuan, asFree });
     if ([unset, asDollar, asYuan, asFree].some((t) => t.mid === null || t.col === null)) {
       fail(`probe dead: the unit rows drew ${shown}, so nothing below is measuring a unit`);
-    } else if (unset.mid !== "12$" || unset.col !== "12.34$") {
+    } else if (unset.mid !== "$12" || unset.col !== "$12.34") {
       fail(
         `an account nobody set a unit on reads ${JSON.stringify(unset)} — 「默认是 $」, applied when drawing`,
       );
@@ -15885,7 +15907,7 @@ try {
       fail(
         `setting the unit to 「$」 reads ${JSON.stringify(asDollar)} where leaving it unset reads ${JSON.stringify(unset)} — the default and the thing it defaults to are one mark`,
       );
-    } else if (asYuan.mid !== "12¥" || asYuan.col !== "12.34¥") {
+    } else if (asYuan.mid !== "¥12" || asYuan.col !== "¥12.34") {
       fail(
         `an account set to 「¥」 reads ${JSON.stringify(asYuan)} — the mark is the person's, and a default that cannot be overridden is a guess`,
       );
@@ -16501,9 +16523,11 @@ try {
       return {
         pips: (lead?.querySelectorAll("[data-dial-pip]") ?? []).length,
         parts: (detail?.querySelectorAll("[data-quota-part]") ?? []).length,
-        used: detail?.querySelector("[data-quota-credits-used]")?.textContent ?? null,
-        pairs: (detail?.querySelectorAll("[data-quota-credits] dt") ?? []).length,
-        balance: detail?.querySelector("[data-quota-credits-balance]") !== null,
+        // Figures under the bars since UX-53; ⚠️ 墓碑: the
+        // `data-quota-credits` dl (`-used`, `-balance`, a dt per pair).
+        used: detail?.querySelector('[data-quota-figure="credits-used"]')?.textContent ?? null,
+        pairs: (detail?.querySelectorAll('[data-quota-figure^="credits"]') ?? []).length,
+        balance: detail?.querySelector('[data-quota-figure="credits-balance"]') !== null,
       };
     });
     if (uncapped.pips !== quotaWindows.length || uncapped.parts !== quotaWindows.length) {
@@ -17895,7 +17919,7 @@ try {
     }
   }
 
-  // ── 8d) narrow 额度: the table says when it has cut a column off ──
+  // ── 8d) 额度: the table says when it has cut a column off ──────────
   // 用户 2026-09-10 chose the wordless answer (「丁」) out of four: no
   // sentence, a veil at the edge that is cut. The whole risk of a
   // wordless mark is that it says the wrong thing silently — a veil
@@ -17907,70 +17931,89 @@ try {
   // cut when the table fits**: without that last one a mark that is
   // simply always on passes the first two, which is this repo's ninth
   // false green (对照组的两条胳膊被造得必然一致).
+  //
+  // ⚠️ **Rewritten for UX-53, and the product changed**: a phone draws
+  // three columns now (模型 / 总量 / 天数, the model cut to one line), so
+  // at 390 the table fits and *that* is the control arm, with the mounted
+  // table at the phone's own width. The two cut arms moved to the wide
+  // face, where every column is drawn: its frame is held narrower than
+  // the table (an inline width on `[data-side-cut]`, which the scroller's
+  // ResizeObserver answers) and let go again — the same mounted table
+  // cut and then whole. ⚠️ 墓碑: cut at 390, the control at 700.
   {
     await press('[data-quota-row][data-quota-kind="sub"]');
     await wait(400);
     const cut = '[data-quota-detail] [data-usage-zone="stats"] [data-side-cut]';
-    if ((await page.locator(cut).count()) !== 1) {
-      fail("probe dead: the stats table is not in a side-cut frame, so nothing below measured a cut edge");
+    const marks = () =>
+      page.evaluate((sel) => {
+        const el = [...document.querySelectorAll(sel)].find((e) => e.getClientRects().length > 0);
+        const box = el?.firstElementChild;
+        if (!box) return null;
+        return {
+          left: el.hasAttribute("data-cut-left"),
+          right: el.hasAttribute("data-cut-right"),
+          over: box.scrollWidth - box.clientWidth,
+        };
+      }, cut);
+    const atPhone = await marks();
+    if (atPhone === null) {
+      fail("probe dead: the narrow stats table is not in a side-cut frame, so nothing below measured a cut edge");
+    } else if (atPhone.over > 1) {
+      fail(`the phone's stats table is ${atPhone.over}px wider than 390 — three columns, whole (UX-53, src/views/UsageHalf.tsx PHONE_COLS)`);
+    } else if (atPhone.left || atPhone.right) {
+      fail(`a table with nothing cut off still marks left=${atPhone.left} right=${atPhone.right} — the veil is painted on, not measured`);
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(400);
+    await open("quota");
+    await press('[data-quota-row][data-quota-kind="sub"]');
+    await until(5_000, async () => (await page.locator(`${cut} th[data-usage-col]`).filter({ visible: true }).count()) > 3);
+    const hold = (w) =>
+      page.evaluate(
+        ([sel, px]) => {
+          const el = [...document.querySelectorAll(sel)].find((e) => e.getClientRects().length > 0);
+          if (el) el.style.width = px === null ? "" : `${px}px`;
+        },
+        [cut, w],
+      );
+    const shove = (to) =>
+      page.evaluate(
+        ([sel, x]) => {
+          const box = [...document.querySelectorAll(sel)].find((e) => e.getClientRects().length > 0)?.firstElementChild;
+          if (box) box.scrollLeft = x === "end" ? box.scrollWidth : 0;
+        },
+        [cut, to],
+      );
+    await hold(260);
+    await wait(300);
+    const atRest = await marks();
+    if (atRest === null || atRest.over <= 1) {
+      fail(`probe dead: the wide stats table held at 260px is ${atRest?.over ?? "?"}px over, so there is no cut edge to measure`);
+    } else if (!atRest.right || atRest.left) {
+      fail(`a table cut off on the right marks left=${atRest.left} right=${atRest.right} — the veil is on the wrong edge, and it has no words to correct itself with`);
     } else {
-      const marks = () =>
-        page.evaluate((sel) => {
-          const el = document.querySelector(sel);
-          const box = el.firstElementChild;
-          return {
-            left: el.hasAttribute("data-cut-left"),
-            right: el.hasAttribute("data-cut-right"),
-            over: box.scrollWidth - box.clientWidth,
-          };
-        }, cut);
-      const shove = (to) =>
-        page.evaluate(
-          ([sel, x]) => {
-            const box = document.querySelector(sel).firstElementChild;
-            box.scrollLeft = x === "end" ? box.scrollWidth : 0;
-          },
-          [cut, to],
-        );
-
-      const atRest = await marks();
-      if (atRest.over <= 1) {
-        fail(`probe dead: the stats table fits in 390px (${atRest.over}px over), so there is no cut edge to measure`);
-      } else if (!atRest.right || atRest.left) {
-        fail(`a table cut off on the right marks left=${atRest.left} right=${atRest.right} — the veil is on the wrong edge, and it has no words to correct itself with`);
+      await shove("end");
+      await wait(200);
+      const atEnd = await marks();
+      if (atEnd.right || !atEnd.left) {
+        fail(`scrolled to the last column the table still marks right=${atEnd.right} left=${atEnd.left} — a veil that stays says there is more when there is not`);
       } else {
-        await shove("end");
-        await wait(200);
-        const atEnd = await marks();
-        if (atEnd.right || !atEnd.left) {
-          fail(`scrolled to the last column the table still marks right=${atEnd.right} left=${atEnd.left} — a veil that stays says there is more when there is not`);
+        await shove(0);
+        await hold(null);
+        await wait(300);
+        const whole = await marks();
+        if (whole.over > 1) {
+          fail(`probe dead: the wide stats table let go is still ${whole.over}px too wide — the control arm never got a table that fits`);
+        } else if (whole.left || whole.right) {
+          fail(`a table with nothing cut off still marks left=${whole.left} right=${whole.right} — the veil is painted on, not measured`);
         } else {
-          // The control arm: wide enough that nothing is cut, and
-          // **still inside the narrow face**. A mark that cannot go
-          // away passes both arms above, so this is the one that has
-          // to be reachable — and it was not, the first four ways it
-          // was torn down. 719 is the breakpoint (`use-narrow`); going
-          // out to 1400 crosses it, rebuilds the whole subtree, and
-          // remounts the very thing under test, so any stuck mark is
-          // wiped by the remount rather than caught here. 700 keeps the
-          // same mounted table and merely stops cutting it.
-          await page.setViewportSize({ width: 700, height: 900 });
-          await wait(400);
-          const wide = await marks();
-          if (wide.over > 1) {
-            fail(`probe dead: the stats table is still ${wide.over}px too wide at 700 — the control arm never got a table that fits`);
-          } else if (wide.left || wide.right) {
-            fail(`a table with nothing cut off still marks left=${wide.left} right=${wide.right} — the veil is painted on, not measured`);
-          } else {
-            console.log(
-              `side cut: 390px over by ${atRest.over} → right only; scrolled to end → left only; 700px fits → neither`,
-            );
-          }
-          await page.setViewportSize({ width: 390, height: 844 });
-          await wait(300);
+          console.log(
+            `side cut: phone 390 fits (${atPhone.over}) → neither; wide held at 260 over by ${atRest.over} → right only; scrolled to end → left only; let go → neither`,
+          );
         }
       }
     }
+    await hold(null);
   }
 
   // ── 9) readings per volume and per card, with a whole fallback ────
@@ -24325,17 +24368,18 @@ try {
 
     // (8) the 额度 rows' numbers.
     await open("quota");
-    // The reading stands beside the ring at the row's right-top since
-    // UX-32 (`data-quota-ring` → `data-ring-glyph` + `data-quota-ring-word`):
-    // whole, inside the row, to the right of the title, never under the
-    // face's mark. ⚠️ 墓碑 (W-V11 → UX-32): a word laid over the row's
-    // fluid dial (`data-dial-reading`), judged against its frame and the
-    // provider's mark beside it.
-    await until(5_000, async () => (await page.locator("[data-quota-row] [data-quota-ring-word]").count()) > 1);
+    // The share stands alone at the row's right-top since UX-53
+    // (`data-quota-pct`), the gauge left of the corner (`data-quota-gauge`,
+    // the account page's dial at the two lines' height): the share whole,
+    // inside the row, right of its gauge; the gauge right of the title,
+    // never under the face's mark. ⚠️ 墓碑 (W-V11 → UX-32 → UX-53): a word
+    // laid over the row's fluid dial (`data-dial-reading`); then a word
+    // beside a 16 glyph at the right-top (`data-quota-ring-word`).
+    await until(5_000, async () => (await page.locator("[data-quota-row] [data-quota-pct]").count()) > 1);
     const dials = await page.evaluate(() =>
       [...document.querySelectorAll("[data-quota-row]")].flatMap((row) => {
-        const ring = row.querySelector("[data-quota-ring] [data-ring-glyph]");
-        const text = row.querySelector("[data-quota-ring-word]");
+        const ring = row.querySelector("[data-quota-gauge]");
+        const text = row.querySelector("[data-quota-pct]");
         const title = row.querySelector("[data-side-title]") ?? row.querySelector("[data-quota-name]");
         const face = row.querySelector("[data-side-face]");
         if (!ring || !text || (text.textContent ?? "").trim() === "") return [];
@@ -24353,21 +24397,21 @@ try {
         ];
       }),
     );
-    console.log(`lists (8) · ring readings [l,t,r,b]: ${JSON.stringify(dials)}`);
-    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a reading beside the ring — (8) measured nothing`);
+    console.log(`lists (8) · row shares [l,t,r,b]: ${JSON.stringify(dials)}`);
+    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a gauge and a share — (8) measured nothing`);
     for (const d of dials) {
       const [l, t, r, b] = d.text;
       const clipped = l < d.row[0] - 0.5 || r > d.row[2] + 0.5 || t < d.row[1] - 0.5 || b > d.row[3] + 0.5;
-      const leftOfRing = r <= d.ring[0] + 0.5;
-      const underTitle = d.title !== null && l < d.title[2] - 0.5;
-      const onFace = d.face !== null && l < d.face[2] - 0.5;
+      const leftOfRing = l < d.ring[2] - 0.5;
+      const ringUnderTitle = d.title !== null && d.ring[0] < d.title[2] - 0.5;
+      const onFace = d.face !== null && d.ring[0] < d.face[2] - 0.5;
       if (clipped) {
-        fail(`the ${d.id} ring's 「${d.says}」 runs to ${JSON.stringify(d.text)} past its row ${JSON.stringify(d.row)} — the reading is clipped (src/views/QuotaLanding.tsx)`);
+        fail(`the ${d.id} row's share 「${d.says}」 runs to ${JSON.stringify(d.text)} past its row ${JSON.stringify(d.row)} — the reading is clipped (src/views/QuotaLanding.tsx)`);
       }
-      if (leftOfRing || underTitle || onFace) {
+      if (leftOfRing || ringUnderTitle || onFace) {
         fail(
-          `the ${d.id} ring's 「${d.says}」 at ${JSON.stringify(d.text)} is not at the right-top beside its ring ${JSON.stringify(d.ring)} (title to ${d.title?.[2]}, face to ${d.face?.[2]}) — ` +
-            "the ring and its reading are the row's right-top (UX-32; src/views/QuotaLanding.tsx)",
+          `the ${d.id} row's share 「${d.says}」 at ${JSON.stringify(d.text)} and gauge ${JSON.stringify(d.ring)} are out of place (title to ${d.title?.[2]}, face to ${d.face?.[2]}) — ` +
+            "the share at the right-top, its gauge left of it and right of the title (UX-53; src/views/QuotaLanding.tsx)",
         );
       }
     }
@@ -24628,8 +24672,9 @@ try {
   //      alone; no `row-running` sentence, no exit code, no time in the
   //      line, no state ink (the state word over its age is the row's
   //      `trailing`, unchanged);
-  //   c. quota — when the fullest window resets under the name, the
-  //      reading's age bare at the bottom-right, nothing where none;
+  //   c. quota — ↻ and when the fullest window resets under the name
+  //      (UX-53), the reading's age with its 前 at the bottom-right,
+  //      nothing where none;
   //   d. workspaces — the branch after the name (secondary ink, a size
   //      down, `@1a2b3c4d` detached, cut in the middle on a phone row),
   //      the git symbols top-right in their inks (UX-51: 「⇡861 *1 !1 ?2」,
@@ -24669,7 +24714,9 @@ try {
                 sub: r.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
                 top: r.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
                 bottom: r.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
-                opacity: +getComputedStyle(r).opacity,
+                // Greyed is the face's (afix-a: the row's words keep their
+                // inks, `SideList` `dim`).
+                opacity: +getComputedStyle(r.querySelector("[data-side-face-slot]") ?? r).opacity,
               },
             ]),
         ),
@@ -24683,6 +24730,9 @@ try {
   };
   /** A bare duration off the one ladder (`words.ts` `span`). */
   const BARE = /^\d+ (秒|分钟|小时|天)$/;
+  // A corner that says *when* something happened says which way
+  // (WORDS-1008): the browser's, 最近's, 存储's.
+  const AGO = /^\d+ (秒|分钟|小时|天)前$/;
 
   // a. machines.
   {
@@ -24888,13 +24938,13 @@ try {
       Object.assign(peer, { paused: true });
       for (const [posture, size] of POSTURES) {
         await land(size, "devices");
-        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "离线");
+        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "不通");
         const rows = await slots("[data-side-row][data-device]", "data-device");
         const more = await readings();
         console.log(`corners a · ${posture} · offline elder, paused peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
         const [e, p] = [rows.elder, rows.peer];
-        if (!e || e.top !== "离线" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.lat !== null || more.elder.state !== "offline" || more.elder.road !== null || !(e.opacity < 0.99)) {
-          fail(`corners a · ${posture} · an unreachable elder reads ${JSON.stringify({ ...e, ...more.elder })} — 离线 over 「20 小时」 (how long unheard), no readings under its name, no latency after it, dimmed (UX-48, UX-50)`);
+        if (!e || e.top !== "不通" || e.bottom !== "20 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.lat !== null || more.elder.state !== "offline" || more.elder.road !== null || !(e.opacity < 0.99)) {
+          fail(`corners a · ${posture} · an unreachable elder reads ${JSON.stringify({ ...e, ...more.elder })} — 不通 over 「20 小时」 (how long unheard), no readings under its name, no latency after it, dimmed (UX-48, UX-50, WORDS-1008: never 离线)`);
         }
         if (!p || p.top !== "已暂停" || p.bottom !== null || more.peer.state !== "paused" || more.peer.held !== 0) {
           fail(`corners a · ${posture} · a paused peer reads ${JSON.stringify({ ...p, ...more.peer })} — 已暂停 top-right, no time under it (UX-48)`);
@@ -24902,23 +24952,26 @@ try {
       }
       // Idle: no live wire and nothing failed — not offline (the lead,
       // 2026-10-07). elder last used the relay, which settled 5 hours ago:
-      // the relay word over 5 hours, undimmed, no readings. peer never connected
-      // since the resident started: no state and no time at all.
+      // 未连 over 5 hours, undimmed, no readings — the last road is the
+      // detail's, not the row's (WORDS-1008: the filter said 未连 for the row
+      // that said 中继). peer never connected since the resident started and
+      // the page is inside its dial budget: not named yet (`fetchDevices`),
+      // nothing at all.
       restore();
       Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: 5 * 3600_000, last_hop: "relay", heard_ms: 3 * 3600_000, down_ms: null, last_rtt_ms: 140 });
       Object.assign(peer, { hop: "quiet", rtt_ms: null, since_ms: null, last_hop: null, heard_ms: null, down_ms: null, last_rtt_ms: null, paused: false });
       for (const [posture, size] of POSTURES) {
         await land(size, "devices");
-        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "中继");
+        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "未连");
         const rows = await slots("[data-side-row][data-device]", "data-device");
         const more = await readings();
         console.log(`corners a · ${posture} · idle elder (last road relay), never-connected peer: ${JSON.stringify({ elder: rows.elder, peer: rows.peer })} ${JSON.stringify({ elder: more.elder, peer: more.peer })}`);
         const [e, p] = [rows.elder, rows.peer];
-        if (!e || e.top !== "中继" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.state !== "idle" || more.elder.road !== "relay" || e.opacity < 0.99) {
-          fail(`corners a · ${posture} · an idle elder reads ${JSON.stringify({ ...e, ...more.elder })} — the road it last used, 中继, over 「5 小时」 (since that road settled), no readings, undimmed; never 离线 (UX-48)`);
+        if (!e || e.top !== "未连" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.state !== "idle" || more.elder.road !== null || e.opacity < 0.99) {
+          fail(`corners a · ${posture} · an idle elder reads ${JSON.stringify({ ...e, ...more.elder })} — 未连 over 「5 小时」 (since that road settled), no last road on the row, no readings, undimmed; never 不通 (UX-48, WORDS-1008)`);
         }
         if (!p || p.top !== null || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== null || p.opacity < 0.99) {
-          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — nothing top-right or bottom-right, no readings, undimmed (UX-48)`);
+          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — not named yet inside the dial budget: nothing top-right or bottom-right, no readings, undimmed (UX-48, api.ts fetchDevices)`);
         }
       }
       // A state that changes in place gets the room it needs: the corner
@@ -25066,19 +25119,34 @@ try {
     // The fullest whole-plan window of the subscription is the week, which
     // resets in a day less a moment; the bill's own reset is a day off too.
     // ⚠️ 墓碑 (UX-15): what is left · the weekday it resets (row-window).
-    if (sub.sub !== "23 小时后重置" || bill.sub !== "23 小时后重置") {
-      fail(`corners c · ${posture} · the second lines read ${JSON.stringify([sub.sub, bill.sub])} — 「23 小时后重置」, the time to the fullest window's reset (UX-48)`);
+    // Two units, never rounded down to one (WORDS-1008: 「2 小时 13 分后重置」);
+    // since UX-53 ↻ and the bare time on the glass (「↻ 23 小时 59 分」), the
+    // whole sentence for a reader (`Resets`' aria-label).
+    const dayLess = /^23 小时 \d+ 分$/;
+    const saidLess = /^23 小时 \d+ 分后重置$/;
+    const said = await page.evaluate(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll("[data-quota-row]")]
+          .filter((r) => r.getBoundingClientRect().width > 0)
+          .map((r) => [r.getAttribute("data-quota-row"), r.querySelector("[data-side-sub] [data-quota-resets]")?.getAttribute("aria-label") ?? null]),
+      ),
+    );
+    if (!dayLess.test(sub.sub ?? "") || !dayLess.test(bill.sub ?? "")) {
+      fail(`corners c · ${posture} · the second lines read ${JSON.stringify([sub.sub, bill.sub])} — ↻ 「23 小时 59 分」, the time to the fullest window's reset, two units (UX-53, WORDS-1008)`);
+    } else if (!saidLess.test(said["acc-sub-here"] ?? "") || !saidLess.test(said["acc-fill"] ?? "")) {
+      fail(`corners c · ${posture} · the second lines say ${JSON.stringify([said["acc-sub-here"], said["acc-fill"]])} to a reader — 「23 小时 59 分后重置」 (UX-53, \`Resets\`)`);
     }
     if (none.sub !== "") fail(`corners c · ${posture} · a row with no reset time reads ${JSON.stringify(none.sub)} under its name — nothing (UX-48)`);
     // The subscription's reading is as old as the fixture made it
     // (`routeQuota`: two minutes before it was routed) plus however long
     // the walk took to get here, so the age is read against that clock,
-    // not a constant: bare, in minutes. ⚠️ 墓碑: `card-age`,
-    // `accounts-just-now`.
+    // not a constant: in minutes, with its direction (WORDS-1008, 「3 分钟
+    // 前」: a when-corner says 前). ⚠️ 墓碑: `card-age`, `accounts-just-now`;
+    // the bare 「2 分钟」 (UX-48).
     const ageMin = probeNow ? Math.floor((Date.now() / 1000 - probeNow.as_of) / 60) : 2;
-    const ages = [ageMin - 1, ageMin, ageMin + 1].map((m) => `${m} 分钟`);
+    const ages = [ageMin - 1, ageMin, ageMin + 1].map((m) => `${m} 分钟前`);
     if (!ages.includes(sub.bottom)) {
-      fail(`corners c · ${posture} · the subscription's bottom-right reads ${JSON.stringify(sub.bottom)} — 「${ageMin} 分钟」, how old the reading is, bare (UX-48)`);
+      fail(`corners c · ${posture} · the subscription's bottom-right reads ${JSON.stringify(sub.bottom)} — 「${ageMin} 分钟前」, how old the reading is (UX-53, WORDS-1008)`);
     }
     // A reading this machine takes as it is shown has no age to say.
     if (bill.bottom !== null) fail(`corners c · ${posture} · a reading taken here says ${JSON.stringify(bill.bottom)} at its bottom-right — nothing (UX-48)`);
@@ -25089,7 +25157,7 @@ try {
         .filter((r) => r.getBoundingClientRect().width > 0)
         .flatMap((r) => {
           const corner = r.querySelector('[data-corner="top"]')?.getBoundingClientRect();
-          const word = r.querySelector("[data-quota-ring-word], [data-quota-state]")?.getBoundingClientRect();
+          const word = r.querySelector("[data-quota-pct], [data-quota-balance], [data-quota-state]")?.getBoundingClientRect();
           if (!corner || !word) return [];
           const over = +Math.max(word.right - corner.right, corner.left - word.left).toFixed(2);
           return over > 0.05 ? [[r.getAttribute("data-quota-row"), over]] : [];
@@ -25285,7 +25353,7 @@ try {
         }
       }
       if (rows.notes.aside !== 0 || rows.notes.newest !== "drafts/plan.md" || rows.notes.where !== null || rows.notes.subject !== null || rows.notes.top !== null || rows.notes.bottom !== "2 小时") {
-        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时」 under that (UX-48)`);
+        fail(`corners d · ${posture} · a plain folder reads ${JSON.stringify(rows.notes)} — no branch, its newest file 「drafts/plan.md」 under its name (not its path), nothing top-right, 「2 小时」 under that, bare (UX-48, WORDS-1008)`);
       }
       // UX-51 (the owner 2026-10-08): the second line is a sentence — an
       // edited file 「最近修改了 …」, a made one 「最近新建了 …」.
@@ -25307,7 +25375,7 @@ try {
         if (!ok) fail(`corners d · ${posture} · a long file's sentence draws ${JSON.stringify(got)} — 「${before}」 whole, then the file cut in the middle (UX-51)`);
       }
       if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟") {
-        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟」 under that (UX-48)`);
+        fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟」 under that, bare (UX-48, WORDS-1008)`);
       }
       // The long row: the counts whole inside the corner, the name whole,
       // the branch cut — in the middle on a phone row, its head and its
@@ -25372,8 +25440,8 @@ try {
         fail(`probe dead: corners e · ${posture} · tab ${t.id} is not in the list`);
         continue;
       }
-      if (r.sub !== t.url.replace(/^https?:\/\//i, "") || r.top !== null || !BARE.test(r.bottom ?? "")) {
-        fail(`corners e · ${posture} · tab ${t.id} reads ${JSON.stringify(r)} — its address without the scheme, no state, how long ago it was opened (UX-48)`);
+      if (r.sub !== t.url.replace(/^https?:\/\//i, "") || r.top !== null || !AGO.test(r.bottom ?? "")) {
+        fail(`corners e · ${posture} · tab ${t.id} reads ${JSON.stringify(r)} — its address without the scheme, no state, when it was opened, 「5 分钟前」 (UX-48, WORDS-1008)`);
       }
     }
   }
@@ -25416,11 +25484,11 @@ try {
         fail(`probe dead: corners f · ${posture} · 存储 opened ${opened} and drew ${JSON.stringify(order)}`);
         continue;
       }
-      if (got.title !== "from peer.png" || got.aside !== 0 || got.sub !== "peer" || got.top !== null || got.bottom !== "3 小时") {
-        fail(`corners f · ${posture} · a received file reads ${JSON.stringify(got)} — its name, 「peer」 (where it came from) under it, nothing top-right, 「3 小时」 (since it was received, not its mtime) (UX-48)`);
+      if (got.title !== "from peer.png" || got.aside !== 0 || got.sub !== "peer" || got.top !== null || got.bottom !== "3 小时前") {
+        fail(`corners f · ${posture} · a received file reads ${JSON.stringify(got)} — its name, 「peer」 (where it came from) under it, nothing top-right, 「3 小时前」 (when it was received, not its mtime) (UX-48, WORDS-1008)`);
       }
-      if (mine.sub !== "" || mine.top !== null || mine.bottom !== "2 天") {
-        fail(`corners f · ${posture} · a file with no receipt reads ${JSON.stringify(mine)} — no sender, nothing top-right, 「2 天」 by its mtime (UX-48)`);
+      if (mine.sub !== "" || mine.top !== null || mine.bottom !== "2 天前") {
+        fail(`corners f · ${posture} · a file with no receipt reads ${JSON.stringify(mine)} — no sender, nothing top-right, 「2 天前」 by its mtime (UX-48, WORDS-1008)`);
       }
       if (order.join(" | ") !== "from peer.png | by hand.txt") {
         fail(`corners f · ${posture} · 存储 lists ${order.join(" | ")} — newest received first (UX-48)`);
@@ -25457,15 +25525,16 @@ try {
   //   f. the narrow list screen has the same button and it works;
   //   g. the workspaces overview beside the list is not narrowed.
   //
-  // Axes: machines — 连接方式 (`link:`), 系统 (`sys:`), 状态 (`state:`,
-  // 已暂停 alone, on offer only while a machine is paused); workspaces —
+  // Axes: machines — 连接方式 (`link:`, the row's top-right word, 已暂停
+  // among them, on offer only while a machine is paused — WORDS-1008), 系统
+  // (`sys:`); workspaces —
   // 机器 (`dev:`, by id; `""` where the machine left the table) and 类型
   // (`kind:`, the corner: `branch` / `folder`). New, not a fix: no red
   // first (30-behavior 「先红后绿只用于修 bug」).
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25634,7 +25703,9 @@ try {
       await wait(400);
       await check("every chip taken out", { rows: all, chips: [] });
       // (d) 已暂停: on offer only while something is paused, and still on
-      // offer — so it can be undone — once its last row has gone.
+      // offer — so it can be undone — once its last row has gone. A
+      // connection word since WORDS-1008 (the row says 已暂停 top-right, so
+      // the tick is `link:`; ⚠️ 墓碑: its own `state:` axis).
       gatePaused = true;
       const paused = await until(8_000, async () =>
         (await page.locator('[data-list] [data-side-row][data-device="gate"][data-paused="true"]').count()) === 1,
@@ -25643,22 +25714,22 @@ try {
         fail("probe dead: lists · this machine never came back paused from the fixture");
       } else {
         const withPause = await offered();
-        if (!withPause["state:paused"]) {
+        if (!withPause["link:paused"]) {
           fail(`lists · machines · a paused machine is on the list and the menu offers ${JSON.stringify(Object.keys(withPause))} — no 已暂停`);
         }
-        await toggle("state:paused");
-        await check("状态 = 已暂停", { rows: ["gate"], chips: ["state:paused"] });
+        await toggle("link:paused");
+        await check("连接方式 = 已暂停", { rows: ["gate"], chips: ["link:paused"] });
         gatePaused = false;
         await until(8_000, async () => (await names()).length === 0);
-        await check("已暂停, and nothing paused any more", { rows: [], chips: ["state:paused"] });
+        await check("已暂停, and nothing paused any more", { rows: [], chips: ["link:paused"] });
         const stillOffered = await offered();
-        if (!stillOffered["state:paused"]) {
+        if (!stillOffered["link:paused"]) {
           fail("lists · machines · 已暂停 is ticked and left the menu when its last row did — the tick can no longer be undone");
         }
-        await toggle("state:paused");
+        await toggle("link:paused");
         await check("已暂停 unticked", { rows: all, chips: [] });
         const after = await offered();
-        if (after["state:paused"]) {
+        if (after["link:paused"]) {
           fail("lists · machines · 已暂停 is still offered with no machine paused and nothing ticked");
         }
       }
@@ -25894,7 +25965,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26252,7 +26323,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26560,7 +26631,7 @@ try {
       await until(5_000, async () => (await page.locator('[data-side-row="tui/ws-5"]').count()) > 0);
       const session = await page.evaluate(() => {
         const row = document.querySelector('[data-side-row="tui/ws-5"]');
-        return row && { far: row.querySelector("[data-row-far]")?.textContent?.trim() ?? null, opacity: +getComputedStyle(row).opacity };
+        return row && { far: row.querySelector("[data-row-far]")?.textContent?.trim() ?? null, opacity: +getComputedStyle(row.querySelector("[data-side-face-slot]") ?? row).opacity };
       });
       await landOn("devices");
       await until(5_000, async () => (await page.locator('[data-side-row][data-device="elder"]').count()) > 0);
@@ -26582,7 +26653,7 @@ try {
             sub: row.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
             top: row.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
             bottom: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
-            opacity: +getComputedStyle(row).opacity,
+            opacity: +getComputedStyle(row.querySelector("[data-side-face-slot]") ?? row).opacity,
           }
         );
       });
@@ -26602,19 +26673,19 @@ try {
       if (!is || !im || !ds || !dm) fail(`probe dead: entity g · a row to read is missing (${JSON.stringify({ idle, down })})`);
       else {
         if (is.far !== null || is.opacity < 0.99) {
-          fail(`entity g · an idle machine's session row reads ${JSON.stringify(is)} — drawn as any other: no 「无法获取」, undimmed (NET-13)`);
+          fail(`entity g · an idle machine's session row reads ${JSON.stringify(is)} — drawn as any other: no 「不通」, undimmed (NET-13)`);
         }
-        if (im.state !== "idle" || im.top !== "中继" || im.bottom !== "40 分钟" || im.sub !== "" || im.opacity < 0.99) {
-          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — 中继 (the road it last used) over 「40 分钟」, never 离线, no readings under its name, undimmed (NET-13, UX-48)`);
+        if (im.state !== "idle" || im.top !== "未连" || im.bottom !== "40 分钟" || im.sub !== "" || im.opacity < 0.99) {
+          fail(`entity g · an idle machine's row reads ${JSON.stringify(im)} — 未连 over 「40 分钟」, never 不通, no readings under its name, undimmed (NET-13, UX-48, WORDS-1008)`);
         }
-        if (!(ds.far ?? "").includes("无法获取") || !(ds.opacity < 0.7)) {
-          fail(`entity g · an unreachable machine's session row reads ${JSON.stringify(ds)} — dimmed, 「无法获取 · …」 (NET-13)`);
+        if (!(ds.far ?? "").startsWith("不通 · ") || !(ds.far ?? "").endsWith("前") || !(ds.opacity < 0.7)) {
+          fail(`entity g · an unreachable machine's session row reads ${JSON.stringify(ds)} — dimmed, 「不通 · 3 分钟前」 (NET-13, WORDS-1008)`);
         }
-        if (dm.state !== "offline" || dm.top !== "离线" || dm.sub !== "" || !(dm.opacity < 0.7)) {
-          fail(`entity g · an unreachable machine's row reads ${JSON.stringify(dm)} — 离线, no readings, dimmed (NET-13, UX-48)`);
+        if (dm.state !== "offline" || dm.top !== "不通" || dm.sub !== "" || !(dm.opacity < 0.7)) {
+          fail(`entity g · an unreachable machine's row reads ${JSON.stringify(dm)} — 不通, no readings, dimmed (NET-13, UX-48, WORDS-1008)`);
         }
         if (dm.bottom !== "3 分钟") {
-          fail(`entity g · how long it has not been heard is not under 离线 (${JSON.stringify(dm.bottom)}) — 「3 分钟」, bare (UX-48)`);
+          fail(`entity g · how long it has not been heard is not under 不通 (${JSON.stringify(dm.bottom)}) — 「3 分钟」, bare (UX-48)`);
         }
       }
       for (const f of Object.keys(elder)) if (!(f in keep)) delete elder[f];
@@ -26627,7 +26698,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27126,7 +27197,7 @@ try {
           return { who: el.closest("[data-seat]").getAttribute("data-seat").slice(0, 4), x: (b.l + b.r) / 2, y: (b.t + b.b) / 2, rad: (b.r - b.l) / 2 };
         });
         const texts = [
-          ...map.querySelectorAll("[data-seat-name], [data-seat-age], [data-seat-never], [data-seat-blocked], [data-edge-word]"),
+          ...map.querySelectorAll("[data-seat-name], [data-seat-age], [data-seat-never], [data-seat-paused], [data-seat-blocked], [data-edge-word]"),
         ]
           .filter((el) => el.getBoundingClientRect().width > 0)
           .map((el) => ({
@@ -27359,7 +27430,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28252,7 +28323,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "import"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -34492,8 +34563,8 @@ try {
         if (r.where !== want) {
           fail(`side c · 最近's ${r.kind} row says ${JSON.stringify(r.where)} under its name — ${JSON.stringify(want)}, where it is (UX-48)`);
         }
-        if (r.kind !== "file" && !/^\d+ (秒|分钟|小时|天)$/.test(r.bottom ?? "")) {
-          fail(`side c · 最近's ${r.kind} row's bottom-right reads ${JSON.stringify(r.bottom)} — how long ago it was opened, bare (UX-48)`);
+        if (r.kind !== "file" && !/^\d+ (秒|分钟|小时|天)前$/.test(r.bottom ?? "")) {
+          fail(`side c · 最近's ${r.kind} row's bottom-right reads ${JSON.stringify(r.bottom)} — when it was opened, 「2 分钟前」 (UX-48, WORDS-1008: a when-corner says 前)`);
         }
         if (r.kind === "file" && (!r.fileFace || r.machineFace)) fail(`side c · 最近's file row wears ${JSON.stringify(r)} — a file's face is its kind alone (UX-45)`);
         if (r.kind !== "file" && r.fileFace) fail(`side c · 最近's ${r.kind} row wears a file's face — only a file does (UX-45)`);
@@ -38614,6 +38685,861 @@ try {
   }
   if (process.env.FACE_ONLY === "follow") console.log("follow · FACE_ONLY=follow: the other sections are skipped");
 
+  // ── the UX audit's clear bugs (afix-a, 2026-10-08) ─────────────────
+  //
+  // The owner approved four of the audit's findings as bugs (「可以修」);
+  // each is a value a machine reads, so each is a gate, red first on
+  // 342d4e52 (the redesign before this lane):
+  //   a. **a word longer than its bubble stays in it** (S2): at 390, a
+  //      留言 line ending in a long URL and an agent's conversation — its
+  //      words and a tool line's title — each end inside their box and
+  //      their column (red: the 留言 bubble ran the URL past its edge);
+  //   b. **a fact's value is never squeezed beside its label** (D1): on
+  //      诊断 at 375 and 390, every value that takes more than one line
+  //      has a line of its own (≥ 90 % of the row); every label is one
+  //      line inside the row, and a relay's host wider than the row is
+  //      cut in the middle — its start and its port both drawn, 「…」
+  //      between (red: 「测不到往返」 17 px wide, five lines);
+  //   c. **a greyed row's words still pass 4.5** (item 9, S4): the
+  //      machines list with one machine unreachable and one paused, and
+  //      the sessions overview's machine column with one machine that
+  //      never answered, in both themes — every drawn word but the
+  //      `tertiary` exception, its colour times every opacity above it,
+  //      over the ground behind it; the greyed rows are still greyed
+  //      (their face below 0.99), and this machine never is (red: 2.4
+  //      on the list, 2.2 on 本机);
+  //   d. **a part that fails to draw takes only itself down** (R1):
+  //      诊断 answered `null` says `doctor-no-answer` and stops loading;
+  //      诊断 answered `[null]` (a throw in its render) draws
+  //      `fault-said` and 重试 where the page was — the rail, and on the
+  //      phone the screen's 「‹」, still there, no engine text on the
+  //      page — and 重试 over a good answer draws the checks; ⌘K
+  //      answered `null` says 「没有结果」 and the window stays (red:
+  //      the window blank in all three, or loading for ever).
+  //
+  // `FACE_ONLY=afix` runs this section alone.
+  afix: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "afix") break afix;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).filter({ visible: true }).count();
+    const zh = readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8");
+    const word = (key) => new RegExp(`^${key} = "(.*)"$`, "m").exec(zh)?.[1] ?? null;
+    const now = Date.now();
+    const LONG = `https://example.test/share?token=${"a1b2c3d4".repeat(16)}`;
+
+    // a. a long word inside its bubble.
+    {
+      const base = {
+        kind: "tui", word: "idle", at_ms: now, unread: 0, source: null, pinned: false, stale: false, category: "shell",
+        group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
+      };
+      const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+      const agentRow = {
+        ...base, id: "gui/afix-agent", kind: "gui", title: "afix-agent", category: "claude", attachable: false,
+        source: { device: "f".repeat(64), age_ms: 0 },
+      };
+      const line = (id, from_me, text) => ({
+        id, at_ms: now - 60_000, from: from_me ? "gate" : "peer", from_me, text, files: null, unknown: null,
+        retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
+      });
+      const frame = (update) => ({ kind: "history", update: { update } });
+      const routesA = [
+        ["**/sessions", json([chatRow, agentRow])],
+        ["**/machine_log", json({ messages: [line("m-in", false, `看这个 ${LONG}`), line("m-out", true, LONG)], broken: 0 })],
+        [
+          "**/chat_poll",
+          (r) =>
+            json({
+              frames:
+                ((r.request().postDataJSON() ?? {}).since ?? 0) > 0
+                  ? []
+                  : [
+                      frame({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `链接在这里 ${LONG} 。` } }),
+                      frame({ sessionUpdate: "tool_call", toolCallId: "t-long", title: `Fetch ${LONG}`, kind: "fetch", status: "completed" }),
+                      { kind: "history_end" },
+                    ],
+              next: 1,
+              gone: false,
+              lost: false,
+            })(r),
+        ],
+      ];
+      for (const [glob, run] of routesA) await page.route(glob, run);
+      await page.evaluate(() => window.localStorage.clear());
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      /** Every drawn box the selector finds: how far its words run past
+          it, and how far it runs past its column (the conversation's) or
+          the screen. */
+      const spill = (sel) =>
+        page.evaluate((s) => {
+          return [...document.querySelectorAll(s)]
+            .filter((e) => e.getClientRects().length > 0)
+            .map((e) => {
+              const b = e.getBoundingClientRect();
+              const col = e.closest("[data-chat-column]")?.getBoundingClientRect().right ?? window.innerWidth;
+              return { over: Math.round(e.scrollWidth - e.clientWidth), past: Math.round(b.right - Math.min(col, window.innerWidth)) };
+            });
+        }, sel);
+      await open("sessions");
+      await press('[data-side-row="chat/peer"] [data-side-open]');
+      const chatUp = await until(5_000, async () => (await count("[data-msg-text]")) === 2);
+      const bubbles = chatUp ? await spill("[data-msg-text]") : [];
+      console.log(`afix a · 留言 at 390: ${JSON.stringify(bubbles)}`);
+      if (!chatUp) fail("probe dead: afix a · 留言 never drew its two lines");
+      else if (bubbles.some((x) => x.over > 1 || x.past > 1)) {
+        fail(`afix a · a 留言 line with a long URL runs ${JSON.stringify(bubbles)} past its bubble / the screen — it wraps inside the bubble (views/MachineChat.tsx data-msg-text, overflow-wrap)`);
+      }
+      await open("sessions");
+      await press('[data-side-row="gui/afix-agent"] [data-side-open]');
+      const agentUp = await until(5_000, async () => (await count("[data-chat-column] [data-chat-tool]")) === 1);
+      const said = agentUp ? await spill("[data-chat-column] [data-md]") : [];
+      const tool = agentUp ? await spill("[data-chat-column] [data-chat-tool] [data-word-text]") : [];
+      console.log(`afix a · the agent's conversation at 390: words ${JSON.stringify(said)}, tool title ${JSON.stringify(tool)}`);
+      if (!agentUp) fail("probe dead: afix a · the agent's conversation never drew its tool line");
+      else {
+        if (said.length === 0 || said.some((x) => x.over > 1 || x.past > 1)) fail(`afix a · the agent's words with a long URL run ${JSON.stringify(said)} past the column (components/Markdown, views/ChatView data-chat-column)`);
+        if (tool.length === 0 || tool.some((x) => x.over > 1 || x.past > 1)) fail(`afix a · a tool line's long title runs ${JSON.stringify(tool)} past the column — it wraps inside it (views/ChatView data-word-text)`);
+      }
+      for (const [glob, run] of routesA) await page.unroute(glob, run);
+    }
+
+    // b. 诊断's facts on a phone.
+    {
+      const HOST = "relay-beijing-north-region-02.lab.example.cn:8443";
+      const conn = {
+        home_relay: "https://use1-1.relay.iroh.network./",
+        home_connected: true,
+        home_error: null,
+        preferred_relay: null,
+        relays: [
+          { url: "https://relay-beijing.lab.example.cn:8443/", rtt_ms: null },
+          { url: `https://${HOST}/`, rtt_ms: 182 },
+        ],
+        peers: [],
+        unread: null,
+      };
+      const routeB = json(conn);
+      await page.route("**/connections", routeB);
+      for (const [width, scheme] of [[375, "light"], [390, "dark"]]) {
+        const where = `afix b · 诊断 at ${width} ${scheme}`;
+        await page.evaluate(() => window.localStorage.clear());
+        await page.setViewportSize({ width, height: 844 });
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        const up = (await openMore("doctor")) && (await until(5_000, async () => (await page.locator('[data-connections] [data-more-fact="conn-relay"]').count()) === 2));
+        // Counted drawn or not: a value squeezed to no width is the bug,
+        // and a visibility filter would read it as 「never drew」.
+        if (!up) {
+          fail(`probe dead: ${where} · the page or its 连接 group never drew`);
+          continue;
+        }
+        await wait(400);
+        const facts = await page.evaluate(() =>
+          [...document.querySelectorAll('[data-more-page="doctor"] [data-more-row]')]
+            .filter((row) => row.getClientRects().length > 0 && row.querySelector("[data-more-fact]"))
+            .map((row) => {
+              const v = row.querySelector("[data-more-fact]");
+              const l = row.querySelector("[data-more-label]") ?? v.previousElementSibling;
+              const line = v.parentElement.getBoundingClientRect();
+              const lines = (e) => {
+                const cs = getComputedStyle(e);
+                const lh = Number.parseFloat(cs.lineHeight) || Number.parseFloat(cs.fontSize) * 1.3;
+                return Math.round(e.getBoundingClientRect().height / lh);
+              };
+              const mid = l.querySelector("[data-mid-name]");
+              const vb = v.getBoundingClientRect();
+              const lb = l.getBoundingClientRect();
+              return {
+                name: v.getAttribute("data-more-fact"),
+                label: (mid ? mid.children[1] : l).textContent.trim(),
+                labelLines: lines(mid ? mid.children[1] : l),
+                labelPast: Math.round(lb.right - line.right),
+                value: v.textContent.trim(),
+                lines: lines(v),
+                share: Math.round((vb.width / line.width) * 100) / 100,
+              };
+            }),
+        );
+        console.log(`${where}: ${JSON.stringify(facts)}`);
+        const squeezed = facts.filter((f) => f.lines > 1 && f.share < 0.9);
+        if (squeezed.length) fail(`${where} · values squeezed beside their labels: ${JSON.stringify(squeezed)} — a value that wraps has a line of its own (views/more/MorePage MoreFact)`);
+        const spilt = facts.filter((f) => f.labelLines !== 1 || f.labelPast > 1);
+        if (spilt.length) fail(`${where} · labels broken or past the row: ${JSON.stringify(spilt)} — one line inside the row (views/more/MorePage MoreFact)`);
+        // Whole where it fits (390 has the room), cut in the middle where
+        // it does not (375): its start, 「…」, its port — never broken.
+        const host = facts.find((f) => f.name === "conn-relay" && f.value.includes("182"));
+        const cut = host?.label.includes("…");
+        if (!host || (cut ? !host.label.startsWith("relay-") || !host.label.endsWith("8443") : host.label !== HOST)) {
+          fail(`${where} · the relay ${HOST} is labelled ${JSON.stringify(host?.label)} — whole, or cut in the middle: its start, 「…」, its port (browse/TabStrip MidName)`);
+        }
+        if (width === 375 && host && !cut) fail(`${where} · the relay ${HOST} is whole at 375, where it is wider than the row — the probe proves nothing about the cut (or the cut never happened)`);
+      }
+      await page.unroute("**/connections", routeB);
+    }
+
+    // c. a greyed row's words.
+    {
+      const peer = devs.find((d) => d.name === "peer");
+      const elder = devs.find((d) => d.name === "elder");
+      const keep = [peer && { ...peer }, elder && { ...elder }];
+      if (!peer || !elder) fail("probe dead: afix c · no peer or elder in the device table");
+      else {
+        Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: 26 * 3600_000, last_hop: "relay", heard_ms: 20 * 3600_000, down_ms: 4_000, last_rtt_ms: 140, vitals: null });
+        Object.assign(peer, { paused: true });
+        /** Every drawn word in what the selector finds: its contrast, as
+            painted — its colour times every opacity from it to the root,
+            over every ground behind it — skipping the `tertiary`
+            exception (README 可访问性例外). And how greyed the row's face
+            is. */
+        const inks = (sel) =>
+          page.evaluate((s) => {
+            const rgba = (c) => {
+              const m = /rgba?\(([^)]+)\)/.exec(c);
+              if (!m) return [0, 0, 0, 0];
+              const v = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+              return [v[0], v[1], v[2], v[3] ?? 1];
+            };
+            const over = (top, under) => [0, 1, 2].map((i) => top[i] * top[3] + under[i] * (1 - top[3])).concat(1);
+            const behind = (el) => {
+              const chain = [];
+              for (let n = el; n; n = n.parentElement) chain.push(rgba(getComputedStyle(n).backgroundColor));
+              return chain.reverse().reduce((under, top) => over(top, under), [255, 255, 255, 1]);
+            };
+            const lum = (c) => {
+              const f = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+              return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+            };
+            const ratio = (a, b) => {
+              const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+              return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100;
+            };
+            const fade = (el) => {
+              let a = 1;
+              for (let n = el; n; n = n.parentElement) a *= Number(getComputedStyle(n).opacity);
+              return a;
+            };
+            return [...document.querySelectorAll(s)]
+              .filter((row) => row.getClientRects().length > 0)
+              .map((row) => {
+                const probe = document.createElement("span");
+                probe.style.color = "var(--tertiary)";
+                row.appendChild(probe);
+                const tertiary = getComputedStyle(probe).color;
+                probe.remove();
+                const words = [];
+                const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+                for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+                  const el = t.parentElement;
+                  if (!t.textContent.trim() || !el || el.getClientRects().length === 0) continue;
+                  const cs = getComputedStyle(el);
+                  if (cs.visibility === "hidden" || el.closest(".sr-only, [aria-hidden='true'].invisible")) continue;
+                  if (cs.color === tertiary) continue;
+                  const ink = rgba(cs.color);
+                  ink[3] *= fade(el);
+                  const ground = behind(el);
+                  words.push([t.textContent.trim(), ratio(over(ink, ground), ground)]);
+                }
+                const face = row.querySelector("[data-side-face-slot], [data-now-device] > :first-child");
+                return {
+                  row: row.getAttribute("data-device") ?? row.getAttribute("data-now-device")?.slice(0, 6),
+                  face: face ? Math.round(fade(face) * 100) / 100 : null,
+                  low: words.filter(([, c]) => c < 4.5),
+                };
+              });
+          }, sel);
+        for (const scheme of ["light", "dark"]) {
+          await page.evaluate(() => window.localStorage.clear());
+          await page.setViewportSize({ width: 1400, height: 900 });
+          await page.emulateMedia({ colorScheme: scheme });
+          await page.reload({ waitUntil: "load" });
+          await wait(900);
+          await page.mouse.move(0, 0);
+          await open("devices");
+          const listUp = await until(5_000, async () => (await count('[data-side-row][data-device="elder"]')) === 1);
+          await wait(400);
+          const list = listUp ? await inks('[data-side-row][data-device="elder"], [data-side-row][data-device="peer"]') : [];
+          console.log(`afix c · ${scheme} · the machines list: ${JSON.stringify(list)}`);
+          if (!listUp || list.length !== 2) fail(`probe dead: afix c · ${scheme} · the machines list drew ${list.length} of elder and peer`);
+          else {
+            const low = list.filter((r) => r.low.length);
+            if (low.length) fail(`afix c · ${scheme} · greyed machine rows paint words under 4.5: ${JSON.stringify(low)} — the face and the name grey, the words that say why keep their ink (components/SideList dim)`);
+            const bright = list.filter((r) => !(r.face < 0.99));
+            if (bright.length) fail(`afix c · ${scheme} · ${JSON.stringify(bright)} — an unreachable and a paused machine are still greyed, by their face`);
+          }
+          await open("sessions");
+          const nowUp = await until(5_000, async () => (await count("[data-now-machines] [data-now-device]")) === devs.length);
+          await wait(300);
+          const column = nowUp ? await inks("[data-now-machines] [data-now-device]") : [];
+          console.log(`afix c · ${scheme} · the overview's machines: ${JSON.stringify(column)}`);
+          if (!nowUp) fail(`probe dead: afix c · ${scheme} · the sessions overview drew no machine column`);
+          else {
+            const low = column.filter((r) => r.low.length);
+            if (low.length) fail(`afix c · ${scheme} · the overview's machines paint words under 4.5: ${JSON.stringify(low)} — a machine that never answered greys its face and name, never its road (views/MeshNow)`);
+            const me = column.find((r) => r.row === "e".repeat(6));
+            const quiet = column.find((r) => r.row === "d".repeat(6));
+            if (!me || me.face < 0.99) fail(`afix c · ${scheme} · this machine reads ${JSON.stringify(me)} in the overview — never greyed (views/MeshNow)`);
+            if (!quiet || !(quiet.face < 0.99)) fail(`afix c · ${scheme} · a machine that never answered reads ${JSON.stringify(quiet)} — still greyed, by its face (views/MeshNow)`);
+          }
+        }
+        for (const [d, k] of [[peer, keep[0]], [elder, keep[1]]]) {
+          for (const f of Object.keys(d)) if (!(f in k)) delete d[f];
+          Object.assign(d, k);
+        }
+      }
+    }
+
+    // d. a part that fails to draw.
+    {
+      const said = word("fault-said");
+      const none = word("doctor-no-answer");
+      const nothing = word("find-nothing");
+      let answer = null;
+      const routeD = (r) => json(answer)(r);
+      await page.route("**/doctor", routeD);
+      const engine = () => page.evaluate(() => /TypeError|Cannot read|is not a function|undefined is not|null is not/.test(document.body.innerText));
+      const reset = async (width) => {
+        await page.evaluate(() => window.localStorage.clear());
+        await page.setViewportSize({ width, height: width < 600 ? 844 : 900 });
+        await page.emulateMedia({ colorScheme: "light" });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+      };
+
+      // d1. `null`: no answer, said once, loading stopped.
+      answer = null;
+      await reset(1400);
+      const opened1 = await openMore("doctor");
+      const told = opened1 && (await until(4_000, async () => (await page.locator("[data-doctor-error]").filter({ visible: true }).textContent().catch(() => null))?.trim() === none));
+      const waiting = await count('[data-more-page="doctor"] [data-doctor-list] [data-region-state="waiting"]');
+      console.log(`afix d1 · 诊断 answered null: opened ${opened1}, said ${told}, still loading ${waiting}`);
+      if (!opened1) fail("probe dead: afix d1 · 诊断 never opened");
+      else if (!told || waiting) fail(`afix d1 · 诊断 answered null and the page ${told ? "still loads" : `does not say ${JSON.stringify(none)}`} — no answer is an ask that failed (views/more/DoctorPage)`);
+
+      // d2. `[null]`: a throw in the page's render, wide and on a phone.
+      for (const width of [1400, 390]) {
+        const where = `afix d2 · ${width}`;
+        answer = [null];
+        await reset(width);
+        const opened = await openMore("doctor");
+        const caught = opened && (await until(4_000, async () => (await count("[data-fault]")) > 0));
+        const state = await page.evaluate(() => ({
+          fault: [...document.querySelectorAll("[data-fault]")].filter((e) => e.getClientRects().length > 0).map((e) => [e.getAttribute("data-fault"), e.innerText.trim()]),
+          retry: [...document.querySelectorAll("[data-fault-retry]")].filter((e) => e.getClientRects().length > 0).length,
+          rail: document.querySelector("[data-rail-more]")?.getClientRects().length ?? 0,
+          back: [...document.querySelectorAll("[data-back]")].filter((e) => e.getClientRects().length > 0).length,
+        }));
+        const raw = await engine();
+        console.log(`${where} · 诊断 answered [null]: ${JSON.stringify(state)}, engine text ${raw}`);
+        if (!opened) {
+          fail(`probe dead: ${where} · 诊断 never opened`);
+          continue;
+        }
+        if (!caught || state.fault.length !== 1 || !state.fault[0][1].includes(said) || state.retry !== 1) {
+          fail(`${where} · a throw in 诊断's render left ${JSON.stringify(state)} — one sentence (${JSON.stringify(said)}) and 重试 where the page was (components/Fault, App.tsx seams)`);
+        }
+        if (raw) fail(`${where} · the engine's own words are on the page — the sentence is the catalog's, the error goes to the console`);
+        if (width > 600 && !state.rail) fail(`${where} · the window lost its strip with the page — only the page goes down (App.tsx seams)`);
+        if (width < 600 && !state.back) fail(`${where} · the phone's screen lost its 「‹」 with the page — the seam draws it (App.tsx, Fault head)`);
+        answer = DOCTOR_ROWS;
+        if (caught) await press("[data-fault-retry]");
+        const back = caught && (await until(4_000, async () => (await count("[data-doctor-list]")) > 0 && (await count("[data-fault]")) === 0));
+        if (caught && !back) fail(`${where} · 重试 over a good answer did not draw the checks (components/Fault)`);
+      }
+
+      // d3. ⌘K answered `null`.
+      const routeF = json(null);
+      await page.route("**/find", routeF);
+      await reset(1400);
+      await open("sessions");
+      await page.keyboard.press("Meta+k");
+      await until(3_000, async () => (await page.locator("[data-search-box]").count()) === 1);
+      const box = page.locator("[data-search-box]").filter({ visible: true });
+      const typed = (await box.count()) > 0;
+      if (typed) await box.first().fill("gate");
+      const quiet = typed && (await until(3_000, async () => (await page.locator("[data-search-none]").filter({ visible: true }).textContent().catch(() => null))?.trim() === nothing));
+      const standing = await count("[data-rail-more]");
+      const raw = await engine();
+      console.log(`afix d3 · ⌘K answered null: typed ${typed}, 没有结果 ${quiet}, strip ${standing}, engine text ${raw}`);
+      // The box asks once as it opens (an empty word), so a window that
+      // blanks on `null` loses the box before anything is typed: no box
+      // *and* no strip is the bug, no box with the strip standing is the
+      // probe's.
+      if (!typed && standing) fail("probe dead: afix d3 · ⌘K drew no box");
+      else if (!typed || !quiet || !standing || raw) fail(`afix d3 · ⌘K answered null and the window ${standing ? `does not say ${JSON.stringify(nothing)}` : "went blank"} — no answer is no hits (components/SideHead)`);
+      await page.keyboard.press("Escape");
+      await page.unroute("**/find", routeF);
+      await page.unroute("**/doctor", routeD);
+    }
+
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "afix") console.log("afix · FACE_ONLY=afix: the other sections are skipped");
+
+  // ── 额度 at three widths and two themes (UX-53, ux-q3, 2026-10-08) ──
+  //
+  // The owner approved the lab (ux-q2, audit/ux-53.md); the lead named
+  // what a machine reads, at 1280, 390 and 375 (a finger on both phones),
+  // light and dark, on a board of its own: a subscription (5H 91%, 7D
+  // 100%, 7D · Opus), an API account with four model ids read on a peer,
+  // a gateway and a relay read here, a wallet, one that cannot be read.
+  //   a. **the list**: every row's gauge starts on one x, read here or on
+  //      a peer (an age under the share or none); the gauge is as tall as
+  //      the two lines beside it (±1); the share and the reset's time are
+  //      whole; the wallet and the unreadable row draw no gauge — the
+  //      wallet its money, the other its word;
+  //   b. **an account page**: a window's title (name ↻ time) and its share
+  //      are one line each, the time not cut; every bar is ≥ 36; nothing
+  //      runs past the lead's right edge, nor the lead past the screen;
+  //      a dial on the wide face, none on a phone;
+  //   c. **the median**: its rule is `--chart-median`, ≥ 4.5 on `--card`,
+  //      over a halo of the paper; its word in the same ink;
+  //   d. **the colours**: the API account's four models wear no
+  //      `--model-tail` and no two alike; every `--model-series-*` ≥ 3 on
+  //      the ground, both themes; each family's oldest ≥ 3 on the dark
+  //      ground (the tokens, and the oldest opus as drawn); one id one
+  //      colour on two accounts, and on one account before and after the
+  //      subscription's page was opened; on a relay a model whose slot
+  //      sits by a family on that chart moves off it (its slot is
+  //      `--model-series-6` elsewhere — the control);
+  //   e. **a phone's table**: three heads, no cell cut but the model's,
+  //      and that one a single line.
+  //
+  // New rules, red first on 2a036e4f's face (the lane's base, before
+  // ux-q2's build). `FACE_ONLY=quota` runs this section alone.
+  quota: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "quota") break quota;
+  {
+    const sec = Math.floor(Date.now() / 1000);
+    const DAY = 86_400;
+    /** Eight days of a model's tokens, the newest today — totals that
+        differ day to day, so a median stands among them. */
+    const tokensOf = (models) =>
+      models.flatMap((model, i) =>
+        Array.from({ length: 8 }, (_, d) => ({
+          at: sec - (7 - d) * DAY,
+          model,
+          tokens: { input: 900 * (i + 1) + 350 * ((d * 3) % 7), cached_input: 0, cache_write: 0, output: 2_100 * (i + 1) + 600 * ((d * 5) % 7) },
+          cache_split: false,
+        })),
+      );
+    const ROUTER = ["deepseek-chat", "gpt-5", "kimi-k2", "qwen3-coder"];
+    // **Sorted over the board, `zhipu-glm-4.6` is the sixth name** (the
+    // four above, `grok-4`, then it): its slot is `--model-series-6`, which
+    // `lib/model-band`'s `CLOSE` lists by opus — so on the relay, beside
+    // `claude-opus-4-1`, it has to move, and on the gateway it may not.
+    const MOVED = "zhipu-glm-4.6";
+    // **The API account first**: the wide face opens on the first row,
+    // so its colours are read before the subscription's page has ever
+    // been opened (d's 「before and after」).
+    const qBoard = [
+      {
+        ...ring("q-router", "OpenRouter 团队共享", "openrouter", {
+          fill: 0.71,
+          spent: 142.3,
+          limit: 200,
+          remaining: 57.7,
+          currency: "USD",
+          resets_at: sec + 23 * DAY + 6 * 3600,
+          model_tokens: tokensOf(ROUTER),
+        }),
+        mine: false,
+        home_name: "peer",
+        age_ms: 41 * 60_000,
+      },
+      {
+        ...ring("q-max", "Claude Max", "claude", {
+          kind: "sub",
+          plan: "Max 20x",
+          fill: 1,
+          at_ms: Date.now() - 3 * 60_000,
+          windows: [
+            { span: "five_hour", scope: null, used_pct: 91, resets_at: sec + 2 * 3600 + 14 * 60, active: true, severity: "normal" },
+            { span: "seven_day", scope: null, used_pct: 100, resets_at: sec + 3 * DAY + 4 * 3600, active: false, severity: "normal" },
+            { span: "seven_day", scope: "Opus", used_pct: 64, resets_at: sec + 3 * DAY + 4 * 3600, active: false, severity: "normal" },
+          ],
+          credits: { enabled: true, disabled_reason: null, used: 12.4, balance: null, monthly_limit: 50, currency: "USD", ever_enabled: true },
+        }),
+        strain: "critical",
+      },
+      ring("q-gw", "gateway", "newapi", {
+        fill: 0.46,
+        spent: 46,
+        limit: 100,
+        currency: "USD",
+        resets_at: sec + 45 * 60,
+        model_tokens: tokensOf(["gpt-5", "grok-4", MOVED]),
+      }),
+      ring("q-relay", "relay", "newapi", {
+        fill: 0.2,
+        spent: 20,
+        limit: 100,
+        currency: "USD",
+        resets_at: sec + 2 * 3600 + 14 * 60,
+        model_tokens: tokensOf(["claude-opus-4-1", MOVED]),
+      }),
+      ring("q-wallet", "DeepSeek 钱包", "deepseek", { remaining: 42.1, currency: "CNY", unit: "¥" }),
+      ring("q-moon", "Moonshot", "moonshot", { trouble: "key-refused" }),
+    ];
+    // The subscription's transcripts: opus in three generations (the
+    // oldest is the one the dark ground swallowed), and a Codex model no
+    // account carries — what the page learns only once the subscription
+    // has been opened.
+    const dayOf = (k) => {
+      const t = new Date(Date.now() - k * DAY * 1000);
+      return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+    };
+    const cellOf = (k, model, n, category = "claude") => ({
+      day: dayOf(k),
+      category,
+      model,
+      tokens: { input: n, cached_input: 3 * n, cache_write: n, output: 2 * n },
+    });
+    const qUsage = {
+      days: [],
+      unreadable: 0,
+      models: [
+        ...[7, 6, 5, 4, 3, 2, 1, 0].flatMap((k) => [cellOf(k, "claude-opus-6", 4_000 + 900 * ((k * 3) % 5)), cellOf(k, "claude-sonnet-4-5", 1_500 + 300 * k)]),
+        ...[7, 5, 3].map((k) => cellOf(k, "claude-opus-5", 2_000)),
+        cellOf(6, "claude-opus-4-8", 1_200),
+        cellOf(2, "gpt-5-codex", 9_000, "codex"),
+      ],
+      today: dayOf(0),
+    };
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const boardRoute = json(qBoard);
+    const usageRoute = json(qUsage);
+    await page.unroute("**/quota_board");
+    await page.route("**/quota_board", boardRoute);
+    await page.route("**/usage", usageRoute);
+    const cdpQ = await page.context().newCDPSession(page);
+    const lum = (c) => {
+      const f = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+    };
+    const ratio = (a, b) => {
+      if (!a || !b) return 0;
+      const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+      return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100;
+    };
+    const same = (a, b) => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) <= 1);
+    const count = (sel) => page.locator(sel).filter({ visible: true }).count();
+
+    /** The list's rows, as laid out: the gauge's box, the two lines it
+        stands beside, the share's and the time's overflow. */
+    const listRows = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll("[data-quota-row]")]
+          .filter((r) => r.getBoundingClientRect().width > 0)
+          .map((row) => {
+            const g = row.querySelector("[data-quota-gauge]")?.getBoundingClientRect() ?? null;
+            const lines = row.querySelector("[data-side-text] > span:first-child")?.getBoundingClientRect() ?? null;
+            const pct = row.querySelector("[data-quota-pct]");
+            const time = row.querySelector("[data-side-sub] [data-quota-resets] > span");
+            return {
+              id: row.getAttribute("data-quota-row"),
+              gauge: g ? { left: +g.left.toFixed(1), h: +g.height.toFixed(1) } : null,
+              lines: lines ? +lines.height.toFixed(1) : null,
+              sub: (row.querySelector("[data-side-sub]")?.textContent ?? "").trim(),
+              pct: pct ? { says: pct.textContent.trim(), over: pct.scrollWidth - pct.clientWidth } : null,
+              timeOver: time ? time.scrollWidth - time.clientWidth : null,
+              balance: row.querySelector("[data-quota-balance]")?.textContent?.trim() ?? null,
+              state: row.querySelector("[data-quota-state]")?.textContent?.trim() ?? null,
+              age: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
+              // The right column's widths, for the read when the x differs.
+              corner: ["[data-side-corners]", '[data-corner="top"]', '[data-corner="bottom"]', "[data-quota-pct]"].map((q) => +(row.querySelector(q)?.getBoundingClientRect().width ?? -1).toFixed(1)),
+            };
+          }),
+      );
+
+    /** The open account page: its lead's lines, bars, dials and edges;
+        the median; the legend's paints; the table's cells; the tokens. */
+    const pageRead = () =>
+      page.evaluate(() => {
+        const shown = (sel, root = document) => [...root.querySelectorAll(sel)].filter((e) => e.getClientRects().length > 0);
+        const parse = (c) => {
+          let m = /^rgba?\(([^)]+)\)/.exec(c ?? "");
+          if (m) return m[1].split(/[\s,/]+/).filter(Boolean).slice(0, 3).map(Number);
+          m = /^color\(srgb ([^)]+)\)/.exec(c ?? "");
+          if (m) return m[1].split(/[\s/]+/).filter(Boolean).slice(0, 3).map((v) => Math.round(Number(v) * 255));
+          return null;
+        };
+        const ink = (value) => {
+          const p = document.createElement("span");
+          p.style.color = value;
+          document.body.append(p);
+          const c = getComputedStyle(p).color;
+          p.remove();
+          return parse(c);
+        };
+        const lineOf = (e) => {
+          let lh = 0;
+          for (const n of [e, ...e.querySelectorAll("*")]) {
+            const cs = getComputedStyle(n);
+            lh = Math.max(lh, Number.parseFloat(cs.lineHeight) || Number.parseFloat(cs.fontSize) * 1.2 || 0);
+          }
+          return lh;
+        };
+        const detail = shown("[data-quota-detail]")[0] ?? null;
+        const lead = detail ? shown("[data-quota-lead]", detail)[0] ?? null : null;
+        const lb = lead?.getBoundingClientRect();
+        const oneLine = (sel) =>
+          lead
+            ? shown(sel, lead).map((e) => ({
+                says: e.textContent.trim(),
+                h: +e.getBoundingClientRect().height.toFixed(1),
+                lh: +lineOf(e).toFixed(1),
+                over: e.scrollWidth - e.clientWidth,
+              }))
+            : [];
+        let past = -Infinity;
+        let pastWhat = null;
+        if (lead) {
+          for (const n of lead.querySelectorAll("*")) {
+            const b = n.getBoundingClientRect();
+            if (b.width === 0 || b.height === 0) continue;
+            if (b.right - lb.right > past) {
+              past = b.right - lb.right;
+              pastWhat = (n.textContent ?? "").trim().slice(0, 24) || n.tagName.toLowerCase();
+            }
+          }
+        }
+        const rule = detail ? shown("[data-usage-median-rule]", detail)[0] ?? null : null;
+        const word = detail ? shown("[data-usage-median-word]", detail)[0] ?? null : null;
+        const stats = detail ? shown('[data-usage-zone="stats"]', detail)[0] ?? null : null;
+        const frame = stats ? shown("[data-side-cut]", stats)[0] ?? null : null;
+        return {
+          detail: detail?.getAttribute("data-quota-detail") ?? null,
+          lead: lead
+            ? {
+                titles: oneLine("[data-quota-part-title]"),
+                pcts: oneLine("[data-quota-window-pct]"),
+                times: shown("[data-quota-resets] > span", lead).map((e) => e.scrollWidth - e.clientWidth),
+                bars: shown("[data-part-bar]", lead).map((e) => +e.getBoundingClientRect().width.toFixed(1)),
+                dials: shown("[data-dial-face]", lead).length,
+                past: +past.toFixed(1),
+                pastWhat,
+                offScreen: +(lb.right - document.documentElement.clientWidth).toFixed(1),
+              }
+            : null,
+          median: rule
+            ? {
+                stroke: parse(getComputedStyle(rule).stroke),
+                word: word ? parse(getComputedStyle(word).fill) : null,
+                halo: shown("[data-usage-median-halo]", detail).length,
+              }
+            : null,
+          paints: detail
+            ? Object.fromEntries(
+                shown("[data-usage-key-model]", detail).map((k) => [k.getAttribute("data-usage-key-model"), parse(getComputedStyle(k.querySelector("i")).backgroundColor)]),
+              )
+            : {},
+          table: stats
+            ? {
+                heads: shown("th[data-usage-col]", stats).map((h) => h.getAttribute("data-usage-col")),
+                over: frame?.firstElementChild ? frame.firstElementChild.scrollWidth - frame.firstElementChild.clientWidth : null,
+                rows: shown("tr[data-usage-row]", stats).map((tr) => {
+                  const cells = shown("td[data-usage-cell]", tr).map((td) => ({ key: td.getAttribute("data-usage-cell"), over: td.scrollWidth - td.clientWidth, h: td.getBoundingClientRect().height }));
+                  return { model: tr.getAttribute("data-usage-row"), cells };
+                }),
+              }
+            : null,
+          tokens: {
+            card: ink("var(--card)"),
+            median: ink("var(--chart-median)"),
+            tail: ink("var(--model-tail)"),
+            opus: ink("var(--model-opus)"),
+            series: [1, 2, 3, 4, 5, 6].map((k) => ink(`var(--model-series-${k})`)),
+            old: Object.fromEntries(["opus", "fable", "sonnet", "haiku"].map((f) => [f, ink(`var(--model-${f}-old)`)])),
+          },
+        };
+      });
+
+    const PASSES = [
+      ["1280", { width: 1280, height: 900 }, false],
+      ["390", { width: 390, height: 844 }, true],
+      ["375", { width: 375, height: 812 }, true],
+    ];
+    for (const [w, size, finger] of PASSES) {
+      for (const scheme of ["light", "dark"]) {
+        const where = `quota · ${w} ${scheme}`;
+        await cdpQ.send("Emulation.setTouchEmulationEnabled", { enabled: finger, maxTouchPoints: 1 });
+        await page.evaluate(() => window.localStorage.clear());
+        await page.setViewportSize(size);
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        if (finger !== (await page.evaluate(() => matchMedia("(pointer: coarse)").matches))) {
+          fail(`probe void: ${where} · the finger is ${finger ? "off" : "on"} — the gauge's height is the pointer's`);
+        }
+        await open("quota");
+        const up = await until(8_000, async () => (await count("[data-quota-row]")) === qBoard.length);
+        await wait(400);
+
+        // a. the list.
+        const rows = up ? await listRows() : [];
+        console.log(`${where} · list: ${JSON.stringify(rows)}`);
+        if (!up || rows.length !== qBoard.length) {
+          fail(`probe dead: ${where} · the list drew ${rows.length} of ${qBoard.length} rows`);
+          continue;
+        }
+        const gauged = rows.filter((r) => r.gauge);
+        const want = ["q-max", "q-router", "q-gw", "q-relay"];
+        if (JSON.stringify(gauged.map((r) => r.id).sort()) !== JSON.stringify([...want].sort())) {
+          fail(`${where} · gauges on ${JSON.stringify(gauged.map((r) => r.id))} — one on each row with a share (${want.join(", ")}), none on the wallet or the unreadable (UX-53, src/views/QuotaLanding.tsx RowGauge)`);
+        }
+        const xs = gauged.map((r) => r.gauge.left);
+        if (gauged.length > 1 && Math.max(...xs) - Math.min(...xs) > 0.5) {
+          fail(`${where} · the gauges start at ${JSON.stringify(gauged.map((r) => [r.id, r.gauge.left, r.age]))} — one x on every row, an age under the share or none (UX-53, the right corner's width)`);
+        }
+        const tall = gauged.filter((r) => r.lines === null || Math.abs(r.gauge.h - r.lines) > 1);
+        if (tall.length) {
+          fail(`${where} · gauge against its two lines: ${JSON.stringify(tall.map((r) => [r.id, r.gauge.h, r.lines]))} — as tall as the lines beside it, ±1 (UX-53, ROW_GAUGE_H)`);
+        }
+        const cut = rows.filter((r) => (r.pct && r.pct.over > 0) || (r.timeOver ?? 0) > 0);
+        if (cut.length) {
+          fail(`${where} · cut on the list: ${JSON.stringify(cut.map((r) => [r.id, r.pct, r.timeOver]))} — the share and the reset's time are whole (UX-53)`);
+        }
+        const wallet = rows.find((r) => r.id === "q-wallet");
+        const moon = rows.find((r) => r.id === "q-moon");
+        if (!wallet?.balance || wallet.gauge || wallet.pct) {
+          fail(`${where} · the wallet row reads ${JSON.stringify(wallet)} — its money at the right-top, no gauge, no share (the lead, 2026-10-08)`);
+        }
+        if (!moon?.state || moon.gauge || moon.pct) {
+          fail(`${where} · the unreadable row reads ${JSON.stringify(moon)} — its word at the right-top, no gauge (UX-53)`);
+        }
+
+        // b–e. the account pages. The router first, then the subscription,
+        // then the router again: what the page learns on the
+        // subscription's (its transcripts' models) may not recolour it.
+        const openRow = async (id) => {
+          if (finger) {
+            for (let i = 0; i < 3 && (await count("[data-quota-detail]")) > 0; i++) {
+              if (!(await tap("[data-back]"))) break;
+            }
+          }
+          await tap(`[data-quota-row="${id}"]`);
+          return until(6_000, async () => (await count(`[data-quota-detail="${id}"]`)) === 1 && (await count(`[data-quota-detail="${id}"] [data-usage-key-model]`)) > 0);
+        };
+        const seen = {};
+        for (const [id, key] of [["q-router", "router"], ["q-max", "max"], ["q-router", "router2"], ["q-gw", "gw"], ["q-relay", "relay"]]) {
+          const at = `${where} · ${key}`;
+          if (!(await openRow(id))) {
+            fail(`probe dead: ${at} · the account page or its chart never drew`);
+            continue;
+          }
+          await wait(300);
+          const r = await pageRead();
+          seen[key] = r;
+          console.log(`${at}: ${JSON.stringify({ lead: r.lead, median: r.median, paints: r.paints, table: r.table && { heads: r.table.heads, over: r.table.over } })}`);
+          if (key === "router2" || key === "gw" || key === "relay") continue;
+
+          // b. the lead.
+          const L = r.lead;
+          if (!L || L.titles.length === 0) {
+            fail(`probe dead: ${at} · no lead with window lines`);
+          } else {
+            const wrapped = [...L.titles, ...L.pcts].filter((t) => t.h > t.lh + 1 || t.over > 1);
+            if (wrapped.length) fail(`${at} · lines that wrap or spill: ${JSON.stringify(wrapped)} — a window's title (name ↻ time) and its share are one line each (UX-53, data-quota-parts)`);
+            if (L.times.some((o) => o > 0)) fail(`${at} · a reset's time is cut (${JSON.stringify(L.times)}) — 「2 小时 14 分」 whole (UX-53, Resets)`);
+            if (L.bars.length !== L.titles.length || L.bars.some((b) => b < 36)) fail(`${at} · bars ${JSON.stringify(L.bars)} for ${L.titles.length} lines — one per line, each ≥ 36 (UX-53)`);
+            if (L.past > 0.5 || L.offScreen > 0.5) fail(`${at} · 「${L.pastWhat}」 runs ${L.past} past the lead's right edge, the lead ${L.offScreen} past the screen — nothing crosses the page's right line (UX-53)`);
+            const dials = finger ? 0 : 1;
+            if (L.dials !== dials) fail(`${at} · ${L.dials} dial(s) in the lead — ${finger ? "none on a phone, each line carries its number (the lead's A)" : "one on the wide face"} (UX-53)`);
+          }
+
+          // c. the median.
+          const T = r.tokens;
+          if (!r.median) {
+            fail(`probe dead: ${at} · the trend chart drew no median rule`);
+          } else {
+            const c = ratio(r.median.stroke, T.card);
+            if (!same(r.median.stroke, T.median) || !same(r.median.word, T.median) || c < 4.5 || r.median.halo !== 1) {
+              fail(`${at} · the median rule ${JSON.stringify(r.median)} against --chart-median ${JSON.stringify(T.median)}, ${c} on --card — the ink, ≥ 4.5, over a halo of the paper, its word in the same ink (UX-53, UsageHalf)`);
+            }
+          }
+
+          // e. a phone's table.
+          if (finger) {
+            const tb = r.table;
+            if (!tb || tb.rows.length === 0) {
+              fail(`probe dead: ${at} · no stats table with rows`);
+            } else {
+              if (JSON.stringify(tb.heads) !== JSON.stringify(["model", "total", "days"])) {
+                fail(`${at} · the phone's table heads are ${JSON.stringify(tb.heads)} — 模型 / 总量 / 天数 (UX-53, PHONE_COLS)`);
+              }
+              const cutCells = tb.rows.flatMap((row) => row.cells.filter((c) => c.key !== "model" && c.over > 0).map((c) => [row.model, c.key, c.over]));
+              const tallNames = tb.rows.filter((row) => {
+                const name = row.cells.find((c) => c.key === "model");
+                const rest = row.cells.filter((c) => c.key !== "model").map((c) => c.h);
+                return !name || name.h > Math.max(...rest) + 1;
+              });
+              if (cutCells.length || (tb.over ?? 0) > 1) fail(`${at} · the phone's table cuts ${JSON.stringify(cutCells)}, runs ${tb.over} past its frame — only the model is cut (UX-53)`);
+              if (tallNames.length) fail(`${at} · model names on more than one line: ${JSON.stringify(tallNames.map((row) => row.model))} — one line, cut at its end (UX-53)`);
+            }
+          }
+        }
+
+        // d. the colours.
+        const T = seen.router?.tokens ?? seen.max?.tokens;
+        if (!T || !seen.router || !seen.router2 || !seen.gw || !seen.relay || !seen.max) {
+          fail(`probe dead: ${where} · d · pages read ${JSON.stringify(Object.keys(seen))}`);
+          continue;
+        }
+        const four = ROUTER.map((m) => [m, seen.router.paints[m] ?? null]);
+        if (four.some(([, p]) => !p)) {
+          fail(`probe dead: ${where} · d · the API account's legend reads ${JSON.stringify(seen.router.paints)}`);
+        } else {
+          const grey = four.filter(([, p]) => same(p, T.tail));
+          const twins = four.filter(([m, p]) => four.some(([n, q]) => n !== m && same(p, q)));
+          if (grey.length) fail(`${where} · d · ${JSON.stringify(grey.map(([m]) => m))} wear --model-tail — a model outside the families takes a series slot (UX-53, lib/model-band)`);
+          if (twins.length) fail(`${where} · d · ${JSON.stringify(twins)} — four models, four colours (UX-53)`);
+        }
+        const lowSeries = T.series.map((c, k) => [`--model-series-${k + 1}`, ratio(c, T.card)]).filter(([, c]) => c < 3);
+        if (lowSeries.length) fail(`${where} · d · ${JSON.stringify(lowSeries)} on --card — every series slot ≥ 3 on the ground (UX-53, tokens.css)`);
+        if (scheme === "dark") {
+          const lowOld = Object.entries(T.old).map(([f, c]) => [`--model-${f}-old`, ratio(c, T.card)]).filter(([, c]) => c < 3);
+          if (lowOld.length) fail(`${where} · d · ${JSON.stringify(lowOld)} on the black — each family's oldest stops at 3:1 (UX-53, tokens.css)`);
+          const oldest = seen.max.paints["claude-opus-4-8"];
+          if (!oldest || ratio(oldest, T.card) < 3) fail(`${where} · d · the oldest opus as drawn is ${JSON.stringify(oldest)}, ${ratio(oldest, T.card)} on the black — ≥ 3 (UX-53, lib/model-band)`);
+        }
+        const g5 = [seen.router.paints["gpt-5"], seen.gw.paints["gpt-5"]];
+        if (!same(g5[0], g5[1])) fail(`${where} · d · gpt-5 is ${JSON.stringify(g5)} on two accounts — one id, one colour on every page (UX-53, the board's slots)`);
+        const moved = ROUTER.filter((m) => !same(seen.router.paints[m], seen.router2.paints[m]));
+        if (moved.length) {
+          fail(`${where} · d · ${JSON.stringify(moved.map((m) => [m, seen.router.paints[m], seen.router2.paints[m]]))} — the API account's colours changed once the subscription's page was opened; one id, one colour (UX-53, QuotaLanding boardModels)`);
+        }
+        const home = seen.gw.paints[MOVED];
+        const relayed = seen.relay.paints[MOVED];
+        if (!same(home, T.series[5])) {
+          fail(`probe void: ${where} · d · ${MOVED} on the gateway is ${JSON.stringify(home)}, not --model-series-6 ${JSON.stringify(T.series[5])} — the relay arm below measures nothing`);
+        } else if (!relayed || same(relayed, T.series[5]) || same(relayed, seen.relay.paints["claude-opus-4-1"])) {
+          fail(`${where} · d · ${MOVED} on the relay is ${JSON.stringify(relayed)} beside opus — off series-6, which sits by opus (UX-53, lib/model-band CLOSE)`);
+        }
+      }
+    }
+    await cdpQ.send("Emulation.setTouchEmulationEnabled", { enabled: false, maxTouchPoints: 1 });
+    await cdpQ.detach().catch(() => {});
+    await page.unroute("**/usage", usageRoute);
+    await routeStanding();
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "quota") console.log("quota · FACE_ONLY=quota: the other sections are skipped");
+
   // ── 导入 is a search (imp-a, 2026-10-09, IMPORT-BRIEF) ───────────────
   //
   // The owner: 「现在，导入的时候，逻辑混乱，用户可能不期望按目录选，而可以
@@ -38638,8 +39564,9 @@ try {
   //      screen; narrow, the sheet does not scroll and the list does.
   //
   // `FACE_ONLY=import` runs this section alone.
-  import: {
-  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "import") break import;
+  // (The label is `imports`: `import` is a reserved word.)
+  imports: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "import") break imports;
   {
     const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     const count = (sel) => page.locator(sel).count();

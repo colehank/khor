@@ -24,7 +24,7 @@ import { IconReload } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
-import { ago } from "@/words";
+import { lasting } from "@/words";
 
 const SKELETON = ["w-[72%]", "w-[56%]", "w-[64%]", "w-[40%]"];
 
@@ -211,7 +211,7 @@ export function Waiting({
           {say && (
             <>
               <p role="status" className="max-w-measure text-callout text-muted-foreground tabular-nums">
-                {machine ? gui.waiting_on(machine, ago(since)) : gui.waiting(ago(since))}
+                {machine ? gui.waiting_on(machine, lasting(waited)) : gui.waiting(lasting(waited))}
               </p>
               {(onCancel || onRetry) && (
                 <div className="flex gap-in">

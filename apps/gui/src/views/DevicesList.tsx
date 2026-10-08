@@ -10,8 +10,7 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { band, BAND_INK } from "@/lib/latency";
 import { cli, gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
-import { isDown } from "@/lib/topology";
-import { lasted, connectionKey, connectionKeyWord, groupLabel, hopWord, systemWord } from "@/words";
+import { lasting, connectionKey, connectionKeyWord, groupLabel, latency, systemWord } from "@/words";
 import { MachineEditDialog } from "@/views/MachineEditDialog";
 import { PendingStrip } from "@/views/PairDialogs";
 
@@ -21,8 +20,10 @@ import { PendingStrip } from "@/views/PairDialogs";
  * the same menu and chips and the same rule (`lib/list-filter`), on the
  * three things a machine row says out loud:
  *
- * - `link:` 连接方式 — the word on the second line (`connectionKey`):
- *   本机, the road (直连 / 中继 / 未连接 / …), or 「经 <sponsor>」.
+ * - `link:` 连接方式 — **the word in the row's top-right corner**
+ *   (`connectionKey`, WORDS-1008: one derivation, so a tick on 中继 keeps
+ *   every row that says 中继): 已暂停, 本机, the road (直连 / 中继), 未连,
+ *   不通, or 「经 <sponsor>」.
  *   **One value per sponsor, not one 「借网」 for all of them**: the row
  *   prints 「经 turing」, so the option prints the same words and a tick
  *   keeps exactly the rows that say them. Merged, the option would need
@@ -33,19 +34,17 @@ import { PendingStrip } from "@/views/PairDialogs";
  *   machine that could not say (an older peer, a satellite, no reading
  *   yet) wears the plain machine mark, never a guess, and files under
  *   `""` 「未知」 — which is what that corner says.
- * - `state:` 状态 — 已暂停 and nothing else: the one state a row prints
- *   (`machine_paused`). A row that is not paused answers nothing here,
- *   so the axis is on offer only while some machine is paused (or a
- *   remembered tick is waiting to be undone).
+ * - ⚠️ 墓碑 (WORDS-1008): `state:` 状态, which held 已暂停 alone. 已暂停 is
+ *   the row's connection word now, so it is a `link:` value — two axes
+ *   would have offered one fact twice.
  *
  * The first prefix is also where a bare key would land (`axisOf`);
  * nothing ever wrote one into this store.
  */
-export const DEVICE_KEYS = ["link:", "sys:", "state:"] as const;
+export const DEVICE_KEYS = ["link:", "sys:"] as const;
 const devicePick = {
   "link:": (d: DeviceRow) => connectionKey(d),
   "sys:": (d: DeviceRow) => d.vitals?.vitals.system ?? "",
-  "state:": (d: DeviceRow) => (d.paused ? "paused" : null),
 };
 /** The three axes as the sieve reads them: keys and answers, no words. */
 const DEVICE_SIEVE = DEVICE_KEYS.map((key) => ({ key, pick: devicePick[key] }));
@@ -63,12 +62,6 @@ export const deviceAxes = (): ListAxis<DeviceRow>[] => [
     heading: gui.axis_system,
     pick: devicePick["sys:"],
     label: (v) => (v === "" ? gui.filter_unknown : systemWord(v)),
-  },
-  {
-    key: "state:",
-    heading: gui.axis_state,
-    pick: devicePick["state:"],
-    label: (v) => (v === "paused" ? gui.machine_paused : v),
   },
 ];
 
@@ -273,16 +266,16 @@ export function DevicesList({
     // readings; top-right the state; bottom-right how long it has held. A
     // slot with nothing true to say is not drawn.
     //
-    // A machine's state is its connection: the road its live wire is on
-    // for as long as it has been on it (`since_ms`), the "here" word for
-    // this one. With no live wire it is offline only when unreachable
-    // (`down_ms`: an attempt failed and nothing was heard since), for as
-    // long as it has not been heard; idle — no live wire, nothing known
-    // wrong — says the road it last used (`last_hop`) over how long since
-    // that road settled, and nothing when it never connected. Without a
-    // live wire its readings are not drawn, an old number being no
-    // reading at all. Paused is the state that wins: this machine stopped
-    // talking to it.
+    // A machine's state is its connection, **the one derivation every
+    // surface and the filter read** (`connectionKey`, WORDS-1008): 已暂停
+    // wins (this machine stopped talking to it); 本机; the road its live
+    // wire is on (直连 / 中继) for as long as it has been on it
+    // (`since_ms`); 不通 when unreachable (`down_ms`: an attempt failed and
+    // nothing was heard since), for as long as it has not been heard; 未连
+    // when idle — no live wire, nothing known wrong — for as long as it has
+    // been so. The bottom-right is a **duration**, bare (「4 小时」): how
+    // long the state has held. Without a live wire its readings are not
+    // drawn, an old number being no reading at all.
     // Tombstone (UX-15 → UX-48): the model as the name's aside; the
     // sessions running in the second line; the latency on the right with
     // the unreadable / not-connected words and the last-heard time under
@@ -290,29 +283,23 @@ export function DevicesList({
     // row: idle is not unreachable. (UX-50) the latency first in the
     // second line and the middle dots between its readings; a fourth
     // reading (disk beside GPU) — at most three, the owner 2026-10-08.
+    // (WORDS-1008) 离线 for unreachable, and the last road (中继) on an
+    // idle row: the filter said 未连 for the same row, so ticking 中继 did
+    // not find a row that said 中继. The last road is the detail's.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
-    const down = !d.me && d.hop === "quiet" && isDown(d.down_ms);
+    const key = connectionKey(d);
     const live = d.me || d.hop === "direct" || d.hop === "relay";
-    const idle = !d.me && d.hop === "quiet" && !down;
-    const lastRoad = idle && (d.last_hop === "direct" || d.last_hop === "relay") ? d.last_hop : null;
-    const state = d.paused
-      ? gui.machine_paused
-      : d.me
-        ? gui.machine_here
-        : live
-          ? hopWord(d.hop ?? "")
-          : down
-            ? gui.row_offline
-            : lastRoad
-              ? hopWord(lastRoad)
-              : null;
-    const held = d.paused
-      ? null
-      : (live || lastRoad) && typeof d.since_ms === "number"
-        ? lasted(d.since_ms)
-        : down && typeof d.heard_ms === "number"
-          ? lasted(d.heard_ms)
-          : null;
+    const state = connectionKeyWord(key);
+    const held =
+      key === "paused" || key === "here"
+        ? null
+        : key === "down"
+          ? typeof d.heard_ms === "number"
+            ? lasting(d.heard_ms)
+            : null
+          : typeof d.since_ms === "number"
+            ? lasting(d.since_ms)
+            : null;
     // **UX-50** (the owner 2026-10-08): the latency is the title line's,
     // after the name; under the name at most three readings, each a label
     // and a value with a gap between them and no middle dot: CPU, memory,
@@ -376,7 +363,7 @@ export function DevicesList({
                 className="me-xxs inline-block size-1.5 rounded-full align-middle"
                 style={{ background: BAND_INK[band(lat)] }}
               />
-              {gui.row_rtt(lat)}
+              {latency(lat)}
             </span>
           </Whole>
         ) : undefined,
@@ -394,7 +381,7 @@ export function DevicesList({
       ) : undefined,
       corners: {
         top: state ? (
-          <span data-row-state={d.paused ? "paused" : d.me ? "here" : live ? d.hop : down ? "offline" : "idle"} data-row-road={lastRoad ?? undefined}>
+          <span data-row-state={key === "down" ? "offline" : key === "quiet" ? "idle" : key}>
             {state}
           </span>
         ) : undefined,
@@ -415,7 +402,7 @@ export function DevicesList({
       // and its corner says when it was last heard; the sessions list
       // greys its far rows the same way. Idle is not unreachable (round
       // NET-13): its row is drawn as any other.
-      dim: d.paused || down,
+      dim: key === "paused" || key === "down",
       rowData: {
         "data-device": d.name,
         "data-row": d.id,

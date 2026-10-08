@@ -402,10 +402,14 @@ function MsgLine({
         {m.retracted ? (
           <div className="text-caption text-muted-foreground">{cli.retracted}</div>
         ) : m.text !== null ? (
+          // **A word longer than the bubble breaks inside the bubble**
+          // (afix-a; the audit's S2: a long URL ran past the bubble and
+          // off a phone's screen, its tail unreadable). `anywhere`, so a
+          // URL with no break of its own still wraps.
           <div
             data-msg-text
             className={cn(
-              "whitespace-pre-wrap rounded-lg px-3 py-1.5 text-read-ink",
+              "whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg px-3 py-1.5 text-read-ink",
               m.from_me ? "bg-accent" : "border bg-card",
             )}
           >

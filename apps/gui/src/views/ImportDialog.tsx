@@ -59,14 +59,15 @@ function markOf(answer: AgentSaid | undefined): string {
 }
 
 /** **Why a machine is not in 「全部」**, or `null` for one that is: it
-    cannot be reached (`connectionKey`'s `down`, the word every surface
-    says, WORDS-1008), or it is paused. Its chip stays, with the word;
-    pressed, its last-known sessions are listed. A machine the table has
-    not named is taken as reachable — what it reported is all there is. */
+    cannot be reached or is paused — `connectionKey`'s `down` / `paused`
+    and their words (不通 / 已暂停), the one derivation every surface
+    reads (WORDS-1008). Its chip stays, with the word; pressed, its
+    last-known sessions are listed. A machine the table has not named is
+    taken as reachable — what it reported is all there is. */
 function away(d: DeviceRow | undefined): string | null {
-  if (!d || d.me) return null;
-  if (d.paused) return gui.machine_paused;
-  return connectionKey(d) === "down" ? connectionKeyWord("down") : null;
+  if (!d) return null;
+  const key = connectionKey(d);
+  return key === "down" || key === "paused" ? connectionKeyWord(key) : null;
 }
 
 /** The fields a typed word is looked for in. */
@@ -535,7 +536,7 @@ function Row({
           {row.at_ms > 0 && (
             <>
               {" · "}
-              <span className="tabular-nums">{gui.card_age(ago(row.at_ms))}</span>
+              <span className="tabular-nums">{ago(row.at_ms)}</span>
             </>
           )}
         </span>

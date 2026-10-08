@@ -1,0 +1,47 @@
+/* Lab only (lane ux-q2): the tokens this draft proposes, in both themes.
+   On a real build they go into `styles/tokens.css` and
+   `docs/design-system/tokens.json` in one commit.
+
+   --model-series-1..6: a slot per model id outside the four Claude
+   families (replaces `--model-spare`, and `--model-tail` for any named
+   model). Searched in OKLCH, then validated with the dataviz validator
+   (Machado 2009 CVD, OKLab ΔE×100):
+     light on #f4f4ef: contrast 3.42–7.50; adjacent CVD ≥ 14.9, slots 1–4
+       all-pairs CVD ≥ 13.5; normal-vision all-pairs ≥ 17.3.
+     dark on #000:     contrast 3.88–7.52; adjacent CVD ≥ 13.3, slots 1–4
+       all-pairs CVD ≥ 12.6; normal-vision all-pairs ≥ 17.2.
+   Every slot keeps ≥ 35° (HSL) off 待批's cold blue (avatar.rs
+   BLOCKED_KEEPOUT).
+
+   --chart-median: the ink of the median rule and its word, drawn on a
+   halo of the paper (`--card`), so its contrast is ink-on-paper on every
+   band: 13.6 light / 16.5 dark. */
+:root {
+  --model-series-1: #0b663c;
+  --model-series-2: #4c68eb;
+  --model-series-3: #9a8202;
+  --model-series-4: #d34198;
+  --model-series-5: #be1506;
+  --model-series-6: #7223aa;
+  --chart-median: var(--foreground);
+}
+:root[data-theme="dark"] {
+  --model-series-1: #0eb16a;
+  --model-series-2: #4761e4;
+  --model-series-3: #85700b;
+  --model-series-4: #be2b86;
+  --model-series-5: #f0503d;
+  --model-series-6: #b46df4;
+  --chart-median: var(--foreground);
+}
+
+/* The row's ring is as tall as the row's two lines of words: the
+   headline's line and the callout's (measured in the lab). */
+:root {
+  --quota-ring: 34px;
+}
+@media (pointer: coarse) {
+  :root {
+    --quota-ring: 41px;
+  }
+}
