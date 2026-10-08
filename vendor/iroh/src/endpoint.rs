@@ -1401,6 +1401,18 @@ impl Endpoint {
         self.inner.home_relay_status()
     }
 
+    /// **This endpoint's direct addresses with where each came from**
+    /// (khor patch 7, vendor/iroh/KHOR.md): the set [`Self::watch_addr`]
+    /// carries, but typed, so a watcher can tell a locally bound address
+    /// (it moves when an interface does) from one learned by QAD or a
+    /// port mapping (it moves when a probe says so).
+    #[cfg(not(wasm_browser))]
+    pub fn watch_direct_addrs(
+        &self,
+    ) -> impl Watcher<Value = std::collections::BTreeSet<DirectAddr>> + use<> {
+        self.inner.ip_addrs()
+    }
+
     /// **The peers a relay just saw leave** (khor patch 4, vendor/iroh/KHOR.md).
     ///
     /// A relay server sends `EndpointGone` to the endpoints a departing

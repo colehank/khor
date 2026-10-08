@@ -264,8 +264,16 @@ export function SideWorkspace({
             git
             goLine={goLine?.path === file ? goLine : null}
             draft={drafts.get(file)}
+            // **The same draft is no change** (`MachineFiles`' rule; fix-e,
+            // 2026-10-08): `FileView` says its draft from an effect that
+            // runs whenever this callback is new, which is every render —
+            // a new Map each time made it an update a frame, for as long as
+            // a file was open here, and the landings' switch (a transition)
+            // never finished: 「侧边展开的时候, 不能通过导航到别的页面」.
             onDraft={(d) =>
               setDrafts((was) => {
+                const had = was.get(file);
+                if (d === null ? had === undefined : had === d) return was;
                 const now = new Map(was);
                 if (d === null) now.delete(file);
                 else now.set(file, d);

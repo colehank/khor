@@ -15,9 +15,11 @@
  * **No edit mode** (UX-14): a text file is editable as soon as it is open
  * (Notes) — a tap puts the caret where the finger is, a drag scrolls, the
  * keyboard's rise does not move the text. A file that renders opens
- * rendered and the eye turns it to its source at the same place. Saving
- * is the ✓; leaving keeps the draft (the row carries its dot), and
- * nothing asks. A Mac clicks into the text and saves with ⌘S, as before.
+ * rendered and the eye turns it to its source at the same place. The file
+ * saves itself a second after the typing stops and on leaving (save-a,
+ * 2026-10-08); the ✓ writes at once and says 已保存. A save that does not
+ * land keeps the draft (the row carries its dot), and the file says why.
+ * A Mac clicks into the text and saves with ⌘S, as before.
  * ⚠️ 墓碑: the name pill at the top centre (it faded while the text
  * moved), the 编辑 circle that turned into ✓ 保存, and the question on
  * leaving with a draft.
@@ -37,6 +39,7 @@ import { IconBack, IconBranch, IconCheck, IconEye, IconMore, IconReload, IconSha
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,6 +59,7 @@ import { FILE_STEPS, fileSizeStyle, useFileSize } from "@/lib/file-size";
 import { groundAttr, GROUNDS, usePreviewGround } from "@/lib/preview-ground";
 import { baseName } from "@/lib/paths";
 import { treeChanged } from "@/lib/tree-changed";
+import { useRoad } from "@/lib/save-road";
 import { cn } from "@/lib/utils";
 import { bytesOf, revealHere, shares } from "@/views/chat-files";
 import { HistorySheet, RevisionView, shortId } from "@/views/FileHistory";
@@ -517,10 +521,12 @@ export function FilePage({
     restore.current = topLine(box.current);
     setFace((f) => (f === "preview" ? "source" : "preview"));
   };
-  /** **Saving is explicit** (UX-14): the ✓ at the pill's end, drawn while
-      the buffer differs from the file. Leaving keeps the draft (its row
-      carries the dot); nothing asks. */
+  /** **The file saves itself** (save-a, 2026-10-08; UX-14's explicit
+      saving 墓碑): a second after the typing stops and on leaving. The ✓
+      at the pill's end, drawn while something is not yet written, writes
+      at once; then it says 已保存 for a moment (`confirmed`). */
   const save = () => setSaves((n) => n + 1);
+  const confirmed = useRoad(machine, path).confirmed;
 
   // **The deck folds while the file is read** (UX-13, `lib/deck-fold`): a
   // file rests at its top. Nothing folds with the keyboard up.
@@ -696,6 +702,19 @@ export function FilePage({
                 <GlassItem aria-label={gui.watch_save} data-file-save data-tab-act="save" onClick={save} className="text-brand-strong">
                   <IconCheck />
                 </GlassItem>
+              ) : confirmed ? (
+                // 已保存, said at the ✓ for a moment and pressing nothing
+                // (the wide strip's `saved`, `TabStrip`).
+                <Tooltip key="saved" open>
+                  <TooltipTrigger asChild>
+                    <GlassItem aria-label={gui.file_saved} aria-disabled data-tab-act="saved" className="pointer-events-none">
+                      <IconCheck />
+                    </GlassItem>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" data-saved-said>
+                    {gui.file_saved}
+                  </TooltipContent>
+                </Tooltip>
               ) : (
                 <GlassItem aria-label={gui.file_reread} data-file-reread data-tab-act="reload" onClick={() => setReads((n) => n + 1)}>
                   <IconReload />

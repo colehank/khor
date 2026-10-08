@@ -200,7 +200,10 @@ impl Node {
                 let Some(middle) = all.iter().find(|d| &d.id == b) else { continue };
                 let Ok(via) = b.parse::<EndpointId>() else { continue };
                 // Boxed: the middle's wire is a dial, and a dial may hop.
-                let line = Box::pin(self.line_to_inner(ep, middle, Proto::Tunnel, None, false));
+                let line = Box::pin(crate::journal::BY.scope(
+                    crate::journal::By::Hop,
+                    self.line_to_inner(ep, middle, Proto::Tunnel, None, false),
+                ));
                 let Ok(line) = line.await else {
                     continue;
                 };
@@ -210,9 +213,20 @@ impl Node {
             }
             None
         };
+        let tried = u32::try_from(picked.len().min(TRIES)).unwrap_or(u32::MAX);
         let Ok(Some((via, send, recv))) = tokio::time::timeout(HOP_WITHIN, tries).await else {
+            if tried > 0 {
+                self.wires.note(Some(&y.id), crate::journal::What::Hop { via: None, tried });
+            }
             return;
         };
+        self.wires.note(
+            Some(&y.id),
+            crate::journal::What::Hop {
+                via: Some(via.to_string()),
+                tried,
+            },
+        );
         let attached = self.carry.attach(peer, Carrier::Hop { via }, recv, send);
         let (links, wires, id) = (self.carry.clone(), self.wires.clone(), y.id.clone());
         tokio::spawn(async move {

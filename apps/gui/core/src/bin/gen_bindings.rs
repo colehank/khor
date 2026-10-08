@@ -47,6 +47,8 @@ fn main() {
     khor_gui_core::ReachReport::export_all_to(&dir).expect("export ReachReport");
     // 经由's copy line: asked by one screen, embedded in nothing.
     khor_gui_core::ProxyLine::export_all_to(&dir).expect("export ProxyLine");
+    // 连接记录: asked by the machine page, embedded in nothing.
+    khor_gui_core::JournalLine::export_all_to(&dir).expect("export JournalLine");
     khor_gui_core::add::AddAsk::export_all_to(&dir).expect("export AddAsk");
     khor_gui_core::add::AddRun::export_all_to(&dir).expect("export AddRun");
     khor_gui_core::add::LoginAsk::export_all_to(&dir).expect("export LoginAsk");

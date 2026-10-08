@@ -21,7 +21,7 @@
 //      and no file imports `span` or `lasted` (a bare number of hours is
 //      the ambiguity: an age, a deadline or a duration?);
 //   4. **a latency is 「23 ms」**: no catalog sentence words one in 毫秒
-//      (`{n} 毫秒`), and the latency keys (`row-rtt`, `conn-relay-ms`,
+//      (`{n} 毫秒`), and the latency keys (`row-rtt`,
 //      `roads-ms`) are called from `words.ts` alone (`latency`);
 //   5. **连不上 is 不通**: the machine-connection sentences never say 离线,
 //      无法获取 or 连不上; the retired keys (`row-offline`, `map-last-seen`,
@@ -129,7 +129,7 @@ for (const name of ["span", "lasted"]) {
 // 4. 23 ms.
 const msZh = [...zh].filter(([, v]) => /\{\d+\}\s*毫秒/.test(v));
 if (msZh.length) fail(`latencies worded in 毫秒 — 「23 ms」 (the owner 2026-10-05): ${msZh.map(([k, v]) => `${k} = ${v}`).join(" | ")}`);
-for (const key of ["gui.row_rtt", "gui.conn_relay_ms", "cli.roads_ms"]) {
+for (const key of ["gui.row_rtt", "cli.roads_ms"]) {
   const at = users(new RegExp(`\\b${key.replace(".", "\\.")}\\b`));
   if (at.length) fail(`${key} called from ${at.join(", ")} — a latency is words.ts latency()`);
 }
@@ -147,7 +147,7 @@ for (const key of MACHINE) {
 }
 if (zh.get("hop.down") !== "不通") fail(`hop.down = ${zh.get("hop.down")} — 不通`);
 if (zh.get("cli.vitals-never") !== "尚无读数") fail(`vitals-never = ${zh.get("cli.vitals-never")} — 尚无读数`);
-for (const key of ["gui.row-offline", "gui.map-last-seen", "gui.card-age"]) {
+for (const key of ["gui.row-offline", "gui.map-last-seen", "gui.card-age", "gui.conn-relay-ms"]) {
   if (zh.has(key)) fail(`${key} is back in zh.toml — retired by WORDS-1008 (不通 / downWord, agoOf)`);
   const at = users(new RegExp(`\\b${ident(key).replace(".", "\\.")}\\b`), []);
   if (at.length) fail(`${ident(key)} is used in ${at.join(", ")} — retired by WORDS-1008`);

@@ -400,6 +400,11 @@ pub enum Op {
         password: bool,
         passphrase: bool,
     },
+    /// **A machine's page was opened** (NET-STABLE 第二步): a round with
+    /// it now, past its backoff — the restart a person would otherwise
+    /// reach for. At most once a `link::SYNC_EVERY` per machine.
+    /// Answered [`Reply::Noted`] at once; the round runs on. Tail-appended.
+    Visit { machine: String },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -495,6 +500,7 @@ impl Op {
             Op::HistoryOn { .. } => ("HistoryOn", DEADLINE_FAR),
             Op::GitOn { .. } => ("GitOn", DEADLINE_FAR),
             Op::FaceHere { .. } => ("FaceHere", DEADLINE_LOCAL),
+            Op::Visit { .. } => ("Visit", DEADLINE_LOCAL),
             Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
