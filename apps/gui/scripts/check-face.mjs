@@ -29107,12 +29107,13 @@ try {
       const tabNotice = page.locator('[data-tab="tui/face-term"][data-tab-notice="failed"]');
       await until(3_000, async () => (await tabNotice.count()) > 0);
       const bare = await page.evaluate(() => document.body.innerText.includes("refused by the gate"));
+      const onTab = await tabNotice.count();
       await page.locator('[data-tab="tui/face-term"] [data-tab-open]').click().catch(() => {});
       await until(2_000, async () => (await page.locator("[data-notice-panel] [data-notice-detail]").count()) > 0);
       await page.locator("[data-notice-panel] [data-notice-detail]").click().catch(() => {});
       const said = await page.locator("[data-notice-panel] [data-notice-raw]").textContent().catch(() => null);
-      console.log(`term iv · a refused drop: on the tab ${await tabNotice.count()}, its words before 详情 ${bare}, under it ${JSON.stringify(said)}`);
-      if ((await tabNotice.count()) === 0 || bare || !said?.includes("refused by the gate")) {
+      console.log(`term iv · a refused drop: on the tab ${onTab}, its words before 详情 ${bare}, under it ${JSON.stringify(said)}`);
+      if (onTab === 0 || bare || !said?.includes("refused by the gate")) {
         fail(`term iv · a refused drop said ${JSON.stringify(said)} — the failure on the front tab, the refusal's words under 详情 and nowhere before it`);
       }
       await page.locator('[data-notice-panel] [data-notice-act="cancel"]').click().catch(() => {});
@@ -39154,12 +39155,38 @@ try {
     }
     const pillH = a.pill?.height ?? 0;
 
-    // b. the growth from the pill's own box.
+    // b. the growth from the pill's own box: every clip the island is
+    // drawn with, from its first, recorded as it changes.
+    const watchClips = () =>
+      page.evaluate(() => {
+        const w = window;
+        w.__clips = [];
+        w.__pillAt = document.querySelector("[data-deck-pill]")?.getBoundingClientRect().toJSON() ?? null;
+        const note = () => {
+          const isl = document.querySelector("[data-notice-island]");
+          if (!isl) return;
+          const c = getComputedStyle(isl).clipPath;
+          if (w.__clips[w.__clips.length - 1]?.clip !== c) w.__clips.push({ clip: c, box: isl.getBoundingClientRect().toJSON(), hidden: getComputedStyle(isl).visibility === "hidden" });
+        };
+        w.__clipWatch?.disconnect();
+        w.__clipWatch = new MutationObserver(note);
+        w.__clipWatch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+      });
+    const clips = () => page.evaluate(() => ({ clips: window.__clips.filter((c) => !c.hidden), pill: window.__pillAt }));
+    await watchClips();
     await page.locator("[data-deck-pill] [data-deck-title]").click();
-    const first = await read();
+    await until(2_000, async () => (await read()).island !== null);
     await wait(450);
+    const seen = await clips();
+    const first = { clip: seen.clips[0]?.clip ?? null, islandBox: seen.clips[0]?.box ?? null, pill: seen.pill, island: seen.clips.length ? "folded" : null };
     const b = await read();
-    const inset = (c) => (c?.match(/inset\(([^)]*)\)/)?.[1] ?? "").split(/\s+/).filter((x) => x.endsWith("px")).slice(0, 4).map(parseFloat);
+    // `inset(t r b l round …)` as the browser writes it back: the CSS
+    // shorthand, one to four lengths.
+    const inset = (c) => {
+      const v = (c?.match(/inset\(([^)]*)\)/)?.[1] ?? "").split(" round")[0].trim().split(/\s+/).filter(Boolean).map(parseFloat);
+      const [t, r = t, b = t, l = r] = v;
+      return v.length ? [t, r, b, l] : [];
+    };
     const startAt = inset(first.clip);
     const want = first.pill && first.islandBox ? [first.pill.top - first.islandBox.top, first.islandBox.right - first.pill.right, first.islandBox.bottom - first.pill.bottom, first.pill.left - first.islandBox.left] : [];
     console.log(`notice b · first clip ${first.clip} (the pill's box ${JSON.stringify(want.map(Math.round))}); grown ${b.island}, rows ${JSON.stringify(b.rows)}, glyph at ${JSON.stringify(b.glyphs.map((x) => Math.round(x - (b.islandBox?.left ?? 0))))}, the pill's look ${b.lookOpacity}`);
@@ -39216,9 +39243,13 @@ try {
 
     // e. reduced motion.
     await page.emulateMedia({ reducedMotion: "reduce" });
+    await watchClips();
     await page.locator("[data-deck-pill] [data-deck-title]").click();
-    const still = await read();
-    if (still.island !== "open" || !/inset\(0(px)?\s/.test(still.clip ?? "")) fail(`notice e · reduced motion: the first frame was ${still.island} ${still.clip} — grown at once`);
+    await until(2_000, async () => (await read()).island !== null);
+    await wait(100);
+    const stillSeen = await clips();
+    const still = { island: (await read()).island, clip: stillSeen.clips[0]?.clip ?? null };
+    if (still.island !== "open" || !/^inset\(0(px)?( 0(px)?)* round/.test(still.clip ?? "")) fail(`notice e · reduced motion: the first frame drawn was ${still.clip} (${still.island}) — grown at once`);
     await page.keyboard.press("Escape");
     await page.emulateMedia({ reducedMotion: "no-preference" });
 

@@ -232,6 +232,8 @@ export function SessionScreen({
       under way and a plain pill open the 底栏 as before. */
   const stops = face?.notices ?? [];
   const grown = useGrownPill(stops.length);
+  /** Grown and something to grow into: the island stands, the pill hides. */
+  const island = grown.growth.mounted && stops.length > 0;
   const [deckPill, setDeckPill] = useState<HTMLElement | null>(null);
   const foldGrown = grown.fold;
   useEffect(() => foldGrown(), [active, foldGrown]);
@@ -394,7 +396,7 @@ export function SessionScreen({
         // The deck steps away while the sheet is up (UX-37 §4; the owner
         // 2026-10-06 21:05 again: 「展开了不要有下面的药丸这一行」). Over
         // the scrim while the pill is grown.
-        className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible", grown.growth.mounted && "relative z-50")}
+        className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible", island && "relative z-50")}
       >
         {folded && (
           // **Safari's capsule** (UX-29, the owner 2026-10-06): one small
@@ -479,7 +481,7 @@ export function SessionScreen({
               aria-label={gui.session_tabs}
               className="glass relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-glass-btn"
               // While grown the pill is the island: one piece of glass.
-              style={grown.growth.mounted ? { visibility: "hidden" } : undefined}
+              style={island ? { visibility: "hidden" } : undefined}
             >
               <div data-deck-pill-row className="flex h-glass-btn min-w-0 items-center gap-in ps-1 pe-1">
                 <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
@@ -519,11 +521,11 @@ export function SessionScreen({
               </GlassCircle>
             </>
           )}
-          {grown.growth.mounted && !editor && <NoticeIsland list={stops} pill={deckPill} growth={grown.growth} seat="size-glass-item-h" />}
+          {island && !editor && <NoticeIsland list={stops} pill={deckPill} growth={grown.growth} seat="size-glass-item-h" />}
         </div>
         <div ref={setUnder} data-session-bar-under className="flex flex-none flex-col empty:hidden" />
       </div>
-      {grown.growth.mounted && <NoticeScrim on={grown.growth.big} openedAt={grown.openedAt} onFold={grown.fold} />}
+      {island && <NoticeScrim on={grown.growth.big} openedAt={grown.openedAt} onFold={grown.fold} />}
       <TabSheet
         open={sheet}
         onOpenChange={setSheet}

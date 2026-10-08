@@ -2083,7 +2083,7 @@ export function TerminalPane({
         }
         seq = b.seq;
         if (b.gone) setGone(true);
-        const held = b.gone ? null : b.stall;
+        const held = b.gone ? null : (b.stall ?? null);
         setStall((was) => (was && held && was.kind === held.kind && was.raw === held.raw ? was : held));
         setStallSince((t) => (held ? t || Date.now() : 0));
         return b.gone ? "ended" : "live";

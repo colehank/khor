@@ -20,7 +20,7 @@
 // 详情 folded (the machine's own words only there), and the acts at the
 // end. A light scrim behind; a tap outside folds it back. Reduced motion:
 // no animation.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 import { MidName } from "@/browse/TabStrip";
@@ -106,7 +106,7 @@ export function NoticeLook({ list, seat, hideMark = false }: { list: PillNotice[
         {list.length > 1 && (
           <span
             data-notice-count={list.length}
-            className="absolute -top-0.5 -right-0.5 grid h-affordance min-w-affordance place-items-center rounded-full bg-foreground px-0.5 text-caption leading-none font-semibold text-background tabular-nums"
+            className="absolute -top-0.5 -right-0.5 grid h-affordance min-w-affordance place-items-center rounded-full bg-foreground px-0.5 text-caption leading-none text-background tabular-nums"
           >
             {list.length}
           </span>
@@ -204,7 +204,7 @@ function ActButton({ a }: { a: NoticeAct }) {
       type="button"
       data-notice-act={a.key}
       onClick={a.run}
-      className={cn("rounded-md px-2 py-1 text-callout hover:bg-fill", a.quiet ? "text-muted-foreground" : "font-semibold text-foreground")}
+      className={cn("rounded-md px-2 py-1 text-callout hover:bg-fill", a.quiet ? "text-muted-foreground" : "text-foreground")}
     >
       {a.word}
     </button>
@@ -408,6 +408,9 @@ export function NoticeIsland({
         clipPath: clip,
         WebkitClipPath: clip,
         transition: move ? `clip-path ${GROW_MS}ms ${EASE}, -webkit-clip-path ${GROW_MS}ms ${EASE}` : undefined,
+        // Not drawn until the pill's box is measured: never a frame at
+        // the grown size before it has grown.
+        visibility: growth.big || box ? undefined : "hidden",
       }}
     >
       <div ref={scroller} className="absolute inset-0 overflow-x-hidden overflow-y-auto overscroll-contain">
@@ -521,17 +524,15 @@ export function useGrownPill(count: number) {
   useEffect(() => {
     if (count === 0) setOpen(false);
   }, [count]);
-  useEscape(open, () => setOpen(false));
-  return {
-    open,
-    growth,
-    openedAt: openedAt.current,
-    grow: () => {
-      openedAt.current = Date.now();
-      setOpen(true);
-    },
-    fold: () => setOpen(false),
-  };
+  // Stable, so an owner can fold on its own changes (another tab in
+  // front) without folding on every render.
+  const fold = useCallback(() => setOpen(false), []);
+  const grow = useCallback(() => {
+    openedAt.current = Date.now();
+    setOpen(true);
+  }, []);
+  useEscape(open, fold);
+  return { open, growth, openedAt: openedAt.current, grow, fold };
 }
 
 export type GrownPill = ReturnType<typeof useGrownPill>;

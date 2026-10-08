@@ -1156,7 +1156,7 @@ export function ChatView({
           if (stopped) return;
           cursor = batch.next;
           setSending(batch.sending_of > 0 ? [batch.sending, batch.sending_of] : null);
-          const held = batch.gone ? null : batch.stall;
+          const held = batch.gone ? null : (batch.stall ?? null);
           setStall((was) => (was && held && was.kind === held.kind && was.raw === held.raw ? was : held));
           setStallSince((t) => (held ? t || Date.now() : 0));
           // **A turn that did not go** (`Unsent`): taken back off the
