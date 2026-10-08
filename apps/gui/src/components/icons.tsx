@@ -120,13 +120,16 @@ const LIVE = {
   pin: fit(2.87, 1.84, 11.29), // round
   terminal: reshare(fit(2.45, 2.56, 11.1), PLAIN, LIGHT),
   chat: fit(1.6, 2.3, 12.8),
-  keyboard: fit(1.17, 1.17, 13.66), // square
-  // The Finder's (UX-27, 2026-10-06): the same 11 square as the keyboard's
-  // case, on the 16 canvas.
+  // The deck's two (icon-a, 2026-10-09), computed rather than scanned: a
+  // case and a row of caps 10.5 across (2.75–13.25), ink 11.44 with the
+  // line, at the square share — 13 units, so at 26, the size they are
+  // drawn at under a finger, one unit is two pixels and the keyboard's
+  // dots land whole. One box for both: side by side they reach as far.
+  keyboard: fit(1.5, 1.5, 13), // square
+  keyRow: fit(1.5, 1.5, 13), // square
+  // The Finder's (UX-27, 2026-10-06): an 11 square (2.5–13.5) on the 16
+  // canvas, scanned.
   finder: fit(1.17, 1.17, 13.66), // square
-  // The key row's (UX-12, 2026-10-04), computed rather than scanned: a
-  // strip 15 across, centred on the 16 canvas, at the 0.90 share.
-  keyRow: fit(-1.05, -1.05, 18.1),
   file: fit(1.07, 1.07, 13.87), // square
   link: fit(2.14, 2.14, 11.73), // round
   // The cursor key's (2026-10-03): ink 11 across, centred on the 16
@@ -283,7 +286,7 @@ export function IconDevices({ className }: IconProps) {
 /**
  * An SSH host = the rack's box, one window tall: the window is the solid
  * piece and a `>_` prompt is punched through it with the family's line,
- * the keyboard's construction (round join-d, the owner kept the lab's
+ * the shield's keyhole construction (round join-d, the owner kept the lab's
  * proposal). It sits beside `devices` on 添加机器's first choice at the
  * same weight, and its box is `devices`' outline exactly (3.5–20.5 ×
  * 4.6–19.4), so the measured live area is `devices`' too.
@@ -912,36 +915,37 @@ export function IconChat({ className }: IconProps) {
 
 /**
  * A keyboard — the soft keyboard's switch on the narrow session page's
- * bar (2026-10-02, iOS 第三步 A): up when it is down, down when it is up.
- * Drawn for the 16 canvas, the 32nd glyph. **The case is the solid
- * piece** and the keys are punched through it with the family's cut — a
- * row of three keys and the space bar, the shield's keyhole done four
- * times — rather than drawn on top: keys drawn on a filled case would be
- * ink on ink, and keys drawn as an outline's contents read at 16 as a
- * grille.
+ * deck (2026-10-02, iOS 第三步 A): up when it is down, down when it is up.
+ * Drawn for the 16 canvas, the 32nd glyph.
+ *
+ * **The system's keyboard, not a plate** (icon-a, 2026-10-09: the owner
+ * tried the candidates in the keys lab and took K1 —「键盘用k1和r1」).
+ * An outlined case, two rows of keys and the space bar, the way the
+ * system draws a keyboard, in place of the solid case with three keys
+ * punched through it. So it has **no solid piece** — with the key row
+ * beside it, the family's outline-only pair: here the keys are the
+ * density, and a filled case under them would be ink on ink.
+ *
+ * **Four keys over three, centred** (the owner on K1:「四个点不对称不协
+ * 调，要么对齐的四个点，要么第二行只有三个点居中对齐」; the lead took
+ * three): the second row sits in the first row's gaps, a keyboard's
+ * stagger, and is lighter at 16 than four over four. Both rows and the
+ * space bar are mirror images about the centre — the lab's K1 drew its
+ * rows 0.5 left of the case and its last key 0.15 short. The space bar
+ * spans the row above it, key to key. Everything is on whole units, and
+ * a unit is two pixels at 26: each key is a dot one unit across, centred
+ * on a whole pixel, so it paints a clean 2 × 2 cell. At 16 and 20 only
+ * the middle column lands on the grid; at those sizes symmetry is what
+ * keeps the dots alike.
  */
 export function IconKeyboard({ className }: IconProps) {
   return (
-    <Mark
-      className={className}
-      live={LIVE.keyboard}
-      icon="keyboard"
-      cut={
-        <path
-          stroke="black"
-          strokeWidth={lineOf(LIVE.keyboard)}
-          strokeLinecap="round"
-          d="M5.4 6.9h.01M8 6.9h.01M10.6 6.9h.01M5.4 9.5h5.2"
-        />
-      }
-    >
-      {(cutId) => (
-        <path
-          data-body
-          mask={`url(#${cutId})`}
-          d="M4.1 4h7.8a1.6 1.6 0 0 1 1.6 1.6v4.8a1.6 1.6 0 0 1-1.6 1.6H4.1a1.6 1.6 0 0 1-1.6-1.6V5.6A1.6 1.6 0 0 1 4.1 4Z"
-        />
-      )}
+    <Mark className={className} live={LIVE.keyboard} icon="keyboard">
+      <rect x="2.75" y="4.25" width="10.5" height="7.5" rx="1.6" />
+      {/* A dot of the line's own width reads smaller than the line, so a
+          key is one unit, a hair over it (0.94): the lab's 1.6 to 1.5. */}
+      <path strokeWidth={1} d="M5 6h.01M7 6h.01M9 6h.01M11 6h.01M6 8h.01M8 8h.01M10 8h.01" />
+      <path d="M6 10h4" />
     </Mark>
   );
 }
@@ -964,7 +968,7 @@ const FINDER_FACE = "M4.9 4.7v1.1M11.1 4.7v1.1M4.5 9.7Q8 12.6 11.5 9.7";
  * drawn once, as the body's own edge. The eyes and the smile are the
  * front form: they cut the body with the family's equal-width gap and
  * are drawn over both halves — the smile crosses the split, as it does
- * on the real one. The pulse's construction, not the keyboard's: a
+ * on the real one. The pulse's construction, not the shield's keyhole: a
  * feature drawn on the hollow half must be a line, so it is a line on
  * the solid half too, in its own channel.
  */
@@ -998,18 +1002,27 @@ export function IconFinder({ className }: IconProps) {
 
 /**
  * The terminal's key row — the deck's circle that opens and closes it on
- * a phone (UX-12, 2026-10-04): one row of keys, a strip parted into
- * three, the first part wider, the way Esc sits beside Ctrl and Tab.
- * **Hollow, where the keyboard is solid**: in 点击按钮 the two circles
- * stand side by side, and the soft keyboard's is a filled case with its
- * keys cut out, so the two read apart at a glance. Three caps drawn
- * apart read at 20 as「000」; one strip parted reads as a row.
+ * a phone (UX-12, 2026-10-04): **three key caps in a row** (icon-a,
+ * 2026-10-09, the owner's R1 from the keys lab), in place of one strip
+ * parted into three. In 点击按钮 it stands beside the keyboard's circle,
+ * and the two read apart by shape — a case of keys, a row of caps — now
+ * that neither is solid.
+ *
+ * **Apart by the family's gap, square-cornered**: the lab's caps were
+ * drawn 0.95 apart under a 1.5 line, so their walls touched and the row
+ * read as one strip again; here the caps stand one `GAP` apart, as the
+ * store's arrow stands off its tray. Taller than wide, about the lab's
+ * proportion, with a tight corner: rounder caps read at 20 as「000」,
+ * which is the reason the strip was drawn in the first place. The caps
+ * span the keyboard's case exactly (2.75–13.25), so the two glyphs share
+ * one live area and reach as far.
  */
 export function IconKeyRow({ className }: IconProps) {
   return (
     <Mark className={className} live={LIVE.keyRow} icon="key-row">
-      <rect x="0.5" y="3.8" width="15" height="8.4" rx="2.2" />
-      <path d="M6 3.8v8.4M10.75 3.8v8.4" />
+      <rect x="2.75" y="6" width="2.58" height="4" rx="0.6" />
+      <rect x="6.71" y="6" width="2.58" height="4" rx="0.6" />
+      <rect x="10.67" y="6" width="2.58" height="4" rx="0.6" />
     </Mark>
   );
 }
@@ -1115,7 +1128,7 @@ export function IconShare({ className }: IconProps) {
  * the mark the tab's face seat wears while a drop runs, SF's
  * `arrow.up.circle.fill` in this family. The 34th glyph, 16 canvas.
  * **The disc is the solid piece** and the arrow is punched through it
- * with the family's cut, the keyboard's construction; at the tick's
+ * with the family's cut, the shield's keyhole construction; at the tick's
  * `bold` weight, because a hole reads thinner than a line of its width.
  * Not `IconShare` (an arrow leaving an open tray: handing something
  * out) and not the cursor key's bare arrows (a way to move): a closed
