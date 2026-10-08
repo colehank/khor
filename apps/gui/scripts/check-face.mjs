@@ -24531,10 +24531,12 @@ try {
   //      the end, CPU never (measured on both kinds of machine); `machine-here` with nothing
   //      under it; `row-offline` over how long unheard (`heard_ms`) with
   //      no readings and no latency; `machine-paused` with no time;
-  //   b. terminal sessions — the command alone under the name, idle or
-  //      running: no `row-running` sentence, no exit code, no time in the
-  //      line (the
-  //      state word over its age is the row's `trailing`, unchanged);
+  //   b. terminal sessions — running, the command under the name; once
+  //      finished, its output's last line, else 「<命令> 执行成功 / 执行
+  //      失败」; ^C, a closed pipe and a full-screen program the command
+  //      alone; no `row-running` sentence, no exit code, no time in the
+  //      line, no state ink (the state word over its age is the row's
+  //      `trailing`, unchanged);
   //   c. quota — when the fullest window resets under the name, the
   //      reading's age bare at the bottom-right, nothing where none;
   //   d. workspaces — the branch after the name (secondary ink, a size
@@ -24851,7 +24853,11 @@ try {
     }
   }
 
-  // b. terminal sessions: the command alone.
+  // b. terminal sessions: running, the command; finished, what it said —
+  // its output's last line, or with nothing printed the command and how
+  // it ended in words (the terminal row, the owner 2026-10-08); ^C, a
+  // closed pipe and a full-screen program: the command alone. No exit
+  // code, no 正在运行, no state ink on the line.
   {
     const doing = (patch) => ({
       command: null,
@@ -24868,43 +24874,71 @@ try {
       notice_ms: 0,
       pane_unmarked: false,
       bell_ms: 0,
+      last_line: null,
       ...patch,
     });
     const term = (n, id, d) => ({ ...row(n, "idle"), id, kind: "shell", category: "shell", title: id.split("/")[1], hosted: true, attachable: true, doing: d });
     const now = Date.now();
+    const ran = (command, exit, last_line = null) => doing({ command, running: false, started_ms: now - 61_000, ended_ms: now - 60_000, exit, last_line });
     const TERMS = [
-      // An idle shell after `ls`, which exited 0 a minute ago.
-      term(41, "shell/corners-ran", doing({ command: "ls", running: false, started_ms: now - 61_000, ended_ms: now - 60_000, exit: 0 })),
-      // …one whose last command failed, so an exit code exists to leak.
-      term(42, "shell/corners-failed", doing({ command: "make", running: false, started_ms: now - 30_000, ended_ms: now - 20_000, exit: 2 })),
-      // …and one running for three minutes.
-      { ...term(43, "shell/corners-running", doing({ command: "pytest tests/", running: true, started_ms: now - 180_000 })), word: "busy" },
+      // An idle shell after `ls`, which printed two names and exited 0.
+      term(41, "shell/corners-ran", ran("ls", 0, "a.txt  b.txt")),
+      // …one whose last command failed, saying so on its last line.
+      { ...term(42, "shell/corners-failed", ran("make", 2, "make: *** [all] Error 2")), word: "failed" },
+      // …one that printed nothing and succeeded, one that printed nothing and failed.
+      term(43, "shell/corners-quiet-ok", ran("cp a.txt b.txt", 0)),
+      { ...term(44, "shell/corners-quiet-failed", ran("test -f weights.pt", 1)), word: "failed" },
+      // …^C and a closed pipe: neither.
+      term(45, "shell/corners-ctrl-c", ran("sleep 600", 130)),
+      term(46, "shell/corners-pipe", ran("yes", 141)),
+      // …one running for three minutes, and a full-screen program.
+      { ...term(47, "shell/corners-running", doing({ command: "pytest tests/", running: true, started_ms: now - 180_000 })), word: "busy" },
+      { ...term(48, "shell/corners-full", doing({ command: "vim notes.md", running: true, full_screen: true, started_ms: now - 60_000 })), word: "busy" },
     ];
     const termRows = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(TERMS) });
     await page.route("**/sessions", termRows);
+    const said = await page.evaluate(async () => {
+      const { gui } = await import("/src/gen/catalog.ts");
+      return { ok: gui.row_ran_ok("cp a.txt b.txt"), failed: gui.row_ran_failed("test -f weights.pt") };
+    });
     for (const [posture, size] of POSTURES) {
       await land(size, "sessions");
       await until(5_000, async () => (await page.locator('[data-side-row="shell/corners-running"]').filter({ visible: true }).count()) === 1);
       const rows = await slots("[data-side-row]", "data-side-row");
-      const lines = await page.evaluate(() =>
-        Object.fromEntries(
+      const lines = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--muted-foreground)";
+        document.body.appendChild(probe);
+        const secondary = getComputedStyle(probe).color;
+        probe.remove();
+        return Object.fromEntries(
           [...document.querySelectorAll("[data-side-row]")]
             .filter((r) => r.getBoundingClientRect().width > 0)
-            .map((r) => [
-              r.getAttribute("data-side-row"),
-              {
-                doing: r.querySelector("[data-doing]")?.getAttribute("data-doing") ?? null,
-                command: r.querySelector("[data-doing] [data-doing-command]")?.textContent ?? null,
-                exit: r.querySelectorAll("[data-exit]").length,
-              },
-            ]),
-        ),
-      );
+            .map((r) => {
+              const d = r.querySelector("[data-doing]");
+              const inks = d ? [...d.querySelectorAll("*")].filter((e) => e.childNodes.length && [...e.childNodes].some((n) => n.nodeType === 3)).map((e) => getComputedStyle(e).color) : [];
+              return [
+                r.getAttribute("data-side-row"),
+                {
+                  doing: d?.getAttribute("data-doing") ?? null,
+                  shows: d?.getAttribute("data-doing-shows") ?? null,
+                  exit: r.querySelectorAll("[data-exit]").length,
+                  plainInk: inks.every((c) => c === secondary),
+                },
+              ];
+            }),
+        );
+      });
       console.log(`corners b · ${posture} · terminal rows: ${JSON.stringify(TERMS.map((t) => ({ id: t.id, ...rows[t.id], ...lines[t.id] })))}`);
-      for (const [id, want, how] of [
-        ["shell/corners-ran", "ls", "ran"],
-        ["shell/corners-failed", "make", "ran"],
-        ["shell/corners-running", "pytest tests/", "running"],
+      for (const [id, want, how, shows] of [
+        ["shell/corners-ran", "a.txt  b.txt", "ran", "output"],
+        ["shell/corners-failed", "make: *** [all] Error 2", "ran", "output"],
+        ["shell/corners-quiet-ok", said.ok, "ran", "ran-ok"],
+        ["shell/corners-quiet-failed", said.failed, "ran", "ran-failed"],
+        ["shell/corners-ctrl-c", "sleep 600", "ran", "command"],
+        ["shell/corners-pipe", "yes", "ran", "command"],
+        ["shell/corners-running", "pytest tests/", "running", "command"],
+        ["shell/corners-full", "vim notes.md", "running", "command"],
       ]) {
         const r = rows[id];
         const l = lines[id];
@@ -24914,8 +24948,8 @@ try {
         }
         // ⚠️ 墓碑 (UX-48): the running sentence with its time and the ran
         // sentence with its exit code (row-running, row-ran).
-        if (r.sub !== want || l.command !== want || l.doing !== how || l.exit !== 0 || /正在运行|退出/.test(r.sub)) {
-          fail(`corners b · ${posture} · ${id}'s second line reads ${JSON.stringify({ sub: r.sub, ...l })} — the command alone, 「${want}」 (UX-48, DoingLine)`);
+        if (r.sub !== want || l.doing !== how || l.shows !== shows || l.exit !== 0 || /正在运行|退出/.test(r.sub) || !l.plainInk) {
+          fail(`corners b · ${posture} · ${id}'s second line reads ${JSON.stringify({ sub: r.sub, ...l })} — 「${want}」 (${shows}) in the secondary ink, no exit code (the terminal row, DoingLine)`);
         }
       }
     }

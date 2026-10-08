@@ -2720,6 +2720,10 @@ row-unreachable = "无法获取 · {0}"
 # row-ran 「{0} · 退出 {1} · {2}」, row-ran-plain, row-running-bare — a
 # terminal row's second line is the command itself; its time is the
 # bottom-right's, under the state.
+# A finished command that printed nothing (the terminal row, the owner 2026-10-08):
+# the command, then how it ended; no exit code.
+row-ran-ok = "{0} 执行成功"
+row-ran-failed = "{0} 执行失败"
 day-unreachable = "无法获取"
 reading-unreachable = "无法获取 · 上次 {0}"
 machine-cant-reach = "无法连接 {0}"

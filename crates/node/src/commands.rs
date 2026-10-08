@@ -53,6 +53,20 @@
 //! both the deferred install and its hook): a second `A` with nothing in
 //! between, or a `C` while one is running, changes nothing.
 //!
+//! # What a finished command said
+//!
+//! The terminal row's second line once a command has finished (the owner
+//! 2026-10-08: a finished command still showing its command line reads as
+//! still running) is the last non-empty line of that command's own
+//! output: the text between its `C` and its `D` — the same bytes the ring
+//! holds between the command's `at` and `end_at` — read here as they pass,
+//! so a ring trimmed past a long command's start still answers. Escape
+//! sequences are dropped; a line rewritten with `\r` (a progress bar) is
+//! its last rewrite; a backspace takes a character back; the line is cut
+//! to [`LAST_LINE_MAX`] characters. Nothing for a command that held the
+//! screen (a full-screen program draws, it does not print lines), nor
+//! through a tmux client, whose bytes between marks are tmux's redraw.
+//!
 //! # What is kept
 //!
 //! The running command and the last [`RECENT`] finished ones, in this
@@ -70,6 +84,11 @@ use khor_core::Doing;
 use serde::{Deserialize, Serialize};
 
 use crate::modes::Modes;
+
+/// The longest last line a finished command keeps, in characters.
+pub const LAST_LINE_MAX: usize = 200;
+/// The most bytes of one output line the ledger holds while reading it.
+const TAIL_LINE_MAX: usize = 4 * 1024;
 
 /// How many finished commands a session keeps.
 pub const RECENT: usize = 50;
@@ -103,6 +122,11 @@ pub struct Command {
     /// The tmux pane it ran in (`%3`), through a tmux client.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pane: Option<String>,
+    /// The last non-empty line of its own output (see the module head);
+    /// `None` while it runs, when it printed nothing, when it held the
+    /// screen, and through a tmux client.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_line: Option<String>,
 }
 
 /// `commands.json`: what the node and the faces read.
@@ -148,6 +172,9 @@ enum Scan {
     DcsEsc,
     /// Inside a CSI: skipped, the modes have their own reader.
     Csi,
+    /// After `ESC (`, `ESC )`, `ESC *` or `ESC +`: the one byte naming a
+    /// character set (`tput sgr0` writes `ESC ( B`), not text.
+    Charset,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -169,6 +196,67 @@ struct Parked {
     named: Option<String>,
     running: Option<Command>,
     cwd: Option<String>,
+}
+
+/// **The running command's output, as lines** (see the module head): the
+/// line being written, and the last non-empty one finished.
+#[derive(Debug, Default)]
+struct Tail {
+    line: Vec<u8>,
+    last: Vec<u8>,
+    /// A `\r` came: the next text rewrites the line from its start.
+    back: bool,
+    /// The command held the screen at some point: it said no lines.
+    held: bool,
+}
+
+impl Tail {
+    fn byte(&mut self, b: u8) {
+        match b {
+            b'\n' => {
+                if !blank(&self.line) {
+                    self.last = std::mem::take(&mut self.line);
+                } else {
+                    self.line.clear();
+                }
+                self.back = false;
+            }
+            b'\r' => self.back = true,
+            0x08 => {
+                while let Some(last) = self.line.pop() {
+                    if last & 0xc0 != 0x80 {
+                        break;
+                    }
+                }
+            }
+            b'\t' | 0x20.. if b != 0x7f => {
+                if std::mem::take(&mut self.back) {
+                    self.line.clear();
+                }
+                if self.line.len() < TAIL_LINE_MAX {
+                    self.line.push(if b == b'\t' { b' ' } else { b });
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The last non-empty line: the one being written, else the last one
+    /// finished; trimmed and cut to [`LAST_LINE_MAX`] characters.
+    fn said(&self) -> Option<String> {
+        if self.held {
+            return None;
+        }
+        let line = if blank(&self.line) { &self.last } else { &self.line };
+        let text = String::from_utf8_lossy(line);
+        let text = text.trim();
+        (!text.is_empty()).then(|| text.chars().take(LAST_LINE_MAX).collect())
+    }
+}
+
+/// Nothing but spaces.
+fn blank(line: &[u8]) -> bool {
+    line.iter().all(|b| b.is_ascii_whitespace())
 }
 
 /// See the module head.
@@ -212,6 +300,8 @@ pub struct Ledger {
     lent: bool,
     /// Every pane that has sent a mark, oldest first.
     marked_panes: Vec<String>,
+    /// The running command's output, as lines.
+    tail: Tail,
 }
 
 impl Ledger {
@@ -231,6 +321,9 @@ impl Ledger {
         if self.modes.program_holds_screen() != full {
             self.changed = true;
         }
+        if self.running.is_some() && (full || self.modes.program_holds_screen()) {
+            self.tail.held = true;
+        }
         for &b in bytes {
             self.byte(b, now_ms);
             self.offset += 1;
@@ -246,6 +339,8 @@ impl Ledger {
                     self.ring(now);
                 } else if self.phase == Phase::Input && !self.through_tmux() {
                     self.typed_byte(b);
+                } else if self.phase == Phase::Running && !self.through_tmux() {
+                    self.tail.byte(b);
                 }
             }
             Scan::Esc => {
@@ -254,9 +349,11 @@ impl Ledger {
                     b']' => Scan::Osc,
                     b'P' => Scan::Dcs,
                     b'[' => Scan::Csi,
+                    b'(' | b')' | b'*' | b'+' => Scan::Charset,
                     _ => Scan::Ground,
                 };
             }
+            Scan::Charset => self.scan = Scan::Ground,
             Scan::Csi => {
                 if (0x40..=0x7e).contains(&b) {
                     self.scan = Scan::Ground;
@@ -562,7 +659,9 @@ impl Ledger {
                     at: self.offset,
                     end_at: None,
                     pane: self.pane.clone(),
+                    last_line: None,
                 });
+                self.tail = Tail::default();
                 self.phase = Phase::Running;
                 self.changed = true;
             }
@@ -599,6 +698,7 @@ impl Ledger {
         c.ended_ms = Some(now);
         c.exit = exit;
         c.end_at = Some(self.offset);
+        c.last_line = std::mem::take(&mut self.tail).said().filter(|_| !self.through_tmux());
         // A finished command's progress is over, whatever it last said.
         self.progress = None;
         self.progress_failed = false;
@@ -647,6 +747,7 @@ impl Ledger {
             ended_ms: c.and_then(|c| c.ended_ms),
             exit: c.and_then(|c| c.exit),
             cwd: cwd.cloned(),
+            last_line: c.filter(|_| running.is_none()).and_then(|c| c.last_line.clone()),
             ..Doing::default()
         }
     }
@@ -976,6 +1077,7 @@ mod tests {
             at: 0,
             end_at: None,
             pane: None,
+            last_line: None,
         };
         append_history(&file, "shell/a", &[c(1, "cargo test -p khor-node", "/w/khor", 0), c(2, "git status", "/w/khor", 0)]);
         append_history(&file, "shell/b", &[c(3, "cargo build", "/w/khor-net", 101), c(4, "Cargo Test -p khor-node", "/w/khor/crates", 1)]);
@@ -1024,6 +1126,45 @@ mod tests {
         assert!(!d.running);
         assert_eq!(d.command.as_deref(), Some("false"));
         assert_eq!(d.exit, Some(1));
+    }
+
+    /// **What a finished command last said** (the terminal row, the owner
+    /// 2026-10-08): the last non-empty line of its own output, colours
+    /// and a charset switch dropped, a `\r` progress line as its last
+    /// rewrite, a backspace taking a character back, cut to
+    /// [`LAST_LINE_MAX`]; nothing while it runs, when it printed nothing,
+    /// or when it held the screen.
+    #[test]
+    fn a_finished_command_keeps_the_last_line_it_printed() {
+        let run = |cmd: &str, out: &[u8], exit: i32| {
+            let mut s = format!("\x1b]133;A\x07$ \x1b]133;B\x07\x1b]633;E;{cmd}\x07\x1b]133;C\x07").into_bytes();
+            s.extend_from_slice(out);
+            s.extend_from_slice(format!("\x1b]133;D;{exit}\x07\x1b]133;A\x07$ ").as_bytes());
+            s
+        };
+        let last = |s: &[u8]| fed(s).doing().last_line;
+        assert_eq!(
+            last(&run("cargo build", b"   Compiling khor\r\n\x1b[1m\x1b[32m    Finished\x1b(B\x1b[m `release` in 41s\r\n\r\n", 0)).as_deref(),
+            Some("Finished `release` in 41s"),
+            "the last non-empty line, escapes dropped"
+        );
+        assert_eq!(
+            last(&run("pip install x", b"  10%\r  55%\r 100% done\r\n", 0)).as_deref(),
+            Some("100% done"),
+            "a rewritten line is its last rewrite"
+        );
+        assert_eq!(last(&run("printf", b"no newline", 0)).as_deref(), Some("no newline"), "a line not ended yet");
+        assert_eq!(last(&run("typo", b"abX\x08c\r\n", 1)).as_deref(), Some("abc"), "a backspace takes one back");
+        assert_eq!(last(&run("true", b"", 0)), None, "printed nothing");
+        assert_eq!(last(&run("vim", b"\x1b[?1049hdrawn\r\n\x1b[?1049l", 0)), None, "a full-screen program says no line");
+        let long = "x".repeat(LAST_LINE_MAX + 50);
+        assert_eq!(last(&run("yes", long.as_bytes(), 0)).map(|l| l.chars().count()), Some(LAST_LINE_MAX));
+        // Running: no last line yet, and a new command starts empty.
+        let mut s = run("echo a", b"a\r\n", 0);
+        s.extend_from_slice(b"\x1b]133;B\x07\x1b]633;E;sleep 9\x07\x1b]133;C\x07");
+        let l = fed(&s);
+        assert!(l.doing().running && l.doing().last_line.is_none());
+        assert_eq!(l.recent.back().and_then(|c| c.last_line.as_deref()), Some("a"));
     }
 
     #[test]
