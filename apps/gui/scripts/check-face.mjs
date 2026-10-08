@@ -2294,7 +2294,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25541,7 +25541,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25972,7 +25972,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26330,7 +26330,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26705,7 +26705,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27437,7 +27437,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28330,7 +28330,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "import"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -29166,11 +29166,22 @@ try {
       // iv.
       dropAnswer = () => ({ status: 500, body: JSON.stringify("refused by the gate") });
       await fireDrop(["/tmp/f.txt"], mid);
-      const why = page.locator('[data-kept-terminal="tui/face-term"] [data-term-drop-why]');
-      await until(3_000, async () => (await why.count()) > 0);
-      const said = (await why.count()) ? await why.innerText() : null;
-      console.log(`term iv · a refused drop says: ${JSON.stringify(said)}`);
-      if (!said?.includes("refused by the gate")) fail(`term iv · a refused drop said ${JSON.stringify(said)} in the pane, not the refusal`);
+      // **On the front tab, its words under 详情 only** (NOTICE-BRIEF):
+      // ⚠️ 墓碑 — the refusal whole, in red, in the pane's corner.
+      const tabNotice = page.locator('[data-tab="tui/face-term"][data-tab-notice="failed"]');
+      await until(3_000, async () => (await tabNotice.count()) > 0);
+      const bare = await page.evaluate(() => document.body.innerText.includes("refused by the gate"));
+      const onTab = await tabNotice.count();
+      await page.locator('[data-tab="tui/face-term"] [data-tab-open]').click().catch(() => {});
+      await until(2_000, async () => (await page.locator("[data-notice-panel] [data-notice-detail]").count()) > 0);
+      await page.locator("[data-notice-panel] [data-notice-detail]").click().catch(() => {});
+      const said = await page.locator("[data-notice-panel] [data-notice-raw]").textContent().catch(() => null);
+      console.log(`term iv · a refused drop: on the tab ${onTab}, its words before 详情 ${bare}, under it ${JSON.stringify(said)}`);
+      if (onTab === 0 || bare || !said?.includes("refused by the gate")) {
+        fail(`term iv · a refused drop said ${JSON.stringify(said)} — the failure on the front tab, the refusal's words under 详情 and nowhere before it`);
+      }
+      await page.locator('[data-notice-panel] [data-notice-act="cancel"]').click().catch(() => {});
+      await until(2_000, async () => (await tabNotice.count()) === 0);
       dropAnswer = () => ({ status: 200, body: "null" });
       // v.
       drops.length = 0;
@@ -29346,13 +29357,20 @@ try {
         staged.length = 0;
         drops.length = 0;
         await pick("big.mov", 200 * 2 ** 20 + 1);
-        const why = page.locator('[data-kept-terminal="tui/face-far"] [data-term-drop-why]');
+        // On the pill (NOTICE-BRIEF), with only 取消: trying again
+        // cannot help a file over the cap.
+        const why = page.locator('[data-deck-pill] [data-deck-notice="failed"]');
         await until(5_000, async () => (await why.count()) > 0);
-        const said = (await why.count()) ? await why.innerText() : null;
-        console.log(`term viii · over the cap: ${JSON.stringify(said)}, staged ${staged.length}, term_drop ${drops.length}`);
-        if (!said?.includes("200") || !said.includes("big.mov") || staged.length !== 0 || drops.length !== 0) {
-          fail("term viii · a picked file over 200 MB is refused in the pane's corner with the cap and its name, nothing staged or dropped");
+        await page.locator("[data-deck-pill] [data-deck-title]").click().catch(() => {});
+        await until(2_000, async () => (await page.locator('[data-notice-island="open"]').count()) > 0);
+        const said = await page.locator("[data-notice-island] [data-notice-how]").textContent().catch(() => null);
+        const acts = await page.locator("[data-notice-island] [data-notice-act]").evaluateAll((els) => els.map((e) => e.getAttribute("data-notice-act")));
+        console.log(`term viii · over the cap: ${JSON.stringify(said)}, acts ${JSON.stringify(acts)}, staged ${staged.length}, term_drop ${drops.length}`);
+        if (!said?.includes("200") || JSON.stringify(acts) !== '["cancel"]' || staged.length !== 0 || drops.length !== 0) {
+          fail("term viii · a picked file over 200 MB is on the pill with the cap, 取消 alone, nothing staged or dropped");
         }
+        await page.locator('[data-notice-island] [data-notice-act="cancel"]').click().catch(() => {});
+        await until(2_000, async () => (await why.count()) === 0);
         // **The pill while files go in, and its ×** (item 71, the owner
         // 2026-10-07 12:45–13:20), on the phone's deck band:
         //
@@ -32345,11 +32363,12 @@ try {
       await wait(300);
     }
 
-    // ── v. one slot under the pill (UX-31 §2–3, the owner 2026-10-06):
-    //       the window's foot — what is happening elsewhere — hangs under
-    //       the deck's pill inside a session, in the pill's glass, only
-    //       while there is something to say; while the tab reloads the
-    //       slot is the progress line instead, and the status waits. ──
+    // ── v. one slot under the pill (UX-31 §2–3), and **the pill keeps
+    //       its size** (NOTICE-BRIEF, the owner 2026-10-08: 「别的会话不
+    //       用提醒」): while the tab reloads the slot is the progress line
+    //       along the pill's edge; what happens in other sessions never
+    //       hangs under it. ⚠️ 墓碑 (UX-31 → NOTICE-BRIEF): the window's
+    //       foot as a status strip under the pill, growing it a row. ──
     if (!(await openRow(terms[1].id)) || !(await xtermUp())) {
       fail("probe dead: bar v · a terminal never opened for the pill's slot");
     } else {
@@ -32382,7 +32401,8 @@ try {
       // admits a change into 忙碌): the strip has something to say.
       await page.unroute("**/sessions");
       await page.route("**/sessions", json([...terms, { ...chatRow, word: "busy" }, guiRow]));
-      const came = await until(8_000, async () => (await slot()).inPill === 1);
+      // Long enough for the row to be admitted as 忙碌 (`use-status-bar`).
+      await wait(3_000);
       const saying = await slot();
       if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, "ux31-pill-status.png") });
       // The tab reloads meanwhile: the join held for a beat so it can be seen.
@@ -32432,31 +32452,29 @@ try {
       // The transfer ends: the line leaves on its own after its beat.
       await page.unroute("**/sessions");
       await page.route("**/sessions", json(barRows));
-      const went = await until(10_000, async () => (await slot()).inPill === 0);
+      await wait(500);
       const gone = await slot();
       console.log(`bar v · quiet ${JSON.stringify(quiet)}; saying ${JSON.stringify(saying)}; loading ${JSON.stringify(loading)}; after ${JSON.stringify(after)}; gone ${JSON.stringify(gone)}`);
       // **No day under the pill** (UX-39 §4, the owner 2026-10-06 22:10:
       // 「药丸下面就不绘制 session 的日志了」): at rest, under a status
       // strip, during a reload and after it. ⚠️ 墓碑 (UX-36): the line
       // along the pill's first row's foot.
-      for (const [when, at] of [["at rest", quiet], ["with a status strip", saying], ["during the reload", loading], ["after the reload", after]]) {
+      for (const [when, at] of [["at rest", quiet], ["while another row is busy", saying], ["during the reload", loading], ["after the reload", after]]) {
         if (at.log !== 0) fail(`bar v · ${when} the session pill draws ${at.log} day line(s) — no day under any pill (UX-39 §4)`);
       }
       if (quiet.slot !== 1 || quiet.progress || quiet.status || quiet.atFoot || Math.abs(quiet.pill - quiet.btn) > 0.5) {
         fail(`bar v · at rest the pill reads ${JSON.stringify(quiet)} — one empty slot, the pill one row (${quiet.btn}), no strip at the foot`);
       }
-      if (!came || saying.inPill !== 1 || saying.atFoot !== 0 || !saying.said?.includes("peer")) {
-        fail(`bar v · a transfer pressing a row: ${JSON.stringify(saying)} — the strip hangs under the pill, not at the foot, naming the row`);
-      } else {
-        if (Math.abs(saying.pill - (saying.btn + saying.line)) > 1) fail(`bar v · the pill with its strip is ${saying.pill}, one row ${saying.btn} plus a caption line ${saying.line}`);
-        if (Math.abs(saying.backTop - saying.rowTop) > 1) fail(`bar v · the deck's ‹ starts at ${saying.backTop}, the pill's row at ${saying.rowTop} — the circles keep the first row while the pill grows`);
-        if (Math.abs(saying.deckBottom - quiet.deckBottom) > 1) fail(`bar v · the deck's foot moved from ${quiet.deckBottom} to ${saying.deckBottom} — the pill grows upward into the content, the foot stays`);
+      // Red first (NOTICE-BRIEF): the strip came in (`inPill` 1) and the
+      // pill grew by a caption line.
+      if (saying.inPill !== 0 || saying.status !== 0 || saying.atFoot !== 0 || Math.abs(saying.pill - saying.btn) > 0.5 || Math.abs(saying.deckBottom - quiet.deckBottom) > 1) {
+        fail(`bar v · another row going busy: ${JSON.stringify(saying)} — nothing under the pill and none at the foot; the pill one row (${saying.btn}), the deck where it was`);
       }
       if (!ran || loading.progress !== 1 || loading.status !== 0 || Math.abs(loading.pill - loading.btn) > 0.5) {
         fail(`bar v · while the join runs: ${JSON.stringify(loading)} — the progress line along the pill, the status not drawn, the pill one row`);
       }
-      if (!ended || after.progress !== 0 || after.status !== 1) fail(`bar v · the join done: ${JSON.stringify(after)} — the line gone, the status back`);
-      if (!went || gone.inPill !== 0 || gone.status !== 0 || Math.abs(gone.pill - gone.btn) > 0.5) fail(`bar v · the transfer over: ${JSON.stringify(gone)} — the strip leaves on its own, the pill one row again`);
+      if (!ended || after.progress !== 0 || after.status !== 0) fail(`bar v · the join done: ${JSON.stringify(after)} — the line gone, nothing under the pill`);
+      if (gone.inPill !== 0 || gone.status !== 0 || Math.abs(gone.pill - gone.btn) > 0.5) fail(`bar v · the transfer over: ${JSON.stringify(gone)} — the pill one row`);
     }
 
     // ── l. a drag that starts on chrome does not move the screen (the
@@ -39545,7 +39563,241 @@ try {
     await wait(900);
   }
   }
+  // ── notice: what the session's pill shows (NOTICE-BRIEF, the owner
+  //    2026-10-08; the notice lab approved 10-09, ux-52 §9–10c). Only
+  //    what stops this session reaches the pill: a transfer that did not
+  //    get there, and the session reconnecting. On a phone (390, a far
+  //    terminal) and on the wide strip:
+  //
+  //   a. **reconnecting is the pill's** (`TermChunk.stall`): 「重新连接
+  //      peer」 and its seconds in the pill's row, the reload ring in the
+  //      face's seat; no bubble over the terminal (`data-term-rejoining`,
+  //      IMG_5412) and none of the network's English anywhere on the page
+  //      (red: the bubble, and the raw words in it);
+  //   b. **a tap grows it from its own box** (the plain pill and a
+  //      transfer under way open the 底栏 instead): the island's first
+  //      clip is the pill's rect, it opens to the deck's width, and the
+  //      rows stand at the card's inset — the glyph column within the
+  //      pill's own left pad of the island's edge, not where the ‹ was;
+  //      the pill's row becomes the notice's row — one row per notice,
+  //      the pill's look gone once grown (no duplicate);
+  //   c. **the ghost click**: a click on the scrim within 400 ms of the
+  //      tap leaves it open; one later folds it; 立即重试 asks
+  //      `rejoin_now` for the machine;
+  //   d. **a failed transfer stays, counted behind reconnecting**: a drop
+  //      answered unreached puts 「图片未传到 peer」 on the pill under the
+  //      ring (reconnecting first) with the count 2; grown, two rows; 详情
+  //      opens the raw words; 取消 takes it away (the count gone);
+  //   e. **reduced motion**: the first frame after the tap is grown;
+  //   f. **wide**: the front tab wears the notice; a press opens the panel
+  //      under it, and the tab is its own face and name again meanwhile.
+  //
+  // `FACE_ONLY=notice` runs this section alone.
+  notice: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "notice") break notice;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const RAW = "aborted by peer: the server refused to accept a new connection";
+    const farRow = {
+      id: "tui/notice-far", kind: "tui", title: "notice-far", word: "idle", at_ms: Date.now(), unread: 0, source: { device: "peer", age_ms: 1200 },
+      pinned: false, stale: false, category: "shell", group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null,
+      home: "peer", place: "/srv/w", mux: false,
+    };
+    let stall = null;
+    const chunk = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ bytes: "", seq: 0, gone: false, reset: false, stall }) });
+    const now = [];
+    let dropEnd = { landed: [], miss: null };
+    const routes = [
+      ["**/sessions", json([farRow])],
+      ["**/term_open", json(null)],
+      ["**/term_attach", json({ bytes: "", seq: 0 })],
+      ["**/term_stream", chunk],
+      ["**/term_wait", chunk],
+      ["**/rejoin_now", (r) => (now.push(r.request().postDataJSON()), json(null)(r))],
+      ["**/term_drop", (r) => json(dropEnd)(r)],
+      ["**/term_drop_progress", json(null)],
+    ];
+    for (const [glob, run] of routes) await page.route(glob, run);
+    const read = () =>
+      page.evaluate(() => {
+        const r = (s) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+        const isl = document.querySelector("[data-notice-island]");
+        const look = document.querySelector("[data-notice-pill-look]");
+        return {
+          pill: r("[data-deck-pill]"),
+          notice: document.querySelector("[data-deck-pill] [data-deck-notice]")?.getAttribute("data-deck-notice") ?? null,
+          short: document.querySelector("[data-deck-pill] [data-notice-short]")?.textContent ?? null,
+          seconds: document.querySelector("[data-deck-pill] [data-notice-seconds]")?.textContent ?? null,
+          count: document.querySelector("[data-deck-pill] [data-notice-count]")?.textContent ?? null,
+          bubble: document.querySelectorAll("[data-term-rejoining], [data-term-drop-why], [data-term-history-out]").length,
+          island: isl?.getAttribute("data-notice-island") ?? null,
+          islandBox: isl?.getBoundingClientRect() ?? null,
+          clip: isl ? getComputedStyle(isl).clipPath : null,
+          rows: [...document.querySelectorAll("[data-notice-island] [data-notice-row]")].map((e) => e.getAttribute("data-notice-row")),
+          glyphs: [...document.querySelectorAll("[data-notice-island] [data-notice-row] [data-notice-glyph]")].map((e) => e.getBoundingClientRect().left),
+          lookOpacity: look ? getComputedStyle(look).opacity : null,
+          sheet: document.querySelectorAll("[data-place-sheet]").length,
+          text: document.body.innerText,
+        };
+      });
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    await open("sessions");
+    await press('[data-side-row="tui/notice-far"] [data-side-open]');
+    if (!(await until(5_000, async () => (await page.locator("[data-session-deck] [data-deck-pill]").count()) > 0))) {
+      fail("probe dead: notice · the far terminal never opened on the phone's session page");
+      break notice;
+    }
+    await wait(600);
+
+    // b′. the plain pill: a tap is the 底栏's.
+    await page.locator("[data-deck-pill] [data-deck-title]").click();
+    const plainOpened = await until(2_000, async () => (await read()).sheet > 0);
+    const plain = await read();
+    if (!plainOpened || plain.island !== null) fail(`notice b · a tap on the plain pill opened ${plain.island ? "the grown view" : "nothing"} — the 底栏 (\`data-place-sheet\`), as today`);
+    await page.keyboard.press("Escape");
+    await until(2_000, async () => (await read()).sheet === 0);
+
+    // a. reconnecting.
+    stall = { kind: "unreached", machine: "peer", raw: RAW };
+    const came = await until(5_000, async () => (await read()).notice === "rejoin");
+    await wait(1_200);
+    const a = await read();
+    console.log(`notice a · ${JSON.stringify({ notice: a.notice, short: a.short, seconds: a.seconds, bubble: a.bubble, raw: a.text.includes("aborted") })}`);
+    if (!came || !a.short?.includes("peer") || !a.seconds || a.bubble !== 0 || a.text.includes("aborted")) {
+      fail(`notice a · reconnecting read ${JSON.stringify({ notice: a.notice, short: a.short, seconds: a.seconds, bubble: a.bubble })} — 「重新连接 peer」 and its seconds on the pill, no bubble over the terminal, no raw English on the page`);
+    }
+    const pillH = a.pill?.height ?? 0;
+
+    // b. the growth from the pill's own box: every clip the island is
+    // drawn with, from its first, recorded as it changes.
+    const watchClips = () =>
+      page.evaluate(() => {
+        const w = window;
+        w.__clips = [];
+        w.__pillAt = document.querySelector("[data-deck-pill]")?.getBoundingClientRect().toJSON() ?? null;
+        const note = () => {
+          const isl = document.querySelector("[data-notice-island]");
+          if (!isl) return;
+          const c = getComputedStyle(isl).clipPath;
+          if (w.__clips[w.__clips.length - 1]?.clip !== c) w.__clips.push({ clip: c, box: isl.getBoundingClientRect().toJSON(), hidden: getComputedStyle(isl).visibility === "hidden" });
+        };
+        w.__clipWatch?.disconnect();
+        w.__clipWatch = new MutationObserver(note);
+        w.__clipWatch.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["style"] });
+      });
+    const clips = () => page.evaluate(() => ({ clips: window.__clips.filter((c) => !c.hidden), pill: window.__pillAt }));
+    await watchClips();
+    await page.locator("[data-deck-pill] [data-deck-title]").click();
+    await until(2_000, async () => (await read()).island !== null);
+    await wait(450);
+    const seen = await clips();
+    const first = { clip: seen.clips[0]?.clip ?? null, islandBox: seen.clips[0]?.box ?? null, pill: seen.pill, island: seen.clips.length ? "folded" : null };
+    const b = await read();
+    // `inset(t r b l round …)` as the browser writes it back: the CSS
+    // shorthand, one to four lengths.
+    const inset = (c) => {
+      const v = (c?.match(/inset\(([^)]*)\)/)?.[1] ?? "").split(" round")[0].trim().split(/\s+/).filter(Boolean).map(parseFloat);
+      const [t, r = t, b = t, l = r] = v;
+      return v.length ? [t, r, b, l] : [];
+    };
+    const startAt = inset(first.clip);
+    const want = first.pill && first.islandBox ? [first.pill.top - first.islandBox.top, first.islandBox.right - first.pill.right, first.islandBox.bottom - first.pill.bottom, first.pill.left - first.islandBox.left] : [];
+    console.log(`notice b · first clip ${first.clip} (the pill's box ${JSON.stringify(want.map(Math.round))}); grown ${b.island}, rows ${JSON.stringify(b.rows)}, glyph at ${JSON.stringify(b.glyphs.map((x) => Math.round(x - (b.islandBox?.left ?? 0))))}, the pill's look ${b.lookOpacity}`);
+    if (first.island !== "folded" || startAt.length !== 4 || startAt.some((x, i) => Math.abs(x - want[i]) > 1.5)) {
+      fail(`notice b · the grown view began at ${first.clip} — the pill's own box ${JSON.stringify(want)} (it grows out of the pill)`);
+    }
+    if (b.island !== "open" || b.rows.length !== 1 || b.lookOpacity !== "0" || b.sheet !== 0) {
+      fail(`notice b · grown: ${JSON.stringify({ island: b.island, rows: b.rows, look: b.lookOpacity, sheet: b.sheet })} — open, one row for the one notice, the pill's look gone (no row said twice), no 底栏`);
+    }
+    if (!b.islandBox || b.glyphs.length !== 1 || b.glyphs[0] - b.islandBox.left > pillH / 2) {
+      fail(`notice b · the grown row's mark stands ${b.glyphs.map((x) => Math.round(x - (b.islandBox?.left ?? 0)))} in from the card's edge — at the card's own inset, not where the ‹ was`);
+    }
+    if (b.islandBox && b.islandBox.height > 844 / 2 + 1) fail(`notice b · the grown view is ${b.islandBox.height} tall — at most half the screen`);
+
+    // c. the ghost click, the fold, 立即重试.
+    await page.locator("[data-notice-act=\"now\"]").click();
+    const asked = await until(2_000, async () => now.length > 0);
+    if (!asked || now[0]?.machine !== "peer") fail(`notice c · 立即重试 asked ${JSON.stringify(now)} — rejoin_now for peer`);
+    const scrimClick = () => page.evaluate(() => document.querySelector("[data-notice-scrim]")?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await scrimClick();
+    await wait(450);
+    if ((await read()).island !== null) fail("notice c · a tap on the scrim well after the pill grew left it grown — it folds");
+    await page.locator("[data-deck-pill] [data-deck-title]").click();
+    await page.evaluate(() => document.querySelector("[data-notice-scrim]")?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await wait(100);
+    const ghost = await read();
+    await wait(450);
+    await page.evaluate(() => document.querySelector("[data-notice-scrim]")?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await wait(500);
+    const folded = await read();
+    if (ghost.island === null) fail("notice c · the click right after the tap (the touch's leftover) folded the grown pill — it must not (GHOST_MS)");
+    if (folded.island !== null) fail(`notice c · a tap on the scrim later left it ${folded.island} — it folds`);
+
+    // d. a failed transfer behind reconnecting.
+    dropEnd = { landed: [], miss: { kind: "unreached", machine: "peer", raw: RAW } };
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("khor:window-drop", { detail: { paths: ["/tmp/IMG_5413.png"], x: 195, y: 300 } })));
+    const counted = await until(4_000, async () => (await read()).count === "2");
+    const d = await read();
+    await page.locator("[data-deck-pill] [data-deck-title]").click();
+    await wait(450);
+    const dOpen = await read();
+    console.log(`notice d · ${JSON.stringify({ notice: d.notice, count: d.count, rows: dOpen.rows })}`);
+    if (!counted || d.notice !== "rejoin" || JSON.stringify(dOpen.rows) !== '["failed","rejoin"]') {
+      fail(`notice d · reconnecting and a failed drop: ${JSON.stringify({ notice: d.notice, count: d.count, rows: dOpen.rows })} — the ring on the pill with 2, grown the failure above and reconnecting nearest the pill`);
+    }
+    await page.locator('[data-notice-row="failed"] [data-notice-detail]').click().catch(() => {});
+    const raw = await page.locator("[data-notice-raw]").textContent().catch(() => null);
+    if (raw !== RAW) fail(`notice d · 详情 opened ${JSON.stringify(raw)} — the network's own words, there and only there`);
+    await page.locator('[data-notice-row="failed"] [data-notice-act="cancel"]').click().catch(() => {});
+    const cancelled = await until(2_000, async () => (await read()).count === null);
+    if (!cancelled) fail("notice d · 取消 left the failure on the pill");
+    await page.keyboard.press("Escape");
+    await until(2_000, async () => (await read()).island === null);
+
+    // e. reduced motion.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await watchClips();
+    await page.locator("[data-deck-pill] [data-deck-title]").click();
+    await until(2_000, async () => (await read()).island !== null);
+    await wait(100);
+    const stillSeen = await clips();
+    const still = { island: (await read()).island, clip: stillSeen.clips[0]?.clip ?? null };
+    if (still.island !== "open" || !/^inset\(0(px)?( 0(px)?)* round/.test(still.clip ?? "")) fail(`notice e · reduced motion: the first frame drawn was ${still.clip} (${still.island}) — grown at once`);
+    await page.keyboard.press("Escape");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+
+    // f. wide.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await wait(900);
+    const wide = () =>
+      page.evaluate(() => ({
+        tab: document.querySelector('[data-tab="tui/notice-far"]')?.getAttribute("data-tab-notice") ?? null,
+        look: document.querySelectorAll('[data-tab="tui/notice-far"] [data-tab-notice-look]').length,
+        panel: document.querySelector("[data-notice-panel]")?.getAttribute("data-notice-panel") ?? null,
+        rows: document.querySelectorAll("[data-notice-panel] [data-notice-row]").length,
+      }));
+    const wAt = await until(4_000, async () => (await wide()).tab === "rejoin");
+    await page.locator('[data-tab="tui/notice-far"] [data-tab-open]').click().catch(() => {});
+    await wait(450);
+    const w = await wide();
+    console.log(`notice f · wide ${JSON.stringify(w)}`);
+    if (!wAt || w.panel !== "open" || w.rows !== 1 || w.tab !== null || w.look !== 0) {
+      fail(`notice f · wide: ${JSON.stringify(w)} — the front tab wore the notice, a press opened the panel with its row, and the tab is its own self while it is open`);
+    }
+    await page.keyboard.press("Escape");
+    stall = null;
+    for (const [glob, run] of routes) await page.unroute(glob, run);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
   if (process.env.FACE_ONLY === "quota") console.log("quota · FACE_ONLY=quota: the other sections are skipped");
+  if (process.env.FACE_ONLY === "notice") console.log("notice · FACE_ONLY=notice: the other sections are skipped");
 
   // ── 导入 is a search (imp-a, 2026-10-09, IMPORT-BRIEF) ───────────────
   //

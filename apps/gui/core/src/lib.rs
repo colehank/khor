@@ -17,6 +17,7 @@ pub mod code;
 pub mod files;
 pub mod git;
 pub mod import;
+pub mod miss;
 mod landing;
 pub mod qr;
 pub mod recents;
@@ -434,6 +435,14 @@ pub async fn visit(root: &Path, machine: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())??;
     let _ = n.visit(machine).await;
     Ok(())
+}
+
+/// **立即重试** (NOTICE-BRIEF): a session reconnecting to `machine` is
+/// tried at once — every rejoin's wait cut short ([`rejoin::kick`]) and
+/// the machine dialled past its backoff ([`visit`], a person's act).
+pub async fn rejoin_now(root: &Path, machine: &str) -> Result<(), String> {
+    rejoin::kick();
+    visit(root, machine).await
 }
 
 /// The connections, read off the resident (`Node::connections`).

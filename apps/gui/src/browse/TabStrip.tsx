@@ -63,6 +63,8 @@ import { SessionFace } from "@/components/SessionFace";
 import { FaceMark, type KindMark } from "@/components/FaceMark";
 import { IconBack, IconCheck, IconClose, IconPlus, IconReload, IconUpload } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
+import { NoticeLook, NoticePanel, NoticeScrim, useGrownPill } from "@/components/PillNotice";
+import type { PillNotice } from "@/lib/pill-notices";
 import { PaneBar } from "@/components/PaneBar";
 import { RegionLead } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
@@ -208,6 +210,12 @@ export type TabFace = {
       count (the line is the whole drop's). ⚠️ 墓碑 (13:05 → 13:15):
       `count`, 「（1/3）」 kept whole after the name. */
   drop?: { name: string };
+  /** **What stops this session, the most urgent first** (NOTICE-BRIEF,
+      `lib/pill-notices`): a transfer that did not get there, the session
+      reconnecting. The pill wears the first's mark and short line, with
+      the count when there are several, and a press grows it into the
+      list (`components/PillNotice`). A session's tab only. */
+  notices?: PillNotice[];
 };
 
 /** The face a tab wears: the session assembly when it is a session,
@@ -590,6 +598,19 @@ export function TabStrip({
       name — which renames, and must not show and hide the day on its
       way there (`useSinglePress`). */
   const pressAgain = useSinglePress(() => faces.find((f) => f.id === active)?.again?.toggle?.());
+  /** **The front tab grows like the phone's pill** (NOTICE-BRIEF): a
+      press on it while something stops its session opens the panel below
+      it, across the capsule's width; the tab is its own self again while
+      the panel says the notice. */
+  const stops = faces.find((f) => f.id === active)?.notices ?? [];
+  const grown = useGrownPill(stops.length);
+  const capsule = useRef<HTMLDivElement>(null);
+  const [front, setFront] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    setFront(grown.growth.mounted ? (strip.current?.querySelector<HTMLElement>(`[data-tab="${CSS.escape(active)}"]`) ?? null) : null);
+  }, [grown.growth.mounted, active]);
+  const foldGrown = grown.fold;
+  useEffect(() => foldGrown(), [active, foldGrown]);
 
   return (
     <div
@@ -642,6 +663,7 @@ export function TabStrip({
           on `[data-tab-strip]`; the wheel and the faded ends are the ways
           past the edge. */}
       <div
+        ref={capsule}
         data-tab-capsule
         data-tabs-held={held !== null || undefined}
         onPointerLeave={
@@ -679,6 +701,8 @@ export function TabStrip({
         {faces.map((f) => {
           const on = f.id === active;
           const again = on ? f.again : undefined;
+          // The front tab's notice, unless its panel is out (it says it).
+          const notices = f.notices?.length && !(on && grown.growth.mounted) ? f.notices : undefined;
           // **Every pill sheds as it shrinks, the front one too** (UX-45,
           // Chrome's strip; the owner 「等宽先看看」): its own width
           // decides (`@container/tab`, tokens.css `--container-tab-*`) —
@@ -688,7 +712,12 @@ export function TabStrip({
               key={f.id}
               data-tab={f.id}
               data-on={on}
-              style={held !== null ? { width: held, flexShrink: 0 } : undefined}
+              data-tab-notice={notices?.[0].kind}
+              style={{
+                ...(held !== null ? { width: held, flexShrink: 0 } : undefined),
+                // Grown, its lower corners give way to the panel below.
+                ...(on && grown.growth.mounted ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : undefined),
+              }}
               // Machine first, then where on it — the same order the
               // address bar commits them in, and the same order the
               // sentence reads: this tab is *on* that machine.
@@ -752,6 +781,12 @@ export function TabStrip({
                 // the tab already in front).
                 onClick={(e) => {
                   onFocus(f.id);
+                  // The front tab whose session is stopped grows instead.
+                  if (on && f.notices?.length) {
+                    if (grown.open) grown.fold();
+                    else grown.grow();
+                    return;
+                  }
                   if (again) pressAgain(e);
                 }}
                 aria-expanded={again?.expanded}
@@ -798,12 +833,18 @@ export function TabStrip({
                     both lines it has the pair itself as its measure,
                     which is where a session tab's avatar already
                     stands. */}
+                {notices ? (
+                  <span data-tab-notice-look className="flex min-w-0 flex-1 items-center gap-tab-gap text-tab">
+                    <NoticeLook list={notices} seat="size-4" />
+                  </span>
+                ) : (
                 <TabAvatar f={f} bare="size-4 flex-none" seat="tab" />
+                )}
                 {/* `nested`: the name sits inside the button that opens
                     the tab, so it is not a control here — the same
                     arrangement the list rows keep, and for the same
                     reason (`EditableName`'s head). */}
-                {f.rename ? (
+                {notices ? null : f.rename ? (
                   <span className="flex min-w-0 flex-1 flex-col justify-center @max-tab-face/tab:hidden">
                     <EditableName
                       kind={f.rename.kind}
@@ -1019,6 +1060,19 @@ export function TabStrip({
         );
       })()}
       {tail}
+      {grown.growth.mounted && (
+        <>
+          {/* Over the board only: the strip is the window's frame. */}
+          <NoticeScrim
+            on={grown.growth.big}
+            openedAt={grown.openedAt}
+            onFold={grown.fold}
+            fixed
+            style={{ top: capsule.current?.getBoundingClientRect().bottom }}
+          />
+          <NoticePanel list={stops} tab={front} board={capsule.current} growth={grown.growth} />
+        </>
+      )}
     </div>
   );
 }

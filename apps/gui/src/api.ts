@@ -15,6 +15,8 @@ import type { Connections } from "./gen/bindings/Connections";
 import type { ReachReport } from "./gen/bindings/ReachReport";
 import type { ProxyLine } from "./gen/bindings/ProxyLine";
 import type { JournalLine } from "./gen/bindings/JournalLine";
+import type { DropEnd } from "./gen/bindings/DropEnd";
+import type { Miss } from "./gen/bindings/Miss";
 import type { AddAsk } from "./gen/bindings/AddAsk";
 import type { AddRun } from "./gen/bindings/AddRun";
 import type { LoginAsk } from "./gen/bindings/LoginAsk";
@@ -90,6 +92,8 @@ import type { CpuDay } from "./gen/bindings/CpuDay";
 import type { WatchedDir } from "./gen/bindings/WatchedDir";
 
 export type {
+  DropEnd,
+  Miss,
   AccountRing,
   TabRow,
   TabsOpen,
@@ -1018,6 +1022,10 @@ export const faceHere = (visible: boolean) => call<null>("face_here", { visible 
 /** A machine's page was opened: the resident has a round with it now,
     past its backoff (`khor_gui_core::visit`, NET-STABLE 第二步). */
 export const visitMachine = (machine: string) => call<null>("visit", { machine });
+/** **立即重试** on a session reconnecting to `machine` (NOTICE-BRIEF):
+    its rejoin tries now, and the machine is dialled past its backoff
+    (`khor_gui_core::rejoin_now`). */
+export const rejoinNow = (machine: string) => call<null>("rejoin_now", { machine });
 /** 首选中继, or `null` for the nearest. */
 export const setPreferredRelay = (url: string | null) => call<null>("set_preferred_relay", { url });
 /** Whether claude on **this** machine is set up to tell khor what it is
@@ -1944,7 +1952,7 @@ export const notifyFinished = (title: string, body: string) => call<null>("notif
     into a command (`khor_gui_core::term::term_drop`). `into`: the
     shell's current directory, where 「放到当前目录」 lands them. */
 export const termDrop = (id: string, paths: string[], from?: string | null, into?: string | null) =>
-  call<string[]>("term_drop", { id, paths, from: from ?? null, into: into ?? null });
+  call<DropEnd>("term_drop", { id, paths, from: from ?? null, into: into ?? null });
 /** **The drop under way on session `id`, cancelled** (the owner
     2026-10-07 12:50, item 71): the pull stops, its part file goes,
     nothing is pasted; with no drop under way, nothing happens.

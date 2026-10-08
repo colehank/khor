@@ -31,7 +31,7 @@
 //
 // What this file still owns, because xterm cannot: the open/attach
 // lifecycle and its three faces (`why` — never opened; `gone` — the
-// host ended; `dropWhy` — a drop that failed), the poll pacing (nobody
+// host ended; `missed` — a drop that failed, on the pill), the poll pacing (nobody
 // looking, nobody paying), the tauri file-drop (paths land as a
 // shell-quoted paste via `term_drop`, cross-machine aware), and the
 // theme — xterm takes concrete colours, so the app's tokens are
@@ -63,10 +63,11 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, termAttach, termDrop, termDropCancel, termDropProgress, termDropStage, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait } from "@/api";
+import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termDrop, termDropCancel, termDropProgress, termDropStage, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { offerTabAct } from "@/lib/tab-acts";
+import { failedNotice, offerNotice, rejoinNotice, type PillNotice } from "@/lib/pill-notices";
 import { carriesPath, droppedPath } from "@/lib/path-drag";
 import { onWindowDrop } from "@/lib/window-drop";
 import { peekOf, type Peek } from "@/lib/term-peek";
@@ -76,11 +77,10 @@ import { rememberTermSize } from "@/lib/term-size-hint";
 import { TermHistory } from "@/views/TermHistory";
 import { TermPeek } from "@/views/TermPeek";
 import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
-import { RegionState, useWaited, WAIT_SAY_MS, Waiting } from "@/components/RegionState";
+import { RegionState, Waiting } from "@/components/RegionState";
 import { gui, menu, msg } from "@/gen/catalog";
 import { baseName } from "@/lib/paths";
 import { levelOf, treeChanged } from "@/lib/tree-changed";
-import { lasting } from "@/words";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
@@ -516,8 +516,6 @@ function cellAt(term: Terminal, x: number, y: number): { col: number; row: numbe
   return { col, row: term.buffer.active.viewportY + inView };
 }
 
-/** How long the corner says a tmux history cannot be read (item 31). */
-const HISTORY_OUT_MS = 4000;
 
 /** Travel past which a touch is a drag, not a tap — and the dead zone
     past which a downward one lowers the keyboard (`lib/term-swipe`'s
@@ -1279,7 +1277,6 @@ export function TerminalPane({
   const muxRef = useRef(mux);
   muxRef.current = mux;
   const shownRef = useRef(false);
-  const [historyOut, setHistoryOut] = useState(false);
   const doingRef = useRef(doing);
   doingRef.current = doing;
   // The native scroller around the terminal, and the room after it that
@@ -1335,11 +1332,40 @@ export function TerminalPane({
   const [openedAt, setOpenedAt] = useState<number | null>(null);
   const [attempt, setAttempt] = useState(0);
   // The far pipe ended and is being asked for again (`TermChunk::
-  // rejoining`): the screen is the last one that arrived, and it says so.
-  const [rejoining, setRejoining] = useState(false);
-  // Why the last drop produced no paste, in khor's own words. Kept on
-  // screen until a drop works (docs/UX.md 失败就地说).
-  const [dropWhy, setDropWhy] = useState<string | null>(null);
+  // stall`): the screen is the last one that arrived, held back in ink,
+  // and the pill says 「重新连接 Mac-mini」 (NOTICE-BRIEF, `rejoinNotice`)
+  // with why in parts — since when (`stallSince`), for its seconds.
+  const [stall, setStall] = useState<Miss | null>(null);
+  const [stallSince, setStallSince] = useState(0);
+  const rejoining = stall !== null;
+  const inBar = useInBar();
+  // **The drops that did not get there** (NOTICE-BRIEF): each stays on
+  // the session's pill until 重试 or 取消, its failure in parts
+  // (`failedNotice`). ⚠️ 墓碑: `dropWhy`, the backend's whole sentence in
+  // red in this pane's corner until the next drop worked (IMG_5413).
+  const [missed, setMissed] = useState<PillNotice[]>([]);
+  useEffect(() => {
+    const off = missed.map((n) => offerNotice(id, n));
+    return () => off.forEach((f) => f());
+  }, [id, missed]);
+  // **Reconnecting, on the pill** (`rejoinNotice`); 立即重试 dials now,
+  // past the backoff, and the seconds start again.
+  useEffect(() => {
+    if (!stall || gone || why) return;
+    return offerNotice(
+      id,
+      rejoinNotice({
+        stall,
+        machine: machine ?? null,
+        since: stallSince || Date.now(),
+        now: () => {
+          setStallSince(Date.now());
+          const m = stall.machine ?? machine;
+          if (m) void rejoinNow(m).catch(() => {});
+        },
+      }),
+    );
+  }, [id, stall, stallSince, gone, why, machine]);
   const hidden = useHidden();
   const pace = useRef(LIVE_MS);
   const pollNow = useRef<() => void>(() => {});
@@ -2035,7 +2061,7 @@ export function TerminalPane({
         const gap = performance.now() - lastBeat;
         lastBeat = performance.now();
         if (performance.now() - born < 1500 && (b.bytes || b.reset)) {
-          trace(`chunk ${b.bytes.length} from ${seq} to ${b.seq}${b.reset ? " reset" : ""}${b.rejoining ? " rejoining" : ""}`);
+          trace(`chunk ${b.bytes.length} from ${seq} to ${b.seq}${b.reset ? " reset" : ""}${b.stall ? ` stall ${b.stall.kind}` : ""}`);
         }
         // The feed trimmed past our place (a long time hidden): start
         // the screen over from what the node still holds, rather than
@@ -2057,7 +2083,9 @@ export function TerminalPane({
         }
         seq = b.seq;
         if (b.gone) setGone(true);
-        setRejoining(b.rejoining && !b.gone);
+        const held = b.gone ? null : (b.stall ?? null);
+        setStall((was) => (was && held && was.kind === held.kind && was.raw === held.raw ? was : held));
+        setStallSince((t) => (held ? t || Date.now() : 0));
         return b.gone ? "ended" : "live";
       } catch {
         // The next beat asks again, after a wait (below).
@@ -2589,7 +2617,6 @@ export function TerminalPane({
     // (item 31, `lib/term-tmux-history`), not tmux's copy mode by the
     // wheel; a mouse's page keeps the wheel going to tmux.
     let tmuxHistory: ReturnType<typeof holdsTmuxHistory> | null = null;
-    let outShown = 0;
     /** The person is up in a tmux pane's history (item 31). */
     let historyUp = false;
     const historyHas = () => tmuxHistory?.active() ?? false;
@@ -2663,11 +2690,11 @@ export function TerminalPane({
           sync();
         },
         gained: () => setFreshBelow(true),
-        outOfReach: () => {
-          setHistoryOut(true);
-          window.clearTimeout(outShown);
-          outShown = window.setTimeout(() => setHistoryOut(false), HISTORY_OUT_MS);
-        },
+        // ⚠️ 墓碑 (NOTICE-BRIEF, the owner 2026-10-08: 「暂时读不到tmux
+        // 历史这种，用户需要知道吗」): the corner said so for four seconds
+        // (IMG_5414). A note that changes no action is not shown; the drag
+        // goes to tmux's own scrolling, as it did.
+        outOfReach: () => {},
       });
       tmuxHistory.shown(shownRef.current);
     }
@@ -2823,7 +2850,6 @@ export function TerminalPane({
       unwheel();
       firstTouch.stop();
       firstTouchRef.current = null;
-      window.clearTimeout(outShown);
       native.stop();
       selectsNow?.dispose();
       offerEditMenu([]);
@@ -2918,8 +2944,8 @@ export function TerminalPane({
   // they need it (iTerm2's behaviour, 批④, item 60): `term_drop` pastes,
   // bracketed when the program asked, and for a session on another
   // machine has that machine pull the files first and pastes where they
-  // landed — its progress on the pill's line (`dropShare`), a failure in
-  // this pane's corner (`dropWhy`).
+  // landed — its progress on the pill's line (`dropShare`), a failure on
+  // the pill until 重试 or 取消 (`missed`).
   //
   // **Only the tab on screen takes a drop.** The kept tabs stand hidden
   // at the same size in the same place (`DetailPane`), so a test of the
@@ -2927,6 +2953,33 @@ export function TerminalPane({
   const activeRef = useRef(active);
   activeRef.current = active;
   const dropping = useRef(false);
+  const missedSeq = useRef(0);
+  /** A drop that did not get there, onto the pill: `again` drops the same
+      files again, `clean` lets go of what was staged for it. */
+  const fail = useCallback(
+    (miss: Miss, names: string[], again: () => void, clean: () => void) => {
+      if (miss.kind === "cancelled") return;
+      const key = `drop-${(missedSeq.current += 1)}`;
+      const off = () => setMissed((l) => l.filter((n) => n.id !== key));
+      const n = failedNotice({
+        id: key,
+        miss,
+        machine: machine ?? null,
+        what: names,
+        capMb: DROP_CAP / 2 ** 20,
+        retry: () => {
+          off();
+          again();
+        },
+        cancel: () => {
+          off();
+          clean();
+        },
+      });
+      setMissed((l) => [...l, n]);
+    },
+    [machine],
+  );
   /** `paths` may first have to be made: files picked on a phone are
       staged here before the drop (`dropFiles`), under the same line,
       and the maker is told whether the drop was cancelled meanwhile
@@ -2941,7 +2994,6 @@ export function TerminalPane({
     ) => {
       if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return;
       dropping.current = true;
-      setDropWhy(null);
       // The pill turns to the files at once, the line at its start.
       setDropShare(0);
       setDropNames(names);
@@ -2971,16 +3023,36 @@ export function TerminalPane({
         void termDropCancel(id).catch(() => {});
       };
       Promise.resolve(Array.isArray(paths) ? paths : paths(() => cancelled))
-        .then((made) => (cancelled || made === null ? null : termDrop(id, made, from, into)))
-        .then((landed) => {
+        .then((made) => (cancelled || made === null ? null : termDrop(id, made, from, into).then((end) => ({ made, end }))))
+        .then((done) => {
+          if (!done) return;
+          const { made, end } = done;
+          if (end?.miss) {
+            // **A failed drop keeps what was staged for it** (`term_drop`):
+            // 重试 drops the same paths again; 取消 lets them go — unless
+            // another drop runs by then, which a cancel would stop too.
+            const staged = !Array.isArray(paths);
+            if (!cancelled)
+              fail(
+                end.miss,
+                names,
+                () => dropFromRef.current(made, names, from, into),
+                () => {
+                  if (staged && !dropping.current) void termDropCancel(id, made).catch(() => {});
+                },
+              );
+            return;
+          }
           // **The session's machine's trees are told** (UX-43 §1): each
           // level a file landed in — its `~/khor-drop`, or the shell's
           // directory — reads again wherever a tree holds it.
-          for (const dir of new Set((landed ?? []).map(levelOf))) treeChanged({ machine: machine ?? "", here: machine == null, dir });
+          for (const dir of new Set((end?.landed ?? []).map(levelOf))) treeChanged({ machine: machine ?? "", here: machine == null, dir });
           pollNow.current();
         })
         .catch((err: unknown) => {
-          if (!cancelled) setDropWhy(String((err as { message?: string })?.message ?? err));
+          // The call itself failed (staging a picked file, the bridge):
+          // its words are the raw ones; 重试 starts the drop over.
+          if (!cancelled) fail({ kind: "other", machine: null, raw: said(err) }, names, () => dropFromRef.current(paths, names, from, into), () => {});
         })
         .finally(() => {
           if (!cancelled) settle();
@@ -2988,8 +3060,10 @@ export function TerminalPane({
           dropping.current = false;
         });
     },
-    [id, machine],
+    [id, machine, fail],
   );
+  const dropFromRef = useRef(dropFrom);
+  dropFromRef.current = dropFrom;
   // `into`: the shell's current directory (「放到当前目录」, part 5).
   const drop = useCallback(
     (paths: string[], from: string | null, into?: string | null) => dropFrom(paths, paths.map(baseName), from, into ?? null),
@@ -3004,7 +3078,7 @@ export function TerminalPane({
       if (files.length === 0 || dropping.current) return;
       const big = files.find((f) => f.size > DROP_CAP);
       if (big) {
-        setDropWhy(msg.drop_too_big(DROP_CAP / 2 ** 20, big.name));
+        fail({ kind: "too-big", machine: null, raw: "" }, [big.name], () => {}, () => {});
         return;
       }
       dropFrom(
@@ -3027,7 +3101,7 @@ export function TerminalPane({
         null,
       );
     },
-    [dropFrom, id],
+    [dropFrom, id, fail],
   );
   const dropRef = useRef(drop);
   dropRef.current = drop;
@@ -3430,8 +3504,9 @@ export function TerminalPane({
           )}
         </button>
       )}
-      {/* Reconnecting, said over the screen it holds (`RejoinPill`). */}
-      {rejoining && !gone && !why && <RejoinPill machine={machine} />}
+      {/* ⚠️ 墓碑 (NOTICE-BRIEF, IMG_5412): reconnecting was a bubble
+          floating at the top of the screen it held (`RejoinPill`), over
+          the program's text. It is the session pill's now. */}
       {opening && !why && openedAt !== null && (
         <div data-term-opening className="absolute inset-0 z-10 bg-card font-sans">
           <Waiting
@@ -3468,19 +3543,11 @@ export function TerminalPane({
               {gui.term_over}
             </div>
           )}
-
-          {/* Held to the pane's own width so a sentence wraps here
-              instead of pushing the screen sideways. */}
-          {historyOut && (
-            <div data-term-history-out className="max-w-72 text-right text-muted-foreground">
-              {gui.term_tmux_history_out}
-            </div>
-          )}
-          {dropWhy && (
-            <div data-term-drop-why className="max-w-72 text-right text-destructive">
-              {dropWhy}
-            </div>
-          )}
+          {/* ⚠️ 墓碑 (NOTICE-BRIEF): a drop's failure in red, the backend's
+              sentence with the dial's English in it (IMG_5413), and the
+              tmux history's note in grey (IMG_5414), right-aligned here
+              over the program's own text. A failed drop is the pill's now
+              (`lib/pill-notices`); the note is not shown. */}
         </div>
       )}
     </div>
@@ -3508,7 +3575,10 @@ export function TerminalPane({
       </GlassCircle>
     </BarSeat>
     )}
-    {active && dropNames === null && (
+    {/* **The pill's room is the notice's** (NOTICE-BRIEF): while
+        something stops the session the deck's pill says it, and its
+        立即重试 / 重试 are in the grown view — no reload beside it. */}
+    {active && dropNames === null && !(inBar && (missed.length > 0 || rejoining)) && (
     <BarSeat at="lead">
       <GlassCircle
         data-term-reload
@@ -3552,18 +3622,6 @@ export function TerminalPane({
 }
 
 /**
- * **Reconnecting, said over the screen it holds** (round NET-FIX): the
- * far pipe ended and is being asked for again, so the screen under this
- * is the last one that arrived — held back in ink, and this pill on top
- * in the pane's floating language (the way-back-down control's), so it
- * never sits on the program's own text the way a bare caption would.
- *
- * **From [`WAIT_SAY_MS`] it says for how long, and what brings it back**
- * (UX-8, the first run's 「the Mac's khor is not running」): the pill
- * alone spun with no end, and the one move that helps is on the other
- * machine — the pipe comes back by itself once that machine is up.
- */
-/**
  * **The key row and its circle** (UX-12, the owner 2026-10-04): the deck
  * is one row and always there — ‹, the pill, the key row's circle and the
  * tabs circle — and the key row (`row`) stands under it only while open
@@ -3595,28 +3653,5 @@ function KeyRowSeats({
       </BarSeat>
       {open && <BarSeat at="under">{row}</BarSeat>}
     </>
-  );
-}
-
-function RejoinPill({ machine }: { machine?: string | null }) {
-  const [since] = useState(() => Date.now());
-  const say = useWaited(since) >= WAIT_SAY_MS;
-  return (
-    <div
-      data-term-rejoining
-      role="status"
-      className="absolute top-2 left-1/2 z-10 flex max-w-[calc(100%-2*var(--spacing)*2)] -translate-x-1/2 flex-col items-center rounded-lg border bg-popover px-3 py-1 font-sans text-caption text-muted-foreground shadow-(--shadow-float)"
-    >
-      <span className="flex items-center gap-xxs tabular-nums">
-        <IconReload className="size-3.5 flex-none animate-spin motion-reduce:animate-none" />
-        {machine ? gui.term_rejoining(machine) : gui.term_rejoining_here}
-        {say && <span data-term-rejoining-for>· {lasting(Date.now() - since)}</span>}
-      </span>
-      {say && (
-        <span data-term-rejoining-how className="text-center">
-          {machine ? gui.term_rejoining_how(machine) : gui.term_rejoining_how_here}
-        </span>
-      )}
-    </div>
   );
 }

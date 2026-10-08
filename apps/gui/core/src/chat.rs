@@ -87,6 +87,13 @@ pub enum ChatFrame {
     /// **key**, looked up at the last moment like every other word.
     /// Sent to the face that sent the op and to nobody else.
     Refused { why: String },
+    /// **A turn that did not go** (NOTICE-BRIEF): its bytes could not be
+    /// written to the host — the road to that machine broke under it —
+    /// and why, in parts. The face takes the line back off its
+    /// transcript and offers 重试 / 取消 on the session's pill. ⚠️ 墓碑:
+    /// a `Refused` frame carrying the write's own error, which the face
+    /// read as 「当前没有进行中的回合」.
+    Unsent { miss: crate::miss::Miss },
     /// What this session can be set to and what it is set to
     /// (`khor_node::gui_host::GuiNote::Settings`): `{ modes, options }`
     /// in the protocol's own JSON, `unknown` here for the reason
@@ -121,6 +128,10 @@ pub struct ChatBatch {
     pub sending: u64,
     #[ts(type = "number")]
     pub sending_of: u64,
+    /// The pipe to a far host ended and is being asked for again
+    /// (`crate::rejoin`), and why, in parts — the terminal's
+    /// [`crate::term::TermChunk::stall`], for a conversation.
+    pub stall: Option<crate::miss::Miss>,
 }
 
 /// How many frames one attachment keeps.
@@ -226,6 +237,11 @@ struct Chat {
     conn: Mutex<TcpStream>,
     frames: Mutex<Frames>,
     gone: AtomicBool,
+    /// Between a far pipe ending and the next one ([`ChatBatch::stall`]).
+    stall: Mutex<Option<crate::miss::Miss>>,
+    /// The far machine it lives on, `None` when it is held here: the
+    /// machine a turn that did not go names.
+    far: Option<String>,
     /// Woken whenever a frame lands, the attachment is made again or
     /// ends: what a held [`chat_wait`] waits on.
     arrived: tokio::sync::Notify,
@@ -353,6 +369,8 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
         conn: Mutex::new(conn),
         frames: Mutex::new(Frames::default()),
         gone: AtomicBool::new(false),
+        stall: Mutex::new(None),
+        far: far.clone(),
         arrived: tokio::sync::Notify::new(),
         saying: Mutex::new(()),
         sending: (AtomicU64::new(0), AtomicU64::new(0)),
@@ -382,12 +400,24 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
             let Some(machine) = far.as_deref().filter(|_| crate::rejoin::is_on()) else {
                 break;
             };
-            let Some(conn) = crate::rejoin::again(&root, machine, &sid, &reader.left, |addr, cookie| {
-                khor_node::host::connect_at(addr, cookie, 0, 0)
-            }) else {
+            *reader.stall.lock().unwrap() = Some(crate::miss::Miss::new(crate::miss::MissKind::Unreached, Some(machine), ""));
+            reader.arrived.notify_waiters();
+            let told = |miss: crate::miss::Miss| {
+                *reader.stall.lock().unwrap() = Some(miss);
+                reader.arrived.notify_waiters();
+            };
+            let Some(conn) = crate::rejoin::again(
+                &root,
+                machine,
+                &sid,
+                &reader.left,
+                |addr, cookie| khor_node::host::connect_at(addr, cookie, 0, 0),
+                told,
+            ) else {
                 break;
             };
             let Ok(again) = conn.try_clone() else { break };
+            *reader.stall.lock().unwrap() = None;
             // The write half first, so the history a face asks for on
             // seeing `lost` goes down the new attachment.
             *reader.conn.lock().unwrap() = conn;
@@ -396,6 +426,7 @@ pub fn chat_open(root: &Path, id: &str) -> Result<bool, String> {
             reading = again;
         }
         // A goodbye and a torn connection land the same way (ChatBatch).
+        *reader.stall.lock().unwrap() = None;
         reader.gone.store(true, Ordering::Relaxed);
         reader.arrived.notify_waiters();
     });
@@ -475,6 +506,7 @@ pub fn chat_poll(id: &str, since: u64) -> Result<ChatBatch, String> {
         lost,
         sending: chat.sending.0.load(Ordering::Relaxed),
         sending_of: chat.sending.1.load(Ordering::Relaxed),
+        stall: chat.stall.lock().unwrap().clone(),
     })
 }
 
@@ -527,8 +559,9 @@ pub fn chat_say(id: &str, text: &str) -> Result<(), String> {
 /// to a thread). A turn too big for one frame goes in slices
 /// (`khor_node::gui_host::write_op`), each taking the connection alone,
 /// so a stop pressed meanwhile goes between them; the batch's `sending`
-/// says how far it has got. When it cannot go, the face is told the way
-/// a host refusal tells it — a `Refused` frame — and gets its words back.
+/// says how far it has got. When it cannot go, the face is told on the
+/// conversation itself — an `Unsent` frame, the failure in parts — and
+/// gets its words back.
 pub fn chat_say_with(
     id: &str,
     text: &str,
@@ -550,10 +583,9 @@ pub fn chat_say_with(
     chat.sending.0.store(0, Ordering::Relaxed);
     chat.sending.1.store(0, Ordering::Relaxed);
     if let Err(why) = &sent {
-        chat.frames
-            .lock()
-            .unwrap()
-            .push(ChatFrame::Refused { why: why.clone() });
+        chat.frames.lock().unwrap().push(ChatFrame::Unsent {
+            miss: crate::miss::read(why, chat.far.as_deref()),
+        });
     }
     chat.arrived.notify_waiters();
     sent
@@ -950,6 +982,8 @@ mod wait_tests {
             conn: Mutex::new(conn),
             frames: Mutex::new(Frames::default()),
             gone: AtomicBool::new(false),
+            stall: Mutex::new(None),
+            far: None,
             arrived: tokio::sync::Notify::new(),
             saying: Mutex::new(()),
             sending: (AtomicU64::new(0), AtomicU64::new(0)),

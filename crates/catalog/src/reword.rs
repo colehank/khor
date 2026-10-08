@@ -43,6 +43,7 @@ enum Piece {
 }
 
 struct Entry {
+    key: &'static str,
     zh: Vec<Piece>,
     en: Vec<Piece>,
 }
@@ -84,7 +85,7 @@ fn entries() -> &'static [Entry] {
     ALL.get_or_init(|| {
         crate::TEMPLATES
             .iter()
-            .map(|(_, zh, en)| Entry { zh: pieces(zh), en: pieces(en) })
+            .map(|(key, zh, en)| Entry { key, zh: pieces(zh), en: pieces(en) })
             .filter(|e| own_text(&e.zh) >= OWN_TEXT && own_text(&e.en) >= OWN_TEXT)
             .collect()
     })
@@ -172,7 +173,9 @@ fn render(p: &[Piece], args: &[(usize, String)]) -> String {
     out
 }
 
-fn said_again(said: &str, lang: crate::lang::Lang, depth: usize) -> Option<String> {
+/// The entry that says `said` with the most text of its own, and the
+/// arguments it fills it with.
+fn best(said: &str) -> Option<(&'static Entry, Vec<(usize, &str)>)> {
     let mut best: Option<(&Entry, Vec<(usize, &str)>, usize)> = None;
     for e in entries() {
         for p in [&e.zh, &e.en] {
@@ -185,7 +188,11 @@ fn said_again(said: &str, lang: crate::lang::Lang, depth: usize) -> Option<Strin
             }
         }
     }
-    let (e, args, _) = best?;
+    best.map(|(e, args, _)| (e, args))
+}
+
+fn said_again(said: &str, lang: crate::lang::Lang, depth: usize) -> Option<String> {
+    let (e, args) = best(said)?;
     let args: Vec<(usize, String)> = args
         .into_iter()
         .map(|(i, a)| {
@@ -206,6 +213,18 @@ pub fn reword(said: &str) -> Option<String> {
     said_again(said, crate::lang::current(), DEPTH)
 }
 
+/// `said` read back into the entry that says it: its key
+/// (`section.key`) and its arguments by position, as they were said —
+/// for a caller that must tell one failure from another and keep the
+/// machine's own words apart (NOTICE-BRIEF: a transfer's failure in
+/// parts), not say it again. `None` when no entry says it.
+pub fn read(said: &str) -> Option<(&'static str, Vec<String>)> {
+    let (e, mut args) = best(said)?;
+    args.sort_by_key(|(i, _)| *i);
+    args.dedup_by_key(|(i, _)| *i);
+    Some((e.key, args.into_iter().map(|(_, a)| a.to_owned()).collect()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +238,18 @@ mod tests {
         let p = pieces(if lang == Lang::Zh { zh } else { en });
         let args: Vec<(usize, String)> = args.iter().enumerate().map(|(i, a)| (i, a.to_string())).collect();
         render(&p, &args)
+    }
+
+    /// A dial's failure read back into its key, the machine and the
+    /// network's own words — in either language (NOTICE-BRIEF).
+    #[test]
+    fn a_sentence_is_read_back_into_its_key_and_arguments() {
+        let raw = "aborted by peer: the server refused to accept a new connection";
+        for lang in [Lang::Zh, Lang::En] {
+            let s = said("msg.cant-reach-named", lang, &["Mac-mini", raw]);
+            assert_eq!(read(&s), Some(("msg.cant-reach-named", vec!["Mac-mini".to_owned(), raw.to_owned()])));
+        }
+        assert_eq!(read("Permission denied (os error 13)"), None);
     }
 
     /// The owner's machine page: a far refusal in English, read on a

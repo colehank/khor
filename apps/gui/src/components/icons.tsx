@@ -144,6 +144,8 @@ const LIVE = {
   // computed: a disc of r 6.5 with its line fills the whole box — it
   // stands in a face's seat, and a face fills its seat.
   upload: fit(1, 1, 14),
+  // The failure's (NOTICE-BRIEF): upload's own disc.
+  alert: fit(1, 1, 14),
   // 最近's clock (UX-30, 2026-10-06), on the 24 canvas beside the
   // landings' glyphs: a ring of r 8.5 — the rack's 17 across — computed
   // rather than scanned (ink = 17 + the line, at the round share).
@@ -1148,6 +1150,35 @@ export function IconUpload({ className }: IconProps) {
           strokeLinejoin="round"
           d="M8 11.3V4.9M5.3 7.5 8 4.8l2.7 2.7"
         />
+      }
+    >
+      {(cutId) => <circle data-body mask={`url(#${cutId})`} cx="8" cy="8" r="6.5" />}
+    </Mark>
+  );
+}
+
+/**
+ * 未传到 — a transfer that did not get there (NOTICE-BRIEF, the owner
+ * 2026-10-08; drawn in the notice lab and approved with it, 「药丸那可以
+ * 了」, 10-09): the mark the session pill's face seat wears while the
+ * failure waits for 重试 or 取消, SF's `exclamationmark.circle.fill` in
+ * this family. The 37th glyph, 16 canvas. `IconUpload`'s construction —
+ * the disc is the solid piece, the bar and the dot punched through it at
+ * the `bold` weight — so the two read as one pair: going up, did not get
+ * there. Drawn in `state-failed` ink by its caller.
+ */
+export function IconAlert({ className }: IconProps) {
+  const bold = lineOf(LIVE.alert, STROKE.bold);
+  return (
+    <Mark
+      className={className}
+      live={LIVE.alert}
+      icon="alert"
+      cut={
+        <>
+          <path stroke="black" strokeWidth={bold} strokeLinecap="round" d="M8 4.6V8.7" />
+          <circle fill="black" stroke="none" cx="8" cy="11.1" r={bold * 0.62} />
+        </>
       }
     >
       {(cutId) => <circle data-body mask={`url(#${cutId})`} cx="8" cy="8" r="6.5" />}

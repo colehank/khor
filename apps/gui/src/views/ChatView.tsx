@@ -51,6 +51,7 @@
 //   element — the fold and the frames are unchanged, which is why the
 //   change is reversible and this note can be short.
 import { offerTabAct } from "@/lib/tab-acts";
+import { failedNotice, offerNotice, rejoinNotice, type PillNotice } from "@/lib/pill-notices";
 import { takeHandOff } from "@/lib/composer-handoff";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
@@ -68,7 +69,9 @@ import {
   chatWait,
   followHistory,
   inApp,
+  rejoinNow,
   type ChatFrame,
+  type Miss,
 } from "@/api";
 import { IconBack } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
@@ -564,6 +567,9 @@ function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
     }
     return false;
   }
+  // A turn that did not go is the session pill's (NOTICE-BRIEF), not a
+  // line of the conversation: the line itself is taken back.
+  if (frame.kind === "unsent") return true;
   if (frame.kind === "refused") {
     // A line of the conversation's own, because that is where the
     // person is looking when it happens — and it says which of the two
@@ -1038,6 +1044,32 @@ export function ChatView({
   /** The last line handed to the host, until it says what became of it. */
   const sent = useRef("");
   const pollNow = useRef<() => void>(() => {});
+  /** The last turn as it went, for 重试 on a turn that did not go. */
+  const lastSay = useRef<{ line: string; full: string; images: [string, string][]; docs: [string, string][] } | null>(null);
+  /** **A turn that did not go, and the session reconnecting, on its pill**
+      (NOTICE-BRIEF): offered by this conversation's id. */
+  const [unsent, setUnsent] = useState<PillNotice | null>(null);
+  useEffect(() => (unsent ? offerNotice(id, unsent) : undefined), [id, unsent]);
+  const [stall, setStall] = useState<Miss | null>(null);
+  const [stallSince, setStallSince] = useState(0);
+  useEffect(() => {
+    if (!stall || gone) return;
+    return offerNotice(
+      id,
+      rejoinNotice({
+        stall,
+        machine: machine ?? null,
+        since: stallSince || Date.now(),
+        now: () => {
+          setStallSince(Date.now());
+          const m = stall.machine ?? machine;
+          if (m) void rejoinNow(m).catch(() => {});
+        },
+      }),
+    );
+  }, [id, stall, stallSince, gone, machine]);
+  /** Says the last turn again, painted as it was the first time. */
+  const sayAgain = useRef<() => void>(() => {});
 
   useEffect(() => {
     let stopped = false;
@@ -1124,6 +1156,39 @@ export function ChatView({
           if (stopped) return;
           cursor = batch.next;
           setSending(batch.sending_of > 0 ? [batch.sending, batch.sending_of] : null);
+          const held = batch.gone ? null : (batch.stall ?? null);
+          setStall((was) => (was && held && was.kind === held.kind && was.raw === held.raw ? was : held));
+          setStallSince((t) => (held ? t || Date.now() : 0));
+          // **A turn that did not go** (`Unsent`): taken back off the
+          // transcript, and on the pill until 重试 or 取消 — 取消 hands
+          // the words back to an empty box.
+          const unsentFrame = batch.frames.find((f): f is Extract<ChatFrame, { kind: "unsent" }> => f.kind === "unsent");
+          const turn = lastSay.current;
+          if (unsentFrame && turn) {
+            setInTurn(false);
+            sent.current = "";
+            setPaint((prev) => {
+              const last = prev.live[prev.live.length - 1];
+              if (!last || last.who !== "user" || last.text !== turn.full) return prev;
+              return { ...prev, live: prev.live.slice(0, -1) };
+            });
+            setUnsent(
+              failedNotice({
+                id: "say",
+                miss: unsentFrame.miss,
+                machine: machine ?? null,
+                what: "say",
+                retry: () => {
+                  setUnsent(null);
+                  sayAgain.current();
+                },
+                cancel: () => {
+                  setUnsent(null);
+                  setText((now) => (now.trim() ? now : turn.line));
+                },
+              }),
+            );
+          }
           // **The past this face was holding is no longer backed by
           // anything.** The attachment's frame list is capped
           // (`khor_gui_core::chat::FRAME_CAP`), and this says the trim
@@ -1500,7 +1565,17 @@ export function ChatView({
     // it back is the difference between "it did not go in" and "it did
     // not go in and you get to type it again".
     sent.current = line;
+    lastSay.current = { line, full, images: carried, docs: carriedDocs };
+    setUnsent(null);
     chatSay(id, full, carried, carriedDocs).catch(() => setInTurn(false));
+  };
+  sayAgain.current = () => {
+    const turn = lastSay.current;
+    if (!turn || inTurn || gone) return;
+    setInTurn(true);
+    setPaint((prev) => ({ ...prev, live: [...prev.live, { who: "user", text: turn.full }] }));
+    sent.current = turn.line;
+    chatSay(id, turn.full, turn.images, turn.docs).catch(() => setInTurn(false));
   };
 
   // The "/" menu: the agent's own commands, filtered by what has been
