@@ -72,6 +72,7 @@ import { SectionHead } from "@/components/SectionHead";
 import { bandsFor } from "@/lib/model-band";
 import { ruler, tickSet, type Ruler } from "@/lib/ruler";
 import { SideCut } from "@/components/SideCut";
+import { useNarrow } from "@/hooks/use-narrow";
 // A token count: K / M / B (UX-50), base 1000.
 import { tokens as count } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
@@ -357,6 +358,7 @@ export function UsageHalf({
   today,
   cacheKnown,
   source,
+  board,
 }: {
   rows: UsageRow[] | null;
   why: string | null;
@@ -367,8 +369,13 @@ export function UsageHalf({
       than being drawn as nothing. */
   cacheKnown: boolean;
   source: "transcript" | "vendor";
+  /** Every model id on the whole 额度 board, every account's: the series
+      colours are handed out over it, so one id is one colour on every
+      page (UX-53, `lib/model-band`). Absent, this account's own. */
+  board?: (string | null)[];
 }) {
-  const [win, setWin] = useState<number>(0);
+  // **30D first** (UX-53, the owner 2026-10-08: 「默认 30D，而非现在的全部」).
+  const [win, setWin] = useState<number>(30);
   const [view, setView] = useState<"day" | "model">("day");
   /** Which row the scatter last asked for, and how many times it has
       asked — the machine card's shape, and for its reason: pressing the
@@ -392,7 +399,7 @@ export function UsageHalf({
   // **Colours are worked out over every model the account has, never
   // over the window's** — see `lib/model-band`. Fed the window's, a
   // model changes colour when somebody presses 7 天.
-  const bands = useMemo(() => bandsFor([...new Set((rows ?? []).map((r) => r.model))]), [rows]);
+  const bands = useMemo(() => bandsFor([...new Set((rows ?? []).map((r) => r.model))], board), [rows, board]);
   const days = useMemo(() => dayAxis(rows ?? [], today, win), [rows, today, win]);
   const agg = useMemo(() => aggregate(rows ?? [], days, cacheKnown), [rows, days, cacheKnown]);
 
@@ -580,7 +587,7 @@ function Trend({
             },
             {
               key: "window",
-              word: gui.usage_window_all,
+              word: gui.usage_window,
               chosen: String(win),
               options: WINDOWS.map((w) => ({ key: String(w), word: w === 0 ? gui.usage_window_all : gui.usage_window_days(w) })),
             },
@@ -715,8 +722,14 @@ function Trend({
           )}
           {median !== null && (
             <g data-usage-median={median}>
-              <line x1={PLOT.padL} x2={W - PLOT.padR} y1={y(median)} y2={y(median)} stroke="currentColor" strokeOpacity={0.45} strokeWidth={0.9} strokeDasharray="4 3" />
-              <text x={W - PLOT.padR} y={y(median) - 4} fontSize={PLOT.tick} textAnchor="end" fill="currentColor" fillOpacity={0.6}>
+              {/* **The ink on a halo of the paper** (UX-53, 「中位颜色看不
+                  清」): whatever band it crosses, the rule and its word
+                  read at ink-on-paper (`--chart-median`). ⚠️ 墓碑:
+                  `currentColor` at 0.45, its word at 0.6 — lost on the
+                  dark bands. */}
+              <line data-usage-median-halo x1={PLOT.padL} x2={W - PLOT.padR} y1={y(median)} y2={y(median)} stroke="var(--card)" strokeWidth={3.5} />
+              <line data-usage-median-rule x1={PLOT.padL} x2={W - PLOT.padR} y1={y(median)} y2={y(median)} stroke="var(--chart-median)" strokeWidth={1.4} strokeDasharray="5 3" />
+              <text data-usage-median-word x={W - PLOT.padR} y={y(median) - 5} fontSize={PLOT.tick} fontWeight={600} textAnchor="end" fill="var(--chart-median)" stroke="var(--card)" strokeWidth={3} paintOrder="stroke" strokeLinejoin="round">
                 {gui.usage_median(count(median))}
               </text>
             </g>
@@ -997,6 +1010,12 @@ function Stats({
       : []),
     { key: "days", word: gui.usage_axis_days, of: (r) => r.days },
   ];
+  // **A phone draws three columns, whole** (UX-53: the table was cut at
+  // the right edge and the names broke over three lines): the model, its
+  // total and its days; the rest is the wide face's, and the sort still
+  // answers to whichever column was pressed there.
+  const narrow = useNarrow();
+  const drawn = narrow ? cols.filter((c) => PHONE_COLS.includes(c.key)) : cols;
   const listed = [...agg].sort((a, b) => {
     const c = cols.find((x) => x.key === sort.key);
     if (!c) return 0;
@@ -1222,7 +1241,7 @@ function Stats({
                 that a column with no head, or a head that ever spans
                 two columns, breaks. */}
             <tr className="border-b">
-              {cols.map((c) => (
+              {drawn.map((c) => (
                 // **`aria-sort` on every head, `none` where it is not the
                 // one in use.** Only marking the active column says
                 // 「this column is sorted」 and leaves 「those columns
@@ -1249,6 +1268,7 @@ function Stats({
                   //   row of controls drawn twice.
                   className={cn(
                     "whitespace-nowrap p-0 pr-in font-title text-foreground",
+                    narrow && c.key === "model" && "w-full",
                     sort.key !== c.key && "font-title",
                   )}
                 >
@@ -1289,8 +1309,19 @@ function Stats({
               // 「locate」 on the machine card. The mark it wears now is
               // put on by the effect above and takes itself off.
               <tr key={keyOf(r)} data-usage-row={r.model ?? ""} className="border-b">
-                {cols.map((c) => (
-                  <td key={c.key} className={cn("px-1 py-1", c.key === "model" ? "text-left" : "text-right")}>
+                {drawn.map((c) => (
+                  <td
+                    key={c.key}
+                    data-usage-cell={c.key}
+                    title={narrow && c.key === "model" ? r.word : undefined}
+                    className={cn(
+                      "px-1 py-1",
+                      c.key === "model" ? "text-left" : "whitespace-nowrap text-right",
+                      // One line, cut at its end: the cell takes what the
+                      // two numbers leave (`max-w-0` lets it shrink).
+                      c.key === "model" && (narrow ? "w-full max-w-0 truncate" : "whitespace-nowrap"),
+                    )}
+                  >
                     {/* `align-middle`, not a one-pixel nudge: `check-px` reads a
                         literal in a class as a second source of truth, and
                         `npm run test` was red on it from 30f6a88 (12:49) to
@@ -1323,6 +1354,9 @@ function Stats({
     </section>
   );
 }
+
+/** The columns a phone draws (`Stats`). */
+const PHONE_COLS = ["model", "total", "days"];
 
 /** The unnamed row has no name to key on, and `""` would collide with a
     model actually called that.

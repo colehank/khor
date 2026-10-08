@@ -97,7 +97,9 @@ const WORDS = "src/words.ts";
  * until that rewrite lands on `money` / `moneyIn` / `until` / `untilBare`.
  * Each entry is printed on every run; drop it when the rewrite lands.
  */
-const PENDING = new Map([["src/views/QuotaLanding.tsx", "ux-q2: money / ringWord → words.ts money / moneyIn; the age cell's bare lasting → agoOf"]]);
+// UX-53 (ux-q2, 2026-10-08): the quota page took words.ts money / moneyIn,
+// agoOf and untilBare; nothing is pending.
+const PENDING = new Map();
 const words = files.find((f) => f.path === WORDS);
 if (!words) fail("probe dead: src/words.ts is not there");
 /** Code without its comments, so a tombstone naming a retired key is not
