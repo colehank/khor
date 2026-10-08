@@ -27,6 +27,8 @@ relay = "Relay"
 quiet = "Idle"
 down = "Down"
 no-serve = "Serve not running"
+ssh = "Over SSH"
+forwarded = "Forwarded"
 
 [avatar]
 axis-palette = "Palette"
@@ -76,6 +78,10 @@ lang = "Interface language"
 tabs-limit = "Tab limit"
 session-form = "New sessions open as"
 files-click = "Single click"
+ssh-carry = "Relay over SSH"
+ssh-carry-note = "A khor host with no internet is connected through a machine that can log in to it over SSH. Takes effect when khor restarts"
+peer-hop = "Forward Through Other Machines"
+peer-hop-note = "With no direct connection, go through a machine both ends can reach before using a relay"
 # Under "Ask before", so each key names the act rather than repeating
 # the question.
 confirm-takeover = "Taking over a session"
@@ -155,7 +161,7 @@ usage: khor <verb>
   rm [-m machine] <path>
                         deletes that file or directory. **On this
                         machine it goes to the trash; on other
-                        machines and satellites it's deleted outright,
+                        machines and SSH hosts it's deleted outright,
                         unrecoverable** (no trash there). A directory
                         goes with everything inside it; refuses if the
                         path doesn't exist
@@ -188,7 +194,7 @@ usage: khor <verb>
                         contains it (`path:line: that line`).
                         Case-insensitive, plain substring, not a
                         regex; on this machine it respects .gitignore,
-                        on a satellite it only skips .git. Caps out at
+                        on an SSH host it only skips .git. Caps out at
                         50 names, 200 lines, 5 seconds — says so on
                         stderr when it hits the limit
   read <machine> <file>
@@ -223,6 +229,26 @@ usage: khor <verb>
                         proxy port — point a browser at it and traffic
                         goes out from there (needs serve running;
                         close that session to shut the port)
+  reach <host> [--port N]
+                        every online machine connects to this address
+                        once from its own network (ssh's 22 by default)
+                        and reports whether it got through, the ms, the
+                        server's first line (ssh's version line) and the
+                        key its own known_hosts holds for the name; the
+                        fastest is the entrance. One address only: no
+                        scan, no key fetch
+  pipe --via <machine> <host> <port>
+                        a byte pipe to host:port through that machine's
+                        network, on stdin and stdout. For ssh's
+                        ProxyCommand:
+                        ssh -o ProxyCommand='khor pipe --via lab %h %p' box
+  carry <machine> <ssh host> [--port <port>] [--via <jump>]
+      [--password | --key <key file> [--passphrase]] | carry <machine> --off
+                        connect a khor host with no internet through this
+                        machine's ssh login to it; others reach it through
+                        this machine. Logs in as add does: a password or
+                        passphrase is read from standard input and kept
+                        only in this machine's system keychain
   tabs [ls] | open [-m machine] <url> | close|focus|pin|unpin <n|id>
                         the browsing tabs this screen has open. **Local,
                         never replicated**: what is open belongs to this
@@ -422,17 +448,33 @@ usage: khor <verb>
                         the end of their line)
   invite                issues a one-time pairing ticket (requires
                         serve running)
-  pair <ticket>         joins the network with a ticket
-  adopt <ssh host> [name]
-                        brings an ssh-only machine into the network (a
-                        satellite): identity comes from your
-                        known_hosts, everything runs on its behalf
-                        through this machine; to remove it, use
-                        forget. Requires passwordless ssh (one that
-                        prompts for a password can't connect)
+  pair <ticket|->       joins the network with a ticket; - reads it
+                        from standard input
+  add <SSH host> [name] [--port <port>] [--via <jump>] [-m <khor host>]
+      [--password | --key <key file> [--passphrase]] [--no-install]
+                        adds a machine over SSH: by default installs khor
+                        and makes it a khor host (user-level resident, no
+                        root); when khor can't keep running there, removes
+                        the installed files and connects over SSH instead.
+                        --no-install installs nothing and adds an SSH host
+                        (no files left there; this machine runs everything
+                        over SSH). --port defaults to 22 or your ssh
+                        config's port. --via sends every ssh through that
+                        jump host without changing your ssh config. -m has
+                        that khor host add it over its own ssh (it runs the
+                        add; key login only, --key is a path there).
+                        --password reads the password from standard input
+                        and keeps it only in this machine's system
+                        keychain. --key logs in with that key file, keeping
+                        only its path, never the key; --passphrase reads
+                        its passphrase from standard input, kept the same
+                        way. Without them, your ssh config's and ssh-agent's
+                        keys are used. Identity comes from your known_hosts
+  promote <SSH host>    installs khor on an SSH host this machine added;
+                        the name carries over, the SSH host row goes
   pending [--json]      what waits for the root holder: machines paired
-                        in that have no certificate yet, satellites
-                        adopted by a machine without the root, machines
+                        in that have no certificate yet, SSH hosts
+                        added by a machine without the root, machines
                         removed elsewhere and not revoked yet. One line
                         each: id, name, what it waits for
   approve <machine>     on the machine holding the root: signs a waiting
@@ -636,7 +678,7 @@ identity-reset = "the identity key is gone; the next khor mints a new one, and t
 unread = "unread {0}"
 unreachable-for = "unreachable for {0}"
 quiet-for = "quiet for {0}"
-adopted = "brought in: {0}, speaking through {1}; the whole network can see it right away"
+adopted = "Added the SSH host {0}, connected over SSH from {1}; the whole network sees it now"
 # The user's root key and the roster (docs/CONNECT.md 身份).
 root-born-hint = "This machine just made the network's root key: it signs which machines are yours. Write the 24 recovery words on paper and keep them — without it no machine can be added or revoked again. To see them: khor root words {0}"
 root-show-key = "Root key: {0}"
@@ -650,17 +692,37 @@ root-recovered = "Root key restored onto this machine: {0}"
 root-inited = "Made root key {0} and signed the {1} machines in the table; each picks it up on its next sync"
 pending-none = "Nothing is waiting"
 pending-kind-device = "join"
-pending-kind-satellite = "satellite join"
+pending-kind-satellite = "SSH host join"
 pending-kind-leave = "removal"
 approved = "Approved \"{0}\"; roster version {1}"
 revoked-ok = "Revoked \"{0}\"; roster version {1}"
 pair-pending-hint = "Paired, but this machine has no certificate yet: the root holder was not part of this pairing. The network recognizes it once khor approve runs on the machine holding the root"
-adopt-pending-hint = "Satellite brought in, but not on the roster yet: this machine does not hold the root. Run khor approve on the machine that does"
+# 添加机器 (`khor add`, `khor promote`): the steps as the terminal
+# prints them, what each did, and the outcome.
+add-step-connect = "Connect"
+add-step-place = "Install khor"
+add-step-start = "Start"
+add-step-pair = "Pair"
+add-step-undo = "Remove installed files"
+add-step-satellite = "Add as an SSH host"
+add-placed-fetched = "{0}, downloaded by the target host"
+add-placed-pushed = "{0}, uploaded from this machine"
+add-paired-carried = "Connected over SSH"
+keeper-launchd = "Keeps running after logout; launchd starts it at boot"
+keeper-boot = "Keeps running after logout; systemd starts it at boot"
+keeper-login = "Keeps running after logout; after a restart it starts at the next login"
+keeper-none = "Keeps running after logout; after a restart run khor-serve-up"
+password-prompt = "Password"
+passphrase-prompt = "Key passphrase"
+added-member = "Added {0}: khor is installed and connects directly"
+added-satellite = "{0}; installed files removed, connected over SSH instead"
+promoted = "Installed khor on {0}; it is a khor host now"
+adopt-pending-hint = "SSH host added, but not on the roster yet: this machine does not hold the root. Run khor approve on the machine that does"
 doctor-roster-stale = "The roster is {0} days past fresh (signed {1} days ago): the root holder has been away a long time, and no new certificate is accepted"
 doctor-roster-none = "Knows the root key, but holds no roster that verifies"
 via-sponsor = "via {0}"
-sat-tmux-yes = "it has tmux — terminals opened on it can persist"
-sat-tmux-no = "it has no tmux — terminals opened on it are temporary (gone once the connection drops)"
+sat-tmux-yes = "It has tmux; terminals opened on it persist"
+sat-tmux-no = "It has no tmux; terminals opened on it close when the connection drops"
 adaptor-behind = "{0} running sessions khor can't read — it doesn't recognize the format they're reporting"
 old-sessions-hidden = "{0} old sessions not listed (--all shows them all)"
 age-seconds = "{0} seconds"
@@ -824,7 +886,7 @@ quota-remaining = "{0} remaining"
 resume-needs-agent = "--resume needs --agent: an id alone doesn't say which agent should resume it"
 gui-not-on-another-machine = "--gui with --on only accepts an agent name (claude, codex, or a registered one), not a command: that machine has to start it itself"
 resume-not-on-another-machine = "--resume can't combine with --on: a conversation has to resume on the machine that opened it"
-invite-window = "This ticket is valid for {0} minutes — issue a new one after that"
+invite-window = "Valid for {0} minutes, and only once"
 paired-ok = "Paired: {0}. Every machine it knows is now in your machine list"
 nothing-to-sync = "Only this machine is on the network — nothing to sync"
 sync-failed-line = "{0}: didn't sync — {1}"
@@ -867,6 +929,25 @@ relay-stats-no-device = "No device has connected yet"
 # Round NET-12: `khor devices --roads`.
 roads-ms = "{0} ms"
 roads-unreported = "reports no roads (an older khor, or not yet)"
+# Round ROAD-1: `khor reach`.
+reach-head = "{0} port {1}, tried once from each machine"
+reach-reached = "reachable"
+reach-silent-word = "no ssh answer"
+reach-refused-word = "refused"
+reach-timeout-word = "timed out"
+reach-no-name-word = "can't resolve"
+reach-unasked = "not asked"
+reach-predates-word = "older khor"
+reach-entrance = "Entrance: {0} ({1} ms)"
+reach-no-entrance = "No machine can connect to it"
+reach-choose = "This machine holds no key for it and the others disagree: choose the entrance yourself"
+reach-disagree = "These machines' known_hosts hold different keys for this name: they mean different machines"
+reach-known-as = "This key belongs to {0}"
+# Round ROAD-1: roads with legs in `khor devices --roads`.
+roads-ssh = "ssh"
+roads-broken = "broken at {0} → {1}"
+roads-jump = "the jump host"
+roads-broken-auth = "{0} accepts password logins only"
 
 [msg]
 watch-path-relative = "Watched directory must be an absolute path: {0}"
@@ -1003,7 +1084,7 @@ cant-revoke-holder = "The root holder cannot revoke itself"
 already-revoked = "\"{0}\" is already revoked"
 recover-other-network = "This machine is in another network (root {0}), and these words are a different root. Run khor leave first, then recover"
 root-already = "There is already a root key here: {0}"
-sat-revoked = "Satellite \"{0}\" was revoked; nothing is run on its behalf any more"
+sat-revoked = "SSH host \"{0}\" was revoked; nothing is run on its behalf any more"
 no-home-dir = "This machine can't report its own home directory"
 path-not-absolute = "Path must be written from root: {0}"
 
@@ -1212,6 +1293,22 @@ command-not-found = "Command not found: {0}. khor looked on this PATH: {1}. Inst
 
 no-such-dir = "No such directory: {0}"
 tunnel-pipe-failed = "Pipe couldn't reach {0}: {1}"
+# Round ROAD-1: `khor reach`, every machine's try at one address.
+reach-no-name = "No address found for {0}"
+reach-refused = "{0} refused the connection: {1}"
+reach-timeout = "{0} didn't answer within {1} s"
+reach-paused = "{0} is paused, so it wasn't asked"
+reach-predates = "{0} runs an older khor that doesn't know this request"
+reach-no-host = "Give an address"
+reach-silent = "{0} accepted the connection but sent no ssh version line (possibly a proxy's fake address)"
+carry-off = "Connect over SSH is off on this machine: khor config set ssh-carry on"
+carry-needs-serve = "khor is not running on this machine, so it can't be connected over SSH"
+carry-not-a-machine = "{0} is not a machine in this network"
+carry-set = "This machine connects {0} over SSH: {1}"
+carry-unset = "This machine no longer connects {0}"
+carry-is-satellite = "{0} is an SSH host and does not run khor, so it can't be connected this way"
+carry-not-up = "The SSH connection to {0} did not come up"
+pipe-via-satellite = "{0} is a satellite, not khor, so a pipe can't go through it; jump through its ssh with ssh -J"
 self-moved = "khor's own binary is no longer at {0} (upgraded or moved) — restart serve"
 agent-brief = """You're attached to khor: a network connecting all of this person's machines.\
 khor's tools are your hands — devices/sessions/ls are for looking, use them freely;\
@@ -1294,7 +1391,7 @@ host-never-ready = "Host wasn't ready within 5 seconds"
 host-died-mute = "Host died right after starting and left no message"
 ghost-never-ready = "Conversation host wasn't ready within 30 seconds"
 agent-wants-a-login = "This agent needs to log in before it can open a session (it said: {0})"
-agent-not-on-a-satellite = "{0} is a satellite machine — it has no khor on it, so an agent can't start there; a terminal can"
+agent-not-on-a-satellite = "{0} is an SSH host with no khor on it, so an agent can't start there; a terminal can"
 account-name-blank = "This account needs a name"
 account-key-blank = "The key is empty"
 
@@ -1335,12 +1432,48 @@ upload-too-big = "File too large: web access uploads are capped at {0}MB. For an
 upload-needs-machine-and-name = "Uploads need machine and name as query parameters"
 web-door-shut = "This address needs a key. On that machine, run khor web and open the link it prints once — this browser will be remembered after that"
 ssh-wont-run = "Can't run ssh: {0}"
-sat-cant-reach = "ssh can't reach {0} (passwordless required): {1}"
-sat-not-in-known-hosts = "known_hosts has no public key for {0}. ssh to it yourself once (accept the fingerprint), then come back and adopt it"
-not-my-satellite = "{0} isn't a satellite this machine adopted — its readings belong to its sponsor"
-sat-not-sampled-yet = "No reading sampled yet (the sponsor samples once a minute)"
-sat-no-ssh-host = "{0} is a satellite, but its table has no ssh address on record; re-adopt it on the sponsor machine"
-sat-send-elsewhere = "{0} is a satellite that speaks through {1}; send files with khor send on {1}"
+sat-cant-reach = "SSH can't connect to {0}: {1}"
+# Which segment of a road through a jump broke (`satellite::broken`),
+# with ssh's own last line.
+sat-to-jump-broken = "This machine can't connect to the jump host {0}: {1}"
+sat-jump-to-target-broken = "The jump host {0} can't connect to the target host {1}: {2}"
+# BatchMode stopped at the target's door. khor never takes a password;
+# {1} is the command that puts this machine's key there.
+sat-password-only = "{0} did not accept this machine's key. Log in with a password, or run {1} in a terminal to upload the public key"
+sat-password-refused = "{0} did not accept the saved password"
+sat-password-missing = "No password for {0} is saved on this machine"
+sat-passphrase-missing = "No passphrase for the key {0} uses is saved on this machine"
+sat-passphrase-refused = "{0} did not accept the key {1}, or the saved passphrase is wrong"
+sat-key-locked = "The key {0} has a passphrase. Give it when adding; it is kept only in this machine's keychain"
+sat-key-refused = "{0} did not accept the key {1}. Run {2} in a terminal to upload the public key"
+sat-one-time-code = "{0} asks for a one-time code at every login; khor doesn't support such hosts"
+no-secret-store = "This machine has no system keychain to keep the password in; use key login instead"
+secret-store-failed = "Couldn't use the system keychain: {0}"
+password-not-given = "No password on standard input"
+add-on-no-password = "Adding through the khor host {0} takes key login only: a password stays on the machine that runs ssh and never crosses the network"
+add-on-no-passphrase = "Adding through the khor host {0} can't use a key with a passphrase: a passphrase stays on the machine that runs ssh and never crosses the network"
+add-on-self = "That is this machine; add it directly"
+add-on-predates = "khor on {0} is too old to add machines for you; update it first"
+add-on-needs-serve = "khor on {0} isn't running as a resident, so it can't add machines for you"
+# 添加机器 over ssh (`khor_node::join`). Why a member attempt became a
+# satellite, one sentence each; {0} is the host.
+add-timed-out = "No response within {0} seconds"
+add-why-bin-ro = "{0}'s ~/.local/bin isn't writable"
+add-why-no-build = "khor has no build for {0} yet"
+add-why-cant-place = "Couldn't install khor on {0}: {1}"
+add-why-no-resident = "khor can't keep running on {0}: it stopped when the session ended"
+add-why-start-failed = "khor couldn't start on {0}: {1}"
+add-why-no-pair = "khor on {0} didn't connect back within {1} seconds"
+add-why-no-relay = "{0} can't reach any relay, and connecting it through SSH didn't work either"
+add-no-asset-here = "This machine can't get {0} either"
+add-need-host = "Enter a host first"
+add-lost = "This add's progress is gone; khor may have restarted"
+promote-stayed-satellite = "Couldn't install khor; it's still an SSH host: {0}"
+sat-not-in-known-hosts = "known_hosts has no host key for {0}. Connect with ssh once and accept the fingerprint, then add it again"
+not-my-satellite = "{0} isn't an SSH host this machine added; its readings come from the machine that added it"
+sat-not-sampled-yet = "No reading yet (the machine that added it samples once a minute)"
+sat-no-ssh-host = "{0} is an SSH host, but no SSH address is on record; run khor add --satellite again on the machine that added it"
+sat-send-elsewhere = "{0} is an SSH host connected through {1}; send files with khor send on {1}"
 sat-no-tools = "{0} has neither sha256sum/shasum nor base64; saving there needs it to verify its own copy — without that, nothing is written"
 sat-sent = "Sent to {0}'s home directory, {1} bytes"
 web-key-too-open = "The web access key file's permissions are too open ({0}) — anyone else on this machine can read it and use it as you.\n  Fix: chmod 600 {1}"
@@ -1999,7 +2132,7 @@ need-path = "Enter a directory first"
 need-pin = "Enter the PIN first"
 need-text = "Write something first"
 need-pick = "Choose what to import first"
-need-ticket = "Paste a pairing ticket first"
+need-ticket = "Enter an invitation code first"
 need-relay = "Enter a relay address first"
 need-account-name = "Name this account first"
 need-key = "Paste the key first"
@@ -2090,6 +2223,73 @@ message-text = "Message"
 send-it = "Send"
 make-a-ticket = "Invite device"
 join-with-a-ticket = "Join network"
+# ── Add machine (round join-d) ──
+add-machine = "Add Machine"
+add-machine-ask = "Add Machine…"
+add-khor-host = "khor Host"
+add-khor-host-note = "Already runs khor; add it with an invitation code"
+add-ssh-host = "SSH Host"
+add-ssh-host-note = "Add it over SSH"
+have-a-ticket = "Have an Invitation Code"
+add-host = "Host"
+add-host-hint = "user@host"
+add-port = "Port"
+add-config-hosts = "Hosts in SSH Config"
+add-jump = "Jump Host"
+add-jump-none = "Connect Directly"
+add-jump-khor = "Through a khor Host"
+add-jump-khor-note = "The add runs on that machine"
+add-jump-ssh = "Through an SSH Jump Host"
+add-jump-other = "Other host"
+add-copy-config = "Copy SSH Config…"
+add-copy-config-note = "Don't add a machine; just ssh through a khor host"
+add-probe = "Test Which Machines Can Connect…"
+add-auth = "Authentication"
+add-auth-password = "Password"
+add-auth-key-file = "Key · {0}"
+add-key-files = "Key Files"
+add-key-files-on = "Key Files on {0}"
+add-key-default = "Default"
+add-key-default-note = "Keys from the SSH config and ssh-agent"
+add-key-pick = "Choose Key File…"
+add-key-path-only = "khor records only the key file's path and never copies the key"
+add-key-only-on = "Adding through {0} works with keys only. khor records only the key file's path"
+add-password-kept = "The password is kept only in this Mac's keychain"
+add-run-on = "The add runs on {0}, and {0} connects to {1} over SSH"
+add-install = "Install khor on {0}"
+add-install-note = "When off, connect over SSH only and leave no files on the host"
+add-this-host = "the host"
+add-via-title = "Connect Through {0}"
+add-config-line = "A Line for Your SSH Config"
+add-config-line-note = "Put it under Host {0}. khor never changes your SSH config"
+add-or-run = "Or Run"
+copy-text = "Copy"
+reach-title = "Connectivity Test"
+reach-busy = "Testing…"
+reach-lead = "Each online machine tries to connect to port {1} on {0}"
+reach-here = " (this machine)"
+reach-best = "Lowest latency"
+reach-odd = "The host key {0} recorded differs from the other machines'; it may not be the same host"
+reach-unsure = "The machines recorded different host keys, and this machine has none for the host. Check the keys, then choose a machine"
+add-adding = "Adding {0}"
+add-step-via = "Through {0}"
+add-fell-back = "khor could not be installed on {0}; the installed files were removed"
+add-satellite-note = "Actions run over SSH"
+login-title = "Log In to {0}"
+login-key-refused = "{0} doesn't accept this machine's key"
+login-copy-id = "Upload Public Key"
+login-copy-id-note = "Run ssh-copy-id in a terminal, then log in with the key"
+login-use-password = "Use Password"
+passphrase-title = "{0} Needs Its Passphrase"
+passphrase = "Passphrase"
+passphrase-kept = "The passphrase is kept only in this Mac's keychain"
+road-line = "Path"
+leg-to-sponsor = "This machine can't connect to {0}"
+leg-to-jump = "This machine can't connect to the jump host {0}"
+leg-jump-to-target = "The jump host can't reach the target: {0} can't connect to {1}"
+leg-ssh = "{0} can't connect to {1} over SSH"
+leg-auth = "{0} doesn't accept {1}'s key"
+promote-ask = "Install khor…"
 # Waiting for the root holder, and the root's recovery words (docs/CONNECT.md 身份).
 pending-title = "Waiting"
 approve = "Approve"
@@ -2099,13 +2299,13 @@ pending-elsewhere = "Approve on the machine that holds the root"
 root-words-title = "Recovery words"
 root-words-body = "These 24 words are the network's root key, which signs which machines are yours. Write them on paper and keep them: without them no machine can be added or revoked again, and anyone who sees them can sign their own machine into your network"
 root-words-show-ask = "Show…"
-ticket = "Pairing ticket"
-ticket-qr = "The pairing ticket as a QR code"
-copy-ticket = "Copy ticket"
-paste-a-ticket = "Paste the ticket here"
-join-dialing = "Connecting to the machine that issued the ticket…"
-alone-how = "Only this machine is here. To add another, choose Invite device on one and take the ticket to Join network on the other"
-ticket-used-by = "{0} joined with this ticket"
+ticket = "Invitation code"
+ticket-qr = "The invitation code as a QR code"
+copy-ticket = "Copy Invitation Code"
+paste-a-ticket = "Enter invitation code"
+join-dialing = "Connecting to the machine that made the code…"
+alone-how = "Only this machine is here. Add another under ＋"
+ticket-used-by = "{0} joined with this code"
 scan-a-ticket = "Scan QR Code"
 scan-aim = "Point at the QR code in Invite device on the other machine"
 scan-camera-denied = "khor isn't allowed to use the camera. Allow it in Settings and scan again, or paste the ticket"

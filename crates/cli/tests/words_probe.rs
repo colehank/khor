@@ -33,6 +33,8 @@ fn word_of(hop: Hop) -> &'static str {
         Hop::Relay => "中继",
         Hop::Idle => "未连接",
         Hop::NoServe => "无常驻",
+        Hop::Ssh => "经 SSH",
+        Hop::Forwarded => "转发",
     }
 }
 

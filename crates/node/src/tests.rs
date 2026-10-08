@@ -3011,7 +3011,7 @@ fn settings_group_into_the_seven_pages_and_keep_their_values() {
     )
     .unwrap();
     let pages: Vec<&str> = config::grouped(&r).iter().map(|(p, _)| *p).collect();
-    assert_eq!(pages, ["appearance", "session", "workspace", "security"]);
+    assert_eq!(pages, ["appearance", "session", "workspace", "connection", "security"]);
     let on = |page: &str| -> Vec<(&str, &str)> {
         config::grouped(&r)
             .into_iter()
@@ -3021,6 +3021,8 @@ fn settings_group_into_the_seven_pages_and_keep_their_values() {
     };
     assert_eq!(on("session"), [("tabs-limit", "7"), ("session-form", "term")]);
     assert_eq!(on("workspace"), [("files-click", "pin")]);
+    // 连接 (round ROAD-2): the two carried roads, on by default.
+    assert_eq!(on("connection"), [("ssh-carry", "on"), ("peer-hop", "on")]);
     assert_eq!(on("security"), [("confirm-takeover", "on"), ("confirm-delete", "off")]);
     assert_eq!(
         on("appearance"),

@@ -51,7 +51,7 @@
 //     glass; a picked row in a floating list keeping a second ink.
 //
 // Run: `npm run palette` (boots its own vite, needs system Chrome). No
-// backend: the join dialog reaches a primary button with no mesh behind
+// backend: 添加机器 reaches a primary button with no mesh behind
 // it, and this measures paint, not data.
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -303,14 +303,14 @@ try {
   await wait(1200);
 
   // A real primary button, on a real screen, with nothing behind the
-  // app. The join dialog is the shortest way to one that does not need a
+  // app. 添加机器's SSH 主机 page is the shortest way to one that does not need a
   // machine to exist first.
   //
   // The field has to be filled: that button is disabled until a ticket
   // is typed, and **a disabled button cannot be focused**, so a keyboard
   // probe against the empty dialog silently measures nothing. The value
   // is never submitted — nothing here presses it.
-  const join = page.locator("[data-join]");
+  const join = page.locator("[data-add-go]");
   const openJoin = async () => {
     // Reach devices as a *switch*, never a re-click: pressing the open
     // landing's own glyph now collapses its list (2026-09-02「再点收起」,
@@ -321,18 +321,16 @@ try {
     await wait(200);
     await page.locator('[data-rail-item][data-landing="devices"]:visible').click();
     await wait(400);
-    // 加入网络… is on the machines landing's ＋ and nowhere else
-    // (2026-09-30, 「一个动作只有一个家」): two acts, so ＋ drops a menu.
+    // 添加机器… is the machines landing's one act, so ＋ is it (round
+    // join-d); its SSH 主机 page holds the dialog's primary 添加.
     await page.locator("[data-side-head] [data-pane-new]").click();
-    await wait(300);
-    const joinButton = page.locator('[role="menu"] [data-new-item="join"]');
-    if ((await joinButton.count()) !== 1) throw new Error("probe dead: no 加入网络… on the machines landing's ＋ menu");
-    await joinButton.click();
+    await wait(400);
+    const ssh = page.locator('[data-add-machine] [data-add-row="ssh"]');
+    if ((await ssh.count()) !== 1) throw new Error("probe dead: 添加机器 did not open on the machines landing's ＋");
+    await ssh.click();
     await wait(600);
-    if ((await join.count()) !== 1) throw new Error("probe dead: no primary button in the join dialog");
-    await page.locator("[data-ticket-input]").fill("not-a-real-ticket");
-    await wait(200);
-    if (await join.isDisabled()) throw new Error("probe dead: the primary button stayed disabled");
+    if ((await join.count()) !== 1) throw new Error("probe dead: no primary button on 添加机器's SSH 主机 page");
+    if (await join.isDisabled()) throw new Error("probe dead: the primary button is disabled");
   };
 
   for (const scheme of ["light", "dark"]) {
@@ -353,7 +351,7 @@ try {
         // and every list sit on it, so the row's title, its second line
         // and the selected row's tint are all read against it.
         side: g("--side"),
-        // What floats (the join dialog open right now is one), and the
+        // What floats (添加机器 open right now is one), and the
         // red a refusal inside one is written in.
         popover: g("--popover"),
         // A segmented control's track and its chosen face
@@ -719,7 +717,7 @@ try {
     let landed = false;
     for (let i = 0; i < 30 && !landed; i++) {
       await page.keyboard.press("Tab");
-      landed = await page.evaluate(() => document.activeElement?.matches("[data-join]") ?? false);
+      landed = await page.evaluate(() => document.activeElement?.matches("[data-add-go]") ?? false);
     }
     if (!landed) throw new Error(`probe dead in ${scheme}: Tab never reached the primary button`);
 

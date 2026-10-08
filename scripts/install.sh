@@ -21,6 +21,12 @@
 #   KHOR_VERSION   a tag to install (default: the latest release)
 #   KHOR_REPO      owner/name (default: the one below)
 #   KHOR_NO_SERVE  set to skip starting the resident
+#   KHOR_SKIP_FETCH  set to keep the khor already in ~/.local/bin and only
+#                  do what comes after the fetch (`khor add` runs the
+#                  install in two steps, 放 khor then 启动)
+#   KHOR_ASSET_FILE  a release asset (.gz) already on this machine, used
+#                  instead of downloading one — `khor add` pushes it over
+#                  ssh when this machine cannot fetch for itself
 #   KHOR_MIRROR    base URL of a mirror carrying install.sh + the
 #                  release assets, for machines that cannot reach
 #                  GitHub at all (the no-DNS half of a fleet):
@@ -56,8 +62,11 @@ else
     URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET.gz"
 fi
 
-echo "khor: fetching $ASSET ($VERSION)"
 mkdir -p "$BIN_DIR"
+if [ -n "${KHOR_SKIP_FETCH:-}" ] && [ -x "$BIN_DIR/khor" ]; then
+    :
+else
+echo "khor: fetching $ASSET ($VERSION)"
 # Downloaded **next to its destination**, then renamed: `mv` is only
 # atomic within one filesystem, and across two it degrades to
 # copy-then-unlink, which can rewrite the bytes of a binary some other
@@ -69,10 +78,15 @@ trap 'rm -f "$TMP" "$TMP.gz"' EXIT
 # has no `pipefail`, so a failed download would reach gzip as an empty
 # stream and the install would report a corrupt archive instead of a
 # network that did not answer.
-if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$URL" -o "$TMP.gz"
+if [ -n "${KHOR_ASSET_FILE:-}" ]; then
+    URL="$KHOR_ASSET_FILE"
+    mv -f "$KHOR_ASSET_FILE" "$TMP.gz"
+elif command -v curl >/dev/null 2>&1; then
+    # A machine with no road out must say so in seconds, not hang: the
+    # caller (`khor add`) pushes the asset itself when this fails.
+    curl -fsSL --connect-timeout 15 "$URL" -o "$TMP.gz"
 elif command -v wget >/dev/null 2>&1; then
-    wget -qO "$TMP.gz" "$URL"
+    wget -qT 15 -O "$TMP.gz" "$URL"
 else
     echo "khor: needs curl or wget to fetch a release" >&2
     exit 1
@@ -88,6 +102,7 @@ esac
 chmod +x "$TMP"
 mv -f "$TMP" "$BIN_DIR/khor"
 trap - EXIT
+fi
 
 if ! grep -qs 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null; then
     printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
@@ -211,7 +226,12 @@ fi
 if command -v setsid >/dev/null 2>&1; then
     env -u KHOR_HOME setsid nohup "$BIN" serve >> "$R/.khor/serve.log" 2>&1 &
 else
-    env -u KHOR_HOME nohup "$BIN" serve >> "$R/.khor/serve.log" 2>&1 &
+    # Not `nohup` on macOS: under a non-interactive ssh (`khor add`) it
+    # refuses with 「can't detach from console」 and nothing starts
+    # (measured 2026-10-08). Ignoring HUP is all it would have done here;
+    # the output is redirected anyway, and `exec` keeps the pid the one
+    # written below.
+    ( trap '' HUP; exec env -u KHOR_HOME "$BIN" serve ) < /dev/null >> "$R/.khor/serve.log" 2>&1 &
 fi
 echo $! > "$PIDF"
 SERVEUP
@@ -223,6 +243,10 @@ chmod +x "$UP"
 # rebooting. Pick the best boot-hook the current privileges allow —
 # detected, not asked (defaults over settings).
 GUARDIAN="nothing — run khor-serve-up after a reboot"
+# The same answer as one word, for `khor add` to read (it says it in the
+# reader's language): none | launchd | systemd | systemd-linger |
+# systemd-login | login.
+KEEPER=none
 GUARDIAN_SET=""
 case "$(uname -s)" in
 Darwin)
@@ -240,6 +264,7 @@ Darwin)
 PLIST
     launchctl bootstrap "gui/$(id -u)" "$PL" 2>/dev/null || true
     GUARDIAN="launchd (LaunchAgent, no root needed)"
+    KEEPER=launchd
     ;;
 Linux)
     if command -v systemctl >/dev/null 2>&1 && [ "$(id -u)" = 0 ]; then
@@ -265,6 +290,7 @@ UNIT
         systemctl daemon-reload
         systemctl enable khor-serve.service >/dev/null 2>&1
         GUARDIAN="systemd (system unit khor-serve.service)"
+        KEEPER=systemd
         GUARDIAN_SET=1
     elif command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
         mkdir -p "$HOME/.config/systemd/user"
@@ -290,8 +316,8 @@ UNIT
         # Without lingering the unit only fires at login — same promise
         # as the .profile line below, just tidier. With it, at boot.
         loginctl enable-linger "$(id -un)" >/dev/null 2>&1 \
-            && GUARDIAN="systemd (user unit, lingering on: starts at boot)" \
-            || GUARDIAN="systemd (user unit: starts at your first login)"
+            && { GUARDIAN="systemd (user unit, lingering on: starts at boot)"; KEEPER=systemd-linger; } \
+            || { GUARDIAN="systemd (user unit: starts at your first login)"; KEEPER=systemd-login; }
         GUARDIAN_SET=1
     fi
     # Belt and suspenders for every non-root tier: the first person to
@@ -309,6 +335,7 @@ UNIT
         done
         if [ -z "${GUARDIAN_SET:-}" ]; then
             GUARDIAN="your first login (.profile/.bash_profile line)"
+            KEEPER=login
         fi
     fi
     ;;
@@ -336,6 +363,7 @@ fi
 if kill -0 "$(cat "$PIDF")" 2>/dev/null; then
     echo "khor: serve is up (pid $(cat "$PIDF"), store $ROOT)"
     echo "khor: reboots handled by $GUARDIAN"
+    echo "khor: keeper $KEEPER"
 else
     echo "khor: serve died on start — tail of $ROOT/.khor/serve.log:" >&2
     tail -5 "$ROOT/.khor/serve.log" >&2

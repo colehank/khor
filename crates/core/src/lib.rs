@@ -212,10 +212,17 @@ pub enum Hop {
     /// No resident on this machine, so nothing here holds a wire to read
     /// the answer off.
     NoServe,
+    /// Over this machine's own ssh session to it (round ROAD-2, khor
+    /// inside ssh): this machine carries it. Tail-appended; an older face
+    /// paints the key.
+    Ssh,
+    /// Through a third khor machine that splices the two ends (round
+    /// ROAD-2, the peer hop). Tail-appended.
+    Forwarded,
 }
 
 impl Hop {
-    pub const ALL: [Hop; 4] = [Hop::Direct, Hop::Relay, Hop::Idle, Hop::NoServe];
+    pub const ALL: [Hop; 6] = [Hop::Direct, Hop::Relay, Hop::Idle, Hop::NoServe, Hop::Ssh, Hop::Forwarded];
 
     /// Wire and catalog key.
     pub const fn key(self) -> &'static str {
@@ -229,6 +236,8 @@ impl Hop {
             // mistake echo the key instead, which is visible.
             Hop::Idle => "quiet",
             Hop::NoServe => "no-serve",
+            Hop::Ssh => "ssh",
+            Hop::Forwarded => "forwarded",
         }
     }
 }
@@ -398,6 +407,11 @@ pub struct Link {
     /// started, and from an older resident. Tail field.
     #[serde(default)]
     pub last_hop: Option<Hop>,
+    /// **The middle, when the wire goes through one** (round ROAD-3, the
+    /// peer hop): `hop` is then [`Hop::Forwarded`]. `None` otherwise, and
+    /// from an older resident. Tail field.
+    #[serde(default)]
+    pub via: Option<String>,
 }
 
 impl Link {
@@ -1014,6 +1028,61 @@ pub struct Road {
     /// only by more than a quarter, at most once in ten minutes.
     #[serde(default)]
     pub ms: Option<u16>,
+    /// **The machine this road goes through** (round ROAD-1), when it
+    /// does not reach `to` itself: a satellite's sponsor, which runs ssh
+    /// for it. `road`, `relay` and `ms` are then the first leg's, to
+    /// `via`. `None` for a road of its own. At most one: khor's roads
+    /// have at most one forwarding hop.
+    #[serde(default)]
+    pub via: Option<String>,
+    /// **Which leg broke**, when `road` is `none` on a road with legs:
+    /// its two ends by device id. `None` on a road of its own, whose one
+    /// leg is the road.
+    #[serde(default)]
+    pub broken: Option<Leg>,
+}
+
+impl Road {
+    /// A road of its own: no hop, nothing broken.
+    pub fn own(to: impl Into<String>, road: RoadKind, relay: Option<String>, ms: Option<u16>) -> Self {
+        Road { to: to.into(), road, relay, ms, via: None, broken: None }
+    }
+}
+
+/// **The leg of a road that broke** (round ROAD-1): which kind of leg,
+/// and its two ends by device id where the end is a device — a jump
+/// host is not one, so that end is `None`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct Leg {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub leg: LegKind,
+    /// **ssh's own words** for why (round join-e), as the sponsor read
+    /// them off its last failed sample (`khor_node::satellite::words`):
+    /// one short line, no address prefix, never a key or a secret — the
+    /// machine page shows them under its sentence. `None` where ssh said
+    /// nothing worth carrying, and on khor's own legs.
+    #[serde(default)]
+    pub said: Option<String>,
+}
+
+/// Which leg, read off the wire or off ssh's own words
+/// (`khor_node::satellite::broken`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum LegKind {
+    /// This machine to the sponsor: khor's own wire.
+    ToSponsor,
+    /// The sponsor to the ssh jump host.
+    ToJump,
+    /// The jump host on to the satellite.
+    JumpToTarget,
+    /// The sponsor's ssh to the satellite, for a reason ssh's words do
+    /// not name.
+    Ssh,
+    /// The satellite answered and refused the key: it takes a password
+    /// only (BatchMode stopped at its door).
+    Auth,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
@@ -1023,6 +1092,181 @@ pub enum RoadKind {
     Relay,
     /// No live wire: unreachable from that machine.
     None,
+    /// **A sponsor's road to its satellite** (round ROAD-1): its ssh to it
+    /// answered the last sample (docs/NET.md 卫星). An older khor does not
+    /// know the word and reads the register as no road.
+    Ssh,
+}
+
+/// **One machine's try at an address a person gave** (round ROAD-1,
+/// `khor reach`): it resolved the name with its own resolver, opened a
+/// TCP connection with a short timeout, read the first line the server
+/// says, and looked the name up in its own known_hosts. Nothing else —
+/// no scan, no keyscan (`khor_node::reach`).
+///
+/// Crosses the wire (`Response::Probed`) and the hand-off; every field is
+/// required on the wire, so a later field goes at the tail with a serde
+/// default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+pub struct ReachSeen {
+    pub outcome: ReachOutcome,
+    /// The TCP connect, whole ms; only when `reached`.
+    #[ts(type = "number | null")]
+    pub ms: Option<u32>,
+    /// The address its resolver gave and it tried last (`ip:port`).
+    pub addr: Option<String>,
+    /// The server's first line, printable ASCII, at most
+    /// [`REACH_BANNER_MAX`] characters (`SSH-2.0-OpenSSH_9.6`); `None`
+    /// when the server said nothing first, which a web server does not.
+    pub banner: Option<String>,
+    /// The host key this machine's known_hosts holds for the name, as
+    /// the SHA256 digest in hex — the same shape as a satellite's id
+    /// (docs/NET.md 卫星). `None` when it holds none.
+    pub host_key: Option<String>,
+    /// Why it was not reached, in the far machine's words.
+    pub why: Option<String>,
+}
+
+/// The longest banner a probe keeps.
+pub const REACH_BANNER_MAX: usize = 120;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReachOutcome {
+    /// Connected, and the server said an ssh version line.
+    Reached,
+    /// **Connected, and nothing answered as ssh** (round ROAD-1, the
+    /// lead 2026-10-08): no first line, or one that is not `SSH-`. A
+    /// fake-ip proxy accepts every connection this way (measured:
+    /// `no-such-host.invalid` → 198.18.0.23:22), so a connect alone is
+    /// not reached, and a silent row is never the entrance.
+    Silent,
+    /// The address answered and refused the connection, or the network
+    /// said there is no route.
+    Refused,
+    /// Nothing answered inside the timeout.
+    Timeout,
+    /// Its resolver has no address for the name.
+    NoName,
+    /// That machine could not be asked: offline, paused, or the ask failed.
+    Unasked,
+    /// A khor older than the probe: it refused the question by its name.
+    Predates,
+}
+
+/// **Every machine's try at one address**, and the pick (round ROAD-1).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReachView {
+    pub host: String,
+    pub port: u16,
+    /// By device id; this machine first.
+    pub rows: Vec<(String, ReachSeen)>,
+    /// The entrance: the lowest `ms` among the reached, this machine on
+    /// a tie ([`ReachView::pick`]); when the keys disagree, only among
+    /// the rows whose key is this machine's own.
+    pub entrance: Option<String>,
+    /// Two machines' known_hosts hold different keys for the name: the
+    /// name means a different machine from each — the same
+    /// `192.168.1.5` on two LANs.
+    pub disagree: bool,
+}
+
+impl ReachView {
+    /// Fills `entrance` and `disagree` from `rows`; `me` is this
+    /// machine's id. Only a row that said ssh's version line is a
+    /// candidate. A tie in ms goes to this machine — no hop beats a hop —
+    /// and otherwise to the earlier row, so the pick is stable.
+    ///
+    /// **When the keys disagree** the name means two machines, and the
+    /// one meant is the one this machine knows: only rows holding this
+    /// machine's own key are candidates, and with no key here there is no
+    /// pick — the person chooses.
+    pub fn pick(mut self, me: &str) -> Self {
+        let mut keys = self.rows.iter().filter_map(|(_, s)| s.host_key.as_deref());
+        let first = keys.next();
+        self.disagree = first.is_some_and(|k| keys.any(|o| o != k));
+        let mine = self.rows.iter().find(|(id, _)| id == me).and_then(|(_, s)| s.host_key.clone());
+        let disagree = self.disagree;
+        self.entrance = self
+            .rows
+            .iter()
+            .filter(|(_, s)| s.outcome == ReachOutcome::Reached)
+            .filter(|(_, s)| !disagree || (mine.is_some() && s.host_key == mine))
+            .filter_map(|(id, s)| s.ms.map(|ms| (ms, id != me, id)))
+            .min_by_key(|(ms, not_me, _)| (*ms, *not_me))
+            .map(|(_, _, id)| id.clone());
+        self
+    }
+}
+
+#[cfg(test)]
+mod reach_tests {
+    use super::{ReachOutcome, ReachSeen, ReachView};
+
+    fn seen(outcome: ReachOutcome, ms: Option<u32>, key: Option<&str>) -> ReachSeen {
+        ReachSeen { outcome, ms, addr: None, banner: None, host_key: key.map(Into::into), why: None }
+    }
+
+    fn view(rows: Vec<(&str, ReachSeen)>) -> ReachView {
+        ReachView {
+            host: "h".into(),
+            port: 22,
+            rows: rows.into_iter().map(|(id, s)| (id.to_owned(), s)).collect(),
+            entrance: None,
+            disagree: false,
+        }
+        .pick("me")
+    }
+
+    #[test]
+    fn the_entrance_is_the_fastest_reached_and_this_machine_on_a_tie() {
+        let v = view(vec![
+            ("me", seen(ReachOutcome::Reached, Some(9), None)),
+            ("a", seen(ReachOutcome::Reached, Some(3), None)),
+            ("b", seen(ReachOutcome::Timeout, None, None)),
+        ]);
+        assert_eq!(v.entrance.as_deref(), Some("a"));
+        let tie = view(vec![
+            ("a", seen(ReachOutcome::Reached, Some(3), None)),
+            ("me", seen(ReachOutcome::Reached, Some(3), None)),
+        ]);
+        assert_eq!(tie.entrance.as_deref(), Some("me"), "no hop beats a hop");
+        let none = view(vec![("me", seen(ReachOutcome::Refused, None, None))]);
+        assert_eq!(none.entrance, None);
+        let silent = view(vec![
+            ("me", seen(ReachOutcome::Silent, Some(1), None)),
+            ("a", seen(ReachOutcome::Reached, Some(40), None)),
+        ]);
+        assert_eq!(silent.entrance.as_deref(), Some("a"), "a connect with no ssh line is never the entrance");
+    }
+
+    #[test]
+    fn two_keys_for_one_name_are_two_machines() {
+        let same = view(vec![
+            ("me", seen(ReachOutcome::Reached, Some(1), Some("aa"))),
+            ("a", seen(ReachOutcome::Reached, Some(2), Some("aa"))),
+            ("b", seen(ReachOutcome::Reached, Some(2), None)),
+        ]);
+        assert!(!same.disagree, "one key, and a machine that holds none, agree");
+        let two = view(vec![
+            ("me", seen(ReachOutcome::Reached, Some(1), Some("aa"))),
+            ("a", seen(ReachOutcome::Timeout, None, Some("bb"))),
+        ]);
+        assert!(two.disagree);
+        // Disagreeing: only the rows holding this machine's key.
+        let mine = view(vec![
+            ("me", seen(ReachOutcome::Timeout, None, Some("aa"))),
+            ("a", seen(ReachOutcome::Reached, Some(2), Some("bb"))),
+            ("b", seen(ReachOutcome::Reached, Some(5), Some("aa"))),
+        ]);
+        assert_eq!(mine.entrance.as_deref(), Some("b"));
+        let unknown = view(vec![
+            ("me", seen(ReachOutcome::Timeout, None, None)),
+            ("a", seen(ReachOutcome::Reached, Some(2), Some("bb"))),
+            ("b", seen(ReachOutcome::Reached, Some(5), Some("aa"))),
+        ]);
+        assert_eq!(unknown.entrance, None, "no key here: the person chooses");
+    }
 }
 
 /// Whether this build's machine can **host** — hold a session's process

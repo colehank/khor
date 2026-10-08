@@ -61,7 +61,7 @@ async fn write_target(send: &mut SendStream, target: &str) -> Result<(), String>
 /// Reads the target header on the exit side. An oversized length is
 /// refused before the bytes are read, so a lie about the length cannot
 /// make us buffer past the cap.
-async fn read_target(recv: &mut RecvStream) -> Result<String, String> {
+pub(crate) async fn read_target(recv: &mut RecvStream) -> Result<String, String> {
     let mut len = [0u8; 2];
     recv.read_exact(&mut len)
         .await
@@ -170,17 +170,28 @@ pub async fn dial(conn: &Connection, target: &str) -> Result<(SendStream, RecvSt
 /// ways until either side hangs up. `paired` is asked per stream so the
 /// verdict rides the stream that carries it.
 pub async fn serve_stream(
-    mut send: SendStream,
+    send: SendStream,
     mut recv: RecvStream,
     paired: bool,
 ) -> Result<(), String> {
     let target = read_target(&mut recv).await?;
+    serve_target(send, recv, &target, paired).await
+}
+
+/// [`serve_stream`] once its target is read: the resident reads it first
+/// to tell a hop's ask from an exit's target (`crate::hop`).
+pub(crate) async fn serve_target(
+    mut send: SendStream,
+    recv: RecvStream,
+    target: &str,
+    paired: bool,
+) -> Result<(), String> {
     if !paired {
         let _ = send.write_all(&[REFUSED]).await;
         let _ = send.finish();
         return Ok(());
     }
-    let tcp = match tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect(&target))
+    let tcp = match tokio::time::timeout(CONNECT_TIMEOUT, tokio::net::TcpStream::connect(target))
         .await
     {
         Ok(Ok(tcp)) => tcp,

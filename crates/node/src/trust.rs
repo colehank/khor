@@ -1368,7 +1368,7 @@ mod tests {
         let (ta, tb) = (TempTree::fresh("trust-sat-a"), TempTree::fresh("trust-sat-b"));
         let a = node(&ta, "alpha");
         let sat = fake_id(0x51);
-        a.enter_satellite(&sat, "box", "box.example", false).unwrap();
+        a.enter_satellite(&sat, "box", &crate::satellite::Dest::new("box.example", None), false).unwrap();
         let r = a.roster().unwrap();
         let c = r.cert(&nt::id_from_hex(&sat).unwrap()).expect("signed on the holder");
         assert_eq!(c.kind, Kind::Satellite);
@@ -1380,7 +1380,7 @@ mod tests {
         a.approve_here("beta").unwrap();
         carry(&a, &b);
         let sat2 = fake_id(0x52);
-        b.enter_satellite(&sat2, "box2", "box2.example", true).unwrap();
+        b.enter_satellite(&sat2, "box2", &crate::satellite::Dest::new("box2.example", None), true).unwrap();
         let waiting = b.pending().unwrap();
         assert!(
             waiting.iter().any(|w| w.id == sat2 && w.kind == "satellite"),
@@ -1484,7 +1484,7 @@ mod tests {
 
         // An older roster cannot undo a newer one, and a machine shown
         // the door here is not let back in by vouching for itself.
-        a.enter_satellite(&fake_id(0x51), "box", "box.example", false).unwrap();
+        a.enter_satellite(&fake_id(0x51), "box", &crate::satellite::Dest::new("box.example", None), false).unwrap();
         carry(&a, &b);
         assert!(b.roster().unwrap().seq > old_seq(&old.2, &a));
         assert_eq!(b.take_vouch(a.device_str(), &old.0, &old.1, &old.2).unwrap_err(), msg::vouch_refused());
@@ -1559,7 +1559,7 @@ mod tests {
         carry(&b, &a);
         carry(&a, &b);
         let sat = fake_id(0x5a);
-        a.enter_satellite(&sat, "box", "box.example", false).unwrap();
+        a.enter_satellite(&sat, "box", &crate::satellite::Dest::new("box.example", None), false).unwrap();
         assert_eq!(a.standing_of(b.device_str()), Standing::Legacy);
         assert!(a.pending().unwrap().is_empty(), "nobody to ask before roots");
 

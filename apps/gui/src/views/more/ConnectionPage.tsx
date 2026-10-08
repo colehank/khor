@@ -11,6 +11,7 @@ import { fetchAbout, setPaused, type About, type DeviceRow } from "@/api";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { gui } from "@/gen/catalog";
 import { NetSettings } from "@/views/NetSettings";
+import { ConfigSections } from "@/views/more/ConfigRows";
 import { MoreFrame, MoreSection } from "@/views/more/MorePage";
 
 export function ConnectionPage({
@@ -45,6 +46,10 @@ export function ConnectionPage({
       {/* 中继 and 首选中继 (and 只使用自己的中继): see `NetSettings` for
           why it is read on arrival. */}
       <NetSettings />
+      {/* 通过 SSH 转连 and 通过其他机器转发 (`khor config`'s
+          `connection` section, rounds ROAD-2 and ROAD-3): drawn from the
+          node's own rows like every other page's settings. */}
+      <ConfigSections page="connection" onChanged={onChanged} />
       {!alone && about && (
         <MoreSection name="sync">
           {/* 暂停同步: **a switch** — one state, taken at once, undone by the

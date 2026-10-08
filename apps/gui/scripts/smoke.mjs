@@ -1060,6 +1060,13 @@ for line in sys.stdin:
     await page.locator("[data-side-head] [data-pane-new]").click();
     await page.locator(`[role="menu"] [data-new-item="${key}"]`).click();
   };
+  /** 添加机器 → khor 主机 (round join-d): ＋ on 机器 is that one act, and
+      the invitation code and the field for one made elsewhere share its
+      khor 主机 page. */
+  const toTicketPage = async () => {
+    await page.locator("[data-side-head] [data-pane-new]").click();
+    await page.locator('[data-add-machine] [data-add-row="khor"]').click();
+  };
   const openLanding = async (tab) => {
     // Re-clicking the open landing now collapses its list (App.tsx 再点
     // 收起, 2026-09-02; the workspaces landing joined on 2026-09-16 —
@@ -1200,7 +1207,7 @@ for line in sys.stdin:
   if ((await page.locator('[data-device="alpha"]').count()) !== 0) {
     throw new Error("alpha is in the table before pairing — the control is void");
   }
-  await plusAct("join");
+  await toTicketPage();
   await page.locator("[data-ticket-input]").fill(ticketA);
   await page.locator("[data-join]").click();
   await until("alpha's row, wearing its own face", 30_000, async () => {
@@ -1229,7 +1236,7 @@ for line in sys.stdin:
 
   // 3) the GUI mints a real ticket — proven by a third machine joining
   //    with it from the CLI, not by the string looking ticket-shaped.
-  await plusAct("invite");
+  await toTicketPage();
   const guiTicket = await until("a ticket from the GUI", 20_000, async () => {
     const err = await page.locator("[data-dialog-error]").count();
     if (err) throw new Error(await page.locator("[data-dialog-error]").innerText());
@@ -1260,7 +1267,7 @@ for line in sys.stdin:
   //    (`khor_gui_core::qr`); this proves the real ticket reached the face
   //    with a picture.
   const qr = await page.evaluate(() => {
-    const svg = document.querySelector("[data-invite-dialog] svg[data-ticket-qr]");
+    const svg = document.querySelector('[data-add-machine="ticket"] svg[data-ticket-qr]');
     const path = svg?.querySelector("path");
     return svg && path ? { d: (path.getAttribute("d") ?? "").length, fill: path.getAttribute("fill"), span: svg.viewBox.baseVal.width } : null;
   });

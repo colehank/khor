@@ -12,7 +12,19 @@
 
 ## 补丁
 
-五处。
+六处。
+
+### 6. `src/socket/remote_map/remote_state.rs`：中继先答时也打开自定义地址（2026-10-08，ROAD-3 轮）
+
+`handle_msg_add_connection` 里，客户端在连接建好后把已知的中继地址补开成额外路径——上游只在
+路径 0 不是中继时这么做，而且只补中继。khor 的自定义传输（`khor_net::carry`，ssh 里的 khor
+和经第三台机器的转发）跟中继一起拨号：中继先答时路径 0 是中继，自定义地址从此不会被打开，
+「先转发、后中继」（`carry::RoadOrder` 的开局三秒）就落空。补丁：不论路径 0 是什么，已知的
+自定义地址都补开；中继仍只在路径 0 不是中继时补。改动约 10 行。
+测试：`crates/net/tests/carry.rs` 的
+`the_carried_road_is_opened_and_kept_when_the_relay_answers_first`（回环中继加一条每字节慢
+120 ms 的链路：中继先答，补丁前路径一直是中继，补丁后开局内换到链路上、过了开局不回中继、
+链路断了中继接着用同一条连接）。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 5. `src/net_report.rs`：中继的接班者（2026-10-04，NET-7 轮）
 

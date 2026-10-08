@@ -14,6 +14,10 @@ use serde::Serialize;
 pub enum PathKind {
     Direct,
     Relay,
+    /// A road khor carries itself (round ROAD-2, [`crate::carry`]): an ssh
+    /// session or a hop through a third machine. Which of the two is the
+    /// node's to say; the path only knows it is not an IP and not a relay.
+    Carried,
     /// The default. "Not reported yet" is the only value that claims
     /// nothing; defaulting to Relay or Direct would be making it up.
     #[default]
@@ -24,6 +28,8 @@ pub enum PathKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PathFact {
     pub relay: bool,
+    /// A carried road ([`PathKind::Carried`]).
+    pub carried: bool,
     /// Whether application data rides this path right now. With several
     /// open, exactly one is.
     pub selected: bool,
@@ -40,6 +46,7 @@ pub struct PathFact {
 pub fn kind_of(facts: &[PathFact]) -> PathKind {
     match facts.iter().find(|f| f.selected) {
         Some(f) if f.relay => PathKind::Relay,
+        Some(f) if f.carried => PathKind::Carried,
         Some(_) => PathKind::Direct,
         None => PathKind::Unknown,
     }
@@ -78,6 +85,7 @@ pub fn path_facts(conn: &iroh::endpoint::Connection) -> Vec<PathFact> {
         .iter()
         .map(|p| PathFact {
             relay: p.is_relay(),
+            carried: matches!(p.remote_addr(), iroh::TransportAddr::Custom(_)),
             selected: p.is_selected(),
             rtt_ms: p.rtt().as_millis(),
             addr: format!("{:?}", p.remote_addr()),
@@ -121,6 +129,7 @@ mod tests {
     fn path(relay: bool, selected: bool, rtt_ms: u128) -> PathFact {
         PathFact {
             relay,
+            carried: false,
             selected,
             rtt_ms,
             addr: if relay {
@@ -151,6 +160,12 @@ mod tests {
         );
         // Relay only.
         assert_eq!(kind_of(&[path(true, true, 61)]), PathKind::Relay);
+        // A carried road is neither (round ROAD-2).
+        let carried = PathFact {
+            carried: true,
+            ..path(false, true, 9)
+        };
+        assert_eq!(kind_of(&[carried, path(true, false, 61)]), PathKind::Carried);
         // No paths, or none selected: both are "no fact available".
         assert_eq!(kind_of(&[]), PathKind::Unknown);
         assert_eq!(

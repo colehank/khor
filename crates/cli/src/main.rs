@@ -62,6 +62,9 @@ use khor_node::{
 mod relay;
 
 fn main() {
+    // ssh asking for a kept password (`khor_node::secret`): answered
+    // before anything else, and the process ends there.
+    khor_node::secret::answer_askpass_if_asked();
     // 语言, before the first word this process can print (docs/MORE.md
     // 语言). A stored choice wins, `auto` reads the environment, and
     // anything that is not zh* — 「read nothing at all」 included — is
@@ -325,6 +328,41 @@ const VERBS: &[Verb] = &[
         run: borrow,
         reach: Reach::Act,
     },
+    // Writes nothing anywhere, and still an act: it has every machine in
+    // the network open a connection to an address of the caller's
+    // choosing, which is the thing a mode should be asked about.
+    Verb {
+        word: "reach",
+        run: reach,
+        reach: Reach::Act,
+    },
+    // Opens a connection from another machine's network to an address of
+    // the caller's choosing, and carries whatever goes through it.
+    Verb {
+        word: "pipe",
+        run: pipe,
+        reach: Reach::Act,
+    },
+    // Has this machine keep an ssh session up to another and carry that
+    // machine's khor through it (round ROAD-2).
+    Verb {
+        word: "carry",
+        run: carry,
+        reach: Reach::Act,
+    },
+    // The far end of that session: what the carrier's ssh runs.
+    Verb {
+        word: "_carry",
+        run: carry_in,
+        reach: Reach::Inner,
+    },
+    // What `khor add` asks the machine it adds before 配对 (round
+    // ROAD-4): whether it reaches a relay at all.
+    Verb {
+        word: "_relay-check",
+        run: relay_check,
+        reach: Reach::Inner,
+    },
     // `ls` reads and the other three write this machine's own tab
     // table, so the word is an act — the rule is per word, not per
     // invocation (`ws` above). **Nothing here goes out on the wire**:
@@ -526,8 +564,13 @@ const VERBS: &[Verb] = &[
         reach: Reach::Act,
     },
     Verb {
-        word: "adopt",
-        run: adopt,
+        word: "add",
+        run: add,
+        reach: Reach::Act,
+    },
+    Verb {
+        word: "promote",
+        run: promote,
         reach: Reach::Act,
     },
     // What waits for the root holder (docs/CONNECT.md 根不在场). Reads.
@@ -683,6 +726,14 @@ const NOT_IN_USAGE: &[(&str, &str)] = &[
     (
         "_codexagent",
         "internal: khor's own codex ACP shim; the agent a codex GUI session runs (`codexagent` module head)",
+    ),
+    (
+        "_carry",
+        "internal: the far end of a carrier's ssh session (`khor_node::carry`), stdin and stdout are the link",
+    ),
+    (
+        "_relay-check",
+        "internal: what `khor add` runs over its ssh before 配对 (`khor_node::join::reaches_a_relay`), relay urls on stdin",
     ),
     (
         "_verbs",
@@ -2008,6 +2059,182 @@ fn borrow(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// `khor reach <host> [--port N]` (round ROAD-1): every online machine's
+/// try at one address, and the entrance. One line per machine, this one
+/// first; then the entrance, and a warning when two machines' known_hosts
+/// disagree about whose key the name is.
+fn reach(rest: &[String]) -> Result<(), String> {
+    let (host, port) = match rest {
+        [host] => (host, None),
+        [host, flag, n] | [flag, n, host] if flag == "--port" => {
+            (host, Some(n.parse::<u16>().map_err(|_| usage_text())?))
+        }
+        _ => return Err(usage_text().into()),
+    };
+    let n = node()?;
+    let port = khor_node::reach::port_or_ssh(port);
+    let view = rt()?.block_on(n.reach_probe(host, port))?;
+    let all = n.devices()?;
+    let name = |id: &str| {
+        all.iter()
+            .find(|d| d.id == id)
+            .map(|d| d.shown().to_owned())
+            .unwrap_or_else(|| id.chars().take(8).collect())
+    };
+    println!("{}", cli::reach_head(&view.host, view.port));
+    for (id, s) in &view.rows {
+        let here = if id == n.device_str() { cli::this_machine() } else { "" };
+        let word = match s.outcome {
+            khor_node::ReachOutcome::Reached => cli::reach_reached(),
+            khor_node::ReachOutcome::Silent => cli::reach_silent_word(),
+            khor_node::ReachOutcome::Refused => cli::reach_refused_word(),
+            khor_node::ReachOutcome::Timeout => cli::reach_timeout_word(),
+            khor_node::ReachOutcome::NoName => cli::reach_no_name_word(),
+            khor_node::ReachOutcome::Unasked => cli::reach_unasked(),
+            khor_node::ReachOutcome::Predates => cli::reach_predates_word(),
+        };
+        let ms = s.ms.map(|ms| cli::roads_ms(ms)).unwrap_or_default();
+        let key = s.host_key.as_deref().map(khor_node::reach::shown_key).unwrap_or_default();
+        let tail = match s.outcome {
+            khor_node::ReachOutcome::Reached => s.banner.clone().unwrap_or_default(),
+            _ => s.why.clone().unwrap_or_default(),
+        };
+        println!(
+            "  {}{here}\t{word}\t{ms}\t{}\t{tail}\t{key}",
+            name(id),
+            s.addr.as_deref().unwrap_or("")
+        );
+    }
+    match view.entrance.as_deref() {
+        Some(id) => {
+            let ms = view.rows.iter().find(|(r, _)| r == id).and_then(|(_, s)| s.ms).unwrap_or(0);
+            println!("{}", cli::reach_entrance(name(id), ms));
+        }
+        // Disagreeing keys and none here: which machine is meant is the
+        // person's to say.
+        None if view.disagree => println!("{}", cli::reach_choose()),
+        None => println!("{}", cli::reach_no_entrance()),
+    }
+    if view.disagree {
+        println!("{}", cli::reach_disagree());
+    }
+    // A key that is a satellite's id names that satellite: the name
+    // answered with a machine this network already holds.
+    let keys: std::collections::BTreeSet<&str> =
+        view.rows.iter().filter_map(|(_, s)| s.host_key.as_deref()).collect();
+    for k in keys {
+        if let Some(d) = all.iter().find(|d| d.id == k) {
+            println!("{}", cli::reach_known_as(d.shown()));
+        }
+    }
+    Ok(())
+}
+
+/// `khor pipe --via <machine> <host> <port>` (round ROAD-1): stdin and
+/// stdout spliced to `host:port` as that machine's network reaches it —
+/// ssh's `ProxyCommand` (`khor_node::pipe`). Prints nothing of its own on
+/// stdout: every byte there is the far end's.
+fn pipe(rest: &[String]) -> Result<(), String> {
+    let [flag, via, host, port] = rest else {
+        return Err(usage_text().into());
+    };
+    if flag != "--via" {
+        return Err(usage_text().into());
+    }
+    let port: u16 = port.parse().map_err(|_| usage_text())?;
+    let n = node()?;
+    let rt = rt()?;
+    let out = rt.block_on(n.pipe_via(via, host, port, tokio::io::stdin(), tokio::io::stdout()));
+    // stdin is read on a blocking thread that never returns while ssh
+    // holds it open; waiting for it would keep the pipe up after the
+    // far end hung up.
+    rt.shutdown_background();
+    out
+}
+
+/// `khor carry <machine> <ssh host> [--port N] [--via jump] [--password |
+/// --key <path> [--passphrase]]` (round ROAD-2): this machine carries a
+/// khor host that reaches nothing else over its ssh login to it; `--off`
+/// stops (`khor_node::carry`). The login flags are `add`'s, and so is
+/// where a secret goes (round ROAD-4): read from standard input, kept in
+/// this machine's secret store, the key file only a path on the row.
+fn carry(rest: &[String]) -> Result<(), String> {
+    match rest {
+        [machine, off] if off == "--off" => {
+            println!("{}", node()?.set_carried(machine, None, None)?);
+            Ok(())
+        }
+        [machine, host, flags @ ..] => {
+            let (mut port, mut jump, mut password, mut key, mut passphrase) = (None, None, false, None, false);
+            let mut it = flags.iter();
+            while let Some(f) = it.next() {
+                match f.as_str() {
+                    "--port" => port = Some(it.next().and_then(|p| p.parse().ok()).ok_or_else(usage_text)?),
+                    "--via" => jump = Some(it.next().ok_or_else(usage_text)?.clone()),
+                    "--password" => password = true,
+                    "--key" => key = Some(it.next().ok_or_else(usage_text)?.clone()),
+                    "--passphrase" => passphrase = true,
+                    _ => return Err(usage_text().into()),
+                }
+            }
+            // `add`'s rule: a password or a key, never both; a
+            // passphrase is a key file's.
+            if (password && (passphrase || key.is_some())) || (passphrase && key.is_none()) {
+                return Err(usage_text().into());
+            }
+            let secret = if password {
+                Some(read_password(cli::password_prompt())?)
+            } else if passphrase {
+                Some(read_password(cli::passphrase_prompt())?)
+            } else {
+                None
+            };
+            let road = khor_node::satellite::Dest::new(host.clone(), jump.as_deref())
+                .on_port(port)
+                .with_password(password)
+                .with_identity(key.as_deref())
+                .with_passphrase(passphrase);
+            println!("{}", node()?.set_carried(machine, Some(&road), secret.as_deref())?);
+            Ok(())
+        }
+        _ => Err(usage_text().into()),
+    }
+}
+
+/// `khor _carry <carrier id>`: what a carrier's ssh runs here. stdin and
+/// stdout are the link; nothing of this verb's own goes on stdout.
+fn carry_in(rest: &[String]) -> Result<(), String> {
+    let [carrier] = rest else {
+        return Err(usage_text().into());
+    };
+    let n = node()?;
+    let rt = rt()?;
+    let out = rt.block_on(n.carry_in(carrier, tokio::io::stdin(), tokio::io::stdout()));
+    rt.shutdown_background();
+    out
+}
+
+/// `khor _relay-check`: the relay urls on standard input, one a line;
+/// prints `yes` when this machine reaches any of them, `no` when none
+/// answers (`khor_node::join::far_reaches_a_relay` reads it).
+fn relay_check(rest: &[String]) -> Result<(), String> {
+    use std::io::Read;
+    if !rest.is_empty() {
+        return Err(usage_text().into());
+    }
+    let mut text = String::new();
+    std::io::stdin().read_to_string(&mut text).map_err(|e| e.to_string())?;
+    let urls: Vec<String> = text.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_owned).collect();
+    if urls.is_empty() {
+        return Err(usage_text().into());
+    }
+    let rt = rt()?;
+    let yes = rt.block_on(khor_node::join::reaches_a_relay(urls));
+    rt.shutdown_background();
+    println!("{}", if yes { "yes" } else { "no" });
+    Ok(())
+}
+
 /// Shows a machine the door, network-wide.
 ///
 /// One argument and no flag: this is the same shape as `close`, which
@@ -2193,6 +2420,23 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
         },
         // `none` is unreachable, never idle (round NET-13).
         khor_node::RoadKind::None => khor_catalog::hop::word(khor_node::Link::DOWN_KEY).to_owned(),
+        khor_node::RoadKind::Ssh => cli::roads_ssh().to_owned(),
+    };
+    // A road with legs (round ROAD-1): which machine it goes through, and
+    // which leg broke.
+    let legs = |r: &khor_node::Road| {
+        let via = r.via.as_deref().map(|v| format!(" {}", cli::via_sponsor(name(v)))).unwrap_or_default();
+        // A jump host is no device: its end is said as the jump.
+        let end = |e: &Option<String>| e.as_deref().map(name).unwrap_or_else(|| cli::roads_jump().to_owned());
+        let broke = r
+            .broken
+            .as_ref()
+            .map(|l| match l.leg {
+                khor_node::LegKind::Auth => format!(" {}", cli::roads_broken_auth(end(&l.to))),
+                _ => format!(" {}", cli::roads_broken(end(&l.from), end(&l.to))),
+            })
+            .unwrap_or_default();
+        format!("{via}{broke}")
     };
     for d in all.iter().filter(|d| d.sponsor.is_none()) {
         let me = d.id == n.device_str();
@@ -2200,8 +2444,22 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
         // which no table holds: an idle wire writes no road.
         let lines: Vec<(String, String, Option<u16>)> = if me {
             let ms = |m: u32| m.min(u32::from(u16::MAX)) as u16;
+            // Its satellites, by its own ssh, and the others' through
+            // their sponsors — composed from the same live wires; a
+            // carried member it has no road of its own to, through its
+            // carrier (round ROAD-4), in place of the idle wire.
+            let own = own_roads(links, n.my_satellite_roads());
+            let composed: Vec<khor_node::Road> = n
+                .with_satellite_roads(&d.id, own.clone())
+                .into_iter()
+                .filter(|r| {
+                    all.iter().any(|s| s.id == r.to && s.sponsor.is_some())
+                        || (r.via.is_some() && !own.iter().any(|o| o.to == r.to))
+                })
+                .collect();
             links
                 .iter()
+                .filter(|(to, _)| !composed.iter().any(|r| &r.to == to))
                 .map(|(to, l)| {
                     let (word, at) = match (l.hop, l.down_ms) {
                         (khor_node::Hop::Direct, _) => (way(khor_node::RoadKind::Direct, None), l.rtt_ms),
@@ -2211,11 +2469,16 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
                     };
                     (to.clone(), word, at.map(ms))
                 })
+                .chain(
+                    composed
+                        .iter()
+                        .map(|r| (r.to.clone(), format!("{}{}", way(r.road, r.relay.as_deref()), legs(r)), r.ms)),
+                )
                 .collect()
         } else {
-            n.roads_of(d)
+            n.with_satellite_roads(&d.id, n.roads_of(d))
                 .into_iter()
-                .map(|r| (r.to.clone(), way(r.road, r.relay.as_deref()), r.ms))
+                .map(|r| (r.to.clone(), format!("{}{}", way(r.road, r.relay.as_deref()), legs(&r)), r.ms))
                 .collect()
         };
         let here = if me { cli::this_machine() } else { "" };
@@ -2228,6 +2491,14 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
             println!("  → {}\t{word}\t{ms}", name(&to));
         }
     }
+}
+
+/// This machine's roads off its live wires (`none` only for a wire that
+/// failed; an idle one is no road), with its ssh roads to its satellites.
+fn own_roads(links: &[(String, khor_node::Link)], sats: Vec<khor_node::Road>) -> Vec<khor_node::Road> {
+    let mut out = khor_node::roadbook::own_roads(links);
+    out.extend(sats);
+    out
 }
 
 /// How many rows `khor top` prints. The card asks for its own count;
@@ -3115,6 +3386,7 @@ mod top_table {
             last_rtt_ms: Some(23),
             since_ms: None,
             last_hop: None,
+            via: None,
         };
         let down = khor_node::Link { down_ms: Some(4_000), ..idle.clone() };
         assert_eq!(super::link_words(idle, false), khor_catalog::hop::word("quiet"));
@@ -5047,6 +5319,17 @@ fn pair(rest: &[String]) -> Result<(), String> {
     let [ticket] = rest else {
         return Err(usage_text().into());
     };
+    // `-`: the ticket on stdin, so it is on no command line — `khor add`
+    // pairs a machine this way over ssh, and a command line is in `ps`.
+    let mut read = String::new();
+    let ticket = if ticket == "-" {
+        std::io::stdin()
+            .read_line(&mut read)
+            .map_err(|e| e.to_string())?;
+        read.trim()
+    } else {
+        ticket.as_str()
+    };
     let n = node()?;
     let name = rt()?.block_on(n.pair(ticket))?;
     println!("{}", cli::paired_ok(name));
@@ -5058,33 +5341,151 @@ fn pair(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Leads an ssh-only machine into the network as this machine's
-/// satellite (附属机器批) — `Node::adopt_satellite` does the probing
-/// and the minting; this prints the report, and the tmux line rides
-/// along so the terminal's nature is no surprise later.
-fn adopt(rest: &[String]) -> Result<(), String> {
-    let (host, name) = match rest {
+/// Adds a machine over ssh (添加机器; `khor_node::join`): a member by
+/// default, a satellite when it cannot stay one or when `--no-install`
+/// says so (the form's 「在 … 上安装 khor」 switch, off). Each step is told on stderr as it ends; the outcome on
+/// stdout.
+fn add(rest: &[String]) -> Result<(), String> {
+    let mut words = Vec::new();
+    let mut via = None;
+    let mut port = None;
+    let mut password = false;
+    let mut key = None;
+    let mut passphrase = false;
+    let mut from = None;
+    let mut satellite_only = false;
+    let mut it = rest.iter();
+    while let Some(w) = it.next() {
+        match w.as_str() {
+            "--via" => via = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
+            "--port" => {
+                let p = it.next().ok_or_else(|| usage_text().to_owned())?;
+                port = Some(p.parse::<u16>().map_err(|_| usage_text().to_owned())?);
+            }
+            "--password" => password = true,
+            "--key" => key = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
+            "--passphrase" => passphrase = true,
+            "-m" => from = Some(it.next().ok_or_else(|| usage_text().to_owned())?.clone()),
+            "--no-install" => satellite_only = true,
+            _ => words.push(w.clone()),
+        }
+    }
+    let (host, name) = match words.as_slice() {
         [host] => (host, None),
         [host, name] => (host, Some(name.as_str())),
         _ => return Err(usage_text().into()),
     };
+    // A road logs in with a password or with a key, never both; a
+    // passphrase is a key file's.
+    if (password && (passphrase || key.is_some())) || (passphrase && key.is_none()) {
+        return Err(usage_text().into());
+    }
+    let secret = if password {
+        Some(read_password(cli::password_prompt())?)
+    } else if passphrase {
+        Some(read_password(cli::passphrase_prompt())?)
+    } else {
+        None
+    };
     let n = node()?;
-    let (id, name, tmux) = n.adopt_satellite(host, name)?;
-    println!("{}", cli::adopted(&name, n.name()));
+    let to = khor_node::satellite::Dest::new(host.as_str(), via.as_deref())
+        .on_port(port)
+        .with_identity(key.as_deref());
+    // From another khor machine (通过 khor 主机): it is the sponsor and
+    // runs the add; this one tells its steps as they come.
+    if let Some(m) = from.filter(|m| m != n.name()) {
+        let to = to.with_password(password).with_passphrase(passphrase);
+        let added = rt()?.block_on(n.add_on(&m, &to, name, satellite_only, tell_step))?;
+        say_added(&n, &added, &m);
+        return Ok(());
+    }
+    let added = n.add_over_ssh(&to, name, satellite_only, secret.as_deref(), &mut tell_step)?;
+    say_added(&n, &added, n.name());
+    Ok(())
+}
+
+/// `--password`'s password or `--passphrase`'s passphrase: one line of
+/// standard input, never an argument (an argument is in `ps`). From a
+/// terminal the echo is off while it is typed, after `prompt`.
+fn read_password(prompt: &str) -> Result<String, String> {
+    use std::io::IsTerminal;
+    let tty = std::io::stdin().is_terminal();
+    let stty = |arg: &str| {
+        let _ = std::process::Command::new("stty")
+            .arg(arg)
+            .stdin(std::process::Stdio::inherit())
+            .status();
+    };
+    if tty {
+        eprint!("{prompt}: ");
+        stty("-echo");
+    }
+    let mut line = String::new();
+    let read = std::io::stdin().read_line(&mut line);
+    if tty {
+        stty("echo");
+        eprintln!();
+    }
+    read.map_err(|e| e.to_string())?;
+    let p = line.trim_end_matches(['\n', '\r']).to_owned();
+    if p.is_empty() {
+        return Err(msg::password_not_given().to_owned());
+    }
+    Ok(p)
+}
+
+/// 转正 (docs/NET.md 卫星): a satellite of this machine becomes a member.
+fn promote(rest: &[String]) -> Result<(), String> {
+    let [machine] = rest else {
+        return Err(usage_text().into());
+    };
+    let n = node()?;
+    let added = n.promote(machine, &mut tell_step)?;
+    println!("{}", cli::promoted(&added.name));
+    Ok(())
+}
+
+/// One finished step, one line on stderr: its word and what it did.
+fn tell_step(step: khor_node::join::Step, mark: khor_node::join::Mark) {
+    use khor_node::join::{Mark, Step};
+    let word = match step {
+        Step::Connect => cli::add_step_connect(),
+        Step::Place => cli::add_step_place(),
+        Step::Start => cli::add_step_start(),
+        Step::Pair => cli::add_step_pair(),
+        Step::Undo => cli::add_step_undo(),
+        Step::Satellite => cli::add_step_satellite(),
+    };
+    match mark {
+        Mark::Live => {}
+        Mark::Done(note) if note.is_empty() => eprintln!("✓ {word}"),
+        Mark::Done(note) => eprintln!("✓ {word}  {note}"),
+        Mark::Failed(why) | Mark::Refused(_, why) => eprintln!("✗ {word}  {why}"),
+    }
+}
+
+fn say_added(n: &khor_node::Node, added: &khor_node::join::Added, sponsor: &str) {
+    if added.member {
+        println!("{}", cli::added_member(&added.name));
+        return;
+    }
+    if let Some(why) = &added.why {
+        println!("{}", cli::added_satellite(why));
+    }
+    println!("{}", cli::adopted(&added.name, sponsor));
     // On the roster only once the root holder signs it (docs/CONNECT.md
     // 卫星也进名单); until then it waits, and it still works from here.
-    if n.standing_of(&id) == khor_node::Standing::Pending {
+    if n.standing_of(&added.id) == khor_node::Standing::Pending {
         eprintln!("{}", cli::adopt_pending_hint());
     }
     println!(
         "{}",
-        if tmux {
+        if added.tmux {
             cli::sat_tmux_yes()
         } else {
             cli::sat_tmux_no()
         }
     );
-    Ok(())
 }
 
 fn sync(_rest: &[String]) -> Result<(), String> {

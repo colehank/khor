@@ -136,11 +136,40 @@ const F_SPONSOR: &str = "sponsor";
 /// it replicates anyway because it is a decision, not a credential, and
 /// the sponsor must still know it after its own restart.
 const F_SSH_HOST: &str = "ssh_host";
+/// The ssh jump in front of that destination, as the person picked it in
+/// khor (a Host alias or user@host; empty = none). Beside the
+/// destination for the same reason: khor never writes the user's ssh
+/// config, so the row is where the road is kept (docs/NET.md 卫星 经由).
+const F_SSH_JUMP: &str = "ssh_jump";
+/// The ssh port in front of that destination as the person typed it in
+/// khor, decimal (empty = none: 22, or whatever the sponsor's ssh config
+/// says). Beside the jump for the jump's reason.
+const F_SSH_PORT: &str = "ssh_port";
+/// Whether the sponsor logs in to it with a password. The password
+/// itself is only ever in the sponsor's OS secret store
+/// (`khor_node::secret`); the row says which road to take, never what
+/// opens it.
+const F_SSH_PASSWORD: &str = "ssh_password";
+/// The private key file the sponsor logs in with, as a path on the
+/// sponsor (empty = none: the sponsor's ssh config and agent decide).
+/// Only the path: the key itself never leaves the sponsor's disk.
+const F_SSH_IDENTITY: &str = "ssh_identity";
+/// Whether that key's passphrase is kept in the sponsor's OS secret
+/// store — `ssh_password`'s sibling, and like it never the secret.
+const F_SSH_PASSPHRASE: &str = "ssh_passphrase";
 /// Whether the satellite had tmux when it was adopted (or last probed)
 /// — what decides if a terminal on it can be made persistent. Stored as
 /// a bool register but read three-valued: "unprobed" must not read as
 /// "absent".
 const F_SAT_TMUX: &str = "sat_tmux";
+/// **The machine that carries this one over ssh** (round ROAD-2, khor
+/// inside ssh), by id; empty = none. A member, not a satellite: it runs
+/// khor and speaks for itself, but reaches nothing except through the
+/// carrier's ssh session to it, which the carrier keeps up with the road
+/// in `ssh_host` / `ssh_jump` / `ssh_port` / `ssh_password`. An older
+/// khor replicates the register untouched and reads the row as an
+/// ordinary machine it cannot reach.
+const F_CARRIER: &str = "carrier";
 /// The directories this machine is asked to keep an eye on (2026-09-06
 /// 关注目录): one JSON array, whole-value LWW like `addrs`, and anyone
 /// may write it like `pinned` — it is a fact about the machine that the
@@ -258,6 +287,21 @@ fn fkey(id: &str, field: &str) -> String {
     k
 }
 
+/// A satellite's ssh road as its row keeps it: the destination, its
+/// port and jump when the person gave them, whether the sponsor logs
+/// in with a password (kept in the sponsor's secret store, never here),
+/// and the key file it logs in with and whether that key's passphrase is
+/// kept beside such a password.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SshRoad<'a> {
+    pub host: &'a str,
+    pub port: Option<u16>,
+    pub jump: Option<&'a str>,
+    pub password: bool,
+    pub identity: Option<&'a str>,
+    pub passphrase: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceInfo {
     /// The public key, hex — the machine id (docs/NET.md).
@@ -288,11 +332,26 @@ pub struct DeviceInfo {
     /// on the sponsor (whose ssh config defines it); carried on the row
     /// so the sponsor still knows it after a restart.
     pub ssh_host: Option<String>,
+    /// The jump in front of `ssh_host`, `None` for a direct road.
+    pub ssh_jump: Option<String>,
+    /// The port of `ssh_host` when the person gave one, `None` for 22
+    /// or the sponsor's ssh config.
+    pub ssh_port: Option<u16>,
+    /// The sponsor logs in with a password from its own secret store.
+    pub ssh_password: bool,
+    /// The key file the sponsor logs in with (a path on the sponsor),
+    /// `None` for its ssh config and agent.
+    pub ssh_identity: Option<String>,
+    /// That key's passphrase is in the sponsor's secret store.
+    pub ssh_passphrase: bool,
     /// `Some(true)` = tmux was there at the last probe, `Some(false)` =
     /// probed and absent, `None` = never probed (an adoption from an
     /// older khor). Three states on purpose: unprobed must not read as
     /// absent.
     pub sat_tmux: Option<bool>,
+    /// The machine that carries it over ssh (`F_CARRIER`), `None` for
+    /// one that reaches the others itself.
+    pub carrier: Option<String>,
     /// The directories it is asked to watch, in the order they were
     /// given — empty when nobody asked (`F_WATCH`). The list is the
     /// setting; the readings for it come from the machine itself
@@ -586,10 +645,34 @@ impl DeviceDoc {
         &self,
         id: &str,
         sponsor: &str,
-        ssh_host: &str,
+        road: &SshRoad<'_>,
         tmux: bool,
     ) -> Result<(), String> {
         let mut dirty = false;
+        let ssh_host = road.host;
+        let jump = road.jump.unwrap_or("");
+        if self.flat_str(id, F_SSH_JUMP).as_deref().unwrap_or("") != jump {
+            self.write_field(id, F_SSH_JUMP, jump)?;
+            dirty = true;
+        }
+        let port = road.port.map(|p| p.to_string()).unwrap_or_default();
+        if self.flat_str(id, F_SSH_PORT).unwrap_or_default() != port {
+            self.write_field(id, F_SSH_PORT, port)?;
+            dirty = true;
+        }
+        if self.bool_field(id, F_SSH_PASSWORD) != road.password {
+            self.write_field(id, F_SSH_PASSWORD, road.password)?;
+            dirty = true;
+        }
+        let identity = road.identity.unwrap_or("");
+        if self.flat_str(id, F_SSH_IDENTITY).as_deref().unwrap_or("") != identity {
+            self.write_field(id, F_SSH_IDENTITY, identity)?;
+            dirty = true;
+        }
+        if self.bool_field(id, F_SSH_PASSPHRASE) != road.passphrase {
+            self.write_field(id, F_SSH_PASSPHRASE, road.passphrase)?;
+            dirty = true;
+        }
         if self.flat_str(id, F_SPONSOR).as_deref() != Some(sponsor) {
             self.write_field(id, F_SPONSOR, sponsor)?;
             dirty = true;
@@ -601,6 +684,54 @@ impl DeviceDoc {
         if self.flat(id, F_SAT_TMUX) != Some(LoroValue::Bool(tmux)) {
             self.write_field(id, F_SAT_TMUX, tmux)?;
             dirty = true;
+        }
+        if dirty {
+            self.inner.commit();
+        }
+        Ok(())
+    }
+
+    /// **Carries a member over ssh** (round ROAD-2): `carrier` keeps an ssh
+    /// session to it by `road` and bridges its resident's endpoint
+    /// through it. `None` stops carrying it; the road is left as it was,
+    /// a decision rather than a credential, for the next time.
+    pub fn set_carried(&self, id: &str, carrier: Option<&str>, road: Option<&SshRoad<'_>>) -> Result<(), String> {
+        let mut dirty = false;
+        let carrier = carrier.unwrap_or("");
+        if self.flat_str(id, F_CARRIER).unwrap_or_default() != carrier {
+            self.write_field(id, F_CARRIER, carrier)?;
+            dirty = true;
+        }
+        if let Some(road) = road {
+            let jump = road.jump.unwrap_or("");
+            if self.flat_str(id, F_SSH_JUMP).as_deref().unwrap_or("") != jump {
+                self.write_field(id, F_SSH_JUMP, jump)?;
+                dirty = true;
+            }
+            let port = road.port.map(|p| p.to_string()).unwrap_or_default();
+            if self.flat_str(id, F_SSH_PORT).unwrap_or_default() != port {
+                self.write_field(id, F_SSH_PORT, port)?;
+                dirty = true;
+            }
+            if self.bool_field(id, F_SSH_PASSWORD) != road.password {
+                self.write_field(id, F_SSH_PASSWORD, road.password)?;
+                dirty = true;
+            }
+            // A key file and its passphrase (redesign-join round 3), as
+            // `set_satellite` keeps them.
+            let identity = road.identity.unwrap_or("");
+            if self.flat_str(id, F_SSH_IDENTITY).as_deref().unwrap_or("") != identity {
+                self.write_field(id, F_SSH_IDENTITY, identity)?;
+                dirty = true;
+            }
+            if self.bool_field(id, F_SSH_PASSPHRASE) != road.passphrase {
+                self.write_field(id, F_SSH_PASSPHRASE, road.passphrase)?;
+                dirty = true;
+            }
+            if self.flat_str(id, F_SSH_HOST).as_deref() != Some(road.host) {
+                self.write_field(id, F_SSH_HOST, road.host)?;
+                dirty = true;
+            }
         }
         if dirty {
             self.inner.commit();
@@ -712,10 +843,16 @@ impl DeviceDoc {
                 pinned: self.bool_field(&id, F_PINNED),
                 sponsor: self.str_field(&id, F_SPONSOR),
                 ssh_host: self.str_field(&id, F_SSH_HOST),
+                ssh_jump: self.str_field(&id, F_SSH_JUMP).filter(|j| !j.is_empty()),
+                ssh_port: self.str_field(&id, F_SSH_PORT).and_then(|p| p.parse().ok()),
+                ssh_password: self.bool_field(&id, F_SSH_PASSWORD),
+                ssh_identity: self.str_field(&id, F_SSH_IDENTITY).filter(|k| !k.is_empty()),
+                ssh_passphrase: self.bool_field(&id, F_SSH_PASSPHRASE),
                 sat_tmux: match self.field(&id, F_SAT_TMUX) {
                     Some(LoroValue::Bool(b)) => Some(b),
                     _ => None,
                 },
+                carrier: self.str_field(&id, F_CARRIER).filter(|c| !c.is_empty()),
                 watch: self
                     .str_field(&id, F_WATCH)
                     .and_then(|s| serde_json::from_str(&s).ok())
@@ -1574,7 +1711,19 @@ mod tests {
             .upsert("5a".repeat(32).as_str(), "gpu-box", &[])
             .unwrap();
         sponsor
-            .set_satellite("5a".repeat(32).as_str(), "aa", "gpubox", true)
+            .set_satellite(
+                "5a".repeat(32).as_str(),
+                "aa",
+                &SshRoad {
+                    host: "gpubox",
+                    port: Some(2222),
+                    jump: Some("bastion"),
+                    password: true,
+                    identity: Some("~/.ssh/lab_key"),
+                    passphrase: true,
+                },
+                true,
+            )
             .unwrap();
 
         let far = DeviceDoc::new(2).unwrap();
@@ -1589,6 +1738,11 @@ mod tests {
             Some("gpubox"),
             "…with the ssh destination"
         );
+        assert_eq!(sat.ssh_jump.as_deref(), Some("bastion"), "…and its jump");
+        assert_eq!(sat.ssh_port, Some(2222), "…and its port");
+        assert!(sat.ssh_password, "…and that it logs in with a password");
+        assert_eq!(sat.ssh_identity.as_deref(), Some("~/.ssh/lab_key"), "…and its key file's path");
+        assert!(sat.ssh_passphrase, "…and that the key's passphrase is kept");
         assert_eq!(sat.sat_tmux, Some(true), "…and the tmux probe");
         let plain = far.get("aa").expect("the sponsor itself crossed");
         assert_eq!(
