@@ -2511,6 +2511,19 @@ try {
     return "no marker and no class — grep for the words on it";
   };
 
+  /** Every finite animation running now, finished (or two seconds). */
+  const settled = () =>
+    page.evaluate(() =>
+      Promise.race([
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((a) => a.playState === "running" && a.effect?.getComputedTiming().endTime !== Infinity)
+            .map((a) => a.finished.catch(() => null)),
+        ),
+        new Promise((r) => setTimeout(r, 2_000)),
+      ]),
+    );
   const sweep = () =>
     page.evaluate((PRESSABLE) => {
       const floor = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--touch"));
@@ -3502,6 +3515,14 @@ try {
         await stop.after?.();
         continue;
       }
+      // **At rest, not mid-entrance** (net-f, 2026-10-09): a box measured
+      // while its surface zooms in is the drawing's size at that frame,
+      // not the control's. The dial's card enters with `zoom-in-95` over
+      // 180 ms; swept 20–60 ms in, its 44-tall rows read 41.8–43.6
+      // (getBoundingClientRect under the scale; offsetHeight 44 all along)
+      // and the walk went red at 43 on some runs and not others. So the
+      // finite animations running now finish first, two seconds at most.
+      await settled();
       const seen = await sweep();
       if (!(seen.floor > 0)) fail(`${here}: --touch does not resolve on the page`);
       if (seen.targets.length === 0) fail(`probe dead: ${here} has nothing pressable to measure`);
