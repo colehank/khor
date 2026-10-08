@@ -467,7 +467,8 @@ function isFar(row: DeviceRow): boolean {
     (`DeviceRow.roads`: live wires, and the roads to SSH 主机 and carried
     machines composed through the machine in the middle). */
 function roadTo(me: DeviceRow | null, row: DeviceRow): Road | null {
-  return me?.roads.find((r) => r.to === row.id) ?? null;
+  // An older peer writes no roads; a reading without them is none.
+  return (me?.roads ?? []).find((r) => r.to === row.id) ?? null;
 }
 
 /** A road's `via` is a machine id; the name a person reads. */
