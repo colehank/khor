@@ -8,6 +8,11 @@
 // with the text (`FileText.digest`), not a second judgment made here
 // that could disagree with the one that decoded it.
 //
+// **It saves on its own since save-a (2026-10-08)**: a second after the
+// typing stops and on leaving the file, through `lib/save-road`, which
+// also holds what a write that did not land means (a clash stops it, a
+// failure is tried again). ✓ and ⌘S are the extra confirmation.
+//
 // **The editor is a transparent `<textarea>` over the painted `<pre>`.**
 // Not CodeMirror: its gutter would fight the git gutter this file
 // already draws, and the part of it worth the dependency — completion,
@@ -33,7 +38,6 @@ import {
   mergeFileText,
   pullFile,
   said,
-  saveFileText,
   type FileStat,
   type FileText,
   type GitBlame,
@@ -50,6 +54,18 @@ import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { useHereHosts } from "@/lib/here";
 import { levelOf, treeChanged } from "@/lib/tree-changed";
+import {
+  confirmSaved,
+  forget,
+  holdFlush,
+  newLine,
+  onAnyLanded,
+  onLanded,
+  PAUSE_MS,
+  reopened,
+  useRoad,
+  write,
+} from "@/lib/save-road";
 import { ago } from "@/words";
 import { usePinch } from "@/hooks/use-pinch";
 import { cn } from "@/lib/utils";
@@ -94,11 +110,29 @@ const unchanged = (f: FileText, now: FileStat) =>
 /** Bytes a text takes on disk, for a file whose text was just saved. */
 const bytesOf = (text: string) => new TextEncoder().encode(text).length;
 
-/** An unsaved working copy: the text, and the digest the next save is
-    pinned to. **One piece of state, not two** — a save replaces both at
-    once, and holding them apart is how a second save gets pinned to a
-    digest that belongs to different bytes. */
-export type Draft = { text: string; was: string };
+// **Every write that lands is what the disk holds now**, whichever view
+// asked and whether or not it is still mounted (`lib/save-road`): the
+// cache of files read lately moves with it, so coming back to the file
+// is a stat that matches rather than a read; and the trees and git's
+// letters of that level ask again (UX-43 §1).
+onAnyLanded((l) => {
+  const had = held.get(heldKey(l.machine, l.path));
+  remember(l.machine, l.path, {
+    ...(had ?? { cut: false, binary: false }),
+    text: l.text,
+    digest: l.digest,
+    at_ms: l.at_ms,
+    total: bytesOf(l.text),
+  });
+  treeChanged({ machine: l.machine, dir: levelOf(l.path) });
+});
+
+/** An unsaved working copy: the text, the digest the next save is
+    pinned to, and which line of editing it is (`lib/save-road`'s `by`:
+    one per buffer read from the disk). **One piece of state, not two** —
+    a save replaces both at once, and holding them apart is how a second
+    save gets pinned to a digest that belongs to different bytes. */
+export type Draft = { text: string; was: string; by: string };
 
 const IMAGES = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"];
 const DOCS = ["docx", "xlsx", "pptx", "doc", "xls", "ppt"];
@@ -309,15 +343,21 @@ export function FileView({
     },
     [draft],
   );
-  const [saving, setSaving] = useState(false);
+  /** A way out of a clash is under way (a read, a merge, an overwrite). */
+  const [working, setWorking] = useState(false);
   /** Bumped to read this file again without changing which file it is
       — the way out of a refusal that keeps the person's own change
       (`theirs`). A counter for `diffAt`'s reason: two reads of one
       path are two questions, and a boolean cannot ask twice. */
   const [reread, setReread] = useState(0);
-  /** What the last save did — a sentence when it refused, `true` for a
-      moment when it landed. */
-  const [saved, setSaved] = useState<string | true | null>(null);
+  /** **What the file's save road says** (`lib/save-road`, save-a): a
+      clash or a failure, held there rather than here because it outlives
+      this mount — the last write goes as the person leaves the file.
+      ⚠️ 墓碑: `saved`, the last save's sentence or `true`, this mount's own. */
+  const road = useRoad(machine, path);
+  const trouble = road.trouble;
+  /** A way out that could not even ask the machine (its read failed). */
+  const [oops, setOops] = useState<string | null>(null);
   /** How many clashes the last merge left, or `null` when the box holds
       nothing merged. **Its own state rather than a word inside
       `saved`**: `saved` is what the *file* did and a merge does nothing
@@ -414,7 +454,7 @@ export function FileView({
     }
     setFile(null);
     if (draft === undefined) setEdit(null);
-    setSaved(null);
+    setOops(null);
     setError(null);
     setTook(null);
     const take = (f: FileText) => {
@@ -424,7 +464,7 @@ export function FileView({
       // **Only when nobody is holding one.** A draft means somebody
       // typed here and walked away; overwriting it with what is on
       // disk is the loss this whole arrangement exists to stop.
-      if (draft === undefined) setEdit({ text: f.text, was: f.digest });
+      if (draft === undefined) setEdit({ text: f.text, was: f.digest, by: newLine() });
     };
     const read = () =>
       fetchFileText(machine, path)
@@ -832,7 +872,7 @@ export function FileView({
   useEffect(() => {
     if (saveAt === askedAt.current) return;
     askedAt.current = saveAt;
-    save();
+    save(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saveAt]);
 
@@ -877,7 +917,7 @@ export function FileView({
         if (f === null || f.digest === file.digest) return;
         remember(machine, path, f);
         setFile(f);
-        setEdit({ text: f.text, was: f.digest });
+        setEdit({ text: f.text, was: f.digest, by: newLine() });
         // The gutter is about HEAD and the file just moved underneath
         // it, so it is wrong until it is asked again.
         setDiffAt((n) => n + 1);
@@ -885,42 +925,96 @@ export function FileView({
       .catch(() => {});
   };
 
-  const save = () => {
-    if (edit === null || !canEdit || saving) return;
-    setSaving(true);
-    setSaved(null);
-    const sent = edit.text;
-    saveFileText(machine, path, edit.was, sent)
-      .then((w) => {
-        // **Pinned to what was sent, not to what is in the box now.**
-        // Somebody typing during the round trip must keep their
-        // keystrokes, and the digest that came back is the digest of
-        // `sent` — so the text baseline moves to `sent` and whatever
-        // they typed on top of it is still unsaved.
-        setFile((f) => {
-          if (f === null) return f;
-          const now = { ...f, text: sent, digest: w.digest, at_ms: w.at_ms, total: bytesOf(sent) };
-          remember(machine, path, now);
-          return now;
-        });
-        setEdit((e) => (e === null ? e : { ...e, was: w.digest }));
-        setClashes(null);
-        setSaved(true);
+  /** **A write landed**, from this mount or from one that left the file
+      a moment ago (`lib/save-road`). The disk is the text written, so
+      that is khor's reading of the file now; the buffer is re-pinned to
+      the new digest when it is the same line of editing, and keeps
+      whatever was typed during the round trip on top. A buffer read
+      separately keeps its pin and will be refused, which is right: it
+      does not hold this write's text. */
+  const savedRef = useRef(onSaved);
+  savedRef.current = onSaved;
+  useEffect(
+    () =>
+      onLanded(machine, path, (l) => {
+        setFile((f) =>
+          f === null ? f : { ...f, text: l.text, digest: l.digest, at_ms: l.at_ms, total: bytesOf(l.text) },
+        );
+        setEdit((e) => (e === null || e.by !== l.by ? e : { ...e, was: l.digest }));
+        setOops(null);
         // The gutter is about HEAD and the file just moved, so it is
         // wrong until it is asked again. Same for the tree's marks,
-        // which this view does not hold — nor does its host alone: every
-        // holder of this checkout's letters asks again (UX-43 §1).
+        // which this view does not hold (`onSaved`, and `treeChanged`
+        // from the road for every holder, UX-43 §1).
         setDiffAt((n) => n + 1);
-        onSaved?.();
-        treeChanged({ machine, dir: levelOf(path) });
-      })
-      .catch((e: unknown) => setSaved(String(e instanceof Error ? e.message : e)))
-      .finally(() => setSaving(false));
+        savedRef.current?.();
+      }),
+    [machine, path],
+  );
+
+  /** **Write the buffer through the save road** (save-a). `asked` is a
+      person pressing for it (✓, ⌘S, 保存并关闭): it writes even after a
+      clash — the other side may have gone back — and the button says
+      已保存 when it lands, or at once when there is nothing to write. */
+  const save = (asked = false) => {
+    if (edit === null || !canEdit) return;
+    // Before the read lands the buffer can only be the pane's draft —
+    // something typed and not written — so it is written as it stands.
+    if (file !== null && !dirty) {
+      if (asked && !road.busy) confirmSaved(machine, path);
+      return;
+    }
+    // The answer is heard by `onLanded` above and the trouble by
+    // `useRoad`; the promise has nothing left to say.
+    write(machine, path, edit, { asked }).catch(() => {});
   };
+  const saveRef = useRef(save);
+  saveRef.current = save;
+
+  /** **Autosave**: a second after the typing stops (`PAUSE_MS`). Not
+      while a clash is unanswered — nothing is written until the person
+      picks a way out — and not over a merge that has not been looked at:
+      its text holds both sides and maybe the markers between them, and
+      「是否保存仍由你决定」 (`file-merged-clean`) stays true until a
+      keystroke or ✓. A failure does not stop it: the next pause tries
+      again with the newer text, and the road retries on its own between. */
+  const autosave = canEdit && dirty && clashes === null && trouble?.kind !== "clash";
+  useEffect(() => {
+    if (!autosave) return;
+    const id = setTimeout(() => saveRef.current(false), PAUSE_MS);
+    return () => clearTimeout(id);
+  }, [autosave, edit?.text]);
+
+  /** **Leaving the file writes it** — another tab, the tab closed, the
+      page left — and so does the app being hidden or quit (`holdFlush`,
+      which `lib/save-road` calls). Read through a ref: the unmount sees
+      the last render, not the first. The pane hears the landing through
+      `orphan` when no view of this file is mounted by then. */
+  const leaving = useRef({ edit, autosave, onDraft, onSaved });
+  leaving.current = { edit, autosave, onDraft, onSaved };
+  useEffect(() => {
+    reopened(machine, path);
+    const flush = () => {
+      const s = leaving.current;
+      if (!s.autosave || s.edit === null) return null;
+      return write(machine, path, s.edit, {
+        orphan: () => {
+          s.onDraft?.(null);
+          s.onSaved?.();
+        },
+      }).catch(() => {});
+    };
+    const stop = holdFlush(machine, path, flush);
+    return () => {
+      stop();
+      void flush();
+    };
+  }, [machine, path]);
 
   /** Throw away what is in the box and read the file again. */
   const theirs = () => {
-    setSaved(null);
+    forget(machine, path);
+    setOops(null);
     setClashes(null);
     setEdit(null);
     onDraft?.(null);
@@ -934,16 +1028,17 @@ export function FileView({
    * is one side, and the machine is asked for the other. What comes
    * back goes in the box pinned to the digest that came with it, so
    * the save that follows is an ordinary one — and it is still the
-   * person who presses it.
+   * person who presses it, or types on (autosave waits for one of the
+   * two, `autosave` above).
    *
    * Both changes are in that text, and where they touched the same
    * lines both are there between markers. khor does not pick; the
    * count says how many times it did not.
    */
   const merge = () => {
-    if (edit === null || file === null || saving) return;
-    setSaving(true);
-    setSaved(null);
+    if (edit === null || file === null || working) return;
+    setWorking(true);
+    setOops(null);
     const base = file.text;
     const mine_ = edit.text;
     fetchFileText(machine, path)
@@ -953,12 +1048,14 @@ export function FileView({
           // measured against what this merge started from, not against
           // the text the view first opened.
           setFile((f) => (f === null ? f : { ...f, text: now.text, digest: now.digest, at_ms: now.at_ms }));
-          setEdit((e) => (e === null ? e : { text: m.text, was: now.digest }));
+          setEdit((e) => (e === null ? e : { ...e, text: m.text, was: now.digest }));
           setClashes(m.clashes);
+          // The clash is answered: the box is pinned to what is there.
+          forget(machine, path);
         }),
       )
-      .catch((e: unknown) => setSaved(String(e instanceof Error ? e.message : e)))
-      .finally(() => setSaving(false));
+      .catch((e: unknown) => setOops(said(e)))
+      .finally(() => setWorking(false));
   };
 
   /** Save what is in the box over whatever is there now.
@@ -970,23 +1067,19 @@ export function FileView({
    * it is the gap the person just chose to accept — the button says so.
    */
   const mine = () => {
-    if (edit === null || saving) return;
-    setSaving(true);
-    setSaved(null);
-    const sent = edit.text;
+    if (edit === null || working) return;
+    setWorking(true);
+    setOops(null);
+    const pin = edit;
     fetchFileText(machine, path)
-      .then((now) => saveFileText(machine, path, now.digest, sent))
-      .then((w) => {
-        setFile((f) => (f === null ? f : { ...f, text: sent, digest: w.digest, at_ms: w.at_ms }));
-        setEdit((e) => (e === null ? e : { ...e, text: sent, was: w.digest }));
-        setClashes(null);
-        setSaved(true);
-        setDiffAt((n) => n + 1);
-        onSaved?.();
-        treeChanged({ machine, dir: levelOf(path) });
+      .then((now) => write(machine, path, { ...pin, was: now.digest }, { asked: true }))
+      .then(() => setClashes(null))
+      .catch((e: unknown) => {
+        // A refusal of the write is the road's trouble and on screen
+        // already; what is left is the read that did not happen.
+        if (e instanceof Error || typeof e === "string") setOops(said(e));
       })
-      .catch((e: unknown) => setSaved(String(e instanceof Error ? e.message : e)))
-      .finally(() => setSaving(false));
+      .finally(() => setWorking(false));
   };
 
   const take = () => {
@@ -1111,10 +1204,11 @@ export function FileView({
   // about — wrong, not merely old. The alternative is a round trip per
   // keystroke onto somebody else's machine, which khor will not do.
   const hunks = dirty ? [] : (diff?.hunks ?? []);
-  /** Whether the gutter has gone quiet because of an edit, as opposed
-      to because the file matches HEAD. Only then is there something to
-      say. */
-  const stale = dirty && (diff?.hunks.length ?? 0) > 0;
+  // ⚠️ 墓碑 (save-a, 2026-10-08): `stale`, 「保存后才能显示改动位置」 in
+  // the notice while the box differed from the disk and the gutter had
+  // gone quiet. The file saves itself a second after the typing stops
+  // now, so the sentence would flash on every pause; a save that does
+  // not land says so in its own words below.
   /** Put a hunk on screen, from the overview ruler.
    *
    * **It scrolls and opens nothing** (2026-09-16). The ruler is the map
@@ -1436,7 +1530,7 @@ export function FileView({
                 setClashes(null);
                 setEdit((e) => (e === null ? e : { ...e, text: t }));
               }}
-              onSave={save}
+              onSave={() => save(true)}
             />
             {blamed !== null && caret !== null && caret <= blamed.length && (
               <InlineBlame commit={blamed[caret - 1]} sheet={sheet} tops={tops} />
@@ -1457,13 +1551,14 @@ export function FileView({
       {/* **The one notice left, and it floats** (2026-09-16:「类似要在
           文件上方新增一列的东西都不要」— the user).
 
-          Three things can land in it and all three are about a save
-          that did not simply happen: khor refused to write (the far
-          copy moved under the buffer), what a merge left behind, and
-          the gutter having gone quiet because the box no longer matches
-          the disk. The first of those is the only place in this column
-          where somebody **has** to act, which is why it is still drawn
-          at all — 「没有就不显示」 covers the rest of the day.
+          What can land in it is a save that did not simply happen: the
+          file changed somewhere else and autosave stopped (save-a: one
+          sentence and the ways out), a write that failed and is being
+          tried again (and why), what a merge left behind, and a way out
+          that could not reach the machine. The clash is the only place in
+          this column where somebody **has** to act; 「没有就不显示」
+          covers the rest of the day — a save that lands says nothing
+          here (the dot goes out; ✓ and ⌘S say 已保存 on the button).
 
           **`absolute`, at the foot, over the text.** Anything in the
           flow above the file moves the line a person is typing on the
@@ -1472,12 +1567,10 @@ export function FileView({
           foot rather than the head because the head is where the caret
           usually is — a notice there would cover the thing it is about.
 
-          **It goes when the reason goes**, which is already how all
-          three of its facts behave: `clashes` clears on the next
-          keystroke and on the save, `saved` clears when the next save
-          starts, and `stale` is false the moment the box matches the
-          disk again. */}
-      {(typeof saved === "string" || clashes !== null || stale) && (
+          **It goes when the reason goes**: the trouble when a write lands
+          or the person picks a way out, `clashes` on the next keystroke
+          and on the save. */}
+      {(trouble !== null || clashes !== null || oops !== null) && (
         <div
           data-file-notice
           // `pointer-events-none` on the frame and back on inside it:
@@ -1489,18 +1582,24 @@ export function FileView({
               (20-states 浮层, 2026-09-28): it was the board's `card`
               under a shadow of Tailwind's scale. */}
           <div className="pointer-events-auto flex max-w-full flex-wrap items-center gap-3 rounded-lg border bg-popover px-3 py-1.5 text-callout text-muted-foreground shadow-(--shadow-float)">
-            {typeof saved === "string" && <span data-save-state="refused">{saved}</span>}
+            {/* **Which trouble, from the disk and not from the words**
+                (`lib/save-road`): the far machine's refusal is in its
+                own language; what decides is what the file holds now. */}
+            {trouble?.kind === "clash" && clashes === null && (
+              <span data-save-state="refused" title={trouble.said}>
+                {gui.file_clash}
+              </span>
+            )}
+            {trouble?.kind === "failed" && (
+              <span data-save-state="failed">{gui.file_unsaved_why(trouble.said)}</span>
+            )}
             {clashes !== null && (
               <span data-merged={clashes}>
                 {clashes === 0 ? gui.file_merged_clean : gui.file_merged_clashes(clashes)}
               </span>
             )}
-            {/* The gutter going quiet, said here rather than as a row of
-                its own: a file with no bars reads as a file that matches
-                HEAD, and that is exactly the claim khor cannot make
-                while there is something typed in the box. */}
-            {stale && typeof saved !== "string" && <span data-git-stale>{gui.git_stale}</span>}
-            {/* **Three ways out of a refusal, where there used to be
+            {oops !== null && <span data-save-oops>{oops}</span>}
+            {/* **Three ways out of a clash, where there used to be
                 none** (2026-09-13). A save khor would not make left the
                 sentence 「这个文件在你编辑期间变了」 standing and nothing
                 to press — the person's only move was to copy their text
@@ -1508,13 +1607,13 @@ export function FileView({
                 and say so on the button; the third keeps both and is the
                 one a person usually wants, which is why it sits between
                 them rather than at the end. */}
-            {typeof saved === "string" && (
+            {trouble?.kind === "clash" && clashes === null && (
               <span className="flex shrink-0 gap-2">
                 <Button
                   size="sm"
                   data-take-theirs
-                  disabled={saving}
-                  aria-busy={saving || undefined}
+                  disabled={working}
+                  aria-busy={working || undefined}
                   onClick={theirs}
                   className="min-h-touch min-w-touch"
                 >
@@ -1523,8 +1622,8 @@ export function FileView({
                 <Button
                   size="sm"
                   data-merge
-                  disabled={saving}
-                  aria-busy={saving || undefined}
+                  disabled={working}
+                  aria-busy={working || undefined}
                   onClick={merge}
                   className="min-h-touch min-w-touch"
                 >
@@ -1533,8 +1632,8 @@ export function FileView({
                 <Button
                   size="sm"
                   data-keep-mine
-                  disabled={saving}
-                  aria-busy={saving || undefined}
+                  disabled={working}
+                  aria-busy={working || undefined}
                   onClick={mine}
                   className="min-h-touch min-w-touch"
                 >

@@ -192,8 +192,10 @@ export type TabFace = {
       band it is the pill's third seat, on every pill; on the wide strip
       no pill wears it (UX-39 §7) — the front tab's stands after the
       capsule where the strip asks for it (`frontAct`). Absent only on a
-      tab nobody has listed yet. */
-  act?: { kind: "reload" | "stop" | "save"; label: string; onPress: () => void };
+      tab nobody has listed yet. `saved` is not an act but the file's ✓
+      saying 已保存 for a moment after a save somebody asked for (save-a):
+      a state, drawn in the seat and pressing nothing. */
+  act?: { kind: "reload" | "stop" | "save" | "saved"; label: string; onPress: () => void };
   /** **The pill reloads**: a 2-pt line runs along its own bottom edge
       while a join, a load or a read is under way (UX-33 §2; UX-31's slot). */
   loading?: boolean;
@@ -975,6 +977,30 @@ export function TabStrip({
       {frontAct && (() => {
         const f = faces.find((x) => x.id === active);
         if (!f?.act) return null;
+        // **已保存, said once at the button** (save-a, 「保存按钮只是作为一个
+        // 额外的确定」): the ✓ turns to ink and its name stands under it for
+        // the moment, without a hover — a confirmation nobody has to look
+        // for. Its own instance, so the open name is not the hover one's.
+        if (f.act.kind === "saved") {
+          return (
+            <Tooltip key="saved" open>
+              <TooltipTrigger asChild>
+                <GlassCircle
+                  data-tab-act="saved"
+                  data-tab-front-act
+                  aria-label={f.act.label}
+                  aria-disabled
+                  className="pointer-events-none"
+                >
+                  <IconCheck />
+                </GlassCircle>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" data-saved-said>
+                {f.act.label}
+              </TooltipContent>
+            </Tooltip>
+          );
+        }
         return (
           <Tooltip>
             <TooltipTrigger asChild>

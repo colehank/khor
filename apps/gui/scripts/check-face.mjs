@@ -102,6 +102,17 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  // `FACE_STACK=1`: a React warning carries where it was raised from.
+  if (process.env.FACE_STACK) {
+    await page.addInitScript(() => {
+      const was = console.error.bind(console);
+      let n = 0;
+      console.error = (...a) => {
+        if (String(a[0]).includes("Maximum update depth") && n++ < 3) was(`${a[0]}\n${new Error().stack}`);
+        else was(...a);
+      };
+    });
+  }
   /** **A file opens to read; its editor is one press away** (the owner,
       2026-10-04: a file page and a workspace file open in preview, and
       「编辑」 turns the editor on — `data-file-edit`). The walk asked for
@@ -206,9 +217,13 @@ try {
   // sentences about a walk that is fine and none about the one line that
   // broke. The tally at the foot is still the gate; this is the address
   // (2026-09-17, after a batch spent twenty minutes on exactly that).
+  if (process.env.FACE_STACK) page.on("console", (m) => m.type() === "error" && console.log(`console: ${m.text().slice(0, 2000)}`));
+  // React's own word for an update that sets off itself (side m).
+  let updateLoops = 0;
+  page.on("console", (m) => m.type() === "error" && m.text().includes("Maximum update depth") && updateLoops++);
   page.on("pageerror", (e) => {
     thrown.push(String(e));
-    console.log(`page threw: ${String(e).split("\n")[0]}`);
+    console.log(`page threw: ${process.env.FACE_STACK ? e.stack : String(e).split("\n")[0]}`);
   });
 
   // Session rows and devices, so a title and a reading exist to measure.
@@ -2270,7 +2285,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "afix", "quota"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -4720,8 +4735,13 @@ try {
         }),
       });
     const wrote = [];
+    /** The machine refusing every write, for v): since save-a a tab
+        closed over typing that can be saved saves and closes; the sheet
+        is for typing that cannot be. */
+    let refuse = false;
     const tabWrite = (r) => {
       wrote.push(r.request().postDataJSON() ?? {});
+      if (refuse) return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify("联系不上 peer") });
       return r.fulfill({
         contentType: "application/json",
         body: JSON.stringify({ at_ms: Date.now(), digest: "4".repeat(64) }),
@@ -4767,18 +4787,78 @@ try {
       fail("probe dead: the strip would not empty, so nothing below starts from a known place");
     } else {
       // The head, gone whole. A negative claim, so it is asserted with
-      // the strip on screen — otherwise it passes on a blank pane.
+      // the middle column on screen — otherwise it passes on a blank pane.
+      // **With no tab, no strip** (fix-e, the owner 2026-10-08: 「工作区没
+      // 有选中的标签的时候, 最上方有一个没有功能的甲板, 删掉」): the empty
+      // capsule over 最近打开 was a deck nobody could press.
       const head = await page.evaluate(() => ({
         strip: document.querySelectorAll("[data-ws-tab-strip]").length,
+        empty: document.querySelectorAll("[data-ws-empty]").length,
         drafts: document.querySelectorAll("[data-drafts]").length,
         branch: document.querySelectorAll("[data-branch]").length,
         tree: document.querySelectorAll("[data-ws-tab-strip] [data-on]").length,
       }));
-      if (head.strip !== 1) {
+      if (head.empty !== 1) fail("probe dead: the middle column drew no 最近打开 with no tab open (src/views/WorkspaceEmpty.tsx)");
+      if (head.strip !== 0) {
         fail(
-          "the middle column drew no tab strip — it is what the head row became " +
-            "(src/views/WorkspacePane.tsx)",
+          `the middle column draws ${head.strip} tab strip(s) with no tab open — an empty deck that does nothing (fix-e; ` +
+            "src/browse/Tabs.tsx)",
         );
+      }
+      // …and nothing beside it moves as the first tab brings the strip
+      // and the last takes it away: R0, the tree's head, the column's
+      // left edge. Every frame across both presses.
+      {
+        const sample = () =>
+          page.evaluate(() => {
+            window.__wsFrames = [];
+            const at = (s) => {
+              const r = document.querySelector(s)?.getBoundingClientRect();
+              return r ? [r.left, r.top, r.width] : null;
+            };
+            const tick = () => {
+              if (!window.__wsFrames) return;
+              window.__wsFrames.push({
+                r0: at("[data-main] [data-region-head]"),
+                tree: at("[data-tree-head]"),
+                strips: document.querySelectorAll("[data-ws-tab-strip]").length,
+                tabs: document.querySelectorAll("[data-ws-tab-strip] [data-tab]").length,
+              });
+              requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+          });
+        const taken = () =>
+          page.evaluate(() => {
+            const f = window.__wsFrames ?? [];
+            window.__wsFrames = null;
+            return f;
+          });
+        await sample();
+        await press("[data-ws-tree] [data-file-tree] [data-file]:not([data-dir]) > button");
+        await until(3_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab]").count()) === 1);
+        await wait(400);
+        const opening = await taken();
+        await sample();
+        await clearTabs();
+        await wait(400);
+        const closing = await taken();
+        const drift = (fs) => {
+          const ok = fs.filter((f) => f.r0 && f.tree);
+          if (!ok.length) return null;
+          const [a, b] = [ok[0].r0, ok[0].tree];
+          return Math.max(...ok.map((f) => Math.max(...f.r0.map((v, i) => Math.abs(v - a[i])), ...f.tree.map((v, i) => Math.abs(v - b[i])))));
+        };
+        const bare = [...opening, ...closing].filter((f) => f.strips > 0 && f.tabs === 0).length;
+        console.log(
+          `4 vii · no tab, no strip: ${JSON.stringify(head)}; the first tab and the last: R0 and the tree's head moved ` +
+            `${drift(opening)} / ${drift(closing)} over ${opening.length} / ${closing.length} frames, ${bare} frame(s) with an empty strip`,
+        );
+        if (opening.length < 5 || closing.length < 5) fail(`probe dead: 4 vii · ${opening.length} / ${closing.length} frames sampled`);
+        if ((drift(opening) ?? 99) > 0.5 || (drift(closing) ?? 99) > 0.5) {
+          fail(`the first tab or the last moved R0 or the tree's head (${drift(opening)} / ${drift(closing)} px) — the strip comes and goes inside its column (fix-e)`);
+        }
+        if (bare > 0) fail(`${bare} frame(s) drew the strip with no tab in it — it comes with the first tab and goes with the last (fix-e)`);
       }
       if (head.drafts !== 0 || head.branch !== 0) {
         fail(
@@ -5458,7 +5538,11 @@ try {
         }
       }
 
-      // v) closing over a draft asks, and 别关 changes nothing.
+      // v) closing over a draft that cannot be saved asks, and 别关
+      //    changes nothing. **Since save-a (2026-10-08) only one that
+      //    cannot be saved**: × over typing writes it and closes
+      //    (`FACE_ONLY=save` i), so the machine refuses writes here.
+      refuse = true;
       await toEdit();
       await toEdit();
     await page.locator("[data-edit]").click();
@@ -5505,6 +5589,7 @@ try {
           );
         }
       }
+      refuse = false;
 
       // v) the menu, on the tab's own opener. A second tab first, so
       //    关闭其他 has something to close.
@@ -7503,7 +7588,8 @@ try {
     } else {
       // i) open one, and look at what the list says about which.
       await openWs();
-      const opened = await until(5_000, async () => (await page.locator("[data-ws-tab-strip]").count()) === 1);
+      // The middle column, by its tab strip or (no tab open, fix-e) 最近打开.
+      const opened = await until(5_000, async () => (await page.locator("[data-ws-tab-strip], [data-ws-empty]").count()) === 1);
       // Back up to the rows (UX-23: the open workspace's column is its
       // tree); it stays the open one, which is what is read.
       if (await page.locator("[data-ws-list-back]").count()) await press("[data-ws-list-back]");
@@ -8813,8 +8899,10 @@ try {
       // differs) · 分享 · 「…」, and no 编辑 circle. The eye turns the
       // file to its source, which is the editor at once; typing draws ✓,
       // ✓ writes and goes away. 字号 and 预览背景 are in 「…」 only while
-      // the file is rendered. Leaving with a draft asks nothing and keeps
-      // it: back on the file, ✓ is there.
+      // the file is rendered. Leaving with something typed asks nothing
+      // and writes it (save-a, 2026-10-08): back on the file there is no
+      // ✓, and the write held the typing. ⚠️ 墓碑 (UX-14): the draft kept
+      // and ✓ there on coming back.
       {
         const deck = () =>
           page.evaluate(() => ({
@@ -8844,7 +8932,7 @@ try {
         };
         const writes = [];
         const wrote14 = (r) => {
-          writes.push(1);
+          writes.push(r.request().postDataJSON()?.text ?? "");
           return r.fulfill({ contentType: "application/json", body: JSON.stringify({ at_ms: Date.now(), digest: "3".repeat(64) }) });
         };
         await page.route("**/write_text", wrote14);
@@ -8862,6 +8950,7 @@ try {
         await press("[data-file-pill] [data-file-save]");
         await until(5_000, async () => writes.length > 0 && (await deck()).save === 0);
         const savedDeck = await deck();
+        const byTick = writes.length;
         await page.locator("[data-file-page] textarea[data-edit]").click();
         await page.keyboard.press("Control+End");
         await page.keyboard.type(" again");
@@ -8884,12 +8973,10 @@ try {
         }
         if (source.eye !== "source" || source.editor !== 1) fail(`UX-14 · the eye left ${JSON.stringify(source)} — the source, and it is the editor with no edit mode`);
         if (dirty.save !== 1) fail(`UX-14 · typing drew ${dirty.save} ✓ in the pill`);
-        if (writes.length !== 1 || savedDeck.save !== 0 || savedDeck.editor !== 1) fail(`UX-14 · ✓ wrote ${writes.length} time(s) and left ${JSON.stringify(savedDeck)} — one write, ✓ gone, still editable`);
-        if (leftAsked !== 0 || kept.save !== 1) fail(`UX-14 · leaving with a draft asked ${leftAsked} time(s); back on the file ✓ is ${kept.save} — no question, the draft kept`);
-        // Saved, so the walk after this finds the file as it found it.
-        if (kept.save === 1) {
-          await press("[data-file-pill] [data-file-save]");
-          await until(5_000, async () => (await deck()).save === 0);
+        if (byTick !== 1 || savedDeck.save !== 0 || savedDeck.editor !== 1) fail(`UX-14 · ✓ wrote ${byTick} time(s) and left ${JSON.stringify(savedDeck)} — one write, ✓ gone, still editable`);
+        const leftWrote = writes.length === 2 && writes[1].endsWith(" again");
+        if (leftAsked !== 0 || kept.save !== 0 || !leftWrote) {
+          fail(`UX-14 · leaving with something typed asked ${leftAsked} time(s), wrote ${JSON.stringify(writes.slice(1))}; back on the file ✓ is ${kept.save} — no question, the typing written on the way out (save-a)`);
         }
         await page.unroute("**/write_text", wrote14);
       }
@@ -24641,6 +24728,9 @@ try {
   };
   /** A bare duration off the one ladder (`words.ts` `span`). */
   const BARE = /^\d+ (秒|分钟|小时|天)$/;
+  // A corner that says *when* something happened says which way
+  // (WORDS-1008): the browser's, 最近's, 存储's.
+  const AGO = /^\d+ (秒|分钟|小时|天)前$/;
 
   // a. machines.
   {
@@ -24862,8 +24952,9 @@ try {
       // 2026-10-07). elder last used the relay, which settled 5 hours ago:
       // 未连 over 5 hours, undimmed, no readings — the last road is the
       // detail's, not the row's (WORDS-1008: the filter said 未连 for the row
-      // that said 中继). peer never connected since the resident started: 未连
-      // and no time at all.
+      // that said 中继). peer never connected since the resident started and
+      // the page is inside its dial budget: not named yet (`fetchDevices`),
+      // nothing at all.
       restore();
       Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: 5 * 3600_000, last_hop: "relay", heard_ms: 3 * 3600_000, down_ms: null, last_rtt_ms: 140 });
       Object.assign(peer, { hop: "quiet", rtt_ms: null, since_ms: null, last_hop: null, heard_ms: null, down_ms: null, last_rtt_ms: null, paused: false });
@@ -24877,8 +24968,8 @@ try {
         if (!e || e.top !== "未连" || e.bottom !== "5 小时" || e.sub !== "" || more.elder.keys.length !== 0 || e.aside !== 0 || more.elder.state !== "idle" || more.elder.road !== null || e.opacity < 0.99) {
           fail(`corners a · ${posture} · an idle elder reads ${JSON.stringify({ ...e, ...more.elder })} — 未连 over 「5 小时」 (since that road settled), no last road on the row, no readings, undimmed; never 不通 (UX-48, WORDS-1008)`);
         }
-        if (!p || p.top !== "未连" || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== "idle" || p.opacity < 0.99) {
-          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — 未连 and no time, no readings, undimmed (UX-48, WORDS-1008: the filter's word)`);
+        if (!p || p.top !== null || p.bottom !== null || p.sub !== "" || more.peer.keys.length !== 0 || more.peer.state !== null || p.opacity < 0.99) {
+          fail(`corners a · ${posture} · a never-connected peer reads ${JSON.stringify({ ...p, ...more.peer })} — not named yet inside the dial budget: nothing top-right or bottom-right, no readings, undimmed (UX-48, api.ts fetchDevices)`);
         }
       }
       // A state that changes in place gets the room it needs: the corner
@@ -25347,8 +25438,8 @@ try {
         fail(`probe dead: corners e · ${posture} · tab ${t.id} is not in the list`);
         continue;
       }
-      if (r.sub !== t.url.replace(/^https?:\/\//i, "") || r.top !== null || !BARE.test(r.bottom ?? "")) {
-        fail(`corners e · ${posture} · tab ${t.id} reads ${JSON.stringify(r)} — its address without the scheme, no state, how long ago it was opened (UX-48)`);
+      if (r.sub !== t.url.replace(/^https?:\/\//i, "") || r.top !== null || !AGO.test(r.bottom ?? "")) {
+        fail(`corners e · ${posture} · tab ${t.id} reads ${JSON.stringify(r)} — its address without the scheme, no state, when it was opened, 「5 分钟前」 (UX-48, WORDS-1008)`);
       }
     }
   }
@@ -25441,7 +25532,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix", "quota"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25872,7 +25963,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix", "quota"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26230,7 +26321,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix", "quota"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26605,7 +26696,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix", "quota"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27337,7 +27428,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix", "quota"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28230,7 +28321,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix", "quota"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -30949,6 +31040,337 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "ws") console.log("ws · FACE_ONLY=ws: the other sections are skipped");
+
+  // ── save) 文件自己保存 (save-a, 2026-10-08) ─────────────────────────
+  //
+  // The owner: 「编辑文件要实时保存，保存按钮只是作为一个额外的确定」. The
+  // editor writes a second after the typing stops and at once on leaving
+  // the file; ✓ writes at once and says 已保存; a file that changed on the
+  // disk stops autosave and asks; a write that fails keeps the edits,
+  // says why and tries again (`src/lib/save-road.ts`).
+  //
+  // The machine here is a stand-in disk behind the routes that keeps the
+  // node's compare-and-write promise (`files::write_whole`): a write
+  // pinned to the digest the file has now lands and answers the next
+  // digest; any other is refused. So what is measured is the face's road
+  // against the real contract, not against a write that always says yes.
+  //
+  //   a. **the pause**: three keys 200 ms apart write nothing while they
+  //      come, then exactly one write, holding all three, 900–1700 ms
+  //      after the last; the tab's ✓ stands while it is unwritten and is
+  //      gone when it lands; the next pause's write is pinned to the
+  //      digest the first answered (a chain, not a re-read);
+  //   b. **one write in flight**: the write held 1.5 s at the disk, keys
+  //      typed meanwhile go in exactly one more write once it lands,
+  //      pinned to its digest — never two at once;
+  //   c. **undo survives a save**: a key, its write landed, ⌘Z takes the
+  //      key back out of the box;
+  //   d. **leaving writes**: a key and at once another file opened — the
+  //      first file is written within 400 ms, its text holding the key,
+  //      long before the pause would have run out;
+  //   e. **✓ is the confirmation**: a key, then ✓ at once — written within
+  //      400 ms, then the seat is 已保存 (`data-tab-act="saved"`, its name
+  //      standing as an open tooltip) and is the clean ↻ again by 2.5 s;
+  //   f. **a clash stops it**: the disk changed by somebody else, a key
+  //      typed — the write is refused, the notice says the catalog's
+  //      sentence (`data-save-state="refused"`) with 重新读取 / 合并 /
+  //      保存我的版本; more keys and 3 s more write nothing; 保存我的版本
+  //      writes pinned to the digest the disk has now and the notice goes;
+  //   g. **a failure keeps the edits and tries again**: the machine
+  //      unreachable (writes and reads refused) — the notice says
+  //      `file_unsaved_why` with the machine's own words
+  //      (`data-save-state="failed"`), the box still holds the key, the
+  //      road asks again by itself (a second write with no key typed);
+  //      the machine back, the retry lands and the notice and ✓ go;
+  //   h. **closing over a failure asks**: unreachable again, a key, × on
+  //      the tab — the tab stays and the sheet asks
+  //      (`[data-close-draft]`); 继续编辑 keeps it;
+  //   i. **closing over a pending edit does not ask**: reachable, a key,
+  //      × at once — written, the tab gone, no sheet.
+  //
+  // `FACE_ONLY=save` runs this section alone.
+  save: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "save") break save;
+  {
+    const BASE = "# notes\n\nthe fixture's file\n";
+    /** The stand-in disk: path → text and digest, and the writes it saw. */
+    const disk = new Map();
+    const writes = [];
+    let down = false;
+    let hold = 0;
+    let n = 0;
+    const digestOf = () => {
+      n += 1;
+      return String(n).padStart(64, "d");
+    };
+    const at = (path) => {
+      if (!disk.has(path)) disk.set(path, { text: BASE, digest: "0".repeat(64) });
+      return disk.get(path);
+    };
+    const saveRead = (r) => {
+      const { path } = JSON.parse(r.request().postData() ?? "{}");
+      if (down) return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify("联系不上 peer") });
+      const f = at(path);
+      return r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ total: f.text.length, at_ms: Date.now(), text: f.text, cut: false, binary: false, digest: f.digest }),
+      });
+    };
+    const saveWrite = async (r) => {
+      const { path, was, text } = JSON.parse(r.request().postData() ?? "{}");
+      const w = { path, was, text, at: Date.now(), done: null, ok: false };
+      writes.push(w);
+      if (hold > 0) await wait(hold);
+      w.done = Date.now();
+      if (down) return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify("联系不上 peer") });
+      const f = at(path);
+      if (was !== f.digest) {
+        return r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify(`这个文件在你编辑期间变了，没有写回去：${path}`) });
+      }
+      f.text = text;
+      f.digest = digestOf();
+      w.ok = true;
+      return r.fulfill({ contentType: "application/json", body: JSON.stringify({ at_ms: Date.now(), digest: f.digest }) });
+    };
+    const statFail = (r) => r.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify("no stat here") });
+    await page.route("**/read_text", saveRead);
+    await page.route("**/write_text", saveWrite);
+    await page.route("**/stat_text", statFail);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const openWs = async () => {
+      if (!(await press("[data-ws-row]"))) return false;
+      if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+      return true;
+    };
+    const openFile = (name) => press(`[data-file-tree] [data-depth="0"][data-file="${name}"] > button`);
+    const opened = (await open("workspaces")) && (await openWs()) && (await openFile("one.rs"));
+    const editor = await until(5_000, async () => (await page.locator("textarea[data-edit]").count()) > 0);
+    /** The caret at the end of the box, focused, for typing. */
+    const toEnd = () =>
+      page.evaluate(() => {
+        const ed = document.querySelector("textarea[data-edit]");
+        ed.focus();
+        ed.setSelectionRange(ed.value.length, ed.value.length);
+      });
+    const box = () => page.evaluate(() => document.querySelector("textarea[data-edit]")?.value ?? null);
+    const seat = () =>
+      page.evaluate(() => document.querySelector("[data-ws-tab-strip] [data-tab-front-act]")?.getAttribute("data-tab-act") ?? null);
+    const notice = () =>
+      page.evaluate(() => {
+        const s = document.querySelector("[data-file-notice] [data-save-state]");
+        return s === null
+          ? null
+          : {
+              state: s.getAttribute("data-save-state"),
+              text: s.textContent,
+              theirs: !!document.querySelector("[data-take-theirs]"),
+              merge: !!document.querySelector("[data-merge]"),
+              mine: !!document.querySelector("[data-keep-mine]"),
+            };
+      });
+    const oneRs = (w) => w.path.endsWith("/one.rs");
+    if (!opened || !editor) {
+      fail("probe dead: save · one.rs never opened in the peer's workspace");
+    } else {
+      // a. the pause.
+      await wait(400);
+      await toEnd();
+      const keys = [];
+      for (const k of ["a", "b", "c"]) {
+        await page.keyboard.type(k);
+        keys.push(Date.now());
+        await wait(200);
+      }
+      const typed = await seat();
+      const during = writes.length;
+      await until(3_000, async () => writes.length > during);
+      await wait(1_200);
+      const a = writes.filter(oneRs);
+      const gap = a.length > 0 ? a[0].at - keys[2] : null;
+      const after = await seat();
+      console.log(`save a · the pause: ${a.length} write(s), ${gap} ms after the last key, holding ${JSON.stringify(a[0]?.text.slice(-4))}; the seat ${typed} while typing, ${after} after`);
+      if (during !== 0) fail(`save a · ${during} write(s) went while the keys were still coming — the write waits for a second of quiet (src/lib/save-road.ts PAUSE_MS)`);
+      if (a.length !== 1) fail(`save a · ${a.length} writes for one burst of typing — exactly one, after the pause`);
+      if (gap === null || gap < 900 || gap > 1_700) fail(`save a · the write went ${gap} ms after the last key — about a second (900–1700)`);
+      if (!a[0]?.text.endsWith("abc")) fail(`save a · the write held ${JSON.stringify(a[0]?.text.slice(-6))} — all three keys`);
+      if (typed !== "save") fail(`save a · while unwritten the tab's seat was ${typed} — ✓, the extra confirmation`);
+      if (after !== "reload") fail(`save a · after the write landed the seat is ${after} — the clean file's ↻ (no 已保存 for a save nobody pressed)`);
+      // …and the next one is pinned to the digest the first answered.
+      await toEnd();
+      await page.keyboard.type("d");
+      await until(3_000, async () => writes.filter(oneRs).length >= 2);
+      await wait(300);
+      const chain = writes.filter(oneRs);
+      if (chain.length !== 2 || !chain[0].ok || chain[1].was === chain[0].was || !chain[1].ok) {
+        fail(`save a · the second write was pinned to ${chain[1]?.was.slice(-4)} and ${chain[1]?.ok ? "landed" : "was refused"} — pinned to the digest the first write answered, and landed`);
+      }
+
+      // b. one write in flight.
+      hold = 1_500;
+      const b0 = writes.length;
+      await toEnd();
+      await page.keyboard.type("e");
+      await until(3_000, async () => writes.length > b0);
+      // The first is at the disk now; type on top of it.
+      await wait(200);
+      await page.keyboard.type("f");
+      await wait(300);
+      await page.keyboard.type("g");
+      await wait(2_400);
+      hold = 0;
+      await until(3_000, async () => writes.length >= b0 + 2 && writes[b0 + 1].done !== null);
+      await wait(1_500);
+      const b = writes.slice(b0).filter(oneRs);
+      const overlap = b.length >= 2 && b[1].at < b[0].done;
+      console.log(`save b · in flight: ${b.length} write(s) — ${b.map((w) => `${JSON.stringify(w.text.slice(-3))} at +${w.at - b[0].at} ms ${w.ok ? "landed" : "refused"}`).join(", ")}`);
+      if (b.length !== 2) fail(`save b · ${b.length} writes for a key, a write held at the disk and two keys during it — exactly two: the held one, then one with both keys`);
+      if (overlap) fail("save b · the second write left before the first was answered — one write in flight per file");
+      if (b.length >= 2 && (!b[1].text.endsWith("efg") || !b[1].ok || b[1].was === b[0].was)) {
+        fail(`save b · the write after the held one holds ${JSON.stringify(b[1].text.slice(-4))}, ${b[1].ok ? "landed" : "was refused"} — both keys typed during the flight, pinned to the held write's digest`);
+      }
+
+      // c. undo survives a save.
+      await toEnd();
+      await page.keyboard.type("h");
+      const c0 = writes.length;
+      await until(3_000, async () => writes.length > c0);
+      await wait(500);
+      await page.keyboard.press("ControlOrMeta+z");
+      await wait(300);
+      const undone = await box();
+      console.log(`save c · undo after a save: the box ends ${JSON.stringify(undone?.slice(-3))}`);
+      if (undone === null || undone.endsWith("h")) fail("save c · ⌘Z after a save left the key in the box — a save must not take the undo history with it");
+      // The undo is an edit like any other: let it be written.
+      await wait(1_800);
+
+      // d. leaving writes.
+      await toEnd();
+      await page.keyboard.type("i");
+      const d0 = writes.length;
+      const leftAt = Date.now();
+      await page.locator('[data-file-tree] [data-depth="0"][data-file="debug.log"] > button').first().click();
+      await until(2_000, async () => writes.slice(d0).some(oneRs));
+      const d = writes.slice(d0).find(oneRs);
+      console.log(`save d · leaving: one.rs written ${d ? d.at - leftAt : "never"} ms after another file was opened, ending ${JSON.stringify(d?.text.slice(-2))}`);
+      if (!d || d.at - leftAt > 400) fail(`save d · leaving the file wrote it ${d ? `${d.at - leftAt} ms` : "never"} after — at once (≤ 400 ms), not at the end of the pause`);
+      if (d && !d.text.endsWith("i")) fail("save d · the write on leaving did not hold the key typed just before");
+      await wait(600);
+      // Back to one.rs.
+      await page.locator('[data-ws-tab-strip] [data-tab]').filter({ hasText: "one.rs" }).first().click();
+      await until(3_000, async () => (await page.locator("textarea[data-edit]").count()) > 0);
+      await wait(600);
+      const back = await box();
+      if (!back?.endsWith("i")) fail(`save d · coming back to one.rs the box ends ${JSON.stringify(back?.slice(-3))} — what was written on leaving`);
+
+      // e. ✓ is the confirmation.
+      await toEnd();
+      await page.keyboard.type("j");
+      const e0 = writes.length;
+      const pressedAt = Date.now();
+      await page.locator("[data-ws-tab-strip] [data-tab-front-act][data-tab-act='save']").click();
+      await until(1_000, async () => writes.length > e0);
+      const e = writes[e0];
+      await until(1_000, async () => (await seat()) === "saved");
+      const said = await page.evaluate(() => ({
+        seat: document.querySelector("[data-ws-tab-strip] [data-tab-front-act]")?.getAttribute("data-tab-act") ?? null,
+        tip: document.querySelector("[data-saved-said]")?.textContent ?? null,
+      }));
+      await until(3_000, async () => (await seat()) === "reload");
+      const settled = Date.now() - pressedAt;
+      const later = await seat();
+      console.log(`save e · ✓: written ${e ? e.at - pressedAt : "never"} ms after the press; then ${JSON.stringify(said)}; ${later} ${settled} ms after`);
+      if (!e || e.at - pressedAt > 400) fail(`save e · ✓ wrote ${e ? `${e.at - pressedAt} ms` : "never"} after the press — at once`);
+      if (said.seat !== "saved" || !said.tip) fail(`save e · after ✓ landed the seat read ${JSON.stringify(said)} — 已保存, said at the button (the catalog's file_saved)`);
+      if (later !== "reload" || settled > 2_500) fail(`save e · the seat was ${later} ${settled} ms after the press — back to ↻ within 2.5 s`);
+
+      // f. a clash stops it.
+      const rs = [...disk.keys()].find((p) => p.endsWith("/one.rs"));
+      disk.set(rs, { text: "# notes\n\nsomebody else's line\n", digest: "e".repeat(64) });
+      await toEnd();
+      await page.keyboard.type("k");
+      const f0 = writes.length;
+      await until(3_000, async () => (await notice())?.state === "refused");
+      const clash = await notice();
+      await toEnd();
+      await page.keyboard.type("l");
+      await wait(3_000);
+      const f1 = writes.length;
+      console.log(`save f · clash: ${f1 - f0} write(s); the notice ${JSON.stringify(clash)}`);
+      if (clash?.state !== "refused" || !clash.theirs || !clash.merge || !clash.mine) {
+        fail(`save f · the disk changed under the buffer and the notice is ${JSON.stringify(clash)} — the clash sentence and its three ways out`);
+      }
+      if (f1 - f0 !== 1) fail(`save f · ${f1 - f0} writes after a clash and more typing — one (the refused one); autosave stops until the person chooses`);
+      await page.locator("[data-keep-mine]").click();
+      await until(3_000, async () => writes.length > f1 && writes[writes.length - 1].done !== null);
+      await wait(400);
+      const kept = writes[writes.length - 1];
+      const gone = await notice();
+      if (!kept || kept.was !== "e".repeat(64) || !kept.ok || !kept.text.endsWith("kl")) {
+        fail(`save f · 保存我的版本 wrote ${kept ? `pinned to ${kept.was.slice(-4)}, ${kept.ok ? "landed" : "refused"}` : "nothing"} — pinned to what the disk holds now, with the person's keys`);
+      }
+      if (gone !== null) fail(`save f · after 保存我的版本 landed the notice still says ${JSON.stringify(gone)}`);
+
+      // g. a failure keeps the edits and tries again.
+      down = true;
+      await toEnd();
+      await page.keyboard.type("m");
+      const g0 = writes.length;
+      await until(3_000, async () => (await notice())?.state === "failed");
+      const failed = await notice();
+      const held = await box();
+      await until(5_000, async () => writes.length >= g0 + 2);
+      const retried = writes.length - g0;
+      down = false;
+      await until(12_000, async () => (await notice()) === null);
+      await wait(400);
+      const healed = { notice: await notice(), seat: await seat(), last: writes[writes.length - 1] };
+      console.log(`save g · failure: ${JSON.stringify(failed)}, the box ends ${JSON.stringify(held?.slice(-2))}, ${retried} attempt(s) with nothing typed, then ${JSON.stringify({ ...healed, last: healed.last?.ok })}`);
+      if (failed?.state !== "failed" || !failed.text?.includes("联系不上 peer")) fail(`save g · an unreachable machine left the notice ${JSON.stringify(failed)} — unsaved, why, and that it will try again`);
+      if (!held?.endsWith("m")) fail("save g · the edit is gone from the box after a failed write");
+      if (retried < 2) fail(`save g · ${retried} attempt(s) in 5 s with nothing typed — the road tries again by itself`);
+      if (healed.notice !== null || healed.seat !== "reload" || !healed.last?.ok || !healed.last.text.endsWith("m")) {
+        fail(`save g · the machine came back and the file reads ${JSON.stringify({ ...healed, last: healed.last?.ok })} — the retry lands, the notice and ✓ go`);
+      }
+
+      // h. closing over a failure asks.
+      down = true;
+      await toEnd();
+      await page.keyboard.type("n");
+      await until(3_000, async () => (await notice())?.state === "failed");
+      const tabs0 = await page.locator("[data-ws-tab-strip] [data-tab]").count();
+      await page.locator('[data-ws-tab-strip] [data-tab]').filter({ hasText: "one.rs" }).first().locator("[data-tab-close]").click({ force: true });
+      const asked = await until(2_000, async () => (await page.locator("[data-close-draft]").count()) === 1);
+      if (asked) await page.locator("[data-close-keep]").click();
+      await wait(400);
+      const tabs1 = await page.locator("[data-ws-tab-strip] [data-tab]").count();
+      console.log(`save h · × over a failure: the sheet ${asked ? "asked" : "never came"}, tabs ${tabs0} → ${tabs1}`);
+      if (!asked) fail("save h · × on a tab whose edits could not be saved closed or stood without asking — leaving unsaved edits warns");
+      if (tabs1 !== tabs0) fail("save h · 继续编辑 and the tab was closed anyway");
+      down = false;
+      await until(12_000, async () => (await notice()) === null);
+
+      // i. closing over a pending edit does not ask.
+      await toEnd();
+      await page.keyboard.type("o");
+      const i0 = writes.length;
+      const before = await page.locator("[data-ws-tab-strip] [data-tab]").count();
+      await page.locator('[data-ws-tab-strip] [data-tab]').filter({ hasText: "one.rs" }).first().locator("[data-tab-close]").click({ force: true });
+      await until(3_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab]").count()) < before);
+      const sheet = await page.locator("[data-close-draft]").count();
+      const i = writes.slice(i0).find(oneRs);
+      console.log(`save i · × over a pending edit: written ${!!i?.ok}, holding ${JSON.stringify(i?.text.slice(-1))}, the sheet ${sheet}`);
+      if (!i?.ok || !i.text.endsWith("o")) fail("save i · × over an edit the pause had not written yet did not write it");
+      if (sheet !== 0) fail("save i · × over an edit that could be saved asked — it saves and closes");
+      if ((await page.locator("[data-ws-tab-strip] [data-tab]").filter({ hasText: "one.rs" }).count()) !== 0) fail("save i · the tab is still there after its edit was written");
+    }
+    await page.unroute("**/read_text", saveRead);
+    await page.unroute("**/write_text", saveWrite);
+    await page.unroute("**/stat_text", statFail);
+  }
+  }
+  if (process.env.FACE_ONLY === "save") console.log("save · FACE_ONLY=save: the other sections are skipped");
 
   // ── 20) 窄档的会话页：内容在上，标签与操作在下 (iOS 第三步 A, 2026-10-02) ──
   //
@@ -34139,8 +34561,8 @@ try {
         if (r.where !== want) {
           fail(`side c · 最近's ${r.kind} row says ${JSON.stringify(r.where)} under its name — ${JSON.stringify(want)}, where it is (UX-48)`);
         }
-        if (r.kind !== "file" && !/^\d+ (秒|分钟|小时|天)$/.test(r.bottom ?? "")) {
-          fail(`side c · 最近's ${r.kind} row's bottom-right reads ${JSON.stringify(r.bottom)} — how long ago it was opened, bare (UX-48)`);
+        if (r.kind !== "file" && !/^\d+ (秒|分钟|小时|天)前$/.test(r.bottom ?? "")) {
+          fail(`side c · 最近's ${r.kind} row's bottom-right reads ${JSON.stringify(r.bottom)} — when it was opened, 「2 分钟前」 (UX-48, WORDS-1008: a when-corner says 前)`);
         }
         if (r.kind === "file" && (!r.fileFace || r.machineFace)) fail(`side c · 最近's file row wears ${JSON.stringify(r)} — a file's face is its kind alone (UX-45)`);
         if (r.kind !== "file" && r.fileFace) fail(`side c · 最近's ${r.kind} row wears a file's face — only a file does (UX-45)`);
@@ -34427,12 +34849,14 @@ try {
       if (!stored || Math.abs(stored.w - dragged) > 1) fail(`side f · the width is not remembered for the session (${JSON.stringify(stored)})`);
       await openSession("tui/side-2");
       if ((await count(col)) !== 0) fail("side f · the other session opened with a column — one memory per session");
-      // Back on the first session it is closed (UX-46 §1); the press opens
-      // it at the width it was dragged to — the one thing remembered.
+      // Back on the first session its pill remembers it open (fix-e), at
+      // the width it was dragged to.
       await openSession("tui/side-1");
-      if ((await count(col)) !== 0) fail("side f · back on the first session its 附栏 is still open — leaving the session closed it (UX-46 §1)");
-      else await press(front("tui/side-1"));
-      await until(2_000, async () => (await count(col)) === 1);
+      if (!(await until(2_000, async () => (await count(col)) === 1))) {
+        fail("side f · back on the first session its 附栏 is closed — the pill remembers it open (fix-e)");
+        await press(front("tui/side-1"));
+        await until(2_000, async () => (await count(col)) === 1);
+      }
       await wait(600);
       const back = (await rect(col))?.width ?? 0;
       if (Math.abs(back - dragged) > 1) fail(`side f · back on the first session the column is ${back}, it was dragged to ${dragged}`);
@@ -34446,17 +34870,20 @@ try {
       if ((await count(col)) !== 0) fail("side f · dragging the seam under the floor did not fold the column away");
     }
 
-    // k. the 附栏 is its session's alone (UX-46 §1, the owner 2026-10-07:
-    //    「在跳转到别的目录的时候仍然存在，这个侧栏应该是只属于 session」):
-    //    another landing closes it and coming back finds it closed; the
-    //    press opens it on the seat it was left on (UX-47; ⚠️ 墓碑 UX-40
-    //    §3: on 最近 whatever seat); another tab closes it and coming back
-    //    finds it closed; closing the session's tab closes it.
+    // k. each pill remembers its 附栏 (fix-e, the owner 2026-10-08: 「要记
+    //    住每一个药丸的侧边展开情况, 从一个没有展开的到展开的, 要自动展开」):
+    //    another landing draws none, and coming back to the session finds
+    //    it open where it was left; a tab whose 附栏 was closed shows none,
+    //    and back on the open one it is open again on its own seat; two
+    //    open ones each keep their seat; a tab closed forgets its open.
+    //    ⚠️ 墓碑 (UX-46 §1 → fix-e): leaving the session closed it and
+    //    coming back found it closed.
     {
       const shut = () => until(2_000, async () => (await count(col)) === 0);
+      const up = () => until(2_000, async () => (await count(col)) === 1);
       const opens = async (id) => {
         if ((await count(col)) === 0) await press(front(id));
-        return until(2_000, async () => (await count(col)) === 1);
+        return up();
       };
       const expanded = (id) => page.evaluate((s) => document.querySelector(s)?.getAttribute("aria-expanded") ?? null, front(id));
       const roads = {};
@@ -34467,28 +34894,86 @@ try {
       await press('[data-landing-strip] [data-landing="devices"]');
       roads.landing = await shut();
       await press('[data-landing-strip] [data-landing="sessions"]');
-      await wait(800);
-      roads.back = { col: await count(col), expanded: await expanded("tui/side-1") };
-      await press(front("tui/side-1"));
-      await until(2_000, async () => (await count(col)) === 1);
-      await wait(300);
-      roads.seat = await seatOn();
+      roads.back = { col: (await up()) ? 1 : 0, expanded: await expanded("tui/side-1"), seat: await seatOn() };
       await openSession("tui/side-2");
       roads.tab = await shut();
       await openSession("tui/side-1");
-      roads.tabBack = await count(col);
-      await opens("tui/side-1");
+      roads.tabBack = { col: (await up()) ? 1 : 0, seat: await seatOn() };
+      // Two open: side-2's on 工作区, side-1's still on 浏览器.
+      await openSession("tui/side-2");
+      await opens("tui/side-2");
+      await pick("workspace");
+      await openSession("tui/side-1");
+      roads.both1 = await seatOn();
+      await openSession("tui/side-2");
+      roads.both2 = await seatOn();
+      // side-1's tab closed while open: opened again as a tab, it is closed.
+      await openSession("tui/side-1");
       await press('[data-session-tabs] [data-tab="tui/side-1"] [data-tab-close]');
-      roads.closed = await shut();
+      await wait(600);
+      await openSession("tui/side-1");
+      roads.reopened = { col: await count(col), expanded: await expanded("tui/side-1") };
+      // Leave every 附栏 closed for what follows.
+      await openSession("tui/side-2");
+      if ((await count(col)) === 1) await press(front("tui/side-2"));
+      await shut();
       await wait(400);
       console.log(`side k · ${JSON.stringify(roads)}`);
       if (roads.left !== "browser") fail(`probe dead: side k · the column was on ${roads.left} before leaving, not 浏览器`);
-      if (!roads.landing) fail("side k · the 附栏 stayed open on the 机器 landing — leaving the session closes it (UX-46 §1)");
-      if (roads.back.col !== 0 || roads.back.expanded !== "false") fail(`side k · back on the session the 附栏 is ${JSON.stringify(roads.back)} — closed, the front tab saying so (UX-46 §1)`);
-      if (roads.seat !== "browser") fail(`side k · left on 浏览器, reopened, the 附栏 is on ${roads.seat} — where it was left (UX-47)`);
-      if (!roads.tab) fail("side k · another session's tab in front, the 附栏 stayed open (UX-46 §1)");
-      if (roads.tabBack !== 0) fail("side k · back on the first session's tab its 附栏 is open again — leaving closed it (UX-46 §1)");
-      if (!roads.closed) fail("side k · the session's tab closed and the 附栏 stayed (UX-46 §1)");
+      if (!roads.landing) fail("side k · the 附栏 stayed open on the 机器 landing — another landing draws none (UX-46 §1)");
+      if (roads.back.col !== 1 || roads.back.expanded !== "true" || roads.back.seat !== "browser") {
+        fail(`side k · back on the session the 附栏 is ${JSON.stringify(roads.back)} — open again on 浏览器, the pill remembers it (fix-e)`);
+      }
+      if (!roads.tab) fail("side k · a tab whose 附栏 was never opened came to the front and the column stayed (fix-e)");
+      if (roads.tabBack.col !== 1 || roads.tabBack.seat !== "browser") fail(`side k · back on the open pill the 附栏 is ${JSON.stringify(roads.tabBack)} — open by itself, on 浏览器 (fix-e)`);
+      if (roads.both1 !== "browser" || roads.both2 !== "workspace") fail(`side k · two open pills show ${roads.both1} / ${roads.both2} — each its own seat, 浏览器 / 工作区 (fix-e, UX-47)`);
+      if (roads.reopened.col !== 0 || roads.reopened.expanded !== "false") fail(`side k · a tab closed with its 附栏 open, opened again: ${JSON.stringify(roads.reopened)} — closed, the closed pill forgot it (fix-e)`);
+    }
+
+    // m. the landings answer with a file open in the 附栏 (fix-e, the
+    //    owner 2026-10-08: 「侧边展开的时候, 不能通过导航到别的页面, 这时候
+    //    的行为应该是侧边收起, 到别的页面」). A file page in the 工作区 seat
+    //    handed its draft up on every render (`FileView` reports it from
+    //    an effect that depends on `onDraft`, and `SideWorkspace` made a
+    //    new `onDraft` and a new Map each time): an update every frame,
+    //    which never lets the landing's switch (a transition, `goLanding`)
+    //    finish — the press on 机器 did nothing. Read as the landing the
+    //    strip lights after the press, the column gone, and React's own
+    //    「Maximum update depth」 said while the file is open.
+    {
+      const landingOn = () => page.evaluate(() => document.querySelector("[data-landing-strip] [data-on=true]")?.getAttribute("data-landing") ?? null);
+      const loops0 = updateLoops;
+      await openSession("tui/side-1");
+      if ((await count(col)) === 0) await press(front("tui/side-1"));
+      await until(2_000, async () => (await count(col)) === 1);
+      await pick("workspace");
+      await until(3_000, async () => (await count(`${col} [data-side-workspace] [data-file-tree] [data-file]`)) > 0);
+      await press(`${col} [data-side-workspace] [data-file-tree] [data-file] > button`);
+      const opened = await until(3_000, async () => (await count(`${col} [data-files-page]`)) === 1);
+      await wait(1_000);
+      const loops = updateLoops - loops0;
+      const roads = { opened, loops };
+      for (const to of ["devices", "quota"]) {
+        await press(`[data-landing-strip] [data-landing="${to}"]`);
+        const went = await until(3_000, async () => (await landingOn()) === to);
+        roads[to] = { went, col: await count(col), on: await landingOn() };
+        await press('[data-landing-strip] [data-landing="sessions"]');
+        await until(3_000, async () => (await landingOn()) === "sessions");
+        await wait(600);
+      }
+      // Back on side-1 its pill remembers the 附栏 open, on the file.
+      roads.back = { on: await landingOn(), col: await count(col), file: await count(`${col} [data-files-page]`) };
+      await press(`${col} [data-files-page] [data-file-back]`);
+      await wait(400);
+      if ((await count(col)) === 1) await press(front("tui/side-1"));
+      await until(2_000, async () => (await count(col)) === 0);
+      console.log(`side m · a file open in the 附栏: ${JSON.stringify(roads)}`);
+      if (!opened) fail("probe dead: side m · no file page opened in the 附栏's 工作区");
+      if (loops > 0) fail(`side m · with a file open in the 附栏 React said 「Maximum update depth exceeded」 ${loops} time(s) — an update every frame (fix-e)`);
+      for (const to of ["devices", "quota"]) {
+        if (!roads[to].went || roads[to].col !== 0) fail(`side m · a press on ${to} with a file open in the 附栏: ${JSON.stringify(roads[to])} — that landing, the 附栏 put away (fix-e)`);
+      }
+      if (roads.back.on !== "sessions" || roads.back.col !== 1 || roads.back.file !== 1) fail(`side m · back on the session: ${JSON.stringify(roads.back)} — the 附栏 open again on its file (fix-e)`);
     }
 
     // l. where it was left (UX-47, the owner 2026-10-07, replacing UX-40
@@ -34669,12 +35154,13 @@ try {
           await wait(500);
         }
       }
+      // Read at once, the listing held back: khor's own delete was heard
+      // when it happened, not asked about now. Back on side-1 its pill
+      // remembers the 附栏 open (fix-e), so it opens by itself.
+      slowLs = true;
       await open("sessions");
       await openSession("tui/side-1");
-      // Read at once, the listing held back: khor's own delete was heard
-      // when it happened, not asked about now.
-      slowLs = true;
-      await press(front("tui/side-1"));
+      if ((await count(col)) === 0) await press(front("tui/side-1"));
       await until(3_000, async () => (await count(col)) === 1);
       await wait(300);
       out.deleted = { removed, gone: !treeL.has("notes.md"), at: await where() };
@@ -35437,8 +35923,65 @@ try {
       await wait(400);
       const left = asks.splice(0);
       const leftTo = page.viewportSize().width;
+      // Back on the session its pill remembers open (fix-e): the room again.
       await press('[data-landing-strip] [data-landing="sessions"]');
-      await wait(600);
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(400);
+      const cameBack = asks.splice(0);
+      const backOpen = page.viewportSize().width;
+      // **The pills' switches** (fix-e): closed to open asks for the room,
+      // open to closed gives it back, open to open asks nothing — and over
+      // any run of switches, rapid ones included, the asks alternate, so
+      // the window's account never takes twice or gives back twice.
+      const pills = [];
+      const tabTo = async (id, wait_ = 900) => {
+        await page.locator(front(id)).first().click();
+        if (wait_) await wait(wait_);
+      };
+      const step = async (what, act, want) => {
+        await act();
+        const a = asks.splice(0);
+        pills.push({ what, asks: a.map((x) => x.cmd), col: await count(col), w: page.viewportSize().width });
+        const ok = a.map((x) => x.cmd).join(" ") === want.asks && (await count(col)) === want.col && page.viewportSize().width === (want.col ? base + w : base);
+        if (!ok) fail(`side g · ${what}: asked ${JSON.stringify(a.map((x) => x.cmd))}, column ${await count(col)}, window ${page.viewportSize().width} — want ${JSON.stringify(want)} (fix-e)`);
+      };
+      await openSession("tui/side-2");
+      await step("open side-1 → side-2 (closed)", async () => {}, { asks: "unwiden", col: 0 });
+      await step("→ side-1 (open, by itself)", () => tabTo("tui/side-1"), { asks: "widen", col: 1 });
+      await step("→ side-2", () => tabTo("tui/side-2"), { asks: "unwiden", col: 0 });
+      await step("side-2 opened", async () => {
+        await press(front("tui/side-2"));
+        await wait(600);
+      }, { asks: "widen", col: 1 });
+      await step("→ side-1 (both open)", () => tabTo("tui/side-1"), { asks: "", col: 1 });
+      await openSession("tui/side-3");
+      asks.splice(0);
+      await tabTo("tui/side-1");
+      asks.splice(0);
+      const rapid = [];
+      for (const id of ["tui/side-2", "tui/side-3", "tui/side-1", "tui/side-3", "tui/side-2", "tui/side-3"]) await tabTo(id, 0);
+      await wait(1_500);
+      rapid.push(...asks.map((x) => x.cmd));
+      const alternates = rapid.every((c, i) => c === (i % 2 === 0 ? "unwiden" : "widen"));
+      pills.push({ what: "rapid, from side-1 (open) to side-3 (closed)", asks: [...rapid], col: await count(col), w: page.viewportSize().width });
+      if (!alternates || rapid.at(-1) !== "unwiden" || (await count(col)) !== 0 || page.viewportSize().width !== base) {
+        fail(`side g · rapid switching asked ${JSON.stringify(rapid)} and left the window ${page.viewportSize().width} with ${await count(col)} column(s) — the asks alternate and end given back (fix-e)`);
+      }
+      asks.splice(0);
+      // The tab closed while its 附栏 is open, the next one closed.
+      await tabTo("tui/side-1");
+      asks.splice(0);
+      await step("side-1's tab closed while open", async () => {
+        await press('[data-session-tabs] [data-tab="tui/side-1"] [data-tab-close]');
+        await wait(600);
+        if ((await count(col)) === 1) {
+          // The next tab in front was an open one: close it to measure.
+          await press(front("tui/side-2"));
+          await wait(600);
+        }
+      }, { asks: "unwiden", col: 0 });
+      console.log(`side g · back on the session: ${JSON.stringify(cameBack)} → window ${backOpen}; pills ${JSON.stringify(pills)}`);
+      if (cameBack.length !== 1 || cameBack[0].cmd !== "widen" || backOpen !== base + w) fail(`side g · back on the session asked ${JSON.stringify(cameBack)}, window ${backOpen} — the remembered 附栏 opens and asks the room once (fix-e)`);
       await page.unroute(/\/(un)?widen$/, room);
       await page.setViewportSize({ width: base, height: 900 });
       const dOpen = drift(openFrames);
@@ -38286,7 +38829,9 @@ try {
         await page.emulateMedia({ colorScheme: scheme });
         await page.reload({ waitUntil: "load" });
         await wait(900);
-        const up = (await openMore("doctor")) && (await until(5_000, async () => (await count('[data-connections] [data-more-fact="conn-relay"]')) === 2));
+        const up = (await openMore("doctor")) && (await until(5_000, async () => (await page.locator('[data-connections] [data-more-fact="conn-relay"]').count()) === 2));
+        // Counted drawn or not: a value squeezed to no width is the bug,
+        // and a visibility filter would read it as 「never drew」.
         if (!up) {
           fail(`probe dead: ${where} · the page or its 连接 group never drew`);
           continue;
@@ -38323,10 +38868,14 @@ try {
         if (squeezed.length) fail(`${where} · values squeezed beside their labels: ${JSON.stringify(squeezed)} — a value that wraps has a line of its own (views/more/MorePage MoreFact)`);
         const spilt = facts.filter((f) => f.labelLines !== 1 || f.labelPast > 1);
         if (spilt.length) fail(`${where} · labels broken or past the row: ${JSON.stringify(spilt)} — one line inside the row (views/more/MorePage MoreFact)`);
+        // Whole where it fits (390 has the room), cut in the middle where
+        // it does not (375): its start, 「…」, its port — never broken.
         const host = facts.find((f) => f.name === "conn-relay" && f.value.includes("182"));
-        if (!host || !host.label.includes("…") || !host.label.startsWith("relay-") || !host.label.endsWith("8443")) {
-          fail(`${where} · the relay ${HOST} is labelled ${JSON.stringify(host?.label)} — wider than the row, it is cut in the middle: its start, 「…」, its port (browse/TabStrip MidName)`);
+        const cut = host?.label.includes("…");
+        if (!host || (cut ? !host.label.startsWith("relay-") || !host.label.endsWith("8443") : host.label !== HOST)) {
+          fail(`${where} · the relay ${HOST} is labelled ${JSON.stringify(host?.label)} — whole, or cut in the middle: its start, 「…」, its port (browse/TabStrip MidName)`);
         }
+        if (width === 375 && host && !cut) fail(`${where} · the relay ${HOST} is whole at 375, where it is wider than the row — the probe proves nothing about the cut (or the cut never happened)`);
       }
       await page.unroute("**/connections", routeB);
     }
@@ -38504,7 +39053,9 @@ try {
       const routeF = json(null);
       await page.route("**/find", routeF);
       await reset(1400);
-      await press("[data-global-search]");
+      await open("sessions");
+      await page.keyboard.press("Meta+k");
+      await until(3_000, async () => (await page.locator("[data-search-box]").count()) === 1);
       const box = page.locator("[data-search-box]").filter({ visible: true });
       const typed = (await box.count()) > 0;
       if (typed) await box.first().fill("gate");
@@ -38512,8 +39063,12 @@ try {
       const standing = await count("[data-rail-more]");
       const raw = await engine();
       console.log(`afix d3 · ⌘K answered null: typed ${typed}, 没有结果 ${quiet}, strip ${standing}, engine text ${raw}`);
-      if (!typed) fail("probe dead: afix d3 · ⌘K drew no box");
-      else if (!quiet || !standing || raw) fail(`afix d3 · ⌘K answered null and the window ${standing ? `does not say ${JSON.stringify(nothing)}` : "went blank"} — no answer is no hits (components/SideHead)`);
+      // The box asks once as it opens (an empty word), so a window that
+      // blanks on `null` loses the box before anything is typed: no box
+      // *and* no strip is the bug, no box with the strip standing is the
+      // probe's.
+      if (!typed && standing) fail("probe dead: afix d3 · ⌘K drew no box");
+      else if (!typed || !quiet || !standing || raw) fail(`afix d3 · ⌘K answered null and the window ${standing ? `does not say ${JSON.stringify(nothing)}` : "went blank"} — no answer is no hits (components/SideHead)`);
       await page.keyboard.press("Escape");
       await page.unroute("**/find", routeF);
       await page.unroute("**/doctor", routeD);

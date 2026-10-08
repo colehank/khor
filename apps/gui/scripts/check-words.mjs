@@ -21,7 +21,7 @@
 //      and no file imports `span` or `lasted` (a bare number of hours is
 //      the ambiguity: an age, a deadline or a duration?);
 //   4. **a latency is 「23 ms」**: no catalog sentence words one in 毫秒
-//      (`{n} 毫秒`), and the latency keys (`row-rtt`, `conn-relay-ms`,
+//      (`{n} 毫秒`), and the latency keys (`row-rtt`,
 //      `roads-ms`) are called from `words.ts` alone (`latency`);
 //   5. **连不上 is 不通**: the machine-connection sentences never say 离线,
 //      无法获取 or 连不上; the retired keys (`row-offline`, `map-last-seen`,
@@ -33,8 +33,9 @@
 //      and the row's state is `connectionKeyWord(connectionKey(d))`, not
 //      a second ladder (`views/DevicesList`);
 //   7. **money is one formatter**: no file but `words.ts` defines a
-//      `money` (or the ring's `ringWord`) of its own — the quota page is
-//      named as pending on ux-q2 (`PENDING`), printed every run;
+//      `money` (or the ring's `ringWord`) of its own — a page waiting on
+//      a lane is named in `PENDING` and printed every run (none since
+//      UX-53);
 //   8. **the direction is not trimmed off** `until` / `ago`'s answer
 //      (`untilBare` is the bare two-unit form).
 //
@@ -92,10 +93,10 @@ const files = [];
 const WORDS = "src/words.ts";
 /**
  * **Waiting on a lane, by name, with what is left** — never a quiet pass.
- * The quota page is ux-q2's to rewrite (its rows, its account page, its
- * caption; the lead, 2026-10-08), so its own two money formatters stay
- * until that rewrite lands on `money` / `moneyIn` / `until` / `untilBare`.
- * Each entry is printed on every run; drop it when the rewrite lands.
+ * Each entry is printed on every run; drop it when the lane lands.
+ * ⚠️ 墓碑: the quota page's own `money` and `ringWord`, pending on ux-q2
+ * until UX-53 put its rows, account page and caption on `money` /
+ * `moneyIn` / `agoOf` / `untilBare`.
  */
 // UX-53 (ux-q2, 2026-10-08): the quota page took words.ts money / moneyIn,
 // agoOf and untilBare; nothing is pending.
@@ -131,7 +132,7 @@ for (const name of ["span", "lasted"]) {
 // 4. 23 ms.
 const msZh = [...zh].filter(([, v]) => /\{\d+\}\s*毫秒/.test(v));
 if (msZh.length) fail(`latencies worded in 毫秒 — 「23 ms」 (the owner 2026-10-05): ${msZh.map(([k, v]) => `${k} = ${v}`).join(" | ")}`);
-for (const key of ["gui.row_rtt", "gui.conn_relay_ms", "cli.roads_ms"]) {
+for (const key of ["gui.row_rtt", "cli.roads_ms"]) {
   const at = users(new RegExp(`\\b${key.replace(".", "\\.")}\\b`));
   if (at.length) fail(`${key} called from ${at.join(", ")} — a latency is words.ts latency()`);
 }
@@ -149,7 +150,7 @@ for (const key of MACHINE) {
 }
 if (zh.get("hop.down") !== "不通") fail(`hop.down = ${zh.get("hop.down")} — 不通`);
 if (zh.get("cli.vitals-never") !== "尚无读数") fail(`vitals-never = ${zh.get("cli.vitals-never")} — 尚无读数`);
-for (const key of ["gui.row-offline", "gui.map-last-seen", "gui.card-age"]) {
+for (const key of ["gui.row-offline", "gui.map-last-seen", "gui.card-age", "gui.conn-relay-ms"]) {
   if (zh.has(key)) fail(`${key} is back in zh.toml — retired by WORDS-1008 (不通 / downWord, agoOf)`);
   const at = users(new RegExp(`\\b${ident(key).replace(".", "\\.")}\\b`), []);
   if (at.length) fail(`${ident(key)} is used in ${at.join(", ")} — retired by WORDS-1008`);

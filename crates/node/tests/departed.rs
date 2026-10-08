@@ -109,8 +109,17 @@ async fn a_machine_its_relay_saw_leave_is_said_gone_at_once() {
     // it is back. Beta's face is on, so its pump beats every 5 s; before,
     // each beat its backoff allowed was a failed dial, about 9 KB through
     // the relay.
+    // **The face arriving is a person's act and dials past every wait**
+    // (NET-STABLE 第二步): one dial, given a departed machine's short
+    // budget. What is measured is the pump after it.
+    let before_face = b.wire_counts().await.unwrap().dial_failed;
     b.face_is_here(true).await.unwrap();
+    let faced = Instant::now();
+    while b.wire_counts().await.unwrap().dial_failed == before_face && faced.elapsed() < Duration::from_secs(8) {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     let failed = b.wire_counts().await.unwrap().dial_failed;
+    assert!(failed - before_face <= 1, "the face's round dialled alpha once at most");
     tokio::time::sleep(link::SYNC_EVERY * 3 + Duration::from_secs(1)).await;
     let pump_failed = b.wire_counts().await.unwrap().dial_failed - failed;
     assert_eq!(pump_failed, 0, "beta's pump dialled the machine its relay said left");

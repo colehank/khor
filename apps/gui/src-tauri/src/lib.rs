@@ -474,6 +474,13 @@ async fn face_here(visible: bool) -> Result<(), String> {
     khor_gui_core::face_here(&Node::root_from_env(), visible).await
 }
 
+/// A machine's page was opened (`khor_gui_core::visit`): a round with it
+/// now, past its backoff. Async: it is a question to the resident.
+#[tauri::command]
+async fn visit(machine: String) -> Result<(), String> {
+    khor_gui_core::visit(&Node::root_from_env(), &machine).await
+}
+
 /// The 网络 page's 连接 group (`khor_gui_core::connections`).
 #[tauri::command]
 async fn connections() -> Result<khor_gui_core::Connections, String> {
@@ -541,6 +548,18 @@ async fn pick_key_file(app: tauri::AppHandle) -> Option<String> {
 #[tauri::command]
 async fn proxy_line(machine: String, host: String, port: Option<u16>) -> Result<khor_gui_core::ProxyLine, String> {
     off_main(move || Ok(khor_gui_core::proxy_line(&machine, &host, port))).await
+}
+
+/// 连接记录 (`khor_gui_core::journal`). Off the main thread: it reads files.
+#[tauri::command]
+async fn journal(machine: String, minutes: u64) -> Result<Vec<khor_gui_core::JournalLine>, String> {
+    off_main(move || khor_gui_core::journal(&Node::root_from_env(), &machine, minutes)).await
+}
+
+/// 报告 (`khor_gui_core::journal_report`). Off the main thread: it writes a file.
+#[tauri::command]
+async fn journal_report(minutes: u64) -> Result<String, String> {
+    off_main(move || khor_gui_core::journal_report(&Node::root_from_env(), minutes)).await
 }
 
 /// 首选中继 (`khor_gui_core::set_preferred_relay`). Off the main thread:
@@ -4607,6 +4626,7 @@ pub fn run() {
             open_copy_id,
             pick_key_file,
             face_here,
+            visit,
             set_preferred_relay,
             tell,
             pin_session,
@@ -4728,6 +4748,8 @@ pub fn run() {
             root_words,
             pair,
             sync_now,
+            journal,
+            journal_report,
             leave,
             set_paused,
             set_machine_paused

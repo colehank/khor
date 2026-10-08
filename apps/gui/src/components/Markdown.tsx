@@ -274,7 +274,11 @@ function Link({ href, children }: { href?: string; children?: ReactNode }) {
       // **The pointing hand, and one of only two in the app** (the other
       // is `PathLink`): a link in prose. Every control is the arrow, the
       // way AppKit draws it (design-system 30-behavior 选字与手).
-      className="cursor-pointer underline underline-offset-2"
+      // **A `button` is an atomic box, so a long address in it wraps only
+      // if it may break anywhere** (afix-a, `check-face` afix a: an agent's
+      // URL ran 838 px past its paragraph): `anywhere`, and the wrapped
+      // lines start on the left like the prose around them.
+      className="cursor-pointer text-left underline underline-offset-2 [overflow-wrap:anywhere]"
       onClick={() =>
         (home === null ? openLink(href) : launchOn(home.machine, href)).catch(() =>
           setRefused(true),

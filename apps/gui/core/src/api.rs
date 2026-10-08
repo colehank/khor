@@ -438,6 +438,8 @@ pub fn answer(
         "relays" => to_json(&crate::relays(root)?),
         "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
         "connections" => to_json(&rt.block_on(crate::connections(root))?),
+        "journal" => to_json(&crate::journal(root, &arg("machine")?, num("minutes")?)?),
+        "journal_report" => to_json(&crate::journal_report(root, num("minutes")?)?),
         "proxy_line" => {
             let port = match args.get("port") {
                 None | Some(serde_json::Value::Null) => None,
@@ -451,6 +453,10 @@ pub fn answer(
         }
         "face_here" => {
             rt.block_on(crate::face_here(root, matches!(args.get("visible"), Some(serde_json::Value::Bool(true)))))?;
+            Ok("null".to_owned())
+        }
+        "visit" => {
+            rt.block_on(crate::visit(root, &arg("machine")?))?;
             Ok("null".to_owned())
         }
         "set_preferred_relay" => {

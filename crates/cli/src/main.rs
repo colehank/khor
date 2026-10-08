@@ -537,6 +537,13 @@ const VERBS: &[Verb] = &[
         run: doctor,
         reach: Reach::Act,
     },
+    // Reads the connection journal — **until `--report`**, which writes
+    // a file under this home. The rule is per word (`doctor` above).
+    Verb {
+        word: "journal",
+        run: journal,
+        reach: Reach::Act,
+    },
     // `status` observes and the other four write the lock file, so the
     // word is an act: the rule is per word, not per invocation.
     Verb {
@@ -5233,6 +5240,48 @@ fn doctor(rest: &[String]) -> Result<(), String> {
             c.state.word(),
             c.said
         );
+    }
+    Ok(())
+}
+
+/// `khor journal [machine] [--minutes N] [--report] [--json]`: the
+/// connection journal (`khor_node::journal`), read straight off the files
+/// — it answers when the resident does not, which is when it is wanted.
+fn journal(rest: &[String]) -> Result<(), String> {
+    let n = node()?;
+    let (mut machine, mut minutes, mut report, mut json) = (None, 60u64, false, false);
+    let mut it = rest.iter();
+    while let Some(word) = it.next() {
+        match word.as_str() {
+            "--report" => report = true,
+            "--json" => json = true,
+            "--minutes" => {
+                minutes = it
+                    .next()
+                    .and_then(|m| m.parse().ok())
+                    .ok_or_else(|| usage_text().to_string())?;
+            }
+            w if !w.starts_with('-') && machine.is_none() => machine = Some(w.to_owned()),
+            _ => return Err(usage_text().into()),
+        }
+    }
+    if report {
+        let path = n.journal_report(minutes)?;
+        println!("{}", msg::journal_report_saved(path.display()));
+        return Ok(());
+    }
+    let peer = machine.map(|m| n.device_by_name(&m)).transpose()?;
+    let lines = n.journal(peer.as_deref(), minutes);
+    if json {
+        println!("{}", serde_json::to_string(&lines).map_err(|e| e.to_string())?);
+        return Ok(());
+    }
+    if lines.is_empty() {
+        println!("{}", msg::journal_empty());
+    }
+    for l in &lines {
+        let mark = if l.trouble { "!" } else { " " };
+        println!("{} {mark} {}\t{}", l.when, l.machine, l.text);
     }
     Ok(())
 }

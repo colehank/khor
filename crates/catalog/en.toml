@@ -446,6 +446,15 @@ usage: khor <verb>
                         page reads the same answer); --fix runs one
                         check's remedy (checks that have one say so at
                         the end of their line)
+  journal [machine] [--minutes N] [--report] [--json]
+                        the connection record: every dial this machine
+                        made, the roads it tried, how it ended and the
+                        step that failed, backoff, connections retired,
+                        network and home relay changes. A machine shows
+                        just it (with this machine's own events), the
+                        last 60 minutes by default; --report saves that
+                        span of every machine into one file to hand
+                        over, with no keys, tickets or host keys
   invite                issues a one-time pairing ticket (requires
                         serve running)
   pair <ticket|->       joins the network with a ticket; - reads it
@@ -1533,12 +1542,78 @@ mcp-open-needs-command = "open needs a command"
 mcp-closed = "Session closed"
 mcp-told = "Message delivered"
 
+journal-started = "Resident started"
+journal-by-pump = "background sync"
+journal-by-forced = "sync now"
+journal-by-ask = "request"
+journal-by-hop = "as a forwarding middle machine"
+journal-by-pair = "pairing"
+journal-dial-ok = "Dial succeeded ({0}) in {1} ms, {2}"
+journal-dial-failed = "Dial failed ({0}) after {1} ms: {2}"
+journal-won-direct = "the attempt with addresses answered first"
+journal-won-relay = "the relay-only attempt answered first"
+journal-won-early = "the request rode the handshake"
+journal-offered = "Tried: {0}"
+journal-offered-direct = "{0} direct addresses"
+journal-offered-relays = "relays {0}"
+journal-offered-carried = "SSH carry"
+journal-backoff = "Failure {0} in a row; background dial again in {1} s"
+journal-timed-out = "timed out"
+journal-settled = "The connection settled on {0}, round trip {1} ms"
+journal-settled-relay = "{0} ({1})"
+journal-road-direct = "direct"
+journal-road-relay = "relay"
+journal-road-carried = "carried"
+journal-road-unknown = "an undetermined road"
+journal-paths = "Paths: {0}"
+journal-retired = "Connection retired: {0}; nothing heard for {1} s; it lasted {2} s"
+journal-why-silent = "silent"
+journal-why-unanswered = "request unanswered"
+journal-why-closed = "closed by the far side or QUIC"
+journal-why-network = "no answer after a network change"
+journal-why-replaced = "let go on purpose"
+journal-why-paused = "paused"
+journal-why-suspended = "app went to the background"
+journal-why-departed = "its relay said it left"
+journal-departed = "Its relay reported it disconnected"
+journal-inbound = "It connected to this machine"
+journal-network = "Network change: {0}"
+journal-net-wake = "woke from sleep"
+journal-net-path = "the system reported a new network path"
+journal-net-clock = "clock jump (sleep)"
+journal-net-relay = "the home relay is connected again"
+journal-net-addrs = "this machine's interface addresses changed"
+journal-addrs = "This machine's addresses are now: {0}"
+journal-addrs-none = "This machine has no usable address"
+journal-home = "Home relay {0}: {1}"
+journal-home-none = "No home relay"
+journal-home-connected = "connected"
+journal-home-connecting = "connecting"
+journal-home-down = "disconnected"
+journal-home-down-why = "disconnected: {0}"
+journal-ears = "New endpoint bound in {0} ms"
+journal-ears-failed = "Binding a new endpoint failed: {0}"
+journal-hop-up = "Forwarding through {0} is up"
+journal-hop-none = "Tried {0} middle machines; none forwarded"
+journal-carry-up = "SSH carry is up"
+journal-carry-down = "SSH carry ended: {0}"
+journal-person-face = "A window came to the front: syncing now, without waiting out the backoff"
+journal-person-page = "Machine page opened: syncing now, without waiting out the backoff"
+journal-here = "This machine"
+journal-empty = "No connection records yet"
+journal-report-title = "khor connection record"
+journal-report-machine = "Machine: {0} ({1})"
+journal-report-version = "Version: {0}"
+journal-report-span = "Span: last {0} minutes, {1} entries"
+journal-report-relays = "Relays: {0}"
+journal-report-saved = "Saved: {0}"
+journal-report-cant = "Couldn't save the report: {0}"
+
 [gui]
 conn-home = "Home relay"
 conn-home-ok = "{0} · connected"
 conn-home-down = "{0} · can't connect"
 conn-home-none = "Not on any relay yet"
-conn-relay-ms = "{0} ms"
 conn-relay-quiet = "No round trip measured"
 conn-peer-rtt = "round trip {0}"
 conn-peer-failed = "Last error ({0}): {1}"
@@ -1775,9 +1850,10 @@ machine-here = "This machine"
 # then GPU where there is one, else Disk — each a label (vitals-name-*) and a
 # value.
 row-pct = "{0}%"
-# Unspaced: conn-relay-ms already says "{0} ms" and the catalog refuses one text
-# under two names.
-row-rtt = "{0}ms"
+# Every latency's word (WORDS-1008, `latency` in words.ts). It was unspaced
+# while conn-relay-ms said "{0} ms" (the catalog refuses one text under two
+# names); conn-relay-ms is gone.
+row-rtt = "{0} ms"
 card-version = "khor {0}"
 # The strip of facts at the top of a machine's detail (2026-10-01; it was a
 # contact card from 2026-09-30). The model is a cell only on the narrow face.
@@ -1901,8 +1977,10 @@ file-keep-mine = "Save mine (overwrite their changes)"
 file-merge = "Merge (you decide on lines both sides touched)"
 file-merged-clean = "Their changes are merged in too. Still your call to save."
 file-merged-clashes = "Merged in. {0} places changed the same line on both sides — marked in the file for you to decide."
+file-clash = "This file changed elsewhere. Autosave is paused."
+file-unsaved-why = "Not saved; trying again shortly: {0}"
+file-saved = "Saved"
 file-read-only = "Read-only"
-git-stale = "Save to see where it changed."
 git-added = "These lines aren't in HEAD"
 settings = "General"
 network = "Network"
@@ -2305,6 +2383,12 @@ leg-jump-to-target = "The jump host can't reach the target: {0} can't connect to
 leg-ssh = "{0} can't connect to {1} over SSH"
 leg-auth = "{0} doesn't accept {1}'s key"
 promote-ask = "Install khor…"
+journal-row = "Connection record"
+journal-summary = "{1} entries in the last {0} minutes"
+journal-summary-trouble = "{1} entries in the last {0} minutes, {2} of them faults"
+journal-report-ask = "Report"
+journal-report-at = "Report saved to {0}"
+journal-line-of = "{0}: {1}"
 # Waiting for the root holder, and the root's recovery words (docs/CONNECT.md 身份).
 pending-title = "Waiting"
 approve = "Approve"
