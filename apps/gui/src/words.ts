@@ -527,6 +527,22 @@ export function money(n: number, unit: string | null): string {
 }
 
 /**
+ * **An endpoint's ISO 4217 code, as the mark `money` wears** (WORDS-1008,
+ * 「钱的符号在前」): `USD` → `$`, `CNY` → `¥`, `EUR` → `€`, `GBP` → `£`,
+ * `JPY` → `¥`. Any other code stays the code, and `money` puts a mark that
+ * starts with a letter after the figure (`12.40 CHF`). For a currency the
+ * provider names (the subscription's extra usage, `QuotaCredits.currency`);
+ * an account's own unit is the person's mark and never passes through here.
+ * ⚠️ 墓碑 (ux-q3): the code itself as the mark, 「12.40 USD / 50 USD」.
+ */
+export function markOfCode(code: string | null): string | null {
+  if (!code) return null;
+  return CODE_MARK[code.trim().toUpperCase()] ?? code;
+}
+
+const CODE_MARK: Record<string, string> = { USD: "$", CNY: "¥", EUR: "€", GBP: "£", JPY: "¥" };
+
+/**
  * Money in at most `room` characters — a ring's middle (`RING_CHARS`): the
  * shortest true form that fits. Whole units (`$124`), then the token
  * count's K / M / B (`¥12K`, `$1.2K`; `lib/tokens`' letters), then without
