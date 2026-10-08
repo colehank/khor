@@ -1,5 +1,11 @@
 // 关一个还有草稿的标签，问一句 (工作区批⑧).
 //
+// **Since save-a (2026-10-08) only a draft that cannot be saved asks.**
+// The editor saves on its own, and × over something typed writes it and
+// closes; this sheet comes up when that write did not land (a clash, an
+// unreachable machine) — the warning on leaving unsaved edits. Quitting
+// the same: everything is written first, and only what is left asks.
+//
 // 「关一个有草稿的标签问『保存 / 不保存 / 取消』」— docs/WORKSPACE.md
 // 第二轮, from the user's VS Code framing of the whole strip.
 //

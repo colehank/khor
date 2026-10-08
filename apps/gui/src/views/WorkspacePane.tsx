@@ -59,6 +59,7 @@ import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { useHidden } from "@/hooks/use-hidden";
 import { roomBeside, useListWidth, type PaneWidth } from "@/hooks/use-list-width";
 import { reportDrafts } from "@/lib/drafts";
+import { discard, flushFile, roadOf, useRoads } from "@/lib/save-road";
 import { useReadFirst } from "@/hooks/use-read-first";
 import { useTabHost } from "@/lib/shortcuts";
 import {
@@ -335,8 +336,15 @@ export function WorkspacePane({
   /** A tab that will close as soon as it has nothing waiting in it.
       **Watched rather than closed on the save's promise**: a save that
       is refused must leave the tab open with the refusal on it, and the
-      only thing that knows a save landed is the draft going away. */
-  const [waiting, setWaiting] = useState<string | null>(null);
+      only thing that knows a save landed is the draft going away.
+      `ask`: closed by ×, saving on the way out (save-a) — a save that
+      does not land then asks 保存并关闭 / 不保存 / 继续编辑, which is
+      the warning on leaving a file with unsaved edits. A close asked
+      from that sheet does not ask again: the file shows why. */
+  const [waiting, setWaiting] = useState<{ path: string; ask: boolean } | null>(null);
+  /** The save roads' version, for the tab's ✓ / 已保存 / ↻ and the
+      close that waits on a save. */
+  const roads = useRoads();
   /** Every file in this workspace with something typed in it and not
       saved, by absolute path.
       **Held here because the view is remounted on every file.** Until
@@ -1002,26 +1010,40 @@ export function WorkspacePane({
       setPreview((was) => (was === path ? null : was));
       setDrafts((was) => {
         if (!was.has(path)) return was;
+        // **Thrown away on purpose** (不保存): the write the file's view
+        // makes on its way out must not bring it back (save-a).
+        discard(machine, path);
         const now = new Map(was);
         now.delete(path);
         return now;
       });
       setClosing((was) => (was === path ? null : was));
     },
-    [remember],
+    [remember, machine],
   );
 
-  /** Close a tab, asking first when something is typed in it.
-      **The dialog is the only place the draft can be saved from**, and
-      it is raised rather than the close being refused: a refusal would
-      leave a person pressing × over and over with nothing telling them
-      why (docs/UX.md 做了但没变化). */
+  /** Close a tab. **Something typed in it is saved on the way out**
+      (save-a, 「编辑文件要实时保存」): the tab closes when the write
+      lands. It asks first only when the file cannot be saved — a clash
+      or a failure already on it, or the save on the way out not landing
+      (`waiting`'s `ask`) — and the dialog is raised rather than the close
+      refused: a refusal would leave a person pressing × over and over
+      with nothing telling them why (docs/UX.md 做了但没变化). */
   const shut = useCallback(
     (path: string) => {
-      if (drafts.has(path)) setClosing(path);
-      else drop(path);
+      if (!drafts.has(path)) return drop(path);
+      const r = roadOf(machine, path);
+      // The front file's view writes what it would have written at the
+      // end of the pause; a tab behind wrote its text as it was left,
+      // and that write may still be under way. Neither — a merge not
+      // looked at, a write that was thrown away — is a question.
+      if (r.trouble === null && (flushFile(machine, path) !== null || r.busy)) {
+        setWaiting({ path, ask: true });
+        return;
+      }
+      setClosing(path);
     },
-    [drafts, drop],
+    [drafts, drop, machine],
   );
 
   // The save the sheet asked for, made by the view that holds the
@@ -1037,10 +1059,20 @@ export function WorkspacePane({
   // the only honest signal that the save landed: a refusal leaves the
   // draft where it is, and the tab with it.
   useEffect(() => {
-    if (waiting === null || drafts.has(waiting)) return;
-    setWaiting(null);
-    drop(waiting);
-  }, [waiting, drafts, drop]);
+    if (waiting === null) return;
+    if (!drafts.has(waiting.path)) {
+      setWaiting(null);
+      drop(waiting.path);
+      return;
+    }
+    // The save on the way out did not land: ask, rather than close over
+    // the edits or leave the tab standing with nothing said.
+    const r = roadOf(machine, waiting.path);
+    if (waiting.ask && r.trouble !== null && !r.busy) {
+      setWaiting(null);
+      setClosing(waiting.path);
+    }
+  }, [waiting, drafts, drop, machine, roads]);
 
   // ⌘W, ⌃⇥ / ⌃⇧⇥ on this strip: **lent to the app's keyboard**
   // (`lib/shortcuts`, 2026-09-28) rather than a listener of its own — the
@@ -1199,6 +1231,11 @@ export function WorkspacePane({
         // it, ↻ read from the disk again when clean. A tab not in front is
         // brought to the front first — the save is made by the view that
         // holds the buffer (`wantSave`), the read by the mounted view.
+        // **The file saves itself now** (save-a): ✓ is the extra
+        // confirmation — while something is typed and not yet written it
+        // writes at once; for a moment after it lands (or after ⌘S on a
+        // file with nothing to write) it is 已保存, a state and not a
+        // button; then the clean file's ↻ again (UX-33's 「和来源对齐」).
         act: isDiff
           ? undefined
           : drafts.has(key)
@@ -1213,7 +1250,9 @@ export function WorkspacePane({
                   }
                 },
               }
-            : {
+            : roadOf(machine, key).confirmed
+              ? { kind: "saved" as const, label: gui.file_saved, onPress: () => {} }
+              : {
                 kind: "reload" as const,
                 label: gui.file_reread,
                 onPress: () => {
@@ -1224,7 +1263,7 @@ export function WorkspacePane({
         };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [tabs, machine, machineFace, root, drafts, preview, shut, file, fileNote, readFirst.item?.label, readFirst.item === null],
+    [tabs, machine, machineFace, root, drafts, preview, shut, file, fileNote, readFirst.item?.label, readFirst.item === null, roads],
   );
 
   /** 关闭 / 关闭其他 / 复制路径 / 复制相对路径.
@@ -2203,7 +2242,7 @@ export function WorkspacePane({
           // asking a second time about something it is already showing.
           setFile(closing);
           setWantSave(closing);
-          setWaiting(closing);
+          setWaiting({ path: closing, ask: false });
           setClosing(null);
         }}
       />
