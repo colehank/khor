@@ -764,7 +764,10 @@ function Resets({ at, mark }: { at: number; mark?: Record<string, string> }) {
       role="img"
       aria-label={said}
       title={said}
-      className="inline-flex min-w-0 items-center gap-xxs text-callout text-muted-foreground tabular-nums"
+      // `align-top`: an inline-flex box on its baseline grew the row's
+      // second line by 2 px (1.5 under a finger), and the gauge beside the
+      // two lines is cut to their leading (ux-q3, `check-face` quota a).
+      className="inline-flex min-w-0 items-center gap-xxs align-top text-callout text-muted-foreground tabular-nums"
     >
       <IconReload className="size-[1em] flex-none" />
       <span aria-hidden="true" className="truncate">
@@ -1442,17 +1445,23 @@ export function QuotaLanding({
         ),
       corners: {
         // **Top-right only the percentage** (「右上干脆只写百分比」), kept
-        // whole and as wide as 「100%」 in the over weight, so every row's
-        // gauge stands at one x; over the limit, the strain ink in the
-        // over weight — no red (the lead, 2026-10-08). A wallet says its
-        // balance; a trouble its word.
+        // whole and **as wide as the age's floor under it** (4.6em, 「59 分钟前」),
+        // so every row's gauge stands at one x whether or not it has an
+        // age to say (ux-q3: at 5ch a row read here, with no age, put its
+        // gauge 26 px right of a peer's — `check-face` quota a); over the
+        // limit, the strain ink in the over weight — no red (the lead,
+        // 2026-10-08). A wallet says its balance; a trouble its word.
         top: trouble ? (
           <span data-quota-state>{gui.day_unreachable}</span>
         ) : pct !== null ? (
           <span
             data-quota-pct={pct}
             data-corner-keep
-            className={cn("inline-block min-w-[5ch] text-right", over ? "font-title text-strain" : "text-foreground")}
+            // A width, not a `min-w`: the corner gives its children
+            // `min-w-0` (`[&>*]:min-w-0`, so a branch can be cut), which
+            // overrode the floor this had — 5ch then — and left the share
+            // 24 px wide (ux-q3).
+            className={cn("inline-block w-[4.6em] flex-none text-right", over ? "font-title text-strain" : "text-foreground")}
           >
             {`${pct}%`}
           </span>

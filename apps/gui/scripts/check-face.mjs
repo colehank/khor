@@ -39136,7 +39136,24 @@ try {
     // `lib/model-band`'s `CLOSE` lists by opus — so on the relay, beside
     // `claude-opus-4-1`, it has to move, and on the gateway it may not.
     const MOVED = "zhipu-glm-4.6";
+    // **The API account first**: the wide face opens on the first row,
+    // so its colours are read before the subscription's page has ever
+    // been opened (d's 「before and after」).
     const qBoard = [
+      {
+        ...ring("q-router", "OpenRouter 团队共享", "openrouter", {
+          fill: 0.71,
+          spent: 142.3,
+          limit: 200,
+          remaining: 57.7,
+          currency: "USD",
+          resets_at: sec + 23 * DAY + 6 * 3600,
+          model_tokens: tokensOf(ROUTER),
+        }),
+        mine: false,
+        home_name: "peer",
+        age_ms: 41 * 60_000,
+      },
       {
         ...ring("q-max", "Claude Max", "claude", {
           kind: "sub",
@@ -39151,20 +39168,6 @@ try {
           credits: { enabled: true, disabled_reason: null, used: 12.4, balance: null, monthly_limit: 50, currency: "USD", ever_enabled: true },
         }),
         strain: "critical",
-      },
-      {
-        ...ring("q-router", "OpenRouter 团队共享", "openrouter", {
-          fill: 0.71,
-          spent: 142.3,
-          limit: 200,
-          remaining: 57.7,
-          currency: "USD",
-          resets_at: sec + 23 * DAY + 6 * 3600,
-          model_tokens: tokensOf(ROUTER),
-        }),
-        mine: false,
-        home_name: "peer",
-        age_ms: 41 * 60_000,
       },
       ring("q-gw", "gateway", "newapi", {
         fill: 0.46,
@@ -39250,6 +39253,8 @@ try {
               balance: row.querySelector("[data-quota-balance]")?.textContent?.trim() ?? null,
               state: row.querySelector("[data-quota-state]")?.textContent?.trim() ?? null,
               age: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
+              // The right column's widths, for the read when the x differs.
+              corner: ["[data-side-corners]", '[data-corner="top"]', '[data-corner="bottom"]', "[data-quota-pct]"].map((q) => +(row.querySelector(q)?.getBoundingClientRect().width ?? -1).toFixed(1)),
             };
           }),
       );
@@ -39365,7 +39370,7 @@ try {
     for (const [w, size, finger] of PASSES) {
       for (const scheme of ["light", "dark"]) {
         const where = `quota · ${w} ${scheme}`;
-        await cdpQ.send("Emulation.setTouchEmulationEnabled", { enabled: finger, maxTouchPoints: finger ? 1 : 0 });
+        await cdpQ.send("Emulation.setTouchEmulationEnabled", { enabled: finger, maxTouchPoints: 1 });
         await page.evaluate(() => window.localStorage.clear());
         await page.setViewportSize(size);
         await page.emulateMedia({ colorScheme: scheme });
@@ -39520,7 +39525,7 @@ try {
         }
       }
     }
-    await cdpQ.send("Emulation.setTouchEmulationEnabled", { enabled: false, maxTouchPoints: 0 });
+    await cdpQ.send("Emulation.setTouchEmulationEnabled", { enabled: false, maxTouchPoints: 1 });
     await cdpQ.detach().catch(() => {});
     await page.unroute("**/usage", usageRoute);
     await routeStanding();
