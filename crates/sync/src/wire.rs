@@ -17,10 +17,19 @@ use crate::store::{BlockStore, Doc};
 
 /// Raw bytes (pre-base64) one sync may carry per direction. The control
 /// stream is serial — a huge frame blocks keys and events queued behind
-/// it — so this path carries increments only; a full history goes over
-/// the file path, which has no per-frame cap. 256 KiB ≈ tens of thousands
-/// of text messages; the number is tunable, the criterion is not.
-pub const MAX_BYTES: usize = 256 * 1024;
+/// it — so this path is meant for increments; the number is tunable, the
+/// criterion is not.
+///
+/// **4 MiB, not 256 KiB** (NET-DIRECT, 2026-10-09). At 256 KiB nothing
+/// handled a delta past the cap, and a machine that once fell that far
+/// behind could never catch up: turing's devices table lacked 1005 KiB of
+/// the others' history and lecun's 635 KiB, every round failed on it in
+/// both directions, and every road, name and address written since stayed
+/// on the machine that wrote it (audit/net-d.md). The gap only grows —
+/// each road or address write is history that is never dropped — so the
+/// cap has to clear the largest gap a fleet can open, once; after the
+/// catch-up the deltas are bytes again.
+pub const MAX_BYTES: usize = 4 * 1024 * 1024;
 
 const B64: base64::engine::general_purpose::GeneralPurpose =
     base64::engine::general_purpose::STANDARD;
@@ -224,15 +233,22 @@ impl Peer {
 /// lives here so drivers are readers of the order, not re-implementors.
 /// The store flushes right after the merge — same reason as
 /// [`Peer::absorb`].
+///
+/// **What they sent is merged even when what they lack cannot be sent**
+/// (over [`MAX_BYTES`]): the caller's words are no bigger for it, and
+/// refusing them too made one side's oversized history stop the other
+/// side's small one as well (turing's 50 KiB were refused because the
+/// answer to it was 1 MiB).
 pub fn answer<D: Doc>(
     store: &mut BlockStore,
     doc: &D,
     have: &str,
     changes: &str,
 ) -> Result<Reply, String> {
-    let out = changes_since_b64(doc, have)?;
+    let out = changes_since_b64(doc, have);
     merge_b64(doc, changes)?;
     store.flush(doc)?;
+    let out = out?;
     Ok(Reply {
         version: version_b64(doc),
         changes: out,

@@ -9233,6 +9233,11 @@ impl Node {
             let synced = with_doc!(self, name.as_str(), |loaded| self
                 .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
                 .await);
+            if doc_must_sync(&name)
+                && let Some(w) = crate::journal::sync_failed(&d.id, &name, synced.as_ref().err().map(String::as_str))
+            {
+                self.wires.note(Some(&d.id), w);
+            }
             match synced {
                 Ok(n) => {
                     moved += n;

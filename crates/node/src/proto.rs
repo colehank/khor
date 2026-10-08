@@ -65,8 +65,11 @@
 use serde::{Deserialize, Serialize};
 
 /// One frame's byte cap — above the sync payload cap
-/// (`khor_sync::wire::MAX_BYTES` base64'd) with headroom.
-pub const MAX_FRAME: usize = 512 * 1024;
+/// (`khor_sync::wire::MAX_BYTES` base64'd, 4/3 of it) with headroom.
+/// Raised with it from 512 KiB (NET-DIRECT): a khor before that refuses
+/// a frame this size, so a catch-up larger than its cap waits until both
+/// ends run this build.
+pub const MAX_FRAME: usize = 6 * 1024 * 1024;
 
 /// One payload slice per request: stays under [`MAX_FRAME`] and makes
 /// resume-by-offset free. Room is left for the msgpack envelope.

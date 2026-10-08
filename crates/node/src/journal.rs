@@ -232,6 +232,11 @@ pub enum What {
         remote: Vec<String>,
         rounds: u32,
     },
+    /// A document that must sync with the peer did not, and the round
+    /// stopped there (NET-DIRECT: turing's and lecun's devices tables
+    /// failed every round for days and nothing said so). Written when
+    /// the failure is new or its words changed ([`sync_failed`]).
+    Sync { doc: String, error: String },
 }
 
 /// One line of the journal.
@@ -530,6 +535,7 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             let list = |v: &[String]| if v.is_empty() { none() } else { v.join("，") };
             msg::journal_round(rounds, list(local), list(remote))
         }
+        What::Sync { doc, error } => msg::journal_sync_failed(doc, scrub(error)),
     }
 }
 
@@ -544,6 +550,7 @@ pub fn is_trouble(e: &Entry) -> bool {
         What::Hop { via, .. } => via.is_none(),
         What::Carry { up, .. } => !up,
         What::Departed => true,
+        What::Sync { .. } => true,
         _ => false,
     }
 }
@@ -758,6 +765,28 @@ impl Learnt {
             from,
         })
     }
+}
+
+/// The sync failures last written, per (machine, document).
+static SYNC_FAILED: std::sync::LazyLock<Mutex<HashMap<(String, String), String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// **A must-sync document failed with the peer** (`link::sync_what_changed`):
+/// the line to write, or `None` when the same words were written last
+/// time. `error` `None` is a success, which clears the memory so the next
+/// failure is told again.
+pub(crate) fn sync_failed(peer: &str, doc: &str, error: Option<&str>) -> Option<What> {
+    let mut last = SYNC_FAILED.lock().unwrap_or_else(|p| p.into_inner());
+    let key = (peer.to_owned(), doc.to_owned());
+    let Some(error) = error else {
+        last.remove(&key);
+        return None;
+    };
+    if last.get(&key).map(String::as_str) == Some(error) {
+        return None;
+    }
+    last.insert(key, error.to_owned());
+    Some(What::Sync { doc: doc.to_owned(), error: error.to_owned() })
 }
 
 /// How often a round of hole punching with unchanged candidates is
