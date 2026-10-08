@@ -589,7 +589,9 @@ function Trend({
               key: "window",
               word: gui.usage_window,
               chosen: String(win),
-              options: WINDOWS.map((w) => ({ key: String(w), word: w === 0 ? gui.usage_window_all : gui.usage_window_days(w) })),
+              // 「全部」 is the catalog's one word for it (`sessions-all`):
+              // one text, one key (ux-q3; ⚠️ 墓碑 `usage-window-all`).
+              options: WINDOWS.map((w) => ({ key: String(w), word: w === 0 ? gui.sessions_all : gui.usage_window_days(w) })),
             },
           ]}
           onPick={(row, k) => (row === "view" ? onView(k === "model" ? "model" : "day") : onWin(Number(k)))}
@@ -822,7 +824,7 @@ function Trend({
           <AxisLabel
             which="view"
             word={view === "model" ? gui.usage_view_model : gui.usage_view_day}
-            rulerWord={win === 0 ? gui.usage_window_all : gui.usage_window_days(win)}
+            rulerWord={win === 0 ? gui.sessions_all : gui.usage_window_days(win)}
           />
         </span>
       </span>

@@ -1806,7 +1806,7 @@ accounts-remaining = "Remaining"
 accounts-resets = "Resets"
 accounts-expires = "Expires"
 accounts-this-month = "This month"
-# Distinct from `usage-window-all`'s "All time" (a time-window filter) —
+# Not the usage range's "All" (`sessions-all`, a time-window filter) —
 # this is a running total, so "Lifetime" pairs naturally with "This month".
 accounts-all-time = "Lifetime"
 accounts-models = "Models"
@@ -2583,7 +2583,6 @@ usage-title = "Token usage"
 usage-view-day = "By day"
 usage-view-model = "By model"
 usage-window = "Range"
-usage-window-all = "All"
 usage-window-days = "{0}D"
 usage-axis-total = "Total"
 usage-axis-input = "Input"
