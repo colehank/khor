@@ -2,6 +2,7 @@ import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useR
 
 import { hereActs, ProgressLine, termName } from "@/components/DoingLine";
 import { tabAct, useTabActs } from "@/lib/tab-acts";
+import { noticesOf, useNotices } from "@/lib/pill-notices";
 import { rungOffScreen } from "@/lib/bell-marks";
 import { FinishedWatch, type Finished } from "@/lib/finished";
 import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
@@ -1780,6 +1781,7 @@ export default function App() {
   // face, state halo, kind mark), the same facts in the same clothes. A
   // tab whose row has not been listed yet (just opened) wears its id.
   const actsVersion = useTabActs();
+  const noticesVersion = useNotices();
   // **A bell rung off screen** (the terminal audit, item 67,
   // `lib/bell-marks`): the sessions whose bell rang while they were not
   // in front wear the mark on their tab and row until they are.
@@ -1931,11 +1933,14 @@ export default function App() {
               loading: tabAct(id)?.busy ?? false,
               share: tabAct(id)?.share,
               rang: rung.has(id),
+              // **What stops this session** (NOTICE-BRIEF): its pane
+              // offers them by id, as it offers its act.
+              notices: noticesOf(id),
             }
           : { id, label: id, face: null, path: "", again };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [openTabs, rows, devices, side, actsVersion, days, selected, rung],
+    [openTabs, rows, devices, side, actsVersion, noticesVersion, days, selected, rung],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
@@ -3246,10 +3251,10 @@ export default function App() {
       newLabel={gui.new_session}
       onBack={() => setScreen("list")}
       caption={stale ? gui.backend_unreachable : undefined}
-      // **The window's foot hangs under the pill here** (UX-31): what is
-      // happening elsewhere, in the pill's glass, only while there is
-      // something to say.
-      status={status.items.length > 0 ? <StatusBar at="pill" items={status.items} onDismiss={status.dismiss} /> : undefined}
+      // ⚠️ 墓碑 (UX-31 → NOTICE-BRIEF, the owner 2026-10-08: 「别的会话
+      // 不用提醒」): the window's foot hung under the pill here — what was
+      // happening in other sessions, growing the pill a row. The list's
+      // lights say it; the pill says only what stops this session.
       away={placeSheet !== null && selectedRow !== null}
     >
       {detail}

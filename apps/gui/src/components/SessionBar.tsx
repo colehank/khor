@@ -75,6 +75,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { WINDOW_DRAG } from "@/components/shell";
 import { GlassCircle } from "@/components/Glass";
+import { NoticeIsland, NoticeLook, NoticeScrim, useGrownPill } from "@/components/PillNotice";
 import { gui } from "@/gen/catalog";
 import { DECK_FOLD, foldStep, groundUnder, inkOver, RESTS_AT_BOTTOM, UnfoldHold, type DeckInk, type FoldMemo } from "@/lib/deck-fold";
 import { seatFold } from "@/lib/fold-seat";
@@ -147,7 +148,6 @@ export function SessionScreen({
   nativeDeck = false,
   foldOver = true,
   ink,
-  status,
   away = false,
   children,
 }: {
@@ -156,12 +156,6 @@ export function SessionScreen({
       was. Hidden in place, not taken out: the content keeps its height,
       so the terminal under the sheet's half does not refit. */
   away?: boolean;
-  /** **The status strip under the pill** (UX-31, the owner 2026-10-06:
-      the window's foot — what is happening elsewhere — hangs under the
-      deck's pill on the phone, like Safari's progress bar): the slot's
-      content once no load runs. A session's; a page and a file show
-      nothing after a load. */
-  status?: ReactNode;
   /** **The folded capsule sits in the home indicator's band** (item 62,
       the owner 2026-10-07: half of it covered the terminal's last rows):
       the fold frees the deck's whole height to the content, which ends at
@@ -233,6 +227,16 @@ export function SessionScreen({
   const seats = useMemo(() => ({ lead, trail, under, pill, progress }), [lead, trail, under, pill, progress]);
   const at = faces.findIndex((f) => f.id === active);
   const face = at < 0 ? null : faces[at];
+  /** **The pill grows while something stops this session** (NOTICE-BRIEF):
+      a press on it opens the grown view instead of the 底栏; a transfer
+      under way and a plain pill open the 底栏 as before. */
+  const stops = face?.notices ?? [];
+  const grown = useGrownPill(stops.length);
+  /** Grown and something to grow into: the island stands, the pill hides. */
+  const island = grown.growth.mounted && stops.length > 0;
+  const [deckPill, setDeckPill] = useState<HTMLElement | null>(null);
+  const foldGrown = grown.fold;
+  useEffect(() => foldGrown(), [active, foldGrown]);
   const [own, setOwn] = useState(false);
   /** The strip pressed holds the deck through the flick (`UnfoldHold`). */
   const hold = useRef(new UnfoldHold());
@@ -364,7 +368,7 @@ export function SessionScreen({
   // rule is now the terminal's swipe, on its own scroller
   // (`TerminalPane`'s `swipeLowers`).
   return (
-    <div data-session-screen data-deck-folded={folded || undefined} className="flex h-full min-h-0 flex-col bg-card">
+    <div data-session-screen data-deck-folded={folded || undefined} className="relative flex h-full min-h-0 flex-col bg-card">
       {/* The top of the glass is the platform's: a phone's status bar
           (`--safe-top`), or on a Mac window dragged narrow the corner its
           three buttons stand in (`app.css`, `[data-session-top]` under
@@ -390,8 +394,9 @@ export function SessionScreen({
         data-fold-over={foldOver || undefined}
         data-deck-away={away || undefined}
         // The deck steps away while the sheet is up (UX-37 §4; the owner
-        // 2026-10-06 21:05 again: 「展开了不要有下面的药丸这一行」).
-        className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible")}
+        // 2026-10-06 21:05 again: 「展开了不要有下面的药丸这一行」). Over
+        // the scrim while the pill is grown.
+        className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible", island && "relative z-50")}
       >
         {folded && (
           // **Safari's capsule** (UX-29, the owner 2026-10-06): one small
@@ -449,7 +454,7 @@ export function SessionScreen({
           // One glass row tall with the pill at one row; a pill grown by
           // its slot (UX-31) grows the deck under the circles, which keep
           // the first row.
-          className="flex min-h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-start gap-in px-row py-in"
+          className="relative flex min-h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-start gap-in px-row py-in"
         >
           {/* ‹ gives the editor its room (UX-38 §3): Safari's address
               field runs the width, with 取消 beside it. */}
@@ -470,13 +475,17 @@ export function SessionScreen({
             // glass. The corner is the one-row capsule's, so a pill grown
             // by a strip keeps the same ends.
             <div
+              ref={setDeckPill}
               data-deck-pill
+              data-tap={stops.length ? "grow" : "sheet"}
               aria-label={gui.session_tabs}
               className="glass relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-glass-btn"
+              // While grown the pill is the island: one piece of glass.
+              style={island ? { visibility: "hidden" } : undefined}
             >
               <div data-deck-pill-row className="flex h-glass-btn min-w-0 items-center gap-in ps-1 pe-1">
                 <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
-                <DeckBand faces={faces} active={active} onFocus={onFocus} onTitle={onTitle} />
+                <DeckBand faces={faces} active={active} onFocus={onFocus} onTitle={stops.length ? grown.grow : onTitle} />
                 {caption && (
                   // Gives way before the pill's own seats do (UX-22: a page's
                   // failure and its 重试 pushed reload out of the pill).
@@ -486,9 +495,7 @@ export function SessionScreen({
                 )}
                 <span ref={setLead} data-session-bar-lead className="flex flex-none items-center empty:hidden" />
               </div>
-              <PillSlot loading={loading} seat={setProgress}>
-                {status}
-              </PillSlot>
+              <PillSlot loading={loading} seat={setProgress} />
             </div>
           )}
           {editor ? (
@@ -514,9 +521,11 @@ export function SessionScreen({
               </GlassCircle>
             </>
           )}
+          {island && !editor && <NoticeIsland list={stops} pill={deckPill} growth={grown.growth} seat="size-glass-item-h" />}
         </div>
         <div ref={setUnder} data-session-bar-under className="flex flex-none flex-col empty:hidden" />
       </div>
+      {island && <NoticeScrim on={grown.growth.big} openedAt={grown.openedAt} onFold={grown.fold} />}
       <TabSheet
         open={sheet}
         onOpenChange={setSheet}
@@ -548,10 +557,11 @@ const SAMPLE_MS = 250;
  * while the tab reloads — a session's re-attach, a page's load, a file's
  * re-read — it is Safari's progress line, a 2-pt run along the pill's own
  * bottom edge, left to right, in the pill's glass; when the load ends it
- * is empty and folds. A session shows the status strip there after
- * (`status`); a page and a file show nothing. Progress and status never
- * share it: progress wins while a load runs (`app.css` hides the status
- * under a running line).
+ * is empty. **The pill never grows by it** (NOTICE-BRIEF, the owner
+ * 2026-10-08): what stops the session is said in the pill's own row
+ * (`components/PillNotice`), and nothing else is. ⚠️ 墓碑 (UX-31 →
+ * NOTICE-BRIEF): the window's foot — other rows going busy or failing —
+ * hung under a session's pill as a status strip, growing the pill a row.
  *
  * Two ways to say "loading": the screen's own `loading` (the browser's
  * page) and the `progress` seat, which the view that holds the tab fills
@@ -562,24 +572,11 @@ const SAMPLE_MS = 250;
  * slot held its day at rest, the 24 hours flattened along the pill's
  * foot. No pill draws a day now; it is 最近's first row.
  */
-export function PillSlot({
-  loading = false,
-  seat,
-  children,
-}: {
-  loading?: boolean;
-  seat: (el: HTMLElement | null) => void;
-  children?: ReactNode;
-}) {
+export function PillSlot({ loading = false, seat }: { loading?: boolean; seat: (el: HTMLElement | null) => void }) {
   return (
     <div data-pill-slot className="flex min-w-0 flex-col">
       <span ref={seat} data-pill-progress-seat className="contents" />
       {loading && <PillProgress />}
-      {children && (
-        <div data-pill-status className="flex min-w-0 items-center">
-          {children}
-        </div>
-      )}
     </div>
   );
 }
@@ -884,7 +881,29 @@ export function DeckBand({
     drag.current = null;
     if (d.moved) springBack();
   };
-  const body = (f: TabFace, role: "prev" | "cur" | "next") => (
+  const body = (f: TabFace, role: "prev" | "cur" | "next") =>
+    // **What stops this session takes the pill's look** (NOTICE-BRIEF):
+    // the kind's mark in the face's seat, the short line in the name's
+    // room — each tab its own, so a swipe works the same with one showing.
+    f.notices?.length ? (
+      role === "cur" && onTitle ? (
+        <button
+          type="button"
+          data-deck-title
+          data-deck-notice={f.notices[0].kind}
+          onClick={(e) => {
+            if (e.detail === 0) onTitle();
+          }}
+          className="flex h-full min-h-touch min-w-0 flex-1 items-center gap-in text-left text-body"
+        >
+          <NoticeLook list={f.notices} seat="size-glass-item-h" />
+        </button>
+      ) : (
+        <span data-deck-notice={f.notices[0].kind} className="flex h-full min-w-0 flex-1 items-center gap-in text-body">
+          <NoticeLook list={f.notices} seat="size-glass-item-h" />
+        </span>
+      )
+    ) : (
     <>
       <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
         <TabAvatar f={f} bare="size-tab-face" seat="tab" />
@@ -909,7 +928,7 @@ export function DeckBand({
         </span>
       )}
     </>
-  );
+    );
   /** A neighbour: put away until a drag pulls it in, then as wide as the
       room the drag opened, anchored to its own edge. A file going in
       keeps to the band: its name is cut in the middle so the count after
@@ -922,7 +941,7 @@ export function DeckBand({
       aria-hidden="true"
       className={cn("absolute inset-y-0 hidden items-center overflow-hidden text-foreground", role === "prev" ? "left-0" : "right-0")}
     >
-      <div className={cn("flex h-full flex-none items-center gap-in whitespace-nowrap pe-row", f.drop && "w-[var(--band-w)]")}>{body(f, role)}</div>
+      <div className={cn("flex h-full flex-none items-center gap-in whitespace-nowrap pe-row", (f.drop || f.notices?.length) && "w-[var(--band-w)]")}>{body(f, role)}</div>
     </div>
   );
   return (

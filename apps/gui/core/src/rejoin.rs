@@ -23,7 +23,7 @@
 //! that lost its pipe ended — and with wires that are now retired when
 //! they go silent (`khor_node`'s wires), a desktop loses pipes for the
 //! same reasons a phone does: a sleep, a network change, a far machine
-//! restarted. The face says 正在重新连接 meanwhile (`TermChunk::rejoining`).
+//! restarted. The face says 正在重新连接 meanwhile (`TermChunk::stall`).
 //!
 //! **It stops on an answer, not on a clock.** `Rejoin::Gone` — the far
 //! machine answered and the session is not there — ends the attachment,
@@ -39,6 +39,8 @@ use std::time::Duration;
 
 use khor_node::link::Rejoin;
 use khor_node::{Node, SessionId};
+
+use crate::miss::{Miss, MissKind};
 
 static ON: AtomicBool = AtomicBool::new(true);
 
@@ -98,12 +100,18 @@ fn rejoin_once(root: &Path, machine: &str, id: &SessionId) -> Result<(String, St
 /// nobody holds the attachment any more (`left`). `attach` turns an
 /// address and cookie into the host connection (the terminal's and the
 /// conversation's handshakes differ only in the size they send).
+///
+/// **Each try that does not reach is told, in parts** (`told`,
+/// NOTICE-BRIEF): the machine not answering at all (`unreached`), or
+/// answering with a pipe whose host does not (`host-lost`) — both read
+/// as 「正在重新连接」 on the pill, and the words go under 详情.
 pub fn again<T>(
     root: &Path,
     machine: &str,
     id: &SessionId,
     left: &AtomicBool,
     attach: impl Fn(&str, &str) -> Result<T, String>,
+    told: impl Fn(Miss),
 ) -> Option<T> {
     let mut beat = FIRST;
     loop {
@@ -115,12 +123,17 @@ pub fn again<T>(
                 // A pipe that was bound but whose handshake fails is the
                 // same as not reached: the far host is not answering
                 // through it yet.
-                if let Ok(conn) = attach(&addr, &cookie) {
-                    return Some(conn);
+                match attach(&addr, &cookie) {
+                    Ok(conn) => return Some(conn),
+                    Err(why) => told(Miss::new(MissKind::HostLost, Some(machine), why)),
                 }
             }
             Err(Rejoin::Gone(_)) => return None,
-            Err(Rejoin::Unreached(_)) => {}
+            Err(Rejoin::Unreached(why)) => {
+                let mut miss = crate::miss::read(&why, Some(machine));
+                miss.kind = MissKind::Unreached;
+                told(miss);
+            }
         }
         wait(beat);
         beat = (beat * 2).min(LONGEST);
@@ -178,7 +191,7 @@ mod tests {
     fn a_left_attachment_is_not_asked_again() {
         let left = Arc::new(AtomicBool::new(true));
         let root = std::env::temp_dir().join("khor-rejoin-left-never-opened");
-        let got: Option<()> = again(&root, "far", &SessionId("x".into()), &left, |_, _| Ok(()));
+        let got: Option<()> = again(&root, "far", &SessionId("x".into()), &left, |_, _| Ok(()), |_| {});
         assert!(got.is_none());
         assert!(!root.exists(), "nothing was opened for it");
     }

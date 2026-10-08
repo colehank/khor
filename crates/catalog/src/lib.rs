@@ -11,7 +11,7 @@
 pub mod lang;
 mod reword;
 
-pub use reword::reword;
+pub use reword::{read, reword};
 
 include!(concat!(env!("OUT_DIR"), "/catalog.rs"));
 
