@@ -28253,6 +28253,29 @@ try {
 
   // b. 「…」 on every item that opens a window.
   {
+    // **The sweep presses 置顶 too**, on the last row of every list, and
+    // the stand-in pin routes keep what they are told on the shared
+    // fixtures — `pinFirst` sorts `devs` in place, so elder came out
+    // pinned and first. Every section after this one read that order:
+    // join's `devs[0]` was elder, not this machine, and its broken road
+    // never reached the page (join f, red only in the full run,
+    // 2026-10-08). So the lists, their order and their pins are put back
+    // when the sweep is done.
+    const lists = [rows, devs, board, wsRows, tabRows].map((l) => ({ l, was: l.map((x) => ({ x, pinned: x.pinned, group: x.group })) }));
+    const subWas = subHerePinned;
+    const putBack = () => {
+      for (const { l, was } of lists) {
+        l.length = 0;
+        for (const { x, pinned, group } of was) {
+          for (const [k, v] of Object.entries({ pinned, group })) {
+            if (v === undefined) delete x[k];
+            else x[k] = v;
+          }
+          l.push(x);
+        }
+      }
+      subHerePinned = subWas;
+    };
     const misses = [];
     let pressed = 0;
     let windows = 0;
@@ -28408,6 +28431,7 @@ try {
     for (const m of misses) {
       fail(`fix b · ${m} opens a window and its word has no 「…」 — 「带省略号表示还会再问一次」 (README 文字怎么写)`);
     }
+    putBack();
     await page.reload({ waitUntil: "load" });
     await wait(900);
   }
@@ -37268,8 +37292,10 @@ try {
   {
     const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     const count = (sel) => page.locator(sel).count();
+    // By name, not by place: the fixture's order is whatever the last
+    // pin left (`fix b`).
     const sat = {
-      ...devs[1],
+      ...devs.find((d) => d.name === "peer"),
       id: "b".repeat(64),
       name: "gpu-box",
       shown: "gpu-box",
@@ -37280,10 +37306,10 @@ try {
       roads: [],
     };
     const me = {
-      ...devs[0],
+      ...devs.find((d) => d.me),
       roads: [{ to: sat.id, road: "none", relay: null, ms: null, via: null, broken: { from: null, to: "gpu-box", leg: "jump-to-target", said: "Connection timed out" } }],
     };
-    const rowsJ = [me, ...devs.slice(1), sat];
+    const rowsJ = [...devs.map((d) => (d.me ? me : d)), sat];
     const sent = [];
     const reads = [];
     let run = null;
@@ -37451,9 +37477,6 @@ try {
     // f.
     if ((await toDevices()) && (await tap('[data-device="gpu-box"]'))) {
       await until(3_000, async () => (await count("[data-road-line]")) === 1);
-      // The line can draw from the row before its roads land: under the
-      // full run's load the read took longer and the probe saw no leg yet.
-      await until(5_000, async () => (await count("[data-road-line] [data-road-said]")) === 1);
       const road = await page.evaluate(() => {
         const line = document.querySelector("[data-road-line]");
         return {
