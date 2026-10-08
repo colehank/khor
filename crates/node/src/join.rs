@@ -78,6 +78,10 @@ pub enum Mark {
     Live,
     Done(String),
     Failed(String),
+    /// The step failed because the target would not let this machine
+    /// log in: the sentence, and which refusal it was (the face offers
+    /// the way on — upload a key, a password, a passphrase).
+    Refused(satellite::Refusal, String),
 }
 
 /// What an add ended as.
@@ -145,6 +149,13 @@ pub(crate) fn start(node: Arc<Node>, run: Arc<Mutex<Run>>, to: Dest, name: Optio
         });
         run.lock().unwrap_or_else(|p| p.into_inner()).done = Some(out);
     });
+}
+
+fn refused_or_failed(refused: Option<satellite::Refusal>, why: &str) -> Mark {
+    match refused {
+        Some(r) => Mark::Refused(r, why.to_owned()),
+        None => Mark::Failed(why.to_owned()),
+    }
 }
 
 /// What one look at the machine found, over one connection — the
@@ -383,8 +394,8 @@ impl Node {
         on(Step::Connect, Mark::Live);
         let look = match self.look(to) {
             Ok(l) => l,
-            Err(e) => {
-                on(Step::Connect, Mark::Failed(e.clone()));
+            Err((e, refused)) => {
+                on(Step::Connect, refused_or_failed(refused, &e));
                 return Err(e);
             }
         };
@@ -425,7 +436,12 @@ impl Node {
         let to = Dest::of(&row).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
         let name = row.shown().to_owned();
         on(Step::Connect, Mark::Live);
-        let look = self.look(&to).inspect_err(|e| on(Step::Connect, Mark::Failed(e.clone())))?;
+        let look = self
+            .look(&to)
+            .map_err(|(e, refused)| {
+                on(Step::Connect, refused_or_failed(refused, &e));
+                e
+            })?;
         on(Step::Connect, Mark::Done(String::new()));
         match self.become_member(&to, &name, &look, on) {
             Ok(added) => {
@@ -442,10 +458,13 @@ impl Node {
         }
     }
 
-    fn look(&self, to: &Dest) -> Result<Look, String> {
-        let (ok, out, err) = run(to, "sh -s", LOOK_SH.as_bytes(), Duration::from_secs(30))?;
+    /// The first look, over one connection; a failure says whether it
+    /// was a refused login ([`satellite::refusal`]).
+    fn look(&self, to: &Dest) -> Result<Look, (String, Option<satellite::Refusal>)> {
+        let (ok, out, err) =
+            run(to, "sh -s", LOOK_SH.as_bytes(), Duration::from_secs(30)).map_err(|e| (e, None))?;
         if !ok {
-            return Err(satellite::cant_reach(to, &err));
+            return Err((satellite::cant_reach(to, &err), satellite::refusal(to, &err)));
         }
         let mut lines = out.lines().map(str::trim);
         let system = lines.next().unwrap_or("").to_owned();

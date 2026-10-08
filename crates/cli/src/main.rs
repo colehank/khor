@@ -5460,7 +5460,7 @@ fn tell_step(step: khor_node::join::Step, mark: khor_node::join::Mark) {
         Mark::Live => {}
         Mark::Done(note) if note.is_empty() => eprintln!("✓ {word}"),
         Mark::Done(note) => eprintln!("✓ {word}  {note}"),
-        Mark::Failed(why) => eprintln!("✗ {word}  {why}"),
+        Mark::Failed(why) | Mark::Refused(_, why) => eprintln!("✗ {word}  {why}"),
     }
 }
 

@@ -363,6 +363,34 @@ const ONE_SIDED: &[(&str, &str)] = &[
          choosing; the lead kept it to the app (2026-10-08), so a browser holding the web \
          face's key cannot turn the fleet into a prober",
     ),
+    // ── 添加机器 over SSH (round join-d) ─────
+    (
+        "add_start",
+        "carries a password or a key's passphrase into the OS secret store of the machine that \
+         runs ssh, and installs khor on another computer; the app only, like the root's words",
+    ),
+    (
+        "add_read",
+        "reads the progress of an add only the app can start (`add_start`)",
+    ),
+    (
+        "promote_start",
+        "installs khor on an SSH host over this machine's ssh; the app only, like `add_start`",
+    ),
+    (
+        "ssh_config_hosts",
+        "lists the Host names of this machine's ssh config for the app's add form; a browser \
+         holding the web face's key has no business reading the owner's ssh config",
+    ),
+    (
+        "open_copy_id",
+        "opens a terminal on this machine running ssh-copy-id, which asks for a password in it; \
+         the add form that offers it is the app's",
+    ),
+    (
+        "pick_key_file",
+        "opens the system's file picker on this machine; a page in a browser has no such picker",
+    ),
 ];
 
 /// **Both tables name the same commands.**

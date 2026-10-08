@@ -2320,6 +2320,8 @@ add-why-start-failed = "khor 无法在 {0} 上启动：{1}"
 add-why-no-pair = "{0} 上的 khor 未在 {1} 秒内连接回来"
 add-why-no-relay = "{0} 无法连接任何中继，经 SSH 转连也没有连上"
 add-no-asset-here = "本机也无法获取 {0}"
+add-need-host = "先输入主机"
+add-lost = "找不到这次添加的进度，可能是 khor 已重启"
 promote-stayed-satellite = "未能安装 khor，它仍是 SSH 主机：{0}"
 sat-not-in-known-hosts = "known_hosts 中没有 {0} 的主机密钥。先用 ssh 连接一次并确认指纹，再回来添加"
 # The sponsor gate on relayed readings: one row, one speaker — a second

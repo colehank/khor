@@ -9,6 +9,7 @@
 //! node. The GUI must not re-derive any of it (docs/UX.md 状态呈现).
 
 pub mod acs;
+pub mod add;
 pub mod agents;
 pub mod api;
 pub mod chat;

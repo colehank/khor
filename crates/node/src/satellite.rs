@@ -53,6 +53,38 @@ fn ssh_dir() -> Option<PathBuf> {
     std::env::var_os("KHOR_SSH_DIR").map(Into::into)
 }
 
+/// The `Host` names of the person's ssh config (`KHOR_SSH_DIR`'s in
+/// tests), offered while they type a host: read only, never written;
+/// patterns (`*`, `?`, `!`) are left out, and so is what an `Include`
+/// pulls in. No config is no names.
+pub fn config_hosts() -> Vec<String> {
+    let path = ssh_dir()
+        .or_else(|| std::env::home_dir().map(|h| h.join(".ssh")))
+        .map(|d| d.join("config"));
+    path.and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|text| hosts_in(&text))
+        .unwrap_or_default()
+}
+
+fn hosts_in(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        let mut words = line.splitn(2, |c: char| c.is_whitespace() || c == '=');
+        if !words.next().is_some_and(|w| w.eq_ignore_ascii_case("host")) {
+            continue;
+        }
+        for name in words.next().unwrap_or("").split_whitespace() {
+            let name = name.trim_matches('"');
+            if name.is_empty() || name.contains(['*', '?', '!']) || out.iter().any(|h| h == name) {
+                continue;
+            }
+            out.push(name.to_owned());
+        }
+    }
+    out
+}
+
 /// Where a machine is reached over ssh: the destination as the user
 /// names it (a Host alias or user@host), its port and the jump in front
 /// of it when the person gave them, whether it logs in with a password
@@ -292,6 +324,42 @@ pub fn broken(to: &Dest, said: &str) -> Option<Broken> {
         return Some(Broken::PasswordOnly);
     }
     None
+}
+
+/// Why the target would not let this machine log in, typed so a face
+/// can offer the next step (upload a key, a password, a passphrase)
+/// without reading the sentence. Rides a [`crate::join::Mark::Refused`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Refusal {
+    /// No key this machine offered was taken (the default ones, or the
+    /// chosen key file, which is not locked).
+    Key,
+    /// The chosen key file is locked with a passphrase and none was given.
+    Locked,
+    /// The kept password was not accepted.
+    Password,
+    /// The key was refused with its kept passphrase.
+    Passphrase,
+}
+
+/// [`cant_reach`]'s reading of a refused login, as a [`Refusal`]; `None`
+/// for any other failure (a broken jump, a host that is down, a
+/// one-time code).
+pub fn refusal(to: &Dest, said: &str) -> Option<Refusal> {
+    if said.contains(crate::secret::ASKPASS_NOT_A_PASSWORD) {
+        return None;
+    }
+    if said.contains(crate::secret::ASKPASS_NONE_KEPT) {
+        return Some(if to.passphrase { Refusal::Locked } else { Refusal::Password });
+    }
+    match (broken(to, said)?, &to.identity) {
+        (Broken::PasswordOnly, _) if to.password => Some(Refusal::Password),
+        (Broken::PasswordOnly, Some(_)) if to.passphrase => Some(Refusal::Passphrase),
+        (Broken::PasswordOnly, Some(k)) if key_locked(k) => Some(Refusal::Locked),
+        (Broken::PasswordOnly, _) => Some(Refusal::Key),
+        _ => None,
+    }
 }
 
 /// The sentence for an ssh that failed: the broken segment named when
@@ -1706,6 +1774,29 @@ fn sha256_b64_to_hex(b64: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The ssh config's hosts as the add form offers them: names only,
+    /// patterns and repeats left out, either spelling of the keyword.
+    #[test]
+    fn config_hosts_are_names_not_patterns() {
+        let text = "Host gpu-box lab\n  HostName 10.0.0.7\nhost=bastion\nHost *.corp !x ab?\nHost lab\nMatch host y\n";
+        assert_eq!(hosts_in(text), ["gpu-box", "lab", "bastion"]);
+    }
+
+    /// A refused login reads as which way on the face should offer; a
+    /// broken jump is not a refusal.
+    #[test]
+    fn a_refusal_is_typed() {
+        let plain = Dest::new("box", None);
+        assert_eq!(refusal(&plain, "user@box: Permission denied (publickey,password)."), Some(Refusal::Key));
+        assert_eq!(
+            refusal(&plain.clone().with_password(true), "Permission denied (publickey,password)."),
+            Some(Refusal::Password)
+        );
+        let jumped = Dest::new("box", Some("gate"));
+        assert_eq!(refusal(&jumped, "channel 0: open failed: connect failed: refused\nstdio forwarding failed"), None);
+        assert_eq!(refusal(&plain, "ssh: connect to host box port 22: Connection refused"), None);
+    }
 
     /// **A sponsor's road to its satellite** (round ROAD-1): `ssh` while
     /// the last sample is fresh, `none` once it is not, and through the

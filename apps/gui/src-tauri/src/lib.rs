@@ -487,6 +487,53 @@ async fn reach_probe(host: String, port: Option<u16>) -> Result<khor_gui_core::R
     khor_gui_core::reach_probe(&Node::root_from_env(), host, port).await
 }
 
+/// 添加机器 over SSH (`khor_gui_core::add`): starts the add as the run
+/// `token`; the face reads it with `add_read`. The secret in `ask` goes
+/// to the OS secret store and nowhere else.
+#[tauri::command]
+fn add_start(token: String, ask: khor_gui_core::add::AddAsk) -> Result<(), String> {
+    khor_gui_core::add::add_start(&Node::root_from_env(), token, ask)
+}
+
+/// The steps so far of the run `token`, and how it ended once it has.
+#[tauri::command]
+fn add_read(token: String) -> Result<khor_gui_core::add::AddRun, String> {
+    khor_gui_core::add::add_read(&token)
+}
+
+/// 安装 khor on an SSH 主机 (`Node::promote`), as the run `token`.
+#[tauri::command]
+fn promote_start(token: String, machine: String) -> Result<(), String> {
+    khor_gui_core::add::promote_start(&Node::root_from_env(), token, machine)
+}
+
+/// The Host names of the ssh config, offered while the host is typed.
+#[tauri::command]
+fn ssh_config_hosts() -> Vec<String> {
+    khor_gui_core::add::ssh_config_hosts()
+}
+
+/// 上传公钥: a terminal running `ssh-copy-id` for the form's host.
+#[tauri::command]
+async fn open_copy_id(ask: khor_gui_core::add::LoginAsk) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || khor_gui_core::add::open_copy_id(&Node::root_from_env(), ask))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// 选择密钥文件…: the system's picker, opened in `~/.ssh`. Answers the
+/// path only — the key is never read here. `None` = cancelled.
+#[tauri::command]
+async fn pick_key_file(app: tauri::AppHandle) -> Option<String> {
+    use tauri_plugin_dialog::DialogExt;
+    let mut pick = app.dialog().file();
+    if let Some(home) = std::env::home_dir() {
+        pick = pick.set_directory(home.join(".ssh"));
+    }
+    let picked = pick.blocking_pick_file()?;
+    picked.into_path().ok().map(|p| p.display().to_string())
+}
+
 /// 经由's ProxyCommand line (`khor_gui_core::proxy_line`): shown with a
 /// copy button, never written into the user's ssh config.
 #[tauri::command]
@@ -4368,6 +4415,12 @@ pub fn run() {
             connections,
             reach_probe,
             proxy_line,
+            add_start,
+            add_read,
+            promote_start,
+            ssh_config_hosts,
+            open_copy_id,
+            pick_key_file,
             face_here,
             set_preferred_relay,
             tell,
