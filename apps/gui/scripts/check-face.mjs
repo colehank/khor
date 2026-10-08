@@ -82,6 +82,13 @@ const fail = (m) => {
   console.error(m);
   process.exitCode = 1;
 };
+/** **The caret to the end of a text box.** Chrome on macOS keeps the
+    Mac's keys: ⌘↓ goes to the end of a textarea, and ⌃End moves nothing
+    (measured 2026-10-09: the caret stayed at 3 of 26). The walk pressed
+    ⌃End, so what it typed landed wherever the click left the caret —
+    the end of line 1 — and save-a's 「leaving with something typed」
+    read 「…file again\nmore\n」 for a write that was right. */
+const DOC_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End";
 
 let vite = null;
 let browser = null;
@@ -6647,7 +6654,7 @@ try {
         );
       }
       await page.locator("[data-edit]").click();
-      await page.keyboard.press("Control+End");
+      await page.keyboard.press(DOC_END);
       await page.keyboard.type("\n## typed\n");
       const dotted = await until(3_000, async () => (await page.locator('[data-ws-tab-strip] [data-tab-act="save"]').count()) === 1);
       // The front tab's ✓ saves and stays on the source (UX-33; after the
@@ -8945,7 +8952,7 @@ try {
         const source = await deck();
         const sourceMenu = await menu();
         await page.locator("[data-file-page] textarea[data-edit]").click();
-        await page.keyboard.press("Control+End");
+        await page.keyboard.press(DOC_END);
         await page.keyboard.type("\nmore");
         await until(3_000, async () => (await deck()).save === 1);
         const dirty = await deck();
@@ -8954,7 +8961,7 @@ try {
         const savedDeck = await deck();
         const byTick = writes.length;
         await page.locator("[data-file-page] textarea[data-edit]").click();
-        await page.keyboard.press("Control+End");
+        await page.keyboard.press(DOC_END);
         await page.keyboard.type(" again");
         await until(3_000, async () => (await deck()).save === 1);
         await press("[data-file-back]");
