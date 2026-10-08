@@ -136,3 +136,80 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
         "the report carries the identity key"
     );
 }
+
+/// **One machine loses its home relay, the other's still answers it** —
+/// alpha homes on the relay through the road this test cuts, beta on the
+/// same relay server under its plain address. A measurement for
+/// audit/net-journal.md, run by hand (`--ignored`). Measured 2026-10-08:
+/// it does **not** isolate alpha — beta's relay address rides in beta's
+/// row, alpha's dial offers it, and iroh connects to it beside the dead
+/// home: the wire was retired after 16 s of silence and the next pump
+/// round redialled through beta's relay in 8 ms. Cutting a machine off
+/// entirely needs every relay address behind a cut.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore]
+async fn measure_one_side_losing_its_relay() {
+    let outage = Duration::from_secs(
+        std::env::var("KHOR_JOURNAL_OUTAGE_S")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(120),
+    );
+    let (ra, rb, rr) = (scratch("journal1-a"), scratch("journal1-b"), scratch("journal1-r"));
+    let (_relay, url) = local_relay(&rr.0);
+    let to: std::net::SocketAddr = url
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
+    let quick = Impair {
+        rtt: Duration::ZERO,
+        loss_pct: 0,
+        stall: Duration::ZERO,
+    };
+    let (at, cut, _road) = cuttable_road(to, quick).await;
+    home_on(&ra.0, &format!("http://{at}"));
+    home_on(&rb.0, &url);
+    let env: &[(&str, &str)] = &[("KHOR_RELAY_ONLY", "1")];
+    let _a = serve_with(&ra.0, "alpha", env);
+    let _b = serve_with(&rb.0, "beta", env);
+    stood_up(&[&ra.0, &rb.0]).await;
+    let alpha = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let beta = Node::open_as(rb.0.clone(), "beta").unwrap();
+    tokio::time::sleep(Duration::from_secs(3)).await;
+    let ticket = alpha.invite().unwrap();
+    let began = Instant::now();
+    loop {
+        match timeout(Duration::from_secs(60), beta.pair(&ticket)).await {
+            Ok(Ok(_)) => break,
+            other if began.elapsed() < Duration::from_secs(90) => {
+                eprintln!("[journal1] pairing again: {other:?}");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+            other => panic!("pairing: {other:?}"),
+        }
+    }
+    let (alpha_id, beta_id) = (alpha.device_str().to_owned(), beta.device_str().to_owned());
+    until_reads(&beta, &alpha_id, Hop::Relay, Duration::from_secs(60)).await;
+    until_reads(&alpha, &beta_id, Hop::Relay, Duration::from_secs(60)).await;
+    tokio::time::sleep(Duration::from_secs(12)).await;
+
+    cut.cut();
+    tokio::time::sleep(outage).await;
+    cut.heal();
+    let healed = Instant::now();
+    let a_back = until_reads(&alpha, &beta_id, Hop::Relay, Duration::from_secs(600)).await;
+    let b_back = until_reads(&beta, &alpha_id, Hop::Relay, Duration::from_secs(600)).await;
+    eprintln!(
+        "[journal1] alpha's road cut for {outage:?}; after it healed alpha read 中继 in {a_back:?}, \
+         beta in {:?}",
+        b_back.max(healed.elapsed().saturating_sub(Duration::from_millis(100)))
+    );
+    for (who, n) in [("alpha", &alpha), ("beta", &beta)] {
+        eprintln!("[journal1] ── {who} ──");
+        for l in n.journal(None, 30) {
+            let mark = if l.trouble { "!" } else { " " };
+            eprintln!("{} {mark} {}\t{}", l.when, l.machine, l.text);
+        }
+    }
+}
