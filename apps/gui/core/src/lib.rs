@@ -636,7 +636,7 @@ pub struct DeviceRow {
     /// The machine this satellite speaks through, by name (附属机器批)
     /// — `None` for every ordinary machine. Where `hop` answers "which
     /// road", this answers "whose road": a satellite has none of its
-    /// own, so faces print 「经 <sponsor>」 in the road's place.
+    /// own, so faces print 「通过 <sponsor>」 in the road's place.
     pub sponsor: Option<String>,
     /// An SSH 主机's jump host, as its row keeps it (`ssh_jump`, round
     /// join-a): the machine page draws it as the road's middle stop.

@@ -207,7 +207,7 @@ export function topology(
       from: me.id,
       to: row.id,
       road,
-      word: road === "none" ? said : [said, latency].filter(Boolean).join(" · ") || null,
+      word: road === "none" ? said : [said, latency].filter(Boolean).join(" ") || null,
     });
   }
   return { me, others, relays, segments };

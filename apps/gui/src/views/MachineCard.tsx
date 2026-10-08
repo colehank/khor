@@ -440,7 +440,7 @@ function Body({
  *   (`vitals.system`);
  * - khor 版本 — `vitals.version`, the khor that machine runs;
  * - 连接 — `connectionWord`, the word the list row prints: 本机, the road
- *   (`hop`), or 「经 <sponsor>」;
+ *   (`hop`), or 「通过 <name>」;
  * - 已运行 — `vitals.uptime_s`, nothing for 0 (an older node);
  * - 读数 — how old the reading is: an age for a machine reached over the
  *   wire, the clock of its taking for this one;
@@ -502,7 +502,10 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
   if (row.me || !me) return null;
   const road = roadTo(me, row);
   const sponsor = row.sponsor && row.sponsor !== me.name ? row.sponsor : null;
-  const via = road?.via ? nameOf(road.via, rows) : null;
+  // A live peer hop names its middle from the wire (`hopRoad`), as the
+  // 连接 cell does; the roadbook's `via` moves only when a road held.
+  const live = hopRoad(row, rows);
+  const via = live ? live.via.shown : road?.via ? nameOf(road.via, rows) : null;
   const hops: string[] = [gui.machine_here];
   if (row.sponsor) {
     if (sponsor) hops.push(sponsor);
@@ -526,7 +529,7 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
   const mine = !!row.sponsor && row.sponsor === me.name && !!onPromote;
   // A live peer hop says each leg under the stops (NET-DIRECT, the owner
   // 2026-10-09): 「iPhone → turing 直连 26 ms」「turing → MacLab 直连 3 ms」.
-  const legs = hopRoad(row, rows)?.legs ?? null;
+  const legs = live?.legs ?? null;
   if (hops.length < 3 && !leg && !mine) return null;
   return (
     <div data-road-line className="flex flex-col gap-xxs border-b pb-base">

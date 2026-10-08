@@ -109,16 +109,19 @@ export function connectionWord(row: {
 
 /**
  * The same fact as a key, for the machines list's filter (2026-09-29):
- * `here` for this machine, `via:<sponsor>` for a satellite, the hop key
+ * `here` for this machine, `via:<name>` for a machine reached through
+ * another (a satellite's sponsor, a peer hop's middle), the hop key
  * otherwise, and `""` where `connectionWord` has no word. **The word is
  * looked up from the key** (`connectionKeyWord`), so a tick in the
  * filter and the word on the row cannot come apart — there is one
  * derivation, which is this one. The prefixes cannot collide: a hop key
  * is one kebab word (`khor_core::Hop`), never `here` and never with a
  * colon in it. An idle machine whose last attempt failed is `down`, the
- * one key here that is not a road (`khor_core::Link::DOWN_KEY`). A wire
- * through a middle (the peer hop) is `hop:<middle>`, worded 「通过 turing」
- * (NET-DIRECT, the owner 2026-10-09), so the filter ticks 通过 turing.
+ * one key here that is not a road (`khor_core::Link::DOWN_KEY`).
+ * **Through another machine is one key, `via:<name>`**, worded 「通过
+ * hinton」 (WORDS-1008; the lead 2026-10-09): a satellite whose sponsor
+ * is hinton and a peer hop through hinton (NET-DIRECT) say the same
+ * words, so they are one tick in the filter, not two that read alike.
  */
 export function connectionKey(row: {
   me: boolean;
@@ -135,7 +138,7 @@ export function connectionKey(row: {
   if (row.me) return "here";
   if (row.sponsor) return `via:${row.sponsor}`;
   if (row.hop === "quiet" && isDown(row.down_ms)) return "down";
-  if (row.hop === "forwarded" && row.via) return `hop:${row.via}`;
+  if (row.hop === "forwarded" && row.via) return `via:${row.via}`;
   return row.hop ?? "";
 }
 
@@ -143,8 +146,7 @@ export function connectionKey(row: {
 export function connectionKeyWord(key: string): string | null {
   if (key === "paused") return gui.machine_paused;
   if (key === "here") return gui.machine_here;
-  if (key.startsWith("via:")) return cli.via_sponsor(key.slice("via:".length));
-  if (key.startsWith("hop:")) return gui.add_step_via(key.slice("hop:".length));
+  if (key.startsWith("via:")) return gui.add_step_via(key.slice("via:".length));
   if (key !== "") return hopWord(key);
   return null;
 }

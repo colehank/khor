@@ -127,13 +127,14 @@ function seatSizes(): { seat: number; me: number; halo: number; touch: number } 
 }
 
 /** A road's word for a card or a cell: 直连 / 中继 · <name> / 未连 /
-    不通, with the ms (an idle edge's is its last reading); `null` (an
-    older peer's silence) is 未知. */
+    不通, with the ms after a space as everywhere else, 「直连 23 ms」
+    (WORDS-1008; an idle edge's is its last reading); `null` (an older
+    peer's silence) is 未知. */
 function roadWord(l: Link | null): string {
   if (l === null) return gui.filter_unknown;
   if (l.road === "none") return gui.dial_key_none;
   const way = wayWord(l);
-  return l.ms === null ? way : `${way} · ${latency(l.ms)}`;
+  return l.ms === null ? way : `${way} ${latency(l.ms)}`;
 }
 
 /** The way alone, for the card's head. */
@@ -1144,7 +1145,7 @@ function MachineCard({
           ) : (
             <>
               <Light band={b} half={idle} />
-              <span data-dial-card-road>{link.ms === null ? wayWord(link) : `${latency(link.ms)} · ${wayWord(link)}`}</span>
+              <span data-dial-card-road>{roadWord(link)}</span>
             </>
           )
         }

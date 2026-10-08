@@ -23,9 +23,9 @@ import { PendingStrip } from "@/views/PairDialogs";
  * - `link:` 连接方式 — **the word in the row's top-right corner**
  *   (`connectionKey`, WORDS-1008: one derivation, so a tick on 中继 keeps
  *   every row that says 中继): 已暂停, 本机, the road (直连 / 中继), 未连,
- *   不通, or 「经 <sponsor>」.
- *   **One value per sponsor, not one 「借网」 for all of them**: the row
- *   prints 「经 turing」, so the option prints the same words and a tick
+ *   不通, or 「通过 <name>」 (a satellite's sponsor, a peer hop's middle).
+ *   **One value per machine, not one 「借网」 for all of them**: the row
+ *   prints 「通过 turing」, so the option prints the same words and a tick
  *   keeps exactly the rows that say them. Merged, the option would need
  *   a word no row carries, and one tick would stand for rows that read
  *   differently — the filter would be saying something the list does

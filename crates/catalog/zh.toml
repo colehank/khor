@@ -689,11 +689,6 @@ promoted = "已在 {0} 上安装 khor，它现在是 khor 主机"
 adopt-pending-hint = "SSH 主机已添加，但还不在名单上：本机不持根。在持根的机器上运行 khor approve 批准"
 doctor-roster-stale = "名单已过期 {0} 天（{1} 天前签发）：持根的机器很久没上线了，新证书一律不收"
 doctor-roster-none = "认得根钥匙，但手里没有一份验得过的名单"
-# A satellite's road column: it has no road of its own — its sponsor
-# speaks for it — so where every other machine shows 直连/中继 this
-# shows who it speaks through (both faces use it; 呈现处标「经 <sponsor>」
-# is the batch's own acceptance line).
-via-sponsor = "经 {0}"
 # The tmux probe's two outcomes, told at adoption so the terminal's
 # nature is no surprise later (docs/SESSION.md 例外墓碑: persistence on
 # a satellite is borrowed from its own tmux, never hosted by khor).
@@ -4140,7 +4135,8 @@ top-show-all = "显示全部 {0} 个"
 # filter吧？」)。和会话、额度两栏同一套:轴名是小标题,值是行上印着的事实。
 #
 # 机器栏三根轴。「连接方式」的值就是行副标题里那个词——本机(machine-here)、
-# [hop] 的五个词、借网的「经 某台」(cli 的 via-sponsor),都不另起新词;
+# [hop] 的五个词、借网的「通过 某台」(gui 的 add-step-via,和经另一台 khor
+# 转发的那一行同一个词),都不另起新词;
 # 「系统」是行角标画的那个系统家族;「状态」借 axis-state,只有「已暂停」
 # (machine-paused)一个值,有机器暂停时才出现。
 # 工作区栏两根轴:「机器」借 devices-tab,「类型」借 quota-kind——同一段字
