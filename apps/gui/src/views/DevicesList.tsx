@@ -10,7 +10,7 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { band, BAND_INK } from "@/lib/latency";
 import { cli, gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
-import { lasting, connectionKey, connectionKeyWord, groupLabel, latency, systemWord } from "@/words";
+import { lasting, connectionKey, connectionKeyWord, groupLabel, hopRoad, latency, systemWord } from "@/words";
 import { MachineEditDialog } from "@/views/MachineEditDialog";
 import { PendingStrip } from "@/views/PairDialogs";
 
@@ -288,7 +288,9 @@ export function DevicesList({
     // not find a row that said 中继. The last road is the detail's.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
     const key = connectionKey(d);
-    const live = d.me || d.hop === "direct" || d.hop === "relay";
+    // A wire through a middle is live too (the peer hop, NET-DIRECT): its
+    // row says 「通过 turing」 and the two legs added (`hopRoad`).
+    const live = d.me || d.hop === "direct" || d.hop === "relay" || d.hop === "forwarded";
     const state = connectionKeyWord(key);
     const held =
       key === "paused" || key === "here"
@@ -308,7 +310,7 @@ export function DevicesList({
     // the two never disagree). When they do not fit, whole items go from
     // the end (`Whole`); CPU stays.
     const v = live ? d.vitals?.vitals : undefined;
-    const lat = live && !d.me ? rtt : null;
+    const lat = live && !d.me ? (d.hop === "forwarded" ? (hopRoad(d, rows)?.ms ?? rtt) : rtt) : null;
     const share = (f: { used: number; total: number }) => Math.round((f.used / f.total) * 100);
     const readings = [
       v ? { key: "cpu", label: cli.vitals_name_cpu, value: Math.round(v.cpu_pct) } : null,

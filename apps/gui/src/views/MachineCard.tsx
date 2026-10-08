@@ -53,7 +53,7 @@ import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { pagesHere } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
-import { agoOf, hopWord, lasting, linkWord, systemWord, count } from "@/words";
+import { agoOf, connectionKey, connectionKeyWord, hopRoad, hopWord, lasting, legWord, linkWord, systemWord, count } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -524,6 +524,9 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
             ? { at: last, why: gui.leg_auth(row.shown, sponsor ?? gui.machine_here) }
             : { at: last, why: gui.leg_ssh(sponsor ?? gui.machine_here, row.shown) };
   const mine = !!row.sponsor && row.sponsor === me.name && !!onPromote;
+  // A live peer hop says each leg under the stops (NET-DIRECT, the owner
+  // 2026-10-09): 「iPhone → turing 直连 26 ms」「turing → MacLab 直连 3 ms」.
+  const legs = hopRoad(row, rows)?.legs ?? null;
   if (hops.length < 3 && !leg && !mine) return null;
   return (
     <div data-road-line className="flex flex-col gap-xxs border-b pb-base">
@@ -549,6 +552,11 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
           </Button>
         )}
       </div>
+      {legs?.map((l, i) => (
+        <div key={i} data-hop-leg={i} className="text-callout text-muted-foreground tabular-nums">
+          {legWord(l)}
+        </div>
+      ))}
       {leg && (
         <div data-road-broken={b!.leg} className="text-callout text-muted-foreground">
           {leg.why}
@@ -696,6 +704,11 @@ function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; say
       ]
         .filter(Boolean)
         .join(" · ")}
+    </span>
+  ) : hopRoad(row, rows) ? (
+    // A live peer hop: the row's own word (`connectionKey`), 「通过 turing」.
+    <span data-hop="forwarded" data-road-via={row.via!}>
+      {connectionKeyWord(connectionKey(row))}
     </span>
   ) : roadTo(me, row)?.via ? (
     <span data-road-via={roadTo(me, row)!.via!}>{gui.add_step_via(nameOf(roadTo(me, row)!.via!, rows))}</span>

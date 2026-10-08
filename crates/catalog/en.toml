@@ -1616,6 +1616,8 @@ journal-tun-off = "The default route no longer goes through a proxy's TUN"
 journal-path-opened = "Direct path opened: {0}"
 journal-path-selected = "Now on {0}: {1}"
 journal-path-rtt = ", round trip {0} ms"
+journal-path-hop = "Now through {0}"
+journal-path-ssh = "Now carried over SSH"
 journal-round = "Hole punching, {0} round(s): candidates here {1}; candidates there {2}"
 journal-round-none = "none"
 journal-sync-failed = "Syncing {0} failed and the round stopped there: {1}"
@@ -1889,6 +1891,9 @@ row-pct = "{0}%"
 # while conn-relay-ms said "{0} ms" (the catalog refuses one text under two
 # names); conn-relay-ms is gone.
 row-rtt = "{0} ms"
+# A peer hop's two legs (NET-DIRECT): {2} the leg's road, {3} its round trip.
+hop-leg = "{0} → {1} {2}"
+hop-leg-rtt = "{0} → {1} {2} {3}"
 card-version = "khor {0}"
 # The strip of facts at the top of a machine's detail (2026-10-01; it was a
 # contact card from 2026-09-30). The model is a cell only on the narrow face.

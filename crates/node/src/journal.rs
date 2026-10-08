@@ -522,6 +522,10 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         What::Path { change, road, addr, rtt_ms } => {
             let mut s = if change == "opened" {
                 msg::journal_path_opened(addr)
+            } else if road == "carried" && addr == "ssh" {
+                msg::journal_path_ssh().to_owned()
+            } else if road == "carried" && !addr.is_empty() {
+                msg::journal_path_hop(name_of(addr))
             } else {
                 msg::journal_path_selected(road_word(road), addr)
             };
@@ -1253,5 +1257,23 @@ mod tests {
         );
         assert_eq!(scrub("Authorization: Bearer abc.def"), "Authorization: Bearer …");
         assert_eq!(scrub("nothing here"), "nothing here");
+    }
+
+    /// net-e: a carried path names what carries it — 「改为通过 turing」,
+    /// 「改为经 SSH 转连」 — where it said 「改走转连：，往返 0 ms」.
+    #[test]
+    fn a_carried_path_says_what_carries_it() {
+        let name_of = |id: &str| if id == "b1" { "turing".to_owned() } else { id.to_owned() };
+        let e = |addr: &str, rtt_ms| Entry {
+            at: 0,
+            peer: Some("y".into()),
+            what: What::Path { change: "selected".into(), road: "carried".into(), addr: addr.into(), rtt_ms },
+        };
+        assert_eq!(words(&e("b1", None), &name_of), msg::journal_path_hop("turing"));
+        assert_eq!(words(&e("ssh", None), &name_of), msg::journal_path_ssh());
+        assert_eq!(
+            words(&e("b1", Some(3)), &name_of),
+            format!("{}{}", msg::journal_path_hop("turing"), msg::journal_path_rtt(3))
+        );
     }
 }

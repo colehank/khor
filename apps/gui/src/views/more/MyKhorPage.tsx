@@ -138,6 +138,7 @@ function roadWord(l: Link | null): string {
 
 /** The way alone, for the card's head. */
 function wayWord(l: Link): string {
+  if (l.via) return gui.add_step_via(l.via);
   if (l.road === "idle") return hop.quiet;
   return l.road === "direct" ? hop.direct : l.relay ? gui.dial_via(l.relay) : hop.relay;
 }

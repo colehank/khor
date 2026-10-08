@@ -80,9 +80,10 @@ pub(crate) fn watch(
     id: &str,
     conn: &iroh::endpoint::Connection,
     journal: Option<Arc<crate::journal::Journal>>,
+    carry: &khor_net::carry::Links,
 ) {
     if let Some(j) = journal.clone() {
-        follow(id, conn.path_events(), conn.weak_handle(), j);
+        follow(id, conn.path_events(), conn.weak_handle(), j, carry.clone());
     }
     let (roads, id, weak) = (roads.clone(), id.to_owned(), conn.weak_handle());
     tokio::spawn(async move {
@@ -161,6 +162,7 @@ fn follow(
     events: iroh::endpoint::PathEventStream,
     weak: iroh::endpoint::WeakConnectionHandle,
     journal: Arc<crate::journal::Journal>,
+    carry: khor_net::carry::Links,
 ) {
     let id = id.to_owned();
     tokio::spawn(async move {
@@ -184,7 +186,17 @@ fn follow(
                         .unwrap_or_default()
                         .to_owned(),
                 ),
-                _ => ("carried", String::new()),
+                // A carried road names what carries it (net-e): the
+                // middle's id for a peer hop, `ssh` for ssh — the line
+                // said 「改走转连：」 with nothing after the colon.
+                _ => (
+                    "carried",
+                    match id.parse().ok().and_then(|p| carry.last_carrier(&p)) {
+                        Some(khor_net::carry::Carrier::Hop { via }) => via.to_string(),
+                        Some(khor_net::carry::Carrier::Ssh) => "ssh".to_owned(),
+                        None => String::new(),
+                    },
+                ),
             };
             {
                 let mut written = WRITTEN.lock().unwrap_or_else(|p| p.into_inner());
@@ -198,10 +210,13 @@ fn follow(
                     written.remove(&(id.clone(), "opened"));
                 }
             }
+            // A carried path just selected has no sample yet and reads 0:
+            // said as nothing rather than 「往返 0 ms」.
             let rtt_ms = weak
                 .upgrade()
                 .and_then(|c| c.rtt(path_id))
-                .map(crate::journal::ms);
+                .map(crate::journal::ms)
+                .filter(|ms| road != "carried" || *ms > 0);
             journal.note(
                 Some(&id),
                 crate::journal::What::Path {

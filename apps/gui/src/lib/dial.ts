@@ -10,13 +10,20 @@
 // faces' edges, and which road the table knows between any two machines.
 import type { DeviceRow } from "@/api";
 import type { RoadKind } from "@/gen/bindings/RoadKind";
-import { isDown, roadOf } from "@/lib/topology";
+import { hopRoad, isDown, roadOf } from "@/lib/topology";
 
 /** One road between two machines as the dial draws it. `idle` is this
     machine's own edge with no live wire and nothing known to be wrong
     (round NET-13): seated by its last reading (`ms`, `last_rtt_ms`) at
     half ink, never on the 不通 rim unless it has no reading at all. */
-export type Link = { road: RoadKind | "idle"; ms: number | null; relay: string | null };
+export type Link = {
+  road: RoadKind | "idle";
+  ms: number | null;
+  relay: string | null;
+  /** The middle of a peer hop, by the name a person reads (NET-DIRECT):
+      the link says 「通过 turing」 and `ms` is its two legs added. */
+  via?: string | null;
+};
 
 /** The rim: a road this slow (or none) sits on the 不通 ring. The log
     scale runs `ln(1 + ms) / ln(1 + RIM_MS)`. */
@@ -130,6 +137,8 @@ export function clip(a: Pt, b: Pt, ra: number, rb: number, air = 3): { x1: numbe
     `rtt_ms`, `relay` — the live wire's readings). A satellite's road is
     its sponsor's. */
 export function firstHand(row: DeviceRow, rows: readonly DeviceRow[]): Link {
+  const hop = hopRoad(row, rows);
+  if (hop) return { road: hop.legs.some((l) => l.road === "relay") ? "relay" : "direct", ms: hop.ms, relay: null, via: hop.via.shown };
   const via = row.sponsor ? (rows.find((r) => r.name === row.sponsor) ?? row) : row;
   if (via.me) return { road: "direct", ms: via.rtt_ms ?? null, relay: via.relay ?? null };
   const road = roadOf(via);
@@ -141,9 +150,11 @@ export function firstHand(row: DeviceRow, rows: readonly DeviceRow[]): Link {
 /** What `from` wrote into the table about its road to `to` (NET-12,
     `DeviceRow.roads`); `null` when it wrote nothing — an older peer —
     which the face says as 未知, never as 不通. */
-export function reported(from: DeviceRow, to: string): Link | null {
+export function reported(from: DeviceRow, to: string, rows: readonly DeviceRow[] = []): Link | null {
   const r = (from.roads ?? []).find((x) => x.to === to);
-  return r ? { road: r.road, ms: r.ms, relay: r.relay } : null;
+  // A written road through a middle names it by id (`Road.via`).
+  const via = r?.via ? (rows.find((x) => x.id === r.via)?.shown ?? r.via.slice(0, 8)) : null;
+  return r ? { road: r.road, ms: r.ms, relay: r.relay, via } : null;
 }
 
 /** The road between any two machines, as well as this machine knows it:
@@ -153,7 +164,7 @@ export function linkOf(a: DeviceRow, b: DeviceRow, rows: readonly DeviceRow[]): 
   if (a.id === b.id) return null;
   if (a.me) return firstHand(b, rows);
   if (b.me) return firstHand(a, rows);
-  return reported(a, b.id) ?? reported(b, a.id);
+  return reported(a, b.id, rows) ?? reported(b, a.id, rows);
 }
 
 /** The matrix cell `a` reports about `b`: first-hand on this machine's
@@ -161,5 +172,5 @@ export function linkOf(a: DeviceRow, b: DeviceRow, rows: readonly DeviceRow[]): 
 export function cellOf(a: DeviceRow, b: DeviceRow, rows: readonly DeviceRow[]): Link | null {
   if (a.id === b.id) return null;
   if (a.me) return firstHand(b, rows);
-  return reported(a, b.id);
+  return reported(a, b.id, rows);
 }

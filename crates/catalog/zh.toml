@@ -2570,6 +2570,9 @@ journal-tun-off = "默认路由不再经过代理的 TUN"
 journal-path-opened = "直连路径已打通：{0}"
 journal-path-selected = "改走{0}：{1}"
 journal-path-rtt = "，往返 {0} ms"
+# 转连的那一路说清是什么在转（net-e）：经第三台机器（通过 turing），或经 SSH。
+journal-path-hop = "改为通过 {0}"
+journal-path-ssh = "改为经 SSH 转连"
 journal-round = "打洞 {0} 轮：本机候选 {1}；对方候选 {2}"
 journal-round-none = "无"
 journal-sync-failed = "同步 {0} 失败，这一轮就此停下：{1}"
@@ -3176,6 +3179,12 @@ row-pct = "{0}%"
 # The row's latency keeps the Latin unit (the owner, 2026-10-05: 「23 ms」), and it is
 # every latency's word now (WORDS-1008, `latency` in words.ts; no 毫秒 anywhere).
 row-rtt = "{0} ms"
+# **A peer hop's two legs** (NET-DIRECT, the owner 2026-10-09): the row says
+# 「通过 turing 29 ms」 (add-step-via, and the legs added); the machine page
+# says each leg, 「iPhone → turing 直连 26 ms」「turing → MacLab 直连 3 ms」.
+# {2} is the leg's road ([hop]), {3} its round trip (row-rtt).
+hop-leg = "{0} → {1} {2}"
+hop-leg-rtt = "{0} → {1} {2} {3}"
 # ⚠️ 墓碑 (UX-48): row-changes 「{0} 个改动」 (the workspace row says the
 # prompt's git segment instead), row-window 「剩 {0} · {1} 重置」 and
 # row-left (the quota row says quota-resets), row-kind-sub / row-kind-api

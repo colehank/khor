@@ -2895,7 +2895,7 @@ impl Node {
         match outcome {
             Ok(Ok((conn, asked))) => {
                 crate::roads::replied(&self.roads, &d.id, started.elapsed());
-                crate::roads::watch(&self.roads, &d.id, &conn, self.wires.journal.get().cloned());
+                crate::roads::watch(&self.roads, &d.id, &conn, self.wires.journal.get().cloned(), &self.carry);
                 self.wires.adopt(&d.id, wires::Proto::Main, conn.clone());
                 drop(_one);
                 match asked {
@@ -10695,7 +10695,7 @@ impl Node {
                     Some(Ok((won, Ok(conn)))) => {
                         note(Some(won), None);
                         crate::roads::replied(&self.roads, id, started.elapsed());
-                        crate::roads::watch(&self.roads, id, &conn, self.wires.journal.get().cloned());
+                        crate::roads::watch(&self.roads, id, &conn, self.wires.journal.get().cloned(), &self.carry);
                         return Ok(conn);
                     }
                     Some(Ok((_, Err(e)))) => refused = Some(e.to_string()),

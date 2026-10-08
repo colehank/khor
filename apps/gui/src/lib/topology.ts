@@ -59,6 +59,45 @@ export function isDown(downMs: number | null | undefined): boolean {
 export const roadOf = (row: Pick<DeviceRow, "hop">): Road =>
   row.hop === "direct" ? "direct" : row.hop === "relay" ? "relay" : "none";
 
+/** One leg of a peer hop: its two ends by the names a person reads, the
+    leg's road (`[hop]` key; `null` when not known) and round trip. */
+export type HopLeg = { from: string; to: string; road: string | null; ms: number | null };
+
+/**
+ * **A peer hop, by its two legs** (NET-DIRECT, the owner 2026-10-09): the
+ * row says 「通过 turing 29 ms」 and the machine page each leg, 「iPhone →
+ * turing 直连 26 ms」「turing → MacLab 直连 3 ms」. The first leg is this
+ * machine's live wire to the middle (its row's `rtt_ms`); the second is
+ * the middle's own road onward, as it wrote it in its row (`roads`) —
+ * the two numbers the resident chose the hop by (`Node::compare_roads`).
+ * `ms` is the two added, or the hop wire's own round trip when a leg has
+ * no number. `null` for a row that is not on a hop.
+ */
+export function hopRoad(
+  row: DeviceRow,
+  rows: readonly DeviceRow[],
+): { via: DeviceRow; ms: number | null; legs: [HopLeg, HopLeg] } | null {
+  if (row.me || row.hop !== "forwarded" || !row.via) return null;
+  const me = rows.find((r) => r.me);
+  const via = rows.find((r) => r.name === row.via);
+  if (!me || !via) return null;
+  const onward = (via.roads ?? []).find((r) => r.to === row.id && r.via === null);
+  const first: HopLeg = {
+    from: me.shown,
+    to: via.shown,
+    road: via.hop === "direct" || via.hop === "relay" ? via.hop : null,
+    ms: via.rtt_ms,
+  };
+  const second: HopLeg = {
+    from: via.shown,
+    to: row.shown,
+    road: onward && onward.road !== "none" ? onward.road : null,
+    ms: onward?.ms ?? null,
+  };
+  const ms = first.ms !== null && second.ms !== null ? first.ms + second.ms : row.rtt_ms;
+  return { via, ms, legs: [first, second] };
+}
+
 /** A machine this one cannot reach: grey on the map, with when it was
     last seen. **No road is not enough** (round NET-13): an idle wire
     closed and the next open dials it fine; unreachable is the resident's
@@ -111,6 +150,11 @@ function placeRelay(rows: readonly DeviceRow[], me: DeviceRow | null): { left: n
 /**
  * The graph. `ms` words a latency (`latency`) and `way` a road
  * (`hopWord`); they are handed in so this file reads no catalog.
+ *
+ * A machine reached through a middle (the peer hop, NET-DIRECT) hangs off
+ * that middle, the way a satellite hangs off its sponsor: this machine's
+ * link to the middle is its own segment, and the hop's stretch says the
+ * whole round trip.
  */
 export function topology(
   rows: readonly DeviceRow[],
@@ -138,6 +182,17 @@ export function topology(
     if (row.sponsor) {
       const sponsor = rows.find((r) => r.name === row.sponsor);
       if (sponsor) segments.push({ id: row.id, from: sponsor.id, to: row.id, road: sponsor.me ? "direct" : roadOf(sponsor), word: null });
+      continue;
+    }
+    const hop = hopRoad(row, rows);
+    if (hop) {
+      segments.push({
+        id: row.id,
+        from: hop.via.id,
+        to: row.id,
+        road: hop.legs[1].road === "relay" ? "relay" : "direct",
+        word: hop.ms !== null ? ms(hop.ms) : null,
+      });
       continue;
     }
     const road = roadOf(row);

@@ -24691,6 +24691,8 @@ try {
   //      its newest file and nothing on the right;
   //   e. browser — the address without its scheme under the title, no
   //      state, how long ago it was opened.
+  //   g. a peer hop — 「通过 peer」 and its legs added on the row, each leg
+  //      on the machine page (NET-DIRECT).
   //
   // (The side column's recent rows are read in section side c, where its fixture
   // lives.) New, not a fix: no red first (30-behavior). Only what a
@@ -25502,6 +25504,52 @@ try {
       }
     }
     for (const [glob, run] of Object.entries(routesF)) await page.unroute(glob, run);
+  }
+
+  // g. a peer hop (NET-DIRECT, the owner 2026-10-09): elder reached
+  //    through peer. The row says 「通过 peer」 and the two legs added,
+  //    26 + 3 = 「29 ms」 (not the hop wire's own 31); the machine page's
+  //    连接 says 「通过 peer」 and 线路 each leg, 「gate → peer 直连 26 ms」
+  //    「peer → elder 直连 3 ms」. One derivation (`connectionKey`,
+  //    `hopRoad`). New, not a fix: no red first.
+  {
+    const peer = devs.find((d) => d.name === "peer");
+    const elder = devs.find((d) => d.name === "elder");
+    const keep = [peer && { ...peer }, elder && { ...elder }];
+    if (!peer || !elder) fail("probe dead: corners g · peer or elder missing from the fixture");
+    else {
+      Object.assign(peer, {
+        hop: "direct", rtt_ms: 26, via: null, down_ms: null, paused: false,
+        roads: [{ to: elder.id, road: "direct", relay: null, ms: 3, via: null, broken: null }],
+      });
+      Object.assign(elder, { hop: "forwarded", via: "peer", rtt_ms: 31, relay: null, since_ms: 60_000, heard_ms: 1_000, down_ms: null, paused: false });
+      for (const [posture, size] of POSTURES) {
+        await land(size, "devices");
+        await until(5_000, async () => (await slots("[data-side-row][data-device]", "data-device")).elder?.top === "通过 peer");
+        const rows = await slots("[data-side-row][data-device]", "data-device");
+        const rtt = await page.evaluate(() => document.querySelector('[data-side-row][data-device="elder"] [data-row-reading="rtt"]')?.textContent ?? null);
+        console.log(`corners g · ${posture} · elder: ${JSON.stringify(rows.elder)} rtt ${rtt}`);
+        if (rows.elder?.top !== "通过 peer" || rtt !== "29 ms") {
+          fail(`corners g · ${posture} · elder's row reads ${JSON.stringify({ top: rows.elder?.top, rtt })} — 「通过 peer」 top-right and 「29 ms」 after the name, the legs added (NET-DIRECT)`);
+        }
+        if (posture !== "wide") continue;
+        await tap('[data-side-row][data-device="elder"] [data-row-open]');
+        await until(3_000, async () => (await page.locator("[data-hop-leg]").count()) === 2);
+        const card = await page.evaluate(() => ({
+          cell: document.querySelector('[data-hop="forwarded"]')?.textContent?.trim() ?? null,
+          legs: [...document.querySelectorAll("[data-hop-leg]")].map((e) => e.textContent?.trim()),
+        }));
+        console.log(`corners g · elder's page: ${JSON.stringify(card)}`);
+        if (card.cell !== "通过 peer") fail(`corners g · elder's 连接 reads ${JSON.stringify(card.cell)} — 「通过 peer」, the row's word`);
+        if (JSON.stringify(card.legs) !== JSON.stringify(["gate → peer 直连 26 ms", "peer → elder 直连 3 ms"])) {
+          fail(`corners g · elder's 线路 says ${JSON.stringify(card.legs)} — each leg, 「gate → peer 直连 26 ms」「peer → elder 直连 3 ms」`);
+        }
+      }
+      for (const [d, k] of [[peer, keep[0]], [elder, keep[1]]]) {
+        for (const f of Object.keys(d)) if (!(f in k)) delete d[f];
+        Object.assign(d, k);
+      }
+    }
   }
 
   await page.setViewportSize({ width: 1400, height: 900 });

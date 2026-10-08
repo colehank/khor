@@ -628,6 +628,11 @@ pub struct DeviceRow {
     /// (`relay.khor.cloud`, `101.200.80.77:3340`). `None` on a direct
     /// wire, without a live one, and for this machine.
     pub relay: Option<String>,
+    /// **The machine in the middle, by name, when `hop` is `forwarded`**
+    /// (the peer hop, NET-DIRECT; `khor_core::Link::via`): the row says
+    /// 「通过 <via>」 and the machine page draws its two legs. `None`
+    /// otherwise, from an older resident, and for this machine.
+    pub via: Option<String>,
     /// The machine this satellite speaks through, by name (附属机器批)
     /// — `None` for every ordinary machine. Where `hop` answers "which
     /// road", this answers "whose road": a satellite has none of its
@@ -1417,6 +1422,11 @@ fn rows_of_devices(
                 .then(|| links.iter().find(|(id, _)| *id == d.id))
                 .flatten()
                 .and_then(|(_, l)| l.relay.clone()),
+            via: (d.id != me)
+                .then(|| links.iter().find(|(id, _)| *id == d.id))
+                .flatten()
+                .and_then(|(_, l)| l.via.as_ref())
+                .map(|v| names.get(v).cloned().unwrap_or_else(|| v.clone())),
             down_ms: (d.id != me)
                 .then(|| links.iter().find(|(id, _)| *id == d.id))
                 .flatten()

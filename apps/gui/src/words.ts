@@ -2,7 +2,8 @@
 // looked up at the last moment; unknown keys echo — an old face must
 // still render a session whose kind it has never heard of.
 import { avatar, category, cli, gui, hop, one, state } from "./gen/catalog";
-import { isDown } from "./lib/topology";
+import { type HopLeg, isDown } from "./lib/topology";
+export { hopRoad } from "./lib/topology";
 
 /**
  * **Counted words, singular where the language has one** (`[one]` in the
@@ -95,11 +96,14 @@ export function connectionWord(row: {
   me: boolean;
   sponsor: string | null;
   hop: string | null;
+  via?: string | null;
   heard_ms?: number | null;
   down_ms?: number | null;
   paused?: boolean;
 }): string | null {
-  if (!row.paused && !row.me && !row.sponsor && row.hop) return linkWord(row.hop, row.heard_ms, row.down_ms);
+  if (!row.paused && !row.me && !row.sponsor && row.hop && !(row.hop === "forwarded" && row.via)) {
+    return linkWord(row.hop, row.heard_ms, row.down_ms);
+  }
   return connectionKeyWord(connectionKey(row));
 }
 
@@ -112,12 +116,15 @@ export function connectionWord(row: {
  * derivation, which is this one. The prefixes cannot collide: a hop key
  * is one kebab word (`khor_core::Hop`), never `here` and never with a
  * colon in it. An idle machine whose last attempt failed is `down`, the
- * one key here that is not a road (`khor_core::Link::DOWN_KEY`).
+ * one key here that is not a road (`khor_core::Link::DOWN_KEY`). A wire
+ * through a middle (the peer hop) is `hop:<middle>`, worded 「通过 turing」
+ * (NET-DIRECT, the owner 2026-10-09), so the filter ticks 通过 turing.
  */
 export function connectionKey(row: {
   me: boolean;
   sponsor: string | null;
   hop: string | null;
+  via?: string | null;
   down_ms?: number | null;
   paused?: boolean;
 }): string {
@@ -128,6 +135,7 @@ export function connectionKey(row: {
   if (row.me) return "here";
   if (row.sponsor) return `via:${row.sponsor}`;
   if (row.hop === "quiet" && isDown(row.down_ms)) return "down";
+  if (row.hop === "forwarded" && row.via) return `hop:${row.via}`;
   return row.hop ?? "";
 }
 
@@ -136,8 +144,15 @@ export function connectionKeyWord(key: string): string | null {
   if (key === "paused") return gui.machine_paused;
   if (key === "here") return gui.machine_here;
   if (key.startsWith("via:")) return cli.via_sponsor(key.slice("via:".length));
+  if (key.startsWith("hop:")) return gui.add_step_via(key.slice("hop:".length));
   if (key !== "") return hopWord(key);
   return null;
+}
+
+/** A leg's line: 「iPhone → turing 直连 26 ms」. */
+export function legWord(l: HopLeg): string {
+  const road = l.road ? hopWord(l.road) : gui.filter_unknown;
+  return l.ms === null ? gui.hop_leg(l.from, l.to, road) : gui.hop_leg_rtt(l.from, l.to, road, latency(l.ms));
 }
 
 /**
