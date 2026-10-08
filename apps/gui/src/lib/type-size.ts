@@ -98,6 +98,20 @@ export function wearTypeSize() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") wear(stored());
   });
+  // **Set in another window of this app** (fix-c, 2026-10-08, the owner:
+  // 字号「改不动」). On the Mac 外观 is the settings window, a page of its
+  // own: its slider wrote the store and wore the size on itself, and the
+  // main window heard nothing — the changed event is a window's own, and
+  // a window beside it is never hidden, so `visibilitychange` never came
+  // either. The size took only at the next launch. The store says so to
+  // every other page of this origin; this one wears it and tells its
+  // terminals and rows, as if the slider were its own.
+  window.addEventListener("storage", (e) => {
+    if (e.key !== KEY && e.key !== null) return;
+    const t = stored();
+    wear(t);
+    window.dispatchEvent(new CustomEvent(CHANGED, { detail: t }));
+  });
 }
 
 export function setTypeSize(t: TypeSize) {

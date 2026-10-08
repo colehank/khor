@@ -532,7 +532,10 @@ async function roomPhase(pid) {
   };
   const [sx, sy, sw] = run("screen").split(" ").map(Number);
   const name = "room";
-  execFileSync("tmux", ["new-session", "-d", "-s", name, "-x", "120", "-y", "40"], { env });
+  // **Opened through khor, not tmux** (fix-c, 2026-10-08): the scratch
+  // node lists the sessions khor made, and a bare `tmux new-session` on
+  // its server was never a row — the other half of 「no row 「room」」.
+  const opened = execFileSync(cliBin, ["open", "-d", "--title", name, "--", "cat"], { env, encoding: "utf8" }).trim();
   front(pid);
   // The row, listed by the scratch node's next poll; pressed, its tab.
   let listed = false;
@@ -563,7 +566,9 @@ async function roomPhase(pid) {
     const f1 = frame();
     const was = await close(f0, f1);
     const f2 = frame();
-    const expected = want(was ?? f0, f1);
+    // A road answers the frame it measures from, or nothing (a press's
+    // true is not a frame).
+    const expected = want(was && typeof was === "object" ? was : f0, f1);
     rows.push(`${what}: ${fmt(f0)} → open ${fmt(f1)} → closed ${fmt(f2)}`);
     console.log(`room · ${what}: before ${fmt(f0)}, open ${fmt(f1)}, closed ${fmt(f2)}${same(f2, expected) ? "" : ` — want ${fmt(expected)}`}`);
     if (!near(f1.w, f0.w + col) || !near(f1.h, f0.h) || !near(f1.y, f0.y)) {
@@ -627,7 +632,7 @@ async function roomPhase(pid) {
     if (!same(f2, f0)) fail(`room · at the right edge, closed, the window is ${fmt(f2)}, want ${fmt(f0)} (UX-46 §2)`);
   }
   await home();
-  execFileSync("tmux", ["kill-session", "-t", name], { env });
+  execFileSync(cliBin, ["close", opened.split(/\s+/).pop()], { env, stdio: "ignore" });
   return rows;
 }
 

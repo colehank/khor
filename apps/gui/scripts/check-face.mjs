@@ -2256,6 +2256,8 @@ try {
   // alone** (STORE-BRIEF phase 2, 2026-10-08).
   // **`FACE_ONLY=bar` walks section 20 alone** (窄档的会话页：内容在上，
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
+  // **`FACE_ONLY=caret` walks the editor's caret and 字号 alone** (fix-c,
+  // 2026-10-08).
   // **`FACE_ONLY=corners` walks every list's row alone** (UX-48,
   // 2026-10-07: the owner's four slots on every list).
   // **`FACE_ONLY=walk` walks this block alone** — sections 1 to 10,
@@ -2263,7 +2265,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25374,7 +25376,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -26161,7 +26163,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26536,7 +26538,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27268,7 +27270,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28161,7 +28163,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -37522,6 +37524,239 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "join") console.log("join · FACE_ONLY=join: the other sections are skipped");
+
+  // ── the caret on its letter at every 字号 (fix-c, 2026-10-08) ───────
+  //
+  // The owner: 「文件编辑的光标始终不能和文字对齐」. The editor is a
+  // transparent textarea over the painted sheet (`views/FileView` `Sheet`),
+  // and 4c compares the two boxes and their styles at the base size. The
+  // file page sets its own `--text-mono` / `--text-mono--line-height`
+  // (文件字号, `lib/file-size`), and `text-mono` was compiled to the root's
+  // values (`@theme inline`), so at a step above the base only the sheet's
+  // per-line `min-h-[var(--text-mono--line-height)]` took the step: every
+  // painted line grew, the editor's rows did not, and the caret climbed off
+  // its letter by the difference on every line. A bug, red first: on the
+  // old tokens.css this reads painted 230 against the editor's 200 over ten
+  // lines at 115 %, and the caret 30 px above its letter on line 11.
+  //
+  // On the phone's file page (where `FilePage` is the file), for each step
+  // and in both themes:
+  //   a. the sheet and the editor draw the step: one font size and one
+  //      leading, both the step's (the base's 13 / 20 times the step, the
+  //      leading in whole pixels);
+  //   b. every painted line ends where the editor's own layout of the
+  //      lines up to it ends (±0.5);
+  //   c. **the caret on the character's edge**: the editor's selection of
+  //      a line, drawn by the browser, ends on its last row where the
+  //      painted line's last character ends — x on that character's right
+  //      edge (±1.5) and the row's middle on its middle (±2.5; a drift of
+  //      rows is (b)'s, to the half pixel) — for a Latin line,
+  //      a CJK line, a wrapped mixed line and a mixed line ending 「。」;
+  //   d. 界面字号 written by another window of the app (the Mac's settings
+  //      window) is worn by this one at once (below, where it is read).
+  //
+  // `FACE_ONLY=caret` runs this section alone.
+  caret: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "caret") break caret;
+  {
+    const LINES = [
+      "fn main() {",
+      "    let latin = \"plain ascii, nothing wide\";",
+      "强化学习的核心思想来自试错学习与时序差分。",
+      "    // 中文注释 mixed with English words and 123 numbers",
+      "这是一行足够长的中英混排文字，它会在手机的宽度里折到第二行甚至第三行，更新 (Sutton & Barto, 2018, L.3)。",
+      "",
+      "    let b = 2;",
+      "    let c = 3;",
+      "    let d = 4;",
+      "}",
+      "更新 (Sutton & Barto, 2018, L.3)。",
+    ];
+    const TEXT = LINES.join("\n");
+    const read = (r) =>
+      r.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ total: TEXT.length, at_ms: Date.now(), text: TEXT, cut: false, binary: false, digest: "0".repeat(64) }),
+      });
+    const noDiff = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ hunks: [], more: false }) });
+    await page.route("**/read_text", read);
+    await page.route("**/git_diff", noDiff);
+    const openWs = async () => {
+      if (!(await press("[data-ws-row]"))) return false;
+      if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
+      return true;
+    };
+    // The 1-based lines read in (c): Latin, CJK, the wrapped mixed one, the
+    // last (mixed, ending 「。」).
+    const PROBED = [2, 3, 5, 11];
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const [scheme, step] of [["light", 0], ["light", 1], ["dark", 2], ["dark", 4], ["light", 4]]) {
+      const k = [0.85, 1, 1.15, 1.3, 1.5][step];
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.evaluate((s) => localStorage.setItem("khor.file-size", String(s)), step);
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const opened =
+        (await open("workspaces")) && (await openWs()) && (await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button'));
+      const up = await until(5_000, async () => (await page.locator("[data-file-page] textarea[data-edit]").count()) === 1);
+      const where = `caret · ${scheme} at 字号 ×${k}`;
+      if (!opened || !up) {
+        fail(`probe dead: ${where} · one.rs opened no editor on the phone's file page`);
+        continue;
+      }
+      await wait(500);
+      // a, b: the type and every line's end, painted against the editor's
+      // own layout (a hidden copy of the editor, as wide, holding the
+      // lines up to that one — its scrollHeight is where they end).
+      const lay = await page.evaluate(() => {
+        const ta = document.querySelector("[data-file-page] textarea[data-edit]");
+        const pre = ta.parentElement.querySelector("[data-file-text]");
+        const s = getComputedStyle(pre);
+        const t = getComputedStyle(ta);
+        const rows = [...pre.querySelectorAll("[data-line]")];
+        const top = rows[0].getBoundingClientRect().top;
+        const copy = ta.cloneNode();
+        copy.style.height = "1px";
+        copy.style.visibility = "hidden";
+        ta.parentElement.appendChild(copy);
+        const lines = ta.value.split("\n");
+        const ends = rows.map((row, i) => {
+          copy.value = lines.slice(0, i + 1).join("\n");
+          return [i + 1, Math.round((row.getBoundingClientRect().bottom - top) * 10) / 10, copy.scrollHeight];
+        });
+        copy.remove();
+        return { pre: [s.fontSize, s.lineHeight], ta: [t.fontSize, t.lineHeight], ends };
+      });
+      const wantSize = 13 * k;
+      const wantLead = Math.round(20 * k);
+      const px = (v) => Number.parseFloat(v);
+      console.log(`${where}: sheet ${lay.pre.join("/")}, editor ${lay.ta.join("/")}; ends ${JSON.stringify(lay.ends.map(([n, p, e]) => (p === e ? n : `${n}:${p}≠${e}`)))}`);
+      if (lay.pre.join() !== lay.ta.join()) fail(`${where} (a) · the sheet draws ${lay.pre.join("/")} and the editor ${lay.ta.join("/")} — one type, or the caret is laid out by one and the letters by the other (src/styles/tokens.css text-mono)`);
+      if (Math.abs(px(lay.pre[0]) - wantSize) > 0.05 || px(lay.pre[1]) !== wantLead) fail(`${where} (a) · the sheet draws ${lay.pre.join("/")}, the step is ${wantSize.toFixed(2)}px/${wantLead}px (lib/file-size; tokens.css text-mono)`);
+      const off = lay.ends.find(([, p, e]) => Math.abs(p - e) > 0.5);
+      if (off) fail(`${where} (b) · line ${off[0]} ends at ${off[1]} painted and ${off[2]} in the editor — the caret's row is ${Math.round((off[2] - off[1]) * 10) / 10}px off its letters from there down (lib/file-size, tokens.css text-mono)`);
+      // c: the browser's own drawing of the editor's selection, in red,
+      // against the painted line's last character.
+      await page.addStyleTag({ content: "[data-file-page] textarea[data-edit]::selection { background: rgb(255, 0, 0) !important; }" });
+      for (const n of PROBED) {
+        await page.evaluate((n) => {
+          const ta = document.querySelector("[data-file-page] textarea[data-edit]");
+          const lines = ta.value.split("\n");
+          const start = lines.slice(0, n - 1).reduce((s, l) => s + l.length + 1, 0);
+          ta.parentElement.querySelector(`[data-file-text] [data-line="${n}"]`).scrollIntoView({ block: "center" });
+          ta.focus({ preventScroll: true });
+          ta.setSelectionRange(start, start + lines[n - 1].length);
+        }, n);
+        await wait(300);
+        // Read after the selection has settled: a selection may scroll.
+        const at = await page.evaluate((n) => {
+          const ta = document.querySelector("[data-file-page] textarea[data-edit]");
+          const row = ta.parentElement.querySelector(`[data-file-text] [data-line="${n}"]`);
+          const range = document.createRange();
+          range.selectNodeContents(row);
+          const boxes = [...range.getClientRects()].filter((b) => b.width > 0);
+          const last = boxes[boxes.length - 1];
+          const box = ta.getBoundingClientRect();
+          const top = Math.max(0, box.top);
+          return {
+            right: last.right,
+            // The middle of the last row: the selection is drawn as tall
+            // as the row's leading, the character's box as tall as its font.
+            mid: (last.top + last.bottom) / 2,
+            lead: Number.parseFloat(getComputedStyle(ta).lineHeight),
+            clip: { x: box.left, y: top, width: box.width, height: Math.min(box.bottom, innerHeight) - top },
+          };
+        }, n);
+        const shot = await page.screenshot({ clip: at.clip });
+        const sel = await page.evaluate(async ({ b64, clip, mid, lead }) => {
+          const img = new Image();
+          img.src = `data:image/png;base64,${b64}`;
+          await img.decode();
+          const c = document.createElement("canvas");
+          c.width = img.width;
+          c.height = img.height;
+          const g = c.getContext("2d");
+          g.drawImage(img, 0, 0);
+          const d = g.getImageData(0, 0, c.width, c.height).data;
+          const sx = img.width / clip.width;
+          const red = (x, y) => {
+            const i = (y * c.width + x) * 4;
+            return d[i] > 180 && d[i] - d[i + 1] > 120;
+          };
+          // Only near the line read: a drift of rows is (b)'s to say, and
+          // the deck floating over the page's foot is not the selection.
+          const lo = Math.max(0, Math.floor((mid - 1.5 * lead - clip.y) * sx));
+          const hi = Math.min(c.height - 1, Math.ceil((mid + 1.5 * lead - clip.y) * sx));
+          let y1 = -1;
+          for (let y = hi; y >= lo && y1 < 0; y--) for (let x = 0; x < c.width; x++) if (red(x, y)) { y1 = y; break; }
+          if (y1 < 0) return null;
+          // The last row's right end, read off its bottom two pixel rows.
+          let right = -1;
+          for (let y = Math.max(0, y1 - 2); y <= y1; y++) for (let x = 0; x < c.width; x++) if (red(x, y)) right = Math.max(right, x);
+          return { right: clip.x + (right + 1) / sx, bottom: clip.y + (y1 + 1) / sx };
+        }, { b64: shot.toString("base64"), clip: at.clip, mid: at.mid, lead: at.lead });
+        if (sel === null) {
+          fail(`probe dead: ${where} (c) · line ${n}: no selection drawn to read`);
+          continue;
+        }
+        const dx = Math.round((sel.right - at.right) * 10) / 10;
+        const dy = Math.round((sel.bottom - at.lead / 2 - at.mid) * 10) / 10;
+        console.log(`${where} (c) · line ${n}: the caret's edge ${dx >= 0 ? "+" : ""}${dx} x, ${dy >= 0 ? "+" : ""}${dy} y off the last character`);
+        if (Math.abs(dx) > 1.5 || Math.abs(dy) > 2.5) {
+          fail(`${where} (c) · line ${n} 「${LINES[n - 1].slice(-6)}」: the editor's caret stands ${dx} px across and ${dy} px down from the painted last character's edge — 「文件编辑的光标始终不能和文字对齐」`);
+        }
+      }
+      await page.evaluate(() => document.activeElement?.blur());
+    }
+    await page.unroute("**/read_text", read);
+    await page.unroute("**/git_diff", noDiff);
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.evaluate(() => localStorage.removeItem("khor.file-size"));
+
+    // d. **界面字号 set in another window of the app reaches this one**
+    //    (the owner: 字号「改不动」). On the Mac 外观 is the settings
+    //    window, a page of its own on the same store; its slider wrote the
+    //    store and the main window wore nothing until the next launch. A
+    //    second page of this origin writes what the slider writes; this
+    //    one's scale and its type follow, and follow it back. Red first:
+    //    the scale stayed 1.
+    {
+      // A second window of this origin: an empty frame the page makes
+      // (about:blank inherits its maker's origin and store) — the page's
+      // context holds one page only.
+      const other = {
+        evaluate: (f) =>
+          page.evaluate((src) => {
+            let fr = document.getElementById("caret-other");
+            if (!fr) {
+              fr = document.createElement("iframe");
+              fr.id = "caret-other";
+              fr.style.display = "none";
+              document.body.appendChild(fr);
+            }
+            fr.contentWindow.eval(`(${src})()`);
+          }, f.toString()),
+        close: () => page.evaluate(() => document.getElementById("caret-other")?.remove()),
+      };
+      const worn = () =>
+        page.evaluate(() => [document.documentElement.style.getPropertyValue("--ui-scale"), getComputedStyle(document.body).fontSize]);
+      const before = await worn();
+      await other.evaluate(() => localStorage.setItem("khor.type-size", JSON.stringify({ followSystem: false, uiStep: 6, term: 14 })));
+      const took = await until(3_000, async () => Number((await worn())[0]) === 23 / 17);
+      const after = await worn();
+      await other.evaluate(() => localStorage.removeItem("khor.type-size"));
+      const back = await until(3_000, async () => (await worn())[0] === before[0]);
+      await other.close();
+      console.log(`caret d · 界面字号 from another window: before ${before.join(" ")}, after ${after.join(" ")}, back ${back}`);
+      if (!took) fail(`caret d · another window set 界面字号 to 23 and this one still wears ${after.join(" ")} — the settings window's slider does nothing to the main window (src/lib/type-size.ts)`);
+      else if (!back) fail("caret d · another window took 界面字号 back and this one kept the 23 (src/lib/type-size.ts)");
+    }
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "caret") console.log("caret · FACE_ONLY=caret: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
