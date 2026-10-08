@@ -25005,7 +25005,10 @@ try {
     // A second plain folder whose newest file was made rather than edited
     // (UX-51, `NewestFile.added`); gate's notes is the edited one.
     const made = { device: "e".repeat(64), machine: "gate", path: "/home/gate/made", name: "made", pinned: false, newest: { path: "fresh.txt", at_ms: Date.now() - 3 * 60_000, added: true } };
-    extra.push(made);
+    // …and one whose file's name is too long for a phone row: the verb
+    // stands, the name is cut in the middle.
+    const longFile = { device: "e".repeat(64), machine: "gate", path: "/home/gate/longfile", name: "longfile", pinned: false, newest: { path: "experiments/attention-sweep-results-final-version-two.ipynb", at_ms: Date.now() - 4 * 60_000, added: false } };
+    extra.push(made, longFile);
     wsRows.push(...extra);
     // What each row must say on its right, word by word, and in which ink;
     // and a plain folder's sentence, both verbs.
@@ -25014,6 +25017,7 @@ try {
       return {
         merge: gui.ws_op_merge, rebase: gui.ws_op_rebase, "cherry-pick": gui.ws_op_cherry_pick, revert: gui.ws_op_revert, bisect: gui.ws_op_bisect,
         changed: gui.ws_newest_changed("drafts/plan.md"), added: gui.ws_newest_added("fresh.txt"),
+        changedSlot: gui.ws_newest_changed("\u0001"),
       };
     });
     const R = "git-remote", S = "git-stash", C = "git-conflict", A = "git-added", M = "git-modified", U = "git-untracked";
@@ -25086,7 +25090,9 @@ try {
                     const line = r.querySelector("[data-side-sub] [data-ws-newest-line]");
                     if (!line) return null;
                     const said = [...line.childNodes].map((n) => (n.nodeType === 3 ? n.textContent : n.getAttribute?.("title") ?? "")).join("");
-                    return { verb: line.getAttribute("data-ws-newest-line"), said, pathWhole: (() => { const p = line.querySelector("[data-ws-newest]"); return p ? p.scrollWidth <= p.clientWidth + 1 : null; })() };
+                    const mid = line.querySelector("[data-ws-newest] [data-mid-name]");
+                    const drawn = [...line.childNodes].map((n) => (n.nodeType === 3 ? n.textContent : (mid ? mid.children[1].textContent : n.textContent))).join("");
+                    return { verb: line.getAttribute("data-ws-newest-line"), said, drawn };
                   })(),
                   subject: r.querySelector("[data-side-sub] [data-ws-subject]")?.textContent?.trim() ?? null,
                   top: corner ? [...corner.querySelectorAll("[data-ws-op], [data-ws-symbol]")].map((t) => t.textContent.trim()) : null,
@@ -25127,7 +25133,7 @@ try {
       await until(5_000, async () => (await page.locator("[data-ws-row] [data-ws-git]").filter({ visible: true }).count()) >= 9);
       const rows = await readWsRows();
       console.log(`corners d · ${posture} · workspace rows: ${JSON.stringify(Object.fromEntries(Object.entries(rows).map(([k, r]) => [k, { branch: r.branch?.said, top: r.top, bottom: r.bottom, sub: r.sub }])))}`);
-      if (!rows.notes || !rows.made || Object.keys(want).some((k) => !rows[k])) {
+      if (!rows.notes || !rows.made || !rows.longfile || Object.keys(want).some((k) => !rows[k])) {
         fail(`probe dead: corners d · ${posture} · the workspaces list drew ${JSON.stringify(Object.keys(rows))}`);
         continue;
       }
@@ -25163,6 +25169,17 @@ try {
         if (got?.verb !== verb || got?.said !== said) {
           fail(`corners d · ${posture} · the plain folder ${name} reads ${JSON.stringify(got)} — 「${said}」 (UX-51, NewestFile.added)`);
         }
+      }
+      // A long file name: the verb whole, the name cut in the middle — its
+      // start and its end both the file's (narrow; wide may fit it).
+      {
+        const got = rows.longfile?.sentence;
+        const [before, after] = words.changedSlot.split("\u0001");
+        const full = longFile.newest.path;
+        const name = got ? got.drawn.slice(before.length, got.drawn.length - after.length) : "";
+        const at = name.indexOf("…");
+        const ok = got && got.drawn.startsWith(before) && got.drawn.endsWith(after) && (posture === "wide" && at < 0 ? name === full : at > 0 && full.startsWith(name.slice(0, at)) && full.endsWith(name.slice(at + 1)) && name.slice(at + 1).length > 0);
+        if (!ok) fail(`corners d · ${posture} · a long file's sentence draws ${JSON.stringify(got)} — 「${before}」 whole, then the file cut in the middle (UX-51)`);
       }
       if (rows.made.aside !== 0 || rows.made.top !== null || rows.made.bottom !== "3 分钟") {
         fail(`corners d · ${posture} · the made folder reads ${JSON.stringify(rows.made)} — no branch, nothing top-right, 「3 分钟」 under that (UX-48)`);

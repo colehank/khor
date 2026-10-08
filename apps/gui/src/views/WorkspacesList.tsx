@@ -41,7 +41,6 @@ import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
 import { ago, axisOf, groupLabel, valueOf } from "@/words";
-import { PathCut } from "@/components/PathCut";
 import type { GitOperation } from "@/gen/bindings/GitOperation";
 import type { GitSegment } from "@/gen/bindings/GitSegment";
 import type { NewestFile } from "@/gen/bindings/NewestFile";
@@ -763,10 +762,11 @@ function BranchAside({ seg }: { seg: GitSegment }) {
 }
 
 /** **A plain folder's second line, as a sentence** (UX-51, the owner
-    2026-10-08): 「最近新建了 <file>」 when its birth time says the file
-    was made (`NewestFile.added`), else 「最近修改了 <file>」. The words
-    are the catalog's around the file; only the path is cut, from its
-    start (`PathCut`), so the verb always stands. */
+    2026-10-08): the catalog's `ws_newest_added` when the file's birth
+    time says it was made (`NewestFile.added`), else `ws_newest_changed`
+    — only those two verbs. The words are the catalog's around the file;
+    only the file is cut, in the middle (`MidName`, its extension kept),
+    so the verb always stands. The whole path is the title. */
 function NewestLine({ newest }: { newest: NewestFile }) {
   const say = newest.added ? gui.ws_newest_added : gui.ws_newest_changed;
   // The catalog's sentence with a control character in the file's
@@ -776,7 +776,9 @@ function NewestLine({ newest }: { newest: NewestFile }) {
   return (
     <span data-ws-newest-line={newest.added ? "added" : "changed"} className="flex min-w-0 whitespace-pre">
       {before}
-      <PathCut data-ws-newest text={newest.path} className="flex-1" />
+      <span data-ws-newest title={newest.path} className="block min-w-0 flex-1">
+        <MidName text={newest.path} />
+      </span>
       {after}
     </span>
   );
