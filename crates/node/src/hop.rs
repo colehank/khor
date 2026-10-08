@@ -287,7 +287,7 @@ impl Node {
         if let Some(addr) = self.carried_addr(&y.id) {
             ep.offer_addrs(iroh::EndpointAddr::from_parts(peer, [addr])).await;
         }
-        let (links, wires, id, ep) = (self.carry.clone(), self.wires.clone(), y.id.clone(), ep.clone());
+        let (links, wires, id, node) = (self.carry.clone(), self.wires.clone(), y.id.clone(), self.weak());
         // The wire to the middle is judged on a hop's patience while the
         // hop lives (`wires::HOP_SILENT`): a frozen middle hands back sooner.
         let riding = wires.hop_held(&via.to_string());
@@ -300,12 +300,8 @@ impl Node {
                 tokio::select! {
                     () = &mut ended => {
                         // The road under the carried path is gone: iroh
-                        // chooses again now, not when the path idles out
-                        // (vendor/iroh patch 13). A newer link to the same
-                        // machine rides that path, so it is left.
-                        if !links.has(&peer) {
-                            ep.close_carried(peer).await;
-                        }
+                        // chooses again now, not when the path idles out.
+                        crate::carry::let_path_go(&node, &links, peer).await;
                         return;
                     }
                     () = tokio::time::sleep(LOOK_EVERY) => {}
@@ -454,9 +450,7 @@ impl Node {
                 self.wires.forgive(&asker);
                 let _riding = self.wires.hop_held(from);
                 attached.ended().await;
-                if !self.carry.has(&x) {
-                    ep.close_carried(x).await;
-                }
+                crate::carry::let_path_go(&self.weak(), &self.carry, x).await;
             }
         }
     }

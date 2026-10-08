@@ -80,6 +80,12 @@ impl Node {
         self.carry.has(&peer).then(|| khor_net::carry::transport_addr(&peer))
     }
 
+    /// The handle a carrying task keeps to reach [`let_path_go`]: weak, so
+    /// a task never keeps the node alive.
+    pub(crate) fn weak(&self) -> std::sync::Weak<Node> {
+        self.me.get().cloned().unwrap_or_default()
+    }
+
     /// The word for a wire on a carried path: over this machine's own ssh
     /// session, or forwarded by a third machine — by the link it rides, or
     /// rode until a moment ago ([`khor_net::carry::Links::last_carrier`]).
@@ -199,7 +205,7 @@ impl Node {
         let addr = listener.local_addr().map_err(|e| e.to_string())?.to_string();
         let cookie = crate::link::fresh_hex()?;
         let want = format!("{cookie}\n");
-        let (links, wires, id) = (self.carry.clone(), self.wires.clone(), carrier.to_owned());
+        let (links, wires, id, node) = (self.carry.clone(), self.wires.clone(), carrier.to_owned(), self.weak());
         tokio::spawn(async move {
             let claimed = tokio::time::timeout(CLAIM_WITHIN, async {
                 loop {
@@ -217,9 +223,11 @@ impl Node {
                 let _ = sock.set_nodelay(true);
                 let (r, w) = sock.into_split();
                 let attached = links.attach(peer, Carrier::Ssh, r, w);
+                offer_path(&node, peer).await;
                 wires.forgive(&id);
                 wires.note(Some(&id), crate::journal::What::Carry { up: true, why: None });
                 attached.ended().await;
+                let_path_go(&node, &links, peer).await;
                 wires.note(Some(&id), crate::journal::What::Carry { up: false, why: None });
             }
         });
@@ -266,6 +274,7 @@ impl Node {
         OneCarry {
             links: self.carry.clone(),
             wires: self.wires.clone(),
+            node: self.weak(),
             me: self.device_str().to_owned(),
             peer,
             to,
@@ -301,10 +310,37 @@ impl Node {
     }
 }
 
+/// **A carried link ended: let iroh drop its path now** (vendor/iroh patch
+/// 13), so the selector chooses again among the rest at once rather than
+/// keeping the dead path on its last round trip until iroh's 15 s path
+/// idle. Nothing when a newer link to the machine took its place (it rides
+/// the same path) or no resident is serving. The ears are read at the end,
+/// not when the link came up: fresh ears move the links to a new endpoint.
+pub(crate) async fn let_path_go(node: &std::sync::Weak<Node>, links: &khor_net::carry::Links, peer: iroh::EndpointId) {
+    if links.has(&peer) {
+        return;
+    }
+    if let Some(ep) = node.upgrade().and_then(|n| n.current_ears()) {
+        ep.close_carried(peer).await;
+    }
+}
+
+/// **A carried link came up: open its path on the live connections**
+/// (vendor/iroh patch 12), the other half of [`let_path_go`]. A link that
+/// ended had its path closed, so a reconnect is offered at once, not at
+/// the next dial.
+pub(crate) async fn offer_path(node: &std::sync::Weak<Node>, peer: iroh::EndpointId) {
+    if let Some(ep) = node.upgrade().and_then(|n| n.current_ears()) {
+        ep.offer_addrs(iroh::EndpointAddr::from_parts(peer, [khor_net::carry::transport_addr(&peer)]))
+            .await;
+    }
+}
+
 /// One ssh session kept up to one machine: what it needs of the node.
 struct OneCarry {
     links: khor_net::carry::Links,
     wires: Arc<crate::wires::Wires>,
+    node: std::sync::Weak<Node>,
     me: String,
     peer: iroh::EndpointId,
     to: Dest,
@@ -315,7 +351,7 @@ impl OneCarry {
     /// flow's session, which also ends when another link to the machine
     /// took its place.
     async fn run(self, until: Option<Instant>) {
-        let OneCarry { links, wires, me, peer, to } = self;
+        let OneCarry { links, wires, node, me, peer, to } = self;
         let id = peer.to_string();
         let mut failures = 0u32;
         loop {
@@ -342,14 +378,24 @@ impl OneCarry {
                     })
                 });
                 let attached = links.attach(peer, Carrier::Ssh, r, w);
+                offer_path(&node, peer).await;
                 wires.forgive(&id);
                 wires.note(Some(&id), crate::journal::What::Carry { up: true, why: None });
+                let ended = attached.ended();
+                tokio::pin!(ended);
+                let mut gone = false;
                 tokio::select! {
-                    () = attached.ended() => {}
+                    () = &mut ended => gone = true,
                     _ = child.wait() => {}
                 }
                 let _ = child.start_kill();
                 let _ = child.wait().await;
+                // ssh exited first: its pipes are closed, and the link ends
+                // as soon as the reader sees it.
+                if !gone {
+                    let _ = tokio::time::timeout(Duration::from_secs(2), &mut ended).await;
+                }
+                let_path_go(&node, &links, peer).await;
                 let mut why = None;
                 if let Some(said) = said
                     && let Ok(Ok(line)) = tokio::time::timeout(Duration::from_secs(2), said).await
