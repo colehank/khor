@@ -17,11 +17,11 @@
 //! so a frame carries no address. Everything is a datagram network to
 //! QUIC: a full queue drops, never blocks (`spike: no frame dropped`).
 //!
-//! **The selector** ([`RoadOrder`]) is the owner's order: direct, then a
-//! carried road, then the relay — and between a carried road and the
-//! relay no move mid-connection unless the one in use breaks. iroh's own
-//! selector puts a custom path level with direct and moves on a few
-//! milliseconds (audit/road-spike.md, "mixed endpoint").
+//! **The selector** ([`RoadOrder`]): direct whenever it is open, else the
+//! faster of a carried road and the relay by at least
+//! [`SWITCH_MARGIN`] (NET-DIRECT step 4). iroh's own selector puts a
+//! custom path level with direct and moves on a few milliseconds
+//! (audit/road-spike.md, "mixed endpoint").
 //!
 //! ⚠️ The API is iroh's `unstable-custom-transports`. We vendor iroh, so it
 //! changes only when we re-vendor; re-vendoring must re-run the spike.
@@ -32,7 +32,7 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use bytes::Bytes;
 use iroh::endpoint::transports::{
@@ -97,6 +97,9 @@ struct Inner {
     addrs: n0_watcher::Watchable<Vec<CustomAddr>>,
     serial: AtomicU64,
     dropped: AtomicU64,
+    /// The carrier each machine's link was last attached on, kept after
+    /// the link ends ([`Links::last_carrier`]).
+    last: Mutex<HashMap<EndpointId, Carrier>>,
 }
 
 /// **This machine's carried links**, one per far machine. Cheap to clone;
@@ -124,6 +127,7 @@ impl Links {
             addrs: n0_watcher::Watchable::new(vec![addr_of(&me)]),
             serial: AtomicU64::new(1),
             dropped: AtomicU64::new(0),
+            last: Mutex::default(),
         }))
     }
 
@@ -141,6 +145,18 @@ impl Links {
     /// What the link to `peer` is a stream of, when one is up.
     pub fn carrier(&self, peer: &EndpointId) -> Option<Carrier> {
         self.lock().get(peer).map(|l| l.carrier)
+    }
+
+    /// **What the link to `peer` rides, or rode when it ended**: the word
+    /// for a connection iroh still has on its carried path between the
+    /// link ending and iroh choosing another road. Read as [`carrier`]
+    /// was, a hop whose middle stopped answering read as ssh for those
+    /// two seconds, on the face and in the row (net-e, 2026-10-09).
+    ///
+    /// [`carrier`]: Links::carrier
+    pub fn last_carrier(&self, peer: &EndpointId) -> Option<Carrier> {
+        self.carrier(peer)
+            .or_else(|| self.0.last.lock().unwrap_or_else(|p| p.into_inner()).get(peer).copied())
     }
 
     /// Every machine with a link up, and what it rides.
@@ -177,6 +193,7 @@ impl Links {
         let (out, out_rx) = mpsc::channel::<Bytes>(QUEUE);
         let serial = self.0.serial.fetch_add(1, Relaxed);
         self.lock().insert(peer, Link { out, carrier, serial });
+        self.0.last.lock().unwrap_or_else(|p| p.into_inner()).insert(peer, carrier);
         let (done, gone) = oneshot::channel();
         let links = self.clone();
         tokio::spawn(async move {
@@ -349,29 +366,30 @@ impl Tier {
     }
 }
 
-/// How long after a path is first selected a better tier may still take
-/// over from it without the path breaking: the opening race, where the
-/// relay often answers a few ms before a carried road does. Past it, a
-/// connection on the relay stays on the relay.
-pub const OPENING: Duration = Duration::from_secs(3);
-
 /// Within the direct tier, the margin a path must beat the one in use by
 /// before the selection moves (iroh's own `RTT_SWITCHING_MIN`).
 const DIRECT_MARGIN: Duration = Duration::from_millis(5);
 
-/// Paths remembered for [`OPENING`]; past this many the memory starts
-/// over, which at worst lets one connection's relay give way to a
-/// carried road once more.
-const REMEMBERED: usize = 4096;
+/// **Between a carried road and the relay, the margin the faster must
+/// beat the one in use by** (NET-DIRECT step 4, the owner 2026-10-09:
+/// 「可以，一定要把iroh用好呀」 on Tailscale's peer-relay rule): the
+/// lowest round trip carries the connection, and noise of a few ms moves
+/// nothing.
+pub const SWITCH_MARGIN: Duration = Duration::from_millis(10);
 
-/// **khor's path selector** (round ROAD-2): direct, then carried, then
-/// relay; moving up to direct whenever a direct path is open (iroh's hole
-/// punch); between a carried road and the relay, only in the opening
-/// moments or when the path in use breaks.
+/// **khor's path selector** (round ROAD-2, rule of NET-DIRECT step 4):
+/// direct whenever a direct path is open (iroh's hole punch keeps going
+/// under every other road); otherwise the carried road or the relay,
+/// whichever has the lower measured round trip, moving only when the
+/// other beats the one in use by [`SWITCH_MARGIN`]. A carried road through
+/// a middle machine is measured end to end — its two legs and the middle.
+///
+/// ⚠️ 墓碑: until 2026-10-09 the carried road always beat the relay in the
+/// first 3 s of a connection and the two never traded places after
+/// (「只在断的时候换路」): a hop slower than the relay kept carrying, and a
+/// connection that had settled on the relay never took a faster hop.
 #[derive(Debug, Default)]
-pub struct RoadOrder {
-    first_seen: Mutex<HashMap<FourTuple, Instant>>,
-}
+pub struct RoadOrder;
 
 impl PathSelector for RoadOrder {
     fn select(&self, ctx: &PathSelectionContext<'_>) -> PathSelection {
@@ -388,16 +406,9 @@ impl PathSelector for RoadOrder {
             }
             candidates.push((p, tier, stats.rtt));
         }
-        let age = ctx.current().map(|c| {
-            let mut seen = self.first_seen.lock().unwrap_or_else(|p| p.into_inner());
-            if seen.len() >= REMEMBERED && !seen.contains_key(c) {
-                seen.clear();
-            }
-            seen.entry(c.clone()).or_insert_with(Instant::now).elapsed()
-        });
         let ranked: Vec<(Tier, Duration)> = candidates.iter().map(|(_, t, r)| (*t, *r)).collect();
         let mut selection = PathSelection::none();
-        if let Some(i) = choose(current, age.unwrap_or_default(), &ranked) {
+        if let Some(i) = choose(current, &ranked) {
             selection.set(&candidates[i].0);
         }
         selection
@@ -407,12 +418,12 @@ impl PathSelector for RoadOrder {
 /// The rule, apart from iroh's types: which candidate to move to, or
 /// `None` to stay. `current` is the path in use with its round trip, or
 /// `None` when nothing is selected or the selected path broke (it is no
-/// longer among the open ones); `age` is how long it has been in use.
-pub fn choose(current: Option<(Tier, Duration)>, age: Duration, candidates: &[(Tier, Duration)]) -> Option<usize> {
+/// longer among the open ones).
+pub fn choose(current: Option<(Tier, Duration)>, candidates: &[(Tier, Duration)]) -> Option<usize> {
     let best = candidates
         .iter()
         .enumerate()
-        .min_by_key(|(_, (tier, rtt))| (*tier, *rtt))
+        .min_by_key(|(_, (tier, rtt))| (*tier != Tier::Direct, *rtt))
         .map(|(i, _)| i)?;
     let (best_tier, best_rtt) = candidates[best];
     let Some((tier, rtt)) = current else {
@@ -424,9 +435,8 @@ pub fn choose(current: Option<(Tier, Duration)>, age: Duration, candidates: &[(T
         (_, Tier::Direct) => Some(best),
         // Off direct only when it broke, and then `current` is `None`.
         (Tier::Direct, _) => None,
-        // The relay gives way to a carried road only while opening.
-        (Tier::Relay, Tier::Carried) => (age < OPENING).then_some(best),
-        _ => None,
+        // A carried road and the relay: the faster, past the margin.
+        _ => (best_rtt + SWITCH_MARGIN <= rtt).then_some(best),
     }
 }
 
@@ -437,49 +447,42 @@ mod tests {
     const MS: fn(u64) -> Duration = Duration::from_millis;
 
     #[test]
-    fn the_order_is_direct_then_carried_then_relay() {
+    fn direct_first_then_the_faster_of_carried_and_relay() {
         let all = [(Tier::Relay, MS(5)), (Tier::Carried, MS(40)), (Tier::Direct, MS(90))];
-        assert_eq!(choose(None, Duration::ZERO, &all), Some(2), "direct, however slow");
-        assert_eq!(choose(None, Duration::ZERO, &all[..2]), Some(1), "a carried road over a faster relay");
-        assert_eq!(choose(None, Duration::ZERO, &all[..1]), Some(0));
-        assert_eq!(choose(None, Duration::ZERO, &[]), None);
+        assert_eq!(choose(None, &all), Some(2), "direct, however slow");
+        assert_eq!(choose(None, &all[..2]), Some(0), "the relay, faster than the carried road");
+        let hop = [(Tier::Relay, MS(58)), (Tier::Carried, MS(29))];
+        assert_eq!(choose(None, &hop), Some(1), "the hop, faster than the relay");
+        assert_eq!(choose(None, &all[..1]), Some(0));
+        assert_eq!(choose(None, &[]), None);
     }
 
-    /// The owner's 「只在断的时候换路」: a few ms is never a reason.
+    /// NET-DIRECT step 4: the faster of a carried road and the relay, by
+    /// at least [`SWITCH_MARGIN`] — never on a few ms of noise.
     #[test]
-    fn a_carried_road_and_the_relay_hold_once_opened() {
-        let long = OPENING + Duration::from_secs(1);
-        let both = [(Tier::Relay, MS(5)), (Tier::Carried, MS(40))];
-        assert_eq!(
-            choose(Some((Tier::Carried, MS(40))), long, &both),
-            None,
-            "never down to the relay for being faster"
-        );
-        assert_eq!(
-            choose(Some((Tier::Relay, MS(5))), long, &both),
-            None,
-            "a connection on the relay stays there"
-        );
-        assert_eq!(
-            choose(Some((Tier::Relay, MS(5))), MS(200), &both),
-            Some(1),
-            "the opening race: the relay answered first"
-        );
+    fn a_carried_road_and_the_relay_trade_places_by_ten_ms() {
+        let iphone_maclab = [(Tier::Relay, MS(58)), (Tier::Carried, MS(29))];
+        assert_eq!(choose(Some((Tier::Relay, MS(58))), &iphone_maclab), Some(1), "29 ms through turing beats 58 ms");
+        assert_eq!(choose(Some((Tier::Carried, MS(29))), &iphone_maclab), None, "and holds");
+        let close = [(Tier::Relay, MS(30)), (Tier::Carried, MS(22))];
+        assert_eq!(choose(Some((Tier::Relay, MS(30))), &close), None, "8 ms is not enough");
+        assert_eq!(choose(Some((Tier::Carried, MS(22))), &close), None);
+        let degraded = [(Tier::Relay, MS(30)), (Tier::Carried, MS(90))];
+        assert_eq!(choose(Some((Tier::Carried, MS(90))), &degraded), Some(0), "a hop whose leg degraded gives way");
         // Broken: the one in use is gone, so there is no current.
-        assert_eq!(choose(None, long, &both[..1]), Some(0), "the carried road broke: the relay");
+        assert_eq!(choose(None, &degraded[..1]), Some(0), "the carried road broke: the relay");
     }
 
     #[test]
     fn direct_takes_over_at_any_time_and_is_left_only_when_it_breaks() {
-        let long = Duration::from_secs(600);
         let open = [(Tier::Carried, MS(40)), (Tier::Direct, MS(60))];
-        assert_eq!(choose(Some((Tier::Carried, MS(40))), long, &open), Some(1));
-        assert_eq!(choose(Some((Tier::Relay, MS(40))), long, &[(Tier::Relay, MS(40)), (Tier::Direct, MS(60))]), Some(1));
-        assert_eq!(choose(Some((Tier::Direct, MS(60))), long, &open), None);
+        assert_eq!(choose(Some((Tier::Carried, MS(40))), &open), Some(1));
+        assert_eq!(choose(Some((Tier::Relay, MS(40))), &[(Tier::Relay, MS(40)), (Tier::Direct, MS(60))]), Some(1));
+        assert_eq!(choose(Some((Tier::Direct, MS(60))), &open), None);
         let two = [(Tier::Direct, MS(60)), (Tier::Direct, MS(57))];
-        assert_eq!(choose(Some((Tier::Direct, MS(60))), long, &two), None, "within the margin");
+        assert_eq!(choose(Some((Tier::Direct, MS(60))), &two), None, "within the margin");
         let two = [(Tier::Direct, MS(60)), (Tier::Direct, MS(20))];
-        assert_eq!(choose(Some((Tier::Direct, MS(60))), long, &two), Some(1));
+        assert_eq!(choose(Some((Tier::Direct, MS(60))), &two), Some(1));
     }
 
     #[test]
@@ -488,5 +491,23 @@ mod tests {
         assert_eq!(id_of(&addr_of(&id)), Some(id));
         assert_eq!(id_of(&CustomAddr::from((7u64, &id.as_bytes()[..]))), None, "another transport's");
         assert_eq!(id_of(&CustomAddr::from((CARRY, &[1u8, 2][..]))), None);
+    }
+
+    /// A hop whose link ended still reads as the hop until iroh leaves the
+    /// carried path, never as ssh (net-e: the three-node test read 「Ssh」
+    /// for two seconds after the middle stopped).
+    #[tokio::test]
+    async fn an_ended_link_is_remembered_by_what_it_rode() {
+        let links = Links::new(iroh::SecretKey::generate().public());
+        let (peer, via) = (iroh::SecretKey::generate().public(), iroh::SecretKey::generate().public());
+        assert_eq!(links.last_carrier(&peer), None);
+        let (here, there) = tokio::io::duplex(64);
+        let (r, w) = tokio::io::split(here);
+        let attached = links.attach(peer, Carrier::Hop { via }, r, w);
+        assert_eq!(links.last_carrier(&peer), Some(Carrier::Hop { via }));
+        drop(there);
+        attached.ended().await;
+        assert_eq!(links.carrier(&peer), None, "the link is gone");
+        assert_eq!(links.last_carrier(&peer), Some(Carrier::Hop { via }), "and is remembered as the hop");
     }
 }

@@ -83,6 +83,32 @@ const OPEN_PATH_RETRY_DELAY: Duration = Duration::from_millis(333);
 /// bound the oldest entry is dropped, being the one least likely to still be reachable.
 const MAX_PENDING_OPEN_PATHS: usize = 64;
 
+/// khor patch 8 (vendor/iroh/KHOR.md): one hole-punching round this
+/// endpoint started toward `remote`, with the candidates on both sides.
+/// Upstream says so only as the tracing event `iroh::_events::qnt::init`.
+#[derive(Debug, Clone)]
+pub struct HolepunchRound {
+    /// The remote endpoint.
+    pub remote: EndpointId,
+    /// This endpoint's candidates, as offered to the remote.
+    pub local: Vec<SocketAddr>,
+    /// The remote's candidates, as it offered them.
+    pub remote_candidates: Vec<SocketAddr>,
+}
+
+/// khor patch 10: this endpoint's addresses as remotes observed them on
+/// direct paths, with when; shared by every remote's actor and read where
+/// the direct addresses are assembled (`socket.rs`).
+pub(crate) type PeerObserved =
+    Arc<std::sync::Mutex<std::collections::BTreeMap<SocketAddr, std::time::Instant>>>;
+
+/// khor patch 10: how long a remote's observation is offered after it was
+/// last made.
+pub(crate) const PEER_OBSERVED_FOR: Duration = Duration::from_secs(10 * 60);
+
+/// khor patch 10: the most observed addresses kept.
+pub(crate) const PEER_OBSERVED_MAX: usize = 8;
+
 /// A stream of events from all paths for all connections.
 ///
 /// The connection is identified using [`ConnId`].  The event `Err` variant happens when the
@@ -181,6 +207,11 @@ struct State {
 
     /// The path selector used to pick the preferred path among the candidates.
     path_selector: Arc<dyn PathSelector>,
+
+    /// khor patch 8: every round started, told to `Endpoint::holepunch_rounds`.
+    rounds: tokio::sync::broadcast::Sender<HolepunchRound>,
+    /// khor patch 10: the endpoint's addresses as remotes observed them.
+    peer_observed: PeerObserved,
 }
 
 impl RemoteStateActor {
@@ -192,6 +223,8 @@ impl RemoteStateActor {
         metrics: Arc<SocketMetrics>,
         address_lookup: AddressLookupServices,
         path_selector: Arc<dyn PathSelector>,
+        rounds: tokio::sync::broadcast::Sender<HolepunchRound>,
+        peer_observed: PeerObserved,
     ) -> Self {
         Self {
             connections: FxHashMap::default(),
@@ -212,6 +245,8 @@ impl RemoteStateActor {
                 pending_open_paths: VecDeque::new(),
                 address_lookup_stream: None,
                 path_selector,
+                rounds,
+                peer_observed,
             },
         }
     }
@@ -374,7 +409,20 @@ impl RemoteStateActor {
                 self.handle_msg_add_connection(handle, tx);
             }
             RemoteStateMessage::ResolveRemote(addrs, tx) => {
+                // khor patch 12: a custom (carried) address handed in while
+                // connections are live is opened on them now. Upstream
+                // only records it, and a connection that settled on the
+                // relay never learnt of a road khor carried afterwards.
+                // `open_path_ensure` leaves a path that is already open.
+                let custom: Vec<transports::FourTuple> =
+                    to_transports_addr(self.state.endpoint_id, addrs.iter().cloned())
+                        .filter(|a| matches!(a, transports::Addr::Custom(_)))
+                        .map(transports::FourTuple::from_remote)
+                        .collect();
                 self.state.handle_msg_resolve_remote(addrs, tx);
+                for open_addr in &custom {
+                    self.open_path_on_all_conns(open_addr);
+                }
             }
             RemoteStateMessage::RemoteInfo(tx) => {
                 let addrs = self.state.paths.to_remote_addrs();
@@ -386,6 +434,28 @@ impl RemoteStateActor {
             }
             RemoteStateMessage::NetworkChange { is_major } => {
                 self.handle_msg_network_change(is_major);
+            }
+            RemoteStateMessage::CloseCustom => {
+                // khor patch 13: the road under every custom (carried)
+                // path to this remote is gone, so close them now. Upstream
+                // leaves a path until its idle timeout (15 s) and the
+                // selector keeps choosing it on its last round trip; the
+                // close emits `Abandoned`, which re-runs the selection.
+                for conn_state in self.connections.values() {
+                    let Some(conn) = conn_state.handle.upgrade() else {
+                        continue;
+                    };
+                    for (path_id, tuple) in conn_state.paths.iter() {
+                        if !matches!(tuple.remote(), transports::Addr::Custom(_)) {
+                            continue;
+                        }
+                        if let Some(path) = conn.path(*path_id) {
+                            // The last open path is refused: the
+                            // connection keeps it and idles out as before.
+                            let _ = path.close();
+                        }
+                    }
+                }
             }
         }
     }
@@ -653,7 +723,21 @@ impl RemoteStateActor {
             NoqPathEvent::Discarded { id, path_stats, .. } => {
                 trace!(%id, ?path_stats, "path discarded");
             }
-            NoqPathEvent::RemoteStatus { .. } | NoqPathEvent::ObservedAddr { .. } => {
+            NoqPathEvent::ObservedAddr { id, addr, .. } => {
+                // khor patch 10: on a direct path, what the remote sees is
+                // this endpoint's address on the internet for that road —
+                // the same fact QAD asks a relay for. On a relay or carried
+                // path it is a mapped address and means nothing.
+                let direct = conn
+                    .path(id)
+                    .and_then(|p| p.network_path().ok())
+                    .and_then(|np| self.state.mapped_addrs.to_transport_tuple(&np))
+                    .is_some_and(|t| t.is_ip());
+                if direct {
+                    self.state.peer_observed(addr);
+                }
+            }
+            NoqPathEvent::RemoteStatus { .. } => {
                 // Nothing to do for these events.
             }
             _ => {
@@ -972,7 +1056,7 @@ impl State {
                 let remote_candidates = remote_candidates
                     .iter()
                     .map(|addr| SocketAddr::new(addr.ip().to_canonical(), addr.port()))
-                    .collect();
+                    .collect::<BTreeSet<SocketAddr>>();
                 event!(
                     target: "iroh::_events::qnt::init",
                     Level::DEBUG,
@@ -980,6 +1064,12 @@ impl State {
                     ?local_candidates,
                     ?remote_candidates,
                 );
+                // khor patch 8: no subscriber is no error.
+                let _ = self.rounds.send(HolepunchRound {
+                    remote: self.endpoint_id,
+                    local: local_candidates.iter().copied().collect(),
+                    remote_candidates: remote_candidates.iter().copied().collect(),
+                });
                 self.last_holepunch = Some(HolepunchAttempt {
                     when: Instant::now(),
                     local_candidates,
@@ -1162,12 +1252,47 @@ impl State {
     }
 
     /// Returns the current set of local direct addresses.
+    ///
+    /// khor patch 9: only those the endpoint's address filter lets through.
+    /// Upstream offers every direct address to the remote, a proxy's
+    /// fake-IP TUN address (198.18.0.0/15) among them, which no peer can
+    /// reach and a peer running the same proxy reaches on itself.
     fn local_candidates(&mut self) -> BTreeSet<SocketAddr> {
-        self.local_direct_addrs
+        let all = self
+            .local_direct_addrs
             .get()
             .iter()
-            .map(|d| d.addr)
+            .map(|d| TransportAddr::Ip(d.addr))
+            .collect();
+        self.address_lookup
+            .filtered(all)
+            .into_iter()
+            .filter_map(|a| match a {
+                TransportAddr::Ip(sa) => Some(sa),
+                _ => None,
+            })
             .collect()
+    }
+
+    /// khor patch 10: an address the remote says it sees this endpoint's
+    /// packets come from, on a direct path. Kept for [`PEER_OBSERVED_FOR`]
+    /// and offered like a QAD address from the next direct-address update
+    /// on; at most [`PEER_OBSERVED_MAX`], the oldest giving way.
+    fn peer_observed(&self, addr: SocketAddr) {
+        let addr = SocketAddr::new(addr.ip().to_canonical(), addr.port());
+        // Two endpoints on one machine see each other on loopback: that is
+        // no address on the internet.
+        if addr.ip().is_loopback() || addr.ip().is_unspecified() || addr.port() == 0 {
+            return;
+        }
+        let mut seen = self.peer_observed.lock().expect("poisoned");
+        seen.insert(addr, std::time::Instant::now());
+        while seen.len() > PEER_OBSERVED_MAX {
+            let Some(oldest) = seen.iter().min_by_key(|(_, t)| **t).map(|(a, _)| *a) else {
+                break;
+            };
+            seen.remove(&oldest);
+        }
     }
 }
 
@@ -1255,6 +1380,9 @@ pub(crate) enum RemoteStateMessage {
     RemoteInfo(oneshot::Sender<RemoteInfo>),
     /// The network status has changed in some way
     NetworkChange { is_major: bool },
+    /// khor patch 13: closes every custom path to this remote on every
+    /// connection; the road under them is gone.
+    CloseCustom,
 }
 
 /// Information about a holepunch attempt.

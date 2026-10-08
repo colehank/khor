@@ -80,7 +80,11 @@ pub(crate) fn watch(
     id: &str,
     conn: &iroh::endpoint::Connection,
     journal: Option<Arc<crate::journal::Journal>>,
+    carry: &khor_net::carry::Links,
 ) {
+    if let Some(j) = journal.clone() {
+        follow(id, conn.path_events(), conn.weak_handle(), j, carry.clone());
+    }
     let (roads, id, weak) = (roads.clone(), id.to_owned(), conn.weak_handle());
     tokio::spawn(async move {
         let deadline = tokio::time::Instant::now() + SETTLE;
@@ -141,6 +145,91 @@ pub(crate) fn watch(
 }
 
 /// Every machine's tally, in no particular order.
+/// The last path written per machine and kind of change ([`follow`]): a
+/// machine's two connections (one each way) report the same selection, and
+/// one line says it.
+static WRITTEN: std::sync::LazyLock<Mutex<HashMap<(String, &'static str), String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// **Every path change of a connection, for its whole life** (NET-DIRECT):
+/// a direct path opening is a hole punch that landed, a selection is the
+/// road moving — relay to direct, direct back to relay, onto a carried road.
+/// [`watch`]'s verdict covers only the first [`SETTLE`]; iroh keeps
+/// punching every 60 s after it, and what that finds was written nowhere.
+/// The stream ends when the connection closes; nothing is polled.
+fn follow(
+    id: &str,
+    events: iroh::endpoint::PathEventStream,
+    weak: iroh::endpoint::WeakConnectionHandle,
+    journal: Arc<crate::journal::Journal>,
+    carry: khor_net::carry::Links,
+) {
+    let id = id.to_owned();
+    tokio::spawn(async move {
+        use n0_future::StreamExt;
+        use iroh::endpoint::PathEvent;
+        tokio::pin!(events);
+        while let Some(event) = events.next().await {
+            let (change, path_id, remote) = match event {
+                PathEvent::Opened { id: pid, remote_addr, .. } if remote_addr.is_ip() => ("opened", pid, remote_addr),
+                PathEvent::Selected { id: pid, remote_addr, .. } => ("selected", pid, remote_addr),
+                _ => continue,
+            };
+            let (road, addr) = match &remote {
+                iroh::TransportAddr::Ip(sa) => ("direct", sa.to_string()),
+                iroh::TransportAddr::Relay(url) => (
+                    "relay",
+                    url.as_str()
+                        .trim_end_matches('/')
+                        .split("://")
+                        .last()
+                        .unwrap_or_default()
+                        .to_owned(),
+                ),
+                // A carried road names what carries it (net-e): the
+                // middle's id for a peer hop, `ssh` for ssh — the line
+                // said 「改走转连：」 with nothing after the colon.
+                _ => (
+                    "carried",
+                    match id.parse().ok().and_then(|p| carry.last_carrier(&p)) {
+                        Some(khor_net::carry::Carrier::Hop { via }) => via.to_string(),
+                        Some(khor_net::carry::Carrier::Ssh) => "ssh".to_owned(),
+                        None => String::new(),
+                    },
+                ),
+            };
+            {
+                let mut written = WRITTEN.lock().unwrap_or_else(|p| p.into_inner());
+                let key = (id.clone(), change);
+                if written.get(&key) == Some(&addr) {
+                    continue;
+                }
+                written.insert(key, addr.clone());
+                // A new selection is news for the next opening too.
+                if change == "selected" {
+                    written.remove(&(id.clone(), "opened"));
+                }
+            }
+            // A carried path just selected has no sample yet and reads 0:
+            // said as nothing rather than 「往返 0 ms」.
+            let rtt_ms = weak
+                .upgrade()
+                .and_then(|c| c.rtt(path_id))
+                .map(crate::journal::ms)
+                .filter(|ms| road != "carried" || *ms > 0);
+            journal.note(
+                Some(&id),
+                crate::journal::What::Path {
+                    change: change.to_owned(),
+                    road: road.to_owned(),
+                    addr,
+                    rtt_ms,
+                },
+            );
+        }
+    });
+}
+
 pub(crate) fn tally(roads: &Roads) -> Vec<(String, RoadTally)> {
     let Ok(map) = roads.lock() else {
         return Vec::new();

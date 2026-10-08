@@ -213,7 +213,7 @@ export function MandalaMap({
   // this one is talking to — counted off the rows the map is drawn from,
   // with the same roads the network page counts (direct and relayed
   // carry something; 未连接 / serve 未运行 do not).
-  const connected = others.filter((r) => r.hop === "direct" || r.hop === "relay").length;
+  const connected = others.filter((r) => r.hop === "direct" || r.hop === "relay" || r.hop === "forwarded").length;
   return (
     <>
     {subtitle && rows.length > 0 && (

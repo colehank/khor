@@ -192,6 +192,51 @@ pub enum What {
     /// `face`, a face arriving (this machine's line); `page`, a machine's
     /// page opened (that machine's).
     Person { by: String },
+    /// What iroh learnt of this machine from the relays that answer QUIC
+    /// address discovery (NET-DIRECT): its public addresses, whether its
+    /// NAT maps each destination to a port of its own (then a peer behind
+    /// another such NAT cannot punch through on IPv4), and which relays
+    /// answered. Written when the addresses or the mapping change.
+    Learnt {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        v4: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        v6: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        varies: Option<bool>,
+        from: Vec<String>,
+    },
+    /// The kernel sends this machine's internet traffic out from `src`, a
+    /// fake-IP address (198.18.0.0/15): a proxy's TUN carries every UDP
+    /// datagram and gives it a port of its own. `None`: it no longer does.
+    Tun {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        src: Option<String>,
+    },
+    /// A path of a connection to the peer, for the life of the
+    /// connection: `opened`, a direct path validated (a punch landed);
+    /// `selected`, the path now carrying it.
+    Path {
+        change: String,
+        road: String,
+        addr: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rtt_ms: Option<u64>,
+    },
+    /// Hole punching toward the peer (vendor/iroh patch 8): the
+    /// candidates of the latest round, and how many rounds were started
+    /// since the last such line — written when the candidates change, and
+    /// at most every [`ROUND_EVERY`] while they do not.
+    Round {
+        local: Vec<String>,
+        remote: Vec<String>,
+        rounds: u32,
+    },
+    /// A document that must sync with the peer did not, and the round
+    /// stopped there (NET-DIRECT: turing's and lecun's devices tables
+    /// failed every round for days and nothing said so). Written when
+    /// the failure is new or its words changed ([`sync_failed`]).
+    Sync { doc: String, error: String },
 }
 
 /// One line of the journal.
@@ -463,6 +508,38 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         What::Carry { up: false, why } => msg::journal_carry_down(scrub(why.as_deref().unwrap_or(""))),
         What::Person { by } if by == "page" => msg::journal_person_page().to_owned(),
         What::Person { .. } => msg::journal_person_face().to_owned(),
+        What::Learnt { v4: None, v6: None, .. } => msg::journal_learnt_none().to_owned(),
+        What::Learnt { v4, v6, varies, from } => {
+            let addrs: Vec<&str> = v4.iter().chain(v6.iter()).map(String::as_str).collect();
+            let mut s = msg::journal_learnt(addrs.join("，"), from.join("、"));
+            if *varies == Some(true) {
+                s.push_str(msg::journal_learnt_varies());
+            }
+            s
+        }
+        What::Tun { src: Some(src) } => msg::journal_tun(src),
+        What::Tun { src: None } => msg::journal_tun_off().to_owned(),
+        What::Path { change, road, addr, rtt_ms } => {
+            let mut s = if change == "opened" {
+                msg::journal_path_opened(addr)
+            } else if road == "carried" && addr == "ssh" {
+                msg::journal_path_ssh().to_owned()
+            } else if road == "carried" && !addr.is_empty() {
+                msg::journal_path_hop(name_of(addr))
+            } else {
+                msg::journal_path_selected(road_word(road), addr)
+            };
+            if let Some(ms) = rtt_ms {
+                s.push_str(&msg::journal_path_rtt(ms));
+            }
+            s
+        }
+        What::Round { local, remote, rounds } => {
+            let none = || msg::journal_round_none().to_owned();
+            let list = |v: &[String]| if v.is_empty() { none() } else { v.join("，") };
+            msg::journal_round(rounds, list(local), list(remote))
+        }
+        What::Sync { doc, error } => msg::journal_sync_failed(doc, scrub(error)),
     }
 }
 
@@ -477,6 +554,7 @@ pub fn is_trouble(e: &Entry) -> bool {
         What::Hop { via, .. } => via.is_none(),
         What::Carry { up, .. } => !up,
         What::Departed => true,
+        What::Sync { .. } => true,
         _ => false,
     }
 }
@@ -519,6 +597,8 @@ pub(crate) fn watch_ears(
     let mut addrs = ep.watch_addr();
     let mut home = ep.home_relay_status();
     let mut direct = ep.watch_direct_addrs();
+    let mut report = ep.net_report();
+    let mut rounds = ep.holepunch_rounds();
     // Owned: the watch never keeps old ears alive.
     let closed = ep.closed();
     tokio::spawn(async move {
@@ -559,7 +639,13 @@ pub(crate) fn watch_ears(
         // or has never been.
         let mut down_at: Option<std::time::Instant> = None;
         let mut interfaces = Interfaces::new(interface_addrs(&direct.get()));
+        let mut learnt = Learnt::default();
+        let mut punching = Punching::default();
+        let mut tun = tun_source();
         wires.note(None, What::Addrs { addrs: was_ips.clone() });
+        if tun.is_some() {
+            wires.note(None, What::Tun { src: tun.clone() });
+        }
         for (url, state, error) in homes(&home.get()) {
             if state == "disconnected" {
                 down_at.get_or_insert_with(std::time::Instant::now);
@@ -578,8 +664,29 @@ pub(crate) fn watch_ears(
                 () = tokio::time::sleep_until(tokio::time::Instant::from_std(due.unwrap_or_else(std::time::Instant::now))), if due.is_some() => {
                     if interfaces.settled() {
                         changed(Change::Addrs);
+                        let now = tun_source();
+                        if now != tun {
+                            wires.note(None, What::Tun { src: now.clone() });
+                            tun = now;
+                        }
                     }
                 }
+                got = report.updated() => {
+                    let Ok(now) = got else { return };
+                    if let Some(w) = now.as_ref().and_then(|r| learnt.saw(r)) {
+                        wires.note(None, w);
+                    }
+                }
+                got = rounds.recv() => match got {
+                    Ok(round) => {
+                        let peer = round.remote.to_string();
+                        if let Some(w) = punching.saw(round, std::time::Instant::now()) {
+                            wires.note(Some(&peer), w);
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                },
                 got = addrs.updated() => {
                     let Ok(now) = got else { return };
                     let now = ips(&now);
@@ -623,6 +730,116 @@ pub(crate) fn watch_ears(
             }
         }
     });
+}
+
+/// **What iroh learnt of this machine's public side, told when it
+/// changes** ([`watch_ears`]): the addresses' IPs and whether the NAT maps
+/// per destination. Ports are left out of the comparison — behind a NAT
+/// that maps per destination each fresh QAD connection gets a new one, and
+/// a line every five minutes would say nothing new.
+#[derive(Debug, Default)]
+struct Learnt {
+    told: Option<(Option<std::net::IpAddr>, Option<std::net::IpAddr>, Option<bool>)>,
+}
+
+impl Learnt {
+    fn saw(&mut self, r: &iroh::unstable_net_report::NetReport) -> Option<What> {
+        use iroh::unstable_net_report::Probe;
+        let varies = r.mapping_varies_by_dest_ipv4.or(r.mapping_varies_by_dest_ipv6);
+        let key = (
+            r.global_v4.map(|a| std::net::IpAddr::V4(*a.ip())),
+            r.global_v6.map(|a| std::net::IpAddr::V6(*a.ip())),
+            varies,
+        );
+        if self.told.as_ref() == Some(&key) {
+            return None;
+        }
+        self.told = Some(key);
+        let mut from: Vec<String> = r
+            .relay_latency
+            .iter()
+            .filter(|(p, ..)| matches!(p, Probe::QadIpv4 | Probe::QadIpv6))
+            .map(|(_, url, _)| scrub(url.as_str().trim_end_matches('/')))
+            .collect();
+        from.dedup();
+        Some(What::Learnt {
+            v4: r.global_v4.map(|a| a.to_string()),
+            v6: r.global_v6.map(|a| a.to_string()),
+            varies,
+            from,
+        })
+    }
+}
+
+/// The sync failures last written, per (machine, document).
+static SYNC_FAILED: std::sync::LazyLock<Mutex<HashMap<(String, String), String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// **A must-sync document failed with the peer** (`link::sync_what_changed`):
+/// the line to write, or `None` when the same words were written last
+/// time. `error` `None` is a success, which clears the memory so the next
+/// failure is told again.
+pub(crate) fn sync_failed(peer: &str, doc: &str, error: Option<&str>) -> Option<What> {
+    let mut last = SYNC_FAILED.lock().unwrap_or_else(|p| p.into_inner());
+    let key = (peer.to_owned(), doc.to_owned());
+    let Some(error) = error else {
+        last.remove(&key);
+        return None;
+    };
+    if last.get(&key).map(String::as_str) == Some(error) {
+        return None;
+    }
+    last.insert(key, error.to_owned());
+    Some(What::Sync { doc: doc.to_owned(), error: error.to_owned() })
+}
+
+/// How often a round of hole punching with unchanged candidates is
+/// written: iroh starts one every 60 s while a connection has no direct
+/// path of 10 ms or less, and a line a minute per machine would push the
+/// dials out of the file.
+pub const ROUND_EVERY: Duration = Duration::from_secs(10 * 60);
+
+/// The rounds of hole punching per machine, and which of them are written
+/// ([`What::Round`]).
+#[derive(Debug, Default)]
+struct Punching {
+    /// Per machine: the candidates last written, rounds since, written when.
+    last: HashMap<iroh::EndpointId, (Vec<String>, Vec<String>, u32, std::time::Instant)>,
+}
+
+impl Punching {
+    fn saw(&mut self, round: iroh::endpoint::HolepunchRound, now: std::time::Instant) -> Option<What> {
+        let sorted = |v: &[std::net::SocketAddr]| {
+            let mut v: Vec<String> = v.iter().map(|a| a.to_string()).collect();
+            v.sort();
+            v
+        };
+        let (local, remote) = (sorted(&round.local), sorted(&round.remote_candidates));
+        let first = !self.last.contains_key(&round.remote);
+        let entry = self.last.entry(round.remote).or_insert_with(|| (Vec::new(), Vec::new(), 0, now));
+        entry.2 += 1;
+        let fresh = first || entry.0 != local || entry.1 != remote;
+        if !fresh && now.duration_since(entry.3) < ROUND_EVERY {
+            return None;
+        }
+        let rounds = entry.2;
+        *entry = (local.clone(), remote.clone(), 0, now);
+        Some(What::Round { local, remote, rounds })
+    }
+}
+
+/// The address this machine's internet traffic leaves from, when that is
+/// a proxy TUN's fake-IP range (198.18.0.0/15); `None` otherwise. Asked of
+/// the kernel by connecting a UDP socket, which sends nothing.
+fn tun_source() -> Option<String> {
+    let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    s.connect("1.1.1.1:443").ok()?;
+    match s.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(v4) if v4.octets()[0] == 198 && matches!(v4.octets()[1], 18 | 19) => {
+            Some(v4.to_string())
+        }
+        _ => None,
+    }
 }
 
 /// How long the interface addresses hold still before their change is
@@ -771,6 +988,25 @@ impl crate::Node {
         out.push('\n');
         out.push_str(&msg::journal_report_span(minutes, lines.len()));
         out.push_str("\n\n");
+        let since = crate::now_ms().saturating_sub(minutes.saturating_mul(60_000));
+        let verdicts = not_direct(&read(self.root(), None, since));
+        if !verdicts.is_empty() {
+            let names: HashMap<String, String> = self
+                .devices()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|d| (d.id, d.name))
+                .collect();
+            out.push_str(msg::journal_why_title());
+            out.push('\n');
+            for (peer, road, why) in &verdicts {
+                let name = names.get(peer).cloned().unwrap_or_else(|| peer.chars().take(8).collect());
+                let why: Vec<String> = why.iter().map(Why::words).collect();
+                out.push_str(&msg::journal_why_line(name, road_word(road), why.join("；")));
+                out.push('\n');
+            }
+            out.push('\n');
+        }
         for l in &lines {
             let mark = if l.trouble { "!" } else { " " };
             out.push_str(&format!("{} {mark} {}\t{}\n", l.when, l.machine, l.text));
@@ -786,9 +1022,187 @@ impl crate::Node {
     }
 }
 
+/// One reason a machine's connection is not direct ([`not_direct`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Why {
+    /// No round of hole punching from this side was written.
+    NoRound,
+    /// It offers a public IPv6 address and this machine has none.
+    V6Here,
+    /// This machine has a public IPv6 address and it offers none.
+    V6There,
+    /// Neither has public IPv6, and this machine's NAT maps per destination.
+    HardNat,
+    /// The default route goes through a proxy's TUN.
+    Tun,
+    /// No relay told this machine its public address.
+    NoPublic,
+    /// This many rounds, and nothing above explains it: its candidates did
+    /// not answer.
+    Punched(u32),
+}
+
+impl Why {
+    fn words(&self) -> String {
+        match self {
+            Why::NoRound => msg::journal_why_no_round().to_owned(),
+            Why::V6Here => msg::journal_why_v6_here().to_owned(),
+            Why::V6There => msg::journal_why_v6_there().to_owned(),
+            Why::HardNat => msg::journal_why_hard_nat().to_owned(),
+            Why::Tun => msg::journal_why_tun().to_owned(),
+            Why::NoPublic => msg::journal_why_no_public().to_owned(),
+            Why::Punched(n) => msg::journal_why_punched(n),
+        }
+    }
+}
+
+/// Whether an address is a global unicast IPv6 one (2000::/3).
+fn global_v6(addr: &str) -> bool {
+    match addr.parse::<std::net::SocketAddr>() {
+        Ok(std::net::SocketAddr::V6(a)) => a.ip().segments()[0] & 0xe000 == 0x2000,
+        _ => false,
+    }
+}
+
+/// **Per machine whose latest road is not direct, why** (NET-DIRECT, the
+/// report's 「为什么不是直连」): read off the journal alone — this machine's
+/// addresses, what the relays told it, the TUN, and that machine's rounds
+/// of hole punching with the candidates it offered. Oldest first in, one
+/// verdict per machine out, by id.
+pub fn not_direct(entries: &[Entry]) -> Vec<(String, String, Vec<Why>)> {
+    let mut here_v6 = false;
+    let mut learnt_v4 = false;
+    let mut varies = None;
+    let mut tun = false;
+    // Per machine: latest road, rounds counted, its latest candidates.
+    let mut peers: std::collections::BTreeMap<String, (Option<String>, u32, Vec<String>)> =
+        Default::default();
+    for e in entries {
+        match (&e.peer, &e.what) {
+            (None, What::Addrs { addrs }) => here_v6 = addrs.iter().any(|a| global_v6(a)),
+            (None, What::Learnt { v4, v6, varies: v, .. }) => {
+                learnt_v4 = v4.is_some();
+                here_v6 |= v6.is_some();
+                varies = *v;
+            }
+            (None, What::Tun { src }) => tun = src.is_some(),
+            (Some(p), What::Settled { road, .. }) => {
+                peers.entry(p.clone()).or_default().0 = Some(road.clone());
+            }
+            (Some(p), What::Path { change, road, .. }) if change == "selected" => {
+                peers.entry(p.clone()).or_default().0 = Some(road.clone());
+            }
+            (Some(p), What::Round { remote, rounds, .. }) => {
+                let peer = peers.entry(p.clone()).or_default();
+                peer.1 += rounds;
+                peer.2 = remote.clone();
+            }
+            _ => {}
+        }
+    }
+    peers
+        .into_iter()
+        .filter_map(|(peer, (road, rounds, remote))| {
+            let road = road?;
+            if road == "direct" {
+                return None;
+            }
+            let mut why = Vec::new();
+            if rounds == 0 {
+                why.push(Why::NoRound);
+            } else {
+                let there_v6 = remote.iter().any(|a| global_v6(a));
+                match (here_v6, there_v6) {
+                    (false, true) => why.push(Why::V6Here),
+                    (true, false) => why.push(Why::V6There),
+                    (false, false) if varies == Some(true) => why.push(Why::HardNat),
+                    _ => {}
+                }
+            }
+            if tun {
+                why.push(Why::Tun);
+            }
+            if !learnt_v4 {
+                why.push(Why::NoPublic);
+            }
+            if why.is_empty() {
+                why.push(Why::Punched(rounds));
+            }
+            Some((peer, road, why))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The report's 「为什么不是直连」, from MacLab's night of 10-09**: no
+    /// IPv6 here, the iPhone offering Unicom v6, a NAT that maps per
+    /// destination, the proxy's TUN — and turing, direct, left out.
+    #[test]
+    fn why_not_direct_reads_the_journal() {
+        let at = |n: u64, peer: Option<&str>, what: What| Entry { at: n, peer: peer.map(str::to_owned), what };
+        let entries = vec![
+            at(1, None, What::Addrs { addrs: vec!["59.64.53.85:57876".into(), "198.18.0.1:57876".into()] }),
+            at(2, None, What::Tun { src: Some("198.18.0.1".into()) }),
+            at(3, None, What::Learnt {
+                v4: Some("219.142.45.253:52498".into()),
+                v6: None,
+                varies: Some(true),
+                from: vec!["https://aps1-1.relay.n0.iroh.link.".into()],
+            }),
+            at(4, Some("phone"), What::Settled { road: "relay".into(), relay: None, rtt_ms: 27, paths: vec![] }),
+            at(5, Some("phone"), What::Round {
+                local: vec!["59.64.53.85:57876".into()],
+                remote: vec!["[2408:8409:18d0:5ff8::1]:61723".into(), "10.1.2.3:61723".into()],
+                rounds: 3,
+            }),
+            at(6, Some("turing"), What::Settled { road: "relay".into(), relay: None, rtt_ms: 30, paths: vec![] }),
+            at(7, Some("turing"), What::Path { change: "selected".into(), road: "direct".into(), addr: "172.16.185.103:35156".into(), rtt_ms: Some(2) }),
+            at(8, Some("lecun"), What::Settled { road: "carried".into(), relay: None, rtt_ms: 2, paths: vec![] }),
+        ];
+        let v = not_direct(&entries);
+        assert_eq!(
+            v,
+            vec![
+                ("lecun".to_owned(), "carried".to_owned(), vec![Why::NoRound, Why::Tun]),
+                ("phone".to_owned(), "relay".to_owned(), vec![Why::V6Here, Why::Tun]),
+            ],
+            "turing went direct and is not listed"
+        );
+        // Both with v6, nothing else wrong: the rounds are the answer.
+        let entries = vec![
+            at(1, None, What::Addrs { addrs: vec!["[2001:da8:207:e212::5]:35060".into()] }),
+            at(2, None, What::Learnt { v4: Some("1.2.3.4:5".into()), v6: None, varies: Some(false), from: vec![] }),
+            at(3, Some("p"), What::Settled { road: "relay".into(), relay: None, rtt_ms: 9, paths: vec![] }),
+            at(4, Some("p"), What::Round { local: vec![], remote: vec!["[2408::1]:1".into()], rounds: 2 }),
+            at(5, Some("p"), What::Round { local: vec![], remote: vec!["[2408::1]:1".into()], rounds: 5 }),
+        ];
+        assert_eq!(not_direct(&entries), vec![("p".to_owned(), "relay".to_owned(), vec![Why::Punched(7)])]);
+    }
+
+    /// Rounds with unchanged candidates are written once per
+    /// [`ROUND_EVERY`], with the count since; new candidates at once.
+    #[test]
+    fn rounds_are_written_on_change_and_then_sparingly() {
+        let id = iroh::SecretKey::generate().public();
+        let a: std::net::SocketAddr = "1.2.3.4:5".parse().unwrap();
+        let b: std::net::SocketAddr = "[2408::1]:6".parse().unwrap();
+        let round = |remote: Vec<std::net::SocketAddr>| iroh::endpoint::HolepunchRound {
+            remote: id,
+            local: vec![a],
+            remote_candidates: remote,
+        };
+        let t = std::time::Instant::now();
+        let mut p = Punching::default();
+        assert!(matches!(p.saw(round(vec![a]), t), Some(What::Round { rounds: 1, .. })), "the first is written");
+        for i in 1..5 {
+            assert_eq!(p.saw(round(vec![a]), t + Duration::from_secs(60 * i)), None, "unchanged within the wait");
+        }
+        assert!(matches!(p.saw(round(vec![a]), t + ROUND_EVERY), Some(What::Round { rounds: 5, .. })), "then with the count");
+        assert!(matches!(p.saw(round(vec![a, b]), t + ROUND_EVERY), Some(What::Round { rounds: 1, .. })), "new candidates at once");
+    }
 
     /// **A switch is told once, after it holds still** (NET-STABLE 第二步):
     /// the old address going, nothing, the new one arriving within the
@@ -843,5 +1257,23 @@ mod tests {
         );
         assert_eq!(scrub("Authorization: Bearer abc.def"), "Authorization: Bearer …");
         assert_eq!(scrub("nothing here"), "nothing here");
+    }
+
+    /// net-e: a carried path names what carries it — 「改为通过 turing」,
+    /// 「改为经 SSH 转连」 — where it said 「改走转连：，往返 0 ms」.
+    #[test]
+    fn a_carried_path_says_what_carries_it() {
+        let name_of = |id: &str| if id == "b1" { "turing".to_owned() } else { id.to_owned() };
+        let e = |addr: &str, rtt_ms| Entry {
+            at: 0,
+            peer: Some("y".into()),
+            what: What::Path { change: "selected".into(), road: "carried".into(), addr: addr.into(), rtt_ms },
+        };
+        assert_eq!(words(&e("b1", None), &name_of), msg::journal_path_hop("turing"));
+        assert_eq!(words(&e("ssh", None), &name_of), msg::journal_path_ssh());
+        assert_eq!(
+            words(&e("b1", Some(3)), &name_of),
+            format!("{}{}", msg::journal_path_hop("turing"), msg::journal_path_rtt(3))
+        );
     }
 }

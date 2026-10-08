@@ -2386,9 +2386,10 @@ fn devices(rest: &[String]) -> Result<(), String> {
         let link = links.iter().find(|(id, _)| *id == d.id).map(|(_, l)| l.clone());
         // A satellite has no road of its own — its sponsor speaks for
         // it (附属机器批), so the road column says who through instead
-        // of a reading nothing could take.
+        // of a reading nothing could take: 「通过 hinton」, the word a
+        // hop through a middle has (WORDS-1008).
         let road = match d.sponsor.as_deref() {
-            Some(sp) => cli::via_sponsor(names.get(sp).copied().unwrap_or(sp)),
+            Some(sp) => khor_catalog::gui::add_step_via(names.get(sp).copied().unwrap_or(sp)),
             None => link.map(|l| link_words(l, me)).unwrap_or_default(),
         };
         println!(
@@ -2432,7 +2433,7 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
     // A road with legs (round ROAD-1): which machine it goes through, and
     // which leg broke.
     let legs = |r: &khor_node::Road| {
-        let via = r.via.as_deref().map(|v| format!(" {}", cli::via_sponsor(name(v)))).unwrap_or_default();
+        let via = r.via.as_deref().map(|v| format!(" {}", khor_catalog::gui::add_step_via(name(v)))).unwrap_or_default();
         // A jump host is no device: its end is said as the jump.
         let end = |e: &Option<String>| e.as_deref().map(name).unwrap_or_else(|| cli::roads_jump().to_owned());
         let broke = r

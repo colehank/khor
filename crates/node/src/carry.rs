@@ -81,9 +81,10 @@ impl Node {
     }
 
     /// The word for a wire on a carried path: over this machine's own ssh
-    /// session, or forwarded by a third machine.
+    /// session, or forwarded by a third machine — by the link it rides, or
+    /// rode until a moment ago ([`khor_net::carry::Links::last_carrier`]).
     pub(crate) fn carried_hop(&self, id: &str) -> khor_core::Hop {
-        let carrier = id.parse().ok().and_then(|p| self.carry.carrier(&p));
+        let carrier = id.parse().ok().and_then(|p| self.carry.last_carrier(&p));
         match carrier {
             Some(Carrier::Hop { .. }) => khor_core::Hop::Forwarded,
             _ => khor_core::Hop::Ssh,

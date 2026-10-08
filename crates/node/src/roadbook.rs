@@ -238,7 +238,7 @@ impl crate::Node {
                 let mut r = self.wires.link(&d.id);
                 // Through a middle (the peer hop, round ROAD-3): the road
                 // is the first leg's, to the middle, with `via`.
-                let via = match d.id.parse().ok().and_then(|p| self.carry.carrier(&p)) {
+                let via = match d.id.parse().ok().and_then(|p| self.carry.last_carrier(&p)) {
                     Some(khor_net::carry::Carrier::Hop { via }) if r.road == Some(khor_net::path::PathKind::Carried) => {
                         let first = self.wires.link(&via.to_string());
                         r.road = first.road.filter(|k| *k != khor_net::path::PathKind::Carried);

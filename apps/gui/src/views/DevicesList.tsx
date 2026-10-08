@@ -10,7 +10,7 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { band, BAND_INK } from "@/lib/latency";
 import { cli, gui } from "@/gen/catalog";
 import { type ListAxis, listAxes, listOptions, sieve } from "@/lib/list-filter";
-import { lasting, connectionKey, connectionKeyWord, groupLabel, latency, systemWord } from "@/words";
+import { lasting, connectionKey, connectionKeyWord, groupLabel, hopRoad, latency, systemWord } from "@/words";
 import { MachineEditDialog } from "@/views/MachineEditDialog";
 import { PendingStrip } from "@/views/PairDialogs";
 
@@ -23,9 +23,9 @@ import { PendingStrip } from "@/views/PairDialogs";
  * - `link:` 连接方式 — **the word in the row's top-right corner**
  *   (`connectionKey`, WORDS-1008: one derivation, so a tick on 中继 keeps
  *   every row that says 中继): 已暂停, 本机, the road (直连 / 中继), 未连,
- *   不通, or 「经 <sponsor>」.
- *   **One value per sponsor, not one 「借网」 for all of them**: the row
- *   prints 「经 turing」, so the option prints the same words and a tick
+ *   不通, or 「通过 <name>」 (a satellite's sponsor, a peer hop's middle).
+ *   **One value per machine, not one 「借网」 for all of them**: the row
+ *   prints 「通过 turing」, so the option prints the same words and a tick
  *   keeps exactly the rows that say them. Merged, the option would need
  *   a word no row carries, and one tick would stand for rows that read
  *   differently — the filter would be saying something the list does
@@ -288,7 +288,9 @@ export function DevicesList({
     // not find a row that said 中继. The last road is the detail's.
     const rtt = typeof d.rtt_ms === "number" ? d.rtt_ms : null;
     const key = connectionKey(d);
-    const live = d.me || d.hop === "direct" || d.hop === "relay";
+    // A wire through a middle is live too (the peer hop, NET-DIRECT): its
+    // row says 「通过 turing」 and the two legs added (`hopRoad`).
+    const live = d.me || d.hop === "direct" || d.hop === "relay" || d.hop === "forwarded";
     const state = connectionKeyWord(key);
     const held =
       key === "paused" || key === "here"
@@ -308,7 +310,7 @@ export function DevicesList({
     // the two never disagree). When they do not fit, whole items go from
     // the end (`Whole`); CPU stays.
     const v = live ? d.vitals?.vitals : undefined;
-    const lat = live && !d.me ? rtt : null;
+    const lat = live && !d.me ? (d.hop === "forwarded" ? (hopRoad(d, rows)?.ms ?? rtt) : rtt) : null;
     const share = (f: { used: number; total: number }) => Math.round((f.used / f.total) * 100);
     const readings = [
       v ? { key: "cpu", label: cli.vitals_name_cpu, value: Math.round(v.cpu_pct) } : null,

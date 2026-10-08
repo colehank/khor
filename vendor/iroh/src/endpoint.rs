@@ -51,8 +51,8 @@ use self::hooks::EndpointHooksList;
 pub use super::socket::{
     BindError, DirectAddr, DirectAddrType,
     remote_map::{
-        Path, PathEvent, PathEventStream, PathList, PathListIter, PathListStream, RemoteInfo,
-        TransportAddrInfo, TransportAddrUsage,
+        HolepunchRound, Path, PathEvent, PathEventStream, PathList, PathListIter,
+        PathListStream, RemoteInfo, TransportAddrInfo, TransportAddrUsage,
     },
     transports::LocalTransportAddr,
 };
@@ -1423,6 +1423,34 @@ impl Endpoint {
     /// a relay are told; a peer reached directly says nothing here.
     pub fn relay_departures(&self) -> tokio::sync::broadcast::Receiver<EndpointId> {
         self.inner.relay_departures()
+    }
+
+    /// **Every round of hole punching this endpoint starts** (khor patch 8,
+    /// vendor/iroh/KHOR.md): toward whom, and the candidates on both sides.
+    /// A round runs when a connection is added, when either side's
+    /// candidates change, and every 60 s while no direct path of 10 ms or
+    /// less carries the connection. Whether it landed is a direct path
+    /// opening afterwards ([`Connection::path_events`]).
+    pub fn holepunch_rounds(&self) -> tokio::sync::broadcast::Receiver<HolepunchRound> {
+        self.inner.holepunch_rounds()
+    }
+
+    /// **Hands iroh more roads to a remote without dialling it** (khor
+    /// patch 12, vendor/iroh/KHOR.md): the addresses are recorded as a
+    /// dial's would be, and a custom (carried) one is opened at once on
+    /// every live client connection to that remote, so the path selector
+    /// can move a connection onto a road that came up after it settled.
+    pub async fn offer_addrs(&self, addr: EndpointAddr) {
+        let _ = self.inner.resolve_remote(addr).await;
+    }
+
+    /// khor patch 13: **closes every custom (carried) path to a remote**,
+    /// on every live connection to it, because the road under them ended.
+    /// The path selector then chooses again among the rest at once, rather
+    /// than keeping a dead path on its last round trip until the path's
+    /// idle timeout. The last open path of a connection is left.
+    pub async fn close_carried(&self, endpoint_id: EndpointId) {
+        self.inner.close_custom_paths(endpoint_id).await;
     }
 
     /// Returns a [`Watcher`] for any net report runs from this [`Endpoint`].

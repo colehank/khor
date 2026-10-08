@@ -1672,6 +1672,10 @@ impl Node {
                         if !n.resting.load(std::sync::atomic::Ordering::Relaxed) {
                             let book = n.clone();
                             let _ = tokio::task::spawn_blocking(move || book.note_roads()).await;
+                            // Each relay wire held against the hops by their
+                            // measured legs (NET-DIRECT step 4); every 30 s,
+                            // not every beat.
+                            n.compare_roads(&e).await;
                         }
                         if !round { return }
                         // Every machine at once, each on its own wire and
@@ -2891,7 +2895,7 @@ impl Node {
         match outcome {
             Ok(Ok((conn, asked))) => {
                 crate::roads::replied(&self.roads, &d.id, started.elapsed());
-                crate::roads::watch(&self.roads, &d.id, &conn, self.wires.journal.get().cloned());
+                crate::roads::watch(&self.roads, &d.id, &conn, self.wires.journal.get().cloned(), &self.carry);
                 self.wires.adopt(&d.id, wires::Proto::Main, conn.clone());
                 drop(_one);
                 match asked {
@@ -8744,7 +8748,7 @@ impl Node {
                     _ => None,
                 });
                 // The middle of a peer hop (round ROAD-3).
-                let via = match d.id.parse().ok().and_then(|p| self.carry.carrier(&p)) {
+                let via = match d.id.parse().ok().and_then(|p| self.carry.last_carrier(&p)) {
                     Some(khor_net::carry::Carrier::Hop { via }) if hop == khor_core::Hop::Forwarded => {
                         Some(via.to_string())
                     }
@@ -9233,6 +9237,11 @@ impl Node {
             let synced = with_doc!(self, name.as_str(), |loaded| self
                 .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
                 .await);
+            if doc_must_sync(&name)
+                && let Some(w) = crate::journal::sync_failed(&d.id, &name, synced.as_ref().err().map(String::as_str))
+            {
+                self.wires.note(Some(&d.id), w);
+            }
             match synced {
                 Ok(n) => {
                     moved += n;
@@ -10686,7 +10695,7 @@ impl Node {
                     Some(Ok((won, Ok(conn)))) => {
                         note(Some(won), None);
                         crate::roads::replied(&self.roads, id, started.elapsed());
-                        crate::roads::watch(&self.roads, id, &conn, self.wires.journal.get().cloned());
+                        crate::roads::watch(&self.roads, id, &conn, self.wires.journal.get().cloned(), &self.carry);
                         return Ok(conn);
                     }
                     Some(Ok((_, Err(e)))) => refused = Some(e.to_string()),

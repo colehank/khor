@@ -342,6 +342,21 @@ fn follow(mdns: iroh_mdns_address_lookup::MdnsAddressLookup, id: iroh::EndpointI
 /// The environment switch that binds with relays only ([`builder`]).
 pub const RELAY_ONLY_ENV: &str = "KHOR_RELAY_ONLY";
 
+/// The environment switch that binds UDP on this one address only, say
+/// `127.0.0.1` or `::1` ([`bind_pinned`]); iroh then offers exactly it.
+///
+/// **For scratch nodes, not for people.** Three nodes on one machine all
+/// go direct to each other. One bound on `127.0.0.1` and another on
+/// `::1` share no road, so the two meet on the relay alone, while a third
+/// bound on both wildcards reaches each directly — the shape of a peer
+/// hop (`crates/cli/tests/hop.rs`). Never set by khor.
+pub const BIND_IP_ENV: &str = "KHOR_BIND_IP";
+
+/// The one address [`BIND_IP_ENV`] names, if it names one.
+fn bind_ip() -> Option<std::net::IpAddr> {
+    std::env::var(BIND_IP_ENV).ok()?.trim().parse().ok()
+}
+
 /// The environment switch that binds with no mDNS service: the node
 /// neither announces itself on the segment nor listens for others.
 ///
@@ -448,7 +463,10 @@ pub async fn bind_pinned(
             .add_custom_transport(links.transport())
             .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()));
     }
-    if (v4, v6) != (0, 0) && std::env::var_os(RELAY_ONLY_ENV).is_none() {
+    if let Some(ip) = bind_ip().filter(|_| std::env::var_os(RELAY_ONLY_ENV).is_none()) {
+        let port = if ip.is_ipv4() { v4 } else { v6 };
+        b = b.clear_ip_transports().bind_addr(std::net::SocketAddr::new(ip, port))?;
+    } else if (v4, v6) != (0, 0) && std::env::var_os(RELAY_ONLY_ENV).is_none() {
         use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
         b = b
             .clear_ip_transports()
@@ -534,7 +552,9 @@ fn builder(
         .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()])
         // The filter that keeps this machine from publishing an address
         // nobody can route to belongs where the services are assembled
-        // (the reason is the mDNS service's, below).
+        // (the reason is the mDNS service's, below). It also decides what
+        // a hole-punching round offers the far side (vendor/iroh patch 9):
+        // upstream offered every address, 198.18.0.1 among them.
         .addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
             if addrs.iter().any(unroutable) {
                 std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
@@ -611,11 +631,21 @@ fn ca_roots() -> iroh::tls::CaTlsConfig {
 /// screenful 0.72–0.91 s against Cubic's 0.30 at 200 ms. The vendored
 /// noq-proto carries the fix from moq-dev/noq#5 (vendor/noq-proto/KHOR.md),
 /// and the same screenful now takes 0.21 s against Cubic's 0.30.
+///
+/// **And observed-address reports both ways** (NET-DIRECT): each side tells
+/// the other, on every direct path, the address it sees the other's
+/// packets come from — what QAD asks a relay, asked of a peer. iroh has
+/// them off, and ignored them when on; vendor/iroh patch 10 offers what a
+/// peer saw as a hole-punching candidate, so a machine whose relays answer
+/// no QAD still learns its public address from any machine it reaches
+/// directly. A peer of an older build negotiates neither and sends none.
 pub fn transport() -> iroh::endpoint::QuicTransportConfig {
     iroh::endpoint::QuicTransportConfig::builder()
         .congestion_controller_factory(std::sync::Arc::new(
             noq_proto::congestion::Bbr3Config::default(),
         ))
+        .send_observed_address_reports(true)
+        .receive_observed_address_reports(true)
         .build()
 }
 
@@ -981,6 +1011,54 @@ mod tests {
             "control: the probe must find the relay that is in the map"
         );
         ep.close().await;
+    }
+
+    /// **A hole-punching round offers only what is published** (vendor/iroh
+    /// patches 8 and 9). Upstream offered the far side every direct
+    /// address, a proxy TUN's 198.18.0.1 among them (MacLab's journal,
+    /// 2026-10-09). On a machine that has such an address, iroh still holds
+    /// it among its direct addresses — the control — and the round leaves
+    /// it out; on one that has none the check says so and is vacuous.
+    #[tokio::test]
+    async fn a_punching_round_offers_no_unroutable_address() {
+        use iroh::Watcher;
+        let relays = [Relay::bare("http://203.0.113.9:3340")];
+        let bind = || async { builder(iroh::SecretKey::generate(), &relays, false, false).unwrap().bind().await.unwrap() };
+        let (server, client) = (bind().await, bind().await);
+        let port = server.bound_sockets().iter().find(|s| s.is_ipv4()).unwrap().port();
+        let addr = iroh::EndpointAddr::new(server.id())
+            .with_ip_addr(std::net::SocketAddr::from(([127, 0, 0, 1], port)));
+        let held = tokio::spawn({
+            let server = server.clone();
+            async move {
+                let conn = server.accept().await.expect("accept ended early").await.expect("handshake");
+                conn.closed().await;
+            }
+        });
+        let mut rounds = client.holepunch_rounds();
+        let _conn = client.connect(addr, ALPN).await.expect("loopback dial");
+        let round = tokio::time::timeout(std::time::Duration::from_secs(10), rounds.recv())
+            .await
+            .expect("a round starts when the connection is added")
+            .expect("the round");
+        assert_eq!(round.remote, server.id());
+        let offered: Vec<_> = round.local.iter().filter(|a| unroutable(&iroh::TransportAddr::Ip(**a))).collect();
+        assert!(offered.is_empty(), "offered unroutable candidates: {offered:?}");
+        let held_here: Vec<std::net::SocketAddr> = client
+            .watch_direct_addrs()
+            .get()
+            .iter()
+            .map(|d| d.addr)
+            .filter(|a| unroutable(&iroh::TransportAddr::Ip(*a)))
+            .collect();
+        if held_here.is_empty() {
+            eprintln!("no unroutable address on this machine: the check above is vacuous here");
+        } else {
+            eprintln!("control: iroh holds {held_here:?}, the round offered {:?}", round.local);
+        }
+        held.abort();
+        client.close().await;
+        server.close().await;
     }
 
     /// `KHOR_NO_MDNS`: no lookup service at all on a hermetic bind, so

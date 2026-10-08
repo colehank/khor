@@ -12,7 +12,64 @@
 
 ## 补丁
 
-七处。
+十三处。
+
+### 13. `src/socket/remote_map/remote_state.rs`、`src/socket.rs`、`src/endpoint.rs`：转连的路断了，当场关掉自定义路径（2026-10-09，NET-DIRECT）
+
+转发（经第三台 khor 机器）的中间那台冻住时，khor 的转连链路结束了，iroh 却不知道：自定义路径还开着，`RoadOrder`
+按它最后的往返（1–2 ms）继续选它，直到路径空闲超时（`PATH_MAX_IDLE_TIMEOUT` 15 s）把它放弃，才回到中继。
+三台机器的回环测试（`crates/cli/tests/hop.rs`）量得冻住到回中继 19.9 s；把那条隧道线的静默上限从 15 s 降到 10 s
+（`wires::HOP_SILENT`）单独不改这个数，因为线退了路径还在。补丁：`Endpoint::close_carried(EndpointId)` 让该远端的
+actor 在每条活着的连接上关掉所有自定义路径（`RemoteStateMessage::CloseCustom`）；noq 当场发出 `Abandoned`，
+iroh 随即重新选路。连接只剩这一条路径时 noq 拒绝关，照旧等空闲超时。khor 这边在转发链路结束、且没有新链路顶上时
+调用（`hop::open_hop` 的守望任务、`serve_hop` 的 `Ask::From`）。量得冻住到回中继 12.9–13.2 s（三次）。
+改动约 35 行。上游没有对应 PR，升级 iroh 时要重新打。
+
+### 12. `src/socket/remote_map/remote_state.rs`、`src/endpoint.rs`：连接活着时交来的转连地址当场打开（2026-10-09，NET-DIRECT 第四步）
+
+上游收到新地址（`ResolveRemote`，`connect` 时发）只记下，不在已有连接上开路；补丁 6 只在连接加入时补开自定义
+地址。于是一条已经落在中继上的连接，永远用不上之后才搭起来的转发（经第三台机器）。补丁：`ResolveRemote` 里的
+自定义地址在每条活着的客户端连接上 `open_path_ensure`（已开的不重复开）；`Endpoint::offer_addrs(EndpointAddr)`
+不拨号、只交地址。khor 这边 `hop::compare_roads` 搭起转发后调用它，由 `RoadOrder` 按往返决定走不走。
+改动约 25 行。上游没有对应 PR，升级 iroh 时要重新打。
+
+### 11. `src/net_report.rs`：增量报告量不到家中继时不换家（2026-10-09，NET-DIRECT）
+
+增量报告只量握着 QAD 连接的那台中继（`have_enough_reports` 一个 v4 回答就够），`add_report_history_and_set_preferred_relay`
+只在这一轮量到的中继里挑，旧家不在这一轮里时也不走「新的要快三分之一才换」的滞回。MacLab 10-09 整夜：完整报告
+（5 分钟一次）量到北京、住北京，25 秒后的增量报告只量到 n0 的 aps1、住 aps1（audit/net-d.md §1.4）。补丁：
+**增量**报告没有量到当前的家，就留在家里；完整报告照旧可以换（家真死了，下一次完整报告或网络大变时离开）。
+函数多一个参数 `full`，上游自己的表测试跟着传 `true`。改动约 15 行。上游没有对应 PR，升级 iroh 时要重新打。
+
+### 10. `src/socket/remote_map/remote_state.rs`、`src/socket.rs`：对端看到的地址（2026-10-09，NET-DIRECT）
+
+QUIC 的 observed address 报告（QAD 在中继上用的就是它）iroh 默认两边都关，开了收到也不管
+（`NoqPathEvent::ObservedAddr => {}`）。于是一台机器只能从答 QAD 的中继得知自己的公网地址；khor 自己的中继
+都不答。补丁：直连路径（`to_transport_tuple(..).is_ip()`）上收到的对端观察地址记进一张共享表
+（`PeerObserved`，十分钟有效，最多 8 个，回环和未指定地址不收），`update_direct_addresses` 在本机网卡地址之后
+把它们作为 `DirectAddrType::PeerObserved` 加进直接地址——从此作为打洞候选给出去、也随行发布。中继和转连路径
+上的观察地址是映射地址，不收。khor 这边 `endpoint::transport()` 打开收发两向的报告；旧版对端不协商、不发，
+不受影响。改动约 50 行。验证：回环上看不到（对端看到的是回环，不收），要在机群上看连接记录「本机地址变为」
+里多出的地址。上游没有对应 PR，升级 iroh 时要重新打。
+
+### 9. `src/socket/remote_map/remote_state.rs`、`src/address_lookup.rs`：打洞只给发布过滤留下的地址（2026-10-09，NET-DIRECT）
+
+上游 `local_candidates` 把所有直接地址都作为打洞候选（QNT ADD_ADDRESS）给对端，代理 TUN 的 198.18.0.1 也在
+里面（MacLab 10-09 的连接记录）。补丁：先过端点的发布过滤（`AddressLookupServices::filtered`，就是 khor
+`endpoint::unroutable` 那条），发布什么就给什么。改动约 25 行。测试：`crates/net/src/endpoint.rs` 的
+`a_punching_round_offers_no_unroutable_address`（读补丁 8 的打洞轮；在有 198.18.0.1 的机器上对照：iroh 的
+直接地址里有，打洞候选里没有）。上游没有对应 PR，升级 iroh 时要重新打。
+
+### 8. `src/socket/remote_map/remote_state.rs`、`src/socket/remote_map.rs`、`src/socket.rs`、`src/endpoint.rs`：每一轮打洞（2026-10-09，NET-DIRECT 第一步）
+
+`Endpoint::holepunch_rounds()`：iroh 每开始一轮打洞（`do_holepunching`，连接加入、任一方候选变化、
+没有 10 ms 以内的直连时每 60 秒）就广播一个 `HolepunchRound`：对谁、本机给出的候选、对方给出的候选。
+上游只有 tracing 事件 `iroh::_events::qnt::init`。khor 这边 `journal::watch_ears` 订阅，写成连接记录的
+「打洞」一行（候选变了就写，不变时最多十分钟一行，带上这期间的轮数），`--report` 据此说「为什么不是直连」。
+打没打通看随后有没有直连路径打开（`Connection::path_events`，`roads::follow`）。改动约 30 行：
+`RemoteMap::new` 多一个参数（broadcast 发送端），`RemoteStateActor` 存一份。
+测试：`crates/node/src/journal.rs` 的 `rounds_are_written_on_change_and_then_sparingly`（只测节流）。
+上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 7. `src/endpoint.rs`：带来源的直接地址（2026-10-08，NET-STABLE 第二步）
 
@@ -33,9 +90,9 @@
 「先转发、后中继」（`carry::RoadOrder` 的开局三秒）就落空。补丁：不论路径 0 是什么，已知的
 自定义地址都补开；中继仍只在路径 0 不是中继时补。改动约 10 行。
 测试：`crates/net/tests/carry.rs` 的
-`the_carried_road_is_opened_and_kept_when_the_relay_answers_first`（回环中继加一条每字节慢
-120 ms 的链路：中继先答，补丁前路径一直是中继，补丁后开局内换到链路上、过了开局不回中继、
-链路断了中继接着用同一条连接）。上游没有对应 PR，升级 iroh 时要重新打。
+`the_carried_road_is_opened_when_the_relay_answers_first_and_the_faster_carries`（回环中继加一条每字节慢
+120 ms 的链路：中继先答，补丁前这条链路从没被打开，补丁后它被打开；2026-10-09 起选路按往返挑，
+这条慢链路打开后由更快的中继接着走）。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 5. `src/net_report.rs`：中继的接班者（2026-10-04，NET-7 轮）
 

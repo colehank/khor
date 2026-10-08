@@ -477,6 +477,18 @@ impl AddressLookupServices {
         *self.addr_filter.write().expect("poisoned") = Some(filter);
     }
 
+    /// khor patch 9: `addrs` as the publishing filter leaves them — what a
+    /// hole-punching round offers is what is published.
+    pub(crate) fn filtered(
+        &self,
+        addrs: Vec<iroh_base::TransportAddr>,
+    ) -> Vec<iroh_base::TransportAddr> {
+        match &*self.addr_filter.read().expect("poisoned") {
+            Some(filter) => filter.apply(&addrs).into_owned(),
+            None => addrs,
+        }
+    }
+
     /// Adds an [`AddressLookup`] service.
     ///
     /// If there is historical Address Lookup data, it will be published immediately on this service.
