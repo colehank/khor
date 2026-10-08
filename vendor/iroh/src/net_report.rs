@@ -448,7 +448,7 @@ impl Client {
                 }
             }
         }
-        self.add_report_history_and_set_preferred_relay(&mut report);
+        self.add_report_history_and_set_preferred_relay(&mut report, do_full);
         debug!(
             ?report,
             duration = ?now.elapsed(),
@@ -765,7 +765,7 @@ impl Client {
     }
 
     /// Adds `r` to the set of recent Reports and mutates `r.preferred_relay` to contain the best recent one.
-    fn add_report_history_and_set_preferred_relay(&mut self, r: &mut Report) {
+    fn add_report_history_and_set_preferred_relay(&mut self, r: &mut Report, full: bool) {
         let mut prev_relay = None;
         if let Some(ref last) = self.reports.last {
             prev_relay.clone_from(&last.preferred_relay);
@@ -832,8 +832,22 @@ impl Client {
                 && !old_relay_cur_latency.is_zero()
                 && best_any > old_relay_cur_latency / 3 * 2
             {
-                r.preferred_relay = prev_relay;
+                r.preferred_relay = prev_relay.clone();
             }
+        }
+
+        // khor patch 11: an incremental report that did not measure the
+        // home keeps it. Such a report measures only the relay holding the
+        // QAD connection; ranking that one alone moved MacLab's home from
+        // Beijing to n0's aps1 25 s after every full report, all night
+        // (audit/net-d.md §1.4). A full report measures every relay and
+        // may move the home as before, so a home that died is left at the
+        // next one (every 5 min, or at once on a major network change).
+        if !full
+            && let Some(prev) = &prev_relay
+            && r.relay_latency.get(prev).is_none()
+        {
+            r.preferred_relay = Some(prev.clone());
         }
 
         // khor patch 3: a relay the person chose wins whenever this report
@@ -1277,7 +1291,7 @@ mod tests {
             for s in &mut tt.steps {
                 // trigger the timer
                 tokio::time::advance(Duration::from_secs(s.after)).await;
-                client.add_report_history_and_set_preferred_relay(s.r.as_mut().unwrap());
+                client.add_report_history_and_set_preferred_relay(s.r.as_mut().unwrap(), true);
             }
             let last_report = tt.steps.last().unwrap().r.clone().unwrap();
             let got = client.reports.prev.len();

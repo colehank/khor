@@ -12,7 +12,15 @@
 
 ## 补丁
 
-十处。
+十一处。
+
+### 11. `src/net_report.rs`：增量报告量不到家中继时不换家（2026-10-09，NET-DIRECT）
+
+增量报告只量握着 QAD 连接的那台中继（`have_enough_reports` 一个 v4 回答就够），`add_report_history_and_set_preferred_relay`
+只在这一轮量到的中继里挑，旧家不在这一轮里时也不走「新的要快三分之一才换」的滞回。MacLab 10-09 整夜：完整报告
+（5 分钟一次）量到北京、住北京，25 秒后的增量报告只量到 n0 的 aps1、住 aps1（audit/net-d.md §1.4）。补丁：
+**增量**报告没有量到当前的家，就留在家里；完整报告照旧可以换（家真死了，下一次完整报告或网络大变时离开）。
+函数多一个参数 `full`，上游自己的表测试跟着传 `true`。改动约 15 行。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 10. `src/socket/remote_map/remote_state.rs`、`src/socket.rs`：对端看到的地址（2026-10-09，NET-DIRECT）
 
