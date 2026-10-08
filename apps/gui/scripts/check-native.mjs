@@ -641,34 +641,28 @@ async function roomPhase(pid) {
     if (!same(f2, f0)) fail(`room · at the right edge, closed, the window is ${fmt(f2)}, want ${fmt(f0)} (UX-46 §2)`);
   }
   await home();
-  await pointerRoads();
+  await landingRoads();
   await pillRoads();
   await home();
   execFileSync(cliBin, ["close", opened.split(/\s+/).pop()], { env, stdio: "ignore" });
   return rows;
 
   /**
-   * **The landings by the pointer, the 附栏 open** (fix-e, the owner
+   * **The landings answer with the 附栏 open** (fix-e, the owner
    * 2026-10-08: 「侧边展开的时候, 不能通过导航到别的页面, 这时候的行为应该是
-   * 侧边收起, 到别的页面」). A pointer's press on 机器 (`click`: down and up
-   * at the glyph's centre, posted to the pid — what is on top there
-   * answers it), not accessibility's, which hands WebKit the element and
-   * presses straight through whatever stands over it: the roads above
-   * left the landing by AXPress and were green while the owner's clicks
-   * did nothing. Left, the session's name is off the page (its row and
-   * its tab are the sessions landing's) and the window is back.
+   * 侧边收起, 到别的页面」). Left, the session's name is off the page (its
+   * row and its tab are the sessions landing's) and the window is back.
+   * The owner's case is the third road: a file open in the 附栏's 工作区,
+   * whose page handed its draft up on every render — an update a frame,
+   * and the landing's switch (a transition) never got to finish. The
+   * roads above left with the 附栏 on 最近, which is why they were green.
    */
-  async function pointerRoads() {
-    const click = async (what) => {
-      const ok = run("click", P, what) === "1";
-      await wait(1500);
-      return ok;
-    };
+  async function landingRoads() {
     const onSession = () => JSON.parse(run("axtext", P, name)).length > 0;
-    // The control: with the 附栏 closed a pointer's press does go through.
-    const ctl = (await click(said("gui.devices-tab"))) && !onSession();
-    await click(said("gui.sessions-tab"));
-    if (!ctl || !onSession()) throw new Error("probe dead: room · a pointer's press on 机器 with the 附栏 closed did not leave the session — the clicks are not reaching the page");
+    // The control: with the 附栏 closed a press leaves the session.
+    const ctl = (await press(said("gui.devices-tab"))) && !onSession();
+    await press(said("gui.sessions-tab"));
+    if (!ctl || !onSession()) throw new Error("probe dead: room · a press on 机器 with the 附栏 closed did not leave the session");
     // **A file open in the 附栏** is the owner's case: its page handed its
     // draft up on every render, an update a frame, and the landing's
     // switch (a transition) never got to finish (fix-e). The session's
@@ -691,23 +685,23 @@ async function roomPhase(pid) {
       await tab();
       const f1 = frame();
       if (prep && !(await prep())) {
-        fail(`probe dead: room · pointer on ${what}: could not open package.json in the 附栏's 工作区`);
+        fail(`probe dead: room · ${what}: could not open package.json in the 附栏's 工作区`);
         await tab();
         continue;
       }
-      const pressed = await click(said(to));
+      const pressed = await press(said(to));
       const left = !onSession();
       const fL = frame();
-      await click(said("gui.sessions-tab"));
+      await press(said("gui.sessions-tab"));
       // Back on the session its pill remembers open; closed by the press.
       if (frame().w > f0.w + 1) await tab();
       const f2 = frame();
-      rows.push(`pointer on ${what}, the 附栏 open: ${fmt(f0)} → open ${fmt(f1)} → ${left ? "left" : "STAYED"} ${fmt(fL)} → closed ${fmt(f2)}`);
-      console.log(`room · pointer on ${what}, the 附栏 open: before ${fmt(f0)}, open ${fmt(f1)}, ${left ? "left the session" : "still on the session"}, window ${fmt(fL)}, closed ${fmt(f2)}`);
-      if (!pressed) fail(`room · pointer on ${what}: no 「${said(to)}」 to click`);
-      else if (!left) fail(`room · a pointer's press on 「${said(to)}」 with the 附栏 open did nothing — it goes there, the 附栏 put away (fix-e)`);
-      if (left && !same(fL, f0)) fail(`room · pointer on ${what}: the window is ${fmt(fL)} there, want ${fmt(f0)} — the room given back (UX-46 §2)`);
-      if (!same(f2, f0)) fail(`room · pointer on ${what}: closed, the window is ${fmt(f2)}, want ${fmt(f0)}`);
+      rows.push(`${what}, the 附栏 open: ${fmt(f0)} → open ${fmt(f1)} → ${left ? "left" : "STAYED"} ${fmt(fL)} → closed ${fmt(f2)}`);
+      console.log(`room · ${what}, the 附栏 open: before ${fmt(f0)}, open ${fmt(f1)}, ${left ? "left the session" : "still on the session"}, window ${fmt(fL)}, closed ${fmt(f2)}`);
+      if (!pressed) fail(`room · ${what}: no 「${said(to)}」 to click`);
+      else if (!left) fail(`room · a press on 「${said(to)}」 with the 附栏 open (${what}) did nothing — it goes there, the 附栏 put away (fix-e)`);
+      if (left && !same(fL, f0)) fail(`room · ${what}: the window is ${fmt(fL)} there, want ${fmt(f0)} — the room given back (UX-46 §2)`);
+      if (!same(f2, f0)) fail(`room · ${what}: closed, the window is ${fmt(f2)}, want ${fmt(f0)}`);
     }
   }
 

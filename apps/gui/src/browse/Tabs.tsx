@@ -95,10 +95,17 @@ export function Tabs({
   ) : (
     <>
       {/* A band like a region's head (`lib/scroll-edge`): what scrolls
-          under the strip passes beneath it on glass. */}
-      <div ref={band} data-band className="flex h-pane-head flex-none">
-        {strip}
-      </div>
+          under the strip passes beneath it on glass. **Not drawn with
+          nothing on it** (fix-e, the owner 2026-10-08: 「工作区没有选中的
+          标签的时候, 最上方有一个没有功能的甲板, 删掉」): no tab and nothing
+          at either end is an empty capsule nobody can press; the band
+          comes with the first tab and goes with the last, in the same
+          frame as the page under it changes. */}
+      {(faces.length > 0 || head || tail) && (
+        <div ref={band} data-band className="flex h-pane-head flex-none">
+          {strip}
+        </div>
+      )}
       <div className={cn("min-h-0 flex-1 bg-card", bodyClass)}>{children}</div>
     </>
   );

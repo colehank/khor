@@ -4777,18 +4777,78 @@ try {
       fail("probe dead: the strip would not empty, so nothing below starts from a known place");
     } else {
       // The head, gone whole. A negative claim, so it is asserted with
-      // the strip on screen — otherwise it passes on a blank pane.
+      // the middle column on screen — otherwise it passes on a blank pane.
+      // **With no tab, no strip** (fix-e, the owner 2026-10-08: 「工作区没
+      // 有选中的标签的时候, 最上方有一个没有功能的甲板, 删掉」): the empty
+      // capsule over 最近打开 was a deck nobody could press.
       const head = await page.evaluate(() => ({
         strip: document.querySelectorAll("[data-ws-tab-strip]").length,
+        empty: document.querySelectorAll("[data-ws-empty]").length,
         drafts: document.querySelectorAll("[data-drafts]").length,
         branch: document.querySelectorAll("[data-branch]").length,
         tree: document.querySelectorAll("[data-ws-tab-strip] [data-on]").length,
       }));
-      if (head.strip !== 1) {
+      if (head.empty !== 1) fail("probe dead: the middle column drew no 最近打开 with no tab open (src/views/WorkspaceEmpty.tsx)");
+      if (head.strip !== 0) {
         fail(
-          "the middle column drew no tab strip — it is what the head row became " +
-            "(src/views/WorkspacePane.tsx)",
+          `the middle column draws ${head.strip} tab strip(s) with no tab open — an empty deck that does nothing (fix-e; ` +
+            "src/browse/Tabs.tsx)",
         );
+      }
+      // …and nothing beside it moves as the first tab brings the strip
+      // and the last takes it away: R0, the tree's head, the column's
+      // left edge. Every frame across both presses.
+      {
+        const sample = () =>
+          page.evaluate(() => {
+            window.__wsFrames = [];
+            const at = (s) => {
+              const r = document.querySelector(s)?.getBoundingClientRect();
+              return r ? [r.left, r.top, r.width] : null;
+            };
+            const tick = () => {
+              if (!window.__wsFrames) return;
+              window.__wsFrames.push({
+                r0: at("[data-main] [data-region-head]"),
+                tree: at("[data-tree-head]"),
+                strips: document.querySelectorAll("[data-ws-tab-strip]").length,
+                tabs: document.querySelectorAll("[data-ws-tab-strip] [data-tab]").length,
+              });
+              requestAnimationFrame(tick);
+            };
+            requestAnimationFrame(tick);
+          });
+        const taken = () =>
+          page.evaluate(() => {
+            const f = window.__wsFrames ?? [];
+            window.__wsFrames = null;
+            return f;
+          });
+        await sample();
+        await press("[data-ws-tree] [data-file-tree] [data-file]:not([data-dir]) > button");
+        await until(3_000, async () => (await page.locator("[data-ws-tab-strip] [data-tab]").count()) === 1);
+        await wait(400);
+        const opening = await taken();
+        await sample();
+        await clearTabs();
+        await wait(400);
+        const closing = await taken();
+        const drift = (fs) => {
+          const ok = fs.filter((f) => f.r0 && f.tree);
+          if (!ok.length) return null;
+          const [a, b] = [ok[0].r0, ok[0].tree];
+          return Math.max(...ok.map((f) => Math.max(...f.r0.map((v, i) => Math.abs(v - a[i])), ...f.tree.map((v, i) => Math.abs(v - b[i])))));
+        };
+        const bare = [...opening, ...closing].filter((f) => f.strips > 0 && f.tabs === 0).length;
+        console.log(
+          `4 vii · no tab, no strip: ${JSON.stringify(head)}; the first tab and the last: R0 and the tree's head moved ` +
+            `${drift(opening)} / ${drift(closing)} over ${opening.length} / ${closing.length} frames, ${bare} frame(s) with an empty strip`,
+        );
+        if (opening.length < 5 || closing.length < 5) fail(`probe dead: 4 vii · ${opening.length} / ${closing.length} frames sampled`);
+        if ((drift(opening) ?? 99) > 0.5 || (drift(closing) ?? 99) > 0.5) {
+          fail(`the first tab or the last moved R0 or the tree's head (${drift(opening)} / ${drift(closing)} px) — the strip comes and goes inside its column (fix-e)`);
+        }
+        if (bare > 0) fail(`${bare} frame(s) drew the strip with no tab in it — it comes with the first tab and goes with the last (fix-e)`);
       }
       if (head.drafts !== 0 || head.branch !== 0) {
         fail(
@@ -7513,7 +7573,8 @@ try {
     } else {
       // i) open one, and look at what the list says about which.
       await openWs();
-      const opened = await until(5_000, async () => (await page.locator("[data-ws-tab-strip]").count()) === 1);
+      // The middle column, by its tab strip or (no tab open, fix-e) 最近打开.
+      const opened = await until(5_000, async () => (await page.locator("[data-ws-tab-strip], [data-ws-empty]").count()) === 1);
       // Back up to the rows (UX-23: the open workspace's column is its
       // tree); it stays the open one, which is what is read.
       if (await page.locator("[data-ws-list-back]").count()) await press("[data-ws-list-back]");
