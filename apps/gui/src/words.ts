@@ -343,8 +343,7 @@ export function valueOf(key: string, axes: readonly string[] = AXES): string {
 //   `agoOf`): list corners, last heard, last answered, a reading's age;
 // - **a moment ahead** — 「2 小时 13 分后」 (`until`): two units where the
 //   second matters, never rounded down to one (a reset in 2 h 13 min was
-//   「2 小时后」 and read as two hours early); `untilBare` under a column
-//   head that already says which way;
+//   「2 小时后」 and read as two hours early);
 //
 // **Minutes** (the lead, 2026-10-08): alone they are 分钟 (「45 分钟后重
 // 置」「3 分钟前」), second after hours they are 分 (「2 小时 13 分」).
@@ -426,16 +425,6 @@ export function quietFor(atMs: number): string {
  */
 export function until(atMs: number): string {
   return gui.time_in(pair(atMs - Date.now()));
-}
-
-/**
- * The same two units **without the direction** — 「2 小时 14 分」「3 天 4
- * 小时」 — for a cell whose column is already headed with it (the quota
- * page's 「重置」 column, ux-q2). Never trim 后 off `until`: that is a
- * second spelling of the direction, and the words gate reads for it.
- */
-export function untilBare(atMs: number): string {
-  return pair(atMs - Date.now());
 }
 
 /**
