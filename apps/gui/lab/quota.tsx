@@ -212,10 +212,11 @@ const BANDS = boardBands(ACCOUNTS.flatMap((a) => (a.usage ?? []).map((r) => r.mo
 // formatter will give.
 
 /** How long until a moment: two units where the second matters, never
-    rounded down to one — 「2 小时 13 分」「3 天 4 小时」「45 分」. */
+    rounded down to one — 「2 小时 13 分」「3 天 4 小时」; minutes alone are
+    「45 分钟」 (the lead, 2026-10-08). */
 function ahead(ms: number): string {
   const m = Math.max(1, Math.floor(ms / MIN));
-  if (m < 60) return `${m} 分`;
+  if (m < 60) return `${m} 分钟`;
   const h = Math.floor(m / 60);
   if (h < 24) return m % 60 ? `${h} 小时 ${m % 60} 分` : `${h} 小时`;
   const d = Math.floor(h / 24);
