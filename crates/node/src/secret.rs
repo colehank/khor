@@ -312,7 +312,7 @@ mod os {
         if out.status.success() {
             Ok(())
         } else {
-            Err(msg::no_secret_store())
+            Err(msg::no_secret_store().into())
         }
     }
 
@@ -332,7 +332,7 @@ mod os {
     pub fn forget(key: &str) -> Result<(), String> {
         match tool("clear", key).stderr(Stdio::null()).status() {
             Ok(_) => Ok(()),
-            Err(_) => Err(msg::no_secret_store()),
+            Err(_) => Err(msg::no_secret_store().into()),
         }
     }
 }
@@ -342,11 +342,11 @@ mod os {
     use khor_catalog::msg;
 
     pub fn put(_: &str, _: &str) -> Result<(), String> {
-        Err(msg::no_secret_store())
+        Err(msg::no_secret_store().into())
     }
 
     pub fn get(_: &str) -> Result<Option<String>, String> {
-        Err(msg::no_secret_store())
+        Err(msg::no_secret_store().into())
     }
 
     pub fn forget(_: &str) -> Result<(), String> {
