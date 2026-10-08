@@ -526,7 +526,9 @@ function Row({
             </span>
           )}
         </span>
-        <span data-import-where className="truncate text-callout text-muted-foreground">
+        {/* The whole path is the line's tooltip: the last part says
+            where, and two `app`s are told apart under the pointer. */}
+        <span data-import-where title={row.place ?? undefined} className="truncate text-callout text-muted-foreground">
           <Hit text={row.machine} words={words} />
           {dir && (
             <>

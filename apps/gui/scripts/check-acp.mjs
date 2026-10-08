@@ -963,6 +963,9 @@ try {
         rows: [...document.querySelectorAll('[data-import-row^="acp:"]')].map((el) => ({
           id: el.getAttribute("data-import-row"),
           text: (el.textContent ?? "").trim(),
+          title: (el.querySelector("[data-import-title]")?.textContent ?? "").trim(),
+          where: (el.querySelector("[data-import-where]")?.textContent ?? "").trim(),
+          path: el.querySelector("[data-import-where]")?.getAttribute("title") ?? null,
         })),
         // The positive control for every negative claim below: the
         // dialog is open and painting agents at all.
@@ -1028,16 +1031,19 @@ try {
       } else {
         // Its own name where it has one, and where it lives where it
         // does not — the id alone is not something a person picks by.
-        if (!w.rows[0].text.includes("接上注册表")) {
-          fail(`${say}: the named conversation reads ${JSON.stringify(w.rows[0].text)}`);
+        // Since 导入 became a search (IMPORT-BRIEF, the owner's lab) a row
+        // says its directory by its last part, 「机器 · 目录 · 时间」, and
+        // the whole path is the line's tooltip.
+        if (!w.rows[0].title.includes("接上注册表")) {
+          fail(`${say}: the named conversation reads ${JSON.stringify(w.rows[0].title)}`);
         }
-        if (!w.rows[1].text.includes("/w/other")) {
-          fail(`${say}: the unnamed conversation must fall back to where it lives, got ${JSON.stringify(w.rows[1].text)}`);
+        if (w.rows[1].title !== "other") {
+          fail(`${say}: the unnamed conversation must fall back to where it lives, got ${JSON.stringify(w.rows[1].title)}`);
         }
         // Where it lands is on screen, because a click does not go to
         // the 目录 box above.
-        if (!w.rows[0].text.includes("/w/khor")) {
-          fail(`${say}: a row does not say where opening it lands: ${JSON.stringify(w.rows[0].text)}`);
+        if (!w.rows[0].where.includes("khor") || w.rows[0].path !== "/w/khor") {
+          fail(`${say}: a row does not say where opening it lands: ${JSON.stringify(w.rows[0])}`);
         }
       }
       console.log(`${say}: ${w.rows.length} conversation(s) drew`);
