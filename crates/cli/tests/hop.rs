@@ -8,7 +8,10 @@
 //! Alpha's resident holds its relay wire to gamma against beta's legs
 //! every 30 s (`Node::compare_roads`) and opens the hop; the wire then
 //! reads 通过 beta. With beta frozen (its leg degraded to nothing), the
-//! wire goes back to the relay without ever going down.
+//! wire goes back to the relay without ever going down, within about
+//! 13 s: the wire to the middle gives up after 10 s of silence
+//! (`wires::HOP_SILENT`) and the carried path is closed with it (vendor/iroh
+//! patch 13), where before it waited out iroh's 15 s path idle (20 s).
 //!
 //! Loopback relay, temporary homes and identities, own tmux socket, no
 //! mDNS; processes by pid.
@@ -160,6 +163,10 @@ async fn a_hop_through_a_middle_beats_a_slow_relay_and_the_relay_takes_back_when
     signal(pid, "-CONT");
     let (took_back, _) = back.expect("the relay takes back");
     eprintln!("[hop] back on the relay {took_back:?} after beta stopped");
+    assert!(
+        took_back < Duration::from_secs(16),
+        "a frozen middle hands back to the relay in about 13 s, not iroh's 15 s path idle: {took_back:?}"
+    );
     let after = read(&alpha, &c_id).await.expect("a link to gamma");
     assert!(after.down_ms.is_none(), "the wire never went down: {after:?}");
     drop(b);

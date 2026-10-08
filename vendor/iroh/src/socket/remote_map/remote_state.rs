@@ -435,6 +435,28 @@ impl RemoteStateActor {
             RemoteStateMessage::NetworkChange { is_major } => {
                 self.handle_msg_network_change(is_major);
             }
+            RemoteStateMessage::CloseCustom => {
+                // khor patch 13: the road under every custom (carried)
+                // path to this remote is gone, so close them now. Upstream
+                // leaves a path until its idle timeout (15 s) and the
+                // selector keeps choosing it on its last round trip; the
+                // close emits `Abandoned`, which re-runs the selection.
+                for conn_state in self.connections.values() {
+                    let Some(conn) = conn_state.handle.upgrade() else {
+                        continue;
+                    };
+                    for (path_id, tuple) in conn_state.paths.iter() {
+                        if !matches!(tuple.remote(), transports::Addr::Custom(_)) {
+                            continue;
+                        }
+                        if let Some(path) = conn.path(*path_id) {
+                            // The last open path is refused: the
+                            // connection keeps it and idles out as before.
+                            let _ = path.close();
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1358,6 +1380,9 @@ pub(crate) enum RemoteStateMessage {
     RemoteInfo(oneshot::Sender<RemoteInfo>),
     /// The network status has changed in some way
     NetworkChange { is_major: bool },
+    /// khor patch 13: closes every custom path to this remote on every
+    /// connection; the road under them is gone.
+    CloseCustom,
 }
 
 /// Information about a holepunch attempt.

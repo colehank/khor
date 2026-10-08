@@ -287,14 +287,27 @@ impl Node {
         if let Some(addr) = self.carried_addr(&y.id) {
             ep.offer_addrs(iroh::EndpointAddr::from_parts(peer, [addr])).await;
         }
-        let (links, wires, id) = (self.carry.clone(), self.wires.clone(), y.id.clone());
+        let (links, wires, id, ep) = (self.carry.clone(), self.wires.clone(), y.id.clone(), ep.clone());
+        // The wire to the middle is judged on a hop's patience while the
+        // hop lives (`wires::HOP_SILENT`): a frozen middle hands back sooner.
+        let riding = wires.hop_held(&via.to_string());
         tokio::spawn(async move {
+            let _riding = riding;
             let ended = attached.ended();
             tokio::pin!(ended);
             let mut held = 0u8;
             loop {
                 tokio::select! {
-                    () = &mut ended => return,
+                    () = &mut ended => {
+                        // The road under the carried path is gone: iroh
+                        // chooses again now, not when the path idles out
+                        // (vendor/iroh patch 13). A newer link to the same
+                        // machine rides that path, so it is left.
+                        if !links.has(&peer) {
+                            ep.close_carried(peer).await;
+                        }
+                        return;
+                    }
                     () = tokio::time::sleep(LOOK_EVERY) => {}
                 }
                 // Direct took over, or the relay kept it (the hop is no
@@ -422,6 +435,7 @@ impl Node {
                 if send.write_all(&[OK]).await.is_err() {
                     return;
                 }
+                let _riding = (self.wires.hop_held(from), self.wires.hop_held(&y));
                 splice((send, recv), (ys, yr)).await;
             }
             // Y: this stream is the link to `from`'s asker (X), via B.
@@ -438,7 +452,11 @@ impl Node {
                     ep.offer_addrs(iroh::EndpointAddr::from_parts(x, [addr])).await;
                 }
                 self.wires.forgive(&asker);
+                let _riding = self.wires.hop_held(from);
                 attached.ended().await;
+                if !self.carry.has(&x) {
+                    ep.close_carried(x).await;
+                }
             }
         }
     }

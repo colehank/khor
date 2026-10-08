@@ -1444,6 +1444,15 @@ impl Endpoint {
         let _ = self.inner.resolve_remote(addr).await;
     }
 
+    /// khor patch 13: **closes every custom (carried) path to a remote**,
+    /// on every live connection to it, because the road under them ended.
+    /// The path selector then chooses again among the rest at once, rather
+    /// than keeping a dead path on its last round trip until the path's
+    /// idle timeout. The last open path of a connection is left.
+    pub async fn close_carried(&self, endpoint_id: EndpointId) {
+        self.inner.close_custom_paths(endpoint_id).await;
+    }
+
     /// Returns a [`Watcher`] for any net report runs from this [`Endpoint`].
     ///
     /// <div class="warning">

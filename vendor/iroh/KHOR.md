@@ -12,7 +12,18 @@
 
 ## 补丁
 
-十二处。
+十三处。
+
+### 13. `src/socket/remote_map/remote_state.rs`、`src/socket.rs`、`src/endpoint.rs`：转连的路断了，当场关掉自定义路径（2026-10-09，NET-DIRECT）
+
+转发（经第三台 khor 机器）的中间那台冻住时，khor 的转连链路结束了，iroh 却不知道：自定义路径还开着，`RoadOrder`
+按它最后的往返（1–2 ms）继续选它，直到路径空闲超时（`PATH_MAX_IDLE_TIMEOUT` 15 s）把它放弃，才回到中继。
+三台机器的回环测试（`crates/cli/tests/hop.rs`）量得冻住到回中继 19.9 s；把那条隧道线的静默上限从 15 s 降到 10 s
+（`wires::HOP_SILENT`）单独不改这个数，因为线退了路径还在。补丁：`Endpoint::close_carried(EndpointId)` 让该远端的
+actor 在每条活着的连接上关掉所有自定义路径（`RemoteStateMessage::CloseCustom`）；noq 当场发出 `Abandoned`，
+iroh 随即重新选路。连接只剩这一条路径时 noq 拒绝关，照旧等空闲超时。khor 这边在转发链路结束、且没有新链路顶上时
+调用（`hop::open_hop` 的守望任务、`serve_hop` 的 `Ask::From`）。量得冻住到回中继 12.9–13.2 s（三次）。
+改动约 35 行。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 12. `src/socket/remote_map/remote_state.rs`、`src/endpoint.rs`：连接活着时交来的转连地址当场打开（2026-10-09，NET-DIRECT 第四步）
 

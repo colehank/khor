@@ -95,7 +95,26 @@ pub(crate) struct Patience {
 /// timeouts; see [`Patience`]).
 const RTTS: u32 = 9;
 
+/// **A wire that carries a hop gives up sooner**: 10 s of silence
+/// instead of 15 (the lead, 2026-10-09). A middle that freezes holds the
+/// two ends on a road that carries nothing until the wire under it is
+/// judged dead, and only then does iroh take the relay back; the
+/// three-node hop test (`crates/cli/tests/hop.rs`) measured 20 s from a
+/// frozen middle to the relay at 15 s. Every other wire keeps 15: it has
+/// a relay of its own under it and nothing else waits on its verdict.
+const HOP_SILENT: Duration = Duration::from_secs(10);
+
 impl Patience {
+    /// For a wire one or more hops ride ([`Wires::hop_held`]): the
+    /// silence floor is [`HOP_SILENT`], the rest as [`Self::for_rtt`].
+    pub(crate) fn for_hop_rtt(rtt: Duration) -> Patience {
+        let k = rtt.saturating_mul(RTTS);
+        Patience {
+            silent: (HOP_SILENT + k).min(Duration::from_secs(90)),
+            ..Patience::for_rtt(rtt)
+        }
+    }
+
     pub(crate) fn for_rtt(rtt: Duration) -> Patience {
         let k = rtt.saturating_mul(RTTS);
         Patience {
@@ -289,6 +308,9 @@ pub(crate) struct Wires {
     /// relay's word that it left, let go on purpose) sets nothing: no
     /// attempt failed, so the machine is idle, not unreachable.
     down: Mutex<HashMap<String, Instant>>,
+    /// Machines whose wire a hop rides, and how many ([`Self::hop_held`]):
+    /// those wires are judged on [`Patience::for_hop_rtt`].
+    hops: Mutex<HashMap<String, usize>>,
     pub(crate) counts: Counts,
     /// The connection journal, set by the resident only
     /// (`crate::journal`: one writer per home).
@@ -318,6 +340,25 @@ struct Served {
     rx: u64,
     heard: Instant,
     rtt: Duration,
+}
+
+/// A hop riding a machine's wire ([`Wires::hop_held`]); dropping it
+/// lets the wire go back to the ordinary patience.
+pub(crate) struct HopHeld {
+    wires: Arc<Wires>,
+    id: String,
+}
+
+impl Drop for HopHeld {
+    fn drop(&mut self) {
+        let mut hops = self.wires.hops.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(n) = hops.get_mut(&self.id) {
+            *n -= 1;
+            if *n == 0 {
+                hops.remove(&self.id);
+            }
+        }
+    }
 }
 
 /// The counters, as atomics. [`Counts::snapshot`] is what crosses ipc.
@@ -880,6 +921,22 @@ impl Wires {
         self.counts.network_changes.fetch_add(1, Relaxed);
     }
 
+    /// Marks `id`'s wire as one a hop rides, until the guard drops: the
+    /// side that opened the hop (its wire to the middle), the middle (its
+    /// wires to both ends) and the far end (the middle's wire to it).
+    pub(crate) fn hop_held(self: &Arc<Self>, id: &str) -> HopHeld {
+        *self
+            .hops
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .entry(id.to_owned())
+            .or_default() += 1;
+        HopHeld {
+            wires: Arc::clone(self),
+            id: id.to_owned(),
+        }
+    }
+
     /// One look at every wire: counts what was heard, settles the road,
     /// and retires the silent. Returns how many it retired, which is the
     /// pump's cue to visit early.
@@ -898,6 +955,21 @@ impl Wires {
             change.is_some_and(|at| {
                 heard.is_none_or(|h| h < at) && now >= at + Patience::for_rtt(rtt).after_change
             })
+        };
+        // Taken apart from the other locks, so no order between them.
+        let hops: Vec<String> = self
+            .hops
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .keys()
+            .cloned()
+            .collect();
+        let silent = |id: &str, rtt: Duration| {
+            if hops.iter().any(|h| h == id) {
+                Patience::for_hop_rtt(rtt).silent
+            } else {
+                Patience::for_rtt(rtt).silent
+            }
         };
         let mut retired = 0;
         let mut dead: Vec<String> = Vec::new();
@@ -918,7 +990,7 @@ impl Wires {
                 if !rtt.is_zero() {
                     w.rtt = rtt;
                 }
-                if now.saturating_duration_since(w.heard) >= Patience::for_rtt(w.rtt).silent
+                if now.saturating_duration_since(w.heard) >= silent(&w.id, w.rtt)
                     || gone_with_change(Some(w.heard), w.rtt)
                 {
                     conn.close(0u32.into(), Retired::Silent.reason());
@@ -955,7 +1027,14 @@ impl Wires {
                 .heard
                 .map_or(Duration::MAX, |h| now.saturating_duration_since(h));
             let stale_after_change = gone_with_change(slot.heard, slot.rtt);
-            if quiet >= Patience::for_rtt(slot.rtt).silent || stale_after_change {
+            // A hop rides only a tunnel wire; the request wire to the
+            // same machine keeps its own patience.
+            let limit = if *proto == Proto::Tunnel {
+                silent(id, slot.rtt)
+            } else {
+                Patience::for_rtt(slot.rtt).silent
+            };
+            if quiet >= limit || stale_after_change {
                 let why = if stale_after_change {
                     Retired::Network
                 } else {

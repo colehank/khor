@@ -1373,6 +1373,14 @@ impl EndpointInner {
         rx.await.ok()
     }
 
+    /// khor patch 13: closes every custom path to `id`
+    /// ([`RemoteStateMessage::CloseCustom`]). Nothing when no actor runs.
+    pub(crate) async fn close_custom_paths(&self, id: EndpointId) {
+        if let Some(actor) = self.remote_actors.get(&id) {
+            actor.send(RemoteStateMessage::CloseCustom).await.ok();
+        }
+    }
+
     /// Registers the connection in the `RemoteStateActor`.
     ///
     /// The actor is responsible for holepunching and opening additional paths to this
