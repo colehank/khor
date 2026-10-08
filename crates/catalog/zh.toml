@@ -592,7 +592,7 @@ doctor-peer-behind = "{0} {1} {2}，与本机版本不同"
 doctor-peer-mute = "{0} {1}，版本未知"
 doctor-peers-alone = "尚未与其他机器配对"
 # 本机暂停接入时的自检结论(docs/MORE.md 暂停)。不是警告:它正在做被吩咐的事。
-doctor-peers-paused = "已暂停接入——不再与别的机器同步，别的机器那边看见这台离线。要恢复：khor resume"
+doctor-peers-paused = "已暂停接入——不再与别的机器同步，别的机器那边看见这台不通。要恢复：khor resume"
 doctor-peers-unread = "无法读取机器列表"
 # 连接诊断 (docs/CONNECT.md 度量与验收): per machine, how long the last
 # dial took to get an answer, and where the last few settled. 「首包」 is
@@ -1033,7 +1033,7 @@ vitals-taken = "{0}前的读数"
 vitals-version = "khor {0}"
 # Never reached since this khor started. Not the same as an old reading,
 # and not 「0%」 either — those send a person to look at different things.
-vitals-never = "尚未获取"
+vitals-never = "尚无读数"
 # Tokens spent, one day at a time (khor_core::Tokens). **Four numbers and
 # no total**, because on this machine the cached reads outnumber the
 # output five hundred to one: a sum would be almost entirely cache and
@@ -1333,7 +1333,7 @@ relay-stats-device = "{0}…  连接 {1} 次，在线 {2}"
 relay-stats-no-device = "还没有设备连过"
 
 # Round NET-12: `khor devices --roads`.
-roads-ms = "{0} 毫秒"
+roads-ms = "{0} ms"
 roads-unreported = "没有报告路（旧版 khor，或还没报）"
 # Round ROAD-1: `khor reach`.
 reach-head = "{0} 端口 {1}，每台机器各试一次"
@@ -1344,7 +1344,7 @@ reach-timeout-word = "超时"
 reach-no-name-word = "无法解析"
 reach-unasked = "未询问"
 reach-predates-word = "版本过旧"
-reach-entrance = "入口：{0}（{1} 毫秒）"
+reach-entrance = "入口：{0}（{1} ms）"
 reach-no-entrance = "没有一台机器连得上它"
 reach-choose = "本机没有它的钥匙，几台机器又说法不一：选哪台做入口由你定"
 reach-disagree = "几台机器的 known_hosts 给这个名字记着不同的钥匙：它们说的不是同一台机器"
@@ -1758,7 +1758,7 @@ forgot = "已删除设备：{0}。要它回来：在网里任一台上 khor invi
 # 而这两种情况剩下要做的事不一样(docs/UX.md 失败要说清是哪一种)。
 left = "已离开网络。这台机器现在不在任何网里，拿一张新票 khor pair 可以重新加入"
 left-told = "以下设备已收到通知：{0}"
-left-untold = "以下设备未能连接，它们仍会看到 {1} 离线——需在那边运行 khor forget {1}：{0}"
+left-untold = "以下设备未能连接，它们仍会看到 {1} 不通——需在那边运行 khor forget {1}：{0}"
 # You cannot show yourself the door: the table this would be written into
 # is the one being left, so the act has no meaning from the inside. It
 # names the verb that does the whole act instead (`Node::leave`) — a
@@ -1778,7 +1778,7 @@ leave-names-another-machine = "{0} 不是本机。要删除这台设备：khor f
 leave-with-no-network = "这台机器还没入过网——没有网可离。要入网：khor pair <票>"
 # `khor pause` / `khor resume` (docs/MORE.md 暂停). 暂停不是离开:表还在,
 # 别人那边看见的是这台离线,本机自己照常用。
-paused = "已暂停接入。这台机器不再与别的机器同步，别的机器那边看见的是它离线；本机照常用。要恢复：khor resume"
+paused = "已暂停接入。这台机器不再与别的机器同步，别的机器那边看见的是它不通；本机照常用。要恢复：khor resume"
 resumed = "已恢复接入。这台机器重新与别的机器同步，下一轮就能对上"
 # 问第二遍。和设置项不一样:把一个偏好设成它已经是的值,不值一句话;
 # 而对一台已经暂停的机器说「暂停」,是这个人不知道它已经停了(`lock::set_on`
@@ -1844,7 +1844,7 @@ serve-orphaned = "[{0}] keeper 没了——孤儿 serve 占着店只会挡住下
 # 两分钟时就地换一副新耳朵——同一把钥匙的新端点，旧的和挂在它上面的都放掉，
 # 新地址写回设备表，马上同步一轮。
 serve-ears-closed = "[{0}] 端点在 serve 底下关了，暂时听不见；回到前台或两分钟没人应答时换一副新耳朵"
-serve-fresh-ears = "[{0}] 换了一副新耳朵（{1} 毫秒），马上同步一轮"
+serve-fresh-ears = "[{0}] 换了一副新耳朵（{1} ms），马上同步一轮"
 serve-fresh-ears-failed = "[{0}] 没换成新耳朵：{1}"
 serve-deaf-fresh-ears = "[{0}] 谁都联系不上已有 {1} 秒——耳朵大概坏了，就地换一副（不退出）"
 # Round NET-11: why a silence was not taken as deafness, said once per reason.
@@ -2493,10 +2493,10 @@ conn-home = "家中继"
 conn-home-ok = "{0} · 已连接"
 conn-home-down = "{0} · 连接不上"
 conn-home-none = "还没有住进任何中继"
-conn-relay-ms = "{0} 毫秒"
+conn-relay-ms = "{0} ms"
 conn-relay-quiet = "测不到往返"
-conn-peer-rtt = "往返 {0} 毫秒"
-conn-peer-failed = "上次出错（{0}前）：{1}"
+conn-peer-rtt = "往返 {0}"
+conn-peer-failed = "上次出错（{0}）：{1}"
 conn-unanswered = "常驻没有回答"
 relays-preferred = "首选中继"
 relays-preferred-auto = "自动（最近的）"
@@ -2515,7 +2515,7 @@ term-rejoining-here = "正在重新连接"
 # one move that helps is on the other machine.
 term-rejoining-how = "{0} 开着 khor、连上网后会自动接上"
 term-rejoining-how-here = "那台机器开着 khor、连上网后会自动接上"
-link-last-heard = "{0} · 上次 {1}前"
+link-last-heard = "{0} · 上次 {1}"
 # Windows 上窗口自己的三颗按钮,画在标签条右端(docs/SHELL.md 第十三轮;macOS 用系统的,Linux 用原生装饰)。
 window-minimize = "最小化"
 window-maximize = "最大化 / 还原"
@@ -2546,9 +2546,8 @@ nav-settings = "设置"
 # the network's map and the identity; it replaces 这台机器.
 my-khor = "我的 khor"
 # The topology map (UX-16, 我的 khor and the machines overview): a
-# link's latency is conn-relay-ms; this is when a machine with no road
-# was last seen.
-map-last-seen = "无法获取 · 上次 {0}前"
+# link's latency is row-rtt (`latency`). ⚠️ 墓碑 (WORDS-1008): map-last-seen
+# 「无法获取 · 上次 {0}前」——连不上叫不通，用 link-last-heard 和 hop.down 说（`downWord`）。
 map-latency = "延迟"
 map-heard = "上次联系"
 # The chevron that opens a link's facts in the narrow column (aria).
@@ -2571,7 +2570,7 @@ dial-look = "查看 {0} 的连接"
 # that wrote none is filter-unknown's 未知, never 不通), when an unreachable
 # machine last answered, the relay a road goes by.
 dial-to = "到 {0}"
-dial-last-answer = "上次应答 {0}前"
+dial-last-answer = "上次应答 {0}"
 dial-via = "中继 · {0}"
 dial-holds-root = "持有根"
 dial-faces = "脸"
@@ -2715,7 +2714,7 @@ pull-to-sync = "下拉同步"
 release-to-sync = "松开同步"
 syncing = "正在同步"
 synced-now = "已同步"
-row-unreachable = "无法获取 · {0}"
+row-unreachable = "不通 · {0}"
 # ⚠️ 墓碑 (UX-48, the owner 2026-10-07): row-running 「正在运行 {0} · {1}」,
 # row-ran 「{0} · 退出 {1} · {2}」, row-ran-plain, row-running-bare — a
 # terminal row's second line is the command itself; its time is the
@@ -2725,7 +2724,7 @@ row-unreachable = "无法获取 · {0}"
 row-ran-ok = "{0} 执行成功"
 row-ran-failed = "{0} 执行失败"
 day-unreachable = "无法获取"
-reading-unreachable = "无法获取 · 上次 {0}"
+reading-unreachable = "不通 · 上次 {0}"
 machine-cant-reach = "无法连接 {0}"
 # ── 额度 ──────────────────────────────────────────────────────────
 # The rail's sixth landing: registered API accounts as rings. 「额度」
@@ -2847,7 +2846,7 @@ accounts-models = "模型"
 # 行上再说一遍就是同一个事实在一屏里说两处。
 accounts-just-now = "刚刚"
 accounts-read-here = "本机刚刚读取"
-accounts-read-from = "{0} 读取于 {1}前"
+accounts-read-from = "{0} 读取于 {1}"
 # 这两句 2026-09-07 从账户事实栏搬到了**卡头右上**,和机器卡放同一件事的
 # 那个座位对齐。
 #
@@ -3053,11 +3052,11 @@ machine-here = "本机"
 # middle dot between them.
 # ⚠️ 墓碑: row-sessions 「{0} 个会话」 (UX-15's activity line); row-cpu,
 # row-mem, row-gpu (UX-50: the label and the value are inked apart, so they
-# are two words).
-row-offline = "离线"
+# are two words). ⚠️ 墓碑 (WORDS-1008): row-offline 「离线」——连不上叫不通（hop.down），
+# 行和筛选从同一个 `connectionKey` 取词。
 row-pct = "{0}%"
-# The row's latency keeps the Latin unit (the owner, 2026-10-05: 「23 ms」); the
-# relay rows on 连接 keep theirs (conn-relay-ms).
+# The row's latency keeps the Latin unit (the owner, 2026-10-05: 「23 ms」), and it is
+# every latency's word now (WORDS-1008, `latency` in words.ts; no 毫秒 anywhere).
 row-rtt = "{0} ms"
 # ⚠️ 墓碑 (UX-48): row-changes 「{0} 个改动」 (the workspace row says the
 # prompt's git segment instead), row-window 「剩 {0} · {1} 重置」 and
@@ -3073,7 +3072,7 @@ row-rtt = "{0} ms"
 # The capital K is the user's — the product's name on a card's masthead,
 # not the command's spelling.
 card-version = "khor {0}"
-card-age = "{0}前"
+# ⚠️ 墓碑 (WORDS-1008): card-age 「{0}前」——时间的方向只在 time-ago / time-in 里。
 # 机器详情最上面那条事实带(2026-10-01 晚,负责人选的方向 A;09-30 → 10-01 是一张
 # 通讯录式的名片)的格子:每格上面标签、下面值,标签用标准词。「型号」只在窄档出现
 # (窄档没有页头,型号是第一格)。
@@ -3575,6 +3574,18 @@ network = "网络"
 security = "安全"
 # 第十七轮: the one word an error state offers (`components/RegionState`).
 region_retry = "重试"
+# 时间的方向只在这两个词里（WORDS-1008，负责人 2026-10-08：「普通的还是2秒前这样.重置如2小时13分后重置」）。
+# [gui] 里别的句子不自己带「前」「后」，拿 `ago` / `until` 说好的那一段（words.ts，check-words 守）。
+time-ago = "{0}前"
+time-in = "{0}后"
+time-hours-minutes = "{0} 小时 {1} 分"
+time-days-hours = "{0} 天 {1} 小时"
+# 一块界面画不出来时（afix-a，2026-10-08，审查 R1：渲染一抛错整窗白屏）：
+# 页面、列表、对话框、⌘K 的结果各包一层，只说这一句，配「重试」（region_retry）；
+# 原文只进控制台，不上屏。
+fault-said = "这部分内容无法显示"
+# 诊断请求答回来是空的（不是一张表）：不当成「一切正常」，也不一直转圈。
+doctor-no-answer = "没有收到诊断结果"
 # 2026-09-27 用户定名:这一页叫「诊断」,不叫「自检」。键不改(`doctor`)。
 doctor = "诊断"
 # 头像开的那一页。**不叫「我」**——khor 里没有账号,一台机器就是一个身份,
@@ -3599,7 +3610,7 @@ identity-faces = "khor 的界面"
 # 太尴尬了」):每一条都先过一遍「系统设置里会不会这么写」。
 # 它们从头像卡搬到了网络页:说的是这台机器和这张网的关系,
 # 不是这台机器是谁。暂停排在离开前面——可逆的在不可逆的前面。
-identity-pause-warn = "暂停后不再与其他机器同步，其他机器会看到这台机器离线；本机的会话、工作区照常使用。机器列表不变——这不是离开网络，随时可以恢复。"
+identity-pause-warn = "暂停后不再与其他机器同步，其他机器会看到这台机器不通；本机的会话、工作区照常使用。机器列表不变——这不是离开网络，随时可以恢复。"
 # 「暂停」「恢复」: the network page says them about this machine, and a
 # machine row's menu about that machine (docs/SHELL.md 第五轮 第 10 条) —
 # one act, one word, which is why the key lost its `identity-` prefix.
@@ -3608,7 +3619,7 @@ resume = "恢复"
 # A machine row this machine has stopped talking to (第 10 条), under its
 # name; the row is also drawn grey.
 machine-paused = "已暂停"
-identity-paused-now = "已暂停——其他机器会看到这台机器离线"
+identity-paused-now = "已暂停——其他机器会看到这台机器不通"
 identity-leave-warn = "本机将退出网络：机器列表只保留本机，其他机器留在这里的数据一并清除。本机的会话、工作区、身份、设置不受影响；用一张新的配对票 pair 可以重新加入。"
 identity-leave-type-name = "输入这台机器的名称以确认"
 identity-leave-do = "离开网络"
@@ -3643,7 +3654,7 @@ roads-none = "还没有连接读数"
 roads-unanswered = "serve 没有回答"
 # 开关:打开就是 `khor pause`。说明写会发生什么。
 net-pause-sync = "暂停同步"
-net-pause-note = "其他机器会看到这台机器离线；本机照常使用"
+net-pause-note = "其他机器会看到这台机器不通；本机照常使用"
 net-relays = "中继"
 # 离开网络那一行:和安全页「重置身份 · 重置…」同一个形状,确认在窗里。
 net-leave-note = "机器列表只保留本机；用新的配对票可以重新加入"
@@ -4827,7 +4838,7 @@ quota-seven-day = "7 天窗口"
 # 同一刀去掉的还有读数年龄。代价是真的:额度缓存五分钟,所以屏幕上那个数
 # 最多可能是五分钟前的,**而现在没有任何一处说这件事**。
 # 这个窗口什么时候归零。
-quota-resets = "{0}后重置"
+quota-resets = "{0}重置"
 # 五种「没有数」,每一种对应一件不同的事可做。**不能合并成一句「读不到」**:
 # 前两种是用户动一下就好,第三种是等,后两种是别人的事。
 quota-no-login = "这台机器没登录 Claude Code"

@@ -48,6 +48,7 @@ import {
 import { MachineAvatar } from "@/components/Avatar";
 import {
   IconAppearance,
+  IconBack,
   IconBrowser,
   IconChevronRight,
   IconClose,
@@ -79,7 +80,7 @@ import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
 import { Tabs } from "@/browse/Tabs";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
 import { gui, msg } from "@/gen/catalog";
-import { lasted } from "@/words";
+import { lasting } from "@/words";
 import {
   closeSessionSide,
   forgetSidePlace,
@@ -153,6 +154,7 @@ import { MachineFiles } from "@/views/MachineFiles";
 import { FullScreenProvider } from "@/lib/full-screen";
 import { MachineWeb } from "@/views/MachineWeb";
 import { RegionState, Waiting } from "@/components/RegionState";
+import { Fault } from "@/components/Fault";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
 import { AddMachineDialog } from "@/views/AddMachine";
@@ -524,7 +526,7 @@ export default function App() {
     const said = window as unknown as { __finished?: Finished[] };
     if (done.length) said.__finished = [...(said.__finished ?? []), ...done];
     for (const f of done) {
-      const took = lasted(f.ms);
+      const took = lasting(f.ms);
       const body =
         f.notice ??
         (f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took));
@@ -3667,6 +3669,10 @@ export default function App() {
   // the screen under it scrolls beneath it on glass, which reaches up
   // under the status bar. Wide, it is the second half of the left
   // column's band (`[data-wide-band]`).
+  /** **Where the window is**, for the seams (`components/Fault`): a part
+      that failed to draw is drawn again once a person goes somewhere
+      else, the way leaving a page and coming back would. */
+  const seamAt = [landing, morePage ?? "", selected ?? "", selectedDevice ?? "", openWs?.device ?? "", openWs?.path ?? ""].join("\u0000");
   const sideHead = (
     <div
       data-side-l0
@@ -3854,6 +3860,27 @@ export default function App() {
                 「你往里走了一层」, and these do not sit inside anything.
                 They are opened over the whole region, the way the
                 mark's place used to be, and take the same silence. */}
+            <Fault
+              name="page"
+              reset={seamAt}
+              // The screen's 「‹」, which the page that failed would have
+              // drawn: where the edge swipe goes (`swipeBack`).
+              head={
+                swipeBack && (
+                  <NarrowHead>
+                    {(seated) =>
+                      seated && (
+                        <header data-fault-head className="flex min-w-0 flex-1 items-center gap-in self-stretch">
+                          <GlassCircle aria-label={gui.back} data-back onClick={swipeBack}>
+                            <IconBack />
+                          </GlassCircle>
+                        </header>
+                      )
+                    }
+                  </NarrowHead>
+                )
+              }
+            >
             {morePage
               ? screen === "detail"
                 ? morePageEl
@@ -3893,6 +3920,7 @@ export default function App() {
                         ? sessionScreen
                         : detail
                       : list}
+            </Fault>
           </div>
           </div>
           {/* The navigation floats over the landings and nothing else
@@ -3961,6 +3989,10 @@ export default function App() {
               browsing address bar are rows of their own. */}
           <main data-main className="relative flex min-w-0 flex-1 flex-col bg-background">
           <RegionLead.Provider value={foldedLead}>
+          {/* One seam per landing (`components/Fault`); the board's own
+              content has a seam of its own inside, so a broken page
+              keeps its R0 and the list beside it. */}
+          <Fault name="page" reset={seamAt}>
           {dial ? (
             morePageEl
           ) : morePage ? (
@@ -3986,7 +4018,9 @@ export default function App() {
                 )
               }
             >
-              {morePageEl}
+              <Fault name="more" reset={seamAt}>
+                {morePageEl}
+              </Fault>
             </Region>
           ) : quotas ? (
             <QuotaLanding
@@ -4069,7 +4103,9 @@ export default function App() {
                     // terminal's reload, `BarSeat` `lead`).
                     tail={<span ref={setVerbSeat} data-session-verbs className="flex flex-none items-center gap-in empty:hidden" />}
                   >
-                    {detail}
+                    <Fault name="detail" reset={seamAt}>
+                      {detail}
+                    </Fault>
                   </Tabs>
                   </VerbSeat.Provider>
                 ) : (
@@ -4101,14 +4137,21 @@ export default function App() {
                     // version and reading age are the card's, 2026-10-01.)
                     caption={stale ? gui.backend_unreachable : undefined}
                   >
-                    {detail}
+                    <Fault name="detail" reset={seamAt}>
+                      {detail}
+                    </Fault>
                   </Region>
                 )}
               </div>
-              {sessionSide}
+              {sessionSide && (
+                <Fault name="side" reset={seamAt}>
+                  {sessionSide}
+                </Fault>
+              )}
               </div>
             </>
           )}
+          </Fault>
           </RegionLead.Provider>
           </main>
           </div>

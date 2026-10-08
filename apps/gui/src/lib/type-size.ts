@@ -21,6 +21,8 @@
 // refuses storage follows the system and the default terminal size.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 /** iOS's body sizes, xS…xxxL; the fourth (17) is the default. */
 export const UI_STEPS = [14, 15, 16, 17, 19, 21, 23] as const;
 const UI_BASE = 17;
@@ -104,10 +106,9 @@ export function wearTypeSize() {
   // main window heard nothing — the changed event is a window's own, and
   // a window beside it is never hidden, so `visibilitychange` never came
   // either. The size took only at the next launch. The store says so to
-  // every other page of this origin; this one wears it and tells its
-  // terminals and rows, as if the slider were its own.
-  window.addEventListener("storage", (e) => {
-    if (e.key !== KEY && e.key !== null) return;
+  // every other page of this origin (`lib/other-windows`); this one wears
+  // it and tells its terminals and rows, as if the slider were its own.
+  heardFrom(KEY, () => {
     const t = stored();
     wear(t);
     window.dispatchEvent(new CustomEvent(CHANGED, { detail: t }));

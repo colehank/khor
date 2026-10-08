@@ -13,6 +13,8 @@
 // cursor and tap settings. A face that refuses storage keeps the default.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 export const HISTORY_CHOICES = [1000, 2000, 5000, 10_000, 20_000] as const;
 
 const KEY = "khor.term-history";
@@ -48,6 +50,13 @@ export function setTermHistory(lines: number) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: lines }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(KEY, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: termHistory() }));
+});
 
 /** Calls `then` with every later choice; answers the way to stop. */
 export function onTermHistory(then: (lines: number) => void): () => void {

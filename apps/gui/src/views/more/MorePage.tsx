@@ -18,6 +18,7 @@
 // rather than being another value of it.
 import { createContext, useContext, useState, type ReactNode } from "react";
 
+import { MidName } from "@/browse/TabStrip";
 import { IconBack, IconChevronRight, IconClose } from "@/components/icons";
 import { PageAction, PageSubtitle } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
@@ -373,29 +374,42 @@ export function MoreFact({
       into a ragged right column. */
   note?: ReactNode;
 }) {
+  // **Side by side when both fit whole, the value under the label when
+  // they do not** (afix-a; the audit's D1: on a phone the label kept its
+  // line and the value was squeezed beside it — 「测不到往返」 one
+  // character a line, a relay's host broken in the middle). A wrapping
+  // row decides by the two widths: neither is ever squeezed beside the
+  // other. The label is whole or cut in the middle when it alone is
+  // wider than the row (a relay's host, a machine's name; `MidName`); the
+  // value is never cut — it is what people copy — and wraps only on a
+  // line of its own.
+  //
+  // ⚠️ 墓碑: the label `flex-1 whitespace-nowrap` and the value
+  // `min-w-0` beside it, which kept a store path from crushing its label
+  // (docs/IOS.md) by crushing the value instead.
   const row = (
     <>
-      {/* The label keeps its line: a long value (a store path on a phone,
-          docs/IOS.md) wraps beside it instead of squeezing it to one
-          character a line. */}
-      <span className="flex-1 whitespace-nowrap">{label}</span>
-      <span data-more-fact={name} data-setting-trail data-selectable className="min-w-0 [overflow-wrap:anywhere] text-right text-muted-foreground">
+      <span data-more-label className="flex min-w-0 max-w-full flex-auto">
+        <MidName text={label} even />
+      </span>
+      <span data-more-fact={name} data-setting-trail data-selectable className="ms-auto min-w-0 max-w-full [overflow-wrap:anywhere] text-right text-muted-foreground">
         {children}
       </span>
     </>
   );
+  const line = "flex min-w-0 flex-wrap content-center items-center gap-x-row gap-y-xxs";
   if (!note) {
     return (
       // `data-more-row`: a row of a settings card like the four kinds —
       // their height, their trailing edge (app.css, `check-face` 4I).
-      <div data-more-row className="flex min-w-0 items-center gap-row text-body">
+      <div data-more-row className={cn(line, "text-body")}>
         {row}
       </div>
     );
   }
   return (
     <div data-more-row className="flex min-w-0 flex-col justify-center text-body">
-      <div className="flex min-w-0 items-center gap-row">{row}</div>
+      <div className={line}>{row}</div>
       <span data-more-note={name} data-selectable className="min-w-0 text-left text-callout text-muted-foreground [overflow-wrap:anywhere]">
         {note}
       </span>

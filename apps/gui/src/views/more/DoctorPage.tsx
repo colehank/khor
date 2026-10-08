@@ -26,7 +26,7 @@ import { useCallback, useEffect, useState } from "react";
 import { doctorFix, fetchDoctor, type DeviceRow, type DoctorRow } from "@/api";
 import { Waiting } from "@/components/RegionState";
 import { ActionRow } from "@/components/settings/ActionRow";
-import { cli } from "@/gen/catalog";
+import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { MoreFold, MoreFrame, MoreSection } from "@/views/more/MorePage";
 import { NetStatusSections } from "@/views/more/NetStatus";
@@ -104,6 +104,15 @@ export function DoctorPage({
     setFixed({});
     fetchDoctor().then(
       (r) => {
+        // **An answer that is not a table is no answer** (afix-a; the
+        // audit's R1: a node that answered `null` threw on the rows below
+        // and blanked the window). Not 「一切正常」 — nothing was checked —
+        // and not loading for ever: the ask failed, and 重新检查 is there.
+        if (!Array.isArray(r)) {
+          setError(gui.doctor_no_answer);
+          setAsking(false);
+          return;
+        }
         setRows(r);
         setAnsweredAt(Date.now());
         setAsking(false);

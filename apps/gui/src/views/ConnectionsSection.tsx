@@ -17,7 +17,7 @@ import { Waiting } from "@/components/RegionState";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { gui } from "@/gen/catalog";
 import { MoreFact, MoreSection } from "@/views/more/MorePage";
-import { ago, hopWord, linkWord } from "@/words";
+import { agoOf, hopWord, latency, linkWord } from "@/words";
 
 /** How often the group asks again while it is on screen. */
 const AGAIN_MS = 5000;
@@ -81,7 +81,6 @@ export function ConnectionsSection() {
       </MoreSection>
     );
   }
-  const now = Date.now();
   return (
     <MoreSection name="connections" label={gui.card_connection} mark={{ "data-connections": "" }}>
       <MoreFact
@@ -101,7 +100,7 @@ export function ConnectionsSection() {
       {conn.relays.map((r) => (
         <MoreFact key={r.url} name="conn-relay" label={hostOf(r.url)}>
           <span data-conn-relay={r.url} className="tabular-nums">
-            {r.rtt_ms === null ? gui.conn_relay_quiet : gui.conn_relay_ms(r.rtt_ms)}
+            {r.rtt_ms === null ? gui.conn_relay_quiet : latency(r.rtt_ms)}
           </span>
         </MoreFact>
       ))}
@@ -115,13 +114,13 @@ export function ConnectionsSection() {
           // ragged right column.
           note={
             p.last_failure && p.failure_ago_ms !== null ? (
-              <span data-conn-failure>{gui.conn_peer_failed(ago(now - p.failure_ago_ms), p.last_failure)}</span>
+              <span data-conn-failure>{gui.conn_peer_failed(agoOf(p.failure_ago_ms), p.last_failure)}</span>
             ) : undefined
           }
         >
           <span data-conn-peer={p.id} data-hop={p.hop} className="tabular-nums">
             {linkWord(p.hop, p.heard_ms)}
-            {p.rtt_ms !== null && ` · ${gui.conn_peer_rtt(p.rtt_ms)}`}
+            {p.rtt_ms !== null && ` · ${gui.conn_peer_rtt(latency(p.rtt_ms))}`}
           </span>
         </MoreFact>
       ))}

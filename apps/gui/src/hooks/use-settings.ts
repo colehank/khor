@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { fetchConfig, hear, type ConfigRow } from "@/api";
+import { CONFIG_TOLD, heardFrom } from "@/lib/other-windows";
 
 /** ⚠️ **Not `useSettings`** — that one is `src/settings.ts`, which reads
     the answer out of the context this hook fills. Two functions with one
@@ -61,12 +62,19 @@ export function useStoredSettings(): Settings {
   // Two roads to one fact: the page's `focus` (a browser face), and the
   // app's `window:focused` — WKWebView does not hand the page a `focus`
   // when the app comes back to the front, so the window says it.
+  //
+  // **And at once when another window changed one** (fix-d, 2026-10-08):
+  // the Mac's 设置 is a window beside this one, and the main window is not
+  // focused while somebody picks 深色 there — it stayed light until
+  // clicked. `setConfig` says so to every other window.
   useEffect(() => {
     window.addEventListener("focus", reread);
     const drop = hear<null>("window:focused", reread);
+    const told = heardFrom(CONFIG_TOLD, reread);
     return () => {
       window.removeEventListener("focus", reread);
       drop();
+      told();
     };
   }, [reread]);
 

@@ -15,6 +15,8 @@
 // that refuses storage keeps the default.
 import { useEffect, useState } from "react";
 
+import { heardFrom } from "@/lib/other-windows";
+
 export type CursorShape = "block" | "bar" | "underline";
 export type CursorChoice = { shape: CursorShape; blink: boolean };
 
@@ -51,6 +53,13 @@ export function setTermCursor(next: CursorChoice) {
   }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: next }));
 }
+
+// Set in another window of this app (the Mac's settings window,
+// `lib/other-windows`): heard here as if set here.
+heardFrom(KEY, () => {
+  session = null;
+  window.dispatchEvent(new CustomEvent(CHANGED, { detail: termCursor() }));
+});
 
 /** Calls `then` with every later choice; answers the way to stop. */
 export function onTermCursor(then: (c: CursorChoice) => void): () => void {

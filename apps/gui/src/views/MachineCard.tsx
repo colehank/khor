@@ -52,7 +52,7 @@ import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { pagesHere } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
-import { ago, lasting, linkWord, systemWord, count } from "@/words";
+import { agoOf, hopWord, lasting, linkWord, systemWord, count } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -613,7 +613,7 @@ function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; say
   ) : roadTo(me, row)?.via ? (
     <span data-road-via={roadTo(me, row)!.via!}>{gui.add_step_via(nameOf(roadTo(me, row)!.via!, rows))}</span>
   ) : row.hop ? (
-    <span data-hop={row.hop}>{linkWord(row.hop, row.heard_ms)}</span>
+    <span data-hop={row.hop}>{linkWord(row.hop, row.heard_ms, row.down_ms)}</span>
   ) : null;
   if (road) facts.push(["connection", gui.card_connection, road]);
   if (v && v.uptime_s > 0) {
@@ -630,14 +630,14 @@ function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; say
       "reading",
       gui.card_reading,
       far ? (
-        // 「无法获取 · 上次 HH:MM」 (P5): what the row says, with the clock
+        // 「不通 · 上次 HH:MM」 (P5; WORDS-1008): what the row says, with the clock
         // of the last reading rather than an age that keeps growing.
         <span data-vitals-age data-far className="tabular-nums">
           {gui.reading_unreachable(clock(Date.now() - age))}
         </span>
       ) : !row.me && age > 0 ? (
         <span data-vitals-age className="tabular-nums">
-          {gui.card_age(ago(Date.now() - age))}
+          {agoOf(age)}
         </span>
       ) : (
         <span data-updated className="tabular-nums">
@@ -1493,7 +1493,7 @@ function Readings({
                 {cli.day_title}
               </span>
               {dayLost ? (
-                <span className="text-callout text-muted-foreground">{gui.day_unreachable}</span>
+                <span className="text-callout text-muted-foreground">{hopWord("down")}</span>
               ) : (
                 <div data-skeleton aria-busy="true" className="min-h-0 flex-1 rounded-md bg-fill" />
               )}

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { isMenuFace } from "./api";
 import { MenuFace } from "./components/OmniMenu";
+import { Fault } from "./components/Fault";
 import "./styles/tokens.css";
 import "./styles/app.css";
 import { followSystemTheme, mirroredPref, wearTheme } from "./theme";
@@ -78,6 +79,12 @@ followFieldSwipe();
 // it. A second HTML entry point was the other road and it is the worse
 // one: the menu's look would then be defined in two places, and the two
 // would drift the first time either was restyled.
+//
+// **The last seam** (`components/Fault`): the app's own seams take a
+// broken part down alone; whatever reaches this one is the shell itself,
+// and the window says one sentence with 重试 rather than going blank.
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>{isMenuFace ? <MenuFace /> : <App />}</React.StrictMode>,
+  <React.StrictMode>
+    <Fault name="app" className="h-dvh">{isMenuFace ? <MenuFace /> : <App />}</Fault>
+  </React.StrictMode>,
 );

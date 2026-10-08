@@ -40,6 +40,7 @@ import {
 import { createPortal } from "react-dom";
 
 import { find as findAll, type FindHit } from "@/api";
+import { Fault } from "@/components/Fault";
 import { IconClose, IconSearch } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
@@ -346,7 +347,10 @@ export function SideHead({
     findAll(word)
       .then((rows) => {
         if (!live) return;
-        setHits(rows);
+        // **Anything but a list is no hits** (afix-a; the audit's R1: a
+        // node that answered `null` threw on `slice` below and blanked
+        // the window).
+        setHits(Array.isArray(rows) ? rows : []);
         setAt(0);
       })
       .catch(() => live && setHits([]));
@@ -500,41 +504,11 @@ export function SideHead({
                 // (tokens.css `--seat-menu-inset`).
                 style={{ left: "var(--seat-menu-inset)" }}
               >
-                {shown.length === 0 && (
-                  <span data-search-none className="px-2 py-2 text-callout text-muted-foreground">
-                    {gui.find_nothing}
-                  </span>
-                )}
-                {shown.map((h, i) => (
-                  <button
-                    key={`${h.kind}:${h.id}`}
-                    type="button"
-                    role="option"
-                    aria-selected={i === at}
-                    data-search-row={h.id}
-                    data-search-kind={h.kind}
-                    data-on={i === at}
-                    onClick={() => go(h)}
-                    // The picked hit is a chosen row — `fill-strong`,
-                    // like a selected list row — and the pointer's is
-                    // `fill`. The brand wash is for the row being
-                    // located to (README 颜色, `check-face` 4K).
-                    className={cn(
-                      "flex min-h-menu-item min-w-0 items-center gap-2 rounded-menu-item px-row text-left text-body hover:bg-fill",
-                      i === at && "glass-sel",
-                    )}
-                  >
-                    {/* **A hit is a list row** (W-V15): its name, and under
-                        it where it lives and what it is — 「proto · 会话」 —
-                        not three words spread across the column. */}
-                    <span className="flex min-w-0 flex-1 flex-col py-1">
-                      <span className="truncate">{h.label}</span>
-                      <span className="truncate text-caption text-muted-foreground">
-                        {[h.note, kindWord(h.kind)].filter(Boolean).join(" · ")}
-                      </span>
-                    </span>
-                  </button>
-                ))}
+                {/* A hit that fails to draw takes the hits down with it,
+                    never the window (`components/Fault`). */}
+                <Fault name="find" reset={word} className="h-auto flex-none p-row">
+                  <Hits shown={shown} at={at} go={go} />
+                </Fault>
               </div>
             )}
           </div>
@@ -544,5 +518,53 @@ export function SideHead({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * ⌘K's hits, one row each, or 「没有结果」. **A component of its own so a
+ * hit that fails to draw is caught by the seam around it**
+ * (`components/Fault`): rows mapped inline are drawn by `SideHead`'s own
+ * render, above any boundary inside it.
+ */
+function Hits({ shown, at, go }: { shown: FindHit[]; at: number; go: (hit: FindHit | undefined) => void }) {
+  return (
+    <>
+      {shown.length === 0 && (
+        <span data-search-none className="px-2 py-2 text-callout text-muted-foreground">
+          {gui.find_nothing}
+        </span>
+      )}
+      {shown.map((h, i) => (
+        <button
+          key={`${h.kind}:${h.id}`}
+          type="button"
+          role="option"
+          aria-selected={i === at}
+          data-search-row={h.id}
+          data-search-kind={h.kind}
+          data-on={i === at}
+          onClick={() => go(h)}
+          // The picked hit is a chosen row — `fill-strong`,
+          // like a selected list row — and the pointer's is
+          // `fill`. The brand wash is for the row being
+          // located to (README 颜色, `check-face` 4K).
+          className={cn(
+            "flex min-h-menu-item min-w-0 items-center gap-2 rounded-menu-item px-row text-left text-body hover:bg-fill",
+            i === at && "glass-sel",
+          )}
+        >
+          {/* **A hit is a list row** (W-V15): its name, and under
+              it where it lives and what it is — 「proto · 会话」 —
+              not three words spread across the column. */}
+          <span className="flex min-w-0 flex-1 flex-col py-1">
+            <span className="truncate">{h.label}</span>
+            <span className="truncate text-caption text-muted-foreground">
+              {[h.note, kindWord(h.kind)].filter(Boolean).join(" · ")}
+            </span>
+          </span>
+        </button>
+      ))}
+    </>
   );
 }

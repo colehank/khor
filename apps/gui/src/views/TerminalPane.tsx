@@ -80,7 +80,7 @@ import { RegionState, useWaited, WAIT_SAY_MS, Waiting } from "@/components/Regio
 import { gui, menu, msg } from "@/gen/catalog";
 import { baseName } from "@/lib/paths";
 import { levelOf, treeChanged } from "@/lib/tree-changed";
-import { ago } from "@/words";
+import { lasting } from "@/words";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useKeysTo } from "@/hooks/use-keys-to";
@@ -3610,7 +3610,7 @@ function RejoinPill({ machine }: { machine?: string | null }) {
       <span className="flex items-center gap-xxs tabular-nums">
         <IconReload className="size-3.5 flex-none animate-spin motion-reduce:animate-none" />
         {machine ? gui.term_rejoining(machine) : gui.term_rejoining_here}
-        {say && <span data-term-rejoining-for>· {ago(since)}</span>}
+        {say && <span data-term-rejoining-for>· {lasting(Date.now() - since)}</span>}
       </span>
       {say && (
         <span data-term-rejoining-how className="text-center">
