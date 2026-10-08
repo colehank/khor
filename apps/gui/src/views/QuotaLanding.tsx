@@ -1573,16 +1573,15 @@ export function QuotaLanding({
   // — the windows card and the money card, one under the other.
   const isSub = current?.kind === "sub";
   const dials = current && isSub ? subDials(current) : [];
-  // **Every model id on the board**, every account's and this machine's
-  // transcripts': the series colours are handed out over it, so one id is
-  // one colour on every page (UX-53, `lib/model-band`).
-  const boardModels = useMemo(
-    () => [
-      ...(board ?? []).flatMap((a) => a.reading.model_tokens.map((m) => m.model)),
-      ...(usage?.models ?? []).map((m) => m.model),
-    ],
-    [board, usage],
-  );
+  // **Every model id on the board**, every account's: the series colours
+  // are handed out over it, so one id is one colour on every page (UX-53,
+  // `lib/model-band`). **The board alone**, which is in hand before any
+  // page draws: a model only a subscription's transcripts carry takes the
+  // slot after the board's on that chart (`bandsFor`'s `strangers`).
+  // ⚠️ 墓碑 (ux-q3): the transcripts' models folded in too — they arrive
+  // only once a subscription is opened (`fetchUsage`), so every API
+  // account's colours moved the moment one was (`check-face` quota d).
+  const boardModels = useMemo(() => (board ?? []).flatMap((a) => a.reading.model_tokens.map((m) => m.model)), [board]);
   /** **The account page's lead** (UX-53, the owner 2026-10-08: 「窗口简洁
       一点」「点击去不要环和 bar 换行」「重置写在 5H 这种左侧的标题旁边」
       「重制用一个刷新 icon」): one line per window — its name and ↻ the
