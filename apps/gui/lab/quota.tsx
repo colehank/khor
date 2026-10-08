@@ -18,7 +18,7 @@ import { Bar } from "@/components/Bar";
 import { sessionMark } from "@/components/BrandIcons";
 import { DetailFrame } from "@/components/DetailFrame";
 import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, type Pip } from "@/components/Face";
-import { IconBack } from "@/components/icons";
+import { IconBack, IconReload } from "@/components/icons";
 import { providerKind } from "@/components/SessionFace";
 import { SideList, type SideRow } from "@/components/SideList";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -278,6 +278,8 @@ function RowRing({ pct, strain }: { pct: number | null; strain: Strain | null })
   );
 }
 
+const ROW_GLYPH = new URLSearchParams(location.search).get("row") === "glyph";
+
 function rowOf(a: Acct, on: boolean, open: () => void): SideRow {
   const t = tightest(a);
   const strain = t ? strainOf(t.pct) : null;
@@ -291,7 +293,11 @@ function rowOf(a: Acct, on: boolean, open: () => void): SideRow {
     title: a.name,
     name: a.name,
     // Left-bottom: how long until the line the row speaks for resets.
-    sub: t?.resets ? <span className="tabular-nums">{`${ahead(t.resets - NOW)}后重置`}</span> : undefined,
+    // Two drafts for the owner to pick (`?row=glyph`): the words, or ↻
+    // as on the account page.
+    sub: t?.resets ? (
+      ROW_GLYPH ? <Resets ms={t.resets - NOW} /> : <span className="tabular-nums">{`${ahead(t.resets - NOW)}后重置`}</span>
+    ) : undefined,
     // Left of the rightmost column: the ring, both lines tall. A trouble
     // has no reading to draw.
     // A wallet has no fraction and draws none (the lead, 2026-10-08).
@@ -322,11 +328,24 @@ function rowOf(a: Acct, on: boolean, open: () => void): SideRow {
 
 // ---- the account's page ---------------------------------------------------
 
+/** **↻ and the time** in secondary ink at the text's size; the words
+    stay for a reader that cannot see the glyph. */
+function Resets({ ms }: { ms: number }) {
+  const said = `${ahead(ms)}后重置`;
+  return (
+    <span data-quota-resets role="img" aria-label={said} title={said} className="inline-flex items-center gap-xxs text-callout text-muted-foreground tabular-nums">
+      <IconReload className="size-[1em] flex-none" />
+      <span aria-hidden="true">{ahead(ms)}</span>
+    </span>
+  );
+}
+
 function Lines({ a }: { a: Acct }) {
   if (a.lines.length === 0) return null;
-  // The owner (2026-10-08): 「重置写在 5H 这种左侧的标题旁边」 — the reset
-  // rides its window's title in secondary ink; no reset column, and no
-  // column heads (a bar filled to the number beside it says 「used」).
+  // The owner (2026-10-08): 「重置写在 5H 这种左侧的标题旁边」, then 「重制
+  // 用一个刷新 icon，不必写俩字」 — ↻ and the time ride the window's title in
+  // secondary ink; no reset column, and no column heads (a bar filled to
+  // the number beside it says 「used」).
   return (
     <div data-quota-lines className="grid min-w-0 flex-1 grid-cols-[auto_minmax(1.5rem,1fr)_auto] items-center gap-x-in gap-y-in">
       {a.lines.map((l) => {
@@ -336,9 +355,7 @@ function Lines({ a }: { a: Acct }) {
           <div key={l.id} data-quota-line={l.id} className="contents">
             <span data-quota-line-title className="flex items-baseline gap-in whitespace-nowrap">
               <span className="text-body">{l.word}</span>
-              {l.resets && (
-                <span className="text-callout text-muted-foreground tabular-nums">{`${ahead(l.resets - NOW)}后重置`}</span>
-              )}
+              {l.resets && <Resets ms={l.resets - NOW} />}
             </span>
             <Bar pct={l.pct} strain={l.id === "credits" ? null : s} />
             <span className={cn("text-right text-body tabular-nums whitespace-nowrap", over && "font-semibold text-strain")}>
@@ -356,12 +373,9 @@ function Page({ a, narrow, onBack }: { a: Acct; narrow: boolean; onBack?: () => 
   const Mark = sessionMark("agent", a.provider);
   const caption = [a.plan, `${a.home} · ${a.age === null ? "刚刚" : ago(a.age)}`].filter(Boolean).join(" · ");
   const pips: Pip[] = a.lines.filter((l) => l.id !== "credits").map((l) => ({ word: l.word, v: l.pct }));
-  // Narrow: the dial one size down, so it and the lines stay on one row
-  // at 375 (the owner: 「点击去不要环和 bar 换行」).
-  // Below 380 (a 375 phone) one step further, so the bar keeps 36 beside
-  // 「2 小时 14 分」 (the lead's pick ①, 2026-10-08).
-  const slim = useMedia("(max-width: 379px)");
-  const dial = narrow ? { size: slim ? 60 : 76, stroke: slim ? 3.5 : 4 } : { size: DIAL_CARD_SIZE, stroke: DIAL_CARD_STROKE };
+  // **No dial on a phone** (the lead's A, 2026-10-08): each window's own
+  // line carries its number, and the dial's room is the bar's. Wide keeps
+  // it — it has the room and it is the page's one picture.
   return (
     <div data-quota-page className="flex min-h-0 min-w-0 flex-1 flex-col">
       {/* R0, drawn plainly for the lab: the vendor's mark, the name, and
@@ -384,19 +398,19 @@ function Page({ a, narrow, onBack }: { a: Acct; narrow: boolean; onBack?: () => 
             <p className="text-body">{a.trouble}</p>
           ) : (
             <div data-quota-lead className="flex flex-nowrap items-center gap-x-row">
-              <Face
-                size={dial.size}
-                stroke={dial.stroke}
-                ratio={1}
-                crop
-                fraction={t ? t.pct / 100 : null}
-                strain={t ? strainOf(t.pct) : null}
-                pips={pips.length > 1 ? pips : []}
-              >
-                {/* Narrow: no number in the dial — the lines beside it say
-                    each one, and the dial's was the tightest line's again. */}
-                {narrow ? null : t ? `${t.pct}%` : a.balance}
-              </Face>
+              {!narrow && (
+                <Face
+                  size={DIAL_CARD_SIZE}
+                  stroke={DIAL_CARD_STROKE}
+                  ratio={1}
+                  crop
+                  fraction={t ? t.pct / 100 : null}
+                  strain={t ? strainOf(t.pct) : null}
+                  pips={pips.length > 1 ? pips : []}
+                >
+                  {t ? `${t.pct}%` : a.balance}
+                </Face>
+              )}
               <Lines a={a} />
               {a.lines.length === 0 && a.money && (
                 <dl className="grid grid-cols-[auto_1fr] gap-x-row gap-y-1 text-callout">
@@ -436,17 +450,6 @@ function Page({ a, narrow, onBack }: { a: Acct; narrow: boolean; onBack?: () => 
 }
 
 // ---- the lab --------------------------------------------------------------
-
-function useMedia(q: string): boolean {
-  const [on, setOn] = useState(() => window.matchMedia(q).matches);
-  useEffect(() => {
-    const m = window.matchMedia(q);
-    const said = () => setOn(m.matches);
-    m.addEventListener("change", said);
-    return () => m.removeEventListener("change", said);
-  }, [q]);
-  return on;
-}
 
 function useNarrowStamp(): boolean {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW_QUERY).matches);
