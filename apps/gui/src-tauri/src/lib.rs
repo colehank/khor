@@ -3991,6 +3991,7 @@ fn watch_the_front(app: tauri::AppHandle) {
         UIApplicationDidBecomeActiveNotification, UIApplicationDidEnterBackgroundNotification,
         UIApplicationWillEnterForegroundNotification,
     };
+    let face = app.clone();
     let worker = front_worker(app);
     // SAFETY: UIKit's names, linked statics that live for the process.
     let names = unsafe {
@@ -4015,6 +4016,68 @@ fn watch_the_front(app: tauri::AppHandle) {
             std::mem::forget(token);
         }
     }
+    // In front again: the face's paint is asked for at once, and again
+    // once whatever resize the trip left behind has had time to end
+    // (`repaint_the_face`).
+    let active = block2::RcBlock::new(move |_note: std::ptr::NonNull<NSNotification>| {
+        repaint_the_face(&face);
+        let later = face.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(600));
+            repaint_the_face(&later);
+        });
+    });
+    // SAFETY: as above — the default centre, for the life of the process.
+    unsafe {
+        let token =
+            centre.addObserverForName_object_queue_usingBlock(Some(UIApplicationDidBecomeActiveNotification), None, None, &active);
+        std::mem::forget(token);
+    }
+}
+
+/// **The face is painted whole again when the app is back in front**
+/// (ios-b, the owner 2026-10-08: 「偶尔会出现这样的情况，一般是退出并返回。
+/// 等关闭app重新打开才能恢复正常」 — `audit/ios-blank.md`). After a trip to
+/// the background the list was painted down to CSS y 203 and no further:
+/// under it stood the wide face's column border (CSS x 340, `--list-w`),
+/// old paint from a landscape frame. WebKit paints only the tiles its
+/// visible rect covers, and that rect is sent again only when the web view
+/// lays out or its scroll view moves — and the face's never does
+/// (`hold_the_face_still`; every list scrolls in an element of its own),
+/// so nothing asked for the rest until a relaunch. This asks: a layout
+/// pass, and a half-point move of the scroll view and back, each of which
+/// sends the rect again. Nothing is seen to move (the move is undone
+/// before the frame is drawn; a list's scroll and the page's stay put,
+/// measured on the simulator). ⚠️ **Not yet proven to clear the state**:
+/// the simulator has not reproduced it (`audit/ios-blank.md`); where the
+/// state never occurs this costs two layout passes per return.
+#[cfg(target_os = "ios")]
+fn repaint_the_face(app: &tauri::AppHandle) {
+    let Some(face) = phone_page::face(app) else {
+        return;
+    };
+    let _ = face.with_webview(|wv| {
+        use objc2::msg_send;
+        use objc2::runtime::AnyObject;
+        use objc2_foundation::NSPoint;
+        // SAFETY: UIKit on the main thread (`with_webview` runs there);
+        // the live face webview and documented UIView / UIScrollView calls.
+        unsafe {
+            let wv = wv.inner() as *mut AnyObject;
+            if wv.is_null() {
+                return;
+            }
+            let _: () = msg_send![wv, setNeedsLayout];
+            let _: () = msg_send![wv, layoutIfNeeded];
+            let scroll: *mut AnyObject = msg_send![wv, scrollView];
+            if scroll.is_null() {
+                return;
+            }
+            let at: NSPoint = msg_send![scroll, contentOffset];
+            let _: () = msg_send![scroll, setContentOffset: NSPoint::new(at.x, at.y + 0.5)];
+            let _: () = msg_send![scroll, setContentOffset: at];
+        }
+    });
 }
 
 /// **The Mac woke from sleep** (`NSWorkspaceDidWakeNotification`): the
