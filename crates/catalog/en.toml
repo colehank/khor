@@ -1912,6 +1912,10 @@ network = "Network"
 security = "Security"
 # 第十七轮: the one word an error state offers (`components/RegionState`).
 region_retry = "Retry"
+# A part of the face that failed to draw (afix-a, 2026-10-08; audit R1): one sentence and Retry, the error itself only in the console.
+fault-said = "This part can't be shown"
+# The checks came back empty (not a table): neither 「all well」 nor a spinner forever.
+doctor-no-answer = "No diagnosis came back"
 # "Diagnostics": the owner named this page 「诊断」 on 2026-09-27 (was 「自检」 / "Doctor"); the key stays `doctor`.
 doctor = "Diagnostics"
 # The identity-card page title. Distinct from `machine-here`'s "This

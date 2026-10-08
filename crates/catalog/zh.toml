@@ -3575,6 +3575,12 @@ network = "网络"
 security = "安全"
 # 第十七轮: the one word an error state offers (`components/RegionState`).
 region_retry = "重试"
+# 一块界面画不出来时（afix-a，2026-10-08，审查 R1：渲染一抛错整窗白屏）：
+# 页面、列表、对话框、⌘K 的结果各包一层，只说这一句，配「重试」（region_retry）；
+# 原文只进控制台，不上屏。
+fault-said = "这部分内容无法显示"
+# 诊断请求答回来是空的（不是一张表）：不当成「一切正常」，也不一直转圈。
+doctor-no-answer = "没有收到诊断结果"
 # 2026-09-27 用户定名:这一页叫「诊断」,不叫「自检」。键不改(`doctor`)。
 doctor = "诊断"
 # 头像开的那一页。**不叫「我」**——khor 里没有账号,一台机器就是一个身份,

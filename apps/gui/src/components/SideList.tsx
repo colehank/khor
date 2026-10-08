@@ -386,6 +386,15 @@ export function SideList({
     // under a finger, 56 / 32 under a mouse). The hairline is the text
     // block's foot, so a picked row's grey block (wide) hides its own.
     const picked = !narrow && !!r.selected;
+    // **Greyed is the face and the name, never the words that say why**
+    // (afix-a; the audit's item 9: the whole row at 0.55 left 「离线」
+    // 「已暂停」 and their times at 2.4 against the side, under even the
+    // `tertiary` exception — and they are the one thing on a greyed row
+    // a person has to read). The face fades; the name drops from `ink`
+    // to `secondary`, which still passes 4.5 on the side, on `fill` and
+    // on the picked block; the corners keep their own inks. A picked row
+    // is never greyed (no transparency on the selection, README 颜色).
+    const dim = !!r.dim && !picked;
     const button = (
       <button
         type="button"
@@ -402,7 +411,7 @@ export function SideList({
         {/* **One leading slot** (the audit fix plan F2.1): the face's
             width on every list, so the words start on one x whatever the
             face is — a session's, a machine's, the 额度 dial. */}
-        <span data-side-face-slot className="flex w-list-face flex-none items-center justify-center">
+        <span data-side-face-slot className={cn("flex w-list-face flex-none items-center justify-center", dim && "opacity-55")}>
           {"machine" in r.face ? (
             <FaceMark face={r.face} halo={r.halo} mark={r.mark} />
           ) : (
@@ -423,7 +432,7 @@ export function SideList({
               is the picked one — a picked row shows by its block, never
               by its weight (F2.1; SYS-05, N15, W09). */}
           {r.aside ? (
-            <span data-side-title className="flex min-w-0 items-baseline gap-in text-headline">
+            <span data-side-title className={cn("flex min-w-0 items-baseline gap-in text-headline", dim && "text-muted-foreground")}>
               <span data-side-name className="max-w-full min-w-0 shrink-0 truncate">
                 {r.title}
               </span>
@@ -435,7 +444,7 @@ export function SideList({
               </span>
             </span>
           ) : (
-            <span data-side-title className="block min-w-0 truncate text-headline">
+            <span data-side-title className={cn("block min-w-0 truncate text-headline", dim && "text-muted-foreground")}>
               {r.title}
             </span>
           )}
@@ -518,6 +527,7 @@ export function SideList({
             data-side-in={r.group}
             data-side-menu={r.menu.length > 0}
             data-selected={picked}
+            data-dim={dim || undefined}
             {...r.rowData}
             // **Selected is painted by `app.css`, keyed on
             // `data-selected`** (第十五轮 第 2 条, D6): the brand's solid
@@ -532,7 +542,6 @@ export function SideList({
               "flex w-full items-center",
               !narrow && "rounded-lg",
               !picked && !narrow && "hover:bg-fill",
-              r.dim && !picked && "opacity-55",
             )}
           >
             {/* **The menu's trigger is the button, not the strip around

@@ -1620,8 +1620,14 @@ export function ChatView({
             `text-read-ink` as another font-size — it has no way to know
             the tail of that name is a colour — so it drops the class it
             thinks was superseded. Measured: the paragraph came back at
-            the shell's base with the theme's own leading. */}
-        <div data-chat-column data-selectable className="mx-auto w-full max-w-measure space-y-2 text-read">
+            the shell's base with the theme's own leading.
+
+            `break-words`: **a word longer than the column breaks inside
+            it** (afix-a; the audit's S2 found a URL running off 留言's
+            bubble, and this column's own lines — an error, a request's
+            title — had no wrap either). `break-word`, not `anywhere`: it
+            leaves a table's widths alone, which scrolls in its frame. */}
+        <div data-chat-column data-selectable className="mx-auto w-full max-w-measure space-y-2 break-words text-read">
         {/* **The agent's own name for this conversation.** Scrolls with
             the conversation rather than sitting in a fixed header: it
             names the thing below it, and a title pinned over a
@@ -1814,14 +1820,16 @@ export function ChatView({
                       }
                     >
                       <ToolDot status={item.status} />
-                      <span data-word-text style={{ color: toolInk(item.status) }}>
+                      {/* A flex item: `min-w-0` and `anywhere`, or a long
+                          path in the title holds the row past the column. */}
+                      <span data-word-text className="min-w-0 [overflow-wrap:anywhere]" style={{ color: toolInk(item.status) }}>
                         {item.title}
                       </span>
                     </button>
                   ) : (
                     <span className="flex items-center gap-1.5">
                       <ToolDot status={item.status} />
-                      <span data-word-text style={{ color: toolInk(item.status) }}>
+                      <span data-word-text className="min-w-0 [overflow-wrap:anywhere]" style={{ color: toolInk(item.status) }}>
                         {item.title}
                       </span>
                     </span>

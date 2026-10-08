@@ -2258,6 +2258,8 @@ try {
   // 标签与操作在下, iOS 第三步 A, 2026-10-02), for the same reason.
   // **`FACE_ONLY=caret` walks the editor's caret and 字号 alone** (fix-c,
   // 2026-10-08).
+  // **`FACE_ONLY=afix` walks the UX audit's four bugs alone** (afix-a,
+  // 2026-10-08).
   // **`FACE_ONLY=corners` walks every list's row alone** (UX-48,
   // 2026-10-07: the owner's four slots on every list).
   // **`FACE_ONLY=walk` walks this block alone** — sections 1 to 10,
@@ -2265,7 +2267,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "afix"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -11940,7 +11942,8 @@ try {
           // under it. ⚠️ 墓碑: `[data-row-paused]` led the second line.
           mark: el?.querySelector('[data-corner="top"] [data-row-state="paused"]')?.textContent?.trim() ?? null,
           held: el?.querySelectorAll('[data-corner="bottom"]').length ?? null,
-          opacity: el ? Number(getComputedStyle(el).opacity) : null,
+          // Greyed is the face's (afix-a, `SideList` `dim`).
+          opacity: el ? Number(getComputedStyle(el.querySelector("[data-side-face-slot]") ?? el).opacity) : null,
           // The picked row is the open one's block and is not greyed
           // (`SideList` `dim && !selected`); the word still says it.
           picked: el?.getAttribute("data-selected") === "true",
@@ -24580,7 +24583,9 @@ try {
                 sub: r.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
                 top: r.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
                 bottom: r.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
-                opacity: +getComputedStyle(r).opacity,
+                // Greyed is the face's (afix-a: the row's words keep their
+                // inks, `SideList` `dim`).
+                opacity: +getComputedStyle(r.querySelector("[data-side-face-slot]") ?? r).opacity,
               },
             ]),
         ),
@@ -25376,7 +25381,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25805,7 +25810,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26163,7 +26168,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26471,7 +26476,7 @@ try {
       await until(5_000, async () => (await page.locator('[data-side-row="tui/ws-5"]').count()) > 0);
       const session = await page.evaluate(() => {
         const row = document.querySelector('[data-side-row="tui/ws-5"]');
-        return row && { far: row.querySelector("[data-row-far]")?.textContent?.trim() ?? null, opacity: +getComputedStyle(row).opacity };
+        return row && { far: row.querySelector("[data-row-far]")?.textContent?.trim() ?? null, opacity: +getComputedStyle(row.querySelector("[data-side-face-slot]") ?? row).opacity };
       });
       await landOn("devices");
       await until(5_000, async () => (await page.locator('[data-side-row][data-device="elder"]').count()) > 0);
@@ -26493,7 +26498,7 @@ try {
             sub: row.querySelector("[data-side-sub]")?.textContent?.trim() ?? "",
             top: row.querySelector('[data-corner="top"]')?.textContent?.trim() ?? null,
             bottom: row.querySelector('[data-corner="bottom"]')?.textContent?.trim() ?? null,
-            opacity: +getComputedStyle(row).opacity,
+            opacity: +getComputedStyle(row.querySelector("[data-side-face-slot]") ?? row).opacity,
           }
         );
       });
@@ -26538,7 +26543,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27270,7 +27275,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28163,7 +28168,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "afix"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -38072,6 +38077,394 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "follow") console.log("follow · FACE_ONLY=follow: the other sections are skipped");
+
+  // ── the UX audit's clear bugs (afix-a, 2026-10-08) ─────────────────
+  //
+  // The owner approved four of the audit's findings as bugs (「可以修」);
+  // each is a value a machine reads, so each is a gate, red first on
+  // 342d4e52 (the redesign before this lane):
+  //   a. **a word longer than its bubble stays in it** (S2): at 390, a
+  //      留言 line ending in a long URL and an agent's conversation — its
+  //      words and a tool line's title — each end inside their box and
+  //      their column (red: the 留言 bubble ran the URL past its edge);
+  //   b. **a fact's value is never squeezed beside its label** (D1): on
+  //      诊断 at 375 and 390, every value that takes more than one line
+  //      has a line of its own (≥ 90 % of the row); every label is one
+  //      line inside the row, and a relay's host wider than the row is
+  //      cut in the middle — its start and its port both drawn, 「…」
+  //      between (red: 「测不到往返」 17 px wide, five lines);
+  //   c. **a greyed row's words still pass 4.5** (item 9, S4): the
+  //      machines list with one machine unreachable and one paused, and
+  //      the sessions overview's machine column with one machine that
+  //      never answered, in both themes — every drawn word but the
+  //      `tertiary` exception, its colour times every opacity above it,
+  //      over the ground behind it; the greyed rows are still greyed
+  //      (their face below 0.99), and this machine never is (red: 2.4
+  //      on the list, 2.2 on 本机);
+  //   d. **a part that fails to draw takes only itself down** (R1):
+  //      诊断 answered `null` says `doctor-no-answer` and stops loading;
+  //      诊断 answered `[null]` (a throw in its render) draws
+  //      `fault-said` and 重试 where the page was — the rail, and on the
+  //      phone the screen's 「‹」, still there, no engine text on the
+  //      page — and 重试 over a good answer draws the checks; ⌘K
+  //      answered `null` says 「没有结果」 and the window stays (red:
+  //      the window blank in all three, or loading for ever).
+  //
+  // `FACE_ONLY=afix` runs this section alone.
+  afix: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "afix") break afix;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).filter({ visible: true }).count();
+    const zh = readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8");
+    const word = (key) => new RegExp(`^${key} = "(.*)"$`, "m").exec(zh)?.[1] ?? null;
+    const now = Date.now();
+    const LONG = `https://example.test/share?token=${"a1b2c3d4".repeat(16)}`;
+
+    // a. a long word inside its bubble.
+    {
+      const base = {
+        kind: "tui", word: "idle", at_ms: now, unread: 0, source: null, pinned: false, stale: false, category: "shell",
+        group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
+      };
+      const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+      const agentRow = {
+        ...base, id: "gui/afix-agent", kind: "gui", title: "afix-agent", category: "claude", attachable: false,
+        source: { device: "f".repeat(64), age_ms: 0 },
+      };
+      const line = (id, from_me, text) => ({
+        id, at_ms: now - 60_000, from: from_me ? "gate" : "peer", from_me, text, files: null, unknown: null,
+        retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
+      });
+      const frame = (update) => ({ kind: "history", update: { update } });
+      const routesA = [
+        ["**/sessions", json([chatRow, agentRow])],
+        ["**/machine_log", json({ messages: [line("m-in", false, `看这个 ${LONG}`), line("m-out", true, LONG)], broken: 0 })],
+        [
+          "**/chat_poll",
+          (r) =>
+            json({
+              frames:
+                ((r.request().postDataJSON() ?? {}).since ?? 0) > 0
+                  ? []
+                  : [
+                      frame({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `链接在这里 ${LONG} 。` } }),
+                      frame({ sessionUpdate: "tool_call", toolCallId: "t-long", title: `Fetch ${LONG}`, kind: "fetch", status: "completed" }),
+                      { kind: "history_end" },
+                    ],
+              next: 1,
+              gone: false,
+              lost: false,
+            })(r),
+        ],
+      ];
+      for (const [glob, run] of routesA) await page.route(glob, run);
+      await page.evaluate(() => window.localStorage.clear());
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.emulateMedia({ colorScheme: "light" });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      /** Every drawn box the selector finds: how far its words run past
+          it, and how far it runs past its column (the conversation's) or
+          the screen. */
+      const spill = (sel) =>
+        page.evaluate((s) => {
+          return [...document.querySelectorAll(s)]
+            .filter((e) => e.getClientRects().length > 0)
+            .map((e) => {
+              const b = e.getBoundingClientRect();
+              const col = e.closest("[data-chat-column]")?.getBoundingClientRect().right ?? window.innerWidth;
+              return { over: Math.round(e.scrollWidth - e.clientWidth), past: Math.round(b.right - Math.min(col, window.innerWidth)) };
+            });
+        }, sel);
+      await open("sessions");
+      await press('[data-side-row="chat/peer"] [data-side-open]');
+      const chatUp = await until(5_000, async () => (await count("[data-msg-text]")) === 2);
+      const bubbles = chatUp ? await spill("[data-msg-text]") : [];
+      console.log(`afix a · 留言 at 390: ${JSON.stringify(bubbles)}`);
+      if (!chatUp) fail("probe dead: afix a · 留言 never drew its two lines");
+      else if (bubbles.some((x) => x.over > 1 || x.past > 1)) {
+        fail(`afix a · a 留言 line with a long URL runs ${JSON.stringify(bubbles)} past its bubble / the screen — it wraps inside the bubble (views/MachineChat.tsx data-msg-text, overflow-wrap)`);
+      }
+      await open("sessions");
+      await press('[data-side-row="gui/afix-agent"] [data-side-open]');
+      const agentUp = await until(5_000, async () => (await count("[data-chat-column] [data-chat-tool]")) === 1);
+      const said = agentUp ? await spill("[data-chat-column] [data-md]") : [];
+      const tool = agentUp ? await spill("[data-chat-column] [data-chat-tool] [data-word-text]") : [];
+      console.log(`afix a · the agent's conversation at 390: words ${JSON.stringify(said)}, tool title ${JSON.stringify(tool)}`);
+      if (!agentUp) fail("probe dead: afix a · the agent's conversation never drew its tool line");
+      else {
+        if (said.length === 0 || said.some((x) => x.over > 1 || x.past > 1)) fail(`afix a · the agent's words with a long URL run ${JSON.stringify(said)} past the column (components/Markdown, views/ChatView data-chat-column)`);
+        if (tool.length === 0 || tool.some((x) => x.over > 1 || x.past > 1)) fail(`afix a · a tool line's long title runs ${JSON.stringify(tool)} past the column — it wraps inside it (views/ChatView data-word-text)`);
+      }
+      for (const [glob, run] of routesA) await page.unroute(glob, run);
+    }
+
+    // b. 诊断's facts on a phone.
+    {
+      const HOST = "relay-beijing-north-region-02.lab.example.cn:8443";
+      const conn = {
+        home_relay: "https://use1-1.relay.iroh.network./",
+        home_connected: true,
+        home_error: null,
+        preferred_relay: null,
+        relays: [
+          { url: "https://relay-beijing.lab.example.cn:8443/", rtt_ms: null },
+          { url: `https://${HOST}/`, rtt_ms: 182 },
+        ],
+        peers: [],
+        unread: null,
+      };
+      const routeB = json(conn);
+      await page.route("**/connections", routeB);
+      for (const [width, scheme] of [[375, "light"], [390, "dark"]]) {
+        const where = `afix b · 诊断 at ${width} ${scheme}`;
+        await page.evaluate(() => window.localStorage.clear());
+        await page.setViewportSize({ width, height: 844 });
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        const up = (await openMore("doctor")) && (await until(5_000, async () => (await count('[data-connections] [data-more-fact="conn-relay"]')) === 2));
+        if (!up) {
+          fail(`probe dead: ${where} · the page or its 连接 group never drew`);
+          continue;
+        }
+        await wait(400);
+        const facts = await page.evaluate(() =>
+          [...document.querySelectorAll('[data-more-page="doctor"] [data-more-row]')]
+            .filter((row) => row.getClientRects().length > 0 && row.querySelector("[data-more-fact]"))
+            .map((row) => {
+              const v = row.querySelector("[data-more-fact]");
+              const l = row.querySelector("[data-more-label]") ?? v.previousElementSibling;
+              const line = v.parentElement.getBoundingClientRect();
+              const lines = (e) => {
+                const cs = getComputedStyle(e);
+                const lh = Number.parseFloat(cs.lineHeight) || Number.parseFloat(cs.fontSize) * 1.3;
+                return Math.round(e.getBoundingClientRect().height / lh);
+              };
+              const mid = l.querySelector("[data-mid-name]");
+              const vb = v.getBoundingClientRect();
+              const lb = l.getBoundingClientRect();
+              return {
+                name: v.getAttribute("data-more-fact"),
+                label: (mid ? mid.children[1] : l).textContent.trim(),
+                labelLines: lines(mid ? mid.children[1] : l),
+                labelPast: Math.round(lb.right - line.right),
+                value: v.textContent.trim(),
+                lines: lines(v),
+                share: Math.round((vb.width / line.width) * 100) / 100,
+              };
+            }),
+        );
+        console.log(`${where}: ${JSON.stringify(facts)}`);
+        const squeezed = facts.filter((f) => f.lines > 1 && f.share < 0.9);
+        if (squeezed.length) fail(`${where} · values squeezed beside their labels: ${JSON.stringify(squeezed)} — a value that wraps has a line of its own (views/more/MorePage MoreFact)`);
+        const spilt = facts.filter((f) => f.labelLines !== 1 || f.labelPast > 1);
+        if (spilt.length) fail(`${where} · labels broken or past the row: ${JSON.stringify(spilt)} — one line inside the row (views/more/MorePage MoreFact)`);
+        const host = facts.find((f) => f.name === "conn-relay" && f.value.includes("182"));
+        if (!host || !host.label.includes("…") || !host.label.startsWith("relay-") || !host.label.endsWith("8443")) {
+          fail(`${where} · the relay ${HOST} is labelled ${JSON.stringify(host?.label)} — wider than the row, it is cut in the middle: its start, 「…」, its port (browse/TabStrip MidName)`);
+        }
+      }
+      await page.unroute("**/connections", routeB);
+    }
+
+    // c. a greyed row's words.
+    {
+      const peer = devs.find((d) => d.name === "peer");
+      const elder = devs.find((d) => d.name === "elder");
+      const keep = [peer && { ...peer }, elder && { ...elder }];
+      if (!peer || !elder) fail("probe dead: afix c · no peer or elder in the device table");
+      else {
+        Object.assign(elder, { hop: "quiet", rtt_ms: null, since_ms: 26 * 3600_000, last_hop: "relay", heard_ms: 20 * 3600_000, down_ms: 4_000, last_rtt_ms: 140, vitals: null });
+        Object.assign(peer, { paused: true });
+        /** Every drawn word in what the selector finds: its contrast, as
+            painted — its colour times every opacity from it to the root,
+            over every ground behind it — skipping the `tertiary`
+            exception (README 可访问性例外). And how greyed the row's face
+            is. */
+        const inks = (sel) =>
+          page.evaluate((s) => {
+            const rgba = (c) => {
+              const m = /rgba?\(([^)]+)\)/.exec(c);
+              if (!m) return [0, 0, 0, 0];
+              const v = m[1].split(/[\s,/]+/).filter(Boolean).map(Number);
+              return [v[0], v[1], v[2], v[3] ?? 1];
+            };
+            const over = (top, under) => [0, 1, 2].map((i) => top[i] * top[3] + under[i] * (1 - top[3])).concat(1);
+            const behind = (el) => {
+              const chain = [];
+              for (let n = el; n; n = n.parentElement) chain.push(rgba(getComputedStyle(n).backgroundColor));
+              return chain.reverse().reduce((under, top) => over(top, under), [255, 255, 255, 1]);
+            };
+            const lum = (c) => {
+              const f = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+              return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+            };
+            const ratio = (a, b) => {
+              const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+              return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100;
+            };
+            const fade = (el) => {
+              let a = 1;
+              for (let n = el; n; n = n.parentElement) a *= Number(getComputedStyle(n).opacity);
+              return a;
+            };
+            return [...document.querySelectorAll(s)]
+              .filter((row) => row.getClientRects().length > 0)
+              .map((row) => {
+                const probe = document.createElement("span");
+                probe.style.color = "var(--tertiary)";
+                row.appendChild(probe);
+                const tertiary = getComputedStyle(probe).color;
+                probe.remove();
+                const words = [];
+                const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+                for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+                  const el = t.parentElement;
+                  if (!t.textContent.trim() || !el || el.getClientRects().length === 0) continue;
+                  const cs = getComputedStyle(el);
+                  if (cs.visibility === "hidden" || el.closest(".sr-only, [aria-hidden='true'].invisible")) continue;
+                  if (cs.color === tertiary) continue;
+                  const ink = rgba(cs.color);
+                  ink[3] *= fade(el);
+                  const ground = behind(el);
+                  words.push([t.textContent.trim(), ratio(over(ink, ground), ground)]);
+                }
+                const face = row.querySelector("[data-side-face-slot], [data-now-device] > :first-child");
+                return {
+                  row: row.getAttribute("data-device") ?? row.getAttribute("data-now-device")?.slice(0, 6),
+                  face: face ? Math.round(fade(face) * 100) / 100 : null,
+                  low: words.filter(([, c]) => c < 4.5),
+                };
+              });
+          }, sel);
+        for (const scheme of ["light", "dark"]) {
+          await page.evaluate(() => window.localStorage.clear());
+          await page.setViewportSize({ width: 1400, height: 900 });
+          await page.emulateMedia({ colorScheme: scheme });
+          await page.reload({ waitUntil: "load" });
+          await wait(900);
+          await page.mouse.move(0, 0);
+          await open("devices");
+          const listUp = await until(5_000, async () => (await count('[data-side-row][data-device="elder"]')) === 1);
+          await wait(400);
+          const list = listUp ? await inks('[data-side-row][data-device="elder"], [data-side-row][data-device="peer"]') : [];
+          console.log(`afix c · ${scheme} · the machines list: ${JSON.stringify(list)}`);
+          if (!listUp || list.length !== 2) fail(`probe dead: afix c · ${scheme} · the machines list drew ${list.length} of elder and peer`);
+          else {
+            const low = list.filter((r) => r.low.length);
+            if (low.length) fail(`afix c · ${scheme} · greyed machine rows paint words under 4.5: ${JSON.stringify(low)} — the face and the name grey, the words that say why keep their ink (components/SideList dim)`);
+            const bright = list.filter((r) => !(r.face < 0.99));
+            if (bright.length) fail(`afix c · ${scheme} · ${JSON.stringify(bright)} — an unreachable and a paused machine are still greyed, by their face`);
+          }
+          await open("sessions");
+          const nowUp = await until(5_000, async () => (await count("[data-now-machines] [data-now-device]")) === devs.length);
+          await wait(300);
+          const column = nowUp ? await inks("[data-now-machines] [data-now-device]") : [];
+          console.log(`afix c · ${scheme} · the overview's machines: ${JSON.stringify(column)}`);
+          if (!nowUp) fail(`probe dead: afix c · ${scheme} · the sessions overview drew no machine column`);
+          else {
+            const low = column.filter((r) => r.low.length);
+            if (low.length) fail(`afix c · ${scheme} · the overview's machines paint words under 4.5: ${JSON.stringify(low)} — a machine that never answered greys its face and name, never its road (views/MeshNow)`);
+            const me = column.find((r) => r.row === "e".repeat(6));
+            const quiet = column.find((r) => r.row === "d".repeat(6));
+            if (!me || me.face < 0.99) fail(`afix c · ${scheme} · this machine reads ${JSON.stringify(me)} in the overview — never greyed (views/MeshNow)`);
+            if (!quiet || !(quiet.face < 0.99)) fail(`afix c · ${scheme} · a machine that never answered reads ${JSON.stringify(quiet)} — still greyed, by its face (views/MeshNow)`);
+          }
+        }
+        for (const [d, k] of [[peer, keep[0]], [elder, keep[1]]]) {
+          for (const f of Object.keys(d)) if (!(f in k)) delete d[f];
+          Object.assign(d, k);
+        }
+      }
+    }
+
+    // d. a part that fails to draw.
+    {
+      const said = word("fault-said");
+      const none = word("doctor-no-answer");
+      const nothing = word("find-nothing");
+      let answer = null;
+      const routeD = (r) => json(answer)(r);
+      await page.route("**/doctor", routeD);
+      const engine = () => page.evaluate(() => /TypeError|Cannot read|is not a function|undefined is not|null is not/.test(document.body.innerText));
+      const reset = async (width) => {
+        await page.evaluate(() => window.localStorage.clear());
+        await page.setViewportSize({ width, height: width < 600 ? 844 : 900 });
+        await page.emulateMedia({ colorScheme: "light" });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+      };
+
+      // d1. `null`: no answer, said once, loading stopped.
+      answer = null;
+      await reset(1400);
+      const opened1 = await openMore("doctor");
+      const told = opened1 && (await until(4_000, async () => (await page.locator("[data-doctor-error]").filter({ visible: true }).textContent().catch(() => null))?.trim() === none));
+      const waiting = await count('[data-more-page="doctor"] [data-doctor-list] [data-region-state="waiting"]');
+      console.log(`afix d1 · 诊断 answered null: opened ${opened1}, said ${told}, still loading ${waiting}`);
+      if (!opened1) fail("probe dead: afix d1 · 诊断 never opened");
+      else if (!told || waiting) fail(`afix d1 · 诊断 answered null and the page ${told ? "still loads" : `does not say ${JSON.stringify(none)}`} — no answer is an ask that failed (views/more/DoctorPage)`);
+
+      // d2. `[null]`: a throw in the page's render, wide and on a phone.
+      for (const width of [1400, 390]) {
+        const where = `afix d2 · ${width}`;
+        answer = [null];
+        await reset(width);
+        const opened = await openMore("doctor");
+        const caught = opened && (await until(4_000, async () => (await count("[data-fault]")) > 0));
+        const state = await page.evaluate(() => ({
+          fault: [...document.querySelectorAll("[data-fault]")].filter((e) => e.getClientRects().length > 0).map((e) => [e.getAttribute("data-fault"), e.innerText.trim()]),
+          retry: [...document.querySelectorAll("[data-fault-retry]")].filter((e) => e.getClientRects().length > 0).length,
+          rail: document.querySelector("[data-rail-more]")?.getClientRects().length ?? 0,
+          back: [...document.querySelectorAll("[data-back]")].filter((e) => e.getClientRects().length > 0).length,
+        }));
+        const raw = await engine();
+        console.log(`${where} · 诊断 answered [null]: ${JSON.stringify(state)}, engine text ${raw}`);
+        if (!opened) {
+          fail(`probe dead: ${where} · 诊断 never opened`);
+          continue;
+        }
+        if (!caught || state.fault.length !== 1 || !state.fault[0][1].includes(said) || state.retry !== 1) {
+          fail(`${where} · a throw in 诊断's render left ${JSON.stringify(state)} — one sentence (${JSON.stringify(said)}) and 重试 where the page was (components/Fault, App.tsx seams)`);
+        }
+        if (raw) fail(`${where} · the engine's own words are on the page — the sentence is the catalog's, the error goes to the console`);
+        if (width > 600 && !state.rail) fail(`${where} · the window lost its strip with the page — only the page goes down (App.tsx seams)`);
+        if (width < 600 && !state.back) fail(`${where} · the phone's screen lost its 「‹」 with the page — the seam draws it (App.tsx, Fault head)`);
+        answer = DOCTOR_ROWS;
+        if (caught) await press("[data-fault-retry]");
+        const back = caught && (await until(4_000, async () => (await count("[data-doctor-list]")) > 0 && (await count("[data-fault]")) === 0));
+        if (caught && !back) fail(`${where} · 重试 over a good answer did not draw the checks (components/Fault)`);
+      }
+
+      // d3. ⌘K answered `null`.
+      const routeF = json(null);
+      await page.route("**/find", routeF);
+      await reset(1400);
+      await press("[data-global-search]");
+      const box = page.locator("[data-search-box]").filter({ visible: true });
+      const typed = (await box.count()) > 0;
+      if (typed) await box.first().fill("gate");
+      const quiet = typed && (await until(3_000, async () => (await page.locator("[data-search-none]").filter({ visible: true }).textContent().catch(() => null))?.trim() === nothing));
+      const standing = await count("[data-rail-more]");
+      const raw = await engine();
+      console.log(`afix d3 · ⌘K answered null: typed ${typed}, 没有结果 ${quiet}, strip ${standing}, engine text ${raw}`);
+      if (!typed) fail("probe dead: afix d3 · ⌘K drew no box");
+      else if (!quiet || !standing || raw) fail(`afix d3 · ⌘K answered null and the window ${standing ? `does not say ${JSON.stringify(nothing)}` : "went blank"} — no answer is no hits (components/SideHead)`);
+      await page.keyboard.press("Escape");
+      await page.unroute("**/find", routeF);
+      await page.unroute("**/doctor", routeD);
+    }
+
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "afix") console.log("afix · FACE_ONLY=afix: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

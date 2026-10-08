@@ -123,37 +123,44 @@ export function MeshNow({
               in the second column it would be a layout holding a space
               open for something that is not coming back. */}
           <div data-now-machines-list className="flex flex-col">
-            {devices.map((d) => (
-              <button
-                key={d.id}
-                type="button"
-                data-now-device={d.id}
-                onClick={() => onDevice(d)}
-                className={cn(
-                  // Same floor as the waiting rows above it, and for the
-                  // same reason they are worth stating once: a list of
-                  // rows 30 tall is the shape where a press lands on the
-                  // neighbour (tokens.css `--touch`).
-                  "flex min-h-touch items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-fill",
-                  // Never answered = greyed, the card's vitals_never fact
-                  // painted instead of said; no word is invented for it.
-                  !d.vitals && "opacity-50",
-                )}
-              >
-                <MachineAvatar face={d.face} className="size-kind-mark flex-none" />
-                <span data-now-name className="min-w-0 truncate text-callout">
-                  {d.name}
-                </span>
-                {/* The road, the machines list's own word for it
-                    (`connectionWord`): 本机 for this one, never a
-                    bracket on the name. */}
-                {connectionWord(d) && (
-                  <span data-now-connection className="flex-none text-callout text-muted-foreground">
-                    {connectionWord(d)}
+            {devices.map((d) => {
+              // Never answered = greyed, the card's vitals_never fact
+              // painted instead of said; no word is invented for it.
+              // **The face and the name, never the road** (afix-a; the
+              // audit's S4: the whole row at 0.5 left 「直连」 at 2.2): the
+              // face fades, the name takes `secondary`, and the road keeps
+              // its own 4.5. This machine is never greyed — it is the one
+              // asking.
+              const quiet = !d.vitals && !d.me;
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  data-now-device={d.id}
+                  onClick={() => onDevice(d)}
+                  className={cn(
+                    // Same floor as the waiting rows above it, and for the
+                    // same reason they are worth stating once: a list of
+                    // rows 30 tall is the shape where a press lands on the
+                    // neighbour (tokens.css `--touch`).
+                    "flex min-h-touch items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-fill",
+                  )}
+                >
+                  <MachineAvatar face={d.face} className={cn("size-kind-mark flex-none", quiet && "opacity-50")} />
+                  <span data-now-name data-dim={quiet || undefined} className={cn("min-w-0 truncate text-callout", quiet && "text-muted-foreground")}>
+                    {d.name}
                   </span>
-                )}
-              </button>
-            ))}
+                  {/* The road, the machines list's own word for it
+                      (`connectionWord`): 本机 for this one, never a
+                      bracket on the name. */}
+                  {connectionWord(d) && (
+                    <span data-now-connection className="flex-none text-callout text-muted-foreground">
+                      {connectionWord(d)}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </section>
       </div>
