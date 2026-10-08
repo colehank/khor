@@ -22,7 +22,9 @@
 （`wires::HOP_SILENT`）单独不改这个数，因为线退了路径还在。补丁：`Endpoint::close_carried(EndpointId)` 让该远端的
 actor 在每条活着的连接上关掉所有自定义路径（`RemoteStateMessage::CloseCustom`）；noq 当场发出 `Abandoned`，
 iroh 随即重新选路。连接只剩这一条路径时 noq 拒绝关，照旧等空闲超时。khor 这边在转发链路结束、且没有新链路顶上时
-调用（`hop::open_hop` 的守望任务、`serve_hop` 的 `Ask::From`）。量得冻住到回中继 12.9–13.2 s（三次）。
+调用（`carry::let_path_go`：`hop::open_hop` 的守望任务、`serve_hop` 的 `Ask::From`、ssh 转连的 `OneCarry::run`
+与 `carry_hosted`）。量得冻住到回中继 12.9–13.2 s（三次）；ssh 会话断掉到回中继 1.8 s（三次，未打补丁时 15.9 s）。
+路径关了以后，ssh 重连上来的链路由 `carry::offer_path`（补丁 12）当场在活着的连接上再开。
 改动约 35 行。上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 12. `src/socket/remote_map/remote_state.rs`、`src/endpoint.rs`：连接活着时交来的转连地址当场打开（2026-10-09，NET-DIRECT 第四步）

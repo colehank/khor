@@ -461,3 +461,115 @@ async fn a_machine_that_cannot_connect_back_pairs_over_the_ssh_it_was_added_by()
     .await;
     until_reads(&alpha, &b_id, Hop::Ssh, Duration::from_secs(20)).await;
 }
+
+/// **A carried road that ends hands back to the relay at once**
+/// (NET-DIRECT, vendor/iroh patch 13). Alpha and beta meet on a loopback
+/// relay behind a 200 ms slow road, beta on the relay only; alpha carries
+/// beta over ssh, which at about 1 ms takes the connection. Then sshd
+/// stops listening (no reconnect) and alpha's ssh session is killed: the
+/// link ends, and alpha's word for beta reads 中继 within a few seconds,
+/// the wire never down. Before, iroh kept the dead carried path selected
+/// on its last round trip until its 15 s path idle. When sshd listens
+/// again, the reconnect takes the connection back.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_ended_ssh_session_hands_the_connection_to_the_relay_at_once() {
+    if !Path::new("/usr/sbin/sshd").exists() {
+        eprintln!("no /usr/sbin/sshd here: skipped");
+        return;
+    }
+    let (ra, rb, rr) = (scratch("carry-end-a"), scratch("carry-end-b"), scratch("carry-end-r"));
+    let (_relay, direct_url) = local_relay(&rr.0);
+    let to: std::net::SocketAddr = direct_url
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .parse()
+        .unwrap();
+    let (at, _road) = slow_road(
+        to,
+        Impair {
+            rtt: Duration::from_millis(200),
+            loss_pct: 0,
+            stall: Duration::ZERO,
+        },
+    )
+    .await;
+    let url = format!("http://{at}");
+    home_on(&ra.0, &url);
+    home_on(&rb.0, &url);
+    let world = rr.0.join("ssh-world");
+    let port = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+    ssh_world(&world, port, &rb.0);
+    let ssh_dir = world.display().to_string();
+    let secrets = rr.0.join("secrets").display().to_string();
+    let _a = serve_with(&ra.0, "alpha", &[("KHOR_SSH_DIR", &ssh_dir), ("KHOR_SECRET_DIR", &secrets)]);
+    let _b = serve_with(&rb.0, "beta", &[("KHOR_RELAY_ONLY", "1")]);
+    stood_up(&[&ra.0, &rb.0]).await;
+    let alpha = khor_node::Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let beta = khor_node::Node::open_as(rb.0.clone(), "beta").unwrap();
+    let ticket = alpha.invite().unwrap();
+    timeout(Duration::from_secs(90), beta.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .expect("pairing succeeds");
+    let b_id = beta.device_str().to_owned();
+    until(Duration::from_secs(60), "alpha lists beta over the relay", || async {
+        alpha.ls_of("beta", "/").await.is_ok()
+    })
+    .await;
+    until_reads(&alpha, &b_id, Hop::Relay, Duration::from_secs(30)).await;
+
+    let sshd = Reaped(
+        Command::new("/usr/sbin/sshd")
+            .args(["-D", "-e", "-f"])
+            .arg(world.join("sshd_config"))
+            .stderr(std::fs::File::create(world.join("sshd.log")).unwrap())
+            .spawn()
+            .unwrap(),
+    );
+    until(Duration::from_secs(10), "sshd listens", || async {
+        tokio::net::TcpStream::connect(("127.0.0.1", port)).await.is_ok()
+    })
+    .await;
+    let out = khor(&ra.0).args(["carry", "beta", "member"]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let took = until_reads(&alpha, &b_id, Hop::Ssh, Duration::from_secs(60)).await;
+    eprintln!("[carry-end] carried {took:?} after `khor carry`");
+
+    // No reconnect: sshd stops listening (the session it forked lives on).
+    drop(sshd);
+    let a_pid = serve_pid(&ra.0).expect("alpha's resident");
+    let ps = Command::new("ps").args(["-A", "-o", "pid=,ppid=,comm="]).output().unwrap();
+    let ssh_pid = String::from_utf8_lossy(&ps.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut f = l.split_whitespace();
+            let (pid, ppid, comm) = (f.next()?.parse::<i32>().ok()?, f.next()?.parse::<i32>().ok()?, f.next()?);
+            (ppid == a_pid && (comm == "ssh" || comm.ends_with("/ssh"))).then_some(pid)
+        })
+        .next()
+        .expect("alpha's ssh session");
+    signal(ssh_pid, "-KILL");
+    let back = until_reads(&alpha, &b_id, Hop::Relay, Duration::from_secs(60)).await;
+    eprintln!("[carry-end] back on the relay {back:?} after the ssh session ended");
+    let after = alpha.links().await.unwrap().into_iter().find(|(i, _)| *i == b_id).map(|(_, l)| l);
+    assert!(after.as_ref().is_some_and(|l| l.down_ms.is_none()), "the wire never went down: {after:?}");
+    assert!(
+        back < Duration::from_secs(8),
+        "an ended ssh session hands back to the relay in a few seconds, not iroh's 15 s path idle: {back:?}"
+    );
+
+    // sshd listens again: the carrier's reconnect is offered to the live
+    // connection (its carried path was closed), which goes back to ssh.
+    let _sshd = Reaped(
+        Command::new("/usr/sbin/sshd")
+            .args(["-D", "-e", "-f"])
+            .arg(world.join("sshd_config"))
+            .stderr(std::fs::File::create(world.join("sshd-again.log")).unwrap())
+            .spawn()
+            .unwrap(),
+    );
+    let again = until_reads(&alpha, &b_id, Hop::Ssh, Duration::from_secs(90)).await;
+    eprintln!("[carry-end] carried again {again:?} after sshd came back");
+    let out = khor(&ra.0).args(["carry", "beta", "--off"]).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
