@@ -658,11 +658,16 @@ async function roomPhase(pid) {
    * roads above left with the 附栏 on 最近, which is why they were green.
    */
   async function landingRoads() {
-    const onSession = () => JSON.parse(run("axtext", P, name)).length > 0;
+    // Where the page is: the landing's own title (its list head, a
+    // static text; the strip's glyphs are named, not written). The
+    // session's name is no answer — 机器's card lists its sessions.
+    // Read as the title appearing: absent before the press, there after.
+    const titled = (word) => JSON.parse(run("axtext", P, said(word))).length > 0;
     // The control: with the 附栏 closed a press leaves the session.
-    const ctl = (await press(said("gui.devices-tab"))) && !onSession();
+    const before = titled("gui.devices-tab");
+    const ctl = !before && (await press(said("gui.devices-tab"))) && titled("gui.devices-tab");
     await press(said("gui.sessions-tab"));
-    if (!ctl || !onSession()) throw new Error("probe dead: room · a press on 机器 with the 附栏 closed did not leave the session");
+    if (!ctl || titled("gui.devices-tab")) throw new Error(`probe dead: room · a press on 机器 with the 附栏 closed: 「${said("gui.devices-tab")}」 titled before ${before}, the press did not bring it, or 会话 did not take it away`);
     // **A file open in the 附栏** is the owner's case: its page handed its
     // draft up on every render, an update a frame, and the landing's
     // switch (a transition) never got to finish (fix-e). The session's
@@ -689,8 +694,9 @@ async function roomPhase(pid) {
         await tab();
         continue;
       }
+      const was = titled(to);
       const pressed = await press(said(to));
-      const left = !onSession();
+      const left = !was && titled(to);
       const fL = frame();
       await press(said("gui.sessions-tab"));
       // Back on the session its pill remembers open; closed by the press.
