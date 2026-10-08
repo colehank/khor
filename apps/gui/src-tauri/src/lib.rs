@@ -481,6 +481,14 @@ async fn visit(machine: String) -> Result<(), String> {
     khor_gui_core::visit(&Node::root_from_env(), &machine).await
 }
 
+/// **立即重试** on a session that is reconnecting (NOTICE-BRIEF): every
+/// rejoin waiting out its beat tries now, and the machine is dialled
+/// past its backoff — a person's act, the machine page's road.
+#[tauri::command]
+async fn rejoin_now(machine: String) -> Result<(), String> {
+    khor_gui_core::rejoin_now(&Node::root_from_env(), &machine).await
+}
+
 /// The 网络 page's 连接 group (`khor_gui_core::connections`).
 #[tauri::command]
 async fn connections() -> Result<khor_gui_core::Connections, String> {
@@ -1176,8 +1184,8 @@ fn term_key(id: String, keys: String) -> Result<(), String> {
 /// `into` is the shell's current directory for 「放到当前目录」 (part 5);
 /// absent, they land in that machine's `~/khor-drop`.
 #[tauri::command]
-async fn term_drop(id: String, paths: Vec<String>, from: Option<String>, into: Option<String>) -> Result<Vec<String>, String> {
-    off_main(move || khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref(), into.as_deref())).await
+async fn term_drop(id: String, paths: Vec<String>, from: Option<String>, into: Option<String>) -> Result<khor_gui_core::term::DropEnd, String> {
+    off_main(move || Ok(khor_gui_core::term::term_drop(&Node::root_from_env(), &id, &paths, from.as_deref(), into.as_deref()))).await
 }
 
 /// How far a terminal's drop has got, for its pill's line (item 60):
@@ -4627,6 +4635,7 @@ pub fn run() {
             pick_key_file,
             face_here,
             visit,
+            rejoin_now,
             set_preferred_relay,
             tell,
             pin_session,

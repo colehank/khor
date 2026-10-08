@@ -2592,6 +2592,27 @@ term-rejoining-here = "正在重新连接"
 # one move that helps is on the other machine.
 term-rejoining-how = "{0} 开着 khor、连上网后会自动接上"
 term-rejoining-how-here = "那台机器开着 khor、连上网后会自动接上"
+# **The session's pill** (NOTICE-BRIEF, the owner 2026-10-08): only what
+# stops this session reaches it — a transfer that did not get there, and
+# the session reconnecting. Two lengths each: the short line on the pill
+# (about eight characters beside a name) and the whole sentence when the
+# pill grows; the line under it says why. The machine's own words go
+# only under 详情.
+notice-rejoin-short = "重新连接 {0}"
+notice-host-lost-how = "{0} 上这个会话的宿主没有应答，它回来后会自动接上"
+notice-retry-now = "立即重试"
+notice-detail = "详情"
+notice-image-failed-short = "图片未传到 {0}"
+notice-image-failed = "图片没有传到 {0}"
+notice-file-failed-short = "文件未传到 {0}"
+notice-file-failed = "文件没有传到 {0}"
+notice-say-failed-short = "消息未发到 {0}"
+notice-say-failed = "消息没有发到 {0}"
+notice-why-unreached = "{0} 现在不通"
+notice-why-serve-gone = "本机的 khor 中途退出"
+notice-why-predates = "{0} 的 khor 版本较旧，收不了文件"
+notice-why-too-big = "超过 {0} MB，放不进会话"
+notice-why-other = "{0} 没有收下，原话在详情里"
 link-last-heard = "{0} · 上次 {1}"
 # Windows 上窗口自己的三颗按钮,画在标签条右端(docs/SHELL.md 第十三轮;macOS 用系统的,Linux 用原生装饰)。
 window-minimize = "最小化"
@@ -4867,10 +4888,6 @@ open-in-browser = "在系统浏览器中打开"
 # The terminal ended — the host's child exited or the connection tore.
 # Both are one fact to a face (docs/handoff 终端画屏).
 term-over = "终端已结束"
-# A tmux row on a phone whose history could not be read (an older khor
-# on that machine, or it is out of reach): the drag goes to tmux's own
-# scrolling, as before (item 31).
-term-tmux-history-out = "这台机器的 tmux 历史暂时读不到，滑动改由 tmux 翻页"
 # The two forms a session can be held in. Nouns, not verbs — and now
 # only the new-session dialog says them, where they are a choice about
 # a session that does not exist yet.

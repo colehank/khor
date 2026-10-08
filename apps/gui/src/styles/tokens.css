@@ -241,6 +241,12 @@
      ⚠️ 墓碑 (UX-44 → UX-49): dark lifted the page with a light veil,
      `rgba(238, 238, 231, 0.16)` — a black terminal read as grey. */
   --sheet-scrim: rgba(0, 0, 0, 0.5);
+  /* **The session pill grown** (NOTICE-BRIEF, the owner 2026-10-08: 「a
+     light scrim」; the notice lab's values, approved 10-09): lighter than
+     a sheet's — the pill grows in place, nothing rises over the page —
+     and darker in the dark theme, where a light veil would grey a black
+     terminal. */
+  --notice-scrim: rgba(0, 0, 0, 0.16);
   --input: rgba(26, 26, 20, 0.12);
   /* The focus ring, ink for the same reason and to the same reading.
    *
@@ -2029,6 +2035,7 @@
   --destructive-foreground: var(--on-destructive);
   --border: rgba(238, 238, 231, 0.14);
   --sheet-scrim: rgba(0, 0, 0, 0.5);
+  --notice-scrim: rgba(0, 0, 0, 0.4);
   --input: rgba(238, 238, 231, 0.14);
   --ring: var(--brand-strong);
 

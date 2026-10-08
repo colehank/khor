@@ -459,6 +459,10 @@ pub fn answer(
             rt.block_on(crate::visit(root, &arg("machine")?))?;
             Ok("null".to_owned())
         }
+        "rejoin_now" => {
+            rt.block_on(crate::rejoin_now(root, &arg("machine")?))?;
+            Ok("null".to_owned())
+        }
         "set_preferred_relay" => {
             let url = args.get("url").and_then(|v| v.as_str()).map(str::to_owned);
             crate::set_preferred_relay(root, url)?;
@@ -555,7 +559,7 @@ pub fn answer(
             // time, and a turn carrying photos to a far machine takes as
             // long as the road does — every poll behind it would wait.
             // How it went reaches the face on the conversation itself:
-            // the batch's `sending`, and a `Refused` frame if it did not
+            // the batch's `sending`, and an `Unsent` frame if it did not
             // go (`chat::chat_say_with`).
             let (id, text) = (arg("id")?, arg("text")?);
             std::thread::spawn(move || {
@@ -735,7 +739,7 @@ pub fn answer(
                 .unwrap_or_default();
             let from = args.get("from").and_then(|v| v.as_str());
             let into = args.get("into").and_then(|v| v.as_str());
-            to_json(&crate::term::term_drop(root, &arg("id")?, &paths, from, into)?)
+            to_json(&crate::term::term_drop(root, &arg("id")?, &paths, from, into))
         }
         "term_drop_progress" => to_json(&crate::term::term_drop_progress(&arg("id")?)),
         // The pill's × while files go in (item 71). Behind the bridge it

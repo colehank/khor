@@ -44,6 +44,8 @@ use khor_node::{Node, SessionId};
 use serde::Serialize;
 use ts_rs::TS;
 
+use crate::miss::{Miss, MissKind};
+
 /// The base64 the two answers speak — standard alphabet, the same
 /// engine the node's wire uses.
 const B64: base64::engine::general_purpose::GeneralPurpose =
@@ -131,8 +133,13 @@ pub struct TermChunk {
     pub reset: bool,
     /// The pipe to a far machine's host ended and is being asked for
     /// again (`crate::rejoin`): what is on screen is the last thing that
-    /// arrived, not a live screen. The face says so until bytes flow.
-    pub rejoining: bool,
+    /// arrived, not a live screen. The face says so until bytes flow —
+    /// on the session's pill, 「重新连接 Mac-mini」 — and this says why,
+    /// in parts: the machine not answering (`unreached`, its words empty
+    /// until the first try is answered) or its host for this session not
+    /// answering (`host-lost`). ⚠️ 墓碑 (NOTICE-BRIEF): `rejoining`, a
+    /// bare flag, and a bubble over the terminal's top (IMG_5412).
+    pub stall: Option<Miss>,
 }
 
 struct Term {
@@ -147,8 +154,9 @@ struct Term {
     /// (`crate::acs`).
     acs: Mutex<crate::acs::Acs>,
     gone: AtomicBool,
-    /// Between a far pipe ending and the next one carrying bytes.
-    rejoining: AtomicBool,
+    /// Between a far pipe ending and the next one carrying bytes: why,
+    /// as the last try said it ([`TermChunk::stall`]).
+    stall: Mutex<Option<Miss>>,
     /// Rung whenever the feed grows or a flag above changes: what a
     /// [`term_wait`] sleeps on instead of the face polling on a beat.
     arrived: tokio::sync::Notify,
@@ -289,7 +297,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
         parser: Mutex::new(vt100::Parser::new(rows, cols, 0)),
         acs: Mutex::new(crate::acs::Acs::default()),
         gone: AtomicBool::new(false),
-        rejoining: AtomicBool::new(false),
+        stall: Mutex::new(None),
         arrived: tokio::sync::Notify::new(),
         holds: AtomicUsize::new(1),
         left: AtomicBool::new(false),
@@ -320,17 +328,28 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
                     let Some(machine) = far.as_deref().filter(|_| crate::rejoin::is_on()) else {
                         break;
                     };
-                    reader.rejoining.store(true, Ordering::Relaxed);
+                    *plock(&reader.stall) = Some(Miss::new(MissKind::Unreached, Some(machine), ""));
                     reader.arrived.notify_waiters();
                     let (rows, cols) = plock(&reader.parser).screen().size();
-                    let Some(conn) = crate::rejoin::again(&root, machine, &sid, &reader.left, |addr, cookie| {
-                        // A far host may have been replaced meanwhile:
-                        // the version is agreed again.
-                        khor_node::host::connect_versioned(addr, cookie, cols, rows).map(|a| {
-                            reader.version.store(a.version, Ordering::Relaxed);
-                            a.stream
-                        })
-                    }) else {
+                    let told = |miss: Miss| {
+                        *plock(&reader.stall) = Some(miss);
+                        reader.arrived.notify_waiters();
+                    };
+                    let Some(conn) = crate::rejoin::again(
+                        &root,
+                        machine,
+                        &sid,
+                        &reader.left,
+                        |addr, cookie| {
+                            // A far host may have been replaced meanwhile:
+                            // the version is agreed again.
+                            khor_node::host::connect_versioned(addr, cookie, cols, rows).map(|a| {
+                                reader.version.store(a.version, Ordering::Relaxed);
+                                a.stream
+                            })
+                        },
+                        told,
+                    ) else {
                         break;
                     };
                     let Ok(again) = conn.try_clone() else { break };
@@ -344,7 +363,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
                     if fresh {
                         start_over(&reader);
                         fresh = false;
-                        reader.rejoining.store(false, Ordering::Relaxed);
+                        *plock(&reader.stall) = None;
                     }
                     if let Some((cols, rows)) = paint(
                         &reader.acs,
@@ -360,6 +379,7 @@ pub fn term_open(root: &Path, id: &str, cols: u16, rows: u16, history: u32) -> R
                 }
             }
         }
+        *plock(&reader.stall) = None;
         reader.gone.store(true, Ordering::Relaxed);
         reader.arrived.notify_waiters();
     });
@@ -743,7 +763,7 @@ pub fn term_stream(id: &str, since: u64) -> Result<TermChunk, String> {
         seq,
         gone: term.gone.load(Ordering::Relaxed),
         reset,
-        rejoining: term.rejoining.load(Ordering::Relaxed),
+        stall: plock(&term.stall).clone(),
     })
 }
 
@@ -941,7 +961,10 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String], int
 /// `~/khor-drop` itself, and [`term_drop_progress`] reads how far it got.
 ///
 /// **A file a face staged** ([`term_drop_stage`]) is read by nobody once
-/// the drop is over, landed or not, and goes then. Staged for a session
+/// the drop has landed or been cancelled, and goes then. **A drop that
+/// failed keeps it** (NOTICE-BRIEF): the pill offers 重试, which drops the
+/// same staged paths again, and 取消, which is [`term_drop_cancel`] with
+/// them. Staged for a session
 /// on this machine, it is not pasted where it waits but moved into this
 /// machine's `~/khor-drop`, where a picked file lands on any machine.
 ///
@@ -958,14 +981,39 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String], int
 ///
 /// **Answers where the files landed** (absolute, on the session's
 /// machine), so the face can tell that machine's file trees which levels
-/// changed (UX-43 §1).
-pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>) -> Result<Vec<String>, String> {
+/// changed (UX-43 §1) — **or what went wrong, in parts** ([`Miss`]):
+/// the kind, the machine, and the raw words for 详情 alone. ⚠️ 墓碑
+/// (NOTICE-BRIEF): the failure was one sentence with the dial's English
+/// inside it, shown whole in red over the terminal (IMG_5413).
+pub fn term_drop(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: Option<&str>) -> DropEnd {
     // Held from the first line, before anything that takes time: a
     // cancel finds the drop as soon as the face has asked for it.
     let held = Held::begin(id);
-    let (landed, text) = drop_text(root, id, paths, from, into, &held)?;
-    term_paste(id, &text)?;
-    Ok(landed)
+    let ended = drop_text(root, id, paths, from, into, &held).and_then(|(landed, text)| {
+        term_paste(id, &text)?;
+        Ok(landed)
+    });
+    match ended {
+        Ok(landed) => DropEnd { landed, miss: None },
+        Err(why) => {
+            let far = Node::open(root.to_path_buf())
+                .ok()
+                .and_then(|n| n.far_machine(&SessionId(id.to_owned())).ok().flatten());
+            let mut miss = crate::miss::read(&why, far.as_deref());
+            // A cancel is the person's own act, not a failure to show.
+            if miss.kind == MissKind::Cancelled {
+                miss.raw.clear();
+            }
+            DropEnd { landed: Vec::new(), miss: Some(miss) }
+        }
+    }
+}
+
+/// What [`term_drop`] answers: where the files landed, or the failure.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct DropEnd {
+    pub landed: Vec<String>,
+    pub miss: Option<Miss>,
 }
 
 /// [`term_drop`] up to its paste: the files put where the session reads
@@ -986,6 +1034,13 @@ fn drop_text(root: &Path, id: &str, paths: &[String], from: Option<&str>, into: 
     } else {
         drop_blocking(root, id, from, &to, into, paths, &held.stopped)
     };
+    // **A failure keeps what was staged** (the pill's 重试 drops it
+    // again); a landing and a cancel let it go.
+    if let Err(why) = &here
+        && !held.stopped()
+    {
+        return Err(why.clone());
+    }
     for p in paths {
         if let Some(dir) = staged_dir(root, p) {
             let _ = std::fs::remove_dir_all(dir);
@@ -1619,7 +1674,7 @@ mod tests {
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
-            rejoining: AtomicBool::new(false),
+            stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
             holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
@@ -1666,7 +1721,7 @@ mod tests {
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
-            rejoining: AtomicBool::new(false),
+            stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
             holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
@@ -1702,7 +1757,7 @@ mod tests {
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
-            rejoining: AtomicBool::new(false),
+            stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
             holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
@@ -1860,7 +1915,7 @@ mod burst_tests {
             parser: Mutex::new(vt100::Parser::new(24, 80, 0)),
             acs: Mutex::new(crate::acs::Acs::default()),
             gone: AtomicBool::new(false),
-            rejoining: AtomicBool::new(false),
+            stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
             holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
