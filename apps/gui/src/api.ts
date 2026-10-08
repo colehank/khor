@@ -14,6 +14,7 @@ import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
 import type { Connections } from "./gen/bindings/Connections";
 import type { ReachReport } from "./gen/bindings/ReachReport";
 import type { ProxyLine } from "./gen/bindings/ProxyLine";
+import type { JournalLine } from "./gen/bindings/JournalLine";
 import type { AddAsk } from "./gen/bindings/AddAsk";
 import type { AddRun } from "./gen/bindings/AddRun";
 import type { LoginAsk } from "./gen/bindings/LoginAsk";
@@ -986,6 +987,14 @@ export const reachProbe = (host: string, port: number | null) =>
     a copy button. khor never writes the user's ssh config. */
 export const proxyLine = (machine: string, host: string, port: number | null) =>
   call<ProxyLine>("proxy_line", { machine, host, port });
+/** 连接记录 (NET-STABLE 第一步): what this machine's resident saw on its
+    way to `machine` (an id), this machine's own events interleaved, over
+    the last `minutes`. Read off files: answers with no resident. */
+export const journal = (machine: string, minutes: number) =>
+  call<JournalLine[]>("journal", { machine, minutes });
+/** 报告: every machine's last `minutes` frozen into one file under this
+    home; answers its path. */
+export const journalReport = (minutes: number) => call<string>("journal_report", { minutes });
 /** 添加机器 over SSH (round join-d): starts the add as the run `token`
     (made by the face, so a second press starts nothing). Read it with
     `addRead`. The secret in `ask` goes to the OS secret store of the
@@ -1006,6 +1015,9 @@ export const pickKeyFile = () => call<string | null>("pick_key_file");
 /** This face is on screen, or stopped being: what paces the resident's
     pump (`khor_gui_core::face_here`, round NET-6). */
 export const faceHere = (visible: boolean) => call<null>("face_here", { visible });
+/** A machine's page was opened: the resident has a round with it now,
+    past its backoff (`khor_gui_core::visit`, NET-STABLE 第二步). */
+export const visitMachine = (machine: string) => call<null>("visit", { machine });
 /** 首选中继, or `null` for the nearest. */
 export const setPreferredRelay = (url: string | null) => call<null>("set_preferred_relay", { url });
 /** Whether claude on **this** machine is set up to tell khor what it is

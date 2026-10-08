@@ -12,7 +12,18 @@
 
 ## 补丁
 
-六处。
+七处。
+
+### 7. `src/endpoint.rs`：带来源的直接地址（2026-10-08，NET-STABLE 第二步）
+
+`Endpoint::watch_direct_addrs()`：把 `watch_addr` 里那组直接地址连同来源（`DirectAddr::typ`：
+本机网卡 / QAD 学到的公网 / 端口映射）给出来。iroh 1.2 导出了 `DirectAddr` 和 `DirectAddrType`，
+却没有公开的取法，`watch_addr` 只给不带来源的地址。khor 要的是「本机网卡地址变了」——iroh 自己的
+网络监视看到换网时重绑、重探，khor 不知道，退避照等；QAD 学到的公网地址会自己变，不能算换网。
+改动 8 行，只是把内部的 `ip_addrs()` 露出来。khor 这边 `journal::watch_ears` 订阅，稳定 1 秒后
+告诉常驻（`Change::Addrs`）。测试：`crates/node/src/journal.rs` 的
+`interface_addresses_are_told_once_they_hold_still`（只测去抖；回环上没法真的换网卡）。
+上游没有对应 PR，升级 iroh 时要重新打。
 
 ### 6. `src/socket/remote_map/remote_state.rs`：中继先答时也打开自定义地址（2026-10-08，ROAD-3 轮）
 

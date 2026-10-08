@@ -401,6 +401,12 @@ usage = """
                         每项各自 3 秒超时，一项卡住不拖累别项。
                         --json 出原样（GUI 那一页读的是同一份）；
                         --fix 跑那一项的修法（能修的项在行尾写着怎么跑）
+  journal [机器] [--minutes 分钟] [--report] [--json]
+                        连接记录：本机每次拨号、走了哪几条路、结果和失败的
+                        那一步、退避、连接收回、网络和家中继的变化。
+                        给机器只看它（夹着本机的事），默认最近 60 分钟；
+                        --report 把所有机器的这一段存成一个文件交给别人，
+                        不含密钥、配对票和 host key
   invite                出一张一次性配对票（要求 serve 在跑）
   pair <票|->           凭票入网；- 从标准输入读票
   add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [-m <khor主机>]
@@ -2486,6 +2492,77 @@ mcp-open-needs-command = "open 需要一条命令"
 mcp-closed = "session 已关闭"
 mcp-told = "留言已送达"
 
+# 连接记录 (crates/node/src/journal.rs, NET-STABLE 第一步): each line
+# one event the resident saw on its way to another machine, in the
+# order they happened. Formal words: this file is what the owner hands
+# over when a machine will not connect.
+journal-started = "常驻进程启动"
+journal-by-pump = "后台同步"
+journal-by-forced = "立即同步"
+journal-by-ask = "请求"
+journal-by-hop = "作为转发的中间机器"
+journal-by-pair = "配对"
+journal-dial-ok = "拨号成功（{0}），{1} 毫秒，{2}"
+journal-dial-failed = "拨号失败（{0}），{1} 毫秒：{2}"
+journal-won-direct = "先答的是带地址的一路"
+journal-won-relay = "先答的是只经中继的一路"
+journal-won-early = "握手时带着请求"
+journal-offered = "试过：{0}"
+journal-offered-direct = "{0} 个直接地址"
+journal-offered-relays = "中继 {0}"
+journal-offered-carried = "SSH 转连"
+journal-backoff = "连续第 {0} 次失败，后台 {1} 秒后再拨"
+journal-timed-out = "超时"
+journal-settled = "连接落在{0}，往返 {1} 毫秒"
+journal-settled-relay = "{0}（{1}）"
+journal-road-direct = "直连"
+journal-road-relay = "中继"
+journal-road-carried = "转连"
+journal-road-unknown = "未确定的路"
+journal-paths = "各条路径：{0}"
+journal-retired = "连接收回：{0}，{1} 秒没有听到对方，这条连接用了 {2} 秒"
+journal-why-silent = "静默"
+journal-why-unanswered = "请求无回应"
+journal-why-closed = "对方或 QUIC 关闭"
+journal-why-network = "网络变化后没有回应"
+journal-why-replaced = "主动放下"
+journal-why-paused = "已暂停"
+journal-why-suspended = "app 转入后台"
+journal-why-departed = "中继说它已离开"
+journal-departed = "它的中继报告它已断开"
+journal-inbound = "它连了进来"
+journal-network = "网络变化：{0}"
+journal-net-wake = "睡眠后唤醒"
+journal-net-path = "系统报告网络路径变化"
+journal-net-clock = "时钟跳变（睡眠）"
+journal-net-relay = "家中继恢复连接"
+journal-net-addrs = "本机网卡地址变化"
+journal-addrs = "本机地址变为：{0}"
+journal-addrs-none = "本机没有可用地址"
+journal-home = "家中继 {0}：{1}"
+journal-home-none = "没有家中继"
+journal-home-connected = "已连接"
+journal-home-connecting = "正在连接"
+journal-home-down = "断开"
+journal-home-down-why = "断开：{0}"
+journal-ears = "换新端点，用了 {0} 毫秒"
+journal-ears-failed = "换新端点失败：{0}"
+journal-hop-up = "经 {0} 转发已接上"
+journal-hop-none = "试了 {0} 台中间机器，都没有接上转发"
+journal-carry-up = "SSH 转连已接上"
+journal-carry-down = "SSH 转连断开：{0}"
+journal-person-face = "界面回到前台：立即同步，不等退避"
+journal-person-page = "打开机器页：立即同步，不等退避"
+journal-here = "本机"
+journal-empty = "还没有连接记录"
+journal-report-title = "khor 连接记录"
+journal-report-machine = "本机：{0}（{1}）"
+journal-report-version = "版本：{0}"
+journal-report-span = "范围：最近 {0} 分钟，{1} 条"
+journal-report-relays = "中继：{0}"
+journal-report-saved = "已保存：{0}"
+journal-report-cant = "无法保存报告：{0}"
+
 [gui]
 # 网络页的「连接」组（round NET-2）：本机住在哪台中继、到每台中继的往返、每台机器走哪条路、
 # 往返多久、多久前听到、上次出了什么错——doctor 的连接诊断，做成可以截图的一页。
@@ -4348,6 +4425,14 @@ leg-jump-to-target = "跳板机无法连接目标主机：{0} 无法连接 {1}"
 leg-ssh = "{0} 无法通过 SSH 连接 {1}"
 leg-auth = "{0} 不接受 {1} 的密钥"
 promote-ask = "安装 khor…"
+# 机器页的「连接记录」一行（NET-STABLE 第一步）：最近一小时到这台机器的拨号和
+# 连接变化，右端「报告」把所有机器的这一段存成一个文件。
+journal-row = "连接记录"
+journal-summary = "最近 {0} 分钟 {1} 条"
+journal-summary-trouble = "最近 {0} 分钟 {1} 条，其中 {2} 条是故障"
+journal-report-ask = "报告"
+journal-report-at = "报告已保存到 {0}"
+journal-line-of = "{0}：{1}"
 # 待批与根钥匙的恢复词（docs/CONNECT.md 身份）。
 pending-title = "待批"
 approve = "批准"
