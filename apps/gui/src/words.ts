@@ -343,7 +343,12 @@ export function valueOf(key: string, axes: readonly string[] = AXES): string {
 //   `agoOf`): list corners, last heard, last answered, a reading's age;
 // - **a moment ahead** — 「2 小时 13 分后」 (`until`): two units where the
 //   second matters, never rounded down to one (a reset in 2 h 13 min was
-//   「2 小时后」 and read as two hours early);
+//   「2 小时后」 and read as two hours early); `untilBare` under a column
+//   head that already says which way;
+//
+// **Minutes** (the lead, 2026-10-08): alone they are 分钟 (「45 分钟后重
+// 置」「3 分钟前」), second after hours they are 分 (「2 小时 13 分」).
+// Seconds are only ever alone (「2 秒前」), never a second unit.
 // - **a duration** — 「4 小时」 bare (`lasting`, `stretch`): how long a
 //   state has held, how long a process ran, how long something waited.
 //
@@ -424,6 +429,16 @@ export function until(atMs: number): string {
 }
 
 /**
+ * The same two units **without the direction** — 「2 小时 14 分」「3 天 4
+ * 小时」 — for a cell whose column is already headed with it (the quota
+ * page's 「重置」 column, ux-q2). Never trim 后 off `until`: that is a
+ * second spelling of the direction, and the words gate reads for it.
+ */
+export function untilBare(atMs: number): string {
+  return pair(atMs - Date.now());
+}
+
+/**
  * How long something has been going on or lasted — a **duration**, bare:
  * 「4 小时」. A state held in a row's bottom-right corner, a process's run
  * time, a wait. Never an age or a deadline: those say which way
@@ -450,7 +465,8 @@ export function stretch(ms: number): string {
   if (m < 60) return count.minutes(m);
   const h = Math.floor(m / 60);
   const rest = m % 60;
-  return rest === 0 ? count.hours(h) : `${count.hours(h)} ${count.minutes(rest)}`;
+  // The minutes rule above: second after hours, 分.
+  return rest === 0 ? count.hours(h) : gui.time_hours_minutes(h, rest);
 }
 
 /** A duration in the coarsest unit that still says something. **Not

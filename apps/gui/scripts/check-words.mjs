@@ -33,13 +33,16 @@
 //      and the row's state is `connectionKeyWord(connectionKey(d))`, not
 //      a second ladder (`views/DevicesList`);
 //   7. **money is one formatter**: no file but `words.ts` defines a
-//      `money` (or the ring's `ringWord`) of its own.
+//      `money` (or the ring's `ringWord`) of its own — the quota page is
+//      named as pending on ux-q2 (`PENDING`), printed every run;
+//   8. **the direction is not trimmed off** `until` / `ago`'s answer
+//      (`untilBare` is the bare two-unit form).
 //
-// Red first: on 342d4e52 every claim fails — seven [gui] sentences with
+// Red first: on 342d4e52 claims 1 to 6 fail — seven [gui] sentences with
 // their own 前 / 后, `span` exported and imported by two pages, five 毫秒,
 // 离线 / 无法获取 in nine machine sentences, three retired keys in use,
-// DevicesList's second ladder, and the quota page's own `money` and
-// `ringWord` (28 lines on the lane's run).
+// DevicesList's second ladder (27 findings on the lane's run). Claim 7's
+// one offender is the quota page, pending on ux-q2.
 //
 // Run: `npm run words` (also in `npm test`).
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -87,6 +90,14 @@ const files = [];
   }
 })(src);
 const WORDS = "src/words.ts";
+/**
+ * **Waiting on a lane, by name, with what is left** — never a quiet pass.
+ * The quota page is ux-q2's to rewrite (its rows, its account page, its
+ * caption; the lead, 2026-10-08), so its own two money formatters stay
+ * until that rewrite lands on `money` / `moneyIn` / `until` / `untilBare`.
+ * Each entry is printed on every run; drop it when the rewrite lands.
+ */
+const PENDING = new Map([["src/views/QuotaLanding.tsx", "ux-q2: money / ringWord → words.ts money / moneyIn; the age cell's bare lasting → agoOf"]]);
 const words = files.find((f) => f.path === WORDS);
 if (!words) fail("probe dead: src/words.ts is not there");
 /** Code without its comments, so a tombstone naming a retired key is not
@@ -156,8 +167,14 @@ else {
 }
 
 // 7. one money.
-const moneyOwn = users(/\bfunction\s+(money|ringWord)\s*\(/);
+const moneyOwn = users(/\bfunction\s+(money|ringWord)\s*\(/).filter((f) => !PENDING.has(f));
 if (moneyOwn.length) fail(`${moneyOwn.join(", ")} define a money formatter of their own — words.ts money() (symbol first, 「$9.21」「¥12K」)`);
 
+// 8. the direction is never trimmed off: no page strips 后 / 前 from what
+//    `until` / `ago` said (`untilBare` is the bare form).
+const trimmed = users(/\b(until|ago|agoOf)\([^)]*\)\s*\.(replace|slice|trim)/);
+if (trimmed.length) fail(`${trimmed.join(", ")} cut the direction off what ago / until said — untilBare or lasting`);
+
+for (const [file, what] of PENDING) console.log(`words gate: pending · ${file} · ${what}`);
 if (bad) process.exitCode = 1;
 else console.log("words gate: 前 and 后 in two keys, the ladder at home, every latency in ms, 不通 for a machine out of reach, one derivation for the filter and the row, one money");

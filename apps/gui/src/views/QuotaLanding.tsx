@@ -80,7 +80,7 @@ import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
-import { QUOTA_AXES, agoOf, groupLabel, money, moneyIn, until } from "@/words";
+import { QUOTA_AXES, agoOf, groupLabel, lasting, until } from "@/words";
 
 /** How often the board is asked for. The node caches every reading for
     five minutes and cools a failed account for ten (`accounts` module
@@ -260,13 +260,82 @@ function markOf(unit: string | null): string {
   return unit === null || unit.trim() === "" ? DEFAULT_MARK : unit;
 }
 
-/* ⚠️ **Tombstone: `ringWord` and `money` are gone, 2026-10-08
-   (WORDS-1008)** — this page's two money formatters, `124$` in the ring
-   and `12.34$` / `124 USDT` in the column, mark after the figure. Money
-   is one formatter now, symbol first (`words.ts` `money`, `moneyIn` for
-   the ring's `RING_CHARS`), with the rules these two had and kept: the
-   mark is a label never a rate, a letter mark is a word with a space,
-   and when the ring has no room **the mark goes, never the digits**. */
+/**
+ * A reading as it goes **inside a ring**: at most [`RING_CHARS`].
+ *
+ * - a share is already short — `100%` is the longest one there is;
+ * - money is rounded to whole units and wears its sign: `124$`;
+ * - and past what fits, `1.2k` / `1.2m`.
+ *
+ * ⚠️ **The rounding is not new here.** `money` has always dropped the
+ * decimals above 100 (`123.75` has been drawing as `124` since before
+ * this rule), so what this adds is the sign and the k/m step — and the
+ * only band it changes is 10–99.99, which used to draw `12.34` and now
+ * draws `12$`.
+ */
+function ringWord(n: number, mark: string): string {
+  const whole = Math.round(n);
+  const fits = (s: string) => s.length <= RING_CHARS;
+  if (fits(`${whole}${mark}`)) return `${whole}${mark}`;
+  // Not enough room: buy some by shortening the **magnitude**, which is
+  // what `1.1k` was asked for.
+  const short = whole < 1_000_000 ? `${Math.round(n / 1_000)}k` : `${Math.round(n / 1_000_000)}m`;
+  if (fits(`${short}${mark}`)) return `${short}${mark}`;
+  // ⚠️ **And when even that does not fit, the mark is what goes — not
+  // the digits.** Since 2026-09-07 the mark is free text (「直接输入
+  // 符号」), so it can be longer than the whole budget, and a step down
+  // in magnitude cannot pay for it: `124` under a `USDT` would become
+  // `0kUSDT`, then `0k`, and **a reading of 124 would be drawn as
+  // zero**. The magnitude is the part a person is reading, so it keeps
+  // its own full form and the column beside it spells the unit out.
+  return fits(`${whole}`) ? `${whole}` : short;
+}
+
+/**
+ * The figure a column shows, with its unit spelled out in full.
+ *
+ * **`unit` is whatever string its caller holds, and this function does
+ * not interpret it**: for an account that is the mark its owner typed
+ * (or [`DEFAULT_MARK`]); for the subscription's credits it is the code
+ * the endpoint reported. Nothing here maps one to the other — see the
+ * tombstone above `DEFAULT_MARK` for why khor stopped doing that.
+ *
+ * ⚠️ **Why credits are not defaulted to `$` like an account is.** The
+ * default exists because a person can open 编辑 and correct it. The
+ * subscription has no such box, so a `$` there would be a mark nobody
+ * could argue with — the exact thing the default was chosen over. Its
+ * figures wear the endpoint's own code, or nothing.
+ *
+ * # The space, and why it is conditional
+ *
+ * 2026-09-07:「右栏要读起来像钱」. A mark that is a **symbol** sits
+ * against its figure (`124$`, `1235¥`); one that starts with a
+ * **letter** is a word and takes a word gap (`124 USDT`). Measured on
+ * the page before choosing: `124 $` reads as a typo and `124USDT` as
+ * one token.
+ *
+ * **This is typography, not recognition.** It does not decide *what*
+ * the unit is — that is the thing khor stopped doing — only whether
+ * the two things beside each other need air between them. A person who
+ * types `£` and a person who types `GBP` both get their own string back.
+ *
+ * ⚠️ **This and [`ringWord`] round differently on purpose**: above 100
+ * both drop the decimals, below it a ring says `12$` where this says
+ * `12.34$` — the ring has four characters, this line has as many as it
+ * needs. What they may **never** differ on is the unit itself.
+ *
+ * ⚠️ **The unit is a label, never a rate.** An account may carry a
+ * `unit` its owner typed, because a gateway can stamp 「USD」 on
+ * renminbi (「他说 usd,但可能是 rmb。同样的数字,单位不同而已」) — the
+ * node swaps the *name* before the board is sent and touches no digit.
+ * **Nothing here may grow into a conversion**: no rates, no sources,
+ * no arithmetic. That is a different feature and a different ruling.
+ */
+function money(n: number, unit: string | null): string {
+  const figure = n >= 100 ? n.toFixed(0) : n.toFixed(2);
+  if (!unit) return figure;
+  return /^\p{L}/u.test(unit) ? `${figure} ${unit}` : `${figure}${unit}`;
+}
 
 /* ⚠️ **Tombstone: `SPAN_MINUTES` and `ringWindows` are gone,
    2026-09-07 — and with them the rule 「一个模型的份额不是第三个长度,
@@ -505,7 +574,7 @@ function subDials(r: Row): Dial[] {
  * spend when there is a number but no denominator, what is left when
  * the provider reports a wallet rather than a spend, nothing else.
  *
- * **Everything here is at most [`RING_CHARS`]** — see `moneyIn`. It is
+ * **Everything here is at most [`RING_CHARS`]** — see `ringWord`. It is
  * the same function on the card and on the row: one seat, one rule, and
  * the card's larger ring does not get a longer string just because it
  * would fit. Two spellings of one figure on one screen is what this
@@ -520,8 +589,8 @@ function centre(r: AccountRing): string {
   // translate into one; the mark is the person's, defaulted here and
   // nowhere upstream.
   const mark = markOf(r.unit);
-  if (reading.spent != null) return moneyIn(reading.spent, mark, RING_CHARS);
-  if (reading.remaining != null) return moneyIn(reading.remaining, mark, RING_CHARS);
+  if (reading.spent != null) return ringWord(reading.spent, mark);
+  if (reading.remaining != null) return ringWord(reading.remaining, mark);
   return "";
 }
 
@@ -1293,7 +1362,7 @@ export function QuotaLanding({
           </span>
         ),
         // A reading this machine takes as it is shown has no age to say.
-        bottom: r.age_ms === null ? undefined : <span data-quota-age-cell>{agoOf(r.age_ms)}</span>,
+        bottom: r.age_ms === null ? undefined : <span data-quota-age-cell>{lasting(r.age_ms)}</span>,
       },
       find: `${r.name} ${subLine(r)}`,
       selected: on,
@@ -1656,9 +1725,8 @@ export function QuotaLanding({
                 <dt className="text-muted-foreground">{gui.accounts_spent}</dt>
                 <dd data-quota-spent className="tabular-nums">
                   {acc.reading.limit != null
-                    ? // Both sides wear the mark (WORDS-1008: 「$457 / $1,000」).
-                      gui.accounts_of(
-                        money(acc.reading.spent, markOf(acc.unit)),
+                    ? gui.accounts_of(
+                        money(acc.reading.spent, null),
                         money(acc.reading.limit, markOf(acc.unit)),
                       )
                     : money(acc.reading.spent, markOf(acc.unit))}
