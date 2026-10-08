@@ -535,10 +535,12 @@ async fn pick_key_file(app: tauri::AppHandle) -> Option<String> {
 }
 
 /// 经由's ProxyCommand line (`khor_gui_core::proxy_line`): shown with a
-/// copy button, never written into the user's ssh config.
+/// copy button, never written into the user's ssh config. Off the main
+/// thread: finding the `khor` it names can ask the login shell for its
+/// PATH (`Node::user_path`), a process started and waited on.
 #[tauri::command]
-fn proxy_line(machine: String, host: String, port: Option<u16>) -> khor_gui_core::ProxyLine {
-    khor_gui_core::proxy_line(&machine, &host, port)
+async fn proxy_line(machine: String, host: String, port: Option<u16>) -> Result<khor_gui_core::ProxyLine, String> {
+    off_main(move || Ok(khor_gui_core::proxy_line(&machine, &host, port))).await
 }
 
 /// 首选中继 (`khor_gui_core::set_preferred_relay`). Off the main thread:
