@@ -1452,6 +1452,22 @@ impl Node {
                             net_round.ask(&node, &ep, &deaf, false, Duration::ZERO);
                         }
                     }
+                    // **The interface addresses moved** (NET-STABLE 第二步),
+                    // as iroh's own network monitor saw it — a Wi-Fi switch
+                    // or a TUN on a Mac that did not sleep, anything on
+                    // Linux. iroh has already rebound and moved its paths;
+                    // what it cannot do is end khor's waits. So every wait
+                    // is forgiven and every machine visited now, which is
+                    // also how a dead wire is found: the round's request on
+                    // it goes unanswered. Not judged by the clock as a wake
+                    // is — iroh pinged the paths before this was told, so a
+                    // healthy idle wire (a terminal among them) would have
+                    // to be heard again within three seconds or be retired.
+                    Wake::Network(change @ crate::journal::Change::Addrs) => {
+                        node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
+                        node.wires.forgive_all();
+                        net_round.ask(&node, &ep, &deaf, true, Duration::ZERO);
+                    }
                     Wake::Network(change) => {
                         node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
                         node.wires.network_changed();

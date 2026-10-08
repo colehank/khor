@@ -862,16 +862,20 @@ impl Wires {
         n
     }
 
-    /// The network under this machine changed, or it woke from sleep:
-    /// any wire not heard within its [`Patience::after_change`] from now is
-    /// presumed to have died with the old network ([`Self::tick`] judges).
-    pub(crate) fn network_changed(&self) {
-        // Every wait the pump was keeping is forgiven: the dials that
-        // failed may have failed on the old network.
+    /// Every wait the pump was keeping is forgiven: the dials that failed
+    /// may have failed on the old network.
+    pub(crate) fn forgive_all(&self) {
         for slot in self.slots.lock().unwrap_or_else(|p| p.into_inner()).values_mut() {
             slot.failures = 0;
             slot.retry_at = None;
         }
+    }
+
+    /// The network under this machine changed, or it woke from sleep:
+    /// any wire not heard within its [`Patience::after_change`] from now is
+    /// presumed to have died with the old network ([`Self::tick`] judges).
+    pub(crate) fn network_changed(&self) {
+        self.forgive_all();
         *self.changed.lock().unwrap_or_else(|p| p.into_inner()) = Some(Instant::now());
         self.counts.network_changes.fetch_add(1, Relaxed);
     }

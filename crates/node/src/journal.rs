@@ -90,6 +90,10 @@ pub enum Change {
     /// ([`watch_ears`]): the dials that failed since may have failed
     /// only because it was.
     Relay { down_at: std::time::Instant },
+    /// iroh's own network monitor moved this machine's interface
+    /// addresses ([`watch_ears`]): a Wi-Fi switch, a VPN or proxy TUN, a
+    /// cable — on a Mac that did not sleep, and on Linux.
+    Addrs,
 }
 
 impl Change {
@@ -99,6 +103,7 @@ impl Change {
             Change::Path => "path",
             Change::Clock => "clock",
             Change::Relay { .. } => "relay",
+            Change::Addrs => "addrs",
         }
     }
 }
@@ -431,6 +436,7 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             "wake" => msg::journal_net_wake(),
             "path" => msg::journal_net_path(),
             "relay" => msg::journal_net_relay(),
+            "addrs" => msg::journal_net_addrs(),
             _ => msg::journal_net_clock(),
         }),
         What::Addrs { addrs } if addrs.is_empty() => msg::journal_addrs_none().to_owned(),
@@ -494,6 +500,10 @@ pub fn when(at: u64) -> String {
 /// home relay connected again after it was down is
 /// [`Change::Relay`] — measured, a 240 s outage left both sides in their
 /// backoff for 70 s after the relay was back, and a restart was the cure.
+/// The interface addresses moving is [`Change::Addrs`], once they have
+/// held still for [`ADDRS_SETTLE`] ([`Interfaces`]); the addresses iroh
+/// learns from QAD or a port mapping are not interfaces and move on
+/// their own, so they are not looked at.
 pub(crate) fn watch_ears(
     ep: &Arc<iroh::Endpoint>,
     wires: Arc<crate::wires::Wires>,
@@ -502,6 +512,7 @@ pub(crate) fn watch_ears(
     use iroh::Watcher;
     let mut addrs = ep.watch_addr();
     let mut home = ep.home_relay_status();
+    let mut direct = ep.watch_direct_addrs();
     // Owned: the watch never keeps old ears alive.
     let closed = ep.closed();
     tokio::spawn(async move {
@@ -541,6 +552,7 @@ pub(crate) fn watch_ears(
         // Since when the home relay has been down; `None` while it is up
         // or has never been.
         let mut down_at: Option<std::time::Instant> = None;
+        let mut interfaces = Interfaces::new(interface_addrs(&direct.get()));
         wires.note(None, What::Addrs { addrs: was_ips.clone() });
         for (url, state, error) in homes(&home.get()) {
             if state == "disconnected" {
@@ -550,8 +562,18 @@ pub(crate) fn watch_ears(
             was_home.push((url, state, error));
         }
         loop {
+            let due = interfaces.due;
             tokio::select! {
                 () = &mut closed => return,
+                got = direct.updated() => {
+                    let Ok(now) = got else { return };
+                    interfaces.saw(interface_addrs(&now), std::time::Instant::now());
+                }
+                () = tokio::time::sleep_until(tokio::time::Instant::from_std(due.unwrap_or_else(std::time::Instant::now))), if due.is_some() => {
+                    if interfaces.settled() {
+                        changed(Change::Addrs);
+                    }
+                }
                 got = addrs.updated() => {
                     let Ok(now) = got else { return };
                     let now = ips(&now);
@@ -595,6 +617,58 @@ pub(crate) fn watch_ears(
             }
         }
     });
+}
+
+/// How long the interface addresses hold still before their change is
+/// told ([`watch_ears`]): a switch passes through several sets — the old
+/// going, nothing, the new arriving — within a second or two.
+const ADDRS_SETTLE: Duration = Duration::from_secs(1);
+
+/// This machine's interface addresses among iroh's direct ones: bound
+/// locally, loopback left out — iroh lists loopback only when there is
+/// nothing else, which is no network rather than a new one.
+fn interface_addrs(all: &std::collections::BTreeSet<iroh::endpoint::DirectAddr>) -> Vec<std::net::SocketAddr> {
+    all.iter()
+        .filter(|d| d.typ == iroh::endpoint::DirectAddrType::Local && !d.addr.ip().is_loopback())
+        .map(|d| d.addr)
+        .collect()
+}
+
+/// **The interface addresses the resident was last told about, and a
+/// newer set waiting to hold still** ([`watch_ears`]).
+#[derive(Debug)]
+struct Interfaces {
+    told: Vec<std::net::SocketAddr>,
+    seen: Vec<std::net::SocketAddr>,
+    /// When `seen` will have held still for [`ADDRS_SETTLE`]; `None`
+    /// while it is what was told.
+    due: Option<std::time::Instant>,
+}
+
+impl Interfaces {
+    fn new(now: Vec<std::net::SocketAddr>) -> Self {
+        Interfaces {
+            told: now.clone(),
+            seen: now,
+            due: None,
+        }
+    }
+
+    /// iroh's set, at `at`: each new set starts the wait again, and one
+    /// back to what was told ends it.
+    fn saw(&mut self, set: Vec<std::net::SocketAddr>, at: std::time::Instant) {
+        self.due = (set != self.told).then_some(at + ADDRS_SETTLE);
+        self.seen = set;
+    }
+
+    /// The wait is over: answers whether to tell. **An empty set is kept
+    /// and not told** — with no network there is nothing to dial — so the
+    /// network coming back, even on the same addresses, is a change.
+    fn settled(&mut self) -> bool {
+        self.due = None;
+        self.told = self.seen.clone();
+        !self.told.is_empty()
+    }
 }
 
 /// What a dial offered: how many direct addresses, which relays (by
@@ -709,6 +783,32 @@ impl crate::Node {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **A switch is told once, after it holds still** (NET-STABLE 第二步):
+    /// the old address going, nothing, the new one arriving within the
+    /// settle is one change; a set back to what was told is none; the
+    /// network gone is not told, and back on the same address is.
+    #[test]
+    fn interface_addresses_are_told_once_they_hold_still() {
+        let a: std::net::SocketAddr = "192.168.1.5:7000".parse().unwrap();
+        let b: std::net::SocketAddr = "10.0.0.7:7000".parse().unwrap();
+        let t = std::time::Instant::now();
+        let ms = |n: u64| t + Duration::from_millis(n);
+        let mut i = Interfaces::new(vec![a]);
+        i.saw(vec![], ms(0));
+        i.saw(vec![b], ms(300));
+        assert_eq!(i.due, Some(ms(300) + ADDRS_SETTLE), "each set starts the wait again");
+        assert!(i.settled(), "a new network is told");
+        assert_eq!(i.due, None);
+        i.saw(vec![a], ms(2000));
+        i.saw(vec![b], ms(2200));
+        assert_eq!(i.due, None, "back to what was told: nothing to tell");
+        i.saw(vec![], ms(3000));
+        assert!(!i.settled(), "no network is not told");
+        i.saw(vec![b], ms(9000));
+        assert!(i.due.is_some());
+        assert!(i.settled(), "the network back on the same address is told");
+    }
 
     #[test]
     fn a_file_is_cut_back_to_its_last_lines_and_reads_in_order() {
