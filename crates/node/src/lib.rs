@@ -15,6 +15,7 @@ pub mod adaptor;
 pub mod backup;
 pub(crate) mod beside;
 pub mod cagent;
+pub mod carry;
 pub mod chat;
 pub mod code;
 pub mod codexagent;
@@ -30,6 +31,7 @@ pub mod git;
 pub mod gui_host;
 pub mod hardware;
 pub mod history;
+pub(crate) mod hop;
 pub mod host;
 pub mod ipc;
 pub mod keeper;
@@ -43,14 +45,18 @@ pub mod modes;
 pub(crate) mod once;
 pub mod pause;
 pub mod pictures;
+pub mod pipe;
 pub mod place;
 pub mod preview;
 pub mod proto;
 pub mod quota;
+pub mod reach;
 pub mod reactor;
 pub mod road;
 pub(crate) mod roads;
 pub mod satellite;
+pub mod secret;
+pub mod join;
 pub mod serves;
 pub mod roadbook;
 pub mod tabs;
@@ -72,7 +78,7 @@ pub use khor_core::avatar::{
     Avatar, AvatarSeed, AvatarStyle, FaceShape, PRESETS, Palette, Preset, Variant, avatar, preset,
 };
 pub use khor_core::{
-    CpuDay, Fill, Hop, Link, Load, Road, RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
+    CpuDay, Fill, Hop, Leg, LegKind, Link, Load, ReachOutcome, ReachSeen, ReachView, Road, RoadKind, RoadTally, Session, SessionId, State, Tokens, TopBy, TopRow, Usage,
     WireCounts,
     UsageDay, Vitals, kind,
 };
@@ -492,6 +498,12 @@ pub struct Node {
     /// `ipc::Op::Roads` — because only it lives long enough to have
     /// dialled anything more than once.
     pub(crate) roads: roads::Roads,
+    /// **The roads this machine carries itself** (round ROAD-2,
+    /// `khor_net::carry`): ssh sessions to members that reach nothing
+    /// else, and hops through a third machine. One table for the life of
+    /// the node; every bind of the resident registers it, unless both
+    /// switches are off ([`Node::carrying`]).
+    pub(crate) carry: khor_net::carry::Links,
     /// Whether this machine can host a session (`khor_core::hosts_here`,
     /// docs/IOS.md): `false` on a phone. Read once at open and written to
     /// this machine's own row in the device table, so every machine in
@@ -1069,6 +1081,7 @@ impl Node {
         // that wants a changed list gets it by opening another node.
         let (relay_map, relays_only_mine) = relays_under(&root);
         let relays = relay_map.iter().map(|r| r.url.clone()).collect();
+        let carry = khor_net::carry::Links::new(key.public());
         let mut node = Node {
             root,
             key,
@@ -1108,6 +1121,7 @@ impl Node {
             app_resident: std::sync::atomic::AtomicBool::new(false),
             root_born: false,
             roads: Arc::default(),
+            carry,
             hosts,
         };
         node.register_self()?;
@@ -2026,12 +2040,12 @@ impl Node {
     /// the satellite's own side — it has no side.
     pub fn adopt_satellite(
         &self,
-        host: &str,
+        host: &satellite::Dest,
         name: Option<&str>,
     ) -> Result<(String, String, bool), String> {
         let probe = satellite::probe(host)?;
         let id = satellite::fingerprint_id(host)?;
-        let name = name.unwrap_or(host);
+        let name = name.unwrap_or(&host.host);
         let name = channel_of_machine(name)
             .ok_or_else(|| msg::name_not_pathable(format_args!("{name:?}")))?;
         self.enter_satellite(&id, &name, host, probe.tmux)?;
@@ -2046,12 +2060,14 @@ impl Node {
         &self,
         id: &str,
         name: &str,
-        host: &str,
+        host: &satellite::Dest,
         tmux: bool,
     ) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
         loaded.doc.upsert(id, name, &[])?;
-        loaded.doc.set_satellite(id, self.device_str(), host, tmux)?;
+        loaded
+            .doc
+            .set_satellite(id, self.device_str(), &host.as_row(), tmux)?;
         loaded.doc.set_gone(id, false)?;
         self.enroll_satellite(&loaded.doc, id, name)?;
         let mut store = loaded.store;
@@ -2065,7 +2081,7 @@ impl Node {
     /// sponsor when it is somebody else's satellite — a file push runs
     /// the sponsor's scp, and only the sponsor has the road
     /// (一期单 sponsor; docs/NET.md 卫星).
-    pub fn satellite_host_here(&self, machine: &str) -> Result<Option<String>, String> {
+    pub fn satellite_host_here(&self, machine: &str) -> Result<Option<satellite::Dest>, String> {
         // The broadcast is no machine, satellite or not.
         if machine.starts_with(khor_sync::chat::WIDE) {
             return Ok(None);
@@ -2074,7 +2090,7 @@ impl Node {
         let Some(d) = self.devices_loaded()?.doc.by_name(&channel) else {
             return Ok(None);
         };
-        let Some(sp) = d.sponsor else { return Ok(None) };
+        let Some(sp) = d.sponsor.clone() else { return Ok(None) };
         if sp != self.device_str() {
             let sponsor_name = self
                 .devices_loaded()?
@@ -2084,8 +2100,7 @@ impl Node {
                 .unwrap_or(sp);
             return Err(msg::sat_send_elsewhere(&channel, sponsor_name));
         }
-        d.ssh_host
-            .map(Some)
+        crate::satellite::Dest::of(&d).map(Some)
             .ok_or_else(|| msg::sat_no_ssh_host(&channel))
     }
 
@@ -2094,7 +2109,7 @@ impl Node {
     /// message and no transfer: the far side has no khor to approve or
     /// receive anything, so the bytes just go, and the verb reports
     /// what moved (一期: sponsor 本机才有这条路).
-    pub fn send_to_satellite(&self, host: &str, path: &Path) -> Result<u64, String> {
+    pub fn send_to_satellite(&self, host: &satellite::Dest, path: &Path) -> Result<u64, String> {
         satellite::push_file(host, path)
     }
 
@@ -3638,15 +3653,53 @@ impl Node {
         if home == self.device() {
             return Err(msg::cant_forget_self(self.shown_name()));
         }
+        self.forget_id(&home.hex())?;
+        Ok(name)
+    }
+
+    /// Whether this machine logs in to `d` over ssh by the road on its
+    /// row: it sponsors the satellite, or carries the member (round
+    /// ROAD-4) — the rows whose kept secret stays.
+    pub(crate) fn logs_in_to(&self, d: &khor_sync::devices::DeviceInfo) -> bool {
+        let me = Some(self.device_str());
+        d.sponsor.as_deref() == me || (d.sponsor.is_none() && d.carrier.as_deref() == me)
+    }
+
+    /// The names of the secrets this machine's ssh roads still ask for:
+    /// what the sweep keeps ([`crate::secret::sweep`]).
+    pub(crate) fn secrets_in_use(&self, devs: &[khor_sync::devices::DeviceInfo]) -> std::collections::HashSet<String> {
+        devs.iter()
+            .filter(|d| self.logs_in_to(d))
+            .filter_map(satellite::Dest::of)
+            .filter(satellite::Dest::asks)
+            .map(|to| to.secret_key())
+            .collect()
+    }
+
+    /// [`Node::forget_device`] by id: 转正 drops the satellite row while
+    /// the new member wears the same name, so a name would be ambiguous.
+    pub(crate) fn forget_id(&self, id: &str) -> Result<(), String> {
         let loaded = self.devices_loaded()?;
-        loaded.doc.set_gone(&home.hex(), true)?;
+        // A satellite of this machine, or a member it carries, that
+        // logged in with a password or a key's passphrase: the secret
+        // goes with it (docs/NET.md 添加机器 认证方式). Removed on another
+        // machine, the sponsor's sweep drops it instead
+        // (`satellite_sampler`).
+        if let Some(row) = loaded.doc.get(id)
+            && self.logs_in_to(&row)
+            && let Some(to) = satellite::Dest::of(&row)
+            && to.asks()
+        {
+            crate::secret::drop_kept(&self.root, &to.secret_key())?;
+        }
+        loaded.doc.set_gone(id, true)?;
         // On the machine holding the root the removal is also a
         // revocation (docs/CONNECT.md 名单是信任的唯一出处); anywhere else
         // it waits in `khor pending` for the holder.
-        self.revoke_if_holder(&loaded.doc, &home.hex())?;
+        self.revoke_if_holder(&loaded.doc, id)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
-        Ok(name)
+        Ok(())
     }
 
     /// The rows only this device can derive — what `Request::Sessions`
@@ -3851,18 +3904,31 @@ impl Node {
         loop {
             tick.tick().await;
             let Ok(devs) = self.devices() else { continue };
+            // The sweep (docs/NET.md 添加机器 认证方式): a password or
+            // passphrase kept for a satellite whose row left the table —
+            // removed here or on any other machine — goes now. A member
+            // this machine carries logs in by its road too (round ROAD-4).
+            let _ = crate::secret::sweep(&self.root, &self.secrets_in_use(&devs), now_ms());
             for d in devs {
                 if d.sponsor.as_deref() != Some(self.device_str()) {
                     continue;
                 }
-                let Some(host) = d.ssh_host.clone() else {
+                let Some(host) = satellite::Dest::of(&d) else {
                     continue;
                 };
                 // Off the runtime: a sample is an ssh dial plus a
                 // one-second on-host measurement.
-                let taken = tokio::task::spawn_blocking(move || satellite::sample(&host)).await;
-                if let Ok(Ok(v)) = taken {
-                    let _ = self.cache_peer_vitals(&d.id, &v);
+                let taken = tokio::task::spawn_blocking(move || satellite::sample_read(&host)).await;
+                // What broke is kept for the road to it (round ROAD-1).
+                let mut book = self.roadbook.lock().unwrap_or_else(|p| p.into_inner());
+                match taken {
+                    Ok(Ok(v)) => {
+                        book.sampled(&d.id, None);
+                        drop(book);
+                        let _ = self.cache_peer_vitals(&d.id, &v);
+                    }
+                    Ok(Err((_, broke, said))) => book.sampled(&d.id, Some((broke, said))),
+                    Err(_) => {}
                 }
             }
         }

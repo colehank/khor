@@ -12,6 +12,11 @@ import { gui, msg } from "./gen/catalog";
 import type { MenuRows } from "./components/OmniMenu";
 import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
 import type { Connections } from "./gen/bindings/Connections";
+import type { ReachReport } from "./gen/bindings/ReachReport";
+import type { ProxyLine } from "./gen/bindings/ProxyLine";
+import type { AddAsk } from "./gen/bindings/AddAsk";
+import type { AddRun } from "./gen/bindings/AddRun";
+import type { LoginAsk } from "./gen/bindings/LoginAsk";
 import type { TabRow } from "./gen/bindings/TabRow";
 import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
@@ -125,6 +130,9 @@ export type {
   ChatBatch,
   ChatFrame,
   DirListing,
+  AddAsk,
+  AddRun,
+  LoginAsk,
   Found,
   SearchHit,
   RecentRow,
@@ -966,6 +974,34 @@ export const fetchRoadShare = () => call<RoadShare>("road_share");
 /** The 网络 page's 连接 group: home relay, relay round trips, and per
     machine its road, round trip, age and last failure (round NET-2). */
 export const fetchConnections = () => call<Connections>("connections");
+/** 全网谁够得着 (round ROAD-1): every online machine connects once to
+    `host:port` (`null` = ssh's 22) from its own network and reports what
+    it saw; the entrance is the fastest. Takes up to ~20 s when a machine
+    does not answer. App only: the web face does not offer it. */
+export const reachProbe = (host: string, port: number | null) =>
+  call<ReachReport>("reach_probe", { host, port });
+/** 经由: the ProxyCommand that reaches `host:port` through `machine`
+    (`khor pipe --via`), as an ssh config line and a one-off command, for
+    a copy button. khor never writes the user's ssh config. */
+export const proxyLine = (machine: string, host: string, port: number | null) =>
+  call<ProxyLine>("proxy_line", { machine, host, port });
+/** 添加机器 over SSH (round join-d): starts the add as the run `token`
+    (made by the face, so a second press starts nothing). Read it with
+    `addRead`. The secret in `ask` goes to the OS secret store of the
+    machine that runs ssh and nowhere else. App only. */
+export const addStart = (token: string, ask: AddAsk) => call<null>("add_start", { token, ask });
+/** The run `token`'s steps so far, and how it ended once it has. */
+export const addRead = (token: string) => call<AddRun>("add_read", { token });
+/** 安装 khor on an SSH 主机 this machine sponsors, as the run `token`. */
+export const promoteStart = (token: string, machine: string) => call<null>("promote_start", { token, machine });
+/** The Host names of this machine's ssh config, read only. */
+export const fetchSshConfigHosts = () => call<string[]>("ssh_config_hosts");
+/** 上传公钥: a terminal session on this machine running `ssh-copy-id`
+    for the form's host. Answers the session's id. */
+export const openCopyId = (ask: LoginAsk) => call<string>("open_copy_id", { ask });
+/** 选择密钥文件…: the system's picker in `~/.ssh`; the path, or `null`
+    when cancelled. */
+export const pickKeyFile = () => call<string | null>("pick_key_file");
 /** This face is on screen, or stopped being: what paces the resident's
     pump (`khor_gui_core::face_here`, round NET-6). */
 export const faceHere = (visible: boolean) => call<null>("face_here", { visible });

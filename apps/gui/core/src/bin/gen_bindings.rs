@@ -42,6 +42,14 @@ fn main() {
     // 网络's 直连占比: asked on its own when the page opens.
     khor_gui_core::RoadShare::export_all_to(&dir).expect("export RoadShare");
     khor_gui_core::Connections::export_all_to(&dir).expect("export Connections");
+    // 全网谁够得着: asked by one press, embedded in nothing. Walks into
+    // `ReachRow` and `ReachOutcome` from here.
+    khor_gui_core::ReachReport::export_all_to(&dir).expect("export ReachReport");
+    // 经由's copy line: asked by one screen, embedded in nothing.
+    khor_gui_core::ProxyLine::export_all_to(&dir).expect("export ProxyLine");
+    khor_gui_core::add::AddAsk::export_all_to(&dir).expect("export AddAsk");
+    khor_gui_core::add::AddRun::export_all_to(&dir).expect("export AddRun");
+    khor_gui_core::add::LoginAsk::export_all_to(&dir).expect("export LoginAsk");
     khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
     khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
     // The identity card's foot: asked for on its own, embedded in no row.

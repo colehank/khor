@@ -771,6 +771,18 @@ impl Wires {
         });
     }
 
+    /// A new road to this machine came up (round ROAD-2: a carried link):
+    /// the pump's wait on it is forgiven, so the next round dials.
+    pub(crate) fn forgive(&self, id: &str) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        for ((who, _), slot) in slots.iter_mut() {
+            if who == id {
+                slot.failures = 0;
+                slot.retry_at = None;
+            }
+        }
+    }
+
     /// The network under this machine changed, or it woke from sleep:
     /// any wire not heard within its [`Patience::after_change`] from now is
     /// presumed to have died with the old network ([`Self::tick`] judges).

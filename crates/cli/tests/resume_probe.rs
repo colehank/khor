@@ -44,6 +44,8 @@ async fn word(n: &Node, id: &str) -> String {
                 Hop::Relay => "中继".to_owned(),
                 Hop::Idle => "未连接".to_owned(),
                 Hop::NoServe => "无常驻".to_owned(),
+                Hop::Ssh => "经 SSH".to_owned(),
+                Hop::Forwarded => "转发".to_owned(),
             })
             .unwrap_or_else(|| "（无行）".to_owned()),
         Err(_) => "（读不到）".to_owned(),

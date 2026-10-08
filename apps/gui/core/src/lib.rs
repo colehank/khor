@@ -9,6 +9,7 @@
 //! node. The GUI must not re-derive any of it (docs/UX.md 状态呈现).
 
 pub mod acs;
+pub mod add;
 pub mod agents;
 pub mod api;
 pub mod chat;
@@ -264,6 +265,112 @@ pub struct PeerRow {
     pub unanswered: u64,
 }
 
+/// **Every machine's try at one address** (round ROAD-1, 全网谁够得着):
+/// `khor_core::ReachView` with names on the machines and the key shown
+/// as OpenSSH prints it.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ReachReport {
+    pub host: String,
+    pub port: u16,
+    /// This machine first, then the table's order; satellites left out.
+    pub rows: Vec<ReachRow>,
+    /// The entrance's device id: the lowest ms among the reached, this
+    /// machine on a tie.
+    pub entrance: Option<String>,
+    /// Two machines' known_hosts hold different keys for the name: it
+    /// means a different machine from each.
+    pub disagree: bool,
+    /// The shown name of the machine in the table whose id is that host
+    /// key (a satellite), when one is.
+    pub known_as: Option<String>,
+}
+
+/// One machine's try.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ReachRow {
+    pub id: String,
+    pub shown: String,
+    pub here: bool,
+    pub outcome: khor_core::ReachOutcome,
+    /// The TCP connect, whole ms.
+    #[ts(type = "number | null")]
+    pub ms: Option<u32>,
+    /// The address its resolver gave and it tried.
+    pub addr: Option<String>,
+    /// The server's first line (`SSH-2.0-OpenSSH_9.6`).
+    pub banner: Option<String>,
+    /// `SHA256:<base64>`, as that machine's known_hosts holds it.
+    pub host_key: Option<String>,
+    /// Words for a failure, in this machine's language.
+    pub why: Option<String>,
+}
+
+/// **The ProxyCommand through a khor machine** (round ROAD-1, 经由):
+/// the ssh config line and the one-off ssh command, to show with a copy
+/// button. khor never writes the user's ssh config.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ProxyLine {
+    /// `ProxyCommand '<khor>' pipe --via '<machine>' %h %p`
+    pub config_line: String,
+    /// `ssh -o 'ProxyCommand=…' [-p port] '<host>'`
+    pub command: String,
+}
+
+/// [`ProxyLine`] for `host:port` through `machine`; `port` `None` is 22.
+pub fn proxy_line(machine: &str, host: &str, port: Option<u16>) -> ProxyLine {
+    let (config_line, command) =
+        khor_node::pipe::proxy_line(machine, host, khor_node::reach::port_or_ssh(port));
+    ProxyLine { config_line, command }
+}
+
+/// Every machine's try at `host:port` (`Node::reach_probe`); `port`
+/// `None` is ssh's 22. With no resident it binds an endpoint of its own
+/// and still asks everyone; an error is a probe that could not run at
+/// all (no address given, the resident's hand-off failed).
+pub async fn reach_probe(root: &Path, host: String, port: Option<u16>) -> Result<ReachReport, String> {
+    let at = root.to_path_buf();
+    let n = tokio::task::spawn_blocking(move || open(&at))
+        .await
+        .map_err(|e| e.to_string())??;
+    let port = khor_node::reach::port_or_ssh(port);
+    let devices = n.devices().unwrap_or_default();
+    let shown = |id: &str| {
+        devices
+            .iter()
+            .find(|d| d.id == id)
+            .map(|d| d.shown().to_owned())
+            .unwrap_or_else(|| id.chars().take(8).collect())
+    };
+    let view = n.reach_probe(&host, port).await?;
+    let known_as = view
+        .rows
+        .iter()
+        .filter_map(|(_, s)| s.host_key.as_deref())
+        .find_map(|k| devices.iter().find(|d| d.id == k).map(|d| d.shown().to_owned()));
+    Ok(ReachReport {
+        rows: view
+            .rows
+            .iter()
+            .map(|(id, s)| ReachRow {
+                shown: shown(id),
+                here: id == n.device_str(),
+                id: id.clone(),
+                outcome: s.outcome,
+                ms: s.ms,
+                addr: s.addr.clone(),
+                banner: s.banner.clone(),
+                host_key: s.host_key.as_deref().map(khor_node::reach::shown_key),
+                why: s.why.clone(),
+            })
+            .collect(),
+        host: view.host,
+        port: view.port,
+        entrance: view.entrance,
+        disagree: view.disagree,
+        known_as,
+    })
+}
+
 /// A face is on screen, or stopped being (`Node::face_is_here`): the
 /// resident's pump beats every 5 s while one is and every 30 s while none
 /// is, and gives a face that arrives a round at once (round NET-6). With
@@ -465,6 +572,10 @@ pub struct DeviceRow {
     /// road", this answers "whose road": a satellite has none of its
     /// own, so faces print 「经 <sponsor>」 in the road's place.
     pub sponsor: Option<String>,
+    /// An SSH 主机's jump host, as its row keeps it (`ssh_jump`, round
+    /// join-a): the machine page draws it as the road's middle stop.
+    /// `None` for a direct ssh road and for every khor 主机.
+    pub ssh_jump: Option<String>,
     /// The directories this machine is asked to keep an eye on — the
     /// setting, as kept on its row in the device table (2026-09-06
     /// 关注目录). What the editor on the card starts from.
@@ -1211,6 +1322,7 @@ fn rows_of_devices(
     Ok(all
         .into_iter()
         .map(|d| DeviceRow {
+            ssh_jump: d.ssh_jump.clone(),
             sponsor: d
                 .sponsor
                 .as_ref()
@@ -1264,10 +1376,14 @@ fn rows_of_devices(
             // This machine's from its live wires, first-hand, the same
             // readings `rtt_ms` and `relay` are; another machine's as it
             // wrote them into the table (round NET-12).
+            // Satellites through their sponsors (round ROAD-1): this
+            // machine's ssh to its own read live, the rest composed.
             roads: if d.id == me {
-                own_roads(&links)
+                let mut own = own_roads(&links);
+                own.extend(n.my_satellite_roads());
+                n.with_satellite_roads(&d.id, own)
             } else {
-                n.roads_of(&d)
+                n.with_satellite_roads(&d.id, n.roads_of(&d))
             },
             face: n.face_of(&d),
             pinned: d.pinned,
@@ -1307,30 +1423,7 @@ fn rows_of_devices(
 /// its own edges, never this machine's own row read back from the table
 /// (round NET-12, `khor_node::roadbook`).
 fn own_roads(links: &[(String, khor_node::Link)]) -> Vec<khor_node::Road> {
-    use khor_node::{Hop, RoadKind};
-    links
-        .iter()
-        .filter_map(|(to, l)| {
-            // `none` is unreachable (round NET-13); an idle wire is no road
-            // at all, as the table would hold none for it.
-            let road = match (l.hop, l.down_ms) {
-                (Hop::Direct, _) => RoadKind::Direct,
-                (Hop::Relay, _) => RoadKind::Relay,
-                (_, Some(_)) => RoadKind::None,
-                _ => return None,
-            };
-            Some(khor_node::Road {
-                to: to.clone(),
-                road,
-                relay: if road == RoadKind::Relay { l.relay.clone() } else { None },
-                ms: if road == RoadKind::None {
-                    None
-                } else {
-                    l.rtt_ms.map(|m| m.min(u32::from(u16::MAX)) as u16)
-                },
-            })
-        })
-        .collect()
+    khor_node::roadbook::own_roads(links)
 }
 
 /// What every machine in the network has spent, by day and by vendor —

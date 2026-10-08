@@ -9,7 +9,19 @@ edition.workspace = true
 # crate.
 rustls = { version = "0.23", default-features = false, features = ["std"] }
 khor-catalog.workspace = true
-iroh.workspace = true
+# `unstable-custom-transports` (round ROAD-2): khor inside ssh and the
+# peer hop ride a transport of khor's own (`carry`) and a path selector
+# of khor's own. Unstable upstream; we vendor iroh, so it moves only when
+# we re-vendor — and re-vendoring must re-run audit/road-spike.
+iroh = { workspace = true, features = ["unstable-custom-transports"] }
+# The custom transport's types (`carry`): iroh-base for `CustomAddr`,
+# n0-watcher for the local address watch, noq-udp for `RecvMeta`, bytes
+# for the frames. All four are iroh's own, at the versions it pins — no
+# new package. Licences: MIT OR Apache-2.0 (each checked).
+iroh-base = "1.2"
+n0-watcher = "1.0"
+noq-udp = { version = "1.3", default-features = false }
+bytes = "1"
 iroh-mdns-address-lookup.workspace = true
 # Reading the mdns service's event stream, which is a `Stream` and needs
 # a `StreamExt` to consume. iroh's own, so no new version in the tree.

@@ -834,6 +834,11 @@ aside[data-side] {
   background: var(--popover);
   z-index: 1;
 }
+/* A lone act that ends the sheet (完成) keeps the trailing edge, as
+   iOS's Done does; a lone 返回 / 取消 stays leading (round join-d). */
+[data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-footer"] > [data-footer-trailing]:only-child {
+  margin-inline-start: auto;
+}
 [data-narrow] [data-slot="dialog-content"][data-form] > [data-slot="dialog-header"] {
   z-index: 2;
   /* The title lies over the row the buttons stand in; it takes no

@@ -93,6 +93,7 @@ const reshare = (f: Fit, from: number, to: number): Fit => {
 const LIVE = {
   sessions: fit(1.7, 1.81, 20.6),
   devices: fit(1.45, 1.45, 21.11), // square
+  sshHost: fit(1.45, 1.45, 21.11), // square: devices' own outline
   files: fit(1.45, 1.49, 21.11), // square
   browser: fit(2.93, 2.93, 18.15), // round
   more: fit(2.92, 2.92, 18.16),
@@ -275,6 +276,26 @@ export function IconDevices({ className }: IconProps) {
           <rect data-body x="3.5" y="13" width="17" height="6.4" rx="2.6" />
         </g>
       )}
+    </RailGlyph>
+  );
+}
+
+/**
+ * An SSH host = the rack's box, one window tall: the window is the solid
+ * piece and a `>_` prompt is punched through it with the family's line,
+ * the keyboard's construction (round join-d, the owner kept the lab's
+ * proposal). It sits beside `devices` on 添加机器's first choice at the
+ * same weight, and its box is `devices`' outline exactly (3.5–20.5 ×
+ * 4.6–19.4), so the measured live area is `devices`' too.
+ */
+export function IconSshHost({ className }: IconProps) {
+  return (
+    <RailGlyph
+      className={className}
+      live={LIVE.sshHost}
+      cut={<path d="M7.7 8.9 10.8 12l-3.1 3.1M12.6 15.1h3.8" stroke="black" />}
+    >
+      {(cutId) => <rect data-body mask={`url(#${cutId})`} x="3.5" y="4.6" width="17" height="14.8" rx="2.6" />}
     </RailGlyph>
   );
 }

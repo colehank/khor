@@ -19,7 +19,9 @@ base64.workspace = true
 sha2.workspace = true
 getrandom.workspace = true
 iroh.workspace = true
-tokio.workspace = true
+# `process` for the carrier's ssh session (round ROAD-2, `carry`): its
+# stdin and stdout are a link iroh reads without a thread per pipe.
+tokio = { workspace = true, features = ["process"] }
 gethostname.workspace = true
 serde_bytes.workspace = true
 blake3.workspace = true
@@ -96,6 +98,7 @@ notify = "8.2"
 [target.'cfg(target_os = "macos")'.dependencies]
 io-kit-sys.workspace = true
 core-foundation.workspace = true
+security-framework.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nvml-wrapper.workspace = true

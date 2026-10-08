@@ -57,6 +57,10 @@ quiet = "未连"
 down = "不通"
 # 本机没有常驻,压根没人能读这个数——和「未连接」分开,因为它有解:去起 serve。
 no-serve = "serve 未运行"
+# 经本机到它的 SSH 会话转连(ROAD-2,它连不上互联网)。
+ssh = "经 SSH"
+# 经第三台 khor 机器转发(ROAD-2)。
+forwarded = "转发"
 
 [avatar]
 axis-palette = "色板"
@@ -147,6 +151,12 @@ tabs-limit = "标签页上限"
 session-form = "新会话默认打开方式"
 files-click = "单击文件"
 confirm-takeover = "接管会话"
+# 连接(ROAD-2)。没有互联网、只能经 SSH 登录的 khor 主机，由能登录它的机器转连。
+ssh-carry = "通过 SSH 转连"
+ssh-carry-note = "无法访问互联网的 khor 主机，由可以通过 SSH 登录它的机器转连。重启 khor 后生效"
+# 两台机器之间没有直连时，先经一台都连得上的机器转发，再用中继；中间那台只转发密文。
+peer-hop = "通过其他机器转发"
+peer-hop-note = "没有直连时，先通过两端都能连接的机器转发，再使用中继"
 # 每条侧边栏右键「删除」之前那一问(docs/SHELL.md 第四轮);取代「删除工作区」那一项。
 confirm-delete = "删除"
 
@@ -222,7 +232,7 @@ usage = """
                         就是本机，可以写 .）；rm 移出这张表，目录本身
                         一个字节都不动；pin/unpin 让它排在最前面
   rm [-m 机器] <路径>     把那个文件或目录删掉。**本机的进废纸篓，别的机器
-                        和卫星是直接删、找不回来**（那边没有废纸篓）。
+                        和 SSH 主机是直接删、找不回来**（那边没有废纸篓）。
                         目录连里面的一起走；路径不存在就拒绝
   mkdir [-m 机器] <路径>  在那台机器上建一个目录。只建一级，上一级不在就
                         拒绝；名字已经有了也拒绝，没有 -p 也没有 -f
@@ -241,7 +251,7 @@ usage = """
                         在那台机器的那个目录下面找这个词：先是名字里带它的
                         文件（一行一个路径），再是内容里带它的行
                         （`路径:行号: 那一行`）。不区分大小写，当纯子串，
-                        不是正则；本机这条路尊重 .gitignore，卫星那条
+                        不是正则；本机这条路尊重 .gitignore，SSH 主机
                         只跳过 .git。最多 50 个名字、200 行、跑 5 秒，
                         到顶了在 stderr 上说一句
   read <机器> <文件>      把文档读成文字打出来：md/csv/tsv 原样（它们本来
@@ -263,6 +273,20 @@ usage = """
                         标记的结果打到标准输出，退出码 1
   borrow <机器>         借那台机器的网：起一个本地代理口，浏览器指过来就从
                         它那儿出去（要 serve 在跑；close 那条 session 收口）
+  reach <主机> [--port 端口]
+                        每台在线的机器各用自己的网连一次这个地址（默认 ssh 的
+                        22），报可达与否、毫秒、对方的第一行（ssh 的版本行）、
+                        它自己 known_hosts 里这个名字的钥匙；最快连上的是入口。
+                        只连这一个地址，不扫描，不取钥匙
+  pipe --via <机器> <主机> <端口>
+                        经那台机器的网接一根管子到这个主机的这个端口，接在标准输入输出上。
+                        给 ssh 当 ProxyCommand：
+                        ssh -o ProxyCommand='khor pipe --via 实验室 %h %p' 内网机
+  carry <机器> <SSH主机> [--port <端口>] [--via <跳板机>]
+      [--password | --key <密钥文件> [--passphrase]] | carry <机器> --off
+                        连不上互联网的 khor 主机，经本机到它的 SSH 登录转连；
+                        别的机器经本机连到它。登录方式同 add：密码和口令从
+                        标准输入读取，只存进本机的系统钥匙串
   tabs [ls] | open [-m 机器] <网址> | close|focus|pin|unpin <序号|id>
                         浏览器这块屏幕上开着的标签页。**本机的，不同步**：
                         开着什么是这块屏幕的事，别的机器不看（常去的地方才跟着人走）。
@@ -378,12 +402,26 @@ usage = """
                         --json 出原样（GUI 那一页读的是同一份）；
                         --fix 跑那一项的修法（能修的项在行尾写着怎么跑）
   invite                出一张一次性配对票（要求 serve 在跑）
-  pair <票>             凭票入网
-  adopt <ssh主机> [名字] 领一台只有 ssh 的机器进网（卫星）：身份从你的
-                        known_hosts 来，一切操作经本机代跑；移除还是
-                        forget。要求免密 ssh（有密码提示的连不上）
+  pair <票|->           凭票入网；- 从标准输入读票
+  add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [-m <khor主机>]
+      [--password | --key <密钥文件> [--passphrase]] [--no-install]
+                        通过 SSH 添加一台机器：默认安装 khor，作为 khor 主机
+                        （用户级常驻，不需要 root）；无法持续运行时移除安装
+                        的文件，改为通过 SSH 连接。--no-install 不安装 khor，
+                        直接作为 SSH 主机（不在该主机上留下文件，由本机通过
+                        SSH 执行）。--port 不填时用 22 或你的 ssh 配置里的
+                        端口。--via 每条 ssh 都经过该跳板机，不修改你的 ssh
+                        配置。-m 由那台 khor 主机经它自己的 ssh 添加（它代为
+                        执行，只能用密钥，--key 是它上面的路径）。--password
+                        从标准输入读取密码，只存进本机的系统钥匙串。--key 用
+                        该密钥文件登录，只记录路径，不复制密钥；--passphrase
+                        从标准输入读取它的口令，同样只存进本机钥匙串。不加时
+                        用你的 ssh 配置和 ssh-agent 中的密钥。主机身份取自你
+                        的 known_hosts
+  promote <SSH主机>     安装 khor：在本机添加的 SSH 主机上安装 khor，名称保留，
+                        原来的 SSH 主机那一行移除
   pending [--json]      等持根的机器批的：刚配进来还没拿到证书的机器、不持根
-                        的机器领进来的卫星、在别处删掉了还没撤销的机器。一行
+                        的机器添加的 SSH 主机、在别处删掉了还没撤销的机器。一行
                         一台：id、名字、等的是什么
   approve <机器>         在持根的机器上批一台待批的：签它的证书（移除就签它的
                         撤销），马上同步给全网
@@ -603,7 +641,7 @@ quiet-for = "{0}无消息"
 # sponsor is said out loud because it is the satellite's home from now
 # on, and the promise (全网都看得见) is the CRDT doing what it always
 # does, said so nobody goes checking.
-adopted = "领进来了：{0}，经 {1} 说话；全网马上都看得见它"
+adopted = "已添加 SSH 主机 {0}，由 {1} 通过 SSH 连接；全网立即可见"
 # 用户根钥匙与名单（docs/CONNECT.md 身份）。
 root-born-hint = "这台机器刚生成了网络的根钥匙：它签字决定哪些机器算你的。把 24 个恢复词抄在纸上收好——丢了它就再也加不了、撤不了机器。看恢复词：khor root words {0}"
 root-show-key = "根公钥：{0}"
@@ -617,12 +655,32 @@ root-recovered = "根钥匙已恢复到本机：{0}"
 root-inited = "已生成根钥匙 {0}，签了机器表里的 {1} 台；它们下次同步时认上"
 pending-none = "没有待批的"
 pending-kind-device = "入网"
-pending-kind-satellite = "卫星入网"
+pending-kind-satellite = "SSH 主机加入"
 pending-kind-leave = "移除"
 approved = "已批准「{0}」，名单第 {1} 版"
 revoked-ok = "已撤销「{0}」，名单第 {1} 版"
 pair-pending-hint = "已配上，但这台还没拿到证书：持根的机器不在这次配对里。在持根的那台上跑 khor approve 批了之后，全网才认它"
-adopt-pending-hint = "卫星已领进来，但还不在名单上：本机不持根。在持根的那台上跑 khor approve 批"
+# 添加机器 (`khor add`, `khor promote`): the steps as the terminal
+# prints them, what each did, and the outcome.
+add-step-connect = "连接"
+add-step-place = "安装 khor"
+add-step-start = "启动"
+add-step-pair = "配对"
+add-step-undo = "移除安装的文件"
+add-step-satellite = "作为 SSH 主机添加"
+add-placed-fetched = "{0}，由目标主机自行下载"
+add-placed-pushed = "{0}，由本机上传"
+add-paired-carried = "经 SSH 转连"
+keeper-launchd = "退出登录后继续运行，开机时由 launchd 启动"
+keeper-boot = "退出登录后继续运行，开机时由 systemd 启动"
+keeper-login = "退出登录后继续运行，重启后登录一次才会启动"
+keeper-none = "退出登录后继续运行，重启后需手动运行 khor-serve-up"
+password-prompt = "密码"
+passphrase-prompt = "密钥口令"
+added-member = "已添加 {0}：已安装 khor，可直接连接"
+added-satellite = "{0}，已移除安装的文件，改为通过 SSH 连接"
+promoted = "已在 {0} 上安装 khor，它现在是 khor 主机"
+adopt-pending-hint = "SSH 主机已添加，但还不在名单上：本机不持根。在持根的机器上运行 khor approve 批准"
 doctor-roster-stale = "名单已过期 {0} 天（{1} 天前签发）：持根的机器很久没上线了，新证书一律不收"
 doctor-roster-none = "认得根钥匙，但手里没有一份验得过的名单"
 # A satellite's road column: it has no road of its own — its sponsor
@@ -633,8 +691,8 @@ via-sponsor = "经 {0}"
 # The tmux probe's two outcomes, told at adoption so the terminal's
 # nature is no surprise later (docs/SESSION.md 例外墓碑: persistence on
 # a satellite is borrowed from its own tmux, never hosted by khor).
-sat-tmux-yes = "它有 tmux，在它上面开的终端能持久"
-sat-tmux-no = "它没有 tmux，在它上面开的终端是临时的（连接断了就没了）"
+sat-tmux-yes = "该主机有 tmux，在其上打开的终端可以保持"
+sat-tmux-no = "该主机没有 tmux，在其上打开的终端是临时的，连接断开即关闭"
 # Said only when the number is non-zero. Zero rows and zero unreadable is
 # an idle machine; zero rows and a non-zero count is khor being out of
 # date, and nothing but this line tells the two apart.
@@ -1226,7 +1284,7 @@ resume-not-on-another-machine = "--resume 不能配 --on：要续的对话得在
 # Said on stderr when a ticket is minted: the ticket itself goes to
 # stdout so it can be piped, and the window is something the person has
 # to know without it landing in whatever they paste.
-invite-window = "这张配对票 {0} 分钟内有效，过期后需重新生成"
+invite-window = "{0} 分钟内有效，仅可使用一次"
 paired-ok = "配上了：{0}。它认识的机器现在都在你的机器表里"
 nothing-to-sync = "网里只有本机，没得同步"
 sync-failed-line = "{0}：没同步上——{1}"
@@ -1277,6 +1335,25 @@ relay-stats-no-device = "还没有设备连过"
 # Round NET-12: `khor devices --roads`.
 roads-ms = "{0} 毫秒"
 roads-unreported = "没有报告路（旧版 khor，或还没报）"
+# Round ROAD-1: `khor reach`.
+reach-head = "{0} 端口 {1}，每台机器各试一次"
+reach-reached = "可达"
+reach-silent-word = "无 ssh 应答"
+reach-refused-word = "拒绝连接"
+reach-timeout-word = "超时"
+reach-no-name-word = "无法解析"
+reach-unasked = "未询问"
+reach-predates-word = "版本过旧"
+reach-entrance = "入口：{0}（{1} 毫秒）"
+reach-no-entrance = "没有一台机器连得上它"
+reach-choose = "本机没有它的钥匙，几台机器又说法不一：选哪台做入口由你定"
+reach-disagree = "几台机器的 known_hosts 给这个名字记着不同的钥匙：它们说的不是同一台机器"
+reach-known-as = "这把钥匙是 {0} 的"
+# Round ROAD-1: roads with legs in `khor devices --roads`.
+roads-ssh = "ssh"
+roads-broken = "断在 {0} → {1}"
+roads-jump = "跳板"
+roads-broken-auth = "{0} 只接受密码登录"
 
 [msg]
 # ── the watch list (关注目录) ──
@@ -1444,7 +1521,7 @@ cant-revoke-holder = "不能撤销持根的这台自己"
 already-revoked = "「{0}」已经撤销过了"
 recover-other-network = "这台机器在另一张网里（根 {0}），这组恢复词是另一把根。先 khor leave 离开那张网，再恢复"
 root-already = "这里已经有根钥匙了：{0}"
-sat-revoked = "卫星「{0}」已被撤销，不再代它跑任何操作"
+sat-revoked = "SSH 主机「{0}」已被撤销，不再代为执行任何操作"
 # The Ls contract (`khor_node::files`): empty asks for home, anything
 # else is spelled from the root — a relative path would be relative to
 # wherever serve happened to start.
@@ -1942,6 +2019,23 @@ no-such-dir = "没有这个目录：{0}"
 # A fixed-target pipe could not open its stream. Only ever seen in a
 # log: the terminal protocol has no room to say it.
 tunnel-pipe-failed = "通道无法连接到 {0}：{1}"
+# Round ROAD-1: `khor reach`, every machine's try at one address.
+reach-no-name = "{0} 解析不到地址"
+reach-refused = "{0} 拒绝了连接：{1}"
+reach-timeout = "{0} 在 {1} 秒内没有回应"
+reach-paused = "{0} 已暂停，没有问它"
+reach-predates = "{0} 的 khor 版本较旧，不认识这个请求"
+reach-no-host = "要给一个地址"
+reach-silent = "{0} 接受了连接，但没有回 ssh 的版本行（可能是代理的假地址）"
+# khor 经 SSH 转连(ROAD-2):被转连那台上的 `khor _carry`,和转连那台。
+carry-off = "本机关闭了「经 SSH 转连」：khor config set ssh-carry on"
+carry-needs-serve = "本机的 khor 没有运行，无法经 SSH 转连"
+carry-not-a-machine = "{0} 不是网络中的机器"
+carry-set = "{0} 由本机经 SSH 转连：{1}"
+carry-unset = "本机不再转连 {0}"
+carry-is-satellite = "{0} 是 SSH 主机，不运行 khor，无法转连"
+carry-not-up = "到 {0} 的 SSH 没有连上"
+pipe-via-satellite = "{0} 是卫星，不是 khor，经不了它；它的 ssh 用 ssh -J 跳"
 self-moved = "khor 程序已不在 {0}（已升级或移动），需重启 serve"
 # What the scheduler is told about itself, appended to the vendor's own
 # system prompt (docs/AGENT.md). Short on purpose: the tools carry their
@@ -2182,25 +2276,68 @@ ssh-wont-run = "无法运行 ssh：{0}"
 # prompts fail fast, and ssh's sentence is what tells "no route" from
 # "wants a password" — khor must not paraphrase a diagnosis it did not
 # make.
-sat-cant-reach = "ssh 无法连接 {0}（需要免密登录）：{1}"
+sat-cant-reach = "SSH 无法连接 {0}：{1}"
 # The identity rule: khor reads known_hosts, never keyscans — only the
 # trust the user already extended counts, so the fix is theirs to do
 # once by hand.
-sat-not-in-known-hosts = "known_hosts 里没有 {0} 的公钥。先自己 ssh 连它一次（把指纹认下来），再回来领"
+# Which segment of a road through a jump broke (`satellite::broken`),
+# with ssh's own last line.
+sat-to-jump-broken = "本机无法连接跳板机 {0}：{1}"
+sat-jump-to-target-broken = "跳板机 {0} 无法连接目标主机 {1}：{2}"
+# BatchMode stopped at the target's door. khor never takes a password;
+# {1} is the command that puts this machine's key there.
+sat-password-only = "{0} 未接受本机的密钥。改用密码登录，或在终端中运行 {1} 上传公钥"
+# 认证方式 密码 (crates/node/src/secret.rs): the password is kept only in
+# the OS secret store of the machine that runs ssh, and ssh asks khor for
+# it through SSH_ASKPASS.
+sat-password-refused = "{0} 未接受保存的密码"
+sat-password-missing = "本机没有保存 {0} 的密码"
+# 认证方式 密钥 with a key file (round 3): khor keeps only the path; a
+# locked key's passphrase is kept like a password. {0} the host, {1} the
+# key file's path, {2} the ssh-copy-id line.
+sat-passphrase-missing = "本机没有保存 {0} 所用密钥的口令"
+sat-passphrase-refused = "{0} 未接受密钥 {1}，或保存的口令不正确"
+sat-key-locked = "密钥 {0} 设有口令。添加时输入口令，口令只保存在本机钥匙串中"
+sat-key-refused = "{0} 未接受密钥 {1}。在终端中运行 {2} 上传公钥"
+sat-one-time-code = "{0} 每次登录都要求一次性验证码，khor 不支持这类主机"
+no-secret-store = "本机没有可用的系统钥匙串，无法保存密码；改用密钥登录"
+secret-store-failed = "无法访问系统钥匙串：{0}"
+password-not-given = "标准输入中没有密码"
+# 通过 khor 主机添加 (Node::add_on): that machine runs the add as the sponsor.
+add-on-no-password = "通过 khor 主机 {0} 添加时只能使用密钥登录：密码只保存在运行 ssh 的机器上，不经网络传输"
+add-on-no-passphrase = "通过 khor 主机 {0} 添加时不能使用设有口令的密钥：口令只保存在运行 ssh 的机器上，不经网络传输"
+add-on-self = "这就是本机，直接添加即可"
+add-on-predates = "{0} 上的 khor 版本过旧，无法代为添加；先更新它"
+add-on-needs-serve = "{0} 上的 khor 没有常驻运行，无法代为添加"
+# 添加机器 over ssh (`khor_node::join`). Why a member attempt became a
+# satellite, one sentence each; {0} is the host.
+add-timed-out = "{0} 秒内没有响应"
+add-why-bin-ro = "{0} 的 ~/.local/bin 不可写"
+add-why-no-build = "khor 尚无适用于 {0} 的版本"
+add-why-cant-place = "无法在 {0} 上安装 khor：{1}"
+add-why-no-resident = "无法在 {0} 上持续运行 khor：会话结束后它就停止了"
+add-why-start-failed = "khor 无法在 {0} 上启动：{1}"
+add-why-no-pair = "{0} 上的 khor 未在 {1} 秒内连接回来"
+add-why-no-relay = "{0} 无法连接任何中继，经 SSH 转连也没有连上"
+add-no-asset-here = "本机也无法获取 {0}"
+add-need-host = "先输入主机"
+add-lost = "找不到这次添加的进度，可能是 khor 已重启"
+promote-stayed-satellite = "未能安装 khor，它仍是 SSH 主机：{0}"
+sat-not-in-known-hosts = "known_hosts 中没有 {0} 的主机密钥。先用 ssh 连接一次并确认指纹，再回来添加"
 # The sponsor gate on relayed readings: one row, one speaker — a second
 # machine answering for somebody else's satellite would be a staler
 # second voice on the same row.
-not-my-satellite = "{0} 不是这台机器领的卫星，它的读数归它的 sponsor 说"
+not-my-satellite = "{0} 不是本机添加的 SSH 主机，它的读数由添加它的机器提供"
 # The gap before the first sample lands: an honest "not yet", never a
 # row of zeros dressed as a reading.
-sat-not-sampled-yet = "还没采到它的读数（sponsor 每分钟采一轮）"
+sat-not-sampled-yet = "还没有读数（添加它的机器每分钟采集一次）"
 # A satellite row with no ssh destination on record: adopted by an
 # older khor, or the register lost — either way the fix is re-adopting.
-sat-no-ssh-host = "{0} 是卫星，但表里没有它的 ssh 地址；在 sponsor 那台上重新 adopt 一次"
+sat-no-ssh-host = "{0} 是 SSH 主机，但没有记录它的 SSH 地址；在添加它的机器上重新运行 khor add --satellite"
 # The file push needs the sponsor's own scp; said with the sponsor's
 # name so the person knows exactly which machine to walk to (一期单
 # sponsor 的单点语义,说破不绕).
-sat-send-elsewhere = "{0} 是经 {1} 说话的卫星；发文件要在 {1} 那台上 khor send"
+sat-send-elsewhere = "{0} 是由 {1} 通过 SSH 连接的主机；在 {1} 上运行 khor send 发送文件"
 # **Refused rather than done weakly.** Saving anywhere else in khor
 # holds one promise: the file you are replacing is still the file you
 # read, or nothing is written (`files::write_whole`). Over ssh that
@@ -3834,7 +3971,7 @@ need-path = "先填写目录"
 need-pin = "先输入 PIN"
 need-text = "先写下要说的话"
 need-pick = "先选择要导入的会话"
-need-ticket = "先粘贴配对票"
+need-ticket = "先输入邀请码"
 need-relay = "先填写中继地址"
 need-account-name = "先为这个账号命名"
 need-key = "先粘贴密钥"
@@ -4140,6 +4277,73 @@ message-text = "留言"
 send-it = "发送"
 make-a-ticket = "邀请机器"
 join-with-a-ticket = "加入网络"
+# ── 添加机器（round join-d）：＋ 下唯一的入口，khor 主机用邀请码，SSH 主机走 SSH ──
+add-machine = "添加机器"
+add-machine-ask = "添加机器…"
+add-khor-host = "khor 主机"
+add-khor-host-note = "已安装 khor，使用邀请码添加"
+add-ssh-host = "SSH 主机"
+add-ssh-host-note = "通过 SSH 添加"
+have-a-ticket = "已有邀请码"
+add-host = "主机"
+add-host-hint = "user@host"
+add-port = "端口"
+add-config-hosts = "SSH 配置中的主机"
+add-jump = "跳板机"
+add-jump-none = "直接连接"
+add-jump-khor = "通过 khor 主机"
+add-jump-khor-note = "添加在该机器上执行"
+add-jump-ssh = "通过 SSH 跳板机"
+add-jump-other = "其他主机"
+add-copy-config = "复制 SSH 配置…"
+add-copy-config-note = "不添加机器，只经 khor 主机用 ssh 连接"
+add-probe = "检测哪些机器可以连接…"
+add-auth = "认证方式"
+add-auth-password = "密码"
+add-auth-key-file = "密钥 · {0}"
+add-key-files = "密钥文件"
+add-key-files-on = "{0} 上的密钥文件"
+add-key-default = "默认"
+add-key-default-note = "SSH 配置和 ssh-agent 中的密钥"
+add-key-pick = "选择密钥文件…"
+add-key-path-only = "khor 只记录密钥文件的路径，不复制密钥"
+add-key-only-on = "通过 {0} 添加时只能使用密钥。khor 只记录密钥文件的路径"
+add-password-kept = "密码仅保存在本机钥匙串中"
+add-run-on = "添加在 {0} 上执行，由 {0} 通过 SSH 连接 {1}"
+add-install = "在 {0} 上安装 khor"
+add-install-note = "关闭则仅通过 SSH 连接，不在该主机上留下文件"
+add-this-host = "该主机"
+add-via-title = "通过 {0} 连接"
+add-config-line = "SSH 配置中的一行"
+add-config-line-note = "加在 Host {0} 下。khor 不修改你的 SSH 配置"
+add-or-run = "或直接运行"
+copy-text = "复制"
+reach-title = "连通性检测"
+reach-busy = "正在检测…"
+reach-lead = "每台在线的机器分别尝试连接 {0} 的 {1} 端口"
+reach-here = "（本机）"
+reach-best = "延迟最低"
+reach-odd = "{0} 记录的主机密钥与其他机器记录的不一致，可能不是同一台主机"
+reach-unsure = "各机器记录的主机密钥不一致，本机没有该主机的记录。核对密钥后选择一台机器"
+add-adding = "添加 {0}"
+add-step-via = "通过 {0}"
+add-fell-back = "未能在 {0} 上安装 khor，已移除安装的文件"
+add-satellite-note = "操作通过 SSH 执行"
+login-title = "登录 {0}"
+login-key-refused = "{0} 不接受本机的密钥"
+login-copy-id = "上传公钥"
+login-copy-id-note = "在终端中运行 ssh-copy-id，之后使用密钥登录"
+login-use-password = "使用密码"
+passphrase-title = "{0} 需要口令"
+passphrase = "口令"
+passphrase-kept = "口令仅保存在本机钥匙串中"
+road-line = "线路"
+leg-to-sponsor = "本机无法连接 {0}"
+leg-to-jump = "本机无法连接跳板机 {0}"
+leg-jump-to-target = "跳板机无法连接目标主机：{0} 无法连接 {1}"
+leg-ssh = "{0} 无法通过 SSH 连接 {1}"
+leg-auth = "{0} 不接受 {1} 的密钥"
+promote-ask = "安装 khor…"
 # 待批与根钥匙的恢复词（docs/CONNECT.md 身份）。
 pending-title = "待批"
 approve = "批准"
@@ -4152,24 +4356,24 @@ pending-elsewhere = "在持根的机器上批准"
 root-words-title = "恢复词"
 root-words-body = "这 24 个词就是网络的根钥匙，它签字决定哪些机器算你的。抄在纸上收好：丢了它就再也加不了、撤不了机器，谁看见它谁就能把自己的机器签进你的网"
 root-words-show-ask = "显示…"
-ticket = "配对票"
+ticket = "邀请码"
 # 邀请设备的两种写法（2026-09-30，负责人：「邀请设备显示两个内容：现在的
 # token，和一个二维码」）。`ticket-qr` 是那张码的名字，给读屏的人——码里
 # 装的就是这串配对票，所以名字说的是它，不是「二维码」三个字。`copy-ticket`
 # 是对话框唯一的主按钮，当场做完，不带省略号；按下后借 `copied` /
 # `copy-failed` 报一声再回来（`copy-id` 的规矩）。
-ticket-qr = "配对票的二维码"
-copy-ticket = "复制配对票"
-paste-a-ticket = "在此粘贴配对票"
+ticket-qr = "邀请码的二维码"
+copy-ticket = "复制邀请码"
+paste-a-ticket = "输入邀请码"
 # Between pressing 加入 and an answer (UX-8): a dial can wait ten seconds,
 # and a busy button alone said nothing for all of them.
-join-dialing = "正在连接出票的机器…"
+join-dialing = "正在连接生成邀请码的机器…"
 # Under the list while the table holds only this machine (UX-8, the first
 # run), above the two buttons that start a pairing.
-alone-how = "这里只有这台机器。要加入另一台：在其中一台上「邀请机器」，把配对票带到另一台「加入网络」"
+alone-how = "这里只有这台机器。在 ＋ 中添加另一台"
 # The invite dialog once a machine joined with its ticket (UX-8): the
 # ticket is spent, so the dialog says who used it instead of offering it.
-ticket-used-by = "{0} 已用这张配对票加入"
+ticket-used-by = "{0} 已用这个邀请码加入"
 # 加入网络的扫码（docs/IOS.md 第三步）：有相机扫码的那一头（手机的构建）在配对票的框旁边多一颗
 # 「扫码」。码里装的就是那串票本身（`khor_gui_core::qr`），扫到后填进同一个框、走同一个「加入」——
 # 一个加入，两种填法。扫的时候整屏是相机，上面一句说对准什么，下面一颗「取消」（`delete-keep`）。

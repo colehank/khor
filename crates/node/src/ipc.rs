@@ -360,6 +360,46 @@ pub enum Op {
     /// `to`, which pulls it, is told to stop. Answered with
     /// [`Reply::Noted`]. Tail-appended.
     DropStop { token: String, to: String },
+    /// **Every machine's try at `host:port`** (round ROAD-1, `khor
+    /// reach`): the resident asks them all at once
+    /// (`proto::Request::Probe`). Answered [`Reply::ReachProbe`].
+    /// Tail-appended.
+    ReachProbe { host: String, port: u16 },
+    /// **A pipe to `target` (`host:port`) through `machine`'s network**
+    /// (round ROAD-1, `khor pipe`): the resident dials the exit's stream
+    /// and binds a loopback port that hands it to the one connection
+    /// that says the cookie first (`crate::pipe`). Answered
+    /// [`Reply::Piping`]. Tail-appended.
+    PipeOn { machine: String, target: String },
+    /// [`crate::proto::Request::AddOverSsh`] asked of `machine` by the
+    /// resident. Answered with [`Reply::Adding`]. Tail-appended.
+    AddOn {
+        machine: String,
+        token: String,
+        host: String,
+        port: Option<u16>,
+        jump: Option<String>,
+        identity: Option<String>,
+        name: Option<String>,
+        satellite_only: bool,
+    },
+    /// **khor inside ssh, this end** (round ROAD-2, `khor _carry`): the
+    /// resident binds a loopback port that takes the one connection saying
+    /// the cookie first and makes it the carried link to `carrier`
+    /// (`crate::carry`). Answered [`Reply::Piping`]. Tail-appended.
+    CarryIn { carrier: String },
+    /// **The add flow's carry** (round ROAD-3, `Node::carry_for`): an ssh
+    /// session to `id`, not paired yet, by this road, so its pairing can
+    /// ride it. Answered [`Reply::Noted`] once it has held. Tail-appended.
+    CarryFor {
+        id: String,
+        host: String,
+        port: Option<u16>,
+        jump: Option<String>,
+        identity: Option<String>,
+        password: bool,
+        passphrase: bool,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -460,6 +500,11 @@ impl Op {
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
             Op::DropInto { .. } => ("DropInto", DEADLINE_FAR),
             Op::DropStop { .. } => ("DropStop", DEADLINE_FAR),
+            Op::ReachProbe { .. } => ("ReachProbe", DEADLINE_FAR),
+            Op::PipeOn { .. } => ("PipeOn", DEADLINE_FAR),
+            Op::AddOn { .. } => ("AddOn", DEADLINE_FAR),
+            Op::CarryIn { .. } => ("CarryIn", DEADLINE_FAR),
+            Op::CarryFor { .. } => ("CarryFor", DEADLINE_FAR),
             Op::SyncNow => ("SyncNow", DEADLINE_SLOW),
             Op::Pair { .. } => ("Pair", DEADLINE_SLOW),
             Op::Borrow { .. } => ("Borrow", DEADLINE_SLOW),
@@ -667,6 +712,13 @@ pub enum Reply {
     },
     /// Tail-appended with [`Op::DropOn`].
     DropFile { state: crate::drops::DropState },
+    /// Tail-appended with [`Op::ReachProbe`].
+    ReachProbe { view: khor_core::ReachView },
+    /// Tail-appended with [`Op::PipeOn`]: where to connect, and the
+    /// cookie to say first.
+    Piping { addr: String, cookie: String },
+    /// Tail-appended with [`Op::AddOn`].
+    Adding { run: crate::join::Run },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

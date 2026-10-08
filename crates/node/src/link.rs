@@ -700,6 +700,10 @@ const PULL_AHEAD: u64 = 8;
 /// frame.
 pub const DROP_ASK_EVERY: Duration = Duration::from_millis(250);
 
+/// How often a routed add's asker reads the run again
+/// ([`Node::add_on`]): a step is seconds long, a mark is a line.
+pub const ADD_ASK_EVERY: Duration = Duration::from_millis(500);
+
 /// How often a drop's asker looks whether it was cancelled between its
 /// asks (`Node::drop_file_until`, item 71): the order to stop goes out
 /// within this of the ×, not a whole ask later.
@@ -866,6 +870,7 @@ impl Node {
                 self.relays_n0(),
                 preferred.as_deref(),
                 ports,
+                self.carrying(),
             )
         };
         // **The ports these ears had last time** (round NET-11), so a
@@ -1055,6 +1060,12 @@ impl Node {
         {
             let n = node.clone();
             tokio::spawn(async move { n.satellite_sampler().await });
+        }
+        // The carrier (round ROAD-2, khor inside ssh): an ssh session up to
+        // every member this machine carries.
+        if node.carry_on() && node.carrying().is_some() {
+            let n = node.clone();
+            tokio::spawn(async move { n.carrier().await });
         }
         // The day strip's sampler (`crates/node/src/day.rs`), on the same
         // footing and for the same reason: one sample is a whole
@@ -1258,7 +1269,7 @@ impl Node {
                             let remote = conn.remote_id().to_string();
                             let _ = done_tx.send(Some(true));
                             if conn.alpn() == endpoint::TUNNEL_ALPN {
-                                let _ = n.serve_tunnel(conn).await;
+                                let _ = n.serve_tunnel(conn, e).await;
                             } else {
                                 let _ = n.handle(conn, remote, e, done).await;
                             }
@@ -1876,6 +1887,29 @@ impl Node {
                 Ok(changes) => ipc::Reply::DirsChanged { changes },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::CarryIn { carrier } => match self.carry_hosted(&carrier).await {
+                Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::CarryFor { id, host, port, jump, identity, password, passphrase } => {
+                let to = crate::satellite::Dest::new(host, jump.as_deref())
+                    .on_port(port)
+                    .with_password(password)
+                    .with_identity(identity.as_deref())
+                    .with_passphrase(passphrase);
+                match self.carry_for(&id, to).await {
+                    Ok(()) => ipc::Reply::Noted,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::PipeOn { machine, target } => match self.pipe_hosted(ep, &machine, &target).await {
+                Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::ReachProbe { host, port } => match self.reach_probe_with(ep, &host, port).await {
+                Ok(view) => ipc::Reply::ReachProbe { view },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::StatOn { machine, path } => match self.stat_with(ep, &machine, &path).await {
                 Ok((total, at_ms, digest)) => ipc::Reply::Stat {
                     total,
@@ -2043,6 +2077,30 @@ impl Node {
                 Ok(()) => ipc::Reply::Noted,
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::AddOn {
+                machine,
+                token,
+                host,
+                port,
+                jump,
+                identity,
+                name,
+                satellite_only,
+            } => {
+                let req = Request::AddOverSsh {
+                    token,
+                    host,
+                    port,
+                    jump,
+                    identity,
+                    name,
+                    satellite_only,
+                };
+                match self.add_ask_with(ep, &machine, &req).await {
+                    Ok(run) => ipc::Reply::Adding { run },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
         }
     }
 
@@ -2172,10 +2230,7 @@ impl Node {
             .filter(|d| d.sponsor.is_some())
         {
             let sponsor_id = sat.sponsor.clone().expect("filtered on sponsor");
-            let host = sat
-                .ssh_host
-                .clone()
-                .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+            let host = crate::satellite::Dest::of(&sat).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
             let sponsor_name = self
                 .devices_loaded()?
                 .doc
@@ -2405,6 +2460,19 @@ impl Node {
         proto: wires::Proto,
         by: Option<std::time::Instant>,
     ) -> Result<Line, DialFailure> {
+        self.line_to_inner(ep, d, proto, by, true).await
+    }
+
+    /// [`Node::line_to_by`]; `may_hop` false for the wires a hop itself
+    /// rides (`crate::hop`), so a hop never asks for another.
+    pub(crate) async fn line_to_inner(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        proto: wires::Proto,
+        by: Option<std::time::Instant>,
+        may_hop: bool,
+    ) -> Result<Line, DialFailure> {
         if crate::pause::peer_on(self.root(), &d.id) {
             self.wires.retire_peer(&d.id, wires::Retired::Paused);
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
@@ -2422,6 +2490,11 @@ impl Node {
         let _one = lock.lock().await;
         if let Some(conn) = self.wires.live(&d.id, proto) {
             return Ok(line(conn));
+        }
+        // The peer hop (round ROAD-3): a road through a third machine,
+        // ready before the dial so it races from the first packet.
+        if may_hop {
+            self.hop_ahead(ep, d).await;
         }
         match self.dial(ep, &d.id, &d.addrs, proto.alpn(), by).await {
             Ok(conn) => {
@@ -2556,9 +2629,12 @@ impl Node {
         if self.wires.live(&d.id, wires::Proto::Main).is_some() {
             return Early::NotTaken;
         }
-        let Ok(addr) = endpoint::dial_addr(&d.id, &d.addrs, self.relays()) else {
+        self.hop_ahead(ep, d).await;
+        let Ok(mut addr) = endpoint::dial_addr(&d.id, &d.addrs, self.relays()) else {
             return Early::NotTaken;
         };
+        // A road this machine carries itself, as `dial_with` adds it.
+        addr.addrs.extend(self.carried_addr(&d.id));
         let Ok(frame) = proto::encode(req) else {
             return Early::NotTaken;
         };
@@ -2671,7 +2747,7 @@ impl Node {
     /// `None` = no live serve, take the direct path. `Some(Err)` = a
     /// serve is alive but unreachable — never fall back then: the key is
     /// taken and a second endpoint would knock both off.
-    async fn via_serve(&self, op: ipc::Op) -> Option<Result<ipc::Reply, String>> {
+    pub(crate) async fn via_serve(&self, op: ipc::Op) -> Option<Result<ipc::Reply, String>> {
         let f = match self.endpoint_file() {
             Ok(Some(f)) => f,
             _ => return None,
@@ -2695,15 +2771,27 @@ impl Node {
     /// table mid-session must stop being answered, and reading the doc
     /// each time is what makes the removal bite. The verdict is handed to
     /// `serve_stream`, which puts it on the wire as the status byte.
-    async fn serve_tunnel(&self, conn: iroh::endpoint::Connection) -> Result<(), String> {
+    async fn serve_tunnel(
+        self: std::sync::Arc<Self>,
+        conn: iroh::endpoint::Connection,
+        ep: std::sync::Arc<iroh::Endpoint>,
+    ) -> Result<(), String> {
         let remote = conn.remote_id().to_string();
-        while let Ok((send, recv)) = conn.accept_bi().await {
+        while let Ok((send, mut recv)) = conn.accept_bi().await {
             // A machine this one has paused is treated as a stranger
             // here, per stream, so a pause bites on a tunnel already up.
             let paired =
                 !crate::pause::peer_on(self.root(), &remote) && self.admit(&remote).is_ok();
+            let (node, ep, remote) = (self.clone(), ep.clone(), remote.clone());
             tokio::spawn(async move {
-                let _ = crate::tunnel::serve_stream(send, recv, paired).await;
+                let Ok(target) = crate::tunnel::read_target(&mut recv).await else { return };
+                // A hop's ask rides the exit's stream (round ROAD-3).
+                match crate::hop::Ask::of(&target) {
+                    Some(ask) => node.serve_hop(ep, &remote, ask, send, recv, paired).await,
+                    None => {
+                        let _ = crate::tunnel::serve_target(send, recv, &target, paired).await;
+                    }
+                }
             });
         }
         Ok(())
@@ -3629,6 +3717,35 @@ impl Node {
                 crate::drops::stop(&token);
                 Ok(Response::DropStopped)
             }
+            Request::Probe { host, port } => Ok(Response::Probed {
+                seen: crate::reach::probe_here(&host, port).await,
+            }),
+            Request::AddOverSsh {
+                token,
+                host,
+                port,
+                jump,
+                identity,
+                name,
+                satellite_only,
+            } => {
+                // An add another machine asked this one to run as the
+                // sponsor (通过 khor 主机), on a thread of its own so it
+                // outlives this ask; every ask answers its marks so far.
+                if !crate::once::valid(&token) {
+                    return Err(msg::create_token_bad().into());
+                }
+                let (run, fresh) = crate::join::run_for(&token);
+                if fresh {
+                    let node = self.me().ok_or_else(|| msg::add_on_needs_serve(self.name()))?;
+                    let to = crate::satellite::Dest::new(host, jump.as_deref())
+                        .on_port(port)
+                        .with_identity(identity.as_deref());
+                    crate::join::start(node, run.clone(), to, name, satellite_only);
+                }
+                let run = run.lock().unwrap_or_else(|p| p.into_inner()).clone();
+                Ok(Response::Adding { run })
+            }
             Request::FetchPath { path, offset } => {
                 // Off the reactor with Ls, for Ls's reason.
                 let (total, at_ms, bytes) =
@@ -3648,7 +3765,7 @@ impl Node {
     /// the one gate every satellite op passes: not in the table, not
     /// mine, or mine without a road each refuse by name. One row, one
     /// speaker (附属机器批).
-    fn my_satellite_host(&self, sat: &str) -> Result<String, String> {
+    fn my_satellite_host(&self, sat: &str) -> Result<crate::satellite::Dest, String> {
         let d = self
             .devices_loaded()?
             .doc
@@ -3664,7 +3781,7 @@ impl Node {
         if self.standing_of(sat) == crate::Standing::Revoked {
             return Err(msg::sat_revoked(d.shown()));
         }
-        d.ssh_host.ok_or_else(|| msg::sat_no_ssh_host(sat))
+        crate::satellite::Dest::of(&d).ok_or_else(|| msg::sat_no_ssh_host(sat))
     }
 
     /// Where a satellite pull stages on the sponsor: one spot per
@@ -3689,13 +3806,13 @@ impl Node {
     async fn sat_slice(
         &self,
         sat: &str,
-        host: &str,
+        host: &crate::satellite::Dest,
         path: &str,
         offset: u64,
     ) -> Result<(u64, u64, Vec<u8>), String> {
         let staged = self.sat_staging_path(sat, path)?;
         if offset == 0 || !staged.exists() {
-            let (h, p, s) = (host.to_owned(), path.to_owned(), staged.clone());
+            let (h, p, s) = (host.clone(), path.to_owned(), staged.clone());
             tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &s))
                 .await
                 .map_err(|e| e.to_string())??;
@@ -3727,7 +3844,7 @@ impl Node {
     async fn sat_write(
         &self,
         sat: &str,
-        host: &str,
+        host: &crate::satellite::Dest,
         path: &str,
         was: &str,
         bytes: &[u8],
@@ -3744,7 +3861,7 @@ impl Node {
         let staged = self.sat_staging_path(sat, path)?;
         let want = {
             let (h, p, sp, was) = (
-                host.to_owned(),
+                host.clone(),
                 path.to_owned(),
                 staged.clone(),
                 was.to_owned(),
@@ -3763,7 +3880,7 @@ impl Node {
             .await
             .map_err(|e| e.to_string())??
         };
-        let (h, p, mine) = (host.to_owned(), path.to_owned(), bytes.to_vec());
+        let (h, p, mine) = (host.clone(), path.to_owned(), bytes.to_vec());
         let at_ms =
             tokio::task::spawn_blocking(move || crate::satellite::write_file(&h, &p, &want, &mine))
                 .await
@@ -3978,7 +4095,7 @@ impl Node {
 
     /// Resolves a machine and opens the tunnel connection to it on `ep`.
     /// The one recipe both borrow dialers share.
-    async fn dial_tunnel(
+    pub(crate) async fn dial_tunnel(
         &self,
         ep: &iroh::Endpoint,
         machine: &str,
@@ -4655,10 +4772,7 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || crate::satellite::remove(&host, &path))
                     .await
@@ -4700,11 +4814,11 @@ impl Node {
     /// [`Self::sat_and_sponsor`]**: that one answers whose satellite it
     /// is, this one answers how to reach it, and a row can lose its
     /// address without leaving the table.
-    fn sponsored_host(&self, channel: &str) -> Result<String, String> {
+    fn sponsored_host(&self, channel: &str) -> Result<crate::satellite::Dest, String> {
         self.devices_loaded()?
             .doc
             .by_name(channel)
-            .and_then(|d| d.ssh_host.clone())
+            .and_then(|d| crate::satellite::Dest::of(&d))
             .ok_or_else(|| msg::sat_no_ssh_host(channel))
     }
 
@@ -5302,10 +5416,7 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || {
                     crate::satellite::is_checkout(&host, &path)
@@ -5373,10 +5484,7 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || {
                     crate::satellite::touched(&host, &path)
@@ -5904,7 +6012,7 @@ impl Node {
                     .devices_loaded()?
                     .doc
                     .by_name(&channel)
-                    .and_then(|d| d.ssh_host.clone())
+                    .and_then(|d| crate::satellite::Dest::of(&d))
                     .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 return self.sat_write(&sat, &host, path, was, bytes).await;
             };
@@ -6219,10 +6327,7 @@ impl Node {
         if let Some(sp) = target.sponsor.clone() {
             let sat = target.id.clone();
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 return self.sat_slice(&sat, &host, path, offset).await;
             }
             let sponsor = self
@@ -6695,10 +6800,7 @@ impl Node {
         // sponsor itself no wire is needed at all.
         if let Some(sp) = target.sponsor.clone() {
             if sp == self.device_str() {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || crate::satellite::ls(&host, &path))
                     .await
@@ -6870,10 +6972,7 @@ impl Node {
         // (`Request::SatFetchPath`).
         let (dial_to, sat) = match target.sponsor.clone() {
             Some(sp) if sp == self.device_str() => {
-                let host = target
-                    .ssh_host
-                    .clone()
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let (h, p, part) = (host, path.to_owned(), fell.part.clone());
                 let moved =
                     tokio::task::spawn_blocking(move || crate::satellite::pull_file(&h, &p, &part))
@@ -7229,6 +7328,114 @@ impl Node {
             .await?
         {
             Response::DropStopped => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// **Adds the machine at `to` from `machine`** (添加机器 通过 khor
+    /// 主机, 2026-10-08 owner ruling b): that machine becomes the sponsor
+    /// and runs the add over its own ssh road ([`crate::join`]); this
+    /// one asks it every [`ADD_ASK_EVERY`] and hands each new mark to
+    /// `on` as it comes. Key login only: a password is kept only on the
+    /// machine that runs ssh and never crosses the wire, so a password
+    /// road is refused here in one sentence.
+    pub async fn add_on(
+        &self,
+        machine: &str,
+        to: &crate::satellite::Dest,
+        name: Option<&str>,
+        satellite_only: bool,
+        mut on: impl FnMut(crate::join::Step, crate::join::Mark),
+    ) -> Result<crate::join::Added, String> {
+        if to.password {
+            return Err(msg::add_on_no_password(machine));
+        }
+        if to.passphrase {
+            return Err(msg::add_on_no_passphrase(machine));
+        }
+        let req = Request::AddOverSsh {
+            token: fresh_hex()?,
+            host: to.host.clone(),
+            port: to.port,
+            jump: to.jump.clone(),
+            identity: to.identity.clone(),
+            name: name.map(str::to_owned),
+            satellite_only,
+        };
+        let op = || match req.clone() {
+            Request::AddOverSsh {
+                token,
+                host,
+                port,
+                jump,
+                identity,
+                name,
+                satellite_only,
+            } => ipc::Op::AddOn {
+                machine: machine.to_owned(),
+                token,
+                host,
+                port,
+                jump,
+                identity,
+                name,
+                satellite_only,
+            },
+            _ => unreachable!("built above"),
+        };
+        // Through the resident when there is one, else on an endpoint of
+        // this call's, kept for the whole add.
+        let mut ep: Option<iroh::Endpoint> = None;
+        let mut seen = 0;
+        let out = loop {
+            let answer = match &ep {
+                Some(e) => self.add_ask_with(e, machine, &req).await,
+                None => match self.via_serve(op()).await {
+                    Some(reply) => match reply {
+                        Ok(ipc::Reply::Adding { run }) => Ok(run),
+                        Ok(ipc::Reply::Refused { why }) => Err(why),
+                        Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+                        Err(e) => Err(e),
+                    },
+                    None => {
+                        let e = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        let a = self.add_ask_with(&e, machine, &req).await;
+                        ep = Some(e);
+                        a
+                    }
+                },
+            };
+            let run = match answer {
+                Ok(run) => run,
+                Err(why) => break Err(why),
+            };
+            for (s, m) in run.marks.iter().skip(seen) {
+                on(*s, m.clone());
+            }
+            seen = run.marks.len();
+            if let Some(done) = run.done {
+                break done;
+            }
+            tokio::time::sleep(ADD_ASK_EVERY).await;
+        };
+        if let Some(e) = ep {
+            e.close().await;
+        }
+        out
+    }
+
+    /// One ask of a routed add on an endpoint the caller owns.
+    async fn add_ask_with(&self, ep: &iroh::Endpoint, machine: &str, req: &Request) -> Result<crate::join::Run, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Err(msg::add_on_self().to_owned());
+        }
+        match self.ask(ep, &channel, req).await? {
+            Response::Adding { run } => Ok(run),
+            Response::Refused { why } if why.contains("AddOverSsh") => Err(msg::add_on_predates(&channel)),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
@@ -8293,6 +8500,7 @@ impl Node {
                             last_rtt_ms: None,
                             since_ms: None,
                             last_hop: None,
+                            via: None,
                         },
                     )
                 })
@@ -8320,6 +8528,7 @@ impl Node {
                         self.wires.counts.read_relay.fetch_add(1, Relaxed);
                         khor_core::Hop::Relay
                     }
+                    Some(khor_net::path::PathKind::Carried) => self.carried_hop(&d.id),
                     _ => {
                         if r.down.is_some() {
                             self.wires.counts.read_down.fetch_add(1, Relaxed);
@@ -8334,8 +8543,16 @@ impl Node {
                 let last_hop = r.last_road.and_then(|k| match k {
                     khor_net::path::PathKind::Direct => Some(khor_core::Hop::Direct),
                     khor_net::path::PathKind::Relay => Some(khor_core::Hop::Relay),
+                    khor_net::path::PathKind::Carried => Some(self.carried_hop(&d.id)),
                     _ => None,
                 });
+                // The middle of a peer hop (round ROAD-3).
+                let via = match d.id.parse().ok().and_then(|p| self.carry.carrier(&p)) {
+                    Some(khor_net::carry::Carrier::Hop { via }) if hop == khor_core::Hop::Forwarded => {
+                        Some(via.to_string())
+                    }
+                    _ => None,
+                };
                 let ms = |d: Duration| u64::try_from(d.as_millis()).unwrap_or(u64::MAX);
                 // Whole milliseconds, never 0 for a wire that has one: a
                 // loopback wire's 0.3 ms reads as 1 ms, not as nothing.
@@ -8351,6 +8568,7 @@ impl Node {
                         last_rtt_ms: r.last_rtt.map(whole),
                         since_ms: last_hop.and(r.since).map(ms),
                         last_hop,
+                        via,
                     },
                 )
             })
@@ -9625,6 +9843,7 @@ mod last_links {
                             last_rtt_ms: l.last_rtt_ms.or(l.rtt_ms),
                             since_ms: l.since_ms.map(|s| s.saturating_add(since)),
                             last_hop: l.last_hop,
+                            via: l.via.clone(),
                         },
                     )
                 })
@@ -10150,8 +10369,14 @@ impl Node {
         // person waits through is the whole dial, head start included.
         let started = std::time::Instant::now();
         let mut roads = tokio::task::JoinSet::new();
-        if !direct.is_empty() {
-            let addr = endpoint::dial_addr(id, direct, relays).map_err(bare)?;
+        // A road this machine carries itself (round ROAD-2): a candidate
+        // beside the direct ones, so it races them from the first packet
+        // (`khor_net::carry::RoadOrder` then keeps the owner's order).
+        let carried = self.carried_addr(id);
+        let ahead = !direct.is_empty() || carried.is_some();
+        if ahead {
+            let mut addr = endpoint::dial_addr(id, direct, relays).map_err(bare)?;
+            addr.addrs.extend(carried);
             let (ep, alpn) = (ep.clone(), alpn.to_vec());
             roads.spawn(async move { ep.connect(addr, &alpn).await });
         }
@@ -10159,7 +10384,7 @@ impl Node {
         // is the one thing about it that a restart does not change.
         {
             let addr = endpoint::dial_addr(id, &[], relays).map_err(bare)?;
-            let (ep, alpn, wait) = (ep.clone(), alpn.to_vec(), !direct.is_empty());
+            let (ep, alpn, wait) = (ep.clone(), alpn.to_vec(), ahead);
             roads.spawn(async move {
                 if wait {
                     tokio::time::sleep(RELAY_HEAD_START).await;

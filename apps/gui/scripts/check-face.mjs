@@ -2263,7 +2263,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25340,7 +25340,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -25539,8 +25539,10 @@ try {
       }
       // (f) the narrow list screen: L0 is the filter and ＋, then the
       // search circle (UX-11 §4 reversed, 2026-10-05).
-      await page.setViewportSize({ width: 390, height: 844 });
-      await wait(600);
+      // The phone's sheet is the [data-narrow] rules (`app.css`); a resize
+      // would remount the shell under the dialog, so the stamp is set here.
+      await page.evaluate(() => document.documentElement.setAttribute("data-narrow", ""));
+      await wait(300);
       const narrowBar = await page.evaluate((h) => {
         const bar = document.querySelector(`${h} [data-pane-bar]`);
         return bar
@@ -25767,7 +25769,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26125,7 +26127,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26500,7 +26502,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27232,7 +27234,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -27370,8 +27372,8 @@ try {
     // (`FACE_ONLY=tabs` b).
     const forms = [
       ["sessions", "import", "导入…", "[data-import-dialog]", "menu"],
-      ["devices", "invite", "邀请设备…", "[data-invite-dialog]", "menu"],
-      ["devices", "join", "加入网络…", "[data-join-dialog]", "menu"],
+      // 添加机器 (round join-d) is 机器's one act: ＋ is it.
+      ["devices", "add", "添加机器…", "[data-add-machine]", "direct"],
       ["quota", "register", "登记…", "[data-quota-dialog]", "direct"],
       ["workspaces", "ws-add", "添加工作区…", "[data-dir-picker]", "direct"],
     ];
@@ -27445,14 +27447,18 @@ try {
     }
 
     // (c) 邀请设备: the token and its QR code.
-    if (!(await open("devices")) || !["menu", "direct"].includes(await plus("invite"))) {
+    // 添加机器 → khor 主机 (round join-d): the code is on that page.
+    const toTicket = async () =>
+      (await until(2_000, async () => (await page.locator('[data-add-machine] [data-add-row="khor"]').count()) === 1)) &&
+      (await page.locator('[data-add-machine] [data-add-row="khor"]').click(), true);
+    if (!(await open("devices")) || !["menu", "direct"].includes(await plus("add")) || !(await toTicket())) {
       fail("probe dead: acts (c) could not press ＋ on 机器");
-    } else if (!(await until(3_000, async () => (await page.locator("[data-invite-dialog] [data-ticket]").count()) === 1))) {
+    } else if (!(await until(3_000, async () => (await page.locator('[data-add-machine="ticket"] [data-ticket]').count()) === 1))) {
       fail("probe dead: acts (c) · 邀请设备 opened no dialog with a token in it");
     } else {
       await wait(400);
       const q = await page.evaluate(() => {
-        const dlg = document.querySelector("[data-invite-dialog]");
+        const dlg = document.querySelector('[data-add-machine="ticket"]');
         const svg = dlg?.querySelector("svg[data-ticket-qr]");
         const path = svg?.querySelector("path");
         const field = dlg?.querySelector("[data-ticket]");
@@ -28121,7 +28127,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -30247,8 +30253,11 @@ try {
       if (!(await open("devices"))) return false;
       await wait(300);
       if (!(await press("[data-side-head] [data-pane-new]"))) return false;
-      if ((await count('[role="menu"]')) > 0 && !(await press('[role="menu"] [data-new-item="join"]'))) return false;
-      return until(3_000, async () => (await count("[data-join-dialog]")) === 1);
+      // 添加机器 → khor 主机 (round join-d): the code field is on that page.
+      if ((await count('[role="menu"]')) > 0 && !(await press('[role="menu"] [data-new-item="add"]'))) return false;
+      if (!(await until(3_000, async () => (await count('[data-add-machine] [data-add-row="khor"]')) === 1))) return false;
+      if (!(await press('[data-add-machine] [data-add-row="khor"]'))) return false;
+      return until(3_000, async () => (await count('[data-add-machine="ticket"]')) === 1);
     };
     const reload = async (size) => {
       await page.evaluate(() => window.localStorage.clear());
@@ -30284,13 +30293,13 @@ try {
     } else {
       await until(3_000, async () => scannerAsked > 0);
       await wait(400);
-      const field = await count("[data-join-dialog] [data-ticket-input]");
+      const field = await count('[data-add-machine="ticket"] [data-ticket-input]');
       const entry = await count("[data-scan-ticket]");
       const used = await calls();
       console.log(`scan a · no scanner: asked ${scannerAsked}, field ${field}, 扫码 ${entry}, camera calls ${JSON.stringify(used)}`);
       if (field !== 1) fail("probe dead: scan a · the join dialog has no ticket field");
       if (!scannerAsked) fail("probe dead: scan a · the face never asked scanner_here — the arm measured a default, not an answer");
-      if (entry !== 0) fail("scan a · a face without a scanner draws 扫码 — absent, not refused (src/views/PairDialogs.tsx)");
+      if (entry !== 0) fail("scan a · a face without a scanner draws 扫码 — absent, not refused (src/views/AddMachine.tsx)");
       if (used.length) fail(`scan a · a face without a scanner called the camera: ${JSON.stringify(used)}`);
       await page.keyboard.press("Escape");
       await wait(300);
@@ -30303,13 +30312,13 @@ try {
       fail("probe dead: scan b · 加入网络 never opened");
       break scan;
     }
-    const drawn = await until(3_000, async () => (await count("[data-join-dialog] [data-scan-ticket]")) === 1);
+    const drawn = await until(3_000, async () => (await count('[data-add-machine="ticket"] [data-scan-ticket]')) === 1);
     console.log(`scan b · a scanner: 扫码 ${drawn ? "drawn" : "absent"}`);
     if (!drawn) {
-      fail("scan b · a face with a scanner draws no 扫码 in 加入网络 (src/views/PairDialogs.tsx)");
+      fail("scan b · a face with a scanner draws no 扫码 in 添加机器 · khor 主机 (src/views/AddMachine.tsx)");
       break scan;
     }
-    const field = () => page.locator("[data-join-dialog] [data-ticket-input]").inputValue();
+    const field = () => page.locator('[data-add-machine="ticket"] [data-ticket-input]').inputValue();
     // The two sentences the catalog owns, read here rather than above so
     // a face from before them goes red on the missing entry, not on this.
     const DENIED = word("scan-camera-denied");
@@ -30329,7 +30338,7 @@ try {
     await press("[data-scan-ticket]");
     const up = await until(3_000, async () => (await count("[data-scanner]")) === 1);
     const during = await page.evaluate(() => {
-      const dialog = document.querySelector("[data-join-dialog]");
+      const dialog = document.querySelector('[data-add-machine="ticket"]');
       const scanner = document.querySelector("[data-scanner]");
       return {
         stamped: document.documentElement.hasAttribute("data-scanning"),
@@ -30365,14 +30374,14 @@ try {
     if (after.layer || after.stamped) fail("scan b1 · the camera layer outlived the scan");
     // The control: the typed road asks the same `pair`.
     const typedAt = paired.length;
-    await page.locator("[data-join-dialog] [data-ticket-input]").fill(TYPED);
-    await press("[data-join-dialog] [data-join]");
+    await page.locator('[data-add-machine="ticket"] [data-ticket-input]').fill(TYPED);
+    await press('[data-add-machine="ticket"] [data-join]');
     await until(3_000, async () => paired.length > typedAt);
     if (paired[typedAt] !== TYPED) fail(`probe dead: scan b1 · typing a ticket and pressing 加入 asked ${JSON.stringify(paired.slice(typedAt))} — the control road is broken`);
 
     // b2. a refused permission: a sentence and the settings, no scan.
     const pairedBefore = paired.length;
-    await page.locator("[data-join-dialog] [data-ticket-input]").fill("");
+    await page.locator('[data-add-machine="ticket"] [data-ticket-input]').fill("");
     await page.evaluate(() => {
       Object.assign(window.__scan, { perm: "denied", calls: [] });
     });
@@ -35027,7 +35036,7 @@ try {
         ["the tabs sheet", "[data-tab-sheet]", async () => (await toSession()) && press("[data-session-deck] [data-deck-tabs]")],
         // ⚠️ 墓碑 (UX-45): 新会话 here — it is a new tab's page now, not a sheet.
         ["导入", "[data-import-dialog]", async () => (await open("sessions")) && newItem("import")],
-        ["加入网络", "[data-join-dialog]", async () => (await open("devices")) && newItem("join")],
+        ["添加机器", "[data-add-machine]", async () => (await open("devices")) && newItem("add")],
         ["the key row editor", "[data-key-row-editor]", async () => ((await openMore("terminal")) && (await press('[data-setting-row-name="term-key-row"]'))) || ((await openMore("appearance")) && press('[data-setting-row-name="term-key-row"]'))],
       ];
       const hex = (v) => [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16));
@@ -37194,6 +37203,288 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "iphone") console.log("iphone · FACE_ONLY=iphone: the other sections are skipped");
+
+  // ── 添加机器 (round join-d, the owner approved the lab at redesign-join cb5dbb54) ──
+  //
+  // Values only (30-behavior: layout is the owner's device checklist in
+  // audit/join-4.md). New, not a fix: no red first.
+  //   a. ＋ on 机器 is 添加机器 itself (one act); its first page has two
+  //      rows, khor 主机 and SSH 主机, whose glyphs paint the same box;
+  //   b. SSH 主机: the install switch is on, the port says 22 as its
+  //      placeholder, one primary; the ssh config's hosts are drawn only
+  //      while the host field is focused;
+  //   c. 跳板机 → a config host → back on the form with that value;
+  //      认证方式 → 密码 adds a password row and the keychain note;
+  //   d. 添加 sends `add_start` with the host, the jump, install on and
+  //      the typed password as the secret; a refused key lands on 登录;
+  //   e. a run that ends in an SSH 主机: one ✓ per done step, one ✗, the
+  //      removal said under the steps, and on the phone's sheet 完成 at
+  //      the trailing edge;
+  //   f. the machine page of an SSH 主机 behind a jump whose jump-to-target
+  //      leg broke: the road line reads 本机 · jump · host, one broken leg
+  //      at the last, the sentence under it, ssh's own words under that
+  //      (round join-e, `Leg.said`), and 安装 khor… on this machine's own;
+  //   g. (round join-e) an add under way survives the window crossing the
+  //      narrow breakpoint and back: the shell draws the dialog in both
+  //      its trees, so it remounts; it comes back on the run page and
+  //      reads the same token, and the end lands; closed, the next
+  //      opening starts on the first page.
+  join: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "join") break join;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const sat = {
+      ...devs[1],
+      id: "b".repeat(64),
+      name: "gpu-box",
+      shown: "gpu-box",
+      me: false,
+      sponsor: "gate",
+      ssh_jump: "bastion",
+      hop: null,
+      roads: [],
+    };
+    const me = {
+      ...devs[0],
+      roads: [{ to: sat.id, road: "none", relay: null, ms: null, via: null, broken: { from: null, to: "gpu-box", leg: "jump-to-target", said: "Connection timed out" } }],
+    };
+    const rowsJ = [me, ...devs.slice(1), sat];
+    const sent = [];
+    const reads = [];
+    let run = null;
+    const routesJ = {
+      "**/devices": (r) => json(rowsJ)(r),
+      "**/ssh_config_hosts": (r) => json(["gpu-box", "gpu-box-2", "bastion"])(r),
+      "**/add_start": (r) => {
+        sent.push(r.request().postDataJSON() ?? {});
+        return json(null)(r);
+      },
+      "**/add_read": (r) => {
+        reads.push(r.request().postDataJSON()?.token ?? null);
+        return json(run)(r);
+      },
+    };
+    for (const [glob, go] of Object.entries(routesJ)) await page.route(glob, go);
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const toDevices = async () => {
+      await tap('[data-rail-item][data-landing="sessions"]');
+      return tap('[data-rail-item][data-landing="devices"]');
+    };
+    const openAdd = async () => (await toDevices()) && (await tap("[data-side-head] [data-pane-new]")) && (await until(3_000, async () => (await count('[data-add-machine="pick"]')) === 1));
+
+    // a.
+    if (!(await openAdd())) {
+      fail("join a · ＋ on 机器 did not open 添加机器 by itself — one act, so ＋ is it");
+    } else {
+      const pick = await page.evaluate(() => {
+        const box = (k) => document.querySelector(`[data-add-machine] [data-add-row="${k}"] svg`)?.getBoundingClientRect();
+        const body = (k) => document.querySelector(`[data-add-machine] [data-add-row="${k}"] svg [data-body]`)?.getBoundingClientRect();
+        const [a, b, c, d] = [box("khor"), box("ssh"), body("khor"), body("ssh")];
+        return {
+          menu: document.querySelectorAll('[role="menu"]').length,
+          rows: document.querySelectorAll("[data-add-machine] [data-add-row]").length,
+          glyphs: a && b ? [a.width, a.height, b.width, b.height].map((v) => +v.toFixed(1)) : null,
+          bodies: c && d ? [c.width, d.width].map((v) => +v.toFixed(1)) : null,
+        };
+      });
+      console.log(`join a · ${JSON.stringify(pick)}`);
+      if (pick.menu !== 0) fail("join a · ＋ on 机器 dropped a menu — 添加机器 is its one act");
+      if (pick.rows !== 2) fail(`join a · the first page has ${pick.rows} rows — khor 主机 and SSH 主机`);
+      if (!pick.glyphs || pick.glyphs[0] !== pick.glyphs[2] || pick.glyphs[1] !== pick.glyphs[3]) fail(`join a · the two glyphs paint ${JSON.stringify(pick.glyphs)} — one icon weight`);
+      if (!pick.bodies || pick.bodies[0] !== pick.bodies[1]) fail(`join a · the two solid bodies are ${JSON.stringify(pick.bodies)} wide — the SSH host is the rack's own box`);
+
+      // b.
+      await tap('[data-add-machine] [data-add-row="ssh"]');
+      await until(2_000, async () => (await count('[data-add-machine="ssh"]')) === 1);
+      await page.locator("#add-host").blur();
+      // The list lingers 250 ms after the field lets go (`HostRow`).
+      await wait(500);
+      const form = await page.evaluate(() => {
+        const dlg = document.querySelector('[data-add-machine="ssh"]');
+        const probe = document.createElement("div");
+        probe.style.cssText = "position:absolute;visibility:hidden;background-color:var(--brand-strong)";
+        document.body.appendChild(probe);
+        const brand = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        const sw = dlg?.querySelector('[data-add-row="install"] [role="switch"]');
+        return {
+          port: dlg?.querySelector("[data-add-port]")?.getAttribute("placeholder"),
+          install: sw?.getAttribute("aria-checked"),
+          primaries: dlg ? [...dlg.querySelectorAll("button")].filter((x) => getComputedStyle(x).backgroundColor === brand).length : -1,
+          rows: dlg ? [...dlg.querySelectorAll("[data-add-row]")].map((r) => r.getAttribute("data-add-row")) : [],
+          hostsBlurred: document.querySelectorAll("[data-ssh-config-hosts]").length,
+        };
+      });
+      await page.locator("#add-host").focus();
+      await page.locator("#add-host").fill("gpu");
+      await wait(200);
+      form.hostsFocused = await page.locator("[data-ssh-config-hosts] [role=option]").count();
+      console.log(`join b · ${JSON.stringify(form)}`);
+      if (form.port !== "22") fail(`join b · the port's placeholder is ${JSON.stringify(form.port)} — 22`);
+      if (form.install !== "true") fail(`join b · the install switch reads ${JSON.stringify(form.install)} — on by default (the owner)`);
+      if (form.primaries !== 1) fail(`join b · ${form.primaries} primary buttons — one per dialog`);
+      if (["host", "jump", "auth", "install"].some((k) => !form.rows.includes(k)) || form.rows.includes("add-password")) fail(`join b · the form's rows are ${JSON.stringify(form.rows)} — 主机, 跳板机, 认证方式, the install switch`);
+      if (form.hostsBlurred !== 0) fail("join b · the ssh config's hosts are drawn while the host field is not focused");
+      if (form.hostsFocused !== 2) fail(`join b · typing gpu offers ${form.hostsFocused} config hosts — gpu-box and gpu-box-2`);
+      await page.locator("#add-host").fill("gpu-box");
+      await page.locator("#add-host").blur();
+
+      // c.
+      await tap('[data-add-machine] [data-add-row="jump"]');
+      const jumped = (await until(2_000, async () => (await count('[data-add-machine="jump"]')) === 1)) && (await tap('[data-add-machine] [data-add-row="bastion"]'));
+      const jumpValue = jumped ? await page.locator('[data-add-machine="ssh"] [data-add-row="jump"]').innerText().catch(() => "") : "";
+      await tap('[data-add-machine] [data-add-row="auth"]');
+      await tap('[data-add-machine] [data-add-row="password"]');
+      await tap('[data-add-machine] [data-dialog-cancel]');
+      const pw = await count('[data-add-machine="ssh"] [data-add-row="add-password"] input[type=password]');
+      const note = await page.locator('[data-add-machine="ssh"] [data-add-group-foot]').first().innerText().catch(() => "");
+      console.log(`join c · jump ${JSON.stringify(jumpValue)} · password rows ${pw} · note ${JSON.stringify(note)}`);
+      if (!jumpValue.includes("bastion")) fail(`join c · 跳板机 reads ${JSON.stringify(jumpValue)} after picking bastion`);
+      if (pw !== 1) fail(`join c · 密码 drew ${pw} password rows on the form — one`);
+      if (!note) fail("join c · 密码 says nothing about where the password is kept");
+
+      // d.
+      await page.locator("#add-password").fill("scratch-not-a-password");
+      run = {
+        marks: [{ step: "connect", state: "failed", note: "gpu-box refused", refusal: "key" }],
+        done: { id: null, name: null, member: false, why: null, keeper: null, error: "gpu-box refused", refusal: "key" },
+      };
+      await tap("[data-add-machine] [data-add-go]");
+      const login = await until(3_000, async () => (await count('[data-add-machine="login"]')) === 1);
+      const ask = sent.at(-1) ?? {};
+      console.log(`join d · sent ${JSON.stringify({ ...ask, ask: { ...ask.ask, secret: ask.ask?.secret ? "(set)" : null } })} · login ${login}`);
+      if (ask.ask?.host !== "gpu-box" || ask.ask?.jump !== "bastion" || ask.ask?.install !== true || ask.ask?.on !== null) fail(`join d · add_start was asked ${JSON.stringify({ ...ask.ask, secret: undefined })} — gpu-box through bastion, install on, run here`);
+      if (ask.ask?.secret !== "scratch-not-a-password") fail("join d · the typed password did not go with add_start");
+      if (!ask.token) fail("join d · add_start carried no token");
+      if (!login) fail("join d · a refused key did not land on 登录 (screen 7)");
+      await page.keyboard.press("Escape");
+      await wait(300);
+
+      // e.
+      run = {
+        marks: [
+          { step: "connect", state: "done", note: "", refusal: null },
+          { step: "place", state: "failed", note: "no systemd --user, no tmux", refusal: null },
+          { step: "undo", state: "done", note: "", refusal: null },
+          { step: "satellite", state: "done", note: "", refusal: null },
+        ],
+        done: { id: sat.id, name: "gpu-box", member: false, why: null, keeper: null, error: null, refusal: null },
+      };
+      // On the phone's face from the start: its sheet is the [data-narrow]
+      // rules, and the shell's narrow tree is its own.
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      const seat = await tap('[data-nav-item][data-landing="devices"]');
+      const plusN = seat && (await tap("[data-pane-new]"));
+      const opened = plusN && (await until(3_000, async () => (await count('[data-add-machine="pick"]')) === 1));
+      if (!opened) console.log(`join e · narrow: seat ${seat}, ＋ ${plusN}, pane-new ${await count("[data-pane-new]")}, dialogs ${await count("[data-add-machine]")}`);
+      if (opened) {
+        await tap('[data-add-machine] [data-add-row="ssh"]');
+        await page.locator("#add-host").fill("gpu-box");
+        const pressed = await tap("[data-add-machine] [data-add-go]");
+        if (!pressed) console.log("join e · narrow: 添加 could not be pressed");
+      }
+      const ran = opened && (await until(3_000, async () => (await count('[data-add-machine="run"] [data-add-done]')) === 1));
+      if (opened && !ran) console.log(`join e · narrow: pages ${JSON.stringify(await page.evaluate(() => [...document.querySelectorAll("[data-add-machine]")].map((d) => d.getAttribute("data-add-machine") + ":" + (d.textContent ?? "").slice(0, 80))))}`);
+      const end = ran
+        ? await page.evaluate(() => {
+            const dlg = document.querySelector('[data-add-machine="run"]');
+            const foot = dlg?.querySelector('[data-slot="dialog-footer"]')?.getBoundingClientRect();
+            const done = dlg?.querySelector("[data-add-done]")?.getBoundingClientRect();
+            return {
+              steps: [...(dlg?.querySelectorAll("[data-step]") ?? [])].map((s) => s.getAttribute("data-step")),
+              note: dlg?.querySelector('[data-add-group="steps"] [data-add-group-foot]')?.textContent ?? null,
+              trail: foot && done ? +(foot.right - done.right).toFixed(1) : null,
+            };
+          })
+        : null;
+      console.log(`join e · ${JSON.stringify(end)}`);
+      if (!end) fail("probe dead: join e · the run never ended on the phone's sheet");
+      else {
+        if (end.steps.join() !== "done,failed,done") fail(`join e · the steps read ${end.steps} — 连接 ✓, 安装 khor ✗, 作为 SSH 主机添加 ✓ (the removal is said, not drawn)`);
+        if (!end.note) fail("join e · the fallback does not say the installed files were removed");
+        if (end.trail === null || Math.abs(end.trail) > 1) fail(`join e · 完成 stands ${end.trail} px off the sheet's trailing edge — a lone 完成 keeps it`);
+      }
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    }
+
+    // f.
+    if ((await toDevices()) && (await tap('[data-device="gpu-box"]'))) {
+      await until(3_000, async () => (await count("[data-road-line]")) === 1);
+      const road = await page.evaluate(() => {
+        const line = document.querySelector("[data-road-line]");
+        return {
+          stops: [...(line?.querySelectorAll("[data-road] > span") ?? [])].map((s) => s.textContent?.trim()),
+          broken: line ? [...line.querySelectorAll("[data-road-leg]")].length : -1,
+          brokenLast: line?.querySelector("[data-road] > span:last-child [data-road-leg='broken']") !== null,
+          said: line?.querySelector("[data-road-broken]")?.getAttribute("data-road-broken") ?? null,
+          words: line?.querySelector("[data-road-said]")?.textContent ?? null,
+          under:
+            (line?.querySelector("[data-road-said]")?.getBoundingClientRect().top ?? 0) >
+            (line?.querySelector("[data-road-broken]")?.getBoundingClientRect().top ?? Infinity),
+          promote: line?.querySelectorAll("[data-promote]").length ?? 0,
+        };
+      });
+      console.log(`join f · ${JSON.stringify(road)}`);
+      if (road.stops.length !== 3 || !road.stops[1]?.includes("bastion") || !road.stops[2]?.includes("gpu-box")) fail(`join f · the road line reads ${JSON.stringify(road.stops)} — 本机, bastion, gpu-box`);
+      if (road.broken !== 1 || !road.brokenLast) fail(`join f · ${road.broken} broken leg(s), last ${road.brokenLast} — one, between the jump and the target`);
+      if (road.said !== "jump-to-target") fail(`join f · the sentence under the line is for ${JSON.stringify(road.said)}`);
+      if (road.words !== "Connection timed out" || !road.under) fail(`join f · ssh's words read ${JSON.stringify(road.words)}, under the sentence ${road.under} — the leg's own, below it`);
+      if (road.promote !== 1) fail("join f · no 安装 khor… on an SSH 主机 this machine sponsors");
+    } else fail("probe dead: join f · could not open gpu-box's page");
+
+    // g.
+    run = { marks: [{ step: "connect", state: "live", note: "", refusal: null }], done: null };
+    if (await openAdd()) {
+      await tap('[data-add-machine] [data-add-row="ssh"]');
+      await page.locator("#add-host").fill("gpu-box");
+      await page.locator("#add-host").blur();
+      await wait(400);
+      await tap("[data-add-machine] [data-add-go]");
+      const running = await until(3_000, async () => (await count('[data-add-machine="run"]')) === 1);
+      const token = sent.at(-1)?.token ?? null;
+      await page.setViewportSize({ width: 390, height: 844 });
+      await wait(1_200);
+      const narrowPage = await page.evaluate(() => [...document.querySelectorAll("[data-add-machine]")].map((d) => d.getAttribute("data-add-machine")));
+      const at = reads.length;
+      await wait(1_200);
+      const narrowReads = reads.slice(at);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(1_200);
+      const widePage = await page.evaluate(() => [...document.querySelectorAll("[data-add-machine]")].map((d) => d.getAttribute("data-add-machine")));
+      run = { marks: [{ step: "connect", state: "done", note: "", refusal: null }, { step: "satellite", state: "done", note: "", refusal: null }], done: { id: sat.id, name: "gpu-box", member: false, why: null, keeper: null, error: null, refusal: null } };
+      const ended = await until(3_000, async () => (await count('[data-add-machine="run"] [data-add-done]')) === 1);
+      const g = { running, token: !!token, narrowPage, narrowReads: narrowReads.length, sameToken: narrowReads.every((t) => t === token), widePage, ended, starts: sent.filter((x) => x.token === token).length };
+      console.log(`join g · ${JSON.stringify(g)}`);
+      if (!running || !token) fail("probe dead: join g · the add did not start on the wide face");
+      else {
+        if (narrowPage.join() !== "run") fail(`join g · across the narrow breakpoint the dialog reads ${JSON.stringify(narrowPage)} — the run, as it was`);
+        if (!narrowReads.length || !g.sameToken) fail(`join g · after the remount the face read ${narrowReads.length} time(s), same token ${g.sameToken} — it reattaches by the run's token`);
+        if (widePage.join() !== "run") fail(`join g · back on the wide face the dialog reads ${JSON.stringify(widePage)} — the run`);
+        if (!ended) fail("join g · the run's end did not land after the two remounts");
+        if (g.starts !== 1) fail(`join g · the run was started ${g.starts} times — a remount reads, it does not start again`);
+      }
+      await page.keyboard.press("Escape");
+      await wait(300);
+      // Closed is closed: the next 添加机器 starts on its first page.
+      if (!(await openAdd())) fail("join g · 添加机器 opened after a finished run is not on its first page — closing forgets the run");
+      await page.keyboard.press("Escape");
+      await wait(300);
+    } else fail("probe dead: join g · could not open 添加机器");
+
+    for (const [glob, go] of Object.entries(routesJ)) await page.unroute(glob, go);
+    await page.evaluate(() => window.localStorage.clear());
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "join") console.log("join · FACE_ONLY=join: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(

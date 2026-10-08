@@ -152,8 +152,7 @@ export function MyKhorPage({
   onOpenBlocked,
   onPin,
   onForget,
-  onInvite,
-  onJoin,
+  onAdd,
   onOpenRelays,
   onChanged,
   onReset,
@@ -177,8 +176,8 @@ export function MyKhorPage({
   /** 忘记这台机器 — `khor forget`; rejects with the node's sentence. */
   onForget: (row: DeviceRow) => Promise<void>;
   /** The add menu's 生成邀请票… and 用票配对… (and the card's 重新配对…). */
-  onInvite: () => void;
-  onJoin: () => void;
+  /** 添加机器 (round join-d), on its first page or on khor 主机's. */
+  onAdd: (start?: "pick" | "ticket") => void;
   /** This machine's 中继… ›: 设置 → 连接. */
   onOpenRelays: () => void;
   /** The device table changed (a rename, a face, leaving the network). */
@@ -270,11 +269,8 @@ export function MyKhorPage({
 
   const addMenu = (Item: typeof ContextMenuItem | typeof DropdownMenuItem, Sep: typeof ContextMenuSeparator | typeof DropdownMenuSeparator) => (
     <>
-      <Item data-dial-add="invite" onSelect={onInvite}>
-        {gui.dial_invite}
-      </Item>
-      <Item data-dial-add="join" onSelect={onJoin}>
-        {gui.dial_pair}
+      <Item data-dial-add="add" onSelect={() => onAdd()}>
+        {gui.add_machine_ask}
       </Item>
       <Item data-dial-add="relay" onSelect={() => setAddingRelay(true)}>
         {gui.relays_add_ask}
@@ -359,7 +355,7 @@ export function MyKhorPage({
           }}
           onRepair={() => {
             close();
-            onJoin();
+            onAdd("ticket");
           }}
           onEdit={() => {
             close();
