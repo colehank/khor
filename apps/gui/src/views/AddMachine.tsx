@@ -48,6 +48,7 @@ import type { ProxyLine } from "@/gen/bindings/ProxyLine";
 import type { ReachReport } from "@/gen/bindings/ReachReport";
 import { cli, gui, msg } from "@/gen/catalog";
 import { feel } from "@/lib/haptics";
+import { keptGet, keptSet, useKept } from "@/lib/kept";
 import { YIELD_MS } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
 import { ScanLayer } from "@/views/PairDialogs";
@@ -79,6 +80,21 @@ const SUGGEST_LINGER_MS = 250;
 
 /** How often a running add is read (`add_read`). */
 const READ_EVERY_MS = 500;
+
+/** Where the add as it stands is kept across the dialog's remount
+    (`lib/kept`, round join-e): the shell draws its dialogs in both its
+    trees, so a window crossing the narrow breakpoint mounts a new one.
+    `up` says the dialog was open, so the new one carries on instead of
+    starting over; `token` is the run to read again. Never the secret. */
+const KEPT = {
+  up: "add-machine:up",
+  page: "add-machine:page",
+  form: "add-machine:form",
+  run: "add-machine:run",
+  runOf: "add-machine:run-of",
+  error: "add-machine:error",
+  token: "add-machine:token",
+} as const;
 
 // ---- rows -------------------------------------------------------------------
 
@@ -289,30 +305,47 @@ export function AddMachineDialog({
   /** 上传公钥 opened a terminal session: show it. */
   onOpenSession?: (id: string) => void;
 }) {
-  const [page, setPage] = useState<Page>("pick");
-  const [form, setForm] = useState<Form>(blank);
+  const [page, setPage] = useKept<Page>(KEPT.page, "pick");
+  const [form, setForm] = useKept<Form>(KEPT.form, blank);
   const set = (p: Partial<Form>) => setForm((f) => ({ ...f, ...p }));
   /** The password typed on the form or the login page, or the key's
-      passphrase. Held only until the add starts. */
+      passphrase. Held only until the add starts, and never kept. */
   const [secret, setSecret] = useState("");
-  const [run, setRun] = useState<AddRun | null>(null);
+  const [run, setRun] = useKept<AddRun | null>(KEPT.run, null);
   /** What `run` is: an add of `form`, or 安装 khor on a machine. */
-  const [runOf, setRunOf] = useState<{ host: string; promote: boolean } | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [runOf, setRunOf] = useKept<{ host: string; promote: boolean } | null>(KEPT.runOf, null);
+  const [error, setError] = useKept<string | null>(KEPT.error, null);
   const [hosts, setHosts] = useState<string[]>([]);
+  /** The run's token. Made here, so pressing 添加 twice starts nothing
+      new; kept, so a remounted dialog reads the same run. */
+  const token = useRef<string | null>(keptGet<string | null>(KEPT.token) ?? null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      keptSet(KEPT.up, false);
+      return;
+    }
+    let live = true;
+    fetchSshConfigHosts()
+      .then((h) => live && setHosts(h))
+      .catch(() => live && setHosts([]));
+    // Mounted again while open (the window crossed the narrow
+    // breakpoint): the kept page, form and run carry on, and the run's
+    // effect below reads the kept token again. Nothing starts twice.
+    if (keptGet<boolean>(KEPT.up)) {
+      return () => {
+        live = false;
+      };
+    }
+    keptSet(KEPT.up, true);
+    keptSet(KEPT.token, null);
+    token.current = null;
     setForm(blank);
     setSecret("");
     setRun(null);
     setRunOf(null);
     setError(null);
     setPage(promote ? "run" : (start ?? "pick"));
-    let live = true;
-    fetchSshConfigHosts()
-      .then((h) => live && setHosts(h))
-      .catch(() => live && setHosts([]));
     if (promote) begin(promote, true);
     return () => {
       live = false;
@@ -320,11 +353,11 @@ export function AddMachineDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // **The add under way**: read every half second until it ends. The
-  // token is made here, so pressing 添加 twice starts nothing new.
-  const token = useRef<string | null>(null);
+  // **The add under way**: read every half second until it ends. A run
+  // that had already ended when the dialog remounted is not read again
+  // (its end was felt once).
   useEffect(() => {
-    if (page !== "run" || !token.current) return;
+    if (page !== "run" || !token.current || run?.done) return;
     const t = token.current;
     let live = true;
     let timer = 0;
@@ -363,6 +396,7 @@ export function AddMachineDialog({
   const begin = (what: string, isPromote: boolean, auth?: { password?: string; passphrase?: string }) => {
     const t = crypto.randomUUID();
     token.current = t;
+    keptSet(KEPT.token, t);
     setRun(null);
     setError(null);
     setRunOf({ host: what, promote: isPromote });

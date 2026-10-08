@@ -37020,8 +37020,13 @@ try {
   //      the trailing edge;
   //   f. the machine page of an SSH 主机 behind a jump whose jump-to-target
   //      leg broke: the road line reads 本机 · jump · host, one broken leg
-  //      at the last, the sentence under it, and 安装 khor… on this
-  //      machine's own.
+  //      at the last, the sentence under it, ssh's own words under that
+  //      (round join-e, `Leg.said`), and 安装 khor… on this machine's own;
+  //   g. (round join-e) an add under way survives the window crossing the
+  //      narrow breakpoint and back: the shell draws the dialog in both
+  //      its trees, so it remounts; it comes back on the run page and
+  //      reads the same token, and the end lands; closed, the next
+  //      opening starts on the first page.
   join: {
   if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "join") break join;
   {
@@ -37040,10 +37045,11 @@ try {
     };
     const me = {
       ...devs[0],
-      roads: [{ to: sat.id, road: "none", relay: null, ms: null, via: null, broken: { from: null, to: "gpu-box", leg: "jump-to-target" } }],
+      roads: [{ to: sat.id, road: "none", relay: null, ms: null, via: null, broken: { from: null, to: "gpu-box", leg: "jump-to-target", said: "Connection timed out" } }],
     };
     const rowsJ = [me, ...devs.slice(1), sat];
     const sent = [];
+    const reads = [];
     let run = null;
     const routesJ = {
       "**/devices": (r) => json(rowsJ)(r),
@@ -37052,7 +37058,10 @@ try {
         sent.push(r.request().postDataJSON() ?? {});
         return json(null)(r);
       },
-      "**/add_read": (r) => json(run)(r),
+      "**/add_read": (r) => {
+        reads.push(r.request().postDataJSON()?.token ?? null);
+        return json(run)(r);
+      },
     };
     for (const [glob, go] of Object.entries(routesJ)) await page.route(glob, go);
     await page.setViewportSize({ width: 1400, height: 900 });
@@ -37213,6 +37222,10 @@ try {
           broken: line ? [...line.querySelectorAll("[data-road-leg]")].length : -1,
           brokenLast: line?.querySelector("[data-road] > span:last-child [data-road-leg='broken']") !== null,
           said: line?.querySelector("[data-road-broken]")?.getAttribute("data-road-broken") ?? null,
+          words: line?.querySelector("[data-road-said]")?.textContent ?? null,
+          under:
+            (line?.querySelector("[data-road-said]")?.getBoundingClientRect().top ?? 0) >
+            (line?.querySelector("[data-road-broken]")?.getBoundingClientRect().top ?? Infinity),
           promote: line?.querySelectorAll("[data-promote]").length ?? 0,
         };
       });
@@ -37220,8 +37233,48 @@ try {
       if (road.stops.length !== 3 || !road.stops[1]?.includes("bastion") || !road.stops[2]?.includes("gpu-box")) fail(`join f · the road line reads ${JSON.stringify(road.stops)} — 本机, bastion, gpu-box`);
       if (road.broken !== 1 || !road.brokenLast) fail(`join f · ${road.broken} broken leg(s), last ${road.brokenLast} — one, between the jump and the target`);
       if (road.said !== "jump-to-target") fail(`join f · the sentence under the line is for ${JSON.stringify(road.said)}`);
+      if (road.words !== "Connection timed out" || !road.under) fail(`join f · ssh's words read ${JSON.stringify(road.words)}, under the sentence ${road.under} — the leg's own, below it`);
       if (road.promote !== 1) fail("join f · no 安装 khor… on an SSH 主机 this machine sponsors");
     } else fail("probe dead: join f · could not open gpu-box's page");
+
+    // g.
+    run = { marks: [{ step: "connect", state: "live", note: "", refusal: null }], done: null };
+    if (await openAdd()) {
+      await tap('[data-add-machine] [data-add-row="ssh"]');
+      await page.locator("#add-host").fill("gpu-box");
+      await page.locator("#add-host").blur();
+      await wait(400);
+      await tap("[data-add-machine] [data-add-go]");
+      const running = await until(3_000, async () => (await count('[data-add-machine="run"]')) === 1);
+      const token = sent.at(-1)?.token ?? null;
+      await page.setViewportSize({ width: 390, height: 844 });
+      await wait(1_200);
+      const narrowPage = await page.evaluate(() => [...document.querySelectorAll("[data-add-machine]")].map((d) => d.getAttribute("data-add-machine")));
+      const at = reads.length;
+      await wait(1_200);
+      const narrowReads = reads.slice(at);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(1_200);
+      const widePage = await page.evaluate(() => [...document.querySelectorAll("[data-add-machine]")].map((d) => d.getAttribute("data-add-machine")));
+      run = { marks: [{ step: "connect", state: "done", note: "", refusal: null }, { step: "satellite", state: "done", note: "", refusal: null }], done: { id: sat.id, name: "gpu-box", member: false, why: null, keeper: null, error: null, refusal: null } };
+      const ended = await until(3_000, async () => (await count('[data-add-machine="run"] [data-add-done]')) === 1);
+      const g = { running, token: !!token, narrowPage, narrowReads: narrowReads.length, sameToken: narrowReads.every((t) => t === token), widePage, ended, starts: sent.filter((x) => x.token === token).length };
+      console.log(`join g · ${JSON.stringify(g)}`);
+      if (!running || !token) fail("probe dead: join g · the add did not start on the wide face");
+      else {
+        if (narrowPage.join() !== "run") fail(`join g · across the narrow breakpoint the dialog reads ${JSON.stringify(narrowPage)} — the run, as it was`);
+        if (!narrowReads.length || !g.sameToken) fail(`join g · after the remount the face read ${narrowReads.length} time(s), same token ${g.sameToken} — it reattaches by the run's token`);
+        if (widePage.join() !== "run") fail(`join g · back on the wide face the dialog reads ${JSON.stringify(widePage)} — the run`);
+        if (!ended) fail("join g · the run's end did not land after the two remounts");
+        if (g.starts !== 1) fail(`join g · the run was started ${g.starts} times — a remount reads, it does not start again`);
+      }
+      await page.keyboard.press("Escape");
+      await wait(300);
+      // Closed is closed: the next 添加机器 starts on its first page.
+      if (!(await openAdd())) fail("join g · 添加机器 opened after a finished run is not on its first page — closing forgets the run");
+      await page.keyboard.press("Escape");
+      await wait(300);
+    } else fail("probe dead: join g · could not open 添加机器");
 
     for (const [glob, go] of Object.entries(routesJ)) await page.unroute(glob, go);
     await page.evaluate(() => window.localStorage.clear());
