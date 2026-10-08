@@ -438,6 +438,8 @@ pub fn answer(
         "relays" => to_json(&crate::relays(root)?),
         "road_share" => to_json(&rt.block_on(crate::road_share(root))?),
         "connections" => to_json(&rt.block_on(crate::connections(root))?),
+        "journal" => to_json(&crate::journal(root, &arg("machine")?, num("minutes")?)?),
+        "journal_report" => to_json(&crate::journal_report(root, num("minutes")?)?),
         "proxy_line" => {
             let port = match args.get("port") {
                 None | Some(serde_json::Value::Null) => None,

@@ -57,6 +57,7 @@ pub(crate) mod roads;
 pub mod satellite;
 pub mod secret;
 pub mod join;
+pub mod journal;
 pub mod serves;
 pub mod roadbook;
 pub mod tabs;

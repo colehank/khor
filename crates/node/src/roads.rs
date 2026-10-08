@@ -72,11 +72,36 @@ pub(crate) fn settled(roads: &Roads, id: &str, kind: PathKind) {
 /// Watches a fresh connection settle, without keeping it alive: the
 /// handle is weak, so a caller that drops its connection closes it on
 /// time — the watch never becomes the reason a pipe stays open.
-pub(crate) fn watch(roads: &Roads, id: &str, conn: &iroh::endpoint::Connection) {
+///
+/// With a `journal`, where it settled is written there too: the road, the
+/// relay, the round trip, and every path iroh held at that moment.
+pub(crate) fn watch(
+    roads: &Roads,
+    id: &str,
+    conn: &iroh::endpoint::Connection,
+    journal: Option<Arc<crate::journal::Journal>>,
+) {
     let (roads, id, weak) = (roads.clone(), id.to_owned(), conn.weak_handle());
     tokio::spawn(async move {
         let deadline = tokio::time::Instant::now() + SETTLE;
         let mut last = PathKind::Unknown;
+        // The facts behind the verdict, read off the connection the
+        // moment it is reached.
+        let mut facts: Option<(Option<String>, u64, Vec<String>)> = None;
+        let read = |conn: &iroh::endpoint::Connection| {
+            let paths = khor_net::path::path_facts(conn)
+                .into_iter()
+                .map(|f| {
+                    let mark = if f.selected { "*" } else { "" };
+                    format!("{mark}{} {}ms", f.addr, f.rtt_ms)
+                })
+                .collect();
+            (
+                khor_net::path::relay_name(conn),
+                crate::journal::ms(crate::wires::rtt_of(conn)),
+                paths,
+            )
+        };
         while tokio::time::Instant::now() < deadline {
             let Some(conn) = weak.upgrade() else { break };
             if conn.close_reason().is_some() {
@@ -85,10 +110,14 @@ pub(crate) fn watch(roads: &Roads, id: &str, conn: &iroh::endpoint::Connection) 
             match classify(&conn) {
                 PathKind::Direct => {
                     last = PathKind::Direct;
+                    facts = Some(read(&conn));
                     break;
                 }
                 PathKind::Unknown => {}
-                kind => last = kind,
+                kind => {
+                    last = kind;
+                    facts = Some(read(&conn));
+                }
             }
             drop(conn);
             // The sampling interval is the precision of "when did it go
@@ -97,6 +126,17 @@ pub(crate) fn watch(roads: &Roads, id: &str, conn: &iroh::endpoint::Connection) 
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
         settled(&roads, &id, last);
+        if let (Some(j), Some((relay, rtt_ms, paths))) = (journal, facts) {
+            j.note(
+                Some(&id),
+                crate::journal::What::Settled {
+                    road: crate::journal::road_key(last).to_owned(),
+                    relay,
+                    rtt_ms,
+                    paths,
+                },
+            );
+        }
     });
 }
 

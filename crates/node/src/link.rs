@@ -507,7 +507,8 @@ enum Wake {
     /// The network under this machine changed, or it woke from sleep
     /// ([`network_changed`]): tell iroh, judge every wire by whether it
     /// is heard right after, and visit everyone once that is known.
-    Network,
+    /// Carries who said so, for the journal.
+    Network(crate::journal::Change),
     /// The app is going to the background ([`suspending`]): let every
     /// wire go now, closed, so the far machines read 未连接 at once
     /// instead of after their silence limit.
@@ -644,7 +645,13 @@ pub fn resume(root: &std::path::Path) -> Option<Resuming> {
 /// the phone on a path change; the resident also notices a sleep on its
 /// own, by its wall clock jumping past its monotonic one.
 pub fn network_changed(root: &std::path::Path) -> bool {
-    door(root).is_some_and(|d| d.send(Wake::Network).is_ok())
+    // Who calls this: the phone's path monitor, the Mac app's wake.
+    let change = if cfg!(target_os = "ios") {
+        crate::journal::Change::Path
+    } else {
+        crate::journal::Change::Wake
+    };
+    door(root).is_some_and(|d| d.send(Wake::Network(change)).is_ok())
 }
 
 /// **The app is going to the background**: the resident on `root` lets
@@ -949,6 +956,9 @@ impl Node {
                 }
             }
         });
+        if self.wires.journal.get().is_some() {
+            crate::journal::watch_ears(ep, self.wires.clone());
+        }
     }
 
     /// The endpoint the resident answers on now, for a task that outlives
@@ -1069,6 +1079,11 @@ impl Node {
         // The resident's handle on itself and on its current ears, for
         // the tasks it spawns that outlive one call (`Node::me`).
         let _ = node.me.set(std::sync::Arc::downgrade(&node));
+        // The connection journal (`crate::journal`): the resident is its
+        // one writer.
+        if node.wires.journal.set(crate::journal::Journal::open(node.root())).is_ok() {
+            node.wires.note(None, crate::journal::What::Started);
+        }
         node.set_ears(&ep);
         // Conversation files that arrived while no resident ran start now.
         node.take_arrived();
@@ -1167,7 +1182,7 @@ impl Node {
                     let ran = mono.elapsed();
                     let walked = wall.elapsed().unwrap_or_default();
                     if walked > ran + SLEPT_AFTER {
-                        let _ = wake.send(Wake::Network);
+                        let _ = wake.send(Wake::Network(crate::journal::Change::Clock));
                     }
                     mono = std::time::Instant::now();
                     wall = std::time::SystemTime::now();
@@ -1356,8 +1371,9 @@ impl Node {
                     }
                     // A network change while backgrounded is the resume's
                     // to deal with: it gives new ears and a round.
-                    Wake::Network if resting.load(std::sync::atomic::Ordering::Relaxed) => {}
-                    Wake::Network => {
+                    Wake::Network(_) if resting.load(std::sync::atomic::Ordering::Relaxed) => {}
+                    Wake::Network(change) => {
+                        node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
                         node.wires.network_changed();
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("{}", msg::serve_network_changed(&stamp));
@@ -1425,6 +1441,10 @@ impl Node {
                                 "{}",
                                 msg::serve_fresh_ears(&stamp, begun.elapsed().as_millis())
                             );
+                            node.wires.note(
+                                None,
+                                crate::journal::What::Ears { ms: crate::journal::ms(begun.elapsed()), error: None },
+                            );
                             for (ears, synced) in waiting {
                                 if let Some(ears) = ears {
                                     let _ = ears.send(Ok(()));
@@ -1434,6 +1454,13 @@ impl Node {
                         }
                         Err(why) => {
                             eprintln!("{}", msg::serve_fresh_ears_failed(&stamp, &why));
+                            node.wires.note(
+                                None,
+                                crate::journal::What::Ears {
+                                    ms: crate::journal::ms(begun.elapsed()),
+                                    error: Some(crate::journal::scrub(&why)),
+                                },
+                            );
                             for (ears, synced) in waiting {
                                 if let Some(ears) = ears {
                                     let _ = ears.send(Err(why.clone()));
@@ -2659,6 +2686,7 @@ impl Node {
         };
         // A road this machine carries itself, as `dial_with` adds it.
         addr.addrs.extend(self.carried_addr(&d.id));
+        let tried = crate::journal::offered(&addr);
         let Ok(frame) = proto::encode(req) else {
             return Early::NotTaken;
         };
@@ -2718,10 +2746,40 @@ impl Node {
                 }
             }
         };
-        match tokio::time::timeout(within, attempt).await {
+        let outcome = tokio::time::timeout(within, attempt).await;
+        {
+            let (won, error) = match &outcome {
+                Ok(Ok(_)) => (Some(crate::journal::Won::Early), None),
+                Ok(Err(DialFailure::Refused(why))) => (None, Some(crate::journal::scrub(why))),
+                _ => (None, None),
+            };
+            let (failures, retry_s) = match won {
+                None => {
+                    let (n, wait) = self.wires.next_backoff(&d.id, wires::Proto::Main);
+                    (n, Some(wait.as_secs()))
+                }
+                Some(_) => (0, None),
+            };
+            self.wires.note(
+                Some(&d.id),
+                crate::journal::What::Dial {
+                    by: crate::journal::by_now(),
+                    tunnel: false,
+                    ms: crate::journal::ms(started.elapsed()),
+                    direct: tried.0,
+                    relays: tried.1.clone(),
+                    carried: tried.2,
+                    won,
+                    error,
+                    failures,
+                    retry_s,
+                },
+            );
+        }
+        match outcome {
             Ok(Ok((conn, asked))) => {
                 crate::roads::replied(&self.roads, &d.id, started.elapsed());
-                crate::roads::watch(&self.roads, &d.id, &conn);
+                crate::roads::watch(&self.roads, &d.id, &conn, self.wires.journal.get().cloned());
                 self.wires.adopt(&d.id, wires::Proto::Main, conn.clone());
                 drop(_one);
                 match asked {
@@ -8276,8 +8334,11 @@ impl Node {
         // two are checked in different places. Beside, so the answer is in
         // by the time the dial gives up rather than three seconds after.
         let probe = tokio::spawn(crate::doctor::any_relay_answers(relays.clone()));
-        let dialled = self
-            .dial_with(ep, &t.id, &t.direct, &relays, ALPN, DIAL_TIMEOUT)
+        let dialled = crate::journal::BY
+            .scope(
+                crate::journal::By::Pair,
+                self.dial_with(ep, &t.id, &t.direct, &relays, ALPN, DIAL_TIMEOUT),
+            )
             .await;
         let conn = match dialled {
             Ok(conn) => {
@@ -8833,6 +8894,21 @@ impl Node {
 
     /// One machine's round: skipped with a reason, joined, or run.
     async fn round_with(
+        &self,
+        ep: &iroh::Endpoint,
+        d: &DeviceInfo,
+        force: bool,
+    ) -> Result<String, String> {
+        // The journal's word for who wanted the dials below.
+        let by = if force {
+            crate::journal::By::Forced
+        } else {
+            crate::journal::By::Pump
+        };
+        crate::journal::BY.scope(by, self.round_with_inner(ep, d, force)).await
+    }
+
+    async fn round_with_inner(
         &self,
         ep: &iroh::Endpoint,
         d: &DeviceInfo,
@@ -10398,24 +10474,58 @@ impl Node {
         // (`khor_net::carry::RoadOrder` then keeps the owner's order).
         let carried = self.carried_addr(id);
         let ahead = !direct.is_empty() || carried.is_some();
+        // What this dial offered, for the journal (`crate::journal`).
+        let mut tried = (0, Vec::new(), false);
         if ahead {
             let mut addr = endpoint::dial_addr(id, direct, relays).map_err(bare)?;
             addr.addrs.extend(carried);
+            tried = crate::journal::offered(&addr);
             let (ep, alpn) = (ep.clone(), alpn.to_vec());
-            roads.spawn(async move { ep.connect(addr, &alpn).await });
+            roads.spawn(async move { (crate::journal::Won::Direct, ep.connect(addr, &alpn).await) });
         }
         // By identity alone. Nothing here can be stale: a machine's id
         // is the one thing about it that a restart does not change.
         {
             let addr = endpoint::dial_addr(id, &[], relays).map_err(bare)?;
+            if !ahead {
+                tried = crate::journal::offered(&addr);
+            }
             let (ep, alpn, wait) = (ep.clone(), alpn.to_vec(), ahead);
             roads.spawn(async move {
                 if wait {
                     tokio::time::sleep(RELAY_HEAD_START).await;
                 }
-                ep.connect(addr, &alpn).await
+                (crate::journal::Won::Relay, ep.connect(addr, &alpn).await)
             });
         }
+        let tunnel = alpn == khor_net::endpoint::TUNNEL_ALPN;
+        let by = crate::journal::by_now();
+        let note = |won: Option<crate::journal::Won>, error: Option<String>| {
+            // A failure's backoff is the one its caller is about to count
+            // (`Node::line_to_inner`); a pairing dial counts none.
+            let (failures, retry_s) = match (won, by) {
+                (None, b) if b != crate::journal::By::Pair => {
+                    let (n, wait) = self.wires.next_backoff(id, if tunnel { wires::Proto::Tunnel } else { wires::Proto::Main });
+                    (n, Some(wait.as_secs()))
+                }
+                _ => (0, None),
+            };
+            self.wires.note(
+                Some(id),
+                crate::journal::What::Dial {
+                    by,
+                    tunnel,
+                    ms: crate::journal::ms(started.elapsed()),
+                    direct: tried.0,
+                    relays: tried.1.clone(),
+                    carried: tried.2,
+                    won,
+                    error,
+                    failures,
+                    retry_s,
+                },
+            );
+        };
 
         let deadline = tokio::time::sleep(within);
         tokio::pin!(deadline);
@@ -10425,19 +10535,26 @@ impl Node {
         let mut refused: Option<String> = None;
         loop {
             tokio::select! {
-                () = &mut deadline => return Err(DialFailure::TimedOut),
+                () = &mut deadline => {
+                    note(None, refused.map(|why| crate::journal::scrub(&why)));
+                    return Err(DialFailure::TimedOut);
+                }
                 joined = roads.join_next() => match joined {
-                    Some(Ok(Ok(conn))) => {
+                    Some(Ok((won, Ok(conn)))) => {
+                        note(Some(won), None);
                         crate::roads::replied(&self.roads, id, started.elapsed());
-                        crate::roads::watch(&self.roads, id, &conn);
+                        crate::roads::watch(&self.roads, id, &conn, self.wires.journal.get().cloned());
                         return Ok(conn);
                     }
-                    Some(Ok(Err(e))) => refused = Some(e.to_string()),
+                    Some(Ok((_, Err(e)))) => refused = Some(e.to_string()),
                     Some(Err(_)) => {}
-                    None => return Err(match refused {
-                        Some(why) => DialFailure::Refused(why),
-                        None => DialFailure::TimedOut,
-                    }),
+                    None => {
+                        note(None, refused.as_deref().map(crate::journal::scrub));
+                        return Err(match refused {
+                            Some(why) => DialFailure::Refused(why),
+                            None => DialFailure::TimedOut,
+                        });
+                    }
                 },
             }
         }

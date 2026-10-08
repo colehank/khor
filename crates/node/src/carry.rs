@@ -217,7 +217,9 @@ impl Node {
                 let (r, w) = sock.into_split();
                 let attached = links.attach(peer, Carrier::Ssh, r, w);
                 wires.forgive(&id);
+                wires.note(Some(&id), crate::journal::What::Carry { up: true, why: None });
                 attached.ended().await;
+                wires.note(Some(&id), crate::journal::What::Carry { up: false, why: None });
             }
         });
         Ok((addr, cookie))
@@ -340,18 +342,22 @@ impl OneCarry {
                 });
                 let attached = links.attach(peer, Carrier::Ssh, r, w);
                 wires.forgive(&id);
+                wires.note(Some(&id), crate::journal::What::Carry { up: true, why: None });
                 tokio::select! {
                     () = attached.ended() => {}
                     _ = child.wait() => {}
                 }
                 let _ = child.start_kill();
                 let _ = child.wait().await;
+                let mut why = None;
                 if let Some(said) = said
                     && let Ok(Ok(line)) = tokio::time::timeout(Duration::from_secs(2), said).await
                     && !line.is_empty()
                 {
                     eprintln!("carry {}: {line}", to.host);
+                    why = Some(line);
                 }
+                wires.note(Some(&id), crate::journal::What::Carry { up: false, why });
             }
             if let Some(until) = until
                 && (Instant::now() >= until || links.has(&peer))

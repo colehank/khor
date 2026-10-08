@@ -192,6 +192,20 @@ pub(crate) enum Retired {
 }
 
 impl Retired {
+    /// The journal's key for it (`journal::What::Retired`).
+    fn key(self) -> &'static str {
+        match self {
+            Retired::Silent => "silent",
+            Retired::Unanswered => "unanswered",
+            Retired::Closed => "closed",
+            Retired::Network => "network",
+            Retired::NewEars => "replaced",
+            Retired::Paused => "paused",
+            Retired::Suspended => "suspended",
+            Retired::Departed => "departed",
+        }
+    }
+
     fn reason(self) -> &'static [u8] {
         match self {
             Retired::Silent => b"silent",
@@ -238,6 +252,9 @@ struct Slot {
     /// UDP bytes sent and received on the wires this slot held before
     /// the one it holds now (round NET-3: what a sync round costs).
     bytes_past: (u64, u64),
+    /// When the wire held now was adopted, for the journal's account of
+    /// how long it lived.
+    since: Option<Instant>,
 }
 
 /// UDP bytes a wire has sent and received, as QUIC counts them —
@@ -273,6 +290,9 @@ pub(crate) struct Wires {
     /// attempt failed, so the machine is idle, not unreachable.
     down: Mutex<HashMap<String, Instant>>,
     pub(crate) counts: Counts,
+    /// The connection journal, set by the resident only
+    /// (`crate::journal`: one writer per home).
+    pub(crate) journal: std::sync::OnceLock<Arc<crate::journal::Journal>>,
 }
 
 /// How long a relay's word that a machine left counts, unheard since.
@@ -435,6 +455,44 @@ pub(crate) struct Reading {
 }
 
 impl Wires {
+    /// One line in the connection journal, when this node keeps one.
+    pub(crate) fn note(&self, peer: Option<&str>, what: crate::journal::What) {
+        if let Some(j) = self.journal.get() {
+            j.note(peer, what);
+        }
+    }
+
+    /// The failure count and the pump's wait that one more failed dial
+    /// to this key would leave ([`Self::failed`]) — what the journal
+    /// writes beside the dial that is about to be counted.
+    pub(crate) fn next_backoff(&self, id: &str, proto: Proto) -> (u32, Duration) {
+        let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let n = slots
+            .get(&(id.to_owned(), proto))
+            .map_or(0, |s| s.failures)
+            .saturating_add(1);
+        (n, backoff(n))
+    }
+
+    /// [`drop_wire`], written in the journal: why, how long the wire had
+    /// been quiet, how long it lived.
+    fn drop_noted(&self, id: &str, proto: Proto, slot: &mut Slot, why: Retired) {
+        if slot.conn.is_some() {
+            let now = Instant::now();
+            let since = |t: Option<Instant>| t.map_or(0, |t| crate::journal::ms(now.saturating_duration_since(t)));
+            self.note(
+                Some(id),
+                crate::journal::What::Retired {
+                    why: why.key().to_owned(),
+                    tunnel: proto == Proto::Tunnel,
+                    quiet_ms: since(slot.heard),
+                    age_ms: since(slot.since),
+                },
+            );
+        }
+        drop_wire(slot, why);
+    }
+
     /// The live wire for this key, if there is one.
     pub(crate) fn live(&self, id: &str, proto: Proto) -> Option<Connection> {
         let slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
@@ -479,6 +537,7 @@ impl Wires {
         settle(slot, road_now(&conn));
         slot.failures = 0;
         slot.retry_at = None;
+        slot.since = Some(now);
         slot.conn = Some(conn);
         self.counts.dialed.fetch_add(1, Relaxed);
     }
@@ -554,7 +613,7 @@ impl Wires {
         {
             return false;
         }
-        drop_wire(slot, why);
+        self.drop_noted(id, proto, slot, why);
         if why == Retired::Unanswered {
             slot.unanswered_total += 1;
             slot.last_failure = Some((khor_catalog::msg::wire_unanswered().to_owned(), Instant::now()));
@@ -613,7 +672,7 @@ impl Wires {
             if let Some(slot) = slots.get_mut(&(id.to_owned(), proto))
                 && slot.conn.is_some()
             {
-                drop_wire(slot, why);
+                self.drop_noted(id, proto, slot, why);
                 self.counts.retired(why);
             }
         }
@@ -630,7 +689,7 @@ impl Wires {
             if let Some(slot) = slots.get_mut(&(id.to_owned(), proto))
                 && slot.conn.is_some()
             {
-                drop_wire(slot, Retired::NewEars);
+                self.drop_noted(id, proto, slot, Retired::NewEars);
                 self.counts.retired(Retired::NewEars);
             }
         }
@@ -638,9 +697,9 @@ impl Wires {
 
     pub(crate) fn clear(&self, why: Retired) {
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
-        for slot in slots.values_mut() {
+        for ((id, proto), slot) in slots.iter_mut() {
             if slot.conn.is_some() {
-                drop_wire(slot, why);
+                self.drop_noted(id, *proto, slot, why);
                 self.counts.retired(why);
             }
         }
@@ -660,6 +719,7 @@ impl Wires {
     /// after a full 10 s dial.
     pub(crate) fn serving(&self, conn: &Connection) {
         self.back(&conn.remote_id().to_string());
+        self.note(Some(&conn.remote_id().to_string()), crate::journal::What::Inbound);
         let mut served = self.served.lock().unwrap_or_else(|p| p.into_inner());
         served.retain(|w| w.conn.upgrade().is_some_and(|c| c.close_reason().is_none()));
         served.push(Served {
@@ -695,6 +755,7 @@ impl Wires {
     /// resident stopped kept its word 中继 for 14 s, and the first ask to
     /// it waited out an ack and a full dial to say so.
     pub(crate) fn departed(&self, id: &str) {
+        self.note(Some(id), crate::journal::What::Departed);
         self.gone
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -707,7 +768,7 @@ impl Wires {
                     && slot.conn.is_some()
                     && slot.word != Some(PathKind::Direct)
                 {
-                    drop_wire(slot, Retired::Departed);
+                    self.drop_noted(id, proto, slot, Retired::Departed);
                     self.counts.retired(Retired::Departed);
                     any = true;
                 }
@@ -845,11 +906,12 @@ impl Wires {
             });
         }
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
-        for ((id, _), slot) in slots.iter_mut() {
+        for ((id, proto), slot) in slots.iter_mut() {
             let Some(conn) = slot.conn.clone() else {
                 continue;
             };
             if conn.close_reason().is_some() {
+                self.drop_noted(id, *proto, slot, Retired::Closed);
                 slot.conn = None;
                 slot.word = None;
                 slot.leaning = None;
@@ -877,7 +939,7 @@ impl Wires {
                 } else {
                     Retired::Silent
                 };
-                drop_wire(slot, why);
+                self.drop_noted(id, *proto, slot, why);
                 slot.last_failure = Some((
                     if why == Retired::Network {
                         khor_catalog::msg::wire_network_changed()

@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import type { Road } from "@/gen/bindings/Road";
-import { fetchAbout, fetchLoad, inApp, setWatch } from "@/api";
+import type { JournalLine } from "@/gen/bindings/JournalLine";
+import { fetchAbout, fetchLoad, fetchRevealHere, inApp, journal, journalReport, reveal, setWatch } from "@/api";
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
 import { DetailFrame } from "@/components/DetailFrame";
 import { MachineFace } from "@/components/SessionFace";
@@ -325,6 +326,7 @@ function Body({
           <DetailFrame className="flex flex-col gap-row">
             <Strip row={row} rows={rows} sayModel={sayModel} />
             <RoadLine row={row} rows={rows} onPromote={onPromote} />
+            <JournalRow row={row} />
             {never ? (
               <RegionState state="loading-never" />
             ) : (
@@ -548,6 +550,82 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
       {leg && b!.said && (
         <div data-road-said className="text-callout text-muted-foreground">
           {b!.said}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** How far back the 连接记录 row reads, in minutes. */
+const JOURNAL_MINUTES = 60;
+/** How many of its newest lines the row shows under its summary. */
+const JOURNAL_SHOWN = 3;
+
+/**
+ * **连接记录** (NET-STABLE 第一步): what this machine's resident saw on
+ * its way to `row` — dials and the roads they tried, wires retired, its
+ * own network and home relay — read off the journal files
+ * (`khor_node::journal`). Built from `RoadLine`'s parts and nothing else:
+ * the caption label, one line of body, a plain button at the end, and
+ * under it the newest few lines in `callout` with their times in
+ * `caption` `tertiary`. 报告 freezes every machine's last hour into one
+ * file under this home and says where (Finder shows it where it can).
+ * Not on this machine's own page: the journal is of the others.
+ */
+function JournalRow({ row }: { row: DeviceRow }) {
+  const [lines, setLines] = useState<JournalLine[] | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+  const [why, setWhy] = useState<string | null>(null);
+  // Read again when the road word moves: that is when there is news.
+  useEffect(() => {
+    if (row.me) return;
+    let live = true;
+    journal(row.id, JOURNAL_MINUTES)
+      .then((l) => live && setLines(l))
+      .catch(() => live && setLines(null));
+    return () => {
+      live = false;
+    };
+  }, [row.id, row.me, row.hop, row.down_ms === null]);
+  if (row.me || lines === null) return null;
+  const trouble = lines.filter((l) => l.trouble).length;
+  const summary =
+    lines.length === 0
+      ? msg.journal_empty
+      : trouble > 0
+        ? gui.journal_summary_trouble(JOURNAL_MINUTES, lines.length, trouble)
+        : gui.journal_summary(JOURNAL_MINUTES, lines.length);
+  const report = () => {
+    setWhy(null);
+    journalReport(JOURNAL_MINUTES)
+      .then(async (path) => {
+        setSaved(path);
+        if (await fetchRevealHere()) await reveal(path);
+      })
+      .catch((e) => setWhy(String(e)));
+  };
+  return (
+    <div data-journal className="flex flex-col gap-xxs border-b pb-base">
+      <div className="flex min-h-ctl-md items-center gap-row">
+        <span className="flex-none text-caption text-muted-foreground">{gui.journal_row}</span>
+        <span data-journal-summary className="min-w-0 flex-1 truncate text-body tabular-nums">
+          {summary}
+        </span>
+        <Button data-journal-report className="flex-none" onClick={report}>
+          {gui.journal_report_ask}
+        </Button>
+      </div>
+      {lines.slice(-JOURNAL_SHOWN).map((l) => (
+        <div key={`${l.at}-${l.text}`} data-journal-line={l.trouble ? "trouble" : "ok"} className="flex gap-row text-callout">
+          <span className="flex-none text-caption text-tertiary tabular-nums">{l.when}</span>
+          <span className="min-w-0 flex-1 text-muted-foreground">
+            {l.machine === row.shown || l.machine === row.name ? l.text : gui.journal_line_of(l.machine, l.text)}
+          </span>
+        </div>
+      ))}
+      {(saved || why) && (
+        <div data-journal-saved className="text-callout text-muted-foreground">
+          {why ?? gui.journal_report_at(saved!)}
         </div>
       )}
     </div>

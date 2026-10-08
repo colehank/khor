@@ -316,6 +316,46 @@ pub struct ProxyLine {
     pub command: String,
 }
 
+/// **One line of the connection journal** (`khor_node::journal`, NET-STABLE
+/// 第一步): what this machine's resident saw on its way to another one,
+/// in this language's words.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct JournalLine {
+    #[ts(type = "number")]
+    pub at: u64,
+    /// `HH:MM:SS`, local.
+    pub when: String,
+    /// The far machine's name, or 本机 for this machine's own events.
+    pub machine: String,
+    pub text: String,
+    /// Something going wrong: a failed dial, a wire retired, the home
+    /// relay down.
+    pub trouble: bool,
+}
+
+/// The journal of one machine by id, this machine's own events
+/// interleaved, over the last `minutes`; read off the files, so it
+/// answers with no resident.
+pub fn journal(root: &Path, machine: &str, minutes: u64) -> Result<Vec<JournalLine>, String> {
+    Ok(open(root)?
+        .journal(Some(machine), minutes)
+        .into_iter()
+        .map(|l| JournalLine {
+            at: l.at,
+            when: l.when,
+            machine: l.machine,
+            text: l.text,
+            trouble: l.trouble,
+        })
+        .collect())
+}
+
+/// 报告: every machine's last `minutes` frozen into one file under this
+/// home (`Node::journal_report`); answers its path.
+pub fn journal_report(root: &Path, minutes: u64) -> Result<String, String> {
+    Ok(open(root)?.journal_report(minutes)?.display().to_string())
+}
+
 /// [`ProxyLine`] for `host:port` through `machine`; `port` `None` is 22.
 pub fn proxy_line(machine: &str, host: &str, port: Option<u16>) -> ProxyLine {
     let (config_line, command) =
