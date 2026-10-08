@@ -38770,7 +38770,9 @@ try {
         await page.emulateMedia({ colorScheme: scheme });
         await page.reload({ waitUntil: "load" });
         await wait(900);
-        const up = (await openMore("doctor")) && (await until(5_000, async () => (await count('[data-connections] [data-more-fact="conn-relay"]')) === 2));
+        const up = (await openMore("doctor")) && (await until(5_000, async () => (await page.locator('[data-connections] [data-more-fact="conn-relay"]').count()) === 2));
+        // Counted drawn or not: a value squeezed to no width is the bug,
+        // and a visibility filter would read it as 「never drew」.
         if (!up) {
           fail(`probe dead: ${where} · the page or its 连接 group never drew`);
           continue;
@@ -38807,10 +38809,14 @@ try {
         if (squeezed.length) fail(`${where} · values squeezed beside their labels: ${JSON.stringify(squeezed)} — a value that wraps has a line of its own (views/more/MorePage MoreFact)`);
         const spilt = facts.filter((f) => f.labelLines !== 1 || f.labelPast > 1);
         if (spilt.length) fail(`${where} · labels broken or past the row: ${JSON.stringify(spilt)} — one line inside the row (views/more/MorePage MoreFact)`);
+        // Whole where it fits (390 has the room), cut in the middle where
+        // it does not (375): its start, 「…」, its port — never broken.
         const host = facts.find((f) => f.name === "conn-relay" && f.value.includes("182"));
-        if (!host || !host.label.includes("…") || !host.label.startsWith("relay-") || !host.label.endsWith("8443")) {
-          fail(`${where} · the relay ${HOST} is labelled ${JSON.stringify(host?.label)} — wider than the row, it is cut in the middle: its start, 「…」, its port (browse/TabStrip MidName)`);
+        const cut = host?.label.includes("…");
+        if (!host || (cut ? !host.label.startsWith("relay-") || !host.label.endsWith("8443") : host.label !== HOST)) {
+          fail(`${where} · the relay ${HOST} is labelled ${JSON.stringify(host?.label)} — whole, or cut in the middle: its start, 「…」, its port (browse/TabStrip MidName)`);
         }
+        if (width === 375 && host && !cut) fail(`${where} · the relay ${HOST} is whole at 375, where it is wider than the row — the probe proves nothing about the cut (or the cut never happened)`);
       }
       await page.unroute("**/connections", routeB);
     }
@@ -38988,7 +38994,9 @@ try {
       const routeF = json(null);
       await page.route("**/find", routeF);
       await reset(1400);
-      await press("[data-global-search]");
+      await open("sessions");
+      await page.keyboard.press("Meta+k");
+      await until(3_000, async () => (await page.locator("[data-search-box]").count()) === 1);
       const box = page.locator("[data-search-box]").filter({ visible: true });
       const typed = (await box.count()) > 0;
       if (typed) await box.first().fill("gate");
@@ -38996,8 +39004,12 @@ try {
       const standing = await count("[data-rail-more]");
       const raw = await engine();
       console.log(`afix d3 · ⌘K answered null: typed ${typed}, 没有结果 ${quiet}, strip ${standing}, engine text ${raw}`);
-      if (!typed) fail("probe dead: afix d3 · ⌘K drew no box");
-      else if (!quiet || !standing || raw) fail(`afix d3 · ⌘K answered null and the window ${standing ? `does not say ${JSON.stringify(nothing)}` : "went blank"} — no answer is no hits (components/SideHead)`);
+      // The box asks once as it opens (an empty word), so a window that
+      // blanks on `null` loses the box before anything is typed: no box
+      // *and* no strip is the bug, no box with the strip standing is the
+      // probe's.
+      if (!typed && standing) fail("probe dead: afix d3 · ⌘K drew no box");
+      else if (!typed || !quiet || !standing || raw) fail(`afix d3 · ⌘K answered null and the window ${standing ? `does not say ${JSON.stringify(nothing)}` : "went blank"} — no answer is no hits (components/SideHead)`);
       await page.keyboard.press("Escape");
       await page.unroute("**/find", routeF);
       await page.unroute("**/doctor", routeD);
