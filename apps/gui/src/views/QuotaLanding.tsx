@@ -82,7 +82,7 @@ import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
 import { UsageHalf, fromReading, fromUsage } from "@/views/UsageHalf";
 
-import { QUOTA_AXES, agoOf, groupLabel, money, moneyIn, until, untilBare } from "@/words";
+import { QUOTA_AXES, agoOf, groupLabel, markOfCode, money, moneyIn, until, untilBare } from "@/words";
 
 /** How often the board is asked for. The node caches every reading for
     five minutes and cools a failed account for ten (`accounts` module
@@ -700,17 +700,19 @@ type Figure = { key: string; word: string; value: ReactNode };
 /** Extra usage, as figures: what was spent against its ceiling, and what
     is left. Drawn only with a real reading (`creditsShown`). */
 function creditFigures(c: QuotaCredits): Figure[] {
+  // The endpoint says `USD`; the figure wears `$` (`markOfCode`).
+  const mark = markOfCode(c.currency);
   const out: Figure[] = [];
   if (c.used != null) {
     out.push({
       key: "credits-used",
       word: gui.quota_credits,
-      value: c.monthly_limit != null ? gui.accounts_of(money(c.used, c.currency), money(c.monthly_limit, c.currency)) : money(c.used, c.currency),
+      value: c.monthly_limit != null ? gui.accounts_of(money(c.used, mark), money(c.monthly_limit, mark)) : money(c.used, mark),
     });
   } else if (c.monthly_limit != null) {
-    out.push({ key: "credits-monthly", word: gui.quota_credits_monthly, value: money(c.monthly_limit, c.currency) });
+    out.push({ key: "credits-monthly", word: gui.quota_credits_monthly, value: money(c.monthly_limit, mark) });
   }
-  if (c.balance != null) out.push({ key: "credits-balance", word: gui.accounts_remaining, value: money(c.balance, c.currency) });
+  if (c.balance != null) out.push({ key: "credits-balance", word: gui.accounts_remaining, value: money(c.balance, mark) });
   return out;
 }
 

@@ -32,7 +32,9 @@
 //      `link:` axis picks `connectionKey` and words it `connectionKeyWord`,
 //      and the row's state is `connectionKeyWord(connectionKey(d))`, not
 //      a second ladder (`views/DevicesList`);
-//   7. **money is one formatter**: no file but `words.ts` defines a
+//   7. **money is one formatter**: a provider's currency code reaches it
+//      only through `markOfCode` (USD → $, CNY → ¥, EUR → €, GBP → £,
+//      JPY → ¥); no file but `words.ts` defines a
 //      `money` (or the ring's `ringWord`) of its own — a page waiting on
 //      a lane is named in `PENDING` and printed every run (none since
 //      UX-53);
@@ -172,6 +174,20 @@ else {
 // 7. one money.
 const moneyOwn = users(/\bfunction\s+(money|ringWord)\s*\(/).filter((f) => !PENDING.has(f));
 if (moneyOwn.length) fail(`${moneyOwn.join(", ")} define a money formatter of their own — words.ts money() (symbol first, 「$9.21」「¥12K」)`);
+// …and a provider's ISO code is a mark only through `markOfCode` (USD → $):
+// handed to money() as it came it reads 「12.40 USD」 (ux-q3, the credits).
+const codeAsMark = users(/\bmoney(In)?\([^;]*?\.currency\b/);
+if (codeAsMark.length) fail(`${codeAsMark.join(", ")} hand a provider's currency code to money() as its mark — markOfCode(code) first (「$12.40」, not 「12.40 USD」)`);
+// The table itself: the five symbols, and a code it does not know kept.
+{
+  const t = words ? code(words.text) : "";
+  const table = /CODE_MARK[^=]*=\s*\{([^}]*)\}/.exec(t)?.[1] ?? "";
+  const want = { USD: "$", CNY: "¥", EUR: "€", GBP: "£", JPY: "¥" };
+  const got = Object.fromEntries([...table.matchAll(/(\w+):\s*"([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  const off = Object.entries(want).filter(([k, v]) => got[k] !== v);
+  if (off.length) fail(`words.ts CODE_MARK reads ${JSON.stringify(got)} — ${off.map(([k, v]) => `${k} → ${v}`).join(", ")} (WORDS-1008, symbol first)`);
+  if (!/\?\?\s*code\b/.test(t)) fail("words.ts markOfCode does not fall back to the code itself — an unknown currency keeps its code after the figure");
+}
 
 // 8. the direction is never trimmed off: no page strips 后 / 前 from what
 //    `until` / `ago` said (`untilBare` is the bare form).
