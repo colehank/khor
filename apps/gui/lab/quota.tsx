@@ -17,7 +17,7 @@ import "./quota.css";
 import { Bar } from "@/components/Bar";
 import { sessionMark } from "@/components/BrandIcons";
 import { DetailFrame } from "@/components/DetailFrame";
-import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, arc, ARC0, SPAN, type Pip } from "@/components/Face";
+import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, type Pip } from "@/components/Face";
 import { IconBack } from "@/components/icons";
 import { providerKind } from "@/components/SessionFace";
 import { SideList, type SideRow } from "@/components/SideList";
@@ -206,15 +206,31 @@ const BANDS = boardBands(ACCOUNTS.flatMap((a) => (a.usage ?? []).map((r) => r.mo
 
 // ---- the words this draft proposes ---------------------------------------
 
-/** M / H / D. `two` keeps a second unit (2H14M, 3D4H) — the page's reset
-    column; the row says one. */
-function short(ms: number, two = false): string {
+// WORDS-1008 (the owner: 「MDH 这个只在需要缩写的地方……普通的还是 2 秒前
+// 这样。重置如 2 小时 13 分后重置」): times in words with their direction;
+// M / H / D only in the window names. Drafts of what lane afix-a's shared
+// formatter will give.
+
+/** How long until a moment: two units where the second matters, never
+    rounded down to one — 「2 小时 13 分」「3 天 4 小时」「45 分」. */
+function ahead(ms: number): string {
   const m = Math.max(1, Math.floor(ms / MIN));
-  if (m < 60) return `${m}M`;
+  if (m < 60) return `${m} 分`;
   const h = Math.floor(m / 60);
-  if (h < 24) return two && m % 60 ? `${h}H${m % 60}M` : `${h}H`;
+  if (h < 24) return m % 60 ? `${h} 小时 ${m % 60} 分` : `${h} 小时`;
   const d = Math.floor(h / 24);
-  return two && h % 24 ? `${d}D${h % 24}H` : `${d}D`;
+  return h % 24 ? `${d} 天 ${h % 24} 小时` : `${d} 天`;
+}
+
+/** How long ago, one unit: 「2 秒前」「3 分钟前」「4 小时前」「2 天前」. */
+function ago(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s} 秒前`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h / 24)} 天前`;
 }
 
 /** 90 / 95, the node's thresholds (`khor_core::Strain`). */
@@ -226,12 +242,10 @@ const tightest = (a: Acct): Line | null =>
 
 // ---- the row's ring -------------------------------------------------------
 
-const GAUGE = new URLSearchParams(location.search).has("gauge");
-
 /**
  * **The row's ring, as tall as the row's two lines** — the owner's 「右侧
- * 一个沾满高度的环」. A whole circle from twelve o'clock (`?gauge` draws
- * the dial's 210° instead, for comparison). The ink is the bar's and the
+ * 一个沾满高度的环」. A whole circle from twelve o'clock (the lead: a full
+ * ring, not the dial's 210°). The ink is the bar's and the
  * dial's (`gaugeColor`): grey, then `--strain` from 90%.
  */
 function RowRing({ pct, strain }: { pct: number | null; strain: Strain | null }) {
@@ -242,32 +256,21 @@ function RowRing({ pct, strain }: { pct: number | null; strain: Strain | null })
   return (
     <span data-quota-row-ring className="flex size-(--quota-ring) flex-none">
       <svg viewBox={`0 0 ${S} ${S}`} className="size-full" aria-hidden="true">
-        {GAUGE ? (
-          <>
-            <path d={arc(S / 2, S / 2 + 2, R, ARC0, ARC0 + SPAN)} fill="none" stroke="currentColor" strokeOpacity={0.16} strokeWidth={W} strokeLinecap="round" />
-            {f !== null && f > 0 && (
-              <path d={arc(S / 2, S / 2 + 2, R, ARC0, ARC0 + (SPAN * f) / 100)} fill="none" stroke={gaugeColor(strain)} strokeWidth={W} strokeLinecap="round" />
-            )}
-          </>
-        ) : (
-          <>
-            <circle cx={S / 2} cy={S / 2} r={R} fill="none" stroke="currentColor" strokeOpacity={0.16} strokeWidth={W} />
-            {f !== null && f >= 100 && <circle cx={S / 2} cy={S / 2} r={R} fill="none" stroke={gaugeColor(strain)} strokeWidth={W} />}
-            {f !== null && f > 0 && f < 100 && (
-              <circle
-                cx={S / 2}
-                cy={S / 2}
-                r={R}
-                fill="none"
-                stroke={gaugeColor(strain)}
-                strokeWidth={W}
-                strokeLinecap="round"
-                pathLength={100}
-                strokeDasharray={`${f} 100`}
-                transform={`rotate(-90 ${S / 2} ${S / 2})`}
-              />
-            )}
-          </>
+        <circle cx={S / 2} cy={S / 2} r={R} fill="none" stroke="currentColor" strokeOpacity={0.16} strokeWidth={W} />
+        {f !== null && f >= 100 && <circle cx={S / 2} cy={S / 2} r={R} fill="none" stroke={gaugeColor(strain)} strokeWidth={W} />}
+        {f !== null && f > 0 && f < 100 && (
+          <circle
+            cx={S / 2}
+            cy={S / 2}
+            r={R}
+            fill="none"
+            stroke={gaugeColor(strain)}
+            strokeWidth={W}
+            strokeLinecap="round"
+            pathLength={100}
+            strokeDasharray={`${f} 100`}
+            transform={`rotate(-90 ${S / 2} ${S / 2})`}
+          />
         )}
       </svg>
     </span>
@@ -287,10 +290,11 @@ function rowOf(a: Acct, on: boolean, open: () => void): SideRow {
     title: a.name,
     name: a.name,
     // Left-bottom: how long until the line the row speaks for resets.
-    sub: t?.resets ? <span className="tabular-nums">{`${short(t.resets - NOW)} 后重置`}</span> : undefined,
+    sub: t?.resets ? <span className="tabular-nums">{`${ahead(t.resets - NOW)}后重置`}</span> : undefined,
     // Left of the rightmost column: the ring, both lines tall. A trouble
-    // has no reading to draw; a wallet has no fraction, so a bare track.
-    trailing: a.trouble ? undefined : <RowRing pct={t ? t.pct : null} strain={strain} />,
+    // has no reading to draw.
+    // A wallet has no fraction and draws none (the lead, 2026-10-08).
+    trailing: a.trouble || !t ? undefined : <RowRing pct={t.pct} strain={strain} />,
     corners: {
       // Right-top: only the percentage (a wallet: its balance; a trouble:
       // the word). Over the limit, the strain ink and weight say so.
@@ -304,7 +308,9 @@ function rowOf(a: Acct, on: boolean, open: () => void): SideRow {
         <span data-corner-keep className="tabular-nums text-foreground">{a.balance}</span>
       ),
       // Right-bottom: the reading's age, as every list's.
-      bottom: a.age === null ? undefined : <span>{short(a.age)}</span>,
+      // At least 「59 分钟前」 wide, so the column — and the ring beside it
+      // — stands at one x on every row whatever the age says.
+      bottom: a.age === null ? undefined : <span className="inline-block min-w-[4.6em] text-right">{ago(a.age)}</span>,
     },
     find: a.name,
     selected: on,
@@ -336,7 +342,7 @@ function Lines({ a }: { a: Acct }) {
               {`${l.pct}%`}
             </span>
             <span className="text-right text-callout text-muted-foreground tabular-nums whitespace-nowrap">
-              {l.resets ? short(l.resets - NOW, true) : ""}
+              {l.resets ? ahead(l.resets - NOW) : ""}
             </span>
           </div>
         );
@@ -348,7 +354,7 @@ function Lines({ a }: { a: Acct }) {
 function Page({ a, narrow, onBack }: { a: Acct; narrow: boolean; onBack?: () => void }) {
   const t = tightest(a);
   const Mark = sessionMark("agent", a.provider);
-  const caption = [a.plan, `${a.home} · ${a.age === null ? "刚刚" : `${short(a.age)} 前`}`].filter(Boolean).join(" · ");
+  const caption = [a.plan, `${a.home} · ${a.age === null ? "刚刚" : ago(a.age)}`].filter(Boolean).join(" · ");
   const pips: Pip[] = a.lines.filter((l) => l.id !== "credits").map((l) => ({ word: l.word, v: l.pct }));
   // Narrow: the dial one size down, so it and the lines stay on one row
   // at 375 (the owner: 「点击去不要环和 bar 换行」).
