@@ -133,13 +133,21 @@ pub fn again<T>(
 /// can tell the face its lists are worth reading again. `None` when no
 /// resumable resident holds that home in this process.
 pub async fn resume(root: &Path) -> Option<Result<Vec<(String, Result<String, String>)>, String>> {
-    let mut resuming = khor_node::link::resume(root)?;
+    Some(resumed(khor_node::link::resume(root)?).await)
+}
+
+/// The rest of a [`resume`] already asked for — for a caller that has to
+/// send the ask itself, in order with its other asks to the resident
+/// (the phone's lifecycle worker), and wait for the rest elsewhere.
+pub async fn resumed(
+    mut resuming: khor_node::link::Resuming,
+) -> Result<Vec<(String, Result<String, String>)>, String> {
     let ears = resuming.ears().await;
     kick();
-    Some(match ears {
+    match ears {
         Ok(()) => resuming.synced().await,
         Err(why) => Err(why),
-    })
+    }
 }
 
 #[cfg(test)]

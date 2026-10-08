@@ -318,7 +318,7 @@ async fn a_dark_machine_costs_its_own_budget_and_is_backed_off() {
 }
 
 /// **A phone going to the background lets its wires go at once**
-/// (`link::suspending`, the app's `WindowEvent::Suspended`): the desk
+/// (`link::suspending`, the app's `UIApplicationDidEnterBackgroundNotification`): the desk
 /// reads it not connected in a moment, not after its silence limit, and
 /// the phone's way back (`link::resume`) is direct again.
 ///

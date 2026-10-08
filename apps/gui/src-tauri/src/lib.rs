@@ -535,10 +535,12 @@ async fn pick_key_file(app: tauri::AppHandle) -> Option<String> {
 }
 
 /// 经由's ProxyCommand line (`khor_gui_core::proxy_line`): shown with a
-/// copy button, never written into the user's ssh config.
+/// copy button, never written into the user's ssh config. Off the main
+/// thread: finding the `khor` it names can ask the login shell for its
+/// PATH (`Node::user_path`), a process started and waited on.
 #[tauri::command]
-fn proxy_line(machine: String, host: String, port: Option<u16>) -> khor_gui_core::ProxyLine {
-    khor_gui_core::proxy_line(&machine, &host, port)
+async fn proxy_line(machine: String, host: String, port: Option<u16>) -> Result<khor_gui_core::ProxyLine, String> {
+    off_main(move || Ok(khor_gui_core::proxy_line(&machine, &host, port))).await
 }
 
 /// 首选中继 (`khor_gui_core::set_preferred_relay`). Off the main thread:
@@ -3851,50 +3853,168 @@ fn scanner_here() -> bool {
     cfg!(mobile)
 }
 
-/// The phone is back in front (`WindowEvent::Resumed`): new ears for the
-/// node, far attachments asked for again on them, and — once the round
-/// that follows has come back — a word to the page that what it lists is
-/// worth reading again (`node:woken`, `src/hooks/use-woken.ts`). Off the
-/// main thread: it waits on the network, and UIKit is waiting on this
-/// handler.
+/// Where the phone's app has gone — what its resident is told about
+/// (docs/IOS.md 前后台). On iOS these are UIKit's own notifications
+/// (`watch_the_front`); on Android, tauri's window events.
+#[cfg(any(test, not(desktop)))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Front {
+    /// `UIApplicationDidEnterBackgroundNotification`: really gone. **Not**
+    /// `applicationWillResignActive`, which is also Notification Centre or
+    /// Control Centre pulled down, a permission prompt, Face ID, a call's
+    /// banner — none of them a trip to the background.
+    Background,
+    /// `UIApplicationWillEnterForegroundNotification`: back from there.
+    Foreground,
+    /// `UIApplicationDidBecomeActiveNotification`: in front and taking
+    /// touches, whatever came before.
+    Active,
+}
+
+#[cfg(any(test, not(desktop)))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Act {
+    Suspend,
+    Resume,
+}
+
+/// **What the resident is told when the app moves**, given whether it is
+/// resting (`link::resting`; `None` when no resident answered). Let go
+/// only on a real trip to the background, new ears on the way back — the
+/// two halves of one pair — and, belt and braces, new ears whenever the
+/// app is active and the resident still rests, whatever left it so.
+///
+/// ⚠️ Until 2026-10-08 the phone let go on tauri's `WindowEvent::Suspended`,
+/// which tao maps from `applicationWillResignActive`, and took ears back
+/// on `Resumed`, from `applicationWillEnterForeground`. A notification
+/// pulled down, or a permission prompt, suspended the node and nothing
+/// resumed it: every far machine that dialled the phone was refused
+/// (「server refused to accept a new connection」, an image dropped from
+/// the phone that its Mac could not pull) until the next real trip to the
+/// background and back.
+#[cfg(any(test, not(desktop)))]
+fn lifecycle_act(on: Front, resting: Option<bool>) -> Option<Act> {
+    match (on, resting) {
+        (Front::Background, Some(true)) => None,
+        (Front::Background, _) => Some(Act::Suspend),
+        (Front::Foreground, _) => Some(Act::Resume),
+        (Front::Active, Some(true)) => Some(Act::Resume),
+        (Front::Active, _) => None,
+    }
+}
+
+/// **The phone's moves, one at a time.** Every move goes to one thread,
+/// which asks the resident in the order the system told them: a
+/// suspension is answered before a resume after it is sent, and the
+/// question `Active` asks waits behind a resume just sent (`link::resting`
+/// goes through the same door), so a foreground followed at once by an
+/// active is one resume, not two. Off the main thread: UIKit waits on its
+/// handlers, and each wait here is bounded.
 #[cfg(not(desktop))]
-fn resume_the_node(app: tauri::AppHandle) {
-    use tauri::Emitter;
+fn front_worker(app: tauri::AppHandle) -> std::sync::mpsc::Sender<Front> {
+    let (tx, rx) = std::sync::mpsc::channel::<Front>();
     std::thread::spawn(move || {
         let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
             return;
         };
-        let begun = std::time::Instant::now();
         let root = Node::root_from_env();
-        let outcome = rt.block_on(khor_gui_core::rejoin::resume(&root));
+        let bounded = std::time::Duration::from_secs(2);
+        for on in rx {
+            let resting = rt.block_on(async {
+                tokio::time::timeout(bounded, khor_node::link::resting(&root))
+                    .await
+                    .ok()
+                    .flatten()
+            });
+            let act = lifecycle_act(on, resting);
+            eprintln!("khor front: {on:?}, resting {resting:?}: {act:?}");
+            match act {
+                Some(Act::Suspend) => {
+                    let _ = rt.block_on(async {
+                        tokio::time::timeout(bounded, khor_node::link::suspending(&root)).await
+                    });
+                }
+                Some(Act::Resume) => resume_the_node(&app, &root),
+                None => {}
+            }
+        }
+    });
+    tx
+}
+
+/// The phone is back in front: new ears for the node, far attachments
+/// asked for again on them, and — once the round that follows has come
+/// back — a word to the page that what it lists is worth reading again
+/// (`node:woken`, `src/hooks/use-woken.ts`). The ask is sent here, in
+/// order (`front_worker`); the wait for the network is another thread's.
+#[cfg(not(desktop))]
+fn resume_the_node(app: &tauri::AppHandle, root: &std::path::Path) {
+    use tauri::Emitter;
+    let begun = std::time::Instant::now();
+    let Some(resuming) = khor_node::link::resume(root) else {
+        eprintln!("khor resume: no resumable serve on this home");
+        let _ = app.emit_to("main", "node:woken", 0u64);
+        return;
+    };
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
+            return;
+        };
+        let outcome = rt.block_on(khor_gui_core::rejoin::resumed(resuming));
         let ms = begun.elapsed().as_millis() as u64;
         match &outcome {
-            Some(Ok(out)) => eprintln!("khor resume: round back in {ms} ms: {out:?}"),
-            Some(Err(why)) => eprintln!("khor resume: {why} ({ms} ms)"),
-            None => eprintln!("khor resume: no resumable serve on this home"),
+            Ok(out) => eprintln!("khor resume: round back in {ms} ms: {out:?}"),
+            Err(why) => eprintln!("khor resume: {why} ({ms} ms)"),
         }
         let _ = app.emit_to("main", "node:woken", ms);
     });
 }
 
-/// The phone is leaving the front (`WindowEvent::Suspended`): the
-/// resident lets every wire go (`link::suspending`). Off the main thread,
-/// bounded: UIKit waits on this handler.
-#[cfg(not(desktop))]
-fn suspend_the_node() {
-    std::thread::spawn(|| {
-        let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
-            return;
-        };
-        let root = Node::root_from_env();
-        let _ = rt.block_on(async {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(2),
-                khor_node::link::suspending(&root),
-            )
-            .await
+/// An Android phone's `front_worker`, for its window events to reach.
+#[cfg(target_os = "android")]
+static ANDROID_FRONT: std::sync::OnceLock<std::sync::mpsc::Sender<Front>> = std::sync::OnceLock::new();
+
+/// **UIKit's own word on where the app is**, from the default
+/// notification centre: did enter background, will enter foreground, did
+/// become active. Observed here rather than through tauri's window
+/// events, because tao maps `Suspended` from `applicationWillResignActive`
+/// and leaves `applicationDidEnterBackground` empty — the pair this
+/// needs is not one tao hands out. Notifications, not the app delegate:
+/// tao owns the delegate. ⚠️ Posted under the app-delegate lifecycle that
+/// `gen/apple` keeps; the UIScene lifecycle posts them too, but do not
+/// opt into it for this (`UIApplicationSceneManifest`).
+#[cfg(target_os = "ios")]
+fn watch_the_front(app: tauri::AppHandle) {
+    use objc2_foundation::{NSNotification, NSNotificationCenter};
+    use objc2_ui_kit::{
+        UIApplicationDidBecomeActiveNotification, UIApplicationDidEnterBackgroundNotification,
+        UIApplicationWillEnterForegroundNotification,
+    };
+    let worker = front_worker(app);
+    // SAFETY: UIKit's names, linked statics that live for the process.
+    let names = unsafe {
+        [
+            (UIApplicationDidEnterBackgroundNotification, Front::Background),
+            (UIApplicationWillEnterForegroundNotification, Front::Foreground),
+            (UIApplicationDidBecomeActiveNotification, Front::Active),
+        ]
+    };
+    let centre = NSNotificationCenter::defaultCenter();
+    for (name, on) in names {
+        let worker = worker.clone();
+        let told = block2::RcBlock::new(move |_note: std::ptr::NonNull<NSNotification>| {
+            let _ = worker.send(on);
         });
-    });
+        // SAFETY: the default centre, observed for the life of the
+        // process; posted on the main thread (no queue given), and the
+        // block only sends on a channel.
+        unsafe {
+            let token = centre.addObserverForName_object_queue_usingBlock(Some(name), None, None, &told);
+            // Kept for the life of the app, as `watch_for_wake`'s is.
+            std::mem::forget(token);
+        }
+    }
 }
 
 /// **The Mac woke from sleep** (`NSWorkspaceDidWakeNotification`): the
@@ -4098,7 +4218,7 @@ pub fn run() {
     // **On a phone it is resumed, not restarted** (docs/IOS.md 第三步):
     // iOS suspends the app seconds after it leaves the screen, and
     // nothing stands a phone app back up — so its serve takes new ears in
-    // place (`serve_resumable`, `on_window_event`'s `Resumed`), and a far
+    // place (`serve_resumable`, `watch_the_front`), and a far
     // terminal or conversation whose pipe ends attaches again rather than
     // ending (`khor_gui_core::rejoin`). A desktop's serve and faces are
     // exactly what they were.
@@ -4195,6 +4315,15 @@ pub fn run() {
             // buttons — and a phone's window is the screen.
             #[cfg(not(desktop))]
             let _phone = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default()).build()?;
+            // **Back to the foreground, new ears; to the background, the
+            // wires let go** (docs/IOS.md 前后台, `lifecycle_act`). Native
+            // and early, rather than the page's `visibilitychange`: the
+            // node is given new ears before the page has run a line, and
+            // nothing here depends on a page being alive to ask.
+            #[cfg(target_os = "ios")]
+            watch_the_front(app.handle().clone());
+            #[cfg(target_os = "android")]
+            let _ = ANDROID_FRONT.set(front_worker(app.handle().clone()));
             #[cfg(target_os = "ios")]
             {
                 let _ = _phone.with_webview(|wv| {
@@ -4212,6 +4341,9 @@ pub fn run() {
         // without this, closing khor's window would leave the process
         // alive with nothing on screen.
         .on_window_event(|window, event| {
+            // An iPhone has nothing to do here (`watch_the_front`).
+            #[cfg(target_os = "ios")]
+            let _ = (window, event);
             #[cfg(desktop)]
             if window.label() == "main" {
                 use tauri::Manager;
@@ -4323,33 +4455,23 @@ pub fn run() {
                     _ => {}
                 }
             }
-            // **Back to the foreground** (docs/IOS.md 第三步). The signal is
-            // UIKit's `applicationWillEnterForeground`, which tauri hands
-            // every window as `WindowEvent::Resumed` — **not**
-            // `RunEvent::Resumed`, which despite its name is the event
-            // loop waking from a poll and fires all the time. Chosen over
-            // the page's `visibilitychange` because it is native and
-            // early: the node is given new ears before the page has run a
-            // line, and nothing here depends on a page being alive to ask.
-            // It fires only after a real trip to the background (not when
-            // a notification is pulled down over the app). ⚠️ It comes
-            // from the app delegate: an Info.plist that opts into the
-            // UIScene lifecycle (`UIApplicationSceneManifest`) moves the
-            // call to a scene delegate tao leaves empty, and this goes
-            // silent — `gen/apple` does not opt in.
-            #[cfg(not(desktop))]
-            if window.label() == "main" && matches!(event, tauri::WindowEvent::Resumed) {
-                use tauri::Manager;
-                resume_the_node(window.app_handle().clone());
-            }
-            // **On the way to the background**, the other half: every
-            // wire let go, closed, so the machines on the other end read
-            // 未连接 now rather than after their silence limit, and
-            // nothing is left half-open for the system to reclaim. iOS
-            // gives an app seconds here; letting go is a close per wire.
-            #[cfg(not(desktop))]
-            if window.label() == "main" && matches!(event, tauri::WindowEvent::Suspended) {
-                suspend_the_node();
+            // **An Android phone's moves** (docs/IOS.md 前后台): tauri's
+            // window events, which there pair as they should. **Not on
+            // iOS**: tao maps `Suspended` from `applicationWillResignActive`
+            // — a notification pulled down suspended the node and nothing
+            // resumed it — so the iPhone listens to UIKit itself
+            // (`watch_the_front`). `RunEvent::Resumed` is something else
+            // again: the event loop waking from a poll, all the time.
+            #[cfg(target_os = "android")]
+            if window.label() == "main" {
+                let on = match event {
+                    tauri::WindowEvent::Suspended => Some(Front::Background),
+                    tauri::WindowEvent::Resumed => Some(Front::Foreground),
+                    _ => None,
+                };
+                if let (Some(on), Some(front)) = (on, ANDROID_FRONT.get()) {
+                    let _ = front.send(on);
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -4687,6 +4809,29 @@ mod room;
 #[cfg(test)]
 mod tests {
     use super::page_label;
+
+    /// **The phone's moves pair** (docs/IOS.md 前后台): let go only on a
+    /// real trip to the background, new ears on the way back, and an app
+    /// in front with a resting node wakes it. The red is the iPhone's
+    /// stuck node: a notification pulled down is `Active` again with the
+    /// resident resting, and before 2026-10-08 nothing resumed it.
+    #[test]
+    fn the_phone_lets_go_in_the_background_and_wakes_in_front() {
+        use super::{Act, Front, lifecycle_act};
+        assert_eq!(lifecycle_act(Front::Background, Some(false)), Some(Act::Suspend));
+        assert_eq!(lifecycle_act(Front::Background, Some(true)), None, "already resting");
+        assert_eq!(lifecycle_act(Front::Background, None), Some(Act::Suspend), "unknown: let go");
+        for resting in [Some(false), Some(true), None] {
+            assert_eq!(
+                lifecycle_act(Front::Foreground, resting),
+                Some(Act::Resume),
+                "back from the background is new ears, resting {resting:?}"
+            );
+        }
+        assert_eq!(lifecycle_act(Front::Active, Some(true)), Some(Act::Resume), "the stuck node");
+        assert_eq!(lifecycle_act(Front::Active, Some(false)), None, "awake: one resume, not two");
+        assert_eq!(lifecycle_act(Front::Active, None), None, "no resident yet");
+    }
 
     /// **set_relays, through the app's own invoke path, reads the
     /// arguments the face sends** (round NET-6). Tauri reads a command's

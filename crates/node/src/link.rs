@@ -514,6 +514,11 @@ enum Wake {
     Suspend {
         done: tokio::sync::oneshot::Sender<()>,
     },
+    /// Whether the resident is resting ([`resting`]): answered by the
+    /// loop, so a `Suspend` or `Resume` sent before it is already taken.
+    Resting {
+        answer: tokio::sync::oneshot::Sender<bool>,
+    },
 }
 
 type Doors = std::sync::Mutex<
@@ -654,6 +659,19 @@ pub async fn suspending(root: &std::path::Path) -> bool {
         return false;
     }
     done_rx.await.is_ok()
+}
+
+/// **Whether the resident on `root` is resting** — let its wires go on
+/// [`suspending`] and not yet given ears again by [`resume`]. Asked
+/// through the same door as both, so it answers after whatever was sent
+/// before it: a resume sent a moment ago reads as awake. `None` when no
+/// resumable serve holds that home here. The phone asks it each time it
+/// is back in front, so a node left resting there is woken
+/// (`lib.rs`'s `lifecycle_act`).
+pub async fn resting(root: &std::path::Path) -> Option<bool> {
+    let (answer, answer_rx) = tokio::sync::oneshot::channel();
+    door(root)?.send(Wake::Resting { answer }).ok()?;
+    answer_rx.await.ok()
 }
 
 /// Closes the endpoint under the resumable serve on `root` and leaves
@@ -1203,9 +1221,12 @@ impl Node {
                         eprintln!("{}", msg::serve_ears_closed(&stamp));
                         continue;
                     };
-                    // Paused: dropped without an answer, so the far side
-                    // sees what a machine that is not there looks like —
-                    // which is the state somebody asked for.
+                    // Paused, or resting in the background: the incoming
+                    // is dropped, and a dropped noq `Incoming` is a
+                    // **refusal** (CONNECTION_REFUSED) — the far side
+                    // learns at once that this machine is not taking
+                    // connections, rather than waiting out its dial.
+                    // Not silence: that would be `Incoming::ignore`.
                     if paused.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     if resting.load(std::sync::atomic::Ordering::Relaxed) { continue }
                     let n = node.clone();
@@ -1329,6 +1350,9 @@ impl Node {
                         node.wires.clear(wires::Retired::Suspended);
                         node.wires.let_go_served(wires::Retired::Suspended);
                         let _ = done.send(());
+                    }
+                    Wake::Resting { answer } => {
+                        let _ = answer.send(resting.load(std::sync::atomic::Ordering::Relaxed));
                     }
                     // A network change while backgrounded is the resume's
                     // to deal with: it gives new ears and a round.

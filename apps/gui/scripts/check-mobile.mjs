@@ -191,6 +191,10 @@ const QUICK = new Set([
   "edit_menu",
   // The system's edit menu at a selection khor drew (item 73): queued on UIKit's thread.
   "edit_menu_at", "edit_menu_hide",
+  // 添加机器 / 安装 khor (`khor_gui_core::add`): a start registers the run
+  // in memory and hands the ssh work to a thread of its own; a read is
+  // that memory. The ssh config's Host names: one local file, read only.
+  "add_start", "promote_start", "add_read", "ssh_config_hosts",
 ]);
 // The ones that waited on the main thread on 2026-10-02, named so the
 // red says which: each must be `async`.
