@@ -24,12 +24,18 @@
 //   move <pid> <x> <y>           → sets that process's main window's origin
 //                                  (points, top-left) through accessibility, as a
 //                                  person dragging it would; prints the AX result
-//   axpress <pid> <name> [expanded]
+//   axpress <pid> <name> [expanded | in=<region>]
 //                                → presses the first page control whose title,
 //                                  description or text starts with that name
 //                                  (AXPress) — with `expanded`, only one that
 //                                  says it opens something (aria-expanded: the
-//                                  tab in front); prints "1" pressed, "0" not found
+//                                  tab in front); with `in=`, only inside the
+//                                  region of that aria-label; prints "1"
+//                                  pressed, "0" not found
+//   click <pid> <name> [expanded | in=<region>]
+//                                → the same control, pressed by the pointer: a
+//                                  mouse down and up at its centre, posted to
+//                                  the pid (whatever is on top there answers)
 //   screen                       → "<x> <y> <w> <h>" of the main screen's visible
 //                                  frame (points, top-left; the menu bar and the
 //                                  Dock left out)
@@ -296,14 +302,26 @@ case "move":
   print(AXUIElementSetAttributeValue(w, kAXPositionAttribute as CFString, v).rawValue)
   spin(0.5)
 
-case "axpress":
+case "axpress", "click":
   // A press on one page control, by the name a person reads on it — through
   // accessibility, to the pid, like every press here (WebKit answers
   // AXPress with a click on the element). Buttons and links in the page
   // only. Prints "1" pressed, "0" not found.
+  //
+  // **`click` is the pointer's press instead** (fix-e, 2026-10-08): a
+  // mouse down and up at the control's centre, posted to the pid. AXPress
+  // hands WebKit the element and skips hit-testing, so a layer standing
+  // over the control (the owner: 「侧边展开的时候，不能通过导航到别的页面」)
+  // is pressed straight through; a click is answered by whatever is on
+  // top at that point, as a person's is.
   let pid = Int32(args[2])!
   let needle = args[3]
+  let pointer = args[1] == "click"
   let expanding = args.count > 4 && args[4] == "expanded"
+  // `in=<name>`: only inside the page region named that (its aria-label),
+  // where the same name stands twice — the 附栏's seat 工作区 and the
+  // landing 工作区 (fix-e).
+  let scope = args.count > 4 && args[4].hasPrefix("in=") ? String(args[4].dropFirst(3)) : nil
   let app = AXUIElementCreateApplication(pid)
   // **WebKit builds the page's tree only for a client that asks** (fix-c,
   // 2026-10-08): without this the window answered six elements and no
@@ -329,9 +347,23 @@ case "axpress":
     }
     return out
   }
+  /// The region named `scope`, or the windows when there is none to find.
+  func roots() -> [AXUIElement] {
+    let windows = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+    guard let scope = scope else { return windows }
+    var queue = windows
+    var seen = 0
+    while !queue.isEmpty && seen < 6000 {
+      let el = queue.removeFirst()
+      seen += 1
+      if (attr(el, kAXDescriptionAttribute) as? String) == scope { return [el] }
+      queue.append(contentsOf: kids(el))
+    }
+    return []
+  }
   var found: AXUIElement? = nil
   for _ in 0..<6 where found == nil {
-    var queue = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+    var queue = roots()
     var seen = 0
     while !queue.isEmpty && found == nil && seen < 6000 {
       let el = queue.removeFirst()
@@ -351,6 +383,21 @@ case "axpress":
     if found == nil { spin(0.5) }
   }
   guard let el = found else { print("0"); exit(0) }
+  if pointer {
+    var at = CGPoint.zero, size = CGSize.zero
+    guard let p = attr(el, kAXPositionAttribute), let s = attr(el, kAXSizeAttribute),
+          AXValueGetValue(p as! AXValue, .cgPoint, &at), AXValueGetValue(s as! AXValue, .cgSize, &size) else { print("0"); exit(0) }
+    let mid = CGPoint(x: at.x + size.width / 2, y: at.y + size.height / 2)
+    let src = CGEventSource(stateID: .privateState)
+    for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+      let e = CGEvent(mouseEventSource: src, mouseType: type, mouseCursorPosition: mid, mouseButton: .left)!
+      e.postToPid(pid)
+      spin(0.06)
+    }
+    spin(0.3)
+    print("1")
+    exit(0)
+  }
   _ = AXUIElementPerformAction(el, kAXPressAction as CFString)
   spin(0.3)
   print("1")
@@ -363,6 +410,6 @@ case "screen":
   print(Int(v.minX), Int(main.frame.height - v.maxY), Int(v.width), Int(v.height))
 
 default:
-  FileHandle.standardError.write("usage: window <pid> | activate <pid> | activate-finder | measure <png> <w> <x,y>... | key <pid> <code> [mods] | axmenu <pid> <role> | menus <pid> | menubar <pid> | pick <pid> <menu> <item> | resize <pid> <w> <h> | move <pid> <x> <y> | axpress <pid> <name> [expanded] | screen\n".data(using: .utf8)!)
+  FileHandle.standardError.write("usage: window <pid> | activate <pid> | activate-finder | measure <png> <w> <x,y>... | key <pid> <code> [mods] | axmenu <pid> <role> | menus <pid> | menubar <pid> | pick <pid> <menu> <item> | resize <pid> <w> <h> | move <pid> <x> <y> | axpress <pid> <name> [expanded | in=<region>] | click <pid> <name> [expanded | in=<region>] | screen\n".data(using: .utf8)!)
   exit(2)
 }

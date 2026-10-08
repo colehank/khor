@@ -102,6 +102,17 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  // `FACE_STACK=1`: a React warning carries where it was raised from.
+  if (process.env.FACE_STACK) {
+    await page.addInitScript(() => {
+      const was = console.error.bind(console);
+      let n = 0;
+      console.error = (...a) => {
+        if (String(a[0]).includes("Maximum update depth") && n++ < 3) was(`${a[0]}\n${new Error().stack}`);
+        else was(...a);
+      };
+    });
+  }
   /** **A file opens to read; its editor is one press away** (the owner,
       2026-10-04: a file page and a workspace file open in preview, and
       「编辑」 turns the editor on — `data-file-edit`). The walk asked for
@@ -206,9 +217,13 @@ try {
   // sentences about a walk that is fine and none about the one line that
   // broke. The tally at the foot is still the gate; this is the address
   // (2026-09-17, after a batch spent twenty minutes on exactly that).
+  if (process.env.FACE_STACK) page.on("console", (m) => m.type() === "error" && console.log(`console: ${m.text().slice(0, 2000)}`));
+  // React's own word for an update that sets off itself (side m).
+  let updateLoops = 0;
+  page.on("console", (m) => m.type() === "error" && m.text().includes("Maximum update depth") && updateLoops++);
   page.on("pageerror", (e) => {
     thrown.push(String(e));
-    console.log(`page threw: ${String(e).split("\n")[0]}`);
+    console.log(`page threw: ${process.env.FACE_STACK ? e.stack : String(e).split("\n")[0]}`);
   });
 
   // Session rows and devices, so a title and a reading exist to measure.
@@ -34360,12 +34375,14 @@ try {
       if (!stored || Math.abs(stored.w - dragged) > 1) fail(`side f · the width is not remembered for the session (${JSON.stringify(stored)})`);
       await openSession("tui/side-2");
       if ((await count(col)) !== 0) fail("side f · the other session opened with a column — one memory per session");
-      // Back on the first session it is closed (UX-46 §1); the press opens
-      // it at the width it was dragged to — the one thing remembered.
+      // Back on the first session its pill remembers it open (fix-e), at
+      // the width it was dragged to.
       await openSession("tui/side-1");
-      if ((await count(col)) !== 0) fail("side f · back on the first session its 附栏 is still open — leaving the session closed it (UX-46 §1)");
-      else await press(front("tui/side-1"));
-      await until(2_000, async () => (await count(col)) === 1);
+      if (!(await until(2_000, async () => (await count(col)) === 1))) {
+        fail("side f · back on the first session its 附栏 is closed — the pill remembers it open (fix-e)");
+        await press(front("tui/side-1"));
+        await until(2_000, async () => (await count(col)) === 1);
+      }
       await wait(600);
       const back = (await rect(col))?.width ?? 0;
       if (Math.abs(back - dragged) > 1) fail(`side f · back on the first session the column is ${back}, it was dragged to ${dragged}`);
@@ -34379,17 +34396,20 @@ try {
       if ((await count(col)) !== 0) fail("side f · dragging the seam under the floor did not fold the column away");
     }
 
-    // k. the 附栏 is its session's alone (UX-46 §1, the owner 2026-10-07:
-    //    「在跳转到别的目录的时候仍然存在，这个侧栏应该是只属于 session」):
-    //    another landing closes it and coming back finds it closed; the
-    //    press opens it on the seat it was left on (UX-47; ⚠️ 墓碑 UX-40
-    //    §3: on 最近 whatever seat); another tab closes it and coming back
-    //    finds it closed; closing the session's tab closes it.
+    // k. each pill remembers its 附栏 (fix-e, the owner 2026-10-08: 「要记
+    //    住每一个药丸的侧边展开情况, 从一个没有展开的到展开的, 要自动展开」):
+    //    another landing draws none, and coming back to the session finds
+    //    it open where it was left; a tab whose 附栏 was closed shows none,
+    //    and back on the open one it is open again on its own seat; two
+    //    open ones each keep their seat; a tab closed forgets its open.
+    //    ⚠️ 墓碑 (UX-46 §1 → fix-e): leaving the session closed it and
+    //    coming back found it closed.
     {
       const shut = () => until(2_000, async () => (await count(col)) === 0);
+      const up = () => until(2_000, async () => (await count(col)) === 1);
       const opens = async (id) => {
         if ((await count(col)) === 0) await press(front(id));
-        return until(2_000, async () => (await count(col)) === 1);
+        return up();
       };
       const expanded = (id) => page.evaluate((s) => document.querySelector(s)?.getAttribute("aria-expanded") ?? null, front(id));
       const roads = {};
@@ -34400,28 +34420,86 @@ try {
       await press('[data-landing-strip] [data-landing="devices"]');
       roads.landing = await shut();
       await press('[data-landing-strip] [data-landing="sessions"]');
-      await wait(800);
-      roads.back = { col: await count(col), expanded: await expanded("tui/side-1") };
-      await press(front("tui/side-1"));
-      await until(2_000, async () => (await count(col)) === 1);
-      await wait(300);
-      roads.seat = await seatOn();
+      roads.back = { col: (await up()) ? 1 : 0, expanded: await expanded("tui/side-1"), seat: await seatOn() };
       await openSession("tui/side-2");
       roads.tab = await shut();
       await openSession("tui/side-1");
-      roads.tabBack = await count(col);
-      await opens("tui/side-1");
+      roads.tabBack = { col: (await up()) ? 1 : 0, seat: await seatOn() };
+      // Two open: side-2's on 工作区, side-1's still on 浏览器.
+      await openSession("tui/side-2");
+      await opens("tui/side-2");
+      await pick("workspace");
+      await openSession("tui/side-1");
+      roads.both1 = await seatOn();
+      await openSession("tui/side-2");
+      roads.both2 = await seatOn();
+      // side-1's tab closed while open: opened again as a tab, it is closed.
+      await openSession("tui/side-1");
       await press('[data-session-tabs] [data-tab="tui/side-1"] [data-tab-close]');
-      roads.closed = await shut();
+      await wait(600);
+      await openSession("tui/side-1");
+      roads.reopened = { col: await count(col), expanded: await expanded("tui/side-1") };
+      // Leave every 附栏 closed for what follows.
+      await openSession("tui/side-2");
+      if ((await count(col)) === 1) await press(front("tui/side-2"));
+      await shut();
       await wait(400);
       console.log(`side k · ${JSON.stringify(roads)}`);
       if (roads.left !== "browser") fail(`probe dead: side k · the column was on ${roads.left} before leaving, not 浏览器`);
-      if (!roads.landing) fail("side k · the 附栏 stayed open on the 机器 landing — leaving the session closes it (UX-46 §1)");
-      if (roads.back.col !== 0 || roads.back.expanded !== "false") fail(`side k · back on the session the 附栏 is ${JSON.stringify(roads.back)} — closed, the front tab saying so (UX-46 §1)`);
-      if (roads.seat !== "browser") fail(`side k · left on 浏览器, reopened, the 附栏 is on ${roads.seat} — where it was left (UX-47)`);
-      if (!roads.tab) fail("side k · another session's tab in front, the 附栏 stayed open (UX-46 §1)");
-      if (roads.tabBack !== 0) fail("side k · back on the first session's tab its 附栏 is open again — leaving closed it (UX-46 §1)");
-      if (!roads.closed) fail("side k · the session's tab closed and the 附栏 stayed (UX-46 §1)");
+      if (!roads.landing) fail("side k · the 附栏 stayed open on the 机器 landing — another landing draws none (UX-46 §1)");
+      if (roads.back.col !== 1 || roads.back.expanded !== "true" || roads.back.seat !== "browser") {
+        fail(`side k · back on the session the 附栏 is ${JSON.stringify(roads.back)} — open again on 浏览器, the pill remembers it (fix-e)`);
+      }
+      if (!roads.tab) fail("side k · a tab whose 附栏 was never opened came to the front and the column stayed (fix-e)");
+      if (roads.tabBack.col !== 1 || roads.tabBack.seat !== "browser") fail(`side k · back on the open pill the 附栏 is ${JSON.stringify(roads.tabBack)} — open by itself, on 浏览器 (fix-e)`);
+      if (roads.both1 !== "browser" || roads.both2 !== "workspace") fail(`side k · two open pills show ${roads.both1} / ${roads.both2} — each its own seat, 浏览器 / 工作区 (fix-e, UX-47)`);
+      if (roads.reopened.col !== 0 || roads.reopened.expanded !== "false") fail(`side k · a tab closed with its 附栏 open, opened again: ${JSON.stringify(roads.reopened)} — closed, the closed pill forgot it (fix-e)`);
+    }
+
+    // m. the landings answer with a file open in the 附栏 (fix-e, the
+    //    owner 2026-10-08: 「侧边展开的时候, 不能通过导航到别的页面, 这时候
+    //    的行为应该是侧边收起, 到别的页面」). A file page in the 工作区 seat
+    //    handed its draft up on every render (`FileView` reports it from
+    //    an effect that depends on `onDraft`, and `SideWorkspace` made a
+    //    new `onDraft` and a new Map each time): an update every frame,
+    //    which never lets the landing's switch (a transition, `goLanding`)
+    //    finish — the press on 机器 did nothing. Read as the landing the
+    //    strip lights after the press, the column gone, and React's own
+    //    「Maximum update depth」 said while the file is open.
+    {
+      const landingOn = () => page.evaluate(() => document.querySelector("[data-landing-strip] [data-on=true]")?.getAttribute("data-landing") ?? null);
+      const loops0 = updateLoops;
+      await openSession("tui/side-1");
+      if ((await count(col)) === 0) await press(front("tui/side-1"));
+      await until(2_000, async () => (await count(col)) === 1);
+      await pick("workspace");
+      await until(3_000, async () => (await count(`${col} [data-side-workspace] [data-file-tree] [data-file]`)) > 0);
+      await press(`${col} [data-side-workspace] [data-file-tree] [data-file] > button`);
+      const opened = await until(3_000, async () => (await count(`${col} [data-files-page]`)) === 1);
+      await wait(1_000);
+      const loops = updateLoops - loops0;
+      const roads = { opened, loops };
+      for (const to of ["devices", "quota"]) {
+        await press(`[data-landing-strip] [data-landing="${to}"]`);
+        const went = await until(3_000, async () => (await landingOn()) === to);
+        roads[to] = { went, col: await count(col), on: await landingOn() };
+        await press('[data-landing-strip] [data-landing="sessions"]');
+        await until(3_000, async () => (await landingOn()) === "sessions");
+        await wait(600);
+      }
+      // Back on side-1 its pill remembers the 附栏 open, on the file.
+      roads.back = { on: await landingOn(), col: await count(col), file: await count(`${col} [data-files-page]`) };
+      await press(`${col} [data-files-page] [data-file-back]`);
+      await wait(400);
+      if ((await count(col)) === 1) await press(front("tui/side-1"));
+      await until(2_000, async () => (await count(col)) === 0);
+      console.log(`side m · a file open in the 附栏: ${JSON.stringify(roads)}`);
+      if (!opened) fail("probe dead: side m · no file page opened in the 附栏's 工作区");
+      if (loops > 0) fail(`side m · with a file open in the 附栏 React said 「Maximum update depth exceeded」 ${loops} time(s) — an update every frame (fix-e)`);
+      for (const to of ["devices", "quota"]) {
+        if (!roads[to].went || roads[to].col !== 0) fail(`side m · a press on ${to} with a file open in the 附栏: ${JSON.stringify(roads[to])} — that landing, the 附栏 put away (fix-e)`);
+      }
+      if (roads.back.on !== "sessions" || roads.back.col !== 1 || roads.back.file !== 1) fail(`side m · back on the session: ${JSON.stringify(roads.back)} — the 附栏 open again on its file (fix-e)`);
     }
 
     // l. where it was left (UX-47, the owner 2026-10-07, replacing UX-40
@@ -34602,12 +34680,13 @@ try {
           await wait(500);
         }
       }
+      // Read at once, the listing held back: khor's own delete was heard
+      // when it happened, not asked about now. Back on side-1 its pill
+      // remembers the 附栏 open (fix-e), so it opens by itself.
+      slowLs = true;
       await open("sessions");
       await openSession("tui/side-1");
-      // Read at once, the listing held back: khor's own delete was heard
-      // when it happened, not asked about now.
-      slowLs = true;
-      await press(front("tui/side-1"));
+      if ((await count(col)) === 0) await press(front("tui/side-1"));
       await until(3_000, async () => (await count(col)) === 1);
       await wait(300);
       out.deleted = { removed, gone: !treeL.has("notes.md"), at: await where() };
@@ -35370,8 +35449,65 @@ try {
       await wait(400);
       const left = asks.splice(0);
       const leftTo = page.viewportSize().width;
+      // Back on the session its pill remembers open (fix-e): the room again.
       await press('[data-landing-strip] [data-landing="sessions"]');
-      await wait(600);
+      await until(3_000, async () => (await count(col)) === 1);
+      await wait(400);
+      const cameBack = asks.splice(0);
+      const backOpen = page.viewportSize().width;
+      // **The pills' switches** (fix-e): closed to open asks for the room,
+      // open to closed gives it back, open to open asks nothing — and over
+      // any run of switches, rapid ones included, the asks alternate, so
+      // the window's account never takes twice or gives back twice.
+      const pills = [];
+      const tabTo = async (id, wait_ = 900) => {
+        await page.locator(front(id)).first().click();
+        if (wait_) await wait(wait_);
+      };
+      const step = async (what, act, want) => {
+        await act();
+        const a = asks.splice(0);
+        pills.push({ what, asks: a.map((x) => x.cmd), col: await count(col), w: page.viewportSize().width });
+        const ok = a.map((x) => x.cmd).join(" ") === want.asks && (await count(col)) === want.col && page.viewportSize().width === (want.col ? base + w : base);
+        if (!ok) fail(`side g · ${what}: asked ${JSON.stringify(a.map((x) => x.cmd))}, column ${await count(col)}, window ${page.viewportSize().width} — want ${JSON.stringify(want)} (fix-e)`);
+      };
+      await openSession("tui/side-2");
+      await step("open side-1 → side-2 (closed)", async () => {}, { asks: "unwiden", col: 0 });
+      await step("→ side-1 (open, by itself)", () => tabTo("tui/side-1"), { asks: "widen", col: 1 });
+      await step("→ side-2", () => tabTo("tui/side-2"), { asks: "unwiden", col: 0 });
+      await step("side-2 opened", async () => {
+        await press(front("tui/side-2"));
+        await wait(600);
+      }, { asks: "widen", col: 1 });
+      await step("→ side-1 (both open)", () => tabTo("tui/side-1"), { asks: "", col: 1 });
+      await openSession("tui/side-3");
+      asks.splice(0);
+      await tabTo("tui/side-1");
+      asks.splice(0);
+      const rapid = [];
+      for (const id of ["tui/side-2", "tui/side-3", "tui/side-1", "tui/side-3", "tui/side-2", "tui/side-3"]) await tabTo(id, 0);
+      await wait(1_500);
+      rapid.push(...asks.map((x) => x.cmd));
+      const alternates = rapid.every((c, i) => c === (i % 2 === 0 ? "unwiden" : "widen"));
+      pills.push({ what: "rapid, from side-1 (open) to side-3 (closed)", asks: [...rapid], col: await count(col), w: page.viewportSize().width });
+      if (!alternates || rapid.at(-1) !== "unwiden" || (await count(col)) !== 0 || page.viewportSize().width !== base) {
+        fail(`side g · rapid switching asked ${JSON.stringify(rapid)} and left the window ${page.viewportSize().width} with ${await count(col)} column(s) — the asks alternate and end given back (fix-e)`);
+      }
+      asks.splice(0);
+      // The tab closed while its 附栏 is open, the next one closed.
+      await tabTo("tui/side-1");
+      asks.splice(0);
+      await step("side-1's tab closed while open", async () => {
+        await press('[data-session-tabs] [data-tab="tui/side-1"] [data-tab-close]');
+        await wait(600);
+        if ((await count(col)) === 1) {
+          // The next tab in front was an open one: close it to measure.
+          await press(front("tui/side-2"));
+          await wait(600);
+        }
+      }, { asks: "unwiden", col: 0 });
+      console.log(`side g · back on the session: ${JSON.stringify(cameBack)} → window ${backOpen}; pills ${JSON.stringify(pills)}`);
+      if (cameBack.length !== 1 || cameBack[0].cmd !== "widen" || backOpen !== base + w) fail(`side g · back on the session asked ${JSON.stringify(cameBack)}, window ${backOpen} — the remembered 附栏 opens and asks the room once (fix-e)`);
       await page.unroute(/\/(un)?widen$/, room);
       await page.setViewportSize({ width: base, height: 900 });
       const dOpen = drift(openFrames);
