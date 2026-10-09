@@ -199,6 +199,12 @@ codegen-units = 1
 [profile.local]
 inherits = "release"
 codegen-units = 16
+# **Local installs keep their symbols** (the owner's rule, 2026-10-10:
+# only the shipped release is stripped and size-capped). The resident's
+# spin on 10-10 was sampled from a stripped binary and could not be read;
+# with the symbol table kept (no debug info, the release has none) a
+# `sample` names the functions directly. 96 MB against 78 MB stripped.
+strip = false
 
 # Debug builds keep line tables, not full debug info (2026-09-22): the
 # target reached 250 GB, most of it ~70 test binaries each carrying full
