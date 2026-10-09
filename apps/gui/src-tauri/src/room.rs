@@ -34,7 +34,13 @@
 //!
 //! **To the right, then to the left for what the right edge could not
 //! give** (UX-46 §2: 「a window that could not grow rightward … and grew
-//! leftward shrinks back the same way」). ⚠️ 墓碑 (2026-09-16 → 10-07):
+//! leftward shrinks back the same way」). **A column with a floor takes
+//! less before it moves the window** (sb-a, 2026-10-09, the owner: 「侧栏
+//! 展开时, 原来的页面位置不要动, 侧栏展开自己额外扩展出去」): the 附栏
+//! asks for its width and the least it can live with; where the right edge
+//! has at least that, the column is what the right edge has and the window
+//! stays where it is; only below it does the window move left, and then by
+//! what the floor still needs. The answer is the width the column got. ⚠️ 墓碑 (2026-09-16 → 10-07):
 //! 「The origin is left alone」 — a window against the screen's right
 //! edge kept its size and the column took its room off the page, which
 //! is still the answer when neither edge has room. Fullscreen and
@@ -79,14 +85,17 @@ pub(crate) struct Grown {
 }
 
 /// The frame a window at `from` grows to for a column `want` physical
-/// pixels wide, inside the screen's work area `area` (also a frame).
-/// `None` = no room on either side, nothing to do.
-pub(crate) fn grow(from: Frame, area: Frame, want: f64, scale: f64) -> Option<Grown> {
+/// pixels wide that can live with `least` (`least >= want`: no give),
+/// inside the screen's work area `area` (also a frame). `None` = no room
+/// on either side, nothing to do.
+pub(crate) fn grow(from: Frame, area: Frame, want: f64, least: f64, scale: f64) -> Option<Grown> {
     if want <= 0.0 || scale <= 0.0 {
         return None;
     }
-    let right = want.min((area.x + area.w - (from.x + from.w)).max(0.0));
-    let left = (want - right).min((from.x - area.x).max(0.0));
+    let least = least.clamp(0.0, want);
+    let room = (area.x + area.w - (from.x + from.w)).max(0.0);
+    let right = want.min(room);
+    let left = if right >= least { 0.0 } else { (least - right).min((from.x - area.x).max(0.0)) };
     if right + left < 1.0 {
         return None;
     }
@@ -208,7 +217,9 @@ fn place_queued(window: &tauri::Window, to: Frame) -> Result<(), String> {
 /// could not (fullscreen, maximised, no room at either edge, or already
 /// grown for this column), and the column then takes its room off the
 /// page.
-pub(crate) fn widen(window: &tauri::Window, column: String, w: f64) -> Result<f64, String> {
+/// `least`: the narrowest the column may take before the window moves
+/// left (`None` = the whole `w`).
+pub(crate) fn widen(window: &tauri::Window, column: String, w: f64, least: Option<f64>) -> Result<f64, String> {
     let key = (window.label().to_string(), column);
     if notes().lock().map_err(|e| e.to_string())?.contains_key(&key) {
         return Ok(0.0);
@@ -228,7 +239,7 @@ pub(crate) fn widen(window: &tauri::Window, column: String, w: f64) -> Result<f6
         }
         None => Frame { x: from.x, y: from.y, w: from.w + w * scale, h: from.h },
     };
-    let Some(mut g) = grow(from, area, w * scale, scale) else {
+    let Some(mut g) = grow(from, area, w * scale, least.unwrap_or(w) * scale, scale) else {
         return Ok(0.0);
     };
     // What the window really stands at, where it is there to be read:
@@ -278,7 +289,7 @@ mod tests {
     #[test]
     fn grows_rightward_when_there_is_room() {
         let from = Frame { x: 100.0, y: 200.0, w: 2000.0, h: 1440.0 };
-        let g = grow(from, AREA, 780.0, S).unwrap();
+        let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
         assert_eq!(g.to, Frame { x: 100.0, y: 200.0, w: 2780.0, h: 1440.0 });
         assert_eq!((g.right, g.left), (390.0, 0.0));
     }
@@ -287,7 +298,7 @@ mod tests {
     fn grows_leftward_for_what_the_right_edge_cannot_give() {
         // 64 physical pixels short of the right edge.
         let from = Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 };
-        let g = grow(from, AREA, 780.0, S).unwrap();
+        let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
         assert_eq!(g.to, Frame { x: 84.0, y: 200.0, w: 2940.0, h: 1440.0 });
         assert_eq!((g.right, g.left), (32.0, 358.0));
     }
@@ -295,11 +306,11 @@ mod tests {
     #[test]
     fn against_both_edges_it_grows_by_what_there_is() {
         let from = Frame { x: 100.0, y: 200.0, w: 2824.0, h: 1440.0 };
-        let g = grow(from, AREA, 780.0, S).unwrap();
+        let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
         assert_eq!(g.to, Frame { x: 0.0, y: 200.0, w: 3024.0, h: 1440.0 });
         assert_eq!((g.right, g.left), (50.0, 50.0));
         let full = Frame { x: 0.0, y: 74.0, w: 3024.0, h: 1816.0 };
-        assert_eq!(grow(full, AREA, 780.0, S), None);
+        assert_eq!(grow(full, AREA, 780.0, 780.0, S), None);
     }
 
     /// The bug the owner saw (「本来的窗口还变了」): near the right edge the
@@ -312,7 +323,7 @@ mod tests {
             Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 },
             Frame { x: 100.0, y: 200.0, w: 2824.0, h: 1440.0 },
         ] {
-            let g = grow(from, AREA, 780.0, S).unwrap();
+            let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
             assert_eq!(give_back(&g, g.to, S), Some(from));
             // A pixel of the window manager's rounding is still untouched.
             let nudged = Frame { w: g.to.w + 1.0, ..g.to };
@@ -323,7 +334,7 @@ mod tests {
     #[test]
     fn a_moved_window_keeps_its_move_and_gets_its_size_back() {
         let from = Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 };
-        let g = grow(from, AREA, 780.0, S).unwrap();
+        let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
         let moved = Frame { x: g.to.x - 40.0, y: g.to.y + 100.0, ..g.to };
         assert_eq!(give_back(&g, moved, S), Some(Frame { x: 760.0, y: 300.0, w: 2160.0, h: 1440.0 }));
     }
@@ -334,7 +345,7 @@ mod tests {
     #[test]
     fn a_resized_window_is_left_alone() {
         let from = Frame { x: 800.0, y: 200.0, w: 2160.0, h: 1440.0 };
-        let g = grow(from, AREA, 780.0, S).unwrap();
+        let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
         for now in [
             Frame { w: g.to.w + 200.0, h: 1200.0, ..g.to },
             Frame { w: 1000.0, ..g.to },
@@ -347,9 +358,32 @@ mod tests {
     #[test]
     fn the_column_comes_off_in_logical_pixels_on_another_screen() {
         let from = Frame { x: 100.0, y: 200.0, w: 2000.0, h: 1440.0 };
-        let g = grow(from, AREA, 780.0, S).unwrap();
+        let g = grow(from, AREA, 780.0, 780.0, S).unwrap();
         // Dragged to a 1× screen: the same 1390×720 points, half the pixels.
         let there = Frame { x: 3100.0, y: 100.0, w: 1390.0, h: 720.0 };
         assert_eq!(give_back(&g, there, 1.0), Some(Frame { x: 3100.0, y: 100.0, w: 1000.0, h: 720.0 }));
+    }
+
+    /// sb-a (2026-10-09): a column with a floor. 1280 points wanted, 720
+    /// the least (640 and 360 logical at 2×).
+    #[test]
+    fn a_column_with_a_floor_takes_the_right_edge_first() {
+        // Room for all of it: all of it, rightward.
+        let from = Frame { x: 100.0, y: 200.0, w: 1400.0, h: 1440.0 };
+        let g = grow(from, AREA, 1280.0, 720.0, S).unwrap();
+        assert_eq!((g.right, g.left), (640.0, 0.0));
+        // 1000 physical to the right edge: the column shrinks to it, the
+        // window does not move.
+        let from = Frame { x: 100.0, y: 200.0, w: 1924.0, h: 1440.0 };
+        let g = grow(from, AREA, 1280.0, 720.0, S).unwrap();
+        assert_eq!(g.to, Frame { x: 100.0, y: 200.0, w: 2924.0, h: 1440.0 });
+        assert_eq!((g.right, g.left), (500.0, 0.0));
+        // 400 to the right edge: below the floor, so the window moves left
+        // by what the floor still needs, and no further.
+        let from = Frame { x: 800.0, y: 200.0, w: 1824.0, h: 1440.0 };
+        let g = grow(from, AREA, 1280.0, 720.0, S).unwrap();
+        assert_eq!(g.to, Frame { x: 480.0, y: 200.0, w: 2544.0, h: 1440.0 });
+        assert_eq!((g.right, g.left), (200.0, 160.0));
+        assert_eq!(give_back(&g, g.to, S), Some(from));
     }
 }

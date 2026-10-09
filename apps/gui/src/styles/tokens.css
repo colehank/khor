@@ -2905,13 +2905,17 @@
   /* The progress line along a tab pill's bottom edge while the tab
      reloads (UX-31 §3, UX-33 §2): Safari's run, two points. */
   --progress-h: 2px;
-  /* **The session's 附栏** (UX-30): the narrow face docked beside a
-     terminal, at a phone's width — 390 is the iPhone's logical width,
-     320 the narrowest phone the narrow face is laid out for, and the
-     column may not be dragged under it. The ceiling is half the main
-     pane, measured at the drag (the two-column answer, `use-list-width`). */
-  --session-side-w: 390px;
-  --session-side-min: 320px;
+  /* **The session's 附栏** (UX-30 → sb-a, 2026-10-09, the owner: 「按你
+     建议的宽度来」): 640 is 80 columns of code at the editor's size, the
+     first width before anything is dragged; 360 the least it takes
+     before the window moves left to make room (`room.rs`), and the
+     narrowest it shrinks to as the window narrows or is dragged. ⚠️ 墓碑
+     (UX-30): 390, a phone's width, and 320 the narrowest phone. */
+  --session-side-w: 640px;
+  --session-side-min: 360px;
+  /* The session beside the 附栏 narrows only after the column is at its
+     floor, and not under this: a terminal 40-odd columns wide. */
+  --session-main-min: 360px;
   /* **The phone's 附栏 sheet stands at two detents** (UX-37 §3): half
      the screen when the pill opens it — the terminal keeps its upper
      half — and nearly all of it when dragged up, the system sheet's

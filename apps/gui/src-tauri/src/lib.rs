@@ -2590,8 +2590,8 @@ fn hide_menu() -> Result<(), String> {
 /// something `khor` has. It never leaves this crate.
 #[cfg(desktop)]
 #[tauri::command]
-fn widen(window: tauri::Window, column: String, w: f64) -> Result<f64, String> {
-    room::widen(&window, column, w)
+fn widen(window: tauri::Window, column: String, w: f64, least: Option<f64>) -> Result<f64, String> {
+    room::widen(&window, column, w, least)
 }
 
 /// Gives back what `widen` took for `column`: the frame it grew from,
@@ -2605,8 +2605,8 @@ fn unwiden(window: tauri::Window, column: String) -> Result<f64, String> {
 
 #[cfg(not(desktop))]
 #[tauri::command]
-fn widen(column: String, w: f64) -> Result<f64, String> {
-    let _ = (column, w);
+fn widen(column: String, w: f64, least: Option<f64>) -> Result<f64, String> {
+    let _ = (column, w, least);
     Ok(0.0)
 }
 

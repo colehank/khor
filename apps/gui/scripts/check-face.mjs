@@ -2284,6 +2284,8 @@ try {
   // 2026-10-09, IMPORT-BRIEF).
   // **`FACE_ONLY=pill` walks the browser pill alone** (sb-a,
   // 2026-10-09, SIDE-BROWSER-BRIEF part 1).
+  // **`FACE_ONLY=fold` walks the session's top row beside the 附栏 alone**
+  // (sb-a, 2026-10-09, SIDE-BROWSER-BRIEF part 2).
   // **`FACE_ONLY=afix` walks the UX audit's four bugs alone** (afix-a,
   // 2026-10-08).
   // **`FACE_ONLY=quota` walks the 额度 page at three widths and two
@@ -2296,7 +2298,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25612,7 +25614,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -26043,7 +26045,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26401,7 +26403,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26776,7 +26778,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27508,7 +27510,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28401,7 +28403,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill", "fold"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -34909,6 +34911,11 @@ try {
       await page.keyboard.press("Escape");
       await wait(200);
       if (today !== 0) fail("side e · the pill's menu still offers 「今天」 (UX-39 §4)");
+      // The window as the app leaves it (sb-a): grown by the column, the
+      // session at the width it had before (here the page cannot grow, so
+      // the viewport stands in for the window that would have).
+      await page.setViewportSize({ width: 1400 + (await tokenPx("--session-side-w")), height: 900 });
+      await wait(600);
       const tabs = await page.evaluate(() => {
         const all = [...document.querySelectorAll("[data-session-tabs] [data-tab]")];
         return {
@@ -34930,9 +34937,13 @@ try {
       // ⚠️ 墓碑 (UX-39 §7 → UX-45): the front pill as wide as its whole
       // name — every wide pill is one width now (`FACE_ONLY=tabs` a).
       if (tabs.widths.length !== 1) fail(`side e · the wide pills are ${JSON.stringify(tabs.widths)} wide — one width, front or not (UX-45)`);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(600);
     }
 
-    // f. remembered per session
+    // f. remembered per seat (sb-a: 最近, 工作区, 浏览器 each its own;
+    //    ⚠️ 墓碑 UX-30: per session). Dragged narrower: the default 640
+    //    is near the ceiling (half the main pane).
     {
       if ((await count(col)) !== 1) await press(front("tui/side-1"));
       await until(2_000, async () => (await count(col)) === 1);
@@ -34940,16 +34951,17 @@ try {
       const was = (await rect(col))?.width ?? 0;
       await page.mouse.move(seam.left + seam.width / 2, seam.top + 300);
       await page.mouse.down();
-      await page.mouse.move(seam.left - 60, seam.top + 300, { steps: 5 });
-      await page.mouse.move(seam.left - 100, seam.top + 300, { steps: 5 });
+      await page.mouse.move(seam.left + 120, seam.top + 300, { steps: 5 });
+      await page.mouse.move(seam.left + 200, seam.top + 300, { steps: 5 });
       await page.mouse.up();
       await wait(500);
       const dragged = (await rect(col))?.width ?? 0;
-      const stored = await page.evaluate(() => JSON.parse(window.localStorage.getItem("khor.session-side.tui/side-1") ?? "null"));
-      console.log(`side f · dragged ${was} → ${dragged}, stored ${JSON.stringify(stored)}`);
-      const travel = seam.width / 2 + 100;
-      if (Math.abs(dragged - (was + travel)) > 2) fail(`side f · the seam dragged ${travel} left made the column ${dragged} from ${was}`);
-      if (!stored || Math.abs(stored.w - dragged) > 1) fail(`side f · the width is not remembered for the session (${JSON.stringify(stored)})`);
+      const seatNow = await seatOn();
+      const stored = await page.evaluate((k) => Number(window.localStorage.getItem(`khor.side-w.${k}`) ?? "NaN"), seatNow);
+      console.log(`side f · dragged ${was} → ${dragged}, stored for ${seatNow} ${JSON.stringify(stored)}`);
+      const travel = 200 - seam.width / 2;
+      if (Math.abs(dragged - (was - travel)) > 2) fail(`side f · the seam dragged ${travel} right made the column ${dragged} from ${was}`);
+      if (!Number.isFinite(stored) || Math.abs(stored - dragged) > 1) fail(`side f · the width is not remembered for the seat ${seatNow} (${JSON.stringify(stored)})`);
       await openSession("tui/side-2");
       if ((await count(col)) !== 0) fail("side f · the other session opened with a column — one memory per session");
       // Back on the first session its pill remembers it open (fix-e), at
@@ -35961,6 +35973,9 @@ try {
       // grows first, the column arrives into the room it made.
       const colAtAsk = [];
       let grown = 0;
+      /** The screen's right edge, as the room it leaves (sb-a): the window
+          grows by no more than this; `null` = all it is asked. */
+      let edge = null;
       const room = async (r) => {
         const body = r.request().postDataJSON() ?? {};
         const cmd = /\/unwiden$/.test(r.request().url()) ? "unwiden" : "widen";
@@ -35968,7 +35983,7 @@ try {
         colAtAsk.push(await page.evaluate(() => document.querySelectorAll("[data-session-side]").length).catch(() => null));
         let answer = null;
         if (cmd === "widen" && typeof body.delta === "number") grown += body.delta;
-        else if (cmd === "widen") answer = grown = body.w;
+        else if (cmd === "widen") answer = grown = edge === null ? body.w : Math.max(Math.min(body.w, edge), body.least ?? body.w);
         else [answer, grown] = [grown, 0];
         await page.setViewportSize({ width: base + grown, height: 900 });
         return r.fulfill({ contentType: "application/json", body: JSON.stringify(answer) });
@@ -36084,6 +36099,51 @@ try {
         }
       }, { asks: "unwiden", col: 0 });
       console.log(`side g · back on the session: ${JSON.stringify(cameBack)} → window ${backOpen}; pills ${JSON.stringify(pills)}`);
+      // **The right edge, and a seat of its own width** (sb-a, 2026-10-09):
+      // the window grows by what the right edge has (500 of 640, above the
+      // floor) and the 附栏 is that wide, the session as it was; a width
+      // set on 最近 by the seam's keys is 最近's, and turning to 浏览器
+      // gives the room back and asks again at 浏览器's own.
+      {
+        edge = 500;
+        await tabTo("tui/side-3");
+        asks.splice(0);
+        const before = await rect(sessionSel);
+        await press(front("tui/side-3"));
+        await until(3_000, async () => (await count(col)) === 1);
+        await wait(500);
+        const asked = asks.splice(0);
+        const fitW = (await rect(col))?.width ?? null;
+        const after = await rect(sessionSel);
+        const min = await tokenPx("--session-side-min");
+        console.log(`side g · the right edge leaves 500: asked ${JSON.stringify(asked)}, the 附栏 ${fitW}, the session ${before?.width} → ${after?.width}`);
+        if (asked.length !== 1 || asked[0].cmd !== "widen" || Math.abs(asked[0].w - w) > 1 || Math.abs((asked[0].least ?? 0) - min) > 1) fail(`side g · the press asked ${JSON.stringify(asked)} — the window once, for ${w} and no less than ${min} (sb-a)`);
+        if (fitW === null || Math.abs(fitW - 500) > 1) fail(`side g · the window gave 500 and the 附栏 is ${fitW} wide — what the window gave (sb-a)`);
+        if (!before || !after || Math.abs(before.width - after.width) > 1) fail(`side g · the session went ${before?.width} → ${after?.width} as the window grew by 500 — it keeps its width (sb-a)`);
+        // 最近 narrowed from the keyboard to its floor: no ask, the session
+        // takes the room.
+        await page.locator(`${col} [data-side-seam]`).focus();
+        await page.keyboard.press("ArrowRight");
+        await wait(400);
+        const keyed = asks.splice(0);
+        const recentW = (await rect(col))?.width ?? null;
+        if (keyed.length !== 0 || recentW === null || Math.abs(recentW - min) > 1) fail(`side g · the seam's → asked ${JSON.stringify(keyed)} and left the 附栏 ${recentW} — ${min}, the window untouched (sb-a)`);
+        await pick("browser");
+        await wait(500);
+        const turned = asks.splice(0);
+        const browserW = (await rect(col))?.width ?? null;
+        await pick("recent");
+        await wait(500);
+        const back = asks.splice(0);
+        const recentAgain = (await rect(col))?.width ?? null;
+        console.log(`side g · 最近 at ${recentW}; → 浏览器 asked ${JSON.stringify(turned)}, ${browserW} wide; → 最近 asked ${JSON.stringify(back)}, ${recentAgain} wide`);
+        if (turned.map((x) => x.cmd).join(" ") !== "unwiden widen" || Math.abs((turned[1]?.w ?? 0) - w) > 1 || browserW === null || Math.abs(browserW - 500) > 1) fail(`side g · turning to 浏览器 asked ${JSON.stringify(turned)} and drew it ${browserW} wide — the room back and asked again at 浏览器's ${w}, given 500 (sb-a)`);
+        if (back.map((x) => x.cmd).join(" ") !== "unwiden widen" || Math.abs((back[1]?.w ?? 0) - min) > 1 || recentAgain === null || Math.abs(recentAgain - min) > 1) fail(`side g · back to 最近 asked ${JSON.stringify(back)} and drew it ${recentAgain} wide — 最近's own ${min} (sb-a)`);
+        await press(front("tui/side-3"));
+        await wait(500);
+        asks.splice(0);
+        edge = null;
+      }
       if (cameBack.length !== 1 || cameBack[0].cmd !== "widen" || backOpen !== base + w) fail(`side g · back on the session asked ${JSON.stringify(cameBack)}, window ${backOpen} — the remembered 附栏 opens and asks the room once (fix-e)`);
       await page.unroute(/\/(un)?widen$/, room);
       await page.setViewportSize({ width: base, height: 900 });
@@ -40366,6 +40426,142 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "pill") console.log("pill · FACE_ONLY=pill: the other sections are skipped");
+
+  // ── The session's top row beside the 附栏 (sb-a, 2026-10-09) ─────────
+  //
+  // SIDE-BROWSER-BRIEF part 2, the owner's bug (audit/side-narrow-nav-
+  // 1009.png): 「附栏打开时, 缩小窗口不能把整个顶部导航给略缩畸形了」 — the
+  // 附栏 dragged wide, the window narrowed, and the session's strip was
+  // squeezed past its column: its ↻ over the 附栏's head. **Not red on
+  // the old code here** (sb-a, measured 2026-10-09): in the web face the
+  // old strip at 130 wide still fit — the Mac's title-bar inset and the
+  // traffic lights are not in this page — so this is the fold's guard,
+  // and the bug itself is the owner's checklist in the real app.
+  //   a. dragged wide and narrowed: nothing of the session's strip stands
+  //      past the session's column, the row does not overflow, and the
+  //      front tab is still on screen (its face at least);
+  //   b. the 附栏 gave way first: while the session is wider than its
+  //      floor (`--session-main-min`), the 附栏 is at its own floor;
+  //   c. widened again, the strip's buttons are back.
+  //
+  // `FACE_ONLY=fold` runs this section alone.
+  fold: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "fold") break fold;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const now = Date.now();
+    const foldRows = [
+      { kind: "tui", word: "idle", at_ms: now, unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "gate", place: "/home/gate/work", mux: false, id: "tui/fold-1", title: "理解方法和公式逻辑" },
+    ];
+    const routesF = {
+      "**/sessions": json(foldRows),
+      "**/term_open": json(null),
+      "**/term_attach": json({ bytes: "", seq: 0 }),
+      "**/term_stream": json({ bytes: "", seq: 0, gone: false, reset: false }),
+      "**/term_resize": json(null),
+      "**/term_leave": json(null),
+      "**/term_key": json(null),
+      "**/day_strips": json({}),
+      "**/page_icons": json({}),
+      "**/recents": json([]),
+    };
+    await page.unroute("**/sessions");
+    for (const [glob, go] of Object.entries(routesF)) await page.route(glob, go);
+    // The owner's window: the list folded, the landings' capsule leading
+    // the session's row (`RegionLead`).
+    await page.evaluate(() => {
+      window.localStorage.clear();
+      window.localStorage.setItem("khor.list-width", JSON.stringify({ w: 260, collapsed: true }));
+    });
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    const col = "[data-session-side]";
+    const front = '[data-session-tabs] [data-tab-open="tui/fold-1"]';
+    const box = (sel) => page.evaluate((s) => {
+      const b = document.querySelector(s)?.getBoundingClientRect();
+      return b ? { left: b.left, right: b.right, width: b.width } : null;
+    }, sel);
+    const px = (name) => page.evaluate((n) => {
+      const p = document.createElement("div");
+      p.style.width = `var(${n})`;
+      document.body.appendChild(p);
+      const w = p.getBoundingClientRect().width;
+      p.remove();
+      return w;
+    }, name);
+    let ok = false;
+    if (!(await open("sessions")) || !(await tap('[data-side-row="tui/fold-1"] [data-side-open]')) || !(await until(5_000, async () => (await count(front)) === 1))) {
+      fail("probe dead: fold · the session never came to the front");
+    } else {
+      await wait(600);
+      await tap(front);
+      ok = await until(3_000, async () => (await count(col)) === 1);
+      if (!ok) fail("probe dead: fold · the 附栏 never opened");
+    }
+    if (ok) {
+      await wait(600);
+      // Dragged wide: the seam to 660 from the column's right edge.
+      const c = await box(col);
+      const seam = await box(`${col} [data-side-seam]`);
+      if (c && seam) {
+        const y = 400;
+        const x0 = (seam.left + seam.right) / 2;
+        await page.mouse.move(x0, y);
+        await page.mouse.down();
+        for (let i = 1; i <= 10; i++) await page.mouse.move(x0 + ((c.right - 660 - x0) * i) / 10, y);
+        await page.mouse.up();
+        await wait(400);
+      }
+      const wide = (await box(col))?.width ?? null;
+      await page.setViewportSize({ width: 1000, height: 900 });
+      await wait(700);
+      const a = await page.evaluate((c) => {
+        const side = document.querySelector(c)?.getBoundingClientRect();
+        const bar = document.querySelector("[data-session-tabs] [data-tab-bar]");
+        const past = [...(bar?.querySelectorAll("*") ?? [])]
+          .filter((e) => e.checkVisibility() && e.getBoundingClientRect().width > 0)
+          .filter((e) => side && e.getBoundingClientRect().right > side.left + 0.5)
+          .map((e) => e.getAttribute("data-tab-front-act") !== null ? "front-act" : e.getAttribute("aria-label") || e.tagName.toLowerCase());
+        const tab = document.querySelector('[data-session-tabs] [data-tab][data-on="true"]')?.getBoundingClientRect();
+        return {
+          past: [...new Set(past)].slice(0, 6),
+          over: bar ? bar.scrollWidth - bar.clientWidth : null,
+          tab: tab ? { w: Math.round(tab.width), inside: !!side && tab.right <= side.left + 0.5 && tab.left >= 0 } : null,
+          side: side ? Math.round(side.width) : null,
+        };
+      }, col);
+      console.log(`fold a · the 附栏 dragged to ${wide}, the window narrowed to 1000: ${JSON.stringify(a)}`);
+      if (a.past.length > 0 || (a.over ?? 0) > 1) fail(`fold a · the session's strip stands past its column ${JSON.stringify(a)} — it folds, never squeezed or past its column`);
+      if (!a.tab || a.tab.w < 16 || !a.tab.inside) fail(`fold a · the front tab is not on screen in its column ${JSON.stringify(a.tab)}`);
+      // b.
+      const mainMin = await px("--session-main-min");
+      const sideMin = await px("--session-side-min");
+      const s = await box(col);
+      const sessionW = s ? s.left - ((await box("[data-session-tabs]"))?.left ?? 0) : null;
+      console.log(`fold b · 附栏 ${s?.width}, session ${sessionW}; floors ${sideMin} / ${mainMin}`);
+      if (s && sessionW !== null && sessionW > mainMin + 1 && Math.abs(s.width - sideMin) > 1) fail(`fold b · the session is ${sessionW} wide (floor ${mainMin}) and the 附栏 ${s.width} — the 附栏 gives way first, to ${sideMin}`);
+      // c.
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await wait(700);
+      const c2 = await page.evaluate(() => ({
+        folded: document.querySelector("[data-session-tabs] [data-tab-bar]")?.hasAttribute("data-tab-bar-folded") ?? null,
+        plus: document.querySelector("[data-session-tabs] [data-tab-new]")?.checkVisibility() ?? false,
+      }));
+      console.log(`fold c · widened again: ${JSON.stringify(c2)}`);
+      if (c2.folded || !c2.plus) fail(`fold c · widened again the strip reads ${JSON.stringify(c2)} — ＋ back`);
+    }
+    for (const [glob, go] of Object.entries(routesF)) await page.unroute(glob, go);
+    await page.route("**/sessions", json(rows));
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "fold") console.log("fold · FACE_ONLY=fold: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
