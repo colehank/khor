@@ -511,3 +511,61 @@ async fn a_resume_keeps_the_ears_and_the_far_machine_reaches_it_at_once() {
     serve_a.abort();
     serve_b.abort();
 }
+
+/// **A resume tells each machine's answer as it lands** (net-r): one
+/// machine that is not there holds the round for its whole dial, and
+/// nothing a person sees should wait on it. Alpha (the phone) has beta
+/// up and gamma gone; beta's answer arrives at once, well before the
+/// round is whole. Before, the round's outcomes came only all together,
+/// and the face's lists re-read after the slowest (13 s on the phone,
+/// 2026-10-10 03:48, lecun's 10 s dial).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_resume_tells_each_answer_before_the_slowest() {
+    let ra = root("each-a");
+    let rb = root("each-b");
+    let rg = root("each-g");
+    let sa = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let _serve_a = tokio::spawn(async move { sa.serve_resumable().await });
+    let sb = Node::open_as(rb.0.clone(), "beta").unwrap();
+    let _serve_b = tokio::spawn(async move { sb.serve().await });
+    let sg = Node::open_as(rg.0.clone(), "gamma").unwrap();
+    let serve_g = tokio::spawn(async move { sg.serve().await });
+    for r in [&ra, &rb, &rg] {
+        wait_for_endpoint_file(&r.0).await;
+    }
+    let a = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let b = Node::open_as(rb.0.clone(), "beta").unwrap();
+    let g = Node::open_as(rg.0.clone(), "gamma").unwrap();
+    for joiner in [&b, &g] {
+        timeout(Duration::from_secs(60), joiner.pair(&a.invite().unwrap()))
+            .await
+            .expect("pairing must not hang")
+            .unwrap();
+    }
+    timeout(Duration::from_secs(60), a.sync_now())
+        .await
+        .expect("a round must come back")
+        .unwrap();
+    // Gamma goes away for good.
+    serve_g.abort();
+    drop(g);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(link::suspending(&ra.0).await);
+    let begun = Instant::now();
+    let mut resuming = link::resume(&ra.0).expect("alpha's serve takes a resume");
+    resuming.ears().await.expect("alpha's ears");
+    let mut answers = Vec::new();
+    while let Some((name, r)) = timeout(Duration::from_secs(60), resuming.answered())
+        .await
+        .expect("answers must not hang")
+    {
+        answers.push((name, r.is_ok(), begun.elapsed()));
+    }
+    let out = resuming.synced().await.unwrap();
+    let whole = begun.elapsed();
+    println!("[each] answers {answers:?}; round whole in {whole:?}: {out:?}");
+    let beta = answers.iter().find(|(n, ok, _)| n == "beta" && *ok).expect("beta answered");
+    assert!(beta.2 < Duration::from_secs(2), "beta's answer came {:?} after the resume", beta.2);
+    assert_eq!(answers.len(), out.len(), "every machine of the round told");
+}
