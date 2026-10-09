@@ -1721,6 +1721,8 @@ page-address = "Enter an address"
 page-none = "No pages open"
 page-none-how = "Use the ＋ above to open one"
 page-machine = "Choose machine"
+# The browser pill's list (sb-a, 2026-10-09): the caption over a machine's recent addresses.
+page-recent-on = "Recently opened on {0}"
 nav-order = "Navigation bar"
 nav-order-note = "The first four show on the bar; the rest are under More"
 type-size = "Text size"

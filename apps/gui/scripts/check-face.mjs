@@ -2282,6 +2282,8 @@ try {
   // 2026-10-08).
   // **`FACE_ONLY=import` walks 导入 as a search alone** (imp-a,
   // 2026-10-09, IMPORT-BRIEF).
+  // **`FACE_ONLY=pill` walks the browser pill alone** (sb-a,
+  // 2026-10-09, SIDE-BROWSER-BRIEF part 1).
   // **`FACE_ONLY=afix` walks the UX audit's four bugs alone** (afix-a,
   // 2026-10-08).
   // **`FACE_ONLY=quota` walks the 额度 page at three widths and two
@@ -2294,7 +2296,7 @@ try {
   // above isolates that page, and this is the smallest cut that runs
   // all of it without the sections after.
   walk: {
-  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break walk;
+  if (["native", "row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break walk;
 
   // ── 1) the chain: token class → computed value ────────────────────
   const chain = await page.evaluate(() => {
@@ -25610,7 +25612,7 @@ try {
   //
   // `FACE_ONLY=filter` runs this section alone.
   lists: {
-  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break lists;
+  if (["native", "row", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break lists;
   const head = "[data-side-head]";
   // Lit is `data-on` on the glass item, absent when off (the redesign).
   const lit = () =>
@@ -26041,7 +26043,7 @@ try {
   // the edge, which is the blank the owner pointed at.
   //
   // `FACE_ONLY=row` runs this section alone.
-  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) {
+  if (!["filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) {
     const TOL = 1;
     const designHead = (() => {
       try {
@@ -26399,7 +26401,7 @@ try {
   //
   // `FACE_ONLY=entity` runs this section alone.
   entity: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break entity;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break entity;
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.reload({ waitUntil: "load" });
   await wait(900);
@@ -26774,7 +26776,7 @@ try {
   if (process.env.FACE_ONLY === "entity") console.log("entity · FACE_ONLY=entity: the other sections are skipped");
 
   rest: {
-  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break rest;
+  if (["row", "filter", "acts", "entity", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break rest;
 
   // ── 11) 像 Mac 的 app, 不像网页 (2026-09-28) ─────────────────────
   //
@@ -27506,7 +27508,7 @@ try {
   //
   // `FACE_ONLY=acts` runs this section alone.
   acts: {
-  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break acts;
+  if (["native", "row", "filter", "fix", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break acts;
   {
     const QR_TOKEN = "khor-face-ticket-0930";
     const QR_SPAN = 33;
@@ -28399,7 +28401,7 @@ try {
   //
   // `FACE_ONLY=fix` runs this section alone.
   fix: {
-  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import"].includes(process.env.FACE_ONLY)) break fix;
+  if (["native", "row", "filter", "acts", "entity", "term", "head", "mark", "phone", "scan", "bar", "iphone", "ws", "side", "store", "tabs", "walk", "corners", "mchat", "bcast", "join", "caret", "follow", "save", "afix", "quota", "notice", "import", "pill"].includes(process.env.FACE_ONLY)) break fix;
   configValues["confirm-delete"] = "on";
   page.on("popup", (p) => void p.close().catch(() => {}));
   await page.setViewportSize({ width: 1400, height: 900 });
@@ -33031,9 +33033,10 @@ try {
               ? {
                   editing: bar.querySelectorAll("[data-deck-pill][data-deck-editing] [data-page-field]").length,
                   ownGlass: bar.querySelectorAll("[data-deck-editing] [data-page-field].glass").length,
-                  // UX-42 row 13: the machine is the selected chip over the
-                  // deck; the face has left the field.
-                  machine: bar.querySelector("[data-deck-editor-above] [data-page-chip][data-on]")?.getAttribute("data-page-chip") ?? null,
+                  // sb-a (the browser lab, 2026-10-09): the machine is the
+                  // face in the field. ⚠️ 墓碑 (UX-42 row 13): the selected
+                  // chip over the deck, the face out of the field.
+                  machine: bar.querySelector("[data-deck-editing] [data-page-machine-face]")?.getAttribute("title") ?? null,
                   faces: bar.querySelectorAll("[data-deck-editing] [data-page-machine-face]").length,
                   under: bar.querySelector("[data-session-bar-under]")?.children.length ?? -1,
                   cancel: bar.querySelectorAll("[data-deck-edit-cancel]").length,
@@ -33046,17 +33049,17 @@ try {
         await until(4_000, async () => (await read())?.editing === 1);
         await wait(400);
         const fresh = await read();
-        // UX-42 row 13: the field has the deck's width but 取消's, and the
-        // machines stand as one row of chips over the deck; a tap on one
-        // picks it and the caret stays in the address.
+        // UX-42 row 13: the field has the deck's width but 取消's. The
+        // machines are the field's list over the deck now (sb-a): the face
+        // pressed lists them, one picked and the caret stays in the
+        // address. ⚠️ 墓碑 (UX-42 row 13): one row of chips over the deck.
         const room = await page.evaluate(() => {
           const bar = document.querySelector("[data-session-bar]");
           const box = (el) => el && el.getBoundingClientRect();
           const deck = box(bar?.querySelector("[data-session-deck]"));
           const pill = box(bar?.querySelector("[data-deck-pill][data-deck-editing]"));
-          const field = box(bar?.querySelector("[data-deck-editing] [data-page-address]"));
+          const field = box(bar?.querySelector("[data-deck-editing] [data-page-field]"));
           const cancel = box(bar?.querySelector("[data-deck-edit-cancel]"));
-          const chips = [...(bar?.querySelectorAll("[data-deck-editor-above] [data-page-chips] [data-page-chip]") ?? [])].map(box);
           const probe = document.createElement("div");
           probe.style.cssText = "position:absolute;width:var(--gap-row);height:var(--gap-in)";
           document.body.appendChild(probe);
@@ -33067,14 +33070,10 @@ try {
                 deck: [deck.left, deck.right, deck.top],
                 pill: [pill.left, pill.right],
                 field: field.width,
-                // The deck's inner width less 取消 and its gap, less the
-                // field's own two paddings.
-                want: deck.width - 2 * row - cancel.width - gap - 2 * row,
+                // The deck's inner width less 取消 and its gap.
+                want: deck.width - 2 * row - cancel.width - gap,
                 padLeft: pill.left - deck.left,
                 row,
-                chips: chips.length,
-                above: chips.every((c) => c.bottom <= deck.top + 0.5),
-                oneRow: new Set(chips.map((c) => Math.round(c.top))).size,
               }
             : null;
         });
@@ -33083,22 +33082,31 @@ try {
         else {
           if (room.field < room.want - 1) fail(`bar o · the address field is ${room.field.toFixed(1)} wide — the deck's width but 取消's, ${room.want.toFixed(1)} (UX-42 row 13)`);
           if (Math.abs(room.padLeft - room.row) > 0.5) fail(`bar o · the editing pill starts ${room.padLeft.toFixed(1)} into the deck — at its padding, nothing before it`);
-          if (room.chips < 2 || !room.above || room.oneRow !== 1) fail(`bar o · the machine chips read ${shown(room)} — every machine, one row, over the deck (UX-42 row 13)`);
         }
-        if (room?.chips >= 2) {
-          const other = await page.evaluate(() => document.querySelector("[data-deck-editor-above] [data-page-chip]:not([data-on])")?.getAttribute("data-page-chip") ?? null);
-          await press(`[data-deck-editor-above] [data-page-chip="${other}"]`);
+        {
+          await press("[data-deck-editing] [data-page-machine-face]");
           await wait(400);
-          const picked = await page.evaluate(() => ({
-            on: document.querySelector("[data-deck-editor-above] [data-page-chip][data-on]")?.getAttribute("data-page-chip") ?? null,
-            caret: document.activeElement?.hasAttribute("data-page-address") ?? false,
-            editing: document.querySelectorAll("[data-deck-editing]").length,
-          }));
-          console.log(`bar o · the chip ${other} tapped ${shown(picked)}`);
-          if (picked.on !== other || !picked.caret || picked.editing !== 1) fail(`bar o · a tap on the chip ${other} left ${shown(picked)} — that machine picked, the caret still in the address`);
-          // Back to the last one used, for the steps below.
-          await press('[data-deck-editor-above] [data-page-chip="peer"]');
-          await wait(400);
+          const offered = await page.evaluate(() =>
+            [...document.querySelectorAll("[data-deck-editor-above] [data-omni-item]")].map((e) => ({ key: e.getAttribute("data-omni-item"), ticked: !!e.querySelector("[data-omni-on]") })),
+          );
+          const other = offered.find((o) => !o.ticked)?.key ?? null;
+          if (offered.length < 2 || offered.filter((o) => o.ticked).length !== 1) fail(`bar o · the face pressed lists ${shown(offered)} — every machine over the deck, the current one ticked (sb-a)`);
+          if (other) {
+            await press(`[data-deck-editor-above] [data-omni-item="${other}"]`);
+            await wait(400);
+            const picked = await page.evaluate(() => ({
+              face: document.querySelector("[data-deck-editing] [data-page-machine-face]")?.getAttribute("title") ?? null,
+              caret: document.activeElement?.hasAttribute("data-page-address") ?? false,
+              editing: document.querySelectorAll("[data-deck-editing]").length,
+            }));
+            console.log(`bar o · the machine ${other} picked ${shown(picked)}`);
+            if (picked.face === "peer" || !picked.caret || picked.editing !== 1) fail(`bar o · picking ${other} left ${shown(picked)} — that machine's face, the caret still in the address`);
+            // Back to the last one used, for the steps below.
+            await press("[data-deck-editing] [data-page-machine-face]");
+            await wait(300);
+            await press(`[data-deck-editor-above] [data-omni-item="m:${"f".repeat(64)}"]`);
+            await wait(400);
+          }
         }
         if (fresh) await press("[data-deck-edit-cancel]");
         await wait(300);
@@ -33110,8 +33118,7 @@ try {
         if (!fresh || fresh.editing !== 1 || fresh.ownGlass !== 0 || fresh.under !== 0 || fresh.cancel !== 1 || fresh.tabs !== 0 || fresh.steps !== 0) {
           fail(`bar o · a fresh browser tab's deck reads ${shown(fresh)} — the pill is the editor (no glass of its own), nothing under the deck, 取消 in the tabs circle's place, no ← → (UX-18)`);
         }
-        if (fresh && fresh.machine !== "peer") fail(`bar o · a fresh tab's machine is ${shown(fresh.machine)} — the last one used (peer), the selected chip`);
-        if (fresh && fresh.faces !== 0) fail(`bar o · the editor's field wears ${fresh.faces} machine face(s) — the face makes way for the address (UX-42 row 13)`);
+        if (fresh && (fresh.machine !== "peer" || fresh.faces !== 1)) fail(`bar o · a fresh tab's machine is ${shown(fresh.machine)} (${fresh.faces} face) — the last one used (peer), its face in the field (sb-a)`);
         if (!put || put.editing !== 0 || put.cancel !== 0 || put.tabs !== 1 || !put.title) fail(`bar o · 取消 left ${shown(put)} — the pill with the tab's title, the tabs circle back`);
         if (!again || again.editing !== 1) fail(`bar o · a tap on the pill's title left ${shown(again)} — the pill turns into the editor`);
       }
@@ -40100,6 +40107,265 @@ try {
   }
   }
   if (process.env.FACE_ONLY === "import") console.log("import · FACE_ONLY=import: the other sections are skipped");
+
+  // ── The browser pill: the machine, then the address (sb-a, 2026-10-09) ─
+  //
+  // SIDE-BROWSER-BRIEF part 1, the lab approved (audit/br-lab.md). The
+  // owner: 「浏览器点击药丸, 不要展开机器, 而是一个推荐列表…侧栏里最近打开的
+  // 浏览器地址, 点击直接打开, 现在点击后还等着输地址选机器.」
+  //   a. **the bug, red first**: a page on this machine in the 附栏's
+  //      最近 opens at once through it — the tab is opened with this
+  //      machine's id, and the deck rests on the page, not on an editor
+  //      asking for a machine (it was opened with no machine: the
+  //      lookup skipped this machine);
+  //   b. the pill's steps, wide (1400) and phone (390), both themes: the
+  //      list of machines (no menu of its own), typing narrows it and the
+  //      matched letters are heavy, the unreachable one is not offered,
+  //      each row says its road (本机 / 直连 23 ms / 中继 140 ms / 通过 …);
+  //      Tab takes the first row as the face and the caret waits in the
+  //      address; that machine's recent addresses under 「peer 最近打开」;
+  //      Backspace at the address's start takes the face off; Enter on a
+  //      typed address opens it through the face, https:// added.
+  //
+  // `FACE_ONLY=pill` runs this section alone.
+  pill: {
+  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "pill") break pill;
+  {
+    const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const count = (sel) => page.locator(sel).count();
+    const me = devs.find((d) => d.me);
+    const peer = devs.find((d) => d.name === "peer");
+    const now = Date.now();
+    const base = {
+      kind: "tui",
+      word: "idle",
+      at_ms: now,
+      unread: 0,
+      source: null,
+      pinned: false,
+      stale: false,
+      category: "claude",
+      group: "",
+      face: null,
+      hosted: true,
+      attachable: true,
+      last: null,
+      via: null,
+      via_face: null,
+      home: "gate",
+      place: "/home/gate/work",
+      mux: false,
+    };
+    const pillRows = [{ ...base, id: "tui/pill-1", title: "pill-1" }];
+    const recentsP = {
+      page: [
+        { device: me.id, name: me.name, place: "http://localhost:5173/", at_ms: now - 60_000, session: "tui/pill-1" },
+        { device: peer.id, name: peer.name, place: "https://docs.rs/tokio/latest/tokio/", at_ms: now - 120_000, session: "tui/pill-1" },
+        { device: peer.id, name: peer.name, place: "https://arxiv.org/abs/2410.01234", at_ms: now - 3 * 3600_000, session: null },
+      ],
+      dir: [],
+      file: [],
+    };
+    const opensP = [];
+    const routesP = {
+      "**/sessions": json(pillRows),
+      "**/term_open": json(null),
+      "**/term_attach": json({ bytes: "", seq: 0 }),
+      "**/term_stream": json({ bytes: "", seq: 0, gone: false, reset: false }),
+      "**/term_resize": json(null),
+      "**/term_leave": json(null),
+      "**/term_key": json(null),
+      "**/day_strips": json({}),
+      "**/page_icons": json({}),
+      "**/recents": (r) => json(recentsP[(r.request().postDataJSON() ?? {}).kind] ?? [])(r),
+    };
+    await page.unroute("**/sessions");
+    for (const [glob, go] of Object.entries(routesP)) await page.route(glob, go);
+    const opening = (r) => {
+      opensP.push(r.request().postDataJSON() ?? {});
+      return r.fallback();
+    };
+    await page.route("**/tabs_open", opening);
+    const col = "[data-session-side]";
+    const front = (id) => `[data-session-tabs] [data-tab-open="${id}"]`;
+
+    // a.
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+    let a = null;
+    if (!(await open("sessions"))) fail("probe dead: pill a · the sessions landing never drew");
+    else if (!(await tap('[data-side-row="tui/pill-1"] [data-side-open]')) || !(await until(5_000, async () => (await count(front("tui/pill-1"))) === 1))) {
+      fail("probe dead: pill a · the session never came to the front");
+    } else {
+      await wait(600);
+      await tap(front("tui/pill-1"));
+      if (!(await until(3_000, async () => (await count(`${col} [data-recent-kind="page"]`)) >= 2))) fail("probe dead: pill a · the 附栏's 最近 never listed the pages");
+      else {
+        const row = `${col} [data-recent-row="page ${me.id} http://localhost:5173/"] [data-side-open]`;
+        await tap(row);
+        await until(3_000, async () => opensP.length > 0);
+        await wait(900);
+        a = await page.evaluate((c) => ({
+          editing: document.querySelectorAll(`${c} [data-deck-editing]`).length,
+          asking: document.querySelectorAll(`${c} [data-page-field-empty], ${c} [data-page-field][data-state="empty"]`).length,
+          back: document.querySelectorAll(`${c} [data-session-deck] [data-back]`).length,
+        }), col);
+        a.opened = opensP.map((o) => ({ device: o.device ?? "", url: o.url ?? "" }));
+        console.log(`pill a · 最近's page on this machine → ${JSON.stringify(a)}`);
+        if (a.opened.length !== 1 || a.opened[0].device !== me.id || a.opened[0].url !== "http://localhost:5173/") {
+          fail(`pill a · 最近's page on this machine opened ${JSON.stringify(a.opened)} — one tab, through this machine (${me.id.slice(0, 8)}…), at its address`);
+        }
+        if (a.editing !== 0 || a.asking !== 0 || a.back !== 1) fail(`pill a · the page from 最近 waits for a machine and an address ${JSON.stringify(a)} — it opens at once, the deck at rest`);
+      }
+    }
+    await page.unroute("**/tabs_open", opening);
+
+    // b. the pill's steps, over four machines: this one, a direct peer,
+    //    a relayed one, and one that cannot be reached (not offered).
+    const machinesP = [
+      { ...me },
+      { ...peer, hop: "direct", rtt_ms: 23, paused: false },
+      { ...devs.find((d) => d.name === "elder"), hop: "relay", rtt_ms: 140, paused: false },
+      { ...peer, id: "c".repeat(64), name: "lecun", shown: "lecun", hop: "quiet", down_ms: 60_000, heard_ms: 600_000 },
+    ];
+    const elder = machinesP[2];
+    const goes = [];
+    const going = (r) => {
+      goes.push(r.request().postDataJSON() ?? {});
+      return r.fallback();
+    };
+    const devicesP = json(machinesP);
+    await page.route("**/devices", devicesP);
+    await page.route("**/tabs_go", going);
+    const items = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll("[data-omni-menu]")]
+          .filter((m) => m.checkVisibility())
+          .flatMap((m) => [
+            ...[...m.querySelectorAll("[data-omni-axis]")].map((x) => ({ caption: x.textContent.trim() })),
+            ...[...m.querySelectorAll("[data-omni-item]")].map((x) => ({
+              key: x.getAttribute("data-omni-item"),
+              aside: x.querySelector("[data-omni-aside]")?.textContent.trim() ?? null,
+              mark: x.querySelector("[data-omni-mark]")?.textContent ?? null,
+              on: x.getAttribute("data-on") === "true",
+              ticked: !!x.querySelector("[data-omni-on]"),
+            })),
+            ...[...m.querySelectorAll("[data-omni-empty]")].map((x) => ({ empty: x.textContent.trim() })),
+          ]),
+      );
+    const fieldIs = () =>
+      page.evaluate(() => {
+        const f = [...document.querySelectorAll("[data-page-field]")].find((e) => e.checkVisibility());
+        const i = f?.querySelector("[data-page-address]");
+        return {
+          state: f?.getAttribute("data-state") ?? null,
+          faces: f?.querySelectorAll("[data-page-machine-face]").length ?? 0,
+          value: i?.value ?? null,
+          caret: document.activeElement === i,
+          menus: document.querySelectorAll('[role="menu"]').length,
+        };
+      });
+    const keyed = (id) => `m:${id}`;
+    for (const [w, h, scheme] of [[1400, 900, "light"], [1400, 900, "dark"], [390, 844, "light"], [390, 844, "dark"]]) {
+      const where = `pill b · ${w} ${scheme}`;
+      goes.length = 0;
+      await page.evaluate(() => window.localStorage.clear());
+      await page.setViewportSize({ width: w, height: h });
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+      if (!(await open("browser")) || !(await tap("[data-side-head] [data-pane-new]"))) {
+        fail(`probe dead: ${where} · no new page from the browser landing`);
+        continue;
+      }
+      const up = await until(4_000, async () => (await items()).some((x) => x.key));
+      if (!up) {
+        fail(`${where} · a new page's field never offered the machines ${JSON.stringify(await fieldIs())}`);
+        continue;
+      }
+      // 1. the machines, no menu of its own, each with its road
+      const m1 = await items();
+      const f1 = await fieldIs();
+      console.log(`${where} 1 · ${JSON.stringify({ f1, m1 })}`);
+      const want1 = [keyed(me.id), keyed(peer.id), keyed(elder.id)];
+      if (JSON.stringify(m1.filter((x) => x.key).map((x) => x.key)) !== JSON.stringify(want1)) fail(`${where} 1 · the list offers ${JSON.stringify(m1.map((x) => x.key))} — this machine, then the reachable ones; lecun (不通) not offered`);
+      if (m1[0]?.caption !== "机器") fail(`${where} 1 · the list's caption is ${JSON.stringify(m1[0])} — 「机器」`);
+      const roads = m1.filter((x) => x.key).map((x) => x.aside);
+      if (JSON.stringify(roads) !== JSON.stringify(["本机", "直连 23 ms", "中继 140 ms"])) fail(`${where} 1 · the roads read ${JSON.stringify(roads)} — 本机 / 直连 23 ms / 中继 140 ms`);
+      if (f1.menus !== 0 || f1.faces !== 0 || !f1.caret) fail(`${where} 1 · the field reads ${JSON.stringify(f1)} — the caret in it, no face yet, no menu of its own`);
+      if (w < 760) {
+        const seat = await page.evaluate(() => {
+          const list = document.querySelector("[data-deck-editor-above] [data-page-list-seat] [data-omni-menu]")?.getBoundingClientRect();
+          const deck = document.querySelector("[data-session-deck]")?.getBoundingClientRect();
+          return list && deck ? { over: list.bottom <= deck.top + 0.5, inside: list.left >= -0.5 && list.right <= innerWidth + 0.5 } : null;
+        });
+        if (!seat?.over || !seat?.inside) fail(`${where} 1 · the phone's list is not over the deck, inside the window: ${JSON.stringify(seat)}`);
+      }
+      // 2. typing narrows, the letters heavy, the first row lit
+      await page.keyboard.type("ee");
+      await wait(200);
+      const m2 = (await items()).filter((x) => x.key);
+      if (m2.length !== 1 || m2[0].key !== keyed(peer.id) || m2[0].mark !== "ee" || !m2[0].on) fail(`${where} 2 · 「ee」 lists ${JSON.stringify(m2)} — peer alone, 「ee」 heavy, lit`);
+      await page.keyboard.type("zz");
+      await wait(200);
+      const m2b = await items();
+      if (m2b.some((x) => x.key) || !m2b.some((x) => x.empty === "没有匹配项")) fail(`${where} 2 · a name nothing holds lists ${JSON.stringify(m2b)} — 「没有匹配项」`);
+      // 3. Tab takes the first row as the face; the caret in the address;
+      //    that machine's recents under its caption
+      for (let i = 0; i < 4; i++) await page.keyboard.press("Backspace");
+      await page.keyboard.type("pe");
+      await page.keyboard.press("Tab");
+      await wait(400);
+      await until(2_000, async () => (await items()).some((x) => x.key?.startsWith("u:")));
+      const f3 = await fieldIs();
+      const m3 = await items();
+      console.log(`${where} 3 · ${JSON.stringify({ f3, m3 })}`);
+      if (f3.faces !== 1 || f3.value !== "" || !f3.caret || f3.state !== "editing") fail(`${where} 3 · after Tab the field reads ${JSON.stringify(f3)} — peer's face, an empty address, the caret in it`);
+      if (m3[0]?.caption !== "peer 最近打开" || JSON.stringify(m3.filter((x) => x.key).map((x) => x.key)) !== JSON.stringify(["u:https://docs.rs/tokio/latest/tokio/", "u:https://arxiv.org/abs/2410.01234"])) {
+        fail(`${where} 3 · the address's list reads ${JSON.stringify(m3)} — 「peer 最近打开」 over peer's two addresses, newest first`);
+      }
+      // 4. typed narrows the addresses
+      await page.keyboard.type("arx");
+      await wait(200);
+      const m4 = (await items()).filter((x) => x.key);
+      if (m4.length !== 1 || m4[0].mark !== "arx") fail(`${where} 4 · 「arx」 lists ${JSON.stringify(m4)} — arxiv alone, 「arx」 heavy`);
+      // 5. Backspace at the address's start takes the face off; Enter on
+      //    a machine brings the face and what was typed back
+      for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("Backspace");
+      await wait(300);
+      const f5 = await fieldIs();
+      const m5 = (await items()).filter((x) => x.key).map((x) => x.key);
+      if (f5.faces !== 0 || f5.value !== "" || JSON.stringify(m5) !== JSON.stringify(want1)) fail(`${where} 5 · Backspace at the start left ${JSON.stringify({ f5, m5 })} — no face, the machines again`);
+      await page.keyboard.press("Enter");
+      await wait(300);
+      const f5b = await fieldIs();
+      if (f5b.faces !== 1 || f5b.value !== "arx") fail(`${where} 5 · Enter on the first machine left ${JSON.stringify(f5b)} — its face, 「arx」 back`);
+      // 6. Enter on a typed address opens it through the face, https://
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.keyboard.type("example.org/x");
+      await page.keyboard.press("Enter");
+      await until(3_000, async () => goes.length > 0);
+      await wait(300);
+      const sent = goes.map((g) => ({ device: g.device, url: g.url }));
+      if (JSON.stringify(sent) !== JSON.stringify([{ device: me.id, url: "https://example.org/x" }])) fail(`${where} 6 · Enter sent ${JSON.stringify(sent)} — the page through this machine at https://example.org/x`);
+    }
+    await page.unroute("**/tabs_go", going);
+    await page.unroute("**/devices", devicesP);
+
+    for (const [glob, go] of Object.entries(routesP)) await page.unroute(glob, go);
+    await page.route("**/sessions", json(rows));
+    await page.evaluate(() => window.localStorage.clear());
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.reload({ waitUntil: "load" });
+    await wait(900);
+  }
+  }
+  if (process.env.FACE_ONLY === "pill") console.log("pill · FACE_ONLY=pill: the other sections are skipped");
 
   if (thrown.length) fail(`page errors while measuring: ${thrown.join(" | ")}`);
   if (!process.exitCode) console.log(
