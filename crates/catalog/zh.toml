@@ -359,7 +359,7 @@ usage = """
                         （顺带把网页版也开在局域网上，见 web）
   relay --dev | --tls-cert 证书 --tls-key 私钥 | --acme 域名 [--acme-contact 邮箱]
         [--token 密钥 | --only-mine] [--rate 字节每秒] [--metrics 地址]
-        [--bind 地址] [--http 地址] [--state 目录] | --stats [--state 目录]
+        [--bind 地址] [--http 地址] [--quic 地址] [--state 目录] | --stats [--state 目录]
                         在这台机器上跑一台中继（iroh-relay，同一份代码）。
                         --dev 是明文 HTTP，默认 3340 口；TLS 用现成的证书，
                         或者 --acme 找 Let's Encrypt 要一张。--token 只放行
@@ -1311,10 +1311,12 @@ relay-admit-mine = "准入：这张网名单上的设备（现有 {0} 台）"
 relay-key-in-clear = "注意：明文 HTTP 下，共享密钥也是明文传的"
 relay-rate = "限速：每个客户端 {0}/秒"
 relay-rate-none = "限速：不限"
+relay-quic = "QUIC 地址发现：UDP {0}"
 relay-metrics = "指标：{0}"
 relay-meter = "计量：{0}"
 relay-pick-mode = "要选一种：--dev（明文 HTTP）、--tls-cert 加 --tls-key，或 --acme 域名"
 relay-token-or-mine = "--token 和 --only-mine 只能选一个"
+relay-quic-needs-tls = "--quic 要证书：和 --tls-cert、--tls-key 或 --acme 一起用"
 relay-flag-unknown = "khor relay 不认识这个参数：{0}"
 relay-flag-needs-value = "{0} 缺少一个值"
 relay-rate-bad = "--rate 要一个大于 0 的整数（字节每秒）：{0}"

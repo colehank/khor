@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 
 use iroh_relay::server::{
     Access, AccessControl, AcmeConfig, CertConfig, ClientRateLimit, ClientRequest, ConnectionId,
-    Metrics, RelayConfig, Server, ServerConfig, TlsConfig,
+    Metrics, QuicConfig, RelayConfig, Server, ServerConfig, TlsConfig,
 };
 use khor_catalog::cli;
 use khor_node::Node;
@@ -74,6 +74,9 @@ struct Options {
     mode: Option<Mode>,
     bind: Option<SocketAddr>,
     http: Option<SocketAddr>,
+    /// `--quic`: where QUIC address discovery listens (UDP), with the
+    /// relay's own certificate; TLS modes only.
+    quic: Option<SocketAddr>,
     tokens: Vec<String>,
     rate: Option<NonZeroU32>,
     only_mine: bool,
@@ -89,6 +92,7 @@ fn parse(rest: &[String]) -> Result<Options, String> {
         mode: None,
         bind: None,
         http: None,
+        quic: None,
         tokens: Vec::new(),
         rate: None,
         only_mine: false,
@@ -131,6 +135,7 @@ fn parse(rest: &[String]) -> Result<Options, String> {
             "--metrics" => o.metrics = Some(addr(flag, it.next())?),
             "--bind" => o.bind = Some(addr(flag, it.next())?),
             "--http" => o.http = Some(addr(flag, it.next())?),
+            "--quic" => o.quic = Some(addr(flag, it.next())?),
             "--state" => o.state = PathBuf::from(value()?),
             "--stats" => o.stats = true,
             "--tls-check" => o.tls_check = true,
@@ -146,6 +151,11 @@ fn parse(rest: &[String]) -> Result<Options, String> {
     };
     if !o.tokens.is_empty() && o.only_mine {
         return Err(cli::relay_token_or_mine().to_owned());
+    }
+    // QUIC needs a certificate, and a client checks it against the relay
+    // url's host: plain HTTP has none to offer.
+    if o.quic.is_some() && matches!(o.mode, Some(Mode::Dev)) {
+        return Err(cli::relay_quic_needs_tls().to_owned());
     }
     Ok(o)
 }
@@ -232,6 +242,9 @@ async fn run(o: &Options, mode: &Mode, table: Option<Arc<Table>>) -> Result<(), 
     });
     let mut cfg = ServerConfig::default();
     cfg.relay = Some(relay);
+    // The QUIC server takes the relay's TLS config when given none, the
+    // same resolver, so a renewal (`SIGHUP`) reaches it too.
+    cfg.quic = o.quic.map(QuicConfig::new);
     cfg.metrics_addr = o.metrics;
     let mut server = Server::spawn(cfg)
         .await
@@ -267,6 +280,9 @@ async fn run(o: &Options, mode: &Mode, table: Option<Arc<Table>>) -> Result<(), 
             None => cli::relay_rate_none().to_owned(),
         }
     );
+    if let Some(q) = server.quic_addr() {
+        println!("{}", cli::relay_quic(q));
+    }
     if let Some(m) = o.metrics {
         println!("{}", cli::relay_metrics(format!("http://{m}/metrics")));
     }

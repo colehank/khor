@@ -255,10 +255,12 @@ iroh 的 `N0` 预设，关就是 `Minimal` 只留 mDNS）；大陆侧查不到�
 | `--rate 字节每秒` | 每个客户端的上行限速（iroh-relay 的 `client_rx`，整台一个值） |
 | `--metrics 地址` | iroh-relay 自带的指标页 |
 | `--bind 地址` | 中继主口（`--dev` 时是 HTTP，TLS 时是 HTTPS） |
+| `--quic 地址` | QUIC 地址发现（QAD，UDP；iroh 的默认口是 7842），用中继自己的证书（续期一起换），只在 TLS 时可用 |
 | `--state 目录` / `--stats` | 计量文件的目录（默认 `.khor/relay`）；`--stats` 只打印计量、不起中继 |
 
-启动时打印在哪听、谁能进、限速、指标、计量文件在哪。QUIC 地址发现（iroh-relay 的
-7842 口）不开：khor 的客户端把每台中继都当没有 QAD 用。
+启动时打印在哪听、谁能进、限速、指标、计量文件在哪。QUIC 地址发现默认不开；开了，
+客户端也只问 `endpoint::KHOR_QAD`（加上环境变量 `KHOR_RELAY_QAD`，`地址|端口`，逗号隔开）里列出的中继，
+别的中继一律当没有 QAD，免得白等一个不答的口（net-h，2026-10-09）。
 
 **计量只存总数**（CONNECT.md「计量只存总数」）：`relay-stats.json` 里只有每个
 endpoint id 的连接次数和在线秒数，加整台中继发出 / 收到的总字节，跨重启累计。

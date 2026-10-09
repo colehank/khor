@@ -95,6 +95,35 @@ pub const KHOR_SUCCESSORS: &[(&str, &str)] = &[("http://101.200.80.77:3340", BEI
 /// and the tests' way to make it on loopback.
 pub const RELAY_SUCCESSOR_ENV: &str = "KHOR_RELAY_SUCCESSOR";
 
+/// **Which of khor's relays answer QUIC address discovery** (QAD), and on
+/// which UDP port (`khor relay --quic`). Every other relay of the
+/// caller's is treated as answering none, so a report never waits on a
+/// port nobody listens on. Empty until the Beijing TLS relay serves it
+/// (NET-DIRECT step 2, audit/net-d.md §5.2): its entry goes in once the
+/// owner's security-group rule is in and the in-path test passed.
+pub const KHOR_QAD: &[(&str, u16)] = &[];
+
+/// `KHOR_RELAY_QAD`: more `url|port` pairs for [`KHOR_QAD`],
+/// comma-separated — a relay somebody runs themselves with `--quic`, and
+/// the tests' way to name one on loopback.
+pub const RELAY_QAD_ENV: &str = "KHOR_RELAY_QAD";
+
+/// The UDP port `url` answers QAD on, if [`KHOR_QAD`] or
+/// [`RELAY_QAD_ENV`] names it.
+fn qad_port(url: &iroh::RelayUrl) -> Option<u16> {
+    let named = std::env::var(RELAY_QAD_ENV).unwrap_or_default();
+    let env = named.split(',').filter_map(|e| {
+        let (u, p) = e.split_once('|')?;
+        Some((u.trim().to_owned(), p.trim().parse::<u16>().ok()?))
+    });
+    KHOR_QAD
+        .iter()
+        .map(|(u, p)| ((*u).to_owned(), *p))
+        .chain(env)
+        .find(|(u, _)| u.parse::<iroh::RelayUrl>().is_ok_and(|u| &u == url))
+        .map(|(_, p)| p)
+}
+
 /// `KHOR_RELAY_CA`: a PEM file of certificates to trust for relays besides
 /// Mozilla's roots — a relay with a private CA, or a test's self-signed
 /// one.
@@ -421,9 +450,9 @@ fn on_the_segment() -> bool {
 /// through [`bind_with`], which adds n0's tier unless the machine is set
 /// to use only its own relays.
 ///
-/// Relays are assumed to run no QUIC address discovery — assuming it
-/// costs a dead-port wait on every connection. Each carries its own key
-/// when it has one ([`Relay::token`]).
+/// A relay is asked for QUIC address discovery only when [`KHOR_QAD`]
+/// names it — assuming it elsewhere costs a dead-port wait on every
+/// report. Each carries its own key when it has one ([`Relay::token`]).
 ///
 /// **An HTTP proxy from the environment is honoured** (`HTTP_PROXY`,
 /// `http_proxy`, `HTTPS_PROXY`, `https_proxy`, in iroh's order): a
@@ -722,7 +751,7 @@ fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
 }
 
 /// The relay map a bind hands iroh: every entry that parses, each with
-/// its key. An entry that does not parse is dropped here rather than
+/// its key and, when [`KHOR_QAD`] names it, its QAD port. An entry that does not parse is dropped here rather than
 /// failing the bind — the list comes from files and environment
 /// variables, and one typo must not take the rest down with it.
 pub fn relay_map(relays: &[Relay]) -> iroh::RelayMap {
@@ -730,8 +759,12 @@ pub fn relay_map(relays: &[Relay]) -> iroh::RelayMap {
         .iter()
         .filter_map(|r| {
             let url = r.url.parse::<iroh::RelayUrl>().ok()?;
+            let qad = qad_port(&url);
             let mut c = iroh::RelayConfig::from(url);
-            c.quic = None;
+            match (c.quic.as_mut(), qad) {
+                (Some(q), Some(port)) => q.port = port,
+                _ => c.quic = None,
+            }
             c.auth_token = r.token.clone().filter(|t| !t.is_empty());
             Some(std::sync::Arc::new(c))
         })

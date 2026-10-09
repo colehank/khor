@@ -377,7 +377,7 @@ usage: khor <verb>
                         web access on the LAN — see web)
   relay --dev | --tls-cert cert --tls-key key | --acme domain [--acme-contact email]
         [--token key | --only-mine] [--rate bytes/s] [--metrics addr]
-        [--bind addr] [--http addr] [--state dir] | --stats [--state dir]
+        [--bind addr] [--http addr] [--quic addr] [--state dir] | --stats [--state dir]
                         runs a relay on this machine (iroh-relay, the
                         same code). --dev is plain HTTP on port 3340 by
                         default; TLS takes a certificate you have, or
@@ -914,10 +914,12 @@ relay-admit-mine = "Admits: devices on this network's roster ({0} now)"
 relay-key-in-clear = "Note: over plain HTTP the shared key travels in the clear"
 relay-rate = "Rate limit: {0}/s per client"
 relay-rate-none = "Rate limit: none"
+relay-quic = "QUIC address discovery: UDP {0}"
 relay-metrics = "Metrics: {0}"
 relay-meter = "Metering: {0}"
 relay-pick-mode = "Pick one: --dev (plain HTTP), --tls-cert with --tls-key, or --acme <domain>"
 relay-token-or-mine = "--token and --only-mine cannot be used together"
+relay-quic-needs-tls = "--quic needs a certificate: use it with --tls-cert and --tls-key, or --acme"
 relay-flag-unknown = "khor relay does not know this argument: {0}"
 relay-flag-needs-value = "{0} needs a value after it"
 relay-rate-bad = "--rate takes a whole number of bytes per second above 0: {0}"

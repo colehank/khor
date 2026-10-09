@@ -160,6 +160,10 @@ TLS 那台启动后 44–50 秒住过去、它停了 40–46 秒住回明文那�
 `the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops`。上游没有对应 PR，
 升级 iroh 时要重新打。
 
+**补一处（2026-10-09，net-h）**：「量到了接班者」只认它的 HTTPS 回答，QAD 的回答不算。QAD 走 UDP，家中继却要靠
+TCP 来连；从 MacLab 到北京 TLS 中继的 TCP 在路上被重置（audit/pk-3341-dump.txt），UDP 却可能通，只凭 QAD 回答就把家
+搬过去，会搬到一台连不上的中继上。还没编译、没测（`crates/cli/tests/relay_qad.rs`，`#[ignore]`）。
+
 ### 4. `src/socket/transports/relay/actor.rs`、`src/socket.rs`、`src/endpoint.rs`：中继说谁走了（2026-10-04，NET-5 轮）
 
 中继服务器在一个端点断开时，给之前收过它包的端点发 `EndpointGone`。iroh 1.2 收到只是从内部的
