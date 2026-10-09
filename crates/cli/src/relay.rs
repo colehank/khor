@@ -75,8 +75,14 @@ struct Options {
     bind: Option<SocketAddr>,
     http: Option<SocketAddr>,
     /// `--quic`: where QUIC address discovery listens (UDP), with the
-    /// relay's own certificate; TLS modes only.
+    /// relay's own certificate — or, beside `--dev`, with the one
+    /// [`Options::quic_tls`] names for QUIC alone.
     quic: Option<SocketAddr>,
+    /// `--tls-cert`/`--tls-key` beside `--dev --quic`: a certificate for
+    /// the QUIC server only, the relay itself staying plain HTTP (the
+    /// lead's ruling (b), audit/net-d.md h.2: QAD under the plain
+    /// relay's url, whose TCP passes where the TLS relay's is reset).
+    quic_tls: Option<(PathBuf, PathBuf)>,
     tokens: Vec<String>,
     rate: Option<NonZeroU32>,
     only_mine: bool,
@@ -93,6 +99,7 @@ fn parse(rest: &[String]) -> Result<Options, String> {
         bind: None,
         http: None,
         quic: None,
+        quic_tls: None,
         tokens: Vec::new(),
         rate: None,
         only_mine: false,
@@ -144,6 +151,12 @@ fn parse(rest: &[String]) -> Result<Options, String> {
     }
     o.mode = match (dev, cert, key, acme) {
         (true, None, None, None) => Some(Mode::Dev),
+        // A certificate beside `--dev` is QUIC's alone, and means nothing
+        // without `--quic`: refused as two modes, as before.
+        (true, Some(cert), Some(key), None) if o.quic.is_some() => {
+            o.quic_tls = Some((cert, key));
+            Some(Mode::Dev)
+        }
         (false, Some(cert), Some(key), None) => Some(Mode::Tls { cert, key }),
         (false, None, None, Some(domain)) => Some(Mode::Acme { domain, contact }),
         (false, None, None, None) => None,
@@ -153,8 +166,8 @@ fn parse(rest: &[String]) -> Result<Options, String> {
         return Err(cli::relay_token_or_mine().to_owned());
     }
     // QUIC needs a certificate, and a client checks it against the relay
-    // url's host: plain HTTP has none to offer.
-    if o.quic.is_some() && matches!(o.mode, Some(Mode::Dev)) {
+    // url's host: plain HTTP has none of its own to offer.
+    if o.quic.is_some() && matches!(o.mode, Some(Mode::Dev)) && o.quic_tls.is_none() {
         return Err(cli::relay_quic_needs_tls().to_owned());
     }
     Ok(o)
@@ -243,8 +256,18 @@ async fn run(o: &Options, mode: &Mode, table: Option<Arc<Table>>) -> Result<(), 
     let mut cfg = ServerConfig::default();
     cfg.relay = Some(relay);
     // The QUIC server takes the relay's TLS config when given none, the
-    // same resolver, so a renewal (`SIGHUP`) reaches it too.
-    cfg.quic = o.quic.map(QuicConfig::new);
+    // same resolver, so a renewal (`SIGHUP`) reaches it too. Beside
+    // `--dev` it has its own, renewed the same way.
+    cfg.quic = match (o.quic, &o.quic_tls) {
+        (Some(bind), Some((cert, key))) => {
+            let (server_config, renewable) = manual_tls(cert, key)?;
+            tokio::spawn(renewable.keep_fresh());
+            let mut q = QuicConfig::new(bind);
+            q.server_config = Some(server_config);
+            Some(q)
+        }
+        (bind, _) => bind.map(QuicConfig::new),
+    };
     cfg.metrics_addr = o.metrics;
     let mut server = Server::spawn(cfg)
         .await

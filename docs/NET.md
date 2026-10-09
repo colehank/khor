@@ -222,7 +222,7 @@ iroh 的 `N0` 预设，关就是 `Minimal` 只留 mDNS）；大陆侧查不到�
 - **设置→网络**：「添加中继…」的窗里第二格填密钥，没有就留空。之后页面只说这台
   「带密钥」，不再显示密钥本身。
 - **`.khor/relays.json`**：每条是 `{"url": "https://…", "token": "…"}`，没有密钥就
-  只写 `url`；旧的纯字符串写法照样读。文件 0600。
+  只写 `url`；那台还做 QAD、pkarr 的，加 `qad`、`pkarr`（见下「`khor relay`」）。旧的纯字符串写法照样读。文件 0600。
 - **`KHOR_RELAY_CA`**：一个 PEM 文件，里面的证书和 Mozilla 的根一起被信任——自己签的中继
   证书、私有 CA，和测试里的自签证书（NET-7）。
 - **`KHOR_RELAY_SUCCESSOR`**：`旧|新`，逗号分隔多对：住旧那台时，量得到新那台就住新那台
@@ -255,12 +255,18 @@ iroh 的 `N0` 预设，关就是 `Minimal` 只留 mDNS）；大陆侧查不到�
 | `--rate 字节每秒` | 每个客户端的上行限速（iroh-relay 的 `client_rx`，整台一个值） |
 | `--metrics 地址` | iroh-relay 自带的指标页 |
 | `--bind 地址` | 中继主口（`--dev` 时是 HTTP，TLS 时是 HTTPS） |
-| `--quic 地址` | QUIC 地址发现（QAD，UDP；iroh 的默认口是 7842），用中继自己的证书（续期一起换），只在 TLS 时可用 |
+| `--quic 地址` | QUIC 地址发现（QAD，UDP；iroh 的默认口是 7842），用中继自己的证书（续期一起换）。和 `--dev` 一起时要另给 `--tls-cert/--tls-key`，这张证书只给 QUIC 用，中继本身仍是明文 HTTP（客户端按中继地址的主机名或 IP 核对证书，所以 `http://IP:3340` 要一张 IP 证书） |
 | `--state 目录` / `--stats` | 计量文件的目录（默认 `.khor/relay`）；`--stats` 只打印计量、不起中继 |
 
 启动时打印在哪听、谁能进、限速、指标、计量文件在哪。QUIC 地址发现默认不开；开了，
-客户端也只问 `endpoint::KHOR_QAD`（加上环境变量 `KHOR_RELAY_QAD`，`地址|端口`，逗号隔开）里列出的中继，
-别的中继一律当没有 QAD，免得白等一个不答的口（net-h，2026-10-09）。
+客户端也只问登记里写了 QAD 端口的中继，别的中继一律当没有 QAD，免得白等一个不答的口。
+
+**一台服务器一条登记，谁跑的都一样**（负责人，2026-10-09：「是任何登记进来的」）：中继地址，
+加上同一台还做什么——`qad`（QUIC 地址发现的 UDP 口）、`pkarr`（地址登记处的 url）。
+`.khor/relays.json` 里写成 `{"url": …, "token": …, "qad": 7842, "pkarr": "http://…:3343"}`，
+`KHOR_RELAY` 里写成查询参数 `http://…:3340?qad=7842&pkarr=http://…:3343`（和 `token` 一样从地址里摘出来，
+不随地址发布）；Khor 档的写在 `endpoint::KHOR_RELAYS` 每条的 `Serves` 里。代码里没有按服务器列的能力表
+（net-i 拿掉了 net-h 的 `KHOR_QAD`）。
 
 **计量只存总数**（CONNECT.md「计量只存总数」）：`relay-stats.json` 里只有每个
 endpoint id 的连接次数和在线秒数，加整台中继发出 / 收到的总字节，跨重启累计。

@@ -6,7 +6,7 @@
 //! 0.75–4.1 s through the TUN) with Beijing (18 ms) never measured again.
 //!
 //! The same shape on loopback, every relay embedded here: two stand-ins
-//! for n0's tier serving QAD (`KHOR_PUBLIC_RELAYS`' `url|port`), each
+//! for n0's tier serving QAD (`KHOR_PUBLIC_RELAYS`' `url?qad=port`), each
 //! behind a road that adds 100 ms each way to both its TCP and its UDP,
 //! and one plain relay of the machine's own with no QAD and no delay — the
 //! Beijing relay. The home must be the plain one. Certificates are
@@ -214,11 +214,11 @@ async fn a_full_report_measures_the_relay_without_qad_before_it_settles() {
         std::env::set_var(endpoint::NO_MDNS_ENV, "1");
         std::env::set_var(
             endpoint::PUBLIC_RELAYS_ENV,
-            named.iter().map(|(url, qad)| format!("{url}|{qad}")).collect::<Vec<_>>().join(","),
+            named.iter().map(|(url, qad)| format!("{url}?qad={qad}")).collect::<Vec<_>>().join(","),
         );
     }
     let began = Instant::now();
-    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay { url: plain.clone(), token: None }], false)
+    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay::bare(plain.clone())], false)
         .await
         .unwrap();
 

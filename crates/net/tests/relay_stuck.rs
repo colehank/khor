@@ -168,7 +168,7 @@ async fn echo(from: &iroh::Endpoint, to: &iroh::Endpoint, url: &str) -> Result<D
 
 /// A relay-only endpoint homed on `home`.
 async fn on(home: &str) -> iroh::Endpoint {
-    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay { url: home.to_owned(), token: None }], false)
+    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay::bare(home.to_owned())], false)
         .await
         .unwrap();
     answer_echoes(&ep);

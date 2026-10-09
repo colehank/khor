@@ -125,7 +125,7 @@ async fn a_slow_pong_keeps_the_relay_connection() {
     let (port, carried) = jittery_road(relay.http_addr().unwrap()).await;
     let url = format!("http://127.0.0.1:{port}");
 
-    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay { url, token: None }], false)
+    let ep = endpoint::bind_with(iroh::SecretKey::generate(), &[Relay::bare(url)], false)
         .await
         .unwrap();
     let began = Instant::now();
