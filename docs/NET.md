@@ -263,8 +263,8 @@ iroh 的 `N0` 预设，关就是 `Minimal` 只留 mDNS）；大陆侧查不到�
 
 **一台服务器一条登记，谁跑的都一样**（负责人，2026-10-09：「是任何登记进来的」）：中继地址，
 加上同一台还做什么——`qad`（QUIC 地址发现的 UDP 口）、`pkarr`（地址登记处的 url）。
-`.khor/relays.json` 里写成 `{"url": …, "token": …, "qad": 7842, "pkarr": "http://…:3343"}`，
-`KHOR_RELAY` 里写成查询参数 `http://…:3340?qad=7842&pkarr=http://…:3343`（和 `token` 一样从地址里摘出来，
+`.khor/relays.json` 里写成 `{"url": …, "token": …, "qad": 7842, "pkarr": "http://…:3343/pkarr"}`，
+`KHOR_RELAY` 里写成查询参数 `http://…:3340?qad=7842&pkarr=http://…:3343/pkarr`（和 `token` 一样从地址里摘出来，
 不随地址发布）；Khor 档的写在 `endpoint::KHOR_RELAYS` 每条的 `Serves` 里。代码里没有按服务器列的能力表
 （net-i 拿掉了 net-h 的 `KHOR_QAD`）。
 

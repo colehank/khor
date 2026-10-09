@@ -161,9 +161,9 @@ pub struct Relay {
     /// (`khor relay --quic`; iroh's default is 7842). `None`: it answers
     /// none, and no report waits on a port nobody listens on.
     pub qad: Option<u16>,
-    /// The pkarr registry the same server keeps, as a url
-    /// (`http://host:port`): where this machine publishes its address and
-    /// looks up its peers' besides n0's.
+    /// The pkarr registry the same server keeps, as a url, path included
+    /// (`http://host:port/pkarr`): where this machine publishes its
+    /// address and looks up its peers' besides n0's.
     pub pkarr: Option<String>,
 }
 
@@ -653,6 +653,21 @@ fn builder(
     if let Some(mdns) = mdns {
         builder = builder.address_lookup(Prebuilt(mdns));
     }
+    // **Every registry this machine's servers keep** ([`Relay::pkarr`]):
+    // this machine publishes there and looks its peers up there, beside
+    // n0's when that tier is on (the owner, 2026-10-09: 「两边都用，看谁
+    // 最快」). iroh asks every lookup service at once and a dial takes
+    // whatever answers first. Unlike n0's, ours carry the direct
+    // addresses too (the filter above still drops the unroutable): a
+    // peer that finds this machine there can dial it straight.
+    for url in registries(relays) {
+        builder = builder
+            .address_lookup(
+                iroh::address_lookup::PkarrPublisher::builder(url.clone().into())
+                    .addr_filter(iroh::address_lookup::AddrFilter::unfiltered()),
+            )
+            .address_lookup(iroh::address_lookup::PkarrResolver::builder(url.into()));
+    }
     let map = full_relay_map(relays, n0);
     if !map.is_empty() {
         builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(map));
@@ -755,6 +770,18 @@ fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
         }
     }
     map.into_iter().collect()
+}
+
+/// The pkarr registries the entries name ([`Relay::pkarr`]), each once,
+/// in the entries' order.
+pub fn registries(relays: &[Relay]) -> Vec<iroh::RelayUrl> {
+    let mut out: Vec<iroh::RelayUrl> = Vec::new();
+    for url in relays.iter().filter_map(|r| r.pkarr.as_deref()?.parse().ok()) {
+        if !out.contains(&url) {
+            out.push(url);
+        }
+    }
+    out
 }
 
 /// The relay map a bind hands iroh: every entry that parses, each with
@@ -1046,9 +1073,9 @@ mod tests {
         // bearer that a keyed relay refuses and an open one ignores.
         assert_eq!(Relay::parse("http://h:1?token=").unwrap().token, None);
         // What else the server serves rides the same way, lifted out too.
-        let serving = Relay::parse("http://101.200.80.77:3340?qad=7842&pkarr=http://101.200.80.77:3343").unwrap();
+        let serving = Relay::parse("http://101.200.80.77:3340?qad=7842&pkarr=http://101.200.80.77:3343/pkarr").unwrap();
         assert_eq!(serving.url, "http://101.200.80.77:3340");
-        assert_eq!((serving.qad, serving.pkarr.as_deref()), (Some(7842), Some("http://101.200.80.77:3343")));
+        assert_eq!((serving.qad, serving.pkarr.as_deref()), (Some(7842), Some("http://101.200.80.77:3343/pkarr")));
         assert_eq!(Relay::parse("http://h:1?qad=x").unwrap().qad, None, "a port that is no port is none");
         for garbage in ["", "garbage", "?token=x", "http://?token=x"] {
             assert_eq!(Relay::parse(garbage), None, "{garbage:?} is not a relay");
