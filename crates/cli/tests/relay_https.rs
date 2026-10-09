@@ -202,8 +202,8 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     // SAFETY: as in `bind`.
     unsafe { std::env::set_var(endpoint::RELAY_SUCCESSOR_ENV, format!("{plain}|{tls}")) };
     let relays = [
-        Relay { url: plain.clone(), token: Some("plain-key".into()) },
-        Relay { url: tls.clone(), token: Some("tls-key".into()) },
+        Relay { url: plain.clone(), token: Some("plain-key".into()), ..Relay::default() },
+        Relay { url: tls.clone(), token: Some("tls-key".into()), ..Relay::default() },
     ];
 
     // The TLS relay not up yet: home on the plain one, as before.
@@ -302,8 +302,8 @@ fn the_script_admits_by_the_key_khor_carries() {
     let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/relay-https.sh")).unwrap();
     let carried = endpoint::KHOR_RELAYS
         .iter()
-        .find(|(url, _)| *url == endpoint::BEIJING_TLS)
-        .and_then(|(_, key)| *key)
+        .find(|(url, _, _)| *url == endpoint::BEIJING_TLS)
+        .and_then(|(_, _, key)| *key)
         .unwrap();
     assert!(script.contains(&format!("TOKEN=\"{carried}\"")), "the script's TOKEN is not khor's");
     let (domain, port) = endpoint::BEIJING_TLS.trim_start_matches("https://").split_once(':').unwrap();

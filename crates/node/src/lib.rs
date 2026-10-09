@@ -893,7 +893,10 @@ pub(crate) struct RelayPlan {
 /// it was the question the first version could not answer, and adding
 /// it here cost a key instead of a migration.
 ///
-/// **Each entry is `{"url": …, "token": …}`, or a bare url string**:
+/// **Each entry is `{"url": …, "token": …, "qad": …, "pkarr": …}`**
+/// (all but `url` optional; `qad` a UDP port, `pkarr` a url — what the
+/// server serves besides relaying, `endpoint::Relay`), **or a bare url
+/// string**:
 /// the string is what the file held before relays took keys, and a
 /// machine that upgrades keeps the relays it had rather than coming up
 /// on the Khor tier alone with the user's list silently gone.
@@ -924,14 +927,22 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
         .into_iter()
         .flatten()
     {
-        let (url, token) = match v {
-            serde_json::Value::String(url) => (url.as_str(), None),
+        let (url, token, qad, pkarr) = match v {
+            serde_json::Value::String(url) => (url.as_str(), None, None, None),
             serde_json::Value::Object(o) => (
                 o.get("url").and_then(|u| u.as_str()).unwrap_or(""),
                 o.get("token")
                     .and_then(|t| t.as_str())
                     .map(str::to_string)
                     .filter(|t| !t.is_empty()),
+                o.get("qad")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok()),
+                o.get("pkarr")
+                    .and_then(|t| t.as_str())
+                    .map(str::trim)
+                    .filter(|u| u.parse::<iroh::RelayUrl>().is_ok())
+                    .map(str::to_string),
             ),
             _ => continue,
         };
@@ -945,6 +956,8 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
         mine.push(khor_net::endpoint::Relay {
             url: url.to_string(),
             token,
+            qad,
+            pkarr,
         });
     }
     let only_mine = !mine.is_empty()
@@ -1341,17 +1354,19 @@ impl Node {
             if kept.iter().any(|have| have.url == url) {
                 continue;
             }
+            let was = stored.iter().find(|s| s.url == url);
             let token = match entry.token.as_deref().map(str::trim) {
                 Some("") => None,
                 Some(t) => Some(t.to_string()),
-                None => stored
-                    .iter()
-                    .find(|s| s.url == url)
-                    .and_then(|s| s.token.clone()),
+                None => was.and_then(|s| s.token.clone()),
             };
+            // What the server serves besides relaying stays with its url
+            // the way the key does: the screen names relays by url only.
             kept.push(khor_net::endpoint::Relay {
                 url: url.to_string(),
                 token,
+                qad: entry.qad.or(was.and_then(|s| s.qad)),
+                pkarr: entry.pkarr.clone().or(was.and_then(|s| s.pkarr.clone())),
             });
         }
         // 「只用我自己那台」with no 自己那台 is the one combination that
@@ -1364,9 +1379,18 @@ impl Node {
         }
         let rows: Vec<serde_json::Value> = kept
             .iter()
-            .map(|r| match &r.token {
-                Some(t) => serde_json::json!({ "url": r.url, "token": t }),
-                None => serde_json::json!({ "url": r.url }),
+            .map(|r| {
+                let mut row = serde_json::json!({ "url": r.url });
+                if let Some(t) = &r.token {
+                    row["token"] = t.as_str().into();
+                }
+                if let Some(p) = r.qad {
+                    row["qad"] = p.into();
+                }
+                if let Some(u) = &r.pkarr {
+                    row["pkarr"] = u.as_str().into();
+                }
+                row
             })
             .collect();
         // The preference survives an edit of the list while its relay is

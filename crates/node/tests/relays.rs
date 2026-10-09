@@ -211,6 +211,7 @@ fn a_relay_key_reaches_the_bind_and_nothing_that_is_published() {
         &[Relay {
             url: MINE.to_string(),
             token: Some(KEY.to_string()),
+            ..Relay::default()
         }],
         false,
     )

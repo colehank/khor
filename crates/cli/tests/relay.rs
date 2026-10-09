@@ -238,6 +238,7 @@ async fn a_token_relay_refuses_the_keyless_and_carries_the_keyed() {
     let keyed = [Relay {
         url: r.url.clone(),
         token: Some(KEY.into()),
+        ..Relay::default()
     }];
     let far = far_side(iroh::SecretKey::generate(), &keyed).await;
     assert_eq!(verdict(&far).await, Ok(()), "the far side holds the key");
@@ -261,6 +262,7 @@ async fn a_token_relay_refuses_the_keyless_and_carries_the_keyed() {
         &[Relay {
             url: r.url.clone(),
             token: Some("not-the-key".into()),
+            ..Relay::default()
         }],
     )
     .await

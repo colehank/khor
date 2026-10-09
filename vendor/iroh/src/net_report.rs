@@ -890,9 +890,15 @@ impl Client {
         // moves to the successor — the same box over TLS, say, measuring
         // no faster than the plain one it replaces. After patch 3, so a
         // person who chose the old one gets the new one too.
+        // Reached means its HTTPS answered: a QAD answer is UDP, and a home
+        // is held over TCP. From MacLab, TCP to the Beijing TLS relay is
+        // reset in-path (audit/pk-3341-dump.txt) where UDP may pass.
         if let Some(home) = &r.preferred_relay
             && let Some((_, new)) = self.successors.iter().find(|(old, _)| old == home)
-            && r.relay_latency.get(new).is_some()
+            && r
+                .relay_latency
+                .iter()
+                .any(|(probe, url, _)| probe == Probe::Https && url == new)
         {
             r.preferred_relay = Some(new.clone());
         }

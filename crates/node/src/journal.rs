@@ -954,7 +954,10 @@ impl crate::Node {
             .devices()
             .unwrap_or_default()
             .into_iter()
-            .map(|d| (d.id, d.name))
+            // The name a person reads (the rename), not the channel: the
+            // iPhone's channel is its hostname, 「localhost」.
+            .map(|d| (d.shown().to_owned(), d.id))
+            .map(|(shown, id)| (id, shown))
             .collect();
         let name_of = |id: &str| {
             names
@@ -1009,7 +1012,10 @@ impl crate::Node {
                 .devices()
                 .unwrap_or_default()
                 .into_iter()
-                .map(|d| (d.id, d.name))
+                // The name a person reads (the rename), not the channel: the
+                // iPhone's channel is its hostname, 「localhost」.
+                .map(|d| (d.shown().to_owned(), d.id))
+                .map(|(shown, id)| (id, shown))
                 .collect();
             out.push_str(msg::journal_why_title());
             out.push('\n');

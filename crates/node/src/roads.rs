@@ -151,6 +151,48 @@ pub(crate) fn watch(
 static WRITTEN: std::sync::LazyLock<Mutex<HashMap<(String, &'static str), String>>> =
     std::sync::LazyLock::new(Default::default);
 
+/// **A direct path is written when it opens, once** (net-i): per machine
+/// and address, how many paths to it are open across all its connections,
+/// and when its opening was last written. Before this, 「直连路径已打通」
+/// came every ~5 s for the same two addresses (turing, 2026-10-09: 61
+/// lines an hour): each of a machine's connections opens its own path to
+/// the same address, and every punching round opens more. An opening is
+/// written when the first path to that address opens and none was written
+/// in the last [`REOPEN_QUIET`].
+static OPEN: std::sync::LazyLock<Mutex<HashMap<(String, String), (u32, std::time::Instant)>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// How long an address that closed and opened again stays unwritten.
+const REOPEN_QUIET: Duration = Duration::from_secs(10 * 60);
+
+/// Counts a direct path to `addr` opening; whether it is news.
+fn opened_is_news(id: &str, addr: &str) -> bool {
+    let mut open = OPEN.lock().unwrap_or_else(|p| p.into_inner());
+    let now = std::time::Instant::now();
+    match open.get_mut(&(id.to_owned(), addr.to_owned())) {
+        Some((count, last)) => {
+            *count += 1;
+            let news = *count == 1 && now.duration_since(*last) >= REOPEN_QUIET;
+            if news {
+                *last = now;
+            }
+            news
+        }
+        None => {
+            open.insert((id.to_owned(), addr.to_owned()), (1, now));
+            true
+        }
+    }
+}
+
+/// Counts a direct path to `addr` closing (or its connection ending).
+fn closed(id: &str, addr: &str) {
+    let mut open = OPEN.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some((count, _)) = open.get_mut(&(id.to_owned(), addr.to_owned())) {
+        *count = count.saturating_sub(1);
+    }
+}
+
 /// **Every path change of a connection, for its whole life** (NET-DIRECT):
 /// a direct path opening is a hole punch that landed, a selection is the
 /// road moving — relay to direct, direct back to relay, onto a carried road.
@@ -169,10 +211,18 @@ fn follow(
         use n0_future::StreamExt;
         use iroh::endpoint::PathEvent;
         tokio::pin!(events);
+        // This connection's open direct paths, handed back when it ends.
+        let mut mine: HashMap<iroh::endpoint::PathId, String> = HashMap::new();
         while let Some(event) = events.next().await {
             let (change, path_id, remote) = match event {
                 PathEvent::Opened { id: pid, remote_addr, .. } if remote_addr.is_ip() => ("opened", pid, remote_addr),
                 PathEvent::Selected { id: pid, remote_addr, .. } => ("selected", pid, remote_addr),
+                PathEvent::Closed { id: pid, .. } => {
+                    if let Some(addr) = mine.remove(&pid) {
+                        closed(&id, &addr);
+                    }
+                    continue;
+                }
                 _ => continue,
             };
             let (road, addr) = match &remote {
@@ -198,17 +248,18 @@ fn follow(
                     },
                 ),
             };
-            {
+            if change == "opened" {
+                mine.insert(path_id, addr.clone());
+                if !opened_is_news(&id, &addr) {
+                    continue;
+                }
+            } else {
                 let mut written = WRITTEN.lock().unwrap_or_else(|p| p.into_inner());
                 let key = (id.clone(), change);
                 if written.get(&key) == Some(&addr) {
                     continue;
                 }
                 written.insert(key, addr.clone());
-                // A new selection is news for the next opening too.
-                if change == "selected" {
-                    written.remove(&(id.clone(), "opened"));
-                }
             }
             // A carried path just selected has no sample yet and reads 0:
             // said as nothing rather than 「往返 0 ms」.
@@ -226,6 +277,9 @@ fn follow(
                     rtt_ms,
                 },
             );
+        }
+        for addr in mine.values() {
+            closed(&id, addr);
         }
     });
 }
@@ -254,6 +308,20 @@ pub(crate) fn tally(roads: &Roads) -> Vec<(String, RoadTally)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// net-i: a machine's second connection opening a path to the same
+    /// address is not written again, nor is the address closing and
+    /// opening again within the quiet; a new address is.
+    #[test]
+    fn a_direct_path_is_written_once_per_address() {
+        let id = "net-i-once";
+        assert!(opened_is_news(id, "10.0.0.1:1"), "the first opening is news");
+        assert!(!opened_is_news(id, "10.0.0.1:1"), "the other connection's path to it is not");
+        closed(id, "10.0.0.1:1");
+        closed(id, "10.0.0.1:1");
+        assert!(!opened_is_news(id, "10.0.0.1:1"), "closed and opened again at once is not");
+        assert!(opened_is_news(id, "[2001:db8::1]:1"), "another address is");
+    }
 
     /// The tally keeps the last [`REMEMBERED`] settled dials, drops the
     /// unknowns, and keeps the most recent reply time.

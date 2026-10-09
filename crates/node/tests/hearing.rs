@@ -38,7 +38,7 @@ async fn homed(ep: &iroh::Endpoint) {
 async fn ears_that_work_echo_and_closed_ones_do_not() {
     util::off_the_segment();
     let url = util::loop_relay().to_owned();
-    let map = vec![Relay { url: url.clone(), token: None }];
+    let map = vec![Relay::bare(url.clone())];
     let relays = vec![url];
 
     let ep = endpoint::bind_with(iroh::SecretKey::generate(), &map, false).await.unwrap();
@@ -51,7 +51,7 @@ async fn ears_that_work_echo_and_closed_ones_do_not() {
     assert_eq!(ears_heard(&ep, &map, false, &relays, true).await, Hearing::Unheard, "closed ears, relay up");
 
     // Nothing answers on the road out: not deafness, the network.
-    let dead = vec![Relay { url: "http://127.0.0.1:9".into(), token: None }];
+    let dead = vec![Relay::bare("http://127.0.0.1:9")];
     let lone = endpoint::bind_with(iroh::SecretKey::generate(), &dead, false).await.unwrap();
     assert_eq!(
         ears_heard(&lone, &dead, false, &["http://127.0.0.1:9".to_owned()], false).await,

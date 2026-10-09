@@ -1662,6 +1662,7 @@ pub fn set_relays(
         .map(|w| khor_node::Relay {
             url: w.url.clone(),
             token: w.token.clone(),
+            ..khor_node::Relay::default()
         })
         .collect();
     let in_use = node.set_relays(&entries, only_mine)?;

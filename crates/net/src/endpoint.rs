@@ -46,22 +46,30 @@ pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
 /// 2026-09-30: 「还是不去 n0 吧，n0 可以兜底」). [`bind_with`] is where
 /// the fallback is added; 「只使用自己的中继」 drops both tiers.
 ///
+/// **What each serves besides relaying is on its entry** ([`Serves`]):
+/// QUIC address discovery on a UDP port, a pkarr registry. A relay whose
+/// entry names no QAD port is asked none (NET-DIRECT step 2,
+/// audit/net-d.md net-i).
+///
 /// ⚠️ 墓碑: until 2026-10-01 this was one open relay,
 /// `http://39.97.7.248:3340` — mandala's aliyun box on loan, running
 /// `iroh-relay --dev` and admitting everyone — with `KHOR_RELAY_TOKEN`
 /// a separate `None`. That box's lease ends; the key now rides with
 /// each address because the two relays do not share one.
-pub const KHOR_RELAYS: &[(&str, Option<&str>)] = &[
+pub const KHOR_RELAYS: &[(&str, Serves, Option<&str>)] = &[
     (
         "http://101.200.80.77:3340",
+        Serves::RELAY,
         Some("bbe31ccf721dde188508517840c24673ef9d4a5865af18a3"),
     ),
     (
         BEIJING_TLS,
+        Serves::RELAY,
         Some("19ccb31e891ffa3ab66f95f5b743c7d4b419afe635b97e5e"),
     ),
     (
         "https://hk.relay.khor.cloud",
+        Serves::RELAY,
         Some("a086ea41af0a8bfe73ac98a914a18542bea845123e8b9eaf"),
     ),
 ];
@@ -137,41 +145,59 @@ pub fn successors(relays: &[Relay]) -> Vec<(iroh::RelayUrl, iroh::RelayUrl)> {
 /// peer that wants to reach this machine through a keyed relay has to
 /// hold the key itself, typed on that machine. A relay khor runs for
 /// its own devices (`khor relay --only-mine`) needs no key at all.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// **One shape for a server, whoever runs it** (the owner, 2026-10-09:
+/// 「是任何登记进来的」): the relay url, and what else the same box
+/// serves — QUIC address discovery on a UDP port, a pkarr registry.
+/// Beijing is one entry, a server the owner adds later is the same kind
+/// of entry; what a server does is read from its entry, never from a
+/// list of servers kept somewhere else in the code.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Relay {
     pub url: String,
     /// The shared key the relay admits by, sent as a bearer token.
     pub token: Option<String>,
+    /// The UDP port the relay's host answers QUIC address discovery on
+    /// (`khor relay --quic`; iroh's default is 7842). `None`: it answers
+    /// none, and no report waits on a port nobody listens on.
+    pub qad: Option<u16>,
+    /// The pkarr registry the same server keeps, as a url, path included
+    /// (`http://host:port/pkarr`): where this machine publishes its
+    /// address and looks up its peers' besides n0's.
+    pub pkarr: Option<String>,
 }
 
 impl Relay {
-    /// A relay that asks for nothing.
+    /// A relay that asks for nothing and serves nothing besides relaying.
     pub fn bare(url: impl Into<String>) -> Relay {
         Relay {
             url: url.into(),
-            token: None,
+            ..Relay::default()
         }
     }
 
     /// Reads one entry the way `KHOR_RELAY` writes it: a relay url,
     /// optionally carrying its key as a `token` query parameter —
-    /// `https://relay.example.com?token=SECRET`. `None` when it is not a
+    /// `https://relay.example.com?token=SECRET` — and what else it serves
+    /// as `qad=<udp port>` and `pkarr=<url>`. `None` when it is not a
     /// relay url at all.
     ///
-    /// The query parameter is iroh-relay's own spelling
+    /// The `token` parameter is iroh-relay's own spelling
     /// (`ClientRequest::auth_token` accepts `?token=` beside the bearer
     /// header), so a url copied out of an iroh-relay operator's notes
-    /// means the same thing here. The key is lifted out of the url
-    /// rather than left in it: the url is what gets published, and a
+    /// means the same thing here. Every parameter is lifted out of the
+    /// url rather than left in it: the url is what gets published, and a
     /// key left inside it would be published with it.
     pub fn parse(entry: &str) -> Option<Relay> {
         let entry = entry.trim();
         let parsed: iroh::RelayUrl = entry.parse().ok()?;
-        let token = parsed
-            .query_pairs()
-            .find(|(k, _)| k == "token")
-            .map(|(_, v)| v.into_owned())
-            .filter(|t| !t.is_empty());
+        let param = |name: &str| {
+            parsed
+                .query_pairs()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.trim().to_owned())
+                .filter(|v| !v.is_empty())
+        };
         let url = match entry.split_once('?') {
             Some((bare, _)) => bare.to_string(),
             None => entry.to_string(),
@@ -180,17 +206,37 @@ impl Relay {
         // `http://?token=x` parses as a url with the query, and not
         // without it.
         url.parse::<iroh::RelayUrl>().ok()?;
-        Some(Relay { url, token })
+        Some(Relay {
+            url,
+            token: param("token"),
+            qad: param("qad").and_then(|p| p.parse().ok()),
+            pkarr: param("pkarr").filter(|p| p.parse::<iroh::RelayUrl>().is_ok()),
+        })
     }
+}
+
+/// What a compiled-in server serves besides relaying: the same two
+/// fields as [`Relay`], as constants.
+#[derive(Debug, Clone, Copy)]
+pub struct Serves {
+    pub qad: Option<u16>,
+    pub pkarr: Option<&'static str>,
+}
+
+impl Serves {
+    /// Relaying only.
+    pub const RELAY: Serves = Serves { qad: None, pkarr: None };
 }
 
 /// The Khor tier as relay entries.
 pub fn khor_tier() -> Vec<Relay> {
     KHOR_RELAYS
         .iter()
-        .map(|(url, token)| Relay {
+        .map(|(url, serves, token)| Relay {
             url: url.to_string(),
             token: token.map(str::to_string),
+            qad: serves.qad,
+            pkarr: serves.pkarr.map(str::to_owned),
         })
         .collect()
 }
@@ -361,8 +407,9 @@ pub const BIND_IP_ENV: &str = "KHOR_BIND_IP";
 /// n0's aps1, 2026-10-09 — and a test needs that shape on loopback
 /// (`crates/cli/tests/home_relay.rs`). Never set by khor.
 ///
-/// An entry written `url|port` serves QUIC address discovery on that UDP
-/// port, as n0's relays do on 7842; a bare url serves none, as khor's own
+/// Each entry is read as [`Relay::parse`] reads `KHOR_RELAY`'s: one written
+/// `url?qad=port` serves QUIC address discovery on that UDP port, as n0's
+/// relays do on 7842; a bare url serves none
 /// (`crates/net/tests/qad_home.rs`).
 pub const PUBLIC_RELAYS_ENV: &str = "KHOR_PUBLIC_RELAYS";
 
@@ -421,9 +468,9 @@ fn on_the_segment() -> bool {
 /// through [`bind_with`], which adds n0's tier unless the machine is set
 /// to use only its own relays.
 ///
-/// Relays are assumed to run no QUIC address discovery — assuming it
-/// costs a dead-port wait on every connection. Each carries its own key
-/// when it has one ([`Relay::token`]).
+/// A relay is asked for QUIC address discovery only when its entry
+/// names a port ([`Relay::qad`]) — assuming it elsewhere costs a
+/// dead-port wait on every report. Each carries its own key when it has one ([`Relay::token`]).
 ///
 /// **An HTTP proxy from the environment is honoured** (`HTTP_PROXY`,
 /// `http_proxy`, `HTTPS_PROXY`, `https_proxy`, in iroh's order): a
@@ -606,6 +653,21 @@ fn builder(
     if let Some(mdns) = mdns {
         builder = builder.address_lookup(Prebuilt(mdns));
     }
+    // **Every registry this machine's servers keep** ([`Relay::pkarr`]):
+    // this machine publishes there and looks its peers up there, beside
+    // n0's when that tier is on (the owner, 2026-10-09: 「两边都用，看谁
+    // 最快」). iroh asks every lookup service at once and a dial takes
+    // whatever answers first. Unlike n0's, ours carry the direct
+    // addresses too (the filter above still drops the unroutable): a
+    // peer that finds this machine there can dial it straight.
+    for url in registries(relays) {
+        builder = builder
+            .address_lookup(
+                iroh::address_lookup::PkarrPublisher::builder(url.clone().into())
+                    .addr_filter(iroh::address_lookup::AddrFilter::unfiltered()),
+            )
+            .address_lookup(iroh::address_lookup::PkarrResolver::builder(url.into()));
+    }
     let map = full_relay_map(relays, n0);
     if !map.is_empty() {
         builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(map));
@@ -696,19 +758,8 @@ fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
         let public: Vec<std::sync::Arc<iroh::RelayConfig>> = match named {
             Some(named) => named
                 .split(',')
-                .filter_map(|entry| {
-                    let (url, qad) = match entry.split_once('|') {
-                        Some((url, port)) => (url, port.trim().parse::<u16>().ok()),
-                        None => (entry, None),
-                    };
-                    let url = url.trim().parse::<iroh::RelayUrl>().ok()?;
-                    let mut c = iroh::RelayConfig::from(url);
-                    match (c.quic.as_mut(), qad) {
-                        (Some(q), Some(port)) => q.port = port,
-                        _ => c.quic = None,
-                    }
-                    Some(std::sync::Arc::new(c))
-                })
+                .filter_map(Relay::parse)
+                .filter_map(|r| relay_config(&r))
                 .collect(),
             None => iroh::defaults::prod::default_relay_map().relays(),
         };
@@ -721,21 +772,39 @@ fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
     map.into_iter().collect()
 }
 
+/// The pkarr registries the entries name ([`Relay::pkarr`]), each once,
+/// in the entries' order.
+pub fn registries(relays: &[Relay]) -> Vec<iroh::RelayUrl> {
+    let mut out: Vec<iroh::RelayUrl> = Vec::new();
+    for url in relays.iter().filter_map(|r| r.pkarr.as_deref()?.parse().ok()) {
+        if !out.contains(&url) {
+            out.push(url);
+        }
+    }
+    out
+}
+
 /// The relay map a bind hands iroh: every entry that parses, each with
-/// its key. An entry that does not parse is dropped here rather than
-/// failing the bind — the list comes from files and environment
-/// variables, and one typo must not take the rest down with it.
+/// its key and the QAD port its entry names ([`Relay::qad`]). An entry
+/// that does not parse is dropped here rather than failing the bind —
+/// the list comes from files and environment variables, and one typo
+/// must not take the rest down with it.
 pub fn relay_map(relays: &[Relay]) -> iroh::RelayMap {
-    relays
-        .iter()
-        .filter_map(|r| {
-            let url = r.url.parse::<iroh::RelayUrl>().ok()?;
-            let mut c = iroh::RelayConfig::from(url);
-            c.quic = None;
-            c.auth_token = r.token.clone().filter(|t| !t.is_empty());
-            Some(std::sync::Arc::new(c))
-        })
-        .collect()
+    relays.iter().filter_map(relay_config).collect()
+}
+
+/// One entry as iroh's relay config: its key, and QAD only on the port
+/// the entry names — a relay asked for QAD on a port nobody listens on
+/// costs every report a dead-port wait.
+fn relay_config(r: &Relay) -> Option<std::sync::Arc<iroh::RelayConfig>> {
+    let url = r.url.parse::<iroh::RelayUrl>().ok()?;
+    let mut c = iroh::RelayConfig::from(url);
+    match (c.quic.as_mut(), r.qad) {
+        (Some(q), Some(port)) => q.port = port,
+        _ => c.quic = None,
+    }
+    c.auth_token = r.token.clone().filter(|t| !t.is_empty());
+    Some(std::sync::Arc::new(c))
 }
 
 /// Is this an address no peer could ever reach us on?
@@ -1003,6 +1072,11 @@ mod tests {
         // An empty key is no key: `?token=` alone must not send an empty
         // bearer that a keyed relay refuses and an open one ignores.
         assert_eq!(Relay::parse("http://h:1?token=").unwrap().token, None);
+        // What else the server serves rides the same way, lifted out too.
+        let serving = Relay::parse("http://101.200.80.77:3340?qad=7842&pkarr=http://101.200.80.77:3343/pkarr").unwrap();
+        assert_eq!(serving.url, "http://101.200.80.77:3340");
+        assert_eq!((serving.qad, serving.pkarr.as_deref()), (Some(7842), Some("http://101.200.80.77:3343/pkarr")));
+        assert_eq!(Relay::parse("http://h:1?qad=x").unwrap().qad, None, "a port that is no port is none");
         for garbage in ["", "garbage", "?token=x", "http://?token=x"] {
             assert_eq!(Relay::parse(garbage), None, "{garbage:?} is not a relay");
         }
@@ -1017,11 +1091,16 @@ mod tests {
             Relay {
                 url: "http://203.0.113.9:3340".into(),
                 token: Some("k".into()),
+                qad: Some(7842),
+                ..Relay::default()
             },
             Relay::bare("http://203.0.113.10:3340"),
             Relay::bare("not a url"),
         ]);
         assert_eq!(map.len(), 2, "the bad entry is dropped, the others kept");
+        let qad_of = |u: &str| map.get(&u.parse().unwrap()).and_then(|c| c.quic.as_ref().map(|q| q.port));
+        assert_eq!(qad_of("http://203.0.113.9:3340"), Some(7842), "QAD on the port the entry names");
+        assert_eq!(qad_of("http://203.0.113.10:3340"), None, "an entry naming no port is asked no QAD");
         let key_of = |u: &str| map.get(&u.parse().unwrap()).and_then(|c| c.auth_token.clone());
         assert_eq!(key_of("http://203.0.113.9:3340").as_deref(), Some("k"));
         assert_eq!(key_of("http://203.0.113.10:3340"), None);
