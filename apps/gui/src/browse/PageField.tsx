@@ -40,7 +40,7 @@
  * `fixed`: the machine is the page's and not a choice (a machine's own
  * page, its 浏览 in place) — the face is shown, not offered.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { fetchRecents, pageStep, type DeviceRow, type RecentRow } from "@/api";
@@ -183,7 +183,8 @@ export function PageField({
   const [hi, setHi] = useState(-1);
   const [recents, setRecents] = useState<RecentRow[]>([]);
   const input = useRef<HTMLInputElement>(null);
-  const field = useRef<HTMLDivElement>(null);
+  const inputId = useId();
+  const field = useRef<HTMLLabelElement>(null);
 
   // The page moved (a link, a step, another machine): the field follows
   // unless somebody is typing in it.
@@ -373,18 +374,15 @@ export function PageField({
         </GlassCapsule>
       )}
       <div className="relative flex min-w-0 flex-1">
-        <div
+        <label
           ref={field}
           data-page-field
           data-state={editing ? "editing" : token ? "set" : "empty"}
+          // **A label for the address**: a press anywhere on the glass is
+          // a press on the address, by the platform's own rule (the face
+          // and the × are buttons of their own, which a label leaves be).
+          htmlFor={inputId}
           className={cn(shell, "gap-in pe-row", token ? "ps-1" : "ps-row")}
-          // A press anywhere on the glass is a press on the address.
-          onPointerDown={(e) => {
-            if (e.target !== input.current && !editing) {
-              e.preventDefault();
-              input.current?.focus();
-            }
-          }}
         >
           {token &&
             (still ? (
@@ -427,6 +425,7 @@ export function PageField({
               rather than cut while it is edited, and a clear × at its end. */}
           <input
             ref={input}
+            id={inputId}
             data-page-address
             aria-label={gui.address_page}
             aria-expanded={rows !== null}
@@ -505,7 +504,8 @@ export function PageField({
                 setHi(-1);
               }
             }}
-            className={cn("min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-tertiary", !editing && "truncate")}
+            // The glass's whole height is the address's to press.
+            className={cn("min-w-0 flex-1 self-stretch bg-transparent text-body outline-none placeholder:text-tertiary", !editing && "truncate")}
           />
           {editing && text !== "" && !switching && (
             <button
@@ -525,7 +525,7 @@ export function PageField({
               <IconClose className="size-affordance" />
             </button>
           )}
-        </div>
+        </label>
         {!floated && listSeat === undefined && list}
       </div>
       {listSeat && list && createPortal(<div data-page-list>{list}</div>, listSeat)}
