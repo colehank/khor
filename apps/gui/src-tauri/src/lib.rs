@@ -3930,6 +3930,28 @@ fn lifecycle_act(on: Front, resting: Option<bool>) -> Option<Act> {
     }
 }
 
+/// **Where the app is once the moves queued behind each other are read
+/// together** (net-r). A trip to the background is answered on the
+/// worker's own thread, and iOS can freeze it there — between the move
+/// and the resident's answer — so on the way back the worker may hold a
+/// `Background` with a `Foreground` already behind it. Taken one at a time,
+/// the stale `Background` let every wire go with the app on screen, and
+/// the resume came after it: a far machine read a refusal and a dropped
+/// terminal for a moment that was no trip at all. The last move decides,
+/// and a batch that left and came back is a return (the network may have
+/// moved meanwhile), not a rest.
+#[cfg(any(test, not(desktop)))]
+fn settled(moves: &[Front]) -> Option<Front> {
+    let last = *moves.last()?;
+    if last == Front::Background {
+        return Some(last);
+    }
+    if moves.iter().any(|m| *m != Front::Active) {
+        return Some(Front::Foreground);
+    }
+    Some(Front::Active)
+}
+
 /// **The phone's moves, one at a time.** Every move goes to one thread,
 /// which asks the resident in the order the system told them: a
 /// suspension is answered before a resume after it is sent, and the
@@ -3946,13 +3968,26 @@ fn front_worker(app: tauri::AppHandle) -> std::sync::mpsc::Sender<Front> {
         };
         let root = Node::root_from_env();
         let bounded = std::time::Duration::from_secs(2);
-        for on in rx {
-            let resting = rt.block_on(async {
-                tokio::time::timeout(bounded, khor_node::link::resting(&root))
-                    .await
-                    .ok()
-                    .flatten()
-            });
+        while let Ok(first) = rx.recv() {
+            let mut moves = vec![first];
+            moves.extend(rx.try_iter());
+            // Asked again while moves keep arriving behind the question:
+            // a freeze in the middle of it ends with the return queued.
+            let (on, resting) = loop {
+                let Some(on) = settled(&moves) else { break (None, None) };
+                let resting = rt.block_on(async {
+                    tokio::time::timeout(bounded, khor_node::link::resting(&root))
+                        .await
+                        .ok()
+                        .flatten()
+                });
+                let before = moves.len();
+                moves.extend(rx.try_iter());
+                if moves.len() == before {
+                    break (Some(on), resting);
+                }
+            };
+            let Some(on) = on else { continue };
             let act = lifecycle_act(on, resting);
             eprintln!("khor front: {on:?}, resting {resting:?}: {act:?}");
             match act {
@@ -4925,6 +4960,23 @@ mod tests {
         assert_eq!(lifecycle_act(Front::Active, Some(true)), Some(Act::Resume), "the stuck node");
         assert_eq!(lifecycle_act(Front::Active, Some(false)), None, "awake: one resume, not two");
         assert_eq!(lifecycle_act(Front::Active, None), None, "no resident yet");
+    }
+
+    /// **Moves queued while the worker was frozen are read together**
+    /// (net-r): a `Background` with the app's return already behind it
+    /// is not a rest. Before, each was taken in turn: the stale
+    /// `Background` let every wire go with the app on screen.
+    #[test]
+    fn a_trip_answered_after_the_return_is_a_return() {
+        use super::{Front, settled};
+        use Front::*;
+        assert_eq!(settled(&[Background]), Some(Background));
+        assert_eq!(settled(&[Background, Foreground, Active]), Some(Foreground), "left and came back");
+        assert_eq!(settled(&[Background, Foreground]), Some(Foreground));
+        assert_eq!(settled(&[Foreground, Active, Background]), Some(Background), "left again");
+        assert_eq!(settled(&[Active]), Some(Active));
+        assert_eq!(settled(&[Active, Active]), Some(Active));
+        assert_eq!(settled(&[]), None);
     }
 
     /// **set_relays, through the app's own invoke path, reads the

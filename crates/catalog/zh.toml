@@ -403,12 +403,13 @@ usage = """
                         每项各自 3 秒超时，一项卡住不拖累别项。
                         --json 出原样（GUI 那一页读的是同一份）；
                         --fix 跑那一项的修法（能修的项在行尾写着怎么跑）
-  journal [机器] [--minutes 分钟] [--report] [--json]
+  journal [机器] [--minutes 分钟] [--report] [--json] [--on 机器]
                         连接记录：本机每次拨号、走了哪几条路、结果和失败的
                         那一步、退避、连接收回、网络和家中继的变化。
                         给机器只看它（夹着本机的事），默认最近 60 分钟；
                         --report 把所有机器的这一段存成一个文件交给别人，
-                        不含密钥、配对票和 host key
+                        不含密钥、配对票和 host key；--on 读另一台机器的
+                        连接记录（经网络取回，只取记录文件）
   invite                出一张一次性配对票（要求 serve 在跑）
   pair <票|->           凭票入网；- 从标准输入读票
   add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [-m <khor主机>]
@@ -1797,6 +1798,8 @@ peer-resumed = "已恢复和 {0} 的往来，下一轮就能对上"
 peer-already-paused = "和 {0} 的往来已经是暂停的了。要恢复：khor resume {0}"
 peer-not-paused = "和 {0} 的往来本来就没暂停。要暂停：khor pause {0}"
 peer-paused-refusal = "这台机器暂停着（本机这边暂停的），要恢复：khor resume <机器>"
+# 手机在后台歇着时谁也不拨（net-r）：别人拨它被拒，它自己的拨号也等回到前台。
+resting-no-dial = "应用在后台，暂不连接其他机器；回到前台后自动连接"
 # 暂停时伸手去配对。两个动词都要收发才成得了,所以不是「失败了」而是
 # 「这台机器现在不干这件事」——按名字拒,并指出解在哪。
 paired-while-paused = "这台机器已暂停接入，配对要先恢复：khor resume"
@@ -2546,6 +2549,8 @@ journal-home-down = "断开"
 journal-home-down-why = "断开：{0}"
 journal-ears = "换新端点，用了 {0} ms"
 journal-ears-failed = "换新端点失败：{0}"
+journal-rest = "进入后台：放下所有连接，回到前台前不再拨号"
+journal-front = "回到前台：沿用原端点，重新绑定端口、检查中继、探测各条路径；随后一轮同步用了 {0} ms"
 journal-hop-up = "经 {0} 转发已接上"
 journal-hop-none = "试了 {0} 台中间机器，都没有接上转发"
 journal-carry-up = "SSH 转连已接上"

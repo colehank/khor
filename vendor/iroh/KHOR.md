@@ -12,7 +12,11 @@
 
 ## 补丁
 
-十五处。
+十六处。
+
+### 16. `src/socket.rs`、`src/endpoint.rs`：公开「大的网络变化」（2026-10-09，net-r）
+
+上游只有 `Endpoint::network_change()`：交给网络监视器去判断，网卡没变就什么也不做。回到前台的手机多半还在原来那张网上，可 socket 可能被系统收回、中继连接和对端的路径可能在冻住时死了。上游测试里有现成的 `force_network_change(is_major)`（`#[cfg(test)]`），做的正是要的那一套：在原端口上重绑 UDP、查中继连接、重置 DNS、重测网络、通知 QUIC 去 ping 每条路径、打洞。改为：去掉那两处 `#[cfg(test)]`，加公开的 `Endpoint::network_change_major()` 调它（端点已关就不做）。khor 回前台时用它代替换新端点（`link.rs` 的 `Wake::Resume`）。测：`cargo test -p khor-node --test resume a_resume_keeps_the_ears`。
 
 ### 15. `src/socket/transports/relay/actor.rs`：一条中继连接不再卡住所有中继；慢的 pong 不算断（2026-10-09，NET-DIRECT，net-g）
 

@@ -676,10 +676,12 @@ impl Resuming {
     }
 }
 
-/// **Fresh ears for the resident on `root`**, in this process, without
-/// a restart (docs/IOS.md 第三步): a new endpoint on the same key, the
-/// old one and what rode it let go, the new roads published, and a sync
-/// round at once. `None` when no resumable serve holds that home here.
+/// **The resident on `root` back in front**, in this process, without
+/// a restart (docs/IOS.md 第三步): its endpoint mended in place — sockets
+/// rebound on their ports, relay checked, paths pinged (net-r) — or, on
+/// an endpoint that closed, a new one on the same key with the old one
+/// and what rode it let go; then a sync round at once. `None` when no
+/// resumable serve holds that home here.
 ///
 /// The phone's app calls this on its way back to the foreground
 /// (`applicationWillEnterForeground`); a laptop waking from sleep could
@@ -1485,6 +1487,7 @@ impl Node {
                     }
                     Wake::Suspend { done } => {
                         resting.store(true, std::sync::atomic::Ordering::Relaxed);
+                        node.wires.note(None, crate::journal::What::Rest);
                         node.wires.clear(wires::Retired::Suspended);
                         node.wires.let_go_served(wires::Retired::Suspended);
                         let _ = done.send(());
@@ -1561,6 +1564,40 @@ impl Node {
                         // on one key knock each other off the relay.
                         if let Some(waiting) = resuming.as_mut() {
                             waiting.push((ears, synced));
+                            continue;
+                        }
+                        // **The same ears, mended in place** (net-r) — the
+                        // app's resume, on an endpoint still open. iroh's
+                        // own cure for a phone back from the background
+                        // (vendor/iroh patch 16): the sockets rebound on
+                        // their ports (netwatch also does this by itself
+                        // when iOS took one back), the relay connection
+                        // checked, a net report, every path pinged. New
+                        // ears instead cost every far machine its road to
+                        // this one: the old endpoint refused their dials
+                        // while it closed, and the new one sat on new
+                        // ports their tables did not have yet. New ears
+                        // stay for a closed endpoint and the deaf watch.
+                        if hearing && ears.is_some() {
+                            let begun = std::time::Instant::now();
+                            node.wires.network_changed();
+                            let (n, e, deaf) = (node.clone(), ep.clone(), deaf.clone());
+                            tokio::spawn(async move {
+                                e.network_change_major().await;
+                                if let Some(ears) = ears {
+                                    let _ = ears.send(Ok(()));
+                                }
+                                let out = n.sync_peers(&e, true).await;
+                                n.wires.note(
+                                    None,
+                                    crate::journal::What::Front { ms: crate::journal::ms(begun.elapsed()) },
+                                );
+                                let heard = if n.self_admitted() { out.as_slice() } else { &[] };
+                                let _ = deaf.lock().unwrap_or_else(|p| p.into_inner()).observe(heard);
+                                if let Some(synced) = synced {
+                                    let _ = synced.send(out);
+                                }
+                            });
                             continue;
                         }
                         resuming = Some(vec![(ears, synced)]);
@@ -1916,6 +1953,10 @@ impl Node {
                 }
                 ipc::Reply::Noted
             }
+            ipc::Op::JournalOn { machine, peer, since } => match self.journal_with(ep, &machine, peer, since).await {
+                Ok(lines) => ipc::Reply::Journal { lines },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::Visit { machine } => match self.resolve(&machine) {
                 Ok((_, home)) => {
                     let id = home.hex();
@@ -2706,6 +2747,17 @@ impl Node {
             self.wires.retire_peer(&d.id, wires::Retired::Paused);
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
         }
+        // **Resting is quiet both ways** (net-r): a phone in the
+        // background refuses the dials to it, so it makes none either. The
+        // face's last polls and a far terminal's rejoin used to dial out in
+        // the seconds before iOS froze it (MacLab's journal, 2026-10-09
+        // 19:43:12): the far machine heard it come in, dialled back, was
+        // refused and backed off, and the wire the phone had just made was
+        // left to freeze half-open. Not a failure, so no backoff: the
+        // resume's round and its kick ask again.
+        if self.resting.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(DialFailure::Refused(msg::resting_no_dial().to_owned()));
+        }
         let line = |conn| Line {
             id: d.id.clone(),
             name: d.name.clone(),
@@ -2847,8 +2899,10 @@ impl Node {
     /// data); the wire this made, if any, is held, and the ask goes on
     /// as usual over it.
     async fn ask_early(&self, ep: &iroh::Endpoint, d: &DeviceInfo, req: &Request) -> Early {
+        // Resting: not taken here, and refused by `line_to_inner` after.
         if !req.rides_early()
             || crate::pause::peer_on(self.root(), &d.id)
+            || self.resting.load(std::sync::atomic::Ordering::Relaxed)
             || self.wires.live(&d.id, wires::Proto::Main).is_some()
         {
             return Early::NotTaken;
@@ -4017,6 +4071,13 @@ impl Node {
                     at_ms,
                     bytes: serde_bytes::ByteBuf::from(bytes),
                 })
+            }
+            Request::Journal { peer, since } => {
+                let root = self.root().to_path_buf();
+                let lines = tokio::task::spawn_blocking(move || crate::journal::lines_since(&root, peer.as_deref(), since))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Journal { lines })
             }
         }
     }
@@ -5907,6 +5968,54 @@ impl Node {
         let out = self.stat_with(&ep, machine, path).await;
         ep.close().await;
         out
+    }
+
+    /// `machine`'s connection journal as JSON lines ([`Request::Journal`]),
+    /// through the resident when one holds this key.
+    pub(crate) async fn journal_lines_of(
+        &self,
+        machine: &str,
+        peer: Option<String>,
+        since: u64,
+    ) -> Result<Vec<String>, String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::JournalOn {
+                machine: machine.to_owned(),
+                peer: peer.clone(),
+                since,
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Journal { lines } => Ok(lines),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.journal_with(&ep, machine, peer, since).await;
+        ep.close().await;
+        out
+    }
+
+    async fn journal_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        peer: Option<String>,
+        since: u64,
+    ) -> Result<Vec<String>, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Ok(crate::journal::lines_since(self.root(), peer.as_deref(), since));
+        }
+        match self.ask(ep, &channel, &Request::Journal { peer, since }).await? {
+            Response::Journal { lines } => Ok(lines),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     async fn stat_with(

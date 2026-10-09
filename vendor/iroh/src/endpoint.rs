@@ -1714,6 +1714,25 @@ impl Endpoint {
         self.inner.network_change().await;
     }
 
+    /// **A major network change, taken as told** (khor patch 16): the UDP
+    /// sockets rebound on their own ports, the relay connection checked,
+    /// a fresh net report, and every path of every connection pinged, so
+    /// loss detection starts now and the paths that do not answer are
+    /// abandoned. [`Self::network_change`] asks the network monitor, which
+    /// does all of this only when the interfaces differ; a phone back from
+    /// the background is usually on the very network it left, with
+    /// sockets the system may have taken back and paths that died while
+    /// it was frozen.
+    ///
+    /// If the endpoint is closed, this method ignores the request.
+    pub async fn network_change_major(&self) {
+        if self.is_closed() {
+            debug!("Attempting to notify a closed endpoint about a network change. Ignoring.");
+            return;
+        }
+        self.inner.force_network_change(true).await;
+    }
+
     // # Methods to update internal state.
 
     /// Sets the initial user-defined data to be published in Address Lookups for this endpoint.

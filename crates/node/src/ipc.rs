@@ -405,6 +405,9 @@ pub enum Op {
     /// reach for. At most once a `link::SYNC_EVERY` per machine.
     /// Answered [`Reply::Noted`] at once; the round runs on. Tail-appended.
     Visit { machine: String },
+    /// [`crate::proto::Request::Journal`] asked of `machine` (net-r):
+    /// answered [`Reply::Journal`]. Tail-appended.
+    JournalOn { machine: String, peer: Option<String>, since: u64 },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -501,6 +504,7 @@ impl Op {
             Op::GitOn { .. } => ("GitOn", DEADLINE_FAR),
             Op::FaceHere { .. } => ("FaceHere", DEADLINE_LOCAL),
             Op::Visit { .. } => ("Visit", DEADLINE_LOCAL),
+            Op::JournalOn { .. } => ("JournalOn", DEADLINE_FAR),
             Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
@@ -725,6 +729,8 @@ pub enum Reply {
     Piping { addr: String, cookie: String },
     /// Tail-appended with [`Op::AddOn`].
     Adding { run: crate::join::Run },
+    /// Tail-appended with [`Op::JournalOn`]: the far journal's lines.
+    Journal { lines: Vec<String> },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.
