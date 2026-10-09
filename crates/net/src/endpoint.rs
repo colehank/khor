@@ -59,7 +59,9 @@ pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
 pub const KHOR_RELAYS: &[(&str, Serves, Option<&str>)] = &[
     (
         "http://101.200.80.77:3340",
-        Serves::RELAY,
+        // QAD on UDP 7842 with an IP certificate (ruling (b), in-path test
+        // audit/net-d.md i.4) and iroh's pkarr server on TCP 3343 (i.5).
+        Serves { qad: Some(7842), pkarr: Some("http://101.200.80.77:3343/pkarr") },
         Some("bbe31ccf721dde188508517840c24673ef9d4a5865af18a3"),
     ),
     (
@@ -1080,6 +1082,16 @@ mod tests {
         for garbage in ["", "garbage", "?token=x", "http://?token=x"] {
             assert_eq!(Relay::parse(garbage), None, "{garbage:?} is not a relay");
         }
+    }
+
+    /// Step (e): Beijing's plain relay serves QAD and a pkarr registry,
+    /// said on its entry (audit/net-d.md i.4, i.5).
+    #[test]
+    fn beijing_serves_qad_and_a_registry() {
+        let beijing = khor_tier().into_iter().find(|r| r.url == "http://101.200.80.77:3340").unwrap();
+        assert_eq!(beijing.qad, Some(7842));
+        assert_eq!(beijing.pkarr.as_deref(), Some("http://101.200.80.77:3343/pkarr"));
+        assert_eq!(registries(&khor_tier()).len(), 1, "one registry in the Khor tier");
     }
 
     /// The map a bind hands iroh: keys on the relays that have them,
