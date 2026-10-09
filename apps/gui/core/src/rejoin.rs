@@ -188,12 +188,18 @@ pub async fn resume(root: &Path) -> Option<Result<Vec<(String, Result<String, St
 pub async fn resumed(
     mut resuming: khor_node::link::Resuming,
 ) -> Result<Vec<(String, Result<String, String>)>, String> {
+    mended(&mut resuming).await?;
+    resuming.synced().await
+}
+
+/// The first half of [`resumed`]: the resident answering again, and every
+/// far attachment waiting to rejoin told so ([`kick`]). The caller can say
+/// so to the face at once, then follow the round machine by machine
+/// (`Resuming::answered`) rather than waiting on the slowest (net-r).
+pub async fn mended(resuming: &mut khor_node::link::Resuming) -> Result<(), String> {
     let ears = resuming.ears().await;
     kick();
-    match ears {
-        Ok(()) => resuming.synced().await,
-        Err(why) => Err(why),
-    }
+    ears
 }
 
 #[cfg(test)]

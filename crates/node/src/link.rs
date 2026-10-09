@@ -499,6 +499,8 @@ enum Wake {
     Resume {
         ears: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
         synced: Option<tokio::sync::oneshot::Sender<Vec<(String, Result<String, String>)>>>,
+        /// Each machine's outcome as it lands, before the round is whole.
+        each: Option<Answers>,
     },
     /// Close the endpoint under the serve and leave it closed ([`deafen`]).
     Deafen {
@@ -649,10 +651,14 @@ pub enum Rejoin {
     Gone(String),
 }
 
+/// Where a round tells each machine's outcome as it lands ([`Resuming::answered`]).
+type Answers = tokio::sync::mpsc::UnboundedSender<(String, Result<String, String>)>;
+
 /// A [`resume`] under way: first the new ears, then the round.
 pub struct Resuming {
     ears: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
     synced: tokio::sync::oneshot::Receiver<Vec<(String, Result<String, String>)>>,
+    each: tokio::sync::mpsc::UnboundedReceiver<(String, Result<String, String>)>,
 }
 
 impl Resuming {
@@ -664,6 +670,15 @@ impl Resuming {
             Some(rx) => rx.await.unwrap_or_else(|_| Err(msg::serve_gone_midway().into())),
             None => Ok(()),
         }
+    }
+
+    /// **The round's machines one at a time, as each answers** (net-r):
+    /// `None` once every one has. A machine that is not there costs its
+    /// whole dial budget (10 s, lecun's often), and nothing a person sees
+    /// should wait on it — the face re-reads its lists at each answer,
+    /// not only when the slowest is done. Call after [`Self::ears`].
+    pub async fn answered(&mut self) -> Option<(String, Result<String, String>)> {
+        self.each.recv().await
     }
 
     /// The round that followed, per machine — the same outcomes a
@@ -689,15 +704,18 @@ impl Resuming {
 pub fn resume(root: &std::path::Path) -> Option<Resuming> {
     let (ears, ears_rx) = tokio::sync::oneshot::channel();
     let (synced, synced_rx) = tokio::sync::oneshot::channel();
+    let (each, each_rx) = tokio::sync::mpsc::unbounded_channel();
     door(root)?
         .send(Wake::Resume {
             ears: Some(ears),
             synced: Some(synced),
+            each: Some(each),
         })
         .ok()?;
     Some(Resuming {
         ears: Some(ears_rx),
         synced: synced_rx,
+        each: each_rx,
     })
 }
 
@@ -1341,6 +1359,7 @@ impl Node {
         type Waiting = (
             Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
             Option<tokio::sync::oneshot::Sender<Vec<(String, Result<String, String>)>>>,
+            Option<Answers>,
         );
         let mut resuming: Option<Vec<Waiting>> = None;
         let (bound_tx, mut bound_rx) = tokio::sync::mpsc::unbounded_channel::<(
@@ -1554,7 +1573,7 @@ impl Node {
                             wires::Patience::for_rtt(Duration::ZERO).after_change + wires::TICK,
                         );
                     }
-                    Wake::Resume { ears, synced } => {
+                    Wake::Resume { ears, synced, each } => {
                         resting.store(false, std::sync::atomic::Ordering::Relaxed);
                         // **Off this loop**: binding waits on the network,
                         // and the arms above — the app's own status
@@ -1563,7 +1582,7 @@ impl Node {
                         // resume while one is binding joins it: two binds
                         // on one key knock each other off the relay.
                         if let Some(waiting) = resuming.as_mut() {
-                            waiting.push((ears, synced));
+                            waiting.push((ears, synced, each));
                             continue;
                         }
                         // **The same ears, mended in place** (net-r) — the
@@ -1587,7 +1606,7 @@ impl Node {
                                 if let Some(ears) = ears {
                                     let _ = ears.send(Ok(()));
                                 }
-                                let out = n.sync_peers(&e, true).await;
+                                let out = n.sync_peers_telling(&e, true, each.as_slice()).await;
                                 n.wires.note(
                                     None,
                                     crate::journal::What::Front { ms: crate::journal::ms(begun.elapsed()) },
@@ -1600,7 +1619,7 @@ impl Node {
                             });
                             continue;
                         }
-                        resuming = Some(vec![(ears, synced)]);
+                        resuming = Some(vec![(ears, synced, each)]);
                         let n = node.clone();
                         let back = bound_tx.clone();
                         tokio::spawn(async move {
@@ -1614,6 +1633,7 @@ impl Node {
                     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                     let waiting = resuming.take().unwrap_or_default();
                     let mut synced_to = Vec::new();
+                    let mut told_to = Vec::new();
                     match fresh {
                         Ok(fresh) => {
                             let old = std::mem::replace(&mut ep, fresh);
@@ -1639,11 +1659,12 @@ impl Node {
                                 None,
                                 crate::journal::What::Ears { ms: crate::journal::ms(begun.elapsed()), error: None },
                             );
-                            for (ears, synced) in waiting {
+                            for (ears, synced, each) in waiting {
                                 if let Some(ears) = ears {
                                     let _ = ears.send(Ok(()));
                                 }
                                 synced_to.extend(synced);
+                                told_to.extend(each);
                             }
                         }
                         Err(why) => {
@@ -1655,11 +1676,12 @@ impl Node {
                                     error: Some(crate::journal::scrub(&why)),
                                 },
                             );
-                            for (ears, synced) in waiting {
+                            for (ears, synced, each) in waiting {
                                 if let Some(ears) = ears {
                                     let _ = ears.send(Err(why.clone()));
                                 }
                                 synced_to.extend(synced);
+                                told_to.extend(each);
                             }
                         }
                     }
@@ -1672,7 +1694,7 @@ impl Node {
                     let e = ep.clone();
                     let deaf = deaf.clone();
                     tokio::spawn(async move {
-                        let out = n.sync_peers(&e, true).await;
+                        let out = n.sync_peers_telling(&e, true, &told_to).await;
                         let _ = n.trust_tick();
                         let heard = if n.self_admitted() { out.as_slice() } else { &[] };
                         let _ = deaf.lock().expect("deaf watch poisoned").observe(heard);
@@ -1853,7 +1875,7 @@ impl Node {
                             if resumable {
                                 eprintln!("{}", msg::serve_deaf_fresh_ears(&stamp, DEAF_AFTER.as_secs()));
                                 *deaf.lock().expect("deaf watch poisoned") = DeafWatch::new();
-                                let _ = wake.send(Wake::Resume { ears: None, synced: None });
+                                let _ = wake.send(Wake::Resume { ears: None, synced: None, each: None });
                             } else {
                                 eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
                                 std::process::exit(DEAF_EXIT);
@@ -9182,6 +9204,17 @@ impl Node {
         ep: &iroh::Endpoint,
         force: bool,
     ) -> Vec<(String, Result<String, String>)> {
+        self.sync_peers_telling(ep, force, &[]).await
+    }
+
+    /// [`Self::sync_peers`], each machine's outcome also told to `each`
+    /// the moment it lands (`Resuming::answered`).
+    async fn sync_peers_telling(
+        &self,
+        ep: &iroh::Endpoint,
+        force: bool,
+        each: &[Answers],
+    ) -> Vec<(String, Result<String, String>)> {
         // Backgrounded: a round already under way when the app went
         // stops here rather than redialling what the suspension let go.
         if self.resting.load(std::sync::atomic::Ordering::Relaxed) {
@@ -9196,7 +9229,13 @@ impl Node {
             .collect();
         let visits = list
             .iter()
-            .map(|d| async move { (d.name.clone(), self.round_with(ep, d, force).await) })
+            .map(|d| async move {
+                let out = (d.name.clone(), self.round_with(ep, d, force).await);
+                for tx in each {
+                    let _ = tx.send(out.clone());
+                }
+                out
+            })
             .collect();
         join_all(visits).await
     }

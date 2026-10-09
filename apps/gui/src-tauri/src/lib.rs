@@ -4004,16 +4004,19 @@ fn front_worker(app: tauri::AppHandle) -> std::sync::mpsc::Sender<Front> {
     tx
 }
 
-/// The phone is back in front: new ears for the node, far attachments
-/// asked for again on them, and — once the round that follows has come
-/// back — a word to the page that what it lists is worth reading again
-/// (`node:woken`, `src/hooks/use-woken.ts`). The ask is sent here, in
-/// order (`front_worker`); the wait for the network is another thread's.
+/// The phone is back in front: the node's ears mended, far attachments
+/// asked for again on them, and a word to the page that what it lists is
+/// worth reading again (`node:woken`, `src/hooks/use-woken.ts`) — **at
+/// once, at each machine that answers the round, and when the round is
+/// whole** (net-r). Said only at the end, the lists waited on the slowest
+/// machine: one that is not there (lecun, often) holds its 10 s dial, and
+/// a return read 13 s (2026-10-10 03:48). The ask is sent here, in order
+/// (`front_worker`); the wait for the network is another thread's.
 #[cfg(not(desktop))]
 fn resume_the_node(app: &tauri::AppHandle, root: &std::path::Path) {
     use tauri::Emitter;
     let begun = std::time::Instant::now();
-    let Some(resuming) = khor_node::link::resume(root) else {
+    let Some(mut resuming) = khor_node::link::resume(root) else {
         eprintln!("khor resume: no resumable serve on this home");
         let _ = app.emit_to("main", "node:woken", 0u64);
         return;
@@ -4023,7 +4026,19 @@ fn resume_the_node(app: &tauri::AppHandle, root: &std::path::Path) {
         let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() else {
             return;
         };
-        let outcome = rt.block_on(khor_gui_core::rejoin::resumed(resuming));
+        let woken = |app: &tauri::AppHandle| {
+            let _ = app.emit_to("main", "node:woken", begun.elapsed().as_millis() as u64);
+        };
+        let outcome = rt.block_on(async {
+            khor_gui_core::rejoin::mended(&mut resuming).await?;
+            woken(&app);
+            while let Some((_, answer)) = resuming.answered().await {
+                if answer.is_ok() {
+                    woken(&app);
+                }
+            }
+            resuming.synced().await
+        });
         let ms = begun.elapsed().as_millis() as u64;
         match &outcome {
             Ok(out) => eprintln!("khor resume: round back in {ms} ms: {out:?}"),
