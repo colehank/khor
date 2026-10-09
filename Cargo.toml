@@ -220,3 +220,7 @@ iroh-mdns-address-lookup = { path = "vendor/iroh-mdns-address-lookup" }
 # swarm-discovery 0.6.3 with upstream's unreleased fix for a stopped
 # service's timer that never stops: vendor/swarm-discovery/KHOR.md.
 swarm-discovery = { path = "vendor/swarm-discovery" }
+# patchbay 0.7.0 (MIT OR Apache-2.0), the network lab under
+# `crates/cli/tests/netlab.rs`, made to run on turing's Linux 5.4:
+# vendor/patchbay/KHOR.md.
+patchbay = { path = "vendor/patchbay" }

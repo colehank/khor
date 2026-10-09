@@ -76,3 +76,12 @@ khor-sync.workspace = true
 # rcgen iroh-relay's server feature already pulls, same version and
 # features (MIT OR Apache-2.0), no new crate.
 rcgen = "0.14"
+
+# `tests/netlab.rs`: real khor nodes in Linux network namespaces, behind
+# NATs and impaired links (docs/NETLAB.md). patchbay 0.7 is n0's lab,
+# MIT OR Apache-2.0, vendored for Linux 5.4 (vendor/patchbay/KHOR.md);
+# ctor (MIT OR Apache-2.0) enters the user namespace before the test
+# harness starts a thread, as iroh's own patchbay tests do.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+patchbay = "0.7"
+ctor = "1.0"

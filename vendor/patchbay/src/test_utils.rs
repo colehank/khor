@@ -1,0 +1,208 @@
+//! Probe and reflector helpers for integration tests.
+//!
+//! All functions are namespace-free: they assume the calling thread/task is
+//! already inside the target network namespace. Callers use
+//! `device.spawn(|_| async { ... })` or `device.run_sync(|| ...)` to wrap them.
+
+use std::{
+    io::ErrorKind,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
+    time::{Duration, Instant},
+};
+
+use anyhow::{anyhow, Context, Result};
+use tokio_util::sync::CancellationToken;
+use tracing::debug;
+
+/// Runs an async UDP reflector. Loops until `cancel` is triggered.
+///
+/// Binds the socket first, then signals readiness on `bound_tx` so callers
+/// can await confirmation before sending probes.
+pub(crate) async fn run_reflector(
+    bind: SocketAddr,
+    cancel: CancellationToken,
+    bound_tx: tokio::sync::oneshot::Sender<Result<()>>,
+) -> Result<()> {
+    let sock = match tokio::net::UdpSocket::bind(bind).await {
+        Ok(s) => {
+            let _ = bound_tx.send(Ok(()));
+            s
+        }
+        Err(e) => {
+            let err = Err(anyhow::anyhow!(e).context("reflector udp bind"));
+            let _ = bound_tx.send(err);
+            return Ok(());
+        }
+    };
+    let mut buf = [0u8; 512];
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            result = sock.recv_from(&mut buf) => {
+                let (_, peer) = result?;
+                let msg = format!("OBSERVED {}", peer);
+                let _ = sock.send_to(msg.as_bytes(), &peer).await;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Sends a UDP probe to `reflector` and returns the observed external address.
+///
+/// Assumes the calling thread is already in the target namespace.
+/// Pass `bind` to specify an explicit local address; `None` uses the unspecified
+/// address matching the reflector's address family.
+pub(crate) fn probe_udp(
+    reflector: SocketAddr,
+    timeout: Duration,
+    bind: Option<SocketAddr>,
+) -> Result<SocketAddr> {
+    let bind_addr = bind.unwrap_or_else(|| {
+        let unspecified = if reflector.is_ipv4() {
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+        } else {
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED)
+        };
+        SocketAddr::new(unspecified, 0)
+    });
+    let sock = UdpSocket::bind(bind_addr).context("probe_udp bind")?;
+    sock.set_read_timeout(Some(timeout))?;
+    let mut buf = [0u8; 512];
+    for attempt in 1..=3 {
+        sock.send_to(b"PROBE", reflector)?;
+        match sock.recv_from(&mut buf) {
+            Ok((n, _)) => {
+                let s = std::str::from_utf8(&buf[..n])?;
+                let addr_str = s
+                    .strip_prefix("OBSERVED ")
+                    .ok_or_else(|| anyhow!("unexpected reflector reply: {:?}", s))?;
+                return Ok(addr_str.parse()?);
+            }
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+                debug!(attempt, "probe timeout waiting for reflector reply");
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Err(anyhow!("probe timed out after 3 attempts"))
+}
+
+/// One-shot UDP roundtrip probe. Returns the observed external address.
+pub(crate) fn udp_roundtrip(reflector: SocketAddr) -> Result<SocketAddr> {
+    probe_udp(reflector, Duration::from_secs(2), None)
+}
+
+/// Returns UDP round-trip time to `reflector` (blocking).
+///
+/// Retries up to 3 times on transient EAGAIN errors, which can occur
+/// under high-latency impairment when the socket buffer is temporarily
+/// full on a loaded CI runner.
+pub(crate) fn udp_rtt_sync(reflector: SocketAddr) -> Result<Duration> {
+    let bind = if reflector.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    };
+    let sock = UdpSocket::bind(bind).context("udp_rtt_sync bind")?;
+    sock.set_read_timeout(Some(Duration::from_secs(2)))?;
+    let mut buf = [0u8; 256];
+    for attempt in 0..3 {
+        let start = Instant::now();
+        match sock.send_to(b"PING", reflector) {
+            Ok(_) => {}
+            Err(e) if e.kind() == ErrorKind::WouldBlock && attempt < 2 => {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(e) => return Err(e).context("udp_rtt_sync send"),
+        }
+        match sock.recv_from(&mut buf) {
+            Ok(_) => return Ok(start.elapsed()),
+            Err(e) if e.kind() == ErrorKind::WouldBlock && attempt < 2 => {
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
+            Err(e) => return Err(e).context("udp_rtt_sync recv"),
+        }
+    }
+    anyhow::bail!("udp_rtt_sync: all retries exhausted")
+}
+
+/// Async UDP round-trip time measurement.
+///
+/// Use inside `handle.spawn(|_| async move { udp_rtt(r).await })`.
+pub(crate) async fn udp_rtt(reflector: SocketAddr) -> Result<Duration> {
+    let bind = SocketAddr::new(
+        if reflector.is_ipv4() {
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+        } else {
+            IpAddr::V6(Ipv6Addr::UNSPECIFIED)
+        },
+        0,
+    );
+    let sock = tokio::net::UdpSocket::bind(bind)
+        .await
+        .context("udp_rtt bind")?;
+    let mut buf = [0u8; 256];
+    let start = Instant::now();
+    sock.send_to(b"PING", reflector).await?;
+    tokio::time::timeout(Duration::from_secs(2), sock.recv_from(&mut buf))
+        .await
+        .context("udp_rtt timeout")?
+        .context("udp_rtt recv")?;
+    Ok(start.elapsed())
+}
+
+/// Async UDP send/recv with paced sending for loss measurement.
+///
+/// Sends `total` packets of `payload` bytes at a paced rate (1ms apart)
+/// while concurrently collecting responses. Returns `(sent, received)` after
+/// all packets are sent and `wait` has elapsed since the last send.
+///
+/// Assumes the reflector is already confirmed-bound (via `spawn_reflector`).
+///
+/// Use inside `handle.spawn(|_| async move { udp_send_recv_count(r, 1000, 64, dur).await })`.
+pub(crate) async fn udp_send_recv_count(
+    target: SocketAddr,
+    total: usize,
+    payload: usize,
+    wait: Duration,
+) -> Result<(usize, usize)> {
+    let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
+        .await
+        .context("udp bind")?;
+
+    let buf = vec![0u8; payload];
+    let mut recv_buf = vec![0u8; payload + 64];
+    let mut received = 0usize;
+    let mut sent = 0usize;
+
+    // Send and receive concurrently so the socket buffer never overflows.
+    let mut next_send = tokio::time::Instant::now();
+    let mut deadline: Option<tokio::time::Instant> = None;
+    loop {
+        tokio::select! {
+            result = sock.recv_from(&mut recv_buf) => {
+                match result {
+                    Ok(_) => received += 1,
+                    Err(_) => break,
+                }
+            }
+            _ = tokio::time::sleep_until(next_send), if sent < total => {
+                let _ = sock.send_to(&buf, target).await;
+                sent += 1;
+                if sent >= total {
+                    deadline = Some(tokio::time::Instant::now() + wait);
+                }
+                next_send = tokio::time::Instant::now() + Duration::from_millis(1);
+            }
+            _ = tokio::time::sleep_until(deadline.unwrap_or(next_send)), if deadline.is_some() => {
+                break;
+            }
+        }
+    }
+
+    Ok((total, received))
+}

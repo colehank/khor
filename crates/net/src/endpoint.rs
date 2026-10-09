@@ -369,6 +369,23 @@ fn bind_ip() -> Option<std::net::IpAddr> {
 /// The tests' harnesses set it for every node they start.
 pub const NO_MDNS_ENV: &str = "KHOR_NO_MDNS";
 
+/// The environment switch that says this node sits in a patchbay lab
+/// (`crates/cli/tests/netlab.rs`), whose internet is 198.18.0.0/15.
+///
+/// **For scratch nodes, not for people.** patchbay hands out its public
+/// addresses from that range and has no setting to move it; [`unroutable`]
+/// drops the range as a proxy TUN's fake IPs, so a lab node would offer
+/// no public address and nothing in the lab could ever go direct. With
+/// the switch set the range is routable and the journal's TUN line stays
+/// quiet. Never set by khor.
+pub const LAB_ENV: &str = "KHOR_NETLAB";
+
+/// Whether this process sits in a patchbay lab ([`LAB_ENV`]).
+pub fn in_lab() -> bool {
+    static LAB: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *LAB.get_or_init(|| std::env::var_os(LAB_ENV).is_some())
+}
+
 /// Whether this process binds with mDNS ([`NO_MDNS_ENV`]).
 fn on_the_segment() -> bool {
     std::env::var_os(NO_MDNS_ENV).is_none()
@@ -713,7 +730,7 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
         iroh::TransportAddr::Ip(sa) => match sa.ip() {
             std::net::IpAddr::V4(v4) => {
                 let o = v4.octets();
-                o[0] == 198 && (o[1] == 18 || o[1] == 19)
+                o[0] == 198 && (o[1] == 18 || o[1] == 19) && !in_lab()
             }
             std::net::IpAddr::V6(_) => false,
         },

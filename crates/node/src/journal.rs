@@ -832,6 +832,10 @@ impl Punching {
 /// a proxy TUN's fake-IP range (198.18.0.0/15); `None` otherwise. Asked of
 /// the kernel by connecting a UDP socket, which sends nothing.
 fn tun_source() -> Option<String> {
+    // A patchbay lab's internet is that range (`endpoint::LAB_ENV`).
+    if khor_net::endpoint::in_lab() {
+        return None;
+    }
     let s = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     s.connect("1.1.1.1:443").ok()?;
     match s.local_addr().ok()?.ip() {
