@@ -275,8 +275,21 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     drop(tls_relay);
     let back = until_home(&near, &plain, Duration::from_secs(60)).await;
     until_home(&far, &plain, Duration::from_secs(60)).await;
-    assert_eq!(echo(&near, &far, &plain).await, Ok(()), "and they meet there again");
     eprintln!("[https] back on the plain relay {back:?} after the TLS one stopped");
+    // The far → near echo just above closed as the TLS relay stopped, so
+    // its close never reached near: near holds that connection until a
+    // relay path's idle timeout (30 s) ends it, and while it lives iroh
+    // sends a new dial's first packets only on its path, the dead relay
+    // (net-h, audit/net-d.md). Once the home moves within those 30 s, the
+    // two meet again when it ends.
+    let began = Instant::now();
+    loop {
+        match echo(&near, &far, &plain).await {
+            Ok(()) => break,
+            Err(e) => assert!(began.elapsed() < Duration::from_secs(35), "and they meet there again: {e}"),
+        }
+    }
+    eprintln!("[https] met again on the plain relay {:?} after both were home there", began.elapsed());
     for ep in [near, far, old, fresh] {
         ep.close().await;
     }

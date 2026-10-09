@@ -355,6 +355,11 @@ impl Client {
         };
 
         let mut report = Report::default();
+        // khor patch 11: a report whose plan is the initial one (no last
+        // report, or one that measured nothing; `ProbePlan::with_last_report`)
+        // probes every relay even when it is not `do_full`.
+        let initial_plan = self.reports.last.as_ref().is_none_or(|l| l.relay_latency.is_empty());
+        let mut probes_ended = false;
 
         // Start the reportgen client to start any needed probes
         let (actor, mut probe_rx) = reportgen::Client::new(
@@ -422,6 +427,7 @@ impl Client {
 
                     maybe_probe = probe_rx.recv() => {
                         let Some(probe_res) = maybe_probe else {
+                            probes_ended = true;
                             break;
                         };
                         match probe_res {
@@ -448,7 +454,12 @@ impl Client {
                 }
             }
         }
-        self.add_report_history_and_set_preferred_relay(&mut report, do_full);
+        // khor patch 11: every relay was tried when the report is full, or
+        // its plan was the initial one and every probe ran to its end (not
+        // cut short by the QAD shortcut). A home missing from such a report
+        // did not answer.
+        let measured_all = do_full || (initial_plan && probes_ended);
+        self.add_report_history_and_set_preferred_relay(&mut report, measured_all);
         debug!(
             ?report,
             duration = ?now.elapsed(),
@@ -856,9 +867,10 @@ impl Client {
         // home keeps it. Such a report measures only the relay holding the
         // QAD connection; ranking that one alone moved MacLab's home from
         // Beijing to n0's aps1 25 s after every full report, all night
-        // (audit/net-d.md §1.4). A full report measures every relay and
-        // may move the home as before, so a home that died is left at the
-        // next one (every 5 min, or at once on a major network change).
+        // (audit/net-d.md §1.4). A report that tried every relay (`full`:
+        // a full one, or an incremental one on the initial plan whose
+        // probes all ended) may move the home as before, so a home that
+        // died is left within two periodic reports (net-h, audit/net-d.md).
         if !full
             && let Some(prev) = &prev_relay
             && r.relay_latency.get(prev).is_none()
