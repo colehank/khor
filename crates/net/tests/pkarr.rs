@@ -121,3 +121,45 @@ async fn peers_find_each_other_through_the_registry_their_entries_name() {
     drop(relay);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **The live registry** (not a gate; `KHOR_PKARR_LIVE=<registry url>`):
+/// two throwaway endpoints, relay only on the Khor tier's Beijing relay,
+/// publish to the named registry and meet by id alone. Nothing of a real
+/// machine is used: fresh keys, no store.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "touches the live registry and relay; run by hand"]
+async fn throwaway_endpoints_meet_through_the_live_registry() {
+    let Ok(pkarr) = std::env::var("KHOR_PKARR_LIVE") else {
+        panic!("set KHOR_PKARR_LIVE to the registry's url");
+    };
+    for k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "all_proxy"] {
+        unsafe { std::env::remove_var(k) };
+    }
+    unsafe {
+        std::env::set_var(endpoint::RELAY_ONLY_ENV, "1");
+        std::env::set_var(endpoint::NO_MDNS_ENV, "1");
+    }
+    let mut beijing = endpoint::khor_tier().into_iter().find(|r| r.url == "http://101.200.80.77:3340").unwrap();
+    beijing.pkarr = Some(pkarr.clone());
+    let began = Instant::now();
+    let alpha = endpoint::bind_with(iroh::SecretKey::generate(), std::slice::from_ref(&beijing), false).await.unwrap();
+    answering(&alpha);
+    let beta = endpoint::bind_with(iroh::SecretKey::generate(), std::slice::from_ref(&beijing), false).await.unwrap();
+    // Alpha publishes once its home relay is up: until then the lookup
+    // answers 404 at once, so the dial is retried each second.
+    let mut found = Err(String::new());
+    let mut tries = 0;
+    while began.elapsed() < Duration::from_secs(30) {
+        tries += 1;
+        found = by_id_alone(&beta, alpha.id(), Duration::from_secs(10)).await;
+        if found.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+    eprintln!("[pkarr-live] {tries} tries");
+    eprintln!("[pkarr-live] {} → {}: {found:?}, {:?} after alpha bound", beta.id().fmt_short(), alpha.id().fmt_short(), began.elapsed());
+    assert!(found.is_ok(), "{found:?}");
+    alpha.close().await;
+    beta.close().await;
+}
