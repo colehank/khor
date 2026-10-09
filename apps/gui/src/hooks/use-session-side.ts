@@ -15,12 +15,15 @@
 // → UX-46): 「open」 written to this device's storage, so a session came
 // back docked after a restart.
 //
-// **The width is remembered per session** (`localStorage`, beside
-// `use-list-width`'s and `use-day-shown`'s keys): a viewer's own
-// convenience, never a fact about the session. Storage can be absent or
+// **The width is remembered per kind** (sb-a, 2026-10-09, the owner's
+// brief: 「browser, files, 最近 each its own」): a width dragged on 浏览器
+// is 浏览器's in every session, and 最近 keeps its own (`localStorage`,
+// beside `use-list-width`'s and `use-day-shown`'s keys) — a viewer's own
+// convenience, never a fact about a session. Storage can be absent or
 // throwing (a private window, blocked site data), and every touch of it
 // is wrapped: unreadable reads as the token's default, and a refused
-// write costs only the memory.
+// write costs only the memory. ⚠️ 墓碑 (UX-30 → sb-a): one width per
+// session, whatever seat it was on.
 //
 // **Where it was left is remembered per session, in memory only**
 // (UX-47, the owner 2026-10-07, replacing UX-40 §3's 「每次打开都是显示
@@ -41,27 +44,10 @@ export const SIDE_SEATS: readonly SideSeat[] = ["recent", "workspace", "browser"
 
 export type SidePref = {
   open: boolean;
-  /** The width it was dragged to; `null` = the token's default. */
-  w: number | null;
   seat: SideSeat;
 };
 
-const KEY = (session: string) => `khor.session-side.${session}`;
-const CLOSED: SidePref = { open: false, w: null, seat: "recent" };
-
-function stored(session: string): SidePref {
-  try {
-    const raw = window.localStorage.getItem(KEY(session));
-    if (!raw) return CLOSED;
-    const p: unknown = JSON.parse(raw);
-    if (typeof p !== "object" || p === null) return CLOSED;
-    // An `open` or a `seat` written before UX-46 is read past: closed, 最近.
-    const { w } = p as Partial<SidePref>;
-    return { ...CLOSED, w: typeof w === "number" && Number.isFinite(w) ? w : null };
-  } catch {
-    return CLOSED;
-  }
-}
+const CLOSED: SidePref = { open: false, seat: "recent" };
 
 /** What is in memory, by session: one object per session that has been
     read, so `useSyncExternalStore`'s snapshot is stable between writes. */
@@ -71,23 +57,55 @@ const heard = new Set<() => void>();
 function current(session: string): SidePref {
   let p = live.get(session);
   if (!p) {
-    p = stored(session);
+    p = CLOSED;
     live.set(session, p);
   }
   return p;
 }
 
 export function setSessionSide(session: string, patch: Partial<SidePref>): void {
-  const next = { ...current(session), ...patch };
-  live.set(session, next);
-  if (patch.w !== undefined) {
+  live.set(session, { ...current(session), ...patch });
+  for (const tell of heard) tell();
+}
+
+const W_KEY = (seat: SideSeat) => `khor.side-w.${seat}`;
+/** The widths read so far, by seat; `null` = the token's default. */
+const widths = new Map<SideSeat, number | null>();
+
+function widthOf(seat: SideSeat): number | null {
+  if (!widths.has(seat)) {
+    let w: number | null = null;
     try {
-      window.localStorage.setItem(KEY(session), JSON.stringify({ w: next.w }));
+      const n = Number(window.localStorage.getItem(W_KEY(seat)));
+      w = window.localStorage.getItem(W_KEY(seat)) !== null && Number.isFinite(n) && n > 0 ? n : null;
     } catch {
-      /* the column still moves; only the memory of it is lost */
+      /* unreadable is the default */
     }
+    widths.set(seat, w);
+  }
+  return widths.get(seat) ?? null;
+}
+
+/** A seat's width dragged (`null` = back to the default), for every
+    session's 附栏. */
+export function setSideWidth(seat: SideSeat, w: number | null): void {
+  widths.set(seat, w);
+  try {
+    if (w === null) window.localStorage.removeItem(W_KEY(seat));
+    else window.localStorage.setItem(W_KEY(seat), String(Math.round(w)));
+  } catch {
+    /* the column still moves; only the memory of it is lost */
   }
   for (const tell of heard) tell();
+}
+
+/** The width a seat was dragged to, `null` for the token's default. */
+export function useSideWidth(seat: SideSeat): number | null {
+  return useSyncExternalStore(
+    listen,
+    () => widthOf(seat),
+    () => null,
+  );
 }
 
 /** **A pill closed takes its 附栏's open with it** (`App`, as the tabs
