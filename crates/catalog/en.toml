@@ -446,7 +446,7 @@ usage: khor <verb>
                         page reads the same answer); --fix runs one
                         check's remedy (checks that have one say so at
                         the end of their line)
-  journal [machine] [--minutes N] [--report] [--json]
+  journal [machine] [--minutes N] [--report] [--json] [--on machine]
                         the connection record: every dial this machine
                         made, the roads it tried, how it ended and the
                         step that failed, backoff, connections retired,
@@ -454,7 +454,9 @@ usage: khor <verb>
                         just it (with this machine's own events), the
                         last 60 minutes by default; --report saves that
                         span of every machine into one file to hand
-                        over, with no keys, tickets or host keys
+                        over, with no keys, tickets or host keys; --on
+                        reads another machine's record over the network
+                        (only its record files are fetched)
   invite                issues a one-time pairing ticket (requires
                         serve running)
   pair <ticket|->       joins the network with a ticket; - reads it
@@ -1212,6 +1214,9 @@ peer-resumed = "Resumed talking to {0}; the next round catches it up"
 peer-already-paused = "Already paused with {0}. To resume: khor resume {0}"
 peer-not-paused = "Not paused with {0}. To pause: khor pause {0}"
 peer-paused-refusal = "paused from this side — to resume: khor resume <machine>"
+# A phone resting in the background asks nobody (net-r): its own
+# dials wait for the front, as the dials to it are refused.
+resting-no-dial = "The app is in the background and does not connect to other machines; it connects again when it returns to the front"
 # Reaching for pairing while paused. Both verbs need to send and
 # receive, so this is not 「it failed」 but 「this machine is not doing
 # that right now」 — refused by name, with the way out in it.
@@ -1592,6 +1597,8 @@ journal-home-down = "disconnected"
 journal-home-down-why = "disconnected: {0}"
 journal-ears = "New endpoint bound in {0} ms"
 journal-ears-failed = "Binding a new endpoint failed: {0}"
+journal-rest = "Moved to the background: every connection let go, no dialling until it is back in front"
+journal-front = "Back in front: the same endpoint, ports rebound, relay checked, every path probed; the sync round that followed took {0} ms"
 journal-hop-up = "Forwarding through {0} is up"
 journal-hop-none = "Tried {0} middle machines; none forwarded"
 journal-carry-up = "SSH carry is up"

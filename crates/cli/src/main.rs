@@ -5251,11 +5251,13 @@ fn doctor(rest: &[String]) -> Result<(), String> {
 fn journal(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     let (mut machine, mut minutes, mut report, mut json) = (None, 60u64, false, false);
+    let mut on = None;
     let mut it = rest.iter();
     while let Some(word) = it.next() {
         match word.as_str() {
             "--report" => report = true,
             "--json" => json = true,
+            "--on" => on = Some(it.next().ok_or_else(|| usage_text().to_string())?.clone()),
             "--minutes" => {
                 minutes = it
                     .next()
@@ -5266,13 +5268,19 @@ fn journal(rest: &[String]) -> Result<(), String> {
             _ => return Err(usage_text().into()),
         }
     }
+    if report && on.is_some() {
+        return Err(usage_text().into());
+    }
     if report {
         let path = n.journal_report(minutes)?;
         println!("{}", msg::journal_report_saved(path.display()));
         return Ok(());
     }
     let peer = machine.map(|m| n.device_by_name(&m)).transpose()?;
-    let lines = n.journal(peer.as_deref(), minutes);
+    let lines = match &on {
+        Some(there) => rt()?.block_on(n.journal_on(there, peer.as_deref(), minutes))?,
+        None => n.journal(peer.as_deref(), minutes),
+    };
     if json {
         println!("{}", serde_json::to_string(&lines).map_err(|e| e.to_string())?);
         return Ok(());

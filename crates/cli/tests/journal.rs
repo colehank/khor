@@ -340,3 +340,31 @@ async fn a_face_arriving_and_a_page_opened_dial_past_the_wait() {
         );
     }
 }
+
+/// **Another machine's journal, read from here** (net-r): beta asks alpha
+/// for alpha's file of beta and alpha's own events, over the wire, through
+/// beta's resident. Alpha's own events come named by alpha's name, not
+/// 「本机」; a `peer` that is not an id reads nothing on alpha.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_far_journal_is_read_from_here() {
+    let p = pair("journal-on").await;
+    let (alpha_id, beta_id) = (p.alpha.device_str().to_owned(), p.beta.device_str().to_owned());
+    until_reads(&p.beta, &alpha_id, Hop::Direct, Duration::from_secs(60)).await;
+    let began = Instant::now();
+    let lines = p.beta.journal_on("alpha", Some(&beta_id), 60).await.expect("alpha answers");
+    eprintln!("[journal] alpha's journal read at beta in {:?}: {} lines", began.elapsed(), lines.len());
+    for l in &lines {
+        eprintln!("[journal]   {} {}\t{}", l.when, l.machine, l.text);
+    }
+    let held = khor_node::journal::read(&p.ra.0, Some(&beta_id), 0);
+    assert!(
+        !lines.is_empty() && lines.iter().zip(&held).all(|(l, e)| l.at == e.at),
+        "the lines alpha holds of beta and of itself, in order"
+    );
+    assert!(
+        lines.iter().any(|l| l.peer.is_none() && l.machine == "alpha"),
+        "alpha's own events, named alpha"
+    );
+    assert!(lines.iter().all(|l| l.peer.as_deref().is_none_or(|id| id == beta_id)));
+    assert!(khor_node::journal::lines_since(&p.ra.0, Some("../journal/here"), 0).is_empty());
+}

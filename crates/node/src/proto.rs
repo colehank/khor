@@ -756,6 +756,12 @@ pub enum Request {
         name: Option<String>,
         satellite_only: bool,
     },
+    /// **This machine's connection journal** (`crate::journal`, net-r):
+    /// the lines at or after `since` (ms) of `peer`'s file and this
+    /// machine's own, or of every file when `peer` is `None`, so the
+    /// asker can read both ends of a reconnect. Read off disk, nothing
+    /// secret in it (`journal::scrub` ran when each line was written).
+    Journal { peer: Option<String>, since: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1108,6 +1114,9 @@ pub enum Response {
     Probed { seen: khor_core::ReachSeen },
     /// [`Request::AddOverSsh`]'s run as it stands.
     Adding { run: crate::join::Run },
+    /// [`Request::Journal`]: each entry as the journal file holds it, one
+    /// JSON line, oldest first.
+    Journal { lines: Vec<String> },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1230,6 +1239,7 @@ impl Request {
                 | Request::Probe { .. }
                 // Asked twice, it answers the one run (by token).
                 | Request::AddOverSsh { .. }
+                | Request::Journal { .. }
         )
     }
 
@@ -1272,6 +1282,7 @@ impl Request {
                 | Request::Versions { .. }
                 | Request::LoadSince { .. }
                 | Request::Stat { .. }
+                | Request::Journal { .. }
         )
     }
 
