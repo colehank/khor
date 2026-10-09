@@ -56,7 +56,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchPageIcons, onPageWord, openLink, openTab, pageDeck, pageGround, pageStep, recentVisit, reveal, type DeviceRow } from "@/api";
 import { revealHere } from "@/views/chat-files";
-import { lastPageMachine, MachineChips, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
+import { lastPageMachine, PageField, reachable, rememberPageMachine } from "@/browse/PageField";
 import { nativeDeckHere, readDeck, seatControl } from "@/lib/native-deck";
 import { pageFail, type PageFail } from "@/browse/page-fail";
 import { pageDownload, type PageSaid } from "@/browse/page-download";
@@ -448,7 +448,7 @@ export function BrowseLanding({
       machine={machine}
       devices={devices}
       at={tabs.current.path}
-      onGo={(place) => machine && tabs.goTo(machine.id, place)}
+      onGo={(place, d) => tabs.goTo(d.id, place)}
       onMachine={(d) => tabs.goTo(d.id, tabs.current.path, tabs.current.title)}
       // A blank tab is somewhere to type an address (UX-45 §2).
       autoFocus={!tabs.current.path}
@@ -681,6 +681,8 @@ export function BrowseLanding({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [native, nativeTab]);
+  /** Where the deck's field draws its list (`pillList` below). */
+  const [listSeat, setListSeat] = useState<HTMLElement | null>(null);
   const pickMachine = (d: DeviceRow) => {
     rememberPageMachine(d.id);
     tabs.goTo(d.id, tabs.current.path, tabs.current.title);
@@ -696,31 +698,27 @@ export function BrowseLanding({
       inPill
       autoFocus={editing}
       // The keyboard put away with the caret out of the field ends the
-      // editing, as Safari's does — but not a press on the machine's face
-      // or its picker, which takes the focus on its way to the menu.
+      // editing, as Safari's does (the face and the list keep the caret).
       onLeave={() =>
         window.setTimeout(() => {
-          if (document.activeElement?.closest("[data-deck-editing], [data-page-machines]")) return;
-          if (document.querySelector("[data-page-machines]")) return;
+          if (document.activeElement?.closest("[data-deck-editing]")) return;
           setEditing(false);
         }, 150)
       }
-      onGo={(place) => {
+      onGo={(place, d) => {
         setEditing(false);
-        if (machine) {
-          rememberPageMachine(machine.id);
-          tabs.goTo(machine.id, place);
-        }
+        tabs.goTo(d.id, place);
       }}
       onMachine={pickMachine}
+      listSeat={listSeat}
+      first={homeOf?.(bare?.here ?? tabs.current.session ?? "") ?? null}
     />
   );
-  /** The machines over the deck while the address is edited (UX-42 row
-      13), the session's own first: the 附栏's, or the one the tab was
-      opened from. */
-  const pillChips = (
-    <MachineChips devices={devices} machine={machine} first={homeOf?.(bare?.here ?? tabs.current.session ?? "") ?? null} onPick={pickMachine} />
-  );
+  /** **The field's list over the deck** (sb-a, the lab's phone): the
+      machines, then the machine's recent addresses, in the flow so the
+      page gives way to it. ⚠️ 墓碑 (UX-42 row 13): a row of machine chips
+      here, the face out of the field. */
+  const pillList = <div ref={setListSeat} data-page-list-seat />;
 
   const content =
     machine && tabs.current.device && tabs.current.path ? (
@@ -932,7 +930,7 @@ export function BrowseLanding({
         onTitle={() => setEditing(true)}
         caption={failedWord || saidWord || caption}
         editor={tabs.ready && editing ? pillEditor : undefined}
-        editorAbove={pillChips}
+        editorAbove={pillList}
         nativeDeck={native}
         // The page is a native view the capsule cannot float over: it
         // keeps its own room under the page (UX-29); on the phone the

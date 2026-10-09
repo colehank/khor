@@ -1,39 +1,57 @@
 /**
- * **The browser's address field: the machine first** (the redesign,
- * 2026-10-02, the owner: 「点击框，弹出可选机器，选择一个机器，机器的头像
- * 出现在输入框的左侧。现在完全不知道是在那台机器。然后，用户再输入地址」).
+ * **The browser's address field: the machine, then the address** (sb-a,
+ * 2026-10-09, the lab approved — audit/br-lab.md; the owner: 「浏览器点击
+ * 药丸, 不要展开机器, 而是一个推荐列表, 里面可以选择机器, 也可以手敲然后自动
+ * 推荐, 类似目录选择. 确定机器后, 机器的头像就在左边定下来了, 点击后头像可以
+ * 再选择别的机器或用删除键删掉再敲新机器. 然后敲地址. 已经确定的药丸, 再此点
+ * 击, 可以点头像或改地址.」).
  *
- * One glass field. At its left end, inside it, the machine whose network
- * the page goes through — its face, at a tab's size, always on screen, a
- * button that offers the machines again. A page with no machine yet has
- * no caret: the field says to choose one, and pressing it opens the
- * picker (the machines this one can reach, each its face and name).
- * Choosing puts the face in the field and the caret after it; then the
- * address, and Enter. On a page already open, choosing another machine
- * reloads the same address through it.
+ * One glass field and one list under it (over it on the deck):
  *
- * Back, forward and reload — the page's own steps, which the browser had
- * as ghost buttons — stand in a glass capsule at the field's left, and
- * only while a page is open (there is nothing to step through before).
+ * 1. Pressed with no machine, the list is the machines this one can reach,
+ *    each its face, name and road (「直连 23 ms」); typing narrows it, the
+ *    matched letters heavy; Enter or Tab takes the lit row, else the first.
+ *    **Tab is the machine alone** (the owner's fix in the lab): the
+ *    address stays empty, the machine's recents listed.
+ * 2. The chosen machine is its face, fixed at the field's left. Pressing
+ *    the face offers the machines again, the current one ticked; on an
+ *    open page another reloads the same address through it at once.
+ *    Backspace with the caret at the address's start takes the face off,
+ *    and what was typed waits for the next machine (Enter brings it back).
+ * 3. The address: the list is that machine's recent addresses, narrowed
+ *    as it is typed. Enter opens the lit row, else the typed text
+ *    (https:// added where it has no scheme; http:// for this network's
+ *    own hosts); Tab completes without opening.
+ * 4. A set field rests as face and host. Pressing the host edits the
+ *    address, selected whole; pressing the face changes the machine.
+ *
+ * **Where the list is drawn**: in the app, on the wide face, in the app's
+ * small menu window (`useFloatedMenu`), because the page's native webview
+ * paints over this page's DOM; on the deck, in the seat over it
+ * (`listSeat`), in the flow, so the page gives way rather than covering
+ * it; elsewhere under the field. ⚠️ 墓碑 (the redesign 2026-10-02 →
+ * sb-a): a menu of machines (`DropdownMenu`) on the face, and on the deck
+ * a row of machine chips over it with the face out of the field (UX-42
+ * row 13).
+ *
+ * Back, forward and reload stand in a glass capsule at the field's left,
+ * only while a page is open (unchanged).
  *
  * `fixed`: the machine is the page's and not a choice (a machine's own
  * page, its 浏览 in place) — the face is shown, not offered.
  */
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-import { pageStep, type DeviceRow } from "@/api";
+import { fetchRecents, pageStep, type DeviceRow, type RecentRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { GlassCapsule, GlassItem } from "@/components/Glass";
 import { IconBack, IconClose, IconForward, IconReload } from "@/components/icons";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { OmniMenu, useFloatedMenu, type MenuRows } from "@/components/OmniMenu";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { imeKey } from "@/lib/ime";
+import { ago, reachWord } from "@/words";
 
 /** The machines a page can go out through: this one, and the ones this
     one can reach now (not quiet, not paused). */
@@ -61,6 +79,39 @@ export function rememberPageMachine(id: string) {
   }
 }
 
+/** An address as a row says it: no scheme, no trailing slash. */
+function bareOf(url: string): string {
+  return url.replace(/^[a-z][a-z\d+.-]*:\/\//i, "").replace(/\/$/, "");
+}
+
+/** **What Enter opens** (the brief: 「adding https:// when missing」): a
+    typed address without a scheme is a web address over https — except
+    this network's own hosts (localhost, an IP, `.local`, `.lan`), whose
+    dev servers speak plain http and would only fail the other way. */
+export function addressOf(raw: string): string {
+  const t = raw.trim();
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(t)) return t;
+  const host = t.replace(/[/?#].*$/, "").replace(/:\d+$/, "").toLowerCase();
+  const local =
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".lan") ||
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(host) ||
+    host.startsWith("[");
+  return `${local ? "http" : "https"}://${t}`;
+}
+
+/** Where the typed letters stand in a label, for the list to draw them
+    heavy (`Candidate.mark`). */
+function markOf(label: string, q: string): [number, number] | undefined {
+  if (!q) return undefined;
+  const i = label.toLowerCase().indexOf(q.toLowerCase());
+  return i < 0 ? undefined : [i, q.length];
+}
+
+/** How many of a machine's addresses the list offers. */
+const RECENTS = 6;
 
 export function PageField({
   tab,
@@ -74,6 +125,8 @@ export function PageField({
   autoFocus = false,
   onLeave,
   inPill = false,
+  listSeat,
+  first = null,
 }: {
   /** The page this field steps (back, forward, reload). */
   tab: string;
@@ -81,107 +134,229 @@ export function PageField({
   devices: DeviceRow[];
   /** Where the page is, `""` before anything has opened. */
   at: string;
-  onGo: (place: string) => void;
+  /** Open this address through this machine. */
+  onGo: (place: string, machine: DeviceRow) => void;
+  /** Another machine chosen for the page that is open: it reloads the
+      same address through it. A field with no page yet keeps the face to
+      itself until Enter. */
   onMachine?: (machine: DeviceRow) => void;
   fixed?: boolean;
   /** Draw ← → ↻ beside the field — not on the phone's deck, whose pill
       carries them (round UX-3). */
   steps?: boolean;
-  /** Put the caret in the address at once: the deck opened the field to
-      be typed in (round UX-3). */
+  /** Put the caret in the field at once: the deck opened it to be typed
+      in (round UX-3), or a blank tab (UX-45 §2). */
   autoFocus?: boolean;
-  /** The caret left the address: the deck puts the field away. */
+  /** The caret left the field: the deck puts the editor away. */
   onLeave?: () => void;
   /** **The deck's pill is the editor** (UX-18): the field is drawn inside
       the pill's own glass, not as a glass field of its own. */
   inPill?: boolean;
+  /** The seat over the deck the list is drawn in (the deck's editor); the
+      list hangs under the field where there is none. */
+  listSeat?: HTMLElement | null;
+  /** The machine listed first, by name: the session's, in its 附栏
+      (UX-42 row 13's order); else this one leads. */
+  first?: string | null;
 }) {
-  const shell = inPill
-    ? "flex h-full min-w-0 flex-1 items-center rounded-full"
-    : "glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full";
-  const [draft, setDraft] = useState(at);
-  const [picking, setPicking] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
-  const editing = useRef(false);
-  // The page moved (a link, a step): the field follows unless somebody is
-  // typing in it.
-  useEffect(() => {
-    if (!editing.current) setDraft(at);
-  }, [at]);
-
-  // The caret goes in once the face is there, ready for the address —
-  // which may be a round trip later (the tab learns its machine from the
-  // node), so it is asked for and taken when the field has a machine.
-  const caret = useRef(false);
-  const choose = (d: DeviceRow) => {
-    setPicking(false);
-    caret.current = true;
-    onMachine?.(d);
-  };
-  useEffect(() => {
-    if (!caret.current || !machine) return;
-    caret.current = false;
-    requestAnimationFrame(() => input.current?.focus());
-  }, [machine]);
-  /** **The picker does not cover the tabs** (the audit fix plan F4.6; N22).
-      On the narrow face the field is the session bar's second row, under
-      the tabs and 「‹」, and a menu opening upward from it lay over both:
-      there it opens above the whole bar, 8 clear of it. Measured as it
-      opens; elsewhere (the wide head) it opens where it always did. */
-  const row = useRef<HTMLDivElement>(null);
-  const [lift, setLift] = useState<number | null>(null);
-  const pick = (open: boolean) => {
-    if (open) {
-      const at = row.current;
-      const trigger = at?.querySelector("[data-page-machine-face], [data-page-field-empty]")?.getBoundingClientRect();
-      const bar = at?.closest("[data-session-screen]")?.querySelector("[data-session-bar]")?.getBoundingClientRect();
-      setLift(trigger && bar && bar.top < trigger.top ? trigger.top - bar.top + 8 : null);
-    }
-    setPicking(open);
-  };
-  const menu = (
-    <DropdownMenuContent
-      align="start"
-      {...(lift === null ? { sideOffset: 8 } : { side: "top" as const, sideOffset: lift, avoidCollisions: false })}
-      data-page-machines
-      onCloseAutoFocus={(e) => e.preventDefault()}
-      className="min-w-nav-menu"
-    >
-      {reachable(devices).map((d) => (
-        <DropdownMenuItem
-          key={d.id}
-          data-page-machine={d.name}
-          data-on={machine?.id === d.id || undefined}
-          onSelect={() => choose(d)}
-          className={cn(machine?.id === d.id && "glass-sel")}
-        >
-          <MachineAvatar face={d.face} className="size-tab-face flex-none" />
-          <span className="min-w-0 truncate">{d.shown}</span>
-        </DropdownMenuItem>
-      ))}
-    </DropdownMenuContent>
-  );
-
-  const open = machine !== null && at !== "";
+  const offered = (() => {
+    const all = reachable(devices);
+    const lead = (d: DeviceRow) => (d.name === first ? 0 : d.me ? 1 : 2);
+    return [...all].sort((a, b) => lead(a) - lead(b));
+  })();
   /** **One machine to go through is not a choice** (the audit fix plan
-      F4.6; N22): the face is shown, not offered, and nothing opens. */
-  const only = reachable(devices).length <= 1;
-  /** Whether the caret is in the address: the whole address then; at
-      rest, the host first (Safari's), cut with an ellipsis. */
-  const [typing, setTyping] = useState(false);
+      F4.6; N22): the face is shown, not offered. */
+  const only = offered.length <= 1;
+  const still = fixed || only;
+  const open = machine !== null && at !== "";
+
+  /** The face in the field: the machine the next address goes through. */
+  const [token, setToken] = useState<DeviceRow | null>(machine ?? (only ? (offered[0] ?? null) : null));
+  const [editing, setEditing] = useState(false);
+  /** What is in the field: a machine's name being typed, or an address. */
+  const [text, setText] = useState(at);
+  /** The face was pressed: the list is the machines, the address stays. */
+  const [switching, setSwitching] = useState(false);
+  /** The address the face's removal put aside. */
+  const [kept, setKept] = useState("");
+  /** The row the arrows lit, `-1` for none. */
+  const [hi, setHi] = useState(-1);
+  const [recents, setRecents] = useState<RecentRow[]>([]);
+  const input = useRef<HTMLInputElement>(null);
+  const field = useRef<HTMLDivElement>(null);
+
+  // The page moved (a link, a step, another machine): the field follows
+  // unless somebody is typing in it.
+  useEffect(() => {
+    if (editing) return;
+    setText(at);
+    if (machine) setToken(machine);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [at, machine?.id]);
+  // A fresh tab learns its machine a round trip after the caret went in
+  // (the last one used, UX-18): an empty face takes it.
+  useEffect(() => {
+    if (machine && token === null && editing) setToken(machine);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [machine?.id]);
+  // One machine, and the tab had none yet: it is the face.
+  useEffect(() => {
+    if (!token && only && offered[0]) setToken(offered[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [only, offered[0]?.id]);
+  // The machines' recent addresses, read again each time the field is
+  // taken: the list is a glance, one read per visit.
+  useEffect(() => {
+    if (!editing) return;
+    let live = true;
+    fetchRecents("page", 60).then(
+      (r) => live && setRecents(r),
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [editing]);
+  useEffect(() => {
+    if (autoFocus) requestAnimationFrame(() => input.current?.focus());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pickingMachine = editing && !fixed && (token === null || switching);
+  /** The whole address just selected is not a query: all of them. */
+  const query = (pickingMachine ? (token === null ? text : "") : open && text === at ? "" : text).trim();
+  const machineRows = offered.filter((d) => d.shown.toLowerCase().includes(token === null ? query.toLowerCase() : ""));
+  const addressRows = (() => {
+    if (!editing || pickingMachine || !token) return [];
+    const seen = new Set<string>();
+    return recents
+      .filter((r) => r.device === token.id && !seen.has(r.place) && seen.add(r.place) && bareOf(r.place).toLowerCase().includes(query.toLowerCase()))
+      .slice(0, RECENTS);
+  })();
+  const n = pickingMachine ? machineRows.length : addressRows.length;
+  /** A name being narrowed lights its first row: what Enter takes. */
+  const lit = hi >= 0 ? hi : pickingMachine && query !== "" && n > 0 ? 0 : -1;
+
+  const rows: MenuRows | null = !editing
+    ? null
+    : pickingMachine
+      ? {
+          groups: [
+            {
+              key: "machines",
+              label: gui.devices_tab,
+              empty: gui.no_matches,
+              candidates: machineRows.map((d) => ({
+                key: `m:${d.id}`,
+                label: d.shown,
+                face: d.face,
+                mark: token === null ? markOf(d.shown, query) : undefined,
+                aside: reachWord(d, devices) ?? undefined,
+                on: token?.id === d.id || undefined,
+              })),
+            },
+          ],
+          at: lit,
+        }
+      : addressRows.length > 0 && token
+        ? {
+            groups: [
+              {
+                key: "recent",
+                label: gui.page_recent_on(token.shown),
+                candidates: addressRows.map((r) => ({
+                  key: `u:${r.place}`,
+                  label: bareOf(r.place),
+                  glyph: "page" as const,
+                  mark: markOf(bareOf(r.place), query),
+                  aside: ago(r.at_ms),
+                })),
+              },
+            ],
+            at: lit,
+          }
+        : null;
+
+  /** Set as the field sends the page somewhere: the blur that follows
+      leaves the face and the address for the page's answer to replace,
+      rather than putting back the ones it is leaving. */
+  const went = useRef(false);
+  /** Back to what is open (or to what was being made), the face with it. */
+  const rest = () => {
+    setEditing(false);
+    setSwitching(false);
+    setHi(-1);
+    if (open && !went.current) {
+      setToken(machine);
+      setText(at);
+    }
+    went.current = false;
+  };
+  /** Out of the field: its blur puts it to rest (`onBlur`). */
+  const leave = () => {
+    if (input.current && document.activeElement === input.current) input.current.blur();
+    else rest();
+  };
+  const go = (raw: string) => {
+    if (!token || raw.trim() === "") return;
+    const place = addressOf(raw);
+    rememberPageMachine(token.id);
+    onGo(place, token);
+    setText(place);
+    went.current = true;
+    leave();
+  };
+  const pick = (d: DeviceRow, bare = false) => {
+    // The face pressed on an open page: it reloads at once through the
+    // new machine.
+    if (open && switching) {
+      setToken(d);
+      if (d.id !== machine?.id) {
+        rememberPageMachine(d.id);
+        onMachine?.(d);
+        went.current = true;
+      }
+      leave();
+      return;
+    }
+    setToken(d);
+    setSwitching(false);
+    setText(bare ? "" : kept);
+    setKept("");
+    setHi(-1);
+    input.current?.focus();
+  };
+  const press = (key: string) => {
+    if (key.startsWith("m:")) {
+      const d = offered.find((x) => x.id === key.slice(2));
+      if (d) pick(d);
+    } else if (key.startsWith("u:")) go(key.slice(2));
+  };
+  const floated = useFloatedMenu(field, listSeat === undefined ? rows : null, press, listSeat === undefined);
+
   const host = (() => {
     try {
       // An address typed without a scheme is a web address: `new URL`
-      // reads 「localhost:1458/x」 as the scheme `localhost:` and drops it,
-      // and the field said 「1458/x」.
+      // reads 「localhost:1458/x」 as the scheme `localhost:` and drops it.
       const u = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(at) ? at : `http://${at}`);
       return u.host + (u.pathname === "/" ? "" : u.pathname);
     } catch {
       return at;
     }
   })();
+
+  const list = rows && (
+    <OmniMenu
+      rows={rows}
+      onPick={press}
+      className={listSeat ? "mx-row" : "absolute inset-x-0 top-full z-20 mt-2"}
+    />
+  );
+  const shell = inPill
+    ? "flex h-full min-w-0 flex-1 items-center rounded-full"
+    : "glass flex h-glass-btn min-w-0 flex-1 items-center rounded-full";
   return (
-    <div ref={row} data-page-field-row className="flex min-w-0 flex-1 items-center gap-in">
+    <div data-page-field-row className="flex min-w-0 flex-1 items-center gap-in">
       {open && steps && (
         <GlassCapsule>
           {(
@@ -197,186 +372,163 @@ export function PageField({
           ))}
         </GlassCapsule>
       )}
-      <DropdownMenu open={picking} onOpenChange={pick}>
-        {machine === null ? (
-          // No machine yet: the whole field is the way to choose one, and
-          // there is no caret to type into. With one machine there is
-          // nothing to choose: the press takes it.
-          only ? (
-            <button
-              type="button"
-              data-page-field
-              data-page-field-empty
-              onClick={() => {
-                const d = reachable(devices)[0];
-                if (d) choose(d);
-              }}
-              className={cn(shell, "px-row text-left text-body text-tertiary")}
-            >
-              {gui.page_choose_machine}
-            </button>
-          ) : (
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                data-page-field
-                data-page-field-empty
-                className={cn(shell, "px-row text-left text-body text-tertiary")}
-              >
-                {gui.page_choose_machine}
-              </button>
-            </DropdownMenuTrigger>
-          )
-        ) : (
-          <label data-page-field className={cn(shell, "gap-in", inPill ? "ps-row pe-row" : "ps-1 pe-row")}>
-            {/* In the pill the face makes way for the address (UX-42 row
-                13): the machine is chosen from the chips over the deck
-                (`MachineChips`). */}
-            {inPill ? null : fixed || only ? (
-              <span data-page-machine-face className="grid size-glass-item-h flex-none place-items-center">
-                <MachineAvatar face={machine.face} className="size-tab-face" />
+      <div className="relative flex min-w-0 flex-1">
+        <div
+          ref={field}
+          data-page-field
+          data-state={editing ? "editing" : token ? "set" : "empty"}
+          className={cn(shell, "gap-in pe-row", token ? "ps-1" : "ps-row")}
+          // A press anywhere on the glass is a press on the address.
+          onPointerDown={(e) => {
+            if (e.target !== input.current && !editing) {
+              e.preventDefault();
+              input.current?.focus();
+            }
+          }}
+        >
+          {token &&
+            (still ? (
+              <span data-page-machine-face title={token.shown} className="grid size-glass-item-h flex-none place-items-center">
+                <MachineAvatar face={token.face} className="size-tab-face" />
               </span>
             ) : (
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  data-page-machine-face
-                  aria-label={machine.shown}
-                  title={gui.page_machine}
-                  data-glass-hit
-                  className="grid size-glass-item-h flex-none place-items-center rounded-full"
-                >
-                  <MachineAvatar face={machine.face} className="size-tab-face" />
-                </button>
-              </DropdownMenuTrigger>
-            )}
-            {/* **Safari's address field** (UX-38 §3): the keyboard for an
-                address with Go on its return key, nothing capitalised or
-                corrected, the whole address selected as the pill opens it
-                (typing replaces it, a tap places the caret), the text
-                scrolling rather than cut while it is edited, and a clear ×
-                at its end. */}
-            <input
-              ref={input}
-              data-page-address
-              aria-label={gui.address_page}
-              placeholder={gui.page_address}
-              value={typing ? draft : host}
-              enterKeyHint="go"
-              inputMode="url"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              onFocus={(e) => {
-                editing.current = true;
-                setTyping(true);
-                if (inPill) {
-                  const field = e.currentTarget;
-                  requestAnimationFrame(() => field.select());
-                }
-              }}
-              autoFocus={autoFocus}
-              onBlur={() => {
-                editing.current = false;
-                setTyping(false);
-                setDraft(at);
-                onLeave?.();
-                // At rest the address reads from its host (the line above);
-                // the field kept the scroll the typing left it at, so a long
-                // address showed its tail, its start cut with no ellipsis.
-                requestAnimationFrame(() => {
-                  if (input.current) input.current.scrollLeft = 0;
-                });
-              }}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (imeKey(e)) return;
-                if (e.key === "Enter" && draft.trim()) {
-                  e.preventDefault();
-                  editing.current = false;
-                  onGo(draft.trim());
-                  input.current?.blur();
-                }
-                if (e.key === "Escape") {
-                  setDraft(at);
-                  input.current?.blur();
-                }
-              }}
-              className={cn("min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-tertiary", !typing && "truncate")}
-            />
-            {inPill && typing && draft !== "" && (
               <button
                 type="button"
-                data-page-address-clear
-                aria-label={gui.search_clear}
-                // The caret stays in the field.
-                onPointerDown={(e) => e.preventDefault()}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  setDraft("");
-                  input.current?.focus();
+                data-page-machine-face
+                aria-label={`${gui.page_machine}：${token.shown}`}
+                aria-expanded={pickingMachine}
+                title={token.shown}
+                data-glass-hit
+                // The caret stays in the field; the face only changes
+                // what the list offers.
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!editing) input.current?.focus();
+                  setSwitching((s) => !(editing && s));
+                  setHi(-1);
                 }}
-                className="grid size-6 flex-none place-items-center rounded-full bg-fill-strong text-muted-foreground"
+                onClick={(e) => {
+                  // A keyboard's press (Space / Enter on the face).
+                  if (e.detail === 0) {
+                    input.current?.focus();
+                    setSwitching((s) => !s);
+                  }
+                }}
+                className="grid size-glass-item-h flex-none place-items-center rounded-full"
               >
-                <IconClose className="size-affordance" />
+                <MachineAvatar face={token.face} className="size-tab-face" />
               </button>
-            )}
-          </label>
-        )}
-        {menu}
-      </DropdownMenu>
-    </div>
-  );
-}
-
-/**
- * **The machines as one row of chips over the deck while the address is
- * edited** (UX-42 row 13, the lead 2026-10-07): the face left the field so
- * the address has the deck's width, and the choice stands where Safari
- * puts its choices, over the keyboard — each machine its face and short
- * name, the page's own selected, the session's machine first. One tap
- * picks it and the caret stays in the field; a long list scrolls
- * sideways. Not drawn when there is only one machine to go through.
- */
-export function MachineChips({
-  devices,
-  machine,
-  first,
-  onPick,
-}: {
-  devices: DeviceRow[];
-  machine: DeviceRow | null;
-  /** The session's machine, by name: the first chip. */
-  first?: string | null;
-  onPick: (machine: DeviceRow) => void;
-}) {
-  const all = reachable(devices);
-  if (all.length <= 1) return null;
-  const ordered = [...all.filter((d) => d.name === first), ...all.filter((d) => d.name !== first)];
-  return (
-    <div data-page-chips role="group" aria-label={gui.page_machine} className="flex gap-in overflow-x-auto px-row">
-      {ordered.map((d) => {
-        const on = machine?.id === d.id;
-        return (
-          <button
-            key={d.id}
-            type="button"
-            data-page-chip={d.name}
-            data-on={on || undefined}
-            aria-pressed={on}
-            // The caret stays in the address.
-            onPointerDown={(e) => e.preventDefault()}
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              if (!on) onPick(d);
+            ))}
+          {/* **Safari's address field** (UX-38 §3): the keyboard for an
+              address with Go on its return key, nothing capitalised or
+              corrected, the whole address selected as it is taken (typing
+              replaces it, a tap places the caret), the text scrolling
+              rather than cut while it is edited, and a clear × at its end. */}
+          <input
+            ref={input}
+            data-page-address
+            aria-label={gui.address_page}
+            aria-expanded={rows !== null}
+            placeholder={token ? gui.page_address : gui.page_choose_machine}
+            value={editing || !open ? text : host}
+            enterKeyHint={token ? "go" : "next"}
+            inputMode={token ? "url" : "text"}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            onFocus={(e) => {
+              if (editing) return;
+              setEditing(true);
+              setHi(-1);
+              if (open) {
+                setText(at);
+                const el = e.currentTarget;
+                requestAnimationFrame(() => el.select());
+              }
             }}
-            className={cn("glass flex h-glass-btn flex-none items-center gap-in rounded-full ps-1 pe-row text-callout", on && "glass-sel")}
-          >
-            <MachineAvatar face={d.face} className="size-tab-face flex-none" />
-            <span className="whitespace-nowrap">{d.shown}</span>
-          </button>
-        );
-      })}
+            onBlur={() => {
+              rest();
+              onLeave?.();
+              // At rest the address reads from its host; the field kept
+              // the scroll the typing left it at.
+              requestAnimationFrame(() => {
+                if (input.current) input.current.scrollLeft = 0;
+              });
+            }}
+            onChange={(e) => {
+              setText(e.target.value);
+              setSwitching(false);
+              setHi(-1);
+            }}
+            onKeyDown={(e) => {
+              if (imeKey(e)) return;
+              if ((e.key === "ArrowDown" || e.key === "ArrowUp") && n > 0) {
+                e.preventDefault();
+                if (e.key === "ArrowDown") setHi(lit < 0 ? 0 : (lit + 1) % n);
+                else setHi(lit < 0 ? n - 1 : (lit - 1 + n) % n);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                if (switching) setSwitching(false);
+                else leave();
+              } else if (e.key === "Enter" || e.key === "Tab") {
+                if (pickingMachine) {
+                  const d = machineRows[lit >= 0 ? lit : 0];
+                  if (d) {
+                    e.preventDefault();
+                    pick(d, e.key === "Tab");
+                  }
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  if (lit >= 0 && addressRows[lit]) go(addressRows[lit].place);
+                  else go(text);
+                } else if (addressRows.length > 0) {
+                  // Tab completes without opening, as a shell's does.
+                  e.preventDefault();
+                  setText(addressRows[lit >= 0 ? lit : 0].place);
+                  setHi(-1);
+                }
+              } else if (
+                e.key === "Backspace" &&
+                token &&
+                !still &&
+                !switching &&
+                e.currentTarget.selectionStart === 0 &&
+                e.currentTarget.selectionEnd === 0
+              ) {
+                // Nothing left of the caret but the face: it comes off
+                // whole, and what was typed waits for the next machine.
+                e.preventDefault();
+                setKept(text);
+                setText("");
+                setToken(null);
+                setHi(-1);
+              }
+            }}
+            className={cn("min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-tertiary", !editing && "truncate")}
+          />
+          {editing && text !== "" && !switching && (
+            <button
+              type="button"
+              data-page-address-clear
+              aria-label={gui.search_clear}
+              // The caret stays in the field.
+              onPointerDown={(e) => e.preventDefault()}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setText("");
+                setHi(-1);
+                input.current?.focus();
+              }}
+              className="grid size-6 flex-none place-items-center rounded-full bg-fill-strong text-muted-foreground"
+            >
+              <IconClose className="size-affordance" />
+            </button>
+          )}
+        </div>
+        {!floated && listSeat === undefined && list}
+      </div>
+      {listSeat && list && createPortal(<div data-page-list>{list}</div>, listSeat)}
     </div>
   );
 }

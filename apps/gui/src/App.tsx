@@ -2122,10 +2122,16 @@ export default function App() {
   };
   const openUrlRef = useRef<(machine: string, url: string) => void>(() => {});
   /** A page, as a browsing tab out through that machine; in the column's
-      browser with a session in front, else on the browser landing. */
-  const openUrlMain = (machine: string, url: string, column: boolean) => {
-    const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
-    void openTab("page", d?.id ?? "", url, fromSession())
+      browser with a session in front, else on the browser landing.
+      **By the record's device id where there is one, this machine
+      included** (sb-a, 2026-10-09, the owner: 「侧栏里最近打开的浏览器地址,
+      点击直接打开, 现在点击后还等着输地址选机器」): the lookup was by name
+      and skipped this machine — a leftover from when an empty device meant
+      this one — so a page here opened with no machine and the pill asked
+      for one and an address. */
+  const openUrlMain = (machine: string, url: string, column: boolean, device?: string) => {
+    const d = devices.find((x) => device !== undefined && x.id === device) ?? (machine === "" ? null : devices.find((x) => x.name === machine));
+    void openTab("page", d?.id ?? device ?? "", url, fromSession())
       .then((id) => {
         if (column && selectedRow) {
           // In front at once, and in the list: the 附栏's page is the tab
@@ -2649,7 +2655,7 @@ export default function App() {
       workspace as the column's listing, a file as its file page. */
   const openRecent = (it: RecentItem) => {
     setSideFrom("recent");
-    if (it.kind === "page") return openUrlMain(it.machine, it.url, true);
+    if (it.kind === "page") return openUrlMain(it.machine, it.url, true, it.device);
     if (it.kind === "workspace") {
       touched("dir", it.machine, it.path);
       return sideShow(it.machine, it.path, null);
@@ -2659,7 +2665,7 @@ export default function App() {
   /** …and a double-click (or 「在主区打开」) takes the same thing to the
       main area, by the roads the landings use. */
   const openRecentMain = (it: RecentItem) => {
-    if (it.kind === "page") return openUrlMain(it.machine, it.url, false);
+    if (it.kind === "page") return openUrlMain(it.machine, it.url, false, it.device);
     if (it.kind === "workspace") return openDirMain(it.machine, it.path);
     openPathMain(it.machine, it.path, false, null);
   };
