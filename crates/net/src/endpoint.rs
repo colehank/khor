@@ -352,6 +352,38 @@ pub const RELAY_ONLY_ENV: &str = "KHOR_RELAY_ONLY";
 /// hop (`crates/cli/tests/hop.rs`). Never set by khor.
 pub const BIND_IP_ENV: &str = "KHOR_BIND_IP";
 
+/// The environment switch that stands in for n0's public relays, and
+/// turns that tier on even with 「only mine」: comma-separated relay urls
+/// ([`full_relay_map`]).
+///
+/// **For scratch nodes, not for people.** A machine with the n0 tier on
+/// can home on a public relay that is in no list it keeps — MacLab on
+/// n0's aps1, 2026-10-09 — and a test needs that shape on loopback
+/// (`crates/cli/tests/home_relay.rs`). Never set by khor.
+///
+/// An entry written `url|port` serves QUIC address discovery on that UDP
+/// port, as n0's relays do on 7842; a bare url serves none, as khor's own
+/// (`crates/net/tests/qad_home.rs`).
+pub const PUBLIC_RELAYS_ENV: &str = "KHOR_PUBLIC_RELAYS";
+
+/// **The relays a machine publishes: its live home first, then its own
+/// list** (net-f, 2026-10-09). The home is where the machine listens; a
+/// home outside its own list (n0's, when that tier is on) published
+/// nowhere left every peer dialling relays it was not on, and MacLab
+/// unreachable for twenty minutes once it homed on aps1. Written without
+/// the trailing slash, as the lists are; a list entry that names the home
+/// is not written twice.
+pub fn home_first(home: Option<&iroh::RelayUrl>, relays: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = home.map(|h| h.as_str().trim_end_matches('/').to_owned()).into_iter().collect();
+    for r in relays {
+        let is_home = home.is_some_and(|h| r.parse::<iroh::RelayUrl>().is_ok_and(|u| &u == h));
+        if !is_home {
+            out.push(r.clone());
+        }
+    }
+    out
+}
+
 /// The one address [`BIND_IP_ENV`] names, if it names one.
 fn bind_ip() -> Option<std::net::IpAddr> {
     std::env::var(BIND_IP_ENV).ok()?.trim().parse().ok()
@@ -656,9 +688,30 @@ pub fn transport() -> iroh::endpoint::QuicTransportConfig {
 /// nothing else.
 fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
     let mut map: Vec<std::sync::Arc<iroh::RelayConfig>> = relay_map(relays).relays();
-    if n0 {
-        let public: Vec<std::sync::Arc<iroh::RelayConfig>> =
-            iroh::defaults::prod::default_relay_map().relays();
+    // A test's stand-in tier is on whatever `n0` says: a scratch node
+    // keeps 「only mine」 on, so it touches no real relay, and still has a
+    // public tier to home on.
+    let named = std::env::var(PUBLIC_RELAYS_ENV).ok();
+    if n0 || named.is_some() {
+        let public: Vec<std::sync::Arc<iroh::RelayConfig>> = match named {
+            Some(named) => named
+                .split(',')
+                .filter_map(|entry| {
+                    let (url, qad) = match entry.split_once('|') {
+                        Some((url, port)) => (url, port.trim().parse::<u16>().ok()),
+                        None => (entry, None),
+                    };
+                    let url = url.trim().parse::<iroh::RelayUrl>().ok()?;
+                    let mut c = iroh::RelayConfig::from(url);
+                    match (c.quic.as_mut(), qad) {
+                        (Some(q), Some(port)) => q.port = port,
+                        _ => c.quic = None,
+                    }
+                    Some(std::sync::Arc::new(c))
+                })
+                .collect(),
+            None => iroh::defaults::prod::default_relay_map().relays(),
+        };
         for r in public {
             if !map.iter().any(|have| have.url == r.url) {
                 map.push(r);
@@ -737,6 +790,14 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
 /// hints carry them mixed. Unparseable entries are skipped, not fatal:
 /// they come from tickets and stored hints, and one typo must not kill
 /// the dial.
+///
+/// **A peer's relay is dialled whoever runs it** (the owner, 2026-10-09:
+/// 「两边总能找到对方」). A machine with 「only mine」 on still reaches a
+/// peer through the relay that peer published, n0's public ones included:
+/// only-mine decides where this machine homes and what it publishes, not
+/// which relay may carry a dial to somebody else. iroh connects to any
+/// relay url in the address; a key goes only to a relay in this
+/// machine's own map.
 pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<iroh::EndpointAddr> {
     let id: iroh::EndpointId = id_hex.parse().context(msg::not_a_machine_id_short())?;
     let mut addr = iroh::EndpointAddr::new(id);
@@ -824,6 +885,19 @@ impl Ticket {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_live_home_is_published_first_and_once() {
+        let mine = vec!["http://101.200.80.77:3340".to_owned(), "https://hk.relay.khor.cloud".to_owned()];
+        let aps1: iroh::RelayUrl = "https://aps1-1.relay.n0.iroh.link.".parse().unwrap();
+        assert_eq!(
+            home_first(Some(&aps1), &mine),
+            ["https://aps1-1.relay.n0.iroh.link.", "http://101.200.80.77:3340", "https://hk.relay.khor.cloud"]
+        );
+        let beijing: iroh::RelayUrl = "http://101.200.80.77:3340".parse().unwrap();
+        assert_eq!(home_first(Some(&beijing), &mine), mine);
+        assert_eq!(home_first(None, &mine), mine);
+    }
 
     /// The [`follow`] tasks alive, by the key whose mDNS service each
     /// reads: a guard held for as long as the task runs.

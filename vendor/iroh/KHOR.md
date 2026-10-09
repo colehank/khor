@@ -12,7 +12,46 @@
 
 ## 补丁
 
-十三处。
+十五处。
+
+### 15. `src/socket/transports/relay/actor.rs`：一条中继连接不再卡住所有中继；慢的 pong 不算断（2026-10-09，NET-DIRECT，net-g）
+
+MacLab 10-09 约 11:36 起，经中继什么也发不出去：iPhone 的 Initial 从家中继 aps1 进来（13:07 测得约 57 KB），
+一个字节也没回；每分钟一次的拨号从没打开过北京或 pk 的连接；家也再没换过。原因是三处没有时限的等待：
+
+1. 连接 actor 空闲 60 秒正常退出时 `client_sink.close().await`。tokio-websockets 的 close 要读到服务器关流为止，
+   回程死了（代理 TUN 把 TCP 一直托着，euc1 那条 5233 进 / 50245 出冻结了 40 多分钟）就永远等下去；
+   这期间它不再应答任何消息，收件箱却开着，不会被回收。
+2. 中继 actor 给一台没有连接的中继发数据报前，挨个问现有连接「见过这台机器没有」（`HasEndpointRoute`），
+   `rx.await` 没有时限：问到上面那条就永远等下去，整个中继 actor 跟着停，所有中继的发送、换家都停了。
+3. 某条连接的队列满了，中继 actor 也一直等它腾出位子。
+
+改为：close 最多等 1 秒；每条连接的回答最多等 250 毫秒，不答当作没见过；队列满了最多等 1 秒，之后丢掉这批
+数据报（同 UDP 丢包）。
+
+另一处（同一文件）：周期 ping 的 pong 时限从「上一次 pong 的 3 倍，至少 0.5 秒」改为固定 5 秒（上游的最大值）。
+经 TUN 到 aps1 的 pong 在 124–976 毫秒之间跳，临时节点 6.5 分钟里被判断开、重拨了 3 次，每次约 4 秒，
+期间中继告诉对方这台机器走了。网络变化后的那次快速检查仍按 RTT。
+
+测试：`crates/net/tests/relay_stuck.rs`（一条吞掉 Close、此后两个方向都不再转发的路；之后 alpha 要能拨到第三台
+中继上的 gamma，回环中继上的 delta 要能拨到 alpha 的家），打补丁前两项都超时，之后 7–14 毫秒；
+`crates/net/tests/relay_jitter.rs`（隔一个 pong 压 700 毫秒），两分钟里打补丁前连了 8 次，之后 1 次。
+上游 1.3.0 三处相同，升级时要重新打；中继服务器那一侧（iroh-relay 的 `server/client.rs`）对客户端也用 3 倍 RTT，
+khor 自己的中继要改得 vendor iroh-relay，没做。
+
+### 14. `src/net_report.rs`：完整报告要等不答 QAD 的中继量完（2026-10-09，NET-DIRECT，net-f）
+
+上游的完整报告一拿到两个 IPv4 QAD 回答就停掉其余探测（`have_enough_reports`），不答 QAD 的中继（khor 自己的
+三台都是 `quic = None`）的 HTTPS 探测还没回来就被丢下，这一轮报告里没有它，于是永远当不了家。MacLab 10-09：
+代理改走 DIRECT 后 n0 的 aps1、euc1 都答 QAD，11:36:41 起家一直是 aps1（经 TUN 握 TLS 0.75–4.1 秒），
+北京（18 毫秒）再没被量过；补丁 11 只管增量报告，管不到这里。补丁：完整报告里，只要还有不答 QAD 的中继没有
+HTTPS 延迟，就不走两个 QAD 的捷径（仍可按「每台都有 HTTPS」收场）；它的探测都结束了这一轮自然收场。
+代价：不答 QAD 的中继若是死的，完整报告要等它的三次探测超时才定家。改动约 15 行。
+测试：`crates/net/tests/qad_home.rs`（net-g）。两台答 QAD 的替身（`KHOR_PUBLIC_RELAYS` 的 `url|端口`，
+`localhost` 自签证书，每个方向加 100 毫秒）加一台不答 QAD 的明文中继；打补丁前家是替身（报告 210 毫秒就收场，
+没有 HTTPS 一项），打补丁后家是明文中继（同样 210 毫秒，它的 HTTPS 1–2 毫秒已在报告里）。注意：上游的捷径看
+netwatch 的 `have_v6`，一个 ULA（如 Tailscale 的 fd7a::）就算有 IPv6，这时捷径还要一个 v6 的 QAD 回答。
+上游 1.3.0 没有对应改动，升级 iroh 时要重新打。
 
 ### 13. `src/socket/remote_map/remote_state.rs`、`src/socket.rs`、`src/endpoint.rs`：转连的路断了，当场关掉自定义路径（2026-10-09，NET-DIRECT）
 

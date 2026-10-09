@@ -520,6 +520,9 @@ enum Wake {
     Resting {
         answer: tokio::sync::oneshot::Sender<bool>,
     },
+    /// The home relay moved ([`Node::set_ears`]): the row and
+    /// `endpoint.json` are written again with it first (net-f).
+    Home,
 }
 
 /// **One round for a network change at a time** (NET-STABLE 第二步).
@@ -1008,6 +1011,33 @@ impl Node {
         // **What the relays say about who left** (round NET-5,
         // `wires::Wires::departed`), for as long as these ears live: the
         // subscription ends when the endpoint does.
+        // **The home relay, published as it moves** (net-f, 2026-10-09).
+        {
+            use iroh::Watcher;
+            let mut home = ep.home_relay_status();
+            let closed = ep.closed();
+            let wake = wake.clone();
+            tokio::spawn(async move {
+                tokio::pin!(closed);
+                let url = |h: &[iroh::endpoint::RelayStatus]| h.first().map(|r| r.url().clone());
+                let mut was = url(&home.get());
+                loop {
+                    tokio::select! {
+                        () = &mut closed => return,
+                        got = home.updated() => {
+                            let Ok(h) = got else { return };
+                            let now = url(&h);
+                            if now != was {
+                                was = now;
+                                if wake.send(Wake::Home).is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
         let mut left = ep.relay_departures();
         let wires = self.wires.clone();
         tokio::spawn(async move {
@@ -1042,30 +1072,56 @@ impl Node {
     /// pairing device already says how to reach us — relay roads
     /// included, or a peer behind a hostile network has no way in.
     /// Written again after fresh ears: a new endpoint has new ports.
-    fn publish_roads(&self, ep: &iroh::Endpoint) -> Result<Vec<String>, String> {
-        let addrs = endpoint::local_addrs(ep);
-        let mut roads = addrs.clone();
-        roads.extend(self.relays().iter().cloned());
+    ///
+    /// **The live home relay is one of them, first** (net-f, 2026-10-09):
+    /// written again whenever the home changes ([`Wake::Home`]).
+    fn publish_roads(&self, ep: &iroh::Endpoint) -> Result<(), String> {
+        let mut roads = endpoint::local_addrs(ep);
+        roads.extend(self.published_relays(ep));
         let loaded = self.devices_loaded()?;
         loaded.doc.upsert(self.device_str(), self.name(), &roads)?;
         let mut store = loaded.store;
         store.flush(&loaded.doc)?;
-        Ok(addrs)
+        Ok(())
+    }
+
+    /// The relays this machine tells others to reach it by: the home it
+    /// is on now, then its own list ([`endpoint::home_first`]). A home
+    /// from n0's tier is in no list this machine keeps.
+    ///
+    /// **No home yet keeps the one the row last named.** A resident
+    /// publishes the moment it binds, before its first net report has
+    /// chosen a home; publishing the bare list then took the home out of
+    /// the row, and a peer that synced in that moment kept dialling relays
+    /// this machine was not on (the scratch test, `home_relay.rs`). A home
+    /// that was is at worst one relay probed for nothing.
+    pub(crate) fn published_relays(&self, ep: &iroh::Endpoint) -> Vec<String> {
+        use iroh::Watcher;
+        let home = ep.home_relay_status().get().first().map(|r| r.url().clone()).or_else(|| {
+            let me = self.devices().ok()?.into_iter().find(|d| d.id == self.device_str())?;
+            me.addrs
+                .iter()
+                .filter(|a| a.starts_with("http://") || a.starts_with("https://"))
+                .find(|a| !self.relays().contains(a))
+                .and_then(|a| a.parse().ok())
+        });
+        endpoint::home_first(home.as_ref(), self.relays())
     }
 
     /// `endpoint.json`: where one-shot verbs find the live endpoint and
     /// the hand-off port. Written again whenever either changes.
     fn write_endpoint_file(
         &self,
-        addrs: Vec<String>,
+        ep: &iroh::Endpoint,
         handoffs: &tokio::net::TcpListener,
         cookie: &str,
     ) -> Result<(), String> {
         let file = EndpointFile {
             id: self.device_str().to_owned(),
-            addrs,
+            addrs: endpoint::local_addrs(ep),
             pid: std::process::id(),
-            relays: self.relays().to_vec(),
+            // What an invite hands out: the live home among them.
+            relays: self.published_relays(ep),
             ipc_port: handoffs.local_addr().map_err(|e| e.to_string())?.port(),
             ipc_cookie: cookie.to_owned(),
             app: self.app_resident.load(std::sync::atomic::Ordering::Relaxed),
@@ -1111,12 +1167,12 @@ impl Node {
         self.app_resident
             .store(resumable, std::sync::atomic::Ordering::Relaxed);
         let mut ep = self.bind_ears().await?;
-        let addrs = self.publish_roads(&ep)?;
+        self.publish_roads(&ep)?;
         let mut handoffs = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .map_err(msg::cant_open_handoff_port)?;
         let cookie = fresh_hex()?;
-        self.write_endpoint_file(addrs, &handoffs, &cookie)?;
+        self.write_endpoint_file(&ep, &handoffs, &cookie)?;
 
         // Borrow rows left by a previous serve point at ports this
         // process does not hold; clear them before answering anyone.
@@ -1411,7 +1467,7 @@ impl Node {
                         Err(_) if resumable => {
                             if let Ok(fresh) = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await {
                                 handoffs = fresh;
-                                let _ = node.write_endpoint_file(endpoint::local_addrs(&ep), &handoffs, &cookie);
+                                let _ = node.write_endpoint_file(&ep, &handoffs, &cookie);
                             }
                             tokio::time::sleep(Duration::from_millis(100)).await;
                         }
@@ -1436,6 +1492,12 @@ impl Node {
                     Wake::Resting { answer } => {
                         let _ = answer.send(resting.load(std::sync::atomic::Ordering::Relaxed));
                     }
+                    Wake::Home => match node.publish_roads(&ep) {
+                        Ok(()) => {
+                            let _ = node.write_endpoint_file(&ep, &handoffs, &cookie);
+                        }
+                        Err(e) => eprintln!("{e}"),
+                    },
                     // A network change while backgrounded is the resume's
                     // to deal with: it gives new ears and a round.
                     Wake::Network(_) if resting.load(std::sync::atomic::Ordering::Relaxed) => {}
@@ -1525,8 +1587,8 @@ impl Node {
                             // already the ones answering.
                             tokio::spawn(async move { old.close().await });
                             match node.publish_roads(&ep) {
-                                Ok(addrs) => {
-                                    let _ = node.write_endpoint_file(addrs, &handoffs, &cookie);
+                                Ok(()) => {
+                                    let _ = node.write_endpoint_file(&ep, &handoffs, &cookie);
                                 }
                                 Err(e) => eprintln!("{e}"),
                             }
@@ -1825,7 +1887,7 @@ impl Node {
                 // Routed pairing reports the serve's own addresses: they
                 // outlive this exchange, unlike a one-shot endpoint's.
                 let mut roads = endpoint::local_addrs(ep);
-                roads.extend(self.relays().iter().cloned());
+                roads.extend(self.published_relays(ep));
                 match self.pair_with(ep, &ticket, roads).await {
                     Ok(name) => ipc::Reply::Paired { name },
                     Err(why) => ipc::Reply::Refused { why },
@@ -2797,7 +2859,7 @@ impl Node {
             return Early::NotTaken;
         }
         self.hop_ahead(ep, d).await;
-        let Ok(mut addr) = endpoint::dial_addr(&d.id, &d.addrs, self.relays()) else {
+        let Ok(mut addr) = endpoint::dial_addr(&d.id, &d.addrs, &self.published_relays(ep)) else {
             return Early::NotTaken;
         };
         // A road this machine carries itself, as `dial_with` adds it.
@@ -8442,7 +8504,7 @@ impl Node {
         // Own relays join the ticket's: the issuer may sit behind a relay
         // it did not think to advertise.
         let mut relays = t.relays.clone();
-        relays.extend(self.relays().iter().cloned());
+        relays.extend(self.published_relays(ep));
         // **Asked beside the dial, read only if it times out** (UX-8):
         // whether any relay answers here is what tells 「no road out of
         // this machine」 — no network, or no relay it can reach — from
@@ -10739,7 +10801,10 @@ impl Node {
         if let Some(by) = by {
             within = within.min(by.saturating_duration_since(std::time::Instant::now()));
         }
-        self.dial_with(ep, id, direct, self.relays(), alpn, within).await
+        // This machine's own home among the relays tried (net-f): two
+        // machines homed on the same public relay meet there even while
+        // each one's row still names only its own list.
+        self.dial_with(ep, id, direct, &self.published_relays(ep), alpn, within).await
     }
 }
 
