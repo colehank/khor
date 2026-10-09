@@ -2,7 +2,8 @@
 // looked up at the last moment; unknown keys echo — an old face must
 // still render a session whose kind it has never heard of.
 import { avatar, category, cli, gui, hop, one, state } from "./gen/catalog";
-import { type HopLeg, isDown } from "./lib/topology";
+import type { DeviceRow } from "./gen/bindings/DeviceRow";
+import { type HopLeg, hopRoad, isDown } from "./lib/topology";
 export { hopRoad } from "./lib/topology";
 
 /**
@@ -149,6 +150,23 @@ export function connectionKeyWord(key: string): string | null {
   if (key.startsWith("via:")) return gui.add_step_via(key.slice("via:".length));
   if (key !== "") return hopWord(key);
   return null;
+}
+
+/**
+ * **The road and how long it takes, in one phrase** (the browser pill's
+ * machines, sb-a 2026-10-09): 「本机」「直连 23 ms」「中继 140 ms」「通过
+ * hinton 29 ms」. The word is `connectionKeyWord(connectionKey(row))`, the
+ * row's and the filter's one derivation; the latency only on a live wire
+ * (a satellite's is its sponsor's road, a hop's the two legs added).
+ * `net-via` is the catalog's 「{0} {1}」, reused: the catalog keeps one
+ * key per text.
+ */
+export function reachWord(row: DeviceRow, rows: readonly DeviceRow[]): string | null {
+  const said = connectionKeyWord(connectionKey(row));
+  if (said === null || row.me || row.paused) return said;
+  const live = row.hop === "direct" || row.hop === "relay" || row.hop === "forwarded" || !!row.sponsor;
+  const ms = !live ? null : row.hop === "forwarded" ? (hopRoad(row, rows)?.ms ?? row.rtt_ms) : row.rtt_ms;
+  return typeof ms === "number" ? gui.net_via(said, latency(ms)) : said;
 }
 
 /** A leg's line: 「iPhone → turing 直连 26 ms」. */

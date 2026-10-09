@@ -1676,7 +1676,11 @@ export type RoomColumn = "session-side" | "ws-sessions";
  * them by the window's own factor; a number measured on the glass must
  * not be sent as a physical one.
  */
-export const widenWindow = (column: RoomColumn, w: number) => roomAsk("widen", { column, w: Math.round(w) });
+/** `least` (sb-a, 2026-10-09): the narrowest the column takes before the
+    window moves left for it — where the right edge has at least that,
+    the answer is what the right edge had and the window stays put. */
+export const widenWindow = (column: RoomColumn, w: number, least?: number) =>
+  roomAsk("widen", { column, w: Math.round(w), ...(least !== undefined ? { least: Math.round(least) } : {}) });
 /** What `widenWindow` took for `column`, given back; answers the width
     given back, once the page has it. */
 export const giveBackWindow = (column: RoomColumn) => roomAsk("unwiden", { column });

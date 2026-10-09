@@ -2718,6 +2718,8 @@ page-address = "输入网址"
 page-none = "没有打开的网页"
 page-none-how = "点击上方的 ＋，打开一个网页"
 page-machine = "选择机器"
+# 浏览药丸的建议列表(sb-a, 2026-10-09):选定机器后,列表上方的说明,下面是那台机器最近打开的网址。
+page-recent-on = "{0} 最近打开"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
 nav-order-note = "前四项显示在底部，其余在「更多」里"

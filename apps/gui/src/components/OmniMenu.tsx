@@ -17,6 +17,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { hear, hideMenu, inApp, menuPick, menuRows, showMenu, sizeMenu } from "@/api";
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { MachineAvatar } from "@/components/Avatar";
+import { IconBrowser, IconCheck } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 /** One thing the list can be narrowed by. `key` is the node's own group
@@ -36,6 +37,20 @@ export type Candidate = {
   face?: Avatar | null;
   hint?: string;
   dim?: boolean;
+  /** **The letters typed, heavy in the label** (the browser pill, sb-a
+      2026-10-09: 「类似目录选择」): where the match starts and how long
+      it is. Two numbers rather than markup, because the rows cross to
+      the floated window as data. */
+  mark?: [number, number];
+  /** A fact about the row, at its end: a machine's road (「直连 23 ms」),
+      an address's age (「3 小时前」). Unlike `hint` it says nothing about
+      where the row came from, so the row is not dimmed. */
+  aside?: string;
+  /** The one that is already chosen, ticked (the pill's face pressed:
+      the current machine). */
+  on?: boolean;
+  /** A glyph where a face would stand: `page`, an address. */
+  glyph?: "page";
 };
 
 /**
@@ -60,6 +75,9 @@ export type OmniAxis = {
   label: string;
   candidates: Candidate[];
   role?: "chip" | "text";
+  /** What the axis says in its rows' place when it has none (「没有匹配
+      项」); an axis with none and no sentence draws nothing. */
+  empty?: string;
 };
 
 /** The whole of what a menu is showing, as it crosses to the window that
@@ -115,6 +133,11 @@ export function OmniMenu({
               {a.label}
             </div>
           )}
+          {a.candidates.length === 0 && a.empty && (
+            <div data-omni-empty className="px-row py-2 text-body text-muted-foreground">
+              {a.empty}
+            </div>
+          )}
           {a.candidates.map((c) => {
             const n = flat.indexOf(c);
             return (
@@ -149,9 +172,32 @@ export function OmniMenu({
                 onClick={() => onPick(c.key)}
               >
                 {c.face !== undefined && c.face !== null && (
-                  <MachineAvatar face={c.face} className="size-kind-mark" />
+                  <MachineAvatar face={c.face} className="size-kind-mark flex-none" />
                 )}
-                <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                {c.glyph === "page" && <IconBrowser className="size-kind-mark flex-none text-muted-foreground" />}
+                <span className="min-w-0 flex-1 truncate">
+                  {c.mark ? (
+                    <>
+                      {c.label.slice(0, c.mark[0])}
+                      <span data-omni-mark className="font-title">
+                        {c.label.slice(c.mark[0], c.mark[0] + c.mark[1])}
+                      </span>
+                      {c.label.slice(c.mark[0] + c.mark[1])}
+                    </>
+                  ) : (
+                    c.label
+                  )}
+                </span>
+                {c.aside && (
+                  <span data-omni-aside className="flex-none text-caption tabular-nums text-muted-foreground">
+                    {c.aside}
+                  </span>
+                )}
+                {c.on && (
+                  <span data-omni-on className="flex flex-none">
+                    <IconCheck className="size-affordance" />
+                  </span>
+                )}
                 {/* Where it came from, when it came from memory
                     rather than from the machine. It rides the row it
                     describes — there is nowhere else for it to be
@@ -196,9 +242,15 @@ export function useFloatedMenu(
   const [able, setAble] = useState(inApp);
   const said = useRef(onPick);
   said.current = onPick;
-  useEffect(() => hear<string>("menu:pick", (key) => said.current(key)), []);
+  /** **A press is this box's only while this box's rows are up**: the
+      window and its `menu:pick` are the app's one, and every box with a
+      floated menu hears it — the browser pill's field and a search box
+      can both be mounted (sb-a, 2026-10-09). */
+  const showing = useRef(false);
+  useEffect(() => hear<string>("menu:pick", (key) => showing.current && said.current(key)), []);
 
   const on = float && able;
+  showing.current = on && rows !== null;
   // The rows are rebuilt on every render, so the effect below is keyed on
   // what is *in* them. Keyed on the object it would ask the app to move a
   // window on every keystroke that changed nothing.
