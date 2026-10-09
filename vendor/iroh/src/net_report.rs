@@ -706,6 +706,22 @@ impl Client {
         }
 
         if do_full {
+            // khor patch 14: a full report takes the QAD shortcut below only
+            // once every relay that serves no QAD has answered its HTTPS
+            // probe (or its probes ended, which ends this loop). Upstream
+            // stopped at two QAD answers, before such a relay was ever
+            // measured, so it could never become home again: MacLab on
+            // 2026-10-09, once its proxy let n0's QAD through, left a 5 ms
+            // relay for one 1-4 s away for good.
+            let unmeasured = self
+                .relay_map
+                .relays::<Vec<_>>()
+                .iter()
+                .filter(|r| r.quic.is_none())
+                .any(|r| !report.relay_latency.iter().any(|(typ, url, _)| typ == Probe::Https && url == &r.url));
+            if unmeasured {
+                return num_https >= num_relays;
+            }
             // Full report, require more probes
             match (state.have_v4, state.have_v6) {
                 (true, true) => {

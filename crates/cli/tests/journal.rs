@@ -121,6 +121,23 @@ async fn a_relay_outage_is_journalled_and_the_report_holds_no_secret() {
     let late = dialled_back.saturating_sub(homes_back);
     eprintln!("[journal] the later home relay connected again; the first dial through came {late} ms after");
     assert!(late < 5_000, "the dial came {late} ms after the relay was back");
+    // **A redial that carries its request is one round trip** (net-g): a
+    // client sent OBSERVED_ADDRESS in 0-RTT, the far side closed on it,
+    // and every such dial waited ~6 s for the closed connection to drain
+    // (vendor/noq-proto/KHOR.md, patch 2). Loopback: 8–12 ms, or about a
+    // second when the first flight is lost around the relay coming back
+    // (one retransmit, measured 1012 ms once in four runs).
+    let early: Vec<u64> = [&ra.0, &rb.0]
+        .iter()
+        .flat_map(|h| khor_node::journal::read(h, None, 0))
+        .filter_map(|e| match e.what {
+            What::Dial { won: Some(khor_node::journal::Won::Early), ms, .. } => Some(ms),
+            _ => None,
+        })
+        .collect();
+    eprintln!("[journal] dials that carried their request: {early:?} ms");
+    assert!(!early.is_empty(), "a dial carried its request");
+    assert!(early.iter().all(|ms| *ms < 3_000), "a dial that carried its request took {early:?} ms");
     // On the side that forgave: the other may have been dialled first.
     assert!(
         [&ra.0, &rb.0].iter().any(|h| {

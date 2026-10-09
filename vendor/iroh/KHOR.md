@@ -12,7 +12,21 @@
 
 ## 补丁
 
-十三处。
+十四处。
+
+### 14. `src/net_report.rs`：完整报告要等不答 QAD 的中继量完（2026-10-09，NET-DIRECT，net-f）
+
+上游的完整报告一拿到两个 IPv4 QAD 回答就停掉其余探测（`have_enough_reports`），不答 QAD 的中继（khor 自己的
+三台都是 `quic = None`）的 HTTPS 探测还没回来就被丢下，这一轮报告里没有它，于是永远当不了家。MacLab 10-09：
+代理改走 DIRECT 后 n0 的 aps1、euc1 都答 QAD，11:36:41 起家一直是 aps1（经 TUN 握 TLS 0.75–4.1 秒），
+北京（18 毫秒）再没被量过；补丁 11 只管增量报告，管不到这里。补丁：完整报告里，只要还有不答 QAD 的中继没有
+HTTPS 延迟，就不走两个 QAD 的捷径（仍可按「每台都有 HTTPS」收场）；它的探测都结束了这一轮自然收场。
+代价：不答 QAD 的中继若是死的，完整报告要等它的三次探测超时才定家。改动约 15 行。
+测试：`crates/net/tests/qad_home.rs`（net-g）。两台答 QAD 的替身（`KHOR_PUBLIC_RELAYS` 的 `url|端口`，
+`localhost` 自签证书，每个方向加 100 毫秒）加一台不答 QAD 的明文中继；打补丁前家是替身（报告 210 毫秒就收场，
+没有 HTTPS 一项），打补丁后家是明文中继（同样 210 毫秒，它的 HTTPS 1–2 毫秒已在报告里）。注意：上游的捷径看
+netwatch 的 `have_v6`，一个 ULA（如 Tailscale 的 fd7a::）就算有 IPv6，这时捷径还要一个 v6 的 QAD 回答。
+上游 1.3.0 没有对应改动，升级 iroh 时要重新打。
 
 ### 13. `src/socket/remote_map/remote_state.rs`、`src/socket.rs`、`src/endpoint.rs`：转连的路断了，当场关掉自定义路径（2026-10-09，NET-DIRECT）
 
