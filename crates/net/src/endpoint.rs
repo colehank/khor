@@ -360,6 +360,10 @@ pub const BIND_IP_ENV: &str = "KHOR_BIND_IP";
 /// can home on a public relay that is in no list it keeps — MacLab on
 /// n0's aps1, 2026-10-09 — and a test needs that shape on loopback
 /// (`crates/cli/tests/home_relay.rs`). Never set by khor.
+///
+/// An entry written `url|port` serves QUIC address discovery on that UDP
+/// port, as n0's relays do on 7842; a bare url serves none, as khor's own
+/// (`crates/net/tests/qad_home.rs`).
 pub const PUBLIC_RELAYS_ENV: &str = "KHOR_PUBLIC_RELAYS";
 
 /// **The relays a machine publishes: its live home first, then its own
@@ -690,13 +694,22 @@ fn full_relay_map(relays: &[Relay], n0: bool) -> iroh::RelayMap {
     let named = std::env::var(PUBLIC_RELAYS_ENV).ok();
     if n0 || named.is_some() {
         let public: Vec<std::sync::Arc<iroh::RelayConfig>> = match named {
-            Some(named) => relay_map(
-                &named
-                    .split(',')
-                    .map(|u| Relay { url: u.trim().to_owned(), token: None })
-                    .collect::<Vec<_>>(),
-            )
-            .relays(),
+            Some(named) => named
+                .split(',')
+                .filter_map(|entry| {
+                    let (url, qad) = match entry.split_once('|') {
+                        Some((url, port)) => (url, port.trim().parse::<u16>().ok()),
+                        None => (entry, None),
+                    };
+                    let url = url.trim().parse::<iroh::RelayUrl>().ok()?;
+                    let mut c = iroh::RelayConfig::from(url);
+                    match (c.quic.as_mut(), qad) {
+                        (Some(q), Some(port)) => q.port = port,
+                        _ => c.quic = None,
+                    }
+                    Some(std::sync::Arc::new(c))
+                })
+                .collect(),
             None => iroh::defaults::prod::default_relay_map().relays(),
         };
         for r in public {
