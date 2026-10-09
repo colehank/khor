@@ -777,6 +777,14 @@ fn unroutable(addr: &iroh::TransportAddr) -> bool {
 /// hints carry them mixed. Unparseable entries are skipped, not fatal:
 /// they come from tickets and stored hints, and one typo must not kill
 /// the dial.
+///
+/// **A peer's relay is dialled whoever runs it** (the owner, 2026-10-09:
+/// 「两边总能找到对方」). A machine with 「only mine」 on still reaches a
+/// peer through the relay that peer published, n0's public ones included:
+/// only-mine decides where this machine homes and what it publishes, not
+/// which relay may carry a dial to somebody else. iroh connects to any
+/// relay url in the address; a key goes only to a relay in this
+/// machine's own map.
 pub fn dial_addr(id_hex: &str, direct: &[String], relays: &[String]) -> Result<iroh::EndpointAddr> {
     let id: iroh::EndpointId = id_hex.parse().context(msg::not_a_machine_id_short())?;
     let mut addr = iroh::EndpointAddr::new(id);
