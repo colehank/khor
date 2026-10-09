@@ -2228,7 +2228,8 @@ impl Connection {
             // (application datagrams).
             let frame_space_1rtt =
                 packet_size.saturating_sub(self.predict_1rtt_overhead(pn, path_id));
-            can_send |= self.can_send_1rtt(path_id, frame_space_1rtt);
+            // khor patch 2: a 0-RTT packet (no 1-RTT keys yet) cannot carry OBSERVED_ADDRESS.
+            can_send |= self.can_send_1rtt(path_id, frame_space_1rtt, !space_has_crypto);
         }
 
         can_send.close = connection_close_pending && space_has_crypto;
@@ -6323,7 +6324,13 @@ impl Connection {
         }
 
         // OBSERVED_ADDR
-        if !scheduling_info.is_abandoned
+        // khor patch 2 (vendor/noq-proto/KHOR.md): never in 0-RTT. The frame is 1-RTT only (`Frame::is_1rtt`) and a
+        // server closes the connection on it with PROTOCOL_VIOLATION; a client resuming
+        // with address discovery remembered set `pending.observed_address` from the
+        // resumed parameters and wrote it into its first 0-RTT packet, so every early dial
+        // waited out the server's draining connection (~6 s) and the 0-RTT was lost.
+        if !is_0rtt
+            && !scheduling_info.is_abandoned
             && space_id == SpaceId::Data
             && path.pending.observed_address
         {
@@ -6954,12 +6961,12 @@ impl Connection {
     ///
     /// See also [`PacketSpace::can_send`] which keeps track of all other frame types that
     /// may need to be sent.
-    fn can_send_1rtt(&self, path_id: PathId, max_size: usize) -> SendableFrames {
+    fn can_send_1rtt(&self, path_id: PathId, max_size: usize, zero_rtt: bool) -> SendableFrames {
         let network_path = self.path_data(path_id).network_path;
         let space_specific = self
             .paths
             .get(&path_id)
-            .is_some_and(|path| path.data.pending_challenge || !path.data.pending.is_empty())
+            .is_some_and(|path| path.data.pending_challenge || (!zero_rtt && !path.data.pending.is_empty()))
             || self.spaces[SpaceKind::Data]
                 .number_spaces
                 .get(&path_id)

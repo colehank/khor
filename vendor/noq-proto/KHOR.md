@@ -9,7 +9,21 @@
 
 ## 补丁
 
-一处：BBRv3 不知道连接闲下来了（2026-10-04，NET-5 轮）。
+两处。
+
+### 2. `src/connection/mod.rs`：OBSERVED_ADDRESS 不进 0-RTT（2026-10-09，NET-DIRECT，net-g）
+
+khor 从 f6d6d7fd 起双向打开地址观察（`endpoint::transport()`）。客户端带着记住的传输参数恢复会话时，
+`set_peer_params` 把 0 号路径的 `pending.observed_address` 置上，`populate_packet` 只看 `SpaceId::Data`，
+就把这一帧写进了第一个 0-RTT 包。这一帧只许在 1-RTT 里（`Frame::is_1rtt`），对方以 PROTOCOL_VIOLATION
+关掉连接，客户端听不到，重传的 Initial 落进对方正在排空的连接，约 6 秒后才重新握手，0-RTT 也丢了。
+测得：回环中继上每一次「握手时带着请求」的拨号 6012–6022 毫秒（打补丁后 8–14 毫秒）；
+`crates/cli/tests/journal.rs` 的 `a_relay_outage…` 因此时红时绿。
+
+改两处：写 OBSERVED_ADDR 的条件加 `!is_0rtt`；`can_send_1rtt` 在 0-RTT 时不把这一帧算作有东西可发，
+否则 debug 构建在「只写了 ACK」的断言上崩（测到过：常驻进程因此重启）。上游 1.3.0 同样如此，升级时要重新看。
+
+### 1. BBRv3 不知道连接闲下来了（2026-10-04，NET-5 轮）
 
 上游 `n0-computer/noq` 还没有对应的修复（截至 2026-10-04 最新 1.3.0；它开着的 #802 修的是另一件事：
 初始 pacing 太快）。修复在 MoQ 的分支 `moq-dev/noq` #5（合于 2026-09-25，进了 `moq-noq 1.3.1`），
