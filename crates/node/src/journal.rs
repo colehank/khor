@@ -708,6 +708,20 @@ pub(crate) fn watch_ears(
                     // 56 lines for one 45 s cut. Connecting is not a change.
                     for (url, state, error) in &now {
                         if state == "connecting" {
+                            // **Except straight from connected**: an
+                            // established connection that drops is set
+                            // disconnected and at once connecting again, and
+                            // this watch sees only the latter — the aps1
+                            // redials every few minutes went unwritten
+                            // (audit/net-d.md g.4). It is a drop.
+                            let was = was_home.iter().find(|(u, ..)| u == url).map(|(_, s, _)| s.as_str());
+                            if was == Some("connected") {
+                                let down = "disconnected".to_owned();
+                                wires.note(None, What::Home { url: Some(url.clone()), state: down.clone(), error: error.clone() });
+                                was_home.retain(|(u, ..)| u != url);
+                                was_home.push((url.clone(), down, error.clone()));
+                                down_at.get_or_insert_with(std::time::Instant::now);
+                            }
                             continue;
                         }
                         let was = was_home.iter().find(|(u, ..)| u == url).map(|(_, s, _)| s.as_str());
