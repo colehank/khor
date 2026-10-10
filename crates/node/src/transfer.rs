@@ -387,6 +387,7 @@ mod tests {
             moved: 0,
             landed: Vec::new(),
             why: String::new(),
+            via: String::new(),
         });
         m
     }

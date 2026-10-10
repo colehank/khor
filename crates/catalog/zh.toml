@@ -1660,6 +1660,14 @@ machine-unreachable-timeout = "无法连接 {0}（超时）——尝试过的路
 offerer-unreachable-timeout = "无法连接出让方（超时）"
 offerer-unreachable = "无法连接出让方：{0}"
 offerer-left-table = "出让方已不在机器列表中"
+# 广播的文件先向发送者取，取不到再向已收下它的机器（持有者）取（BCAST-BRIEF）。
+# 都取不到时，失败原因逐台写出试过的机器，用 take-tried-separator 连起来。
+take-sender-down = "发送者 {0} 不通"
+take-holder-down = "持有者 {0} 不通"
+take-sender-failed = "发送者 {0}：{1}"
+take-holder-failed = "持有者 {0}：{1}"
+take-no-holder = "其他机器都还没有收下这个文件"
+take-tried-separator = "；"
 # Two reads of one table can straddle a removal; the second read owns
 # this word. Not recipient-not-in-table: nothing is being received.
 machine-left-table = "这台机器已不在机器列表中：{0}"

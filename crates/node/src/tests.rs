@@ -477,6 +477,7 @@ fn an_incoming_file_is_busy_on_the_chat_row_until_it_lands() {
         moved: 6,
         landed: vec![r.join("khor-drop").join("drop.bin").display().to_string()],
         why: String::new(),
+        via: String::new(),
     };
     n.chat.set_fate(n.name(), &msg_id, &landed).unwrap();
     let row = chat_row(&n);
@@ -551,6 +552,7 @@ fn land_planted(n: &Node, far: &ChatDoc, r: &std::path::Path) {
         moved: 6,
         landed: vec![r.join("khor-drop").join("drop.bin").display().to_string()],
         why: String::new(),
+        via: String::new(),
     };
     n.chat.set_fate(n.name(), &msg_id, &fate).unwrap();
 }
