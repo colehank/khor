@@ -149,3 +149,86 @@ fn kept_per_round_by_peers() {
         println!("peers {peers:>5}: {:.1} KB kept per round", (live_kb() - before) as f64 / 100.0);
     }
 }
+
+/// **The re-seed, measured** (peers-b, PEERS-BRIEF step 3): a devices pile
+/// on disk with `PEERS_RESEED` writers named as khor named them (full
+/// width, so the version vector is as long as the owner's), each forked
+/// from a stale copy and compacted to one snapshot; then the sync
+/// request's version, a load and the first concurrent import with another
+/// machine's copy, before and after `store::load_pile` rebuilds it. A
+/// temp directory, never a real store.
+///
+/// `cargo test --release -p khor-sync --test peers_memory -- --ignored --nocapture reseed`
+#[test]
+#[ignore]
+fn reseed_before_and_after() {
+    use khor_sync::devices::DeviceDoc;
+    use khor_sync::store::{Doc, Loaded, load, load_pile};
+    use khor_sync::wire::version_b64;
+    const PEERS_RESEED: u64 = 1515;
+    let _one = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let root = std::env::temp_dir().join(format!("khor-peers-reseed-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let (pile, far) = (root.join("devices"), root.join("far"));
+    std::fs::create_dir_all(&pile).unwrap();
+    let all = DeviceDoc::open(7_000_001).unwrap();
+    let mut stale = all.snapshot().unwrap();
+    for p in 0..PEERS_RESEED {
+        let w = DeviceDoc::open((p + 1).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 1).unwrap();
+        w.merge(&stale).unwrap();
+        let row = format!("{:064x}", p % 12);
+        for k in 0..3 {
+            w.upsert(&row, &format!("m{}", p % 12), &[format!("10.0.{}.{k}:{}", p % 7, 40000 + p)]).unwrap();
+        }
+        all.merge(&w.changes_since(&all.version()).unwrap()).unwrap();
+        if p % 3 == 0 {
+            stale = all.snapshot().unwrap();
+        }
+    }
+    let snap = all.snapshot().unwrap();
+    std::fs::write(pile.join("snap-0000000000000001-00000000.loro"), &snap).unwrap();
+    eprintln!("synthetic pile: {PEERS_RESEED} writers, snapshot {} KB", snap.len() / 1024);
+
+    let measure = |label: &str, open: &dyn Fn(&std::path::Path, u64) -> Loaded<DeviceDoc>| {
+        // Another machine's copy: the blocks, not this machine's pens.
+        let _ = std::fs::remove_dir_all(&far);
+        std::fs::create_dir_all(&far).unwrap();
+        for e in std::fs::read_dir(&pile).unwrap().flatten() {
+            if !e.file_name().to_string_lossy().starts_with(".pen-") {
+                std::fs::copy(e.path(), far.join(e.file_name())).unwrap();
+            }
+        }
+        let h0 = live_kb();
+        let t = std::time::Instant::now();
+        let here = open(&pile, 0xAA);
+        let load = t.elapsed();
+        let h1 = live_kb();
+        let there = open(&far, 0xBB);
+        let have = version_b64(&here.store, &here.doc);
+        here.doc.upsert(&"aa".repeat(32), "here", &["10.9.9.9:1".to_owned()]).unwrap();
+        there.doc.upsert(&"bb".repeat(32), "there", &["10.9.9.8:1".to_owned()]).unwrap();
+        let delta = there.doc.changes_since(&here.doc.version()).unwrap();
+        let h2 = live_kb();
+        let t = std::time::Instant::now();
+        here.doc.merge(&delta).unwrap();
+        let first = t.elapsed();
+        let h3 = live_kb();
+        eprintln!(
+            "{label}: names {:>5}, request version {:>6} B, load {:>7.1?} heap +{:>5} KB, first concurrent import {:>7.1?} heap +{:>5} KB",
+            here.doc.version().len(),
+            have.len(),
+            load,
+            h1 - h0,
+            first,
+            h3 - h2,
+        );
+    };
+    measure("before", &|d, p| load::<DeviceDoc>(d, p).unwrap());
+    let t = std::time::Instant::now();
+    let l = load_pile::<DeviceDoc>(&pile, 0xCC).unwrap();
+    eprintln!("re-seed: {:.1?}, epoch {}, names {}", t.elapsed(), l.store.epoch(), l.doc.version().len());
+    assert_eq!(l.doc.version().len(), 1);
+    drop(l);
+    measure("after ", &|d, p| load_pile::<DeviceDoc>(d, p).unwrap());
+    let _ = std::fs::remove_dir_all(&root);
+}
