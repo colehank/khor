@@ -1693,14 +1693,13 @@ pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
 
 /// Leaves a line in a machine's window — the call `khor tell` makes.
 ///
-/// A line in the broadcast (`wide/all`) nudges a round with every
-/// machine at once (STORE-BRIEF phase 3: 发了就同步), where a machine's
-/// window waits for the beat.
+/// Every line nudges a round with every machine at once (STORE-BRIEF
+/// phase 3: 发了就同步), a machine's window as much as the broadcast —
+/// otherwise it waits for the beat, up to 30 s on a machine without a
+/// face.
 pub fn tell(root: &Path, machine: &str, text: &str) -> Result<(), String> {
     open(root)?.tell(machine, text)?;
-    if machine.starts_with(khor_node::wide::WIDE) {
-        sync_soon(root);
-    }
+    sync_soon(root);
     Ok(())
 }
 

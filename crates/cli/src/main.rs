@@ -3933,16 +3933,8 @@ fn tell(rest: &[String]) -> Result<(), String> {
     if text.is_empty() {
         return Err(usage_text().into());
     }
-    let n = node()?;
-    let id = n.tell(machine, &text.join(" "))?;
+    let id = told_now(machine, &text.join(" "))?;
     println!("{id}");
-    // A line in the broadcast goes to every machine now, not at the next
-    // beat (STORE-BRIEF phase 3). Best effort, as `send`'s round.
-    if machine.starts_with("wide/")
-        && let Ok(rt) = rt()
-    {
-        let _ = rt.block_on(n.sync_now());
-    }
     Ok(())
 }
 
@@ -3992,9 +3984,17 @@ fn send(rest: &[String]) -> Result<(), String> {
         }
         return Ok(());
     }
-    let id = node()?.tell(machine, &tail.join(" "))?;
+    let id = told_now(machine, &tail.join(" "))?;
     println!("{id}");
     Ok(())
+}
+
+/// A line told and a round with every machine now, not at the next
+/// beat (`Node::tell_now`): the receiver reads it while the sender is
+/// still looking.
+fn told_now(machine: &str, text: &str) -> Result<String, String> {
+    let n = node()?;
+    rt()?.block_on(n.tell_now(machine, text))
 }
 
 /// A conversation file that failed or was cancelled, sent again: its
