@@ -202,8 +202,8 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     // SAFETY: as in `bind`.
     unsafe { std::env::set_var(endpoint::RELAY_SUCCESSOR_ENV, format!("{plain}|{tls}")) };
     let relays = [
-        Relay { url: plain.clone(), token: Some("plain-key".into()) },
-        Relay { url: tls.clone(), token: Some("tls-key".into()) },
+        Relay { url: plain.clone(), token: Some("plain-key".into()), ..Relay::default() },
+        Relay { url: tls.clone(), token: Some("tls-key".into()), ..Relay::default() },
     ];
 
     // The TLS relay not up yet: home on the plain one, as before.
@@ -275,8 +275,21 @@ async fn the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops() 
     drop(tls_relay);
     let back = until_home(&near, &plain, Duration::from_secs(60)).await;
     until_home(&far, &plain, Duration::from_secs(60)).await;
-    assert_eq!(echo(&near, &far, &plain).await, Ok(()), "and they meet there again");
     eprintln!("[https] back on the plain relay {back:?} after the TLS one stopped");
+    // The far → near echo just above closed as the TLS relay stopped, so
+    // its close never reached near: near holds that connection until a
+    // relay path's idle timeout (30 s) ends it, and while it lives iroh
+    // sends a new dial's first packets only on its path, the dead relay
+    // (net-h, audit/net-d.md). Once the home moves within those 30 s, the
+    // two meet again when it ends.
+    let began = Instant::now();
+    loop {
+        match echo(&near, &far, &plain).await {
+            Ok(()) => break,
+            Err(e) => assert!(began.elapsed() < Duration::from_secs(35), "and they meet there again: {e}"),
+        }
+    }
+    eprintln!("[https] met again on the plain relay {:?} after both were home there", began.elapsed());
     for ep in [near, far, old, fresh] {
         ep.close().await;
     }
@@ -289,8 +302,8 @@ fn the_script_admits_by_the_key_khor_carries() {
     let script = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/relay-https.sh")).unwrap();
     let carried = endpoint::KHOR_RELAYS
         .iter()
-        .find(|(url, _)| *url == endpoint::BEIJING_TLS)
-        .and_then(|(_, key)| *key)
+        .find(|(url, _, _)| *url == endpoint::BEIJING_TLS)
+        .and_then(|(_, _, key)| *key)
         .unwrap();
     assert!(script.contains(&format!("TOKEN=\"{carried}\"")), "the script's TOKEN is not khor's");
     let (domain, port) = endpoint::BEIJING_TLS.trim_start_matches("https://").split_once(':').unwrap();

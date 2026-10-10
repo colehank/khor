@@ -12,7 +12,36 @@
 
 ## 补丁
 
-十四处。
+十六处。
+
+### 16. `src/socket.rs`、`src/endpoint.rs`：公开「大的网络变化」（2026-10-09，net-r）
+
+上游只有 `Endpoint::network_change()`：交给网络监视器去判断，网卡没变就什么也不做。回到前台的手机多半还在原来那张网上，可 socket 可能被系统收回、中继连接和对端的路径可能在冻住时死了。上游测试里有现成的 `force_network_change(is_major)`（`#[cfg(test)]`），做的正是要的那一套：在原端口上重绑 UDP、查中继连接、重置 DNS、重测网络、通知 QUIC 去 ping 每条路径、打洞。改为：去掉那两处 `#[cfg(test)]`，加公开的 `Endpoint::network_change_major()` 调它（端点已关就不做）。khor 回前台时用它代替换新端点（`link.rs` 的 `Wake::Resume`）。测：`cargo test -p khor-node --test resume a_resume_keeps_the_ears`。
+
+### 15. `src/socket/transports/relay/actor.rs`：一条中继连接不再卡住所有中继；慢的 pong 不算断（2026-10-09，NET-DIRECT，net-g）
+
+MacLab 10-09 约 11:36 起，经中继什么也发不出去：iPhone 的 Initial 从家中继 aps1 进来（13:07 测得约 57 KB），
+一个字节也没回；每分钟一次的拨号从没打开过北京或 pk 的连接；家也再没换过。原因是三处没有时限的等待：
+
+1. 连接 actor 空闲 60 秒正常退出时 `client_sink.close().await`。tokio-websockets 的 close 要读到服务器关流为止，
+   回程死了（代理 TUN 把 TCP 一直托着，euc1 那条 5233 进 / 50245 出冻结了 40 多分钟）就永远等下去；
+   这期间它不再应答任何消息，收件箱却开着，不会被回收。
+2. 中继 actor 给一台没有连接的中继发数据报前，挨个问现有连接「见过这台机器没有」（`HasEndpointRoute`），
+   `rx.await` 没有时限：问到上面那条就永远等下去，整个中继 actor 跟着停，所有中继的发送、换家都停了。
+3. 某条连接的队列满了，中继 actor 也一直等它腾出位子。
+
+改为：close 最多等 1 秒；每条连接的回答最多等 250 毫秒，不答当作没见过；队列满了最多等 1 秒，之后丢掉这批
+数据报（同 UDP 丢包）。
+
+另一处（同一文件）：周期 ping 的 pong 时限从「上一次 pong 的 3 倍，至少 0.5 秒」改为固定 5 秒（上游的最大值）。
+经 TUN 到 aps1 的 pong 在 124–976 毫秒之间跳，临时节点 6.5 分钟里被判断开、重拨了 3 次，每次约 4 秒，
+期间中继告诉对方这台机器走了。网络变化后的那次快速检查仍按 RTT。
+
+测试：`crates/net/tests/relay_stuck.rs`（一条吞掉 Close、此后两个方向都不再转发的路；之后 alpha 要能拨到第三台
+中继上的 gamma，回环中继上的 delta 要能拨到 alpha 的家），打补丁前两项都超时，之后 7–14 毫秒；
+`crates/net/tests/relay_jitter.rs`（隔一个 pong 压 700 毫秒），两分钟里打补丁前连了 8 次，之后 1 次。
+上游 1.3.0 三处相同，升级时要重新打；中继服务器那一侧（iroh-relay 的 `server/client.rs`）对客户端也用 3 倍 RTT，
+khor 自己的中继要改得 vendor iroh-relay，没做。
 
 ### 14. `src/net_report.rs`：完整报告要等不答 QAD 的中继量完（2026-10-09，NET-DIRECT，net-f）
 
@@ -56,6 +85,13 @@ iroh 随即重新选路。连接只剩这一条路径时 noq 拒绝关，照旧�
 （5 分钟一次）量到北京、住北京，25 秒后的增量报告只量到 n0 的 aps1、住 aps1（audit/net-d.md §1.4）。补丁：
 **增量**报告没有量到当前的家，就留在家里；完整报告照旧可以换（家真死了，下一次完整报告或网络大变时离开）。
 函数多一个参数 `full`，上游自己的表测试跟着传 `true`。改动约 15 行。上游没有对应 PR，升级 iroh 时要重新打。
+
+**补一处（2026-10-09，net-h）**：`full` 原先只看 iroh 的 `do_full`，可不是 `do_full` 的报告也可能把每台中继都量一遍：
+上一轮什么都没量到时，`ProbePlan::with_last_report` 退回初始计划。中继都不答 QAD 时报告就是这样一轮空、一轮全量交替。
+家中继停了以后，全量那一轮只量到别的中继，补丁 11 却当它是增量报告，把死了的家留住，直到 5 分钟一次的完整报告。
+`crates/cli/tests/relay_https.rs` 因此常红（TLS 中继停了 60 秒还住在它上面）。改为：`do_full`，或者计划是初始计划
+且每个探测都跑完了（没被 QAD 捷径截断），就算量全了。临时打点的一次运行：停后三轮全量报告都只量到明文中继，
+家都留在 TLS；改后第一轮全量报告就回到明文中继（35–48 秒）。
 
 ### 10. `src/socket/remote_map/remote_state.rs`、`src/socket.rs`：对端看到的地址（2026-10-09，NET-DIRECT）
 
@@ -127,6 +163,10 @@ TLS 那台启动后 44–50 秒住过去、它停了 40–46 秒住回明文那�
 当场就量。测试：`crates/cli/tests/relay_https.rs` 的
 `the_tls_relay_takes_over_renews_in_place_and_gives_way_when_it_stops`。上游没有对应 PR，
 升级 iroh 时要重新打。
+
+**补一处（2026-10-09，net-h）**：「量到了接班者」只认它的 HTTPS 回答，QAD 的回答不算。QAD 走 UDP，家中继却要靠
+TCP 来连；从 MacLab 到北京 TLS 中继的 TCP 在路上被重置（audit/pk-3341-dump.txt），UDP 却可能通，只凭 QAD 回答就把家
+搬过去，会搬到一台连不上的中继上。还没编译、没测（`crates/cli/tests/relay_qad.rs`，`#[ignore]`）。
 
 ### 4. `src/socket/transports/relay/actor.rs`、`src/socket.rs`、`src/endpoint.rs`：中继说谁走了（2026-10-04，NET-5 轮）
 

@@ -382,6 +382,14 @@ async fn a_backgrounded_resident_does_not_redial_until_it_resumes() {
     tokio::time::sleep(link::SYNC_EVERY * 2 + Duration::from_secs(1)).await;
     let during = a.wire_counts().await.unwrap().dialed;
     assert_eq!(during, before, "a backgrounded resident dialled");
+    // **Nor does a person's ask** (net-r): the face's last polls and a far
+    // terminal's rejoin, in the seconds before iOS freezes the app. Before,
+    // this dialled beta, which then dialled back and was refused.
+    let asked = timeout(Duration::from_secs(30), a.ls_of("beta", ""))
+        .await
+        .expect("an ask must come back");
+    assert!(asked.is_err(), "a resting phone asks nobody: it was answered");
+    assert_eq!(a.wire_counts().await.unwrap().dialed, during, "a person's ask dialled while resting");
 
     // Asked right after a resume is sent, before its ears are bound: the
     // question waits behind it, so the phone does not resume twice.
@@ -430,4 +438,134 @@ async fn the_pump_beats_slowly_with_no_face_and_at_once_when_one_arrives() {
     let gone = rounds().await;
     tokio::time::sleep(link::SYNC_EVERY * 2).await;
     assert_eq!(rounds().await, gone, "rounds after the face left");
+}
+
+/// **Back in front on the same ears** (net-r): a phone that went to the
+/// background and came back keeps its endpoint and its ports, so the far
+/// machine's next dial reaches it at once, with nothing refused. Before,
+/// every resume bound new ears on new ports and closed the old ones; a
+/// far dial in that moment went to the old ports (the only ones its
+/// table had) and was refused by the closing endpoint, then backed off —
+/// MacLab's journal, 2026-10-09 19:43 and 20:16.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_resume_keeps_the_ears_and_the_far_machine_reaches_it_at_once() {
+    let ra = root("front-a");
+    let rb = root("front-b");
+    let sa = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let serve_a = tokio::spawn(async move { sa.serve_resumable().await });
+    let sb = Node::open_as(rb.0.clone(), "beta").unwrap();
+    let serve_b = tokio::spawn(async move { sb.serve().await });
+    wait_for_endpoint_file(&ra.0).await;
+    wait_for_endpoint_file(&rb.0).await;
+    let a = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let b = Node::open_as(rb.0.clone(), "beta").unwrap();
+    timeout(Duration::from_secs(60), b.pair(&a.invite().unwrap()))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+    timeout(Duration::from_secs(60), a.sync_now())
+        .await
+        .expect("a round must come back")
+        .unwrap();
+    let dir = ra.0.join("front");
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.to_str().unwrap().to_owned();
+    let before = endpoint_json(&ra.0);
+
+    // To the background: beta's ask is refused, as before.
+    assert!(link::suspending(&ra.0).await);
+    let away = timeout(Duration::from_secs(30), b.ls_of("alpha", &path))
+        .await
+        .expect("an ask must come back");
+    assert!(away.is_err(), "control: a resting alpha refuses beta: {away:?}");
+
+    // Back in front, and beta asks at once.
+    let begun = Instant::now();
+    let resuming = link::resume(&ra.0).expect("alpha's serve takes a resume");
+    let mut asks = Vec::new();
+    let reached = loop {
+        let at = Instant::now();
+        let asked = timeout(Duration::from_secs(30), b.ls_of("alpha", &path))
+            .await
+            .expect("an ask must come back");
+        asks.push((at.duration_since(begun), at.elapsed(), asked.as_ref().err().cloned()));
+        if asked.is_ok() || begun.elapsed() > Duration::from_secs(20) {
+            break begun.elapsed();
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    let out = timeout(Duration::from_secs(60), resuming.synced())
+        .await
+        .expect("the round after resume must come back")
+        .unwrap();
+    println!("[front] beta reached alpha {reached:?} after the resume; asks: {asks:?}");
+    println!("[front] alpha's round: {out:?}");
+    let after = endpoint_json(&ra.0);
+    assert_eq!(after["addrs"], before["addrs"], "the same ears, on the same ports");
+    assert!(beta_heard(&out), "the resume's round reaches beta: {out:?}");
+    assert!(reached < Duration::from_secs(2), "beta reached alpha {reached:?} after the resume: {asks:?}");
+    assert!(
+        asks.iter().all(|(_, _, e)| e.is_none()),
+        "nothing refused or timed out after the resume: {asks:?}"
+    );
+    serve_a.abort();
+    serve_b.abort();
+}
+
+/// **A resume tells each machine's answer as it lands** (net-r): one
+/// machine that is not there holds the round for its whole dial, and
+/// nothing a person sees should wait on it. Alpha (the phone) has beta
+/// up and gamma gone; beta's answer arrives at once, well before the
+/// round is whole. Before, the round's outcomes came only all together,
+/// and the face's lists re-read after the slowest (13 s on the phone,
+/// 2026-10-10 03:48, lecun's 10 s dial).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_resume_tells_each_answer_before_the_slowest() {
+    let ra = root("each-a");
+    let rb = root("each-b");
+    let rg = root("each-g");
+    let sa = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let _serve_a = tokio::spawn(async move { sa.serve_resumable().await });
+    let sb = Node::open_as(rb.0.clone(), "beta").unwrap();
+    let _serve_b = tokio::spawn(async move { sb.serve().await });
+    let sg = Node::open_as(rg.0.clone(), "gamma").unwrap();
+    let serve_g = tokio::spawn(async move { sg.serve().await });
+    for r in [&ra, &rb, &rg] {
+        wait_for_endpoint_file(&r.0).await;
+    }
+    let a = Node::open_as(ra.0.clone(), "alpha").unwrap();
+    let b = Node::open_as(rb.0.clone(), "beta").unwrap();
+    let g = Node::open_as(rg.0.clone(), "gamma").unwrap();
+    for joiner in [&b, &g] {
+        timeout(Duration::from_secs(60), joiner.pair(&a.invite().unwrap()))
+            .await
+            .expect("pairing must not hang")
+            .unwrap();
+    }
+    timeout(Duration::from_secs(60), a.sync_now())
+        .await
+        .expect("a round must come back")
+        .unwrap();
+    // Gamma goes away for good.
+    serve_g.abort();
+    drop(g);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    assert!(link::suspending(&ra.0).await);
+    let begun = Instant::now();
+    let mut resuming = link::resume(&ra.0).expect("alpha's serve takes a resume");
+    resuming.ears().await.expect("alpha's ears");
+    let mut answers = Vec::new();
+    while let Some((name, r)) = timeout(Duration::from_secs(60), resuming.answered())
+        .await
+        .expect("answers must not hang")
+    {
+        answers.push((name, r.is_ok(), begun.elapsed()));
+    }
+    let out = resuming.synced().await.unwrap();
+    let whole = begun.elapsed();
+    println!("[each] answers {answers:?}; round whole in {whole:?}: {out:?}");
+    let beta = answers.iter().find(|(n, ok, _)| n == "beta" && *ok).expect("beta answered");
+    assert!(beta.2 < Duration::from_secs(2), "beta's answer came {:?} after the resume", beta.2);
+    assert_eq!(answers.len(), out.len(), "every machine of the round told");
 }

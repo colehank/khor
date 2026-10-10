@@ -377,7 +377,7 @@ usage: khor <verb>
                         web access on the LAN — see web)
   relay --dev | --tls-cert cert --tls-key key | --acme domain [--acme-contact email]
         [--token key | --only-mine] [--rate bytes/s] [--metrics addr]
-        [--bind addr] [--http addr] [--state dir] | --stats [--state dir]
+        [--bind addr] [--http addr] [--quic addr] [--state dir] | --stats [--state dir]
                         runs a relay on this machine (iroh-relay, the
                         same code). --dev is plain HTTP on port 3340 by
                         default; TLS takes a certificate you have, or
@@ -387,6 +387,9 @@ usage: khor <verb>
                         network's roster and not revoked (the same rule
                         every request here passes), no key typed
                         anywhere.
+                        --quic serves QUIC address discovery (UDP) with
+                        the relay's certificate; beside --dev,
+                        --tls-cert and --tls-key are for QUIC alone.
                         --rate limits each client. Metering keeps totals
                         only — per device how many connections and how
                         long online, plus the relay's bytes — in the
@@ -446,7 +449,7 @@ usage: khor <verb>
                         page reads the same answer); --fix runs one
                         check's remedy (checks that have one say so at
                         the end of their line)
-  journal [machine] [--minutes N] [--report] [--json]
+  journal [machine] [--minutes N] [--report] [--json] [--on machine]
                         the connection record: every dial this machine
                         made, the roads it tried, how it ended and the
                         step that failed, backoff, connections retired,
@@ -454,7 +457,9 @@ usage: khor <verb>
                         just it (with this machine's own events), the
                         last 60 minutes by default; --report saves that
                         span of every machine into one file to hand
-                        over, with no keys, tickets or host keys
+                        over, with no keys, tickets or host keys; --on
+                        reads another machine's record over the network
+                        (only its record files are fetched)
   invite                issues a one-time pairing ticket (requires
                         serve running)
   pair <ticket|->       joins the network with a ticket; - reads it
@@ -914,10 +919,12 @@ relay-admit-mine = "Admits: devices on this network's roster ({0} now)"
 relay-key-in-clear = "Note: over plain HTTP the shared key travels in the clear"
 relay-rate = "Rate limit: {0}/s per client"
 relay-rate-none = "Rate limit: none"
+relay-quic = "QUIC address discovery: UDP {0}"
 relay-metrics = "Metrics: {0}"
 relay-meter = "Metering: {0}"
 relay-pick-mode = "Pick one: --dev (plain HTTP), --tls-cert with --tls-key, or --acme <domain>"
 relay-token-or-mine = "--token and --only-mine cannot be used together"
+relay-quic-needs-tls = "--quic needs a certificate: use it with --tls-cert and --tls-key (beside --dev, for QUIC alone), or --acme"
 relay-flag-unknown = "khor relay does not know this argument: {0}"
 relay-flag-needs-value = "{0} needs a value after it"
 relay-rate-bad = "--rate takes a whole number of bytes per second above 0: {0}"
@@ -1037,6 +1044,7 @@ inbound-too-big = "This incoming chunk is {0} KiB, over the pairing channel's pe
 delta-not-base64 = "This delta isn't base64: {0}"
 version-not-base64 = "This version number isn't base64: {0}"
 version-undecodable = "Can't decode version number: {0}"
+pile-other-epoch = "The other machine keeps {0} in format {1} and this machine in format {2}; nothing was merged. Syncing resumes once the older side is upgraded"
 cant-set-peer = "Can't set peer id: {0}"
 cant-export-changes = "Can't export delta: {0}"
 cant-export-snapshot = "Can't export snapshot: {0}"
@@ -1212,6 +1220,9 @@ peer-resumed = "Resumed talking to {0}; the next round catches it up"
 peer-already-paused = "Already paused with {0}. To resume: khor resume {0}"
 peer-not-paused = "Not paused with {0}. To pause: khor pause {0}"
 peer-paused-refusal = "paused from this side — to resume: khor resume <machine>"
+# A phone resting in the background asks nobody (net-r): its own
+# dials wait for the front, as the dials to it are refused.
+resting-no-dial = "The app is in the background and does not connect to other machines; it connects again when it returns to the front"
 # Reaching for pairing while paused. Both verbs need to send and
 # receive, so this is not 「it failed」 but 「this machine is not doing
 # that right now」 — refused by name, with the way out in it.
@@ -1592,6 +1603,8 @@ journal-home-down = "disconnected"
 journal-home-down-why = "disconnected: {0}"
 journal-ears = "New endpoint bound in {0} ms"
 journal-ears-failed = "Binding a new endpoint failed: {0}"
+journal-rest = "Moved to the background: every connection let go, no dialling until it is back in front"
+journal-front = "Back in front: the same endpoint, ports rebound, relay checked, every path probed; the sync round that followed took {0} ms"
 journal-hop-up = "Forwarding through {0} is up"
 journal-hop-none = "Tried {0} middle machines; none forwarded"
 journal-carry-up = "SSH carry is up"
@@ -1620,6 +1633,8 @@ journal-path-ssh = "Now carried over SSH"
 journal-round = "Hole punching, {0} round(s): candidates here {1}; candidates there {2}"
 journal-round-none = "none"
 journal-sync-failed = "Syncing {0} failed and the round stopped there: {1}"
+journal-sync-apart = "{0} not synced; the rest of the round went on: {1}"
+journal-pen-retired = "{0}: the other machine holds records under this machine's writer name {1} that this machine does not have; the name is retired, and some of what was written under it may not have synced"
 journal-why-title = "Why not direct"
 journal-why-line = "{0}: {1}, {2}"
 journal-why-no-round = "this machine has not punched toward it (the side that opened the connection punches)"
@@ -1721,6 +1736,8 @@ page-address = "Enter an address"
 page-none = "No pages open"
 page-none-how = "Use the ＋ above to open one"
 page-machine = "Choose machine"
+# The browser pill's list (sb-a, 2026-10-09): the caption over a machine's recent addresses.
+page-recent-on = "Recently opened on {0}"
 nav-order = "Navigation bar"
 nav-order-note = "The first four show on the bar; the rest are under More"
 type-size = "Text size"

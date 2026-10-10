@@ -8,7 +8,6 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::time::Duration;
 
-use base64::Engine;
 use khor_catalog::msg;
 use khor_net::endpoint::{self, ALPN, Ticket};
 use khor_sync::devices::DeviceInfo;
@@ -81,8 +80,8 @@ fn doc_must_sync(name: &str) -> bool {
 
 /// A document's version, as a [`Request::Versions`] digest: blake3 of
 /// its canonical spelling, 16 bytes.
-fn version_digest<D: Doc>(doc: &D) -> Vec<u8> {
-    blake3::hash(&wire::version_canonical(doc)).as_bytes()[..16].to_vec()
+fn version_digest<D: Doc>(loaded: &khor_sync::store::Loaded<D>) -> Vec<u8> {
+    blake3::hash(&wire::version_canonical(&loaded.store, &loaded.doc)).as_bytes()[..16].to_vec()
 }
 
 /// A reading's answer frame, as a [`Request::Versions`] digest.
@@ -499,6 +498,8 @@ enum Wake {
     Resume {
         ears: Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
         synced: Option<tokio::sync::oneshot::Sender<Vec<(String, Result<String, String>)>>>,
+        /// Each machine's outcome as it lands, before the round is whole.
+        each: Option<Answers>,
     },
     /// Close the endpoint under the serve and leave it closed ([`deafen`]).
     Deafen {
@@ -649,10 +650,14 @@ pub enum Rejoin {
     Gone(String),
 }
 
+/// Where a round tells each machine's outcome as it lands ([`Resuming::answered`]).
+type Answers = tokio::sync::mpsc::UnboundedSender<(String, Result<String, String>)>;
+
 /// A [`resume`] under way: first the new ears, then the round.
 pub struct Resuming {
     ears: Option<tokio::sync::oneshot::Receiver<Result<(), String>>>,
     synced: tokio::sync::oneshot::Receiver<Vec<(String, Result<String, String>)>>,
+    each: tokio::sync::mpsc::UnboundedReceiver<(String, Result<String, String>)>,
 }
 
 impl Resuming {
@@ -666,6 +671,15 @@ impl Resuming {
         }
     }
 
+    /// **The round's machines one at a time, as each answers** (net-r):
+    /// `None` once every one has. A machine that is not there costs its
+    /// whole dial budget (10 s, lecun's often), and nothing a person sees
+    /// should wait on it — the face re-reads its lists at each answer,
+    /// not only when the slowest is done. Call after [`Self::ears`].
+    pub async fn answered(&mut self) -> Option<(String, Result<String, String>)> {
+        self.each.recv().await
+    }
+
     /// The round that followed, per machine — the same outcomes a
     /// `khor sync` prints.
     pub async fn synced(mut self) -> Result<Vec<(String, Result<String, String>)>, String> {
@@ -676,10 +690,12 @@ impl Resuming {
     }
 }
 
-/// **Fresh ears for the resident on `root`**, in this process, without
-/// a restart (docs/IOS.md 第三步): a new endpoint on the same key, the
-/// old one and what rode it let go, the new roads published, and a sync
-/// round at once. `None` when no resumable serve holds that home here.
+/// **The resident on `root` back in front**, in this process, without
+/// a restart (docs/IOS.md 第三步): its endpoint mended in place — sockets
+/// rebound on their ports, relay checked, paths pinged (net-r) — or, on
+/// an endpoint that closed, a new one on the same key with the old one
+/// and what rode it let go; then a sync round at once. `None` when no
+/// resumable serve holds that home here.
 ///
 /// The phone's app calls this on its way back to the foreground
 /// (`applicationWillEnterForeground`); a laptop waking from sleep could
@@ -687,15 +703,18 @@ impl Resuming {
 pub fn resume(root: &std::path::Path) -> Option<Resuming> {
     let (ears, ears_rx) = tokio::sync::oneshot::channel();
     let (synced, synced_rx) = tokio::sync::oneshot::channel();
+    let (each, each_rx) = tokio::sync::mpsc::unbounded_channel();
     door(root)?
         .send(Wake::Resume {
             ears: Some(ears),
             synced: Some(synced),
+            each: Some(each),
         })
         .ok()?;
     Some(Resuming {
         ears: Some(ears_rx),
         synced: synced_rx,
+        each: each_rx,
     })
 }
 
@@ -868,9 +887,6 @@ pub fn invite_window_minutes() -> u32 {
     // sentence.
     (INVITE_WINDOW_MS / 60_000) as u32
 }
-
-const B64: base64::engine::general_purpose::GeneralPurpose =
-    base64::engine::general_purpose::STANDARD;
 
 /// What one-shot CLI verbs need to know about the live endpoint. The
 /// cookie makes it a key to the hand-off port — owner-only on disk.
@@ -1339,6 +1355,7 @@ impl Node {
         type Waiting = (
             Option<tokio::sync::oneshot::Sender<Result<(), String>>>,
             Option<tokio::sync::oneshot::Sender<Vec<(String, Result<String, String>)>>>,
+            Option<Answers>,
         );
         let mut resuming: Option<Vec<Waiting>> = None;
         let (bound_tx, mut bound_rx) = tokio::sync::mpsc::unbounded_channel::<(
@@ -1485,6 +1502,7 @@ impl Node {
                     }
                     Wake::Suspend { done } => {
                         resting.store(true, std::sync::atomic::Ordering::Relaxed);
+                        node.wires.note(None, crate::journal::What::Rest);
                         node.wires.clear(wires::Retired::Suspended);
                         node.wires.let_go_served(wires::Retired::Suspended);
                         let _ = done.send(());
@@ -1551,7 +1569,7 @@ impl Node {
                             wires::Patience::for_rtt(Duration::ZERO).after_change + wires::TICK,
                         );
                     }
-                    Wake::Resume { ears, synced } => {
+                    Wake::Resume { ears, synced, each } => {
                         resting.store(false, std::sync::atomic::Ordering::Relaxed);
                         // **Off this loop**: binding waits on the network,
                         // and the arms above — the app's own status
@@ -1560,10 +1578,44 @@ impl Node {
                         // resume while one is binding joins it: two binds
                         // on one key knock each other off the relay.
                         if let Some(waiting) = resuming.as_mut() {
-                            waiting.push((ears, synced));
+                            waiting.push((ears, synced, each));
                             continue;
                         }
-                        resuming = Some(vec![(ears, synced)]);
+                        // **The same ears, mended in place** (net-r) — the
+                        // app's resume, on an endpoint still open. iroh's
+                        // own cure for a phone back from the background
+                        // (vendor/iroh patch 16): the sockets rebound on
+                        // their ports (netwatch also does this by itself
+                        // when iOS took one back), the relay connection
+                        // checked, a net report, every path pinged. New
+                        // ears instead cost every far machine its road to
+                        // this one: the old endpoint refused their dials
+                        // while it closed, and the new one sat on new
+                        // ports their tables did not have yet. New ears
+                        // stay for a closed endpoint and the deaf watch.
+                        if hearing && ears.is_some() {
+                            let begun = std::time::Instant::now();
+                            node.wires.network_changed();
+                            let (n, e, deaf) = (node.clone(), ep.clone(), deaf.clone());
+                            tokio::spawn(async move {
+                                e.network_change_major().await;
+                                if let Some(ears) = ears {
+                                    let _ = ears.send(Ok(()));
+                                }
+                                let out = n.sync_peers_telling(&e, true, each.as_slice()).await;
+                                n.wires.note(
+                                    None,
+                                    crate::journal::What::Front { ms: crate::journal::ms(begun.elapsed()) },
+                                );
+                                let heard = if n.self_admitted() { out.as_slice() } else { &[] };
+                                let _ = deaf.lock().unwrap_or_else(|p| p.into_inner()).observe(heard);
+                                if let Some(synced) = synced {
+                                    let _ = synced.send(out);
+                                }
+                            });
+                            continue;
+                        }
+                        resuming = Some(vec![(ears, synced, each)]);
                         let n = node.clone();
                         let back = bound_tx.clone();
                         tokio::spawn(async move {
@@ -1577,6 +1629,7 @@ impl Node {
                     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                     let waiting = resuming.take().unwrap_or_default();
                     let mut synced_to = Vec::new();
+                    let mut told_to = Vec::new();
                     match fresh {
                         Ok(fresh) => {
                             let old = std::mem::replace(&mut ep, fresh);
@@ -1602,11 +1655,12 @@ impl Node {
                                 None,
                                 crate::journal::What::Ears { ms: crate::journal::ms(begun.elapsed()), error: None },
                             );
-                            for (ears, synced) in waiting {
+                            for (ears, synced, each) in waiting {
                                 if let Some(ears) = ears {
                                     let _ = ears.send(Ok(()));
                                 }
                                 synced_to.extend(synced);
+                                told_to.extend(each);
                             }
                         }
                         Err(why) => {
@@ -1618,11 +1672,12 @@ impl Node {
                                     error: Some(crate::journal::scrub(&why)),
                                 },
                             );
-                            for (ears, synced) in waiting {
+                            for (ears, synced, each) in waiting {
                                 if let Some(ears) = ears {
                                     let _ = ears.send(Err(why.clone()));
                                 }
                                 synced_to.extend(synced);
+                                told_to.extend(each);
                             }
                         }
                     }
@@ -1635,7 +1690,7 @@ impl Node {
                     let e = ep.clone();
                     let deaf = deaf.clone();
                     tokio::spawn(async move {
-                        let out = n.sync_peers(&e, true).await;
+                        let out = n.sync_peers_telling(&e, true, &told_to).await;
                         let _ = n.trust_tick();
                         let heard = if n.self_admitted() { out.as_slice() } else { &[] };
                         let _ = deaf.lock().expect("deaf watch poisoned").observe(heard);
@@ -1816,7 +1871,7 @@ impl Node {
                             if resumable {
                                 eprintln!("{}", msg::serve_deaf_fresh_ears(&stamp, DEAF_AFTER.as_secs()));
                                 *deaf.lock().expect("deaf watch poisoned") = DeafWatch::new();
-                                let _ = wake.send(Wake::Resume { ears: None, synced: None });
+                                let _ = wake.send(Wake::Resume { ears: None, synced: None, each: None });
                             } else {
                                 eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
                                 std::process::exit(DEAF_EXIT);
@@ -1916,6 +1971,10 @@ impl Node {
                 }
                 ipc::Reply::Noted
             }
+            ipc::Op::JournalOn { machine, peer, since } => match self.journal_with(ep, &machine, peer, since).await {
+                Ok(lines) => ipc::Reply::Journal { lines },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::Visit { machine } => match self.resolve(&machine) {
                 Ok((_, home)) => {
                     let id = home.hex();
@@ -2706,6 +2765,17 @@ impl Node {
             self.wires.retire_peer(&d.id, wires::Retired::Paused);
             return Err(DialFailure::Refused(msg::peer_paused_refusal().to_owned()));
         }
+        // **Resting is quiet both ways** (net-r): a phone in the
+        // background refuses the dials to it, so it makes none either. The
+        // face's last polls and a far terminal's rejoin used to dial out in
+        // the seconds before iOS froze it (MacLab's journal, 2026-10-09
+        // 19:43:12): the far machine heard it come in, dialled back, was
+        // refused and backed off, and the wire the phone had just made was
+        // left to freeze half-open. Not a failure, so no backoff: the
+        // resume's round and its kick ask again.
+        if self.resting.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(DialFailure::Refused(msg::resting_no_dial().to_owned()));
+        }
         let line = |conn| Line {
             id: d.id.clone(),
             name: d.name.clone(),
@@ -2847,8 +2917,10 @@ impl Node {
     /// data); the wire this made, if any, is held, and the ask goes on
     /// as usual over it.
     async fn ask_early(&self, ep: &iroh::Endpoint, d: &DeviceInfo, req: &Request) -> Early {
+        // Resting: not taken here, and refused by `line_to_inner` after.
         if !req.rides_early()
             || crate::pause::peer_on(self.root(), &d.id)
+            || self.resting.load(std::sync::atomic::Ordering::Relaxed)
             || self.wires.live(&d.id, wires::Proto::Main).is_some()
         {
             return Early::NotTaken;
@@ -3240,7 +3312,7 @@ impl Node {
                 self.nudge(ep, false);
                 Ok(Response::Paired {
                     name: self.name().to_owned(),
-                    devices: B64.encode(loaded.doc.snapshot()?),
+                    devices: wire::table_b64(&mut store, &loaded.doc)?,
                     roster: serde_bytes::ByteBuf::from(self.roster_offer_in(&loaded.doc)),
                 })
             }
@@ -3254,12 +3326,11 @@ impl Node {
                 Ok(Response::Vouched)
             }
             Request::Sync { doc, have, changes } => {
-                let reply = with_doc!(self, doc.as_str(), |loaded| wire::answer(
-                    &mut loaded.store,
-                    &loaded.doc,
-                    &have,
-                    &changes
-                ))?;
+                let reply = with_doc!(self, doc.as_str(), |loaded| {
+                    let reply = wire::answer(&mut loaded.store, &loaded.doc, &have, &changes);
+                    self.say_retired(&remote, &doc, &loaded.store);
+                    reply
+                })?;
                 if doc == "devices" && !changes.is_empty() {
                     self.follow_after_sync();
                 }
@@ -4017,6 +4088,13 @@ impl Node {
                     at_ms,
                     bytes: serde_bytes::ByteBuf::from(bytes),
                 })
+            }
+            Request::Journal { peer, since } => {
+                let root = self.root().to_path_buf();
+                let lines = tokio::task::spawn_blocking(move || crate::journal::lines_since(&root, peer.as_deref(), since))
+                    .await
+                    .map_err(|e| e.to_string())?;
+                Ok(Response::Journal { lines })
             }
         }
     }
@@ -5907,6 +5985,54 @@ impl Node {
         let out = self.stat_with(&ep, machine, path).await;
         ep.close().await;
         out
+    }
+
+    /// `machine`'s connection journal as JSON lines ([`Request::Journal`]),
+    /// through the resident when one holds this key.
+    pub(crate) async fn journal_lines_of(
+        &self,
+        machine: &str,
+        peer: Option<String>,
+        since: u64,
+    ) -> Result<Vec<String>, String> {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::JournalOn {
+                machine: machine.to_owned(),
+                peer: peer.clone(),
+                since,
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Journal { lines } => Ok(lines),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await
+            .map_err(|e| e.to_string())?;
+        let out = self.journal_with(&ep, machine, peer, since).await;
+        ep.close().await;
+        out
+    }
+
+    async fn journal_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        peer: Option<String>,
+        since: u64,
+    ) -> Result<Vec<String>, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Ok(crate::journal::lines_since(self.root(), peer.as_deref(), since));
+        }
+        match self.ask(ep, &channel, &Request::Journal { peer, since }).await? {
+            Response::Journal { lines } => Ok(lines),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
     }
 
     async fn stat_with(
@@ -8552,12 +8678,15 @@ impl Node {
                 devices,
                 roster,
             } => {
-                let bytes = B64.decode(devices).map_err(msg::far_table_not_base64)?;
                 let mut loaded = self.devices_loaded()?;
+                let bytes = wire::table_bytes(&loaded.store, &devices)?;
                 // The same rule the issuer just ran, from this side — so
                 // both reach one verdict without a round trip to agree.
                 self.settle_with(&loaded.doc, &roster, &t.id, true)?;
+                let before = loaded.doc.version();
                 loaded.doc.merge(&bytes)?;
+                loaded.store.took_in(&before, &loaded.doc);
+                self.say_retired(&t.id, "devices", &loaded.store);
                 let signed = self.enroll_after_pair(
                     &loaded.doc,
                     &[(t.id.as_str(), name.as_str()), (self.device_str(), self.name())],
@@ -9073,6 +9202,17 @@ impl Node {
         ep: &iroh::Endpoint,
         force: bool,
     ) -> Vec<(String, Result<String, String>)> {
+        self.sync_peers_telling(ep, force, &[]).await
+    }
+
+    /// [`Self::sync_peers`], each machine's outcome also told to `each`
+    /// the moment it lands (`Resuming::answered`).
+    async fn sync_peers_telling(
+        &self,
+        ep: &iroh::Endpoint,
+        force: bool,
+        each: &[Answers],
+    ) -> Vec<(String, Result<String, String>)> {
         // Backgrounded: a round already under way when the app went
         // stops here rather than redialling what the suspension let go.
         if self.resting.load(std::sync::atomic::Ordering::Relaxed) {
@@ -9087,7 +9227,13 @@ impl Node {
             .collect();
         let visits = list
             .iter()
-            .map(|d| async move { (d.name.clone(), self.round_with(ep, d, force).await) })
+            .map(|d| async move {
+                let out = (d.name.clone(), self.round_with(ep, d, force).await);
+                for tx in each {
+                    let _ = tx.send(out.clone());
+                }
+                out
+            })
             .collect();
         join_all(visits).await
     }
@@ -9299,7 +9445,12 @@ impl Node {
             let synced = with_doc!(self, name.as_str(), |loaded| self
                 .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
                 .await);
-            if doc_must_sync(&name)
+            // **Two epochs of one pile do not stop the round**
+            // (`khor_sync::store::load_pile`): the machine that has not
+            // re-seeded yet stays apart in that pile until it does, and
+            // everything else syncs as before. Said once, like a failure.
+            let apart = synced.as_ref().err().is_some_and(|why| wire::other_epoch(why));
+            if (doc_must_sync(&name) || apart)
                 && let Some(w) = crate::journal::sync_failed(&d.id, &name, synced.as_ref().err().map(String::as_str))
             {
                 self.wires.note(Some(&d.id), w);
@@ -9314,7 +9465,7 @@ impl Node {
                         self.take_arrived();
                     }
                 }
-                Err(why) if doc_must_sync(&name) => return Err(why),
+                Err(why) if doc_must_sync(&name) && !apart => return Err(why),
                 Err(_) => {}
             }
         }
@@ -9343,7 +9494,7 @@ impl Node {
         let mut docs = Vec::with_capacity(names.len());
         for name in &names {
             let digest = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>(version_digest(
-                &loaded.doc
+                loaded
             )))?;
             docs.push((name.clone(), serde_bytes::ByteBuf::from(digest)));
         }
@@ -9562,8 +9713,8 @@ impl Node {
         let mut differ = Vec::new();
         for (name, theirs) in docs {
             let Ok((mine, version)) = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>((
-                version_digest(&loaded.doc),
-                wire::version_b64(&loaded.doc)
+                version_digest(loaded),
+                wire::version_b64(&loaded.store, &loaded.doc)
             ))) else {
                 continue;
             };
@@ -9832,6 +9983,17 @@ impl Node {
         Ok(moved)
     }
 
+    /// A pen retired while taking in what `peer` sent
+    /// (`khor_sync::store::BlockStore::took_in`): one journal line.
+    fn say_retired(&self, peer: &str, doc: &str, store: &khor_sync::store::BlockStore) {
+        if let Some(name) = store.retired() {
+            self.wires.note(
+                Some(peer),
+                crate::journal::What::PenRetired { doc: doc.to_owned(), name: format!("{name:016x}") },
+            );
+        }
+    }
+
     /// Two wire rounds: the first is pull-only by design, the second
     /// pushes. Returns bytes moved.
     async fn rounds<D: Doc>(
@@ -9856,7 +10018,7 @@ impl Node {
     ) -> Result<usize, String> {
         let mut moved = 0usize;
         for _ in 0..times {
-            let out = peer.outgoing(&loaded.doc)?;
+            let out = peer.outgoing(&mut loaded.store, &loaded.doc)?;
             let resp = self
                 .exchange_on(
                     line,
@@ -9881,7 +10043,9 @@ impl Node {
                 Response::Refused { why } => return Err(why),
                 other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
-            let round = peer.absorb(&mut loaded.store, &loaded.doc, &out, reply)?;
+            let round = peer.absorb(&mut loaded.store, &loaded.doc, &out, reply);
+            self.say_retired(&line.id, doc_name, &loaded.store);
+            let round = round?;
             moved += round.pushed + round.pulled;
         }
         Ok(moved)

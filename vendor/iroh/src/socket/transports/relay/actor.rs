@@ -86,6 +86,17 @@ const SEND_DATAGRAM_BATCH_SIZE: usize = 20;
 /// handshake.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// khor patch 15: how long a closing relay connection waits for the server to end it.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// khor patch 15: how long the relay actor waits for one active relay to say whether it
+/// has seen an endpoint; no answer counts as no.
+const ROUTE_QUERY_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// khor patch 15: how long a datagram waits for room in one active relay's queue before
+/// it is dropped, as UDP would drop it; the relay actor sends nothing else meanwhile.
+const QUEUE_WAIT_TIMEOUT: Duration = Duration::from_secs(1);
+
 /// Time after which the [`ActiveRelayActor`] will drop undeliverable datagrams.
 ///
 /// When the [`ActiveRelayActor`] is not connected it can not deliver datagrams.  However it
@@ -615,7 +626,13 @@ impl ActiveRelayActor {
                     break Err(e!(RunError::PingTimeout));
                 }
                 _ = ping_interval.tick() => {
-                    let data = state.ping_tracker.new_ping();
+                    // khor patch 15: the periodic ping waits the full pong timeout (5 s).
+                    // Upstream gave it 3x the last pong time (at least 0.5 s); through a
+                    // proxy's TUN to a far relay pongs swing 124-976 ms, so a healthy
+                    // connection was dropped and redialled every few minutes. The quick
+                    // RTT-based timeout stays for the check after a network change.
+                    let timeout = state.ping_tracker.max_timeout();
+                    let data = state.ping_tracker.new_ping_with_timeout(timeout);
                     let fut = client_sink.send(ClientToRelayMsg::Ping(data));
                     self.run_sending(fut, &mut state, &mut client_stream).await?;
                 }
@@ -703,10 +720,16 @@ impl ActiveRelayActor {
             }
         };
 
-        if res.is_ok()
-            && let Err(err) = client_sink.close().await
-        {
-            debug!("Failed to close client sink gracefully: {err:#}");
+        // khor patch 15: the close is bounded. tokio-websockets' close reads until the
+        // server ends the stream; with the way back dead (a proxy's TUN holding the TCP
+        // open) it never did, and this actor then answered nothing again while its inbox
+        // stayed open, so the relay actor waited on it forever (`HasEndpointRoute`).
+        if res.is_ok() {
+            match time::timeout(CLOSE_TIMEOUT, client_sink.close()).await {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => debug!("Failed to close client sink gracefully: {err:#}"),
+                Err(_) => debug!("Relay server did not answer the close within {CLOSE_TIMEOUT:?}"),
+            }
         }
 
         res.map_err(|err| state.map_err(err))
@@ -1227,9 +1250,12 @@ impl RelayActor {
             }
             Err(mpsc::error::TrySendError::Full(item)) => {
                 let sender = handle.datagrams_send_queue.clone();
+                // khor patch 15: bounded, see `QUEUE_WAIT_TIMEOUT`.
                 let fut = async move {
-                    if sender.send(item).await.is_err() {
-                        warn!(?url, "Dropped datagram(s): ActiveRelayActor closed.");
+                    match time::timeout(QUEUE_WAIT_TIMEOUT, sender.send(item)).await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(_)) => warn!(?url, "Dropped datagram(s): ActiveRelayActor closed."),
+                        Err(_) => warn!(?url, "Dropped datagram(s): ActiveRelayActor queue full."),
                     }
                 };
                 Some(fut)
@@ -1299,18 +1325,24 @@ impl RelayActor {
         // already.  E.g. maybe they dialed our home relay recently.
         {
             // Futures which return Some(RelayUrl) if the relay knows about the remote endpoint.
+            // khor patch 15: each answer is bounded; an actor that stopped answering
+            // (a close that never ended, before patch 15) held this whole actor, and with
+            // it every datagram to every relay.
             let check_futs = self.active_relays.iter().map(|(url, handle)| async move {
-                let (tx, rx) = oneshot::channel();
-                handle
-                    .prio_inbox_addr
-                    .send(ActiveRelayPrioMessage::HasEndpointRoute(
-                        *remote_endpoint,
-                        tx,
-                    ))
-                    .await
-                    .ok();
-                match rx.await {
-                    Ok(true) => Some(url.clone()),
+                let asked = async {
+                    let (tx, rx) = oneshot::channel();
+                    handle
+                        .prio_inbox_addr
+                        .send(ActiveRelayPrioMessage::HasEndpointRoute(
+                            *remote_endpoint,
+                            tx,
+                        ))
+                        .await
+                        .ok();
+                    rx.await
+                };
+                match time::timeout(ROUTE_QUERY_TIMEOUT, asked).await {
+                    Ok(Ok(true)) => Some(url.clone()),
                     _ => None,
                 }
             });

@@ -359,13 +359,15 @@ usage = """
                         （顺带把网页版也开在局域网上，见 web）
   relay --dev | --tls-cert 证书 --tls-key 私钥 | --acme 域名 [--acme-contact 邮箱]
         [--token 密钥 | --only-mine] [--rate 字节每秒] [--metrics 地址]
-        [--bind 地址] [--http 地址] [--state 目录] | --stats [--state 目录]
+        [--bind 地址] [--http 地址] [--quic 地址] [--state 目录] | --stats [--state 目录]
                         在这台机器上跑一台中继（iroh-relay，同一份代码）。
                         --dev 是明文 HTTP，默认 3340 口；TLS 用现成的证书，
                         或者 --acme 找 Let's Encrypt 要一张。--token 只放行
                         带这把共享密钥的客户端；--only-mine 只放行这张网名单
                         上、没被撤销的设备（和每个请求过的那道门同一条规矩），
-                        谁也不用填密钥。--rate 给每个客户端限速。
+                        谁也不用填密钥。--quic 开 QUIC 地址发现（UDP），用中继
+                        的证书；和 --dev 一起时，--tls-cert、--tls-key 只给
+                        QUIC 用。--rate 给每个客户端限速。
                         计量只存总数：每台设备连了几次、在线多久，加中继收发的
                         总字节，写在 --state 目录（默认 .khor/relay）；
                         --stats 打印这份计量，不起中继
@@ -401,12 +403,13 @@ usage = """
                         每项各自 3 秒超时，一项卡住不拖累别项。
                         --json 出原样（GUI 那一页读的是同一份）；
                         --fix 跑那一项的修法（能修的项在行尾写着怎么跑）
-  journal [机器] [--minutes 分钟] [--report] [--json]
+  journal [机器] [--minutes 分钟] [--report] [--json] [--on 机器]
                         连接记录：本机每次拨号、走了哪几条路、结果和失败的
                         那一步、退避、连接收回、网络和家中继的变化。
                         给机器只看它（夹着本机的事），默认最近 60 分钟；
                         --report 把所有机器的这一段存成一个文件交给别人，
-                        不含密钥、配对票和 host key
+                        不含密钥、配对票和 host key；--on 读另一台机器的
+                        连接记录（经网络取回，只取记录文件）
   invite                出一张一次性配对票（要求 serve 在跑）
   pair <票|->           凭票入网；- 从标准输入读票
   add <SSH主机> [名称] [--port <端口>] [--via <跳板机>] [-m <khor主机>]
@@ -1311,10 +1314,12 @@ relay-admit-mine = "准入：这张网名单上的设备（现有 {0} 台）"
 relay-key-in-clear = "注意：明文 HTTP 下，共享密钥也是明文传的"
 relay-rate = "限速：每个客户端 {0}/秒"
 relay-rate-none = "限速：不限"
+relay-quic = "QUIC 地址发现：UDP {0}"
 relay-metrics = "指标：{0}"
 relay-meter = "计量：{0}"
 relay-pick-mode = "要选一种：--dev（明文 HTTP）、--tls-cert 加 --tls-key，或 --acme 域名"
 relay-token-or-mine = "--token 和 --only-mine 只能选一个"
+relay-quic-needs-tls = "--quic 要证书：和 --tls-cert、--tls-key（和 --dev 一起时只给 QUIC 用）或 --acme 一起用"
 relay-flag-unknown = "khor relay 不认识这个参数：{0}"
 relay-flag-needs-value = "{0} 缺少一个值"
 relay-rate-bad = "--rate 要一个大于 0 的整数（字节每秒）：{0}"
@@ -1448,6 +1453,8 @@ inbound-too-big = "收到的这一段有 {0} KiB，超过配对通道单帧上�
 delta-not-base64 = "这段增量不是 base64：{0}"
 version-not-base64 = "这个版本号不是 base64：{0}"
 version-undecodable = "无法解析版本号：{0}"
+# 两边的表不在同一次重建之后（store::load_pile）：不合并，较旧的一方升级后才恢复同步。
+pile-other-epoch = "对方的 {0} 是第 {1} 版格式，本机是第 {2} 版，未合并。较旧的一方升级 khor 后恢复同步"
 cant-set-peer = "无法设置 peer id：{0}"
 cant-export-changes = "无法导出增量：{0}"
 cant-export-snapshot = "无法导出快照：{0}"
@@ -1793,6 +1800,8 @@ peer-resumed = "已恢复和 {0} 的往来，下一轮就能对上"
 peer-already-paused = "和 {0} 的往来已经是暂停的了。要恢复：khor resume {0}"
 peer-not-paused = "和 {0} 的往来本来就没暂停。要暂停：khor pause {0}"
 peer-paused-refusal = "这台机器暂停着（本机这边暂停的），要恢复：khor resume <机器>"
+# 手机在后台歇着时谁也不拨（net-r）：别人拨它被拒，它自己的拨号也等回到前台。
+resting-no-dial = "应用在后台，暂不连接其他机器；回到前台后自动连接"
 # 暂停时伸手去配对。两个动词都要收发才成得了,所以不是「失败了」而是
 # 「这台机器现在不干这件事」——按名字拒,并指出解在哪。
 paired-while-paused = "这台机器已暂停接入，配对要先恢复：khor resume"
@@ -2542,6 +2551,8 @@ journal-home-down = "断开"
 journal-home-down-why = "断开：{0}"
 journal-ears = "换新端点，用了 {0} ms"
 journal-ears-failed = "换新端点失败：{0}"
+journal-rest = "进入后台：放下所有连接，回到前台前不再拨号"
+journal-front = "回到前台：沿用原端点，重新绑定端口、检查中继、探测各条路径；随后一轮同步用了 {0} ms"
 journal-hop-up = "经 {0} 转发已接上"
 journal-hop-none = "试了 {0} 台中间机器，都没有接上转发"
 journal-carry-up = "SSH 转连已接上"
@@ -2571,6 +2582,8 @@ journal-path-ssh = "改为经 SSH 转连"
 journal-round = "打洞 {0} 轮：本机候选 {1}；对方候选 {2}"
 journal-round-none = "无"
 journal-sync-failed = "同步 {0} 失败，这一轮就此停下：{1}"
+journal-sync-apart = "{0} 未同步，其余照常：{1}"
+journal-pen-retired = "{0}：对方持有本机写入名 {1} 下本机没有的记录，该写入名已停用，此前用它写下的内容可能有一部分未能同步"
 journal-why-title = "为什么不是直连"
 journal-why-line = "{0}：{1}，{2}"
 journal-why-no-round = "本机没有为它打洞（打洞由发起连接的一方开始）"
@@ -2716,6 +2729,8 @@ page-address = "输入网址"
 page-none = "没有打开的网页"
 page-none-how = "点击上方的 ＋，打开一个网页"
 page-machine = "选择机器"
+# 浏览药丸的建议列表(sb-a, 2026-10-09):选定机器后,列表上方的说明,下面是那台机器最近打开的网址。
+page-recent-on = "{0} 最近打开"
 # 外观: the bar's order, and the two text sizes.
 nav-order = "底部导航"
 nav-order-note = "前四项显示在底部，其余在「更多」里"

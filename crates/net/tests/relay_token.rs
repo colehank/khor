@@ -97,6 +97,7 @@ async fn a_keyed_relay_admits_the_endpoint_that_carries_the_key_and_no_other() {
     let keyed = [Relay {
         url: url.clone(),
         token: Some(KEY.to_string()),
+        ..Relay::default()
     }];
 
     // The far side has **no IP transport at all**: the relay is the only

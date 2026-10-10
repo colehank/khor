@@ -178,6 +178,13 @@ pub enum What {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    /// The app went to the background: every wire let go, no dials until
+    /// it is back (net-r).
+    Rest,
+    /// Back in front, the same endpoint kept (net-r): its sockets rebound
+    /// on their ports, its relay checked, every path pinged; `ms` until
+    /// the round that follows had come back.
+    Front { ms: u64 },
     Hop {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         via: Option<String>,
@@ -237,6 +244,13 @@ pub enum What {
     /// failed every round for days and nothing said so). Written when
     /// the failure is new or its words changed ([`sync_failed`]).
     Sync { doc: String, error: String },
+    /// A pile the peer keeps in another epoch (`khor_sync::store::load_pile`):
+    /// not merged, and the round went on. Written like [`What::Sync`].
+    Apart { doc: String, error: String },
+    /// The far side sent ops under the name this machine's copy of a pile
+    /// was writing with, ops this machine never kept: the name is retired
+    /// (`khor_sync::store::BlockStore::took_in`).
+    PenRetired { doc: String, name: String },
 }
 
 /// One line of the journal.
@@ -347,6 +361,19 @@ pub fn read(root: &Path, peer: Option<&str>, since: u64) -> Vec<Entry> {
         .collect();
     out.sort_by_key(|e| e.at);
     out
+}
+
+/// [`read`] as JSON lines, for another machine that asked
+/// (`proto::Request::Journal`). A `peer` that is not an id names no file
+/// and reads nothing: it comes off the wire, and a file name is made of it.
+pub fn lines_since(root: &Path, peer: Option<&str>, since: u64) -> Vec<String> {
+    if peer.is_some_and(|id| !id.chars().all(|c| c.is_ascii_alphanumeric())) {
+        return Vec::new();
+    }
+    read(root, peer, since)
+        .iter()
+        .filter_map(|e| serde_json::to_string(e).ok())
+        .collect()
 }
 
 /// Removes what must never leave this machine from a sentence some
@@ -502,6 +529,8 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         }
         What::Ears { ms, error: None } => msg::journal_ears(ms),
         What::Ears { error: Some(why), .. } => msg::journal_ears_failed(scrub(why)),
+        What::Rest => msg::journal_rest().to_owned(),
+        What::Front { ms } => msg::journal_front(ms),
         What::Hop { via: Some(via), .. } => msg::journal_hop_up(name_of(via)),
         What::Hop { via: None, tried } => msg::journal_hop_none(tried),
         What::Carry { up: true, .. } => msg::journal_carry_up().to_owned(),
@@ -540,6 +569,8 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             msg::journal_round(rounds, list(local), list(remote))
         }
         What::Sync { doc, error } => msg::journal_sync_failed(doc, scrub(error)),
+        What::Apart { doc, error } => msg::journal_sync_apart(doc, scrub(error)),
+        What::PenRetired { doc, name } => msg::journal_pen_retired(doc, name),
     }
 }
 
@@ -554,7 +585,7 @@ pub fn is_trouble(e: &Entry) -> bool {
         What::Hop { via, .. } => via.is_none(),
         What::Carry { up, .. } => !up,
         What::Departed => true,
-        What::Sync { .. } => true,
+        What::Sync { .. } | What::Apart { .. } | What::PenRetired { .. } => true,
         _ => false,
     }
 }
@@ -708,6 +739,20 @@ pub(crate) fn watch_ears(
                     // 56 lines for one 45 s cut. Connecting is not a change.
                     for (url, state, error) in &now {
                         if state == "connecting" {
+                            // **Except straight from connected**: an
+                            // established connection that drops is set
+                            // disconnected and at once connecting again, and
+                            // this watch sees only the latter — the aps1
+                            // redials every few minutes went unwritten
+                            // (audit/net-d.md g.4). It is a drop.
+                            let was = was_home.iter().find(|(u, ..)| u == url).map(|(_, s, _)| s.as_str());
+                            if was == Some("connected") {
+                                let down = "disconnected".to_owned();
+                                wires.note(None, What::Home { url: Some(url.clone()), state: down.clone(), error: error.clone() });
+                                was_home.retain(|(u, ..)| u != url);
+                                was_home.push((url.clone(), down, error.clone()));
+                                down_at.get_or_insert_with(std::time::Instant::now);
+                            }
                             continue;
                         }
                         let was = was_home.iter().find(|(u, ..)| u == url).map(|(_, s, _)| s.as_str());
@@ -790,6 +835,9 @@ pub(crate) fn sync_failed(peer: &str, doc: &str, error: Option<&str>) -> Option<
         return None;
     }
     last.insert(key, error.to_owned());
+    if khor_sync::wire::other_epoch(error) {
+        return Some(What::Apart { doc: doc.to_owned(), error: error.to_owned() });
+    }
     Some(What::Sync { doc: doc.to_owned(), error: error.to_owned() })
 }
 
@@ -940,11 +988,39 @@ impl crate::Node {
     /// `minutes`.
     pub fn journal(&self, peer: Option<&str>, minutes: u64) -> Vec<Line> {
         let since = crate::now_ms().saturating_sub(minutes.saturating_mul(60_000));
+        self.journal_lines(read(self.root(), peer, since), msg::journal_here())
+    }
+
+    /// **Another machine's journal, read from here** (net-r): both ends of
+    /// a reconnect side by side — what this machine saw, and what the far
+    /// one did meanwhile (its new ears, its own dials). `peer` narrows to
+    /// that machine's file and the far one's own events, which are named
+    /// by the far machine's name, not 「本机」.
+    pub async fn journal_on(&self, machine: &str, peer: Option<&str>, minutes: u64) -> Result<Vec<Line>, String> {
+        let since = crate::now_ms().saturating_sub(minutes.saturating_mul(60_000));
+        let lines = self.journal_lines_of(machine, peer.map(str::to_owned), since).await?;
+        let entries = lines.iter().filter_map(|l| serde_json::from_str::<Entry>(l).ok()).collect();
+        let id = self.device_by_name(machine)?;
+        let there = self
+            .devices()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|d| d.id == id)
+            .map_or_else(|| machine.to_owned(), |d| d.shown().to_owned());
+        Ok(self.journal_lines(entries, &there))
+    }
+
+    /// Entries as a reader shows them, machines by the table's names;
+    /// `here` names the events of the machine whose journal it is.
+    fn journal_lines(&self, entries: Vec<Entry>, here: &str) -> Vec<Line> {
         let names: HashMap<String, String> = self
             .devices()
             .unwrap_or_default()
             .into_iter()
-            .map(|d| (d.id, d.name))
+            // The name a person reads (the rename), not the channel: the
+            // iPhone's channel is its hostname, 「localhost」.
+            .map(|d| (d.shown().to_owned(), d.id))
+            .map(|(shown, id)| (id, shown))
             .collect();
         let name_of = |id: &str| {
             names
@@ -952,12 +1028,12 @@ impl crate::Node {
                 .cloned()
                 .unwrap_or_else(|| id.chars().take(8).collect())
         };
-        read(self.root(), peer, since)
+        entries
             .into_iter()
             .map(|e| Line {
                 at: e.at,
                 when: when(e.at),
-                machine: e.peer.as_deref().map_or_else(|| msg::journal_here().to_owned(), name_of),
+                machine: e.peer.as_deref().map_or_else(|| here.to_owned(), name_of),
                 text: words(&e, &name_of),
                 trouble: is_trouble(&e),
                 peer: e.peer,
@@ -999,7 +1075,10 @@ impl crate::Node {
                 .devices()
                 .unwrap_or_default()
                 .into_iter()
-                .map(|d| (d.id, d.name))
+                // The name a person reads (the rename), not the channel: the
+                // iPhone's channel is its hostname, 「localhost」.
+                .map(|d| (d.shown().to_owned(), d.id))
+                .map(|(shown, id)| (id, shown))
                 .collect();
             out.push_str(msg::journal_why_title());
             out.push('\n');
@@ -1279,5 +1358,21 @@ mod tests {
             words(&e("b1", Some(3)), &name_of),
             format!("{}{}", msg::journal_path_hop("turing"), msg::journal_path_rtt(3))
         );
+    }
+
+    /// **A pile kept in another epoch is said once, as itself** (PEERS-BRIEF
+    /// step 3): not 「the round stopped there」, because it did not, and
+    /// not again on every round while the two stay apart. Another
+    /// failure is still a failure.
+    #[test]
+    fn a_pile_in_another_epoch_is_one_line_of_its_own() {
+        let apart = msg::pile_other_epoch("devices", 0, khor_sync::store::EPOCH);
+        let w = sync_failed("epoch-peer", "devices", Some(&apart)).expect("the first time is written");
+        assert!(matches!(&w, What::Apart { doc, .. } if doc == "devices"), "{w:?}");
+        let e = Entry { at: 1, peer: Some("epoch-peer".into()), what: w };
+        assert_eq!(words(&e, &|s| s.to_owned()), msg::journal_sync_apart("devices", &apart));
+        assert!(sync_failed("epoch-peer", "devices", Some(&apart)).is_none(), "and not again");
+        let other = msg::version_undecodable("x");
+        assert!(matches!(sync_failed("epoch-peer", "devices", Some(&other)), Some(What::Sync { .. })));
     }
 }

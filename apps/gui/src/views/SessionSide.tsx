@@ -2,7 +2,7 @@
  * **The session's 附栏: a phone docked beside the terminal** (UX-30, the
  * owner 2026-10-06:「一边 vibe 一边看交付物，在一个屏内不用切换」).
  *
- * A column at the phone's width (`--session-side-w`) beside a terminal or
+ * A column (`--session-side-w`, 640: sb-a) beside a terminal or
  * a conversation on the wide face, running the narrow face's own pages:
  * it is `NarrowBox` (`hooks/use-narrow`), so everything inside lays
  * itself out as on the phone — list ⇄ detail, the same memory rules —
@@ -25,8 +25,14 @@
  * under the floor it folds the column away, the same gesture the list
  * pane's seam makes (`use-list-width`); double-click is the default
  * width; ← → Home walk the stops from a keyboard. The width is one
- * memory per session, and so is open: each pill opens or closes its own
- * as it comes to the front (fix-e, `use-session-side`).
+ * memory per seat (sb-a: 浏览器, 工作区, 最近 each its own), and open one
+ * per session: each pill opens or closes its own as it comes to the front
+ * (fix-e, `use-session-side`).
+ *
+ * **It gives way first** (sb-a, 2026-10-09, the owner: 「附栏打开时, 缩小
+ * 窗口不能把整个顶部导航给略缩畸形了」): its width is a flex basis that
+ * shrinks ahead of the session beside it (`App`'s `sideMain`), down to
+ * `--session-side-min`; only then does the session narrow.
  */
 import { useMemo, useRef, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 
@@ -59,9 +65,9 @@ function tokenPx(name: string, fallback: number): number {
 function bounds(box: HTMLElement | null) {
   const main = box?.closest<HTMLElement>("[data-main]") ?? null;
   const room = main ? main.getBoundingClientRect().width : window.innerWidth;
-  const min = tokenPx("--session-side-min", 320);
+  const min = tokenPx("--session-side-min", 360);
   return {
-    def: tokenPx("--session-side-w", 390),
+    def: tokenPx("--session-side-w", 640),
     min,
     // Under the snap line a drag stops meaning「this wide」and starts
     // meaning「away」 — the list seam's own rule, half its snap band.
@@ -76,6 +82,7 @@ export function SessionSide({
   seat,
   onSeat,
   onWidth,
+  onLive,
   onClose,
   who,
   boxRef,
@@ -93,6 +100,9 @@ export function SessionSide({
   onSeat: (seat: SideSeat) => void;
   /** The seam let go at this width (`null` = back to the default). */
   onWidth: (w: number | null) => void;
+  /** The seam moving: the session beside it gives or takes the same
+      pixels in the same frame (`App`). */
+  onLive?: (w: number | null) => void;
   /** The seam dragged under the snap line: the column goes away. */
   onClose: () => void;
   /** The seat's page, composed by the shell. */
@@ -109,7 +119,8 @@ export function SessionSide({
   // and tells the store once the pointer lifts.
   const drag = useRef<{ right: number; live: number | null; away: boolean } | null>(null);
   const paint = (w: number | null) => {
-    if (box.current) box.current.style.width = w === null ? "" : `${w}px`;
+    if (box.current) box.current.style.flexBasis = w === null ? "var(--session-side-w)" : `${w}px`;
+    onLive?.(w);
   };
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -187,8 +198,8 @@ export function SessionSide({
       data-session-side={session}
       data-col-seat-on={seat}
       aria-label={gui.session_side}
-      className="relative flex h-full min-h-0 flex-none flex-col border-l bg-card [--side-ground:var(--card)]"
-      style={{ width: width === null ? "var(--session-side-w)" : `${width}px` }}
+      className="relative flex h-full min-h-0 flex-col border-l bg-card [--side-ground:var(--card)]"
+      style={{ flex: `0 1 ${width === null ? "var(--session-side-w)" : `${width}px`}`, minWidth: "var(--session-side-min)" }}
     >
       {/* The seam: a hit margin overhanging the border, taking no room. */}
       <div

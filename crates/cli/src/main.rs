@@ -2431,9 +2431,11 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
         khor_node::RoadKind::Ssh => cli::roads_ssh().to_owned(),
     };
     // A road with legs (round ROAD-1): which machine it goes through, and
-    // which leg broke.
+    // which leg broke. **A road through a middle is said by the middle
+    // alone** — 「通过 hinton 28 ms」, never 「直连 通过 hinton」: its own
+    // road word is only the first leg's (WORDS-1008, the owner 10-09).
     let legs = |r: &khor_node::Road| {
-        let via = r.via.as_deref().map(|v| format!(" {}", khor_catalog::gui::add_step_via(name(v)))).unwrap_or_default();
+        let via = r.via.as_deref().map(|v| khor_catalog::gui::add_step_via(name(v))).unwrap_or_default();
         // A jump host is no device: its end is said as the jump.
         let end = |e: &Option<String>| e.as_deref().map(name).unwrap_or_else(|| cli::roads_jump().to_owned());
         let broke = r
@@ -2445,6 +2447,24 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
             })
             .unwrap_or_default();
         format!("{via}{broke}")
+    };
+    // The word and round trip of one road: the first leg's way, or the
+    // middle's name with both legs added when the middle's own row has
+    // the second (only the first leg is known otherwise).
+    let said = |r: &khor_node::Road| -> (String, Option<u16>) {
+        let Some(via) = r.via.as_deref() else {
+            return (format!("{}{}", way(r.road, r.relay.as_deref()), legs(r)), r.ms);
+        };
+        let onward = all
+            .iter()
+            .find(|m| m.id == via)
+            .and_then(|m| n.roads_of(m).into_iter().find(|o| o.to == r.to && o.via.is_none()))
+            .and_then(|o| o.ms);
+        let ms = match (r.ms, onward) {
+            (Some(a), Some(b)) => Some(a.saturating_add(b)),
+            (a, _) => a,
+        };
+        (legs(r), ms)
     };
     for d in all.iter().filter(|d| d.sponsor.is_none()) {
         let me = d.id == n.device_str();
@@ -2480,13 +2500,19 @@ fn print_roads(n: &Node, all: &[khor_node::DeviceInfo], links: &[(String, khor_n
                 .chain(
                     composed
                         .iter()
-                        .map(|r| (r.to.clone(), format!("{}{}", way(r.road, r.relay.as_deref()), legs(r)), r.ms)),
+                        .map(|r| {
+                            let (word, ms) = said(r);
+                            (r.to.clone(), word, ms)
+                        }),
                 )
                 .collect()
         } else {
             n.with_satellite_roads(&d.id, n.roads_of(d))
                 .into_iter()
-                .map(|r| (r.to.clone(), format!("{}{}", way(r.road, r.relay.as_deref()), legs(&r)), r.ms))
+                .map(|r| {
+                    let (word, ms) = said(&r);
+                    (r.to.clone(), word, ms)
+                })
                 .collect()
         };
         let here = if me { cli::this_machine() } else { "" };
@@ -5251,11 +5277,13 @@ fn doctor(rest: &[String]) -> Result<(), String> {
 fn journal(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     let (mut machine, mut minutes, mut report, mut json) = (None, 60u64, false, false);
+    let mut on = None;
     let mut it = rest.iter();
     while let Some(word) = it.next() {
         match word.as_str() {
             "--report" => report = true,
             "--json" => json = true,
+            "--on" => on = Some(it.next().ok_or_else(|| usage_text().to_string())?.clone()),
             "--minutes" => {
                 minutes = it
                     .next()
@@ -5266,13 +5294,19 @@ fn journal(rest: &[String]) -> Result<(), String> {
             _ => return Err(usage_text().into()),
         }
     }
+    if report && on.is_some() {
+        return Err(usage_text().into());
+    }
     if report {
         let path = n.journal_report(minutes)?;
         println!("{}", msg::journal_report_saved(path.display()));
         return Ok(());
     }
     let peer = machine.map(|m| n.device_by_name(&m)).transpose()?;
-    let lines = n.journal(peer.as_deref(), minutes);
+    let lines = match &on {
+        Some(there) => rt()?.block_on(n.journal_on(there, peer.as_deref(), minutes))?,
+        None => n.journal(peer.as_deref(), minutes),
+    };
     if json {
         println!("{}", serde_json::to_string(&lines).map_err(|e| e.to_string())?);
         return Ok(());

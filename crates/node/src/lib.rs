@@ -146,7 +146,7 @@ pub use khor_sync::recents::Kind as PlaceKind;
 use khor_sync::recents::{RecentDoc, recents_dir};
 use khor_sync::roster::{RosterDoc, roster_dir};
 use khor_sync::seen::{SeenDoc, seen_dir};
-use khor_sync::store::{Loaded, load};
+use khor_sync::store::{Loaded, load_pile};
 use khor_sync::titles::{TitleDoc, titles_dir};
 use khor_sync::webpins::{WebPinDoc, webpins_dir};
 use khor_sync::workspaces::{State as WsState, WorkspaceDoc, workspaces_dir};
@@ -893,7 +893,10 @@ pub(crate) struct RelayPlan {
 /// it was the question the first version could not answer, and adding
 /// it here cost a key instead of a migration.
 ///
-/// **Each entry is `{"url": …, "token": …}`, or a bare url string**:
+/// **Each entry is `{"url": …, "token": …, "qad": …, "pkarr": …}`**
+/// (all but `url` optional; `qad` a UDP port, `pkarr` a url — what the
+/// server serves besides relaying, `endpoint::Relay`), **or a bare url
+/// string**:
 /// the string is what the file held before relays took keys, and a
 /// machine that upgrades keeps the relays it had rather than coming up
 /// on the Khor tier alone with the user's list silently gone.
@@ -924,14 +927,22 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
         .into_iter()
         .flatten()
     {
-        let (url, token) = match v {
-            serde_json::Value::String(url) => (url.as_str(), None),
+        let (url, token, qad, pkarr) = match v {
+            serde_json::Value::String(url) => (url.as_str(), None, None, None),
             serde_json::Value::Object(o) => (
                 o.get("url").and_then(|u| u.as_str()).unwrap_or(""),
                 o.get("token")
                     .and_then(|t| t.as_str())
                     .map(str::to_string)
                     .filter(|t| !t.is_empty()),
+                o.get("qad")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|p| u16::try_from(p).ok()),
+                o.get("pkarr")
+                    .and_then(|t| t.as_str())
+                    .map(str::trim)
+                    .filter(|u| u.parse::<iroh::RelayUrl>().is_ok())
+                    .map(str::to_string),
             ),
             _ => continue,
         };
@@ -945,6 +956,8 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
         mine.push(khor_net::endpoint::Relay {
             url: url.to_string(),
             token,
+            qad,
+            pkarr,
         });
     }
     let only_mine = !mine.is_empty()
@@ -1341,17 +1354,19 @@ impl Node {
             if kept.iter().any(|have| have.url == url) {
                 continue;
             }
+            let was = stored.iter().find(|s| s.url == url);
             let token = match entry.token.as_deref().map(str::trim) {
                 Some("") => None,
                 Some(t) => Some(t.to_string()),
-                None => stored
-                    .iter()
-                    .find(|s| s.url == url)
-                    .and_then(|s| s.token.clone()),
+                None => was.and_then(|s| s.token.clone()),
             };
+            // What the server serves besides relaying stays with its url
+            // the way the key does: the screen names relays by url only.
             kept.push(khor_net::endpoint::Relay {
                 url: url.to_string(),
                 token,
+                qad: entry.qad.or(was.and_then(|s| s.qad)),
+                pkarr: entry.pkarr.clone().or(was.and_then(|s| s.pkarr.clone())),
             });
         }
         // 「只用我自己那台」with no 自己那台 is the one combination that
@@ -1364,9 +1379,18 @@ impl Node {
         }
         let rows: Vec<serde_json::Value> = kept
             .iter()
-            .map(|r| match &r.token {
-                Some(t) => serde_json::json!({ "url": r.url, "token": t }),
-                None => serde_json::json!({ "url": r.url }),
+            .map(|r| {
+                let mut row = serde_json::json!({ "url": r.url });
+                if let Some(t) = &r.token {
+                    row["token"] = t.as_str().into();
+                }
+                if let Some(p) = r.qad {
+                    row["qad"] = p.into();
+                }
+                if let Some(u) = &r.pkarr {
+                    row["pkarr"] = u.as_str().into();
+                }
+                row
             })
             .collect();
         // The preference survives an edit of the list while its relay is
@@ -1804,52 +1828,52 @@ impl Node {
     }
 
     pub(crate) fn devices_loaded(&self) -> Result<Loaded<DeviceDoc>, String> {
-        load(&devices_dir(&self.root), self.peer)
+        load_pile(&devices_dir(&self.root), self.peer)
     }
 
     pub(crate) fn seen_loaded(&self) -> Result<Loaded<SeenDoc>, String> {
-        load(&seen_dir(&self.root), self.peer)
+        load_pile(&seen_dir(&self.root), self.peer)
     }
 
     pub(crate) fn pins_loaded(&self) -> Result<Loaded<PinDoc>, String> {
-        load(&pins_dir(&self.root), self.peer)
+        load_pile(&pins_dir(&self.root), self.peer)
     }
 
     /// What is on the session list (`khor_sync::roster`, docs/SHELL.md
     /// 第八轮).
     pub(crate) fn roster_loaded(&self) -> Result<Loaded<RosterDoc>, String> {
-        load(&roster_dir(&self.root), self.peer)
+        load_pile(&roster_dir(&self.root), self.peer)
     }
 
     pub(crate) fn dirpins_loaded(&self) -> Result<Loaded<DirPinDoc>, String> {
-        load(&dirpins_dir(&self.root), self.peer)
+        load_pile(&dirpins_dir(&self.root), self.peer)
     }
 
     pub(crate) fn workspaces_loaded(&self) -> Result<Loaded<WorkspaceDoc>, String> {
-        load(&workspaces_dir(&self.root), self.peer)
+        load_pile(&workspaces_dir(&self.root), self.peer)
     }
 
     pub(crate) fn webpins_loaded(&self) -> Result<Loaded<WebPinDoc>, String> {
-        load(&webpins_dir(&self.root), self.peer)
+        load_pile(&webpins_dir(&self.root), self.peer)
     }
 
     pub(crate) fn recents_loaded(&self) -> Result<Loaded<RecentDoc>, String> {
-        load(&recents_dir(&self.root), self.peer)
+        load_pile(&recents_dir(&self.root), self.peer)
     }
 
     pub(crate) fn agents_loaded(&self) -> Result<Loaded<AgentDoc>, String> {
-        load(&agents_dir(&self.root), self.peer)
+        load_pile(&agents_dir(&self.root), self.peer)
     }
 
     /// The registered API accounts (`khor_sync::accounts`) — the
     /// descriptions, never the keys; those stay in `keys_dir` on the
     /// machine that registered them.
     pub(crate) fn accounts_loaded(&self) -> Result<Loaded<AccountDoc>, String> {
-        load(&accounts_dir(&self.root), self.peer)
+        load_pile(&accounts_dir(&self.root), self.peer)
     }
 
     pub(crate) fn titles_loaded(&self) -> Result<Loaded<TitleDoc>, String> {
-        load(&titles_dir(&self.root), self.peer)
+        load_pile(&titles_dir(&self.root), self.peer)
     }
 
     /// Every ACP agent this person has named, by name (`khor_sync::agents`).

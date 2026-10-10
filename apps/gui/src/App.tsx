@@ -88,9 +88,11 @@ import {
   keepSidesOf,
   placeFile,
   setSessionSide,
+  setSideWidth,
   sidePlace,
   sidePlaces,
   useSessionSide,
+  useSideWidth,
   type SidePlace,
   type StoreSpot,
   type SideSeat as PlaceSeat,
@@ -2122,10 +2124,16 @@ export default function App() {
   };
   const openUrlRef = useRef<(machine: string, url: string) => void>(() => {});
   /** A page, as a browsing tab out through that machine; in the column's
-      browser with a session in front, else on the browser landing. */
-  const openUrlMain = (machine: string, url: string, column: boolean) => {
-    const d = machine === "" ? null : devices.find((x) => x.name === machine && !x.me);
-    void openTab("page", d?.id ?? "", url, fromSession())
+      browser with a session in front, else on the browser landing.
+      **By the record's device id where there is one, this machine
+      included** (sb-a, 2026-10-09, the owner: 「侧栏里最近打开的浏览器地址,
+      点击直接打开, 现在点击后还等着输地址选机器」): the lookup was by name
+      and skipped this machine — a leftover from when an empty device meant
+      this one — so a page here opened with no machine and the pill asked
+      for one and an address. */
+  const openUrlMain = (machine: string, url: string, column: boolean, device?: string) => {
+    const d = devices.find((x) => device !== undefined && x.id === device) ?? (machine === "" ? null : devices.find((x) => x.name === machine));
+    void openTab("page", d?.id ?? device ?? "", url, fromSession())
       .then((id) => {
         if (column && selectedRow) {
           // In front at once, and in the list: the 附栏's page is the tab
@@ -2649,7 +2657,7 @@ export default function App() {
       workspace as the column's listing, a file as its file page. */
   const openRecent = (it: RecentItem) => {
     setSideFrom("recent");
-    if (it.kind === "page") return openUrlMain(it.machine, it.url, true);
+    if (it.kind === "page") return openUrlMain(it.machine, it.url, true, it.device);
     if (it.kind === "workspace") {
       touched("dir", it.machine, it.path);
       return sideShow(it.machine, it.path, null);
@@ -2659,7 +2667,7 @@ export default function App() {
   /** …and a double-click (or 「在主区打开」) takes the same thing to the
       main area, by the roads the landings use. */
   const openRecentMain = (it: RecentItem) => {
-    if (it.kind === "page") return openUrlMain(it.machine, it.url, false);
+    if (it.kind === "page") return openUrlMain(it.machine, it.url, false, it.device);
     if (it.kind === "workspace") return openDirMain(it.machine, it.path);
     openPathMain(it.machine, it.path, false, null);
   };
@@ -2807,21 +2815,82 @@ export default function App() {
    * on the account while the 附栏 stays open, and its close asks for it
    * back — which a window the person resized (into the narrow layout or
    * not) declines: their size stands (the lead's ruling, 2026-10-07).
+   *
+   * **The column takes what the right edge has, down to its floor**
+   * (sb-a, 2026-10-09, the owner: 「侧栏展开时, 原来的页面位置不要动, 侧栏
+   * 展开自己额外扩展出去」): it asks for its seat's width (640, or what
+   * was dragged there, per seat) and the least it lives with (360); the
+   * window answers what it grew by (`room.rs`), and the column is that
+   * wide for this opening. **A seat of another width refits the window**:
+   * the room is given back and asked for again at the new width, the
+   * session held still between. **As the window narrows the column gives
+   * way first** (「缩小窗口不能把整个顶部导航给略缩畸形了」): the session
+   * stands at a flex basis of what it had beside the column (`sideBasis`)
+   * and barely shrinks, the column's basis shrinks to its floor, and only
+   * then does the session narrow, to `--session-main-min`.
    */
   const sideWanted = sessions && side.open && selectedRow !== null;
   const [sideShown, setSideShown] = useState(false);
   const [sideHold, setSideHold] = useState<number | null>(null);
   const sideMain = useRef<HTMLDivElement | null>(null);
+  /** The row the session and the column share. */
+  const sideRow = useRef<HTMLDivElement | null>(null);
+  /** The width the seat asks for: dragged there, else the token's. */
+  const sideKept = useSideWidth(side.seat);
+  const sidePx = (name: string) => Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 0;
+  /** What the window gave this opening, where it gave less than asked
+      (the right edge); `null` = the asked width. */
+  const [sideFit, setSideFit] = useState<number | null>(null);
+  /** The session's flex basis beside the column (above). */
+  const [sideBasis, setSideBasis] = useState<number | null>(null);
   /** Whether the window holds room for the column now. */
   const sideAsked = useRef(false);
+  /** The width the window was last asked for, to know a seat's own. */
+  const sideAskedW = useRef<number | null>(null);
   /** Bumped each turn: an answer from the window that a later turn
       overtook changes nothing. */
   const sideTurn = useRef(0);
+  /** The session's basis from the row as it stands, less the column. */
+  const baseBeside = (paneW: number) => {
+    const row = sideRow.current?.getBoundingClientRect().width;
+    setSideBasis(row === undefined ? null : Math.max(0, row - paneW));
+  };
   // A layout effect: the hold is measured with the column still drawn and
   // set in the same frame it goes, before anything is painted.
   useLayoutEffect(() => {
     const turn = ++sideTurn.current;
+    const want = sideKept ?? sidePx("--session-side-w");
+    const least = sidePx("--session-side-min");
     const hold = () => setSideHold(sideMain.current ? sideMain.current.getBoundingClientRect().width : null);
+    /** The window's answer, as this opening's width. */
+    const fit = (grew: number) => {
+      const w = grew <= 0 ? want : Math.max(grew, least);
+      setSideFit(w === want ? null : w);
+      return w;
+    };
+    const ask = () =>
+      widenWindow("session-side", want, least).then((grew) => {
+        if (turn !== sideTurn.current) return;
+        sideAskedW.current = want;
+        baseBeside(fit(grew));
+        setSideShown(true);
+        setSideHold(null);
+      });
+    if (sideWanted && !narrow && sideAsked.current && sideShown && sideAskedW.current !== null && sideAskedW.current !== want) {
+      // Another seat, another width: the room given back and asked again.
+      hold();
+      void giveBackWindow("session-side").then((gave) => {
+        if (turn !== sideTurn.current) return;
+        if (gave > 0) return ask();
+        // The person resized the window meanwhile: their size stands, and
+        // the column takes its new width off the session.
+        sideAskedW.current = want;
+        setSideFit(null);
+        baseBeside(want);
+        setSideHold(null);
+      });
+      return;
+    }
     if (sideWanted === sideAsked.current || (sideWanted && narrow)) {
       setSideShown(sideWanted && !narrow);
       setSideHold(null);
@@ -2830,19 +2899,29 @@ export default function App() {
     hold();
     if (sideWanted) {
       sideAsked.current = true;
-      const fallback = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--session-side-w")) || 0;
-      void widenWindow("session-side", side.w ?? fallback).then(() => {
-        if (turn !== sideTurn.current) return;
-        setSideShown(true);
-        setSideHold(null);
-      });
+      void ask();
       return;
     }
     sideAsked.current = false;
+    sideAskedW.current = null;
     setSideShown(false);
+    setSideFit(null);
     void giveBackWindow("session-side").then(() => turn === sideTurn.current && setSideHold(null));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideWanted, narrow]);
+  }, [sideWanted, narrow, sideKept, side.seat]);
+  /** The seam moved by hand: the seat keeps the width, and the session
+      gives or takes the same pixels (the window does not change). */
+  const sideDragged = (w: number | null) => {
+    const to = w ?? sidePx("--session-side-w");
+    sideAskedW.current = w === null ? sidePx("--session-side-w") : w;
+    setSideFit(null);
+    baseBeside(to);
+    setSideWidth(side.seat, w);
+  };
+  const sideLive = (w: number | null) => {
+    const row = sideRow.current?.getBoundingClientRect().width;
+    if (row !== undefined && sideMain.current) sideMain.current.style.flexBasis = `${Math.max(0, row - (w ?? sidePx("--session-side-w")))}px`;
+  };
   // Drawn until the window effect lets it go (`sideShown`), not until the
   // store says closed: the hold is measured with it still there.
   const sessionSide =
@@ -2850,10 +2929,11 @@ export default function App() {
       <SessionSide
         key={selectedRow.id}
         session={selectedRow.id}
-        width={side.w}
+        width={sideFit ?? sideKept}
         seat={side.seat}
         onSeat={enterSeat}
-        onWidth={(w) => setSessionSide(selectedRow.id, { w })}
+        onWidth={sideDragged}
+        onLive={sideLive}
         onClose={() => setSessionSide(selectedRow.id, { open: false })}
         boxRef={setDetailBox}
         who={{ face: selectedRow.face, title: termName(selectedRow), word: selectedRow.word, kind: selectedRow.kind, category: selectedRow.category }}
@@ -4128,7 +4208,7 @@ export default function App() {
               {/* ⚠️ 墓碑 (UX-30): `ref={setDetailBox}` stood here — the day's
                   axis was this pane's; it is the column's now
                   (`SessionSide` `boxRef`). */}
-              <div className={cn("flex min-h-0 min-w-0 flex-1 flex-row", sideHold !== null && "overflow-hidden")}>
+              <div ref={sideRow} className={cn("flex min-h-0 min-w-0 flex-1 flex-row", sideHold !== null && "overflow-hidden")}>
               {/* **The column stands beside the strip too** (UX-39, the
                   owner 2026-10-06 21:45: 「桌面都要顶部对齐」): its head is
                   on the window's first row, level with the tabs' capsule,
@@ -4139,7 +4219,14 @@ export default function App() {
                 ref={sideMain}
                 data-side-held={sideHold !== null ? "" : undefined}
                 className="flex min-h-0 min-w-0 flex-1 flex-col"
-                style={sideHold === null ? undefined : { flex: "none", width: sideHold }}
+                style={
+                  sideHold !== null
+                    ? { flex: "none", width: sideHold }
+                    : sessionSide && sideBasis !== null
+                      ? // Beside the column: it gives way first (above).
+                        { flex: `1 0.001 ${sideBasis}px`, minWidth: "min(var(--session-main-min), 100%)" }
+                      : undefined
+                }
               >
                 {sessions && openTabs.length > 0 ? (
                   <VerbSeat.Provider value={verbSeat}>

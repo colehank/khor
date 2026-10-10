@@ -612,9 +612,52 @@ export function TabStrip({
   const foldGrown = grown.fold;
   useEffect(() => foldGrown(), [active, foldGrown]);
 
+  /**
+   * **The row folds, never squeezes** (sb-a, 2026-10-09, the owner with
+   * the 附栏 open: 「缩小窗口不能把整个顶部导航给略缩畸形了」 — the
+   * capsule had shrunk to nothing and the front act's ↻ stood past the
+   * column, over the 附栏's head). The names go first: the tabs narrow to
+   * their faces (`--tab-w-floor`, the container queries). Then the
+   * secondary buttons — ＋, the front tab's act, the verbs at the end
+   * (`tail`) — step out, while the capsule would be narrower than one
+   * tab; they come back once there is room for them again (their width
+   * measured as they left, so the row does not flap at the edge).
+   */
+  const bar = useRef<HTMLDivElement>(null);
+  const extras = useRef<HTMLSpanElement>(null);
+  const plus = useRef<HTMLSpanElement>(null);
+  const [folded, setFolded] = useState(false);
+  const spare = useRef(0);
+  /** The capsule's width when they left. */
+  const leftAt = useRef(0);
+  useLayoutEffect(() => {
+    const row = bar.current;
+    const cap = capsule.current;
+    if (!row || !cap) return;
+    const check = () => {
+      const floor = Number.parseFloat(getComputedStyle(cap).getPropertyValue("--tab-w-floor")) || 64;
+      const room = cap.getBoundingClientRect().width;
+      const over = row.scrollWidth > row.clientWidth + 0.5;
+      if (!folded && (over || room < floor)) {
+        // What leaves, gaps included, is what must be there to come back.
+        const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
+        const w = (el: HTMLElement | null) => (el ? el.getBoundingClientRect().width : 0);
+        spare.current = w(extras.current) + w(plus.current) + 2 * gap;
+        leftAt.current = room;
+        setFolded(true);
+      } else if (folded && room - spare.current > Math.max(floor, leftAt.current) + 1) setFolded(false);
+    };
+    const ro = new ResizeObserver(check);
+    ro.observe(row);
+    check();
+    return () => ro.disconnect();
+  }, [folded]);
+
   return (
     <div
+      ref={bar}
       data-tab-bar
+      data-tab-bar-folded={folded || undefined}
       // ⚠️ 墓碑 (ux-q, 2026-10-07): the plain strip — the band on the
       // app's ground with the open tab the board's colour, joined to it
       // by its foot (第十三轮 第 5 条) — and the strip hung under a
@@ -999,7 +1042,7 @@ export function TabStrip({
           crowded, and the switcher it opened — every tab is drawn now,
           down to its face, and the strip scrolls past that. */}
       {onNew && (
-        <>
+        <span ref={plus} data-tab-new-seat className={cn("flex flex-none items-center", folded && "hidden")}>
           <span aria-hidden="true" className="h-4.5 w-px flex-none bg-border" />
           <Button
             size="icon"
@@ -1011,9 +1054,12 @@ export function TabStrip({
           >
             <IconPlus />
           </Button>
-        </>
+        </span>
       )}
       </div>
+      {/* The secondary buttons, one seat so they step out together (the
+          fold above); kept mounted, the verbs' seat is a portal's. */}
+      <span ref={extras} data-tab-extras className={cn("flex flex-none items-center gap-in empty:hidden", folded && "hidden")}>
       {/* The front tab's one act, after the capsule (`frontAct`). */}
       {frontAct && (() => {
         const f = faces.find((x) => x.id === active);
@@ -1060,6 +1106,7 @@ export function TabStrip({
         );
       })()}
       {tail}
+      </span>
       {grown.growth.mounted && (
         <>
           {/* Over the board only: the strip is the window's frame. */}

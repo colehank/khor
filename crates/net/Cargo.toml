@@ -65,3 +65,9 @@ iroh-relay = { version = "1.2.0", features = ["server"] }
 # License: MIT OR Apache-2.0 (both; checked before use).
 noq = { version = "1.3.0", default-features = false, features = ["rustls", "ring", "runtime-tokio"] }
 rcgen = "0.14"
+# The pkarr registry khor's servers run (NET-DIRECT, `tests/pkarr.rs`):
+# iroh's own server, embedded on loopback. Tests only; on the Beijing box
+# it runs as its own binary, not inside khor. Its tree (297 crates) was
+# checked: MIT / Apache-2.0 / BSD / ISC / Zlib / Unicode-3.0, webpki-roots
+# CDLA-Permissive-2.0; no copyleft. License: MIT OR Apache-2.0.
+iroh-dns-server = { version = "=1.3.0", default-features = false, features = ["ring"] }

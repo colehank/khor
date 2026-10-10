@@ -712,3 +712,401 @@ fn a_snapshot_pulled_from_another_machine_survives_a_local_compaction() {
     let _ = fs::remove_dir_all(&far);
     let _ = fs::remove_dir_all(&here);
 }
+
+/// **Copies in turn write under one name** (PEERS-BRIEF, 2026-10-10).
+/// Every process used to bring a fresh name and leave a row in the version
+/// vector for good: the owner's devices pile had 1515. Fifty copies opened
+/// one after another, each writing, add one name between them, and each
+/// carries on from the last one's counter, so no line is lost.
+#[test]
+fn copies_in_turn_write_under_one_name() {
+    let dir = tmpdir("pens-in-turn");
+    // The directory has to exist for it to have pens.
+    let mut seed = open_channel(&dir, 0x5E).unwrap();
+    seed.doc.tell(&me("a"), "seed").unwrap();
+    seed.store.flush(&seed.doc).unwrap();
+    drop(seed);
+    for i in 0..50 {
+        let mut c = open_channel(&dir, 0x100 + i).unwrap();
+        c.doc.tell(&me("a"), &format!("turn {i}")).unwrap();
+        c.store.flush(&c.doc).unwrap();
+    }
+    let back = open_channel(&dir, 0x200).unwrap();
+    let text = render(&back.doc);
+    for i in 0..50 {
+        assert!(text.contains(&format!("turn {i}")), "turn {i} is there:\n{text}");
+    }
+    assert_eq!(back.doc.version().len(), 2, "the seed's name and one pen");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The other half of `pens_across_processes`, run as a child process:
+/// takes a pen, says which, waits until every sibling holds one, writes,
+/// flushes and exits. Does nothing when run as a test of its own.
+#[test]
+fn pen_child() {
+    let (Ok(dir), Ok(tag), Ok(wave)) = (
+        std::env::var("KHOR_PEN_DIR"),
+        std::env::var("KHOR_PEN_TAG"),
+        std::env::var("KHOR_PEN_WAVE"),
+    ) else {
+        return;
+    };
+    let dir = PathBuf::from(dir);
+    let wave: usize = wave.parse().unwrap();
+    let mut c = open_channel(&dir, crate::chat::ChatDoc::fresh_peer()).unwrap();
+    println!("pen={:016x}", crate::store::Doc::peer_id(&c.doc));
+    let ready = dir.with_extension("ready");
+    fs::create_dir_all(&ready).unwrap();
+    fs::write(ready.join(&tag), b"").unwrap();
+    let began = std::time::Instant::now();
+    while fs::read_dir(&ready).unwrap().count() < wave && began.elapsed().as_secs() < 20 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    c.doc.tell(&me("a"), &format!("from child {tag}")).unwrap();
+    c.store.flush(&c.doc).unwrap();
+}
+
+/// **Processes at once never share a name, processes in turn reuse them**
+/// (PEERS-BRIEF). Two waves of four processes, each holding its copy
+/// until all four of its wave hold one: the four of a wave have four
+/// names, the second wave's are the first wave's, and every line is on
+/// disk after (a shared name would have lost one).
+#[test]
+fn pens_across_processes() {
+    let dir = tmpdir("pens-processes");
+    let mut seed = open_channel(&dir, 0x5E).unwrap();
+    seed.doc.tell(&me("a"), "seed").unwrap();
+    seed.store.flush(&seed.doc).unwrap();
+    drop(seed);
+    let exe = std::env::current_exe().unwrap();
+    let mut waves = Vec::new();
+    for wave in 0..2 {
+        let _ = fs::remove_dir_all(dir.with_extension("ready"));
+        let children: Vec<_> = (0..4)
+            .map(|i| {
+                std::process::Command::new(&exe)
+                    .args(["--exact", "store::tests::pen_child", "--nocapture", "--test-threads=1"])
+                    .env("KHOR_PEN_DIR", &dir)
+                    .env("KHOR_PEN_TAG", format!("{wave}-{i}"))
+                    .env("KHOR_PEN_WAVE", "4")
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        let names: std::collections::BTreeSet<String> = children
+            .into_iter()
+            .map(|c| {
+                let out = c.wait_with_output().unwrap();
+                assert!(out.status.success(), "a child failed");
+                String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    // The harness's「test … 」may share the line.
+                    .find_map(|l| l.split_once("pen=").map(|(_, n)| n[..16].to_owned()))
+                    .expect("the child says its name")
+            })
+            .collect();
+        assert_eq!(names.len(), 4, "four processes at once, four names: {names:?}");
+        waves.push(names);
+    }
+    assert_eq!(waves[0], waves[1], "the second wave writes under the first wave's names");
+    let back = open_channel(&dir, 0x200).unwrap();
+    let text = render(&back.doc);
+    for tag in ["0-0", "0-1", "0-2", "0-3", "1-0", "1-1", "1-2", "1-3"] {
+        assert!(text.contains(&format!("from child {tag}")), "child {tag}'s line is there:\n{text}");
+    }
+    assert_eq!(back.doc.version().len(), 5, "the seed's name and four pens");
+    let _ = fs::remove_dir_all(&dir);
+    let _ = fs::remove_dir_all(dir.with_extension("ready"));
+}
+
+/// An old pile with `names` writers, each a block of its own, as every
+/// khor process used to leave one: rows of the device table, with an
+/// address each so the rows are nested maps. Returns what it holds.
+fn old_pile(dir: &std::path::Path, names: u64, tag: &str) -> crate::devices::DeviceDoc {
+    use crate::devices::DeviceDoc;
+    use crate::store::Doc;
+    fs::create_dir_all(dir).unwrap();
+    let all = DeviceDoc::open(0xACC).unwrap();
+    for i in 0..names {
+        let peer = 0x1000 + i;
+        let w = DeviceDoc::open(peer).unwrap();
+        w.merge(&all.snapshot().unwrap()).unwrap();
+        let before = w.version();
+        // A few rows, rewritten over and over, as the real pile is.
+        let row = format!("{tag}-{}", i % 5);
+        w.upsert(&row, &row, &[format!("10.0.0.{i}:1")]).unwrap();
+        let bytes = w.changes_since(&before).unwrap();
+        fs::write(dir.join(format!("u-{peer:016x}-00000000.loro")), &bytes).unwrap();
+        all.merge(&bytes).unwrap();
+    }
+    all
+}
+
+/// **An old pile is rebuilt under one name and reads the same**
+/// (PEERS-BRIEF step 3). Forty writers' blocks become one snapshot by one
+/// writer, the ledger and the old pens go, pen 0 holds the new name and
+/// the epoch is written; the next copy writes under that name and its
+/// counter carries on. Opening it again does not rebuild it again.
+#[test]
+fn an_old_pile_is_reseeded_under_one_name() {
+    use crate::devices::DeviceDoc;
+    use crate::store::{Doc, EPOCH, load, load_pile};
+    let dir = tmpdir("reseed");
+    let all = old_pile(&dir, 40, "row");
+    // Read the old way once: the ledger and a pen exist, as on a real disk.
+    drop(load::<DeviceDoc>(&dir, 0x77).unwrap());
+    assert!(dir.join(".merged").exists() && dir.join(".pen-0").exists());
+    let old_pen = fs::read_to_string(dir.join(".pen-0")).unwrap();
+    assert_eq!(all.version().len(), 40);
+
+    let mut p = load_pile::<DeviceDoc>(&dir, 0x78).unwrap();
+    assert_eq!(format!("{:?}", p.doc.all()), format!("{:?}", all.all()), "and reads the same");
+    assert_eq!(p.doc.version().len(), 1, "one writer name: {:?}", p.doc.version());
+    assert_eq!(p.store.epoch(), EPOCH);
+    assert_eq!(fs::read_to_string(dir.join(".epoch")).unwrap().trim(), EPOCH.to_string());
+    let loro: Vec<_> = fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.ends_with(".loro"))
+        .collect();
+    assert_eq!(loro.len(), 1, "one block, the snapshot: {loro:?}");
+    let pen = fs::read_to_string(dir.join(".pen-0")).unwrap();
+    assert_ne!(pen, old_pen, "the old pens are gone");
+    assert_eq!(p.doc.peer_id(), u64::from_str_radix(pen.trim(), 16).unwrap(), "the copy holds pen 0, the new name");
+
+    p.doc.upsert("after", "after", &[]).unwrap();
+    p.store.flush(&p.doc).unwrap();
+    drop(p);
+    let again = load_pile::<DeviceDoc>(&dir, 0x79).unwrap();
+    assert_eq!(fs::read_to_string(dir.join(".pen-0")).unwrap(), pen, "not rebuilt twice");
+    assert!(again.doc.get("after").is_some());
+    assert_eq!(again.doc.version().len(), 1, "the write carried on under the one name");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// **A pile somebody holds is not rebuilt under them.** A copy read
+/// before a rebuild would write after it, on top of blocks that are gone;
+/// so the rebuild waits until nobody holds the pile, and meanwhile the
+/// copy that asked says the old epoch.
+#[test]
+fn a_held_pile_is_reseeded_only_once_let_go() {
+    use crate::devices::DeviceDoc;
+    use crate::store::{Doc, EPOCH, load, load_pile};
+    let dir = tmpdir("reseed-held");
+    old_pile(&dir, 6, "row");
+    drop(load::<DeviceDoc>(&dir, 0x80).unwrap());
+    let held = load::<DeviceDoc>(&dir, 0x81).unwrap();
+    let asked = load_pile::<DeviceDoc>(&dir, 0x82).unwrap();
+    assert_eq!(asked.store.epoch(), 0, "not rebuilt while held");
+    assert_eq!(asked.doc.version().len(), 6, "the old names");
+    drop((held, asked));
+    let after = load_pile::<DeviceDoc>(&dir, 0x83).unwrap();
+    assert_eq!(after.store.epoch(), EPOCH, "rebuilt once let go");
+    assert_eq!(after.doc.version().len(), 1);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// **Two replicas re-seeded apart agree after a round** (PEERS-BRIEF):
+/// each machine rebuilds its own pile under its own name, so the two
+/// rebuilt histories are unrelated; for a map of last-writer-wins rows
+/// that is two concurrent writes of every key, and a round settles every
+/// key alike on both sides. What each wrote only on its own side before
+/// the rebuild is on both after.
+#[test]
+fn two_replicas_reseeded_apart_agree_after_a_round() {
+    use crate::devices::DeviceDoc;
+    use crate::store::{Doc, EPOCH, load_pile};
+    use crate::wire::{Peer, answer};
+    let (a_dir, b_dir) = (tmpdir("reseed-a"), tmpdir("reseed-b"));
+    let shared = old_pile(&a_dir, 20, "row");
+    fs::create_dir_all(&b_dir).unwrap();
+    for e in fs::read_dir(&a_dir).unwrap().flatten() {
+        fs::copy(e.path(), b_dir.join(e.file_name())).unwrap();
+    }
+    // Apart before the rebuild: a row each, and the same row rewritten.
+    for (dir, peer, mine) in [(&a_dir, 0xA0u64, "only-a"), (&b_dir, 0xB0, "only-b")] {
+        let w = DeviceDoc::open(peer).unwrap();
+        w.merge(&shared.snapshot().unwrap()).unwrap();
+        let v = w.version();
+        w.upsert(mine, mine, &[]).unwrap();
+        w.upsert("row-0", mine, &[]).unwrap();
+        fs::write(dir.join(format!("u-{peer:016x}-00000000.loro")), w.changes_since(&v).unwrap()).unwrap();
+    }
+    let mut a = load_pile::<DeviceDoc>(&a_dir, 0xA1).unwrap();
+    let mut b = load_pile::<DeviceDoc>(&b_dir, 0xB1).unwrap();
+    assert_eq!((a.store.epoch(), b.store.epoch()), (EPOCH, EPOCH));
+    assert_ne!(a.doc.peer_id(), b.doc.peer_id(), "each under its own name");
+
+    let mut peer = Peer::new();
+    for _ in 0..2 {
+        peer.round(&mut a.store, &a.doc, |h, c| answer(&mut b.store, &b.doc, h, c)).unwrap();
+    }
+    let (on_a, on_b) = (format!("{:?}", a.doc.all()), format!("{:?}", b.doc.all()));
+    assert_eq!(on_a, on_b, "every key agrees");
+    for row in ["only-a", "only-b", "row-0", "row-1", "row-4"] {
+        assert!(a.doc.get(row).is_some(), "{row} is there:\n{on_a}");
+    }
+    let name = a.doc.get("row-0").unwrap().name;
+    assert!(name == "only-a" || name == "only-b", "the rewritten row is one side's: {name}");
+    assert_eq!(a.doc.version().len(), 2, "two names in all");
+    let _ = fs::remove_dir_all(&a_dir);
+    let _ = fs::remove_dir_all(&b_dir);
+}
+
+/// **No op leaves before it is on disk** (PEERS-BRIEF, peers-a 「Left」
+/// 3). A copy writes and, without flushing, answers a request, pushes on a
+/// round and hands out its table: each time, a copy read from disk right
+/// after already holds the line.
+#[test]
+fn every_way_ops_leave_flushes_them_first() {
+    use crate::wire::{Peer, answer, table_b64, version_b64};
+    let (dir, far_dir) = (tmpdir("flush-first"), tmpdir("flush-first-far"));
+    let mut far = open_channel(&far_dir, 0x3F).unwrap();
+    far.doc.tell(&me("far"), "far").unwrap();
+    far.store.flush(&far.doc).unwrap();
+    let on_disk = |line: &str| render(&open_channel(&dir, 0x3E).unwrap().doc).contains(line);
+
+    let mut w = open_channel(&dir, 0x31).unwrap();
+    w.doc.tell(&me("a"), "answered").unwrap();
+    let theirs = version_b64(&far.store, &far.doc);
+    let reply = answer(&mut w.store, &w.doc, &theirs, "").unwrap();
+    assert!(!reply.changes.is_empty(), "the line left");
+    assert!(on_disk("answered"), "and it was on disk first");
+
+    w.doc.tell(&me("a"), "pushed").unwrap();
+    let out = Peer::knowing(version_b64(&far.store, &far.doc)).outgoing(&mut w.store, &w.doc).unwrap();
+    assert!(out.pushes());
+    assert!(on_disk("pushed"));
+
+    w.doc.tell(&me("a"), "handed out").unwrap();
+    table_b64(&mut w.store, &w.doc).unwrap();
+    assert!(on_disk("handed out"));
+    let _ = fs::remove_dir_all(&dir);
+    let _ = fs::remove_dir_all(&far_dir);
+}
+
+/// **A pen whose holder sent and died before flushing is retired**
+/// (PEERS-BRIEF, peers-a 「Left」 3). The holder sent two lines to one
+/// machine and four to another, unflushed, the way every khor before
+/// this one pushed on a round, and died. The next holder takes the same
+/// name, writes over the first counters (that collision is already paid),
+/// and on its next round learns from the first machine that the name has
+/// ops this disk never kept: the pen gets a fresh name. So the copy after
+/// it writes under a new name, and the second machine's two later lines
+/// and its own line cross both ways; under the old name its counter would
+/// land on those two lines and one side would skip the other's.
+#[test]
+fn a_pen_whose_holder_sent_unflushed_and_died_is_retired() {
+    use crate::store::Doc;
+    use crate::wire::{Peer, answer};
+    let (dir, f_dir, g_dir) = (tmpdir("retire"), tmpdir("retire-f"), tmpdir("retire-g"));
+    let mut seed = open_channel(&dir, 0x50).unwrap();
+    seed.doc.tell(&me("a"), "seed").unwrap();
+    seed.store.flush(&seed.doc).unwrap();
+    drop(seed);
+    let (mut f, mut g) = (open_channel(&f_dir, 0x5F).unwrap(), open_channel(&g_dir, 0x56).unwrap());
+
+    let a = open_channel(&dir, 0x51).unwrap();
+    let name = a.doc.peer_id();
+    for i in 1..=2 {
+        a.doc.tell(&me("a"), &format!("lost {i}")).unwrap();
+    }
+    f.doc.merge(&a.doc.changes_since(&f.doc.version()).unwrap()).unwrap();
+    for i in 3..=4 {
+        a.doc.tell(&me("a"), &format!("lost {i}")).unwrap();
+    }
+    g.doc.merge(&a.doc.changes_since(&g.doc.version()).unwrap()).unwrap();
+    drop(a);
+
+    let mut b = open_channel(&dir, 0x52).unwrap();
+    assert_eq!(b.doc.peer_id(), name, "the next holder takes the same name");
+    b.doc.tell(&me("a"), "after").unwrap();
+    let mut peer = Peer::new();
+    for _ in 0..2 {
+        peer.round(&mut b.store, &b.doc, |h, c| answer(&mut f.store, &f.doc, h, c)).unwrap();
+    }
+    assert_eq!(b.store.retired(), Some(name), "the name is retired");
+    drop(b);
+
+    let mut c = open_channel(&dir, 0x53).unwrap();
+    assert_ne!(c.doc.peer_id(), name, "the copy after writes under a new name");
+    c.doc.tell(&me("a"), "from c").unwrap();
+    let mut peer = Peer::new();
+    for _ in 0..2 {
+        peer.round(&mut c.store, &c.doc, |h, cs| answer(&mut g.store, &g.doc, h, cs)).unwrap();
+    }
+    let (here, there) = (render(&c.doc), render(&g.doc));
+    assert!(there.contains("from c"), "its line reached the second machine:\n{there}");
+    assert!(here.contains("lost 3") && here.contains("lost 4"), "and that machine's lines came here:\n{here}");
+    for d in [dir, f_dir, g_dir] {
+        let _ = fs::remove_dir_all(d);
+    }
+}
+
+/// **A read after one new block imports that block, not the pile**
+/// (peers-b, the owner's Mac 2026-10-10 19:20). Ten blocks read and kept;
+/// one more written; the next read is one pass that imports one block,
+/// and reads every line.
+#[test]
+fn a_read_after_one_new_block_imports_only_that_block() {
+    use crate::store::reads_of;
+    let dir = tmpdir("kept-plus");
+    for i in 0..10 {
+        let mut w = open_channel(&dir, 0x60 + i).unwrap();
+        w.doc.tell(&me("a"), &format!("line {i}")).unwrap();
+        w.store.flush(&w.doc).unwrap();
+    }
+    drop(open_channel(&dir, 0x70).unwrap());
+    let mut w = open_channel(&dir, 0x71).unwrap();
+    w.doc.tell(&me("a"), "the new one").unwrap();
+    w.store.flush(&w.doc).unwrap();
+    drop(w);
+    let (passes, blocks) = reads_of(&dir);
+    let back = render(&open_channel(&dir, 0x72).unwrap().doc);
+    let (passes2, blocks2) = reads_of(&dir);
+    assert_eq!((passes2 - passes, blocks2 - blocks), (1, 1), "one pass, one block");
+    for i in 0..10 {
+        assert!(back.contains(&format!("line {i}")), "{back}");
+    }
+    assert!(back.contains("the new one"), "{back}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// **Concurrent readers of a changed directory make one read between
+/// them**: eight threads at once after a write; one reads, the others wait
+/// and are answered from what it kept, and all eight see the write.
+#[test]
+fn concurrent_readers_of_a_changed_directory_read_once() {
+    use crate::store::reads_of;
+    use std::sync::{Arc, Barrier};
+    let dir = tmpdir("kept-gate");
+    for i in 0..20 {
+        let mut w = open_channel(&dir, 0x90 + i).unwrap();
+        w.doc.tell(&me("a"), &format!("line {i}")).unwrap();
+        w.store.flush(&w.doc).unwrap();
+    }
+    drop(open_channel(&dir, 0xA0).unwrap());
+    let mut w = open_channel(&dir, 0xA1).unwrap();
+    w.doc.tell(&me("a"), "written since").unwrap();
+    w.store.flush(&w.doc).unwrap();
+    drop(w);
+    let (passes, _) = reads_of(&dir);
+    let start = Arc::new(Barrier::new(8));
+    let readers: Vec<_> = (0..8)
+        .map(|i| {
+            let (dir, start) = (dir.clone(), start.clone());
+            std::thread::spawn(move || {
+                start.wait();
+                render(&open_channel(&dir, 0xB0 + i).unwrap().doc)
+            })
+        })
+        .collect();
+    for r in readers {
+        assert!(r.join().unwrap().contains("written since"));
+    }
+    assert_eq!(reads_of(&dir).0 - passes, 1, "one read between the eight");
+    let _ = fs::remove_dir_all(&dir);
+}

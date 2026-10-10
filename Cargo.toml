@@ -55,7 +55,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 rmp-serde = "1"
 # Document CRDT, not a live protocol: increments are bytes that can land as
 # files, so dumb nodes (ssh-only, no process) can carry them.
-loro = "1.13"
+loro = "1.16"
 base64 = "0.22"
 sha2 = "0.10"
 iroh = "1.0"
@@ -199,6 +199,12 @@ codegen-units = 1
 [profile.local]
 inherits = "release"
 codegen-units = 16
+# **Local installs keep their symbols** (the owner's rule, 2026-10-10:
+# only the shipped release is stripped and size-capped). The resident's
+# spin on 10-10 was sampled from a stripped binary and could not be read;
+# with the symbol table kept (no debug info, the release has none) a
+# `sample` names the functions directly. 96 MB against 78 MB stripped.
+strip = false
 
 # Debug builds keep line tables, not full debug info (2026-09-22): the
 # target reached 250 GB, most of it ~70 test binaries each carrying full
@@ -224,3 +230,6 @@ swarm-discovery = { path = "vendor/swarm-discovery" }
 # `crates/cli/tests/netlab.rs`, made to run on turing's Linux 5.4:
 # vendor/patchbay/KHOR.md.
 patchbay = { path = "vendor/patchbay" }
+# loro-internal 1.16.2 without the deep copy of the version vector per
+# merged change: vendor/loro-internal/KHOR.md.
+loro-internal = { path = "vendor/loro-internal" }
