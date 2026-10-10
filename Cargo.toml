@@ -55,7 +55,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 rmp-serde = "1"
 # Document CRDT, not a live protocol: increments are bytes that can land as
 # files, so dumb nodes (ssh-only, no process) can carry them.
-loro = "1.13"
+loro = "1.16"
 base64 = "0.22"
 sha2 = "0.10"
 iroh = "1.0"
