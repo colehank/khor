@@ -64,7 +64,8 @@ pub async fn relay(lab: &Lab, tag: &str, name: &str, rtt: Option<Duration>) -> R
 /// UDP 7842, each on a device of its own, one self-signed certificate
 /// naming every one by IP (iroh checks it against the URL's host).
 pub struct QadRelays {
-    /// For `KHOR_PUBLIC_RELAYS`: `https://ip:443|7842`, comma-separated.
+    /// For `KHOR_PUBLIC_RELAYS`: `https://ip:443?qad=7842`, comma-separated
+    /// (`Relay::parse`).
     pub env: String,
     /// The certificate, for `KHOR_RELAY_CA`.
     pub ca: std::path::PathBuf,
@@ -136,9 +137,18 @@ pub async fn qad_relays(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Durati
         servers.push(task);
         urls.push(format!("https://{ip}:443"));
     }
-    let env = urls.iter().map(|u| format!("{u}|7842")).collect::<Vec<_>>().join(",");
+    let env = urls.iter().map(|u| format!("{u}?qad=7842")).collect::<Vec<_>>().join(",");
     eprintln!("[netlab] QAD stand-ins {env}");
     QadRelays { env, ca, urls, devs, _home: home, _servers: servers }
+}
+
+impl QadRelays {
+    /// The stand-ins as `relays.json` entries of the machine's own list,
+    /// QAD port included: the shape of the Beijing relay once it answers
+    /// address discovery on UDP 7842.
+    pub fn entries(&self) -> Vec<serde_json::Value> {
+        self.urls.iter().map(|u| serde_json::json!({ "url": u, "qad": 7842 })).collect()
+    }
 }
 
 /// Adds `rtt` to every packet in and out of `dev`'s first interface.
@@ -163,9 +173,21 @@ pub struct LabNode {
 
 /// Starts `khor serve` as `name` on `dev`, homed on `relays` only.
 pub async fn node(tag: &str, dev: Device, name: &str, relays: &[&Relay], env: &[(&str, &str)]) -> LabNode {
+    let list = relays.iter().map(|r| serde_json::json!({ "url": r.url })).collect();
+    node_on(tag, dev, name, list, env).await
+}
+
+/// [`node`] with its own list written out as `relays.json` entries
+/// (`{"url", "qad", …}`), for relays that are not `khor relay --dev`.
+pub async fn node_on(
+    tag: &str,
+    dev: Device,
+    name: &str,
+    list: Vec<serde_json::Value>,
+    env: &[(&str, &str)],
+) -> LabNode {
     let home = scratch(&format!("{tag}-{name}"));
     std::fs::create_dir_all(home.0.join(".khor")).unwrap();
-    let list: Vec<_> = relays.iter().map(|r| serde_json::json!({ "url": r.url })).collect();
     std::fs::write(
         home.0.join(".khor/relays.json"),
         serde_json::json!({ "relays": list, "only_mine": true }).to_string(),

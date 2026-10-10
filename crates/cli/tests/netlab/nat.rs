@@ -12,13 +12,15 @@
 //!
 //! The relays here answer no QUIC address discovery, like khor's own
 //! today (net-d §5.2): a machine behind NAT learns no public address.
+//! The `…q` twins run the same pair on a near relay that does, on UDP
+//! 7842: the before and after of opening that port on the Beijing box.
 
 use std::time::Duration;
 
 use khor_core::Hop;
 use patchbay::{IpSupport, Lab, Nat, Router, RouterPreset};
 
-use crate::lab::{LabNode, mesh, node, relay, result, word};
+use crate::lab::{LabNode, mesh, node, node_on, qad_relays, relay, result, word};
 
 /// The network a machine sits behind.
 #[derive(Clone, Copy, Debug)]
@@ -35,8 +37,18 @@ pub enum Net {
     Strict,
     /// Strict v4 plus global v6 with no firewall (the campus on CERNET).
     Campus,
-    /// Strict v4 plus v6 behind a stateful firewall (the phone).
+    /// Strict v4 plus global v6 behind a stateful firewall (the phone).
     Cellular,
+}
+
+/// The one relay a pair shares.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Near {
+    /// `khor relay --dev`: no QUIC address discovery (Beijing today).
+    Plain,
+    /// A stand-in that also answers QUIC address discovery on UDP 7842
+    /// (Beijing with that port open), in the machines' own list.
+    Qad,
 }
 
 pub async fn router(lab: &Lab, name: &str, net: Net) -> Router {
@@ -46,8 +58,8 @@ pub async fn router(lab: &Lab, name: &str, net: Net) -> Router {
         Net::Home => b.nat(Nat::Moderate).ip_support(IpSupport::V4Only),
         Net::Open => b.nat(Nat::Open).ip_support(IpSupport::V4Only),
         Net::Strict => b.nat(Nat::Strict).ip_support(IpSupport::V4Only),
-        Net::Campus => b.nat(Nat::Strict).ip_support(IpSupport::DualStack),
-        Net::Cellular => b.preset(RouterPreset::IspCgnatSymmetric),
+        Net::Campus => b.nat(Nat::Strict).ip_support(IpSupport::DualStack).public_v6(),
+        Net::Cellular => b.preset(RouterPreset::IspCgnatSymmetric).public_v6(),
     };
     b.build().await.unwrap()
 }
@@ -69,13 +81,30 @@ const PUNCH: Duration = Duration::from_secs(75);
 const STUCK: u64 = 10_000;
 
 async fn two(scenario: &str, left: Net, right: Net, want: Want) {
+    two_on(scenario, Near::Plain, left, right, want).await
+}
+
+async fn two_on(scenario: &str, near: Near, left: Net, right: Net, want: Want) {
     let lab = Lab::new().await.unwrap();
-    let r = relay(&lab, scenario, "relay", None).await;
     let (ra, rb) = (router(&lab, "left", left).await, router(&lab, "right", right).await);
     let da = lab.add_device("a").uplink(ra.id()).build().await.unwrap();
     let db = lab.add_device("b").uplink(rb.id()).build().await.unwrap();
-    let a = node(scenario, da, "alpha", &[&r], &[]).await;
-    let b = node(scenario, db, "beta", &[&r], &[]).await;
+    let (a, b, _plain, _qad) = match near {
+        Near::Plain => {
+            let r = relay(&lab, scenario, "relay", None).await;
+            let a = node(scenario, da, "alpha", &[&r], &[]).await;
+            let b = node(scenario, db, "beta", &[&r], &[]).await;
+            (a, b, Some(r), None)
+        }
+        Near::Qad => {
+            let q = qad_relays(&lab, scenario, &["relay"], None).await;
+            let ca = q.ca.to_string_lossy().into_owned();
+            let env = [(khor_net::endpoint::RELAY_CA_ENV, ca.as_str())];
+            let a = node_on(scenario, da, "alpha", q.entries(), &env).await;
+            let b = node_on(scenario, db, "beta", q.entries(), &env).await;
+            (a, b, None, Some(q))
+        }
+    };
     // Both on the relay before either is looked for there.
     tokio::time::sleep(Duration::from_secs(3)).await;
     mesh(&[&a, &b]).await;
@@ -97,7 +126,7 @@ async fn two(scenario: &str, left: Net, right: Net, want: Want) {
         scenario,
         ok,
         format!(
-            "{left:?} × {right:?}: first {} after {took:.1?}; direct {}; now {}; dials {}/{} failed, slowest {} ms",
+            "{near:?} relay, {left:?} × {right:?}: first {} after {took:.1?}; direct {}; now {}; dials {}/{} failed, slowest {} ms",
             word(&first),
             direct.as_ref().map_or("never".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
             word(&last),
@@ -160,4 +189,16 @@ async fn d3_port_per_flow_to_a_home_router_rides_the_relay() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn d4_two_home_routers_go_direct() {
     two("d4", Net::Home, Net::Home, Want::Direct).await;
+}
+
+// d2 and d4 again, the near relay answering QUIC address discovery.
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn d2q_port_per_flow_to_full_cone_goes_direct_with_qad() {
+    two_on("d2q", Near::Qad, Net::Strict, Net::Open, Want::Direct).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn d4q_two_home_routers_go_direct_with_qad() {
+    two_on("d4q", Near::Qad, Net::Home, Net::Home, Want::Direct).await;
 }

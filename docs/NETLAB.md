@@ -39,7 +39,8 @@ scripts/netlab.sh --on <主机> …   # 换一台 Linux
   而 khor 把 198.18.0.0/15 当代理 TUN 的假地址丢掉（`endpoint::unroutable`），不开这个口子实验室里
   永远打不通直连。设了它，这一段算可路由，日志里「默认路由经过代理的 TUN」那行也不写。只给临时节点，
   khor 自己从不设；场景给每个常驻进程都设上。
-- **vendor/patchbay 的两处补丁**：turing 是 Linux 5.4、nft 0.9.3，原样的 patchbay 建不起带 NAT 的路由器。
+- **vendor/patchbay 的三处补丁**：turing 是 Linux 5.4、nft 0.9.3，原样的 patchbay 建不起带 NAT 的路由器（前两处）；
+  第三处是 `RouterBuilder::public_v6()`，v4 在 NAT 后面、v6 拿全球地址（`Net::Campus`、`Net::Cellular`）。
   见 `vendor/patchbay/KHOR.md`。代价：5.4 上 conntrack 超时用内核默认，测映射超时的场景要记住。
 
 ## 加一个场景
@@ -50,6 +51,8 @@ scripts/netlab.sh --on <主机> …   # 换一台 Linux
    （`Public`、`Home`、`Open`、`Strict`、`Campus`、`Cellular`，各自对应 net-d §1.1 量到的哪种网，
    写在 `Net` 上）；设备 `lab.add_device(名字).uplink(路由器.id())`。
 3. 起机器：`lab::node(场景, 设备, 名字, &[&中继], &[环境变量])`，配对 `lab::mesh(&[..])`。
+   中继不是 `khor relay --dev` 时用 `lab::node_on`，直接给 `relays.json` 的条目（如 `QadRelays::entries()`，
+   带 `qad` 端口），再加 `KHOR_RELAY_CA` 指向替身的证书。
 4. 读：`a.until(&b, 时限, |link| …)` 轮询 a 对 b 的路（打印每次变化）；`a.link(&b)`；
    `a.journal(Some(&b))` / `a.journal(None)` 读连接记录（JSONL，`e` 是种类）；`a.freeze()` / `thaw()`。
    改网：`slow(&设备, 往返)`、`iface.replug(别的路由器)`、`router.set_nat(…)`、在设备里跑 `nft`（见 `relay.rs` 的 `wedge`）。
