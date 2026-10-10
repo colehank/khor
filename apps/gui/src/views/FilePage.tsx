@@ -32,6 +32,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 
 import { launchOn, pullTemp, renamePath, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
+import { editorIn, placeLine, topLineOf } from "@/components/CodeEditor";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
@@ -80,12 +81,14 @@ function scrollerIn(box: HTMLElement | null): HTMLElement | null {
 export function topLine(box: HTMLElement | null): number {
   const s = scrollerIn(box);
   if (!s) return 1;
+  if (!s.matches("[data-file-preview]")) {
+    const view = editorIn(box);
+    return view ? topLineOf(view) : 1;
+  }
   const edge = s.getBoundingClientRect().top + parseFloat(getComputedStyle(s).paddingTop || "0");
-  const marks = s.matches("[data-file-preview]")
-    ? [...s.querySelectorAll<HTMLElement>("[data-src-line]")]
-    : [...s.querySelectorAll<HTMLElement>("[data-line]")];
+  const marks = [...s.querySelectorAll<HTMLElement>("[data-src-line]")];
   const first = marks.find((m) => m.getBoundingClientRect().bottom > edge + 1);
-  const n = Number(first?.dataset.srcLine ?? first?.dataset.line ?? "1");
+  const n = Number(first?.dataset.srcLine ?? "1");
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
@@ -94,14 +97,15 @@ export function topLine(box: HTMLElement | null): number {
 export function placeAt(box: HTMLElement | null, line: number): void {
   const s = scrollerIn(box);
   if (!s) return;
+  if (!s.matches("[data-file-preview]")) {
+    const view = editorIn(box);
+    if (view) placeLine(view, line);
+    return;
+  }
   let mark: HTMLElement | undefined;
-  if (s.matches("[data-file-preview]")) {
-    for (const b of s.querySelectorAll<HTMLElement>("[data-src-line]")) {
-      if (Number(b.dataset.srcLine) <= line) mark = b;
-      else break;
-    }
-  } else {
-    mark = s.querySelector<HTMLElement>(`[data-line="${line}"]`) ?? undefined;
+  for (const b of s.querySelectorAll<HTMLElement>("[data-src-line]")) {
+    if (Number(b.dataset.srcLine) <= line) mark = b;
+    else break;
   }
   if (!mark) return;
   const pad = parseFloat(getComputedStyle(s).paddingTop || "0");
@@ -580,7 +584,7 @@ export function FilePage({
       in, every jump and every resize of the visible area put the scroller
       back where it was. */
   const hold = (e: React.FocusEvent) => {
-    if (!coarse || !(e.target as HTMLElement).matches("textarea[data-edit]")) return;
+    if (!coarse || !(e.target as HTMLElement).matches("[data-edit]")) return;
     const s = box.current?.querySelector<HTMLElement>("[data-file-scroll]");
     if (!s) return;
     const at = s.scrollTop;

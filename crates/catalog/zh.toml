@@ -4622,6 +4622,13 @@ file-rev-cut = "这一版太长，只显示了开头"
 blame-show = "显示 blame"
 blame-hide = "隐藏 blame"
 blame-uncommitted = "未提交"
+# ── 文件的编辑器(cm-a,2026-10-10,CM-BRIEF)────────────────────────
+# 文件在 CodeMirror 里。⌘F 是终端那条查找栏的同一个样子,框里的字照
+# `search-terminal` 的说法说它搜的是哪一面;两个折叠的字是折叠标记的读屏名,
+# 说按下去会发生什么。
+search-file = "搜索此文件"
+code-fold = "折叠"
+code-unfold = "展开"
 # 文件「…」里的预览背景（round UX-4）：只管渲染出来的文档，跟随界面，或固定浅色、深色。按设备存。
 preview-ground = "预览背景"
 preview-ground-auto = "跟随"

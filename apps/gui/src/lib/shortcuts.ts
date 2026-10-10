@@ -219,6 +219,17 @@ export function actOf(e: Keyish, face: "app" | "web", mac = IS_MAC): Act | null 
 }
 
 /** The terminal holding the keys, with the acts it lends the keyboard. */
+/** The file editor the person is in (`components/CodeEditor`): the one
+    holding the focus, or — a read-only file takes no focus — the one the
+    selection is in. */
+function codeInUse(): (HTMLElement & { __find?: () => boolean }) | null {
+  const at = document.activeElement?.closest<HTMLElement>("[data-code]");
+  if (at) return at;
+  const sel = document.getSelection()?.anchorNode;
+  const el = sel instanceof Element ? sel : (sel?.parentElement ?? null);
+  return el?.closest<HTMLElement>("[data-code]") ?? null;
+}
+
 function termWithKeys(): (HTMLElement & { __clear?: () => void; __find?: () => void }) | null {
   const at = document.activeElement;
   if (!at?.classList.contains("xterm-helper-textarea")) return null;
@@ -414,6 +425,10 @@ export function useShortcuts(acts: ShellActs) {
             term.__find?.();
             return !!term.__find;
           }
+          // In a file, the file's own find (cm-a): the editor the caret
+          // or the selection is in, read-only ones included.
+          const code = codeInUse();
+          if (code?.__find) return code.__find();
           const open = [...document.querySelectorAll<HTMLElement>("[data-pane-bar] [data-search-open]")].find((e) => e.offsetParent);
           const box = [...document.querySelectorAll<HTMLInputElement>("[data-pane-bar] input")].find((e) => e.offsetParent);
           if (open) open.click();

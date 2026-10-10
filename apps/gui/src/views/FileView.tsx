@@ -13,12 +13,14 @@
 // also holds what a write that did not land means (a clash stops it, a
 // failure is tried again). ✓ and ⌘S are the extra confirmation.
 //
-// **The editor is a transparent `<textarea>` over the painted `<pre>`.**
-// Not CodeMirror: its gutter would fight the git gutter this file
-// already draws, and the part of it worth the dependency — completion,
-// bracket matching, multiple cursors — is the part this app said no to
-// (「不提供任何自动补全什么的」). What that costs is written at `Sheet`
-// below, where it is spent.
+// **The editor is CodeMirror 6 since cm-a (2026-10-10, CM-BRIEF)**
+// (`components/CodeEditor`, `lib/code`). It was a transparent
+// `<textarea>` over a painted `<pre>` for a year, chosen so the git gutter
+// would not fight an editor's; the owner chose CodeMirror because the two
+// layers' caret never lined up with the paint (OWNER-NOTES-10-09 已知问题
+// 1), and the gutter is an extension of the editor now. What it is not
+// is an IDE: no completion, no auto-closing, no second caret
+// (「不提供任何自动补全什么的」).
 //
 // **The three things it refuses to paint, each with its own sentence.**
 // Not text; cut short by one slice; nothing there at all. They are
@@ -26,7 +28,7 @@
 // elsewhere, scroll what is here and take the rest if you need it, or
 // nothing. Folded into one「打不开」they would all read as khor being
 // broken, which is the failure `check-acp` 第二批 names.
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchPreview,
@@ -42,15 +44,13 @@ import {
   type FileText,
   type GitBlame,
   type GitDiff,
-  type GitHunk,
 } from "@/api";
+import { CodeEditor, editorIn, focusAtTop } from "@/components/CodeEditor";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
-import { languageOf, paintFileLines } from "@/lib/highlight";
 import { blameOfLines, useBlameShown } from "@/lib/blame";
-import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { useHereHosts } from "@/lib/here";
 import { levelOf, treeChanged } from "@/lib/tree-changed";
@@ -66,9 +66,7 @@ import {
   useRoad,
   write,
 } from "@/lib/save-road";
-import { ago } from "@/words";
 import { usePinch } from "@/hooks/use-pinch";
-import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
 
 /** The same table `khor_node::preview::kind` keeps, for the one
@@ -191,17 +189,6 @@ function Away({
       {took !== null && <span className="text-callout text-muted-foreground">{took}</span>}
     </div>
   );
-}
-
-/** The language a path's extension names, or null to draw it plain.
-    **The extension and nothing else**: a file with no suffix is not a
-    guess worth making, and `highlightAuto` is the expensive path this
-    app already refuses (`lib/highlight`). */
-export function languageOfPath(path: string): string | null {
-  const name = path.split("/").pop() ?? "";
-  const dot = name.lastIndexOf(".");
-  if (dot <= 0) return null;
-  return languageOf(name.slice(dot + 1));
 }
 
 export function FileView({
@@ -375,18 +362,6 @@ export function FileView({
   // So a diff khor could not read is drawn the way a directory that is
   // not a checkout is drawn — **nothing** — and the state it was held
   // in is gone with the row that read it.
-  /** Which hunk is expanded, by index. **One at a time and closed by
-      default** — 「打开是当前状态,git 状态显示在左侧,点击左侧状态后,
-      才展开 diff」(the user, 2026-09-11). A file that opened already
-      unfolded would be a diff view wearing a file view's name. */
-  const [shown, setShown] = useState<number | null>(null);
-  /** The one scroller in this view. Held so a step can bring its hunk
-      into view **without `scrollIntoView`**, which walks every
-      scrollable ancestor including the window — the same call that
-      exposed the whole app scrolling as one page on 2026-09-12. Here
-      the offset is arithmetic on the line height, which this view knows
-      exactly. */
-  const box = useRef<HTMLDivElement>(null);
   /** A picture zooms under two fingers (`usePinch`). */
   const pinch = usePinch();
   /** Bumped to ask the diff again. **A counter rather than a boolean**:
@@ -495,7 +470,6 @@ export function FileView({
   useEffect(() => {
     let live = true;
     setDiff(null);
-    setShown(null);
     if (!git) return;
     fetchGitDiff(machine, path)
       .then((d) => live && setDiff(d))
@@ -576,297 +550,15 @@ export function FileView({
     onDraft(edit.text === file.text ? null : edit);
   }, [edit, file, onDraft]);
 
-  const lang = languageOfPath(path);
-  // **Above the three early returns on purpose.** A hook after a
-  // conditional `return` is a hook that runs on some renders and not
-  // others, which React answers by throwing — and it throws at the
-  // root, so the whole app went blank rather than this pane
-  // (2026-09-12, found by opening it).
-  //
-  // **The paint is deferred while typing, and the reason is measured.**
-  // On this repo's largest editable file (`crates/node/src/link.rs`,
-  // 174 KB, 3773 lines), painting it costs 24 ms and putting the
-  // resulting 6383 spans into the document and laying them out costs
-  // another 40 — **about two thirds of what a keystroke would cost**,
-  // for a decoration. The truth is in the textarea either way, so the
-  // decoration is the right thing to make wait.
-  //
-  // With it deferred, one keystroke measured end to end in the app
-  // (dispatch plus forced layout, milliseconds on this machine):
-  //
-  // | file | bytes | ms |
-  // |---|---|---|
-  // | `ipc.rs` | 9.7 K | 4–13 |
-  // | `files.rs` | 15.9 K | 7–12 |
-  // | `proto.rs` | 61.6 K | 19–29 |
-  // | `link.rs` | 173.6 K | 31–53 |
-  //
-  // About a quarter of a millisecond per kilobyte, so the median file
-  // in a checkout (6.9 KB, measured in 工作区批2) is under 10 and the
-  // largest one that can be edited at all is under 70. **No size
-  // ceiling is needed and none is imposed** — which is a conclusion
-  // from the table, not a hope.
-  //
-  // ⚠️ **Those numbers are synchronous on purpose.** The first three
-  // attempts at them used `setTimeout` and `requestAnimationFrame` and
-  // reported a frozen renderer; a background tab serves no animation
-  // frames at all and clamps timers to about a second, so what was
-  // being measured was Chrome's throttle. Three files in a row came
-  // back at exactly 1000 ms, which is what gave it away.
-  //
-  // While it is waiting the `<pre>` shows the plain text, never the
-  // last painting: a stale painting is the wrong letters under the
-  // caret, which is worse than no colour by a long way.
-  const [painted, setPainted] = useState<{ text: string; lines: string[] | null } | null>(null);
-  useEffect(() => {
-    if (lang === null) {
-      setPainted(null);
-      return;
-    }
-    // No wait at all on a file that is only being read — a new file
-    // must not flash plain before it colours. The wait exists for the
-    // burst of keystrokes, so it starts when the burst does.
-    // Asynchronous since Shiki (2026-09-15): the first file in a
-    // language waits for its grammar. `live` drops a paint whose text is
-    // no longer the buffer's, so a slow grammar cannot land old paint
-    // under new keystrokes.
-    let live = true;
-    const id = setTimeout(() => {
-      void paintFileLines(body, lang).then((lines) => live && setPainted({ text: body, lines }));
-    }, dirty ? PAINT_IDLE : 0);
-    return () => {
-      live = false;
-      clearTimeout(id);
-    };
-  }, [body, lang, dirty]);
-
-
-  /** The file, one entry per source line. **The text's own split is the
-      spine, not the painter's** (工作区批⑨): the numbers, the gutter and
-      the editor all count lines the way `\n` does, and a painting that
-      disagreed would move every one of them. `paintFileLines` refuses to
-      hand back a different count for exactly that reason. */
-  const rows = useMemo(() => (body.length === 0 ? [] : body.split("\n")), [body]);
+  /** How many lines the text has, counted the way `\n` does — the spine
+      blame is laid along. */
+  const lines = useMemo(() => (body.length === 0 ? 0 : body.split("\n").length), [body]);
   /** Who wrote each line, in this buffer's lines; nothing while the
       buffer differs from the disk, for the change bars' reason (`hunks` below). */
   const blamed = useMemo(
-    () => (blame === null || diff === null || dirty ? null : blameOfLines(rows.length, blame, diff.hunks)),
-    [blame, diff, dirty, rows.length],
+    () => (blame === null || diff === null || dirty ? null : blameOfLines(lines, blame, diff.hunks)),
+    [blame, diff, dirty, lines],
   );
-  /** The line the caret is on, 1-based — the one line blame is said on
-      (UX-23, GitLens' arrangement); a press on a line where there is no
-      editor puts it there too. */
-  const [caret, setCaret] = useState<number | null>(null);
-  useEffect(() => setCaret(null), [path]);
-  /** Where each source line starts, in pixels down from the sheet's own
-      top, plus one last entry for the bottom of the last line — so a
-      hunk covering lines `at`…`at+n` is `tops[at-1]` to `tops[at-1+n]`
-      with no special case at the end.
-   *
-   * **Measured, because the file wraps now** (工作区批⑨). Until this
-   * batch every one of these was arithmetic: line `n` began at
-   * `line-height × n`, which is exact for a `<pre>` that never wraps
-   * and simply wrong for one that does — 「文件显示,要随屏幕宽度自动
-   * 换行」(the user, 2026-09-15). A long line now occupies three rows
-   * and everything below it has moved three rows down; no formula this
-   * side of laying the text out knows by how much.
-   *
-   * **Empty until the first layout**, and the numbers and the bars draw
-   * nothing rather than guess: a bar at a line it is not about is worse
-   * than a bar that arrives a frame late. */
-  const [tops, setTops] = useState<number[]>([]);
-  /** How tall the whole file is inside its scroller, and how far down
-      that scroller the first line begins — the two numbers the overview
-      ruler needs to squeeze the file onto one screen (2026-09-16).
-   *
-   * **Measured beside `tops` rather than computed from it.** The last
-   * entry of `tops` is where the text ends, which is not where the
-   * scroll ends: the box has padding of its own, and the day it grows a
-   * footer the ruler would put every mark slightly too low. `pad` is
-   * scroll-invariant on purpose — it is read as「sheet top minus box
-   * top plus how far the box is scrolled」, so scrolling does not have
-   * to re-measure anything. */
-  const [span, setSpan] = useState<{ total: number; pad: number }>({ total: 0, pad: 0 });
-  /** How tall the open peek block is, or 0 when none is open.
-   *
-   * **What it is for changed in 工作区第五轮.** It used to be the hole
-   * the numbers column had to leave, because the peek sat in the sheet's
-   * flow and pushed every line below it down. Out of the flow nothing
-   * moves and the numbers need nothing — what needs this is the block
-   * itself, which hangs *upward* off the top edge of its line and
-   * therefore has to know its own height to know where to start.
-   *
-   * **Measured on the block and not on the sheet.** An absolutely
-   * positioned child does not change its parent's height, so the
-   * observer watching the sheet never fires when this opens: it has to
-   * be watched itself. Zero for one frame while it is, which puts it
-   * level with the line and then moves it up. */
-  const [peekH, setPeekH] = useState(0);
-  /** The painted sheet, so its lines can be measured. */
-  const sheet = useRef<HTMLPreElement>(null);
-  useLayoutEffect(() => {
-    const el = sheet.current;
-    const pk = el?.querySelector<HTMLElement>("[data-peek]") ?? null;
-    if (pk === null) {
-      setPeekH((was) => (was === 0 ? was : 0));
-      return;
-    }
-    const read = () => {
-      const h = pk.getBoundingClientRect().height;
-      setPeekH((was) => (was === h ? was : h));
-    };
-    read();
-    const ro = new ResizeObserver(read);
-    ro.observe(pk);
-    return () => ro.disconnect();
-    // `shown` opens and closes it; the rest are what re-lay the block
-    // it is measuring. `peekAt` rides `shown`, so it is not repeated.
-  }, [shown, body, painted, face]);
-
-  // **The old text is brought onto the screen when it opens**
-  // (2026-09-16:「点击后,窗口应该移动到这个状态条显示内容的地方。现在
-  // 如果在一个很长的状态条点击,看不见东西,需要拖动状态条最上方才能看
-  // 见」). The peek lies *above* its hunk, so a press low on a tall bar
-  // opens something off the top of the scroller. Arithmetic on rects,
-  // for `box`'s reason below — never `scrollIntoView`. Only when it is
-  // actually out of view: a peek already on screen must not jump.
-  useLayoutEffect(() => {
-    if (shown === null) return;
-    const el = box.current;
-    const peek = el?.querySelector<HTMLElement>("[data-peek]");
-    if (!el || !peek) return;
-    const b = el.getBoundingClientRect();
-    const p = peek.getBoundingClientRect();
-    // **Its top edge to the scroller's top edge, every time**
-    // (2026-09-16:「点击git状态bar的时候, 如果从文件第一行开始就有此bar,
-    // 跳转到的是文件的第一行,但仍看不清提示. 还得鼠标拖动. 应该直接跳转
-    // 到提示框的最上方」— the user).
-    //
-    // It used to scroll **only when the block was out of view**, and to
-    // a third of the way down. Both halves are what the user hit: a
-    // hunk at line 1 lays its old text *above* line 1, so scrolling to
-    // the line leaves the block off the top; and a block taller than
-    // the viewport is partly in view by any test that asks about its
-    // top edge, so 「it is already visible」 was true of a panel whose
-    // first line was above the screen. Asking nothing and always
-    // landing the same way is also the shorter rule to hold: press a
-    // bar, the old text is at the top.
-    //
-    // `--gap-row` of air above it, so the block does not start flush
-    // against the column's edge — the same gap the rows either side of
-    // it are spaced by.
-    const air = Number.parseFloat(getComputedStyle(el).getPropertyValue("--gap-row")) || 0;
-    el.scrollTop += p.top - b.top - air;
-    // **`peekH` is in here on purpose** (工作区第五轮): the block hangs
-    // upward off its line, so on the frame it opens it has not been
-    // measured yet and is sitting level with the line. Landing once on
-    // that would put it a block's height too low; this runs again the
-    // moment the height is known, and then settles.
-  }, [shown, peekH]);
-  // **A layout effect and a `ResizeObserver`, both.** The effect catches
-  // the text changing; the observer catches the column changing width,
-  // which is the whole point of wrapping and which no render here is
-  // told about (the seam is dragged one component up, and the window is
-  // not a prop at all).
-  /** The last measurement, for the anchor below. A ref, not the state:
-      the observer's callback closes over the render it was made in and
-      would read stale tops. */
-  const lastTops = useRef<{ tops: number[]; pad: number } | null>(null);
-  useLayoutEffect(() => {
-    const el = sheet.current;
-    if (el === null) return;
-    const read = () => {
-      const seen = el.querySelectorAll<HTMLElement>("[data-line]");
-      // **Rects, not `offsetTop`.** A line sits at a multiple of 21.6
-      // and `offsetTop` is rounded to a whole pixel, so the numbers
-      // column — whose blocks are the differences between neighbours —
-      // drifted up to half a pixel away from the text it names. The
-      // gate measures that difference at 0.5, which is exactly where
-      // rounded arithmetic lands.
-      const base = el.getBoundingClientRect().top;
-      const next: number[] = [];
-      for (const row of seen) next.push(row.getBoundingClientRect().top - base);
-      const last = seen[seen.length - 1];
-      next.push(last === undefined ? 0 : last.getBoundingClientRect().bottom - base);
-      // **Nothing is written when nothing moved.** The observer fires on
-      // every layout that touches this box, including the one this
-      // state change causes — a new array every time is a render loop
-      // with a repaint in it.
-      setTops((was) =>
-        was.length === next.length && was.every((v, i) => v === next[i]) ? was : next,
-      );
-      const b = box.current;
-      if (b !== null) {
-        const total = b.scrollHeight;
-        const pad = el.getBoundingClientRect().top - b.getBoundingClientRect().top + b.scrollTop;
-        setSpan((was) => (was.total === total && was.pad === pad ? was : { total, pad }));
-        // **The line at the top stays at the top when the lines re-wrap**
-        // (2026-09-16:「调整窗口宽度自动换行的时候,应该保持最上方一行,
-        // 稳定视觉一致性」). A narrower column folds every long line
-        // above the viewport into more rows, and the same scrollTop
-        // then lands somewhere further down the file; the person was
-        // reading line 40 and is now looking at 31. So the source line
-        // whose top was at the scroller's edge is found in the old
-        // measurement and put back at the edge in the new one, offset
-        // within the line kept as far as the line still reaches.
-        // **Only when the line count held** — a keystroke that adds a
-        // line is an edit, and the caret's own scroll owns that.
-        // **And only once the reader is into the lines**: at the top of
-        // the page there is no line to keep, and the scroller's own top
-        // padding changing (the band over it, `lib/scroll-edge`) is not
-        // a re-wrap — anchored, it scrolled the first line under the head.
-        const prev = lastTops.current;
-        const st = b.scrollTop;
-        if (prev !== null && st > prev.pad && prev.tops.length === next.length && next.length > 1) {
-          let i = 0;
-          while (i + 2 < prev.tops.length && prev.pad + prev.tops[i + 1] <= st + 0.5) i += 1;
-          const within = Math.max(0, st - (prev.pad + prev.tops[i]));
-          const room = Math.max(0, next[i + 1] - next[i] - 1);
-          const want = pad + next[i] + Math.min(within, room);
-          if (Math.abs(want - st) > 0.5) b.scrollTop = want;
-        }
-        lastTops.current = { tops: next, pad };
-      }
-      // How tall the open peek came out, so the numbers column can wait
-      // out exactly as much of itself as the sheet just spent on it.
-    };
-    read();
-    const ro = new ResizeObserver(read);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [body, painted, face]);
-
-  // **Esc shuts the open hunk** (2026-09-16). A window listener rather
-  // than a key handler on the bar: the bar is a 12-wide strip nobody
-  // focuses, and what Esc is expected to shut is whatever is open on
-  // the screen — pressing the bar again is the other way, and it is the
-  // one a pointer finds.
-  useEffect(() => {
-    if (shown === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setShown(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [shown]);
-
-  // The ask from outside, and **nothing on the first render**: the
-  // value arrives with the mount, and a mount is not an ask. The ref
-  // moves with each real one, so bringing a tab to the front and asking
-  // it to save is two beats rather than a save on every remount.
-  // A line asked for from outside (ruling 35). Waits for the layout —
-  // `tops` is empty until the first measurement, and with wrapping there
-  // is no arithmetic to fall back on (`Ruler`'s rule) — and puts that
-  // line a third of the way down, which is where `goTo` puts a hunk.
-  const wentTo = useRef<number>(0);
-  useEffect(() => {
-    if (goLine === null || goLine.at === wentTo.current) return;
-    const el = box.current;
-    const top = tops[goLine.line - 1];
-    if (el === null || top === undefined) return;
-    wentTo.current = goLine.at;
-    el.scrollTop = Math.max(0, span.pad + top - el.clientHeight / 3);
-  }, [goLine, tops, span]);
 
   const askedAt = useRef(saveAt);
   useEffect(() => {
@@ -1196,8 +888,6 @@ export function FileView({
     );
   }
 
-  const paint = painted !== null && painted.text === body ? painted.lines : null;
-
   // **Nothing is drawn about HEAD while the buffer differs from disk.**
   // The bars name line numbers and one typed line moves every line
   // under it, so a bar left where it was would point at code it is not
@@ -1209,66 +899,7 @@ export function FileView({
   // gone quiet. The file saves itself a second after the typing stops
   // now, so the sentence would flash on every pause; a save that does
   // not land says so in its own words below.
-  /** Put a hunk on screen, from the overview ruler.
-   *
-   * **It scrolls and opens nothing** (2026-09-16). The ruler is the map
-   * — 「点击后……滚过去」 is the whole of what a mark on it promises, and
-   * opening the old text as well would move the lines under the very
-   * place it just scrolled to. Reading what HEAD had is the gutter
-   * bar's press, one column over from the line it is about.
-   *
-   * **Asked of the bar, not computed from the line height.** The bar is
-   * already sitting where CSS put it, so its `offsetTop` is the answer
-   * by construction — a second arithmetic here would be a copy of
-   * `--text-mono--line-height` that nothing keeps in step, and the day
-   * the token moved one of the two would be wrong. Found **by the line
-   * it names**, not by position in the list: a hunk whose lines this
-   * buffer no longer has draws no bar at all, and counting would then
-   * scroll to somebody else's. */
-  /** Where a press on the bare overview strip lands: that fraction of
-      the file, **centred in the viewport** rather than put at the top.
-      The strip is the file end to end, so the place pressed is the place
-      meant, and the half-screen either side of it is the context that
-      makes it readable (`Ruler`'s `onGoAt`). */
-  const goRatio = (ratio: number) => {
-    const el = box.current;
-    if (el === null) return;
-    const want = ratio * el.scrollHeight - el.clientHeight / 2;
-    el.scrollTop = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, want));
-  };
-
-  const goTo = (h: GitHunk) => {
-    const el = box.current;
-    const bar = el?.querySelector<HTMLElement>(`[data-hunk="${h.at}"]`);
-    if (el && bar) {
-      // A third of the way down rather than at the top: a hunk pinned
-      // to the ceiling is a hunk with no lines above it to compare
-      // against, and comparing is the whole reason to go there.
-      el.scrollTop = bar.offsetTop - el.clientHeight / 3;
-    }
-  };
-
   const renders = rendererOf(path);
-  /** The hunk whose old text is being read, laid into the file itself.
-      `null` closes it, and so does anything that takes the bars away —
-      `hunks` empties the moment somebody types, and a peek about a diff
-      that is no longer being drawn would be a panel with no bar. */
-  const peek = shown !== null && hunks.length > 0 ? (diff?.hunks[shown] ?? null) : null;
-  /** Which line the peek block is laid **above**, 1-based, or `null`.
-   *
-   * A hunk's removed lines belong directly over the lines that replaced
-   * them, so an ordinary change puts them above `at`. **A pure deletion
-   * is the exception**: nothing replaced those lines, and where they
-   * used to begin is the boundary *below* `at` — the same boundary its
-   * notch in the gutter stands on. `rows.length + 1` is the end of the
-   * file, which is a real answer (a tail somebody deleted); past that is
-   * a diff naming lines this buffer no longer has, and then nothing is
-   * drawn, exactly as the gutter draws no bar for it. */
-  const peekAt = (() => {
-    if (peek === null) return null;
-    const at = peek.lines === 0 ? peek.at + 1 : peek.at;
-    return at >= 1 && at <= rows.length + 1 ? at : null;
-  })();
 
   return (
     // `relative`: the one notice this view still has floats at the foot
@@ -1354,31 +985,10 @@ export function FileView({
           title (`onNote` below), where it costs no row. Where the file
           landed is reported by the row whose button did it (the cut row
           above, and the 取走 cards). */}
-      {/* Three columns that scroll as one, **and every line is a block
-          of its own** (工作区批⑨).
-
-          It used to be two `<pre>`s each holding one string, because a
-          painted block's spans cross line ends and splitting the markup
-          by「\n」would cut them in half. Shiki hands the lines over
-          already separated (`paintFileLines`), so that cost is gone —
-          and it had to go: with wrapping on, 「where does line 40
-          start」 is a question only the laid-out text can answer, and a
-          single box has nothing in it to ask.
-
-          **The gutter is still a column of its own.** It cannot be a
-          marker inside either of the other two — one of them has a
-          transparent editor over it — so it floats, and its bars are
-          placed at the measured tops rather than at a multiple of the
-          line height. */}
-      {/* **One padding box for all three columns**, rather than `py-2`
-          on each. Everything the gutter draws is placed by arithmetic
-          from the top of the first line, and a padding of its own would
-          put that origin inside its own border box — eight pixels above
-          where the text actually starts, on every bar. */}
       {/* **The editor leaves the screen in 预览 and keeps everything.**
           The buffer, the digest the next save is pinned to, the dirty
           mark: all of them are this component's state and none of them
-          lives inside the textarea. Switching back finds the text
+          lives inside the editor. Switching back finds the text
           exactly as it was — and typing into a preview is not possible,
           because there is nothing there to focus. */}
       {face === "preview" && renders !== null ? (
@@ -1390,163 +1000,24 @@ export function FileView({
           )}
         </div>
       ) : (
-      // **The ruler is beside the scroller, not inside it** (2026-09-16,
-      //「右侧滑动条后方」). Inside, it would scroll along with the file
-      // and stop being a map of the whole of it; outside and to the
-      // right, it is past the scrollbar exactly as VS Code's is.
-      /* **The ruler lies over the scrollbar's own strip, not beside it**
-         (2026-09-16:「文件右侧的 git 状态导航条是在滑动条的下方的,可以
-         透过滑动条颜色浮上来」). The first cut put it past the scrollbar
-         as a column of its own, 14 wide with a border — a second bar
-         next to the bar. VS Code paints its marks *inside* the
-         scrollbar track under a translucent slider, so the strip is
-         one strip. Here the ruler is laid absolutely over the
-         scroller's right edge, the track is already transparent
-         (`app.css`), and the thumb over this scroller is thinned to
-         a wash so a mark under it still reads (`[data-file-scroll]`
-         in app.css). The wrapper is `relative` for that alone. */
-      <div className="relative flex min-h-0 flex-1">
-      <div
-        ref={box}
-        // Named so a gate can ask **this** box whether anything scrolls
-        // sideways (工作区批⑨). The ruling is that a file wraps, and a
-        // page that does not scroll while its inner scroller does is the
-        // same file off the right edge with one more thing in the way.
-        data-file-scroll
-        // Code is read and copied: it selects (app.css 选字与手); the
-        // line numbers beside it keep their own `select-none`.
-        data-selectable
-        // **The engine's own scroll anchoring is off here** — this view
-        // anchors the top line itself when the sheet re-wraps (`read()`
-        // above), and Blink's anchoring on top of that is two hands on
-        // one wheel; WebKit, which the desktop app runs in, has none,
-        // which is why the ruling was made at all.
-        className="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
-        // **A finger outside the text puts the keyboard away** (2026-10-03,
-        // the owner's iPhone: the keyboard came up over a file and stayed).
-        // The editor is the text itself, so a tap on it places the caret
-        // and raises the keyboard; a phone has no Esc and this page no
-        // keyboard switch, and WebKit keeps the focus when the blank under
-        // the last line is tapped. A touch anywhere in the view but the
-        // text ends the editing, as it does in Notes.
-        // Where there is no editor over the text, a press on a line says
-        // which line is read — blame's line (UX-23).
-        onClick={(e) => {
-          const at = e.target instanceof Element ? e.target.closest("[data-file-text] [data-line]")?.getAttribute("data-line") : null;
-          if (at) setCaret(Number(at));
-        }}
-        onPointerDown={(e) => {
-          const ed = document.activeElement;
-          if (
-            e.pointerType === "touch" &&
-            ed instanceof HTMLTextAreaElement &&
-            ed.dataset.edit !== undefined &&
-            e.target !== ed &&
-            box.current?.contains(ed)
-          ) {
-            ed.blur();
-          }
-        }}
-      >
-        <div className="flex min-w-full items-start py-2">
-          {/* **One block per number, as tall as the line it names**
-              (工作区批⑨). A joined string was exact while every line was
-              one row tall; with wrapping it would put 40 beside line 43.
-              Each block takes the measured height of its line, so the
-              digits land on that line's **first** visual row and the
-              next number waits out however many rows the wrap took —
-             「不做换行开关,我们显示行号的作用就是这个啊」(the user,
-              2026-09-15). */}
-          <pre
-            data-numbers
-            aria-hidden="true"
-            // **The divider is this column's right edge, and the change
-            // bar stands outside it, on the text's side** (2026-09-16:
-            // 「状态条收进了行号与文字分割线的内侧了,分割线到文字部分空了
-            // 一截…要么让文字往左不要空,要么状态条放在分割线外侧」). The
-            // bar used to carry the divider on its own right, which left
-            // the sheet's padding as a blank gap past the line; now the
-            // bar sits in that gap, VS Code's arrangement.
-            className="shrink-0 select-none border-r pl-2 pr-1 text-right font-mono text-mono leading-mono text-muted-foreground tabular-nums"
-          >
-            {/* No spacer for the peek any more: it floats over the
-                text rather than taking a row, so the numbering beside
-                it never moves (工作区第五轮, `Peek`). */}
-            {rows.map((_, i) => (
-              <div
-                key={i}
-                data-num={i + 1}
-                style={tops.length > i + 1 ? { height: tops[i + 1] - tops[i] } : undefined}
-              >
-                {i + 1}
-              </div>
-            ))}
-          </pre>
-          {/* ⚠️ 墓碑 (UX-4 → UX-23, the owner 2026-10-05): a blame column
-              beside the numbers, `--blame-col` (22ch) wide — it squeezed
-              the code to half the pane. Blame is the caret's line's end
-              now (`InlineBlame`). */}
-          <Gutter
-            hunks={hunks}
-            shown={shown}
-            tops={tops}
-            onShow={(i) => setShown(shown === i ? null : i)}
-          />
-          {/* **`min-w-0`, where it used to be `min-w-max`.** That was
-              the column growing to the longest line and the file
-              scrolling sideways; the ruling is that it wraps instead,
-              so the column takes the width it is given and the text
-              folds into it. */}
-          <div className="relative min-w-0 flex-1">
-            <Sheet
-              ref={sheet}
-              rows={rows}
-              text={body}
-              paint={paint}
-              peek={peek}
-              peekAt={peekAt}
-              peekTop={peekAt === null ? 0 : (tops[peekAt - 1] ?? 0)}
-              peekNext={peekAt === null ? 0 : (tops[peekAt] ?? tops[peekAt - 1] ?? 0)}
-              peekH={peekH}
-              // **No editor while a hunk is open, and that is the price
-              // of 「就地显示」** (2026-09-16). The old text goes into
-              // the sheet's own flow, and the editor over it is a
-              // `<textarea>` — one box holding one string, with nowhere
-              // to put a block. Anything inserted on one side and not
-              // the other is the caret a row off its letter from there
-              // down, which is the one failure this arrangement may not
-              // have (`check-face` 4c).
-              //
-              // **It costs almost nothing, and that is measurable rather
-              // than hoped**: bars are drawn only when the buffer
-              // matches the disk (`hunks`), so a file with a draft in it
-              // has no bar to press in the first place. What is given up
-              // is starting to type *while* looking at what HEAD had —
-              // one Esc away, and the buffer is untouched throughout.
-              edit={canEdit && !reading}
-              blameAt={blamed !== null ? caret : null}
-              onCaret={setCaret}
-              onText={(t) => {
-                setClashes(null);
-                setEdit((e) => (e === null ? e : { ...e, text: t }));
-              }}
-              onSave={() => save(true)}
-            />
-            {blamed !== null && caret !== null && caret <= blamed.length && (
-              <InlineBlame commit={blamed[caret - 1]} sheet={sheet} tops={tops} />
-            )}
-          </div>
-        </div>
-      </div>
-      <Ruler
-        hunks={hunks}
-        tops={tops}
-        span={span}
-        shown={shown}
-        onGo={goTo}
-        onGoAt={goRatio}
-      />
-      </div>
+        // **The file in CodeMirror** (CM-BRIEF, cm-a): numbers, folding,
+        // the change gutter and its peek, the overview ruler over the
+        // scrollbar, blame at the caret's line's end and ⌘F are the
+        // editor's own extensions (`lib/code`). Writable exactly when the
+        // whole file is here and nobody is reading it first.
+        <CodeEditor
+          path={path}
+          text={body}
+          editable={canEdit && !reading}
+          hunks={hunks}
+          blamed={blamed}
+          goLine={goLine}
+          onText={(t) => {
+            setClashes(null);
+            setEdit((e) => (e === null ? e : { ...e, text: t }));
+          }}
+          onSave={() => save(true)}
+        />
       )}
       {/* **The one notice left, and it floats** (2026-09-16:「类似要在
           文件上方新增一列的东西都不要」— the user).
@@ -1679,673 +1150,15 @@ function Table({ text, sep }: { text: string; sep: string }) {
   );
 }
 
-/** How long a keystroke has to be the last one before the colours come
-    back, in milliseconds. Short enough that a pause between words
-    repaints, long enough that a burst of typing repaints once.
-    **Not a token**: tokens.css holds lengths, and this is a duration
-    nothing else in the app shares. */
-const PAINT_IDLE = 120;
-
-/** The one rule that makes the caret land on its letter: the painted
-    copy and the editor over it wrap at the same places.
-
-    **Set once and spread onto both**, because the pair is the whole
-    trick and a class edited on one of them is the drift `check-face`
-    goes red about. `anywhere` rather than `break-word`: a 400-character
-    path with no space in it has to fold somewhere, and the alternative
-    is the sideways scroll the ruling took away. */
-const WRAP = "font-mono text-mono leading-mono whitespace-pre-wrap [overflow-wrap:anywhere]";
-
-/**
- * The file's one surface: the painted text, with a transparent editor
- * laid exactly over it when the file may be written back.
- *
- * **Why a textarea over a `<pre>` and not an editor component.** The
- * two have to agree character for character, and they do because they
- * are the same string in the same font, size, line height, padding and
- * wrapping — a browser laying out one lays out the other identically.
- * That is the whole trick, and it is also the whole of its fragility:
- * **every typographic property here must be set on both (`WRAP`), and
- * `check-face` measures the caret against the ink to catch the day one
- * of them drifts.**
- *
- * **What it does not buy, said where it is spent:** no bracket
- * matching, no multiple cursors, no folding, and no completion — the
- * last of which is not a cost at all (「不提供任何自动补全什么的」). A
- * person who wants those opens the file in VS Code, which is the
- * batch after this one.
- *
- * **One block per line, and the newlines are in the editor only**
- * (工作区批⑨). The `<pre>` draws each line as a `<div>`: a block box
- * breaks where a `\n` would, so the two lay out the same, and the
- * numbers and the gutter get one element per line to measure. An empty
- * line has no content to give it height, which is what the `min-h`
- * is for — without it a blank line collapses and everything below it
- * climbs one row.
- *
- * **The `<pre>` keeps the text even under the editor.** It would be
- * cheaper to leave it empty and let the textarea show through, but then
- * the column would have no height of its own and the line tops, the
- * gutter and the numbers would all be measuring a box with nothing in
- * it.
- */
-function Sheet({
-  ref,
-  rows,
-  text,
-  paint,
-  peek,
-  peekAt,
-  peekTop,
-  peekNext,
-  peekH,
-  edit,
-  blameAt,
-  onCaret,
-  onText,
-  onSave,
-}: {
-  ref: React.Ref<HTMLPreElement>;
-  /** The file split on 「\n」 — the spine every column counts by. */
-  rows: string[];
-  /** The same text unsplit, which is what the editor holds. */
-  text: string;
-  /** The painted markup, one entry per line, or null for a language
-      this build does not carry — then the `<pre>` shows plain text. */
-  paint: string[] | null;
-  /** The hunk being read, or null. */
-  peek: GitHunk | null;
-  /** Which line it is laid above, 1-based, or null for「nothing open」
-      (`FileView`'s `peekAt` says how the number is chosen). */
-  peekAt: number | null;
-  /** That line's own offset from the top of this `<pre>`, measured —
-      the peek hangs off it rather than taking a row (`Peek`). */
-  peekTop: number;
-  /** The offset of the line after it, for the case where the block will
-      not fit above (`Peek`). */
-  peekNext: number;
-  /** How tall the peek measured last paint, so it can be hung *above*
-      the line. Zero on the first paint, which puts it level with the
-      line for one frame and then it moves up. */
-  peekH: number;
-  /** Whether to lay an editor over it at all. **A file that cannot be
-      written back grows no textarea**, rather than a disabled one: a
-      caret that appears and then refuses every keystroke is worse than
-      no caret, and the strip above already says why this one is only
-      to look at. */
-  edit: boolean;
-  /** The line blame is said at the end of (`InlineBlame`), or null. */
-  blameAt: number | null;
-  /** The caret moved to a line (1-based). */
-  onCaret: (line: number) => void;
-  onText: (text: string) => void;
-  onSave: () => void;
-}) {
-  const caretOf = (el: HTMLTextAreaElement) => onCaret(el.value.slice(0, el.selectionStart).split("\n").length);
-  return (
-    <>
-      <pre
-        ref={ref}
-        // Named so a gate can find *this* `<pre>` and not the line
-        // numbers beside it. The first probe for「does the expanded
-        // panel cover any code」 fell back to `document.querySelector
-        // ("pre")`, which is the number column — and reported no
-        // overlap against the old overlay too, so the assertion passed
-        // on the behaviour it was written to forbid (2026-09-13).
-        // `data-file-text`, not `data-sheet` (2026-09-30): the retired R0
-        // sheet wore that same name, and 「no `data-sheet` anywhere」 is
-        // now a gate (`check-face` §13 (b)).
-        data-file-text
-        // Hidden from a screen reader when the textarea is there: the
-        // two hold the same words, and read twice they are gibberish.
-        aria-hidden={edit || undefined}
-        // `relative` so the peek can hang off a line's top edge without
-        // taking a row of its own (`Peek`).
-        className={cn("relative px-3", WRAP)}
-      >
-        {rows.map((line, i) => (
-          <div
-            key={i}
-            data-line={i + 1}
-            className="min-h-[var(--text-mono--line-height)]"
-          >
-            {paint === null ? (
-              line
-            ) : (
-              // Safe for `paint`'s reason: Shiki escapes every
-              // character of the input before it wraps any of it, so
-              // this is the file's own text plus spans this build
-              // generated (`lib/highlight`'s `line`).
-              <span dangerouslySetInnerHTML={{ __html: paint[i] }} />
-            )}
-            {/* Where the line's text ends: blame is hung off this (it
-                takes no room, so the line wraps as the editor's does). */}
-            {blameAt === i + 1 && <span data-blame-at className="inline-block h-[var(--text-mono--line-height)] w-0 align-top" />}
-          </div>
-        ))}
-        {peek !== null && peekAt !== null && (
-          <Peek hunk={peek} at={peekTop} next={peekNext} tall={peekH} />
-        )}
-      </pre>
-      {edit && (
-        <textarea
-          data-edit
-          value={text}
-          onChange={(e) => onText(e.target.value)}
-          onSelect={(e) => caretOf(e.currentTarget)}
-          onFocus={(e) => caretOf(e.currentTarget)}
-          onKeyDown={(e) => {
-            // The one shortcut. `metaKey` and `ctrlKey` both, because
-            // this face runs on a mac app, a browser on a phone and a
-            // Windows desktop from one build.
-            if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-              e.preventDefault();
-              onSave();
-            }
-          }}
-          spellCheck={false}
-          autoCapitalize="off"
-          autoCorrect="off"
-          // **`soft`, which is the attribute half of `WRAP`** (工作区
-          // 批⑨). It was `off` until this batch, and the reason given
-          // was that a wrapped editor line would sit beside an unwrapped
-          // painted one — true then, because only one of the two
-          // wrapped. Both do now, and what `off` would cost instead is
-          // an editor that scrolls sideways under a sheet that does not.
-          // **`soft` and never `hard`**: `hard` writes the wrap points
-          // into the value, which would save a file with newlines
-          // nobody typed.
-          wrap="soft"
-          // Transparent ink over the painted copy, and the caret is the
-          // one thing drawn — `text-transparent` hides the glyphs but
-          // not the selection, which browsers paint from their own
-          // highlight colour and is exactly what a selection should
-          // look like here.
-          className={cn(
-            "absolute inset-0 resize-none overflow-hidden border-0 bg-transparent px-3",
-            WRAP,
-            "text-transparent caret-foreground outline-none",
-          )}
-        />
-      )}
-    </>
-  );
-}
-
-/** Which of git's four inks a change wears, from what the change **is**
-    (2026-09-16: 「文件里,有改动或 git 差异的那个竖线,是要有颜色的,和现
-    在的 git 状态颜色一致」— the user).
- *
- * The bars were `--git-mark` until then: the foreground at half
- * strength, argued for on the grounds that a bar says only 「different
- * from HEAD」. The tree's letters had already stopped saying only that
- * (工作区批⑦) — they say **which way** different, in these same four
- * inks — and a file whose row wears a yellow M has no business drawing
- * its own changes in grey. So the gutter reads the way the row does.
- *
- * Three of the four are reachable here and the fourth is not: `C` is a
- * conflict, which is a fact about a path and not about a place inside
- * one, so `git diff` never hands one over. */
-function hunkInk(h: GitHunk): string {
-  // Nothing on screen replaced these lines: they are gone, and gone is
-  // 删除's ink. Asked first because such a hunk also has `was`, and the
-  // order of these two tests is the whole difference between 删 and 改.
-  if (h.lines === 0) return "bg-git-deleted";
-  // Lines with nothing behind them in HEAD — 新增.
-  if (h.was.length === 0) return "bg-git-added";
-  return "bg-git-modified";
-}
-
-/**
- * **Blame at the end of the caret's line** (UX-23, the owner 2026-10-05:
- * the 22ch column squeezed the code to half the pane — GitLens' default
- * instead). One annotation, in the muted ink, hung off the line's last
- * character (`[data-blame-at]` in `Sheet`) so it takes no room and moves
- * no line: `7a921aa · 作者 · 3 天前`, or the short hash alone where the line
- * leaves no room for that. The whole commit — and its subject — on hover,
- * or a long press under a finger. Not committed: the catalog's word.
- */
-function InlineBlame({
-  commit,
-  sheet,
-  tops,
-}: {
-  commit: GitCommit | null;
-  sheet: React.RefObject<HTMLPreElement | null>;
-  /** The lines' measured tops: a re-wrap moves the line's end. */
-  tops: number[];
-}) {
-  const whole = useRef<HTMLSpanElement>(null);
-  const [at, setAt] = useState<{ x: number; y: number; room: number } | null>(null);
-  const [short, setShort] = useState(false);
-  /** Not even the hash fits after the text (a line that runs to the
-      pane's edge, as a phone's often do): it stands at the row's end,
-      over the text, on the file's ground. */
-  const [over, setOver] = useState(false);
-  const hash = useRef<HTMLSpanElement>(null);
-  const [open, setOpen] = useState(false);
-  const press = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const long = commit === null ? gui.blame_uncommitted : `${commit.id.slice(0, 7)} · ${commit.author} · ${ago(commit.when_ms)}`;
-  const brief = commit === null ? gui.blame_uncommitted : commit.id.slice(0, 7);
-  useLayoutEffect(() => {
-    const pre = sheet.current;
-    const mark = pre?.querySelector<HTMLElement>("[data-blame-at]");
-    const box = pre?.parentElement;
-    if (!pre || !mark || !box) {
-      setAt(null);
-      return;
-    }
-    const b = box.getBoundingClientRect();
-    const m = mark.getBoundingClientRect();
-    const end = parseFloat(getComputedStyle(pre).paddingRight) || 0;
-    const x = m.left - b.left;
-    setAt({ x, y: m.top - b.top, room: Math.max(0, b.width - x - end) });
-  }, [sheet, tops, commit]);
-  useLayoutEffect(() => {
-    // The whole annotation measured off screen, then cut to the hash
-    // where it does not fit.
-    const el = whole.current;
-    if (!el || !at) return;
-    setShort(el.offsetWidth > at.room);
-    setOver((hash.current?.offsetWidth ?? 0) > at.room);
-  }, [at, long]);
-  useEffect(() => {
-    if (!open) return;
-    const away = () => setOpen(false);
-    document.addEventListener("pointerdown", away);
-    return () => document.removeEventListener("pointerdown", away);
-  }, [open]);
-  if (!at) return null;
-  return (
-    <>
-      <span ref={whole} aria-hidden="true" className="invisible absolute whitespace-nowrap ps-group font-mono text-caption">
-        {long}
-      </span>
-      <span ref={hash} aria-hidden="true" className="invisible absolute whitespace-nowrap ps-group font-mono text-caption">
-        {brief}
-      </span>
-      <span
-        data-blame-inline
-        data-blame-over={over || undefined}
-        data-blame-short={short || undefined}
-        title={commit === null ? undefined : `${long}\n${commit.subject}`}
-        style={over ? { right: 0, top: at.y } : { left: at.x, top: at.y, maxWidth: at.room }}
-        className={cn(
-          "absolute z-10 overflow-hidden whitespace-nowrap font-mono text-caption leading-[var(--text-mono--line-height)] text-tertiary select-none",
-          over ? "rounded-xs bg-card px-xxs me-3" : "ps-group",
-        )}
-        onPointerDown={(e) => {
-          if (e.pointerType === "mouse" || commit === null) return;
-          e.stopPropagation();
-          press.current = setTimeout(() => setOpen(true), 450);
-        }}
-        onPointerUp={() => press.current && clearTimeout(press.current)}
-        onPointerCancel={() => press.current && clearTimeout(press.current)}
-        onContextMenu={(e) => e.preventDefault()}
-      >
-        {short ? brief : long}
-      </span>
-      {open && commit !== null && (
-        <div
-          data-blame-card
-          style={{ left: Math.max(0, at.x), top: at.y }}
-          className="absolute z-20 mt-[var(--text-mono--line-height)] max-w-[min(32rem,90%)] rounded-md border bg-popover p-in text-caption shadow-(--shadow-float)"
-        >
-          <div className="font-mono text-muted-foreground">{long}</div>
-          <div className="text-foreground">{commit.subject}</div>
-        </div>
-      )}
-    </>
-  );
-}
-
-/** The change gutter: one bar per hunk, each one pressable.
-
-    **Every bar presses, including the ones with nothing removed.** A
-    pure insertion has no old lines to show, so the honest options were
-    a dead target that looks like a live one or a sentence saying the
-    lines are new — and two bars that look alike and behave differently
-    is the worse of the two (`gui.git_added`). */
-function Gutter({
-  hunks,
-  shown,
-  tops,
-  onShow,
-}: {
-  hunks: GitHunk[];
-  shown: number | null;
-  /** Where every line begins, measured off the sheet (`FileView`'s
-      `tops`). **Empty means nothing has been laid out yet** and the
-      gutter draws no bars — a bar at a line it is not about is worse
-      than a bar one frame late, and with wrapping there is no formula
-      to fall back on. */
-  tops: number[];
-  onShow: (i: number) => void;
-}) {
-  return (
-    // `self-stretch` rather than a height of its own: the column has to
-    // be exactly as tall as the text beside it, and the text already
-    // knows how tall it is. It also makes the rule between the numbers
-    // and the code run the whole way down instead of stopping where the
-    // last hunk does.
-    // **4 wide, not 12** (2026-09-16:「左侧的 git 状态条细一点,占用太多
-    // 空间了。刚好适合点击就行」). VS Code's dirty-diff decoration is 3px;
-    // this is one more so a pointer lands on it without aiming, and
-    // nothing else — the column exists for the bar and takes the bar's
-    // width. The touch floor is waived for it in `check-face` for the
-    // reason written there.
-    // **6 wide** (2026-09-16:「左侧的 git 状态条稍微再宽一点,点击性受限
-    // 了」, after 4 turned out too thin to land on) — still a bar, not a
-    // column; and no divider of its own any more, the numbers carry it.
-    <div data-gutter={hunks.length} className="relative w-1.5 shrink-0 self-stretch">
-      {hunks.map((h, i) => {
-        const gone = h.lines === 0;
-        // The line the hunk starts on, and the one after everything it
-        // covers. Out of range — a diff that names lines this buffer no
-        // longer has — draws nothing at all, which is the same answer
-        // as「not measured yet」and the right one: khor has no place to
-        // put a bar about a line it cannot find.
-        const from = tops[h.at - 1];
-        const to = tops[h.at - 1 + h.lines];
-        // A deletion stands on the boundary **below** line `at`, which
-        // is where the lines that went away used to begin.
-        const edge = tops[h.at];
-        if (from === undefined || to === undefined || (gone && edge === undefined)) return null;
-        return (
-          <button
-            type="button"
-            key={`${h.at} ${h.lines}`}
-            data-hunk={h.at}
-            data-on={shown === i}
-            aria-label={gui.git_hunk}
-            onClick={() => onShow(i)}
-            // The floor does not apply here and that is deliberate: a
-            // gutter bar is not a control a finger hunts for, it is the
-            // shape of a fact, and a 44-tall target on a 21.6 line
-            // would cover three of its neighbours. What it costs is
-            // said where it is spent — on a phone the bars are read,
-            // and the file is read, and neither is pressed.
-            className={cn(
-              // **The ink is the hunk's own now** (2026-09-16), where it
-              // used to be `--git-mark` — the foreground at half
-              // strength, which is why the resting weight lived in the
-              // token rather than in an opacity. A hue cannot be dimmed
-              // the same way and stay the colour it is naming, so the
-              // bar is drawn at full strength and the one that is open
-              // is told apart by the ring instead.
-              "absolute left-0 w-full",
-              hunkInk(h),
-              shown === i && "ring-1 ring-foreground/40",
-            )}
-            style={
-              gone
-                ? {
-                    // A deletion has no lines to stand beside, so it is
-                    // a notch on the boundary between two rather than a
-                    // bar over any of them — sitting on a line it would
-                    // claim that line had changed. The transform
-                    // centres the notch on the boundary rather than a
-                    // second arithmetic subtracting half its height.
-                    top: edge,
-                    height: "calc(var(--text-mono--line-height) / 4)",
-                    transform: "translateY(-50%)",
-                  }
-                : { top: from, height: to - from }
-            }
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-/** What HEAD had, **in the file itself, directly over the lines that
-    replaced it** (2026-09-16: 「点击后,不要在下面一行显示情况。就地显示。
-    跟 vscode 一样」— the user).
- *
- * It was a panel pinned under the whole column until then, and the
- * argument for that was a real constraint: the code was one `<pre>`
- * holding one painted string, so nothing could be put between two of
- * its lines without cutting a span that crossed them. **工作区批⑨ took
- * that constraint away** — the sheet is one block per line now, because
- * wrapping needed something to measure — and what was left was a panel
- * describing line 412 sitting at the bottom of the screen.
- *
- * **It floats rather than sitting in the flow** (工作区第五轮,「原文
- * 开着时不能打字」). In the flow it pushed every line below it down, and
- * a textarea is one box holding one string — it cannot be pushed in the
- * middle — so the two fell out of register and the editor had to step
- * off the glass while this was open. Out of the flow nothing moves, and
- * the caret stays where the person left it. The cost is that it covers
- * the few lines above the change, which is what VS Code's peek does
- * too: a peek is something you are looking through, not a row of the
- * file.
- *
- * **Plain, unpainted text.** What is read here is which lines were
- * there, and highlighting them would make the removed copy look exactly
- * like the live one two rows below it — the tint and the ink are what
- * say which is which.
- */
-/** The peek's three inks, **the bar's own** (2026-09-16:「黄色的状态条
-    点击后,弹出的状态底色是红色,跟黄色不一致」): the old lines of a
-    modification sit on the modification's yellow, a deletion's on red,
-    and an insertion's one-line note on green — a tenth for the wash,
-    full for the letters, the same hue as a hairline so the block has an
-    edge on both themes. Same three tests as `hunkInk`, in the same
-    order, so the two can never disagree. */
-function peekInk(h: GitHunk): string {
-  if (h.lines === 0) return "border-git-deleted/40 bg-git-deleted/10 text-git-deleted";
-  if (h.was.length === 0) return "border-git-added/40 bg-git-added/10 text-git-added";
-  return "border-git-modified/40 bg-git-modified/10 text-git-modified";
-}
-
-function Peek({
-  hunk,
-  at,
-  next,
-  tall,
-}: {
-  hunk: GitHunk;
-  /** The top of the line this is about, inside the sheet. */
-  at: number;
-  /** The top of the line after it — where this goes when it will not
-      fit above. */
-  next: number;
-  tall: number;
-}) {
-  const gone = hunk.was.length > 0;
-  // **Above where there is room, below where there is not, and never
-  // over the line itself.** Above is the arrangement (2026-09-16:
-  // 「就地显示」 — the old lines directly over the ones that replaced
-  // them), and out of the flow it cannot push anything down to make
-  // room, so a hunk at line 1 has nowhere above to be: a block clamped
-  // to the top of the column would sit *on* the very line it is being
-  // compared against, which is the comparison losing its other half.
-  // Below, it covers the lines after instead — which are not what is
-  // being read at that moment.
-  //
-  // `tall` is 0 for the frame before it is measured, so the first paint
-  // is「above」 and flush with the line; it settles on the next.
-  const top = tall <= at ? at - tall : next;
-  return (
-    <div
-      // Two elements, because it needs two grounds: the outer is opaque
-      // (it is covering live code, and a tenth-strength wash over text
-      // is not a block, it is a smudge) and the inner carries the tint.
-      // **`data-peek` is on the inner one** — the tint is what says
-      // which of the three kinds this is, and a gate reading the ground
-      // off the named element has to find the colour, not the paper.
-      // The two boxes are the same rectangle, so every measurement of
-      // place and height is the same either way.
-      //
-      // **The floating ground and the one shadow** (2026-09-28): it
-      // floats over the code like anything else that floats; a band
-      // across the whole column, so it has no corner to round.
-      className="absolute inset-x-0 z-10 bg-popover shadow-(--shadow-float)"
-      style={{ top }}
-    >
-      <div data-peek={hunk.at} className={cn("border-y px-3", peekInk(hunk))}>
-        {gone ? (
-          hunk.was.map((line, i) => (
-            <div key={i} className="min-h-[var(--text-mono--line-height)]">
-              {line}
-            </div>
-          ))
-        ) : (
-          // **A pure insertion has no old text, and says so rather than
-          // opening empty** — the bar is pressable everywhere it is drawn
-          // (`Gutter`), and a press that produced a blank block would be
-          // the dead target that rule exists to avoid.
-          <div className="min-h-[var(--text-mono--line-height)]">{gui.git_added}</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** The overview ruler: the whole file squeezed into one column past the
-    scrollbar, with a mark where every hunk is (2026-09-16: 「右侧滑动条
-    后方,就是全文件带颜色的 git 差异的那个竖线。跟 vscode 一样」).
- *
- * **This is what the 「1 处改动 第 1 处」 strip was standing in for.**
- * That strip existed because the gutter can only draw a bar beside a
- * line, and a line eight hundred down is not on the screen — so the
- * count and the two steps were words doing a picture's job. Here the
- * file is one column tall whatever its length, so where the changes are
- * is a thing you look at, and going to one is a press on the place
- * itself.
- *
- * **Proportions, and one floor.** A mark's top and height are fractions
- * of the scroll, so they hold while the column is resized without a
- * single re-measurement; `--overview-mark` keeps a one-line hunk in a
- * long file from rounding away to nothing.
- *
- * **Nothing is drawn before the first layout** (`tops` empty), the same
- * rule the gutter holds: a mark at a place it is not about is worse
- * than a mark one frame late, and with wrapping there is no arithmetic
- * to fall back on. */
-function Ruler({
-  hunks,
-  tops,
-  span,
-  shown,
-  onGo,
-  onGoAt,
-}: {
-  hunks: GitHunk[];
-  tops: number[];
-  /** How tall the scroll is and where the text starts inside it
-      (`FileView`'s `span`). */
-  span: { total: number; pad: number };
-  shown: number | null;
-  onGo: (hunk: GitHunk) => void;
-  /** A press on the bare strip: the fraction down it that was pressed
-      (`FileView`'s `goRatio`). */
-  onGoAt: (ratio: number) => void;
-}) {
-  return (
-    // **Always here, even on a clean file.** A column that appeared with
-    // the first change would move the text sideways under somebody's
-    // caret the moment they saved.
-    <div
-      data-overview={hunks.length}
-      // Over the scroller's right edge, the width of its scrollbar.
-      // Nothing of the strip is drawn — no border, no ground — so on a
-      // trackpad Mac, where the scrollbar is an overlay that fades,
-      // what stays is the marks alone, which is the VS Code picture.
-      //
-      // **The whole column takes a press** (工作区第五轮 第 40 条): it is
-      // the file end to end, so pressing two thirds of the way down it
-      // means「take me two thirds of the way down the file」— and until
-      // now that press fell through to the scrollbar beneath and did
-      // nothing at all. A mark still means「open that change」, which is
-      // why it stops the press from reaching here as well.
-      //
-      // **Below the touch floor on purpose, and on record**: this strip
-      // is as wide as the scrollbar it stands on, and a 44px one would
-      // cover a tenth of the text. What is reachable here is reachable
-      // another way — the gutter's bars are a full row tall, and
-      // scrolling is scrolling.
-      className="absolute inset-y-0 right-0 z-10 w-[var(--overview-ruler)]"
-      onClick={(e) => {
-        const box = e.currentTarget.getBoundingClientRect();
-        if (box.height <= 0) return;
-        onGoAt((e.clientY - box.top) / box.height);
-      }}
-    >
-      {span.total > 0 &&
-        hunks.map((h, i) => {
-          const from = tops[h.at - 1];
-          // A deletion covers no current line, so it is a mark on the
-          // boundary rather than a band over anything — the floor gives
-          // it its height, exactly as the notch in the gutter has one.
-          const to = tops[h.at - 1 + h.lines];
-          if (from === undefined || to === undefined) return null;
-          return (
-            <button
-              type="button"
-              key={`${h.at} ${h.lines}`}
-              data-overview-mark={h.at}
-              data-on={shown === i}
-              aria-label={gui.git_hunk}
-              onClick={(e) => {
-                // The strip under it means「go to this place」; a mark
-                // means「open this change」, and a press is one or the
-                // other.
-                e.stopPropagation();
-                onGo(h);
-              }}
-              // The touch floor does not apply, for the gutter bar's
-              // reason said one column over: this is the shape of a
-              // fact rather than a control a finger hunts for, and a
-              // 44-tall mark would cover a fifth of the file.
-              className={cn(
-                // **Half, so the scrollbar's thumb reads through a mark**
-                // (2026-09-16:「文件右侧悬浮的滚动条,现在在 git 状态条上完全
-                // 看不见了」, and then again:「文件右侧的滑动按钮还是在状态
-                // 条下看不清, 透明度再低一点」). The marks stand above the
-                // scroller for their press; an opaque mark hid the
-                // overlay thumb completely where the two crossed. VS
-                // Code's decorations are translucent for the same
-                // reason. **Both sides moved on the second pass**: the
-                // mark came down from .6 and the thumb went up to half
-                // ink (`--scroll-thumb-strong`) — the thing that has to
-                // be readable is the one you drag.
-                "absolute inset-x-0.5 min-h-[var(--overview-mark)] rounded-xs opacity-50",
-                hunkInk(h),
-              )}
-              style={{
-                top: `${((span.pad + from) / span.total) * 100}%`,
-                height: `${((to - from) / span.total) * 100}%`,
-              }}
-            />
-          );
-        })}
-    </div>
-  );
-}
-
 /**
  * **Into the text, where the reader was** (P1, 2026-10-03): focuses the
  * editor inside `box` with the caret at the start of the first line the
  * scroller shows, without moving it. Called from the press on 「编辑」,
  * in the same gesture — WebKit raises the soft keyboard only for a focus
- * a touch asked for — so the caller renders the editor first
+ * a touch asked for — so the caller renders the editor writable first
  * (`flushSync`) and then calls this.
  */
 export function beginEditing(box: HTMLElement | null): void {
-  const ed = box?.querySelector<HTMLTextAreaElement>("textarea[data-edit]");
-  const scroller = box?.querySelector<HTMLElement>("[data-file-scroll]");
-  if (!ed || !scroller) return;
-  // Past the scroller's own padding: the file page keeps its first line
-  // clear of the name over it (round UX-3).
-  const top = scroller.getBoundingClientRect().top + parseFloat(getComputedStyle(scroller).paddingTop || "0");
-  const first = [...scroller.querySelectorAll<HTMLElement>("[data-line]")].find(
-    (l) => l.getBoundingClientRect().bottom > top,
-  );
-  const line = Number(first?.dataset.line ?? "1");
-  const before = ed.value.split("\n").slice(0, line - 1);
-  const at = before.reduce((n, l) => n + l.length + 1, 0);
-  ed.focus({ preventScroll: true });
-  ed.setSelectionRange(at, at);
+  const view = editorIn(box);
+  if (view) focusAtTop(view);
 }

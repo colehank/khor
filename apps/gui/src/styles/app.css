@@ -1133,8 +1133,8 @@ aside[data-side] {
    query `tokens.css` keys its own palette on. No colour is chosen here
    — the values are `github-light-default` / `github-dark-default` as
    Shiki ships them, which is what github.com paints (user, 2026-09-15:
-   「做到 gh web 预览代码的那种高亮」). Scoped to the two surfaces that
-   paint: a rendered turn and the file sheet. */
+   「做到 gh web 预览代码的那种高亮」). Scoped to the rendered turn and the
+   rendered Markdown; the file itself is CodeMirror's, below. */
 /* File-kind icons (`components/FileKindIcon`): Seti's colour for the
    theme the page is in, the two values carried on the icon itself the
    way a painted token carries its two. **Same switch as the palette's**
@@ -1148,8 +1148,7 @@ aside[data-side] {
   color: var(--kind-dark);
 }
 
-[data-md] span[style*="--shiki"],
-[data-file-text] span[style*="--shiki"] {
+[data-md] span[style*="--shiki"] {
   color: var(--shiki-light);
   text-decoration: var(--shiki-light-text-decoration, inherit);
 }
@@ -1165,8 +1164,7 @@ aside[data-side] {
   font-weight: var(--shiki-light-font-weight, inherit);
 }
 
-:root[data-theme="dark"] [data-md] span[style*="--shiki"],
-:root[data-theme="dark"] [data-file-text] span[style*="--shiki"] {
+:root[data-theme="dark"] [data-md] span[style*="--shiki"] {
   color: var(--shiki-dark);
   text-decoration: var(--shiki-dark-text-decoration, inherit);
 }
@@ -1174,6 +1172,44 @@ aside[data-side] {
   font-style: var(--shiki-dark-font-style, inherit);
   font-weight: var(--shiki-dark-font-weight, inherit);
 }
+
+/* **The file's code, in the same two GitHub themes** (cm-a, CM-BRIEF):
+   CodeMirror tags each token with a class (`lib/code/theme.ts`), and these
+   are the values `github-light-default` / `github-dark-default` give the
+   TextMate scope each class stands for — the colours the Shiki sheet
+   painted until 2026-10-10. No colour is chosen here. The default ink is
+   the app's `foreground`, as it was. Weight and slope are back for the
+   few tokens GitHub sets them on: the editor lays out what it paints, so
+   a bold heading no longer pushes the caret off its letter. */
+[data-code] .tok-keyword { color: #cf222e; }
+[data-code] .tok-comment { color: #6e7781; }
+[data-code] .tok-string { color: #0a3069; }
+[data-code] .tok-constant { color: #0550ae; }
+[data-code] .tok-function { color: #8250df; }
+[data-code] .tok-entity { color: #953800; }
+[data-code] .tok-tag { color: #116329; }
+[data-code] .tok-heading { color: #0550ae; font-weight: var(--font-weight-title); }
+[data-code] .tok-link { color: #0a3069; text-decoration: underline; }
+[data-code] .tok-emphasis { font-style: italic; }
+[data-code] .tok-strong { font-weight: var(--font-weight-title); }
+[data-code] .tok-strike { text-decoration: line-through; }
+[data-code] .tok-inserted { color: #116329; }
+[data-code] .tok-deleted { color: #82071e; }
+[data-code] .tok-changed { color: #953800; }
+[data-code] .tok-invalid { color: #82071e; font-style: italic; }
+:root[data-theme="dark"] [data-code] .tok-keyword { color: #ff7b72; }
+:root[data-theme="dark"] [data-code] .tok-comment { color: #8b949e; }
+:root[data-theme="dark"] [data-code] .tok-string { color: #a5d6ff; }
+:root[data-theme="dark"] [data-code] .tok-constant { color: #79c0ff; }
+:root[data-theme="dark"] [data-code] .tok-function { color: #d2a8ff; }
+:root[data-theme="dark"] [data-code] .tok-entity { color: #ffa657; }
+:root[data-theme="dark"] [data-code] .tok-tag { color: #7ee787; }
+:root[data-theme="dark"] [data-code] .tok-heading { color: #79c0ff; }
+:root[data-theme="dark"] [data-code] .tok-link { color: #a5d6ff; }
+:root[data-theme="dark"] [data-code] .tok-inserted { color: #7ee787; }
+:root[data-theme="dark"] [data-code] .tok-deleted { color: #ffa198; }
+:root[data-theme="dark"] [data-code] .tok-changed { color: #ffa657; }
+:root[data-theme="dark"] [data-code] .tok-invalid { color: #ffa198; }
 
 /* A preview on a ground of its own (预览背景, round UX-4) paints its code
    in that ground's colours, whatever the app's theme. */
