@@ -44,12 +44,13 @@ fn flows(dev: &Device, ip: std::net::Ipv4Addr) -> Vec<(u16, u16)> {
 }
 
 /// Drops every packet of these flows on `dev`, both ways, with nft.
+/// (`in` and `out` are nft keywords, not chain names.)
 fn wedge(dev: &Device, ip: std::net::Ipv4Addr, flows: &[(u16, u16)]) {
-    let mut rules = String::from("table inet netlab_wedge {\n chain in { type filter hook input priority -10; policy accept;\n");
+    let mut rules = String::from("table inet netlab_wedge {\n chain wedge_in { type filter hook input priority -10; policy accept;\n");
     for (_, far) in flows {
         rules += &format!("  ip saddr {ip} tcp sport {far} drop\n");
     }
-    rules += " }\n chain out { type filter hook output priority -10; policy accept;\n";
+    rules += " }\n chain wedge_out { type filter hook output priority -10; policy accept;\n";
     for (_, far) in flows {
         rules += &format!("  ip daddr {ip} tcp dport {far} drop\n");
     }
@@ -93,6 +94,54 @@ async fn b1_the_home_settles_on_the_near_relay_and_stays() {
     let last = homes.last().map(|(_, w)| w.as_str());
     let ok = last == Some("near") && homes.iter().skip_while(|(_, w)| w != "near").all(|(_, w)| w == "near");
     result(s, ok, format!("homes over {WATCH:?}: {moves:?}"));
+    assert_eq!(last, Some("near"), "the home is the near relay");
+    assert!(ok, "once near, the home stays near: {moves:?}");
+}
+
+/// b2: the case that flapped. Two far stand-ins for n0's tier answer QUIC
+/// address discovery, the near plain relay does not (MacLab: aps1 and
+/// euc1 against Beijing). Upstream's full report stops at two QAD answers
+/// before the near relay's HTTPS probe is in; patch 14 makes it wait,
+/// patch 11 keeps the home through the incremental reports between.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn b2_the_home_stays_near_when_far_relays_answer_qad() {
+    let s = "b2";
+    let lab = Lab::new().await.unwrap();
+    let near = relay(&lab, s, "near", None).await;
+    let far = crate::lab::qad_relays(&lab, s, &["far1", "far2"], Some(Duration::from_millis(1500))).await;
+    let rh = router(&lab, "home", Net::Home).await;
+    let dh = lab.add_device("h").uplink(rh.id()).build().await.unwrap();
+    let ca = far.ca.to_string_lossy().into_owned();
+    let n = node(
+        s,
+        dh,
+        "alpha",
+        &[&near],
+        &[(khor_net::endpoint::PUBLIC_RELAYS_ENV, far.env.as_str()), (khor_net::endpoint::RELAY_CA_ENV, ca.as_str())],
+    )
+    .await;
+    tokio::time::sleep(WATCH).await;
+    let near_host = near.url.trim_start_matches("http://").trim_end_matches('/').to_owned();
+    let homes: Vec<(f64, String)> = n
+        .journal(None)
+        .into_iter()
+        .filter(|e| e["e"] == "home" && e["state"] == "connected")
+        .map(|e| {
+            let url = e["url"].as_str().unwrap_or("?");
+            let which = if url.contains(&near_host) {
+                "near".to_owned()
+            } else {
+                far.urls.iter().position(|u| url.contains(u.trim_start_matches("https://"))).map_or(url.to_owned(), |i| format!("far{}", i + 1))
+            };
+            (e["at"].as_u64().unwrap() as f64 / 1000.0, which)
+        })
+        .collect();
+    let t0 = homes.first().map_or(0.0, |(t, _)| *t);
+    let moves: Vec<String> = homes.iter().map(|(t, w)| format!("{w}@{:.0}s", t - t0)).collect();
+    let last = homes.last().map(|(_, w)| w.as_str());
+    let ok = last == Some("near") && homes.iter().skip_while(|(_, w)| w != "near").all(|(_, w)| w == "near");
+    let published = n.published_relays();
+    result(s, ok, format!("homes over {WATCH:?}: {moves:?}; publishes {:?}", published.first()));
     assert_eq!(last, Some("near"), "the home is the near relay");
     assert!(ok, "once near, the home stays near: {moves:?}");
 }

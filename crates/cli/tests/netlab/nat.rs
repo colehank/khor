@@ -87,8 +87,8 @@ async fn two(scenario: &str, left: Net, right: Net, want: Want) {
     };
     let direct = a.until(&b, PUNCH, |l| l.hop == Hop::Direct).await;
     let last = a.link(&b).await.expect("a link");
-    let (dials, failed, slowest) = dials(&a, &b);
-    let (dials_b, failed_b, slowest_b) = dials(&b, &a);
+    let (n_a, failed, slowest) = dials(&a, &b);
+    let (n_b, failed_b, slowest_b) = dials(&b, &a);
     let ok = match want {
         Want::Direct => direct.is_some(),
         Want::Carried => last.rtt_ms.is_some() && last.down_ms.is_none(),
@@ -102,7 +102,7 @@ async fn two(scenario: &str, left: Net, right: Net, want: Want) {
             direct.as_ref().map_or("never".into(), |(t, l)| format!("after {t:.1?} ({})", word(l))),
             word(&last),
             failed + failed_b,
-            dials + dials_b,
+            n_a + n_b,
             slowest.max(slowest_b),
         ),
     );

@@ -60,10 +60,91 @@ pub async fn relay(lab: &Lab, tag: &str, name: &str, rtt: Option<Duration>) -> R
     Relay { url, dev, _home: home, _child: Reaped(child) }
 }
 
+/// Stand-ins for n0's relays: HTTPS on 443 and QUIC address discovery on
+/// UDP 7842, each on a device of its own, one self-signed certificate
+/// naming every one by IP (iroh checks it against the URL's host).
+pub struct QadRelays {
+    /// For `KHOR_PUBLIC_RELAYS`: `https://ip:443|7842`, comma-separated.
+    pub env: String,
+    /// The certificate, for `KHOR_RELAY_CA`.
+    pub ca: std::path::PathBuf,
+    pub urls: Vec<String>,
+    pub devs: Vec<Device>,
+    pub _home: Scratch,
+    _servers: Vec<tokio::task::JoinHandle<()>>,
+}
+
+impl Drop for QadRelays {
+    fn drop(&mut self) {
+        for s in &self._servers {
+            s.abort();
+        }
+    }
+}
+
+pub async fn qad_relays(lab: &Lab, tag: &str, names: &[&str], rtt: Option<Duration>) -> QadRelays {
+    use iroh_relay::server::{CertConfig, QuicConfig, RelayConfig, Server, ServerConfig, TlsConfig};
+    let mut devs = vec![];
+    for name in names {
+        let dc = lab
+            .add_router(&format!("dc-{name}"))
+            .preset(RouterPreset::PublicV4)
+            .build()
+            .await
+            .unwrap();
+        let dev = lab.add_device(name).uplink(dc.id()).build().await.unwrap();
+        if let Some(rtt) = rtt {
+            slow(&dev, rtt).await;
+        }
+        devs.push(dev);
+    }
+    let ips: Vec<std::net::Ipv4Addr> = devs.iter().map(|d| d.ip().unwrap()).collect();
+    let home = scratch(&format!("{tag}-qad"));
+    let made = rcgen::generate_simple_self_signed(ips.iter().map(|ip| ip.to_string()).collect::<Vec<_>>()).unwrap();
+    let ca = home.0.join("qad-ca.pem");
+    std::fs::write(&ca, made.cert.pem()).unwrap();
+    let key = rustls::pki_types::PrivateKeyDer::from(rustls::pki_types::PrivatePkcs8KeyDer::from(
+        made.signing_key.serialize_der(),
+    ));
+    let tls = rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(rustls::crypto::ring::default_provider()))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(vec![made.cert.der().clone()], key)
+        .unwrap();
+    let mut servers = vec![];
+    let mut urls = vec![];
+    for (dev, ip) in devs.iter().zip(&ips) {
+        let (ip, tls) = (std::net::IpAddr::V4(*ip), tls.clone());
+        let (up_tx, up_rx) = tokio::sync::oneshot::channel();
+        let task = dev
+            .spawn(move |_| async move {
+                let mut relay = RelayConfig::new((ip, 80));
+                relay.tls = Some(TlsConfig::new((ip, 443), CertConfig::Manual { server_config: tls.clone() }));
+                let mut cfg = ServerConfig::default();
+                cfg.relay = Some(relay);
+                let mut quic = QuicConfig::new((ip, 7842));
+                quic.server_config = Some(tls);
+                cfg.quic = Some(quic);
+                let server = Server::spawn(cfg).await.expect("a QAD stand-in spawns");
+                let _ = up_tx.send(());
+                std::future::pending::<()>().await;
+                drop(server);
+            })
+            .unwrap();
+        up_rx.await.expect("the stand-in stands up");
+        servers.push(task);
+        urls.push(format!("https://{ip}:443"));
+    }
+    let env = urls.iter().map(|u| format!("{u}|7842")).collect::<Vec<_>>().join(",");
+    eprintln!("[netlab] QAD stand-ins {env}");
+    QadRelays { env, ca, urls, devs, _home: home, _servers: servers }
+}
+
 /// Adds `rtt` to every packet in and out of `dev`'s first interface.
 pub async fn slow(dev: &Device, rtt: Duration) {
     let half = (rtt.as_millis() / 2) as u32;
-    let cond = LinkCondition { latency_ms: half, ..LinkCondition::default() };
+    let cond = LinkCondition::new().latency_ms(half);
     dev.default_iface()
         .expect("an interface")
         .set_condition(cond, LinkDirection::Both)

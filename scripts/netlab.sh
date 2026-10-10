@@ -63,11 +63,19 @@ RUN=/tmp/khor-netlab-run
 mkdir -p "$RUN"
 LOG="$RUN/$(date +%Y%m%d-%H%M%S).log"
 cd "$SRC"
+# khor-web's build wants the face's index.html; the lab never serves the
+# face, so a scratch copy without one gets a placeholder (the rsync
+# above leaves apps/gui/dist alone).
+if [ ! -f apps/gui/dist/index.html ]; then
+    mkdir -p apps/gui/dist
+    echo '<!doctype html><title>netlab: no face</title>' >apps/gui/dist/index.html
+fi
 echo "netlab: building on $(hostname) (target $CARGO_TARGET_DIR)"
 nice -n 10 cargo test -p khor-cli --test netlab --no-run 2>&1 | grep -E '^(error|warning: unused)|Finished' || true
 echo "netlab: running (log $LOG)"
 # Scenarios run side by side: each lab is namespaces of its own.
-nice -n 10 cargo test -p khor-cli --test netlab -- --test-threads 8 "$@" >"$LOG" 2>&1 || true
+# --nocapture: a green scenario's numbers are the point too.
+nice -n 10 cargo test -p khor-cli --test netlab -- --test-threads 8 --nocapture "$@" >"$LOG" 2>&1 || true
 
 echo
 echo "| scenario | today | measured |"
