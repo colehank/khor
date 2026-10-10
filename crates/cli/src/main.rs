@@ -6088,6 +6088,7 @@ mod fate_lines_tests {
             moved,
             landed: landed.iter().map(|s| (*s).to_owned()).collect(),
             why: why.to_owned(),
+            via: String::new(),
         }
     }
 
