@@ -1045,3 +1045,68 @@ fn a_pen_whose_holder_sent_unflushed_and_died_is_retired() {
         let _ = fs::remove_dir_all(d);
     }
 }
+
+/// **A read after one new block imports that block, not the pile**
+/// (peers-b, the owner's Mac 2026-10-10 19:20). Ten blocks read and kept;
+/// one more written; the next read is one pass that imports one block,
+/// and reads every line.
+#[test]
+fn a_read_after_one_new_block_imports_only_that_block() {
+    use crate::store::reads_of;
+    let dir = tmpdir("kept-plus");
+    for i in 0..10 {
+        let mut w = open_channel(&dir, 0x60 + i).unwrap();
+        w.doc.tell(&me("a"), &format!("line {i}")).unwrap();
+        w.store.flush(&w.doc).unwrap();
+    }
+    drop(open_channel(&dir, 0x70).unwrap());
+    let mut w = open_channel(&dir, 0x71).unwrap();
+    w.doc.tell(&me("a"), "the new one").unwrap();
+    w.store.flush(&w.doc).unwrap();
+    drop(w);
+    let (passes, blocks) = reads_of(&dir);
+    let back = render(&open_channel(&dir, 0x72).unwrap().doc);
+    let (passes2, blocks2) = reads_of(&dir);
+    assert_eq!((passes2 - passes, blocks2 - blocks), (1, 1), "one pass, one block");
+    for i in 0..10 {
+        assert!(back.contains(&format!("line {i}")), "{back}");
+    }
+    assert!(back.contains("the new one"), "{back}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// **Concurrent readers of a changed directory make one read between
+/// them**: eight threads at once after a write; one reads, the others wait
+/// and are answered from what it kept, and all eight see the write.
+#[test]
+fn concurrent_readers_of_a_changed_directory_read_once() {
+    use crate::store::reads_of;
+    use std::sync::{Arc, Barrier};
+    let dir = tmpdir("kept-gate");
+    for i in 0..20 {
+        let mut w = open_channel(&dir, 0x90 + i).unwrap();
+        w.doc.tell(&me("a"), &format!("line {i}")).unwrap();
+        w.store.flush(&w.doc).unwrap();
+    }
+    drop(open_channel(&dir, 0xA0).unwrap());
+    let mut w = open_channel(&dir, 0xA1).unwrap();
+    w.doc.tell(&me("a"), "written since").unwrap();
+    w.store.flush(&w.doc).unwrap();
+    drop(w);
+    let (passes, _) = reads_of(&dir);
+    let start = Arc::new(Barrier::new(8));
+    let readers: Vec<_> = (0..8)
+        .map(|i| {
+            let (dir, start) = (dir.clone(), start.clone());
+            std::thread::spawn(move || {
+                start.wait();
+                render(&open_channel(&dir, 0xB0 + i).unwrap().doc)
+            })
+        })
+        .collect();
+    for r in readers {
+        assert!(r.join().unwrap().contains("written since"));
+    }
+    assert_eq!(reads_of(&dir).0 - passes, 1, "one read between the eight");
+    let _ = fs::remove_dir_all(&dir);
+}

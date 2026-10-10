@@ -640,44 +640,47 @@ pub fn loads_kept() -> u64 {
 /// or removes a file), the next read is one import of that snapshot into
 /// a fresh copy under its own lease. The list is taken before the read
 /// and again after it, and a read the two disagree about is not kept.
+///
+/// **A directory that only gained blocks is read from what was kept, plus
+/// the new blocks** (peers-b, the owner's Mac 2026-10-10 19:20: 350 % CPU,
+/// several threads each inside one full read of the devices pile). Kept
+/// reads used to be all or nothing on the list: every write and every
+/// round that moved something made the next read import every block
+/// again, and a read that took seconds while rounds kept adding blocks was
+/// never kept at all. And concurrent misses of one directory each made
+/// that whole read; now they wait for one, and the rest are answered from
+/// what it kept.
 fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
     // The name first, the listing after: a block the name's last holder
     // flushed just before giving it back must be on the listing, or this
     // copy starts its counter below theirs.
     let lease = Lease::take(dir, peer);
     let before = fingerprint(dir)?;
+    let lease = match kept_copy(dir, lease, &before) {
+        Ok(hit) => return Ok(hit),
+        Err(lease) => lease,
+    };
+    let gate = READING.lock().unwrap_or_else(|p| p.into_inner()).entry(dir.to_path_buf()).or_default().clone();
+    let _reading = gate.lock().unwrap_or_else(|p| p.into_inner());
+    // Whoever held the gate may have just read and kept this very list.
+    let before = fingerprint(dir)?;
+    let lease = match kept_copy(dir, lease, &before) {
+        Ok(hit) => return Ok(hit),
+        Err(lease) => lease,
+    };
     let kind = std::any::TypeId::of::<D>();
-    let kept = KEPT
+    // What was kept, if every block it was made of is still listed as it
+    // was: then only the blocks after it need reading.
+    let base = KEPT
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .get(dir)
-        .filter(|k| k.kind == kind && k.fingerprint == before)
-        .map(|k| (k.snapshot.clone(), k.broken.clone()));
-    if let Some((snapshot, broken)) = kept {
-        let doc = D::open(lease.peer)?;
-        if doc.merge(&snapshot).is_ok() {
-            KEPT_HITS.fetch_add(1, Ordering::Relaxed);
-            // As a read holds what it merged: never a block that would
-            // not read, which a compaction must leave where it is.
-            let held = before
-                .iter()
-                .map(|(name, _, _)| name.clone())
-                .filter(|name| !broken.iter().any(|b| file_name(b).as_deref() == Some(name.as_str())))
-                .collect();
-            let store = BlockStore {
-                dir: dir.to_path_buf(),
-                on_disk: doc.version(),
-                ledger: read_ledger(dir),
-                held,
-                epoch: read_epoch(dir),
-                stamp: false,
-                pen: lease.pen_file(),
-                retired: None,
-            };
-            return Ok(Loaded { store, doc, broken, lease });
-        }
-    }
-    let loaded: Loaded<D> = load_inner(dir, lease)?;
+        .filter(|k| {
+            k.kind == kind
+                && k.fingerprint.iter().all(|e| before.binary_search_by(|b| b.0.cmp(&e.0)).is_ok_and(|i| before[i] == *e))
+        })
+        .map(|k| Base { snapshot: k.snapshot.clone(), names: k.fingerprint.iter().map(|e| e.0.clone()).collect(), broken: k.broken.clone() });
+    let loaded: Loaded<D> = load_inner(dir, lease, base)?;
     if !before.is_empty()
         && fingerprint(dir).is_ok_and(|after| after == before)
         && let Ok(snapshot) = loaded.doc.snapshot()
@@ -690,8 +693,73 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
     Ok(loaded)
 }
 
-fn load_inner<D: Doc>(dir: &Path, lease: Lease) -> Result<Loaded<D>, String> {
-    let (loaded, vanished) = read_once(dir, lease)?;
+/// One gate per directory: a miss reads while the others wait.
+static READING: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<std::sync::Mutex<()>>>>,
+> = std::sync::LazyLock::new(Default::default);
+
+/// A copy from what was kept, when it was kept from exactly `listing`;
+/// the lease back otherwise.
+fn kept_copy<D: Doc + 'static>(dir: &Path, lease: Lease, listing: &Fingerprint) -> Result<Loaded<D>, Lease> {
+    let kind = std::any::TypeId::of::<D>();
+    let Some((snapshot, broken)) = KEPT
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(dir)
+        .filter(|k| k.kind == kind && k.fingerprint == *listing)
+        .map(|k| (k.snapshot.clone(), k.broken.clone()))
+    else {
+        return Err(lease);
+    };
+    let Ok(doc) = D::open(lease.peer) else {
+        return Err(lease);
+    };
+    if doc.merge(&snapshot).is_err() {
+        return Err(lease);
+    }
+    KEPT_HITS.fetch_add(1, Ordering::Relaxed);
+    // As a read holds what it merged: never a block that would not read,
+    // which a compaction must leave where it is.
+    let held = listing
+        .iter()
+        .map(|(name, _, _)| name.clone())
+        .filter(|name| !broken.iter().any(|b| file_name(b).as_deref() == Some(name.as_str())))
+        .collect();
+    let store = BlockStore {
+        dir: dir.to_path_buf(),
+        on_disk: doc.version(),
+        ledger: read_ledger(dir),
+        held,
+        epoch: read_epoch(dir),
+        stamp: false,
+        pen: lease.pen_file(),
+        retired: None,
+    };
+    Ok(Loaded { store, doc, broken, lease })
+}
+
+/// Where a read starts when part of the directory was kept: that part as
+/// one snapshot, the blocks it was made of, and those that would not read.
+struct Base {
+    snapshot: std::sync::Arc<Vec<u8>>,
+    names: std::collections::BTreeSet<String>,
+    broken: Vec<PathBuf>,
+}
+
+/// Per directory: passes over its blocks ([`read_once`]), and blocks
+/// imported from files by them.
+static READS: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<PathBuf, (u64, u64)>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// How many passes over `dir`'s blocks this process made, and how many
+/// blocks those passes imported: what a kept read saves, counted per
+/// directory so a test is not counting its neighbours'.
+pub fn reads_of(dir: &Path) -> (u64, u64) {
+    READS.lock().unwrap_or_else(|p| p.into_inner()).get(dir).copied().unwrap_or_default()
+}
+
+fn load_inner<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<Loaded<D>, String> {
+    let (loaded, vanished) = read_once(dir, lease, base)?;
     if !vanished {
         return Ok(loaded);
     }
@@ -711,14 +779,17 @@ fn load_inner<D: Doc>(dir: &Path, lease: Lease) -> Result<Loaded<D>, String> {
     //
     // Once, not in a loop. A second miss means writes are landing faster
     // than a read can finish, and at that point reporting what was found
-    // beats spinning — the next read is two seconds away.
+    // beats spinning — the next read is two seconds away. From nothing
+    // kept: what was kept may be what the compaction just replaced.
     RELISTS.fetch_add(1, Ordering::Relaxed);
-    Ok(read_once(dir, loaded.lease)?.0)
+    Ok(read_once(dir, loaded.lease, None)?.0)
 }
 
 /// One pass over a document's blocks. The flag is 「a block on the
 /// listing was gone by the time we read it」 — see [`load_inner`].
-fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), String> {
+/// From `base` when part of it was kept: its snapshot, then only the
+/// blocks it was not made of.
+fn read_once<D: Doc>(dir: &Path, lease: Lease, base: Option<Base>) -> Result<(Loaded<D>, bool), String> {
     let doc = D::open(lease.peer)?;
     let mut broken = Vec::new();
     let mut ledger = read_ledger(dir);
@@ -727,8 +798,27 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), Stri
     // already say. See the write at the end.
     let mut grew = false;
     let mut held = std::collections::BTreeSet::new();
+    let mut kept = std::collections::BTreeSet::new();
+    if let Some(base) = base {
+        if doc.merge(&base.snapshot).is_err() {
+            return read_once(dir, lease, None);
+        }
+        held = base
+            .names
+            .iter()
+            .filter(|n| !base.broken.iter().any(|b| file_name(b).as_deref() == Some(n.as_str())))
+            .cloned()
+            .collect();
+        broken = base.broken;
+        kept = base.names;
+    }
+    let mut imported = 0;
 
     for p in blocks(dir)? {
+        if file_name(&p).is_some_and(|n| kept.contains(&n)) {
+            continue;
+        }
+        imported += 1;
         match fs::read(&p) {
             Ok(bytes) => {
                 if doc.merge(&bytes).is_err() {
@@ -744,6 +834,12 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), Stri
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => vanished = true,
             Err(_) => broken.push(p),
         }
+    }
+    {
+        let mut reads = READS.lock().unwrap_or_else(|p| p.into_inner());
+        let r = reads.entry(dir.to_path_buf()).or_default();
+        r.0 += 1;
+        r.1 += imported;
     }
     let on_disk = doc.version();
     let mut store = BlockStore {
