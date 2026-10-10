@@ -83,6 +83,10 @@ pub struct BlockStore {
     /// An empty pile opened by [`load_pile`]: its epoch file is written
     /// before its first block.
     stamp: bool,
+    /// The pen this copy writes with, and its name ([`BlockStore::took_in`]).
+    pen: Option<(PathBuf, u64)>,
+    /// The name [`BlockStore::took_in`] retired, for the caller to say.
+    retired: Option<u64>,
 }
 
 /// What `load` returns.
@@ -309,6 +313,16 @@ fn open_owner_only(path: &Path) -> Option<fs::File> {
         opts.mode(OWNER_ONLY_FILE);
     }
     opts.open(path).ok()
+}
+
+impl Lease {
+    /// The pen's file and name, when this is a pen.
+    fn pen_file(&self) -> Option<(PathBuf, u64)> {
+        match &self.held {
+            Held::Pen((dir, k), _) => Some((dir.join(format!("{PEN}{k}")), self.peer)),
+            Held::Spare(_) => None,
+        }
+    }
 }
 
 impl Drop for Lease {
@@ -657,6 +671,8 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
                 held,
                 epoch: read_epoch(dir),
                 stamp: false,
+                pen: lease.pen_file(),
+                retired: None,
             };
             return Ok(Loaded { store, doc, broken, lease });
         }
@@ -737,6 +753,8 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), Stri
         held,
         epoch: read_epoch(dir),
         stamp: false,
+        pen: lease.pen_file(),
+        retired: None,
     };
     // Only write the ledger if the directory exists (an empty document
     // should leave nothing on disk) **and if this read learned a block
@@ -809,6 +827,43 @@ impl BlockStore {
             self.stamp = false;
         }
         Ok(())
+    }
+
+    /// **What the far side just merged in, read for this copy's own
+    /// name** (PEERS-BRIEF, peers-a 「Left」 3). A pen's name is lent by
+    /// a lock, and every holder flushes before any op of it leaves
+    /// (`wire`), so every op under the name this copy holds that exists
+    /// anywhere was on this disk when the copy was read. If a merge raises
+    /// that name's counter anyway, the far side holds ops of it this
+    /// machine never kept: a holder that sent before flushing and then
+    /// died (any khor before this one did that on a round's push), a
+    /// backup put back over newer history, a listing a shared filesystem
+    /// served stale. The next holder would mint those counters again for
+    /// other ops, and on import a name already held is skipped, so one
+    /// side's ops are lost and no sync brings them back.
+    ///
+    /// So the pen is retired: its file gets a fresh name for whoever
+    /// takes it next, and the name is returned (and kept for
+    /// [`BlockStore::retired`]) for the caller to say. This copy carries
+    /// on under the old name: its counter is past the far side's ops now.
+    /// Ops it wrote before the merge at the far side's counters are what
+    /// the collision already cost, and the journal line is how anyone
+    /// learns that it happened.
+    pub fn took_in<D: Doc>(&mut self, before: &VersionVector, doc: &D) -> Option<u64> {
+        let (path, name) = self.pen.clone()?;
+        let counter = |v: &VersionVector| v.get(&name).copied().unwrap_or(0);
+        if counter(&doc.version()) <= counter(before) {
+            return None;
+        }
+        write_atomic(&path, format!("{:016x}\n", fresh_name()).as_bytes()).ok()?;
+        self.pen = None;
+        self.retired = Some(name);
+        Some(name)
+    }
+
+    /// The name [`BlockStore::took_in`] retired in this copy, if it did.
+    pub fn retired(&self) -> Option<u64> {
+        self.retired
     }
 
     /// The epoch this copy's blocks belong to: [`EPOCH`] for a pile

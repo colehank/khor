@@ -955,3 +955,93 @@ fn two_replicas_reseeded_apart_agree_after_a_round() {
     let _ = fs::remove_dir_all(&a_dir);
     let _ = fs::remove_dir_all(&b_dir);
 }
+
+/// **No op leaves before it is on disk** (PEERS-BRIEF, peers-a 「Left」
+/// 3). A copy writes and, without flushing, answers a request, pushes on a
+/// round and hands out its table: each time, a copy read from disk right
+/// after already holds the line.
+#[test]
+fn every_way_ops_leave_flushes_them_first() {
+    use crate::wire::{Peer, answer, table_b64, version_b64};
+    let (dir, far_dir) = (tmpdir("flush-first"), tmpdir("flush-first-far"));
+    let mut far = open_channel(&far_dir, 0x3F).unwrap();
+    far.doc.tell(&me("far"), "far").unwrap();
+    far.store.flush(&far.doc).unwrap();
+    let on_disk = |line: &str| render(&open_channel(&dir, 0x3E).unwrap().doc).contains(line);
+
+    let mut w = open_channel(&dir, 0x31).unwrap();
+    w.doc.tell(&me("a"), "answered").unwrap();
+    let theirs = version_b64(&far.store, &far.doc);
+    let reply = answer(&mut w.store, &w.doc, &theirs, "").unwrap();
+    assert!(!reply.changes.is_empty(), "the line left");
+    assert!(on_disk("answered"), "and it was on disk first");
+
+    w.doc.tell(&me("a"), "pushed").unwrap();
+    let out = Peer::knowing(version_b64(&far.store, &far.doc)).outgoing(&mut w.store, &w.doc).unwrap();
+    assert!(out.pushes());
+    assert!(on_disk("pushed"));
+
+    w.doc.tell(&me("a"), "handed out").unwrap();
+    table_b64(&mut w.store, &w.doc).unwrap();
+    assert!(on_disk("handed out"));
+    let _ = fs::remove_dir_all(&dir);
+    let _ = fs::remove_dir_all(&far_dir);
+}
+
+/// **A pen whose holder sent and died before flushing is retired**
+/// (PEERS-BRIEF, peers-a 「Left」 3). The holder sent two lines to one
+/// machine and four to another, unflushed, the way every khor before
+/// this one pushed on a round, and died. The next holder takes the same
+/// name, writes over the first counters (that collision is already paid),
+/// and on its next round learns from the first machine that the name has
+/// ops this disk never kept: the pen gets a fresh name. So the copy after
+/// it writes under a new name, and the second machine's two later lines
+/// and its own line cross both ways; under the old name its counter would
+/// land on those two lines and one side would skip the other's.
+#[test]
+fn a_pen_whose_holder_sent_unflushed_and_died_is_retired() {
+    use crate::store::Doc;
+    use crate::wire::{Peer, answer};
+    let (dir, f_dir, g_dir) = (tmpdir("retire"), tmpdir("retire-f"), tmpdir("retire-g"));
+    let mut seed = open_channel(&dir, 0x50).unwrap();
+    seed.doc.tell(&me("a"), "seed").unwrap();
+    seed.store.flush(&seed.doc).unwrap();
+    drop(seed);
+    let (mut f, mut g) = (open_channel(&f_dir, 0x5F).unwrap(), open_channel(&g_dir, 0x56).unwrap());
+
+    let a = open_channel(&dir, 0x51).unwrap();
+    let name = a.doc.peer_id();
+    for i in 1..=2 {
+        a.doc.tell(&me("a"), &format!("lost {i}")).unwrap();
+    }
+    f.doc.merge(&a.doc.changes_since(&f.doc.version()).unwrap()).unwrap();
+    for i in 3..=4 {
+        a.doc.tell(&me("a"), &format!("lost {i}")).unwrap();
+    }
+    g.doc.merge(&a.doc.changes_since(&g.doc.version()).unwrap()).unwrap();
+    drop(a);
+
+    let mut b = open_channel(&dir, 0x52).unwrap();
+    assert_eq!(b.doc.peer_id(), name, "the next holder takes the same name");
+    b.doc.tell(&me("a"), "after").unwrap();
+    let mut peer = Peer::new();
+    for _ in 0..2 {
+        peer.round(&mut b.store, &b.doc, |h, c| answer(&mut f.store, &f.doc, h, c)).unwrap();
+    }
+    assert_eq!(b.store.retired(), Some(name), "the name is retired");
+    drop(b);
+
+    let mut c = open_channel(&dir, 0x53).unwrap();
+    assert_ne!(c.doc.peer_id(), name, "the copy after writes under a new name");
+    c.doc.tell(&me("a"), "from c").unwrap();
+    let mut peer = Peer::new();
+    for _ in 0..2 {
+        peer.round(&mut c.store, &c.doc, |h, cs| answer(&mut g.store, &g.doc, h, cs)).unwrap();
+    }
+    let (here, there) = (render(&c.doc), render(&g.doc));
+    assert!(there.contains("from c"), "its line reached the second machine:\n{there}");
+    assert!(here.contains("lost 3") && here.contains("lost 4"), "and that machine's lines came here:\n{here}");
+    for d in [dir, f_dir, g_dir] {
+        let _ = fs::remove_dir_all(d);
+    }
+}

@@ -247,6 +247,10 @@ pub enum What {
     /// A pile the peer keeps in another epoch (`khor_sync::store::load_pile`):
     /// not merged, and the round went on. Written like [`What::Sync`].
     Apart { doc: String, error: String },
+    /// The far side sent ops under the name this machine's copy of a pile
+    /// was writing with, ops this machine never kept: the name is retired
+    /// (`khor_sync::store::BlockStore::took_in`).
+    PenRetired { doc: String, name: String },
 }
 
 /// One line of the journal.
@@ -566,6 +570,7 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
         }
         What::Sync { doc, error } => msg::journal_sync_failed(doc, scrub(error)),
         What::Apart { doc, error } => msg::journal_sync_apart(doc, scrub(error)),
+        What::PenRetired { doc, name } => msg::journal_pen_retired(doc, name),
     }
 }
 
@@ -580,7 +585,7 @@ pub fn is_trouble(e: &Entry) -> bool {
         What::Hop { via, .. } => via.is_none(),
         What::Carry { up, .. } => !up,
         What::Departed => true,
-        What::Sync { .. } | What::Apart { .. } => true,
+        What::Sync { .. } | What::Apart { .. } | What::PenRetired { .. } => true,
         _ => false,
     }
 }

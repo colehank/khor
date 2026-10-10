@@ -3312,7 +3312,7 @@ impl Node {
                 self.nudge(ep, false);
                 Ok(Response::Paired {
                     name: self.name().to_owned(),
-                    devices: wire::table_b64(&store, &loaded.doc)?,
+                    devices: wire::table_b64(&mut store, &loaded.doc)?,
                     roster: serde_bytes::ByteBuf::from(self.roster_offer_in(&loaded.doc)),
                 })
             }
@@ -3326,12 +3326,11 @@ impl Node {
                 Ok(Response::Vouched)
             }
             Request::Sync { doc, have, changes } => {
-                let reply = with_doc!(self, doc.as_str(), |loaded| wire::answer(
-                    &mut loaded.store,
-                    &loaded.doc,
-                    &have,
-                    &changes
-                ))?;
+                let reply = with_doc!(self, doc.as_str(), |loaded| {
+                    let reply = wire::answer(&mut loaded.store, &loaded.doc, &have, &changes);
+                    self.say_retired(&remote, &doc, &loaded.store);
+                    reply
+                })?;
                 if doc == "devices" && !changes.is_empty() {
                     self.follow_after_sync();
                 }
@@ -8684,7 +8683,10 @@ impl Node {
                 // The same rule the issuer just ran, from this side — so
                 // both reach one verdict without a round trip to agree.
                 self.settle_with(&loaded.doc, &roster, &t.id, true)?;
+                let before = loaded.doc.version();
                 loaded.doc.merge(&bytes)?;
+                loaded.store.took_in(&before, &loaded.doc);
+                self.say_retired(&t.id, "devices", &loaded.store);
                 let signed = self.enroll_after_pair(
                     &loaded.doc,
                     &[(t.id.as_str(), name.as_str()), (self.device_str(), self.name())],
@@ -9981,6 +9983,17 @@ impl Node {
         Ok(moved)
     }
 
+    /// A pen retired while taking in what `peer` sent
+    /// (`khor_sync::store::BlockStore::took_in`): one journal line.
+    fn say_retired(&self, peer: &str, doc: &str, store: &khor_sync::store::BlockStore) {
+        if let Some(name) = store.retired() {
+            self.wires.note(
+                Some(peer),
+                crate::journal::What::PenRetired { doc: doc.to_owned(), name: format!("{name:016x}") },
+            );
+        }
+    }
+
     /// Two wire rounds: the first is pull-only by design, the second
     /// pushes. Returns bytes moved.
     async fn rounds<D: Doc>(
@@ -10005,7 +10018,7 @@ impl Node {
     ) -> Result<usize, String> {
         let mut moved = 0usize;
         for _ in 0..times {
-            let out = peer.outgoing(&loaded.store, &loaded.doc)?;
+            let out = peer.outgoing(&mut loaded.store, &loaded.doc)?;
             let resp = self
                 .exchange_on(
                     line,
@@ -10030,7 +10043,9 @@ impl Node {
                 Response::Refused { why } => return Err(why),
                 other => return Err(msg::peer_non_answer(format_args!("{other:?}"))),
             };
-            let round = peer.absorb(&mut loaded.store, &loaded.doc, &out, reply)?;
+            let round = peer.absorb(&mut loaded.store, &loaded.doc, &out, reply);
+            self.say_retired(&line.id, doc_name, &loaded.store);
+            let round = round?;
             moved += round.pushed + round.pulled;
         }
         Ok(moved)

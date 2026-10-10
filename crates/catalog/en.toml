@@ -1634,6 +1634,7 @@ journal-round = "Hole punching, {0} round(s): candidates here {1}; candidates th
 journal-round-none = "none"
 journal-sync-failed = "Syncing {0} failed and the round stopped there: {1}"
 journal-sync-apart = "{0} not synced; the rest of the round went on: {1}"
+journal-pen-retired = "{0}: the other machine holds records under this machine's writer name {1} that this machine does not have; the name is retired, and some of what was written under it may not have synced"
 journal-why-title = "Why not direct"
 journal-why-line = "{0}: {1}, {2}"
 journal-why-no-round = "this machine has not punched toward it (the side that opened the connection punches)"

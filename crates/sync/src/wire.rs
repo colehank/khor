@@ -78,8 +78,10 @@ pub fn other_epoch(said: &str) -> bool {
 }
 
 /// A whole table for a machine joining (`Pair`): its snapshot, spelled
-/// in its epoch like a version.
-pub fn table_b64<D: Doc>(store: &BlockStore, doc: &D) -> Result<String, String> {
+/// in its epoch like a version; flushed first, as
+/// [`changes_since_b64`] is.
+pub fn table_b64<D: Doc>(store: &mut BlockStore, doc: &D) -> Result<String, String> {
+    store.flush(doc)?;
     Ok(spell(store.epoch(), &doc.snapshot()?))
 }
 
@@ -123,8 +125,18 @@ pub fn version_canonical<D: Doc>(store: &BlockStore, doc: &D) -> Vec<u8> {
 /// version-vector inclusion — loro exports a non-empty header block even
 /// with zero new ops, so an emptiness check would keep the wire forever
 /// "moving" and idempotence tests forever green for the wrong reason.
-pub fn changes_since_b64<D: Doc>(store: &BlockStore, doc: &D, theirs: &str) -> Result<String, String> {
+///
+/// **Flushed first** (PEERS-BRIEF, peers-a 「Left」 3): an op must be on
+/// this disk before it is anywhere else. A writer's name is a pen lent by
+/// a lock and handed to the next copy when this one drops; an op that
+/// left unflushed and died with its process would have its counter
+/// minted again by the next holder for another op, and the far side,
+/// holding the first, skips the second. Every way ops leave goes through
+/// here ([`answer`], [`Peer::outgoing`]) or [`table_b64`], so the rule
+/// holds by type rather than by each caller remembering it.
+pub fn changes_since_b64<D: Doc>(store: &mut BlockStore, doc: &D, theirs: &str) -> Result<String, String> {
     let vv = decode_version(store, theirs)?;
+    store.flush(doc)?;
     if vv.includes_vv(&doc.version()) {
         return Ok(String::new());
     }
@@ -220,7 +232,7 @@ impl Peer {
     /// version, which we don't have yet. Cost: my words arrive one round
     /// late, bounded at one; pushing everything instead can hit
     /// [`MAX_BYTES`], unbounded.
-    pub fn outgoing<D: Doc>(&self, store: &BlockStore, doc: &D) -> Result<Outgoing, String> {
+    pub fn outgoing<D: Doc>(&self, store: &mut BlockStore, doc: &D) -> Result<Outgoing, String> {
         Ok(Outgoing {
             have: version_b64(store, doc),
             // An empty `their` means "from the beginning" to
@@ -251,7 +263,9 @@ impl Peer {
     ) -> Result<Round, String> {
         // What they sent counts in the epoch they say they are in.
         decode_version(store, &reply.version)?;
+        let before = doc.version();
         merge_b64(doc, &reply.changes)?;
+        store.took_in(&before, doc);
         store.flush(doc)?;
         self.their = reply.version;
         Ok(Round {
@@ -304,7 +318,9 @@ pub fn answer<D: Doc>(
 ) -> Result<Reply, String> {
     decode_version(store, have)?;
     let out = changes_since_b64(store, doc, have);
+    let before = doc.version();
     merge_b64(doc, changes)?;
+    store.took_in(&before, doc);
     store.flush(doc)?;
     let out = out?;
     Ok(Reply {
@@ -554,15 +570,15 @@ mod tests {
     #[test]
     fn the_version_vector_is_not_capped() {
         let dir = tmpdir("wire-vv");
-        let l = open_channel(&dir, 0x91).unwrap();
+        let mut l = open_channel(&dir, 0x91).unwrap();
         l.doc.tell(&me("a"), "a line").unwrap();
         let v = version_b64(&l.store, &l.doc);
         assert!(!v.is_empty());
         // Empty = from the beginning, not an error — a freshly paired
         // device.
-        assert!(changes_since_b64(&l.store, &l.doc, "").is_ok());
+        assert!(changes_since_b64(&mut l.store, &l.doc, "").is_ok());
         // Bad base64 must read as "not base64", not "sync broken".
-        let e = changes_since_b64(&l.store, &l.doc, "not base64!!").unwrap_err();
+        let e = changes_since_b64(&mut l.store, &l.doc, "not base64!!").unwrap_err();
         assert!(e.contains("base64"), "{e}");
     }
 
@@ -594,7 +610,7 @@ mod tests {
         assert!(new.doc.get("old").is_none(), "and nothing of theirs was merged");
 
         // The other way: this side's round refuses their version itself…
-        let e = Peer::knowing(theirs.clone()).outgoing(&new.store, &new.doc).unwrap_err();
+        let e = Peer::knowing(theirs.clone()).outgoing(&mut new.store, &new.doc).unwrap_err();
         assert!(other_epoch(&e), "{e}");
         // … and does not take in a reply in their epoch.
         let reply = Reply { version: theirs, changes: pushed, items: 1 };
