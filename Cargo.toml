@@ -226,3 +226,6 @@ iroh-mdns-address-lookup = { path = "vendor/iroh-mdns-address-lookup" }
 # swarm-discovery 0.6.3 with upstream's unreleased fix for a stopped
 # service's timer that never stops: vendor/swarm-discovery/KHOR.md.
 swarm-discovery = { path = "vendor/swarm-discovery" }
+# loro-internal 1.16.2 without the deep copy of the version vector per
+# merged change: vendor/loro-internal/KHOR.md.
+loro-internal = { path = "vendor/loro-internal" }
