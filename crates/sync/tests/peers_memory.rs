@@ -108,3 +108,44 @@ fn the_first_merge_after_a_load_stays_small() {
     let grew = live_kb() - before;
     assert!(grew < 32 * 1024, "{grew} KB for the first concurrent import with {PEERS} peers");
 }
+
+/// The table behind the numbers above (docstat's synthetic loop, which
+/// stays a hand tool for the real store): live heap kept per round for
+/// 10 to 3000 peers. Not a gate:
+/// `cargo test --release -p khor-sync --test peers_memory -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn kept_per_round_by_peers() {
+    let _one = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    for peers in [10u64, 300, 1500, 3000] {
+        let a = LoroDoc::new();
+        a.set_peer_id(7_000_001).unwrap();
+        for p in 0..peers {
+            let w = LoroDoc::new();
+            w.set_peer_id(1000 + p).unwrap();
+            w.import(&a.export(ExportMode::Snapshot).unwrap()).unwrap();
+            w.get_map("devices").insert(&format!("k{}", p % 90), p as i64).unwrap();
+            a.import(&w.export(ExportMode::updates(&a.oplog_vv())).unwrap()).unwrap();
+        }
+        let b = LoroDoc::new();
+        b.set_peer_id(7_000_002).unwrap();
+        b.import(&a.export(ExportMode::Snapshot).unwrap()).unwrap();
+        let mut before = live_kb();
+        for i in 0..=100 {
+            // The first round walks the history once (a few MB at 1500
+            // peers); what is kept after it is the question.
+            if i == 1 {
+                before = live_kb();
+            }
+            a.get_map("devices").insert("ka", i).unwrap();
+            a.commit();
+            b.get_map("devices").insert("kb", i).unwrap();
+            b.commit();
+            let to_a = b.export(ExportMode::updates(&a.oplog_vv())).unwrap();
+            let to_b = a.export(ExportMode::updates(&b.oplog_vv())).unwrap();
+            a.import(&to_a).unwrap();
+            b.import(&to_b).unwrap();
+        }
+        println!("peers {peers:>5}: {:.1} KB kept per round", (live_kb() - before) as f64 / 100.0);
+    }
+}
