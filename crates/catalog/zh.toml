@@ -4840,6 +4840,8 @@ bcast-waiting = "待接收"
 bcast-take = "接收"
 bcast-taking = "接收中"
 bcast-landed = "已收到"
+# The sender's own seat on its offer: nothing to receive, only the count.
+bcast-own = "自己发的"
 bcast-count = "{0}/{1} 台已收到"
 # The composer's other verb (GUI 发文件批): hand a file to `send`. The
 # label names the action; in the app a native picker answers with a
