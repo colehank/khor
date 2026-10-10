@@ -560,8 +560,9 @@ function FileChip({
         </div>
       )}
       {wide && m.step === "landed" && (
-        <span data-bcast-landed className="text-caption text-muted-foreground">
-          {gui.bcast_landed}
+        // Pulled from a machine that had it rather than the sender: which.
+        <span data-bcast-landed data-bcast-via={m.via ?? undefined} className="text-caption text-muted-foreground">
+          {m.via ? gui.bcast_landed_via(m.via) : gui.bcast_landed}
         </span>
       )}
       {m.step === "landed" &&

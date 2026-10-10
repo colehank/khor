@@ -4100,6 +4100,11 @@ fn fate_lines(m: &khor_node::Message, names: &std::collections::HashMap<String, 
         .map(|(id, f)| {
             let who = names.get(id).cloned().unwrap_or_else(|| id.chars().take(8).collect());
             let line = match f.step {
+                // Pulled from a machine that had it, not the sender.
+                Step::Landed if !f.via.is_empty() && f.via != m.from.id => {
+                    let via = names.get(&f.via).cloned().unwrap_or_else(|| f.via.chars().take(8).collect());
+                    cli::fate_landed_via(&who, f.landed.join(", "), via)
+                }
                 Step::Landed => cli::fate_landed(&who, f.landed.join(", ")),
                 Step::Failed => cli::fate_failed(&who, &f.why),
                 Step::Moving => cli::fate_moving(&who, f.moved, size),
@@ -6090,6 +6095,16 @@ mod fate_lines_tests {
             why: why.to_owned(),
             via: String::new(),
         }
+    }
+
+    #[test]
+    fn a_landing_from_a_holder_names_it_and_one_from_the_sender_does_not() {
+        let names: HashMap<String, String> = [("aa", "alpha"), ("bb", "beta"), ("cc", "gamma")].map(|(i, n)| (i.to_owned(), n.to_owned())).into();
+        let from = |via: &str| Fate { via: via.to_owned(), ..fate(Step::Landed, 300, &["/x.bin"], "") };
+        let m = files(BTreeMap::from([("bb".to_owned(), from("aa")), ("cc".to_owned(), from("bb"))]));
+        let lines = fate_lines(&m, &names);
+        assert_eq!(lines[0], cli::fate_landed("beta", "/x.bin"), "from the sender: as before");
+        assert_eq!(lines[1], cli::fate_landed_via("gamma", "/x.bin", "beta"));
     }
 
     fn files(fates: BTreeMap<String, Fate>) -> khor_node::Message {

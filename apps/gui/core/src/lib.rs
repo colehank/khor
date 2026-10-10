@@ -2238,6 +2238,10 @@ pub struct ChatMsgRow {
     /// machine that has not answered is 待接收.
     pub got: Option<u32>,
     pub of: Option<u32>,
+    /// In the broadcast, the machine this one's copy was pulled from when
+    /// that was not the sender but a machine that had it (BCAST-BRIEF's
+    /// holder), by its shown name; `None` otherwise.
+    pub via: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -2308,6 +2312,7 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
                 into: Some(m.into).filter(|d| !d.is_empty()),
                 got: None,
                 of: None,
+                via: None,
             }
         })
         .collect();
@@ -2323,6 +2328,8 @@ pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
 fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
     let (log, faces) = n.wide_log(id)?;
     let me = n.device_str().to_owned();
+    let names: std::collections::HashMap<String, String> =
+        n.devices()?.into_iter().map(|d| (d.id.clone(), d.shown().to_owned())).collect();
     let messages = log
         .messages
         .into_iter()
@@ -2338,6 +2345,10 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
                 khor_node::MsgBody::Unknown(k) => (None, None, Some(k)),
             };
             let here = face.as_ref().and_then(|f| f.here.clone());
+            let via = here
+                .as_ref()
+                .filter(|f| !f.via.is_empty() && f.via != m.from.id)
+                .map(|f| names.get(&f.via).cloned().unwrap_or_else(|| f.via.chars().take(8).collect()));
             ChatMsgRow {
                 at_ms: m.at,
                 from_me: m.from.id == me,
@@ -2356,6 +2367,7 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
                 into: None,
                 got: face.as_ref().map(|f| f.got),
                 of: face.as_ref().map(|f| f.of),
+                via,
             }
         })
         .collect();
