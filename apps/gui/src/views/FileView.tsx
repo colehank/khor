@@ -46,6 +46,7 @@ import {
   type GitDiff,
 } from "@/api";
 import { CodeEditor, editorIn, focusAtTop } from "@/components/CodeEditor";
+import { HtmlView } from "@/components/HtmlView";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -67,6 +68,7 @@ import {
   write,
 } from "@/lib/save-road";
 import { usePinch } from "@/hooks/use-pinch";
+import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
 
 /** The same table `khor_node::preview::kind` keeps, for the one
@@ -154,11 +156,13 @@ export function kindOf(path: string): "image" | "svg" | "pdf" | "doc" | "text" {
     change gutter. What this answers is whether there is anything to
     *also* show — and where there is not, no switch is drawn rather
     than a greyed one. */
-export function rendererOf(path: string): "md" | "table" | null {
+export function rendererOf(path: string): "md" | "table" | "html" | null {
   const name = path.split("/").pop() ?? "";
   const dot = name.lastIndexOf(".");
   const e = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
   if (e === "md" || e === "markdown") return "md";
+  // A page, drawn in a sandbox (CM-BRIEF step 3, `HtmlView`).
+  if (e === "html" || e === "htm") return "html";
   if (e === "csv" || e === "tsv") return "table";
   return null;
 }
@@ -995,9 +999,15 @@ export function FileView({
           exactly as it was — and typing into a preview is not possible,
           because there is nothing there to focus. */}
       {face === "preview" && renders !== null ? (
-        <div data-file-preview={renders} {...groundAttr(ground.ground)} className="min-h-0 flex-1 overflow-auto">
+        <div
+          data-file-preview={renders}
+          {...groundAttr(ground.ground)}
+          className={cn("min-h-0 flex-1 overflow-auto", renders === "html" && "flex flex-col")}
+        >
           {renders === "md" ? (
             <Markdown text={body} className="prose-khor px-6 py-4" lines />
+          ) : renders === "html" ? (
+            <HtmlView machine={machine} path={path} text={body} ground={ground.ground} />
           ) : (
             <Table text={body} sep={path.toLowerCase().endsWith(".tsv") ? "\t" : ","} />
           )}

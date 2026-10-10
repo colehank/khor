@@ -13,6 +13,7 @@
 //   #6  the same on a phone: one column, HEAD's lines laid in
 //   #7  a refused save merged: the disk's text against the box, 保留 / 放弃
 //       on every place
+//   #8  an HTML file's 渲染 face: the page in a sandbox, its script not run
 import { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 
@@ -21,6 +22,7 @@ import "@/styles/app.css";
 
 import { CodeDiff } from "@/components/CodeDiff";
 import { CodeEditor, editorIn } from "@/components/CodeEditor";
+import { HtmlView } from "@/components/HtmlView";
 import { textBefore } from "@/lib/code/diff";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { GitHunk } from "@/gen/bindings/GitHunk";
@@ -71,6 +73,16 @@ const LONG = SRC + Array.from({ length: 40 }, (_, i) => `export const step${i} =
 const LONG_HUNKS: GitHunk[] = [...HUNKS, { at: LONG.split("\n").length - 1, lines: 1, was: ["export const last = false;"] }];
 const THEIRS = SRC.replace("const RETRIES = 3;", "const RETRIES = 5;").replace("// Somebody else", "// Another writer");
 
+const PAGE = `<!doctype html><html><head><title>Report</title>
+<style>body{font:15px/1.5 -apple-system,sans-serif;margin:2rem;max-width:40rem}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px}</style>
+</head><body>
+<h1>Run 42</h1>
+<p id="said">Scripts are off: this sentence would read <b>SCRIPT RAN</b> if one had run.</p>
+<table><tr><th>step</th><th>loss</th></tr><tr><td>1000</td><td>2.31</td></tr><tr><td>2000</td><td>1.87</td></tr></table>
+<p><img src="plot.png" alt="plot.png (relative, read through khor)" width="200"> <img src="https://example.com/pixel.png" alt="remote (refused)" width="120"></p>
+<script>document.getElementById("said").textContent = "SCRIPT RAN";</script>
+</body></html>`;
+
 function Screen({ at }: { at: string }) {
   if (at === "5" || at === "6") {
     return (
@@ -78,6 +90,13 @@ function Screen({ at }: { at: string }) {
     );
   }
   if (at === "7") return <Merging />;
+  if (at === "8") {
+    return (
+      <div data-file-preview="html" className="flex min-h-0 flex-1 flex-col">
+        <HtmlView machine="lab" path="/home/lab/site/index.html" text={PAGE} ground="auto" />
+      </div>
+    );
+  }
   return <Editing at={at} />;
 }
 
