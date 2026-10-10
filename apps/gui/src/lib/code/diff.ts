@@ -1,0 +1,94 @@
+// Two texts against each other on `@codemirror/merge` (CM-BRIEF step 2):
+// what the diff tab, the history's 「与当前比较」 and a refused save's
+// merge draw. Side by side on a wide window, one column on a narrow one;
+// unchanged runs folded behind a 「展开」 bar; per-chunk 保留 / 放弃 only
+// where a choice is being made (the merge after a refusal).
+//
+// **Git's inks, not the package's.** What was there is `git-deleted`,
+// what is there now is `git-added` — the tree's letters and the gutter's
+// bars say the same two things in the same two colours — a tenth for a
+// line's wash and a quarter for the words that changed inside it.
+import { EditorState, type Extension } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+
+import { gui } from "@/gen/catalog";
+import type { GitHunk } from "@/gen/bindings/GitHunk";
+
+/** HEAD's text (or a revision's), rebuilt from the file as it is now and
+    the hunks that lead from that to this — all `git_diff` and `git_show`
+    hand over. Each hunk's `was` goes where its `lines` are. */
+export function textBefore(now: string, hunks: GitHunk[]): string {
+  const lines = now.split("\n");
+  const out: string[] = [];
+  let cut = 0;
+  for (const h of [...hunks].sort((a, b) => a.at - b.at)) {
+    const upto = Math.min(h.lines === 0 ? h.at : h.at - 1, lines.length);
+    for (; cut < upto; cut += 1) out.push(lines[cut]);
+    out.push(...h.was);
+    cut += h.lines;
+  }
+  for (; cut < lines.length; cut += 1) out.push(lines[cut]);
+  return out.join("\n");
+}
+
+/** The words `@codemirror/merge` asks for, from the catalog. */
+export const diffPhrases = (): Extension => EditorState.phrases.of({
+  "$ unchanged lines": gui.diff_unchanged("$"),
+  Accept: gui.merge_keep,
+  Reject: gui.merge_drop,
+});
+
+/** Unchanged runs longer than this fold, keeping this much context on
+    either side of every change. */
+export const COLLAPSE = { margin: 3, minSize: 6 };
+
+export const diffTheme = EditorView.theme({
+  "&.cm-merge-a .cm-changedLine, .cm-deletedChunk": {
+    backgroundColor: "color-mix(in srgb, var(--git-deleted) 10%, transparent)",
+  },
+  "&.cm-merge-b .cm-changedLine, .cm-inlineChangedLine, .cm-insertedLine": {
+    backgroundColor: "color-mix(in srgb, var(--git-added) 10%, transparent)",
+  },
+  "&.cm-merge-a .cm-changedText, .cm-deletedChunk .cm-deletedText": {
+    background: "color-mix(in srgb, var(--git-deleted) 25%, transparent)",
+  },
+  "&.cm-merge-b .cm-changedText, .cm-insertedLine .cm-changedText": {
+    background: "color-mix(in srgb, var(--git-added) 25%, transparent)",
+  },
+  ".cm-deletedChunk": {
+    paddingLeft: "var(--gap-row)",
+    color: "var(--muted-foreground)",
+  },
+  ".cm-deletedChunk .cm-chunkButtons": {
+    insetInlineEnd: "var(--gap-in)",
+    display: "flex",
+    gap: "var(--gap-xxs)",
+    fontFamily: "var(--font-sans)",
+  },
+  ".cm-chunkButtons .cm-merge-btn": {
+    border: "none",
+    margin: "0",
+    padding: "0 var(--gap-in)",
+    borderRadius: "var(--radius-xs)",
+    font: "inherit",
+    fontSize: "var(--text-caption)",
+    lineHeight: "var(--text-mono--line-height)",
+    color: "var(--foreground)",
+    backgroundColor: "var(--fill-strong)",
+    cursor: "default",
+  },
+  // The bar a folded run is: the neutral fill, the muted ink, pressed to
+  // open (the package's own behaviour; its words come from the catalog).
+  ".cm-collapsedLines": {
+    padding: "var(--gap-xxs) var(--gap-row)",
+    cursor: "default",
+    color: "var(--muted-foreground)",
+    background: "var(--fill)",
+    fontFamily: "var(--font-sans)",
+    fontSize: "var(--text-caption)",
+  },
+  ".cm-collapsedLines:before, .cm-collapsedLines:after": { content: "none" },
+  ".cm-changeGutter": { width: "calc(var(--gap-xxs) * 1.5)", paddingLeft: "0" },
+  "&.cm-merge-a .cm-changedLineGutter, .cm-deletedLineGutter": { background: "var(--git-deleted)" },
+  "&.cm-merge-b .cm-changedLineGutter, .cm-inlineChangedLineGutter": { background: "var(--git-added)" },
+});

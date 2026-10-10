@@ -14,6 +14,7 @@
 // colour are the platform's own, which is what a person typing Chinese on
 // a phone needs most (memory khor-native-walk-gotchas).
 import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { getChunks, unifiedMergeView } from "@codemirror/merge";
 import { codeFolding, foldGutter, foldKeymap, indentUnit } from "@codemirror/language";
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
@@ -24,6 +25,7 @@ import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { GitHunk } from "@/gen/bindings/GitHunk";
 import { inlineBlame, setBlamed } from "@/lib/code/blame";
+import { diffPhrases, diffTheme } from "@/lib/code/diff";
 import { codeFind, openFind } from "@/lib/code/find";
 import { gitChanges, setHunks } from "@/lib/code/git";
 import { loadLanguage } from "@/lib/code/lang";
@@ -99,6 +101,32 @@ const writable = (on: boolean): Extension => [
   ),
 ];
 
+/** One of a chunk's two buttons, khor's and not the package's green and
+    red: a neutral push button, the words from the catalog. */
+function chunkButton(type: "accept" | "reject", act: (e: MouseEvent) => void): HTMLElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "cm-merge-btn";
+  b.dataset.merge = type;
+  b.textContent = type === "accept" ? gui.merge_keep : gui.merge_drop;
+  b.addEventListener("mousedown", act);
+  return b;
+}
+
+/** **A merge waiting on the person** (CM-BRIEF step 2): the text the
+    disk holds now is the original, the box is the merge, and every chunk
+    where they differ carries 保留 (keep the box's) and 放弃 (take the
+    disk's) — one decision per place, where the markers alone asked the
+    person to edit them out by hand. */
+const merging = (against: string | null): Extension =>
+  against === null
+    ? []
+    : [
+        unifiedMergeView({ original: against, mergeControls: chunkButton, gutter: true, highlightChanges: true, syntaxHighlightDeletions: true }),
+        diffTheme,
+        diffPhrases(),
+      ];
+
 /** The view inside a box (a file pane, a page), for a host that holds the
     box and not the editor. */
 export function editorIn(box: HTMLElement | null): EditorView | null {
@@ -138,8 +166,10 @@ export function CodeEditor({
   hunks,
   blamed = null,
   goLine = null,
+  against = null,
   onText,
   onSave,
+  onChunks,
   className,
 }: {
   /** Names the language (`lib/code/lang`). */
@@ -162,9 +192,13 @@ export function CodeEditor({
   /** A line asked for from outside, stamped so the same line asked twice
       moves the view twice. */
   goLine?: { line: number; at: number } | null;
+  /** The disk's text while a merge waits on the person, else null. */
+  against?: string | null;
   onText?: (text: string) => void;
   /** ⌘S. */
   onSave?: () => void;
+  /** How many places of the merge are still undecided, as they change. */
+  onChunks?: (left: number) => void;
   className?: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -173,11 +207,12 @@ export function CodeEditor({
   /** The last text handed out, so a host echoing it back is not a
       replacement. */
   const out = useRef(text);
-  const cb = useRef({ onText, onSave });
-  cb.current = { onText, onSave };
+  const cb = useRef({ onText, onSave, onChunks });
+  cb.current = { onText, onSave, onChunks };
   const lang = useRef(new Compartment());
   const edit = useRef(new Compartment());
   const wrapping = useRef(new Compartment());
+  const merge = useRef(new Compartment());
 
   useLayoutEffect(() => {
     const svgs = icons.current?.querySelectorAll("svg");
@@ -191,6 +226,7 @@ export function CodeEditor({
           lang.current.of([]),
           edit.current.of(writable(editable)),
           wrapping.current.of(wrap ? EditorView.lineWrapping : []),
+          merge.current.of(merging(against)),
           EditorView.contentAttributes.of({ "data-file-text": "" }),
           keymap.of([
             {
@@ -205,6 +241,8 @@ export function CodeEditor({
             },
           ]),
           EditorView.updateListener.of((u) => {
+            const left = getChunks(u.state)?.chunks.length;
+            if (left !== undefined && left !== getChunks(u.startState)?.chunks.length) cb.current.onChunks?.(left);
             if (!u.docChanged) return;
             const t = u.state.doc.toString();
             out.current = t;
@@ -251,6 +289,16 @@ export function CodeEditor({
   useLayoutEffect(() => {
     view.current?.dispatch({ effects: wrapping.current.reconfigure(wrap ? EditorView.lineWrapping : []) });
   }, [wrap]);
+
+  useLayoutEffect(() => {
+    const v = view.current;
+    if (!v) return;
+    v.dispatch({ effects: merge.current.reconfigure(merging(against)) });
+    // Said once at the start too: a merge that left nothing to decide is
+    // answered before anybody presses anything.
+    const left = getChunks(v.state)?.chunks.length;
+    if (left !== undefined) cb.current.onChunks?.(left);
+  }, [against]);
 
   // A text from outside. Only the part that differs is replaced, so the
   // caret, the folds and the scroll outside it stay where they were.

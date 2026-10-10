@@ -9,13 +9,19 @@
 //   #3  a phone's read-first view of the same file
 //   #4  a long line wrapping, the line a link asked for (brand wash), a
 //       folded block
+//   #5  the diff tab, side by side (HEAD | 工作副本), unchanged runs folded
+//   #6  the same on a phone: one column, HEAD's lines laid in
+//   #7  a refused save merged: the disk's text against the box, 保留 / 放弃
+//       on every place
 import { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 
 import "@/styles/tokens.css";
 import "@/styles/app.css";
 
+import { CodeDiff } from "@/components/CodeDiff";
 import { CodeEditor, editorIn } from "@/components/CodeEditor";
+import { textBefore } from "@/lib/code/diff";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { GitHunk } from "@/gen/bindings/GitHunk";
 import { openFind } from "@/lib/code/find";
@@ -61,7 +67,32 @@ const C1: GitCommit = { id: "7a921aa4c0ffee", author: "colehank", when_ms: Date.
 const C2: GitCommit = { id: "3f00d1e2b7", author: "net-d", when_ms: Date.now() - 5 * 3_600_000, subject: "retry a failed write on the next pause" };
 const BLAMED = SRC.split("\n").map((_, i) => (i === 10 || i === 11 ? null : i % 3 === 0 ? C2 : C1));
 
+const LONG = SRC + Array.from({ length: 40 }, (_, i) => `export const step${i} = ${i} * RETRIES; // nothing changed here`).join("\n") + "\nexport const last = true;\n";
+const LONG_HUNKS: GitHunk[] = [...HUNKS, { at: LONG.split("\n").length - 1, lines: 1, was: ["export const last = false;"] }];
+const THEIRS = SRC.replace("const RETRIES = 3;", "const RETRIES = 5;").replace("// Somebody else", "// Another writer");
+
 function Screen({ at }: { at: string }) {
+  if (at === "5" || at === "6") {
+    return (
+      <CodeDiff path="lib/save.ts" before={textBefore(LONG, LONG_HUNKS)} after={LONG} beforeLabel="HEAD" afterLabel="工作副本" narrow={at === "6"} />
+    );
+  }
+  if (at === "7") return <Merging />;
+  return <Editing at={at} />;
+}
+
+function Merging() {
+  const [text, setText] = useState(SRC.replace("throw new Error(\"clash\");", "throw new Error(\"clash: \" + path);"));
+  const [left, setLeft] = useState<number | null>(null);
+  return (
+    <>
+      <CodeEditor path="lib/save.ts" text={text} editable against={left === 0 ? null : THEIRS} onText={setText} onChunks={setLeft} />
+      <div className="flex-none border-t px-3 py-1.5 text-callout text-muted-foreground">已合并对方的修改，是否保存仍由你决定 · {left ?? "…"}</div>
+    </>
+  );
+}
+
+function Editing({ at }: { at: string }) {
   const [text, setText] = useState(SRC);
   const [goLine, setGoLine] = useState<{ line: number; at: number } | null>(null);
   useEffect(() => {

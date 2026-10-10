@@ -1211,6 +1211,12 @@ aside[data-side] {
 :root[data-theme="dark"] [data-code] .tok-changed { color: #ffa657; }
 :root[data-theme="dark"] [data-code] .tok-invalid { color: #ffa198; }
 
+/* Side by side (`components/CodeDiff`): the two halves parted by the
+   hairline every column in the app is parted by. */
+[data-code] .cm-mergeViewEditor + .cm-mergeViewEditor {
+  border-inline-start: var(--hair) solid var(--border);
+}
+
 /* A preview on a ground of its own (预览背景, round UX-4) paints its code
    in that ground's colours, whatever the app's theme. */
 :root:is([data-theme]) [data-ground="light"] [data-md] span[style*="--shiki"] {

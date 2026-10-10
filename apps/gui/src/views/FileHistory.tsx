@@ -14,8 +14,8 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
-import { cn } from "@/lib/utils";
 import { DiffView } from "@/views/DiffView";
+import { CodeEditor } from "@/components/CodeEditor";
 import { rendererOf } from "@/views/FileView";
 import { ago } from "@/words";
 
@@ -137,7 +137,6 @@ export function RevisionView({
   if (shown === null) return <Waiting since={since} />;
   if (compare) return <DiffView machine={machine} path={path} narrow={narrow} against={against} />;
   const md = rendererOf(path) === "md";
-  const lines = shown.text.split("\n");
   return (
     <div data-file-rev={rev.id} className="flex min-h-0 flex-1 flex-col">
       {md ? (
@@ -145,25 +144,9 @@ export function RevisionView({
           <Markdown text={shown.text} className="prose-khor px-6 py-4" />
         </div>
       ) : (
-        <div data-file-scroll data-selectable className="min-h-0 flex-1 overflow-auto">
-          <div className="flex min-w-full items-start py-2">
-            <pre
-              aria-hidden="true"
-              className="shrink-0 select-none border-r pl-2 pr-1 text-right font-mono text-mono leading-mono text-muted-foreground tabular-nums"
-            >
-              {lines.map((_, i) => (
-                <div key={i}>{i + 1}</div>
-              ))}
-            </pre>
-            <pre className="min-w-0 flex-1 px-3 font-mono text-mono leading-mono whitespace-pre-wrap [overflow-wrap:anywhere]">
-              {lines.map((l, i) => (
-                <div key={i} className={cn("min-h-[var(--text-mono--line-height)]")}>
-                  {l || " "}
-                </div>
-              ))}
-            </pre>
-          </div>
-        </div>
+        // The revision in the file's own editor, read-only: numbers,
+        // folding, ⌘F and the code's colours, the same as the file now.
+        <CodeEditor path={path} text={shown.text} editable={false} />
       )}
       {shown.cut && <div className="px-3 py-1 text-callout text-muted-foreground">{gui.file_rev_cut}</div>}
     </div>

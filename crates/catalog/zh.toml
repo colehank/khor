@@ -4629,6 +4629,12 @@ blame-uncommitted = "未提交"
 search-file = "搜索此文件"
 code-fold = "折叠"
 code-unfold = "展开"
+# 两份文本对照(diff 标签、历史的「与当前比较」、拒绝保存后的合并):没改过的
+# 一长段收成一条,按下展开,说的是按下会发生什么和有几行。合并时每一处改动
+# 旁边两颗按钮:「保留」这一处框里的,「放弃」这一处、换回盘上的。
+diff-unchanged = "展开未更改的 {0} 行"
+merge-keep = "保留"
+merge-drop = "放弃"
 # 文件「…」里的预览背景（round UX-4）：只管渲染出来的文档，跟随界面，或固定浅色、深色。按设备存。
 preview-ground = "预览背景"
 preview-ground-auto = "跟随"

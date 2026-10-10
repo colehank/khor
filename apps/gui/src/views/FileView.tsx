@@ -634,6 +634,8 @@ export function FileView({
         );
         setEdit((e) => (e === null || e.by !== l.by ? e : { ...e, was: l.digest }));
         setOops(null);
+        // A merge saved is a merge answered (✓ over undecided places).
+        setClashes(null);
         // The gutter is about HEAD and the file just moved, so it is
         // wrong until it is asked again. Same for the tree's marks,
         // which this view does not hold (`onSaved`, and `treeChanged`
@@ -667,8 +669,9 @@ export function FileView({
       while a clash is unanswered — nothing is written until the person
       picks a way out — and not over a merge that has not been looked at:
       its text holds both sides and maybe the markers between them, and
-      「是否保存仍由你决定」 (`file-merged-clean`) stays true until a
-      keystroke or ✓. A failure does not stop it: the next pause tries
+      「是否保存仍由你决定」 (`file-merged-clean`) stays true until every
+      place is decided (保留 / 放弃, cm-a) or ✓. ⚠️ 墓碑: 「until a
+      keystroke」 — the first letter typed ended the merge's review. A failure does not stop it: the next pause tries
       again with the newer text, and the road retries on its own between. */
   const autosave = canEdit && dirty && clashes === null && trouble?.kind !== "clash";
   useEffect(() => {
@@ -1012,11 +1015,13 @@ export function FileView({
           hunks={hunks}
           blamed={blamed}
           goLine={goLine}
-          onText={(t) => {
-            setClashes(null);
-            setEdit((e) => (e === null ? e : { ...e, text: t }));
-          }}
+          onText={(t) => setEdit((e) => (e === null ? e : { ...e, text: t }))}
           onSave={() => save(true)}
+          // A merge waiting on the person: the disk's text (the merge set
+          // `file` to it) against the box, a 保留 / 放弃 per place. Every
+          // place decided is the merge answered, and autosave goes on.
+          against={clashes !== null && file !== null ? file.text : null}
+          onChunks={(left) => left === 0 && setClashes(null)}
         />
       )}
       {/* **The one notice left, and it floats** (2026-09-16:「类似要在
@@ -1039,8 +1044,8 @@ export function FileView({
           usually is — a notice there would cover the thing it is about.
 
           **It goes when the reason goes**: the trouble when a write lands
-          or the person picks a way out, `clashes` on the next keystroke
-          and on the save. */}
+          or the person picks a way out, `clashes` when every place of the
+          merge is decided and on the save. */}
       {(trouble !== null || clashes !== null || oops !== null) && (
         <div
           data-file-notice
