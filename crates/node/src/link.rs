@@ -8329,6 +8329,15 @@ impl Node {
         };
         match &outcome {
             Ok((_, landed)) => {
+                // A broadcast file landed here is served from here too, to
+                // whoever cannot reach the sender (`transfer::hold`).
+                if channel.starts_with(chat::WIDE) {
+                    for (f, at) in files.iter().zip(landed) {
+                        if let Err(e) = crate::transfer::hold(self.root(), f, std::path::Path::new(at)) {
+                            eprintln!("{e}");
+                        }
+                    }
+                }
                 tell(Step::Landed, size, landed.clone(), String::new());
                 job.finish(Ok(landed.join("\n")));
             }

@@ -119,6 +119,33 @@ pub fn load_offer(root: &Path, digest: &str) -> Result<Option<Offer>, String> {
         .map_err(msg::offer_garbled)
 }
 
+/// **A machine that landed a broadcast file holds it** (BCAST-BRIEF): the
+/// landed bytes are offered on under the same digest, so a machine that
+/// cannot reach the sender pulls them from here (`serve_slice`). A record
+/// already serving its file whole is kept — this machine's own send of the
+/// same bytes keeps what each receiver did with it; a stale one (its file
+/// gone or no longer that size) is replaced. A holder whose landed file is
+/// edited later answers `offered_file_changed`, and the puller moves on.
+pub fn hold(root: &Path, f: &FileRef, landed: &Path) -> Result<(), String> {
+    if let Ok(Some(o)) = load_offer(root, &f.digest)
+        && fs::metadata(&o.path).is_ok_and(|m| m.len() == o.size)
+    {
+        return Ok(());
+    }
+    save_offer(
+        root,
+        &f.digest,
+        &Offer {
+            path: landed.to_path_buf(),
+            name: f.name.clone(),
+            size: f.size.max(0) as u64,
+            started: false,
+            done: false,
+            to: Default::default(),
+        },
+    )
+}
+
 /// Streaming blake3 over the file. Returns (hex digest, size).
 pub fn digest_file(path: &Path) -> Result<(String, u64), String> {
     use std::io::Read;
@@ -455,6 +482,36 @@ mod tests {
         // An offer recorded before receivers were told apart reads as one.
         let old: Offer = serde_json::from_str(r#"{"path":"/x","name":"a","size":5,"started":true,"done":true}"#).unwrap();
         assert_eq!(old.fetched_by("anyone"), Fetched { started: true, done: true });
+    }
+
+    /// **A landed broadcast file is held** (BCAST-BRIEF): offered on from
+    /// where it landed; a record already serving its file is kept, a
+    /// stale one is replaced.
+    #[test]
+    fn a_landed_file_is_held_and_a_live_record_is_kept() {
+        let root = tmp("hold");
+        let f = file_ref("data.bin");
+        let landed = root.join("data.bin");
+        fs::write(&landed, b"hello").unwrap();
+        hold(&root, &f, &landed).unwrap();
+        let held = load_offer(&root, &f.digest).unwrap().unwrap();
+        assert_eq!((held.path.as_path(), held.size, held.to.len()), (landed.as_path(), 5, 0));
+
+        // This machine's own send of the same bytes stays as it was.
+        let own = root.join("own.bin");
+        fs::write(&own, b"hello").unwrap();
+        let mut sent = held.clone();
+        sent.path = own.clone();
+        sent.note_fetch("beta", true);
+        save_offer(&root, &f.digest, &sent).unwrap();
+        hold(&root, &f, &landed).unwrap();
+        let kept = load_offer(&root, &f.digest).unwrap().unwrap();
+        assert_eq!((kept.path, kept.to.len()), (own.clone(), 1), "a live record is kept");
+
+        // Its file edited: the record no longer serves, the landing does.
+        fs::write(&own, b"hello, edited").unwrap();
+        hold(&root, &f, &landed).unwrap();
+        assert_eq!(load_offer(&root, &f.digest).unwrap().unwrap().path, landed);
     }
 
     /// A malicious file name must not escape the files/ directory.
