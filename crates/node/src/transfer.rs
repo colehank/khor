@@ -41,6 +41,12 @@ pub struct Offer {
     /// 已送达 the moment the first had fetched it.
     #[serde(default)]
     pub to: std::collections::BTreeMap<String, Fetched>,
+    /// Written by [`hold`]: bytes this machine landed and serves on, not
+    /// a file it sent. Only such a record goes when its file is gone
+    /// ([`forget_gone_held`]); a sender's own offer outlives its file
+    /// being moved away and back.
+    #[serde(default)]
+    pub held: bool,
 }
 
 /// What one receiver did with an offer.
@@ -142,8 +148,32 @@ pub fn hold(root: &Path, f: &FileRef, landed: &Path) -> Result<(), String> {
             started: false,
             done: false,
             to: Default::default(),
+            held: true,
         },
     )
+}
+
+/// **A held record whose file is gone is forgotten** (BCAST-BRIEF): the
+/// landed file was deleted or moved, so this machine holds nothing under
+/// that digest any more. Called for one digest on a slice that missed it
+/// (`serve_slice`), and for every record when the serve starts, so
+/// records do not pile up for files nobody asks about. Answers how many
+/// went.
+pub fn forget_gone_held(root: &Path, digest: Option<&str>) -> usize {
+    let digests: Vec<String> = match digest {
+        Some(d) => vec![d.to_owned()],
+        None => fs::read_dir(offers_dir(root))
+            .map(|rd| rd.flatten().filter_map(|e| e.file_name().into_string().ok()).collect())
+            .unwrap_or_default(),
+    };
+    let mut gone = 0;
+    for d in digests {
+        let Ok(Some(o)) = load_offer(root, &d) else { continue };
+        if o.held && !o.path.exists() && offer_path(root, &d).is_ok_and(|p| fs::remove_file(p).is_ok()) {
+            gone += 1;
+        }
+    }
+    gone
 }
 
 /// Streaming blake3 over the file. Returns (hex digest, size).
@@ -474,6 +504,7 @@ mod tests {
             started: false,
             done: false,
             to: Default::default(),
+            held: false,
         };
         assert!(offer.note_fetch("alpha", false));
         assert!(!offer.note_fetch("alpha", false), "nothing new, nothing written");
@@ -512,7 +543,27 @@ mod tests {
         // Its file edited: the record no longer serves, the landing does.
         fs::write(&own, b"hello, edited").unwrap();
         hold(&root, &f, &landed).unwrap();
-        assert_eq!(load_offer(&root, &f.digest).unwrap().unwrap().path, landed);
+        let held = load_offer(&root, &f.digest).unwrap().unwrap();
+        assert_eq!((held.path.as_path(), held.held), (landed.as_path(), true));
+    }
+
+    /// A held record goes once its file is gone; a sender's own offer
+    /// stays, its file only moved away for now.
+    #[test]
+    fn a_held_record_goes_with_its_file_and_an_own_offer_stays() {
+        let root = tmp("forget");
+        let held = file_ref("held.bin");
+        let landed = root.join("held.bin");
+        fs::write(&landed, b"hello").unwrap();
+        hold(&root, &held, &landed).unwrap();
+        let own = FileRef { digest: "cd".repeat(32), ..file_ref("own.bin") };
+        let offer = Offer { path: root.join("away.bin"), name: own.name.clone(), size: 5, started: false, done: false, to: Default::default(), held: false };
+        save_offer(&root, &own.digest, &offer).unwrap();
+        assert_eq!(forget_gone_held(&root, None), 0, "the held file is there; the own offer is not a held one");
+        fs::remove_file(&landed).unwrap();
+        assert_eq!(forget_gone_held(&root, Some(&held.digest)), 1);
+        assert!(load_offer(&root, &held.digest).unwrap().is_none());
+        assert!(load_offer(&root, &own.digest).unwrap().is_some(), "the sender's own offer stays");
     }
 
     /// A malicious file name must not escape the files/ directory.

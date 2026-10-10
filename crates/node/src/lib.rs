@@ -4195,6 +4195,7 @@ impl Node {
                 started: false,
                 done: false,
                 to,
+                held: false,
             },
         )?;
         Ok(f)

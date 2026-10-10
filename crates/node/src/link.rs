@@ -1193,6 +1193,8 @@ impl Node {
         // Borrow rows left by a previous serve point at ports this
         // process does not hold; clear them before answering anyone.
         self.sweep_stale_borrows();
+        // Held broadcast files deleted while it was off (`transfer::hold`).
+        crate::transfer::forget_gone_held(self.root(), None);
 
         // The trust beat, once before answering anyone: a holder whose
         // roster aged while it was off signs it again now, and a network
@@ -4276,8 +4278,12 @@ impl Node {
         use std::io::{Read, Seek, SeekFrom};
         let mut offer =
             crate::transfer::load_offer(self.root(), digest)?.ok_or(msg::offer_lost())?;
-        let meta = fs::metadata(&offer.path)
-            .map_err(|e| msg::offered_file_unreadable(offer.path.display(), e))?;
+        let meta = fs::metadata(&offer.path).map_err(|e| {
+            // A landed copy deleted since: this machine holds nothing
+            // under the digest any more (`transfer::forget_gone_held`).
+            crate::transfer::forget_gone_held(self.root(), Some(digest));
+            msg::offered_file_unreadable(offer.path.display(), e)
+        })?;
         if meta.len() != offer.size {
             return Err(msg::offered_file_changed().into());
         }
