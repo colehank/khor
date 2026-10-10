@@ -910,6 +910,10 @@ link-dropped = "Connection dropped — the session looks like it's still there (
 session-closed = "Session closed"
 retracted = "[retracted]"
 file-chip = "[file {0} {1}B]"
+fate-landed = "  {0}  Received {1}"
+fate-failed = "  {0}  Transfer failed: {1}"
+fate-moving = "  {0}  Transferring {1}/{2}B"
+fate-stopped = "  {0}  Cancelled"
 unknown-body = "[this version can't read this entry: {0}]"
 
 relay-up = "Relay listening on {0}"

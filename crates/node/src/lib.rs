@@ -83,7 +83,7 @@ pub use khor_core::{
     WireCounts,
     UsageDay, Vitals, kind,
 };
-pub use khor_sync::chat::{FileRef, Message, MsgBody};
+pub use khor_sync::chat::{Fate, FileRef, Message, MsgBody, Step as FateStep};
 pub use khor_sync::devices::DeviceInfo;
 pub use trust::{PendingRow, RootState, Standing};
 /// A relay and the key it admits by — what [`Node::set_relays`] takes.
