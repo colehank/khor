@@ -8,7 +8,6 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::time::Duration;
 
-use base64::Engine;
 use khor_catalog::msg;
 use khor_net::endpoint::{self, ALPN, Ticket};
 use khor_sync::devices::DeviceInfo;
@@ -81,8 +80,8 @@ fn doc_must_sync(name: &str) -> bool {
 
 /// A document's version, as a [`Request::Versions`] digest: blake3 of
 /// its canonical spelling, 16 bytes.
-fn version_digest<D: Doc>(doc: &D) -> Vec<u8> {
-    blake3::hash(&wire::version_canonical(doc)).as_bytes()[..16].to_vec()
+fn version_digest<D: Doc>(loaded: &khor_sync::store::Loaded<D>) -> Vec<u8> {
+    blake3::hash(&wire::version_canonical(&loaded.store, &loaded.doc)).as_bytes()[..16].to_vec()
 }
 
 /// A reading's answer frame, as a [`Request::Versions`] digest.
@@ -888,9 +887,6 @@ pub fn invite_window_minutes() -> u32 {
     // sentence.
     (INVITE_WINDOW_MS / 60_000) as u32
 }
-
-const B64: base64::engine::general_purpose::GeneralPurpose =
-    base64::engine::general_purpose::STANDARD;
 
 /// What one-shot CLI verbs need to know about the live endpoint. The
 /// cookie makes it a key to the hand-off port — owner-only on disk.
@@ -3316,7 +3312,7 @@ impl Node {
                 self.nudge(ep, false);
                 Ok(Response::Paired {
                     name: self.name().to_owned(),
-                    devices: B64.encode(loaded.doc.snapshot()?),
+                    devices: wire::table_b64(&store, &loaded.doc)?,
                     roster: serde_bytes::ByteBuf::from(self.roster_offer_in(&loaded.doc)),
                 })
             }
@@ -8683,8 +8679,8 @@ impl Node {
                 devices,
                 roster,
             } => {
-                let bytes = B64.decode(devices).map_err(msg::far_table_not_base64)?;
                 let mut loaded = self.devices_loaded()?;
+                let bytes = wire::table_bytes(&loaded.store, &devices)?;
                 // The same rule the issuer just ran, from this side — so
                 // both reach one verdict without a round trip to agree.
                 self.settle_with(&loaded.doc, &roster, &t.id, true)?;
@@ -9447,7 +9443,12 @@ impl Node {
             let synced = with_doc!(self, name.as_str(), |loaded| self
                 .rounds_from(line, &name, loaded, wire::Peer::knowing(theirs), 1)
                 .await);
-            if doc_must_sync(&name)
+            // **Two epochs of one pile do not stop the round**
+            // (`khor_sync::store::load_pile`): the machine that has not
+            // re-seeded yet stays apart in that pile until it does, and
+            // everything else syncs as before. Said once, like a failure.
+            let apart = synced.as_ref().err().is_some_and(|why| wire::other_epoch(why));
+            if (doc_must_sync(&name) || apart)
                 && let Some(w) = crate::journal::sync_failed(&d.id, &name, synced.as_ref().err().map(String::as_str))
             {
                 self.wires.note(Some(&d.id), w);
@@ -9462,7 +9463,7 @@ impl Node {
                         self.take_arrived();
                     }
                 }
-                Err(why) if doc_must_sync(&name) => return Err(why),
+                Err(why) if doc_must_sync(&name) && !apart => return Err(why),
                 Err(_) => {}
             }
         }
@@ -9491,7 +9492,7 @@ impl Node {
         let mut docs = Vec::with_capacity(names.len());
         for name in &names {
             let digest = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>(version_digest(
-                &loaded.doc
+                loaded
             )))?;
             docs.push((name.clone(), serde_bytes::ByteBuf::from(digest)));
         }
@@ -9710,8 +9711,8 @@ impl Node {
         let mut differ = Vec::new();
         for (name, theirs) in docs {
             let Ok((mine, version)) = with_doc!(self, name.as_str(), |loaded| Ok::<_, String>((
-                version_digest(&loaded.doc),
-                wire::version_b64(&loaded.doc)
+                version_digest(loaded),
+                wire::version_b64(&loaded.store, &loaded.doc)
             ))) else {
                 continue;
             };
@@ -10004,7 +10005,7 @@ impl Node {
     ) -> Result<usize, String> {
         let mut moved = 0usize;
         for _ in 0..times {
-            let out = peer.outgoing(&loaded.doc)?;
+            let out = peer.outgoing(&loaded.store, &loaded.doc)?;
             let resp = self
                 .exchange_on(
                     line,

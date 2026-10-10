@@ -820,3 +820,138 @@ fn pens_across_processes() {
     let _ = fs::remove_dir_all(&dir);
     let _ = fs::remove_dir_all(dir.with_extension("ready"));
 }
+
+/// An old pile with `names` writers, each a block of its own, as every
+/// khor process used to leave one: rows of the device table, with an
+/// address each so the rows are nested maps. Returns what it holds.
+fn old_pile(dir: &std::path::Path, names: u64, tag: &str) -> crate::devices::DeviceDoc {
+    use crate::devices::DeviceDoc;
+    use crate::store::Doc;
+    fs::create_dir_all(dir).unwrap();
+    let all = DeviceDoc::open(0xACC).unwrap();
+    for i in 0..names {
+        let peer = 0x1000 + i;
+        let w = DeviceDoc::open(peer).unwrap();
+        w.merge(&all.snapshot().unwrap()).unwrap();
+        let before = w.version();
+        // A few rows, rewritten over and over, as the real pile is.
+        let row = format!("{tag}-{}", i % 5);
+        w.upsert(&row, &row, &[format!("10.0.0.{i}:1")]).unwrap();
+        let bytes = w.changes_since(&before).unwrap();
+        fs::write(dir.join(format!("u-{peer:016x}-00000000.loro")), &bytes).unwrap();
+        all.merge(&bytes).unwrap();
+    }
+    all
+}
+
+/// **An old pile is rebuilt under one name and reads the same**
+/// (PEERS-BRIEF step 3). Forty writers' blocks become one snapshot by one
+/// writer, the ledger and the old pens go, pen 0 holds the new name and
+/// the epoch is written; the next copy writes under that name and its
+/// counter carries on. Opening it again does not rebuild it again.
+#[test]
+fn an_old_pile_is_reseeded_under_one_name() {
+    use crate::devices::DeviceDoc;
+    use crate::store::{Doc, EPOCH, load, load_pile};
+    let dir = tmpdir("reseed");
+    let all = old_pile(&dir, 40, "row");
+    // Read the old way once: the ledger and a pen exist, as on a real disk.
+    drop(load::<DeviceDoc>(&dir, 0x77).unwrap());
+    assert!(dir.join(".merged").exists() && dir.join(".pen-0").exists());
+    let old_pen = fs::read_to_string(dir.join(".pen-0")).unwrap();
+    assert_eq!(all.version().len(), 40);
+
+    let mut p = load_pile::<DeviceDoc>(&dir, 0x78).unwrap();
+    assert_eq!(format!("{:?}", p.doc.all()), format!("{:?}", all.all()), "and reads the same");
+    assert_eq!(p.doc.version().len(), 1, "one writer name: {:?}", p.doc.version());
+    assert_eq!(p.store.epoch(), EPOCH);
+    assert_eq!(fs::read_to_string(dir.join(".epoch")).unwrap().trim(), EPOCH.to_string());
+    let loro: Vec<_> = fs::read_dir(&dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.ends_with(".loro"))
+        .collect();
+    assert_eq!(loro.len(), 1, "one block, the snapshot: {loro:?}");
+    let pen = fs::read_to_string(dir.join(".pen-0")).unwrap();
+    assert_ne!(pen, old_pen, "the old pens are gone");
+    assert_eq!(p.doc.peer_id(), u64::from_str_radix(pen.trim(), 16).unwrap(), "the copy holds pen 0, the new name");
+
+    p.doc.upsert("after", "after", &[]).unwrap();
+    p.store.flush(&p.doc).unwrap();
+    drop(p);
+    let again = load_pile::<DeviceDoc>(&dir, 0x79).unwrap();
+    assert_eq!(fs::read_to_string(dir.join(".pen-0")).unwrap(), pen, "not rebuilt twice");
+    assert!(again.doc.get("after").is_some());
+    assert_eq!(again.doc.version().len(), 1, "the write carried on under the one name");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// **A pile somebody holds is not rebuilt under them.** A copy read
+/// before a rebuild would write after it, on top of blocks that are gone;
+/// so the rebuild waits until nobody holds the pile, and meanwhile the
+/// copy that asked says the old epoch.
+#[test]
+fn a_held_pile_is_reseeded_only_once_let_go() {
+    use crate::devices::DeviceDoc;
+    use crate::store::{Doc, EPOCH, load, load_pile};
+    let dir = tmpdir("reseed-held");
+    old_pile(&dir, 6, "row");
+    drop(load::<DeviceDoc>(&dir, 0x80).unwrap());
+    let held = load::<DeviceDoc>(&dir, 0x81).unwrap();
+    let asked = load_pile::<DeviceDoc>(&dir, 0x82).unwrap();
+    assert_eq!(asked.store.epoch(), 0, "not rebuilt while held");
+    assert_eq!(asked.doc.version().len(), 6, "the old names");
+    drop((held, asked));
+    let after = load_pile::<DeviceDoc>(&dir, 0x83).unwrap();
+    assert_eq!(after.store.epoch(), EPOCH, "rebuilt once let go");
+    assert_eq!(after.doc.version().len(), 1);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// **Two replicas re-seeded apart agree after a round** (PEERS-BRIEF):
+/// each machine rebuilds its own pile under its own name, so the two
+/// rebuilt histories are unrelated; for a map of last-writer-wins rows
+/// that is two concurrent writes of every key, and a round settles every
+/// key alike on both sides. What each wrote only on its own side before
+/// the rebuild is on both after.
+#[test]
+fn two_replicas_reseeded_apart_agree_after_a_round() {
+    use crate::devices::DeviceDoc;
+    use crate::store::{Doc, EPOCH, load_pile};
+    use crate::wire::{Peer, answer};
+    let (a_dir, b_dir) = (tmpdir("reseed-a"), tmpdir("reseed-b"));
+    let shared = old_pile(&a_dir, 20, "row");
+    fs::create_dir_all(&b_dir).unwrap();
+    for e in fs::read_dir(&a_dir).unwrap().flatten() {
+        fs::copy(e.path(), b_dir.join(e.file_name())).unwrap();
+    }
+    // Apart before the rebuild: a row each, and the same row rewritten.
+    for (dir, peer, mine) in [(&a_dir, 0xA0u64, "only-a"), (&b_dir, 0xB0, "only-b")] {
+        let w = DeviceDoc::open(peer).unwrap();
+        w.merge(&shared.snapshot().unwrap()).unwrap();
+        let v = w.version();
+        w.upsert(mine, mine, &[]).unwrap();
+        w.upsert("row-0", mine, &[]).unwrap();
+        fs::write(dir.join(format!("u-{peer:016x}-00000000.loro")), w.changes_since(&v).unwrap()).unwrap();
+    }
+    let mut a = load_pile::<DeviceDoc>(&a_dir, 0xA1).unwrap();
+    let mut b = load_pile::<DeviceDoc>(&b_dir, 0xB1).unwrap();
+    assert_eq!((a.store.epoch(), b.store.epoch()), (EPOCH, EPOCH));
+    assert_ne!(a.doc.peer_id(), b.doc.peer_id(), "each under its own name");
+
+    let mut peer = Peer::new();
+    for _ in 0..2 {
+        peer.round(&mut a.store, &a.doc, |h, c| answer(&mut b.store, &b.doc, h, c)).unwrap();
+    }
+    let (on_a, on_b) = (format!("{:?}", a.doc.all()), format!("{:?}", b.doc.all()));
+    assert_eq!(on_a, on_b, "every key agrees");
+    for row in ["only-a", "only-b", "row-0", "row-1", "row-4"] {
+        assert!(a.doc.get(row).is_some(), "{row} is there:\n{on_a}");
+    }
+    let name = a.doc.get("row-0").unwrap().name;
+    assert!(name == "only-a" || name == "only-b", "the rewritten row is one side's: {name}");
+    assert_eq!(a.doc.version().len(), 2, "two names in all");
+    let _ = fs::remove_dir_all(&a_dir);
+    let _ = fs::remove_dir_all(&b_dir);
+}

@@ -33,6 +33,19 @@ const LEDGER: &str = ".merged";
 /// this machine. Not a block, not synced, like the ledger.
 const PEN: &str = ".pen-";
 
+/// The pile lock ([`load_pile`]): every open copy holds it shared, a
+/// re-seed holds it alone. Not a block, not synced.
+const PILE_LOCK: &str = ".pile";
+
+/// Which re-seeding a pile's blocks belong to ([`load_pile`]). Not a
+/// block, not synced: each machine re-seeds its own.
+const EPOCH_FILE: &str = ".epoch";
+
+/// The epoch this build keeps key-value piles in. A pile with no epoch
+/// file is epoch 0, as every pile was before re-seeding; a chat channel
+/// stays epoch 0 for good.
+pub const EPOCH: u32 = 1;
+
 /// What the block store and the wire need from a CRDT document. One
 /// implementation per replicated table (chat, devices, …).
 pub trait Doc: Sized {
@@ -64,6 +77,12 @@ pub struct BlockStore {
     /// nothing else (round NET-6) — a block another writer added after
     /// this copy was read is not in its snapshot.
     held: std::collections::BTreeSet<String>,
+    /// The epoch this copy's blocks belong to ([`load_pile`]); what the
+    /// wire says beside its version.
+    epoch: u32,
+    /// An empty pile opened by [`load_pile`]: its epoch file is written
+    /// before its first block.
+    stamp: bool,
 }
 
 /// What `load` returns.
@@ -122,9 +141,14 @@ pub struct Loaded<D> {
 /// created, and unique, so nobody else can hold it. Any pen that cannot
 /// be opened, locked or read falls back the same way: a fresh name is
 /// always safe, only unbounded.
+///
+/// A copy of a directory that exists also holds the pile lock shared, so
+/// a re-seed ([`load_pile`]) never rebuilds a pile somebody has open.
 struct Lease {
     peer: u64,
     held: Held,
+    #[allow(dead_code)]
+    pile: Option<fs::File>,
 }
 
 enum Held {
@@ -134,6 +158,10 @@ enum Held {
     /// A name lent in this process only, for a directory with no pens.
     Spare((PathBuf, u64)),
 }
+
+/// How long a copy waits for a re-seed to let go of the pile. A re-seed
+/// of the owner's devices pile (1515 writers) is well under a second.
+const PILE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// More than this many copies of one pile open at once on one machine
 /// and the next takes a spare name rather than a pen.
@@ -171,16 +199,39 @@ fn fresh_name() -> u64 {
 
 impl Lease {
     fn take(dir: &Path, peer: u64) -> Lease {
-        if dir.is_dir() {
-            for k in 0..PENS {
-                match Lease::pen(dir, k) {
-                    Some(Ok(lease)) => return lease,
-                    Some(Err(())) => break,
-                    None => {}
+        if !dir.is_dir() {
+            return Lease::spare(dir, peer);
+        }
+        // Waits while a re-seed holds it: the copy then reads the new
+        // pile, and takes a pen of the new pile's. Polled, not blocking:
+        // a lock that never comes (a wedged NFS lock daemon) must not
+        // hang every read, so after a while the copy goes on without it.
+        let pile = open_owner_only(&dir.join(PILE_LOCK)).filter(|f| {
+            let began = std::time::Instant::now();
+            loop {
+                match f.try_lock_shared() {
+                    Ok(()) => return true,
+                    Err(fs::TryLockError::WouldBlock) if began.elapsed() < PILE_WAIT => {
+                        std::thread::sleep(std::time::Duration::from_millis(5))
+                    }
+                    Err(_) => return false,
                 }
             }
+        });
+        let mut taken = None;
+        for k in 0..PENS {
+            match Lease::pen(dir, k) {
+                Some(Ok(lease)) => {
+                    taken = Some(lease);
+                    break;
+                }
+                Some(Err(())) => break,
+                None => {}
+            }
         }
-        Lease::spare(dir, peer)
+        let mut lease = taken.unwrap_or_else(|| Lease::spare(dir, peer));
+        lease.pile = pile;
+        lease
     }
 
     /// Pen `k`: `None` if somebody holds it, `Some(Err)` if pens do not
@@ -199,14 +250,7 @@ impl Lease {
             }
             r
         };
-        let mut opts = fs::OpenOptions::new();
-        opts.create(true).truncate(false).read(true).write(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(OWNER_ONLY_FILE);
-        }
-        let Ok(mut file) = opts.open(dir.join(format!("{PEN}{k}"))) else {
+        let Some(mut file) = open_owner_only(&dir.join(format!("{PEN}{k}"))) else {
             return give_back(Some(Err(())));
         };
         match file.try_lock() {
@@ -233,7 +277,7 @@ impl Lease {
                 peer
             }
         };
-        Some(Ok(Lease { peer, held: Held::Pen(slot, file) }))
+        Some(Ok(Lease { peer, held: Held::Pen(slot, file), pile: None }))
     }
 
     fn spare(dir: &Path, peer: u64) -> Lease {
@@ -251,8 +295,20 @@ impl Lease {
                 name
             }
         };
-        Lease { peer, held: Held::Spare(key) }
+        Lease { peer, held: Held::Spare(key), pile: None }
     }
+}
+
+/// A lock file: opened read-write, made owner-only if it is new.
+fn open_owner_only(path: &Path) -> Option<fs::File> {
+    let mut opts = fs::OpenOptions::new();
+    opts.create(true).truncate(false).read(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(OWNER_ONLY_FILE);
+    }
+    opts.open(path).ok()
 }
 
 impl Drop for Lease {
@@ -327,6 +383,199 @@ pub fn load<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, String
     LOADS.fetch_add(1, Ordering::Relaxed);
     LOAD_NANOS.fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
     out
+}
+
+/// **A key-value pile, re-seeded if it is older than this build**
+/// (PEERS-BRIEF step 3, 2026-10-10). Every process used to write under a
+/// name of its own, and loro keeps every name that ever wrote for good:
+/// the owner's devices pile carried 1515 rows in its version vector,
+/// recents 1129, on every sync request and every merge. Pens stop the
+/// growth; only a rebuild sheds the rows already there.
+///
+/// So a pile whose epoch file is older than [`EPOCH`] is rebuilt the
+/// first time it is opened with nobody else holding it: every block read,
+/// the state copied key by key into a fresh document written under one
+/// new name, that document written as one snapshot, the old blocks, the
+/// old pens and the ledger deleted, the new name put in pen 0, and the
+/// epoch written last. The history goes; the contents stay, and the
+/// rebuild is refused unless the copy reads back equal.
+///
+/// Under the pile lock, held alone: every open copy holds it shared
+/// ([`Lease`]), so no copy that read the old blocks can write after them,
+/// and a copy opened meanwhile waits and reads the new pile. Somebody
+/// holding the pile means not now; the next open tries again, and until
+/// then the copy says its old epoch on the wire.
+///
+/// Two machines re-seed on their own, each under its own name. For a map
+/// of last-writer-wins values that converges like any two concurrent
+/// writes (`store::tests::two_replicas_reseeded_apart_agree_after_a_round`).
+/// The wire refuses to merge across epochs, so an old replica never
+/// pushes the old history back in (`wire::answer`). Chat channels are not
+/// piles in this sense: lists, per channel, and loaded with [`load`].
+pub fn load_pile<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
+    if read_epoch(dir) < EPOCH && dir.is_dir() {
+        reseed(dir);
+    }
+    let mut loaded = load(dir, peer)?;
+    if loaded.store.epoch < EPOCH && loaded.store.held.is_empty() && loaded.broken.is_empty() {
+        // Nothing in it yet: it starts in this build's epoch.
+        loaded.store.epoch = EPOCH;
+        loaded.store.stamp = true;
+    }
+    Ok(loaded)
+}
+
+static RESEEDS: AtomicU64 = AtomicU64::new(0);
+
+/// How many piles this process has re-seeded ([`load_pile`]).
+pub fn reseeds_done() -> u64 {
+    RESEEDS.load(Ordering::Relaxed)
+}
+
+/// A pile's epoch: what its epoch file says, 0 with none.
+fn read_epoch(dir: &Path) -> u32 {
+    fs::read_to_string(dir.join(EPOCH_FILE))
+        .ok()
+        .and_then(|t| t.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// The rebuild [`load_pile`] describes. `false`: not done, for any
+/// reason; the pile is then as it was.
+fn reseed(dir: &Path) -> bool {
+    let Some(pile) = open_owner_only(&dir.join(PILE_LOCK)) else {
+        return false;
+    };
+    if pile.try_lock().is_err() || read_epoch(dir) >= EPOCH {
+        return false;
+    }
+    // A copy whose pile lock would not take may still hold a pen.
+    let mut pens = Vec::new();
+    for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+        if e.file_name().to_string_lossy().starts_with(PEN) {
+            match open_owner_only(&e.path()) {
+                Some(f) if f.try_lock().is_ok() => pens.push((e.path(), f)),
+                _ => return false,
+            }
+        }
+    }
+    let Ok(listed) = blocks(dir) else {
+        return false;
+    };
+    let old = loro::LoroDoc::new();
+    let mut read = Vec::new();
+    let mut pending = Vec::new();
+    for p in listed {
+        // A block that will not read stays where it is, as a load leaves it.
+        let Ok(bytes) = fs::read(&p) else { continue };
+        if let Ok(status) = old.import(&bytes) {
+            pending.extend(status.pending);
+            read.push(p);
+        }
+    }
+    // A change whose ancestors are in no block is not in the state, and
+    // the rebuild would delete the only copy of it.
+    let have = old.oplog_vv();
+    if pending.iter().flat_map(|r| r.iter()).any(|(peer, (_, end))| have.get(peer).copied().unwrap_or(0) < *end) {
+        return false;
+    }
+    let name = fresh_name();
+    let new = loro::LoroDoc::new();
+    if !read.is_empty() {
+        if new.set_peer_id(name).is_err() || copy_doc(&old, &new).is_none() || old.get_deep_value() != new.get_deep_value() {
+            return false;
+        }
+        let Ok(snap) = new.export(loro::ExportMode::Snapshot) else {
+            return false;
+        };
+        let snap_path = dir.join(format!("snap-{name:016x}-{:08x}.{EXT}", 0));
+        if write_atomic(&snap_path, &snap).is_err() {
+            return false;
+        }
+        for p in read.into_iter().filter(|p| *p != snap_path) {
+            let _ = fs::remove_file(p);
+        }
+        let _ = fs::remove_file(dir.join(LEDGER));
+        for (p, _) in &pens {
+            let _ = fs::remove_file(p);
+        }
+        if write_atomic(&dir.join(format!("{PEN}0")), format!("{name:016x}\n").as_bytes()).is_err() {
+            return false;
+        }
+        RESEEDS.fetch_add(1, Ordering::Relaxed);
+    }
+    KEPT.lock().unwrap_or_else(|p| p.into_inner()).remove(dir);
+    write_atomic(&dir.join(EPOCH_FILE), format!("{EPOCH}\n").as_bytes()).is_ok()
+}
+
+/// Every root container of `from`, written into `to` value by value.
+/// `None` for a kind no pile uses; the caller compares the two anyway.
+fn copy_doc(from: &loro::LoroDoc, to: &loro::LoroDoc) -> Option<()> {
+    use loro::{Container, LoroValue};
+    let LoroValue::Map(roots) = from.get_value() else {
+        return None;
+    };
+    for (name, id) in roots.iter() {
+        let LoroValue::Container(id) = id else {
+            return None;
+        };
+        match from.get_container(id.clone())? {
+            Container::Map(m) => copy_map(&m, &to.get_map(name.as_str()))?,
+            Container::List(l) => copy_list(&l, &to.get_list(name.as_str()))?,
+            Container::Text(t) => to.get_text(name.as_str()).insert(0, &t.to_string()).ok()?,
+            _ => return None,
+        }
+    }
+    to.commit();
+    Some(())
+}
+
+fn copy_map(from: &loro::LoroMap, to: &loro::LoroMap) -> Option<()> {
+    use loro::{Container, LoroList, LoroMap, LoroText, ValueOrContainer};
+    let mut ok = Some(());
+    from.for_each(|k, v| {
+        if ok.is_none() {
+            return;
+        }
+        ok = match v {
+            ValueOrContainer::Value(v) => to.insert(k, v).ok(),
+            ValueOrContainer::Container(Container::Map(m)) => {
+                to.insert_container(k, LoroMap::new()).ok().and_then(|n| copy_map(&m, &n))
+            }
+            ValueOrContainer::Container(Container::List(l)) => {
+                to.insert_container(k, LoroList::new()).ok().and_then(|n| copy_list(&l, &n))
+            }
+            ValueOrContainer::Container(Container::Text(t)) => {
+                to.insert_container(k, LoroText::new()).ok().and_then(|n| n.insert(0, &t.to_string()).ok())
+            }
+            ValueOrContainer::Container(_) => None,
+        };
+    });
+    ok
+}
+
+fn copy_list(from: &loro::LoroList, to: &loro::LoroList) -> Option<()> {
+    use loro::{Container, LoroList, LoroMap, LoroText, ValueOrContainer};
+    let mut ok = Some(());
+    from.for_each(|v| {
+        if ok.is_none() {
+            return;
+        }
+        ok = match v {
+            ValueOrContainer::Value(v) => to.push(v).ok(),
+            ValueOrContainer::Container(Container::Map(m)) => {
+                to.push_container(LoroMap::new()).ok().and_then(|n| copy_map(&m, &n))
+            }
+            ValueOrContainer::Container(Container::List(l)) => {
+                to.push_container(LoroList::new()).ok().and_then(|n| copy_list(&l, &n))
+            }
+            ValueOrContainer::Container(Container::Text(t)) => {
+                to.push_container(LoroText::new()).ok().and_then(|n| n.insert(0, &t.to_string()).ok())
+            }
+            ValueOrContainer::Container(_) => None,
+        };
+    });
+    ok
 }
 
 /// What a directory's blocks were when a read of them was kept: each
@@ -406,6 +655,8 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
                 on_disk: doc.version(),
                 ledger: read_ledger(dir),
                 held,
+                epoch: read_epoch(dir),
+                stamp: false,
             };
             return Ok(Loaded { store, doc, broken, lease });
         }
@@ -484,6 +735,8 @@ fn read_once<D: Doc>(dir: &Path, lease: Lease) -> Result<(Loaded<D>, bool), Stri
         on_disk,
         ledger,
         held,
+        epoch: read_epoch(dir),
+        stamp: false,
     };
     // Only write the ledger if the directory exists (an empty document
     // should leave nothing on disk) **and if this read learned a block
@@ -526,7 +779,7 @@ impl BlockStore {
     /// data goes permanently missing, with no error anywhere.
     pub fn absorb<D: Doc>(&mut self, doc: &D, name: &str, bytes: &[u8]) -> Result<(), String> {
         doc.merge(bytes)?;
-        make_dir(&self.dir)?;
+        self.make_dir()?;
         write_atomic(&self.dir.join(name), bytes)?;
         self.ledger.insert(name);
         self.held.insert(name.to_owned());
@@ -542,6 +795,33 @@ impl BlockStore {
 
     fn save_ledger(&mut self) -> Result<(), String> {
         write_atomic(&self.dir.join(LEDGER), self.ledger.render().as_bytes())
+    }
+
+    /// The directory, made if it is not there; and an empty pile's epoch
+    /// file before its first block, so no reader ever takes a block of
+    /// this build's for an old pile.
+    fn make_dir(&mut self) -> Result<(), String> {
+        make_dir(&self.dir)?;
+        if self.stamp {
+            if !self.dir.join(EPOCH_FILE).exists() {
+                write_atomic(&self.dir.join(EPOCH_FILE), format!("{}\n", self.epoch).as_bytes())?;
+            }
+            self.stamp = false;
+        }
+        Ok(())
+    }
+
+    /// The epoch this copy's blocks belong to: [`EPOCH`] for a pile
+    /// opened by [`load_pile`] (unless it could not be re-seeded yet), 0
+    /// for a chat channel.
+    pub fn epoch(&self) -> u32 {
+        self.epoch
+    }
+
+    /// The document's name, as the wire and the journal say it: its
+    /// directory's.
+    pub fn name(&self) -> String {
+        file_name(&self.dir).unwrap_or_default()
     }
 
     /// Writes what the doc has beyond `on_disk` as one new block; `None`
@@ -560,7 +840,7 @@ impl BlockStore {
         if delta.is_empty() {
             return Ok(None);
         }
-        make_dir(&self.dir)?;
+        self.make_dir()?;
         let path = self.dir.join(format!(
             "u-{:016x}-{:08x}.{EXT}",
             doc.peer_id(),
@@ -618,7 +898,7 @@ impl BlockStore {
     /// listing and not in the snapshot, and deleting it lost its writes
     /// for good (`store::tests::a_block_written_while_compacting_is_not_deleted_unread`).
     pub fn compact<D: Doc>(&mut self, doc: &D) -> Result<PathBuf, String> {
-        make_dir(&self.dir)?;
+        self.make_dir()?;
         let old: Vec<PathBuf> = blocks(&self.dir)?
             .into_iter()
             .filter(|p| file_name(p).is_some_and(|n| self.held.contains(&n)))

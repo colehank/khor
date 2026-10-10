@@ -244,6 +244,9 @@ pub enum What {
     /// failed every round for days and nothing said so). Written when
     /// the failure is new or its words changed ([`sync_failed`]).
     Sync { doc: String, error: String },
+    /// A pile the peer keeps in another epoch (`khor_sync::store::load_pile`):
+    /// not merged, and the round went on. Written like [`What::Sync`].
+    Apart { doc: String, error: String },
 }
 
 /// One line of the journal.
@@ -562,6 +565,7 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             msg::journal_round(rounds, list(local), list(remote))
         }
         What::Sync { doc, error } => msg::journal_sync_failed(doc, scrub(error)),
+        What::Apart { doc, error } => msg::journal_sync_apart(doc, scrub(error)),
     }
 }
 
@@ -576,7 +580,7 @@ pub fn is_trouble(e: &Entry) -> bool {
         What::Hop { via, .. } => via.is_none(),
         What::Carry { up, .. } => !up,
         What::Departed => true,
-        What::Sync { .. } => true,
+        What::Sync { .. } | What::Apart { .. } => true,
         _ => false,
     }
 }
@@ -826,6 +830,9 @@ pub(crate) fn sync_failed(peer: &str, doc: &str, error: Option<&str>) -> Option<
         return None;
     }
     last.insert(key, error.to_owned());
+    if khor_sync::wire::other_epoch(error) {
+        return Some(What::Apart { doc: doc.to_owned(), error: error.to_owned() });
+    }
     Some(What::Sync { doc: doc.to_owned(), error: error.to_owned() })
 }
 
@@ -1342,5 +1349,21 @@ mod tests {
             words(&e("b1", Some(3)), &name_of),
             format!("{}{}", msg::journal_path_hop("turing"), msg::journal_path_rtt(3))
         );
+    }
+
+    /// **A pile kept in another epoch is said once, as itself** (PEERS-BRIEF
+    /// step 3): not 「the round stopped there」, because it did not, and
+    /// not again on every round while the two stay apart. Another
+    /// failure is still a failure.
+    #[test]
+    fn a_pile_in_another_epoch_is_one_line_of_its_own() {
+        let apart = msg::pile_other_epoch("devices", 0, khor_sync::store::EPOCH);
+        let w = sync_failed("epoch-peer", "devices", Some(&apart)).expect("the first time is written");
+        assert!(matches!(&w, What::Apart { doc, .. } if doc == "devices"), "{w:?}");
+        let e = Entry { at: 1, peer: Some("epoch-peer".into()), what: w };
+        assert_eq!(words(&e, &|s| s.to_owned()), msg::journal_sync_apart("devices", &apart));
+        assert!(sync_failed("epoch-peer", "devices", Some(&apart)).is_none(), "and not again");
+        let other = msg::version_undecodable("x");
+        assert!(matches!(sync_failed("epoch-peer", "devices", Some(&other)), Some(What::Sync { .. })));
     }
 }

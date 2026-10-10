@@ -146,7 +146,7 @@ pub use khor_sync::recents::Kind as PlaceKind;
 use khor_sync::recents::{RecentDoc, recents_dir};
 use khor_sync::roster::{RosterDoc, roster_dir};
 use khor_sync::seen::{SeenDoc, seen_dir};
-use khor_sync::store::{Loaded, load};
+use khor_sync::store::{Loaded, load_pile};
 use khor_sync::titles::{TitleDoc, titles_dir};
 use khor_sync::webpins::{WebPinDoc, webpins_dir};
 use khor_sync::workspaces::{State as WsState, WorkspaceDoc, workspaces_dir};
@@ -1828,52 +1828,52 @@ impl Node {
     }
 
     pub(crate) fn devices_loaded(&self) -> Result<Loaded<DeviceDoc>, String> {
-        load(&devices_dir(&self.root), self.peer)
+        load_pile(&devices_dir(&self.root), self.peer)
     }
 
     pub(crate) fn seen_loaded(&self) -> Result<Loaded<SeenDoc>, String> {
-        load(&seen_dir(&self.root), self.peer)
+        load_pile(&seen_dir(&self.root), self.peer)
     }
 
     pub(crate) fn pins_loaded(&self) -> Result<Loaded<PinDoc>, String> {
-        load(&pins_dir(&self.root), self.peer)
+        load_pile(&pins_dir(&self.root), self.peer)
     }
 
     /// What is on the session list (`khor_sync::roster`, docs/SHELL.md
     /// 第八轮).
     pub(crate) fn roster_loaded(&self) -> Result<Loaded<RosterDoc>, String> {
-        load(&roster_dir(&self.root), self.peer)
+        load_pile(&roster_dir(&self.root), self.peer)
     }
 
     pub(crate) fn dirpins_loaded(&self) -> Result<Loaded<DirPinDoc>, String> {
-        load(&dirpins_dir(&self.root), self.peer)
+        load_pile(&dirpins_dir(&self.root), self.peer)
     }
 
     pub(crate) fn workspaces_loaded(&self) -> Result<Loaded<WorkspaceDoc>, String> {
-        load(&workspaces_dir(&self.root), self.peer)
+        load_pile(&workspaces_dir(&self.root), self.peer)
     }
 
     pub(crate) fn webpins_loaded(&self) -> Result<Loaded<WebPinDoc>, String> {
-        load(&webpins_dir(&self.root), self.peer)
+        load_pile(&webpins_dir(&self.root), self.peer)
     }
 
     pub(crate) fn recents_loaded(&self) -> Result<Loaded<RecentDoc>, String> {
-        load(&recents_dir(&self.root), self.peer)
+        load_pile(&recents_dir(&self.root), self.peer)
     }
 
     pub(crate) fn agents_loaded(&self) -> Result<Loaded<AgentDoc>, String> {
-        load(&agents_dir(&self.root), self.peer)
+        load_pile(&agents_dir(&self.root), self.peer)
     }
 
     /// The registered API accounts (`khor_sync::accounts`) — the
     /// descriptions, never the keys; those stay in `keys_dir` on the
     /// machine that registered them.
     pub(crate) fn accounts_loaded(&self) -> Result<Loaded<AccountDoc>, String> {
-        load(&accounts_dir(&self.root), self.peer)
+        load_pile(&accounts_dir(&self.root), self.peer)
     }
 
     pub(crate) fn titles_loaded(&self) -> Result<Loaded<TitleDoc>, String> {
-        load(&titles_dir(&self.root), self.peer)
+        load_pile(&titles_dir(&self.root), self.peer)
     }
 
     /// Every ACP agent this person has named, by name (`khor_sync::agents`).

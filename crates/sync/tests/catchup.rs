@@ -11,7 +11,6 @@ use std::time::Instant;
 
 use khor_sync::devices::DeviceDoc;
 use khor_sync::store::Doc;
-use khor_sync::wire;
 
 fn rss_mb() -> u64 {
     let out = std::process::Command::new("ps")
@@ -38,11 +37,17 @@ fn write(doc: &DeviceDoc, me: usize, round: usize) {
     }
 }
 
+/// What `a` has beyond `b`, as `wire::answer` computes it (in memory: no
+/// store, so no epoch and no flush).
+fn delta(a: &DeviceDoc, b: &DeviceDoc) -> Vec<u8> {
+    a.changes_since(&b.version()).unwrap()
+}
+
 fn sync(a: &DeviceDoc, b: &DeviceDoc) {
-    let to_b = wire::changes_since_b64(a, &wire::version_b64(b)).unwrap();
-    let to_a = wire::changes_since_b64(b, &wire::version_b64(a)).unwrap();
-    wire::merge_b64(b, &to_b).unwrap();
-    wire::merge_b64(a, &to_a).unwrap();
+    let to_b = delta(a, b);
+    let to_a = delta(b, a);
+    b.merge(&to_b).unwrap();
+    a.merge(&to_a).unwrap();
 }
 
 #[test]
@@ -69,19 +74,19 @@ fn a_large_devices_catch_up_is_cheap_enough() {
     eprintln!("[catchup] built {rounds} rounds in {:?}, rss {} MB", began.elapsed(), rss_mb());
 
     let (mac, ph) = (&docs[0], &docs[phone]);
-    let to_phone = wire::changes_since_b64(mac, &wire::version_b64(ph)).unwrap();
-    let to_mac = wire::changes_since_b64(ph, &wire::version_b64(mac)).unwrap();
+    let to_phone = delta(mac, ph);
+    let to_mac = delta(ph, mac);
     eprintln!(
         "[catchup] delta mac→phone {} KiB, phone→mac {} KiB; rss {} MB",
-        to_phone.len() * 3 / 4 / 1024,
-        to_mac.len() * 3 / 4 / 1024,
+        to_phone.len() / 1024,
+        to_mac.len() / 1024,
         rss_mb()
     );
     let t = Instant::now();
-    wire::merge_b64(ph, &to_phone).unwrap();
+    ph.merge(&to_phone).unwrap();
     eprintln!("[catchup] phone merges: {:?}, rss {} MB", t.elapsed(), rss_mb());
     let t = Instant::now();
-    wire::merge_b64(mac, &to_mac).unwrap();
+    mac.merge(&to_mac).unwrap();
     eprintln!("[catchup] mac merges: {:?}, rss {} MB", t.elapsed(), rss_mb());
     let t = Instant::now();
     let rows = ph.all().len();
