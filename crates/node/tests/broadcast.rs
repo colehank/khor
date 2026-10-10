@@ -280,6 +280,20 @@ async fn a_broadcast_file_is_pulled_from_a_holder_while_its_sender_is_away() {
     assert_eq!(fs::read(&on_b).unwrap(), payload, "beta landed it");
     let at_b = face(&b).here.unwrap();
     assert_eq!((at_b.step, at_b.via.as_str()), (Step::Landed, a.device_str()), "from alpha");
+    // beta holds it: the landed file's record, written by the take. A
+    // 收下 that finds it landed writes it again when it went missing.
+    let records = || -> Vec<String> {
+        fs::read_dir(rb.join(".khor").join("transfers"))
+            .map(|rd| rd.flatten().filter_map(|e| fs::read_to_string(e.path()).ok()).collect())
+            .unwrap_or_default()
+    };
+    assert!(records().iter().any(|r| r.contains("\"held\":true")), "beta holds it: {:?}", records());
+    fs::remove_dir_all(rb.join(".khor").join("transfers")).unwrap();
+    timeout(Duration::from_secs(60), b.take(&tid))
+        .await
+        .expect("a take of a landed file must not hang")
+        .unwrap();
+    assert!(records().iter().any(|r| r.contains("\"held\":true")), "held again: {:?}", records());
 
     // alpha away again; gamma reads beta's landing from beta itself.
     assert!(link::deafen(&ra).await);

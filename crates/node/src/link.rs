@@ -8241,6 +8241,19 @@ impl Node {
         let crate::MsgBody::Files(files) = &m.body else {
             return Err(msg::no_such_transfer(&m.id));
         };
+        // A broadcast file landed here is served from here too, to whoever
+        // cannot reach the sender (`transfer::hold`, which keeps a record
+        // that serves) — also when a 收下 finds it landed already and the
+        // record went, or it landed before holding was a thing.
+        let hold = |landed: &[String]| {
+            if channel.starts_with(chat::WIDE) {
+                for (f, at) in files.iter().zip(landed) {
+                    if let Err(e) = crate::transfer::hold(self.root(), f, std::path::Path::new(at)) {
+                        eprintln!("{e}");
+                    }
+                }
+            }
+        };
         let key = crate::road::sent_key(&m.id, self.device_str());
         let (mut job, fresh) = crate::road::job(&key);
         if !fresh {
@@ -8249,7 +8262,9 @@ impl Node {
             }
             match job.state() {
                 Ok(s) if s.done && s.dest.lines().all(|p| std::path::Path::new(p).is_file()) => {
-                    return Ok((0, s.dest.lines().map(str::to_owned).collect()));
+                    let landed: Vec<String> = s.dest.lines().map(str::to_owned).collect();
+                    hold(&landed);
+                    return Ok((0, landed));
                 }
                 Ok(s) if !s.done => return wait_for(&job).await,
                 // Ended without landing, or what landed is gone since: a
@@ -8265,6 +8280,7 @@ impl Node {
         if let Some(f) = self.chat.fate_here(channel, m).filter(|f| f.step == Step::Landed && f.landed.len() == files.len())
             && f.landed.iter().all(|p| std::path::Path::new(p).is_file())
         {
+            hold(&f.landed);
             job.finish(Ok(f.landed.join("\n")));
             return Ok((0, f.landed.clone()));
         }
@@ -8364,15 +8380,7 @@ impl Node {
         };
         match &outcome {
             Ok((_, landed, via)) => {
-                // A broadcast file landed here is served from here too, to
-                // whoever cannot reach the sender (`transfer::hold`).
-                if wide {
-                    for (f, at) in files.iter().zip(landed) {
-                        if let Err(e) = crate::transfer::hold(self.root(), f, std::path::Path::new(at)) {
-                            eprintln!("{e}");
-                        }
-                    }
-                }
+                hold(landed);
                 tell(Step::Landed, size, landed.clone(), String::new(), via.clone());
                 job.finish(Ok(landed.join("\n")));
             }
