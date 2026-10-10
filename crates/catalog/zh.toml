@@ -1299,6 +1299,12 @@ link-dropped = "连接断了，session 好像还在（{0}）：khor attach {1}"
 session-closed = "session 关了"
 retracted = "[已撤回]"
 file-chip = "[文件 {0} {1}B]"
+# `khor log` under a file message: one line per machine that has
+# answered it — where it was received, why it failed, how far it is.
+fate-landed = "  {0}  已收到 {1}"
+fate-failed = "  {0}  传输失败：{1}"
+fate-moving = "  {0}  传输中 {1}/{2}B"
+fate-stopped = "  {0}  已取消"
 unknown-body = "[当前版本无法读取这条消息：{0}]"
 
 # ── `khor relay` (docs/NET.md 中继, CONNECT.md 自家 khor relay) ──────
@@ -4848,6 +4854,8 @@ bcast-waiting = "待接收"
 bcast-take = "接收"
 bcast-taking = "接收中"
 bcast-landed = "已收到"
+# The sender's own seat on its offer: nothing to receive, only the count.
+bcast-own = "自己发的"
 bcast-count = "{0}/{1} 台已收到"
 # The composer's other verb (GUI 发文件批): hand a file to `send`. The
 # label names the action; in the app a native picker answers with a

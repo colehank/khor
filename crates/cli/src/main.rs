@@ -3933,16 +3933,8 @@ fn tell(rest: &[String]) -> Result<(), String> {
     if text.is_empty() {
         return Err(usage_text().into());
     }
-    let n = node()?;
-    let id = n.tell(machine, &text.join(" "))?;
+    let id = told_now(machine, &text.join(" "))?;
     println!("{id}");
-    // A line in the broadcast goes to every machine now, not at the next
-    // beat (STORE-BRIEF phase 3). Best effort, as `send`'s round.
-    if machine.starts_with("wide/")
-        && let Ok(rt) = rt()
-    {
-        let _ = rt.block_on(n.sync_now());
-    }
     Ok(())
 }
 
@@ -3992,9 +3984,17 @@ fn send(rest: &[String]) -> Result<(), String> {
         }
         return Ok(());
     }
-    let id = node()?.tell(machine, &tail.join(" "))?;
+    let id = told_now(machine, &tail.join(" "))?;
     println!("{id}");
     Ok(())
+}
+
+/// A line told and a round with every machine now, not at the next
+/// beat (`Node::tell_now`): the receiver reads it while the sender is
+/// still looking.
+fn told_now(machine: &str, text: &str) -> Result<String, String> {
+    let n = node()?;
+    rt()?.block_on(n.tell_now(machine, text))
 }
 
 /// A conversation file that failed or was cancelled, sent again: its
@@ -4062,14 +4062,54 @@ fn log(rest: &[String]) -> Result<(), String> {
     let [machine] = rest else {
         return Err(usage_text().into());
     };
-    let log = node()?.log(machine)?;
+    let n = node()?;
+    let log = n.log(machine)?;
     if log.broken > 0 {
         eprintln!("{}", cli::broken_blocks(log.broken));
     }
+    // Machines by id, for the names under a file message's fates.
+    let names: std::collections::HashMap<String, String> = n
+        .devices()?
+        .into_iter()
+        .map(|d| (d.id.clone(), d.shown().to_owned()))
+        .collect();
     for m in log.messages {
         println!("{}: {}", m.from.name, render(&m));
+        for line in fate_lines(&m, &names) {
+            println!("{line}");
+        }
     }
     Ok(())
+}
+
+/// A file message's per-machine fates, one indented line each, in the
+/// machines' name order: where it landed, why it failed, how far it is.
+/// Nothing for a message that is not a file or has no answer yet.
+fn fate_lines(m: &khor_node::Message, names: &std::collections::HashMap<String, String>) -> Vec<String> {
+    use khor_node::FateStep as Step;
+    if m.retracted || !matches!(m.body, MsgBody::Files(_)) {
+        return Vec::new();
+    }
+    let size: i64 = match &m.body {
+        MsgBody::Files(fs) => fs.iter().map(|f| f.size).sum(),
+        _ => 0,
+    };
+    let mut lines: Vec<(String, String)> = m
+        .fates
+        .iter()
+        .map(|(id, f)| {
+            let who = names.get(id).cloned().unwrap_or_else(|| id.chars().take(8).collect());
+            let line = match f.step {
+                Step::Landed => cli::fate_landed(&who, f.landed.join(", ")),
+                Step::Failed => cli::fate_failed(&who, &f.why),
+                Step::Moving => cli::fate_moving(&who, f.moved, size),
+                Step::Stopped => cli::fate_stopped(&who),
+            };
+            (who, line)
+        })
+        .collect();
+    lines.sort();
+    lines.into_iter().map(|(_, l)| l).collect()
 }
 
 fn run(rest: &[String]) -> Result<(), String> {
@@ -6033,5 +6073,61 @@ mod gate {
             VERBS.iter().any(|v| v.word == NOTHING_TYPED),
             "`khor` alone falls back to `{NOTHING_TYPED}`, which no row claims"
         );
+    }
+}
+
+#[cfg(test)]
+mod fate_lines_tests {
+    use super::*;
+    use khor_node::{Fate, FateStep as Step, FileRef};
+    use std::collections::{BTreeMap, HashMap};
+
+    fn fate(step: Step, moved: i64, landed: &[&str], why: &str) -> Fate {
+        Fate {
+            step,
+            moved,
+            landed: landed.iter().map(|s| (*s).to_owned()).collect(),
+            why: why.to_owned(),
+        }
+    }
+
+    fn files(fates: BTreeMap<String, Fate>) -> khor_node::Message {
+        khor_node::Message {
+            id: "m1".into(),
+            at: 0,
+            from: khor_sync::chat::Sender { id: "aa".into(), name: "alpha".into() },
+            body: MsgBody::Files(vec![FileRef { name: "x.bin".into(), size: 300, digest: String::new() }]),
+            retracted: false,
+            edited: false,
+            into: String::new(),
+            fate: None,
+            fates,
+        }
+    }
+
+    #[test]
+    fn each_machine_that_answered_gets_one_line_by_name() {
+        let names: HashMap<String, String> =
+            [("bb", "beta"), ("cc", "gamma"), ("dd", "delta")].map(|(i, n)| (i.to_owned(), n.to_owned())).into();
+        let m = files(BTreeMap::from([
+            ("bb".to_owned(), fate(Step::Landed, 300, &["/home/b/x.bin"], "")),
+            ("cc".to_owned(), fate(Step::Failed, 100, &[], "sender unreachable")),
+            ("dd".to_owned(), fate(Step::Moving, 120, &[], "")),
+        ]));
+        let lines = fate_lines(&m, &names);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert!(lines[0].contains("beta") && lines[0].contains("/home/b/x.bin"), "{lines:?}");
+        assert!(lines[1].contains("delta") && lines[1].contains("120/300"), "{lines:?}");
+        assert!(lines[2].contains("gamma") && lines[2].contains("sender unreachable"), "{lines:?}");
+        assert!(lines.iter().all(|l| l.starts_with("  ")), "indented: {lines:?}");
+    }
+
+    #[test]
+    fn a_text_line_and_an_unanswered_offer_have_none() {
+        let none = HashMap::new();
+        assert!(fate_lines(&files(BTreeMap::new()), &none).is_empty());
+        let mut text = files(BTreeMap::new());
+        text.body = MsgBody::Text("hi".into());
+        assert!(fate_lines(&text, &none).is_empty());
     }
 }

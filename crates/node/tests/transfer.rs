@@ -480,3 +480,35 @@ async fn a_receive_dir_set_elsewhere_is_resolved_on_sync() {
 
     serve.abort();
 }
+
+/// A line told with `tell_now` is on the other machine when the call
+/// returns — a round started by the line itself, not by the beat (30 s
+/// on a machine without a face), and not by a sync the test makes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_line_told_now_reaches_the_other_machine_without_waiting_for_the_beat() {
+    let ra = root("tell-a");
+    let rb = root("tell-b");
+    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let serve = tokio::spawn(async move { server.serve().await });
+    wait_for_endpoint_file(&ra).await;
+    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
+    let ticket = a.invite().unwrap();
+    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
+    timeout(Duration::from_secs(45), b.pair(&ticket))
+        .await
+        .expect("pairing must not hang")
+        .unwrap();
+
+    timeout(Duration::from_secs(45), b.tell_now("alpha", "are you there"))
+        .await
+        .expect("tell_now must not hang")
+        .unwrap();
+    // No sync here: the round the line started brought it across.
+    let said = a.log("alpha").unwrap().messages;
+    assert!(
+        said.iter().any(|m| matches!(&m.body, MsgBody::Text(t) if t == "are you there")),
+        "alpha reads beta's line at once"
+    );
+
+    serve.abort();
+}

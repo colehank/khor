@@ -503,6 +503,13 @@ function FileChip({
           </div>
         </div>
       ))}
+      {sent && (
+        // The sender's seat: its own offer is nothing to receive — no
+        // 接收, no failure — only the count beside.
+        <span data-bcast-own className="text-caption text-muted-foreground">
+          {gui.bcast_own}
+        </span>
+      )}
       {sent && m.got !== null && m.of !== null && (
         // The sender's chip counts the machines that have it, read off
         // the records the receivers wrote.
