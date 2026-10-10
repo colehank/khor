@@ -223,6 +223,42 @@ fn reseed_before_and_after() {
             h3 - h2,
         );
     };
+    // A fresh read (`store::read_once`, nothing kept): the pile's blocks
+    // and `k` blocks from writers forked from it, so each is concurrent
+    // with the others, as a sync round leaves them. Every one is an
+    // import whose diff walks the version vector (the owner's Mac,
+    // 2026-10-10 19:20: AppDag::vv_to_frontiers at the top of the stack).
+    let fresh = |label: &str| {
+        let base = std::fs::read_dir(&pile)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".loro"))
+            .map(|e| (e.file_name(), std::fs::read(e.path()).unwrap()))
+            .collect::<Vec<_>>();
+        let state = DeviceDoc::open(0xF0).unwrap();
+        for (_, b) in &base {
+            state.merge(b).unwrap();
+        }
+        for k in [1u64, 8, 32] {
+            let dir = root.join(format!("fresh-{label}-{k}"));
+            std::fs::create_dir_all(&dir).unwrap();
+            for (n, b) in &base {
+                std::fs::write(dir.join(n), b).unwrap();
+            }
+            for i in 0..k {
+                let peer = 0x5000_0000 + i;
+                let w = DeviceDoc::open(peer).unwrap();
+                w.merge(&state.snapshot().unwrap()).unwrap();
+                let v = w.version();
+                w.upsert(&format!("{:064x}", i % 12), "w", &[format!("10.8.8.{i}:1")]).unwrap();
+                std::fs::write(dir.join(format!("u-{peer:016x}-00000000.loro")), w.changes_since(&v).unwrap()).unwrap();
+            }
+            let t = std::time::Instant::now();
+            let l = load::<DeviceDoc>(&dir, 0xF1).unwrap();
+            eprintln!("{label}: fresh read of the pile + {k:>2} concurrent blocks: {:>8.1?} ({} names)", t.elapsed(), l.doc.version().len());
+        }
+    };
+    fresh("before");
     measure("before", &|d, p| load::<DeviceDoc>(d, p).unwrap());
     let t = std::time::Instant::now();
     let l = load_pile::<DeviceDoc>(&pile, 0xCC).unwrap();
@@ -230,5 +266,6 @@ fn reseed_before_and_after() {
     assert_eq!(l.doc.version().len(), 1);
     drop(l);
     measure("after ", &|d, p| load_pile::<DeviceDoc>(d, p).unwrap());
+    fresh("after ");
     let _ = std::fs::remove_dir_all(&root);
 }
