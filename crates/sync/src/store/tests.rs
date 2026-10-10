@@ -712,3 +712,111 @@ fn a_snapshot_pulled_from_another_machine_survives_a_local_compaction() {
     let _ = fs::remove_dir_all(&far);
     let _ = fs::remove_dir_all(&here);
 }
+
+/// **Copies in turn write under one name** (PEERS-BRIEF, 2026-10-10).
+/// Every process used to bring a fresh name and leave a row in the version
+/// vector for good: the owner's devices pile had 1515. Fifty copies opened
+/// one after another, each writing, add one name between them, and each
+/// carries on from the last one's counter, so no line is lost.
+#[test]
+fn copies_in_turn_write_under_one_name() {
+    let dir = tmpdir("pens-in-turn");
+    // The directory has to exist for it to have pens.
+    let mut seed = open_channel(&dir, 0x5E).unwrap();
+    seed.doc.tell(&me("a"), "seed").unwrap();
+    seed.store.flush(&seed.doc).unwrap();
+    drop(seed);
+    for i in 0..50 {
+        let mut c = open_channel(&dir, 0x100 + i).unwrap();
+        c.doc.tell(&me("a"), &format!("turn {i}")).unwrap();
+        c.store.flush(&c.doc).unwrap();
+    }
+    let back = open_channel(&dir, 0x200).unwrap();
+    let text = render(&back.doc);
+    for i in 0..50 {
+        assert!(text.contains(&format!("turn {i}")), "turn {i} is there:\n{text}");
+    }
+    assert_eq!(back.doc.version().len(), 2, "the seed's name and one pen");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The other half of `pens_across_processes`, run as a child process:
+/// takes a pen, says which, waits until every sibling holds one, writes,
+/// flushes and exits. Does nothing when run as a test of its own.
+#[test]
+fn pen_child() {
+    let (Ok(dir), Ok(tag), Ok(wave)) = (
+        std::env::var("KHOR_PEN_DIR"),
+        std::env::var("KHOR_PEN_TAG"),
+        std::env::var("KHOR_PEN_WAVE"),
+    ) else {
+        return;
+    };
+    let dir = PathBuf::from(dir);
+    let wave: usize = wave.parse().unwrap();
+    let mut c = open_channel(&dir, crate::chat::ChatDoc::fresh_peer()).unwrap();
+    println!("pen={:016x}", crate::store::Doc::peer_id(&c.doc));
+    let ready = dir.with_extension("ready");
+    fs::create_dir_all(&ready).unwrap();
+    fs::write(ready.join(&tag), b"").unwrap();
+    let began = std::time::Instant::now();
+    while fs::read_dir(&ready).unwrap().count() < wave && began.elapsed().as_secs() < 20 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    c.doc.tell(&me("a"), &format!("from child {tag}")).unwrap();
+    c.store.flush(&c.doc).unwrap();
+}
+
+/// **Processes at once never share a name, processes in turn reuse them**
+/// (PEERS-BRIEF). Two waves of four processes, each holding its copy
+/// until all four of its wave hold one: the four of a wave have four
+/// names, the second wave's are the first wave's, and every line is on
+/// disk after (a shared name would have lost one).
+#[test]
+fn pens_across_processes() {
+    let dir = tmpdir("pens-processes");
+    let mut seed = open_channel(&dir, 0x5E).unwrap();
+    seed.doc.tell(&me("a"), "seed").unwrap();
+    seed.store.flush(&seed.doc).unwrap();
+    drop(seed);
+    let exe = std::env::current_exe().unwrap();
+    let mut waves = Vec::new();
+    for wave in 0..2 {
+        let _ = fs::remove_dir_all(dir.with_extension("ready"));
+        let children: Vec<_> = (0..4)
+            .map(|i| {
+                std::process::Command::new(&exe)
+                    .args(["--exact", "store::tests::pen_child", "--nocapture", "--test-threads=1"])
+                    .env("KHOR_PEN_DIR", &dir)
+                    .env("KHOR_PEN_TAG", format!("{wave}-{i}"))
+                    .env("KHOR_PEN_WAVE", "4")
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        let names: std::collections::BTreeSet<String> = children
+            .into_iter()
+            .map(|c| {
+                let out = c.wait_with_output().unwrap();
+                assert!(out.status.success(), "a child failed");
+                String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    // The harness's「test … 」may share the line.
+                    .find_map(|l| l.split_once("pen=").map(|(_, n)| n[..16].to_owned()))
+                    .expect("the child says its name")
+            })
+            .collect();
+        assert_eq!(names.len(), 4, "four processes at once, four names: {names:?}");
+        waves.push(names);
+    }
+    assert_eq!(waves[0], waves[1], "the second wave writes under the first wave's names");
+    let back = open_channel(&dir, 0x200).unwrap();
+    let text = render(&back.doc);
+    for tag in ["0-0", "0-1", "0-2", "0-3", "1-0", "1-1", "1-2", "1-3"] {
+        assert!(text.contains(&format!("from child {tag}")), "child {tag}'s line is there:\n{text}");
+    }
+    assert_eq!(back.doc.version().len(), 5, "the seed's name and four pens");
+    let _ = fs::remove_dir_all(&dir);
+    let _ = fs::remove_dir_all(dir.with_extension("ready"));
+}

@@ -29,6 +29,10 @@ const EXT: &str = "loro";
 /// as a block nor synced to the far side — each machine keeps its own.
 const LEDGER: &str = ".merged";
 
+/// A pen's file, `.pen-<k>` ([`Lease`]): one writer name of this pile on
+/// this machine. Not a block, not synced, like the ledger.
+const PEN: &str = ".pen-";
+
 /// What the block store and the wire need from a CRDT document. One
 /// implementation per replicated table (chat, devices, …).
 pub trait Doc: Sized {
@@ -92,25 +96,147 @@ pub struct Loaded<D> {
 /// table and any other write to it in flight lost one or the other. That
 /// is how a pairing's row ended up only in the joiner's copy (the joiner
 /// is handed the `Pair` arm's snapshot). So each open copy borrows a name
-/// nobody else in this process holds for that directory, and gives it
-/// back when it drops. The caller's own name is lent first, and a name
-/// lent before is lent again before a new one is made: one name per
-/// copy at once, not one per load, so the version vectors do not grow a
-/// row for every write. A name lent again reads the blocks its last
-/// holder wrote, so its counter carries on from theirs.
+/// nobody else holds for that directory, and gives it back when it drops.
+///
+/// **The names are the pile's, not the process's** (PEERS-BRIEF,
+/// 2026-10-10). Every process used to bring a fresh name, and every
+/// process that wrote left a row in the version vector for good: the
+/// owner's devices pile reached 1515 rows, recents 1129 with two ops
+/// each, and every row costs on every sync request and (in loro 1.16.2)
+/// on every merge. Now a directory that exists keeps a few pens beside
+/// its blocks, `.pen-<k>`, each holding one name; a copy takes the lowest
+/// pen that nobody holds, in this process or any other, by an OS lock on
+/// the file, and holds the lock until it drops. The pile has as many
+/// names per machine as copies were ever open at once, however many
+/// processes come and go. The lock is taken before anything is read, so
+/// the copy reads every block the pen's last holder flushed and its
+/// counter carries on from theirs; the lock goes with the process, so a
+/// crash frees it.
+///
+/// A name is minted when its pen is first used, not derived from the
+/// machine: a pile that is deleted and made again gets new names, and a
+/// machine whose identity was copied to a second machine shares none.
+///
+/// A directory not on disk yet has no pens. Its copy writes under the
+/// caller's name, lent in this process only as before: one row per pile
+/// created, and unique, so nobody else can hold it. Any pen that cannot
+/// be opened, locked or read falls back the same way: a fresh name is
+/// always safe, only unbounded.
 struct Lease {
-    key: (PathBuf, u64),
     peer: u64,
+    held: Held,
 }
+
+enum Held {
+    /// A pen: its directory and number in this process's table, and the
+    /// open file whose lock keeps every other process off it.
+    Pen((PathBuf, usize), #[allow(dead_code)] fs::File),
+    /// A name lent in this process only, for a directory with no pens.
+    Spare((PathBuf, u64)),
+}
+
+/// More than this many copies of one pile open at once on one machine
+/// and the next takes a spare name rather than a pen.
+const PENS: usize = 64;
+
+/// Pens out in this process, per directory: a second open of a locked
+/// file in the same process is not refused on every platform.
+static PENS_OUT: std::sync::Mutex<std::collections::BTreeMap<PathBuf, std::collections::BTreeSet<usize>>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
 
 /// For each directory and caller's name: every name lent for it, and
 /// whether it is out.
 type Lent = std::collections::BTreeMap<(PathBuf, u64), Vec<(u64, bool)>>;
 static LENT: std::sync::Mutex<Lent> = std::sync::Mutex::new(std::collections::BTreeMap::new());
 
+/// splitmix64: distinct inputs, well-spread names.
+fn mix(seed: u64) -> u64 {
+    let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// A name nobody else has: this process, this instant, a count. Not
+/// `u64::MAX`, which loro keeps for itself.
+fn fresh_name() -> u64 {
+    static MINTED: AtomicU64 = AtomicU64::new(1);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0);
+    let n = MINTED.fetch_add(1, Ordering::Relaxed);
+    mix((u64::from(std::process::id()) << 40) ^ nanos ^ mix(n)).min(u64::MAX - 1)
+}
+
 impl Lease {
     fn take(dir: &Path, peer: u64) -> Lease {
-        static MINTED: AtomicU64 = AtomicU64::new(1);
+        if dir.is_dir() {
+            for k in 0..PENS {
+                match Lease::pen(dir, k) {
+                    Some(Ok(lease)) => return lease,
+                    Some(Err(())) => break,
+                    None => {}
+                }
+            }
+        }
+        Lease::spare(dir, peer)
+    }
+
+    /// Pen `k`: `None` if somebody holds it, `Some(Err)` if pens do not
+    /// work here at all.
+    fn pen(dir: &Path, k: usize) -> Option<Result<Lease, ()>> {
+        let slot = (dir.to_path_buf(), k);
+        {
+            let mut out = PENS_OUT.lock().unwrap_or_else(|p| p.into_inner());
+            if !out.entry(dir.to_path_buf()).or_default().insert(k) {
+                return None;
+            }
+        }
+        let give_back = |r| {
+            if let Some(ks) = PENS_OUT.lock().unwrap_or_else(|p| p.into_inner()).get_mut(dir) {
+                ks.remove(&k);
+            }
+            r
+        };
+        let mut opts = fs::OpenOptions::new();
+        opts.create(true).truncate(false).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(OWNER_ONLY_FILE);
+        }
+        let Ok(mut file) = opts.open(dir.join(format!("{PEN}{k}"))) else {
+            return give_back(Some(Err(())));
+        };
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(fs::TryLockError::WouldBlock) => return give_back(None),
+            Err(fs::TryLockError::Error(_)) => return give_back(Some(Err(()))),
+        }
+        // Under the lock: the name the pen holds, or a new one written
+        // and synced before any op can carry it.
+        let mut text = String::new();
+        let _ = std::io::Read::read_to_string(&mut file, &mut text);
+        let peer = match u64::from_str_radix(text.trim(), 16) {
+            Ok(peer) => peer,
+            Err(_) => {
+                let peer = fresh_name();
+                use std::io::Seek;
+                let written = file.set_len(0).is_ok()
+                    && file.seek(std::io::SeekFrom::Start(0)).is_ok()
+                    && file.write_all(format!("{peer:016x}\n").as_bytes()).is_ok()
+                    && file.sync_all().is_ok();
+                if !written {
+                    return give_back(Some(Err(())));
+                }
+                peer
+            }
+        };
+        Some(Ok(Lease { peer, held: Held::Pen(slot, file) }))
+    }
+
+    fn spare(dir: &Path, peer: u64) -> Lease {
         let key = (dir.to_path_buf(), peer);
         let mut lent = LENT.lock().unwrap_or_else(|p| p.into_inner());
         let names = lent.entry(key.clone()).or_insert_with(|| vec![(peer, false)]);
@@ -120,28 +246,31 @@ impl Lease {
                 *name
             }
             None => {
-                // splitmix64 of the caller's name and a count: distinct in
-                // this process, and as unlikely as any fresh name to meet
-                // another process's.
-                let mut z = peer ^ MINTED.fetch_add(1, Ordering::Relaxed).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-                let name = z ^ (z >> 31);
+                let name = fresh_name();
                 names.push((name, true));
                 name
             }
         };
-        Lease { key, peer }
+        Lease { peer, held: Held::Spare(key) }
     }
 }
 
 impl Drop for Lease {
     fn drop(&mut self) {
-        let mut lent = LENT.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some(names) = lent.get_mut(&self.key)
-            && let Some(slot) = names.iter_mut().find(|(name, _)| *name == self.peer)
-        {
-            slot.1 = false;
+        match &self.held {
+            Held::Pen((dir, k), _) => {
+                if let Some(ks) = PENS_OUT.lock().unwrap_or_else(|p| p.into_inner()).get_mut(dir) {
+                    ks.remove(k);
+                }
+            }
+            Held::Spare(key) => {
+                let mut lent = LENT.lock().unwrap_or_else(|p| p.into_inner());
+                if let Some(names) = lent.get_mut(key)
+                    && let Some(slot) = names.iter_mut().find(|(name, _)| *name == self.peer)
+                {
+                    slot.1 = false;
+                }
+            }
         }
     }
 }
@@ -249,6 +378,10 @@ pub fn loads_kept() -> u64 {
 /// a fresh copy under its own lease. The list is taken before the read
 /// and again after it, and a read the two disagree about is not kept.
 fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
+    // The name first, the listing after: a block the name's last holder
+    // flushed just before giving it back must be on the listing, or this
+    // copy starts its counter below theirs.
+    let lease = Lease::take(dir, peer);
     let before = fingerprint(dir)?;
     let kind = std::any::TypeId::of::<D>();
     let kept = KEPT
@@ -258,7 +391,6 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
         .filter(|k| k.kind == kind && k.fingerprint == before)
         .map(|k| (k.snapshot.clone(), k.broken.clone()));
     if let Some((snapshot, broken)) = kept {
-        let lease = Lease::take(dir, peer);
         let doc = D::open(lease.peer)?;
         if doc.merge(&snapshot).is_ok() {
             KEPT_HITS.fetch_add(1, Ordering::Relaxed);
@@ -278,7 +410,7 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
             return Ok(Loaded { store, doc, broken, lease });
         }
     }
-    let loaded: Loaded<D> = load_inner(dir, peer)?;
+    let loaded: Loaded<D> = load_inner(dir, lease)?;
     if !before.is_empty()
         && fingerprint(dir).is_ok_and(|after| after == before)
         && let Ok(snapshot) = loaded.doc.snapshot()
@@ -291,8 +423,7 @@ fn load_cached<D: Doc + 'static>(dir: &Path, peer: u64) -> Result<Loaded<D>, Str
     Ok(loaded)
 }
 
-fn load_inner<D: Doc>(dir: &Path, peer: u64) -> Result<Loaded<D>, String> {
-    let lease = Lease::take(dir, peer);
+fn load_inner<D: Doc>(dir: &Path, lease: Lease) -> Result<Loaded<D>, String> {
     let (loaded, vanished) = read_once(dir, lease)?;
     if !vanished {
         return Ok(loaded);
