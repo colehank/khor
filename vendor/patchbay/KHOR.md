@@ -11,8 +11,9 @@
 
 ## 补丁
 
-两处，都在 `src/nft.rs`，都为同一件事：让实验室跑在 turing 上（Ubuntu 20.04，Linux 5.4，nft 0.9.3）。
+三处。前两处在 `src/nft.rs`，为同一件事：让实验室跑在 turing 上（Ubuntu 20.04，Linux 5.4，nft 0.9.3）。
 上游假定较新的内核；在 5.4 上原样的 patchbay 一个用到 NAT 的测试都起不来。
+第三处给路由器加一个建造方法，让场景搭得出「v4 严格 NAT、v6 全球地址」的网。
 
 ### 1. 全锥映射表只记内部地址，端口原样通过（2026-10-09，net-lab）
 
@@ -37,3 +38,17 @@ Linux 6.x 之前，属于非初始 user namespace 的网络命名空间根本不
 补丁：文件不存在时记一条 warn，保留内核默认（5.4：UDP 30 s，UDP 流 120 s，TCP 已建立 5 天），照常继续。
 代价：预设里的超时（比如 `IspCgnatSymmetric` 的 UDP 流超时）在 5.4 上不生效；测保活与映射超时的场景要记住这一点。
 改动约 8 行。
+
+### 3. 路由器可以单独给下游全球 v6（2026-10-10，net-lab2）
+
+上游的下游地址池只能由预设定：`RouterPreset::downstream_pool`，带 NAT 的路由器一律私有池，
+v4 拿 10.x、v6 拿 ULA `fd10::`。v4 与 v6 共用这一个选择，没有公开的建造方法。
+于是「校园网：v4 严格 NAT，v6 是 CERNET 的全球地址」与「手机：v4 运营商 NAT，v6 全球地址加状态防火墙」
+在实验室里搭不出来，场景 a3 的两台机器只有 ULA v6。
+补丁：`RouterConfig` 加 `public_v6: bool`（默认 false），`RouterBuilder::public_v6()` 设它；
+`connect_router_downlink` 分配下游 v6 /64 时，它为真就从公网池取。v4 仍按原来的池，NAT 照旧。
+不改 `downstream_pool` 本身：把整个池改成公网会让 v4 下游也拿公网地址，IX 为它装回程路由，
+严格 NAT 后面的机器就能被直接打到，v4 的语义就不对了。
+v6 的回程路由上游本来就为每个接在 IX 上的路由器装（不看池），防火墙照预设（手机仍是 `BlockInbound`）。
+改动约 20 行，在 `src/core.rs`、`src/router.rs`、`src/lab.rs`。
+升级 patchbay 时：上游若有了公开的 v6 池选择，换成它，丢掉这处。

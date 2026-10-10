@@ -979,6 +979,7 @@ pub struct RouterBuilder {
     pub(crate) ip_support: IpSupport,
     pub(crate) nat_v6: NatV6Mode,
     pub(crate) downstream_pool: Option<DownstreamPool>,
+    pub(crate) public_v6: bool,
     pub(crate) downstream_cidr: Option<Ipv4Net>,
     pub(crate) downlink_condition: Option<LinkCondition>,
     pub(crate) mtu: Option<u32>,
@@ -1008,6 +1009,7 @@ impl RouterBuilder {
             ip_support: IpSupport::V4Only,
             nat_v6: NatV6Mode::None,
             downstream_pool: None,
+            public_v6: false,
             downstream_cidr: None,
             downlink_condition: None,
             mtu: None,
@@ -1193,6 +1195,16 @@ impl RouterBuilder {
         self
     }
 
+    /// khor: gives the downstream devices global v6 from the public pool
+    /// while v4 stays private behind the NAT (a campus with strict v4 NAT
+    /// and routed v6). vendor/patchbay/KHOR.md, patch 3.
+    pub fn public_v6(mut self) -> Self {
+        if self.result.is_ok() {
+            self.public_v6 = true;
+        }
+        self
+    }
+
     /// Overrides the downstream subnet instead of auto-allocating from the pool.
     ///
     /// The gateway address is the `.1` host of the given CIDR. Device addresses
@@ -1233,6 +1245,7 @@ impl RouterBuilder {
                 r.cfg.ra_enabled = self.ra_enabled;
                 r.cfg.ra_interval_secs = self.ra_interval_secs.max(1);
                 r.cfg.ra_lifetime_secs = self.ra_lifetime_secs;
+                r.cfg.public_v6 = self.public_v6;
                 r.ra_runtime.set_enabled(self.ra_enabled);
                 r.ra_runtime.set_interval_secs(self.ra_interval_secs);
                 r.ra_runtime.set_lifetime_secs(self.ra_lifetime_secs);

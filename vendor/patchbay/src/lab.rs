@@ -1018,6 +1018,7 @@ impl Lab {
             ip_support: IpSupport::V4Only,
             nat_v6: NatV6Mode::None,
             downstream_pool: None,
+            public_v6: false,
             downstream_cidr: None,
             downlink_condition: None,
             mtu: None,

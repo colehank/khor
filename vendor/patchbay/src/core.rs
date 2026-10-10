@@ -81,6 +81,9 @@ pub(crate) struct RouterConfig {
     pub downstream_pool: DownstreamPool,
     /// Selects router IPv6 NAT behavior.
     pub nat_v6: NatV6Mode,
+    /// khor: allocate the downstream v6 /64 from the public pool whatever
+    /// `downstream_pool` says (vendor/patchbay/KHOR.md, patch 3).
+    pub public_v6: bool,
     /// Selects which IP address families this router supports.
     pub ip_support: IpSupport,
     /// Optional MTU for WAN and LAN interfaces.
@@ -773,6 +776,7 @@ impl NetworkCore {
                     nat,
                     downstream_pool,
                     nat_v6,
+                    public_v6: false,
                     ip_support,
                     mtu: None,
                     block_icmp_frag_needed: false,
@@ -1266,6 +1270,7 @@ impl NetworkCore {
             .get(&router)
             .ok_or_else(|| anyhow!("unknown router id"))?;
         let pool = router_data.cfg.downstream_pool;
+        let public_v6 = router_data.cfg.public_v6;
         let has_v4 = router_data.cfg.ip_support.has_v4();
         let has_v6 = router_data.cfg.ip_support.has_v6();
 
@@ -1305,8 +1310,8 @@ impl NetworkCore {
                 (sw_entry.cidr_v6, sw_entry.gw_v6)
             } else {
                 let c6 = match pool {
-                    DownstreamPool::Private => self.alloc_private_cidr_v6()?,
-                    DownstreamPool::Public => self.alloc_public_cidr_v6()?,
+                    DownstreamPool::Private if !public_v6 => self.alloc_private_cidr_v6()?,
+                    _ => self.alloc_public_cidr_v6()?,
                 };
                 let seg = c6.addr().segments();
                 let g6 = Ipv6Addr::new(seg[0], seg[1], seg[2], seg[3], seg[4], seg[5], seg[6], 1);
