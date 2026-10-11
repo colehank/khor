@@ -15,7 +15,7 @@ import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { DiffView } from "@/views/DiffView";
-import { CodeEditor } from "@/components/CodeEditor";
+import { CodeEditor } from "@/components/CodeEditor.lazy";
 import { rendererOf } from "@/views/FileView";
 import { ago } from "@/words";
 

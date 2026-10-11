@@ -128,37 +128,12 @@ const merging = (against: string | null): Extension =>
         diffPhrases(),
       ];
 
-/** The view inside a box (a file pane, a page), for a host that holds the
-    box and not the editor. */
-export function editorIn(box: HTMLElement | null): EditorView | null {
-  const el = box?.querySelector<HTMLElement>(".cm-editor");
-  return el ? EditorView.findFromDOM(el) : null;
-}
-
-/** The source line at the top of what is shown. */
-export function topLineOf(view: EditorView): number {
-  const s = view.scrollDOM;
-  const h = s.getBoundingClientRect().top - view.documentTop + 1;
-  const b = view.lineBlockAtHeight(Math.max(0, h));
-  return view.state.doc.lineAt(b.from).number;
-}
-
-/** Scroll so `line` stands at the top of what is shown. */
-export function placeLine(view: EditorView, line: number): void {
-  const n = Math.max(1, Math.min(line, view.state.doc.lines));
-  view.dispatch({ effects: EditorView.scrollIntoView(view.state.doc.line(n).from, { y: "start", yMargin: 0 }) });
-}
-
-/** Into the text, where the reader was (P1, 2026-10-03): the caret at the
-    start of the first line shown, without moving anything. Called inside
-    a press — WebKit raises the soft keyboard only for a focus a touch
-    asked for. */
-export function focusAtTop(view: EditorView): void {
-  const at = view.state.doc.line(topLineOf(view)).from;
-  view.dispatch({ selection: EditorSelection.cursor(at) });
-  view.focus();
-}
-
+/** **The host's four acts on the editor are not exported here** (CM-BRIEF
+    §2): `editorIn`, `topLineOf`, `placeLine` and `focusAtTop` live in
+    `lib/code/place`, and a host importing this module is a host that
+    wants the editor itself. Keeping them here re-exported would let one
+    stray import of a helper pull this whole module — and CodeMirror's
+    runtime with it — back into the entry chunk. */
 export function CodeEditor({
   path,
   text,

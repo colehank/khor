@@ -12,24 +12,13 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
 import { gui } from "@/gen/catalog";
-import type { GitHunk } from "@/gen/bindings/GitHunk";
 
 /** HEAD's text (or a revision's), rebuilt from the file as it is now and
     the hunks that lead from that to this — all `git_diff` and `git_show`
-    hand over. Each hunk's `was` goes where its `lines` are. */
-export function textBefore(now: string, hunks: GitHunk[]): string {
-  const lines = now.split("\n");
-  const out: string[] = [];
-  let cut = 0;
-  for (const h of [...hunks].sort((a, b) => a.at - b.at)) {
-    const upto = Math.min(h.lines === 0 ? h.at : h.at - 1, lines.length);
-    for (; cut < upto; cut += 1) out.push(lines[cut]);
-    out.push(...h.was);
-    cut += h.lines;
-  }
-  for (; cut < lines.length; cut += 1) out.push(lines[cut]);
-  return out.join("\n");
-}
+    hand over. **It needs no editor**, so it lives in `lib/code/text`:
+    `DiffView` calls it before the merge view has been fetched (CM-BRIEF
+    §2, the bundle split). Re-exported here, where it was first. */
+export { textBefore } from "@/lib/code/text";
 
 /** The words `@codemirror/merge` asks for, from the catalog. */
 export const diffPhrases = (): Extension => EditorState.phrases.of({

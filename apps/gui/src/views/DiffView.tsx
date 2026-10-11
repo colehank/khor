@@ -29,10 +29,13 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { fetchFileText, fetchGitDiff, said } from "@/api";
-import { CodeDiff } from "@/components/CodeDiff";
+import { CodeDiff, preloadDiff } from "@/components/CodeDiff.lazy";
 import { gui } from "@/gen/catalog";
 import type { GitHunk } from "@/gen/bindings/GitHunk";
-import { textBefore } from "@/lib/code/diff";
+// **Not `lib/code/diff`**, which carries the CodeMirror extensions: this
+// module is string arithmetic, and the diff tab must be able to lay HEAD
+// out before the merge view's chunk arrives (CM-BRIEF §2).
+import { textBefore } from "@/lib/code/text";
 
 /* ⚠️ 墓碑 (cm-a, 2026-10-10): `sideBySide` and `Side`, two self-drawn
    columns kept level by padding the shorter side with empty tinted rows.
@@ -66,6 +69,11 @@ export function DiffView({
   const [now, setNow] = useState<string | null>(null);
   const [hunks, setHunks] = useState<GitHunk[] | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
+  // The merge view's chunk, fetched while the two texts are read
+  // (`fetchFileText` above): the tab should open drawn, not hollow.
+  useEffect(() => {
+    preloadDiff();
+  }, []);
   useEffect(() => {
     let live = true;
     setNow(null);

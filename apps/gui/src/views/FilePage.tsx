@@ -32,7 +32,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 
 import { launchOn, pullTemp, renamePath, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
-import { editorIn, placeLine, topLineOf } from "@/components/CodeEditor";
+import { editorIn, placeLine, topLineOf } from "@/lib/code/place";
+import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
@@ -474,6 +475,13 @@ export function FilePage({
   const [saves, setSaves] = useState(0);
   /** Where to put the reader after the face changes (a source line). */
   const restore = useRef<number | null>(null);
+  // **The editor's chunk, fetched while the file is read** (CM-BRIEF §2):
+  // 「编辑」 focuses the editor inside its own press, so the module has to
+  // be resident before the press and not after it (`CodeEditor.lazy`).
+  // This page mounts with the file, which is reading time enough.
+  useEffect(() => {
+    preloadEditor();
+  }, []);
   /** **A revision from git 历史, shown where the file was** (round UX-4):
       read-only, the deck's ‹ going back to the file as it is, and the
       pill's compare switch putting it beside the current file. */

@@ -45,7 +45,8 @@ import {
   type GitBlame,
   type GitDiff,
 } from "@/api";
-import { CodeEditor, editorIn, focusAtTop } from "@/components/CodeEditor";
+import { CodeEditor, preloadEditor } from "@/components/CodeEditor.lazy";
+import { editorIn, focusAtTop } from "@/lib/code/place";
 import { HtmlView } from "@/components/HtmlView";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
@@ -312,6 +313,13 @@ export function FileView({
       is how a second save gets pinned to a digest that belongs to
       different bytes. `null` until the file arrives. */
   const [own, setOwn] = useState<Draft | null>(null);
+  // **The editor's chunk, fetched while the file is read** (CM-BRIEF §2):
+  // the strip's 「编辑」 focuses the editor inside its own press
+  // (`beginEditing`), so the module has to be resident before the press
+  // and not after it (`CodeEditor.lazy`).
+  useEffect(() => {
+    preloadEditor();
+  }, []);
   /** The buffer: this mount's own once it has one, and the pane's draft
       until then.
       **That order, and it is the second spelling of it** (工作区批⑧).
