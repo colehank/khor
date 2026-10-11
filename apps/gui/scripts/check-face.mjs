@@ -38259,6 +38259,83 @@ try {
       // the owner chose it because the two never lined up.
       await page.evaluate(() => document.activeElement?.blur());
     }
+    // e. **The caret above the keyboard** (KB-CARET, 2026-10-12).
+    //    The `__khorKeyboard(true)` seam makes `footCovered()` true so
+    //    `scrollMargins` fires (rule 3). The test checks that after the
+    //    seam fires and after 10 Enter presses, the caret's bottom is no
+    //    lower than `--app-h` minus one line height. When the seam is
+    //    cleared (`null`), `scrollTop` must not change (rule 4 / no snap).
+    //
+    //    Rule 2 (scroller-shrink reveal) requires a real visualViewport
+    //    resize; it is verified on the simulator / device (brief measure
+    //    table) because Chrome has no soft keyboard.
+    //
+    //    Runs on the last page left by the 字号 loop (390×844, editor open
+    //    at 字号 ×1.5, line-height 30 px).
+    {
+      // Focus the editor and place the caret at the end of the file.
+      await page.evaluate(() => window.__cm.caretEnd());
+      await wait(200);
+      // Raise the keyboard seam: footCovered() → true, scrollMargins fires.
+      await page.evaluate(() => window.__khorKeyboard?.(true));
+      await wait(300);
+      // e1: caret's bottom must be at or above --app-h minus one line.
+      const e1 = await page.evaluate(() => {
+        const v = window.__cm?.view();
+        if (!v) return null;
+        const appH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-h") || String(window.innerHeight));
+        const lineH = v.defaultLineHeight;
+        const cr = window.__cm.caretRect();
+        return cr ? { caretBottom: cr.bottom, floor: appH - lineH, appH, lineH } : null;
+      });
+      console.log(`caret e1 · keyboard seam up: ${JSON.stringify(e1)}`);
+      if (!e1) {
+        fail("caret e · caretRect() or __cm.view() returned null after keyboard seam — editor lost focus or caret unplaced");
+      } else if (e1.caretBottom > e1.floor + 1) {
+        fail(
+          `caret e1 · caret bottom ${e1.caretBottom}px exceeds floor ${e1.floor}px (--app-h ${e1.appH} - lineH ${e1.lineH}) — ` +
+            `scrollMargins not firing or not large enough (lib/code/keyboard.ts keyboardCaret, footCovered must be true when __khorKeyboard(true))`,
+        );
+      }
+      // e2: type 10 Enter lines; each must stay at or above the floor.
+      let maxBottom = -Infinity;
+      for (let i = 0; i < 10; i++) {
+        await page.keyboard.press("Enter");
+        await wait(60);
+        const d = await page.evaluate(() => {
+          const v = window.__cm?.view();
+          const appH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-h") || String(window.innerHeight));
+          const lineH = v?.defaultLineHeight ?? 20;
+          const cr = window.__cm?.caretRect();
+          return cr ? { caretBottom: cr.bottom, floor: appH - lineH } : null;
+        });
+        if (d && d.caretBottom > maxBottom) maxBottom = d.caretBottom;
+      }
+      const floor1 = await page.evaluate(() => {
+        const v = window.__cm?.view();
+        const appH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--app-h") || String(window.innerHeight));
+        return appH - (v?.defaultLineHeight ?? 20);
+      });
+      console.log(`caret e2 · max caret bottom over 10 Enter presses: ${maxBottom}px, floor: ${floor1}px`);
+      if (maxBottom > floor1 + 1) {
+        fail(
+          `caret e2 · caret bottom reached ${maxBottom}px, floor is ${floor1}px — ` +
+            `scrollMargins not keeping comfort band while typing (lib/code/keyboard.ts keyboardCaret)`,
+        );
+      }
+      // e3: keyboard seam cleared — scrollTop must not change.
+      const beforeDown = await page.evaluate(() => document.querySelector("[data-file-scroll]")?.scrollTop ?? null);
+      await page.evaluate(() => window.__khorKeyboard?.(null));
+      await wait(300);
+      const afterDown = await page.evaluate(() => document.querySelector("[data-file-scroll]")?.scrollTop ?? null);
+      console.log(`caret e3 · scrollTop before seam clear ${beforeDown}, after ${afterDown}`);
+      if (beforeDown !== null && afterDown !== null && Math.abs(afterDown - beforeDown) > 2) {
+        fail(
+          `caret e3 · scrollTop jumped from ${beforeDown} to ${afterDown} when the seam was cleared — ` +
+            `content should not move when the keyboard goes down (lib/code/keyboard.ts observeScroller)`,
+        );
+      }
+    }
     await page.unroute("**/read_text", read);
     await page.unroute("**/git_diff", noDiff);
     await page.emulateMedia({ colorScheme: "light" });
