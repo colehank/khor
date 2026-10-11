@@ -82,6 +82,9 @@ export const codeTheme = EditorView.theme({
     color: "var(--tertiary)",
     cursor: "default",
   },
+  // The package's own sheet gives the marker span the pointing hand; a
+  // control wears the arrow (30-behavior 选字与手).
+  ".cm-foldGutter span": { cursor: "default" },
   ".cm-foldGutter [data-fold='open']": { opacity: "0" },
   ".cm-gutters:hover .cm-foldGutter [data-fold='open']": { opacity: "1" },
   ".cm-foldGutter svg": { width: "0.75em", height: "0.75em" },
@@ -118,22 +121,24 @@ export const codeTheme = EditorView.theme({
   },
   ".cm-git-bar[data-on]": { boxShadow: "0 0 0 var(--hair) color-mix(in srgb, var(--foreground) 40%, transparent)" },
   // The peek (`git.ts`): HEAD's lines in the change's own ink, a tenth for
-  // the wash and the same hue as a hairline for the edges.
+  // the wash and the same hue as a hairline for the edges. The wash is
+  // the ink over whatever ground the file is on, not mixed with `card`:
+  // mixed, its hue is no longer the bar's (face 4p, cm-b).
   ".cm-git-peek": { padding: "0 var(--gap-row)", borderTop: "var(--hair) solid", borderBottom: "var(--hair) solid" },
   ".cm-git-peek[data-kind='modified']": {
     color: "var(--git-modified)",
     borderColor: "color-mix(in srgb, var(--git-modified) 40%, transparent)",
-    backgroundColor: "color-mix(in srgb, var(--git-modified) 10%, var(--card))",
+    backgroundColor: "color-mix(in srgb, var(--git-modified) 10%, transparent)",
   },
   ".cm-git-peek[data-kind='deleted']": {
     color: "var(--git-deleted)",
     borderColor: "color-mix(in srgb, var(--git-deleted) 40%, transparent)",
-    backgroundColor: "color-mix(in srgb, var(--git-deleted) 10%, var(--card))",
+    backgroundColor: "color-mix(in srgb, var(--git-deleted) 10%, transparent)",
   },
   ".cm-git-peek[data-kind='added']": {
     color: "var(--git-added)",
     borderColor: "color-mix(in srgb, var(--git-added) 40%, transparent)",
-    backgroundColor: "color-mix(in srgb, var(--git-added) 10%, var(--card))",
+    backgroundColor: "color-mix(in srgb, var(--git-added) 10%, transparent)",
   },
   ".cm-git-peek > div": { minHeight: "var(--text-mono--line-height)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
   // The overview ruler over the scrollbar's strip (`git.ts`).

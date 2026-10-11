@@ -56,6 +56,8 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
+import { cmProbe } from "./cm-probe.mjs";
+
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const PORT = Number(process.env.FACE_PORT ?? 1451);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -109,6 +111,9 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  // **The file's editor is CodeMirror** (cm-a, 2026-10-10): probes ask
+  // the view through `window.__cm` (scripts/cm-probe.mjs).
+  await page.addInitScript(cmProbe);
   // `FACE_STACK=1`: a React warning carries where it was raised from.
   if (process.env.FACE_STACK) {
     await page.addInitScript(() => {
@@ -3003,7 +3008,7 @@ try {
       // that only existed halfway through another stop's `go` would be
       // measured by nothing.
       name: "workspaces · one file",
-      anchor: "[data-gutter]",
+      anchor: ".cm-git-gutter",
       go: async () => {
         if (!(await open("workspaces")) || !(await openWs())) return false;
         // The tree first (ruling 33: on narrow it is a screen of its
@@ -3246,23 +3251,11 @@ try {
         "same one a mouse meets; the keyboard has Esc and the sheet's own " +
         "取消, so nothing is reachable only through it.",
     ],
-    "data-overview": [
-      "src/views/FileView.tsx",
-      "the overview ruler's own strip, pressable since 2026-09-17 (工作区第五轮 " +
-        "第 40 条: 「概览尺整条可点」). **Not a control, a surface**: it is the " +
-        "file end to end, and pressing a place on it means going to that place " +
-        "— the same thing dragging the scrollbar beneath it means, which is why " +
-        "it wears no cursor change and no focus ring. Made a `<button>` it " +
-        "would be a 12×900 target that fails the finger floor anyway, and made " +
-        "a `role=\"slider\"` it would promise arrow keys over a strip whose " +
-        "whole content is the file the arrow keys already move. **What it does " +
-        "not buy:** a keyboard, and a finger. Both already have the thing this " +
-        "does — scrolling — so nothing is reachable only through it; the marks " +
-        "inside it are real `<button>`s and section 3 measures those. **It is " +
-        "not「no problem」**: a touch reader cannot jump across a long file in " +
-        "one gesture, and the answer to that is a way of naming a place " +
-        "(an outline, a go-to-line), not a fatter strip.",
-    ],
+    // ⚠️ 墓碑 (cm-b, 2026-10-10): `data-overview`, the ruler's strip. It is
+    // a CodeMirror panel now (`lib/code/git.ts`) whose press is a DOM
+    // listener, not a React prop, so this census no longer sees a bare
+    // press on it. What the entry said is still true: no finger can jump
+    // across a long file in one gesture (an outline or go-to-line would).
     "data-omnibox": [
       "src/components/Omnibox.tsx",
       "a forwarder, not a target: the handler fires only for " +
@@ -3270,16 +3263,10 @@ try {
         "one thing — focus the `<input>` inside it. The target is in the DOM " +
         "and is that input; this widens its press area onto the field's padding.",
     ],
-    "data-file-scroll": [
-      "src/views/FileView.tsx",
-      "a surface, not a target: the file's scroller listens for a touch that " +
-        "lands **outside** the text while the editor has the focus, and ends the " +
-        "editing (2026-10-03, the owner's iPhone: the keyboard came up over a " +
-        "file and stayed; Notes' manner). It presses nothing and is reached by " +
-        "no one on purpose. **What it does not buy:** a way to end the editing " +
-        "for a keyboard or a reader — those have 保存 and Esc, which are real " +
-        "buttons and keys and are measured where they are.",
-    ],
+    // ⚠️ 墓碑 (cm-b, 2026-10-10): `data-file-scroll`. The scroller's own
+    // touch-outside-the-text rule (2026-10-03, the owner's iPhone) went
+    // with the textarea in cm-a; it comes back with the phone step (cm-b
+    // step 4) as a listener on CodeMirror's scroller, out of this census.
     // ⚠️ 墓碑 (round UX-3 → UX-33): `data-deck-pill`, the pill's sideways
     // swipe; the band inside it (`data-deck-band`, below) is the surface now.
     "data-deck-band": [
@@ -3357,30 +3344,13 @@ try {
         "keyboard, and where that reader was going anyway — so nothing is " +
         "available only through a dot. **It is not 「no problem」.**",
     ],
-    "data-hunk": [
-      "src/views/FileView.tsx",
-      "one change bar in a workspace file's gutter. **The size is the " +
-        "reading**: a bar stands beside the lines it is about, so its " +
-        "height *is* how many lines changed — a one-line change measures " +
-        "21.6 tall because a line of code is 21.6 tall, and grown to 44 it " +
-        "would be a bar claiming two lines changed. That is WCAG 2.5.5's " +
-        "Essential carve-out in its literal form, and the width is spent " +
-        "the same way: the column is 11 across because every pixel of it " +
-        "is taken off the code beside it, and a 44-wide gutter would push " +
-        "the file two characters right on a phone to make room for a " +
-        "decoration. A deletion is smaller still (a quarter of a line, " +
-        "measured 5) because it marks a boundary between two lines rather " +
-        "than covering either, and a notch tall enough to press would sit " +
-        "on top of one of them and claim it changed. **What it does not " +
-        "buy:** a finger. On a touch screen these are read, not pressed — " +
-        "and what a bar *does* is unfold what HEAD had there, which is the " +
-        "one thing in this view available nowhere else. So unlike the " +
-        "scatter's points, this is **not** additive: a phone can see that " +
-        "a file differs and cannot see how. **It is not「no problem」** — " +
-        "the answer is a way into the diff that is not the bar (a hunk " +
-        "list, or a press anywhere on the changed lines), which is a " +
-        "bigger idea than a wider gutter.",
-    ],
+    // ⚠️ 墓碑 (cm-b, 2026-10-10): `data-hunk`, a change bar in the file's
+    // gutter. CodeMirror's gutter takes the press (`mousedown` on the
+    // gutter, `lib/code/git.ts`), so the bar carries no handler this walk
+    // can measure. **The hole the entry named is still open**: a bar's
+    // height is the lines it is about, a finger cannot press it, and a
+    // phone can see that a file differs and not how — the answer is a
+    // way into the diff that is not the bar.
     "data-overview-mark": [
       "src/views/FileView.tsx",
       "one hunk's mark on the overview ruler, past the file's scrollbar " +
@@ -3836,7 +3806,7 @@ try {
   await atTree();
   await press('[data-file="one.rs"] button');
   const walk = await page.evaluate(async () => {
-    const bars = [...document.querySelectorAll("[data-gutter] [data-hunk]")];
+    const bars = [...document.querySelectorAll(".cm-git-gutter [data-hunk]")];
     if (bars.length === 0) return { bars: 0 };
     // **The first one, and that is the whole of whether this is worth
     // anything.** The old spelling measured wherever a walk happened to
@@ -3844,12 +3814,12 @@ try {
     // there covers nothing, because there is nothing under it, and the
     // check passed on the behaviour it existed to forbid (2026-09-13).
     // The first hunk has lines below it.
-    bars[0].click();
+    window.__cm.press(bars[0]);
     await new Promise((r) => setTimeout(r, 120));
     const peek = document.querySelector("[data-peek]");
     const sheet = document.querySelector("[data-file-text]");
     const at = Number(bars[0].dataset.hunk);
-    const line = document.querySelector(`[data-file-text] [data-line="${at}"]`);
+    const line = window.__cm.line(at);
     const round = (n) => Math.round(n * 10) / 10;
     return {
       bars: bars.length,
@@ -3932,7 +3902,7 @@ try {
     // Shut again, so the sections below start with an editable file:
     // the editor steps off the glass while a peek is in the flow
     // (`Sheet`'s `edit`, and 4p asserts it comes back).
-    await press('[data-gutter] [data-hunk]');
+    await press('.cm-git-gutter [data-hunk]');
     await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
   }
 
@@ -3949,7 +3919,7 @@ try {
   // Driven through the real buttons, never through state: what is
   // being checked is that a person has a way out, and a way out is a
   // thing you can press.
-  const editing = await page.$("textarea");
+  const editing = await page.$("[data-edit]");
   if (editing === null) {
     fail("probe void: nothing editable on the open file, so nothing to save (src/views/FileView.tsx)");
   } else {
@@ -3967,7 +3937,7 @@ try {
     // the keystroke, so the keystroke is where it is measured.
     const lineTop = () =>
       page.evaluate(() => {
-        const one = document.querySelector('[data-file-text] [data-line="1"]');
+        const one = window.__cm.line(1);
         return one === null ? null : Math.round(one.getBoundingClientRect().top * 10) / 10;
       });
     const restTop = await lineTop();
@@ -3993,7 +3963,7 @@ try {
       buttons: document.querySelectorAll("[data-save], [data-undo]").length,
       notice: document.querySelectorAll("[data-file-notice]").length,
       wrote: null,
-      text: document.querySelector("textarea")?.value ?? "",
+      text: window.__cm.text() ?? "",
       dot: document.querySelectorAll('[data-ws-tab-strip] [data-tab-act="save"]').length,
     }));
     console.log(`save by ⌘S: ${JSON.stringify(afterSave)}`);
@@ -4042,7 +4012,7 @@ try {
     const refused = await page.evaluate(() => {
       const notice = document.querySelector("[data-file-notice]");
       const box = document.querySelector("[data-file-scroll]");
-      const first = document.querySelector('[data-file-text] [data-line="1"]');
+      const first = window.__cm.line(1);
       const n = notice?.getBoundingClientRect() ?? null;
       const b = box?.getBoundingClientRect() ?? null;
       return {
@@ -4122,7 +4092,7 @@ try {
     await press("[data-merge]");
     await new Promise((r) => setTimeout(r, 160));
     const merged = await page.evaluate(() => ({
-      box: document.querySelector("textarea")?.value ?? "",
+      box: window.__cm.text() ?? "",
       said: document.querySelector("[data-merged]")?.dataset.merged ?? null,
       // **「not saved」 is the tab's dot now** (2026-09-16 ruling 30):
       // the row that used to carry a word for it is gone, and what says
@@ -6652,32 +6622,11 @@ try {
           "(UX-33 §4; src/views/WorkspacePane.tsx)",
       );
     } else {
-      // **The sheet carries colour only** (2026-09-16:「编辑时的光标没有
-      // 和任何文字对齐」): a bold heading in the painted copy is wider
-      // than the editor's plain text over it, and the caret drifts.
-      // Markdown source is where the theme bolds.
-      const heavy = await page.evaluate(() => {
-        const pre = document.querySelector("[data-file-text]");
-        if (!pre) return null;
-        const base = getComputedStyle(pre);
-        const odd = [];
-        for (const el of pre.querySelectorAll('span[style*="--shiki"]')) {
-          const c = getComputedStyle(el);
-          if (c.fontWeight !== base.fontWeight || c.fontStyle !== base.fontStyle) {
-            odd.push(`${JSON.stringify(el.textContent?.slice(0, 12))} ${c.fontWeight}/${c.fontStyle}`);
-          }
-        }
-        return { spans: pre.querySelectorAll('span[style*="--shiki"]').length, odd };
-      });
-      console.log(`sheet weights: ${JSON.stringify(heavy)}`);
-      if (heavy === null || heavy.spans === 0) {
-        fail("probe void: the markdown source painted no tokens, so nothing here can carry a weight");
-      } else if (heavy.odd.length) {
-        fail(
-          `${heavy.odd.length} painted span(s) on the sheet wear a weight or slope of their own (${heavy.odd.slice(0, 3).join("; ")}) ` +
-            "— the sheet keeps colour only, or the caret leaves its letter (src/styles/app.css)",
-        );
-      }
+      // ⚠️ 墓碑 (cm-b, 2026-10-10): 「the sheet carries colour only」 —
+      // a bold heading on the painted copy pushed the letters away from
+      // the textarea's caret over it. One layer since CodeMirror (cm-a):
+      // the caret is laid out with the letters it sits in, whatever they
+      // weigh, so the claim has no subject.
       await page.locator("[data-edit]").click();
       await page.keyboard.press(DOC_END);
       await page.keyboard.type("\n## typed\n");
@@ -6810,8 +6759,10 @@ try {
   // least one of them must differ from the sheet's own — a one-colour
   // theme wearing spans would pass a count and fail here.
   if (await openFile("one.rs")) {
+    // CodeMirror's highlighter since cm-a: `tok-*` classes, Shiki's
+    // GitHub values in app.css — still read as computed ink.
     const painted = await until(8_000, async () =>
-      (await page.locator('[data-file-text] span[style*="--shiki"]').count()) > 0,
+      (await page.locator('[data-file-text] [class*="tok-"]').count()) > 0,
     );
     if (!painted) {
       const html = await page.evaluate(
@@ -6819,14 +6770,14 @@ try {
       );
       fail(
         `the source of a .rs file carries no highlighting — 「要有语法高亮」, and what is there is ` +
-          `${JSON.stringify(html)} (src/lib/highlight.ts)`,
+          `${JSON.stringify(html)} (src/lib/code/theme.ts)`,
       );
     } else {
       const inks = await page.evaluate(() => {
         const sheet = document.querySelector("[data-file-text]");
         const body = getComputedStyle(sheet).color;
         const seen = new Set();
-        for (const el of sheet.querySelectorAll('span[style*="--shiki"]')) seen.add(getComputedStyle(el).color);
+        for (const el of sheet.querySelectorAll('[class*="tok-"]')) seen.add(getComputedStyle(el).color);
         return { body, inks: [...seen] };
       });
       console.log(`sheet inks: ${JSON.stringify(inks)}`);
@@ -6859,95 +6810,13 @@ try {
   }
 
 
-  // ── 4c) the caret sits on the ink ─────────────────────────────────
+  // ── 4c) ⚠️ 墓碑 (cm-b, 2026-10-10): the caret sits on the ink ────
   //
-  // **The editor is a transparent textarea laid over the painted
-  // `<pre>`** (`views/FileView`), and the whole of why that works is
-  // that the browser lays the two out identically — same font, size,
-  // line height, padding, and `white-space: pre` on both. Nothing in
-  // the language enforces that. One `className` edited on one of them
-  // and the caret drifts a character further from its letter on every
-  // column, which nobody notices in a screenshot and everybody notices
-  // while typing.
-  //
-  // So: the two boxes, corner for corner, and the typographic
-  // properties that decide where a glyph lands, read off both.
-  await atTree();
-  await press('[data-file="one.rs"] button');
-  const sheet = await page.evaluate(() => {
-    const ta = document.querySelector("[data-edit]");
-    if (!ta) return null;
-    const pre = ta.parentElement.querySelector("pre");
-    const px = (n) => Math.round(n * 10) / 10;
-    const t = ta.getBoundingClientRect();
-    const p = pre.getBoundingClientRect();
-    const of = (el) => {
-      const s = getComputedStyle(el);
-      return {
-        font: `${s.fontFamily}|${s.fontSize}|${s.lineHeight}|${s.letterSpacing}|${s.tabSize}`,
-        pad: `${s.paddingTop}|${s.paddingRight}|${s.paddingBottom}|${s.paddingLeft}`,
-        ws: s.whiteSpace,
-        // How a line too long for the box is broken. Only meaningful
-        // since the sheet wraps (工作区批⑨), and only on both at once:
-        // one of the two folding a 400-character path where the other
-        // does not is a caret drifting a whole row.
-        wrap: `${s.overflowWrap}|${s.wordBreak}`,
-      };
-    };
-    return {
-      dx: px(t.left - p.left),
-      dy: px(t.top - p.top),
-      dw: px(t.width - p.width),
-      dh: px(t.height - p.height),
-      ta: of(ta),
-      pre: of(pre),
-    };
-  });
-  if (sheet === null) {
-    fail(
-      "probe dead: the open file grew no editor — either the fixture stopped being savable " +
-        "(**/read_text must answer a digest) or the surface is read-only again (src/views/FileView.tsx)",
-    );
-  } else {
-    console.log(
-      `caret on ink: box off by ${sheet.dx}/${sheet.dy} at the corner, ${sheet.dw}/${sheet.dh} in size; ` +
-        `font ${sheet.ta.font === sheet.pre.font ? "same" : "DIFFERENT"}, ` +
-        `padding ${sheet.ta.pad === sheet.pre.pad ? "same" : "DIFFERENT"}`,
-    );
-    for (const [what, a, b] of [
-      ["the type", sheet.ta.font, sheet.pre.font],
-      ["the padding", sheet.ta.pad, sheet.pre.pad],
-      ["white-space", sheet.ta.ws, sheet.pre.ws],
-    ]) {
-      if (a !== b) {
-        fail(
-          `the editor and the painted copy disagree on ${what}: ${a} against ${b} — the caret is ` +
-            "laid out by one and the letters by the other (src/views/FileView.tsx)",
-        );
-      }
-    }
-    // Sub-pixel is text metrics; a drift worth catching is a whole
-    // border or a padding step.
-    for (const [axis, n] of [["x", sheet.dx], ["y", sheet.dy], ["width", sheet.dw], ["height", sheet.dh]]) {
-      if (Math.abs(n) > 0.5) {
-        fail(`the editor's box is ${n} off the painted copy's on ${axis} (src/views/FileView.tsx)`);
-      }
-    }
-    // …and they fold at the same places. **4c above measures the two
-    // boxes; this measures the text inside them** (工作区批⑨). With
-    // `pre` on both, one box could not wrap differently from the other
-    // because neither wrapped at all; with `pre-wrap` on both it is a
-    // property either side can lose on its own — `overflow-wrap`, a
-    // word-break rule, a padding — and the boxes would still line up
-    // corner for corner while the caret sat a row above its letter.
-    if (sheet.ta.wrap !== sheet.pre.wrap) {
-      fail(
-        `the editor and the painted copy disagree on how they fold: ${sheet.ta.wrap} against ` +
-          `${sheet.pre.wrap} — the caret is laid out by one and the letters by the other ` +
-          "(src/views/FileView.tsx `WRAP`)",
-      );
-    }
-  }
+  // This measured the transparent textarea against the painted `<pre>`
+  // under it — corner, type, padding, white-space and wrap rules — since
+  // the caret was laid out by one and the letters by the other. The
+  // owner chose CodeMirror because that pair never lined up (OWNER-NOTES-
+  // 10-09 已知问题 1); there is one layer now, and nothing to compare.
 
   // ── 4m) 随宽度换行: the file folds, nothing scrolls sideways ──────
   //
@@ -7012,9 +6881,7 @@ try {
       }
     }
     await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
-    const drew = await until(8_000, async () =>
-      (await page.locator('[data-file-text] [data-line="6"]').count()) === 1,
-    );
+    const drew = await until(8_000, async () => page.evaluate(() => !!window.__cm.line(6)));
     if (!drew) {
       fail(
         "probe dead: the sheet drew no per-line blocks — the numbers and the gutter read a real " +
@@ -7024,32 +6891,24 @@ try {
       const fold = await page.evaluate(() => {
         const round = (n) => Math.round(n * 10) / 10;
         const pre = document.querySelector("[data-file-text]");
-        const ta = document.querySelector("[data-edit]");
         const box = document.querySelector("[data-file-scroll]");
         const page_ = document.scrollingElement;
+        // An element or a selector: the lines and numbers are the view's
+        // (`window.__cm`), the bar is the gutter's.
         const top = (sel) => {
-          const el = document.querySelector(sel);
+          const el = typeof sel === "string" ? document.querySelector(sel) : sel;
           return el === null ? null : round(el.getBoundingClientRect().top);
         };
-        const tall = (sel) => {
-          const el = document.querySelector(sel);
-          return el === null ? null : round(el.getBoundingClientRect().height);
-        };
+        const tall = (el) => (el === null ? null : round(el.getBoundingClientRect().height));
         return {
           page: [page_.scrollWidth, page_.clientWidth],
           box: box === null ? null : [box.scrollWidth, box.clientWidth],
           sheet: round(pre.getBoundingClientRect().width),
           column: round(pre.parentElement.getBoundingClientRect().width),
-          row: tall('[data-file-text] [data-line="1"]'),
-          wrapped: tall('[data-file-text] [data-line="2"]'),
-          lines: [2, 3, 4].map((n) => [n, top(`[data-file-text] [data-line="${n}"]`), top(`[data-num="${n}"]`)]),
+          row: tall(window.__cm.line(1)),
+          wrapped: tall(window.__cm.line(2)),
+          lines: [2, 3, 4].map((n) => [n, top(window.__cm.line(n)), top(window.__cm.num(n))]),
           bar: top('[data-hunk="4"]'),
-          // The editor's own idea of how tall the text is. It is forced
-          // to the column's height by `inset-0`, so the only thing that
-          // says whether it folded the same way is what it thinks it
-          // would need.
-          editor: ta === null ? null : ta.scrollHeight,
-          painted: round(pre.getBoundingClientRect().height),
         };
       });
       console.log(`wrap: ${JSON.stringify(fold)}`);
@@ -7113,14 +6972,8 @@ try {
               "(src/views/FileView.tsx)",
           );
         }
-        // d) …and the editor folded where the painting did.
-        if (fold.editor !== null && Math.abs(fold.editor - fold.painted) > 2) {
-          fail(
-            `the editor needs ${fold.editor}px for text the painting drew in ${fold.painted} — they ` +
-              "wrapped at different places, and the caret is a row off its letter from there down " +
-              "(src/views/FileView.tsx `WRAP`)",
-          );
-        }
+        // d) ⚠️ 墓碑 (cm-b): the editor folded where the painting did —
+        //    one layer since CodeMirror, 4c's tombstone.
       }
     }
     await page.unroute("**/read_text", wrapRead);
@@ -7157,28 +7010,14 @@ try {
     // stop before has opened, so its text is this fixture's and not a
     // tab's kept buffer.
     await press('[data-file-tree] [data-depth="0"][data-file="debug.log"] > button');
-    const drew = await until(8_000, async () =>
-      (await page.locator('[data-file-text] [data-line="60"]').count()) === 1,
-    );
+    // CodeMirror draws only the viewport: the fixture's 60 lines are in
+    // the document, not all on the glass.
+    const drew = await until(8_000, async () => page.evaluate(() => (window.__cm.view()?.state.doc.lines ?? 0) >= 60));
     if (!drew) {
       fail("probe dead: the tall fixture did not draw, so nothing here can be scrolled and re-wrapped");
     } else {
-      const topLine = () =>
-        page.evaluate(() => {
-          const box = document.querySelector("[data-file-scroll]");
-          const b = box.getBoundingClientRect().top;
-          let best = null;
-          for (const el of document.querySelectorAll("[data-file-text] [data-line]")) {
-            const r = el.getBoundingClientRect();
-            if (r.top <= b + 1 && r.bottom > b + 1) best = el.getAttribute("data-line");
-          }
-          return best;
-        });
-      await page.evaluate(() => {
-        const box = document.querySelector("[data-file-scroll]");
-        const l = document.querySelector('[data-file-text] [data-line="30"]');
-        box.scrollTop += l.getBoundingClientRect().top - box.getBoundingClientRect().top;
-      });
+      const topLine = () => page.evaluate(() => String(window.__cm.topLine()));
+      await page.evaluate(() => window.__cm.place(30));
       await wait(150);
       const before = await topLine();
       await page.setViewportSize({ width: 900, height: 700 });
@@ -7491,7 +7330,7 @@ try {
     if (!editing) {
       fail("probe dead: no file open to re-read (src/views/FileView.tsx)");
     } else {
-      const shown = () => page.locator("[data-edit]").inputValue();
+      const shown = () => page.evaluate(() => window.__cm.text());
       const back = async () => {
         await hide(true);
         await wait(80);
@@ -8059,9 +7898,21 @@ try {
       await wait(250);
     }
     await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
-    const drew = await until(8_000, async () =>
-      (await page.locator(`[data-file-text] [data-line="${LINES}"]`).count()) === 1,
-    );
+    // In the document: CodeMirror draws the viewport, not all of it.
+    const drew = await until(8_000, async () => page.evaluate((n) => (window.__cm.view()?.state.doc.lines ?? 0) >= n, LINES));
+    /** A press on the bar at line `n`, drawn first: CodeMirror's gutter
+        draws the viewport's bars only, where every line used to be on
+        the sheet for Playwright to scroll to. */
+    const pressBar = async (n) => {
+      await page.evaluate((n) => {
+        const b = window.__cm.block(n);
+        const box = document.querySelector("[data-file-scroll]");
+        const r = box.getBoundingClientRect();
+        if (b.top < r.top || b.bottom > r.bottom) window.__cm.place(Math.max(1, n - 5));
+      }, n);
+      await wait(150);
+      return press(`.cm-git-gutter [data-hunk="${n}"]`);
+    };
     if (!drew) {
       fail(`probe dead: the ${LINES}-line fixture never reached the sheet (src/views/FileView.tsx)`);
     } else {
@@ -8086,7 +7937,7 @@ try {
           const w = el.getAttribute("data-git-weight");
           if (w !== null) letters[w] = rgb(el).color;
         }
-        const bars = [...document.querySelectorAll("[data-gutter] [data-hunk]")].map((el) => ({
+        const bars = [...document.querySelectorAll(".cm-git-gutter [data-hunk]")].map((el) => ({
           at: el.getAttribute("data-hunk"),
           ink: rgb(el).backgroundColor,
         }));
@@ -8094,10 +7945,12 @@ try {
       });
       console.log(`gutter inks: ${JSON.stringify(inks)}`);
       const barAt = (n) => inks.bars.find((b) => b.at === String(n))?.ink ?? null;
-      if (inks.bars.length !== HUNKS.length) {
+      // The three near the top: CodeMirror's gutter draws the viewport's
+      // bars only, and 80 and 150 are far below it.
+      if (![3, 6, 9].every((n) => barAt(n) !== null)) {
         fail(
-          `probe void: the gutter drew ${inks.bars.length} bar(s) for ${HUNKS.length} hunks, so the ` +
-            "inks below are not about one of each shape (src/views/FileView.tsx)",
+          `probe void: the gutter drew bars at ${JSON.stringify(inks.bars.map((b) => b.at))} and not one at each of 3, 6, 9, so the ` +
+            "inks below are not about one of each shape (src/lib/code/git.ts)",
         );
       } else {
         const hues = new Set(inks.bars.map((b) => b.ink));
@@ -8127,7 +7980,7 @@ try {
         }
       }
       // iii/iv) press the bar at 150 and read where the old text landed.
-      await press('[data-gutter] [data-hunk="150"]');
+      await pressBar(150);
       const shown = await until(5_000, async () => (await page.locator("[data-peek]").count()) === 1);
       // **On screen, and in the bar's own ink** (2026-09-16: a press low
       // on a tall bar opened old text off the top of the scroller, and a
@@ -8135,7 +7988,7 @@ try {
       const peekSeen = await page.evaluate(() => {
         const box = document.querySelector("[data-file-scroll]");
         const peek = document.querySelector("[data-peek]");
-        const bar = document.querySelector('[data-gutter] [data-hunk="150"]');
+        const bar = document.querySelector('.cm-git-gutter [data-hunk="150"]');
         if (!box || !peek || !bar) return null;
         const b = box.getBoundingClientRect();
         const p = peek.getBoundingClientRect();
@@ -8214,21 +8067,18 @@ try {
         const round = (n) => Math.round(n * 10) / 10;
         const peek = document.querySelector("[data-peek]");
         const sheet = document.querySelector("[data-file-text]");
-        const top = (sel) => {
-          const el = document.querySelector(sel);
-          return el === null ? null : round(el.getBoundingClientRect().top);
-        };
+        const top = (el) => (el === null ? null : round(el.getBoundingClientRect().top));
         return {
           inSheet: peek !== null && sheet !== null && sheet.contains(peek),
           said: peek?.textContent?.trim() ?? null,
           peekTop: peek === null ? null : round(peek.getBoundingClientRect().top),
           peekBottom: peek === null ? null : round(peek.getBoundingClientRect().bottom),
-          before: top('[data-file-text] [data-line="149"]'),
-          after: top('[data-file-text] [data-line="150"]'),
+          before: top(window.__cm.line(149)),
+          after: top(window.__cm.line(150)),
           // Two numbers on either side of the block, to catch the
           // column silently sliding by the peek's own height.
-          num149: top('[data-num="149"]'),
-          num150: top('[data-num="150"]'),
+          num149: top(window.__cm.num(149)),
+          num150: top(window.__cm.num(150)),
           // **No spacer at all any more** (工作区第五轮 第 41 条): the
           // block floats over the text, so the numbers column has
           // nothing to wait out and the hole it used to leave would be
@@ -8294,9 +8144,9 @@ try {
       //
       // Measured on the hunk in the middle of the file, for the reason
       // written into the fixture above.
-      await press('[data-gutter] [data-hunk="150"]');
+      await pressBar(150);
       await wait(200);
-      await press('[data-gutter] [data-hunk="80"]');
+      await pressBar(80);
       await wait(300);
       const landed = await page.evaluate(() => {
         const box = document.querySelector("[data-file-scroll]");
@@ -8325,18 +8175,18 @@ try {
             "最上方」 (src/views/FileView.tsx, the peek's layout effect)",
         );
       }
-      await press('[data-gutter] [data-hunk="80"]');
+      await pressBar(80);
       await wait(200);
-      await press('[data-gutter] [data-hunk="150"]');
+      await pressBar(150);
       await wait(200);
 
       // v) the same bar closes it, and so does Esc.
-      await press('[data-gutter] [data-hunk="150"]');
+      await pressBar(150);
       const shut = await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
       if (!shut) {
         fail("pressing the bar again left the old text open — one bar, two directions (src/views/FileView.tsx)");
       }
-      await press('[data-gutter] [data-hunk="150"]');
+      await pressBar(150);
       await until(3_000, async () => (await page.locator("[data-peek]").count()) === 1);
       await page.keyboard.press("Escape");
       const escaped = await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
@@ -8352,43 +8202,45 @@ try {
       }
       // vii) **开着 peek 也能打字** (工作区第五轮 第 41 条).
       //
-      // The old arrangement put the block in the sheet's flow, which
-      // pushed every line below it down — and a textarea is one box
-      // holding one string, so it could not be pushed in the middle.
-      // The two fell out of register, and the answer was to take the
-      // editor off the glass while a peek was open. Out of the flow
-      // nothing moves, so both claims are one measurement: the lines
-      // stay where they were, and the caret is still there.
+      // ⚠️ 墓碑 (cm-b, 2026-10-10): 「out of the flow nothing moves」. The
+      // textarea was one box holding one string, so the block had to
+      // float over the text for the two to stay in register. CodeMirror
+      // lays the block in the flow (cm-a; VS Code's peek is in the flow
+      // too): the lines above stay, the lines below move down by the
+      // block's height, and the caret works while it is open.
       {
         const where = async () =>
           page.evaluate(() => {
             const round = (n) => Math.round(n * 10) / 10;
-            const at = (sel) => {
-              const el = document.querySelector(sel);
-              return el === null ? null : round(el.getBoundingClientRect().top);
-            };
+            const at = (el) => (el === null ? null : round(el.getBoundingClientRect().top));
+            const peek = document.querySelector("[data-peek]");
             return {
-              l149: at('[data-file-text] [data-line="149"]'),
-              l150: at('[data-file-text] [data-line="150"]'),
-              l151: at('[data-file-text] [data-line="151"]'),
+              l149: at(window.__cm.line(149)),
+              l150: at(window.__cm.line(150)),
+              l151: at(window.__cm.line(151)),
+              peek: peek === null ? 0 : round(peek.getBoundingClientRect().height),
               edit: document.querySelectorAll("[data-edit]").length,
             };
           });
         const shut0 = await where();
-        await press('[data-gutter] [data-hunk="150"]');
+        await pressBar(150);
         await until(3_000, async () => (await page.locator("[data-peek]").count()) === 1);
         await wait(250);
         const open0 = await where();
         console.log(`peek open · lines: ${JSON.stringify(shut0)} → ${JSON.stringify(open0)}`);
-        for (const n of ["l149", "l150", "l151"]) {
-          if (shut0[n] === null || open0[n] === null) {
-            fail(`probe void: line ${n.slice(1)} is not on the sheet on both sides of the press`);
-          } else if (Math.abs(shut0[n] - open0[n]) > 1) {
-            fail(
-              `opening the old text moved line ${n.slice(1)} from ${shut0[n]} to ${open0[n]} — the ` +
-                "block floats over the file rather than taking a row of it " +
-                "(src/views/FileView.tsx Peek)",
-            );
+        // Measured from line 149, which the press scrolls with the rest:
+        // what is asserted is the room between the lines.
+        for (const n of ["l150", "l151"]) {
+          if (shut0[n] === null || open0[n] === null || shut0.l149 === null || open0.l149 === null) {
+            fail(`probe void: lines 149 and ${n.slice(1)} are not on the sheet on both sides of the press`);
+          } else {
+            const moved = open0[n] - open0.l149 - (shut0[n] - shut0.l149);
+            if (Math.abs(moved - open0.peek) > 1.5) {
+              fail(
+                `opening the old text moved line ${n.slice(1)} ${Math.round(moved * 10) / 10}px further from line 149 for a ` +
+                  `block ${open0.peek}px tall — it is in the flow, above the line it is about (src/lib/code/git.ts)`,
+              );
+            }
           }
         }
         if (open0.edit !== 1) {
@@ -8398,17 +8250,17 @@ try {
           );
         } else {
           const typed = await page.evaluate(() => {
-            const box = document.querySelector("[data-edit]");
-            if (box === null) return null;
-            const was = box.value.length;
-            box.focus();
-            return { was, focused: document.activeElement === box };
+            const v = window.__cm.view();
+            if (v === null) return null;
+            const was = v.state.doc.length;
+            v.focus();
+            return { was, focused: v.hasFocus };
           });
           await page.keyboard.type("Q");
           await wait(400);
           const after = await page.evaluate(() => {
-            const box = document.querySelector("[data-edit]");
-            return box === null ? null : { len: box.value.length, has: box.value.includes("Q") };
+            const t = window.__cm.text();
+            return t === null ? null : { len: t.length, has: t.includes("Q") };
           });
           console.log(`typing with the peek open: ${JSON.stringify(typed)} → ${JSON.stringify(after)}`);
           if (typed === null || after === null || !typed.focused) {
@@ -8424,7 +8276,7 @@ try {
           await page.keyboard.press("Backspace");
           await wait(300);
         }
-        await press('[data-gutter] [data-hunk="150"]');
+        await pressBar(150);
         await wait(200);
       }
       // vi) the ruler.
@@ -8454,16 +8306,16 @@ try {
           // than floating over the text.
           pastBox: round(c.left - b.right),
           pastRight: round(c.right - b.right),
-          gutter: round(document.querySelector("[data-gutter]")?.getBoundingClientRect().width ?? 0),
+          gutter: round(document.querySelector(".cm-git-gutter")?.getBoundingClientRect().width ?? 0),
           gutterPastNumbers: round(
-            (document.querySelector("[data-gutter]")?.getBoundingClientRect().left ?? 0) -
-              (document.querySelector("[data-numbers]")?.getBoundingClientRect().right ?? 0),
+            (document.querySelector(".cm-git-gutter")?.getBoundingClientRect().left ?? 0) -
+              (document.querySelector(".cm-lineNumbers")?.getBoundingClientRect().right ?? 0),
           ),
           // …and what the file itself says about where those lines are,
           // so the fractions above can be checked rather than eyeballed.
           total: box.scrollHeight,
-          at3: document.querySelector('[data-file-text] [data-line="3"]')?.offsetTop ?? null,
-          at150: document.querySelector('[data-file-text] [data-line="150"]')?.offsetTop ?? null,
+          at3: window.__cm.block(3)?.offset ?? null,
+          at150: window.__cm.block(150)?.offset ?? null,
         };
       });
       console.log(`overview ruler: ${JSON.stringify(ruler)}`);
@@ -8545,7 +8397,7 @@ try {
           const box = document.querySelector("[data-file-scroll]");
           box.scrollTop = 0;
           const b = box.getBoundingClientRect();
-          const l = document.querySelector('[data-file-text] [data-line="150"]').getBoundingClientRect();
+          const l = window.__cm.block(150);
           return { top: Math.round(box.scrollTop), onScreen: l.top >= b.top - 1 && l.bottom <= b.bottom + 1 };
         });
         await wait(200);
@@ -8559,9 +8411,8 @@ try {
         await wait(300);
         const went = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const line = document.querySelector('[data-file-text] [data-line="150"]');
           const b = box.getBoundingClientRect();
-          const l = line.getBoundingClientRect();
+          const l = window.__cm.block(150);
           return {
             scrollTop: Math.round(box.scrollTop),
             onScreen: l.top >= b.top - 1 && l.bottom <= b.bottom + 1,
@@ -8950,7 +8801,7 @@ try {
             save: document.querySelectorAll("[data-file-pill] [data-file-save]").length,
             more: document.querySelectorAll("[data-file-deck] [data-file-more]").length,
             edit: document.querySelectorAll("[data-file-edit]").length,
-            editor: document.querySelectorAll("[data-file-page] textarea[data-edit]").length,
+            editor: document.querySelectorAll("[data-file-page] [data-edit]").length,
             asked: document.querySelectorAll("[data-close-draft]").length,
           }));
         const menu = async () => {
@@ -8976,7 +8827,7 @@ try {
         await until(3_000, async () => (await deck()).editor === 1);
         const source = await deck();
         const sourceMenu = await menu();
-        await page.locator("[data-file-page] textarea[data-edit]").click();
+        await page.locator("[data-file-page] [data-edit]").click();
         await page.keyboard.press(DOC_END);
         await page.keyboard.type("\nmore");
         await until(3_000, async () => (await deck()).save === 1);
@@ -8985,7 +8836,7 @@ try {
         await until(5_000, async () => writes.length > 0 && (await deck()).save === 0);
         const savedDeck = await deck();
         const byTick = writes.length;
-        await page.locator("[data-file-page] textarea[data-edit]").click();
+        await page.locator("[data-file-page] [data-edit]").click();
         await page.keyboard.press(DOC_END);
         await page.keyboard.type(" again");
         await until(3_000, async () => (await deck()).save === 1);
@@ -9265,13 +9116,15 @@ try {
           (e) => e.textContent?.trim() ?? "",
         );
         if (tab === null) return { names, tab: null };
+        // `@codemirror/merge` since cm-a: HEAD is the merge view's a side,
+        // the working copy its b side, each an editor with its own numbers.
         const side = (which) => {
-          const nums = tab.querySelector(`[data-diff-numbers="${which}"]`);
-          const rows = [...tab.querySelectorAll(`[data-diff-side="${which}"] ~ * [data-diff-line]`)];
+          const half = tab.querySelector(which === "head" ? ".cm-merge-a" : ".cm-merge-b");
+          const rows = half === null ? [] : [...half.querySelectorAll(".cm-line")];
           return {
-            numbers: nums === null ? 0 : nums.children.length,
+            numbers: half === null ? 0 : half.querySelectorAll(".cm-lineNumbers .cm-gutterElement:not([style*='visibility: hidden'])").length,
             rows: rows.length,
-            changed: rows.filter((e) => e.hasAttribute("data-diff-changed")).length,
+            changed: rows.filter((e) => e.classList.contains("cm-changedLine")).length,
           };
         };
         return { names, tab: { head: side("head"), work: side("work") } };
@@ -9377,10 +9230,9 @@ try {
         );
         const landed = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-file-text] [data-line="3"]');
-          if (box === null || row === null) return null;
+          const r = window.__cm.block(3);
+          if (box === null || r === null) return null;
           const b = box.getBoundingClientRect();
-          const r = row.getBoundingClientRect();
           return {
             inView: r.top >= b.top - 1 && r.bottom <= b.bottom + 1,
             top: Math.round(box.scrollTop),
@@ -9905,7 +9757,7 @@ try {
         );
         const at = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-file-text] [data-line="2"]');
+          const row = window.__cm.block(2);
           return {
             tabs: [...document.querySelectorAll("[data-tab-name]")].map((e) => e.textContent?.trim()),
             // …and it went to the line, read the way ruling 35's own
@@ -9913,8 +9765,7 @@ try {
             inView:
               box === null || row === null
                 ? null
-                : row.getBoundingClientRect().top >= box.getBoundingClientRect().top - 1 &&
-                  row.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom + 1,
+                : row.top >= box.getBoundingClientRect().top - 1 && row.bottom <= box.getBoundingClientRect().bottom + 1,
           };
         });
         console.log(`tree search · pressing a line: ${JSON.stringify(at)}`);
@@ -12539,7 +12390,7 @@ try {
         );
         const there = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
-          const row = document.querySelector('[data-file-text] [data-line="3"]');
+          const row = window.__cm.block(3);
           const on = document.querySelector('[data-rail-item][data-landing="workspaces"]');
           // The open workspace: its row, or — drilled into it, the list
           // column being its tree (UX-23) — the column's 「‹ 名」.
@@ -12553,8 +12404,7 @@ try {
             inView:
               box === null || row === null
                 ? null
-                : row.getBoundingClientRect().top >= box.getBoundingClientRect().top - 1 &&
-                  row.getBoundingClientRect().bottom <= box.getBoundingClientRect().bottom + 1,
+                : row.top >= box.getBoundingClientRect().top - 1 && row.bottom <= box.getBoundingClientRect().bottom + 1,
           };
         });
         console.log(`pressing the path: arrived=${arrived} ${JSON.stringify(there)}`);
@@ -14780,6 +14630,7 @@ try {
       "src/views/MachineChat.tsx": "a message you sent, on the machines' chat — the thing you said",
       "src/views/WorkspacePane.tsx": "a find hit's mark in a file — the place being located to",
       "src/styles/app.css": "the table row a pressed point locates, for a moment (`[data-hot]`) — located to",
+      "src/lib/code/theme.ts": "the line a link or the terminal's path opened a file at (`.cm-anchored`, cm-a) — located to",
     };
     const WASH = /(^|[\s"'`:])(hover:|focus:|data-\[[^\]]*\]:)?bg-accent(\/\d+)?(?=[\s"'`]|$)|var\(--accent\)|var\(--brand-wash\)|bg-brand-wash/;
     const off = [];
@@ -27009,9 +26860,9 @@ try {
       if (read < 50) fail(`probe dead: (b) read ${read} source file(s) for not-allowed`);
       for (const at of hits) fail(`${at} gives a disabled control the barred circle — AppKit keeps the arrow over a disabled control; the greying says it`);
     }
-    const file = await selectOf(["[data-file-scroll]", "[data-file-scroll] [data-file-text]", "[data-numbers]", "[data-file] > button"]);
+    const file = await selectOf(["[data-file-scroll]", "[data-file-scroll] [data-file-text]", ".cm-lineNumbers", "[data-file] > button"]);
     console.log(`mac · user-select in the workspace ${JSON.stringify(file)}`);
-    const want = { "[data-file-scroll]": "text", "[data-file-scroll] [data-file-text]": "text", "[data-numbers]": "none", "[data-file] > button": "none" };
+    const want = { "[data-file-scroll]": "text", "[data-file-scroll] [data-file-text]": "text", ".cm-lineNumbers": "none", "[data-file] > button": "none" };
     for (const { s, v } of file) {
       if (v === null) fail(`probe dead: ${s} is not in the open workspace`);
       else if (v !== want[s]) fail(`${s} computes user-select ${v}, not ${want[s]} — code selects, its line numbers and the tree do not`);
@@ -30819,31 +30670,24 @@ try {
     };
     // A code file: its source is the editor (notes.md opens rendered).
     const opened = (await open("workspaces")) && (await openWs()) && (await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button'));
-    const editor = await until(5_000, async () => (await page.locator("textarea[data-edit]").count()) > 0);
+    const editor = await until(5_000, async () => (await page.locator("[data-edit]").count()) > 0);
     await wait(600);
     /** The caret on a line (1-based), the way a press or an arrow leaves it. */
     const caretTo = (line) =>
       page.evaluate((line) => {
-        const ed = document.querySelector("textarea[data-edit]");
-        const at = ed.value.split("\n").slice(0, line - 1).reduce((n, l) => n + l.length + 1, 0);
-        ed.focus();
-        ed.setSelectionRange(at, at);
-        document.dispatchEvent(new Event("selectionchange"));
-        return JSON.stringify(ed.value.split("\n"));
+        window.__cm.caretTo(line);
+        return JSON.stringify(window.__cm.text().split("\n"));
       }, line);
     const read = (line) =>
       page.evaluate((line) => {
         const r = (el) => el?.getBoundingClientRect() ?? null;
-        const row = document.querySelector(`[data-file-text] [data-line="${line}"]`);
         const tags = [...document.querySelectorAll("[data-blame-inline]")];
         const tag = tags[0] ?? null;
-        // The line's last character: where its text ends, on its last row.
-        const range = document.createRange();
-        range.selectNodeContents(row);
+        // The line's last character: where its text ends, on its last row
+        // (the view's own measure: the annotation is inside the line now).
         // An empty line ends where it starts.
-        const rects = [...range.getClientRects()].filter((b) => b.width > 0);
-        const box = r(row);
-        const end = rects[rects.length - 1] ?? (box && { right: box.left, top: box.top });
+        const v = window.__cm.view();
+        const end = v?.coordsAtPos(v.state.doc.line(line).to, -1) ?? null;
         const t = r(tag);
         return {
           columns: document.querySelectorAll("[data-blame], [data-blame-line]").length,
@@ -30917,7 +30761,7 @@ try {
           back: shown("[data-ws-list-back], [data-back]").length,
           title: shown("[data-list-title]")[0]?.textContent?.trim() ?? null,
           search: shown("[data-tree-search]").length,
-          file: shown("[data-ws-mid] textarea[data-edit], [data-file-page]").length,
+          file: shown("[data-ws-mid] [data-file-text], [data-file-page]").length,
           side: side ? 1 : 0,
           // The page in front, where a finger lands in the middle.
           top: (() => {
@@ -31246,15 +31090,10 @@ try {
     };
     const openFile = (name) => press(`[data-file-tree] [data-depth="0"][data-file="${name}"] > button`);
     const opened = (await open("workspaces")) && (await openWs()) && (await openFile("one.rs"));
-    const editor = await until(5_000, async () => (await page.locator("textarea[data-edit]").count()) > 0);
+    const editor = await until(5_000, async () => (await page.locator("[data-edit]").count()) > 0);
     /** The caret at the end of the box, focused, for typing. */
-    const toEnd = () =>
-      page.evaluate(() => {
-        const ed = document.querySelector("textarea[data-edit]");
-        ed.focus();
-        ed.setSelectionRange(ed.value.length, ed.value.length);
-      });
-    const box = () => page.evaluate(() => document.querySelector("textarea[data-edit]")?.value ?? null);
+    const toEnd = () => page.evaluate(() => window.__cm.caretEnd());
+    const box = () => page.evaluate(() => window.__cm.text());
     const seat = () =>
       page.evaluate(() => document.querySelector("[data-ws-tab-strip] [data-tab-front-act]")?.getAttribute("data-tab-act") ?? null);
     const notice = () =>
@@ -31359,7 +31198,7 @@ try {
       await wait(600);
       // Back to one.rs.
       await page.locator('[data-ws-tab-strip] [data-tab]').filter({ hasText: "one.rs" }).first().click();
-      await until(3_000, async () => (await page.locator("textarea[data-edit]").count()) > 0);
+      await until(3_000, async () => (await page.locator("[data-edit]").count()) > 0);
       await wait(600);
       const back = await box();
       if (!back?.endsWith("i")) fail(`save d · coming back to one.rs the box ends ${JSON.stringify(back?.slice(-3))} — what was written on leaving`);
@@ -35568,8 +35407,8 @@ try {
       await wait(200);
       const findAfterEnter = await holds(find);
       await press(`${col} [data-file-tree] [data-file="long.rs"] > button`);
-      await until(3_000, async () => (await count(`${col} textarea[data-edit]`)) === 1);
-      const editor = `${col} textarea[data-edit]`;
+      await until(3_000, async () => (await count(`${col} [data-edit]`)) === 1);
+      const editor = `${col} [data-edit]`;
       await page.focus(editor).catch(() => {});
       const editorFocused = await holds(editor);
       await dragDown(`${col} [data-file-page] [data-file-scroll]`);
@@ -38323,6 +38162,10 @@ try {
 
   // ── the caret on its letter at every 字号 (fix-c, 2026-10-08) ───────
   //
+  // ⚠️ cm-b, 2026-10-10: the editor is CodeMirror now, one layer, so b
+  // and c below are tombstones and a is read off the editor alone. What
+  // follows is the section as fix-c wrote it.
+  //
   // The owner: 「文件编辑的光标始终不能和文字对齐」. The editor is a
   // transparent textarea over the painted sheet (`views/FileView` `Sheet`),
   // and 4c compares the two boxes and their styles at the base size. The
@@ -38382,9 +38225,6 @@ try {
       if ((await page.locator("[data-ws-tree]").count()) === 0) await press("[data-ws-row]");
       return true;
     };
-    // The 1-based lines read in (c): Latin, CJK, the wrapped mixed one, the
-    // last (mixed, ending 「。」).
-    const PROBED = [2, 3, 5, 11];
     await page.setViewportSize({ width: 390, height: 844 });
     for (const [scheme, step] of [["light", 0], ["light", 1], ["dark", 2], ["dark", 4], ["light", 4]]) {
       const k = [0.85, 1, 1.15, 1.3, 1.5][step];
@@ -38394,114 +38234,29 @@ try {
       await wait(900);
       const opened =
         (await open("workspaces")) && (await openWs()) && (await press('[data-file-tree] [data-depth="0"][data-file="one.rs"] > button'));
-      const up = await until(5_000, async () => (await page.locator("[data-file-page] textarea[data-edit]").count()) === 1);
+      const up = await until(5_000, async () => (await page.locator("[data-file-page] [data-edit]").count()) === 1);
       const where = `caret · ${scheme} at 字号 ×${k}`;
       if (!opened || !up) {
         fail(`probe dead: ${where} · one.rs opened no editor on the phone's file page`);
         continue;
       }
       await wait(500);
-      // a, b: the type and every line's end, painted against the editor's
-      // own layout (a hidden copy of the editor, as wide, holding the
-      // lines up to that one — its scrollHeight is where they end).
+      // a: the type, read off the editor's text (one layer since
+      // CodeMirror: the caret is laid out with the letters it sits in).
       const lay = await page.evaluate(() => {
-        const ta = document.querySelector("[data-file-page] textarea[data-edit]");
-        const pre = ta.parentElement.querySelector("[data-file-text]");
-        const s = getComputedStyle(pre);
-        const t = getComputedStyle(ta);
-        const rows = [...pre.querySelectorAll("[data-line]")];
-        const top = rows[0].getBoundingClientRect().top;
-        const copy = ta.cloneNode();
-        copy.style.height = "1px";
-        copy.style.visibility = "hidden";
-        ta.parentElement.appendChild(copy);
-        const lines = ta.value.split("\n");
-        const ends = rows.map((row, i) => {
-          copy.value = lines.slice(0, i + 1).join("\n");
-          return [i + 1, Math.round((row.getBoundingClientRect().bottom - top) * 10) / 10, copy.scrollHeight];
-        });
-        copy.remove();
-        return { pre: [s.fontSize, s.lineHeight], ta: [t.fontSize, t.lineHeight], ends };
+        const s = getComputedStyle(document.querySelector("[data-file-page] [data-file-text]"));
+        return { pre: [s.fontSize, s.lineHeight] };
       });
       const wantSize = 13 * k;
       const wantLead = Math.round(20 * k);
       const px = (v) => Number.parseFloat(v);
-      console.log(`${where}: sheet ${lay.pre.join("/")}, editor ${lay.ta.join("/")}; ends ${JSON.stringify(lay.ends.map(([n, p, e]) => (p === e ? n : `${n}:${p}≠${e}`)))}`);
-      if (lay.pre.join() !== lay.ta.join()) fail(`${where} (a) · the sheet draws ${lay.pre.join("/")} and the editor ${lay.ta.join("/")} — one type, or the caret is laid out by one and the letters by the other (src/styles/tokens.css text-mono)`);
-      if (Math.abs(px(lay.pre[0]) - wantSize) > 0.05 || px(lay.pre[1]) !== wantLead) fail(`${where} (a) · the sheet draws ${lay.pre.join("/")}, the step is ${wantSize.toFixed(2)}px/${wantLead}px (lib/file-size; tokens.css text-mono)`);
-      const off = lay.ends.find(([, p, e]) => Math.abs(p - e) > 0.5);
-      if (off) fail(`${where} (b) · line ${off[0]} ends at ${off[1]} painted and ${off[2]} in the editor — the caret's row is ${Math.round((off[2] - off[1]) * 10) / 10}px off its letters from there down (lib/file-size, tokens.css text-mono)`);
-      // c: the browser's own drawing of the editor's selection, in red,
-      // against the painted line's last character.
-      await page.addStyleTag({ content: "[data-file-page] textarea[data-edit]::selection { background: rgb(255, 0, 0) !important; }" });
-      for (const n of PROBED) {
-        await page.evaluate((n) => {
-          const ta = document.querySelector("[data-file-page] textarea[data-edit]");
-          const lines = ta.value.split("\n");
-          const start = lines.slice(0, n - 1).reduce((s, l) => s + l.length + 1, 0);
-          ta.parentElement.querySelector(`[data-file-text] [data-line="${n}"]`).scrollIntoView({ block: "center" });
-          ta.focus({ preventScroll: true });
-          ta.setSelectionRange(start, start + lines[n - 1].length);
-        }, n);
-        await wait(300);
-        // Read after the selection has settled: a selection may scroll.
-        const at = await page.evaluate((n) => {
-          const ta = document.querySelector("[data-file-page] textarea[data-edit]");
-          const row = ta.parentElement.querySelector(`[data-file-text] [data-line="${n}"]`);
-          const range = document.createRange();
-          range.selectNodeContents(row);
-          const boxes = [...range.getClientRects()].filter((b) => b.width > 0);
-          const last = boxes[boxes.length - 1];
-          const box = ta.getBoundingClientRect();
-          const top = Math.max(0, box.top);
-          return {
-            right: last.right,
-            // The middle of the last row: the selection is drawn as tall
-            // as the row's leading, the character's box as tall as its font.
-            mid: (last.top + last.bottom) / 2,
-            lead: Number.parseFloat(getComputedStyle(ta).lineHeight),
-            clip: { x: box.left, y: top, width: box.width, height: Math.min(box.bottom, innerHeight) - top },
-          };
-        }, n);
-        const shot = await page.screenshot({ clip: at.clip });
-        const sel = await page.evaluate(async ({ b64, clip, mid, lead }) => {
-          const img = new Image();
-          img.src = `data:image/png;base64,${b64}`;
-          await img.decode();
-          const c = document.createElement("canvas");
-          c.width = img.width;
-          c.height = img.height;
-          const g = c.getContext("2d");
-          g.drawImage(img, 0, 0);
-          const d = g.getImageData(0, 0, c.width, c.height).data;
-          const sx = img.width / clip.width;
-          const red = (x, y) => {
-            const i = (y * c.width + x) * 4;
-            return d[i] > 180 && d[i] - d[i + 1] > 120;
-          };
-          // Only near the line read: a drift of rows is (b)'s to say, and
-          // the deck floating over the page's foot is not the selection.
-          const lo = Math.max(0, Math.floor((mid - 1.5 * lead - clip.y) * sx));
-          const hi = Math.min(c.height - 1, Math.ceil((mid + 1.5 * lead - clip.y) * sx));
-          let y1 = -1;
-          for (let y = hi; y >= lo && y1 < 0; y--) for (let x = 0; x < c.width; x++) if (red(x, y)) { y1 = y; break; }
-          if (y1 < 0) return null;
-          // The last row's right end, read off its bottom two pixel rows.
-          let right = -1;
-          for (let y = Math.max(0, y1 - 2); y <= y1; y++) for (let x = 0; x < c.width; x++) if (red(x, y)) right = Math.max(right, x);
-          return { right: clip.x + (right + 1) / sx, bottom: clip.y + (y1 + 1) / sx };
-        }, { b64: shot.toString("base64"), clip: at.clip, mid: at.mid, lead: at.lead });
-        if (sel === null) {
-          fail(`probe dead: ${where} (c) · line ${n}: no selection drawn to read`);
-          continue;
-        }
-        const dx = Math.round((sel.right - at.right) * 10) / 10;
-        const dy = Math.round((sel.bottom - at.lead / 2 - at.mid) * 10) / 10;
-        console.log(`${where} (c) · line ${n}: the caret's edge ${dx >= 0 ? "+" : ""}${dx} x, ${dy >= 0 ? "+" : ""}${dy} y off the last character`);
-        if (Math.abs(dx) > 1.5 || Math.abs(dy) > 2.5) {
-          fail(`${where} (c) · line ${n} 「${LINES[n - 1].slice(-6)}」: the editor's caret stands ${dx} px across and ${dy} px down from the painted last character's edge — 「文件编辑的光标始终不能和文字对齐」`);
-        }
-      }
+      console.log(`${where}: the editor draws ${lay.pre.join("/")}`);
+      if (Math.abs(px(lay.pre[0]) - wantSize) > 0.05 || px(lay.pre[1]) !== wantLead) fail(`${where} (a) · the editor draws ${lay.pre.join("/")}, the step is ${wantSize.toFixed(2)}px/${wantLead}px (lib/file-size; tokens.css text-mono)`);
+      // ⚠️ 墓碑 (cm-b, 2026-10-10): b (every painted line ends where the
+      // textarea's own layout of it ends) and c (the textarea's selection,
+      // drawn in red, against the painted last character). They measured
+      // the two layers against each other; CodeMirror is one (cm-a), and
+      // the owner chose it because the two never lined up.
       await page.evaluate(() => document.activeElement?.blur());
     }
     await page.unroute("**/read_text", read);

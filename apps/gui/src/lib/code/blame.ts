@@ -94,7 +94,7 @@ function card(anchor: HTMLElement, long: string, subject: string) {
   const c = document.createElement("div");
   c.dataset.blameCard = "";
   c.className =
-    "absolute left-0 top-full z-20 w-max max-w-[min(32rem,80vw)] rounded-md border bg-popover p-in text-caption shadow-(--shadow-float) whitespace-normal";
+    "absolute left-0 top-full z-20 w-max max-w-[min(32rem,80vw)] rounded-lg border bg-popover p-in text-caption shadow-(--shadow-float) whitespace-normal";
   const a = document.createElement("div");
   a.className = "font-mono text-muted-foreground";
   a.textContent = long;

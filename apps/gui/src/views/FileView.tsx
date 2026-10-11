@@ -1025,7 +1025,15 @@ export function FileView({
           hunks={hunks}
           blamed={blamed}
           goLine={goLine}
-          onText={(t) => setEdit((e) => (e === null ? e : { ...e, text: t }))}
+          onText={(t) => {
+            // **The leaving write sees the key at once.** CodeMirror's
+            // input is not a React event, so the render that refreshes
+            // `leaving` comes a task later; a tab closed in that gap
+            // wrote the text without its last key (face save i, cm-b).
+            const s = leaving.current;
+            if (s.edit !== null) leaving.current = { ...s, edit: { ...s.edit, text: t } };
+            setEdit((e) => (e === null ? e : { ...e, text: t }));
+          }}
           onSave={() => save(true)}
           // A merge waiting on the person: the disk's text (the merge set
           // `file` to it) against the box, a 保留 / 放弃 per place. Every

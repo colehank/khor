@@ -100,7 +100,7 @@ export function CodeDiff({
   }, [path, before, after, narrow]);
 
   return (
-    <div data-diff-tab={path} data-code className="flex min-h-0 flex-1 flex-col font-mono text-mono leading-mono">
+    <div data-diff-tab={path} data-code-view className="flex min-h-0 flex-1 flex-col font-mono text-mono leading-mono">
       {!narrow && (
         <div className="flex flex-none border-b font-sans text-caption text-muted-foreground">
           <div data-diff-side="head" className="min-w-0 flex-1 px-3 py-1">

@@ -107,7 +107,8 @@ function chunkButton(type: "accept" | "reject", act: (e: MouseEvent) => void): H
   const b = document.createElement("button");
   b.type = "button";
   b.className = "cm-merge-btn";
-  b.dataset.merge = type;
+  // Not `data-merge`: that is the notice's 合并, which the gates press.
+  b.dataset.mergeChunk = type;
   b.textContent = type === "accept" ? gui.merge_keep : gui.merge_drop;
   b.addEventListener("mousedown", act);
   return b;
@@ -228,18 +229,19 @@ export function CodeEditor({
           wrapping.current.of(wrap ? EditorView.lineWrapping : []),
           merge.current.of(merging(against)),
           EditorView.contentAttributes.of({ "data-file-text": "" }),
-          keymap.of([
-            {
-              // The one shortcut of the textarea, `metaKey` and `ctrlKey`
-              // both: a Mac app, a phone's browser and Windows, one build.
-              key: "Mod-s",
+          // The one shortcut of the textarea, `metaKey` and `ctrlKey`
+          // both: a Mac app, a phone's browser and Windows, one build
+          // (`Mod` alone is ⌘ on a Mac, and ⌃S there saved nothing).
+          keymap.of(
+            ["Mod-s", "Ctrl-s"].map((key) => ({
+              key,
               preventDefault: true,
               run: () => {
                 cb.current.onSave?.();
                 return true;
               },
-            },
-          ]),
+            })),
+          ),
           EditorView.updateListener.of((u) => {
             const left = getChunks(u.state)?.chunks.length;
             if (left !== undefined && left !== getChunks(u.startState)?.chunks.length) cb.current.onChunks?.(left);
@@ -258,8 +260,13 @@ export function CodeEditor({
     v.scrollDOM.dataset.selectable = "";
     // ⌘F from the menu (`lib/shortcuts`' find-list), the terminal's
     // `__find` spelled for a file.
-    const host = box.current as (HTMLElement & { __find?: () => boolean }) | null;
-    if (host) host.__find = () => openFind(v);
+    // The view itself as `__view`, for whoever holds the box and not the
+    // module (`FilePage` once the editor is a lazy chunk, the gates).
+    const host = box.current as (HTMLElement & { __find?: () => boolean; __view?: EditorView }) | null;
+    if (host) {
+      host.__find = () => openFind(v);
+      host.__view = v;
+    }
     view.current = v;
     return () => {
       v.destroy();
@@ -340,7 +347,7 @@ export function CodeEditor({
   return (
     <div
       ref={box}
-      data-code
+      data-code-view
       className={cn("relative min-h-0 flex-1 font-mono text-mono leading-mono", className)}
     >
       <span ref={icons} hidden>

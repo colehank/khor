@@ -197,6 +197,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 
+import { cmProbe } from "./cm-probe.mjs";
 import { FAKE_TOKEN, codexUrlOf, fakeHome, fakeUsage, keychainAsked, keychainGuard } from "./fake-home.mjs";
 // A word this run compares against, read from the generated catalog
 // rather than spelled here (2026-09-28: the literal it replaced went
@@ -1015,6 +1016,8 @@ for line in sys.stdin:
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   const page = await browser.newPage({ viewport: { width: 1080, height: 720 } });
+  // The file's editor is CodeMirror: probes ask the view (`window.__cm`).
+  await page.addInitScript(cmProbe);
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e)));
   // **`pageerror` is not everything the page can tell you.** It fires
@@ -7542,21 +7545,16 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
   //      own file, read over the wire, in the four-column shape a real
   //      desktop actually shows.
   await page.locator('[data-file="long.txt"] > button').first().click();
-  await until("alpha's long file on the sheet", 30_000, async () =>
-    (await page.locator('[data-file-text] [data-line="3"]').count()) === 1,
-  );
+  await until("alpha's long file on the sheet", 30_000, async () => page.evaluate(() => !!window.__cm.line(3)));
   const folded = await page.evaluate(() => {
     const round = (n) => Math.round(n * 10) / 10;
     const pre = document.querySelector("[data-file-text]");
     const box = document.querySelector("[data-file-scroll]");
     const tall = (n) => {
-      const el = document.querySelector(`[data-file-text] [data-line="${n}"]`);
+      const el = window.__cm.line(n);
       return el === null ? null : round(el.getBoundingClientRect().height);
     };
-    const top = (sel) => {
-      const el = document.querySelector(sel);
-      return el === null ? null : round(el.getBoundingClientRect().top);
-    };
+    const top = (el) => (el === null ? null : round(el.getBoundingClientRect().top));
     return {
       row: tall(1),
       long: tall(2),
@@ -7564,8 +7562,8 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
       column: round(pre.parentElement.getBoundingClientRect().width),
       box: box === null ? null : [box.scrollWidth, box.clientWidth],
       page: [document.scrollingElement.scrollWidth, document.scrollingElement.clientWidth],
-      line3: top('[data-file-text] [data-line="3"]'),
-      num3: top('[data-num="3"]'),
+      line3: top(window.__cm.line(3)),
+      num3: top(window.__cm.num(3)),
     };
   });
   console.log(`workspaces · wrap: ${JSON.stringify(folded)}`);
@@ -7852,8 +7850,8 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
     );
     await page.locator('[data-file="keep.txt"] > button').first().click();
     await until("alpha's keep.txt on the sheet with a bar in its gutter", 30_000, async () =>
-      (await page.locator('[data-file-text] [data-line="2"]').count()) === 1 &&
-      (await page.locator("[data-gutter] [data-hunk]").count()) > 0,
+      (await page.evaluate(() => !!window.__cm.line(2))) &&
+      (await page.locator(".cm-git-gutter [data-hunk]").count()) > 0,
     );
     const painted = await page.evaluate(() => {
       // The four tokens, resolved to what a browser would paint. Read
@@ -7882,7 +7880,7 @@ HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
         tokens,
         weight: letter?.getAttribute("data-git-weight") ?? null,
         letterInk: letter === null ? null : getComputedStyle(letter).color,
-        bars: [...document.querySelectorAll("[data-gutter] [data-hunk]")].map((el) => ({
+        bars: [...document.querySelectorAll(".cm-git-gutter [data-hunk]")].map((el) => ({
           at: el.getAttribute("data-hunk"),
           ink: getComputedStyle(el).backgroundColor,
         })),

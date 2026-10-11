@@ -1180,40 +1180,41 @@ aside[data-side] {
    painted until 2026-10-10. No colour is chosen here. The default ink is
    the app's `foreground`, as it was. Weight and slope are back for the
    few tokens GitHub sets them on: the editor lays out what it paints, so
-   a bold heading no longer pushes the caret off its letter. */
-[data-code] .tok-keyword { color: #cf222e; }
-[data-code] .tok-comment { color: #6e7781; }
-[data-code] .tok-string { color: #0a3069; }
-[data-code] .tok-constant { color: #0550ae; }
-[data-code] .tok-function { color: #8250df; }
-[data-code] .tok-entity { color: #953800; }
-[data-code] .tok-tag { color: #116329; }
-[data-code] .tok-heading { color: #0550ae; font-weight: var(--font-weight-title); }
-[data-code] .tok-link { color: #0a3069; text-decoration: underline; }
-[data-code] .tok-emphasis { font-style: italic; }
-[data-code] .tok-strong { font-weight: var(--font-weight-title); }
-[data-code] .tok-strike { text-decoration: line-through; }
-[data-code] .tok-inserted { color: #116329; }
-[data-code] .tok-deleted { color: #82071e; }
-[data-code] .tok-changed { color: #953800; }
-[data-code] .tok-invalid { color: #82071e; font-style: italic; }
-:root[data-theme="dark"] [data-code] .tok-keyword { color: #ff7b72; }
-:root[data-theme="dark"] [data-code] .tok-comment { color: #8b949e; }
-:root[data-theme="dark"] [data-code] .tok-string { color: #a5d6ff; }
-:root[data-theme="dark"] [data-code] .tok-constant { color: #79c0ff; }
-:root[data-theme="dark"] [data-code] .tok-function { color: #d2a8ff; }
-:root[data-theme="dark"] [data-code] .tok-entity { color: #ffa657; }
-:root[data-theme="dark"] [data-code] .tok-tag { color: #7ee787; }
-:root[data-theme="dark"] [data-code] .tok-heading { color: #79c0ff; }
-:root[data-theme="dark"] [data-code] .tok-link { color: #a5d6ff; }
-:root[data-theme="dark"] [data-code] .tok-inserted { color: #7ee787; }
-:root[data-theme="dark"] [data-code] .tok-deleted { color: #ffa198; }
-:root[data-theme="dark"] [data-code] .tok-changed { color: #ffa657; }
-:root[data-theme="dark"] [data-code] .tok-invalid { color: #ffa198; }
+   a bold heading no longer pushes the caret off its letter.
+   `data-code-view`, not `data-code`: that is the VS Code circle's (cm-b). */
+[data-code-view] .tok-keyword { color: #cf222e; }
+[data-code-view] .tok-comment { color: #6e7781; }
+[data-code-view] .tok-string { color: #0a3069; }
+[data-code-view] .tok-constant { color: #0550ae; }
+[data-code-view] .tok-function { color: #8250df; }
+[data-code-view] .tok-entity { color: #953800; }
+[data-code-view] .tok-tag { color: #116329; }
+[data-code-view] .tok-heading { color: #0550ae; font-weight: var(--font-weight-title); }
+[data-code-view] .tok-link { color: #0a3069; text-decoration: underline; }
+[data-code-view] .tok-emphasis { font-style: italic; }
+[data-code-view] .tok-strong { font-weight: var(--font-weight-title); }
+[data-code-view] .tok-strike { text-decoration: line-through; }
+[data-code-view] .tok-inserted { color: #116329; }
+[data-code-view] .tok-deleted { color: #82071e; }
+[data-code-view] .tok-changed { color: #953800; }
+[data-code-view] .tok-invalid { color: #82071e; font-style: italic; }
+:root[data-theme="dark"] [data-code-view] .tok-keyword { color: #ff7b72; }
+:root[data-theme="dark"] [data-code-view] .tok-comment { color: #8b949e; }
+:root[data-theme="dark"] [data-code-view] .tok-string { color: #a5d6ff; }
+:root[data-theme="dark"] [data-code-view] .tok-constant { color: #79c0ff; }
+:root[data-theme="dark"] [data-code-view] .tok-function { color: #d2a8ff; }
+:root[data-theme="dark"] [data-code-view] .tok-entity { color: #ffa657; }
+:root[data-theme="dark"] [data-code-view] .tok-tag { color: #7ee787; }
+:root[data-theme="dark"] [data-code-view] .tok-heading { color: #79c0ff; }
+:root[data-theme="dark"] [data-code-view] .tok-link { color: #a5d6ff; }
+:root[data-theme="dark"] [data-code-view] .tok-inserted { color: #7ee787; }
+:root[data-theme="dark"] [data-code-view] .tok-deleted { color: #ffa198; }
+:root[data-theme="dark"] [data-code-view] .tok-changed { color: #ffa657; }
+:root[data-theme="dark"] [data-code-view] .tok-invalid { color: #ffa198; }
 
 /* Side by side (`components/CodeDiff`): the two halves parted by the
    hairline every column in the app is parted by. */
-[data-code] .cm-mergeViewEditor + .cm-mergeViewEditor {
+[data-code-view] .cm-mergeViewEditor + .cm-mergeViewEditor {
   border-inline-start: var(--hair) solid var(--border);
 }
 

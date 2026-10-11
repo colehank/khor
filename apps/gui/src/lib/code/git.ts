@@ -18,7 +18,6 @@ import {
   ViewPlugin,
   WidgetType,
   gutter,
-  keymap,
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
@@ -316,17 +315,37 @@ const ruler = ViewPlugin.fromClass(
   },
 );
 
-/** Escape closes an open peek (and does nothing else when none is). */
-const closeKey = keymap.of([
-  {
-    key: "Escape",
-    run: (view) => {
-      if (view.state.field(field).shown === null) return false;
-      view.dispatch({ effects: showHunk.of(null) });
-      return true;
-    },
+/** **Esc shuts the open peek, wherever the focus is** (2026-09-16, carried
+    over from `FileView`'s window listener): the bar is a strip nobody
+    focuses and a reader's file takes no caret, so a key handler on the
+    editor would hear nothing. Listening only while a peek is open. */
+const closeKey = ViewPlugin.fromClass(
+  class {
+    off: (() => void) | null = null;
+    constructor(readonly view: EditorView) {
+      this.sync();
+    }
+    update(u: ViewUpdate) {
+      if (u.state.field(field).shown !== u.startState.field(field).shown) this.sync();
+    }
+    sync() {
+      const open = this.view.state.field(field).shown !== null;
+      if (open && this.off === null) {
+        const onKey = (e: KeyboardEvent) => {
+          if (e.key === "Escape") this.view.dispatch({ effects: showHunk.of(null) });
+        };
+        window.addEventListener("keydown", onKey);
+        this.off = () => window.removeEventListener("keydown", onKey);
+      } else if (!open && this.off !== null) {
+        this.off();
+        this.off = null;
+      }
+    }
+    destroy() {
+      this.off?.();
+    }
   },
-]);
+);
 
 /** Everything git draws in the editor. Hunks arrive by `setHunks`. */
 export function gitChanges(): Extension {
