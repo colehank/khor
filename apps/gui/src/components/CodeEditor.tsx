@@ -28,6 +28,7 @@ import { inlineBlame, setBlamed } from "@/lib/code/blame";
 import { diffPhrases, diffTheme } from "@/lib/code/diff";
 import { codeFind, openFind } from "@/lib/code/find";
 import { gitChanges, setHunks } from "@/lib/code/git";
+import { keyboardCaret, observeScroller } from "@/lib/code/keyboard";
 import { loadLanguage } from "@/lib/code/lang";
 import { codeHighlight, codeTheme } from "@/lib/code/theme";
 import { cn } from "@/lib/utils";
@@ -204,6 +205,7 @@ export function CodeEditor({
           wrapping.current.of(wrap ? EditorView.lineWrapping : []),
           merge.current.of(merging(against)),
           EditorView.contentAttributes.of({ "data-file-text": "" }),
+          keyboardCaret(),
           // The one shortcut of the textarea, `metaKey` and `ctrlKey`
           // both: a Mac app, a phone's browser and Windows, one build
           // (`Mod` alone is ⌘ on a Mac, and ⌃S there saved nothing).
@@ -243,7 +245,12 @@ export function CodeEditor({
       host.__view = v;
     }
     view.current = v;
+    // Rule 2 and 4 (KB-CARET): watch the scroller for resize — reveal the
+    // caret when it shrinks (keyboard rising), pin scrollTop when it grows
+    // (keyboard going down).
+    const teardownObserver = observeScroller(v.scrollDOM, () => view.current);
     return () => {
+      teardownObserver();
       v.destroy();
       view.current = null;
     };
