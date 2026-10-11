@@ -361,10 +361,117 @@ pub async fn dirs_wait(
     })
 }
 
+/// Text files up to this size are read whole and editable. Chosen at 64 MB:
+/// big enough for almost any source file, log, or config; small enough that
+/// CodeMirror and the browser can hold it. Files larger than this show their
+/// first slice read-only, which is what they did before this change — the cap
+/// exists, it has only moved.
+const TEXT_CAP: u64 = 64 * 1024 * 1024;
+
 pub async fn read_text(root: &Path, machine: &str, path: &str) -> Result<FileText, String> {
     let n = Node::open(root.to_path_buf())?;
-    let (total, at_ms, bytes) = n.read_head(machine, path).await?;
-    Ok(shape(total, at_ms, &bytes))
+    let (total, at_ms, first) = n.read_head(machine, path).await?;
+
+    // **Small files: the one-slice path stays exactly as it was.** One round
+    // trip, one digest, no loop.
+    if total <= khor_node::proto::SLICE {
+        return Ok(shape(total, at_ms, &first));
+    }
+
+    // **Large files: pull slices until the cap or the end.** The digest is
+    // computed incrementally as the bytes arrive, not after — so a binary
+    // sniffed in slice 3 refuses before slice 4 crosses the wire.
+    let mut bytes = first;
+    let mut hasher = blake3::Hasher::new();
+
+    // Sniff the first slice for binary. This is the same check `shape` does,
+    // pulled out so a binary file is refused before pulling the rest.
+    if bytes.iter().take(SNIFF).any(|b| *b == 0) {
+        return Ok(FileText {
+            total,
+            at_ms,
+            text: String::new(),
+            cut: true,
+            binary: true,
+            digest: String::new(),
+        });
+    }
+
+    hasher.update(&bytes);
+    let want = total.min(TEXT_CAP);
+
+    while (bytes.len() as u64) < want {
+        let offset = bytes.len() as u64;
+        let (now_total, now_ms, slice) = n.read_at(machine, path, offset).await?;
+
+        // The file moved under us: total or mtime changed between slices.
+        if now_total != total || now_ms != at_ms {
+            return Err(khor_catalog::msg::file_moved_while_reading(path));
+        }
+
+        if slice.is_empty() {
+            // The peer claims there is more but sent nothing. This cannot
+            // make progress, so refuse rather than loop forever.
+            return Err(khor_catalog::msg::file_moved_while_reading(path));
+        }
+
+        // Sniff each slice for binary before adding it.
+        if slice.iter().take(SNIFF.min(slice.len())).any(|b| *b == 0) {
+            return Ok(FileText {
+                total,
+                at_ms,
+                text: String::new(),
+                cut: true,
+                binary: true,
+                digest: String::new(),
+            });
+        }
+
+        hasher.update(&slice);
+        bytes.extend_from_slice(&slice);
+    }
+
+    bytes.truncate(want as usize);
+    let cut = total > TEXT_CAP;
+
+    // Decode the whole thing. A file cut by the cap is not given a digest,
+    // because what is on screen is not what a save would write back — the
+    // invariant from the original code.
+    let text = match std::str::from_utf8(&bytes) {
+        Ok(s) => s.to_owned(),
+        // A boundary cut mid-character: keep the valid prefix only if the
+        // file was not cut by the cap. If it was cut, the text is not the
+        // whole file, and `shape`'s rule applies: what is on screen must be
+        // what a save writes back.
+        Err(e) if e.error_len().is_none() && !cut => {
+            String::from_utf8_lossy(&bytes[..e.valid_up_to()]).into_owned()
+        }
+        Err(_) => {
+            return Ok(FileText {
+                total,
+                at_ms,
+                text: String::new(),
+                cut: true,
+                binary: true,
+                digest: String::new(),
+            });
+        }
+    };
+
+    let digest = if cut {
+        String::new()
+    } else {
+        hasher.finalize().to_hex().to_string()
+    };
+
+    Ok(FileText {
+        total,
+        at_ms,
+        text,
+        cut,
+        binary: false,
+        digest,
+    })
 }
 
 /// The whole judgment, with no machine in it — which is why it is a

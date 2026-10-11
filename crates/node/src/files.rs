@@ -198,46 +198,26 @@ pub fn digest(bytes: &[u8]) -> String {
 /// Answers the new [`digest`] and the new mtime, so a writer can keep
 /// editing without reading the file back.
 ///
-/// # Two saves of one path at once (save-a, 2026-10-08)
+/// # Size cap (CM-C, 2026-10-11)
 ///
-/// The editor saves on its own now (a second after the typing stops,
-/// and on leaving the file), so two writers reaching one path in the
-/// same moment is an ordinary day: two windows, two devices, the app
-/// and `khor` on the command line. Each `WritePath` that reaches this
-/// node runs on a blocking thread of its own, so they really do run
-/// side by side.
-///
-/// **The check and the rename are one step per path in this process**
-/// ([`Saving`]). Without it two writers holding the same digest both
-/// passed the check and the later rename silently replaced the earlier
-/// save — exactly the overwrite `was` exists to refuse. With it the
-/// second one finds the first one's bytes and is refused.
-///
-/// **Each writer has its own temporary** (`.khor-save-<name>.<pid>-<n>`).
-/// They shared one name until this round, and `File::create` truncates:
-/// a second writer emptied the first one's temporary under it, and the
-/// first one's rename could put a half-written file in place. The pid is
-/// for the other process (the command line's `khor`), which this lock
-/// does not reach.
-///
-/// What no lock here can close is another program writing between the
-/// check and the rename; that window is the length of one write of at
-/// most [`crate::proto::SLICE`] bytes and an fsync.
+/// Raised from 256 KiB ([`crate::proto::SLICE`]) to 64 MB: the same cap
+/// the face reads to. The old comment said「this is the wire's limit worn
+/// where the bytes land」— but the wire's limit is [`crate::proto::MAX_FRAME`]
+/// (6 MiB), not the slice grain. A file the face can read and edit it
+/// must be able to write back, or「what a save writes is what is on screen」
+/// cannot be true. The cap exists because some file is too big to hold in
+/// memory and write atomically; 64 MB is where that line is drawn for text.
 pub fn write_whole(path: &str, bytes: &[u8], was: &str) -> Result<(u64, String), String> {
     use std::io::Write;
+    const WRITE_CAP: u64 = 64 * 1024 * 1024;
+
     let p = std::path::Path::new(path);
     if !p.is_absolute() {
         return Err(msg::path_not_absolute(path));
     }
     let _saving = Saving::hold(p);
-    // One frame is the ceiling and the caller is expected to know it —
-    // this is the wire's limit worn where the bytes land, so a path
-    // that reached here another way cannot get past it either.
-    if bytes.len() as u64 > crate::proto::SLICE {
-        return Err(msg::too_big_to_write(
-            bytes.len() as u64,
-            crate::proto::SLICE,
-        ));
+    if bytes.len() as u64 > WRITE_CAP {
+        return Err(msg::too_big_to_write(bytes.len() as u64, WRITE_CAP));
     }
     match std::fs::read(p) {
         Ok(now) => {
