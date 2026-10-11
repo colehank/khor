@@ -21,6 +21,7 @@ import { flushSync } from "react-dom";
 
 import {
   fetchGitStatus,
+  fetchGitLog,
   launchOn,
   searchIn,
   widenWindow,
@@ -28,6 +29,7 @@ import {
   type Found,
   type SearchHit,
   type GitStatus,
+  type GitLog,
   type SessionRow,
 } from "@/api";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
@@ -80,7 +82,7 @@ import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
-import { RevisionView, shortId } from "@/views/FileHistory";
+import { RevisionView, shortId, HistorySheet } from "@/views/FileHistory";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { FilePage, FileVerbs, placeAt, topLine } from "@/views/FilePage";
 import { useFullScreen } from "@/lib/full-screen";
@@ -532,6 +534,19 @@ export function WorkspacePane({
       flickering over a fact that did not change. A refusal still
       clears it: 「不是 checkout」 says nothing, here as in the tree. */
   const [headGit, setHeadGit] = useState<GitStatus | null>(null);
+  /** HEAD's first commit, for the tree's commit line (WS-LAB item 1).
+      Re-asked alongside `git` on every `gitAt` bump — the same trigger
+      the marks ride, which is also the moment the commit may have moved.
+      `fetchGitLog(machine, root)` rather than extending GitStatus: the
+      Rust-side status walk does carry subject/id for the workspace list
+      row (`GitSegment`), but that field arrives via a different IPC path
+      than `git_status`. Using `git_log` with path=root is one call and
+      always has the data. */
+  const [headCommit, setHeadCommit] = useState<GitLog["commits"][0] | null>(null);
+  /** Whether the repository history sheet is open (WS-LAB item 1).
+      Both the commit line in the tree and the branch chip in R0's aside
+      open the same sheet. */
+  const [historyOpen, setHistoryOpen] = useState(false);
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
@@ -664,6 +679,29 @@ export function WorkspacePane({
         if (!live) return;
         setGit(null);
         setHeadGit(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [machine, root, gitAt]);
+
+  // **HEAD commit for the tree's commit line** (WS-LAB item 1): asked
+  // on the same `gitAt` beat as git status — a commit always changes
+  // the marks too, so the two answers stay in step. `fetchGitLog` with
+  // path=root gives the repository-level log; its first entry is HEAD.
+  // A non-repository, an empty repo, or a network failure all resolve
+  // to `null` and the commit line is simply omitted.
+  useEffect(() => {
+    if (root === "") return;
+    let live = true;
+    fetchGitLog(machine, root)
+      .then((l) => {
+        if (!live) return;
+        setHeadCommit(l.commits[0] ?? null);
+      })
+      .catch(() => {
+        if (!live) return;
+        setHeadCommit(null);
       });
     return () => {
       live = false;
@@ -1507,10 +1545,17 @@ export function WorkspacePane({
   const aside = branch !== "" && (
     // On the name's baseline: the text is what lines up, and the glyph
     // centres on it (a glyph has no baseline of its own).
-    <span data-ws-head-branch className="flex min-w-0 items-baseline gap-xxs">
+    // **WS-LAB item 1**: pressing the branch chip also opens the repo's
+    // history sheet — one handler, two doors (commit line + chip).
+    <button
+      type="button"
+      data-ws-head-branch
+      onClick={() => setHistoryOpen(true)}
+      className="flex min-w-0 items-baseline gap-xxs hover:text-foreground"
+    >
       <IconBranch className="size-kind-mark-glyph flex-none self-center" />
       <span className="truncate">{branch}</span>
-    </span>
+    </button>
   );
   /** **The second line is the location and nothing else** (2026-09-30:
       「下方完整目录」) — the one long value, with the whole line to itself
@@ -1918,6 +1963,9 @@ export function WorkspacePane({
                 // The head's ＋ (`treeNew`), taken once.
                 make={make}
                 onMakeSeen={() => setMake(null)}
+                // **WS-LAB item 1**: commit line above the tree.
+                headCommit={headCommit}
+                onCommitLine={() => setHistoryOpen(true)}
               />
             )}
           </ListPane>
@@ -2245,6 +2293,19 @@ export function WorkspacePane({
           setWaiting({ path: closing, ask: false });
           setClosing(null);
         }}
+      />
+      {/* **Repository history sheet** (WS-LAB item 1): reuses the same
+          `HistorySheet` the file page opens, with path=root so the log
+          is the repository-level log. A row opens that revision read-only;
+          for this lab a row press does nothing — `git_show` for a
+          repository-level commit (the changed-files list) is out of scope
+          and the sheet notes this by making rows non-interactive. */}
+      <HistorySheet
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        machine={machine}
+        path={root}
+        onPick={() => {}}
       />
     </div>
     </DeeperHeads>

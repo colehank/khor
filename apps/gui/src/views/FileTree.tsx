@@ -38,6 +38,8 @@ import { onTreeChanged, sameMachine, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
 import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
+import { ago } from "@/words";
+import type { GitCommit } from "@/gen/bindings/GitCommit";
 
 /** One row, already placed: the tree is flattened before it is drawn so
     that a row is a row whatever level it is on — the same reason the
@@ -128,6 +130,8 @@ export function FileTree({
   onMade,
   make,
   onMakeSeen,
+  headCommit,
+  onCommitLine,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
@@ -173,6 +177,14 @@ export function FileTree({
       tree — would open a name box nobody asked for. */
   make?: { kind: "file" | "dir"; at: number } | null;
   onMakeSeen?: () => void;
+  /** HEAD's first commit, for the commit line above the tree (WS-LAB
+      item 1). `null` when the root is not a repository or the log has
+      not arrived yet. `undefined` when the caller does not provide it
+      at all — the line is omitted in that case. */
+  headCommit?: GitCommit | null;
+  /** The commit line or the branch chip was pressed — open the
+      repository's history sheet (WS-LAB item 1). */
+  onCommitLine?: () => void;
 }) {
   /** Every directory this tree has an answer for. The root is asked at
       once; the rest are asked when they are opened. */
@@ -650,7 +662,28 @@ export function FileTree({
 
   const rootError = failed.get(root);
   return (
-    <section data-file-tree data-tree-root={root} className="flex h-full min-w-0 flex-col">
+    // **`data-lab-mark`** controls the ink-weight variant for the two
+    // candidate fixes (WS-LAB item 2): `dot6` shrinks the dot to 6 px,
+    // `medium` bumps the letter to font-medium. Default `dot6`. Flip in
+    // devtools without a rebuild to compare.
+    <section data-file-tree data-tree-root={root} data-lab-mark="dot6" className="flex h-full min-w-0 flex-col">
+      {/* **Commit line above the tree** (WS-LAB item 1): subject · short
+          id · age — present whenever the root is a repository with a
+          HEAD and the first commit has arrived. Re-asked via
+          `onTreeChanged`; never on a timer. Pressing it opens the
+          repository's history sheet (`onCommitLine`). */}
+      {headCommit != null && onCommitLine !== undefined && (
+        <button
+          type="button"
+          data-commit-line
+          onClick={onCommitLine}
+          className="flex min-h-[var(--tree-row)] flex-none items-center gap-2 border-b px-page text-left text-caption text-muted-foreground hover:bg-fill"
+        >
+          <span className="min-w-0 flex-1 truncate">{headCommit.subject}</span>
+          <span className="flex-none font-mono">{headCommit.id.slice(0, 7)}</span>
+          <span className="flex-none">{ago(headCommit.when_ms)}</span>
+        </button>
+      )}
       <div data-files-list className="min-h-0 flex-1 overflow-y-auto">
         {rootError !== undefined ? (
           // **The one thing this must never be is blank** — the node's
@@ -780,9 +813,21 @@ export function FileTree({
                           {r.name}
                         </span>
                       )}
-                      <Mark mark={mark} dir />
                     </button>
                   </RowMenu>
+                  {/* **Trailing mark slot** (WS-LAB item 2): mirrors the
+                      leading `--tree-slot` so the dot and the letter
+                      share a column with the same right edge. The dot was
+                      inside the button; moving it here lines it up with
+                      the file's letter, which was already outside.
+                      Unpressable: a directory has no diff (`Mark`). */}
+                  <span
+                    data-tree-mark-slot
+                    className="flex size-[var(--tree-slot)] flex-none items-center justify-center"
+                    aria-hidden="true"
+                  >
+                    <Mark mark={mark} dir />
+                  </span>
                 </div>
               ) : (
                 <div
