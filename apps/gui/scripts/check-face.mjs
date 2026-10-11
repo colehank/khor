@@ -4479,16 +4479,18 @@ try {
     console.log(`file kinds: ${JSON.stringify(kinds.rows)}`);
     // **A marked directory's name wears its dot's ink** (2026-09-16:
     // 「目录如果有状态,应该也上色,现在只有个状态灯,但目录仍然是原色」).
+    // **WS-LAB item 2**: the dot is now in `[data-tree-mark-slot]` beside
+    // the button (not inside it) so the query goes there.
     const dirInks = await page.evaluate(() =>
-      [...document.querySelectorAll("[data-file-tree] [data-dir]")]
-        .filter((b) => b.querySelector("[data-git-mark]"))
-        .map((b) => ({
-          what: b.getAttribute("data-dir"),
-          dot: getComputedStyle(b.querySelector("[data-git-mark]")).backgroundColor,
+      [...document.querySelectorAll("[data-file-tree] [data-depth]")]
+        .filter((row) => row.querySelector("[data-dir]") && row.querySelector("[data-tree-mark-slot] [data-git-mark]"))
+        .map((row) => ({
+          what: row.querySelector("[data-dir]")?.getAttribute("data-dir"),
+          dot: getComputedStyle(row.querySelector("[data-tree-mark-slot] [data-git-mark]")).backgroundColor,
           // Guarded: a tree without the name span is a red, not a crash
           // (the stash run of 2026-09-16 threw here and hid every probe
           // after it).
-          name: b.querySelector("[data-dir-name]") ? getComputedStyle(b.querySelector("[data-dir-name]")).color : null,
+          name: row.querySelector("[data-dir-name]") ? getComputedStyle(row.querySelector("[data-dir-name]")).color : null,
           body: getComputedStyle(document.body).color,
         })),
     );
@@ -4503,6 +4505,31 @@ try {
               "the dot's ink (src/views/FileTree.tsx)",
           );
         }
+      }
+    }
+    // **Every row's mark shares the same right edge** (WS-LAB item 2):
+    // the dot and the letter now both live in `[data-tree-mark-slot]`, a
+    // fixed-width trailing column, so their right edges must be equal.
+    const markEdges = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('[data-file-tree] [data-depth="0"]')];
+      return rows
+        .map((row) => {
+          const slot = row.querySelector("[data-tree-mark-slot]");
+          const mark = slot?.querySelector("[data-git-mark]");
+          if (!slot || !mark) return null;
+          const r = mark.getBoundingClientRect();
+          return { what: row.getAttribute("data-file") ?? row.querySelector("[data-dir]")?.getAttribute("data-dir") ?? "?", right: Math.round(r.right * 10) / 10 };
+        })
+        .filter(Boolean);
+    });
+    console.log(`mark right edges: ${JSON.stringify(markEdges)}`);
+    if (markEdges.length >= 2) {
+      const rights = new Set(markEdges.map((m) => m.right));
+      if (rights.size > 1) {
+        fail(
+          `mark right edges differ (${[...rights].join(" / ")}px) — every row's mark (dot or letter) must share ` +
+            "the same right edge in the trailing slot (src/views/FileTree.tsx data-tree-mark-slot)",
+        );
       }
     }
     // **Rows of 28 under a mouse** (2026-09-16:「文件树的不同行间距太大了,
