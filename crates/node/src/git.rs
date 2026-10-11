@@ -764,9 +764,18 @@ fn log(path: &Path, limit: u32) -> Result<GitAnswer, String> {
             more = true;
             break;
         }
-        let here = blob_in(&repo, info.id, &rel);
-        let before = info.parent_ids.first().and_then(|p| blob_in(&repo, *p, &rel));
-        if here.is_some() && here != before {
+        // The repository itself (`rel` empty, the workspace's commit
+        // line above the tree — ws-lab 2026-10-12): every commit on the
+        // first-parent walk is its history, nothing to compare. A path:
+        // only the commits where its object changed. `blob_in` answers
+        // for a directory too (a tree's id changes when anything under
+        // it does), so a subtree's log is the same question.
+        let changed = rel.is_empty() || {
+            let here = blob_in(&repo, info.id, &rel);
+            let before = info.parent_ids.first().and_then(|p| blob_in(&repo, *p, &rel));
+            here.is_some() && here != before
+        };
+        if changed {
             let c = repo.find_commit(info.id).map_err(|e| e.to_string())?;
             commits.push(commit_of(&c));
         }
@@ -943,6 +952,23 @@ mod status_tests {
     /// thing worth checking here is that the real walk answers at all.
     fn here() -> PathBuf {
         repo_root(Path::new(env!("CARGO_MANIFEST_DIR"))).expect("khor is a checkout")
+    }
+
+    /// **The repository's own log, for the commit line above the tree**
+    /// (ws-lab, 2026-10-12). Asked with the checkout's root — `rel`
+    /// empty — the walk used to compare the root's blob in each commit
+    /// against its parent's, and a root has no blob, so every workspace
+    /// answered with no history at all. The first entry is HEAD.
+    #[test]
+    fn the_checkout_itself_has_a_log_whose_first_entry_is_head() {
+        let root = here();
+        let GitAnswer::Log { commits, .. } = log(&root, 5).expect("log") else {
+            panic!("not a log")
+        };
+        assert!(!commits.is_empty(), "a checkout has at least one commit");
+        let repo = gix::open(&root).expect("open");
+        let head = repo.head_id().expect("head").to_string();
+        assert_eq!(commits[0].id, head, "the first entry is HEAD");
     }
 
     #[test]
