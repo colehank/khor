@@ -1059,13 +1059,29 @@ mod write_tests {
         assert_eq!(left, vec!["a.rs".to_owned()], "one file, no dotfile");
     }
 
+    /// WRITE_CAP was raised to 64 MB (CM-C, 2026-10-11). A file that is
+    /// one byte over SLICE but well under 64 MB must now succeed.
+    /// The old test name said「one frame」— the frame limit is MAX_FRAME
+    /// (6 MiB), not the slice grain; the ceiling and its name are both fixed.
     #[test]
-    fn more_than_one_frame_is_refused_before_anything_is_opened() {
-        let dir = tmp("big");
+    fn over_slice_but_under_write_cap_is_accepted() {
+        let dir = tmp("over-slice");
+        let path = dir.join("a.txt");
+        let over_slice = vec![b'x'; crate::proto::SLICE as usize + 1];
+        write_whole(path.to_str().unwrap(), &over_slice, "")
+            .expect("SLICE+1 must succeed now that WRITE_CAP is 64 MB");
+        assert_eq!(std::fs::read(&path).unwrap(), over_slice);
+    }
+
+    /// Past 64 MB the write is still refused — the cap exists.
+    #[test]
+    fn over_write_cap_is_refused() {
+        let dir = tmp("over-cap");
         let path = dir.join("a.bin");
-        let big = vec![b'x'; crate::proto::SLICE as usize + 1];
+        const WRITE_CAP: u64 = 64 * 1024 * 1024;
+        let big = vec![b'x'; WRITE_CAP as usize + 1];
         let err = write_whole(path.to_str().unwrap(), &big, "").expect_err("over the ceiling");
-        assert!(err.contains(&crate::proto::SLICE.to_string()), "{err}");
+        assert!(err.contains(&WRITE_CAP.to_string()), "{err}");
         assert!(!path.exists(), "and no file was started");
     }
 

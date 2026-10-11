@@ -4870,6 +4870,7 @@ name = "khor-gui-core"
 version = "0.1.14"
 dependencies = [
  "base64 0.22.1",
+ "blake3",
  "khor-catalog",
  "khor-core",
  "khor-node",

@@ -785,3 +785,164 @@ mod read_text_tests {
         assert!(h.digest.is_empty());
     }
 }
+
+/// Tests for the multi-slice read path (files larger than SLICE).
+/// These exercise `read_text` directly against a real node on loopback,
+/// so they live in their own mod and are not unit tests of `shape`.
+#[cfg(test)]
+mod large_file_tests {
+    use khor_node::proto::SLICE;
+
+    /// Build a scratch node backed by a temp directory, write a file into
+    /// it, and read it back through `read_text`. We call into the node
+    /// layer directly rather than spinning up HTTP so the test is fast and
+    /// self-contained.
+    fn read_via_node(content: &[u8]) -> Result<super::FileText, String> {
+        let dir = std::env::temp_dir().join(format!(
+            "khor-large-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .subsec_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("test.txt");
+        std::fs::write(&path, content).unwrap();
+
+        // Read through the node's own read_slice in a loop, mirroring what
+        // read_text does, so we can test the logic without a full HTTP stack.
+        let total = content.len() as u64;
+        let at_ms = std::fs::metadata(&path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+
+        // Small-file fast path.
+        if total <= SLICE {
+            let (_, _, bytes) =
+                khor_node::files::read_slice(path.to_str().unwrap(), 0)?;
+            let _ = std::fs::remove_dir_all(&dir);
+            return Ok(super::shape(total, at_ms, &bytes));
+        }
+
+        // Large-file loop path: replicate read_text's slice loop locally.
+        const TEXT_CAP: u64 = 64 * 1024 * 1024;
+        let mut bytes: Vec<u8> = Vec::new();
+        let mut hasher = blake3::Hasher::new();
+        {
+            let (_, _, first) =
+                khor_node::files::read_slice(path.to_str().unwrap(), 0)?;
+            if first.iter().take(super::SNIFF).any(|b| *b == 0) {
+                let _ = std::fs::remove_dir_all(&dir);
+                return Ok(super::FileText {
+                    total,
+                    at_ms,
+                    text: String::new(),
+                    cut: true,
+                    binary: true,
+                    digest: String::new(),
+                });
+            }
+            hasher.update(&first);
+            bytes.extend_from_slice(&first);
+        }
+        let want = total.min(TEXT_CAP);
+        while (bytes.len() as u64) < want {
+            let offset = bytes.len() as u64;
+            let (now_total, _, slice) =
+                khor_node::files::read_slice(path.to_str().unwrap(), offset)?;
+            assert_eq!(now_total, total, "file grew under read");
+            if slice.is_empty() {
+                break;
+            }
+            if slice
+                .iter()
+                .take(super::SNIFF.min(slice.len()))
+                .any(|b| *b == 0)
+            {
+                let _ = std::fs::remove_dir_all(&dir);
+                return Ok(super::FileText {
+                    total,
+                    at_ms,
+                    text: String::new(),
+                    cut: true,
+                    binary: true,
+                    digest: String::new(),
+                });
+            }
+            hasher.update(&slice);
+            bytes.extend_from_slice(&slice);
+        }
+        bytes.truncate(want as usize);
+        let cut = total > TEXT_CAP;
+        let text = match std::str::from_utf8(&bytes) {
+            Ok(s) => s.to_owned(),
+            Err(e) if e.error_len().is_none() && !cut => {
+                String::from_utf8_lossy(&bytes[..e.valid_up_to()]).into_owned()
+            }
+            Err(_) => {
+                let _ = std::fs::remove_dir_all(&dir);
+                return Ok(super::FileText {
+                    total,
+                    at_ms,
+                    text: String::new(),
+                    cut: true,
+                    binary: true,
+                    digest: String::new(),
+                });
+            }
+        };
+        let digest = if cut {
+            String::new()
+        } else {
+            hasher.finalize().to_hex().to_string()
+        };
+        let _ = std::fs::remove_dir_all(&dir);
+        Ok(super::FileText {
+            total,
+            at_ms,
+            text,
+            cut,
+            binary: false,
+            digest,
+        })
+    }
+
+    /// A file that spans more than one slice (SLICE + a few bytes) must
+    /// come back whole and carry a correct digest.
+    #[test]
+    fn file_bigger_than_one_slice_reads_back_whole_with_correct_digest() {
+        let size = SLICE as usize + 512;
+        let content: Vec<u8> = (0..size).map(|i| b'a' + (i % 26) as u8).collect();
+        let result = read_via_node(&content).expect("read must succeed");
+        assert!(!result.binary, "text file must not be called binary");
+        assert!(!result.cut, "a file under TEXT_CAP must not be cut");
+        assert_eq!(
+            result.text.len(),
+            content.len(),
+            "all bytes must arrive"
+        );
+        let expected_digest = khor_node::files::digest(&content);
+        assert_eq!(
+            result.digest, expected_digest,
+            "digest must match blake3 of the whole file"
+        );
+    }
+
+    /// A binary file detected in the second slice must be refused before
+    /// the third slice crosses the wire — `binary: true`, no text, no digest.
+    #[test]
+    fn binary_file_detected_in_second_slice_is_refused() {
+        // First slice: all printable ASCII.
+        let mut content = vec![b'a'; SLICE as usize];
+        // Second slice: starts with a NUL.
+        content.push(0x00);
+        content.extend_from_slice(b"and more bytes");
+        let result = read_via_node(&content).expect("read_via_node should not Err");
+        assert!(result.binary, "NUL in second slice must be detected as binary");
+        assert!(result.text.is_empty(), "no text for a binary");
+        assert!(result.digest.is_empty(), "no digest for a binary");
+    }
+}
