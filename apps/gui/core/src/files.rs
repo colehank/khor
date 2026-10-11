@@ -945,4 +945,70 @@ mod large_file_tests {
         assert!(result.text.is_empty(), "no text for a binary");
         assert!(result.digest.is_empty(), "no digest for a binary");
     }
+
+    /// Timing measurement for §6 (CM-C-BRIEF). Run with:
+    ///   cargo test -p khor-gui-core -- large_file_tests::bench_read_times --ignored --nocapture
+    /// Measures before (one slice only, old behaviour) and after (all slices, new behaviour)
+    /// for 1 MB, 8 MB and 32 MB files over a local temp directory — no network.
+    #[test]
+    #[ignore]
+    fn bench_read_times() {
+        use std::time::Instant;
+
+        fn make_file(size: usize) -> (std::path::PathBuf, std::path::PathBuf) {
+            let dir = std::env::temp_dir().join(format!(
+                "khor-bench-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .subsec_nanos()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("bench.txt");
+            let content: Vec<u8> = (0..size).map(|i| b'a' + (i % 26) as u8).collect();
+            std::fs::write(&path, &content).unwrap();
+            (dir, path)
+        }
+
+        fn time_old(path: &std::path::Path) -> std::time::Duration {
+            // Old behaviour: one read_slice call, stop at SLICE.
+            let t = Instant::now();
+            let _ = khor_node::files::read_slice(path.to_str().unwrap(), 0).unwrap();
+            t.elapsed()
+        }
+
+        fn time_new(path: &std::path::Path, total: u64) -> std::time::Duration {
+            const TEXT_CAP: u64 = 64 * 1024 * 1024;
+            let t = Instant::now();
+            let want = total.min(TEXT_CAP);
+            let mut read: u64 = 0;
+            while read < want {
+                let (_, _, slice) =
+                    khor_node::files::read_slice(path.to_str().unwrap(), read).unwrap();
+                if slice.is_empty() {
+                    break;
+                }
+                read += slice.len() as u64;
+            }
+            t.elapsed()
+        }
+
+        for &mb in &[1usize, 8, 32] {
+            let size = mb * 1024 * 1024;
+            let (dir, path) = make_file(size);
+            // Warm-up: one read to bring the file into OS cache.
+            let _ = khor_node::files::read_slice(path.to_str().unwrap(), 0);
+
+            let old = time_old(&path);
+            let new = time_new(&path, size as u64);
+            println!(
+                "bench {} MB — before (256 KB): {:>6.1} ms  after (all): {:>6.1} ms  ratio: {:.1}x",
+                mb,
+                old.as_secs_f64() * 1000.0,
+                new.as_secs_f64() * 1000.0,
+                new.as_secs_f64() / old.as_secs_f64().max(0.001),
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
 }
