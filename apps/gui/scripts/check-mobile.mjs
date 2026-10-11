@@ -156,7 +156,7 @@ if (!/#\[cfg_attr\(mobile,\s*tauri::mobile_entry_point\)\]\s*pub fn run\(\)/.tes
 // simulator measures the rest (docs/IOS.md, handoff 001).
 const QUICK = new Set([
   // Lists and documents on this machine's own disk.
-  "day_strips", "workspaces", "tabs_list", "tabs_open", "tabs_go", "tabs_focus",
+  "workspaces", "tabs_list", "tabs_open", "tabs_go", "tabs_focus",
   "tabs_close", "tabs_pin", "tabs_save", "ws_rm", "ws_pin", "pin_account", "rename_account",
   "update_account", "register_account", "remove_account", "seen", "rename_session",
   "rename_machine", "relays", "set_relays", "tell", "pin_session", "pin_device", "forget_device",
@@ -209,6 +209,12 @@ const WAITS = [
   // process table on the main thread, every 2 s (the owner's Mac app at
   // 70–260 % CPU, typing that lagged).
   "sessions",
+  // 2026-10-11: and the day strips were carrying the same read on the
+  // main thread from their own 10 s beat — a strip asks `sessions` for
+  // its own snapshot by design (`khor_node::Node::day_strips`). The
+  // term-lag probe caught it at 31 ms held, with key→echo max 35 ms in
+  // the same window against a p95 of 12 ms.
+  "day_strips",
 ];
 {
   const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;

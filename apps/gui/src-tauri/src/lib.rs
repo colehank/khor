@@ -65,11 +65,24 @@ async fn sessions(by: String) -> Result<Vec<SessionRow>, String> {
 /// The day strips, on their own beat rather than riding the row list
 /// (`khor_gui_core::day_strips`). `cells` is how many the strip has room
 /// for, measured by the screen.
+///
+/// **Off the main thread** (2026-10-11, the term-lag lane): a strip asks
+/// `Node::sessions` again for its own snapshot — that is `day_strips`'s
+/// own judgment, said in its doc — so it carries the whole weight the
+/// row list carried before 2026-10-05, and it was carrying it *on* the
+/// main thread, from its 10 s beat, holding every key behind it while it
+/// read the documents and swept the process table.
+///
+/// Measured, not reasoned (the term-lag probe, scratch app, one `cat`
+/// row, 600 keys at 50 ms): `slow call: day_strips held main for 31 ms`,
+/// twice in the run, with key→echo max **35 ms** in the same window
+/// against a p95 of 12 ms — the stalls and the call are the same event.
+/// Same road as `sessions`: `off_main`.
 #[tauri::command]
-fn day_strips(
+async fn day_strips(
     cells: u32,
 ) -> Result<std::collections::BTreeMap<String, Vec<khor_gui_core::DayRun>>, String> {
-    khor_gui_core::day_strips(&Node::root_from_env(), cells)
+    off_main(move || khor_gui_core::day_strips(&Node::root_from_env(), cells)).await
 }
 
 /// The workspace landing's whole list, off this machine's own table
