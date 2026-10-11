@@ -313,7 +313,7 @@ fn call(root: &std::path::Path, name: &str, args: &Value) -> Result<String, Stri
             Ok(msg::mcp_closed().into())
         }
         "tell" => {
-            n.tell(&s("machine"), &s("text"))?;
+            runtime()?.block_on(n.tell_now(&s("machine"), &s("text")))?;
             Ok(msg::mcp_told().into())
         }
         other => Err(msg::unknown_action(other)),

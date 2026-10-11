@@ -36964,7 +36964,7 @@ try {
     const msg = (id, from, body, fate = {}) => ({
       id, at_ms: now - 60_000, from, from_me: from === "gate", text: null, files: null, unknown: null,
       retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
-      got: null, of: null, ...body, ...fate,
+      got: null, of: null, via: null, ...body, ...fate,
     });
     const file = (name, size) => ({ files: [{ name, size }], got: 0, of: 4 });
     const landedAt = "/home/gate/khor-drop/land.pdf";

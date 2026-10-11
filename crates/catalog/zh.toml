@@ -1299,6 +1299,14 @@ link-dropped = "连接断了，session 好像还在（{0}）：khor attach {1}"
 session-closed = "session 关了"
 retracted = "[已撤回]"
 file-chip = "[文件 {0} {1}B]"
+# `khor log` under a file message: one line per machine that has
+# answered it — where it was received, why it failed, how far it is.
+fate-landed = "  {0}  已收到 {1}"
+# 字节不是从发送者、而是从先收到它的机器（持有者）取来的（BCAST-BRIEF）。
+fate-landed-via = "  {0}  已收到 {1}（来自 {2}）"
+fate-failed = "  {0}  传输失败：{1}"
+fate-moving = "  {0}  传输中 {1}/{2}B"
+fate-stopped = "  {0}  已取消"
 unknown-body = "[当前版本无法读取这条消息：{0}]"
 
 # ── `khor relay` (docs/NET.md 中继, CONNECT.md 自家 khor relay) ──────
@@ -1660,6 +1668,14 @@ machine-unreachable-timeout = "无法连接 {0}（超时）——尝试过的路
 offerer-unreachable-timeout = "无法连接出让方（超时）"
 offerer-unreachable = "无法连接出让方：{0}"
 offerer-left-table = "出让方已不在机器列表中"
+# 广播的文件先向发送者取，取不到再向已收下它的机器（持有者）取（BCAST-BRIEF）。
+# 都取不到时，失败原因逐台写出试过的机器，用 take-tried-separator 连起来。
+take-sender-down = "发送者 {0} 不通"
+take-holder-down = "持有者 {0} 不通"
+take-sender-failed = "发送者 {0}：{1}"
+take-holder-failed = "持有者 {0}：{1}"
+take-no-holder = "其他机器都还没有收下这个文件"
+take-tried-separator = "；"
 # Two reads of one table can straddle a removal; the second read owns
 # this word. Not recipient-not-in-table: nothing is being received.
 machine-left-table = "这台机器已不在机器列表中：{0}"
@@ -4840,6 +4856,10 @@ bcast-waiting = "待接收"
 bcast-take = "接收"
 bcast-taking = "接收中"
 bcast-landed = "已收到"
+# 从持有者（先收到它的另一台机器）取来时，说是哪台。
+bcast-landed-via = "已收到 · 来自 {0}"
+# The sender's own seat on its offer: nothing to receive, only the count.
+bcast-own = "自己发的"
 bcast-count = "{0}/{1} 台已收到"
 # The composer's other verb (GUI 发文件批): hand a file to `send`. The
 # label names the action; in the app a native picker answers with a

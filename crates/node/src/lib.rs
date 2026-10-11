@@ -83,7 +83,7 @@ pub use khor_core::{
     WireCounts,
     UsageDay, Vitals, kind,
 };
-pub use khor_sync::chat::{FileRef, Message, MsgBody};
+pub use khor_sync::chat::{Fate, FileRef, Message, MsgBody, Step as FateStep};
 pub use khor_sync::devices::DeviceInfo;
 pub use trust::{PendingRow, RootState, Standing};
 /// A relay and the key it admits by — what [`Node::set_relays`] takes.
@@ -4195,6 +4195,7 @@ impl Node {
                 started: false,
                 done: false,
                 to,
+                held: false,
             },
         )?;
         Ok(f)
@@ -4263,6 +4264,17 @@ impl Node {
         self.emit(NodeEvent::Event(told.event));
         self.emit(NodeEvent::Row(told.row));
         Ok(told.msg_id)
+    }
+
+    /// [`Self::tell`], then a round with every machine now, not at the
+    /// next beat (5 s with a face on screen, 30 s on a machine without
+    /// one): a line should reach the others while the person is still
+    /// looking. The round is best effort — the line is written either
+    /// way and reaches the others with the next one.
+    pub async fn tell_now(&self, machine: &str, text: &str) -> Result<String, String> {
+        let id = self.tell(machine, text)?;
+        let _ = self.sync_now().await;
+        Ok(id)
     }
 
     /// A channel's readout, oldest first.

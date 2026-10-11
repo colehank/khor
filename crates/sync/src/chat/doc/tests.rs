@@ -334,12 +334,12 @@ fn a_file_message_carries_its_target_and_its_fate_to_every_device() {
     let got = &receiver.messages()[0];
     assert_eq!((got.into.as_str(), got.fate.clone()), ("/data/in", None), "not started yet");
 
-    let moving = Fate { step: Step::Moving, moved: 2, landed: vec![], why: String::new() };
+    let moving = Fate { step: Step::Moving, moved: 2, landed: vec![], why: String::new(), via: String::new() };
     receiver.set_fate(&id, &moving).unwrap();
     let before = receiver.version();
     receiver.set_fate(&id, &moving).unwrap();
     assert_eq!(receiver.version(), before, "the same account twice writes nothing");
-    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/data/in/a.txt".into()], why: String::new() };
+    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/data/in/a.txt".into()], why: String::new(), via: String::new() };
     receiver.set_fate(&id, &landed).unwrap();
 
     third.merge(&receiver.snapshot().unwrap()).unwrap();
@@ -368,9 +368,9 @@ fn every_receiver_keeps_its_own_fate_of_one_offer() {
     }
     assert!(a.messages()[0].fates.is_empty(), "nobody has answered yet");
 
-    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/home/a/khor-drop/a.txt".into()], why: String::new() };
-    let failed = Fate { step: Step::Failed, moved: 2, landed: vec![], why: "gone".into() };
-    a.set_fate_of(&id, "dev-a", &Fate { step: Step::Moving, moved: 1, landed: vec![], why: String::new() }).unwrap();
+    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/home/a/khor-drop/a.txt".into()], why: String::new(), via: String::new() };
+    let failed = Fate { step: Step::Failed, moved: 2, landed: vec![], why: "gone".into(), via: String::new() };
+    a.set_fate_of(&id, "dev-a", &Fate { step: Step::Moving, moved: 1, landed: vec![], why: String::new(), via: String::new() }).unwrap();
     a.set_fate_of(&id, "dev-a", &landed).unwrap();
     let before = a.version();
     a.set_fate_of(&id, "dev-a", &landed).unwrap();

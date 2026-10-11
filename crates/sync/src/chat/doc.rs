@@ -108,6 +108,11 @@ pub struct Fate {
     pub landed: Vec<String>,
     /// Why it failed; empty otherwise.
     pub why: String,
+    /// The device id the bytes were pulled from once landed: the sender,
+    /// or a machine that landed them before (a broadcast's holder,
+    /// BCAST-BRIEF); empty otherwise. Not `from`: that key is the
+    /// message's sender.
+    pub via: String,
 }
 
 /// Message body.
@@ -287,6 +292,9 @@ impl ChatDoc {
         if was.as_ref().map(|f| f.why.as_str()) != Some(fate.why.as_str()) {
             m.insert("why", fate.why.as_str()).map_err(err)?;
         }
+        if was.as_ref().map(|f| f.via.as_str()) != Some(fate.via.as_str()) {
+            m.insert("via", fate.via.as_str()).map_err(err)?;
+        }
         if was.as_ref().map(|f| &f.landed) != Some(&fate.landed)
             && let Some(list) = m
                 .get("files")
@@ -314,6 +322,7 @@ impl ChatDoc {
             ("step".to_owned(), LoroValue::from(fate.step.key())),
             ("moved".to_owned(), LoroValue::from(fate.moved)),
             ("why".to_owned(), LoroValue::from(fate.why.as_str())),
+            ("via".to_owned(), LoroValue::from(fate.via.as_str())),
             ("landed".to_owned(), LoroValue::from(fate.landed.clone())),
         ]
         .into_iter()
@@ -534,7 +543,7 @@ fn read_fates(m: &LoroMap) -> BTreeMap<String, Fate> {
                 .collect(),
             _ => Vec::new(),
         };
-        out.insert(device.to_owned(), Fate { step, moved, landed, why: text("why") });
+        out.insert(device.to_owned(), Fate { step, moved, landed, why: text("why"), via: text("via") });
     });
     out
 }
@@ -557,6 +566,7 @@ fn read_fate(m: &LoroMap) -> Option<Fate> {
         moved: i64_of(m, "moved").unwrap_or(0),
         landed,
         why: str_of(m, "why").unwrap_or_default(),
+        via: str_of(m, "via").unwrap_or_default(),
     })
 }
 

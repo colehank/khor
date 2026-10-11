@@ -1193,6 +1193,8 @@ impl Node {
         // Borrow rows left by a previous serve point at ports this
         // process does not hold; clear them before answering anyone.
         self.sweep_stale_borrows();
+        // Held broadcast files deleted while it was off (`transfer::hold`).
+        crate::transfer::forget_gone_held(self.root(), None);
 
         // The trust beat, once before answering anyone: a holder whose
         // roster aged while it was off signs it again now, and a network
@@ -4276,8 +4278,12 @@ impl Node {
         use std::io::{Read, Seek, SeekFrom};
         let mut offer =
             crate::transfer::load_offer(self.root(), digest)?.ok_or(msg::offer_lost())?;
-        let meta = fs::metadata(&offer.path)
-            .map_err(|e| msg::offered_file_unreadable(offer.path.display(), e))?;
+        let meta = fs::metadata(&offer.path).map_err(|e| {
+            // A landed copy deleted since: this machine holds nothing
+            // under the digest any more (`transfer::forget_gone_held`).
+            crate::transfer::forget_gone_held(self.root(), Some(digest));
+            msg::offered_file_unreadable(offer.path.display(), e)
+        })?;
         if meta.len() != offer.size {
             return Err(msg::offered_file_changed().into());
         }
@@ -8235,6 +8241,19 @@ impl Node {
         let crate::MsgBody::Files(files) = &m.body else {
             return Err(msg::no_such_transfer(&m.id));
         };
+        // A broadcast file landed here is served from here too, to whoever
+        // cannot reach the sender (`transfer::hold`, which keeps a record
+        // that serves) — also when a 收下 finds it landed already and the
+        // record went, or it landed before holding was a thing.
+        let hold = |landed: &[String]| {
+            if channel.starts_with(chat::WIDE) {
+                for (f, at) in files.iter().zip(landed) {
+                    if let Err(e) = crate::transfer::hold(self.root(), f, std::path::Path::new(at)) {
+                        eprintln!("{e}");
+                    }
+                }
+            }
+        };
         let key = crate::road::sent_key(&m.id, self.device_str());
         let (mut job, fresh) = crate::road::job(&key);
         if !fresh {
@@ -8243,7 +8262,9 @@ impl Node {
             }
             match job.state() {
                 Ok(s) if s.done && s.dest.lines().all(|p| std::path::Path::new(p).is_file()) => {
-                    return Ok((0, s.dest.lines().map(str::to_owned).collect()));
+                    let landed: Vec<String> = s.dest.lines().map(str::to_owned).collect();
+                    hold(&landed);
+                    return Ok((0, landed));
                 }
                 Ok(s) if !s.done => return wait_for(&job).await,
                 // Ended without landing, or what landed is gone since: a
@@ -8259,17 +8280,19 @@ impl Node {
         if let Some(f) = self.chat.fate_here(channel, m).filter(|f| f.step == Step::Landed && f.landed.len() == files.len())
             && f.landed.iter().all(|p| std::path::Path::new(p).is_file())
         {
+            hold(&f.landed);
             job.finish(Ok(f.landed.join("\n")));
             return Ok((0, f.landed.clone()));
         }
         let size: i64 = files.iter().map(|f| f.size.max(0)).sum();
-        let tell = |step: Step, moved: i64, landed: Vec<String>, why: String| {
-            let fate = Fate { step, moved, landed, why };
+        let tell = |step: Step, moved: i64, landed: Vec<String>, why: String, via: String| {
+            let fate = Fate { step, moved, landed, why, via };
             if let Err(e) = self.chat.set_fate(channel, &m.id, &fate) {
                 eprintln!("{e}");
             }
         };
-        tell(Step::Moving, 0, Vec::new(), String::new());
+        tell(Step::Moving, 0, Vec::new(), String::new(), String::new());
+        let wide = channel.starts_with(chat::WIDE);
         let pull = async {
             let into = if m.into.is_empty() {
                 crate::road::Dest::Receive
@@ -8280,34 +8303,62 @@ impl Node {
                 }
                 crate::road::Dest::Dir(dir)
             };
-            let home = self
-                .devices_loaded()?
-                .doc
-                .get(&m.from.id)
-                .ok_or(msg::offerer_left_table())?;
-            let mut moved = 0u64;
-            let mut landed = Vec::with_capacity(files.len());
-            for f in files {
-                let parcel = crate::road::Parcel {
-                    // A broadcast file waited for this machine's yes.
-                    mode: if channel.starts_with(chat::WIDE) {
-                        crate::road::Mode::Offer
-                    } else {
-                        crate::road::Mode::Direct
-                    },
-                    source: crate::road::Source::Offer {
-                        from: home.id.clone(),
-                        file: f.clone(),
-                    },
-                    into: into.clone(),
-                    cap: None,
-                    resume: true,
-                };
-                let got = self.land(ep, &parcel, Some(&job)).await?;
-                moved += got.moved;
-                landed.push(got.path.display().to_string());
+            // A broadcast file waited for this machine's yes.
+            let mode = if wide { crate::road::Mode::Offer } else { crate::road::Mode::Direct };
+            let table = self.devices_loaded()?.doc;
+            let sender = table.get(&m.from.id);
+            if !wide {
+                let home = sender.ok_or(msg::offerer_left_table())?;
+                let (moved, landed) = self.take_from(ep, &home, files, &into, mode, &job).await?;
+                return Ok((moved, landed, home.id));
             }
-            Ok::<_, String>((moved, landed))
+            // **A broadcast file comes from whoever has it** (BCAST-BRIEF):
+            // the sender, or any machine that landed it before
+            // (`holders_of`). The partial is kept by digest and pulled by
+            // offset, and every source serves the same bytes, so a pull
+            // broken on one carries on from the next; the digest checks
+            // the whole at the end. Each source is dialled before it is
+            // asked, so the failure says which were unreachable and which
+            // answered with a refusal — unless every file is here already
+            // and nothing needs a wire.
+            let holders = self.holders_of(m, &table);
+            let here = files.iter().all(|f| crate::road::receipt(self.root(), &f.digest).is_some());
+            let mut tried = Vec::new();
+            if sender.is_none() {
+                tried.push(msg::take_sender_failed(&m.from.name, msg::offerer_left_table()));
+            }
+            // In the order the wires know them (`wire_rank`), the sender
+            // ahead of every holder unless its dials are failing: a phone
+            // in the background is a dial's whole timeout per 收下, and a
+            // holder with a live wire answers at once.
+            let mut sources: Vec<(bool, DeviceInfo)> =
+                sender.into_iter().map(|d| (true, d)).chain(holders.iter().cloned().map(|d| (false, d))).collect();
+            sources.sort_by_cached_key(|(is_sender, d)| {
+                let (rank, rtt) = self.wire_rank(&d.id);
+                let rank = if *is_sender && rank < 2 { 0 } else { rank + 1 };
+                (rank, rtt, !*is_sender, d.name.clone())
+            });
+            for (is_sender, d) in sources {
+                if !here && let Err(e) = self.line_to(ep, &d, wires::Proto::Main).await {
+                    tried.push(match (is_sender, e) {
+                        (true, DialFailure::TimedOut) => msg::take_sender_down(&d.name),
+                        (false, DialFailure::TimedOut) => msg::take_holder_down(&d.name),
+                        (true, DialFailure::Refused(why)) => msg::take_sender_failed(&d.name, why),
+                        (false, DialFailure::Refused(why)) => msg::take_holder_failed(&d.name, why),
+                    });
+                    continue;
+                }
+                match self.take_from(ep, &d, files, &into, mode, &job).await {
+                    Ok((moved, landed)) => return Ok((moved, landed, d.id)),
+                    Err(why) if job.is_stopped() => return Err(why),
+                    Err(why) if is_sender => tried.push(msg::take_sender_failed(&d.name, why)),
+                    Err(why) => tried.push(msg::take_holder_failed(&d.name, why)),
+                }
+            }
+            if holders.is_empty() {
+                tried.push(msg::take_no_holder().to_owned());
+            }
+            Err(tried.join(msg::take_tried_separator()))
         };
         // The progress beat: the bytes on this machine, written to the
         // message at most once a second and only when the percent moved,
@@ -8322,14 +8373,15 @@ impl Node {
                     let now = job.moved.load(std::sync::atomic::Ordering::Relaxed) as i64;
                     if size > 0 && now * 100 / size != said * 100 / size {
                         said = now;
-                        tell(Step::Moving, now, Vec::new(), String::new());
+                        tell(Step::Moving, now, Vec::new(), String::new(), String::new());
                     }
                 }
             }
         };
         match &outcome {
-            Ok((_, landed)) => {
-                tell(Step::Landed, size, landed.clone(), String::new());
+            Ok((_, landed, via)) => {
+                hold(landed);
+                tell(Step::Landed, size, landed.clone(), String::new(), via.clone());
                 job.finish(Ok(landed.join("\n")));
             }
             Err(_) if job.is_stopped() => {
@@ -8342,12 +8394,12 @@ impl Node {
                         let _ = fs::remove_file(p);
                     }
                 }
-                tell(Step::Stopped, 0, Vec::new(), String::new());
+                tell(Step::Stopped, 0, Vec::new(), String::new(), String::new());
                 job.finish(Err(crate::road::cancelled()));
             }
             Err(why) => {
                 let moved = job.moved.load(std::sync::atomic::Ordering::Relaxed) as i64;
-                tell(Step::Failed, moved, Vec::new(), why.clone());
+                tell(Step::Failed, moved, Vec::new(), why.clone(), String::new());
                 job.finish(Err(why.clone()));
             }
         }
@@ -8360,7 +8412,63 @@ impl Node {
         if job.is_stopped() && outcome.is_err() {
             return Err(crate::road::cancelled());
         }
-        outcome
+        outcome.map(|(moved, landed, _)| (moved, landed))
+    }
+
+    /// One source's turn at a file message: each file pulled from `home`
+    /// by digest (`land`), in the message's order.
+    async fn take_from(
+        &self,
+        ep: &iroh::Endpoint,
+        home: &DeviceInfo,
+        files: &[khor_sync::chat::FileRef],
+        into: &crate::road::Dest,
+        mode: crate::road::Mode,
+        job: &crate::road::Job,
+    ) -> Result<(u64, Vec<String>), String> {
+        let mut moved = 0u64;
+        let mut landed = Vec::with_capacity(files.len());
+        for f in files {
+            let parcel = crate::road::Parcel {
+                mode,
+                source: crate::road::Source::Offer {
+                    from: home.id.clone(),
+                    file: f.clone(),
+                },
+                into: into.clone(),
+                cap: None,
+                resume: true,
+            };
+            let got = self.land(ep, &parcel, Some(job)).await?;
+            moved += got.moved;
+            landed.push(got.path.display().to_string());
+        }
+        Ok((moved, landed))
+    }
+
+    /// **Who else has a broadcast file's bytes** (BCAST-BRIEF): every
+    /// machine whose own record on the message says landed — the
+    /// document every machine syncs, so it is known here without asking
+    /// anyone — but this one and the sender.
+    fn holders_of(&self, m: &chat::Message, table: &khor_sync::devices::DeviceDoc) -> Vec<DeviceInfo> {
+        use khor_sync::chat::Step;
+        let me = self.device_str();
+        m.fates
+            .iter()
+            .filter(|(id, f)| f.step == Step::Landed && id.as_str() != me && **id != m.from.id)
+            .filter_map(|(id, _)| table.get(id))
+            .collect()
+    }
+
+    /// What the wires know of a machine, best first: a live wire, by its
+    /// round trip; then nothing against it; then dials failing since it
+    /// was last heard.
+    fn wire_rank(&self, id: &str) -> (u8, Duration) {
+        match self.wires.peer_view(id).0 {
+            Some(rtt) => (0, rtt),
+            None if self.wires.next_backoff(id, wires::Proto::Main).0 > 1 => (2, Duration::ZERO),
+            None => (1, Duration::ZERO),
+        }
     }
 
     /// A cancel on the receiver: the running pull stops before its next
@@ -8388,6 +8496,7 @@ impl Node {
                     moved: 0,
                     landed: Vec::new(),
                     why: String::new(),
+                    via: String::new(),
                 },
             )?;
         }

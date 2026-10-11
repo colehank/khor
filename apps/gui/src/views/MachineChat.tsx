@@ -503,6 +503,13 @@ function FileChip({
           </div>
         </div>
       ))}
+      {sent && (
+        // The sender's seat: its own offer is nothing to receive — no
+        // 接收, no failure — only the count beside.
+        <span data-bcast-own className="text-caption text-muted-foreground">
+          {gui.bcast_own}
+        </span>
+      )}
       {sent && m.got !== null && m.of !== null && (
         // The sender's chip counts the machines that have it, read off
         // the records the receivers wrote.
@@ -553,8 +560,9 @@ function FileChip({
         </div>
       )}
       {wide && m.step === "landed" && (
-        <span data-bcast-landed className="text-caption text-muted-foreground">
-          {gui.bcast_landed}
+        // Pulled from a machine that had it rather than the sender: which.
+        <span data-bcast-landed data-bcast-via={m.via ?? undefined} className="text-caption text-muted-foreground">
+          {m.via ? gui.bcast_landed_via(m.via) : gui.bcast_landed}
         </span>
       )}
       {m.step === "landed" &&
