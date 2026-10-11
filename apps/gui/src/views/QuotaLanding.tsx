@@ -61,8 +61,7 @@ import { providerKind } from "@/components/SessionFace";
 import { EditableName } from "@/components/EditableName";
 import { SideList, type SideRow } from "@/components/SideList";
 import { rowWindow } from "@/lib/row-facts";
-import { DIAL_CARD_RATIO, DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, hugRatio, sizeForCroppedHeight, type Pip } from "@/components/Face";
-import { useCoarse } from "@/hooks/use-coarse";
+import { DIAL_CARD_RATIO, DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, type Pip } from "@/components/Face";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -779,27 +778,9 @@ function Resets({ at, mark }: { at: number; mark?: Record<string, string> }) {
   );
 }
 
-/**
- * **The row's gauge: the account page's dial, as tall as the row's two
- * lines** (UX-53, the owner: 「按照页面里的仪表盘画」) — the same 210°
- * arc, pips and ink, the card's stroke scaled with it, so it is one
- * drawing at two sizes. The heights are the two lines' leading under a
- * mouse (headline 18 + callout 16) and under a finger (22 + 19);
- * `check-face`'s quota section measures the gauge against the words
- * beside it, so a leading that moves turns it red.
- */
-const ROW_GAUGE_H = { mouse: 34, finger: 41 } as const;
-function RowGauge({ fraction, strain, pips }: { fraction: number; strain: Strain | null; pips: Pip[] }) {
-  const h = useCoarse() ? ROW_GAUGE_H.finger : ROW_GAUGE_H.mouse;
-  const stroke0 = (DIAL_CARD_STROKE * h) / 102;
-  const size = sizeForCroppedHeight(h, stroke0);
-  const stroke = (DIAL_CARD_STROKE * size) / DIAL_CARD_SIZE;
-  return (
-    <span data-quota-gauge className="flex flex-none items-center self-center">
-      <Face size={size} stroke={stroke} ratio={hugRatio(size, stroke)} crop fraction={fraction} strain={strain} pips={pips} />
-    </span>
-  );
-}
+/* ⚠️ 墓碑 (2026-10-12): `RowGauge` は去掉了。list 行里的百分比已经在右上角
+   corner 里，一行只需要一种读法；card 页才是 dial 合适的地方。
+   `ROW_GAUGE_H` 和 `RowGauge` 随之删除。 */
 
 // ⚠️ 墓碑: `SUB_ID` (「sub:local」), the probed subscription row's id,
 // retired 2026-09-22 with the row (docs/SHELL.md 第七轮 第 3 条).
@@ -1403,7 +1384,6 @@ export function QuotaLanding({
     // one that stops the work first), and the gauge, the number and the
     // reset are all its — one reading, said three ways.
     const pct = win ? Math.round((1 - win.left) * 100) : null;
-    const strain = pct === null ? null : pctStrain(pct);
     const over = pct !== null && pct >= 100;
     const wallet = pct === null && !trouble ? walletWord(r) : null;
     return {
@@ -1435,16 +1415,11 @@ export function QuotaLanding({
       // spelling; the words stay for a reader (`Resets`).
       // ⚠️ 墓碑: 「3 天 4 小时后重置」 in words (UX-48 → WORDS-1008).
       sub: win && win.resets_at !== null ? <Resets at={win.resets_at} mark={{ "data-quota-sub-line": "" }} /> : undefined,
-      // **Left of the rightmost column, the account page's gauge, as tall
-      // as the row's two lines** (the owner: 「这个环位置没问题，但是按照
-      // 页面里的仪表盘画」). A trouble has no reading to draw, and a wallet
-      // has no fraction (the lead, 2026-10-08): neither draws one.
-      // ⚠️ 墓碑 (UX-32 → UX-53): a 16 px glyph beside the number, in the
-      // top-right corner.
-      trailing:
-        pct === null ? undefined : (
-          <RowGauge fraction={pct / 100} strain={strain} pips={r.kind === "sub" ? subDials(r).map((d): Pip => ({ word: d.word, v: d.pct })) : []} />
-        ),
+      // ⚠️ 墓碑 (UX-32 → UX-53 → 2026-10-12): the dial that stood left of
+      // the rightmost column is gone. A list row is not a card; the
+      // percentage in the top-right corner already carries the reading,
+      // and a gauge beside it was the same fact twice at different sizes.
+      trailing: undefined,
       corners: {
         // **Top-right only the percentage** (「右上干脆只写百分比」), kept
         // whole and **as wide as the age's floor under it** (4.6em, 「59 分钟前」),
