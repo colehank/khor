@@ -8157,49 +8157,40 @@ try {
           );
         }
       }
-      // **…and a press lands the old text at the top of the column**
-      // (2026-09-16 ruling 27:「点击git状态bar的时候, 如果从文件第一行
-      // 开始就有此bar, 跳转到的是文件的第一行,但仍看不清提示. 还得鼠标
-      // 拖动. 应该直接跳转到提示框的最上方」— the user).
+      // **…and a press on a peek already on screen moves nothing**
+      // (cm-e, 2026-10-12, the owner: 「点击后总是移动了我的视窗位置，这
+      // 对吗」— VS Code reveals by `nearest`). Measured on the hunk in the
+      // middle of the file: line 80 put mid-screen, the bar pressed,
+      // `scrollTop` read before and after. The foot's case is ws h.
       //
-      // It used to scroll only when the block was **out of view**, and
-      // to a third of the way down. Both halves are what the user hit:
-      // a hunk at line 1 lays its old text above line 1, so scrolling
-      // to the line leaves the block off the top, and a block taller
-      // than the viewport is 「already visible」 by any test about its
-      // top edge.
-      //
-      // Measured on the hunk in the middle of the file, for the reason
-      // written into the fixture above.
+      // ⚠️ 墓碑 (2026-09-16 ruling 27 → 2026-10-12): 「a press lands the
+      // old text at the top of the column」. Ruling 27 was a hunk at line
+      // 1 whose old text opened off the top; a scroll by `nearest` with a
+      // line of air answers that too, and pinning every peek to the top
+      // was what the owner found moving the view on every press.
       await pressBar(150);
       await wait(200);
-      await pressBar(80);
+      await page.evaluate(() => {
+        const v = window.__cm.view();
+        const s = v.scrollDOM;
+        s.scrollTop = v.lineBlockAt(v.state.doc.line(80).from).top - s.clientHeight / 2;
+      });
+      await wait(300);
+      const before80 = await page.evaluate(() => Math.round(window.__cm.view().scrollDOM.scrollTop));
+      await page.evaluate(() => window.__cm.press(document.querySelector('.cm-git-gutter [data-hunk="80"]')));
       await wait(300);
       const landed = await page.evaluate(() => {
-        const box = document.querySelector("[data-file-scroll]");
         const peek = document.querySelector("[data-peek]");
-        if (!box || !peek) return null;
-        const air = Number.parseFloat(getComputedStyle(box).getPropertyValue("--gap-row")) || 0;
-        return {
-          fromTop: Math.round((peek.getBoundingClientRect().top - box.getBoundingClientRect().top - air) * 10) / 10,
-          said: peek.textContent?.trim() ?? "",
-          // The scroller is nowhere near its end, so 「at the top」 is
-          // something this file can actually do.
-          room: Math.round(box.scrollHeight - box.scrollTop - box.clientHeight),
-        };
+        if (!peek) return null;
+        return { said: peek.textContent?.trim() ?? "", top: Math.round(window.__cm.view().scrollDOM.scrollTop) };
       });
-      console.log(`peek at 80: ${JSON.stringify(landed)}`);
+      console.log(`peek at 80: from ${before80} ${JSON.stringify(landed)}`);
       if (landed === null || !landed.said.includes("old eighty")) {
-        fail("probe void: pressing the bar at line 80 opened no old text to measure (src/views/FileView.tsx)");
-      } else if (landed.room < 50) {
+        fail("probe void: pressing the bar at line 80 opened no old text to measure (src/lib/code/git.ts)");
+      } else if (landed.top !== before80) {
         fail(
-          `probe void: the file has ${landed.room}px left under the viewport, so 「scrolled to the top」 ` +
-            "cannot be told from 「scrolled to the end」 (lengthen the fixture)",
-        );
-      } else if (Math.abs(landed.fromTop) > 4) {
-        fail(
-          `the old text opened ${landed.fromTop}px below the top of the column — 「应该直接跳转到提示框的` +
-            "最上方」 (src/views/FileView.tsx, the peek's layout effect)",
+          `a peek opened mid-screen moved the file ${before80} → ${landed.top}px — 「点击后总是移动了我的视窗` +
+            "位置」: a peek already on screen moves nothing (src/lib/code/git.ts bringPeek)",
         );
       }
       await pressBar(80);
@@ -8325,6 +8316,7 @@ try {
               h: round(r.height),
               ink: getComputedStyle(el).backgroundColor,
               opacity: parseFloat(getComputedStyle(el).opacity),
+              on: el.hasAttribute("data-on"),
             };
           }),
           width: round(c.width),
@@ -8354,7 +8346,12 @@ try {
       } else {
         // **Translucent** (2026-09-16:「悬浮的滚动条在 git 状态条上完全看不
         // 见了」): the thumb has to read through a mark.
-        if (ruler.marks.some((m) => m.opacity > 0.75 || m.opacity < 0.3)) {
+        // The open peek's mark is the exception, at full ink (cm-e item
+        // 4): one mark, the place the walk is at.
+        if (ruler.marks.some((m) => m.on && m.opacity < 0.95)) {
+          fail(`the open hunk's ruler mark is painted at ${ruler.marks.find((m) => m.on).opacity} — it wears full ink (src/lib/code/theme.ts .cm-git-ruler > span[data-on])`);
+        }
+        if (ruler.marks.some((m) => !m.on && (m.opacity > 0.75 || m.opacity < 0.3))) {
           fail(
             `a ruler mark is painted at opacity ${ruler.marks.map((m) => m.opacity).join("/")} — the scrollbar's ` +
               "thumb has to read through it (src/views/FileView.tsx Ruler)",
@@ -8420,6 +8417,11 @@ try {
         // its target into the viewport), so the first spelling of this
         // measured a line that was already where it wanted it — and a
         // ruler mark wired to nothing at all went green on it.
+        // No peek open going in, so a peek after the press is the press's.
+        if ((await page.locator("[data-peek]").count()) > 0) {
+          await page.keyboard.press("Escape");
+          await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
+        }
         const where = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
           box.scrollTop = 0;
