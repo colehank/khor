@@ -2252,6 +2252,17 @@ impl LiveKind {
         ending_of(&dir, &meta, &state)
     }
 
+    /// A dead session's page ([`Ended`]); `None` while it is not dead.
+    pub fn ended(&self, id: &SessionId) -> Option<Ended> {
+        let ending = self.ending(id)?;
+        let dir = self.existing_dir(id).ok()?;
+        Some(Ended {
+            ending,
+            screen: crate::host::read_ring_file(&dir),
+            recent: crate::commands::read_saved(&dir).map(|s| s.recent).unwrap_or_default(),
+        })
+    }
+
     fn existing_dir(&self, id: &SessionId) -> Result<PathBuf, String> {
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         if !dir.join("meta.json").exists() {
@@ -2587,6 +2598,17 @@ fn ending_of(dir: &Path, meta: &Meta, state: &LiveState) -> Option<Ending> {
         return Some(Ending::Exit(code));
     }
     (backing(dir, meta) == Backing::Gone).then_some(Ending::HostGone)
+}
+
+/// **What a dead terminal row's page shows** (P5-SHELL items 1 and 2):
+/// how it ended, its last screen when the host left one (`ring.bin`), and
+/// the last commands its shell marked (`commands.json`, newest last) —
+/// the page draws the screen, else the commands.
+#[derive(Debug, Clone)]
+pub struct Ended {
+    pub ending: Ending,
+    pub screen: Option<crate::host::RingFile>,
+    pub recent: Vec<crate::commands::Command>,
 }
 
 /// Exit codes that are not a failure: the person's ^C (130) and a
@@ -5060,5 +5082,42 @@ mod tests {
         let rows = k.rows(|_| 0);
         let word = |id: &SessionId| rows.iter().find(|r| &r.id == id).unwrap().state.state;
         assert_eq!((word(&exited), word(&killed)), (State::Failed, State::Failed), "the word stays 失败");
+    }
+
+    /// **A dead row's page**: the last screen when the host left
+    /// `ring.bin`, and the commands either way — a host from before the
+    /// ring, or one killed before its first write, leaves only those.
+    #[test]
+    fn a_dead_rows_page_is_its_screen_or_its_commands() {
+        let root = tmp("ended");
+        let k = kind_at(&root);
+        let id = sid("shell/gone2");
+        k.register(&id, "shell", "x", Some(dead_pid()), None).unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        let ended = k.ended(&id).expect("dead");
+        assert_eq!(ended.ending, Ending::HostGone);
+        assert!(ended.screen.is_none() && ended.recent.is_empty(), "nothing left: nothing shown");
+        let command = crate::commands::Command {
+            n: 1,
+            text: Some("make".into()),
+            cwd: Some("/w".into()),
+            started_ms: 1,
+            ended_ms: Some(2),
+            exit: Some(2),
+            at: 0,
+            end_at: Some(10),
+            pane: None,
+            last_line: None,
+        };
+        crate::commands::write_saved(&dir, &crate::commands::Saved { recent: vec![command.clone()], ..Default::default() });
+        let ended = k.ended(&id).unwrap();
+        assert!(ended.screen.is_none());
+        assert_eq!(ended.recent, vec![command]);
+        let screen = crate::host::RingFile { form: crate::host::RING_FORM_SNAPSHOT, cols: 80, rows: 24, at_ms: 3, bytes: b"$ make".to_vec() };
+        crate::host::write_ring_file(&dir, &screen).unwrap();
+        assert_eq!(k.ended(&id).unwrap().screen, Some(screen));
+        let alive = sid("shell/alive2");
+        k.register(&alive, "shell", "z", Some(std::process::id()), None).unwrap();
+        assert!(k.ended(&alive).is_none(), "a live shell never reads the file");
     }
 }

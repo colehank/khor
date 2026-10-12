@@ -1829,6 +1829,9 @@ row-ran-failed = "{0} failed"
 # How a dead terminal row ended (P5-SHELL item 3).
 row-ended-exit = "Exit code {0}"
 row-ended-host = "Host was terminated"
+# A dead terminal row with no last screen: the commands it ran.
+ended-commands = "Recent commands"
+ended-commands-none = "No commands were recorded"
 day-unreachable = "Unreachable"
 reading-unreachable = "Down · last {0}"
 machine-cant-reach = "Can't reach {0}"

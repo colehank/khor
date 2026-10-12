@@ -63,7 +63,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termDrop, termDropCancel, termDropProgress, termDropStage, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
+import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termDrop, termDropCancel, termDropProgress, termDropStage, termEnded, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { offerTabAct } from "@/lib/tab-acts";
@@ -99,7 +99,11 @@ import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
 import { termBell } from "@/lib/term-bell";
 import { searchable, useFindHow, type FindHow } from "@/lib/term-find";
 import { covers, pathLinks, pathsOn, urlAt } from "@/lib/term-links";
-import { programOf } from "@/components/DoingLine";
+import { endedWord, programOf, QUIET_EXITS, shortDir } from "@/components/DoingLine";
+import type { EndedCommand } from "@/gen/bindings/EndedCommand";
+import type { EndedPage } from "@/gen/bindings/EndedPage";
+import type { EndedScreen } from "@/gen/bindings/EndedScreen";
+import { ago } from "@/words";
 import type { Doing } from "@/gen/bindings/Doing";
 import { tapAsks, termWake, useTermWake, watchesCursor } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
@@ -3653,5 +3657,171 @@ function KeyRowSeats({
       </BarSeat>
       {open && <BarSeat at="under">{row}</BarSeat>}
     </>
+  );
+}
+
+/**
+ * **A dead terminal row's page** (P5-SHELL items 1 and 2, the owner
+ * 2026-10-12): a shell whose host is gone opened to nothing — its screen
+ * lived in the host's memory. Its host now leaves `ring.bin`, and the
+ * page draws that last screen, read-only, on the muted ground, under the
+ * one sentence that says how it ended (`session-over`, the row's own
+ * cause). A host from before the file, or one killed before its first
+ * write, left only `commands.json`: the page lists those commands —
+ * command, directory, exit code, when — under the same sentence. A live
+ * shell never comes here; its host serves the ring as ever.
+ */
+export function EndedPane({ id, at }: { id: string; at: number }) {
+  // `undefined` while asked; `null` when nothing is dead here to show.
+  const [page, setPage] = useState<EndedPage | null | undefined>(undefined);
+  useEffect(() => {
+    let gone = false;
+    termEnded(id).then(
+      (p) => !gone && setPage(p),
+      () => !gone && setPage(null),
+    );
+    return () => {
+      gone = true;
+    };
+  }, [id, at]);
+  if (!page) return <div data-term-ended-wait className="min-h-0 flex-1 bg-card" />;
+  return (
+    <div data-term-ended={page.screen ? "screen" : "ledger"} className="flex min-h-0 flex-1 flex-col bg-card font-sans">
+      <p data-term-ended-why className="flex-none border-b border-border px-3 py-2 text-callout text-muted-foreground">
+        {msg.session_over(endedWord(page.ended))}
+      </p>
+      {page.screen ? <EndedScreenView screen={page.screen} /> : <EndedLedger recent={page.recent} />}
+    </div>
+  );
+}
+
+/** The last screen, read-only: written once into a terminal of the size
+    it was laid out for. **The columns stay the screen's** — a dead shell
+    cannot redraw at another width, and a reflowed prompt (a right-hand
+    segment, a box) comes apart — so only the rows follow the pane, and a
+    pane narrower than the screen pans sideways. No keys reach anything;
+    the cursor and any mouse mode the program left on are put away, so a
+    drag selects. */
+function EndedScreenView({ screen }: { screen: EndedScreen }) {
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    const mount = mountRef.current;
+    if (!box || !mount) return;
+    const font = fontOf(box);
+    const term = new Terminal({
+      allowProposedApi: true,
+      cols: screen.cols,
+      rows: screen.rows,
+      disableStdin: true,
+      cursorBlink: false,
+      cursorInactiveStyle: "none",
+      scrollback: termHistory(),
+      fontFamily: font.family,
+      fontSize: font.size,
+      lineHeight: 1,
+      // **The muted ground, opaque**: `--muted` is a wash over the card,
+      // and xterm paints its own background (a translucent one came out
+      // black), so it is handed the wash already laid on the card.
+      theme: { ...themeOf(box), background: laidOn(getComputedStyle(box).backgroundColor, getComputedStyle(box.parentElement ?? box).backgroundColor) },
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.loadAddon(new UnicodeGraphemesAddon());
+    term.loadAddon(new ImageAddon());
+    term.open(mount);
+    (box as HTMLDivElement & { __xterm?: Terminal }).__xterm = term;
+    // Fitted only while it stands: a write's callback or the observer
+    // can land after the pane went away.
+    let alive = true;
+    const refit = () => {
+      if (!alive || box.clientHeight === 0) return;
+      const d = fit.proposeDimensions();
+      if (d && d.rows > 0 && d.rows !== term.rows) term.resize(screen.cols, d.rows);
+    };
+    term.write(b64bytes(screen.bytes));
+    term.write(ENDED_MODES_OFF, () => {
+      if (!alive) return;
+      refit();
+      term.scrollToBottom();
+      box.setAttribute("data-term-ended-drawn", "");
+    });
+    const seen = new ResizeObserver(refit);
+    seen.observe(box);
+    return () => {
+      alive = false;
+      seen.disconnect();
+      term.dispose();
+    };
+  }, [screen]);
+  return (
+    <div
+      data-term-ended-screen
+      ref={boxRef}
+      className="relative min-h-0 flex-1 overflow-x-auto overflow-y-hidden bg-muted p-1 text-[var(--term-fg)]"
+      style={
+        {
+          "--term-fg": "var(--card-foreground)",
+          fontFamily: "var(--font-term)",
+          fontSize: "var(--text-term)",
+          lineHeight: "var(--text-term--line-height)",
+        } as React.CSSProperties
+      }
+    >
+      <div ref={mountRef} className="h-full w-max min-w-full" />
+    </div>
+  );
+}
+
+/** A CSS colour `over` (possibly translucent) laid on an opaque `under`,
+    as `rgb(…)`. */
+function laidOn(over: string, under: string): string {
+  const parts = (c: string) => (c.match(/[\d.]+/g) ?? []).map(Number);
+  const [r, g, b, a = 1] = parts(over);
+  const [R = 255, G = 255, B = 255] = parts(under);
+  if (r === undefined || g === undefined || b === undefined) return under;
+  const mix = (x: number, y: number) => Math.round(x * a + y * (1 - a));
+  return `rgb(${mix(r, R)}, ${mix(g, G)}, ${mix(b, B)})`;
+}
+
+/** The cursor hidden and every mouse report off, after the last screen. */
+const ENDED_MODES_OFF = "\x1b[?25l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l";
+
+/** The commands a dead shell marked, newest first: a plain list on the
+    list standard's corners — the command and its exit code, its
+    directory and when it ended. */
+function EndedLedger({ recent }: { recent: EndedCommand[] }) {
+  if (recent.length === 0) {
+    return (
+      <p data-term-ended-none className="p-4 text-center text-callout text-muted-foreground">
+        {gui.ended_commands_none}
+      </p>
+    );
+  }
+  return (
+    <ul data-term-ended-ledger aria-label={gui.ended_commands} className="min-h-0 flex-1 overflow-y-auto">
+      {recent.map((c, i) => (
+        <li key={`${c.started_ms}-${i}`} data-term-ended-row={i} className="flex flex-col gap-0.5 border-b border-border px-3 py-2">
+          <span className="flex min-w-0 items-baseline gap-3">
+            <span data-term-ended-command className="min-w-0 flex-1 truncate text-body" style={{ fontFamily: "var(--font-term)" }}>
+              {c.text}
+            </span>
+            {c.exit !== null && (
+              <span
+                data-term-ended-exit={c.exit}
+                className={cn("flex-none text-caption tabular-nums", c.exit !== 0 && !QUIET_EXITS.includes(c.exit) ? "text-[var(--state-failed)]" : "text-muted-foreground")}
+              >
+                {gui.row_ended_exit(String(c.exit))}
+              </span>
+            )}
+          </span>
+          <span className="flex min-w-0 items-baseline gap-3 text-caption text-muted-foreground">
+            <span className="min-w-0 flex-1 truncate">{c.cwd ? shortDir(c.cwd) : null}</span>
+            <span className="flex-none tabular-nums">{ago(c.ended_ms ?? c.started_ms)}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

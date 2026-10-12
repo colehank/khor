@@ -5055,6 +5055,12 @@ impl Node {
         self.live.ending(id)
     }
 
+    /// A dead session's page (`live::Ended`, P5-SHELL items 1 and 2): its
+    /// last screen when its host left one, else the commands it ran.
+    pub fn ended(&self, id: &SessionId) -> Option<live::Ended> {
+        self.live.ended(id)
+    }
+
     /// The registry dir behind a live session id, for attach clients.
     /// **None on a machine that hosts nothing**: no session's host lives
     /// on it, so nothing there is an address to attach to.

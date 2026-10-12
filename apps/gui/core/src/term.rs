@@ -640,6 +640,70 @@ pub fn term_attach(id: &str) -> Result<TermStart, String> {
     })
 }
 
+/// **A dead terminal row's page** (P5-SHELL items 1 and 2): how it ended,
+/// its last screen when its host left one (`ring.bin`), else the last
+/// commands its shell marked. Read only for a dead row of this machine's;
+/// a live one is attached as ever, and never reads the file.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct EndedPage {
+    pub ended: crate::RowEnding,
+    pub screen: Option<EndedScreen>,
+    /// Newest first.
+    pub recent: Vec<EndedCommand>,
+}
+
+/// The last screen: what a reconnecting face would have been handed, and
+/// the size it was laid out for.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct EndedScreen {
+    pub cols: u16,
+    pub rows: u16,
+    /// base64 of the bytes, as [`TermStart::bytes`].
+    pub bytes: String,
+    #[ts(type = "number")]
+    pub at_ms: u64,
+}
+
+/// One command from the dead session's ledger (`commands.json`).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct EndedCommand {
+    pub text: String,
+    pub cwd: Option<String>,
+    pub exit: Option<i32>,
+    #[ts(type = "number")]
+    pub started_ms: u64,
+    #[ts(type = "number | null")]
+    pub ended_ms: Option<u64>,
+}
+
+/// [`EndedPage`] for `id`; `None` while the session is not dead here.
+pub fn ended(root: &Path, id: &str) -> Result<Option<EndedPage>, String> {
+    let n = Node::open(root.to_path_buf())?;
+    Ok(n.ended(&SessionId(id.to_owned())).map(|e| EndedPage {
+        ended: e.ending.into(),
+        screen: e.screen.map(|r| EndedScreen {
+            cols: r.cols,
+            rows: r.rows,
+            bytes: B64.encode(r.bytes),
+            at_ms: r.at_ms,
+        }),
+        recent: e
+            .recent
+            .into_iter()
+            .rev()
+            .filter_map(|c| {
+                Some(EndedCommand {
+                    text: c.text?,
+                    cwd: c.cwd,
+                    exit: c.exit,
+                    started_ms: c.started_ms,
+                    ended_ms: c.ended_ms,
+                })
+            })
+            .collect(),
+    }))
+}
+
 /// One command line from a machine's history (roadmap 2.6): its newest
 /// run, and how many times it ran.
 #[derive(Debug, Clone, Serialize, TS)]

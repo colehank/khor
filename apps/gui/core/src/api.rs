@@ -699,6 +699,9 @@ pub fn answer(
             Ok("null".to_owned())
         }
         "term_attach" => to_json(&crate::term::term_attach(&arg("id")?)?),
+        // A dead terminal row's page (P5-SHELL): its last screen or its
+        // commands. A read.
+        "term_ended" => to_json(&crate::term::ended(root, &arg("id")?)?),
         "term_stream" => to_json(&crate::term::term_stream(&arg("id")?, num("since")?)?),
         // A machine's commands, searched (roadmap 2.6). A read.
         "term_history" => to_json(&rt.block_on(crate::term::history(
