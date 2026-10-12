@@ -9,7 +9,6 @@
 | 项 | 出处 | 车道 |
 |---|---|---|
 | Phase 5 只留广播，`@机器:路径` 直推，不在线就拒绝 | audit/STORE-BRIEF.md Phase 5 | p5-at（audit/P5-AT-BRIEF.md） |
-| Phase 5 死掉的 shell | 同上「a shell that died」 | p5-shell（audit/P5-SHELL-BRIEF.md） |
 
 ## 问 — 等负责人定
 
