@@ -41,6 +41,7 @@
 | 浏览器暂存的上传，草稿放弃后留在 `.khor/uploads`（拒绝时故意留着让人重发） | audit/p5-at.md |
 | 新旧 khor 混跑没实测：老端轮里点名 `chat/<机器>`，新端答 unknown-doc，老端那一轮停在那 | audit/p5-at.md「Old khor」 |
 | 推送的目标判定用一轮同步：目标多时发送前要等每台一轮 | audit/p5-at.md |
+| `smoke.mjs` 走不通：第 4 步要的机器搜索框藏在 glass 头的搜索钮后面，p5 之前就停 | audit/p5-at.md |
 | 终端 5.3 Windows ConPTY | audit/TERM-ROADMAP.md |
 | 官网可交互演示（录制回放） | memory khor-site-sandbox |
 | iroh-blobs 替换手写持有者+分片协议 | 10-12 讨论；持有者跑稳后评估 |
