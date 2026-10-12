@@ -1728,15 +1728,7 @@ pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
 /// target not reachable is named, and nothing was written).
 pub async fn post(root: &Path, typed: &str, files: &[String]) -> Result<String, String> {
     let files: Vec<std::path::PathBuf> = files.iter().map(std::path::PathBuf::from).collect();
-    let out = open(root)?.post(typed, &files).await;
-    // A refused message leaves no staged upload behind (`stage_upload`).
-    if out.is_err() {
-        let staging = root.join(".khor").join("uploads");
-        for f in files.iter().filter(|f| f.starts_with(&staging)) {
-            let _ = std::fs::remove_file(f);
-        }
-    }
-    out
+    open(root)?.post(typed, &files).await
 }
 
 /// Whether claude on **this** machine is set up to tell khor what it is
@@ -2278,6 +2270,30 @@ pub struct ChatMsgRow {
     /// that was not the sender but a machine that had it (BCAST-BRIEF's
     /// holder), by its shown name; `None` otherwise.
     pub via: Option<String>,
+    /// The machines this message was pushed to (STORE-BRIEF phase 5), in
+    /// the order named, each by **today's** name and with its own move.
+    pub to: Vec<ChatTarget>,
+    /// The words said with a files message; `None` otherwise.
+    pub note: Option<String>,
+    /// Whether this machine is one of `to`: its file comes by itself,
+    /// nobody presses 接收.
+    pub pushed: bool,
+}
+
+/// One machine a message was pushed to, as the bubble shows it.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ChatTarget {
+    /// Its device id — what the `@机器` filter keys on.
+    pub device: String,
+    /// Its name as shown today (a rename shows the new name).
+    pub name: String,
+    /// The directory named there; `None` for its receive location.
+    pub path: Option<String>,
+    /// Its move of the files: `moving`, `landed`, `failed`, `stopped`;
+    /// `None` before it has started (or for a line).
+    pub step: Option<String>,
+    pub why: Option<String>,
+    pub landed: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -2328,6 +2344,23 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
                 khor_node::MsgBody::Unknown(k) => (None, None, Some(k)),
             };
             let here = face.as_ref().and_then(|f| f.here.clone());
+            let named = |id: &str| names.get(id).cloned().unwrap_or_else(|| id.chars().take(8).collect());
+            let to: Vec<ChatTarget> = m
+                .to
+                .iter()
+                .map(|t| {
+                    let fate = m.fates.get(&t.device);
+                    ChatTarget {
+                        device: t.device.clone(),
+                        name: named(&t.device),
+                        path: Some(t.path.clone()).filter(|p| !p.is_empty()),
+                        step: fate.map(|f| f.step.key().to_owned()),
+                        why: fate.map(|f| f.why.clone()).filter(|w| !w.is_empty()),
+                        landed: fate.map(|f| f.landed.clone()).unwrap_or_default(),
+                    }
+                })
+                .collect();
+            let pushed = m.to.iter().any(|t| t.device == me);
             let via = here
                 .as_ref()
                 .filter(|f| !f.via.is_empty() && f.via != m.from.id)
@@ -2351,6 +2384,9 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
                 got: face.as_ref().map(|f| f.got),
                 of: face.as_ref().map(|f| f.of),
                 via,
+                to,
+                note: Some(m.note).filter(|n| !n.is_empty()),
+                pushed,
             }
         })
         .collect();
@@ -2518,7 +2554,9 @@ fn percent_decode(s: &str) -> Option<String> {
 /// path answered — the shared body behind the web face's and the dev
 /// bridge's upload routes. The composer posts that path with its
 /// message ([`post`]); the staged file is the offer's source from then
-/// on, and a post that is refused takes it away (no orphan).
+/// on. A refused post keeps it: the draft and its files stay for the
+/// next try (a draft abandoned leaves its staged copy under
+/// `.khor/uploads`).
 pub fn stage_upload(root: &Path, name: &str, body: &mut dyn std::io::Read) -> Result<String, String> {
     save_upload(root, name, body).map(|p| p.display().to_string())
 }

@@ -4930,6 +4930,19 @@ bcast-landed-via = "已收到 · 来自 {0}"
 # The sender's own seat on its offer: nothing to receive, only the count.
 bcast-own = "自己发的"
 bcast-count = "{0}/{1} 台已收到"
+# 一个频道（STORE-BRIEF 第五阶段）：框里打 @ 弹出机器列表，选一台就在框里写下
+# @机器 ；也可以直接打 @机器:路径。气泡上 @机器 是推送的目标，后面是那台的进度。
+# 按气泡上的 @机器 只看推给它的消息，顶上那一条说正在只看哪台，按 × 看全部。
+at-pick-title = "推送给"
+at-pick-hint = "选一台机器，或接着打 :路径"
+at-pick-none = "没有叫这个名字的机器"
+at-pushed = "已推送"
+at-pushing = "推送中"
+at-push-failed = "推送失败：{0}"
+at-push-stopped = "推送已取消"
+at-only = "只看推给 {0} 的"
+at-only-clear = "看全部"
+at-to-here = "推给本机"
 # The composer's other verb (GUI 发文件批): hand a file to `send`. The
 # label names the action; in the app a native picker answers with a
 # real path, in a browser the bytes upload to the sending machine first
