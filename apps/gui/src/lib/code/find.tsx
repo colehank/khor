@@ -1,7 +1,8 @@
 // ⌘F inside the file (CM-BRIEF step 1): the editor's own search, in the
 // terminal's find bar (item 70, F4.8) — a glass capsule in a row of its
 // own above the text, right-aligned, pushing the text down rather than
-// lying over what it found: the field, the count, case and regex, the
+// lying over what it found: the field, the count, case, whole words
+// (the file's alone: a terminal's search has no word edge) and regex, the
 // two steps, the way out. Same words, same marks, same keys (⏎ / ⇧⏎,
 // ⌘G / ⇧⌘G, esc), so a person who found something in a terminal finds
 // it in a file the same way.
@@ -76,11 +77,12 @@ function seek(view: EditorView, q: SearchQuery, from: number) {
 function FindBar({ view, state }: { view: EditorView; state: EditorState }) {
   const q = getSearchQuery(state);
   const hits = hitsOf(state, q);
-  const set = (next: Partial<{ search: string; caseSensitive: boolean; regexp: boolean }>) => {
+  const set = (next: Partial<{ search: string; caseSensitive: boolean; regexp: boolean; wholeWord: boolean }>) => {
     const nq = new SearchQuery({
       search: next.search ?? q.search,
       caseSensitive: next.caseSensitive ?? q.caseSensitive,
       regexp: next.regexp ?? q.regexp,
+      wholeWord: next.wholeWord ?? q.wholeWord,
     });
     view.dispatch({ effects: setSearchQuery.of(nq) });
     seek(view, nq, view.state.selection.main.from);
@@ -125,6 +127,18 @@ function FindBar({ view, state }: { view: EditorView; state: EditorState }) {
           onClick={() => set({ caseSensitive: !q.caseSensitive })}
         >
           <span aria-hidden className="font-sans text-caption font-label">Aa</span>
+        </GlassItem>
+        {/* Whole words (cm-d item 3): VS Code's third toggle, between
+            case and regex as there. */}
+        <GlassItem
+          data-code-find-word
+          onMouseDown={(e) => e.preventDefault()}
+          aria-label={gui.match_word}
+          aria-pressed={q.wholeWord}
+          on={q.wholeWord}
+          onClick={() => set({ wholeWord: !q.wholeWord })}
+        >
+          <span aria-hidden className="font-sans text-caption font-label underline underline-offset-2">ab</span>
         </GlassItem>
         <GlassItem
           data-code-find-regex

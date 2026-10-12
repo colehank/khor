@@ -67,6 +67,13 @@ export const codeTheme = EditorView.theme({
     padding: "0 var(--gap-xxs) 0 var(--gap-in)",
     fontVariantNumeric: "tabular-nums",
   },
+  // **The caret's line** (cm-d item 3): the lightest neutral fill, the
+  // ground a hover lies on — under the text, never read as a shape; the
+  // brand's wash is the line a link asked for, and stays the only one.
+  // Before `.cm-anchored`, which wins where the two are one line.
+  ".cm-activeLine": { backgroundColor: "var(--fill)" },
+  ".cm-activeLineGutter": { backgroundColor: "var(--fill)", color: "var(--foreground)" },
+  ".cm-lineNumbers .cm-activeLineGutter": { color: "var(--foreground)" },
   // **The line a link or the terminal asked for** (`goLine`): the brand's
   // wash, which is exactly its post — 「垫在被定位到的那一行」(README 颜色
   // 第 3 条) — and never a selection or a hover.
@@ -96,6 +103,11 @@ export const codeTheme = EditorView.theme({
     padding: "0 var(--gap-xxs)",
     margin: "0 var(--gap-xxs)",
   },
+  // **The selected word's other places**: the search hit's own grey,
+  // since they are what ⌘F would find — the selection itself is the
+  // system's, native.
+  ".cm-selectionMatch": { backgroundColor: "var(--fill-strong)", borderRadius: "var(--radius-xs)" },
+  ".cm-searchMatch .cm-selectionMatch": { backgroundColor: "transparent" },
   // Search matches: the neutral fills a selection is not (the selection
   // is the system's, native).
   ".cm-searchMatch": { backgroundColor: "var(--fill-strong)", borderRadius: "var(--radius-xs)" },

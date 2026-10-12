@@ -5,9 +5,10 @@
 //
 // **What CodeMirror is here for is correct text editing, not an IDE**
 // (「不提供任何自动补全什么的」 stands): line numbers, folding, ⌘F, undo,
-// IME composition, tab and newline indentation — and nothing that guesses
-// what you meant to type: no completion, no auto-closed brackets or tags,
-// no bracket-matching highlight, no second caret.
+// IME composition, tab and newline indentation, the caret's line, the
+// selected word's other places, room past the last line — and nothing
+// that guesses what you meant to type: no completion, no auto-closed
+// brackets or tags, no bracket-matching highlight, no second caret.
 //
 // **The caret and the selection are the system's** (no `drawSelection`):
 // the IME's marked text, the iOS handles and loupe and the selection
@@ -17,7 +18,17 @@ import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirro
 import { getChunks, unifiedMergeView } from "@codemirror/merge";
 import { codeFolding, foldGutter, foldKeymap, indentUnit } from "@codemirror/language";
 import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, StateField, Transaction, type Extension } from "@codemirror/state";
-import { Decoration, EditorView, keymap, lineNumbers, type DecorationSet } from "@codemirror/view";
+import { highlightSelectionMatches } from "@codemirror/search";
+import {
+  Decoration,
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+  scrollPastEnd,
+  type DecorationSet,
+} from "@codemirror/view";
 import { useEffect, useLayoutEffect, useRef } from "react";
 
 import { IconChevronDown, IconChevronRight } from "@/components/icons";
@@ -82,6 +93,16 @@ function base(): Extension {
     codeFolding({ placeholderText: "…" }),
     foldGutter({ markerDOM: foldMarker }),
     history(),
+    // The line the caret is on, reading or writing (cm-d item 3).
+    highlightActiveLine(),
+    highlightActiveLineGutter(),
+    // A selected word's other places in what is shown: whole words of
+    // two characters or more, at most `maxMatches` (past it, none).
+    highlightSelectionMatches({ minSelectionLength: 2, wholeWords: true, maxMatches: 100 }),
+    // The last line can be scrolled to the top: with the keyboard up,
+    // the foot of a file is somewhere to type, not under the keys
+    // (KB-CARET rule 1).
+    scrollPastEnd(),
     EditorState.allowMultipleSelections.of(false),
     codeHighlight,
     codeTheme,

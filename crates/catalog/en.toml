@@ -2656,6 +2656,7 @@ match-prev = "Previous match"
 match-next = "Next match"
 match-case = "Match case"
 match-regex = "Use regular expression"
+match-word = "Match whole word"
 
 usage-title = "Token usage"
 usage-view-day = "By day"

@@ -265,6 +265,64 @@ try {
         await page.screenshot({ path: join(dir, `rs-tab-${theme}-${width}.png`) });
         await page.close();
       }
+      // Item 3: the caret's line, the selected word's other places, the
+      // whole-word toggle, and the last line able to reach the top.
+      {
+        const page = await open("ts");
+        const r = await page.evaluate(() => {
+          const v = window.__view;
+          v.focus();
+          // `draft` on line 6 (the parameter), selected.
+          const l = v.state.doc.line(6);
+          const at = l.from + l.text.indexOf("draft");
+          v.dispatch({ selection: { anchor: at, head: at + 5 }, userEvent: "select" });
+          const one = (sel) => [...document.querySelectorAll(sel)].map((e) => e.textContent);
+          return { active: one(".cm-activeLine"), gutter: one(".cm-lineNumbers .cm-activeLineGutter"), matches: one(".cm-selectionMatch") };
+        });
+        judge(r.active.length === 1 && r.active[0].includes("reread(") && r.gutter.join() === "6", `${width} ts: the caret's line ${JSON.stringify(r.active)}, its number ${JSON.stringify(r.gutter)} — line 6`);
+        // `draft` stands three more times as a word (lines 8 ×2, … ) and
+        // never inside `Draft` (case) — whole words, case as typed.
+        judge(r.matches.length >= 2 && r.matches.every((m) => m === "draft"), `${width} ts: the selection's other places ${JSON.stringify(r.matches)} — every other \`draft\``);
+        await page.screenshot({ path: join(dir, `ts-active-matches-${theme}-${width}.png`) });
+        // One letter selected says nothing (minSelectionLength 2).
+        const lone = await page.evaluate(() => {
+          const v = window.__view;
+          const l = v.state.doc.line(6);
+          v.dispatch({ selection: { anchor: l.from + 7, head: l.from + 8 }, userEvent: "select" });
+          return document.querySelectorAll(".cm-selectionMatch").length;
+        });
+        judge(lone === 0, `${width} ts: one letter selected marks ${lone} other places — none`);
+        // ⌘F, `text`: seven without whole words, five with — the two
+        // inside `fetchFileText` drop out.
+        await page.evaluate(() => {
+          const v = window.__view;
+          v.dispatch({ selection: { anchor: 0 } });
+          document.querySelector("[data-code-view]").__find();
+        });
+        await page.waitForSelector("[data-code-find-input]");
+        await page.fill("[data-code-find-input]", "text");
+        await page.waitForTimeout(150);
+        const loose = await page.locator("[data-code-find-hits]").textContent();
+        await page.locator("[data-code-find-word]").click();
+        await page.waitForTimeout(150);
+        const whole = await page.locator("[data-code-find-hits]").textContent();
+        const pressed = await page.locator("[data-code-find-word]").getAttribute("aria-pressed");
+        const total = (t) => Number(t.split("/").pop());
+        judge(total(loose) === 7 && total(whole) === 5 && pressed === "true", `${width} ts: 「text」 finds ${loose} loose, ${whole} as a whole word (pressed ${pressed}) — 7 and 5`);
+        await page.screenshot({ path: join(dir, `ts-find-word-${theme}-${width}.png`) });
+        // scrollPastEnd: scrolled to its end, the last line stands near the
+        // top of the scroller, not at its foot.
+        const end = await page.evaluate(async () => {
+          const v = window.__view;
+          v.scrollDOM.scrollTop = v.scrollDOM.scrollHeight;
+          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+          const last = v.lineBlockAt(v.state.doc.length);
+          const top = v.documentTop + last.top - v.scrollDOM.getBoundingClientRect().top;
+          return { top: Math.round(top), room: v.scrollDOM.clientHeight };
+        });
+        judge(end.top < end.room / 3, `${width} ts: at the end the last line stands ${end.top}px from the top of ${end.room} — in the top third`);
+        await page.close();
+      }
     }
     await server.close();
     if (bad) process.exitCode = 1;

@@ -5095,6 +5095,8 @@ match-next = "下一个"
 # the words Terminal.app's and VS Code's find bars use.
 match-case = "区分大小写"
 match-regex = "使用正则表达式"
+# 文件查找栏的第三个开关（cm-d）：只找完整的词，VS Code 的「全字匹配」。终端的查找栏没有它。
+match-word = "全字匹配"
 
 # ── 额度详情页下半张:花掉的 token ──────────────────────────────
 #
