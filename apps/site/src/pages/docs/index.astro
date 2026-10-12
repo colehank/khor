@@ -1,0 +1,19 @@
+---
+import Docs from "../../layouts/Docs.astro";
+import { docs } from "../../site";
+
+const pages = await docs();
+---
+
+<Docs title="文档" description="安装 khor、把设备连成一张网、开会话、自己跑中继">
+  <div class="overview">
+    {
+      pages.map((p) => (
+        <a class="overview-row" href={`/docs/${p.id}/`}>
+          <strong>{p.data.title}</strong>
+          <span>{p.data.summary}</span>
+        </a>
+      ))
+    }
+  </div>
+</Docs>

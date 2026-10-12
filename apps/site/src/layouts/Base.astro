@@ -1,0 +1,26 @@
+---
+import "../styles/site.css";
+import mark from "../../../gui/src-tauri/icons/src/mandala-16.svg";
+import { TAGLINE } from "../site";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const { title, description = TAGLINE } = Astro.props;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title ? `${title} · khor` : `khor — ${TAGLINE}`}</title>
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={mark.src} />
+    <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

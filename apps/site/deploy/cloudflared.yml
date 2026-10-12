@@ -1,0 +1,16 @@
+# /etc/cloudflared/config.yml on the machine that hosts the site.
+#
+# Only the site goes through the tunnel. A relay must not: Cloudflare's
+# edge is outside the mainland, so a domestic relay behind it would
+# carry every packet across the border twice, and the tunnel does not
+# carry what a relay needs beyond HTTP. Relays get their own DNS-only
+# records (relay-*.khor.cloud) pointing straight at their machines.
+tunnel: khor-site
+credentials-file: /etc/cloudflared/khor-site.json
+
+ingress:
+  - hostname: khor.cloud
+    service: http://127.0.0.1:8787
+  - hostname: www.khor.cloud
+    service: http://127.0.0.1:8787
+  - service: http_status:404

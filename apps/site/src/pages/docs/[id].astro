@@ -1,0 +1,25 @@
+---
+import { render } from "astro:content";
+import Docs from "../../layouts/Docs.astro";
+import { docs } from "../../site";
+
+export async function getStaticPaths() {
+  const pages = await docs();
+  return pages.map((page, i) => ({
+    params: { id: page.id },
+    props: { page, prev: pages[i - 1], next: pages[i + 1] },
+  }));
+}
+const { page, prev, next } = Astro.props;
+const { Content } = await render(page);
+---
+
+<Docs title={page.data.title} description={page.data.summary} current={page.id}>
+  <article class="prose">
+    <Content />
+  </article>
+  <nav class="turn" aria-label="上一篇与下一篇">
+    {prev ? <a href={`/docs/${prev.id}/`}><span>上一篇</span>{prev.data.title}</a> : <span />}
+    {next && <a class="turn-next" href={`/docs/${next.id}/`}><span>下一篇</span>{next.data.title}</a>}
+  </nav>
+</Docs>

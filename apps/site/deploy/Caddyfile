@@ -1,0 +1,26 @@
+# The origin behind the tunnel: static files on loopback, nothing
+# listening on a public port. cloudflared is the only way in.
+#
+# KHOR_SITE_ROOT is where deploy/push.sh lands the build (default
+# /srv/khor-site); /dl inside it is the install mirror.
+http://khor.cloud:8787, http://www.khor.cloud:8787 {
+	bind 127.0.0.1
+	root * {$KHOR_SITE_ROOT:/srv/khor-site}
+	encode zstd gzip
+
+	@www host www.khor.cloud
+	redir @www https://khor.cloud{uri} permanent
+
+	# Hashed by the build, so they never change under one name.
+	header /_astro/* Cache-Control "public, max-age=31536000, immutable"
+	# The mirror carries one version under fixed names; a long edge
+	# cache would keep serving the release before last.
+	header /dl/* Cache-Control "public, max-age=300"
+	header /install.sh Cache-Control "public, max-age=300"
+
+	handle_errors {
+		rewrite * /404.html
+		file_server
+	}
+	file_server
+}

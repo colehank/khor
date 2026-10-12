@@ -1,0 +1,127 @@
+---
+import Base from "../layouts/Base.astro";
+import Mark from "../components/Mark.astro";
+import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
+import { INSTALL, REPO, TAGLINE } from "../site";
+
+// The six state words, in the order the app lists them.
+const words = [
+  ["busy", "忙碌"],
+  ["blocked", "待批"],
+  ["done", "完成"],
+  ["errored", "中断"],
+  ["failed", "失败"],
+  ["idle", "空闲"],
+];
+---
+
+<Base>
+  <header class="bar">
+    <Mark />
+    <nav>
+      <a class="bar-link" href="/docs/">文档</a>
+      <a class="bar-link" href={REPO}>GitHub</a>
+    </nav>
+  </header>
+
+  <main class="home">
+    <section class="hero">
+      <img src={icon.src} alt="" width="96" height="96" />
+      <h1>khor</h1>
+      <p class="tagline">{TAGLINE}</p>
+      <div class="cmd">
+        <span class="cmd-prompt">$</span>
+        <code id="install">{INSTALL}</code>
+        <button class="btn" type="button" data-copy="install">复制</button>
+      </div>
+      <p class="hero-note">Linux 与 macOS，不需要 root</p>
+      <a class="btn btn-primary" href="/docs/install/">开始使用</a>
+    </section>
+
+    <section class="grid3">
+      <div class="group">
+        <h2>一张网，没有中心</h2>
+        <p>每台机器既是客户端也是服务器。配对任意一台就入网，数据只在你自己的设备之间流动；中继只转发，不存内容</p>
+      </div>
+      <div class="group">
+        <h2>所有会话，一个列表</h2>
+        <p>shell、智能体、对话、文件传输在同一个列表里，用同一套状态词</p>
+        <ul class="words">
+          {words.map(([key, word]) => <li style={`color: var(--state-${key})`}>{word}</li>)}
+        </ul>
+      </div>
+      <div class="group">
+        <h2>命令行与界面等价</h2>
+        <p>同一个后端。界面上能做的，命令行都能做</p>
+      </div>
+    </section>
+
+    <h2 class="section-title">三步</h2>
+    <section class="group rows">
+      <div class="row">
+        <span class="row-n">1</span>
+        <div>
+          <h3>安装</h3>
+          <p>每台设备上跑一遍，装完它就常驻</p>
+          <pre><code>{INSTALL}</code></pre>
+        </div>
+      </div>
+      <div class="row">
+        <span class="row-n">2</span>
+        <div>
+          <h3>入网</h3>
+          <p>在已经装好的那台上出一张票，在新机器上用掉它。票 15 分钟内有效，只能用一次</p>
+          <pre><code>khor invite
+khor pair &lt;票&gt;</code></pre>
+        </div>
+      </div>
+      <div class="row">
+        <span class="row-n">3</span>
+        <div>
+          <h3>打开</h3>
+          <p>发一个链接，拿手机或者别的电脑打开，就是整张网</p>
+          <pre><code>khor web</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <h2 class="section-title">能做什么</h2>
+    <section class="group rows features">
+      <div class="row">
+        <h3>监控</h3>
+        <p>每台机器的 CPU、GPU、内存、磁盘，每个会话的状态</p>
+      </div>
+      <div class="row">
+        <h3>发起</h3>
+        <p>在任意一台设备上开会话、传文件、借另一台机器的网</p>
+      </div>
+      <div class="row">
+        <h3>智能体</h3>
+        <p>Claude Code、Codex 的会话装上就出现在列表里；有动作等你准许的排在最前</p>
+      </div>
+      <div class="row">
+        <h3>网页脸</h3>
+        <p>任一台机器出一张网页，手机上什么都不用装</p>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span>坛城（Kyil-khor），意为连接</span>
+      <nav>
+        <a href="/docs/">文档</a>
+        <a href={REPO}>GitHub</a>
+      </nav>
+    </footer>
+  </main>
+</Base>
+
+<script>
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
+    button.addEventListener("click", async () => {
+      const source = document.getElementById(button.dataset.copy!);
+      await navigator.clipboard.writeText(source?.textContent ?? "");
+      button.textContent = "已复制";
+      setTimeout(() => (button.textContent = "复制"), 1600);
+    });
+  }
+</script>
