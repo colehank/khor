@@ -323,6 +323,43 @@ try {
         judge(end.top < end.room / 3, `${width} ts: at the end the last line stands ${end.top}px from the top of ${end.room} — in the top third`);
         await page.close();
       }
+      // Item 4: a TOML file (a stream mode, no tree) folds by indent; a
+      // TypeScript file still folds by its tree.
+      {
+        const page = await open("toml");
+        await page.waitForFunction(() => window.__view.state.facet(window.__fold.foldService).length > 0, null, { timeout: 3000 }).catch(() => {});
+        const r = await page.evaluate(() => {
+          const v = window.__view;
+          const { foldable, foldCode, foldService } = window.__fold;
+          const at = (n) => {
+            const l = v.state.doc.line(n);
+            const f = foldable(v.state, l.from, l.to);
+            return f && { from: v.state.doc.lineAt(f.from).number, to: v.state.doc.lineAt(f.to).number };
+          };
+          const out = { services: v.state.facet(foldService).length, section: at(10), list: at(13), flat: at(1), leaf: at(11) };
+          v.dispatch({ selection: { anchor: v.state.doc.line(10).from } });
+          foldCode(v);
+          out.placeholders = document.querySelectorAll(".cm-foldPlaceholder").length;
+          out.markers = document.querySelectorAll(".cm-foldGutter [data-fold]").length;
+          return out;
+        });
+        judge(
+          r.services === 1 && r.section?.from === 10 && r.section?.to === 16 && r.list?.from === 13 && r.list?.to === 15 && r.flat === null && r.leaf === null && r.placeholders === 1,
+          `${width} toml: by indent ${JSON.stringify(r)} — [workspace.metadata.release] folds 10–16, its list 13–15 (the closing bracket stands level with it), a flat section and a leaf nothing; folded once`,
+        );
+        await page.screenshot({ path: join(dir, `toml-folded-${theme}-${width}.png`) });
+        await page.close();
+        const ts = await open("ts");
+        const t = await ts.evaluate(() => {
+          const v = window.__view;
+          const { foldable, foldService } = window.__fold;
+          const l = v.state.doc.line(6);
+          const f = foldable(v.state, l.from, l.to);
+          return { services: v.state.facet(foldService).length, to: f && f.to, closer: v.state.doc.line(10).from, indentEnd: v.state.doc.line(9).to };
+        });
+        judge(t.services === 0 && t.to === t.closer, `${width} ts: ${JSON.stringify(t)} — no indent service; reread() folds by its tree, up to the \`}\``);
+        await ts.close();
+      }
     }
     await server.close();
     if (bad) process.exitCode = 1;

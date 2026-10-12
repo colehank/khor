@@ -6,6 +6,7 @@
 //   #ts    a TypeScript file, caret on a word that recurs — the active
 //          line and the selection's other matches (item 3)
 //   #toml  a TOML file (a legacy mode, no tree) — folded by indent (item 4)
+import { foldable, foldCode, foldService } from "@codemirror/language";
 import type { EditorView } from "@codemirror/view";
 import ReactDOM from "react-dom/client";
 
@@ -79,6 +80,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <CodeEditor path={s.path} text={s.text} editable />
   </div>,
 );
+
+// What the driver needs from CodeMirror itself, which a page script
+// cannot import.
+(window as unknown as { __fold: unknown }).__fold = { foldable, foldCode, foldService };
 
 // The view, once the editor has put it on its box.
 const wait = () => {

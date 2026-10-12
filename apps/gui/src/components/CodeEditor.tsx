@@ -38,6 +38,7 @@ import type { GitHunk } from "@/gen/bindings/GitHunk";
 import { inlineBlame, setBlamed } from "@/lib/code/blame";
 import { diffPhrases, diffTheme } from "@/lib/code/diff";
 import { codeFind, openFind } from "@/lib/code/find";
+import { withFolding } from "@/lib/code/fold";
 import { gitChanges, setHunks } from "@/lib/code/git";
 import { indentOf } from "@/lib/code/indent";
 import { keyboardCaret, observeScroller } from "@/lib/code/keyboard";
@@ -295,8 +296,10 @@ export function CodeEditor({
     let live = true;
     const v = view.current;
     if (v) v.dispatch({ effects: indent.current.reconfigure(indenting(v.state.doc.toString(), path)) });
+    // The language, and folding by indent where its tree folds nothing
+    // (`lib/code/fold`) — a file with no language too.
     void loadLanguage(path).then((l) => {
-      if (live && l) view.current?.dispatch({ effects: lang.current.reconfigure(l) });
+      if (live) view.current?.dispatch({ effects: lang.current.reconfigure(withFolding(l)) });
     });
     return () => {
       live = false;
