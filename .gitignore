@@ -9,6 +9,9 @@
 CLAUDE.md
 .mcp.json
 .claude/
+AGENTS.md
+.agents/
+.codex/
 .codebuddy/
 .gemini/
 .kiro/
