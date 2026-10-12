@@ -17,7 +17,9 @@
 // behind 「展开未更改的 N 行」, the ink the diff tab's: `git-deleted` /
 // `git-added` at 10 % behind the line. Each view is as tall as its lines,
 // so the page is still one scroll on a phone. A side past the node's byte
-// cap (`big`) says so in one line, as a binary does.
+// cap (`big`) says so in one line, as a binary does; so does every file
+// after the answer's total of both sides reached 2 MiB (`capped`, cm-f) —
+// its bar still says +a −b.
 //
 // **「跳转到文件」** floats at the foot, GitHub's pill: the changed files
 // as a menu, a press scrolls that file's bar to the top. Drawn only where
@@ -198,6 +200,10 @@ function FileChange({ f }: { f: GitCommitFile }) {
       ) : f.big ? (
         <div data-commit-big className="px-row py-2 text-callout text-muted-foreground">
           {gui.commit_file_big}
+        </div>
+      ) : f.capped ? (
+        <div data-commit-capped className="px-row py-2 text-callout text-muted-foreground">
+          {gui.commit_file_capped}
         </div>
       ) : (
         f.before !== f.after && <CommitDiff path={f.path} before={f.before} after={f.after} />

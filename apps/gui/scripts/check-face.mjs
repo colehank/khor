@@ -31241,8 +31241,78 @@ try {
         const gone = await page.locator("[data-commit-page]").count();
         if (gone !== 0) fail(`ws f · ${tag}: ‹ left the commit page up`);
       }
-      await page.unroute("**/git_log", logF);
+      // **Past the answer's 2 MiB the rest say counts and no text** (cm-f,
+      // the owner: 「一次提交传的总量超过 2 MB，剩下的文件只列路径和 +a −b，
+      // 不画 diff」): the node answers the first file with both sides and
+      // the two after it `capped`. The first still has its diff; each
+      // capped one is its bar with +a −b and the catalog's one sentence.
       await page.unroute("**/git_commit", showF);
+      const cappedF = (r) =>
+        r.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            commit: commitsF[0],
+            total: 3,
+            more: false,
+            files: [
+              { path: "apps/gui/src/views/WorkspacesList.tsx", from: "", status: "M", added: 2, removed: 1, binary: false, big: false, capped: false, ...sidesF(40, ["   return (", "-      top={row.sub}", "+      top={corners.top}", "+      bottom={corners.bottom}", "   );", ...LONG_F]) },
+              { path: "vendor/huge/generated.rs", from: "", status: "M", added: 1200, removed: 340, binary: false, big: false, capped: true, before: "", after: "" },
+              { path: "vendor/huge/table.json", from: "", status: "A", added: 9, removed: 0, binary: false, big: false, capped: true, before: "", after: "" },
+            ],
+          }),
+        });
+      await page.route("**/git_commit", cappedF);
+      for (const [w, h, tag] of [
+        [390, 844, "390"],
+        [1400, 900, "1400"],
+      ]) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        await open("workspaces");
+        await press("[data-ws-row]");
+        if (!(await until(5_000, async () => (await page.locator("[data-commit-line]").count()) > 0))) {
+          fail(`probe dead: ws f capped · at ${tag} the commit line above the tree never came`);
+          continue;
+        }
+        await page.locator("[data-commit-line]").first().click();
+        await until(4_000, async () => (await page.locator("[data-commit-row]").count()) > 0);
+        await page.locator("[data-commit-row]").first().click();
+        await until(4_000, async () => (await page.locator("[data-commit-page] [data-commit-file] .cm-editor").count()) > 0);
+        await wait(400);
+        const cap = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-commit-page] [data-commit-file]")].map((f) => ({
+            path: f.getAttribute("data-commit-file"),
+            views: f.querySelectorAll("[data-commit-diff] .cm-editor").length,
+            said: f.querySelector("[data-commit-capped]")?.textContent?.trim() ?? null,
+            bar: f.querySelector("[data-commit-file-bar]")?.textContent?.trim() ?? null,
+          })),
+        );
+        // The capped files in view, for the shot.
+        await page.evaluate(() => {
+          const box = document.querySelector("[data-commit-scroll]");
+          const bar = document.querySelectorAll("[data-commit-file]")[1];
+          if (box && bar) box.scrollTop += bar.getBoundingClientRect().top - box.getBoundingClientRect().top - box.clientHeight / 3;
+        });
+        await wait(200);
+        await shotF(`commit-capped-${tag}`);
+        console.log(`ws f capped · ${tag}: ${JSON.stringify(cap)}`);
+        const SAID = /^(这次提交太大，这个文件的改动未取回|This commit is large; this file's changes weren't loaded)$/;
+        if (cap.length !== 3 || cap[0].views !== 1 || cap[0].said !== null) fail(`ws f capped · ${tag}: the first file reads ${JSON.stringify(cap[0])} — its diff (one merge view), no sentence`);
+        for (const [i, counts] of [
+          [1, ["+1200", "−340"]],
+          [2, ["+9", "−0"]],
+        ]) {
+          const f = cap[i];
+          if (!f || f.views !== 0 || !SAID.test(f.said ?? "") || !counts.every((c) => f.bar?.includes(c))) {
+            fail(`ws f capped · ${tag}: file ${i + 1} reads ${JSON.stringify(f)} — its bar with ${counts.join(" ")}, no diff, and 「这次提交太大，这个文件的改动未取回」 (commit-file-capped)`);
+          }
+        }
+        await page.locator("[data-commit-back]").first().click();
+        await wait(400);
+      }
+      await page.unroute("**/git_log", logF);
+      await page.unroute("**/git_commit", cappedF);
       await page.setViewportSize({ width: 1400, height: 900 });
       await page.reload({ waitUntil: "load" });
       await wait(900);

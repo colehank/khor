@@ -186,6 +186,9 @@ pub struct GitCommitFile {
     pub binary: bool,
     /// A side is over the node's byte cap: the counts and no text.
     pub big: bool,
+    /// The commit's answer had spent its total byte cap on the files
+    /// before this one: the counts and no text.
+    pub capped: bool,
     /// The parent's text and the commit's, whole; empty for a binary or
     /// a big file and for the side an addition or a deletion lacks.
     pub before: String,
@@ -307,6 +310,7 @@ pub async fn commit_show(root: &Path, machine: &str, dir: &str, rev: &str) -> Re
                     removed: f.removed,
                     binary: f.binary,
                     big: f.big,
+                    capped: f.capped,
                     before: f.before,
                     after: f.after,
                 })

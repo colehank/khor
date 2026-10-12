@@ -36,6 +36,8 @@ const runs = Number(runsArg ?? 5);
 
 const git = (...a) => execFileSync("git", ["-C", repo, ...a], { maxBuffer: 1 << 28 });
 const CAP = 256 * 1024;
+/** The answer's total of both sides (`khor_node::git::COMMIT_BYTES`). */
+const COMMIT_BYTES = 2 * 1024 * 1024;
 
 /** The node's answer for `rev`, rebuilt from git's own CLI: first
     parent, renames at git's default, both sides' bytes or the hunks. */
@@ -54,6 +56,7 @@ function commitAnswer(rev, shape) {
       .map((l) => l.split("\t"))
       .map(([a, r, p]) => [p.includes(" => ") ? p.replace(/\{?([^{}]*) => ([^{}]*)\}?/, "$2").replace("//", "/") : p, [Number(a) || 0, Number(r) || 0]]),
   );
+  let room = COMMIT_BYTES;
   const files = rows.map(([s, a, b]) => {
     const status = s[0];
     const path = b ?? a;
@@ -74,7 +77,10 @@ function commitAnswer(rev, shape) {
       }
     } else {
       const big = !binary && (was.length > CAP || now.length > CAP);
-      Object.assign(f, { big, before: binary || big ? "" : was.toString(), after: binary || big ? "" : now.toString() });
+      const capped = !binary && !big && was.length + now.length > room;
+      room = capped ? 0 : binary || big ? room : room - was.length - now.length;
+      const none = binary || big || capped;
+      Object.assign(f, { big, capped, before: none ? "" : was.toString(), after: none ? "" : now.toString() });
     }
     return f;
   });
@@ -144,7 +150,7 @@ try {
                 if (files.length > 0) {
                   // A text file's diff is drawn when its surface is: the
                   // hunks' rows before cm-d, a CodeMirror view after.
-                  const text = files.filter((f) => !f.querySelector("[data-commit-binary],[data-commit-big]") && !/不是文本文件|Not text/.test(f.textContent));
+                  const text = files.filter((f) => !f.querySelector("[data-commit-binary],[data-commit-big],[data-commit-capped]") && !/不是文本文件|Not text/.test(f.textContent));
                   const shown = text.filter((f) => f.querySelector(".cm-editor .cm-line, [data-diff-line]"));
                   if (firstView === null && shown.length > 0) firstView = performance.now() - t0;
                   if (drawn === null && shown.length === text.length) drawn = performance.now() - t0;

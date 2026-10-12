@@ -697,6 +697,13 @@ pub struct CommitFile {
     /// question of commits §「需要负责人定的」1, decided at the file
     /// view's own read cap). The counts are said; neither text is.
     pub big: bool,
+    /// **The commit's answer had no room left for this file's text**
+    /// (cm-f, 2026-10-12, the owner: 「一次提交传的总量超过 2 MB，剩下的
+    /// 文件只列路径和 +a −b，不画 diff」): the files before it spent
+    /// [`COMMIT_BYTES`] between their two sides. The counts are said;
+    /// neither text is — `big`'s shape, for a reason that is the commit's
+    /// and not the file's. Never with `binary` or `big`.
+    pub capped: bool,
     /// **Both sides whole** — the parent's and the commit's, decoded
     /// lossily — and the page diffs them itself (`@codemirror/merge`'s
     /// unified view, syntax ink and folded stretches; cm-d item 1).
@@ -886,6 +893,17 @@ fn show(path: &Path, rev: &str) -> Result<GitAnswer, String> {
 pub(crate) const COMMIT_FILES: usize = 50;
 pub(crate) const COMMIT_LINES: usize = 2000;
 
+/// How many bytes of text one [`GitAnswer::Commit`] carries in all, both
+/// sides of every file (cm-f, 2026-10-12: cm-d's merge view made the
+/// answer 17× larger, and it crosses a relay). Spent in the order the
+/// files are listed, so the first keep their diffs; the file that would
+/// go past it and every one after it are `capped`.
+pub(crate) const COMMIT_BYTES: usize = 2 * 1024 * 1024;
+
+/// One changed file before it is read: (path, from, letter, the parent's
+/// bytes, the commit's).
+type Row = (String, String, &'static str, Vec<u8>, Vec<u8>);
+
 fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
     use gix::object::tree::diff::ChangeDetached as C;
     let root = repo_root(root).ok_or_else(|| khor_catalog::msg::no_checkout().to_owned())?;
@@ -934,16 +952,7 @@ fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
             None => Ok(Vec::new()),
         }
     };
-    let mut files = Vec::new();
-    let mut budget = COMMIT_LINES;
-    let mut more = false;
-    for (path, from, status, was, now) in rows {
-        if files.len() >= COMMIT_FILES || budget == 0 {
-            more = true;
-            break;
-        }
-        files.push(file_of(path, from, status, read(was)?, read(now)?, &mut budget));
-    }
+    let (files, more) = files_of(rows.into_iter().map(|(path, from, status, was, now)| Ok((path, from, status, read(was)?, read(now)?))))?;
     Ok(GitAnswer::Commit {
         commit: commit_of(&commit),
         files,
@@ -952,17 +961,40 @@ fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
     })
 }
 
+/// The listed files of one commit, in `rows`' order, and whether the
+/// list stopped early (`more`). A row is read only once it is known to
+/// be listed.
+fn files_of(rows: impl Iterator<Item = Result<Row, String>>) -> Result<(Vec<CommitFile>, bool), String> {
+    let mut files = Vec::new();
+    let mut budget = COMMIT_LINES;
+    let mut room = COMMIT_BYTES;
+    for row in rows {
+        if files.len() >= COMMIT_FILES || budget == 0 {
+            return Ok((files, true));
+        }
+        let (path, from, status, was, now) = row?;
+        files.push(file_of(path, from, status, was, now, &mut budget, &mut room));
+    }
+    Ok((files, false))
+}
+
 /// One changed file's answer from its two sides' bytes (`a` the
 /// parent's, `b` the commit's; empty for the side it does not have),
-/// spending its changed lines from `budget`. A big file spends nothing:
-/// none of its lines are sent.
-fn file_of(path: String, from: String, status: &str, a: Vec<u8>, b: Vec<u8>, budget: &mut usize) -> CommitFile {
+/// spending its changed lines from `budget` and its bytes from `room`.
+/// A big or capped file spends nothing: none of its lines are sent. The
+/// first file that does not fit leaves no room for any after it.
+fn file_of(path: String, from: String, status: &str, a: Vec<u8>, b: Vec<u8>, budget: &mut usize, room: &mut usize) -> CommitFile {
     let binary = [&a, &b].iter().any(|x| x[..x.len().min(8000)].contains(&0));
     let big = !binary && (a.len() > SHOWN || b.len() > SHOWN);
     let (added, removed) = if binary { (0, 0) } else { counts(&a, &b) };
-    let said = !binary && !big;
+    let capped = !binary && !big && a.len() + b.len() > *room;
+    let said = !binary && !big && !capped;
     if said {
         *budget = budget.saturating_sub((added + removed) as usize);
+        *room -= a.len() + b.len();
+    }
+    if capped {
+        *room = 0;
     }
     let text = |x: Vec<u8>| {
         if !said {
@@ -978,6 +1010,7 @@ fn file_of(path: String, from: String, status: &str, a: Vec<u8>, b: Vec<u8>, bud
         removed,
         binary,
         big,
+        capped,
         before: text(a),
         after: text(b),
     }
@@ -1196,13 +1229,14 @@ mod status_tests {
         let old = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n";
         let new = "1\n2\n3\nfour\n5\n6\n7\neight\n9\n10\n11\n12\n";
         let mut budget = COMMIT_LINES;
-        let f = file_of("a.txt".into(), String::new(), MODIFIED, old.into(), new.into(), &mut budget);
+        let mut room = COMMIT_BYTES;
+        let f = file_of("a.txt".into(), String::new(), MODIFIED, old.into(), new.into(), &mut budget, &mut room);
         assert_eq!((f.added, f.removed, f.binary, f.big), (2, 2, false, false));
         assert_eq!((f.before.as_str(), f.after.as_str()), (old, new));
         assert_eq!(budget, COMMIT_LINES - 4, "four changed lines spent");
 
         let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
-        let f = file_of("a.png".into(), String::new(), ADDED, Vec::new(), png, &mut budget);
+        let f = file_of("a.png".into(), String::new(), ADDED, Vec::new(), png, &mut budget, &mut room);
         assert!(f.binary && !f.big);
         assert_eq!((f.added, f.removed), (0, 0));
         assert!(f.before.is_empty() && f.after.is_empty(), "a binary sends no text");
@@ -1219,7 +1253,8 @@ mod status_tests {
         let mut new = old.clone();
         new.extend_from_slice(b"one more\n");
         let mut budget = COMMIT_LINES;
-        let f = file_of("big.txt".into(), String::new(), MODIFIED, old, new, &mut budget);
+        let mut room = COMMIT_BYTES;
+        let f = file_of("big.txt".into(), String::new(), MODIFIED, old, new, &mut budget, &mut room);
         assert!(f.big && !f.binary);
         assert_eq!((f.added, f.removed), (1, 0));
         assert!(f.before.is_empty() && f.after.is_empty());
@@ -1227,7 +1262,7 @@ mod status_tests {
         // One byte under on both sides is text.
         let small = "y\n".repeat(SHOWN / 2).into_bytes();
         assert_eq!(small.len(), SHOWN);
-        let f = file_of("edge.txt".into(), String::new(), ADDED, Vec::new(), small, &mut budget);
+        let f = file_of("edge.txt".into(), String::new(), ADDED, Vec::new(), small, &mut budget, &mut room);
         assert!(!f.big && f.after.len() == SHOWN);
     }
 
@@ -1237,10 +1272,70 @@ mod status_tests {
     fn the_line_budget_spends_whole_files() {
         let new: String = (0..10).map(|i| format!("{i}\n")).collect();
         let mut budget = 4;
-        let f = file_of("ten.txt".into(), String::new(), ADDED, Vec::new(), new.clone().into_bytes(), &mut budget);
+        let mut room = COMMIT_BYTES;
+        let f = file_of("ten.txt".into(), String::new(), ADDED, Vec::new(), new.clone().into_bytes(), &mut budget, &mut room);
         assert_eq!(f.added, 10);
         assert_eq!(f.after, new, "the file that spent the budget is still whole");
         assert_eq!(budget, 0, "and the next one is not listed");
+    }
+
+    /// **A commit's answer carries at most [`COMMIT_BYTES`] of text**
+    /// (cm-f): the files that fit keep both sides; the one that would go
+    /// past it and every one after — a small one too — say their counts
+    /// and no text, `capped`. A binary after the cap stays a binary.
+    #[test]
+    fn past_the_commit_byte_cap_the_rest_say_counts_and_no_text() {
+        // Four modifications 250 KiB a side (under SHOWN; ≈ 500 KiB each
+        // in the answer) make 1.95 MiB; a fifth would pass 2 MiB.
+        let side = |c: char, n: usize| -> Vec<u8> { (0..n).map(|i| format!("{c}{i:0>98}\n")).collect::<String>().into_bytes() };
+        let lines = 250 * 1024 / 100;
+        let mut rows: Vec<Result<Row, String>> = (0..6)
+            .map(|i| {
+                let old = side('a', lines);
+                let mut new = old.clone();
+                new.extend_from_slice(format!("{i} more\n").as_bytes());
+                Ok((format!("f{i}.txt"), String::new(), MODIFIED, old, new))
+            })
+            .collect();
+        rows.push(Ok(("g.png".into(), String::new(), ADDED, Vec::new(), b"\x89PNG\0".to_vec())));
+        rows.push(Ok(("h.txt".into(), String::new(), ADDED, Vec::new(), b"one\ntwo\n".to_vec())));
+        let (files, more) = files_of(rows.into_iter()).expect("files");
+        assert!(!more, "every file is listed: the byte cap drops texts, not files");
+        assert_eq!(files.len(), 8);
+        let sent: usize = files.iter().map(|f| f.before.len() + f.after.len()).sum();
+        assert!(sent <= COMMIT_BYTES, "{sent} bytes of text sent");
+        for f in &files[..4] {
+            assert!(!f.capped && !f.before.is_empty() && !f.after.is_empty(), "{} fits and keeps its text", f.path);
+            assert_eq!((f.added, f.removed), (1, 0), "{}", f.path);
+        }
+        for f in &files[4..6] {
+            assert!(f.capped && !f.big && !f.binary, "{} is past the cap: {f:?}", f.path);
+            assert!(f.before.is_empty() && f.after.is_empty(), "{} sends no text", f.path);
+            assert_eq!((f.added, f.removed), (1, 0), "{}'s counts are still git's", f.path);
+        }
+        assert!(files[6].binary && !files[6].capped, "a binary is a binary, cap or not");
+        let h = &files[7];
+        assert!(h.capped && h.after.is_empty(), "a small file after the cap has no room either: {h:?}");
+        assert_eq!((h.added, h.removed), (2, 0));
+    }
+
+    /// Under the cap nothing is capped: HEAD's own commit of this
+    /// checkout is far smaller than 2 MiB.
+    #[test]
+    fn a_small_commit_caps_nothing() {
+        let root = here();
+        let head = gix::open(&root).expect("open").head_id().expect("head").to_string();
+        let GitAnswer::Commit { files, .. } = answer(&GitAsk::Commit {
+            root: root.to_string_lossy().into_owned(),
+            rev: head,
+        })
+        .expect("commit") else {
+            panic!("not a commit")
+        };
+        let sent: usize = files.iter().map(|f| f.before.len() + f.after.len()).sum();
+        if sent < COMMIT_BYTES / 2 {
+            assert!(files.iter().all(|f| !f.capped), "{files:?}");
+        }
     }
 
     #[test]
