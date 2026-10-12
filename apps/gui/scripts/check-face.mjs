@@ -37228,6 +37228,9 @@ try {
   //      `[data-post-refused]` and keeps the draft. With `FACE_SHOTS=<dir>`
   //      it leaves the picker, the typed form and the refusal at 1400 and
   //      390 there;
+  //   h. the `@机器` filter: a bubble's target pressed narrows to the
+  //      messages pushed to that machine, `[data-at-only]` says which, and
+  //      看全部 opens it out (no view of them on the machine's page);
   mchat: {
   if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "mchat") break mchat;
   {
@@ -37496,6 +37499,23 @@ try {
         await page.setViewportSize({ width: 1400, height: 900 });
         await wait(500);
       }
+    }
+
+    // h. the @机器 filter: a target pressed narrows to the messages pushed
+    //    to it, a line says so, 看全部 opens it out
+    {
+      const msgs = () => page.evaluate((p) => [...document.querySelectorAll(`${p} [data-msg]`)].map((e) => e.getAttribute("data-msg")), pane);
+      const all = await msgs();
+      await press(`${pane} [data-msg="m-sent"] [data-msg-target-only="peer"]`);
+      await until(3_000, async () => (await count(`${pane} [data-at-only]`)) === 1);
+      const narrowed = await msgs();
+      const line = await page.locator(`${pane} [data-at-only]`).getAttribute("data-at-only");
+      await press(`${pane} [data-at-only-clear]`);
+      await until(3_000, async () => (await count(`${pane} [data-at-only]`)) === 0);
+      const back = await msgs();
+      console.log(`mchat h · all ${all.length}, @peer ${JSON.stringify(narrowed)} (${line}), back ${back.length}`);
+      if (JSON.stringify(narrowed) !== JSON.stringify(["m-sent"]) || line !== "peer") fail(`mchat h · @peer narrowed to ${JSON.stringify(narrowed)} — the one message pushed to peer`);
+      if (back.length !== all.length) fail(`mchat h · 看全部 left ${back.length} of ${all.length}`);
     }
 
     // g. the agent conversation keeps its 「存到」

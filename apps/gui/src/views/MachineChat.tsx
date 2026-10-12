@@ -113,6 +113,11 @@ export function MachineChat({ id }: { id: string }) {
   }, []);
   /** The API's spelling of this machine: a chip shows its own landing. */
   const landsOn = machines.find((r) => r.me)?.name ?? "";
+  /** **The `@机器` filter** (phase 5): only the messages pushed to that
+      machine, by device id; `null` is all. How the messages for one
+      machine are found — there is no view of them on its page. */
+  const [only, setOnly] = useState<{ device: string; name: string } | null>(null);
+  const shownMsgs = log ? (only ? log.messages.filter((m) => m.to.some((t) => t.device === only.device)) : log.messages) : [];
 
   // 新建会话's 留言 on a machine: the box opens with `@<machine> ` in it.
   useEffect(() => {
@@ -251,13 +256,22 @@ export function MachineChat({ id }: { id: string }) {
             {cli.broken_blocks(log.broken)}
           </div>
         )}
-        {log?.messages.map((m, i) => (
+        {only && (
+          <div data-at-only={only.name} className="flex items-center justify-center gap-in text-caption text-muted-foreground">
+            <span>{gui.at_only(only.name)}</span>
+            <Button size="sm" variant="ghost" data-at-only-clear onClick={() => setOnly(null)}>
+              {gui.at_only_clear}
+            </Button>
+          </div>
+        )}
+        {shownMsgs.map((m, i) => (
           <MsgLine
             key={m.id}
             m={m}
-            stamp={stampFor(m, i === 0 ? null : log.messages[i - 1])}
+            stamp={stampFor(m, i === 0 ? null : shownMsgs[i - 1])}
             machine={landsOn}
             me={machines.find((r) => r.me)?.id ?? ""}
+            onOnly={(device, name) => setOnly((now) => (now?.device === device ? null : { device, name }))}
             onChanged={refresh}
           />
         ))}
@@ -471,6 +485,7 @@ function MsgLine({
   stamp,
   machine,
   me,
+  onOnly,
   onChanged,
 }: {
   m: ChatMsgRow;
@@ -478,6 +493,8 @@ function MsgLine({
   machine: string;
   /** This machine's device id: its own move is the chip's to say. */
   me: string;
+  /** A target pressed: the conversation narrows to that machine. */
+  onOnly: (device: string, name: string) => void;
   onChanged: () => void;
 }) {
   return (
@@ -497,7 +514,7 @@ function MsgLine({
             {m.from}
           </div>
         )}
-        {!m.retracted && m.to.length > 0 && <Targets m={m} me={me} />}
+        {!m.retracted && m.to.length > 0 && <Targets m={m} me={me} onOnly={onOnly} />}
         {m.retracted ? (
           <div className="text-caption text-muted-foreground">{cli.retracted}</div>
         ) : m.text !== null ? (
@@ -717,15 +734,22 @@ function FileChip({
  * its own record, the same on every device. This machine's own move is
  * the chip's to say (the bar, the path, the sentence), not said twice.
  */
-function Targets({ m, me }: { m: ChatMsgRow; me: string }) {
+function Targets({ m, me, onOnly }: { m: ChatMsgRow; me: string; onOnly: (device: string, name: string) => void }) {
   return (
     <div data-msg-to className={cn("mb-0.5 flex flex-wrap gap-x-row gap-y-xxs text-caption", m.from_me && "justify-end")}>
       {m.to.map((t) => (
         <span key={t.device} data-msg-target={t.name} data-target-step={t.step ?? undefined} className="flex min-w-0 items-baseline gap-in">
-          <span className="truncate text-muted-foreground">
+          {/* Pressed, the conversation narrows to this machine (the
+              `@机器` filter); pressed again, it opens out. */}
+          <button
+            type="button"
+            data-msg-target-only={t.name}
+            className="truncate text-left text-muted-foreground hover:text-foreground"
+            onClick={() => onOnly(t.device, t.name)}
+          >
             @{t.name}
             {t.path ? `:${t.path}` : ""}
-          </span>
+          </button>
           {m.files !== null && t.step !== null && t.device !== me && (
             <span className={cn("flex-none", t.step === "failed" ? "text-state-failed" : "text-muted-foreground")}>
               {t.step === "landed"
