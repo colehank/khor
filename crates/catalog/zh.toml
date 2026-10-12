@@ -4623,6 +4623,8 @@ commit-authored-one = "{0} 撰写"
 commit-authored-two = "{0} 和 {1} 撰写"
 commit-changed = "已更改 {0} 个文件"
 commit-more = "这次提交太大，后面的改动没有列出"
+# 提交页里一个文件的某一侧超过 256 KiB（与文件页读取上限相同，cm-d）：路径和 +a −b 照写，改动不画。
+commit-file-big = "这个文件太大，不显示改动"
 commit-jump = "跳转到文件"
 file-rev-compare = "与当前比较"
 file-rev-alone = "只看这一版"

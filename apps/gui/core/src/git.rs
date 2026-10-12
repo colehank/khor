@@ -184,16 +184,12 @@ pub struct GitCommitFile {
     pub removed: u32,
     /// Not text: no lines are said.
     pub binary: bool,
-    pub hunks: Vec<GitCommitHunk>,
-}
-
-/// One unified hunk: 1-based starts on each side, each line led by its
-/// own `' '`, `-` or `+` (`khor_node::git::CommitHunk`).
-#[derive(Debug, Clone, Serialize, TS)]
-pub struct GitCommitHunk {
-    pub old_at: u32,
-    pub new_at: u32,
-    pub lines: Vec<String>,
+    /// A side is over the node's byte cap: the counts and no text.
+    pub big: bool,
+    /// The parent's text and the commit's, whole; empty for a binary or
+    /// a big file and for the side an addition or a deletion lacks.
+    pub before: String,
+    pub after: String,
 }
 
 /// One commit and what it changed against its first parent. `total`:
@@ -310,15 +306,9 @@ pub async fn commit_show(root: &Path, machine: &str, dir: &str, rev: &str) -> Re
                     added: f.added,
                     removed: f.removed,
                     binary: f.binary,
-                    hunks: f
-                        .hunks
-                        .into_iter()
-                        .map(|h| GitCommitHunk {
-                            old_at: h.old_at,
-                            new_at: h.new_at,
-                            lines: h.lines,
-                        })
-                        .collect(),
+                    big: f.big,
+                    before: f.before,
+                    after: f.after,
                 })
                 .collect(),
             total,

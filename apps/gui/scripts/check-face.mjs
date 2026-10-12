@@ -31033,6 +31033,14 @@ try {
       // Sixty more unchanged lines under the first file's hunk, so the
       // page is taller than the window and 「跳转到文件」 has to scroll.
       const LONG_F = Array.from({ length: 60 }, (_, i) => ` // the rest of the file, line ${i + 1}`);
+      // **The node answers both sides whole** (cm-d item 1): a hunk the way
+      // `git show` prints it, at line `at` of either side, made into the
+      // parent's text and the commit's — `at - 1` unchanged lines above it.
+      const sidesF = (at, lines) => {
+        const head = Array.from({ length: at - 1 }, (_, i) => `// line ${i + 1}`);
+        const side = (keep) => [...head, ...lines.filter((l) => l[0] === " " || l[0] === keep).map((l) => l.slice(1))].join("\n") + "\n";
+        return { before: side("-"), after: side("+") };
+      };
       const logF = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ commits: commitsF, more: false }) });
       const asked = [];
       const showF = (r) => {
@@ -31051,11 +31059,10 @@ try {
                 added: 2,
                 removed: 1,
                 binary: false,
-                hunks: [
-                  { old_at: 40, new_at: 40, lines: ["   const corners = rowCorners(row);", "   return (", "     <Row", "-      top={row.sub}", "+      top={corners.top}", "+      bottom={corners.bottom}", "     />", "   );", " }", ...LONG_F] },
-                ],
+                big: false,
+                ...sidesF(40, ["   const corners = rowCorners(row);", "   return (", "     <Row", "-      top={row.sub}", "+      top={corners.top}", "+      bottom={corners.bottom}", "     />", "   );", " }", ...LONG_F]),
               },
-              { path: "docs/design-system/rows.png", from: "", status: "A", added: 0, removed: 0, binary: true, hunks: [] },
+              { path: "docs/design-system/rows.png", from: "", status: "A", added: 0, removed: 0, binary: true, big: false, before: "", after: "" },
               {
                 path: "apps/gui/src/lib/corners.ts",
                 from: "apps/gui/src/lib/row-corners.ts",
@@ -31063,7 +31070,8 @@ try {
                 added: 1,
                 removed: 1,
                 binary: false,
-                hunks: [{ old_at: 1, new_at: 1, lines: ["-// The row's corners.", "+// Every list row's four corners.", " export {};"] }],
+                big: false,
+                ...sidesF(1, ["-// The row's corners.", "+// Every list row's four corners.", " export {};"]),
               },
             ],
           }),
@@ -31099,9 +31107,19 @@ try {
             by: pg?.querySelector("[data-commit-by]")?.textContent?.trim() ?? null,
             files: pg?.querySelectorAll("[data-commit-file]").length ?? 0,
             firstBar: first?.querySelector("[data-commit-file-bar]")?.textContent?.trim() ?? null,
-            firstLines: first?.querySelectorAll("[data-commit-diff] [data-diff-line]").length ?? 0,
-            added: first?.querySelectorAll('[data-diff-line="added"]').length ?? 0,
-            removed: first?.querySelectorAll('[data-diff-line="removed"]').length ?? 0,
+            // The file's change is a read-only CodeMirror unified merge
+            // view (cm-d item 1): the commit's lines it wrote, the
+            // parent's laid in above them, the unchanged stretches
+            // folded, ink on the code, the parent's numbers beside.
+            views: first?.querySelectorAll("[data-commit-diff] .cm-editor").length ?? 0,
+            added: first?.querySelectorAll("[data-commit-diff] .cm-line.cm-changedLine").length ?? 0,
+            removed: first?.querySelectorAll("[data-commit-diff] .cm-deletedChunk > .cm-deletedLine").length ?? 0,
+            folds: first?.querySelectorAll("[data-commit-diff] .cm-collapsedLines").length ?? 0,
+            ink: first?.querySelectorAll('[data-commit-diff] [class*="tok-"]').length ?? 0,
+            // (Not the gutter's hidden spacer, which holds the widest.)
+            oldNums: [...(first?.querySelectorAll("[data-commit-diff] .cm-oldNumbers .cm-gutterElement") ?? [])].filter((e) => e.style.visibility !== "hidden").map((e) => e.textContent),
+            newNums: [...(first?.querySelectorAll("[data-commit-diff] .cm-lineNumbers:not(.cm-oldNumbers) .cm-gutterElement") ?? [])].filter((e) => e.style.visibility !== "hidden").map((e) => e.textContent),
+            nested: [...(pg?.querySelectorAll("[data-commit-diff] .cm-scroller") ?? [])].filter((e) => e.scrollHeight > e.clientHeight + 1).length,
             back: pg?.querySelectorAll("[data-commit-back]").length ?? 0,
             wider: pg ? pg.scrollWidth - pg.clientWidth : null,
           };
@@ -31144,11 +31162,47 @@ try {
           fail(`ws f · ${tag}: the stat line reads ${JSON.stringify(pg.stat)} — 「已更改 3 个文件 · +3 −2」`);
         }
         if (pg.files !== 3 || !pg.firstBar?.includes("WorkspacesList.tsx")) fail(`ws f · ${tag}: ${pg.files} file(s), the first bar ${JSON.stringify(pg.firstBar)} — three, in the answer's order`);
-        if (pg.firstLines !== 69 || pg.added !== 2 || pg.removed !== 1) fail(`ws f · ${tag}: under the first bar ${pg.firstLines} line(s), ${pg.added} added, ${pg.removed} removed — its hunk's 69, 2 and 1`);
+        if (pg.views !== 1 || pg.added !== 2 || pg.removed !== 1) fail(`ws f · ${tag}: under the first bar ${pg.views} view(s), ${pg.added} line(s) written, ${pg.removed} laid in — one merge view, 2 and 1`);
+        if (pg.folds < 2) fail(`ws f · ${tag}: the first file folds ${pg.folds} unchanged stretch(es) — the 36 lines above the change and the 57 below, two`);
+        if (pg.ink === 0) fail(`ws f · ${tag}: the first file (.tsx) wears no syntax ink`);
+        // Three lines kept on either side of the change: old 40–42 / new
+        // 40–42 above; old 43 (`top={row.sub}`) laid in with its number
+        // alone; new 43–44 (what it became) with theirs alone, so the old
+        // column has a blank beside them; old 44–46 / new 45–47 below.
+        // The blanks are not drawn as elements, so each column reads as
+        // the run of numbers it shows.
+        if (pg.oldNums.join() !== "40,41,42,43,44,45,46" || pg.newNums.join() !== "40,41,42,43,44,45,46,47") {
+          fail(`ws f · ${tag}: the numbers read old ${JSON.stringify(pg.oldNums)} new ${JSON.stringify(pg.newNums)} — both sides', as the hunks had them`);
+        }
+        if (pg.nested !== 0) fail(`ws f · ${tag}: ${pg.nested} file view(s) scroll on their own — each is as tall as its lines, the page is the one scroll`);
         if (pg.wider !== null && pg.wider > 0) fail(`ws f · ${tag}: the page is ${pg.wider}px wider than its box — a long line scrolls inside its file, not the page`);
         if (asked.at(-1)?.rev !== ID) fail(`ws f · ${tag}: git_commit was asked ${JSON.stringify(asked.at(-1))} — the pressed row's id`);
+        // **A folded stretch opens in place** (cm-d item 1): the 57
+        // unchanged lines under the change, pressed, are drawn in the
+        // file's own view — which grows, the page scrolling it, no
+        // scroller of its own.
+        const opened = await page.evaluate(async () => {
+          const first = document.querySelector("[data-commit-file]");
+          const bars = first?.querySelectorAll("[data-commit-diff] .cm-collapsedLines");
+          const view = first?.querySelector("[data-commit-diff] .cm-editor");
+          if (!bars || bars.length === 0 || !view) return null;
+          const tall = view.getBoundingClientRect().height;
+          bars[bars.length - 1].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+          bars[bars.length - 1].click();
+          await new Promise((r) => setTimeout(r, 300));
+          return {
+            folds: first.querySelectorAll("[data-commit-diff] .cm-collapsedLines").length,
+            grew: Math.round(view.getBoundingClientRect().height - tall),
+            lastLine: [...first.querySelectorAll("[data-commit-diff] .cm-line")].some((l) => l.textContent.includes("line 60")),
+            nested: [...document.querySelectorAll("[data-commit-diff] .cm-scroller")].filter((e) => e.scrollHeight > e.clientHeight + 1).length,
+          };
+        });
+        console.log(`ws f · ${tag}: the stretch under the change opened ${JSON.stringify(opened)}`);
+        if (!opened || opened.folds !== pg.folds - 1 || opened.grew < 40 || !opened.lastLine || opened.nested !== 0) {
+          fail(`ws f · ${tag}: the folded stretch under the first file's change, pressed, left ${JSON.stringify(opened)} — one fold fewer, the view taller by its lines, the file's last line drawn, no scroller of its own`);
+        }
         // 「跳转到文件」: the pill lists the three files; the last picked
-        // scrolls the page (it is taller than the window, `LONG_F`) until
+        // scrolls the page (it is taller than the window, `LONG_F` open) until
         // that file's bar is at the top — or, the last file having nothing
         // under it to stand on, the page at its end with the bar in view.
         await page.locator("[data-commit-jump]").first().click();

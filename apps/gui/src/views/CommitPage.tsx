@@ -6,15 +6,18 @@
 //
 // Top to bottom: who wrote it and when, the subject, the body; 「已更改 N
 // 个文件」 with the lines added and removed; then each file — a bar with
-// its letter and path, and under it the commit's own hunks with both
-// sides' line numbers.
+// its letter and path, and under it the change with both sides' line
+// numbers.
 //
-// **The hunks are drawn here, not by `DiffView`.** That one lays one file
-// out whole beside HEAD in CodeMirror's merge view, from the file as it is
-// on disk; a commit is up to fifty files, neither side of which is on
-// disk, and fifty merge editors is not a page. The node answers `git
-// show`'s unified hunks (`khor_node::git::CommitHunk`) and the ink is the
-// merge view's own: `git-deleted` / `git-added` at 10 % behind the line.
+// **Each file's change is CodeMirror's unified merge view** (cm-d item 1,
+// `components/CommitDiff`), not `DiffView`: that one is the whole file
+// against the disk, and neither side of a commit is on disk. The node
+// answers both sides' texts (`khor_node::git::CommitFile`) and the page
+// diffs them — syntax ink on both sides, the unchanged stretches folded
+// behind 「展开未更改的 N 行」, the ink the diff tab's: `git-deleted` /
+// `git-added` at 10 % behind the line. Each view is as tall as its lines,
+// so the page is still one scroll on a phone. A side past the node's byte
+// cap (`big`) says so in one line, as a binary does.
 //
 // **「跳转到文件」** floats at the foot, GitHub's pill: the changed files
 // as a menu, a press scrolls that file's bar to the top. Drawn only where
@@ -22,6 +25,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { fetchGitCommit, said } from "@/api";
+import { CommitDiff, preloadCommitDiff } from "@/components/CommitDiff.lazy";
 import { GlassCircle } from "@/components/Glass";
 import { IconBack } from "@/components/icons";
 import { Waiting } from "@/components/RegionState";
@@ -29,7 +33,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { GitCommitFile } from "@/gen/bindings/GitCommitFile";
-import type { GitCommitHunk } from "@/gen/bindings/GitCommitHunk";
 import type { GitCommitShow } from "@/gen/bindings/GitCommitShow";
 import { cn } from "@/lib/utils";
 import { authorLine, bodyOf, shortId } from "@/views/FileHistory";
@@ -55,6 +58,8 @@ export function CommitPage({
   const [since, setSince] = useState(() => Date.now());
   useEffect(() => {
     let live = true;
+    // The diff's chunk travels while the node answers.
+    preloadCommitDiff();
     setShown(null);
     setRefused(null);
     setSince(Date.now());
@@ -166,9 +171,9 @@ export function CommitPage({
   );
 }
 
-/** One file's bar and its hunks. The bar stays at the top while its hunks
-    scroll under it, as GitHub's does, so a long file still says whose
-    lines these are. */
+/** One file's bar and its change. The bar stays at the top while the
+    change scrolls under it, as GitHub's does, so a long file still says
+    whose lines these are. */
 function FileChange({ f }: { f: GitCommitFile }) {
   return (
     <section data-commit-file={f.path} className="border-b border-border">
@@ -187,62 +192,16 @@ function FileChange({ f }: { f: GitCommitFile }) {
         )}
       </div>
       {f.binary ? (
-        <div className="px-row py-2 text-callout text-muted-foreground">{gui.file_not_text}</div>
+        <div data-commit-binary className="px-row py-2 text-callout text-muted-foreground">
+          {gui.file_not_text}
+        </div>
+      ) : f.big ? (
+        <div data-commit-big className="px-row py-2 text-callout text-muted-foreground">
+          {gui.commit_file_big}
+        </div>
       ) : (
-        f.hunks.length > 0 && (
-          <div data-commit-diff data-selectable className="overflow-x-auto font-mono text-mono">
-            <div className="w-max min-w-full">
-              {f.hunks.map((h, i) => (
-                <Hunk key={i} h={h} />
-              ))}
-            </div>
-          </div>
-        )
+        f.before !== f.after && <CommitDiff path={f.path} before={f.before} after={f.after} />
       )}
     </section>
-  );
-}
-
-const TINT = {
-  "+": "color-mix(in srgb, var(--git-added) 10%, transparent)",
-  "-": "color-mix(in srgb, var(--git-deleted) 10%, transparent)",
-} as const;
-
-/** `@@ −a +b @@`, then each line with the old and the new number (blank on
-    the side it is not on), its sign, and its text. */
-function Hunk({ h }: { h: GitCommitHunk }) {
-  let o = h.old_at;
-  let n = h.new_at;
-  return (
-    <>
-      <div data-commit-hunk className="bg-fill px-row text-tertiary select-none">
-        @@ −{h.old_at} +{h.new_at} @@
-      </div>
-      {h.lines.map((l, i) => {
-        const k = l[0] === "+" || l[0] === "-" ? l[0] : " ";
-        const old = k === "+" ? null : o++;
-        const now = k === "-" ? null : n++;
-        return (
-          <div
-            key={i}
-            data-diff-line={k === " " ? "same" : k === "+" ? "added" : "removed"}
-            className="flex"
-            style={k === " " ? undefined : { background: TINT[k] }}
-          >
-            <span className="w-[5ch] flex-none pe-1 text-right text-tertiary tabular-nums select-none">{old}</span>
-            <span className="w-[5ch] flex-none pe-1 text-right text-tertiary tabular-nums select-none">{now}</span>
-            <span
-              className={cn(
-                "w-[2ch] flex-none text-center select-none",
-                k === "+" ? "text-git-added" : k === "-" ? "text-git-deleted" : "",
-              )}
-            >
-              {k === "+" ? "+" : k === "-" ? "−" : ""}
-            </span>
-            <span className="whitespace-pre pe-row">{l.slice(1)}</span>
-          </div>
-        );
-      })}
-    </>
   );
 }

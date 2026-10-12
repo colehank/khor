@@ -693,20 +693,18 @@ pub struct CommitFile {
     /// Either side is not text (a NUL in its head, git's own test): no
     /// lines are said, and the counts are 0.
     pub binary: bool,
-    pub hunks: Vec<CommitHunk>,
-}
-
-/// One unified hunk, `git show`'s shape: [`CONTEXT`] unchanged lines on
-/// either side of a run of changes, two runs closer than twice that
-/// joined. **Each line carries its own first character** — `' '`, `-`,
-/// `+` — the way a patch does, so there is no second list that could
-/// disagree with it about which line is which.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CommitHunk {
-    /// 1-based, where the hunk's first line sits on each side.
-    pub old_at: u32,
-    pub new_at: u32,
-    pub lines: Vec<String>,
+    /// Either side is over [`SHOWN`] bytes (cm-d, 2026-10-12: the open
+    /// question of commits §「需要负责人定的」1, decided at the file
+    /// view's own read cap). The counts are said; neither text is.
+    pub big: bool,
+    /// **Both sides whole** — the parent's and the commit's, decoded
+    /// lossily — and the page diffs them itself (`@codemirror/merge`'s
+    /// unified view, syntax ink and folded stretches; cm-d item 1).
+    /// Empty for a binary or a big file, and for the side an addition or
+    /// a deletion does not have. The hunks `git show` would draw are not
+    /// sent beside them: every changed line would cross twice.
+    pub before: String,
+    pub after: String,
 }
 
 /// One commit, as a history row reads it.
@@ -745,8 +743,8 @@ pub enum GitAnswer {
     Show { text: String, cut: bool, hunks: Vec<Hunk>, more: bool },
     /// One commit and the files it changed, in path order. `total` is how
     /// many files it changed in all; `more` says the list stopped at
-    /// [`COMMIT_FILES`] files or [`COMMIT_LINES`] changed lines — said,
-    /// never cut silently.
+    /// [`COMMIT_FILES`] files or once [`COMMIT_LINES`] changed lines were
+    /// spent — said, never cut silently.
     Commit { commit: Commit, files: Vec<CommitFile>, total: u32, more: bool },
 }
 
@@ -880,12 +878,13 @@ fn show(path: &Path, rev: &str) -> Result<GitAnswer, String> {
 }
 
 /// How many files one [`GitAnswer::Commit`] lists, and how many changed
-/// lines it carries across them. A vendored-dependency bump touches
-/// thousands; past either the answer says `more` and the page says so.
+/// lines it spends before it stops listing. A vendored-dependency bump
+/// touches thousands; past either the answer says `more` and the page
+/// says so. A listed file is whole or not there: the budget decides
+/// whether the next file is listed, never where a file's text stops
+/// (each side is capped by [`SHOWN`] instead, `big`).
 pub(crate) const COMMIT_FILES: usize = 50;
 pub(crate) const COMMIT_LINES: usize = 2000;
-/// Unchanged lines around a change, `git diff`'s default.
-pub(crate) const CONTEXT: u32 = 3;
 
 fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
     use gix::object::tree::diff::ChangeDetached as C;
@@ -943,26 +942,7 @@ fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
             more = true;
             break;
         }
-        let (a, b) = (read(was)?, read(now)?);
-        let binary = [&a, &b].iter().any(|x| x[..x.len().min(8000)].contains(&0));
-        let (hunks, added, removed, cut) = if binary {
-            (Vec::new(), 0, 0, false)
-        } else {
-            unified(&a, &b, &mut budget)
-        };
-        more |= cut;
-        files.push(CommitFile {
-            path,
-            from,
-            status: status.to_owned(),
-            added,
-            removed,
-            binary,
-            hunks,
-        });
-        if cut {
-            break;
-        }
+        files.push(file_of(path, from, status, read(was)?, read(now)?, &mut budget));
     }
     Ok(GitAnswer::Commit {
         commit: commit_of(&commit),
@@ -972,76 +952,46 @@ fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
     })
 }
 
-/// Two texts as unified hunks, spending `budget` changed lines; the
-/// counts are the whole file's whatever the budget, `cut` says the hunks
-/// stopped. Lines lose their terminators, as [`hunks`]'s `was` does.
-fn unified(old: &[u8], new: &[u8], budget: &mut usize) -> (Vec<CommitHunk>, u32, u32, bool) {
+/// One changed file's answer from its two sides' bytes (`a` the
+/// parent's, `b` the commit's; empty for the side it does not have),
+/// spending its changed lines from `budget`. A big file spends nothing:
+/// none of its lines are sent.
+fn file_of(path: String, from: String, status: &str, a: Vec<u8>, b: Vec<u8>, budget: &mut usize) -> CommitFile {
+    let binary = [&a, &b].iter().any(|x| x[..x.len().min(8000)].contains(&0));
+    let big = !binary && (a.len() > SHOWN || b.len() > SHOWN);
+    let (added, removed) = if binary { (0, 0) } else { counts(&a, &b) };
+    let said = !binary && !big;
+    if said {
+        *budget = budget.saturating_sub((added + removed) as usize);
+    }
+    let text = |x: Vec<u8>| {
+        if !said {
+            return String::new();
+        }
+        String::from_utf8(x).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+    };
+    CommitFile {
+        path,
+        from,
+        status: status.to_owned(),
+        added,
+        removed,
+        binary,
+        big,
+        before: text(a),
+        after: text(b),
+    }
+}
+
+/// How many lines `new` adds to `old` and removes from it, git's
+/// histogram diff — the numbers `git show --stat` says.
+fn counts(old: &[u8], new: &[u8]) -> (u32, u32) {
     use gix::diff::blob::{Algorithm, InternedInput, sources};
     let input = InternedInput::new(sources::byte_lines(old), sources::byte_lines(new));
     let mut d = gix::diff::blob::Diff::compute(Algorithm::Histogram, &input);
     d.postprocess_lines(&input);
-    let line = |tok: gix::diff::blob::Token| -> String {
-        let raw = String::from_utf8_lossy(input.interner[tok]);
-        raw.strip_suffix('\n')
-            .map(|s| s.strip_suffix('\r').unwrap_or(s))
-            .unwrap_or(&raw)
-            .to_owned()
-    };
-    let raw: Vec<_> = d.hunks().collect();
-    let added = raw.iter().map(|h| h.after.end - h.after.start).sum();
-    let removed = raw.iter().map(|h| h.before.end - h.before.start).sum();
-    let n_old = input.before.len() as u32;
-    let mut out: Vec<CommitHunk> = Vec::new();
-    let mut cut = false;
-    let mut i = 0;
-    while i < raw.len() {
-        // One unified hunk: from CONTEXT above the first run to CONTEXT
-        // below the last run that sits within 2×CONTEXT of the one before.
-        let first = &raw[i];
-        let lead = first.before.start.min(CONTEXT);
-        let mut h = CommitHunk {
-            old_at: first.before.start - lead + 1,
-            new_at: first.after.start - lead + 1,
-            lines: Vec::new(),
-        };
-        let mut at = first.before.start - lead;
-        loop {
-            let r = &raw[i];
-            for k in at..r.before.start {
-                h.lines.push(format!(" {}", line(input.before[k as usize])));
-            }
-            let size = (r.before.end - r.before.start + r.after.end - r.after.start) as usize;
-            if size > *budget {
-                cut = true;
-                *budget = 0;
-                break;
-            }
-            *budget -= size;
-            for k in r.before.clone() {
-                h.lines.push(format!("-{}", line(input.before[k as usize])));
-            }
-            for k in r.after.clone() {
-                h.lines.push(format!("+{}", line(input.after[k as usize])));
-            }
-            at = r.before.end;
-            i += 1;
-            if i >= raw.len() || raw[i].before.start - at > 2 * CONTEXT {
-                break;
-            }
-        }
-        if !cut {
-            for k in at..(at + CONTEXT).min(n_old) {
-                h.lines.push(format!(" {}", line(input.before[k as usize])));
-            }
-        }
-        if h.lines.iter().any(|l| !l.starts_with(' ')) {
-            out.push(h);
-        }
-        if cut {
-            break;
-        }
-    }
-    (out, added, removed, cut)
+    d.hunks()
+        .fold((0, 0), |(a, r), h| (a + h.after.end - h.after.start, r + h.before.end - h.before.start))
 }
 
 #[cfg(test)]
@@ -1190,9 +1140,10 @@ mod status_tests {
     }
 
     /// **The commit page's question** (COMMITS-BRIEF, 2026-10-12): HEAD
-    /// of this checkout changed at least one file, and says where.
+    /// of this checkout changed at least one file, and its text files
+    /// arrive with both sides whole (cm-d item 1).
     #[test]
-    fn head_answers_its_files_with_hunks() {
+    fn head_answers_its_files_with_both_sides() {
         let root = here();
         let head = gix::open(&root).expect("open").head_id().expect("head").to_string();
         let GitAnswer::Commit { commit, files, total, .. } = answer(&GitAsk::Commit {
@@ -1204,12 +1155,9 @@ mod status_tests {
         };
         assert_eq!(commit.id, head);
         assert!(!files.is_empty() && total as usize >= files.len());
-        let f = files.iter().find(|f| !f.binary).expect("a text file");
-        assert!(!f.hunks.is_empty(), "{} changed and says nowhere", f.path);
+        let f = files.iter().find(|f| !f.binary && !f.big).expect("a text file");
         assert!(f.added + f.removed > 0);
-        for h in &f.hunks {
-            assert!(h.lines.iter().all(|l| matches!(l.chars().next(), Some(' ' | '+' | '-'))));
-        }
+        assert_ne!(f.before, f.after, "{} changed and both sides read the same", f.path);
     }
 
     /// A commit with no parent is diffed against nothing: every file it
@@ -1241,28 +1189,58 @@ mod status_tests {
         }
     }
 
+    /// **A text file carries both sides, a binary neither** (cm-d item
+    /// 1), and the counts are git's.
     #[test]
-    fn two_runs_close_together_are_one_hunk_with_context() {
+    fn a_text_file_carries_both_sides_and_a_binary_neither() {
         let old = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n";
         let new = "1\n2\n3\nfour\n5\n6\n7\neight\n9\n10\n11\n12\n";
         let mut budget = COMMIT_LINES;
-        let (h, added, removed, cut) = unified(old.as_bytes(), new.as_bytes(), &mut budget);
-        assert_eq!((added, removed, cut), (2, 2, false));
-        assert_eq!(h.len(), 1);
-        assert_eq!((h[0].old_at, h[0].new_at), (1, 1));
-        assert_eq!(h[0].lines.first().map(String::as_str), Some(" 1"));
-        assert_eq!(h[0].lines.last().map(String::as_str), Some(" 11"));
-        assert!(h[0].lines.contains(&"-4".to_owned()) && h[0].lines.contains(&"+eight".to_owned()));
+        let f = file_of("a.txt".into(), String::new(), MODIFIED, old.into(), new.into(), &mut budget);
+        assert_eq!((f.added, f.removed, f.binary, f.big), (2, 2, false, false));
+        assert_eq!((f.before.as_str(), f.after.as_str()), (old, new));
+        assert_eq!(budget, COMMIT_LINES - 4, "four changed lines spent");
+
+        let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        let f = file_of("a.png".into(), String::new(), ADDED, Vec::new(), png, &mut budget);
+        assert!(f.binary && !f.big);
+        assert_eq!((f.added, f.removed), (0, 0));
+        assert!(f.before.is_empty() && f.after.is_empty(), "a binary sends no text");
+        assert_eq!(budget, COMMIT_LINES - 4, "a binary spends nothing");
     }
 
+    /// **Past [`SHOWN`] on either side a file is `big`**: its counts are
+    /// said, neither text is, and its lines spend nothing.
     #[test]
-    fn the_line_budget_says_it_stopped() {
+    fn a_side_over_the_byte_cap_says_so_and_sends_no_text() {
+        let line = "x".repeat(99) + "\n";
+        let old = line.repeat(SHOWN / 100 + 1).into_bytes();
+        assert!(old.len() > SHOWN);
+        let mut new = old.clone();
+        new.extend_from_slice(b"one more\n");
+        let mut budget = COMMIT_LINES;
+        let f = file_of("big.txt".into(), String::new(), MODIFIED, old, new, &mut budget);
+        assert!(f.big && !f.binary);
+        assert_eq!((f.added, f.removed), (1, 0));
+        assert!(f.before.is_empty() && f.after.is_empty());
+        assert_eq!(budget, COMMIT_LINES);
+        // One byte under on both sides is text.
+        let small = "y\n".repeat(SHOWN / 2).into_bytes();
+        assert_eq!(small.len(), SHOWN);
+        let f = file_of("edge.txt".into(), String::new(), ADDED, Vec::new(), small, &mut budget);
+        assert!(!f.big && f.after.len() == SHOWN);
+    }
+
+    /// The budget stops the list at the next file, never inside one: a
+    /// file is whole or not listed.
+    #[test]
+    fn the_line_budget_spends_whole_files() {
         let new: String = (0..10).map(|i| format!("{i}\n")).collect();
         let mut budget = 4;
-        let (h, added, _, cut) = unified(b"", new.as_bytes(), &mut budget);
-        assert!(cut, "ten added lines do not fit in four");
-        assert_eq!(added, 10, "the count is the whole file's");
-        assert!(h.is_empty() || h.iter().all(|h| h.lines.len() <= 4));
+        let f = file_of("ten.txt".into(), String::new(), ADDED, Vec::new(), new.clone().into_bytes(), &mut budget);
+        assert_eq!(f.added, 10);
+        assert_eq!(f.after, new, "the file that spent the budget is still whole");
+        assert_eq!(budget, 0, "and the next one is not listed");
     }
 
     #[test]
