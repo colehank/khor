@@ -30,6 +30,8 @@
 
 | 项 | 出处 |
 |---|---|
+| 别的机器看死掉的 shell 没有原因和最后一屏（要加线上字段和远读 ring.bin） | audit/p5-shell.md |
+| 托管的 tui 行也写 ring.bin，但只有 shell 行路由到死屏页 | audit/p5-shell.md |
 | 「符号」列表不虚拟化、无快捷键 | audit/cm-d.md、cm-f.md |
 | 提交页在手机上顶部那条「搜索全部」框不该留 | 10-12 lab 截图 |
 | `check-face` 大文件遍历测试（>256 KiB 可编辑、截断句只在超上限） | audit/cm-c.md |
