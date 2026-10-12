@@ -30,9 +30,10 @@
 //! # The list is not a graveyard
 //!
 //! A discovered row must be backed by a **live process on this machine**.
-//! The vendor's files say *what* a session is; the process table says
-//! *whether it still is*. History files are history: this machine holds
-//! 83 codex rollouts and one running codex, and that means one row.
+//! The vendor's files say *what* a session is; a PID or an owned writer
+//! lock establishes liveness. Codex daemons can host several loaded
+//! threads without exposing their frontend PIDs. History alone is never
+//! sufficient evidence for a row.
 //!
 //! The one exception is narrow and is the crash signal: a vendor file
 //! that names its own pid can outlive that pid, and since the vendor
@@ -102,8 +103,9 @@ pub struct Sighting {
     /// Found by running the check against this machine, where exactly
     /// that had happened (2026-08-16).
     ///
-    /// Empty for a crashed row: the pid its file names is gone, so
-    /// nothing running can be inside it.
+    /// Empty for a crashed row, or when the vendor proves liveness with
+    /// a writer lock but exposes no PID. An empty list cannot identify a
+    /// terminal host; it does not itself mean the session has died.
     pub pids: Vec<u32>,
     /// **The working directory this session is in**, when the vendor
     /// records one. Raw, exactly as it was read — the fold up to a
@@ -434,7 +436,7 @@ impl Procs {
 
         let wanted: Vec<Pid> = by_pid
             .iter()
-            .filter(|(_, p)| p.name == codex::PROCESS_NAME)
+            .filter(|(_, p)| process_name_matches(&p.name, codex::PROCESS_NAME))
             .map(|(pid, _)| Pid::from_u32(*pid))
             .collect();
         if !wanted.is_empty() {
@@ -564,16 +566,22 @@ impl Procs {
         out
     }
 
-    /// Every running process with exactly this name. Exact, not a
-    /// substring: this machine runs both `codex` and
-    /// `codex-code-mode-host`, and only one of them is an agent session.
+    /// Match an executable base name, including Windows' case-insensitive
+    /// `.exe` spelling. Helper names such as `codex-code-mode-host` do not match.
     pub fn named<'a>(&'a self, name: &str) -> Vec<(u32, &'a Proc)> {
         self.by_pid
             .iter()
-            .filter(|(_, p)| p.name == name)
+            .filter(|(_, p)| process_name_matches(&p.name, name))
             .map(|(pid, p)| (*pid, p))
             .collect()
     }
+}
+
+fn process_name_matches(actual: &str, wanted: &str) -> bool {
+    actual == wanted
+        || actual.rsplit_once('.').is_some_and(|(base, extension)| {
+            extension.eq_ignore_ascii_case("exe") && base.eq_ignore_ascii_case(wanted)
+        })
 }
 
 // ── the set of adaptors this build knows ────────────────────

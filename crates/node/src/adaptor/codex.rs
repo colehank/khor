@@ -1,51 +1,30 @@
-//! Codex: the second vendor, and the one that shows why the seam had to
-//! stay narrow.
+//! Codex rollouts and live thread writers, on macOS, Linux and Windows.
 //!
-//! Codex keeps no live status file. It writes an append-only transcript
-//! per session at `~/.codex/sessions/<year>/<month>/<day>/rollout-<local
-//! timestamp>-<uuid>.jsonl`, and nothing in it names a pid — measured:
-//! zero of 83 rollout files on this machine mention one. So liveness
-//! cannot come from the files at all, and this adaptor gets it the only
-//! honest way, from the process table.
+//! Current Codex holds an exclusive OS lock on
+//! `thread-writer-locks/<thread-id>.lock` for each loaded writer. A
+//! nonblocking shared-lock probe distinguishes an owned thread from a
+//! stale file without creating, rewriting or deleting vendor files.
+//! See upstream `codex-rs/rollout/src/writer_lock.rs`. This works for a
+//! daemon hosting several threads and for resumed threads: neither the
+//! process's start time nor its cwd identifies those conversations.
 //!
-//! That inversion is the whole argument for per-vendor adaptors. Claude
-//! reads a file and asks the process table to confirm it; codex reads
-//! the process table and asks a file to explain it.
+//! A writer lock establishes a loaded thread, NOT an attached terminal.
+//! Codex can retain idle threads after a frontend disconnects. The lock
+//! contains no PID, so these sightings cannot claim a terminal process
+//! or take part in PID-based terminal deduplication. Homes without the
+//! lock directory retain the older process/start-time join, whose
+//! limitations include daemon threads and resumes.
 //!
-//! # Joining a process to its transcript
+//! The rollout's `session_meta.id` identifies the thread; `session_id`
+//! may be shared by its descendants. Reverted threads can have a new
+//! `_<rollout-id>` filename suffix while keeping that thread ID.
 //!
-//! Two facts make the join cheap and timezone-free:
-//!
-//! - the rollout's uuid is a **v7**, so its first 48 bits are the
-//!   session's start in ms — readable from the file *name*, with no file
-//!   opened and no local-time parsing (the timestamp in the name is
-//!   local, the uuid is not);
-//! - a rollout is created within a second of the process that writes it
-//!   (measured: uuid says 21:49:18.308, the process started 21:49:18).
-//!
-//! So: nearest rollout inside a window around the process start, then
-//! confirmed against the process's own working directory. Files older
-//! than every live codex are never opened, which is what keeps 83
-//! transcripts from costing anything.
-//!
-//! Rollouts whose uuid is a **v4** predate this scheme; their first bits
-//! are random and would decode to a timestamp in the year 5657, so the
-//! version nibble is checked rather than assumed. Those files also carry
-//! the older line format (`{"record_type":"state"}` and bare items, no
-//! `session_meta` envelope), which this adaptor does not read.
-//!
-//! # What codex can and cannot say
-//!
-//! 待批 is not reachable. Codex's transcript has no approval event of any
-//! kind — measured across 4569 `event_msg` payloads in 83 files, the
-//! vocabulary is agent/user messages, reasoning, token counts, and the
-//! four turn events below. An approval prompt in codex leaves no trace
-//! on disk, so this adaptor never spells 待批 rather than approximating
-//! it from a turn that has been running a long time.
-//!
-//! 完成 *is* reachable here, unlike claude: `task_complete` says exactly
-//! "this turn ended", where claude's `idle` conflates a finished turn
-//! with a session that never started one.
+//! Visible messages are legacy `user_message` / `agent_message` events
+//! or paginated `item_completed` UserMessage / AgentMessage events.
+//! Response-item messages can contain injected context and duplicates;
+//! only their tool calls are replayed here. See upstream rollout policy.
+//! Turn events give busy, done and interrupted states. Approval waits
+//! are not persisted, so disk discovery cannot report 待批.
 
 use std::path::{Path, PathBuf};
 
@@ -53,8 +32,7 @@ use khor_core::State;
 
 use super::{Adaptor, Proc, Procs, Sighting, Sweep, read_text};
 
-/// The process name a codex session runs under. Exact — this machine
-/// also runs `codex-code-mode-host`, which is a helper, not a session.
+/// The executable base name used by the legacy process join.
 pub(super) const PROCESS_NAME: &str = "codex";
 
 /// How far from a process's start its rollout may be stamped. Generous
@@ -81,10 +59,10 @@ struct Rollout {
 /// (messages, reasoning, token counts) describes content, not state.
 fn word_of(event: &str) -> Option<State> {
     match event {
-        "task_started" => Some(State::Busy),
+        "task_started" | "turn_started" => Some(State::Busy),
         // Codex says this outright, so the row can hold a badge that
         // clears by being looked at.
-        "task_complete" => Some(State::Done),
+        "task_complete" | "turn_complete" => Some(State::Done),
         // The user interrupted the turn. Not 完成 (nothing finished) and
         // not 中断, which docs/SESSION.md reserves for an error the
         // process survived. The turn is simply over.
@@ -110,7 +88,8 @@ fn uuid_v7_ms(uuid: &str) -> Option<i64> {
 /// `rollout-2026-08-06T21-49-18-019fd755-….jsonl` → its uuid.
 fn uuid_in_name(name: &str) -> Option<&str> {
     let stem = name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
-    (stem.len() >= 36).then(|| &stem[stem.len() - 36..])
+    let thread = stem.split_once('_').map_or(stem, |(thread, _)| thread);
+    thread.get(thread.len().checked_sub(36)?..)
 }
 
 pub struct Codex {
@@ -127,7 +106,26 @@ impl Codex {
     fn rollouts(&self) -> Vec<Rollout> {
         let mut out = Vec::new();
         collect(&self.root.join("sessions"), &mut out, 0);
-        out
+        // thread/revert leaves immutable older rollouts behind. Resolve
+        // discovery, preview and replay to the same newest record.
+        let mut threads = std::collections::BTreeMap::<String, Rollout>::new();
+        for rollout in out {
+            let Some(id) = rollout
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(uuid_in_name)
+            else {
+                continue;
+            };
+            let replace = threads.get(id).is_none_or(|old| {
+                (mtime_ms(&rollout.path), &rollout.path) > (mtime_ms(&old.path), &old.path)
+            });
+            if replace {
+                threads.insert(id.to_owned(), rollout);
+            }
+        }
+        threads.into_values().collect()
     }
 
     /// The rollout a process is writing: nearest start inside the
@@ -172,19 +170,8 @@ impl Codex {
     }
 }
 
-/// What joining a live codex process to its rollout came to.
-///
-/// **Three answers, because two of them used to share a count.** A
-/// process that wrote no rollout in its first minute is not a session
-/// khor failed to read — it is a process that started no session: a
-/// `codex app-server` hosting threads for somebody else (khor's own
-/// conversation ghosts run one; so does VS Code's ChatGPT extension,
-/// which is where the two "sessions khor cannot read" on the author's
-/// machine came from, 2026-09-01). The sessions such a host holds show
-/// up when khor can name them — its own, through the registry — and a
-/// stranger's are not khor's to list. A rollout that *was* written in
-/// the window and could not be read is the other thing entirely: the
-/// vendor changed its file, and that is what the count is for.
+/// Results of the legacy process/start-time join. A host without a
+/// matching rollout is not counted as an unreadable session.
 enum Join<'a> {
     Session(&'a Rollout, Meta),
     /// No rollout started anywhere near this process: a host, not a
@@ -354,9 +341,8 @@ impl Codex {
 /// codex's file format is read**, so the whole record and a followed
 /// tail cannot drift into two readings of the same bytes.
 ///
-/// `event_msg` lines carry the words (`user_message` / `agent_message`);
-/// tool acts are the `response_item` call lines. Reasoning is encrypted
-/// in the file and stays unread.
+/// `event_msg` lines carry legacy or paginated visible messages;
+/// tool acts are the `response_item` call lines. Reasoning is not replayed.
 pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
     use super::claude::Utterance;
     let mut out = Vec::new();
@@ -373,6 +359,27 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                         (Some("agent_message"), Some(m)) => {
                             out.push(Utterance::Agent(m.to_owned()))
                         }
+                        (Some("item_completed"), _) => {
+                            let item = &p["item"];
+                            let kind = item["type"].as_str();
+                            if matches!(kind, Some("UserMessage" | "AgentMessage")) {
+                                let text = item["content"]
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .filter(|c| matches!(c["type"].as_str(), Some("text" | "Text")))
+                                    .filter_map(|c| c["text"].as_str())
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                                if !text.is_empty() {
+                                    out.push(if kind == Some("UserMessage") {
+                                        Utterance::User(text)
+                                    } else {
+                                        Utterance::Agent(text)
+                                    });
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -383,6 +390,15 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                         Some("custom_tool_call") | Some("function_call") | Some("local_shell_call")
                     ) && let Some(name) = p["name"].as_str()
                     {
+                        let input = p
+                            .get("arguments")
+                            .filter(|a| !a.is_null())
+                            .or_else(|| p.get("input"));
+                        let input = input
+                            .and_then(|a| a.as_str())
+                            .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
+                            .or_else(|| input.cloned())
+                            .unwrap_or(serde_json::Value::Null);
                         // Shaped as claude's `tool_use` block so
                         // that both vendors' pasts go through the
                         // one translation (`cagent::said`). codex
@@ -394,11 +410,7 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                             "type": "tool_use",
                             "id": p["call_id"].as_str().unwrap_or(name),
                             "name": name,
-                            "input": p.get("arguments")
-                                .and_then(|a| a.as_str())
-                                .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
-                                .unwrap_or_else(|| p.get("arguments").cloned()
-                                    .unwrap_or(serde_json::Value::Null)),
+                            "input": input,
                         })));
                     }
                 }
@@ -431,6 +443,15 @@ impl Adaptor for Codex {
         // looking at it".
         if !self.root.join("sessions").is_dir() {
             return sweep;
+        }
+        let locks = self.root.join("thread-writer-locks");
+        match std::fs::metadata(&locks) {
+            Ok(meta) if meta.is_dir() => return self.sweep_writers(&locks),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            _ => {
+                sweep.unmapped += 1;
+                return sweep;
+            }
         }
         let live = procs.named(PROCESS_NAME);
         if live.is_empty() {
@@ -466,11 +487,7 @@ impl Adaptor for Codex {
                 title: title_of(meta.cwd.as_deref()),
                 word,
                 at_ms,
-                // Always known here, and always alive: this adaptor
-                // starts from the process table, so there is no row it
-                // could produce for a process that has gone. One each —
-                // codex has no resume that leaves two processes on one
-                // session the way claude's does.
+                // Only the legacy join can identify a process.
                 pids: vec![pid],
                 // The rollout's own first line, already read for the
                 // title one field up.
@@ -478,6 +495,77 @@ impl Adaptor for Codex {
             });
         }
         sweep
+    }
+}
+
+impl Codex {
+    fn sweep_writers(&self, locks: &Path) -> Sweep {
+        let mut sweep = Sweep::default();
+        // Surface access failures instead of silently showing an idle machine.
+        if std::fs::read_dir(locks).is_err() {
+            sweep.unmapped += 1;
+            return sweep;
+        }
+        for rollout in self.rollouts() {
+            let Some(id) = rollout
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .and_then(uuid_in_name)
+            else {
+                continue;
+            };
+            match writer_owned(&locks.join(format!("{id}.lock"))) {
+                Ok(false) => continue,
+                Err(_) => {
+                    sweep.unmapped += 1;
+                    continue;
+                }
+                Ok(true) => {}
+            }
+            let Some(meta) = read_meta(&rollout.path).filter(|meta| meta.session_id == id) else {
+                sweep.unmapped += 1;
+                continue;
+            };
+            let (word, at_ms) =
+                last_word(&rollout.path).unwrap_or((State::Idle, rollout.started_ms));
+            sweep.rows.push(Sighting {
+                vendor_session_id: meta.session_id,
+                title: title_of(meta.cwd.as_deref()),
+                word,
+                at_ms,
+                pids: Vec::new(),
+                cwd: meta.cwd,
+            });
+        }
+        sweep
+    }
+}
+
+/// Probe an existing lock without waiting or changing its contents. Shared
+/// probes do not conflict with other observers; Codex holds an exclusive lock.
+fn writer_owned(path: &Path) -> std::io::Result<bool> {
+    if !path.try_exists()? {
+        return Ok(false);
+    }
+    // Codex checks its writer lock while holding this coordination lock.
+    // Join that protocol so our short shared probe cannot make a concurrent
+    // resume/create fail with "thread already has an active rollout writer".
+    let coordination = std::fs::File::open(path.with_file_name(".coordination.lock"))?;
+    match coordination.try_lock_shared() {
+        Ok(()) => {}
+        Err(std::fs::TryLockError::WouldBlock) => return Err(std::io::ErrorKind::WouldBlock.into()),
+        Err(std::fs::TryLockError::Error(e)) => return Err(e),
+    }
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    match file.try_lock_shared() {
+        Ok(()) => Ok(false), // Closing the handle immediately releases our probe.
+        Err(std::fs::TryLockError::WouldBlock) => Ok(true),
+        Err(std::fs::TryLockError::Error(e)) => Err(e),
     }
 }
 
@@ -500,20 +588,15 @@ fn read_meta(path: &Path) -> Option<Meta> {
     }
     let p = &v["payload"];
     Some(Meta {
-        session_id: p["session_id"]
+        session_id: p["id"]
             .as_str()
-            .or_else(|| p["id"].as_str())?
+            .or_else(|| p["session_id"].as_str())?
             .to_owned(),
         cwd: p["cwd"].as_str().map(str::to_owned),
     })
 }
 
 /// The last state-bearing event in the transcript, and when it happened.
-///
-/// The timestamp is the file's own mtime rather than the event's ISO
-/// string: a rollout is appended to on every event, so its mtime *is*
-/// the last event's instant (measured equal to the millisecond), and
-/// taking it there costs no date parsing and no timezone assumption.
 fn last_word(path: &Path) -> Option<(State, i64)> {
     let text = read_text(path)?;
     let mut word = None;
@@ -524,11 +607,24 @@ fn last_word(path: &Path) -> Option<(State, i64)> {
         if v["type"].as_str() != Some("event_msg") {
             continue;
         }
-        if let Some(w) = v["payload"]["type"].as_str().and_then(word_of) {
-            word = Some(w);
+        let payload = &v["payload"];
+        if let Some(mut w) = payload["type"].as_str().and_then(word_of) {
+            if matches!(
+                payload["type"].as_str(),
+                Some("turn_aborted" | "task_complete" | "turn_complete")
+            ) && !payload["error"].is_null()
+            {
+                w = State::Errored;
+            }
+            let at = v["timestamp"]
+                .as_str()
+                .and_then(|t| t.parse::<jiff::Timestamp>().ok())
+                .map(|t| t.as_millisecond());
+            word = Some((w, at));
         }
     }
-    Some((word?, mtime_ms(path)?))
+    let (word, at) = word?;
+    Some((word, at.or_else(|| mtime_ms(path))?))
 }
 
 fn mtime_ms(path: &Path) -> Option<i64> {
@@ -792,6 +888,372 @@ mod tests {
             "codex's bookkeeping lines must not leak into the past"
         );
         let _ = std::fs::remove_dir_all(&home);
+    }
+}
+
+#[cfg(test)]
+mod current {
+    use super::*;
+    use crate::adaptor::claude::Utterance;
+    use std::fs::{File, OpenOptions};
+    use std::io::Write;
+
+    const THREAD: &str = "019fd755-e464-7aaa-8aaa-aaaaaaaaaaaa";
+    const OTHER: &str = "019fd755-e465-7aaa-8aaa-bbbbbbbbbbbb";
+
+    struct Home(PathBuf);
+
+    impl Home {
+        fn new(label: &str) -> Self {
+            let base =
+                std::env::temp_dir().join(format!("khor-codex-{label}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&base);
+            let path = base.join(".codex");
+            std::fs::create_dir_all(path.join("sessions/2026/08/06")).unwrap();
+            Self(path)
+        }
+
+        fn rollout(&self, id: &str, suffix: &str, events: &str) -> PathBuf {
+            let path = self
+                .0
+                .join("sessions/2026/08/06")
+                .join(format!("rollout-2026-08-06T21-49-18-{id}{suffix}.jsonl"));
+            let meta = serde_json::json!({"type":"session_meta","payload":{
+                "id": id, "session_id": "shared-parent-session", "cwd":"/project",
+                "history_mode":"paginated"
+            }});
+            std::fs::write(&path, format!("{meta}\n{events}")).unwrap();
+            path
+        }
+
+        fn writer(&self, id: &str) -> File {
+            let dir = self.0.join("thread-writer-locks");
+            std::fs::create_dir_all(&dir).unwrap();
+            OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(dir.join(".coordination.lock"))
+                .unwrap();
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(dir.join(format!("{id}.lock")))
+                .unwrap();
+            file.try_lock().unwrap();
+            file
+        }
+    }
+
+    impl Drop for Home {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(self.0.parent().unwrap());
+        }
+    }
+
+    #[test]
+    fn a_writer_backed_row_updates_its_preview_state_and_unread_without_a_pid() {
+        use crate::adaptor::Discovery;
+        use crate::live::LiveKind;
+        use khor_core::DeviceId;
+        use std::sync::Arc;
+
+        let home = Home::new("live-row");
+        let path = home.rollout(THREAD, "", &(item("UserMessage", "question") + "\n"
+            + "{\"timestamp\":\"2026-08-06T13:49:19Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\"}}\n"));
+        let file = OpenOptions::new().write(true).open(&path).unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1))
+            .unwrap();
+        drop(file);
+        let writer = home.writer(THREAD);
+        let base = home.0.parent().unwrap();
+        let kind = LiveKind::new(base.to_path_buf(), DeviceId([9; 32]))
+            .discovering(Arc::new(Discovery::at(base).with_procs(Procs::default())));
+        let first = kind.rows(|_| 0);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].state.state, State::Busy);
+
+        let mut f = OpenOptions::new().append(true).open(path).unwrap();
+        writeln!(f, "{}", item("AgentMessage", "latest answer")).unwrap();
+        writeln!(
+            f,
+            "{}",
+            serde_json::json!({"timestamp":"2026-08-06T13:49:20Z",
+            "type":"event_msg","payload":{"type":"task_complete"}})
+        )
+        .unwrap();
+        drop(f);
+        let next = kind.rows(|_| 0);
+        assert_eq!(next.len(), 1);
+        assert_eq!(next[0].last.as_deref(), Some("latest answer"));
+        assert_eq!((next[0].state.state, next[0].unread), (State::Done, 1));
+        let seen_at = "2026-08-06T13:49:20Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_millisecond();
+        let seen = kind.rows(|_| seen_at);
+        assert_eq!((seen[0].state.state, seen[0].unread), (State::Idle, 0));
+        drop(writer);
+        assert!(kind.rows(|_| 0).is_empty());
+    }
+
+    /// Manual, read-only check against a running Codex home. Does not print messages.
+    #[test]
+    #[ignore = "set KHOR_CODEX_PROBE_HOME to a real Codex home with loaded threads"]
+    fn installed_codex_probe() {
+        let root = std::env::var_os("KHOR_CODEX_PROBE_HOME").expect("explicit probe home required");
+        let codex = Codex::at(root.into());
+        let start = std::time::Instant::now();
+        let found = codex.sweep(&Procs::default());
+        assert_eq!(found.unmapped, 0);
+        assert!(
+            !found.rows.is_empty(),
+            "start a Codex thread before running the probe"
+        );
+        let busy = found.rows.iter().filter(|r| r.word == State::Busy).count();
+        let mut conversations = 0;
+        for row in &found.rows {
+            let said = codex.transcript(&row.vendor_session_id).unwrap();
+            if said
+                .iter()
+                .any(|u| matches!(u, Utterance::User(_) | Utterance::Agent(_)))
+            {
+                conversations += 1;
+            }
+        }
+        println!(
+            "loaded_threads={} busy={} conversations_with_visible_messages={} elapsed_ms={}",
+            found.rows.len(),
+            busy,
+            conversations,
+            start.elapsed().as_millis()
+        );
+        assert!(conversations > 0);
+    }
+
+    #[test]
+    fn daemon_threads_and_resumed_sessions_do_not_depend_on_a_process_clock() {
+        let home = Home::new("writers");
+        home.rollout(
+            THREAD,
+            "",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\"}}\n",
+        );
+        home.rollout(
+            OTHER,
+            "_019fd755-e466-7aaa-8aaa-cccccccccccc",
+            "{\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\"}}\n",
+        );
+        let first_writer = home.writer(THREAD);
+        let second_writer = home.writer(OTHER);
+        let codex = Codex::at(home.0.clone());
+        // A daemon can predate both threads; its cwd and PID cannot identify them.
+        let found = codex.sweep(&Procs::default());
+        assert_eq!(found.unmapped, 0);
+        assert_eq!(
+            found.rows.len(),
+            2,
+            "both writer-owned threads must be discovered"
+        );
+        assert!(
+            found
+                .rows
+                .iter()
+                .any(|r| r.vendor_session_id == THREAD && r.word == State::Busy)
+        );
+        assert!(
+            found
+                .rows
+                .iter()
+                .any(|r| r.vendor_session_id == OTHER && r.word == State::Done)
+        );
+        assert!(
+            found.rows.iter().all(|r| r.pids.is_empty()),
+            "a lock does not identify a frontend PID"
+        );
+        assert_eq!(
+            codex
+                .full_session_id(&crate::live::clean_leaf(OTHER))
+                .as_deref(),
+            Some(OTHER)
+        );
+
+        // A released lock file may survive a crash. It must not keep history alive,
+        // even if an unrelated process happens to match the old start-time heuristic.
+        drop(first_writer);
+        drop(second_writer);
+        let procs = Procs::of([(
+            7,
+            Proc {
+                name: "codex".into(),
+                started_ms: uuid_v7_ms(THREAD).unwrap(),
+                cwd: None,
+                ppid: None,
+            },
+        )]);
+        assert!(codex.sweep(&procs).rows.is_empty());
+        assert!(
+            home.0
+                .join(format!("thread-writer-locks/{THREAD}.lock"))
+                .exists(),
+            "probing must not remove Codex's files"
+        );
+    }
+
+    #[test]
+    fn an_owned_but_unreadable_rollout_is_reported() {
+        let home = Home::new("unreadable-writer");
+        let path = home.rollout(THREAD, "", "");
+        std::fs::write(path, "{\"type\":\"unknown_meta\"}\n").unwrap();
+        let _writer = home.writer(THREAD);
+        let found = Codex::at(home.0.clone()).sweep(&Procs::default());
+        assert!(found.rows.is_empty());
+        assert_eq!(found.unmapped, 1);
+    }
+
+    #[test]
+    fn discovery_never_probes_writer_locks_during_a_codex_ownership_change() {
+        let home = Home::new("coordination");
+        home.rollout(THREAD, "", "");
+        let _writer = home.writer(THREAD);
+        let coordination = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(home.0.join("thread-writer-locks/.coordination.lock"))
+            .unwrap();
+        coordination.try_lock().unwrap();
+        // Nonblocking: a concurrent resume owns the coordinator, so skip the
+        // probe. Never compete for the per-thread lock it is about to acquire.
+        assert_eq!(
+            writer_owned(&home.0.join(format!("thread-writer-locks/{THREAD}.lock")))
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+        drop(coordination);
+        assert_eq!(
+            Codex::at(home.0.clone())
+                .sweep(&Procs::default())
+                .rows
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn reverted_threads_have_one_row_and_replay_the_new_rollout() {
+        let home = Home::new("reverted");
+        let old = home.rollout(THREAD, "", &(item("AgentMessage", "old") + "\n"));
+        // Make selection deterministic even on filesystems with coarse mtimes.
+        let file = OpenOptions::new().write(true).open(&old).unwrap();
+        file.set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1))
+            .unwrap();
+        drop(file);
+        home.rollout(
+            THREAD,
+            "_019fd755-e466-7aaa-8aaa-cccccccccccc",
+            &(item("AgentMessage", "reverted") + "\n"),
+        );
+        let _writer = home.writer(THREAD);
+        let codex = Codex::at(home.0.clone());
+        assert_eq!(codex.sweep(&Procs::default()).rows.len(), 1);
+        assert!(matches!(&codex.transcript(THREAD).unwrap()[..],
+            [Utterance::Agent(s)] if s == "reverted"));
+    }
+
+    fn item(kind: &str, text: &str) -> String {
+        let tag = if kind == "UserMessage" {
+            "text"
+        } else {
+            "Text"
+        };
+        serde_json::json!({"type":"event_msg","payload":{"type":"item_completed",
+        "turn_id":"turn", "item":{"type":kind,"id":"item", "content":[
+            {"type":tag,"text":text}, {"type":"image","image_url":"hidden"}
+        ]}}})
+        .to_string()
+    }
+
+    #[test]
+    fn paginated_messages_follow_incrementally_and_tool_input_is_preserved() {
+        let home = Home::new("paginated");
+        let path = home.rollout(THREAD, "", &(item("UserMessage", "question") + "\n"));
+        let codex = Codex::at(home.0.clone());
+        let first = codex.transcript_since(THREAD, 0).unwrap();
+        assert!(matches!(&first.said[..], [Utterance::User(s)] if s == "question"));
+        let tool = serde_json::json!({"type":"response_item","payload":{
+            "type":"custom_tool_call","name":"apply_patch","call_id":"call",
+            "input":"*** Begin Patch\n*** End Patch"
+        }});
+        let mut f = OpenOptions::new().append(true).open(path).unwrap();
+        writeln!(f, "{tool}\n{}", item("AgentMessage", "answer")).unwrap();
+        // response_item messages duplicate visible events and can also contain
+        // injected context; they must not become a second visible utterance.
+        writeln!(f, "{}", serde_json::json!({"type":"response_item","payload":{
+            "type":"message","role":"assistant","content":[{"type":"output_text","text":"answer"}]
+        }})).unwrap();
+        drop(f);
+        let tail = codex.transcript_since(THREAD, first.at).unwrap();
+        assert_eq!(tail.said.len(), 2);
+        assert!(matches!(&tail.said[0], Utterance::Tool(v)
+            if v["input"] == "*** Begin Patch\n*** End Patch"));
+        assert!(matches!(&tail.said[1], Utterance::Agent(s) if s == "answer"));
+        assert_eq!(codex.transcript(THREAD).unwrap().len(), 3);
+        assert!(
+            codex
+                .transcript_since(THREAD, tail.at)
+                .unwrap()
+                .said
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn state_time_is_the_event_time_and_not_later_bookkeeping() {
+        let home = Home::new("event-time");
+        let path = home.rollout(THREAD, "", concat!(
+            "{\"timestamp\":\"2026-08-06T13:49:19.123Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_complete\"}}\n",
+            "{\"timestamp\":\"2026-08-07T13:00:00Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}\n"));
+        let expected = "2026-08-06T13:49:19.123Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_millisecond();
+        assert_eq!(last_word(&path), Some((State::Done, expected)));
+    }
+
+    #[test]
+    fn turn_aliases_and_abort_errors_keep_their_distinct_states() {
+        assert_eq!(word_of("turn_started"), Some(State::Busy));
+        assert_eq!(word_of("turn_complete"), Some(State::Done));
+        let home = Home::new("abort-error");
+        for event in ["turn_aborted", "task_complete", "turn_complete"] {
+            let line = serde_json::json!({"timestamp":"2026-08-06T13:49:20Z",
+                "type":"event_msg","payload":{"type":event,"reason":"interrupted",
+                    "error":{"message":"transport failed"}}});
+            let path = home.rollout(THREAD, "", &(line.to_string() + "\n"));
+            assert_eq!(last_word(&path).unwrap().0, State::Errored, "{event}");
+        }
+    }
+
+    #[test]
+    fn windows_executable_names_are_recognized_without_accepting_helpers() {
+        let codex = Codex::at(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/codex/.codex"),
+        );
+        for name in ["codex.exe", "CODEX.EXE"] {
+            let found = codex.sweep(&Procs::of([(
+                7,
+                Proc {
+                    name: name.into(),
+                    started_ms: 1_786_024_158_000,
+                    cwd: Some("/w/alpha".into()),
+                    ppid: None,
+                },
+            )]));
+            assert_eq!(found.rows.len(), 1, "{name}");
+        }
     }
 }
 

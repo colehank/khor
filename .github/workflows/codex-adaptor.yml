@@ -1,0 +1,28 @@
+name: Codex adaptor
+
+on:
+  pull_request:
+    paths:
+      - 'crates/node/src/adaptor/**'
+      - 'crates/node/tests/fixtures/vendors/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/codex-adaptor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Tests exercise native file locks as well as both transcript formats.
+      - run: cargo test --locked -p khor-node --lib adaptor::codex
