@@ -361,6 +361,33 @@ try {
         await ts.close();
       }
     }
+    // Item 5: each language's symbols, read off its tree; none for a
+    // stream mode. Asked through the box, as 「…」 does.
+    {
+      const want = {
+        ts: "Draft@4/0 reread@6/0 same@12/0",
+        rs: "Entry@4/0 impl Entry@9/0 new@10/1",
+        py: "Store@4/0 __init__@7/1 read@10/1 main@15/0",
+        go: "Store@3/0 New@7/0 Read@11/0",
+        md: "khor@1/0 Install@5/1 On a Mac@9/2 Use@13/1",
+        toml: "",
+      };
+      const page = await browser.newPage({ viewport: { width: 1400, height: 844 } });
+      for (const [screen, list] of Object.entries(want)) {
+        await page.goto(`${base}lab/cmd.html?${theme}#${screen}`);
+        await page.reload();
+        await page.waitForFunction(() => window.__view && document.querySelector('[data-code-view] [class*="tok-"]'));
+        const got = await page.evaluate(() =>
+          document
+            .querySelector("[data-code-view]")
+            .__symbols()
+            .map((s) => `${s.name}@${s.line}/${s.depth}`)
+            .join(" "),
+        );
+        judge(got === list, `symbols ${screen}: ${JSON.stringify(got)}${got === list ? "" : ` — want ${JSON.stringify(list)}`}`);
+      }
+      await page.close();
+    }
     await server.close();
     if (bad) process.exitCode = 1;
   } else if (what === "big") {

@@ -31247,6 +31247,146 @@ try {
       await page.reload({ waitUntil: "load" });
       await wait(900);
     }
+
+    // g. **「符号」 in a file's 「…」** (cm-d item 5): a Rust file's
+    //    definitions read off its tree — the struct, the impl, the method
+    //    inside it one step in, each function — in the dialog 「git 历史」
+    //    is; a press closes it and puts the caret on that line, on the
+    //    brand's wash, scrolled into view. A rendered document shows no
+    //    editor and is offered no 「符号」. Both widths; the shots
+    //    (FACE_SHOTS) are the report's.
+    {
+      const RS_G = [
+        "struct Store {",
+        "    root: String,",
+        "}",
+        "",
+        "impl Store {",
+        "    fn new() -> Self { Store { root: String::new() } }",
+        "}",
+        "",
+        ...Array.from({ length: 15 }, (_, i) => [`fn step_${i}() {`, `    let x = ${i};`, "    let y = x + 1;", "}", ""]).flat(),
+      ].join("\n");
+      const readG = (r) => {
+        if (!(r.request().postData() ?? "").includes("one.rs")) return r.fallback();
+        return r.fulfill({ contentType: "application/json", body: JSON.stringify({ total: RS_G.length, at_ms: Date.now(), text: RS_G, cut: false, binary: false, digest: "6".repeat(64) }) });
+      };
+      await page.route("**/read_text", readG);
+      const shotG = async (name) => process.env.FACE_SHOTS && (await page.screenshot({ path: join(process.env.FACE_SHOTS, `${name}.png`) }));
+      const items = () => page.evaluate(() => [...document.querySelectorAll("[data-file-more-menu] [data-file-more-item]")].map((e) => e.getAttribute("data-file-more-item")));
+      const more = () => page.locator("[data-file-more]:visible").first().click();
+      for (const [w, h, tag] of [
+        [1400, 900, "1400"],
+        [390, 844, "390"],
+      ]) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        await open("workspaces");
+        await press("[data-ws-row]");
+        await wait(500);
+        await press('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+        const inked = await until(5_000, async () => (await page.locator('[data-code-view] [class*="tok-"]:visible').count()) > 0);
+        if (!inked) {
+          fail(`probe dead: ws g · at ${tag} one.rs never wore its ink (the Rust grammar, whose tree 「符号」 reads)`);
+          continue;
+        }
+        await more();
+        await wait(300);
+        const offered = await items();
+        if (!offered.includes("symbols")) {
+          fail(`ws g · ${tag}: one.rs's 「…」 offers ${JSON.stringify(offered)} — 「符号」 (symbols) among them`);
+          await page.keyboard.press("Escape");
+          continue;
+        }
+        await page.locator('[data-file-more-menu] [data-file-more-item="symbols"]').click();
+        await until(3_000, async () => (await page.locator("[data-file-symbols] [data-file-symbol]").count()) > 0);
+        await wait(300);
+        const list = await page.evaluate(() => ({
+          title: document.querySelector("[data-file-symbols] h2, [data-file-symbols] [data-slot='dialog-title']")?.textContent?.trim() ?? null,
+          rows: [...document.querySelectorAll("[data-file-symbols] [data-file-symbol]")].map((b) => {
+            // The step in is the span's padding, inside its box: measure
+            // where the name's letters start, not where the box does.
+            const span = b.querySelector(".font-mono");
+            const r = document.createRange();
+            r.selectNodeContents(span);
+            return {
+              line: b.getAttribute("data-file-symbol"),
+              name: span?.textContent,
+              inset: Math.round(r.getBoundingClientRect().left - b.getBoundingClientRect().left),
+            };
+          }),
+        }));
+        await shotG(`symbols-${tag}`);
+        const names = list.rows.map((r) => `${r.name}@${r.line}`).join(" ");
+        const want = ["Store@1", "impl Store@5", "new@6", ...Array.from({ length: 15 }, (_, i) => `step_${i}@${9 + 5 * i}`)].join(" ");
+        const inner = list.rows.find((r) => r.name === "new");
+        const outer = list.rows.find((r) => r.name === "Store");
+        console.log(`ws g · ${tag}: 「符号」 ${JSON.stringify(list.title)} lists ${names}; new inset ${inner?.inset}, Store inset ${outer?.inset}`);
+        if (names !== want) fail(`ws g · ${tag}: 「符号」 lists ${names} — want ${want}`);
+        if (!inner || !outer || inner.inset <= outer.inset) fail(`ws g · ${tag}: the method inside the impl stands at ${inner?.inset}px, the struct at ${outer?.inset}px — one step in`);
+        await page.locator('[data-file-symbols] [data-file-symbol="59"]').click();
+        await wait(500);
+        const went = await page.evaluate(() => {
+          const box = [...document.querySelectorAll("[data-code-view][data-code-path]")].find((b) => b.offsetParent !== null);
+          const v = box?.__view;
+          if (!v) return null;
+          const anchored = box.querySelector("[data-anchored]");
+          const sr = v.scrollDOM.getBoundingClientRect();
+          const r = anchored?.getBoundingClientRect();
+          return {
+            dialog: document.querySelectorAll("[data-file-symbols]").length,
+            caret: v.state.doc.lineAt(v.state.selection.main.head).number,
+            anchored: anchored?.getAttribute("data-anchored") ?? null,
+            inView: !!r && r.top >= sr.top && r.bottom <= sr.bottom,
+            scrolled: Math.round(v.scrollDOM.scrollTop),
+          };
+        });
+        console.log(`ws g · ${tag}: step_10 pressed ${JSON.stringify(went)}`);
+        if (!went || went.dialog !== 0 || went.caret !== 59 || went.anchored !== "59" || !went.inView || went.scrolled === 0) {
+          fail(`ws g · ${tag}: a press on step_10 left ${JSON.stringify(went)} — the dialog away, the caret on line 59, that line on the brand's wash and in view, the file scrolled`);
+        }
+        await shotG(`symbols-went-${tag}`);
+        // A rendered document: no editor on screen, no 「符号」. On a phone
+        // the deck folded away as the press scrolled the file; a scroll
+        // up brings it back, as it does for a reader.
+        if (w < 700) {
+          await page.mouse.move(w / 2, h / 2);
+          for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -600);
+          await until(3_000, async () => (await page.locator("[data-file-back]:visible").count()) > 0);
+          await page.locator("[data-file-back]").filter({ visible: true }).first().click({ timeout: 8_000 }).catch(() => {});
+        }
+        await wait(400);
+        await page.locator('[data-file-tree] [data-depth="0"][data-file="notes.md"] > button').filter({ visible: true }).first().click({ timeout: 8_000 }).catch(() => {});
+        await wait(800);
+        const rendered = await page.locator("[data-file-preview]:visible").count();
+        if (!(await page.locator("[data-file-more]:visible").count())) {
+          const seen = await page.evaluate(() => {
+            const vis = (e) => e.offsetParent !== null;
+            return {
+              back: [...document.querySelectorAll("[data-file-back]")].filter(vis).length,
+              notes: [...document.querySelectorAll('[data-file="notes.md"]')].filter(vis).length,
+              page: [...document.querySelectorAll("[data-file-page]")].filter(vis).length,
+              dialogs: document.querySelectorAll("[role=dialog]").length,
+            };
+          });
+          await shotG(`symbols-dead-${tag}`);
+          fail(`probe dead: ws g · at ${tag} notes.md's page never showed its 「…」 ${JSON.stringify(seen)}`);
+          continue;
+        }
+        await more();
+        await wait(300);
+        const mdOffered = await items();
+        await page.keyboard.press("Escape");
+        await wait(200);
+        console.log(`ws g · ${tag}: notes.md rendered ${rendered}, its 「…」 ${JSON.stringify(mdOffered)}`);
+        if (rendered > 0 && mdOffered.includes("symbols")) fail(`ws g · ${tag}: a rendered notes.md offers 「符号」 — no editor shows it, nothing to list`);
+      }
+      await page.unroute("**/read_text", readG);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    }
   }
   }
   if (process.env.FACE_ONLY === "ws") console.log("ws · FACE_ONLY=ws: the other sections are skipped");

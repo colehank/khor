@@ -6,6 +6,7 @@
 //   #ts    a TypeScript file, caret on a word that recurs — the active
 //          line and the selection's other matches (item 3)
 //   #toml  a TOML file (a legacy mode, no tree) — folded by indent (item 4)
+//   #py #go #md  one file each, for 「符号」 (item 5) beside #ts and #rs
 import { foldable, foldCode, foldService } from "@codemirror/language";
 import type { EditorView } from "@codemirror/view";
 import ReactDOM from "react-dom/client";
@@ -68,7 +69,60 @@ tokio = { version = "1", features = ["full"] }
 lto = true
 `;
 
+const PY = `import os
+
+
+class Store:
+    """Files under one root."""
+
+    def __init__(self, root):
+        self.root = root
+
+    def read(self, name):
+        with open(os.path.join(self.root, name)) as f:
+            return f.read()
+
+
+def main():
+    print(Store(".").read("a"))
+`;
+
+const GO = `package store
+
+type Store struct {
+	root string
+}
+
+func New(root string) *Store {
+	return &Store{root: root}
+}
+
+func (s *Store) Read(name string) ([]byte, error) {
+	return os.ReadFile(filepath.Join(s.root, name))
+}
+`;
+
+const MD = `# khor
+
+A mesh of your machines.
+
+## Install
+
+Run the script.
+
+### On a Mac
+
+Drag it in.
+
+## Use
+
+Open it.
+`;
+
 const screens: Record<string, { path: string; text: string }> = {
+  py: { path: "store.py", text: PY },
+  go: { path: "store.go", text: GO },
+  md: { path: "README.md", text: MD },
   rs: { path: "entry.rs", text: RS },
   ts: { path: "draft.ts", text: TS },
   toml: { path: "Cargo.toml", text: TOML },

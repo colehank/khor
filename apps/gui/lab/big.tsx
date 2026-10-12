@@ -1,7 +1,9 @@
 // Lab only (lane cm-d): one generated file of `?lines=` lines (a function
 // every ten) in the editor, for the brief's 50 000-line timings.
 // `window.__big()` answers { openMs, foldAllMs, folded, foldAllParsedMs,
-// foldedParsed, selectMs[] } — the driver is `scripts/cm-measure.mjs big`.
+// foldedParsed, selectMs[], marks, coldHas/coldHasMs (「…」 asking),
+// coldSymbols/coldSymbolsMs, symbols/symbolsMs (「符号」 cold and parsed) }
+// — the driver is `scripts/cm-measure.mjs big`.
 import { foldAll, unfoldAll, forceParsing, foldedRanges } from "@codemirror/language";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
@@ -40,7 +42,19 @@ const t0 = performance.now();
   const openMs = performance.now() - t0;
   const v = view();
   await frame();
+  // 「符号」 before anything has parsed past the first screen: the walk
+  // parses up to its budget (`lib/code/symbols` PARSE_MS) and lists what
+  // is parsed.
+  const host0 = document.querySelector("[data-code-view]") as HTMLElement & { __symbols?: () => unknown[]; __hasSymbols?: () => boolean };
+  // What 「…」 asks as it opens: one definition in what is parsed.
   let s = performance.now();
+  const coldHas = host0.__hasSymbols?.() ?? null;
+  const coldHasMs = +(performance.now() - s).toFixed(2);
+  s = performance.now();
+  const coldSymbols = host0.__symbols?.().length ?? null;
+  const coldSymbolsMs = Math.round(performance.now() - s);
+  await frame();
+  s = performance.now();
   foldAll(v);
   await frame();
   const foldAllMs = performance.now() - s;
@@ -69,7 +83,12 @@ const t0 = performance.now();
     await frame();
   }
   const marks = document.querySelectorAll(".cm-selectionMatch").length;
-  return { openMs: Math.round(openMs), foldAllMs: Math.round(foldAllMs), folded, foldAllParsedMs: Math.round(foldAllParsedMs), foldedParsed, selectMs: selectMs.map((x) => +x.toFixed(2)), marks };
+  // 「符号」 on the whole file, as the dialog asks for it.
+  const host = document.querySelector("[data-code-view]") as HTMLElement & { __symbols?: () => unknown[] };
+  s = performance.now();
+  const symbols = host.__symbols?.().length ?? null;
+  const symbolsMs = Math.round(performance.now() - s);
+  return { openMs: Math.round(openMs), foldAllMs: Math.round(foldAllMs), folded, foldAllParsedMs: Math.round(foldAllParsedMs), foldedParsed, selectMs: selectMs.map((x) => +x.toFixed(2)), marks, coldHas, coldHasMs, coldSymbols, coldSymbolsMs, symbols, symbolsMs };
 };
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
