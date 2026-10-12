@@ -37481,7 +37481,7 @@ try {
       landed: word("bcast-landed"), stopped: word("file-stopped"), count: word("bcast-count"),
     };
     const row = {
-      id: "wide/all", kind: "broadcast", title: "广播", word: "blocked", at_ms: now - 120_000, unread: 2, source: null,
+      id: "wide/all", kind: "broadcast", title: "广播", word: "done", at_ms: now - 120_000, unread: 2, source: null,
       pinned: false, stale: false, quiet: false, imported: false, category: "khor", group: "", face: null, hosted: false,
       attachable: false, last: "lunch at noon", doing: null, via: null, via_face: null, home: "gate", place: null, mux: false,
     };
@@ -37545,7 +37545,9 @@ try {
       if (r.blank !== 1 || r.faces !== 0) fail(`bcast a · the row wears ${r.faces} machine face(s), ${r.blank} blank — every machine's, so none of theirs`);
       if (r.mark < 1) fail("bcast a · the row draws no kind mark");
       if (r.last !== "lunch at noon") fail(`bcast a · the row's second line reads ${JSON.stringify(r.last)} — the newest line`);
-      if (!r.text.includes("广播") || !r.text.includes("待批")) fail(`bcast a · the row reads ${JSON.stringify(r.text)} — 广播 and its word 待批`);
+      // The row wears its newest message's word (STORE-BRIEF phase 5):
+      // unread lines and an offer one may take are 完成, never 待批.
+      if (!r.text.includes("广播") || !r.text.includes("完成") || r.text.includes("待批")) fail(`bcast a · the row reads ${JSON.stringify(r.text)} — 广播 and its word 完成, no 待批`);
     }
 
     // b. opened: a conversation, no 「存到」

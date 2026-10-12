@@ -124,8 +124,9 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     // by its writer, and the seen mark travels (`Node::tell`'s rule).
     assert_eq!((rc_row.unread, rc_row.state.state), (0, State::Idle), "own words are unread nowhere");
 
-    // alpha offers a file. Nothing moves by itself: each machine's row
-    // waits on that machine's yes (待批), the sender's does not.
+    // alpha offers a file. Nothing moves by itself, and nothing waits on
+    // anybody: on each other machine it is a file one may take, unread
+    // like any message (STORE-BRIEF phase 5: an offer never says 待批).
     let payload: Vec<u8> = (0..300_000u32).map(|i| (i % 241) as u8).collect();
     let src = ra.join("all.bin");
     fs::write(&src, &payload).unwrap();
@@ -134,7 +135,7 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     sync(&b).await;
     sync(&c).await;
     for n in [&b, &c] {
-        assert_eq!(row(n).unwrap().state.state, State::Blocked, "an unanswered offer is 待批");
+        assert_eq!(row(n).unwrap().state.state, State::Done, "an unanswered offer is 未看, never 待批");
     }
     assert_ne!(row(&a).unwrap().state.state, State::Blocked, "the sender waits on nobody");
     tokio::time::sleep(Duration::from_millis(500)).await;
@@ -156,7 +157,7 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     assert_eq!(fs::read(&landed).unwrap(), payload, "verbatim, in beta's receive location");
     assert_eq!(face(&b).here.unwrap().step, Step::Landed);
     assert_ne!(row(&b).unwrap().state.state, State::Blocked, "answered, beta's row lets go");
-    assert_eq!(row(&c).unwrap().state.state, State::Blocked, "gamma's own still waits");
+    assert_eq!(row(&c).unwrap().state.state, State::Done, "gamma's own is still unread, not waiting");
 
     // gamma's pull breaks (the sender's file is gone): its own record
     // says so, beta's is untouched, and a retry resumes once it is back.
