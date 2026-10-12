@@ -211,9 +211,9 @@ const WAITS = [
   "sessions",
   // 2026-10-11: and the day strips were carrying the same read on the
   // main thread from their own 10 s beat — a strip asks `sessions` for
-  // its own snapshot by design (`khor_node::Node::day_strips`). The
-  // term-lag probe caught it at 31 ms held, with key→echo max 35 ms in
-  // the same window against a p95 of 12 ms.
+  // its own snapshot by design (`khor_node::Node::day_strips`). Measured
+  // at 31 ms held on a scratch app, with key→echo max 35 ms in the same
+  // window against a p95 of 12 ms.
   "day_strips",
 ];
 {

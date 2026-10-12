@@ -2001,13 +2001,21 @@ fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
         "the person has spoken in this conversation: nothing here is waiting to be read"
     );
 
-    // **And the boundary**: speaking is not landing. A file still on its
-    // way is untouched by anything said in the window — only the landing
-    // lifts it (docs/SESSION.md 六词).
+    // **And the boundary**: speaking is not landing — but the row wears
+    // its latest message's word (STORE-BRIEF phase 5, the row's word),
+    // and the latest is the line. The file still on its way keeps 忙碌
+    // on its own chip; only the landing lifts that. ⚠️ 墓碑: 忙碌 stayed
+    // on the row under a later line, the fold of every file's word that
+    // phase 5 retired.
     assert_eq!(
         row.state.state,
-        State::Busy,
-        "忙碌 is not covered by a line: the file is still on its way here"
+        State::Idle,
+        "the newest message is a line the person has seen: the row is 空闲"
+    );
+    assert_eq!(
+        n.log_faced(n.name()).unwrap().1[0],
+        Some(State::Busy),
+        "the file is still on its way here, and its chip says so"
     );
 
     // Once it does land, the chip agrees with the row rather than

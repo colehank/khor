@@ -303,13 +303,19 @@ impl TransferKind {
         })
     }
 
-    /// The most pressing live word among one channel's file messages,
-    /// folded onto that machine's chat row (传输并入对话批, 2026-08-23:
-    /// a transfer is a file message in the conversation, not a row of
-    /// its own — the pressure lands on the row that carries the
-    /// message).
+    /// The live word of one channel's **latest message**, folded onto
+    /// that machine's chat row (传输并入对话批, 2026-08-23: a transfer is
+    /// a file message in the conversation, not a row of its own — the
+    /// pressure lands on the row that carries the message).
     ///
-    /// What counts as pressure, read off each message's record
+    /// **Only the newest message still standing speaks** (STORE-BRIEF
+    /// phase 5, the row's word): an older file's fate stays on its own
+    /// chip and presses nothing on the row, the way a terminal wears its
+    /// live process's word. ⚠️ 墓碑: this folded every file message in
+    /// the history and kept the most pressing word, so a pull that broke
+    /// weeks ago said 中断 on the row for ever.
+    ///
+    /// What counts as pressure, read off that message's record
     /// (`khor_sync::chat::Fate`), by seat:
     /// - **receiver** (this machine was sent the file): 忙碌 while it
     ///   moves (or has not started), 中断 when it broke and a retry
@@ -321,33 +327,27 @@ impl TransferKind {
     /// - landed or cancelled files press nothing: 完成/未看 is already
     ///   the chat row's own message-based reading.
     ///
-    /// `None` when nothing is in flight; the caller keeps the row's own
-    /// word. Ties go to the most pressing rank, stamped with the message.
+    /// `None` when the latest message presses nothing; the caller keeps
+    /// the row's own word. Stamped with the message.
     pub fn urgency(&self, channel: &str, msgs: &[Message]) -> Option<(State, i64)> {
-        let mut best: Option<(State, i64)> = None;
-        for m in msgs {
-            let MsgBody::Files(files) = &m.body else {
-                continue;
-            };
-            if m.retracted || files.is_empty() {
-                continue;
-            }
-            let i_sent = m.from.id == self.device_str;
-            let i_receive = channel == self.name && !i_sent;
-            let step = m.fate.as_ref().map(|f| f.step);
-            let pressed = match step {
-                None | Some(Step::Moving) if i_receive => Some(State::Busy),
-                Some(Step::Moving) if i_sent => Some(State::Busy),
-                Some(Step::Failed) if i_receive => Some(State::Errored),
-                _ => None,
-            };
-            if let Some(state) = pressed
-                && best.is_none_or(|(b, _)| state.rank() < b.rank())
-            {
-                best = Some((state, m.at));
-            }
+        // Still standing, as the row's preview reads it: a retracted
+        // slot has no word of its own.
+        let m = msgs.iter().rev().find(|m| !m.retracted)?;
+        let MsgBody::Files(files) = &m.body else {
+            return None;
+        };
+        if files.is_empty() {
+            return None;
         }
-        best
+        let i_sent = m.from.id == self.device_str;
+        let i_receive = channel == self.name && !i_sent;
+        let pressed = match m.fate.as_ref().map(|f| f.step) {
+            None | Some(Step::Moving) if i_receive => Some(State::Busy),
+            Some(Step::Moving) if i_sent => Some(State::Busy),
+            Some(Step::Failed) if i_receive => Some(State::Errored),
+            _ => None,
+        };
+        pressed.map(|state| (state, m.at))
     }
 
     /// Clears what an unfinished pull of this transfer left (the partial
@@ -475,6 +475,28 @@ mod tests {
         assert_eq!(face(&fated(m.clone(), Step::Landed), 0), Some(State::Done));
         assert_eq!(face(&fated(m.clone(), Step::Landed), 2000), Some(State::Idle), "looked at");
         assert_eq!(k.message_face("otherbox", &m, 0), None, "not this machine's file");
+    }
+
+    /// **Only the latest message speaks** (STORE-BRIEF phase 5, the
+    /// row's word): a broken file followed by a line leaves the row to
+    /// the line; a broken file after a moving one says 中断, not 忙碌; a
+    /// retracted newest slot hands the word back to the one before it.
+    #[test]
+    fn only_the_latest_message_presses_on_the_row() {
+        let root = tmp("latest");
+        let k = kind(&root);
+        let mut text = msg("m2", "far", file_ref("x"));
+        text.body = MsgBody::Text("later".into());
+        text.at = 2000;
+        let broken = fated(msg("m1", "far", file_ref("old.pdf")), Step::Failed);
+        assert_eq!(k.urgency("mybox", &[broken.clone()]).map(|(w, _)| w), Some(State::Errored), "control");
+        assert_eq!(k.urgency("mybox", &[broken.clone(), text.clone()]), None, "a later line: the old break stays on its chip");
+        let mut newer = fated(msg("m3", "far", file_ref("new.pdf")), Step::Failed);
+        newer.at = 3000;
+        let moving = fated(msg("m1", "far", file_ref("old.pdf")), Step::Moving);
+        assert_eq!(k.urgency("mybox", &[moving, newer.clone()]), Some((State::Errored, 3000)), "the newest one's word, not the most pressing");
+        text.retracted = true;
+        assert_eq!(k.urgency("mybox", &[broken, text]).map(|(w, _)| w), Some(State::Errored), "a retracted slot has no word");
     }
 
     /// The sender's seat presses only while the bytes move; a third

@@ -9,9 +9,7 @@
 | 项 | 出处 | 车道 |
 |---|---|---|
 | Phase 5 只留广播，`@机器:路径` 直推，不在线就拒绝 | audit/STORE-BRIEF.md Phase 5 | p5-at（audit/P5-AT-BRIEF.md） |
-| Phase 5 行只戴最新一条的词 | 同上「the row's word」 | p5-row（audit/P5-ROW-BRIEF.md） |
 | Phase 5 死掉的 shell | 同上「a shell that died」 | p5-shell（audit/P5-SHELL-BRIEF.md） |
-| 删 term-lag 探针脚本和 `KHOR_SLOW_CALLS` | memory khor-remove-dev-probes-before-release | p5-row 第 2 项 |
 
 ## 问 — 等负责人定
 
