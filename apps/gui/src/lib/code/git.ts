@@ -487,13 +487,18 @@ const closeKey = ViewPlugin.fromClass(
     sync() {
       const open = this.view.state.field(field).shown !== null;
       if (open && this.off === null) {
+        // In the capture phase, and the key is spent: the page's own Esc
+        // (a narrow screen's way back, `App`) listens on the window too,
+        // was there first, and would leave the file as the peek shut.
         const onKey = (e: KeyboardEvent) => {
-          if (e.defaultPrevented) return;
-          if (e.key === "Escape") this.view.dispatch({ effects: showHunk.of(null) });
-          else if (e.key === "F5" && e.altKey && !e.metaKey && !e.ctrlKey && stepHunk(this.view, e.shiftKey ? -1 : 1)) e.preventDefault();
+          if (e.defaultPrevented || e.isComposing) return;
+          if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+            e.preventDefault();
+            this.view.dispatch({ effects: showHunk.of(null) });
+          } else if (e.key === "F5" && e.altKey && !e.metaKey && !e.ctrlKey && stepHunk(this.view, e.shiftKey ? -1 : 1)) e.preventDefault();
         };
-        window.addEventListener("keydown", onKey);
-        this.off = () => window.removeEventListener("keydown", onKey);
+        window.addEventListener("keydown", onKey, true);
+        this.off = () => window.removeEventListener("keydown", onKey, true);
       } else if (!open && this.off !== null) {
         this.off();
         this.off = null;
