@@ -11,6 +11,9 @@
 //       the same page at 390 and 1400 into <dir>: as it opens, and with
 //       the first folded stretch opened; says whether any file's view
 //       scrolls on its own (it must not: the page is one scroll).
+//   node scripts/cm-measure.mjs screens <dir> [theme]
+//       `lab/cmd.html`'s screens at 390 and 1400, each driven and judged
+//       (exit 1 on a wrong answer), shot into <dir>.
 //   node scripts/cm-measure.mjs big [lines]
 //       a generated `.ts` of that many lines (a function every 10) in
 //       the editor (`lab/big.html`): ms to open, to fold all, and per
@@ -225,6 +228,46 @@ try {
       await page.close();
     }
     await server.close();
+  } else if (what === "screens") {
+    const dir = arg;
+    const theme = runsArg && Number.isNaN(Number(runsArg)) ? runsArg : "light";
+    const server = await serve("cmd");
+    const base = server.resolvedUrls.local[0];
+    let bad = 0;
+    const judge = (ok, what) => {
+      if (!ok) bad += 1;
+      console.log(`${ok ? "  ok " : "  BAD"} ${what}`);
+    };
+    for (const width of [390, 1400]) {
+      const open = async (screen) => {
+        const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 2 });
+        await page.goto(`${base}lab/cmd.html?${theme}#${screen}`);
+        await page.waitForFunction(() => window.__view && document.querySelector('[data-code-view] [class*="tok-"]'));
+        return page;
+      };
+      // Item 2: Tab in a 4-space .rs inserts four spaces, Enter keeps them.
+      {
+        const page = await open("rs");
+        await page.evaluate(() => {
+          const v = window.__view;
+          v.focus();
+          const l = v.state.doc.line(6);
+          v.dispatch({ selection: { anchor: l.to }, userEvent: "select" });
+        });
+        await page.keyboard.press("Enter");
+        await page.keyboard.press("Tab");
+        await page.keyboard.type("// one deeper");
+        const r = await page.evaluate(() => {
+          const v = window.__view;
+          return { line: v.state.doc.line(7).text };
+        });
+        judge(r.line === "        // one deeper", `${width} rs: Enter then Tab after a 4-space line reads ${JSON.stringify(r.line)} — eight spaces`);
+        await page.screenshot({ path: join(dir, `rs-tab-${theme}-${width}.png`) });
+        await page.close();
+      }
+    }
+    await server.close();
+    if (bad) process.exitCode = 1;
   } else if (what === "big") {
     const lines = Number(arg ?? 50_000);
     const server = await serve("big");

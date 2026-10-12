@@ -28,8 +28,9 @@ import { inlineBlame, setBlamed } from "@/lib/code/blame";
 import { diffPhrases, diffTheme } from "@/lib/code/diff";
 import { codeFind, openFind } from "@/lib/code/find";
 import { gitChanges, setHunks } from "@/lib/code/git";
+import { indentOf } from "@/lib/code/indent";
 import { keyboardCaret, observeScroller } from "@/lib/code/keyboard";
-import { loadLanguage } from "@/lib/code/lang";
+import { languageOfName, loadLanguage } from "@/lib/code/lang";
 import { codeHighlight, codeTheme } from "@/lib/code/theme";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +82,6 @@ function base(): Extension {
     codeFolding({ placeholderText: "…" }),
     foldGutter({ markerDOM: foldMarker }),
     history(),
-    indentUnit.of("  "),
     EditorState.allowMultipleSelections.of(false),
     codeHighlight,
     codeTheme,
@@ -91,6 +91,15 @@ function base(): Extension {
     keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
   ];
 }
+
+/** **The indent the file already uses** (cm-d item 2, `lib/code/indent`):
+    what Tab and a new line insert, and how wide a tab is drawn. Read
+    when the text arrives — at mount, and when the host hands in a new
+    one — and never from what is typed. */
+const indenting = (text: string, path: string): Extension => {
+  const { unit, tabSize } = indentOf(text, languageOfName(path)?.name ?? null);
+  return [indentUnit.of(unit), EditorState.tabSize.of(tabSize)];
+};
 
 const writable = (on: boolean): Extension => [
   EditorState.readOnly.of(!on),
@@ -190,6 +199,7 @@ export function CodeEditor({
   const edit = useRef(new Compartment());
   const wrapping = useRef(new Compartment());
   const merge = useRef(new Compartment());
+  const indent = useRef(new Compartment());
 
   useLayoutEffect(() => {
     const svgs = icons.current?.querySelectorAll("svg");
@@ -201,6 +211,7 @@ export function CodeEditor({
         extensions: [
           base(),
           lang.current.of([]),
+          indent.current.of(indenting(text, path)),
           edit.current.of(writable(editable)),
           wrapping.current.of(wrap ? EditorView.lineWrapping : []),
           merge.current.of(merging(against)),
@@ -261,6 +272,8 @@ export function CodeEditor({
 
   useEffect(() => {
     let live = true;
+    const v = view.current;
+    if (v) v.dispatch({ effects: indent.current.reconfigure(indenting(v.state.doc.toString(), path)) });
     void loadLanguage(path).then((l) => {
       if (live && l) view.current?.dispatch({ effects: lang.current.reconfigure(l) });
     });
@@ -301,7 +314,14 @@ export function CodeEditor({
     while (a < now.length && a < text.length && now.charCodeAt(a) === text.charCodeAt(a)) a += 1;
     let b = 0;
     while (b < now.length - a && b < text.length - a && now.charCodeAt(now.length - 1 - b) === text.charCodeAt(text.length - 1 - b)) b += 1;
-    v.dispatch({ changes: { from: a, to: now.length - b, insert: text.slice(a, text.length - b) }, annotations: [fromHost.of(true), Transaction.addToHistory.of(false)] });
+    v.dispatch({
+      changes: { from: a, to: now.length - b, insert: text.slice(a, text.length - b) },
+      effects: indent.current.reconfigure(indenting(text, path)),
+      annotations: [fromHost.of(true), Transaction.addToHistory.of(false)],
+    });
+    // The path is read where it is now, not as a dependency: a new path
+    // is the effect above's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
 
   useEffect(() => {
