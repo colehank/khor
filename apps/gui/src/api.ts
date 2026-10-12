@@ -34,6 +34,7 @@ import type { GitBlame } from "./gen/bindings/GitBlame";
 import type { GitLog } from "./gen/bindings/GitLog";
 import type { GitShow } from "./gen/bindings/GitShow";
 import type { GitHunk } from "./gen/bindings/GitHunk";
+import type { GitCommitShow } from "./gen/bindings/GitCommitShow";
 import type { Wrote } from "./gen/bindings/Wrote";
 import type { Merged } from "./gen/bindings/Merged";
 import type { CodeAt } from "./gen/bindings/CodeAt";
@@ -108,6 +109,7 @@ export type {
   GitLog,
   GitShow,
   GitHunk,
+  GitCommitShow,
   Wrote,
   Merged,
   CodeAt,
@@ -459,6 +461,10 @@ export const fetchGitLog = (machine: string, path: string) => call<GitLog>("git_
 export const fetchGitBlame = (machine: string, path: string) => call<GitBlame>("git_blame", { machine, path });
 export const fetchGitShow = (machine: string, path: string, rev: string) =>
   call<GitShow>("git_show", { machine, path, rev });
+/** One commit of the repository `dir` is in, and what it changed (the
+    commit page, COMMITS-BRIEF 2026-10-12). */
+export const fetchGitCommit = (machine: string, dir: string, rev: string) =>
+  call<GitCommitShow>("git_commit", { machine, dir, rev });
 /** Saves a whole file back (`khor_gui_core::files::write_text`).
 
     `was` is the `digest` that came with the text. **It is the whole of

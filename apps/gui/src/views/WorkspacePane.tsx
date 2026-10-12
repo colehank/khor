@@ -83,6 +83,7 @@ import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { RevisionView, shortId, HistorySheet } from "@/views/FileHistory";
+import { CommitPage } from "@/views/CommitPage";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { FilePage, FileVerbs, placeAt, topLine } from "@/views/FilePage";
 import { useFullScreen } from "@/lib/full-screen";
@@ -547,6 +548,11 @@ export function WorkspacePane({
       Both the commit line in the tree and the branch chip in R0's aside
       open the same sheet. */
   const [historyOpen, setHistoryOpen] = useState(false);
+  /** **The commit a row of 提交历史 opened** (COMMITS-BRIEF item 3): a page
+      where the file stands on the wide face, a screen on the phone.
+      Opening a file puts it away (`open`). */
+  const [commit, setCommit] = useState<GitCommit | null>(null);
+  useEffect(() => setCommit(null), [machine, root]);
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
@@ -920,6 +926,7 @@ export function WorkspacePane({
   const open = useCallback(
     (path: string, pinned: boolean) => {
       setFile(path);
+      setCommit(null);
       // 最近打开过的文件 (ruling 37). **The file, never the diff key**:
       // what a person wants back is the file, and a diff is a look at
       // one rather than a thing to reopen.
@@ -1217,8 +1224,8 @@ export function WorkspacePane({
   // (UX-25): on the narrow face the file screen with no file is the
   // tree's turn, as the session page's last × is the list's.
   useEffect(() => {
-    if (narrow && screen === "file" && file === null) setScreen("tree");
-  }, [narrow, screen, file]);
+    if (narrow && screen === "file" && file === null && commit === null) setScreen("tree");
+  }, [narrow, screen, file, commit]);
 
   /** What the strip draws. **Built here because the facts are this
       pane's** — which files are open, which one is in front, which one
@@ -1366,6 +1373,8 @@ export function WorkspacePane({
   /** **The phone's file is a full-screen page** (round UX-3): the file
       screen of the narrow face, for anything but a diff. */
   const onPage = narrow && screen === "file" && file !== null && diffOf(file) === null;
+  /** The commit page is up: in the middle column, or the phone's screen. */
+  const commitShown = commit !== null && (!narrow || screen === "file");
   useFullScreen(onPage);
   /** What the view hands back about its unsaved copy, for one file.
       **Nothing is written when nothing changed** (reported from an effect,
@@ -1687,7 +1696,7 @@ export function WorkspacePane({
         what does not fit onto a second one that is clipped, behind an
         empty first item so that a lone branch can wrap too. Dropped
         whole rather than cut to 「ma…」. */}
-    {narrow && !onPage && (
+    {narrow && !onPage && !commitShown && (
       <NarrowHead>
         {() => (
           <>
@@ -2011,7 +2020,18 @@ export function WorkspacePane({
               a count until the third round — the wiring each seat did for
               itself, forgotten in one of them, which is why it lives in
               one place now. */}
-          {onPage && file !== null ? (
+          {commitShown && commit !== null ? (
+            <CommitPage
+              key={commit.id}
+              machine={machine}
+              root={root}
+              commit={commit}
+              onBack={() => {
+                setCommit(null);
+                if (narrow && file === null) setScreen("tree");
+              }}
+            />
+          ) : onPage && file !== null ? (
             // **The phone's file is the file page** (round UX-3): no head,
             // no strip — the name over the text and the circles under it.
             // A diff keeps the strip's view; it has nothing to edit.
@@ -2294,18 +2314,19 @@ export function WorkspacePane({
           setClosing(null);
         }}
       />
-      {/* **Repository history sheet** (WS-LAB item 1): reuses the same
-          `HistorySheet` the file page opens, with path=root so the log
-          is the repository-level log. A row opens that revision read-only;
-          for this lab a row press does nothing — `git_show` for a
-          repository-level commit (the changed-files list) is out of scope
-          and the sheet notes this by making rows non-interactive. */}
+      {/* **The repository's 提交历史** (WS-LAB item 1, COMMITS-BRIEF): the
+          same sheet the file page opens, asked of the root, its rows
+          GitHub's three lines; a row opens the commit's page. */}
       <HistorySheet
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         machine={machine}
         path={root}
-        onPick={() => {}}
+        repo
+        onPick={(c) => {
+          setCommit(c);
+          if (narrow) setScreen("file");
+        }}
       />
     </div>
     </DeeperHeads>

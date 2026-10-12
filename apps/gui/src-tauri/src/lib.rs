@@ -363,6 +363,12 @@ async fn git_show(machine: String, path: String, rev: String) -> Result<khor_gui
     khor_gui_core::git::show(&Node::root_from_env(), &machine, &path, &rev).await
 }
 
+/// One commit of the repository `dir` is in, and what it changed.
+#[tauri::command]
+async fn git_commit(machine: String, dir: String, rev: String) -> Result<khor_gui_core::git::GitCommitShow, String> {
+    khor_gui_core::git::commit_show(&Node::root_from_env(), &machine, &dir, &rev).await
+}
+
 #[tauri::command]
 async fn quota_board() -> Result<Vec<khor_gui_core::AccountRing>, String> {
     khor_gui_core::quota_board(&Node::root_from_env()).await
@@ -4687,6 +4693,7 @@ pub fn run() {
             git_log,
             git_blame,
             git_show,
+            git_commit,
             write_text,
             merge_text,
             preview,

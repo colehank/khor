@@ -172,6 +172,40 @@ pub struct GitShow {
     pub diff: GitDiff,
 }
 
+/// One file a commit changed (`khor_node::git::CommitFile`).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitCommitFile {
+    pub path: String,
+    /// Where a rename came from; empty otherwise.
+    pub from: String,
+    /// `A`, `M`, `D` or `R` — git's own letters.
+    pub status: String,
+    pub added: u32,
+    pub removed: u32,
+    /// Not text: no lines are said.
+    pub binary: bool,
+    pub hunks: Vec<GitCommitHunk>,
+}
+
+/// One unified hunk: 1-based starts on each side, each line led by its
+/// own `' '`, `-` or `+` (`khor_node::git::CommitHunk`).
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitCommitHunk {
+    pub old_at: u32,
+    pub new_at: u32,
+    pub lines: Vec<String>,
+}
+
+/// One commit and what it changed against its first parent. `total`:
+/// files changed in all; `more`: the list stopped at the node's cap.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitCommitShow {
+    pub commit: GitCommit,
+    pub files: Vec<GitCommitFile>,
+    pub total: u32,
+    pub more: bool,
+}
+
 fn commit(c: khor_node::git::Commit) -> GitCommit {
     GitCommit {
         id: c.id,
@@ -254,4 +288,42 @@ pub async fn checkout(root: &Path, machine: &str, dir: &str) -> Result<bool, Str
     Node::open(root.to_path_buf())?
         .checkout_on(machine, dir)
         .await
+}
+
+/// One commit of the repository `dir` is in, and what it changed
+/// (the commit page, COMMITS-BRIEF 2026-10-12).
+pub async fn commit_show(root: &Path, machine: &str, dir: &str, rev: &str) -> Result<GitCommitShow, String> {
+    use khor_node::git::{GitAnswer, GitAsk};
+    let q = GitAsk::Commit {
+        root: dir.to_owned(),
+        rev: rev.to_owned(),
+    };
+    match ask(root, machine, q).await? {
+        GitAnswer::Commit { commit: c, files, total, more } => Ok(GitCommitShow {
+            commit: commit(c),
+            files: files
+                .into_iter()
+                .map(|f| GitCommitFile {
+                    path: f.path,
+                    from: f.from,
+                    status: f.status,
+                    added: f.added,
+                    removed: f.removed,
+                    binary: f.binary,
+                    hunks: f
+                        .hunks
+                        .into_iter()
+                        .map(|h| GitCommitHunk {
+                            old_at: h.old_at,
+                            new_at: h.new_at,
+                            lines: h.lines,
+                        })
+                        .collect(),
+                })
+                .collect(),
+            total,
+            more,
+        }),
+        other => Err(format!("{other:?}")),
+    }
 }

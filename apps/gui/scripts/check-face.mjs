@@ -31008,6 +31008,153 @@ try {
       await page.reload({ waitUntil: "load" });
       await wait(900);
     }
+
+    // f. **提交历史 and one commit's page** (COMMITS-BRIEF, 2026-10-12, the
+    //    owner: 「提交历史应该如 github，点开后显示这个 commit 的更改」). The
+    //    commit line above the tree opens the repository's sheet; its first
+    //    row says subject, age, the body's first line and 「A 和 B 撰写」
+    //    (a `Co-Authored-By:` trailer is the second author); pressing it
+    //    opens the commit's page — in the file's place on the wide face, a
+    //    screen on the phone — saying 「已更改 N 个文件」, and the first
+    //    file's bar has its hunks under it. Both widths; the shots
+    //    (FACE_SHOTS) are the report's.
+    {
+      const ID = "c0ffee5".padEnd(40, "1");
+      const commitsF = [
+        {
+          id: ID,
+          author: "colehank",
+          when_ms: Date.now() - 3 * 86_400_000,
+          subject: "rows: the four corners by the owner’s rule, said once for every list in the app",
+          body: "Every list row's corners say the same four things.\nThe workspace row was the last one.\n\nCo-Authored-By: claude <noreply@anthropic.com>",
+        },
+        { id: "b".repeat(40), author: "colehank", when_ms: Date.now() - 5 * 86_400_000, subject: "额度 list：去掉 RowGauge 圆环", body: "" },
+      ];
+      const logF = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ commits: commitsF, more: false }) });
+      const asked = [];
+      const showF = (r) => {
+        asked.push(r.request().postDataJSON() ?? {});
+        return r.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            commit: commitsF[0],
+            total: 3,
+            more: false,
+            files: [
+              {
+                path: "apps/gui/src/views/WorkspacesList.tsx",
+                from: "",
+                status: "M",
+                added: 2,
+                removed: 1,
+                binary: false,
+                hunks: [
+                  { old_at: 40, new_at: 40, lines: ["   const corners = rowCorners(row);", "   return (", "     <Row", "-      top={row.sub}", "+      top={corners.top}", "+      bottom={corners.bottom}", "     />", "   );", " }"] },
+                ],
+              },
+              { path: "docs/design-system/rows.png", from: "", status: "A", added: 0, removed: 0, binary: true, hunks: [] },
+              {
+                path: "apps/gui/src/lib/corners.ts",
+                from: "apps/gui/src/lib/row-corners.ts",
+                status: "R",
+                added: 1,
+                removed: 1,
+                binary: false,
+                hunks: [{ old_at: 1, new_at: 1, lines: ["-// The row's corners.", "+// Every list row's four corners.", " export {};"] }],
+              },
+            ],
+          }),
+        });
+      };
+      await page.route("**/git_log", logF);
+      await page.route("**/git_commit", showF);
+      const shotF = async (name) => process.env.FACE_SHOTS && (await page.screenshot({ path: join(process.env.FACE_SHOTS, `${name}.png`) }));
+      const readRow = () =>
+        page.evaluate(() => {
+          const row = document.querySelector("[data-commit-row]");
+          const t = (sel) => row?.querySelector(sel)?.textContent?.trim() ?? null;
+          return {
+            rows: document.querySelectorAll("[data-commit-row]").length,
+            title: document.querySelector("[data-file-history] h2, [data-file-history] [role=heading]")?.textContent?.trim() ?? null,
+            subject: t("[data-commit-subject]"),
+            age: t("[data-commit-age]"),
+            body: t("[data-commit-body]"),
+            author: t("[data-commit-author]"),
+            bodies: document.querySelectorAll("[data-commit-row] [data-commit-body]").length,
+          };
+        });
+      const readPage = () =>
+        page.evaluate(() => {
+          const pg = document.querySelector("[data-commit-page]");
+          const first = pg?.querySelector("[data-commit-file]");
+          const at = document.elementFromPoint(window.innerWidth * 0.7, window.innerHeight / 2);
+          return {
+            page: document.querySelectorAll("[data-commit-page]").length,
+            inMid: document.querySelectorAll("[data-ws-mid] [data-commit-page]").length,
+            front: !!at?.closest("[data-commit-page]"),
+            stat: pg?.querySelector("[data-commit-stat]")?.textContent?.trim() ?? null,
+            by: pg?.querySelector("[data-commit-by]")?.textContent?.trim() ?? null,
+            files: pg?.querySelectorAll("[data-commit-file]").length ?? 0,
+            firstBar: first?.querySelector("[data-commit-file-bar]")?.textContent?.trim() ?? null,
+            firstLines: first?.querySelectorAll("[data-commit-diff] [data-diff-line]").length ?? 0,
+            added: first?.querySelectorAll('[data-diff-line="added"]').length ?? 0,
+            removed: first?.querySelectorAll('[data-diff-line="removed"]').length ?? 0,
+            back: pg?.querySelectorAll("[data-commit-back]").length ?? 0,
+            wider: pg ? pg.scrollWidth - pg.clientWidth : null,
+          };
+        });
+      for (const [w, h, tag] of [
+        [1400, 900, "1400"],
+        [390, 844, "390"],
+      ]) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        await open("workspaces");
+        await press("[data-ws-row]");
+        const line = await until(5_000, async () => (await page.locator("[data-commit-line]").count()) > 0);
+        if (!line) {
+          fail(`probe dead: ws f · at ${tag} the commit line above the tree never came (git_log answered ${commitsF.length})`);
+          continue;
+        }
+        await page.locator("[data-commit-line]").first().click();
+        await until(4_000, async () => (await page.locator("[data-commit-row]").count()) > 0);
+        await wait(300);
+        const row = await readRow();
+        await shotF(`commits-list-${tag}`);
+        await page.locator("[data-commit-row]").first().click();
+        await until(4_000, async () => (await page.locator("[data-commit-page] [data-commit-file]").count()) > 0);
+        await wait(400);
+        const pg = await readPage();
+        await shotF(`commits-page-${tag}`);
+        console.log(`ws f · ${tag}: the sheet's first row ${JSON.stringify(row)}; the page ${JSON.stringify(pg)}; asked ${JSON.stringify(asked.at(-1))}`);
+        if (row.rows !== 2) fail(`ws f · ${tag}: the sheet lists ${row.rows} commit row(s) — two, one per commit (data-commit-row; src/views/FileHistory.tsx)`);
+        if (row.subject !== commitsF[0].subject || !row.age) fail(`ws f · ${tag}: the first row's subject / age read ${JSON.stringify(row)} — the subject, and its age at the right`);
+        if (row.body !== "Every list row's corners say the same four things.") fail(`ws f · ${tag}: the first row's second line reads ${JSON.stringify(row.body)} — the body's first line`);
+        if (row.bodies !== 1) fail(`ws f · ${tag}: ${row.bodies} rows carry a body line — only the commit that has a body`);
+        if (!row.author?.includes("colehank") || !row.author?.includes("claude") || row.author.includes("noreply")) {
+          fail(`ws f · ${tag}: the author line reads ${JSON.stringify(row.author)} — 「colehank 和 claude 撰写」, the trailer's name and not its address`);
+        }
+        if (pg.page !== 1 || pg.back !== 1 || !pg.front) fail(`ws f · ${tag}: a row pressed left ${JSON.stringify(pg)} — the commit's page in front, with ‹`);
+        if (w > 700 && pg.inMid !== 1) fail(`ws f · ${tag}: the commit page is not in the file's place (data-ws-mid): ${JSON.stringify(pg)}`);
+        if (!/(已更改 3 个文件|Files changed: 3)/.test(pg.stat ?? "") || !pg.stat?.includes("+3") || !pg.stat?.includes("−2")) {
+          fail(`ws f · ${tag}: the stat line reads ${JSON.stringify(pg.stat)} — 「已更改 3 个文件 · +3 −2」`);
+        }
+        if (pg.files !== 3 || !pg.firstBar?.includes("WorkspacesList.tsx")) fail(`ws f · ${tag}: ${pg.files} file(s), the first bar ${JSON.stringify(pg.firstBar)} — three, in the answer's order`);
+        if (pg.firstLines !== 9 || pg.added !== 2 || pg.removed !== 1) fail(`ws f · ${tag}: under the first bar ${pg.firstLines} line(s), ${pg.added} added, ${pg.removed} removed — its hunk's 9, 2 and 1`);
+        if (pg.wider !== null && pg.wider > 0) fail(`ws f · ${tag}: the page is ${pg.wider}px wider than its box — a long line scrolls inside its file, not the page`);
+        if (asked.at(-1)?.rev !== ID) fail(`ws f · ${tag}: git_commit was asked ${JSON.stringify(asked.at(-1))} — the pressed row's id`);
+        await page.locator("[data-commit-back]").first().click();
+        await wait(400);
+        const gone = await page.locator("[data-commit-page]").count();
+        if (gone !== 0) fail(`ws f · ${tag}: ‹ left the commit page up`);
+      }
+      await page.unroute("**/git_log", logF);
+      await page.unroute("**/git_commit", showF);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    }
   }
   }
   if (process.env.FACE_ONLY === "ws") console.log("ws · FACE_ONLY=ws: the other sections are skipped");

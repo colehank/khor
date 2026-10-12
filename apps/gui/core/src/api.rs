@@ -223,6 +223,13 @@ pub fn answer(
             &arg("path")?,
             &arg("rev")?,
         ))?),
+        // One commit of a repository and what it changed (the commit page).
+        "git_commit" => to_json(&rt.block_on(crate::git::commit_show(
+            root,
+            &arg("machine")?,
+            &arg("dir")?,
+            &arg("rev")?,
+        ))?),
         // Saving an edit. **`was` is required even when empty** — same
         // shape and the same reason as `rename_session`'s `title`
         // above: an empty one is a real claim (「there should be no

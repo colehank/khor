@@ -659,7 +659,7 @@ pub(crate) const WALK: usize = 20_000;
 /// the current file would.
 pub(crate) const SHOWN: usize = 256 * 1024;
 
-/// A question about one file's history. **One wire word for the three**
+/// A question about one file's history. **One wire word for the four**
 /// (`proto::Request::Git`), each its own variant here, so a later
 /// question rides the same word and an older khor refuses the word once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -672,6 +672,41 @@ pub enum GitAsk {
     /// `path` as revision `rev` had it, and where the file as it is now
     /// differs from that.
     Show { path: String, rev: String },
+    /// **One commit of the repository `root` is in, and what it changed**
+    /// against its first parent (the commit page, COMMITS-BRIEF
+    /// 2026-10-12: 「点开后显示这个 commit 的更改」). A root commit has no
+    /// parent and every file it holds arrives added.
+    Commit { root: String, rev: String },
+}
+
+/// One file a commit changed, as the commit page draws it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommitFile {
+    /// Relative to the repository root, `/`-separated.
+    pub path: String,
+    /// Where a rename came from; empty for every other change.
+    pub from: String,
+    /// git's own letter: [`ADDED`], [`MODIFIED`], [`DELETED`], [`RENAMED`].
+    pub status: String,
+    pub added: u32,
+    pub removed: u32,
+    /// Either side is not text (a NUL in its head, git's own test): no
+    /// lines are said, and the counts are 0.
+    pub binary: bool,
+    pub hunks: Vec<CommitHunk>,
+}
+
+/// One unified hunk, `git show`'s shape: [`CONTEXT`] unchanged lines on
+/// either side of a run of changes, two runs closer than twice that
+/// joined. **Each line carries its own first character** — `' '`, `-`,
+/// `+` — the way a patch does, so there is no second list that could
+/// disagree with it about which line is which.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommitHunk {
+    /// 1-based, where the hunk's first line sits on each side.
+    pub old_at: u32,
+    pub new_at: u32,
+    pub lines: Vec<String>,
 }
 
 /// One commit, as a history row reads it.
@@ -708,6 +743,11 @@ pub enum GitAnswer {
     /// differs from it, in the current file's lines — the gutter's own
     /// shape, so 「与当前比较」 is the diff view the file already has.
     Show { text: String, cut: bool, hunks: Vec<Hunk>, more: bool },
+    /// One commit and the files it changed, in path order. `total` is how
+    /// many files it changed in all; `more` says the list stopped at
+    /// [`COMMIT_FILES`] files or [`COMMIT_LINES`] changed lines — said,
+    /// never cut silently.
+    Commit { commit: Commit, files: Vec<CommitFile>, total: u32, more: bool },
 }
 
 /// Answers one history question on this machine.
@@ -716,6 +756,7 @@ pub fn answer(ask: &GitAsk) -> Result<GitAnswer, String> {
         GitAsk::Log { path, limit } => log(Path::new(path), (*limit).clamp(1, LOG)),
         GitAsk::Blame { path } => blame(Path::new(path)),
         GitAsk::Show { path, rev } => show(Path::new(path), rev),
+        GitAsk::Commit { root, rev } => commit_show(Path::new(root), rev),
     }
 }
 
@@ -836,6 +877,171 @@ fn show(path: &Path, rev: &str) -> Result<GitAnswer, String> {
     let cut = old.len() > SHOWN;
     let text = String::from_utf8_lossy(&old[..old.len().min(SHOWN)]).into_owned();
     Ok(GitAnswer::Show { text, cut, hunks, more })
+}
+
+/// How many files one [`GitAnswer::Commit`] lists, and how many changed
+/// lines it carries across them. A vendored-dependency bump touches
+/// thousands; past either the answer says `more` and the page says so.
+pub(crate) const COMMIT_FILES: usize = 50;
+pub(crate) const COMMIT_LINES: usize = 2000;
+/// Unchanged lines around a change, `git diff`'s default.
+pub(crate) const CONTEXT: u32 = 3;
+
+fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
+    use gix::object::tree::diff::ChangeDetached as C;
+    let root = repo_root(root).ok_or_else(|| khor_catalog::msg::no_checkout().to_owned())?;
+    let repo = gix::open(&root).map_err(|e| e.to_string())?;
+    let id = gix::ObjectId::from_hex(rev.as_bytes()).map_err(|e| e.to_string())?;
+    let commit = repo.find_commit(id).map_err(|e| e.to_string())?;
+    let new = commit.tree().map_err(|e| e.to_string())?;
+    let old = match commit.parent_ids().next() {
+        Some(p) => Some(
+            repo.find_commit(p.detach())
+                .map_err(|e| e.to_string())?
+                .tree()
+                .map_err(|e| e.to_string())?,
+        ),
+        None => None,
+    };
+    // Renames tracked with git's own defaults (50 % similar), not the
+    // repository's `diff.renames`: the page reads the same everywhere.
+    let opts = gix::diff::Options::default().with_rewrites(Some(Default::default()));
+    let changes = repo
+        .diff_tree_to_tree(old.as_ref(), Some(&new), opts)
+        .map_err(|e| e.to_string())?;
+    // (path, from, letter, old blob, new blob), files only: a directory
+    // is said by the files under it, a submodule has no lines here.
+    let mut rows: Vec<(String, String, &'static str, Option<gix::ObjectId>, Option<gix::ObjectId>)> = Vec::new();
+    for c in changes {
+        if !c.entry_mode().is_blob_or_symlink() {
+            continue;
+        }
+        let path = c.location().to_str_lossy().into_owned();
+        rows.push(match c {
+            C::Addition { id, .. } => (path, String::new(), ADDED, None, Some(id)),
+            C::Deletion { id, .. } => (path, String::new(), DELETED, Some(id), None),
+            C::Modification { previous_id, id, .. } => (path, String::new(), MODIFIED, Some(previous_id), Some(id)),
+            C::Rewrite { copy: true, id, .. } => (path, String::new(), ADDED, None, Some(id)),
+            C::Rewrite { source_location, source_id, id, .. } => {
+                (path, source_location.to_str_lossy().into_owned(), RENAMED, Some(source_id), Some(id))
+            }
+        });
+    }
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    let total = rows.len().min(u32::MAX as usize) as u32;
+    let read = |id: Option<gix::ObjectId>| -> Result<Vec<u8>, String> {
+        match id {
+            Some(id) => Ok(repo.find_object(id).map_err(|e| e.to_string())?.data.clone()),
+            None => Ok(Vec::new()),
+        }
+    };
+    let mut files = Vec::new();
+    let mut budget = COMMIT_LINES;
+    let mut more = false;
+    for (path, from, status, was, now) in rows {
+        if files.len() >= COMMIT_FILES || budget == 0 {
+            more = true;
+            break;
+        }
+        let (a, b) = (read(was)?, read(now)?);
+        let binary = [&a, &b].iter().any(|x| x[..x.len().min(8000)].contains(&0));
+        let (hunks, added, removed, cut) = if binary {
+            (Vec::new(), 0, 0, false)
+        } else {
+            unified(&a, &b, &mut budget)
+        };
+        more |= cut;
+        files.push(CommitFile {
+            path,
+            from,
+            status: status.to_owned(),
+            added,
+            removed,
+            binary,
+            hunks,
+        });
+        if cut {
+            break;
+        }
+    }
+    Ok(GitAnswer::Commit {
+        commit: commit_of(&commit),
+        files,
+        total,
+        more,
+    })
+}
+
+/// Two texts as unified hunks, spending `budget` changed lines; the
+/// counts are the whole file's whatever the budget, `cut` says the hunks
+/// stopped. Lines lose their terminators, as [`hunks`]'s `was` does.
+fn unified(old: &[u8], new: &[u8], budget: &mut usize) -> (Vec<CommitHunk>, u32, u32, bool) {
+    use gix::diff::blob::{Algorithm, InternedInput, sources};
+    let input = InternedInput::new(sources::byte_lines(old), sources::byte_lines(new));
+    let mut d = gix::diff::blob::Diff::compute(Algorithm::Histogram, &input);
+    d.postprocess_lines(&input);
+    let line = |tok: gix::diff::blob::Token| -> String {
+        let raw = String::from_utf8_lossy(input.interner[tok]);
+        raw.strip_suffix('\n')
+            .map(|s| s.strip_suffix('\r').unwrap_or(s))
+            .unwrap_or(&raw)
+            .to_owned()
+    };
+    let raw: Vec<_> = d.hunks().collect();
+    let added = raw.iter().map(|h| h.after.end - h.after.start).sum();
+    let removed = raw.iter().map(|h| h.before.end - h.before.start).sum();
+    let n_old = input.before.len() as u32;
+    let mut out: Vec<CommitHunk> = Vec::new();
+    let mut cut = false;
+    let mut i = 0;
+    while i < raw.len() {
+        // One unified hunk: from CONTEXT above the first run to CONTEXT
+        // below the last run that sits within 2×CONTEXT of the one before.
+        let first = &raw[i];
+        let lead = first.before.start.min(CONTEXT);
+        let mut h = CommitHunk {
+            old_at: first.before.start - lead + 1,
+            new_at: first.after.start - lead + 1,
+            lines: Vec::new(),
+        };
+        let mut at = first.before.start - lead;
+        loop {
+            let r = &raw[i];
+            for k in at..r.before.start {
+                h.lines.push(format!(" {}", line(input.before[k as usize])));
+            }
+            let size = (r.before.end - r.before.start + r.after.end - r.after.start) as usize;
+            if size > *budget {
+                cut = true;
+                *budget = 0;
+                break;
+            }
+            *budget -= size;
+            for k in r.before.clone() {
+                h.lines.push(format!("-{}", line(input.before[k as usize])));
+            }
+            for k in r.after.clone() {
+                h.lines.push(format!("+{}", line(input.after[k as usize])));
+            }
+            at = r.before.end;
+            i += 1;
+            if i >= raw.len() || raw[i].before.start - at > 2 * CONTEXT {
+                break;
+            }
+        }
+        if !cut {
+            for k in at..(at + CONTEXT).min(n_old) {
+                h.lines.push(format!(" {}", line(input.before[k as usize])));
+            }
+        }
+        if h.lines.iter().any(|l| !l.starts_with(' ')) {
+            out.push(h);
+        }
+        if cut {
+            break;
+        }
+    }
+    (out, added, removed, cut)
 }
 
 #[cfg(test)]
@@ -981,6 +1187,82 @@ mod status_tests {
         let repo = gix::open(&root).expect("open");
         let head = repo.head_id().expect("head").to_string();
         assert_eq!(commits[0].id, head, "the first entry is HEAD");
+    }
+
+    /// **The commit page's question** (COMMITS-BRIEF, 2026-10-12): HEAD
+    /// of this checkout changed at least one file, and says where.
+    #[test]
+    fn head_answers_its_files_with_hunks() {
+        let root = here();
+        let head = gix::open(&root).expect("open").head_id().expect("head").to_string();
+        let GitAnswer::Commit { commit, files, total, .. } = answer(&GitAsk::Commit {
+            root: root.to_string_lossy().into_owned(),
+            rev: head.clone(),
+        })
+        .expect("commit") else {
+            panic!("not a commit")
+        };
+        assert_eq!(commit.id, head);
+        assert!(!files.is_empty() && total as usize >= files.len());
+        let f = files.iter().find(|f| !f.binary).expect("a text file");
+        assert!(!f.hunks.is_empty(), "{} changed and says nowhere", f.path);
+        assert!(f.added + f.removed > 0);
+        for h in &f.hunks {
+            assert!(h.lines.iter().all(|l| matches!(l.chars().next(), Some(' ' | '+' | '-'))));
+        }
+    }
+
+    /// A commit with no parent is diffed against nothing: every file it
+    /// holds is added, and none was removed.
+    #[test]
+    fn the_root_commit_adds_every_file() {
+        let root = here();
+        let repo = gix::open(&root).expect("open");
+        let first = repo
+            .rev_walk([repo.head_id().expect("head").detach()])
+            .first_parent_only()
+            .all()
+            .expect("walk")
+            .filter_map(Result::ok)
+            .last()
+            .expect("a root");
+        assert!(first.parent_ids.is_empty());
+        let GitAnswer::Commit { files, total, more, .. } = answer(&GitAsk::Commit {
+            root: root.to_string_lossy().into_owned(),
+            rev: first.id.to_string(),
+        })
+        .expect("commit") else {
+            panic!("not a commit")
+        };
+        assert!(!files.is_empty());
+        assert!(files.iter().all(|f| f.status == ADDED && f.removed == 0), "{files:?}");
+        if files.len() < total as usize {
+            assert!(more, "{} of {total} files listed and the answer did not say so", files.len());
+        }
+    }
+
+    #[test]
+    fn two_runs_close_together_are_one_hunk_with_context() {
+        let old = "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n";
+        let new = "1\n2\n3\nfour\n5\n6\n7\neight\n9\n10\n11\n12\n";
+        let mut budget = COMMIT_LINES;
+        let (h, added, removed, cut) = unified(old.as_bytes(), new.as_bytes(), &mut budget);
+        assert_eq!((added, removed, cut), (2, 2, false));
+        assert_eq!(h.len(), 1);
+        assert_eq!((h[0].old_at, h[0].new_at), (1, 1));
+        assert_eq!(h[0].lines.first().map(String::as_str), Some(" 1"));
+        assert_eq!(h[0].lines.last().map(String::as_str), Some(" 11"));
+        assert!(h[0].lines.contains(&"-4".to_owned()) && h[0].lines.contains(&"+eight".to_owned()));
+    }
+
+    #[test]
+    fn the_line_budget_says_it_stopped() {
+        let new: String = (0..10).map(|i| format!("{i}\n")).collect();
+        let mut budget = 4;
+        let (h, added, _, cut) = unified(b"", new.as_bytes(), &mut budget);
+        assert!(cut, "ten added lines do not fit in four");
+        assert_eq!(added, 10, "the count is the whole file's");
+        assert!(h.is_empty() || h.iter().all(|h| h.lines.len() <= 4));
     }
 
     #[test]
