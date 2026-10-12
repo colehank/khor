@@ -662,11 +662,12 @@ export function FileTree({
 
   const rootError = failed.get(root);
   return (
-    // **`data-lab-mark`** controls the ink-weight variant for the two
-    // candidate fixes (WS-LAB item 2): `dot6` shrinks the dot to 6 px,
-    // `medium` bumps the letter to font-medium. Default `dot6`. Flip in
-    // devtools without a rebuild to compare.
-    <section data-file-tree data-tree-root={root} data-lab-mark="dot6" className="flex h-full min-w-0 flex-col">
+    // ⚠️ 墓碑 (ws-lab → 2026-10-12): `data-lab-mark`, a devtools switch
+    // between a 6 px dot and a medium letter. The owner picked neither;
+    // the dot stays 8 (2026-09-16 「太小了,小到现在都看不清是什么颜色」,
+    // and check-face holds it there) and the letter stays regular. What
+    // the lab kept is the slot: dot and letter in one trailing column.
+    <section data-file-tree data-tree-root={root} className="flex h-full min-w-0 flex-col">
       {/* **Commit line above the tree** (WS-LAB item 1): subject · short
           id · age — present whenever the root is a repository with a
           HEAD and the first commit has arrived. Re-asked via

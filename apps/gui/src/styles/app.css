@@ -2734,22 +2734,6 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   outline-offset: calc(-1 * var(--ring-w));
 }
 
-/* **WS-LAB item 2 mark variants**: two candidates for equalising dot/letter
- * ink weight, controlled by `data-lab-mark` on the tree root so the owner
- * can flip between them in devtools without a rebuild. Default is `dot6`.
- *
- * `dot6`  — shrinks the dot to 6 × 6 px (from 8 × 8 `size-2`).
- * `medium` — bumps the letter to `font-medium` (from the regular caption).
- *
- * Both keep `bg-current` / `markInk` so the colour decision stays in one
- * place; only the ink *area* changes. */
-[data-lab-mark="dot6"] [data-tree-mark-slot] [data-git-mark="●"] {
-  width: 6px;
-  height: 6px;
-}
-[data-lab-mark="medium"] [data-tree-mark-slot] [data-git-mark]:not([data-git-mark="●"]) {
-  font-weight: 500;
-}
 @keyframes tab-load {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(185%); }

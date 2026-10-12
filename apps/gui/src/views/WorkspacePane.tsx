@@ -1559,6 +1559,9 @@ export function WorkspacePane({
     <button
       type="button"
       data-ws-head-branch
+      // The finger floor (`app.css`'s `::after` reach for `data-glass-hit`):
+      // the chip is a line of caption text, 19 tall, and a press target.
+      data-glass-hit
       onClick={() => setHistoryOpen(true)}
       className="flex min-w-0 items-baseline gap-xxs hover:text-foreground"
     >
