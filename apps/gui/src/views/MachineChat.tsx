@@ -18,7 +18,6 @@ import { PathCut } from "@/components/PathCut";
 import { FilePreview, PendingChips, type Pending } from "@/views/chat-files";
 import { takeDraft } from "@/lib/composer-handoff";
 import { baseName } from "@/lib/paths";
-import { StatusWord } from "@/components/StatusWord";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -606,7 +605,6 @@ function FileChip({
   return (
     <div
       data-msg-files
-      data-word={m.word ?? undefined}
       data-file-step={m.step ?? "waiting"}
       className={cn(
         "flex flex-col gap-1 rounded-lg px-3 py-2 text-callout",
@@ -721,7 +719,6 @@ function FileChip({
           {failed}
         </span>
       )}
-      {m.word && <StatusWord data-file-word word={m.word} />}
       <FilePreview machine={machine} here shown="" path={looking} onClose={() => setLooking(null)} />
     </div>
   );

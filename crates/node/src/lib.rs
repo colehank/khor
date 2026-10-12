@@ -1053,7 +1053,7 @@ impl Node {
                 name: name.clone(),
             },
         );
-        let transfer = TransferKind::new(root.clone(), device_str.clone(), name.clone());
+        let transfer = TransferKind::new(root.clone());
         // The one place khor decides to read other vendors' files. Every
         // other construction of a LiveKind discovers nothing, so no test
         // answers with whatever the machine happens to be running.
@@ -5300,9 +5300,9 @@ impl KindSurface for TransferKind {
     }
 
     /// No rows of its own any more (传输并入对话批, 2026-08-23): a
-    /// transfer is a file message in the machine's conversation, and its
-    /// pressure lands on that chat row's word (`ChatKind`'s rows via
-    /// [`TransferKind::urgency`]). The kind itself stays: `claims`,
+    /// transfer is a file message in the broadcast, and its pressure lands
+    /// on that row's word (`wide::WideKind`'s rows). The kind itself
+    /// stays: `claims`,
     /// `seen_at` and `close` still answer `transfer/` ids — accept marks
     /// them seen, and an older peer still *reports* transfer rows, which
     /// are painted as ever (nothing to migrate; those rows die of the

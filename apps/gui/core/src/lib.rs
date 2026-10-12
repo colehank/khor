@@ -2240,11 +2240,6 @@ pub struct ChatMsgRow {
     pub unknown: Option<String>,
     pub retracted: bool,
     pub edited: bool,
-    /// The file message's transfer face on this machine, as a state
-    /// key (`TransferKind::message_face`) — `None` is "not my seat",
-    /// never "done". The frontend looks the word up and never derives
-    /// one (docs/UX.md 状态呈现).
-    pub word: Option<String>,
     /// A file message's move as its receiver last wrote it
     /// (`khor_sync::chat::Fate`), the same on every device: `moving`,
     /// `landed`, `failed`, `stopped`; `None` until the receiver starts it.
@@ -2256,9 +2251,6 @@ pub struct ChatMsgRow {
     pub landed: Vec<String>,
     /// Why the move failed, in the receiver's sentence.
     pub why: Option<String>,
-    /// The directory the sender chose on the receiver; `None` for its
-    /// receive location.
-    pub into: Option<String>,
     /// In the broadcast (`khor_node::wide`), the machines that have this
     /// file, out of `of` it was offered to; `None` elsewhere. In the
     /// broadcast `step`, `moved`, `landed` and `why` are **this
@@ -2375,12 +2367,10 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
                 unknown,
                 retracted: m.retracted,
                 edited: m.edited,
-                word: None,
                 step: here.as_ref().map(|f| f.step.key().to_owned()),
                 moved: here.as_ref().map_or(0, |f| f.moved),
                 landed: here.as_ref().map(|f| f.landed.clone()).unwrap_or_default(),
                 why: here.as_ref().map(|f| f.why.clone()).filter(|w| !w.is_empty()),
-                into: None,
                 got: face.as_ref().map(|f| f.got),
                 of: face.as_ref().map(|f| f.of),
                 via,

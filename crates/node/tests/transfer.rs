@@ -231,18 +231,19 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
     let ghost = {
         let far = ChatDoc::new(0xEE).unwrap();
         let msg_id = far
-            .send_files(
+            .post(
                 &Sender {
                     id: a.device_str().to_owned(),
                     name: "alpha".into(),
                 },
+                "",
+                &[],
                 &[FileRef {
                     name: "ghost.bin".into(),
                     size: 10,
                     digest: "ee".repeat(32),
                     holder: String::new(),
                 }],
-                "",
             )
             .unwrap();
         let block = far.changes_since(&Default::default()).unwrap();

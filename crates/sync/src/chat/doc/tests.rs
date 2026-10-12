@@ -93,15 +93,16 @@ fn a_huge_attachment_only_costs_its_metadata() {
     b.merge(&a.snapshot().unwrap()).unwrap();
 
     let before = b.version();
-    a.send_files(
+    a.post(
         &me("a"),
+        "",
+        &[],
         &[FileRef {
             name: "dataset.tar.zst".into(),
             size: 209_715_200,
             digest: "b3:9f2c".repeat(6),
             holder: String::new(),
         }],
-        "",
     )
     .unwrap();
 
@@ -317,42 +318,6 @@ fn sharing_one_peer_between_two_writers_silently_loses_a_message() {
     );
 }
 
-/// **A file message carries its own road** (STORE-BRIEF phase 2): the
-/// sender's target and the receiver's account travel with the message,
-/// so a third device reads the same state as the two ends.
-#[test]
-fn a_file_message_carries_its_target_and_its_fate_to_every_device() {
-    let sender = ChatDoc::new(1).unwrap();
-    let receiver = ChatDoc::new(2).unwrap();
-    let third = ChatDoc::new(3).unwrap();
-    let f = FileRef {
-        name: "a.txt".into(),
-        size: 5,
-        digest: "ab".repeat(32),
-        holder: String::new(),
-    };
-    let id = sender.send_files(&me("s"), &[f], "/data/in").unwrap();
-    receiver.merge(&sender.snapshot().unwrap()).unwrap();
-    let got = &receiver.messages()[0];
-    assert_eq!((got.into.as_str(), got.fate.clone()), ("/data/in", None), "not started yet");
-
-    let moving = Fate { step: Step::Moving, moved: 2, landed: vec![], why: String::new(), via: String::new() };
-    receiver.set_fate(&id, &moving).unwrap();
-    let before = receiver.version();
-    receiver.set_fate(&id, &moving).unwrap();
-    assert_eq!(receiver.version(), before, "the same account twice writes nothing");
-    let landed = Fate { step: Step::Landed, moved: 5, landed: vec!["/data/in/a.txt".into()], why: String::new(), via: String::new() };
-    receiver.set_fate(&id, &landed).unwrap();
-
-    third.merge(&receiver.snapshot().unwrap()).unwrap();
-    let seen = &third.messages()[0];
-    assert_eq!(seen.fate.as_ref(), Some(&landed));
-    assert_eq!(seen.into, "/data/in");
-    let plain = sender.send_files(&me("s"), &[FileRef { name: "b".into(), size: 1, digest: String::new(), holder: String::new() }], "").unwrap();
-    let m = sender.messages().into_iter().find(|m| m.id == plain).unwrap();
-    assert_eq!(m.into, "", "the default is no key at all");
-}
-
 /// **A khor-wide file is one record per receiver** (STORE-BRIEF phase
 /// 3): two machines answering the same offer at once, each from its own
 /// copy, both keep their account after the merge, and a third device
@@ -364,7 +329,7 @@ fn every_receiver_keeps_its_own_fate_of_one_offer() {
     let b = ChatDoc::new(3).unwrap();
     let third = ChatDoc::new(4).unwrap();
     let f = FileRef { name: "a.txt".into(), size: 5, digest: "cd".repeat(32), holder: String::new() };
-    let id = sender.send_files(&me("s"), &[f], "").unwrap();
+    let id = sender.post(&me("s"), "", &[], &[f]).unwrap();
     for d in [&a, &b] {
         d.merge(&sender.snapshot().unwrap()).unwrap();
     }
@@ -386,7 +351,6 @@ fn every_receiver_keeps_its_own_fate_of_one_offer() {
     assert_eq!(m.fates.get("dev-a"), Some(&landed));
     assert_eq!(m.fates.get("dev-b"), Some(&failed));
     assert_eq!(m.fates.len(), 2);
-    assert_eq!(m.fate, None, "the single-receiver record stays empty");
 }
 
 /// The head names the machine that runs a khor-wide conversation, and

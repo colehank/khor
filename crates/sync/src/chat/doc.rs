@@ -6,16 +6,16 @@
 //! LWW and silently drops one side. Unknown keys are kept and forwarded —
 //! an old version relaying newer content must not strip it.
 //!
-//! **A file message carries its own road** (STORE-BRIEF phase 2): the
-//! sender writes where it should land (`into`, empty for the receiver's
-//! receive location), and the receiver — the one machine that pulls it —
-//! writes how the move stands (`step`, `moved`, `why`) and where each
-//! file landed (`landed` on each file's map). Every device reads the
-//! same record, so every device shows the same state.
+//! **A file message's move is written by each machine that pulls it**:
+//! how it stands (`step`, `moved`, `why`, `via`) and where its files
+//! landed. Every device reads the same record, so every device shows the
+//! same state. ⚠️ 墓碑 (STORE-BRIEF phase 5): a machine's conversation had
+//! one receiver, whose record sat on the message itself beside the
+//! sender's `into`; that conversation is gone, and with it those keys.
 //!
-//! **A khor-wide conversation has many receivers** (STORE-BRIEF phase 3,
-//! the broadcast): a file there is an offer every machine answers on its
-//! own, so its record is one fate per receiver — a key `fate:<device
+//! **The broadcast has many receivers** (STORE-BRIEF phase 3): a file
+//! there is answered by every machine on its own, so its record is one
+//! fate per receiver — a key `fate:<device
 //! id>` on the message map, holding the same four facts as one plain
 //! value. Each receiver writes only its own key, so two machines landing
 //! the same file at once never touch each other's record. Not a nested
@@ -163,11 +163,6 @@ pub struct Message {
     pub retracted: bool,
     /// Body was edited; the UI draws "edited" from this.
     pub edited: bool,
-    /// A file message's directory on the receiver, as the sender chose
-    /// it; empty for the receiver's receive location.
-    pub into: String,
-    /// A file message's move, as its receiver wrote it.
-    pub fate: Option<Fate>,
     /// In a khor-wide conversation, each receiver's own account of its
     /// move, by device id; a machine that has not answered the offer is
     /// absent.
@@ -298,20 +293,6 @@ impl ChatDoc {
         })
     }
 
-    /// Sends files to nobody in particular — [`Self::post`] with no words
-    /// and no targets. `into` is kept for the tests of the single-receiver
-    /// record until that record goes.
-    pub fn send_files(&self, from: &Sender, files: &[FileRef], into: &str) -> Result<String, String> {
-        let id = self.post(from, "", &[], files)?;
-        if !into.is_empty()
-            && let Some(m) = self.find(&id)
-        {
-            m.insert("into", into).map_err(|e| e.to_string())?;
-            self.inner.commit();
-        }
-        Ok(id)
-    }
-
     fn push(
         &self,
         from: &Sender,
@@ -339,42 +320,6 @@ impl ChatDoc {
         let m = self.find(id).ok_or_else(|| msg::no_such_message(id))?;
         m.insert("text", text).map_err(|e| e.to_string())?;
         m.insert("edited", true).map_err(|e| e.to_string())?;
-        self.inner.commit();
-        Ok(())
-    }
-
-    /// Writes how a file message's move stands. Only its receiver
-    /// writes this, so each key is whole-value without a race; only the
-    /// keys that changed are written, so a progress beat costs one op.
-    pub fn set_fate(&self, id: &str, fate: &Fate) -> Result<(), String> {
-        let m = self.find(id).ok_or_else(|| msg::no_such_message(id))?;
-        let was = read_fate(&m);
-        let err = |e: loro::LoroError| e.to_string();
-        if was.as_ref().map(|f| f.step) != Some(fate.step) {
-            m.insert("step", fate.step.key()).map_err(err)?;
-        }
-        if was.as_ref().map(|f| f.moved) != Some(fate.moved) {
-            m.insert("moved", fate.moved).map_err(err)?;
-        }
-        if was.as_ref().map(|f| f.why.as_str()) != Some(fate.why.as_str()) {
-            m.insert("why", fate.why.as_str()).map_err(err)?;
-        }
-        if was.as_ref().map(|f| f.via.as_str()) != Some(fate.via.as_str()) {
-            m.insert("via", fate.via.as_str()).map_err(err)?;
-        }
-        if was.as_ref().map(|f| &f.landed) != Some(&fate.landed)
-            && let Some(list) = m
-                .get("files")
-                .and_then(|v| v.into_container().ok())
-                .and_then(|c| c.into_list().ok())
-        {
-            for i in 0..list.len() {
-                if let Some(f) = list.get(i).and_then(as_map) {
-                    f.insert("landed", fate.landed.get(i).map(String::as_str).unwrap_or(""))
-                        .map_err(err)?;
-                }
-            }
-        }
         self.inner.commit();
         Ok(())
     }
@@ -572,8 +517,6 @@ fn read_msg(m: &LoroMap) -> Message {
         body,
         retracted: bool_of(m, "retracted"),
         edited: bool_of(m, "edited"),
-        into: str_of(m, "into").unwrap_or_default(),
-        fate: read_fate(m),
         fates: read_fates(m),
         to: read_targets(m),
         note: if kind == "files" { str_of(m, "text").unwrap_or_default() } else { String::new() },
@@ -636,28 +579,6 @@ fn read_fates(m: &LoroMap) -> BTreeMap<String, Fate> {
         out.insert(device.to_owned(), Fate { step, moved, landed, why: text("why"), via: text("via") });
     });
     out
-}
-
-fn read_fate(m: &LoroMap) -> Option<Fate> {
-    let step = Step::from_key(&str_of(m, "step")?)?;
-    let landed = m
-        .get("files")
-        .and_then(|v| v.into_container().ok())
-        .and_then(|c| c.into_list().ok())
-        .map(|list| {
-            (0..list.len())
-                .filter_map(|i| list.get(i).and_then(as_map))
-                .filter_map(|f| str_of(&f, "landed").filter(|p| !p.is_empty()))
-                .collect()
-        })
-        .unwrap_or_default();
-    Some(Fate {
-        step,
-        moved: i64_of(m, "moved").unwrap_or(0),
-        landed,
-        why: str_of(m, "why").unwrap_or_default(),
-        via: str_of(m, "via").unwrap_or_default(),
-    })
 }
 
 fn read_files(m: &LoroMap) -> Vec<FileRef> {

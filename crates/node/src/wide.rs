@@ -373,7 +373,7 @@ mod tests {
     fn a_later_landing_of_the_same_bytes_retires_the_old_break() {
         let (r, n, who) = node("retire");
         let far = ChatDoc::new(0xFAFA).unwrap();
-        far.send_files(&who, &[bytes_ref("a.bin")], "").unwrap();
+        far.post(&who, "", &[], &[bytes_ref("a.bin")]).unwrap();
         plant(&r, &far);
         let old = far.messages()[0].id.clone();
         n.chat.set_fate(BROADCAST, &old, &fate(Step::Failed, "")).unwrap();
@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(here(&n, 0), Some(Step::Failed));
 
         tick();
-        far.send_files(&who, &[bytes_ref("a-again.bin")], "").unwrap();
+        far.post(&who, "", &[], &[bytes_ref("a-again.bin")]).unwrap();
         plant(&r, &far);
         let new = far.messages()[1].id.clone();
         n.chat.set_fate(BROADCAST, &new, &fate(Step::Landed, "/drop/a-again.bin")).unwrap();
@@ -398,7 +398,7 @@ mod tests {
     fn a_newer_line_after_a_moving_file_takes_the_row() {
         let (r, n, who) = node("latest");
         let far = ChatDoc::new(0xFAFA).unwrap();
-        far.send_files(&who, &[bytes_ref("big.bin")], "").unwrap();
+        far.post(&who, "", &[], &[bytes_ref("big.bin")]).unwrap();
         plant(&r, &far);
         let id = far.messages()[0].id.clone();
         n.chat.set_fate(BROADCAST, &id, &fate(Step::Moving, "")).unwrap();
@@ -417,7 +417,7 @@ mod tests {
     fn an_offer_nobody_took_is_not_blocked() {
         let (r, n, who) = node("offer");
         let far = ChatDoc::new(0xFAFA).unwrap();
-        far.send_files(&who, &[bytes_ref("maybe.bin")], "").unwrap();
+        far.post(&who, "", &[], &[bytes_ref("maybe.bin")]).unwrap();
         plant(&r, &far);
         assert_eq!(here(&n, 0), None, "never answered");
         assert_eq!(word(&n), State::Done, "a file one may take: 未看, never 待批");

@@ -6168,8 +6168,6 @@ mod fate_lines_tests {
             body: MsgBody::Files(vec![FileRef { name: "x.bin".into(), size: 300, digest: String::new(), holder: String::new() }]),
             retracted: false,
             edited: false,
-            into: String::new(),
-            fate: None,
             fates,
             to: Vec::new(),
             note: String::new(),
