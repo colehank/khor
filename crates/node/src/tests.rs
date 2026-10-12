@@ -563,6 +563,7 @@ fn khor_node_test_fileref() -> khor_sync::chat::FileRef {
         name: "drop.bin".into(),
         size: 6,
         digest: "ef".repeat(32),
+        holder: String::new(),
     }
 }
 

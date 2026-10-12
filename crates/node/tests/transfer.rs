@@ -300,6 +300,7 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
                     name: "ghost.bin".into(),
                     size: 10,
                     digest: "ee".repeat(32),
+                    holder: String::new(),
                 }],
                 "",
             )

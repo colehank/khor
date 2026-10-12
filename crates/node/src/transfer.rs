@@ -391,6 +391,7 @@ mod tests {
             name: name.into(),
             size: 5,
             digest: "ab".repeat(32),
+            holder: String::new(),
         }
     }
 
@@ -408,6 +409,8 @@ mod tests {
             into: String::new(),
             fate: None,
             fates: Default::default(),
+            to: Vec::new(),
+            note: String::new(),
         }
     }
 
@@ -597,6 +600,7 @@ mod tests {
                 name: bad.into(),
                 size: 1,
                 digest: "cd".repeat(32),
+                holder: String::new(),
             };
             let p = payload_path(&ch, &f);
             assert!(

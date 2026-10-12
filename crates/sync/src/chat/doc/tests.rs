@@ -99,6 +99,7 @@ fn a_huge_attachment_only_costs_its_metadata() {
             name: "dataset.tar.zst".into(),
             size: 209_715_200,
             digest: "b3:9f2c".repeat(6),
+            holder: String::new(),
         }],
         "",
     )
@@ -328,6 +329,7 @@ fn a_file_message_carries_its_target_and_its_fate_to_every_device() {
         name: "a.txt".into(),
         size: 5,
         digest: "ab".repeat(32),
+        holder: String::new(),
     };
     let id = sender.send_files(&me("s"), &[f], "/data/in").unwrap();
     receiver.merge(&sender.snapshot().unwrap()).unwrap();
@@ -346,7 +348,7 @@ fn a_file_message_carries_its_target_and_its_fate_to_every_device() {
     let seen = &third.messages()[0];
     assert_eq!(seen.fate.as_ref(), Some(&landed));
     assert_eq!(seen.into, "/data/in");
-    let plain = sender.send_files(&me("s"), &[FileRef { name: "b".into(), size: 1, digest: String::new() }], "").unwrap();
+    let plain = sender.send_files(&me("s"), &[FileRef { name: "b".into(), size: 1, digest: String::new(), holder: String::new() }], "").unwrap();
     let m = sender.messages().into_iter().find(|m| m.id == plain).unwrap();
     assert_eq!(m.into, "", "the default is no key at all");
 }
@@ -361,7 +363,7 @@ fn every_receiver_keeps_its_own_fate_of_one_offer() {
     let a = ChatDoc::new(2).unwrap();
     let b = ChatDoc::new(3).unwrap();
     let third = ChatDoc::new(4).unwrap();
-    let f = FileRef { name: "a.txt".into(), size: 5, digest: "cd".repeat(32) };
+    let f = FileRef { name: "a.txt".into(), size: 5, digest: "cd".repeat(32), holder: String::new() };
     let id = sender.send_files(&me("s"), &[f], "").unwrap();
     for d in [&a, &b] {
         d.merge(&sender.snapshot().unwrap()).unwrap();
@@ -402,4 +404,34 @@ fn the_head_names_a_home_that_travels_and_can_move() {
     assert_eq!(a.home().as_deref(), Some("dev-b"), "moving a home is writing another id");
     a.set_home("").unwrap();
     assert_eq!(a.home(), None);
+}
+
+/// **A composed message carries its targets, its words and each file's
+/// holder** (STORE-BRIEF phase 5): written once at compose time, read the
+/// same on every device, by device id — the names typed were resolved
+/// then, so nothing here depends on what a machine is called later.
+#[test]
+fn a_posted_message_carries_its_targets_its_words_and_each_files_holder() {
+    use super::Target;
+    let sender = ChatDoc::new(1).unwrap();
+    let third = ChatDoc::new(2).unwrap();
+    let to = vec![
+        Target { device: "dev-b".into(), path: "~/in".into() },
+        Target { device: "dev-c".into(), path: String::new() },
+    ];
+    let here = FileRef { name: "x".into(), size: 5, digest: "ab".repeat(32), holder: String::new() };
+    let far = FileRef { name: "y".into(), size: 7, digest: "cd".repeat(32), holder: "dev-h".into() };
+    let id = sender.post(&me("s"), "look at these", &to, &[here.clone(), far.clone()]).unwrap();
+    let said = sender.post(&me("s"), "hello", &to[..1], &[]).unwrap();
+    third.merge(&sender.snapshot().unwrap()).unwrap();
+    let msgs = third.messages();
+    let files = msgs.iter().find(|m| m.id == id).unwrap();
+    assert_eq!(files.to, to, "every target with its own path, in the order named");
+    assert_eq!(files.body, MsgBody::Files(vec![here, far]), "each file with its holder; empty is the sender");
+    assert_eq!(files.note, "look at these", "the words said with the files");
+    let text = msgs.iter().find(|m| m.id == said).unwrap();
+    assert_eq!(text.body, MsgBody::Text("hello".into()));
+    assert_eq!((text.to.len(), text.note.as_str()), (1, ""), "a line's words are its body, not a note");
+    let plain = sender.post(&me("s"), "to everyone", &[], &[]).unwrap();
+    assert!(sender.messages().iter().find(|m| m.id == plain).unwrap().to.is_empty(), "no target, no key");
 }

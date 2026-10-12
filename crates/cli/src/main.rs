@@ -6112,12 +6112,14 @@ mod fate_lines_tests {
             id: "m1".into(),
             at: 0,
             from: khor_sync::chat::Sender { id: "aa".into(), name: "alpha".into() },
-            body: MsgBody::Files(vec![FileRef { name: "x.bin".into(), size: 300, digest: String::new() }]),
+            body: MsgBody::Files(vec![FileRef { name: "x.bin".into(), size: 300, digest: String::new(), holder: String::new() }]),
             retracted: false,
             edited: false,
             into: String::new(),
             fate: None,
             fates,
+            to: Vec::new(),
+            note: String::new(),
         }
     }
 

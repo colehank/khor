@@ -4174,6 +4174,7 @@ impl Node {
             name: name.clone(),
             size: size as i64,
             digest: digest.clone(),
+            holder: String::new(),
         };
         let path = path.canonicalize().map_err(msg::cant_canonicalize)?;
         // The same file offered again — to another machine, or again to

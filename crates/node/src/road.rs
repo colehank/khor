@@ -662,6 +662,7 @@ mod tests {
             name: name.into(),
             size: bytes.len() as i64,
             digest: blake3::hash(bytes).to_hex().to_string(),
+            holder: String::new(),
         }
     }
 
