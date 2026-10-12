@@ -410,9 +410,12 @@ pub fn answer(
             let shown = crate::rename_machine(root, &arg("id")?, &arg("name")?)?;
             serde_json::to_string(&shown).map_err(|e| e.to_string())
         }
-        "tell" => {
-            crate::tell(root, &arg("machine")?, &arg("text")?)?;
-            Ok("null".to_owned())
+        "post" => {
+            let files: Vec<String> = match args.get("files") {
+                Some(v) => serde_json::from_value(v.clone()).map_err(|e| e.to_string())?,
+                None => Vec::new(),
+            };
+            to_json(&rt.block_on(crate::post(root, &arg("typed")?, &files))?)
         }
         "pin_session" => {
             crate::pin_session(root, &arg("id")?, flag("on")?)?;
@@ -848,18 +851,6 @@ pub fn answer(
             },
             opt_str("token")?.as_deref(),
         ))?),
-        // The path names a file on the machine answering this call —
-        // meaningful from the app and the loopback bridge, where that
-        // machine is the one the person sits at. The browser upload is
-        // not here: it is a raw-bytes route, not a JSON command
-        // (`send_upload` behind `/api/upload`), and this table carries
-        // JSON commands.
-        "send_path" => to_json(&crate::send_path(
-            root,
-            &arg("machine")?,
-            std::path::Path::new(&arg("path")?),
-            opt_str("into")?.as_deref().unwrap_or(""),
-        )?),
         "machine_log" => to_json(&crate::machine_log(root, &arg("id")?)?),
         "retry_transfer" => to_json(&rt.block_on(crate::retry_transfer(root, &arg("msg")?))?),
         "stop_transfer" => to_json(&rt.block_on(crate::stop_transfer(root, &arg("msg")?))?),

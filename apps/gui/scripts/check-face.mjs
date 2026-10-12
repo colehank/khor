@@ -32080,7 +32080,7 @@ try {
       mux: false,
     };
     const terms = Array.from({ length: 8 }, (_, n) => ({ ...base, id: `tui/bar-term-${n}`, title: `bar-term-${n}` }));
-    const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+    const chatRow = { ...base, id: "wide/all", kind: "broadcast", title: "广播", category: "khor", hosted: false, attachable: false, place: null };
     const guiRow = { ...base, id: "tui/bar-gui", kind: "gui", title: "bar-gui", category: "claude", attachable: false };
     // A tmux session's row (item 51: on a phone its history is read from
     // tmux, `lib/term-tmux-history`).
@@ -32244,7 +32244,7 @@ try {
 
     // ── d. a conversation keeps its box in the bar ──
     for (const [what, id, box] of [
-      ["a machine conversation", chatRow.id, "[data-chat-composer]"],
+      ["the broadcast", chatRow.id, "[data-chat-composer]"],
       ["an agent conversation", guiRow.id, "[data-chat-input]"],
     ]) {
       if (!(await openRow(id)) || !(await until(5_000, async () => (await count(box)) > 0))) {
@@ -32636,7 +32636,7 @@ try {
 
       // e, for the conversations under a finger.
       for (const [what, id, box] of [
-        ["a machine conversation", chatRow.id, "[data-chat-composer]"],
+        ["the broadcast", chatRow.id, "[data-chat-composer]"],
         ["an agent conversation", guiRow.id, "[data-chat-input]"],
       ]) {
         if (!(await openRow(id)) || !(await until(5_000, async () => (await count(box)) > 0))) {
@@ -33489,6 +33489,9 @@ try {
         edited: false,
         word: null,
         delivery: null,
+        to: [],
+        note: null,
+        pushed: false,
       }));
       await page.unroute("**/machine_log");
       await page.route("**/machine_log", json({ messages: said, broken: 0 }));
@@ -37196,73 +37199,108 @@ try {
   }
   if (process.env.FACE_ONLY === "store") console.log("store · FACE_ONLY=store: the other sections are skipped");
 
-  // ── a conversation's file goes directly (STORE-BRIEF phase 2, store-e, 2026-10-08) ──
+  // ── the broadcast's chips and composer (STORE-BRIEF phase 2 store-e,
+  //    2026-10-08; phase 5 one channel, p5-at, 2026-10-13) ──
   //
   // The owner: 「用户传文件，不指定位置就是默认位置，指定位置就传到指定
-  // 位置。这个是直接传，不用等接收」. A machine's conversation (留言) and an
-  // agent's: no accept step anywhere; the file chip reads the receiver's
-  // record the same on every device; where a file lands is said above the
-  // box and can be changed. Value checks only (30-behavior: layout is the
-  // owner's checklist). New, not a fix: no red first.
-  //   a. 留言's chips, one per step: no `[data-accept-file]`; not started
-  //      and moving show `[data-file-progress]` (floor(moved*100/size))
-  //      and ×; landed, failed and stopped do not;
+  // 位置。这个是直接传，不用等接收」, then (phase 5) one channel: a message
+  // names its targets as `@机器:路径`, typed or chosen, pushed to them; a
+  // target not reachable refuses it. Value checks only (30-behavior:
+  // layout is the owner's checklist). New, not a fix: no red first.
+  //   a. a file pushed here (`pushed`): no 接收; not started and moving
+  //      show `[data-file-progress]` (floor(moved*100/size)) and ×;
+  //      landed, failed and stopped do not;
   //   b. × posts `stop_transfer` with that message;
   //   c. a landed chip shows `[data-file-landed=<path>]`, and a press opens
   //      `[data-file-preview=<path>]`;
   //   d. failed says the receiver's sentence and 重试 posts
   //      `retry_transfer`; stopped says the catalog's `file-stopped` and
   //      has 重试 too;
-  //   e. 「存到」 reads the receiver's receive_at; ＋ (the browser form)
-  //      uploads with no `into=`; 更改… opens 选择目录 with no machine
-  //      popup, and the next upload carries `into=<picked>`; 恢复默认 is
-  //      drawn only then, and takes it back;
-  //   f. the agent conversation: the same line against its machine; a file
-  //      put with no choice carries no `into=`, one put after 更改… carries
-  //      it; the pending chip's path is what the node answered (the landed
-  //      path), and that path is what the agent is told.
+  //   e. a sent bubble names its target by today's name with its path and
+  //      that machine's move (`at-pushed`), and the words said with it;
+  //      no 「存到」 line over the broadcast's box;
+  //   f. the composer: `@` opens `[data-at-picker]` with every other
+  //      machine (not this one); `@tu` narrows to turing, picked; Enter
+  //      writes 「@turing」 and shuts it; `:~/data look at this` and a file
+  //      from ＋ post `{typed: "@turing:~/data look at this", files: [the
+  //      staged path]}` (the upload carries a name, no machine); the box
+  //      clears; a refused post stands its sentence in
+  //      `[data-post-refused]` and keeps the draft. With `FACE_SHOTS=<dir>`
+  //      it leaves the picker, the typed form and the refusal at 1400 and
+  //      390 there;
+  //   h. the `@机器` filter: a bubble's target pressed narrows to the
+  //      messages pushed to that machine, `[data-at-only]` says which, and
+  //      看全部 opens it out (no view of them on the machine's page);
   mchat: {
   if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "mchat") break mchat;
   {
     const json = (body) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
     const count = (sel) => page.locator(sel).count();
     const now = Date.now();
-    // The catalog's word, read where it is written, not typed again here.
-    const stoppedWord = /^file-stopped = "(.*)"$/m.exec(readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8"))?.[1] ?? null;
+    const zh = readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8");
+    // The catalog's words, read where they are written, not typed again here.
+    const word = (k) => new RegExp(`^${k} = "(.*)"$`, "m").exec(zh)?.[1] ?? null;
+    const stoppedWord = word("file-stopped");
+    const pushedWord = word("at-pushed");
     const drop = { gate: "/home/gate/khor-drop", peer: "/home/peer/khor-drop" };
     const base = {
       kind: "tui", word: "idle", at_ms: now, unread: 0, source: null, pinned: false, stale: false, category: "shell",
       group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
     };
-    const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+    const chatRow = { ...base, id: "wide/all", kind: "broadcast", title: "广播", category: "khor", hosted: false, attachable: false, home: "gate", place: null };
     const agentRow = {
       ...base, id: "gui/mchat-agent", kind: "gui", title: "mchat-agent", category: "claude", attachable: false,
       source: { device: "f".repeat(64), age_ms: 0 },
     };
+    const gateId = devs.find((d) => d.name === "gate")?.id ?? "";
+    const peerId = devs.find((d) => d.name === "peer")?.id ?? "";
+    // A third machine, so the picker has a choice to narrow and the
+    // shots show the brief's own `@turing:~/data`.
+    const turing = { ...devs.find((d) => d.name === "peer"), id: "a".repeat(64), name: "turing", shown: "turing", label: null };
+    const target = (device, name, fate = {}) => ({ device, name, path: null, step: null, why: null, landed: [], ...fate });
+    // Pushed here (this machine is the target): the file comes by itself.
     const msg = (id, name, size, fate = {}) => ({
-      id, at_ms: now - 60_000, from: "gate", from_me: true, text: null, files: [{ name, size }], unknown: null,
-      retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null, ...fate,
+      id, at_ms: now - 60_000, from: "peer", from_me: false, text: null, files: [{ name, size }], unknown: null,
+      retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
+      got: null, of: null, via: null, to: [target(gateId, "gate", { step: fate.step ?? null, why: fate.why ?? null })],
+      note: null, pushed: true, ...fate,
     });
-    const landedAt = `${drop.peer}/land.pdf`;
+    const landedAt = `${drop.gate}/land.pdf`;
     const why = "no such dir: /srv/gone";
     const said = [
       msg("m-wait", "wait.bin", 1000),
       msg("m-move", "move.bin", 1000, { step: "moving", moved: 420 }),
       msg("m-land", "land.pdf", 30, { step: "landed", moved: 30, landed: [landedAt] }),
-      msg("m-fail", "fail.bin", 50, { step: "failed", why, into: "/srv/gone" }),
+      msg("m-fail", "fail.bin", 50, { step: "failed", why }),
       msg("m-stop", "stop.bin", 50, { step: "stopped", moved: 10 }),
+      // Sent from here to peer's ~/data, with words: the bubble names
+      // its target by today's name, with peer's own move.
+      {
+        ...msg("m-sent", "sent.zip", 2048), from: "gate", from_me: true, pushed: false, note: "the build",
+        to: [target(peerId, "peer", { path: "~/data", step: "landed", landed: ["/home/peer/data/sent.zip"] })],
+      },
     ];
-    const asked = { stop: [], retry: [], uploads: [], puts: [], says: [] };
+    const refusal = "turing 不通，这条消息没有发出。等它上线，或者发给别的机器";
+    const asked = { stop: [], retry: [], uploads: [], puts: [], says: [], posts: [] };
+    let refuseNext = false;
     const query = (r) => Object.fromEntries(new URL(r.request().url()).searchParams);
     const routesM = [
       ["**/sessions", json([chatRow, agentRow])],
-      ["**/devices", (r) => json(devs.map((d) => ({ ...d, receive_dir: null, receive_for: null, receive_why: null, receive_at: drop[d.name] ?? null })))(r)],
+      ["**/devices", (r) => json([...devs, turing].map((d) => ({ ...d, receive_dir: null, receive_for: null, receive_why: null, receive_at: drop[d.name] ?? null })))(r)],
       ["**/machine_log", json({ messages: said, broken: 0 })],
       ["**/stop_transfer", (r) => (asked.stop.push(r.request().postDataJSON() ?? {}), json(null)(r))],
       ["**/retry_transfer", (r) => (asked.retry.push(r.request().postDataJSON() ?? {}), json([])(r))],
       ["**/chat_say", (r) => (asked.says.push(r.request().postDataJSON() ?? {}), json(null)(r))],
+      [
+        "**/post",
+        (r) => {
+          asked.posts.push(r.request().postDataJSON() ?? {});
+          if (!refuseNext) return json("m-new")(r);
+          return r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify(refusal) });
+        },
+      ],
       // Raw-bytes POSTs with a query string: matched on the path.
-      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json("m-new")(r))],
+      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json(`/home/gate/.khor/uploads/1-${query(r).name}`)(r))],
       [
         (u) => u.pathname.endsWith("/chat_put"),
         (r) => {
@@ -37278,6 +37316,7 @@ try {
     await page.reload({ waitUntil: "load" });
     await wait(900);
     const pane = "[data-machine-chat]";
+    const shotsAt = process.env.FACE_SHOTS;
     /** The 「存到」 line on screen: its path and whether 恢复默认 is drawn. */
     const into = () =>
       page.evaluate(() => {
@@ -37302,10 +37341,10 @@ try {
     };
 
     await open("sessions");
-    await press('[data-side-row="chat/peer"] [data-side-open]');
+    await press('[data-side-row="wide/all"] [data-side-open]');
     const shown = await until(5_000, async () => (await count(`${pane} [data-msg-files]`)) === said.length);
 
-    // a. the chips
+    // a. a file pushed here comes by itself: the bar and ×, never 接收
     const chips = await page.evaluate((p) =>
       Object.fromEntries(
         [...document.querySelectorAll(`${p} [data-msg]`)].map((m) => {
@@ -37316,6 +37355,7 @@ try {
               step: c.getAttribute("data-file-step"),
               progress: c.querySelector("[data-file-progress]")?.getAttribute("data-file-progress") ?? null,
               stop: c.querySelectorAll("[data-file-stop]").length,
+              take: c.querySelectorAll("[data-bcast-take]").length,
               landed: [...c.querySelectorAll("[data-file-landed]")].map((e) => e.getAttribute("data-file-landed")),
               why: c.querySelector("[data-file-why]")?.textContent ?? null,
               retry: c.querySelectorAll("[data-file-retry]").length,
@@ -37323,12 +37363,11 @@ try {
           ];
         }),
       ), pane);
-    const accepts = await count("[data-accept-file]");
-    console.log(`mchat a · shown ${shown}, accept buttons ${accepts}, ${JSON.stringify(chips)}`);
-    if (!shown) fail(`mchat a · the conversation drew ${await count(`${pane} [data-msg-files]`)} file chip(s) — ${said.length}`);
+    console.log(`mchat a · shown ${shown}, ${JSON.stringify(chips)}`);
+    if (!shown) fail(`mchat a · the broadcast drew ${await count(`${pane} [data-msg-files]`)} file chip(s) — ${said.length}`);
     else {
-      if (accepts !== 0) fail(`mchat a · ${accepts} accept button(s) — a conversation's file goes directly, nobody accepts it`);
       const w = chips["m-wait"], m = chips["m-move"], l = chips["m-land"], f = chips["m-fail"], s = chips["m-stop"];
+      for (const [k, c] of Object.entries(chips)) if (c?.take) fail(`mchat a · ${k} offers 接收 — a file pushed here waits on nobody`);
       if (w?.progress !== "0" || w.stop !== 1) fail(`mchat a · not started reads ${JSON.stringify(w)} — the bar at 0 and ×`);
       if (m?.progress !== "42" || m.stop !== 1) fail(`mchat a · moving 420 of 1000 reads ${JSON.stringify(m)} — the bar at 42 and ×`);
       for (const [k, c] of [["m-land", l], ["m-fail", f], ["m-stop", s]]) {
@@ -37367,38 +37406,119 @@ try {
       if (asked.retry.map((a) => a.msg).join() !== "m-fail,m-stop") fail(`mchat d · 重试 posted ${JSON.stringify(asked.retry)} — retry_transfer for m-fail, then m-stop`);
     }
 
-    // e. 「存到」 above 留言's box
+    // e. the targets over a bubble, by today's name, with their move
     {
-      const file = (name) => ({ name, mimeType: "text/plain", buffer: Buffer.from(name) });
-      const upload = async (name) => {
-        const n = asked.uploads.length;
-        await page.locator(`${pane} [data-file-input]`).setInputFiles(file(name));
-        await until(3_000, async () => asked.uploads.length > n);
-        return asked.uploads[n] ?? null;
-      };
-      const before = await into();
-      const plain = await upload("one.txt");
-      const pick = await pickDir("/srv/inbox");
-      const picked = await into();
-      const there = await upload("two.txt");
-      await press("[data-send-into-reset]");
-      const back = await into();
-      const again = await upload("three.txt");
-      console.log(
-        `mchat e · line ${JSON.stringify(before)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
-          `after ${JSON.stringify(picked)}; there ${JSON.stringify(there)}; reset ${JSON.stringify(back)}; again ${JSON.stringify(again)}`,
-      );
-      if (before?.at !== drop.peer || before.reset !== 0) fail(`mchat e · 「存到」 reads ${JSON.stringify(before)} — peer's receive_at, no 恢复默认`);
-      if (plain?.machine !== "peer" || plain.into !== undefined) fail(`mchat e · ＋ uploaded ${JSON.stringify(plain)} — to peer, no into=`);
-      if (!pick.up) fail("mchat e · 更改… opened no 选择目录");
-      if (pick.machines !== 0) fail("mchat e · 选择目录 offers a machine — the directory is the receiver's");
-      if (picked?.at !== "/srv/inbox" || picked.reset !== 1) fail(`mchat e · after the pick the line reads ${JSON.stringify(picked)} — /srv/inbox, 恢复默认 drawn`);
-      if (there?.into !== "/srv/inbox") fail(`mchat e · the upload after the pick carried ${JSON.stringify(there)} — into=/srv/inbox`);
-      if (back?.at !== drop.peer || back.reset !== 0) fail(`mchat e · 恢复默认 left ${JSON.stringify(back)} — the receive location again`);
-      if (again?.into !== undefined) fail(`mchat e · after 恢复默认 the upload carried ${JSON.stringify(again)} — no into=`);
+      const t = await page.evaluate((p) => {
+        const el = document.querySelector(`${p} [data-msg="m-sent"] [data-msg-target]`);
+        const note = document.querySelector(`${p} [data-msg="m-sent"] [data-msg-note]`)?.textContent ?? null;
+        return el && { name: el.getAttribute("data-msg-target"), step: el.getAttribute("data-target-step"), text: el.textContent, note };
+      }, pane);
+      console.log(`mchat e · target ${JSON.stringify(t)}`);
+      if (t?.name !== "peer" || !t.text?.includes("@peer:~/data") || (pushedWord && !t.text.includes(pushedWord))) {
+        fail(`mchat e · the sent bubble names ${JSON.stringify(t)} — @peer:~/data and 「${pushedWord}」`);
+      }
+      if (t?.note !== "the build") fail(`mchat e · the words said with the file read ${JSON.stringify(t?.note)}`);
+      if ((await count(`${pane} [data-send-into]`)) !== 0) fail("mchat e · a 「存到」 line stands over the broadcast's box — the directory is typed as @机器:路径");
     }
 
-    // f. the agent conversation
+    // f. the composer: @ opens the picker, a choice writes @machine, the
+    //    typed form goes as typed with the staged file, a refusal stands
+    //    over the box naming the machine and the draft stays
+    {
+      const box = page.locator(`${pane} [data-chat-composer]`);
+      const picker = async () =>
+        page.evaluate((p) => {
+          const el = document.querySelector(`${p} [data-at-picker]`);
+          return el && [...el.querySelectorAll("[data-at-item]")].map((i) => [i.getAttribute("data-at-item"), i.getAttribute("data-on")]);
+        }, pane);
+      await box.click();
+      await box.fill("");
+      await box.pressSequentially("@");
+      const all = await picker();
+      await box.pressSequentially("tu");
+      const narrowed = await picker();
+      if (shotsAt) await page.screenshot({ path: join(shotsAt, "picker-1400.png") });
+      await box.press("Enter");
+      const chosen = await box.inputValue();
+      const closed = await picker();
+      await box.pressSequentially(":~/data look at this");
+      await page.locator(`${pane} [data-file-input]`).setInputFiles({ name: "x.bin", mimeType: "application/octet-stream", buffer: Buffer.from("x") });
+      await until(3_000, async () => asked.uploads.length > 0 && (await count(`${pane} [data-chat-pending-file="x.bin"][data-placed]`)) === 1);
+      if (shotsAt) await page.screenshot({ path: join(shotsAt, "typed-1400.png") });
+      await box.press("Enter");
+      await until(3_000, async () => asked.posts.length > 0);
+      const sent = asked.posts[0] ?? null;
+      await until(3_000, async () => (await box.inputValue()) === "");
+      const cleared = await box.inputValue();
+      refuseNext = true;
+      await box.fill("@turing are you there");
+      await box.press("Enter");
+      await until(3_000, async () => asked.posts.length > 1);
+      const said2 = await until(3_000, async () => (await count(`${pane} [data-post-refused]`)) === 1);
+      const sentence = said2 ? await page.locator(`${pane} [data-post-refused]`).textContent() : null;
+      const kept = await box.inputValue();
+      if (shotsAt) await page.screenshot({ path: join(shotsAt, "refused-1400.png") });
+      refuseNext = false;
+      console.log(
+        `mchat f · picker on @ ${JSON.stringify(all)}, on @tu ${JSON.stringify(narrowed)}, chosen ${JSON.stringify(chosen)}, after ${JSON.stringify(closed)}; ` +
+          `posted ${JSON.stringify(sent)}, box after ${JSON.stringify(cleared)}; refusal ${JSON.stringify(sentence)}, kept ${JSON.stringify(kept)}`,
+      );
+      const names = (all ?? []).map(([n]) => n);
+      if (!names.includes("peer") || !names.includes("turing") || names.includes("gate")) fail(`mchat f · @ opened ${JSON.stringify(all)} — every other machine, not this one`);
+      if (JSON.stringify(narrowed) !== JSON.stringify([["turing", "true"]])) fail(`mchat f · @tu offered ${JSON.stringify(narrowed)} — turing alone, picked`);
+      if (chosen !== "@turing" || closed !== null) fail(`mchat f · Enter on the picker wrote ${JSON.stringify(chosen)} and left ${JSON.stringify(closed)} — 「@turing」 and the picker shut`);
+      if (sent?.typed !== "@turing:~/data look at this" || JSON.stringify(sent?.files) !== JSON.stringify(["/home/gate/.khor/uploads/1-x.bin"])) {
+        fail(`mchat f · send posted ${JSON.stringify(sent)} — the typed form as typed and the staged file`);
+      }
+      if (asked.uploads[0]?.machine !== undefined || asked.uploads[0]?.name !== "x.bin") fail(`mchat f · ＋ staged ${JSON.stringify(asked.uploads[0])} — name only, no machine`);
+      if (cleared !== "") fail(`mchat f · after a send the box holds ${JSON.stringify(cleared)}`);
+      if (sentence !== refusal) fail(`mchat f · the refusal reads ${JSON.stringify(sentence)} — the node's sentence, naming the machine`);
+      if (kept !== "@turing are you there") fail(`mchat f · a refused draft became ${JSON.stringify(kept)} — it stays for the next try`);
+      // The phone's width: the box is the session bar's second row there
+      // (`BarSeat`), so it is found on the page, not in the pane.
+      if (shotsAt) {
+        await page.setViewportSize({ width: 390, height: 844 });
+        await wait(600);
+        const phone = page.locator("[data-chat-composer]").filter({ visible: true });
+        await phone.click();
+        await phone.fill("");
+        await phone.pressSequentially("@");
+        await wait(200);
+        await page.screenshot({ path: join(shotsAt, "picker-390.png") });
+        await phone.pressSequentially("turing:~/data look at this");
+        await wait(200);
+        await page.screenshot({ path: join(shotsAt, "typed-390.png") });
+        refuseNext = true;
+        await phone.fill("@turing are you there");
+        await phone.press("Enter");
+        await until(3_000, async () => (await count("[data-post-refused]")) === 1);
+        await wait(200);
+        await page.screenshot({ path: join(shotsAt, "refused-390.png") });
+        refuseNext = false;
+        await phone.fill("");
+        await page.setViewportSize({ width: 1400, height: 900 });
+        await wait(500);
+      }
+    }
+
+    // h. the @机器 filter: a target pressed narrows to the messages pushed
+    //    to it, a line says so, 看全部 opens it out
+    {
+      const msgs = () => page.evaluate((p) => [...document.querySelectorAll(`${p} [data-msg]`)].map((e) => e.getAttribute("data-msg")), pane);
+      const all = await msgs();
+      await press(`${pane} [data-msg="m-sent"] [data-msg-target-only="peer"]`);
+      await until(3_000, async () => (await count(`${pane} [data-at-only]`)) === 1);
+      const narrowed = await msgs();
+      const line = await page.locator(`${pane} [data-at-only]`).getAttribute("data-at-only");
+      await press(`${pane} [data-at-only-clear]`);
+      await until(3_000, async () => (await count(`${pane} [data-at-only]`)) === 0);
+      const back = await msgs();
+      console.log(`mchat h · all ${all.length}, @peer ${JSON.stringify(narrowed)} (${line}), back ${back.length}`);
+      if (JSON.stringify(narrowed) !== JSON.stringify(["m-sent"]) || line !== "peer") fail(`mchat h · @peer narrowed to ${JSON.stringify(narrowed)} — the one message pushed to peer`);
+      if (back.length !== all.length) fail(`mchat h · 看全部 left ${back.length} of ${all.length}`);
+    }
+
+    // g. the agent conversation keeps its 「存到」
     {
       await open("sessions");
       await press(`[data-side-row="${agentRow.id}"] [data-side-open]`);
@@ -37421,18 +37541,18 @@ try {
       await until(3_000, async () => asked.says.length > 0);
       const told = asked.says[0]?.text ?? "";
       console.log(
-        `mchat f · opened ${up}, line ${JSON.stringify(line)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
+        `mchat g · opened ${up}, line ${JSON.stringify(line)}; plain ${JSON.stringify(plain)}; picker ${JSON.stringify(pick)}, ` +
           `after ${JSON.stringify(picked)}; there ${JSON.stringify(there)}; told ${JSON.stringify(told)}`,
       );
-      if (!up) fail("probe dead: mchat f · the agent conversation drew no box");
+      if (!up) fail("probe dead: mchat g · the agent conversation drew no box");
       else {
-        if (line?.at !== drop.peer || line.reset !== 0) fail(`mchat f · 「存到」 reads ${JSON.stringify(line)} — the conversation's machine's receive_at, no 恢复默认`);
-        if (plain.put?.id !== agentRow.id || plain.put.into !== undefined) fail(`mchat f · a file with no choice was put as ${JSON.stringify(plain.put)} — this conversation, no into=`);
-        if (plain.path !== `${drop.peer}/a.txt`) fail(`mchat f · the chip's path is ${plain.path} — what the node answered`);
-        if (!pick.up || pick.machines !== 0) fail(`mchat f · 更改… opened ${JSON.stringify(pick)} — 选择目录, no machine popup`);
-        if (picked?.at !== "/srv/agent" || picked.reset !== 1) fail(`mchat f · after the pick the line reads ${JSON.stringify(picked)}`);
-        if (there.put?.into !== "/srv/agent" || there.path !== "/srv/agent/b.txt") fail(`mchat f · a file after the pick: put ${JSON.stringify(there.put)}, chip ${there.path} — into=/srv/agent, landed there`);
-        if (!told.includes(`@${drop.peer}/a.txt`) || !told.includes("@/srv/agent/b.txt")) fail(`mchat f · the agent was told ${JSON.stringify(told)} — the two landed paths`);
+        if (line?.at !== drop.peer || line.reset !== 0) fail(`mchat g · 「存到」 reads ${JSON.stringify(line)} — the conversation's machine's receive_at, no 恢复默认`);
+        if (plain.put?.id !== agentRow.id || plain.put.into !== undefined) fail(`mchat g · a file with no choice was put as ${JSON.stringify(plain.put)} — this conversation, no into=`);
+        if (plain.path !== `${drop.peer}/a.txt`) fail(`mchat g · the chip's path is ${plain.path} — what the node answered`);
+        if (!pick.up || pick.machines !== 0) fail(`mchat g · 更改… opened ${JSON.stringify(pick)} — 选择目录, no machine popup`);
+        if (picked?.at !== "/srv/agent" || picked.reset !== 1) fail(`mchat g · after the pick the line reads ${JSON.stringify(picked)}`);
+        if (there.put?.into !== "/srv/agent" || there.path !== "/srv/agent/b.txt") fail(`mchat g · a file after the pick: put ${JSON.stringify(there.put)}, chip ${there.path} — into=/srv/agent, landed there`);
+        if (!told.includes(`@${drop.peer}/a.txt`) || !told.includes("@/srv/agent/b.txt")) fail(`mchat g · the agent was told ${JSON.stringify(told)} — the two landed paths`);
       }
     }
 
@@ -37465,8 +37585,8 @@ try {
   //      (posted); stopped = 已取消 and 接收;
   //   e. the sender's chip counts the machines that have it (3/5), with
   //      nothing to accept, stop or retry;
-  //   f. the composer: a line posts `tell` to `wide/all`; ＋ (the browser
-  //      form) uploads to `wide/all` with no `into=`.
+  //   f. the composer: a line posts `post` with its words; ＋ (the browser
+  //      form) stages a file by name and the send posts its staged path.
   bcast: {
   if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "bcast") break bcast;
   {
@@ -37488,7 +37608,7 @@ try {
     const msg = (id, from, body, fate = {}) => ({
       id, at_ms: now - 60_000, from, from_me: from === "gate", text: null, files: null, unknown: null,
       retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
-      got: null, of: null, via: null, ...body, ...fate,
+      got: null, of: null, via: null, to: [], note: null, pushed: false, ...body, ...fate,
     });
     const file = (name, size) => ({ files: [{ name, size }], got: 0, of: 4 });
     const landedAt = "/home/gate/khor-drop/land.pdf";
@@ -37511,8 +37631,8 @@ try {
       ["**/machine_log", json({ messages: said, broken: 0 })],
       ["**/retry_transfer", (r) => (asked.retry.push(r.request().postDataJSON() ?? {}), json([])(r))],
       ["**/stop_transfer", (r) => (asked.stop.push(r.request().postDataJSON() ?? {}), json(null)(r))],
-      ["**/tell", (r) => (asked.tells.push(r.request().postDataJSON() ?? {}), json(null)(r))],
-      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json("f-new")(r))],
+      ["**/post", (r) => (asked.tells.push(r.request().postDataJSON() ?? {}), json("f-new")(r))],
+      [(u) => u.pathname.endsWith("/upload"), (r) => (asked.uploads.push(query(r)), json(`/home/gate/.khor/uploads/1-${query(r).name}`)(r))],
     ];
     for (const [glob, run] of routesB) await page.route(glob, run);
     await page.evaluate(() => window.localStorage.clear());
@@ -37625,9 +37745,14 @@ try {
       await page.locator(`${pane} [data-file-input]`).setInputFiles({ name: "all.txt", mimeType: "text/plain", buffer: Buffer.from("all") });
       await until(3_000, async () => asked.uploads.length > n);
       const up = asked.uploads[n] ?? null;
-      console.log(`bcast f · tell ${JSON.stringify(asked.tells)}, upload ${JSON.stringify(up)}`);
-      if (asked.tells[0]?.machine !== "wide/all" || asked.tells[0]?.text !== "see you all") fail(`bcast f · a line posted ${JSON.stringify(asked.tells)} — tell {machine: "wide/all", text}`);
-      if (up?.machine !== "wide/all" || up.into !== undefined || up.name !== "all.txt") fail(`bcast f · ＋ uploaded ${JSON.stringify(up)} — to wide/all, no into=`);
+      await until(3_000, async () => (await count(`${pane} [data-chat-pending-file="all.txt"][data-placed]`)) === 1);
+      await box.click();
+      await box.press("Enter");
+      await until(3_000, async () => asked.tells.length > 1);
+      console.log(`bcast f · post ${JSON.stringify(asked.tells)}, upload ${JSON.stringify(up)}`);
+      if (asked.tells[0]?.typed !== "see you all" || asked.tells[0]?.files?.length !== 0) fail(`bcast f · a line posted ${JSON.stringify(asked.tells[0])} — post {typed: "see you all", files: []}`);
+      if (up?.machine !== undefined || up.into !== undefined || up.name !== "all.txt") fail(`bcast f · ＋ staged ${JSON.stringify(up)} — a name, nothing else`);
+      if (JSON.stringify(asked.tells[1]?.files) !== JSON.stringify(["/home/gate/.khor/uploads/1-all.txt"]) || asked.tells[1]?.typed !== "") fail(`bcast f · the file posted ${JSON.stringify(asked.tells[1])} — no words, the staged path`);
     }
 
     for (const [glob, run] of routesB) await page.unroute(glob, run);
@@ -39414,7 +39539,7 @@ try {
         kind: "tui", word: "idle", at_ms: now, unread: 0, source: null, pinned: false, stale: false, category: "shell",
         group: "", face: null, hosted: true, attachable: true, last: null, via: null, via_face: null, home: "peer", place: "/home/peer", mux: false,
       };
-      const chatRow = { ...base, id: "chat/peer", kind: "chat", title: "peer", category: null, hosted: false, attachable: false, place: null };
+      const chatRow = { ...base, id: "wide/all", kind: "broadcast", title: "广播", category: "khor", hosted: false, attachable: false, place: null };
       const agentRow = {
         ...base, id: "gui/afix-agent", kind: "gui", title: "afix-agent", category: "claude", attachable: false,
         source: { device: "f".repeat(64), age_ms: 0 },
@@ -39422,6 +39547,7 @@ try {
       const line = (id, from_me, text) => ({
         id, at_ms: now - 60_000, from: from_me ? "gate" : "peer", from_me, text, files: null, unknown: null,
         retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
+        to: [], note: null, pushed: false,
       });
       const frame = (update) => ({ kind: "history", update: { update } });
       const routesA = [
@@ -39465,7 +39591,7 @@ try {
             });
         }, sel);
       await open("sessions");
-      await press('[data-side-row="chat/peer"] [data-side-open]');
+      await press('[data-side-row="wide/all"] [data-side-open]');
       const chatUp = await until(5_000, async () => (await count("[data-msg-text]")) === 2);
       const bubbles = chatUp ? await spill("[data-msg-text]") : [];
       console.log(`afix a · 留言 at 390: ${JSON.stringify(bubbles)}`);

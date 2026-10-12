@@ -44,6 +44,7 @@ pub mod merge;
 pub mod modes;
 pub(crate) mod once;
 pub mod pause;
+pub mod post;
 pub mod pictures;
 pub mod pipe;
 pub mod place;
@@ -326,11 +327,6 @@ pub(crate) struct HostedBorrow {
     pub(crate) listed: bool,
     pub(crate) task: tokio::task::JoinHandle<()>,
 }
-
-/// What `Node::log_faced` returns: a channel's log, and one transfer
-/// face per message aligned by index. A `type` only, to keep
-/// `clippy::type_complexity` off that signature.
-pub type FacedLog = (chat::ChannelLog, Vec<Option<khor_core::State>>);
 
 /// The pipes this node is holding open, by whatever it keys them under:
 /// where the near side listens, which far port it was built for, and the
@@ -1057,7 +1053,7 @@ impl Node {
                 name: name.clone(),
             },
         );
-        let transfer = TransferKind::new(root.clone(), device_str.clone(), name.clone());
+        let transfer = TransferKind::new(root.clone());
         // The one place khor decides to read other vendors' files. Every
         // other construction of a LiveKind discovers nothing, so no test
         // answers with whatever the machine happens to be running.
@@ -2510,16 +2506,8 @@ impl Node {
         self.resolve(machine)
     }
 
-    pub(crate) fn channel_of_session(&self, id: &SessionId) -> Result<(String, DeviceId), String> {
-        let Some(ch) = id.0.strip_prefix("chat/") else {
-            return Err(msg::no_such_session(&id.0));
-        };
-        self.resolve(ch)
-            .map_err(|e| msg::no_such_session_because(&id.0, e))
-    }
-
-    fn kinds(&self) -> [&dyn KindSurface; 4] {
-        [&self.chat, &self.transfer, &self.live, &wide::WideKind]
+    fn kinds(&self) -> [&dyn KindSurface; 3] {
+        [&self.transfer, &self.live, &wide::WideKind]
     }
 
     /// The list: one row per session, each answering the five questions.
@@ -4108,59 +4096,6 @@ impl Node {
         Some((report.usage, now_ms().saturating_sub(report.at_ms)))
     }
 
-    /// Sends a file to a machine's window: the summary (name, size,
-    /// digest, and `into`, the directory over there — empty for its
-    /// receive location) travels the CRDT to everyone, and the receiver
-    /// pulls the bytes from here as soon as it reads it, nobody asked
-    /// (STORE-BRIEF phase 2: 直接传). Returns the transfer session id.
-    ///
-    /// The broadcast (`wide/all`) takes a file the same way, as an offer
-    /// every machine answers on its own ([`Self::wide_send`]).
-    pub fn send(&self, machine: &str, path: &Path, into: &str) -> Result<SessionId, String> {
-        if machine.starts_with(khor_sync::chat::WIDE) {
-            return self.wide_send(machine, path);
-        }
-        let into = road::tidy_setting(into)?;
-        let (channel, home) = self.resolve(machine)?;
-        let f = self.offer_file(path)?;
-        let told = self.chat.send_files(&channel, home, &[f], &into)?;
-        // **Offering is not looking, so no watermark moves here** — and
-        // this is the one place the person and the machine come apart.
-        //
-        // The watermark is the *person's* decision, replicated on
-        // purpose: a look on the phone clears the desk (docs/NET.md 已读).
-        // That is exactly why `tell` raises it and must keep raising it —
-        // a line's content *is* the line, so the person who typed it has
-        // seen it wherever they read it, and `tests/pairing.rs` pins that
-        // ("own words never count as unread, on any device").
-        //
-        // A file message is not that. What it carries is not content but
-        // a summary of bytes that have not arrived anywhere yet, and
-        // **"it arrived here" is a fact about a machine, not about a
-        // person**. So there is no seat — not even this one — that has
-        // looked at it. Raising the watermark from here wrote a machine's
-        // fact into the person's document, and the offering machine
-        // cleared the badge on the machine the file was actually for:
-        // the recipient's row read 空闲/0 where docs/SESSION.md says an
-        // arrived file goes to 完成/未看 like any message, and a third
-        // machine never saw it at all.
-        //
-        // This machine still does not badge itself for what it offered.
-        // That is a seat's answer and it is derived locally, in
-        // `ChatKind::i_offered` — never written into a document that
-        // travels.
-        //
-        // The row is therefore re-read against the watermark that
-        // actually stands, not against the offer's own stamp: an offer
-        // clears nothing, so a debt already sitting on this row must
-        // survive it.
-        let wm = self.seen_loaded()?.doc.watermark(&told.row.id.0);
-        let row = self.chat.row(&channel, home, wm)?;
-        self.emit(NodeEvent::Event(told.event));
-        self.emit(NodeEvent::Row(row));
-        Ok(TransferKind::session_id(&told.msg_id))
-    }
-
     /// A file made ready to be fetched from here: its digest, and the
     /// offer record that serves its bytes (`transfer::Offer`) — the part
     /// of a send that is the same whoever receives it.
@@ -4174,6 +4109,7 @@ impl Node {
             name: name.clone(),
             size: size as i64,
             digest: digest.clone(),
+            holder: String::new(),
         };
         let path = path.canonicalize().map_err(msg::cant_canonicalize)?;
         // The same file offered again — to another machine, or again to
@@ -4202,19 +4138,9 @@ impl Node {
     }
 
 
-    /// The file message behind `transfer/<msg_id>`, with its channel.
+    /// The file message behind `transfer/<msg_id>`, with its board: a
+    /// khor-wide conversation (the broadcast).
     pub(crate) fn find_transfer(&self, msg_id: &str) -> Result<(String, Message), String> {
-        for d in self.devices()? {
-            let log = self.chat.log(&d.name)?;
-            if let Some(m) = log
-                .messages
-                .into_iter()
-                .find(|m| m.id == msg_id && matches!(m.body, MsgBody::Files(_)))
-            {
-                return Ok((d.name, m));
-            }
-        }
-        // A broadcast file: its board is the khor-wide conversation.
         for board in self.known_wide() {
             if let Some(m) = self
                 .chat
@@ -4249,69 +4175,12 @@ impl Node {
         rx
     }
 
-    /// Tells a machine's window a line. Returns the message id.
-    /// The broadcast (`wide/all`) is told the same way
-    /// ([`Self::wide_tell`]).
-    pub fn tell(&self, machine: &str, text: &str) -> Result<String, String> {
-        if machine.starts_with(khor_sync::chat::WIDE) {
-            return self.wide_tell(machine, text);
-        }
-        let (channel, home) = self.resolve(machine)?;
-        let told = self.chat.tell(&channel, home, text)?;
-        // Telling implies looking: own words never count as unread — on
-        // any device, once the watermark syncs.
-        self.mark_seen(&told.row.id, told.at)?;
-        self.emit(NodeEvent::Event(told.event));
-        self.emit(NodeEvent::Row(told.row));
-        Ok(told.msg_id)
-    }
-
-    /// [`Self::tell`], then a round with every machine now, not at the
-    /// next beat (5 s with a face on screen, 30 s on a machine without
-    /// one): a line should reach the others while the person is still
-    /// looking. The round is best effort — the line is written either
-    /// way and reaches the others with the next one.
-    pub async fn tell_now(&self, machine: &str, text: &str) -> Result<String, String> {
-        let id = self.tell(machine, text)?;
-        let _ = self.sync_now().await;
-        Ok(id)
-    }
-
-    /// A channel's readout, oldest first.
-    pub fn log(&self, machine: &str) -> Result<chat::ChannelLog, String> {
-        if machine.starts_with(khor_sync::chat::WIDE) {
-            return self.chat.log(wide::board(machine)?);
-        }
-        let (channel, _) = self.resolve(machine)?;
-        self.chat.log(&channel)
-    }
-
-    /// The readout with each message's transfer face, aligned by index
-    /// — `None` for anything that is not a file message on a seat with
-    /// something to say (`TransferKind::message_face`). One read, one
-    /// order: two calls would let a message land between them and put
-    /// every face off by one.
-    pub fn log_faced(&self, machine: &str) -> Result<FacedLog, String> {
-        let (channel, _) = self.resolve(machine)?;
-        let log = self.chat.log(&channel)?;
-        // The row's own seen mark, read once for the whole readout: the
-        // chips answer 完成/空闲 with the same watermark the row counts
-        // unread against, so a chip and the row it sits in cannot
-        // disagree about what has been looked at. Read here rather than
-        // inside the loop for the reason the whole function exists —
-        // one read, one order.
-        let watermark = self
-            .seen_loaded()?
-            .doc
-            .watermark(&format!("chat/{channel}"));
-        // The receiver's state word per message; every seat reads the
-        // move itself off the message's own record.
-        let faces = log
-            .messages
-            .iter()
-            .map(|m| self.transfer.message_face(&channel, m, watermark))
-            .collect();
-        Ok((log, faces))
+    /// A khor-wide conversation's readout, oldest first — the broadcast
+    /// (`wide/all`). ⚠️ 墓碑 (STORE-BRIEF phase 5): a machine's name read
+    /// its `chat/<机器>` conversation; that session kind is gone, and its
+    /// documents are neither read nor synced.
+    pub fn log(&self, board: &str) -> Result<chat::ChannelLog, String> {
+        self.chat.log(wide::board(board)?)
     }
 
     /// Marks a session seen; unread drops to zero — here and, once the
@@ -5425,122 +5294,15 @@ impl Node {
 
 // ── how each kind answers the surface ───────────────────────
 
-impl KindSurface for ChatKind {
-    fn claims(&self, node: &Node, id: &SessionId) -> bool {
-        node.channel_of_session(id).is_ok()
-    }
-
-    fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
-        let seen = node.seen_loaded()?;
-        let mut out = Vec::new();
-        for d in node.devices()? {
-            let sid = format!("chat/{}", d.name);
-            // ⚠️ **One read per channel, not two** (2026-09-11). This
-            // asked for the log here and for the row below, and each of
-            // those opened the channel's document from disk in full —
-            // every block file read and merged, on the list's 2 s beat.
-            // The watermark is read before the row now for the same
-            // reason: `row_and_log` needs it, and it costs nothing to
-            // ask early.
-            let wm = seen.doc.watermark(&sid);
-            let (row, log) = self.row_and_log(&d.name, device_id_from_hex(&d.id)?, wm)?;
-            let msgs = log.messages;
-            // A put-away conversation is not derived (docs/SESSION.md
-            // 动作: close 对话 = 收起那一行). The mark is a watermark on
-            // the senders' clocks, so the next message stamps past it
-            // and the row simply comes back — on every device at once,
-            // since the mark replicates. Nothing is deleted; the log
-            // read above is the very history a reopen paints.
-            if let Some(closed) = seen.doc.closed_watermark(&sid) {
-                let newest = msgs.iter().map(|m| m.at).max().unwrap_or(0);
-                if newest <= closed {
-                    continue;
-                }
-            }
-            // The row is derived even for a channel the check above is
-            // about to put away, and that is the cheap half: deriving it
-            // walks the message list this read already produced, while
-            // the read itself is what costs.
-            let mut row = row;
-            // A file in flight presses on the machine's own row, now
-            // that transfers no longer stand as rows of their own
-            // (传输并入对话批 — `TransferKind::urgency` owns which seat
-            // may say which word). More pressing wins; the row's own
-            // message-based word already covers 完成/未看, because a
-            // file message lands like any message.
-            if let Some((word, at)) = node.transfer.urgency(&d.name, &msgs)
-                && word.rank() < row.state.state.rank()
-            {
-                row.state = khor_core::StateStamp {
-                    state: word,
-                    at: khor_core::Millis(at.max(0) as u64),
-                };
-            }
-            out.push(row);
-        }
-        Ok(out)
-    }
-
-    /// Chat rows never travel as reports: the document replicates, so
-    /// every device derives its own.
-    fn reportable(&self) -> bool {
-        false
-    }
-
-    /// The max on the senders' clocks — never the local clock (a sender
-    /// running ahead would stay unread after being looked at), never the
-    /// list-order last (a concurrent merge can land mid-list).
-    fn seen_at(&self, node: &Node, id: &SessionId) -> Result<i64, String> {
-        let (channel, _) = node.channel_of_session(id)?;
-        Ok(self
-            .log(&channel)?
-            .messages
-            .iter()
-            .map(|m| m.at)
-            .max()
-            .unwrap_or(0))
-    }
-
-    /// Close is putting the row away, never deletion: the history
-    /// replicates network-wide (a local delete would be pulled right
-    /// back), and the received files belong to the filesystem now
-    /// (传输并入对话批 corrected the earlier "close deletes received
-    /// payloads"). What close *does* is record a put-away watermark at
-    /// the newest message's clock — `rows` above stops deriving the row,
-    /// and the next message stamps past the mark and brings it back,
-    /// history intact (docs/SESSION.md 动作).
-    ///
-    /// It marks seen to the same instant: putting a conversation away is
-    /// at least having looked at it, and a revived row must owe only the
-    /// messages that revived it — old unread resurfacing with the row
-    /// would be a debt the person already dismissed.
-    fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
-        let (channel, _) = node.channel_of_session(id)?;
-        let newest = self
-            .log(&channel)?
-            .messages
-            .iter()
-            .map(|m| m.at)
-            .max()
-            .unwrap_or(0);
-        let loaded = node.seen_loaded()?;
-        loaded.doc.mark(&id.0, newest)?;
-        loaded.doc.put_away(&id.0, newest)?;
-        let mut store = loaded.store;
-        store.flush(&loaded.doc)?;
-        Ok(())
-    }
-}
-
 impl KindSurface for TransferKind {
     fn claims(&self, _node: &Node, id: &SessionId) -> bool {
         id.0.starts_with("transfer/")
     }
 
     /// No rows of its own any more (传输并入对话批, 2026-08-23): a
-    /// transfer is a file message in the machine's conversation, and its
-    /// pressure lands on that chat row's word (`ChatKind`'s rows via
-    /// [`TransferKind::urgency`]). The kind itself stays: `claims`,
+    /// transfer is a file message in the broadcast, and its pressure lands
+    /// on that row's word (`wide::WideKind`'s rows). The kind itself
+    /// stays: `claims`,
     /// `seen_at` and `close` still answer `transfer/` ids — accept marks
     /// them seen, and an older peer still *reports* transfer rows, which
     /// are painted as ever (nothing to migrate; those rows die of the

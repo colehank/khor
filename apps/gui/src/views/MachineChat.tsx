@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  compose,
   fetchDevices,
   inApp,
   machineLog,
-  pickAndSendFile,
+  pickPaths,
   retryTransfer,
+  said,
+  stageFile,
   stopTransfer,
-  tell,
-  uploadFile,
   type ChatMsgRow,
+  type DeviceRow,
   type MachineLog,
 } from "@/api";
 import { PathCut } from "@/components/PathCut";
-import { FilePreview, SendInto } from "@/views/chat-files";
-import { StatusWord } from "@/components/StatusWord";
+import { FilePreview, PendingChips, type Pending } from "@/views/chat-files";
+import { takeDraft } from "@/lib/composer-handoff";
+import { baseName } from "@/lib/paths";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -38,44 +41,32 @@ function fmtSize(n: number): string {
 }
 
 /**
- * A machine's conversation — the same stream `khor log <机器>` prints
- * (`Node::log_faced` behind both), painted as a chat.
+ * **The broadcast** (`wide/all`, STORE-BRIEF phase 3 and 5): the khor's
+ * one conversation for people — the same stream `khor log` prints,
+ * painted as a chat. Text lands as bubbles, own words on the right in
+ * `ChatView`'s clothes so one product speaks one bubble language.
  *
- * Text lands as bubbles, own words on the right in `ChatView`'s
- * clothes so one product speaks one bubble language. A file message is
- * a chip: name, size, and how its move stands — **the file goes
- * directly** (STORE-BRIEF phase 2: 直接传，不用等接收): the receiver
- * pulls it at once, and every device reads the same record of it (its
- * progress with a ×, where it landed, or why it failed with 重试).
- * ⚠️ 墓碑: the receiver's 收下 on a 待批 chip.
+ * **A message names its targets** (phase 5, one channel): `@turing`
+ * pushes it to turing, `@turing:~/data` names where there, and the files
+ * land with nobody pressing anything; every other machine reads the file
+ * as an offer (待接收 with 接收). `@` in the box opens the machine picker
+ * above it — on every face, the phone too — and the typed form works as
+ * typed. A file on another machine is typed as `hinton:/data/x.bin`;
+ * ＋ adds this machine's files (in the app a native picker answers with
+ * real paths, in a browser the bytes are staged here first). A target
+ * that is not reachable refuses the whole message: the node's sentence
+ * stands above the box, naming the machine, and the draft stays.
  *
- * Where a file lands is said above the box: the receiver's receive
- * location by default, or a directory picked on that machine (更改…);
- * ＋ sends there in one press.
- *
- * The composer at the foot is `tell`'s pipe — the same call the 留言
- * dialog makes, so the two ways of speaking cannot drift. Beside it,
- * 发文件 (GUI 发文件批): in the app a native picker answers with a
- * real path (`pick_and_send`), in a browser the bytes upload to the
- * sending machine first (`uploadFile`) — one act, two ways of handing
- * the file to the same `send`. The upload's in-between is said out
- * loud (上传中…), and a refusal — the size cap included — lands as the
- * backend's own sentence where the act was started (the pin's rule).
- */
-/**
- * **The broadcast** (`wide/all`, STORE-BRIEF phase 3) is painted here
- * too: the khor's own group conversation, the same stream and the same
- * composer, the machine name on each line from another machine. Its
- * file is an offer each machine answers on its own, so the chip says
- * *this machine's* state — 待接收 with 接收, the bar with ×, 已收到 with
- * the path, the failure with 重试 — and on the machine that sent it, how
- * many machines have it. There is no 「存到」: an offer lands in each
- * machine's own receive location.
+ * Each bubble names its targets by today's names, each with its own
+ * move. ⚠️ 墓碑 (phase 5): a machine's own `chat/<机器>` conversation was
+ * painted here too, with 「存到」 above its box; the directory is typed
+ * as `@机器:路径` now.
  */
 export function MachineChat({ id }: { id: string }) {
   const [log, setLog] = useState<MachineLog | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [refused, setRefused] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
   const stickToEnd = useRef(true);
   /** The box, for the keyboard's switch (`TermKeys`). */
@@ -107,86 +98,134 @@ export function MachineChat({ id }: { id: string }) {
     if (el && stickToEnd.current) el.scrollTop = el.scrollHeight;
   }, [log]);
 
-  // The channel is the row's title-independent name; the id carries
-  // it (`chat/<channel>`), and peeling it here mirrors the read side.
-  // The broadcast's id is its own name to every call (`tell`, the
-  // uploads, the readout): the core layer knows the board.
-  const wide = id.startsWith("wide/");
-  const machine = id.startsWith("chat/") ? id.slice(5) : id;
-
-  const send = () => {
-    const text = draft.trim();
-    if (!text || sending) return;
-    setSending(true);
-    tell(machine, text).then(
-      () => {
-        setDraft("");
-        setSending(false);
-        refresh();
-      },
-      () => setSending(false),
-    );
-  };
-
-  // 发文件 — the file leg of the composer (module head). One in-flight
-  // at a time; the failure keeps the backend's own sentence, because
-  // "too big" and "machine unreachable" have different next steps and
-  // the sentence is where they differ.
-  const [sendingFile, setSendingFile] = useState(false);
-  const [fileError, setFileError] = useState<string | null>(null);
-  /** The directory picked on the receiver; `null` is its receive
-      location. Kept while this conversation is open. */
-  const [into, setInto] = useState<string | null>(null);
-  /** Whether the receiver is this machine (its files are already on
-      this disk). In the broadcast it always is: a chip shows this
-      machine's own landing. */
-  const [here, setHere] = useState(wide);
-  /** The API's spelling of the machine a landed path is on. */
-  const [landsOn, setLandsOn] = useState(wide ? "" : machine);
+  /** The machines, for the picker and for the landed paths' machine. */
+  const [machines, setMachines] = useState<DeviceRow[]>([]);
   useEffect(() => {
     let live = true;
-    setInto(null);
     fetchDevices().then(
-      (rows) => {
-        if (!live) return;
-        if (wide) return setLandsOn(rows.find((r) => r.me)?.name ?? "");
-        setHere(!!rows.find((r) => r.name === machine)?.me);
-      },
+      (rows) => live && setMachines(rows),
       () => {},
     );
     return () => {
       live = false;
     };
-  }, [machine, wide]);
+  }, []);
+  /** The API's spelling of this machine: a chip shows its own landing. */
+  const landsOn = machines.find((r) => r.me)?.name ?? "";
+  /** **The `@机器` filter** (phase 5): only the messages pushed to that
+      machine, by device id; `null` is all. How the messages for one
+      machine are found — there is no view of them on its page. */
+  const [only, setOnly] = useState<{ device: string; name: string } | null>(null);
+  const shownMsgs = log ? (only ? log.messages.filter((m) => m.to.some((t) => t.device === only.device)) : log.messages) : [];
+
+  // 新建会话's 留言 on a machine: the box opens with `@<machine> ` in it.
+  useEffect(() => {
+    const d = takeDraft();
+    if (d === null) return;
+    setDraft(d);
+    requestAnimationFrame(() => {
+      const el = box.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(d.length, d.length);
+    });
+  }, []);
+
+  // ── the files going along with the line ──
+  const [pending, setPending] = useState<Pending[]>([]);
+  const seq = useRef(0);
+  const placing = pending.some((p) => p.path === null && p.error === null);
   const fileInput = useRef<HTMLInputElement | null>(null);
-  const fileOutcome = (p: Promise<unknown>) =>
-    p.then(
-      () => {
-        setSendingFile(false);
-        refresh();
-      },
-      (e: unknown) => {
-        setSendingFile(false);
-        setFileError(String(e instanceof Error ? e.message : e));
-      },
-    );
   const attach = () => {
-    if (sendingFile) return;
-    setFileError(null);
+    setRefused(null);
     if (inApp) {
-      // The native picker owns the visible in-between here; a cancel
-      // resolves null and simply ends the flight.
-      setSendingFile(true);
-      fileOutcome(pickAndSendFile(machine, into));
+      void pickPaths().then(
+        (ps) =>
+          setPending((now) => [
+            ...now,
+            ...ps.map((p) => ({ key: `p${++seq.current}`, name: baseName(p), size: null, thumb: null, inline: null, path: p, error: null })),
+          ]),
+        (e: unknown) => setRefused(said(e)),
+      );
     } else {
       fileInput.current?.click();
     }
   };
-  const picked = (f: File | undefined) => {
-    if (!f) return;
-    setSendingFile(true);
-    fileOutcome(uploadFile(machine, f, into));
+  const picked = (files: File[]) => {
+    for (const f of files) {
+      const key = `f${++seq.current}`;
+      setPending((now) => [...now, { key, name: f.name, size: f.size, thumb: null, inline: null, path: null, error: null }]);
+      stageFile(f).then(
+        (path) => setPending((now) => now.map((p) => (p.key === key ? { ...p, path } : p))),
+        (e: unknown) => setPending((now) => now.map((p) => (p.key === key ? { ...p, error: said(e) } : p))),
+      );
+    }
   };
+
+  // ── the @ picker ──
+  /** Where the caret is, so the picker reads the word being typed. */
+  const [caret, setCaret] = useState(0);
+  const [pick, setPick] = useState(0);
+  const [pickerShut, setPickerShut] = useState(false);
+  /** The word a choice just wrote: the picker stays shut on it. */
+  const shut = useRef<string | null>(null);
+  const typing = /(^|\s)@([^\s:"]*)$/.exec(draft.slice(0, caret));
+  const asked = typing ? typing[2].toLowerCase() : null;
+  const choices =
+    asked === null || pickerShut
+      ? []
+      : machines.filter(
+          (d) =>
+            !d.me &&
+            d.sponsor === null &&
+            (d.shown.toLowerCase().startsWith(asked) || d.name.toLowerCase().startsWith(asked)),
+        );
+  useEffect(() => {
+    setPick(0);
+    setPickerShut(asked !== null && asked === shut.current);
+    if (asked !== shut.current) shut.current = null;
+  }, [asked]);
+  const pickerOpen = asked !== null && !pickerShut && asked !== shut.current;
+  /** A choice writes `@<machine>` and shuts the picker; what comes next
+      is the person's — `:路径` for a directory there, a space for the
+      next target or the words. */
+  const choose = (d: DeviceRow) => {
+    if (!typing) return;
+    const start = caret - typing[2].length;
+    const word = typedName(d);
+    setDraft(`${draft.slice(0, start)}${word}${draft.slice(caret)}`);
+    const at = start + word.length;
+    setCaret(at);
+    shut.current = word.toLowerCase();
+    requestAnimationFrame(() => box.current?.setSelectionRange(at, at));
+  };
+
+  const send = () => {
+    const text = draft.trim();
+    const files = pending.flatMap((p) => (p.path === null ? [] : [p.path]));
+    if ((!text && files.length === 0) || sending || placing) return;
+    // What this send carries: a file added while it is on its way stays
+    // for the next one.
+    const went = new Set(pending.map((p) => p.key));
+    setSending(true);
+    setRefused(null);
+    compose(text, files).then(
+      () => {
+        setDraft((now) => (now.trim() === text ? "" : now));
+        setPending((now) => now.filter((p) => !went.has(p.key)));
+        setSending(false);
+        stickToEnd.current = true;
+        refresh();
+      },
+      // **Refused, nothing written** (phase 5): the node's sentence names
+      // the machine; the draft and its files stay for the next try.
+      (e: unknown) => {
+        setSending(false);
+        setRefused(said(e));
+      },
+    );
+  };
+  const ready = (draft.trim() !== "" || pending.some((p) => p.path !== null)) && !placing;
 
   return (
     <div data-machine-chat className="flex min-h-0 flex-1 flex-col">
@@ -216,31 +255,32 @@ export function MachineChat({ id }: { id: string }) {
             {cli.broken_blocks(log.broken)}
           </div>
         )}
-        {log?.messages.map((m, i) => (
+        {only && (
+          <div data-at-only={only.name} className="flex items-center justify-center gap-in text-caption text-muted-foreground">
+            <span>{gui.at_only(only.name)}</span>
+            <Button size="sm" variant="ghost" data-at-only-clear onClick={() => setOnly(null)}>
+              {gui.at_only_clear}
+            </Button>
+          </div>
+        )}
+        {shownMsgs.map((m, i) => (
           <MsgLine
             key={m.id}
             m={m}
-            stamp={stampFor(m, i === 0 ? null : log.messages[i - 1])}
+            stamp={stampFor(m, i === 0 ? null : shownMsgs[i - 1])}
             machine={landsOn}
-            here={here}
-            wide={wide}
+            me={machines.find((r) => r.me)?.id ?? ""}
+            onOnly={(device, name) => setOnly((now) => (now?.device === device ? null : { device, name }))}
             onChanged={refresh}
           />
         ))}
         </div>
       </div>
-      {/* The file leg's own two lines, above the composer: the upload's
-          in-between (browser forms only — the app's picker is its own
-          visible state), and a refusal in the backend's sentence where
-          the act was started. Neither renders over nothing. */}
-      {sendingFile && !inApp && (
-        <div data-uploading className="flex-none border-t px-3 py-1 text-caption text-muted-foreground">
-          {gui.uploading}
-        </div>
-      )}
-      {fileError && (
-        <div data-file-error className="flex-none border-t px-3 py-1 text-caption text-state-failed">
-          {gui.send_file_failed}: {fileError}
+      {/* The node's refusal, where the act was started (the pin's rule):
+          a target not reachable names the machine, and nothing was sent. */}
+      {refused && (
+        <div data-post-refused className="flex-none border-t px-3 py-1 text-caption text-state-failed">
+          {refused}
         </div>
       )}
       {/* The rule spans the pane, the controls stand in the column — the
@@ -250,24 +290,60 @@ export function MachineChat({ id }: { id: string }) {
           second row** (`components/SessionBar`, 2026-10-02), the agent
           conversation's arrangement. */}
       <BarSeat at="under">
-      {/* Where a file sent from here lands: the receiver's receive
-          location, or a directory picked on it. ＋ sends there at once.
-          Not in the broadcast: each machine's own location. */}
-      {!wide && (
-        <div className="flex-none px-row pt-in">
-          <SendInto machine={machine} name={machine} into={into} onInto={setInto} className="mx-auto w-full max-w-measure" />
-        </div>
-      )}
-      {/* **The conversation's capsule** (`Composer`, the redesign,
-          2026-10-02): ＋ to send a file, the text, and send once there is
-          something to send. No mode and no interrupt — a note has no
-          agent on the other end. */}
-      <div className={cn("flex-none px-row pb-in", wide ? "pt-in" : "pt-xxs")}>
-      <div className="mx-auto flex w-full max-w-measure text-read">
+      <div className="flex-none px-row pt-in pb-in">
+      <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
+        {/* **The machine picker** (phase 5): over the box, not pushing
+            the conversation up — a list that moves the text being read
+            is worse than none (the slash menu's rule). Keys ↑↓ walk it,
+            Enter or Tab choose, Esc leaves the text as typed; a press
+            chooses without taking the focus from the box, so the phone's
+            keyboard stays up. */}
+        {pickerOpen && (
+          <div
+            data-at-picker
+            role="listbox"
+            aria-label={gui.at_pick_title}
+            className="absolute bottom-full left-0 mb-1 max-h-56 w-full overflow-y-auto rounded-lg border bg-popover p-1 shadow-(--shadow-float)"
+          >
+            <div className="px-2 py-1 text-caption text-muted-foreground">{gui.at_pick_title}</div>
+            {choices.length === 0 ? (
+              <div data-at-none className="px-2 py-1 text-callout text-muted-foreground">
+                {gui.at_pick_none}
+              </div>
+            ) : (
+              choices.map((d, n) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  role="option"
+                  aria-selected={n === pick}
+                  data-at-item={d.name}
+                  data-on={n === pick}
+                  className={cn(
+                    "flex min-h-touch w-full items-center gap-2 rounded-sm px-2 text-left text-callout pointer-fine:min-h-ctl-md",
+                    n === pick && "bg-fill-strong",
+                  )}
+                  onPointerDown={(e) => e.preventDefault()}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => choose(d)}
+                >
+                  <span className="min-w-0 truncate">@{typedName(d)}</span>
+                  {typedName(d) !== d.shown && <span className="truncate text-caption text-muted-foreground">{d.shown}</span>}
+                </button>
+              ))
+            )}
+            <div className="px-2 py-1 text-caption text-muted-foreground">{gui.at_pick_hint}</div>
+          </div>
+        )}
+        <PendingChips items={pending} onRemove={(key) => setPending((now) => now.filter((p) => p.key !== key))} />
+        {/* **The conversation's capsule** (`Composer`, the redesign,
+            2026-10-02): ＋ to add a file, the text, and send once there is
+            something to send. No mode and no interrupt — a message has no
+            agent on the other end. */}
         <Composer
           lead={
             <Tip label={gui.send_file}>
-              <PlusSeat data-attach-file aria-label={gui.send_file} disabled={sendingFile} aria-busy={sendingFile || undefined} onClick={attach} />
+              <PlusSeat data-attach-file aria-label={gui.send_file} onClick={attach} />
             </Tip>
           }
           trail={
@@ -276,7 +352,7 @@ export function MachineChat({ id }: { id: string }) {
             // **The keyboard stays up after a note** (P7, 2026-10-03, the
             // owner's ruling): the press does not take the focus from the
             // text, so the next line is typed at once, as in Messages.
-            draft.trim() ? <SendSeat onSend={send} disabled={sending} keepFocus /> : null
+            ready ? <SendSeat onSend={send} disabled={sending} keepFocus /> : null
           }
         >
         {/* The browser forms' picker: a real <input type=file>, hidden —
@@ -286,10 +362,11 @@ export function MachineChat({ id }: { id: string }) {
           <input
             ref={fileInput}
             type="file"
+            multiple
             hidden
             data-file-input
             onChange={(e) => {
-              picked(e.target.files?.[0]);
+              picked([...(e.target.files ?? [])]);
               e.target.value = "";
             }}
           />
@@ -298,17 +375,46 @@ export function MachineChat({ id }: { id: string }) {
           ref={box}
           data-chat-composer
           aria-label={gui.message_text}
+          aria-expanded={pickerOpen}
           // The same word the agent conversation's capsule wears: one
           // capsule, one invitation (the closing pass, 2026-10-03).
           placeholder={gui.chat_input}
           // Return sends, and the soft keyboard's key says so (Shift+Enter
           // on a hardware keyboard breaks the line).
           enterKeyHint="send"
+          // `@machine:path` is not prose: no capital, no correction.
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           value={draft}
           rows={1}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={(e) => {
             if (imeKey(e)) return;
+            if (pickerOpen && choices.length > 0) {
+              // While the picker is open the keys belong to it: Enter
+              // chooses rather than sends.
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                const step = e.key === "ArrowDown" ? 1 : choices.length - 1;
+                setPick((p) => (p + step) % choices.length);
+                return;
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                choose(choices[Math.min(pick, choices.length - 1)]);
+                return;
+              }
+            }
+            if (pickerOpen && e.key === "Escape") {
+              e.preventDefault();
+              setPickerShut(true);
+              return;
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send();
@@ -329,6 +435,12 @@ export function MachineChat({ id }: { id: string }) {
           (`SessionScreen`); a third way was a second door. */}
     </div>
   );
+}
+
+/** How a machine is written in the typed form: its shown name when that
+    is one token, its name otherwise — `khor_node::post::typed_name`. */
+function typedName(d: DeviceRow): string {
+  return d.shown && !/[\s:"]/.test(d.shown) ? d.shown : d.name;
 }
 
 /** WeChat's clustering distance: two messages further apart than this
@@ -371,15 +483,17 @@ function MsgLine({
   m,
   stamp,
   machine,
-  here,
-  wide,
+  me,
+  onOnly,
   onChanged,
 }: {
   m: ChatMsgRow;
   stamp: string | null;
   machine: string;
-  here: boolean;
-  wide: boolean;
+  /** This machine's device id: its own move is the chip's to say. */
+  me: string;
+  /** A target pressed: the conversation narrows to that machine. */
+  onOnly: (device: string, name: string) => void;
   onChanged: () => void;
 }) {
   return (
@@ -399,6 +513,7 @@ function MsgLine({
             {m.from}
           </div>
         )}
+        {!m.retracted && m.to.length > 0 && <Targets m={m} me={me} onOnly={onOnly} />}
         {m.retracted ? (
           <div className="text-caption text-muted-foreground">{cli.retracted}</div>
         ) : m.text !== null ? (
@@ -416,7 +531,20 @@ function MsgLine({
             {m.text}
           </div>
         ) : m.files !== null ? (
-          <FileChip m={m} machine={machine} here={here} wide={wide} onChanged={onChanged} />
+          <>
+            {m.note && (
+              <div
+                data-msg-note
+                className={cn(
+                  "mb-1 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg px-3 py-1.5 text-read-ink",
+                  m.from_me ? "bg-accent" : "border bg-card",
+                )}
+              >
+                {m.note}
+              </div>
+            )}
+            <FileChip m={m} machine={machine} onChanged={onChanged} />
+          </>
         ) : (
           // A body kind this build cannot read — said out loud rather
           // than rendered blank (`MsgBody::Unknown`'s rule).
@@ -439,15 +567,10 @@ function MsgLine({
 function FileChip({
   m,
   machine,
-  here,
-  wide,
   onChanged,
 }: {
   m: ChatMsgRow;
   machine: string;
-  here: boolean;
-  /** A broadcast offer: the state is this machine's own answer. */
-  wide: boolean;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -459,12 +582,12 @@ function FileChip({
     return () => window.clearTimeout(t);
   }, [failed]);
   const size = (m.files ?? []).reduce((n, f) => n + f.size, 0);
-  // Not started yet is on its way too: the receiver starts it by itself.
-  // Not in the broadcast: there it waits for this machine's 接收, and
-  // the machine that sent it has nothing to move.
-  const sent = wide && m.from_me;
-  const waiting = wide && !sent && !m.retracted && m.step === null;
-  const moving = !sent && !m.retracted && (m.step === "moving" || (!wide && m.step === null));
+  // An offer waits for this machine's 接收; a file pushed here is on its
+  // way by itself (not started yet included); the machine that sent it
+  // has nothing to move.
+  const sent = m.from_me;
+  const waiting = !sent && !m.pushed && !m.retracted && m.step === null;
+  const moving = !sent && !m.retracted && (m.step === "moving" || (m.pushed && m.step === null));
   const pct = size > 0 ? Math.min(100, Math.floor((m.moved * 100) / size)) : 0;
   const act = (p: Promise<unknown>) => {
     setBusy(true);
@@ -482,7 +605,6 @@ function FileChip({
   return (
     <div
       data-msg-files
-      data-word={m.word ?? undefined}
       data-file-step={m.step ?? "waiting"}
       className={cn(
         "flex flex-col gap-1 rounded-lg px-3 py-2 text-callout",
@@ -527,7 +649,7 @@ function FileChip({
           </Button>
         </div>
       )}
-      {moving && wide && (
+      {moving && !m.pushed && (
         <span data-bcast-taking className="text-caption text-muted-foreground">
           {gui.bcast_taking}
         </span>
@@ -559,7 +681,7 @@ function FileChip({
           </Button>
         </div>
       )}
-      {wide && m.step === "landed" && (
+      {m.step === "landed" && (
         // Pulled from a machine that had it rather than the sender: which.
         <span data-bcast-landed data-bcast-via={m.via ?? undefined} className="text-caption text-muted-foreground">
           {m.via ? gui.bcast_landed_via(m.via) : gui.bcast_landed}
@@ -588,7 +710,7 @@ function FileChip({
           <Button size="sm" data-file-retry disabled={busy} aria-busy={busy || undefined} onClick={() => act(retryTransfer(m.id))}>
             {/* A cancelled offer is received again; anything else that
                 broke is tried again. */}
-            {wide && m.step === "stopped" ? gui.bcast_take : gui.region_retry}
+            {m.step === "stopped" && !m.pushed ? gui.bcast_take : gui.region_retry}
           </Button>
         </div>
       )}
@@ -597,8 +719,47 @@ function FileChip({
           {failed}
         </span>
       )}
-      {m.word && <StatusWord data-file-word word={m.word} />}
-      <FilePreview machine={machine} here={here} shown="" path={looking} onClose={() => setLooking(null)} />
+      <FilePreview machine={machine} here shown="" path={looking} onClose={() => setLooking(null)} />
+    </div>
+  );
+}
+
+/**
+ * **The machines a message was pushed to** (phase 5), over its bubble:
+ * `@名字` by today's name (a renamed machine shows its new name), the
+ * directory named there, and on a file, how that machine's move stands —
+ * its own record, the same on every device. This machine's own move is
+ * the chip's to say (the bar, the path, the sentence), not said twice.
+ */
+function Targets({ m, me, onOnly }: { m: ChatMsgRow; me: string; onOnly: (device: string, name: string) => void }) {
+  return (
+    <div data-msg-to className={cn("mb-0.5 flex flex-wrap gap-x-row gap-y-xxs text-caption", m.from_me && "justify-end")}>
+      {m.to.map((t) => (
+        <span key={t.device} data-msg-target={t.name} data-target-step={t.step ?? undefined} className="flex min-w-0 items-baseline gap-in">
+          {/* Pressed, the conversation narrows to this machine (the
+              `@机器` filter); pressed again, it opens out. */}
+          <button
+            type="button"
+            data-msg-target-only={t.name}
+            className="truncate text-left text-muted-foreground hover:text-foreground"
+            onClick={() => onOnly(t.device, t.name)}
+          >
+            @{t.name}
+            {t.path ? `:${t.path}` : ""}
+          </button>
+          {m.files !== null && t.step !== null && t.device !== me && (
+            <span className={cn("flex-none", t.step === "failed" ? "text-state-failed" : "text-muted-foreground")}>
+              {t.step === "landed"
+                ? gui.at_pushed
+                : t.step === "moving"
+                  ? gui.at_pushing
+                  : t.step === "failed"
+                    ? gui.at_push_failed(t.why ?? "")
+                    : gui.at_push_stopped}
+            </span>
+          )}
+        </span>
+      ))}
     </div>
   );
 }

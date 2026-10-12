@@ -302,13 +302,15 @@ usage = """
   find <词>              一次搜会话、机器、工作区、浏览标签和设置页（窗口里 ⌘K 同一份）
   import [<序号|id>...]  不带参数列出可导入的会话（外面开的智能体、tmux 会话、
                         ACP 对话），带序号；带序号或 id 就把它们导进列表
-  tell <机器> <话...>    给机器的窗口留言（永远当字面的话）
-  send <机器> <文件|话...> [--into <目录>]
-                        给那台机器：是个存在的文件就直接传过去（落在它的
-                        接收位置，或 --into 指定的那台机器上的目录），
-                        不是就当留言；话恰好和文件同名时用 tell
+  tell <机器>|@<机器>[:<目录>]... <话...>
+                        在广播里说一句，推给点到的机器（话永远当字面的话）；
+                        点到的机器不通就不发
+  send <机器>|@<机器>[:<目录>]... <文件|<机器>:<路径>|话...> [--into <目录>]
+                        推给点到的机器：每个参数都是存在的文件或别的机器上的
+                        文件时，直接落到它的接收位置，或 @<机器>:<目录>、
+                        --into 指定的目录；不是就当一句话；话恰好和文件同名时用 tell
   retry <传输号>         重新传一个失败或取消的文件（哪台机器上跑都行）
-  log <机器>            看那个窗口的消息
+  log [<机器>]          看广播的消息；带机器只看推给它的
   run [--tui] [--title 名] -- <命令...>
                         临时 session：跟着这个终端活，全程网里可见
   open [-d] [--tui|--gui] [--agent 名字 [--resume id]] [--on 机器] [--title 名] [-- 命令]
@@ -1713,6 +1715,18 @@ wrong-recipient = "这个文件是发给 {0} 的，不应由这台机器接收"
 # 是邀约，每台机器自己接收；发出它的那台本来就有，没有什么要收。
 broadcast-title = "广播"
 own-broadcast-file = "这个文件是本机发出的，本机不用接收"
+# 一个频道（STORE-BRIEF 第五阶段）：@机器 是推送的目标。目标不通就不发，
+# 话里点名是哪台，文字也不写进去——由人决定等它上线还是发给别的机器。
+post-target-down = "{0} 不通，这条消息没有发出。等它上线，或者发给别的机器"
+# 别的机器上的文件（hinton:/data/x.bin）写消息时就请那台机器出让；不通、
+# 拒绝都在写之前说，点名那台机器。
+post-holder-down = "{0} 不通，拿不到 {1}，这条消息没有发出"
+post-holder-refused = "{0} 给不出 {1}：{2}"
+post-target-no-khor = "{0} 是附属机器，没有 khor 接收推送"
+post-target-self = "{0} 是本机，不用推送给自己"
+post-nothing = "没有要发的内容"
+# 手机发出的推送在后台宽限期内没传完：收的那台写下这一句，人再发一次。
+push-cut-suspended = "发送中断：手机已挂起"
 not-a-file-path = "这不是一个文件路径：{0}"
 # 删不掉 (工作区批④). **One key for every reason**, unlike the pairs
 # above that split a refusal by whose fault it was: here the operating
@@ -2289,7 +2303,7 @@ web-key-empty = "网页版的密钥文件为空：{0}。删除它后重启 serve
 upload-too-big = "文件太大：网页版的上传上限是 {0}MB。更大的用那台机器上的 khor send"
 # A malformed upload request — the two query arguments are the whole
 # contract, and a missing one is the caller's bug said plainly.
-upload-needs-machine-and-name = "上传要在地址里带 machine 和 name 两个参数"
+upload-needs-machine-and-name = "上传要在地址里带 name 参数"
 # The refusal page a keyless browser gets (记住一次批: the page itself
 # sits behind the key now). It names the way in AND the promise — open
 # the printed link once, this browser is remembered from then on — so
@@ -4916,6 +4930,19 @@ bcast-landed-via = "已收到 · 来自 {0}"
 # The sender's own seat on its offer: nothing to receive, only the count.
 bcast-own = "自己发的"
 bcast-count = "{0}/{1} 台已收到"
+# 一个频道（STORE-BRIEF 第五阶段）：框里打 @ 弹出机器列表，选一台就在框里写下
+# @机器 ；也可以直接打 @机器:路径。气泡上 @机器 是推送的目标，后面是那台的进度。
+# 按气泡上的 @机器 只看推给它的消息，顶上那一条说正在只看哪台，按 × 看全部。
+at-pick-title = "推送给"
+at-pick-hint = "选一台机器，或接着打冒号和路径"
+at-pick-none = "没有叫这个名字的机器"
+at-pushed = "已推送"
+at-pushing = "推送中"
+at-push-failed = "推送失败：{0}"
+at-push-stopped = "推送已取消"
+at-only = "只看推给 {0} 的"
+at-only-clear = "看全部"
+at-to-here = "推给本机"
 # The composer's other verb (GUI 发文件批): hand a file to `send`. The
 # label names the action; in the app a native picker answers with a
 # real path, in a browser the bytes upload to the sending machine first

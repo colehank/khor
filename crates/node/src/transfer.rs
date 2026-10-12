@@ -1,9 +1,9 @@
 //! The transfer kind: bytes ride point-to-point, never the CRDT
-//! (docs/NET.md 同步). A file message in a machine's window is the
-//! summary — it travels the chat CRDT to everyone, and the receiver
-//! pulls the payload as soon as it reads it, nobody asked (STORE-BRIEF
-//! phase 2: 直接传); how that move stands rides the message itself
-//! (`khor_sync::chat::Fate`). The sender keeps an [`Offer`] per file: the
+//! (docs/NET.md 同步). A file message in the broadcast is the summary —
+//! it travels the CRDT to everyone; a machine it was pushed to pulls the
+//! payload at once, any other when it takes the offer (STORE-BRIEF phase
+//! 5); how each move stands rides the message, under each receiver's own
+//! key (`khor_sync::chat::Fate`). The sender keeps an [`Offer`] per file: the
 //! path it serves the bytes from, and what each receiver fetched.
 //!
 //! Disk layout: a received payload lands in the receiving machine's
@@ -19,8 +19,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use khor_catalog::msg;
-use khor_core::{SessionId, State};
-use khor_sync::chat::{FileRef, Message, MsgBody, Step};
+use khor_core::SessionId;
+use khor_sync::chat::FileRef;
 
 /// Where an offered payload is read from, recorded at send time.
 /// Machine-local — the path means nothing on any other device. Keyed by
@@ -248,106 +248,15 @@ pub fn safe_name(name: &str) -> String {
 
 pub struct TransferKind {
     root: PathBuf,
-    device_str: String,
-    name: String,
 }
 
 impl TransferKind {
-    pub fn new(root: PathBuf, device_str: String, name: String) -> TransferKind {
-        TransferKind {
-            root,
-            device_str,
-            name,
-        }
+    pub fn new(root: PathBuf) -> TransferKind {
+        TransferKind { root }
     }
 
     pub fn session_id(msg_id: &str) -> SessionId {
         SessionId(format!("transfer/{msg_id}"))
-    }
-
-    /// One file message's face on this machine — the same seat and the
-    /// same words as [`Self::urgency`], read per message instead of
-    /// folded onto the row, so a face painting the conversation can
-    /// stamp each file chip without re-deriving the state machine
-    /// (docs/UX.md 状态呈现: the word comes from here or not at all).
-    ///
-    /// Beyond the pressure `urgency` reports, the receiver's settled
-    /// states come through too (完成/空闲 once the file landed): on a
-    /// chip "no word" must mean "not my seat", never "done".
-    /// `None`: a text message, a retracted one, or any message this
-    /// machine did not receive — every device shows the move itself
-    /// from the message's own record (`khor_sync::chat::Fate`); the
-    /// state word is the receiver's alone.
-    ///
-    /// `watermark` is the conversation's own seen mark
-    /// (`khor_sync::seen`): 完成 exactly when the row counts that message
-    /// unread, 空闲 exactly when it does not — the message's own stamp
-    /// against the watermark, both on the senders' clocks.
-    pub fn message_face(&self, channel: &str, m: &Message, watermark: i64) -> Option<State> {
-        let MsgBody::Files(files) = &m.body else {
-            return None;
-        };
-        if m.retracted || files.is_empty() || channel != self.name || m.from.id == self.device_str {
-            return None;
-        }
-        let settled = if m.at > watermark { State::Done } else { State::Idle };
-        Some(match m.fate.as_ref().map(|f| f.step) {
-            // Not started yet: the receiver starts it by itself, nobody
-            // asked (STORE-BRIEF phase 2) — so it is on its way.
-            None | Some(Step::Moving) => State::Busy,
-            // 断了可续: a retry carries on from the bytes kept.
-            Some(Step::Failed) => State::Errored,
-            Some(Step::Landed) => settled,
-            // Cancelled on purpose: nothing is owed and nothing is new.
-            Some(Step::Stopped) => State::Idle,
-        })
-    }
-
-    /// The live word of one channel's **latest message**, folded onto
-    /// that machine's chat row (传输并入对话批, 2026-08-23: a transfer is
-    /// a file message in the conversation, not a row of its own — the
-    /// pressure lands on the row that carries the message).
-    ///
-    /// **Only the newest message still standing speaks** (STORE-BRIEF
-    /// phase 5, the row's word): an older file's fate stays on its own
-    /// chip and presses nothing on the row, the way a terminal wears its
-    /// live process's word. ⚠️ 墓碑: this folded every file message in
-    /// the history and kept the most pressing word, so a pull that broke
-    /// weeks ago said 中断 on the row for ever.
-    ///
-    /// What counts as pressure, read off that message's record
-    /// (`khor_sync::chat::Fate`), by seat:
-    /// - **receiver** (this machine was sent the file): 忙碌 while it
-    ///   moves (or has not started), 中断 when it broke and a retry
-    ///   carries on.
-    /// - **sender**: 忙碌 while it moves.
-    /// - nothing is 待批 any more (STORE-BRIEF phase 2: 直接传，不用等
-    ///   接收). ⚠️ 墓碑: the receiver's 待批 while a file waited on its
-    ///   收下.
-    /// - landed or cancelled files press nothing: 完成/未看 is already
-    ///   the chat row's own message-based reading.
-    ///
-    /// `None` when the latest message presses nothing; the caller keeps
-    /// the row's own word. Stamped with the message.
-    pub fn urgency(&self, channel: &str, msgs: &[Message]) -> Option<(State, i64)> {
-        // Still standing, as the row's preview reads it: a retracted
-        // slot has no word of its own.
-        let m = msgs.iter().rev().find(|m| !m.retracted)?;
-        let MsgBody::Files(files) = &m.body else {
-            return None;
-        };
-        if files.is_empty() {
-            return None;
-        }
-        let i_sent = m.from.id == self.device_str;
-        let i_receive = channel == self.name && !i_sent;
-        let pressed = match m.fate.as_ref().map(|f| f.step) {
-            None | Some(Step::Moving) if i_receive => Some(State::Busy),
-            Some(Step::Moving) if i_sent => Some(State::Busy),
-            Some(Step::Failed) if i_receive => Some(State::Errored),
-            _ => None,
-        };
-        pressed.map(|state| (state, m.at))
     }
 
     /// Clears what an unfinished pull of this transfer left (the partial
@@ -384,46 +293,14 @@ pub fn mtime_ms(p: &Path) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khor_sync::chat::Sender;
 
     fn file_ref(name: &str) -> FileRef {
         FileRef {
             name: name.into(),
             size: 5,
             digest: "ab".repeat(32),
+            holder: String::new(),
         }
-    }
-
-    fn msg(id: &str, from: &str, f: FileRef) -> Message {
-        Message {
-            id: id.into(),
-            at: 1000,
-            from: Sender {
-                id: from.into(),
-                name: "x".into(),
-            },
-            body: MsgBody::Files(vec![f]),
-            retracted: false,
-            edited: false,
-            into: String::new(),
-            fate: None,
-            fates: Default::default(),
-        }
-    }
-
-    fn fated(mut m: Message, step: Step) -> Message {
-        m.fate = Some(khor_sync::chat::Fate {
-            step,
-            moved: 0,
-            landed: Vec::new(),
-            why: String::new(),
-            via: String::new(),
-        });
-        m
-    }
-
-    fn kind(root: &Path) -> TransferKind {
-        TransferKind::new(root.to_path_buf(), "me".repeat(32), "mybox".into())
     }
 
     /// A scratch tree that **takes itself away however the test leaves**
@@ -453,65 +330,6 @@ mod tests {
         let _ = fs::remove_dir_all(&p);
         fs::create_dir_all(&p).unwrap();
         Scratch(p)
-    }
-
-    /// **The receiver's pressure, walked over the message's record**
-    /// (STORE-BRIEF phase 2): not started and moving = 忙碌, broken =
-    /// 中断, landed or cancelled press nothing — and nothing is ever
-    /// 待批: a conversation's file waits on nobody.
-    #[test]
-    fn a_receivers_pressure_walks_busy_errored_then_settles_and_never_blocks() {
-        let root = tmp("faces");
-        let k = kind(&root);
-        let m = msg("m1", "far", file_ref("report.pdf"));
-        let word = |m: Message| k.urgency("mybox", &[m]).map(|(w, _)| w);
-        assert_eq!(word(m.clone()), Some(State::Busy), "not started = on its way, not waiting on anyone");
-        assert_eq!(word(fated(m.clone(), Step::Moving)), Some(State::Busy));
-        assert_eq!(word(fated(m.clone(), Step::Failed)), Some(State::Errored), "a retry carries on");
-        assert_eq!(word(fated(m.clone(), Step::Landed)), None, "the message itself is the news");
-        assert_eq!(word(fated(m.clone(), Step::Stopped)), None);
-        let face = |m: &Message, wm| k.message_face("mybox", m, wm);
-        assert_eq!(face(&m, 0), Some(State::Busy));
-        assert_eq!(face(&fated(m.clone(), Step::Landed), 0), Some(State::Done));
-        assert_eq!(face(&fated(m.clone(), Step::Landed), 2000), Some(State::Idle), "looked at");
-        assert_eq!(k.message_face("otherbox", &m, 0), None, "not this machine's file");
-    }
-
-    /// **Only the latest message speaks** (STORE-BRIEF phase 5, the
-    /// row's word): a broken file followed by a line leaves the row to
-    /// the line; a broken file after a moving one says 中断, not 忙碌; a
-    /// retracted newest slot hands the word back to the one before it.
-    #[test]
-    fn only_the_latest_message_presses_on_the_row() {
-        let root = tmp("latest");
-        let k = kind(&root);
-        let mut text = msg("m2", "far", file_ref("x"));
-        text.body = MsgBody::Text("later".into());
-        text.at = 2000;
-        let broken = fated(msg("m1", "far", file_ref("old.pdf")), Step::Failed);
-        assert_eq!(k.urgency("mybox", &[broken.clone()]).map(|(w, _)| w), Some(State::Errored), "control");
-        assert_eq!(k.urgency("mybox", &[broken.clone(), text.clone()]), None, "a later line: the old break stays on its chip");
-        let mut newer = fated(msg("m3", "far", file_ref("new.pdf")), Step::Failed);
-        newer.at = 3000;
-        let moving = fated(msg("m1", "far", file_ref("old.pdf")), Step::Moving);
-        assert_eq!(k.urgency("mybox", &[moving, newer.clone()]), Some((State::Errored, 3000)), "the newest one's word, not the most pressing");
-        text.retracted = true;
-        assert_eq!(k.urgency("mybox", &[broken, text]).map(|(w, _)| w), Some(State::Errored), "a retracted slot has no word");
-    }
-
-    /// The sender's seat presses only while the bytes move; a third
-    /// party presses nothing.
-    #[test]
-    fn the_senders_seat_presses_only_while_it_moves() {
-        let root = tmp("sender");
-        let k = kind(&root);
-        let mine = msg("m1", &"me".repeat(32), file_ref("data.bin"));
-        let word = |m: Message| k.urgency("otherbox", &[m]).map(|(w, _)| w);
-        assert_eq!(word(mine.clone()), None, "not started is the receiver's to start");
-        assert_eq!(word(fated(mine.clone(), Step::Moving)), Some(State::Busy));
-        assert_eq!(word(fated(mine.clone(), Step::Failed)), None);
-        assert_eq!(word(fated(mine.clone(), Step::Landed)), None);
-        assert_eq!(word(fated(msg("m2", "someone-else", file_ref("x")), Step::Moving)), None, "neither end");
     }
 
     /// **One file sent to two machines is two deliveries** (STORE-BRIEF
@@ -597,6 +415,7 @@ mod tests {
                 name: bad.into(),
                 size: 1,
                 digest: "cd".repeat(32),
+                holder: String::new(),
             };
             let p = payload_path(&ch, &f);
             assert!(

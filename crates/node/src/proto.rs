@@ -762,6 +762,14 @@ pub enum Request {
     /// asker can read both ends of a reconnect. Read off disk, nothing
     /// secret in it (`journal::scrub` ran when each line was written).
     Journal { peer: Option<String>, since: u64 },
+    /// **Offer a file of yours** (STORE-BRIEF phase 5): a message composed
+    /// on another machine names a file on this one (`hinton:/data/x.bin`);
+    /// this machine digests it and keeps the offer record that serves its
+    /// bytes, answering [`Response::Offered`]. Asked at compose time, so
+    /// a file that is not there refuses the message before it is written.
+    /// Tail-appended: an older khor cannot decode it and refuses the
+    /// frame, which the composer says as that machine refusing.
+    Offer { path: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1117,6 +1125,9 @@ pub enum Response {
     /// [`Request::Journal`]: each entry as the journal file holds it, one
     /// JSON line, oldest first.
     Journal { lines: Vec<String> },
+    /// [`Request::Offer`]'s answer: the file's name, size and digest; its
+    /// bytes are served by digest (`Request::Fetch`) from now on.
+    Offered { name: String, size: u64, digest: String },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1240,6 +1251,8 @@ impl Request {
                 // Asked twice, it answers the one run (by token).
                 | Request::AddOverSsh { .. }
                 | Request::Journal { .. }
+                // The same file offered twice is one record.
+                | Request::Offer { .. }
         )
     }
 
@@ -1304,6 +1317,8 @@ impl Request {
         match self {
             Request::Act { action, .. } if action == "take" => Duration::from_secs(3600),
             Request::CodeServe { .. } => Duration::from_secs(280),
+            // A digest is a read of the whole file.
+            Request::Offer { .. } => Duration::from_secs(280),
             Request::Sync { .. }
             | Request::Fetch { .. }
             | Request::FetchPath { .. }

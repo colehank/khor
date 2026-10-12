@@ -172,7 +172,7 @@ export function closeWarning(
   // 第八轮 第 3 条) — the window says so, whatever its kind.
   if (imported) return gui.close_warn_imported;
   // The broadcast closes the way a machine's window does: put away.
-  if (kind === "chat" || kind === "broadcast") return gui.close_warn_chat;
+  if (kind === "broadcast") return gui.close_warn_chat;
   if (kind === "transfer") return gui.close_warn_transfer;
   // An ACP conversation outlives the row: it is the agent's, and 导入
   // finds it again (docs/SHELL.md 第八轮).
@@ -218,7 +218,7 @@ export function closeWarning(
 // address and the kind is the behaviour.
 /** Whether a row is shown as a terminal here — and so whether the deck's
     pill opens its directory (UX-17, `SessionPlaceSheet`). */
-export const isTerminal = (r: SessionRow) => r.kind !== "chat" && r.kind !== "broadcast" && (r.mux || (r.kind !== "gui" && r.attachable));
+export const isTerminal = (r: SessionRow) => r.kind !== "broadcast" && (r.mux || (r.kind !== "gui" && r.attachable));
 
 export function DetailPane({
   row,
@@ -507,7 +507,7 @@ export function DetailPane({
           taking what the column leaves. */}
       <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {terminalShown ? null : row && (row.kind === "chat" || row.kind === "broadcast") ? (
+      {terminalShown ? null : row && row.kind === "broadcast" ? (
         // A machine's conversation — the stream `khor log` prints,
         // with the composer `tell` fills — or the broadcast, the khor's
         // own (STORE-BRIEF phase 3). Keyed so switching machines drops

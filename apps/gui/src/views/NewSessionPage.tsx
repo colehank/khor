@@ -97,14 +97,15 @@ import { PopupButton } from "@/components/ui/popup-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
-import { dropHandOff, peekHandOff } from "@/lib/composer-handoff";
+import { draftFor, dropHandOff, peekHandOff } from "@/lib/composer-handoff";
 import { useHereHosts } from "@/lib/here";
 import { useSetting } from "@/settings";
 import { cn } from "@/lib/utils";
 import { connectionWord } from "@/words";
 
 /** 类型 — the wizard's second step. Three, and no fourth (the ruling):
-    a line left in the machine's window, an agent session, a bare shell. */
+    a line for the broadcast addressed to the machine, an agent session, a
+    bare shell. */
 type Kind = "tell" | "agent" | "shell";
 
 /** **One create token per set of answers** (round NET-7, `khor_node`'s
@@ -413,7 +414,7 @@ export function NewSessionPage({
           })),
         ]
       : []),
-    { key: "tell", label: gui.message_text, mark: sessionKind("chat", null), on: kind === "tell", pick: () => setKind("tell") },
+    { key: "tell", label: gui.message_text, mark: sessionKind("broadcast", null), on: kind === "tell", pick: () => setKind("tell") },
   ];
   /** The arrows walk the tiles and pick as they go, one tab stop for
       the row — a radio group's keys (`SegmentedControl`'s). */
@@ -450,8 +451,9 @@ export function NewSessionPage({
     </div>
   );
   /** The page's one act is 创建 whatever the kind (UX-45): 留言 makes
-      nothing on the node — every machine already has its conversation
-      (`chat/<name>`, one row per machine) — so 创建 turns the tab into it.
+      nothing on the node — the broadcast is already there — so 创建 turns
+      the tab into it, with `@<机器> ` written in its box (STORE-BRIEF
+      phase 5: one channel).
       **The brand's primary, the one page that may wear it** (the owner
       2026-10-07, after UX-45 made it a plain button): `primary` is a
       dialog's one act, and this page is the dialog it replaced — the one
@@ -463,7 +465,12 @@ export function NewSessionPage({
       data-new-session-create
       disabled={opening}
       aria-busy={opening || undefined}
-      onClick={() => (kind === "tell" ? onOpened(`chat/${target}`) : create())}
+      onClick={() => {
+        if (kind !== "tell") return create();
+        const m = machines.find((d) => d.name === target);
+        if (m && !m.me) draftFor(`@${m.label && !/[\s:"]/.test(m.label) ? m.label : m.name} `);
+        onOpened("wide/all");
+      }}
     >
       {gui.create}
     </Button>

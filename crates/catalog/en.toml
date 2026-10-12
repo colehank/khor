@@ -278,18 +278,21 @@ usage: khor <verb>
                         started elsewhere, tmux sessions, ACP
                         conversations), numbered; with numbers or ids,
                         brings those onto the list
-  tell <machine> <words...>
-                        leaves a message in that machine's window
-                        (always taken literally)
-  send <machine> <file|words...> [--into <dir>]
-                        sends to that machine: an existing file goes
-                        straight there (into its receive location, or
-                        the directory on that machine --into names);
-                        otherwise it's treated as a message. If your
-                        words happen to match a filename, use tell
+  tell <machine>|@<machine>[:<dir>]... <words...>
+                        says it in the broadcast, pushed to the machines
+                        named (always taken literally); not sent when a
+                        named machine is unreachable
+  send <machine>|@<machine>[:<dir>]... <file|<machine>:<path>|words...> [--into <dir>]
+                        pushes to the machines named: when every argument
+                        is an existing file or a file on a machine, it
+                        lands in their receive location, or the directory
+                        @<machine>:<dir> or --into names;
+                        otherwise it's treated as words. If your words
+                        happen to match a filename, use tell
   retry <transfer id>   sends a failed or cancelled file again (run it
                         on any machine)
-  log <machine>         shows that window's messages
+  log [<machine>]       shows the broadcast's messages; with a machine,
+                        only those pushed to it
   run [--tui] [--title <name>] -- <command...>
                         a temporary session: lives as long as this
                         terminal, visible on the network the whole
@@ -1189,6 +1192,13 @@ transfer-not-synced-yet = "This transfer hasn't synced to this machine yet: {0};
 wrong-recipient = "This file was sent to {0}; this machine shouldn't receive it"
 broadcast-title = "Broadcast"
 own-broadcast-file = "This machine sent this file; there is nothing to receive"
+post-target-down = "{0} is unreachable, so this message was not sent. Wait for it to come online, or send to another machine"
+post-holder-down = "{0} is unreachable, so {1} cannot be fetched; this message was not sent"
+post-holder-refused = "{0} cannot offer {1}: {2}"
+post-target-no-khor = "{0} is a satellite machine with no khor to receive a push"
+post-target-self = "{0} is this machine; there is no need to push to it"
+post-nothing = "Nothing to send"
+push-cut-suspended = "Sending interrupted: the phone was suspended"
 not-a-file-path = "This isn't a file path: {0}"
 cant-remove = "Can't remove {0}: {1}"
 cant-canonicalize = "Can't resolve this path: {0}"
@@ -2613,6 +2623,16 @@ bcast-landed = "Received"
 bcast-landed-via = "Received · from {0}"
 bcast-own = "Sent by this machine"
 bcast-count = "{0} of {1} received"
+at-pick-title = "Push to"
+at-pick-hint = "Choose a machine, or go on typing :path"
+at-pick-none = "No machine by that name"
+at-pushed = "Delivered"
+at-pushing = "Delivering"
+at-push-failed = "Delivery failed: {0}"
+at-push-stopped = "Delivery cancelled"
+at-only = "Only messages pushed to {0}"
+at-only-clear = "Show all"
+at-to-here = "Pushed to this machine"
 send-file = "Send file"
 uploading = "Uploading…"
 send-file-failed = "Couldn't send"

@@ -13,8 +13,9 @@
 //      with neither the words nor the number written in this script;
 //   4. search filters the devices pane for real, both ways, says so when
 //      nothing matched, and clearing brings everything back;
-//   5. leaving a line reaches the other machine: beta tells alpha from
-//      the GUI, alpha reads it back with `khor log`;
+//   5. leaving a line reaches the other machine: beta pushes a line to
+//      alpha from the GUI's broadcast (`@alpha`), alpha reads it back with
+//      `khor log alpha`;
 //   6. a session living on alpha shows up in beta's GUI, with source,
 //      and the word in the GUI equals the word the CLI prints;
 //   7. the same search on the sessions pane;
@@ -1192,7 +1193,9 @@ for line in sys.stdin:
     const got = await page
       .locator("[data-rail-item][data-landing]")
       .evaluateAll((els) => els.map((e) => e.dataset.landing));
-    const missing = ["sessions", "devices", "workspaces", "browser"].filter((k) => !got.includes(k));
+    // The rail seats the first `NAV_SHOWN` (4) of `NAV_DEFAULT`; 浏览 is
+    // the fifth and lives under 更多 until somebody reorders (UX-11).
+    const missing = ["sessions", "devices", "workspaces"].filter((k) => !got.includes(k));
     if (missing.length) {
       throw new Error(
         `the rail has ${got.length ? got.join(", ") : "nothing"}, missing ${missing.join(", ")}` +
@@ -1308,12 +1311,12 @@ for line in sys.stdin:
   await search.fill("");
   await until("every machine back", 5_000, async () => (await devices.count()) === before);
 
-  // 5) leaving a line: from beta's GUI into alpha's window, read back by
-  //    alpha's own CLI. Two machines, two faces, one message. **Through
-  //    the new tab's page** (UX-45; the wizard since 2026-09-06): pick
-  //    alpha in 目标机器 and the 留言 tile; 创建 turns the tab into
-  //    alpha's conversation, and the line is written in its composer.
-  //    ⚠️ 墓碑 (UX-45): the line and 发送 on the wizard itself.
+  // 5) leaving a line: from beta's GUI to alpha, read back by alpha's own
+  //    CLI. Two machines, two faces, one message. **Through the new tab's
+  //    page** (UX-45): pick alpha in 目标机器 and the 留言 tile; 创建 turns
+  //    the tab into the broadcast with `@alpha ` already in its box
+  //    (STORE-BRIEF phase 5, one channel), and the line is written after
+  //    it. ⚠️ 墓碑 (phase 5): 创建 opened alpha's own `chat/alpha`.
   await assertUntitled("sessions");
   await plusAct("new");
   await until("the new tab's page offering alpha", 10_000, async () =>
@@ -1328,33 +1331,36 @@ for line in sys.stdin:
     throw new Error("留言 still asks for a name or a directory — a line has neither");
   }
   await page.locator("[data-new-session-create]").click();
-  await until("the new tab to become alpha's conversation", 20_000, async () => {
+  await until("the new tab to become the broadcast", 20_000, async () => {
     const err = await page.locator("[data-new-session-error]").count();
     if (err) throw new Error(await page.locator("[data-new-session-error]").innerText());
     return (
       (await page.locator("[data-new-session-page]").count()) === 0 &&
-      (await page.locator('[data-session-tabs] [data-tab="chat/alpha"][data-on="true"]').count()) === 1
+      (await page.locator('[data-session-tabs] [data-tab="wide/all"][data-on="true"]').count()) === 1
     );
   });
-  await page.locator("[data-machine-chat] [data-chat-composer]").fill(NEEDLE);
-  await page.locator("[data-machine-chat] [data-chat-composer]").press("Enter");
+  const box = page.locator("[data-machine-chat] [data-chat-composer]");
+  const drafted = await box.inputValue();
+  if (drafted !== "@alpha ") throw new Error(`留言 on alpha opened the broadcast with ${JSON.stringify(drafted)} — 「@alpha 」`);
+  await box.fill(`${drafted}${NEEDLE}`);
+  await box.press("Enter");
   // Polled at a walking pace: each turn is a whole CLI process opening
   // the node, and the sync pump is on a five-second beat anyway.
   await until(
-    "alpha to read the line in its own window",
+    "alpha to read the line pushed to it",
     40_000,
     () => cli(envA, "log", "alpha").includes(NEEDLE),
     1_000,
   );
 
-  // 5b) the line beta just told rides the chat row as its preview —
-  //      `Session::last` end to end: the CRDT's newest message, through
-  //      the node's row, painted on the second line (会话行改版批). On
-  //      the sessions pane, within a couple of list polls.
+  // 5b) the line beta just pushed rides the broadcast's row as its
+  //      preview — `Session::last` end to end: the CRDT's newest message,
+  //      through the node's row, painted on the second line (会话行改版批).
+  //      On the sessions pane, within a couple of list polls.
   await openLanding("sessions");
-  await until("the chat row previewing the told line", 20_000, async () => {
+  await until("the broadcast row previewing the told line", 20_000, async () => {
     const t = await page
-      .locator(`[data-row="chat/alpha"] [data-last]`)
+      .locator(`[data-row="wide/all"] [data-last]`)
       .innerText()
       .catch(() => "");
     return t.includes(NEEDLE);
@@ -2904,7 +2910,7 @@ for line in sys.stdin:
   //           floats a row into the pinned **group**, and it only
   //           reaches index 0 when that group was empty. Measured on the
   //           run that caught this: `data-pinned=true`, order
-  //           `[tui/cafe1 chat/alpha chat/beta chat/gamma]`, and
+  //           `[tui/cafe1 …]`, and
   //           `khor sessions` led with `tui/cafe1` too — **the product
   //           and the CLI agreed with each other and disagreed with the
   //           test**. That is the shape of a false red: it read as
@@ -2986,9 +2992,8 @@ for line in sys.stdin:
   //     a row that **is** from somewhere else and whose own title and id
   //     do not contain that machine's name. Then searching the name has
   //     to keep it, and the only string it can be matching on is the
-  //     source. Beta also holds a `chat/alpha` row — titled and keyed by
-  //     that same name — which is exactly why the assertion is about one
-  //     identified row rather than about how many rows survive.
+  //     source. That is why the assertion is about one identified row
+  //     rather than about how many rows survive.
   await page.setViewportSize({ width: 1080, height: 720 });
   await openLanding("sessions");
   await until("rows back on the wide face", 10_000, async () => (await page.locator("[data-row]").count()) > 1);
@@ -3640,7 +3645,7 @@ for line in sys.stdin:
   //       2. so does the list row — a rename is network-wide, not a
   //          nickname on the screen that typed it;
   //       3. **`[data-device="alpha"]` is still there.** That attribute
-  //          is the *channel*, and the channel is what `chat/<name>`,
+  //          is the *channel*, and the channel is what the old `chat/<name>`,
   //          the read watermark and the pin are keyed on. A rename
   //          written into the channel would move all three, and this
   //          line is the only one that would notice. Write the label
@@ -4680,7 +4685,7 @@ for line in sys.stdin:
   }
   // Leaving and coming back lands on the same thing, because the thing
   // is the host and not a remembered click.
-  await page.locator(`[data-row="chat/alpha"] [data-row-open]`).click();
+  await page.locator(`[data-row="wide/all"] [data-row-open]`).click();
   await until("another detail in between", 10_000, async () =>
     (await page.locator("[data-terminal]").count()) === 0,
   );
@@ -4703,8 +4708,8 @@ for line in sys.stdin:
   //      lists the ones alpha can see, because the list is one document.
   //      Deleting an imported row takes it off the list and nothing else:
   //      the tmux session still stands, the hook's registry entry is
-  //      still there, and it is a candidate again. And beta's own
-  //      conversation is on the list with nobody importing anything.
+  //      still there, and it is a candidate again. And the broadcast is
+  //      on the list with nobody importing anything.
   execFileSync("tmux", ["-L", TMUX_SOCK, "new-session", "-d", "-s", "bridgeme", "-x", "80", "-y", "24"], { timeout: 10_000 });
   execFileSync("tmux", ["-L", TMUX_SOCK, "send-keys", "-t", "bridgeme", "printf 'tmux-bridge-marker\\n'", "Enter"], { timeout: 10_000 });
   feedHook(envB, "SessionStart", "", "imp01");
@@ -4712,10 +4717,10 @@ for line in sys.stdin:
   mkdirSync(stubHome, { recursive: true });
   cli({ ...envB, KHOR_STUB_LISTS: "1", KHOR_STUB_LIST_CWD: stubHome }, "agents", "add", "stub", STUB);
   await openLanding("sessions");
-  // The control: the list is drawing rows at all — beta's own
-  // conversation with alpha, which nobody imported.
-  await until("the conversation with alpha, on the list with no import", 20_000, async () =>
-    (await page.locator('[data-row="chat/alpha"]').count()) === 1,
+  // The control: the list is drawing rows at all — the broadcast,
+  // which nobody imported.
+  await until("the broadcast, on the list with no import", 20_000, async () =>
+    (await page.locator('[data-row="wide/all"]').count()) === 1,
   );
   await until("the sweep having seen the tmux session", 20_000, () =>
     cli(envB, "import").split("\n").some((l) => l.split("\t")[3] === "bridgeme"),
@@ -6780,9 +6785,9 @@ for line in sys.stdin:
   // and failed on behaviour that is right.
   const otherKind = (
     await page.locator("[data-row]").evaluateAll((els) => els.map((e) => e.dataset.row))
-  ).find((r) => r.startsWith("chat/"));
+  ).find((r) => r === "wide/all");
   if (!otherKind) {
-    throw new Error("probe dead: no device chat in the list, so the split cannot be seen");
+    throw new Error("probe dead: no broadcast in the list, so the split cannot be seen");
   }
   const [warnWizard, warnOther] = [await warningFor(wizId), await warningFor(otherKind)];
   if (!warnWizard || !warnOther) throw new Error("a confirm must say something");
@@ -6913,24 +6918,23 @@ for line in sys.stdin:
   // 25j) 右下角状态栏 (批④ 三笔): what is happening that nobody is
   //      watching, and nothing else.
   //
-  //      Driven by a **real transfer**, which since 传输并入对话批 is a
-  //      file message in the machine's conversation — no transfer/ row
-  //      exists any more; the pressure lands on the machine's chat row
-  //      (`TransferKind::urgency`), and the strip is fed off exactly
-  //      that (`use-status-bar`'s PRESS words). So this section watches
-  //      the row the fact actually lives on now: beta's own window,
-  //      chat/beta. What it proves is unchanged — the two admission
-  //      rules, against something that really happened.
+  //      Driven by a **real transfer**: a file pushed to beta in the
+  //      broadcast (STORE-BRIEF phase 5) — no transfer/ row exists; the
+  //      pressure lands on the broadcast's row (the row wears its latest
+  //      message's word, `wide::WideKind`), and the strip is fed off
+  //      exactly that (`use-status-bar`'s PRESS words). What it proves is
+  //      unchanged — the two admission rules, against something that
+  //      really happened.
   //
-  //      **The file goes directly** (STORE-BRIEF phase 2, 2026-10-08): no
-  //      accept, no 待批 — beta pulls it the moment it reads the message.
-  //      A small file over loopback crosses between two polls, so the
-  //      movement this section can hold still is a **break**: the send
-  //      names a directory on beta that is not there yet (`--into`), beta
-  //      says so on the message (中断, a PRESS word that stays), the
-  //      directory is made, and `khor retry` lands it there. ⚠️ 墓碑: the
-  //      offer pressing 待批 onto the row, the map's seat saying so at
-  //      rest, and `khor accept` moving it.
+  //      **The file comes by itself**: no accept, no 待批 — beta pulls it
+  //      the moment the push reaches it. A small file over loopback
+  //      crosses between two polls, so the movement this section can hold
+  //      still is a **break**: the push names a directory on beta where a
+  //      plain file stands (a push makes a missing directory, so only
+  //      something in the way breaks it), beta says so on the message
+  //      (中断, a PRESS word that stays), the file is taken away, and
+  //      `khor retry` lands it there. ⚠️ 墓碑: a machine's own `chat/beta`
+  //      row carried this, and a missing `--into` directory broke it.
   await openLanding("sessions");
   if ((await page.locator("[data-statusbar]").count()) !== 0) {
     throw new Error("probe dead: the corner is already occupied before anything happened");
@@ -6945,28 +6949,30 @@ for line in sys.stdin:
   //      the first dash once produced a real-looking id for a transfer
   //      that does not exist, which timed out reading exactly like the
   //      sync being slow.
+  writeFileSync(cornerInto, "in the way\n");
   const transferRow = cli(envA, "send", "beta", sentFile, "--into", cornerInto).match(/transfer\/\S+/)?.[0];
   if (!transferRow) throw new Error("khor send did not name the transfer it made");
-  //      Nobody accepts: beta starts the pull by itself, finds no such
-  //      directory, and writes the failure on the message — 中断 on its
-  //      own window row.
-  await until("beta's own pull breaking on a directory that is not there (中断 on chat/beta)", 30_000, async () =>
-    (await page.locator('[data-row="chat/beta"][data-word="errored"]').count()) === 1,
+  //      Nobody accepts: beta starts the pull by itself, finds no
+  //      directory it can land in, and writes the failure on the message
+  //      — 中断 on the broadcast's row.
+  await until("beta's own pull breaking on a directory it cannot make (中断 on wide/all)", 30_000, async () =>
+    (await page.locator('[data-row="wide/all"][data-word="errored"]').count()) === 1,
   );
   //      …and the corner carries it, keyed by the row the fact lives on:
   //      a break is something happening, and it stays until it is
   //      answered (a failure that vanished on its own was not reported).
   await until("the corner reporting the break", 30_000, async () =>
-    (await page.locator('[data-status-item="chat/beta"]').count()) === 1,
+    (await page.locator('[data-status-item="wide/all"]').count()) === 1,
   );
   await settle();
-  if ((await page.locator('[data-status-item="chat/beta"]').count()) !== 1) {
+  if ((await page.locator('[data-status-item="wide/all"]').count()) !== 1) {
     throw new Error("a break left the corner on its own — 中断 stays until it is answered");
   }
-  //      Now it moves — the directory is there, the retry pulls the
+  //      Now it moves — the file in the way is gone, the retry pulls the
   //      bytes into it, the row leaves 中断 (through 忙碌 to 完成, and a
   //      small file may cross both between two polls; leaving a PRESS
   //      word is itself an admission, so the strip catches it either way).
+  rmSync(cornerInto);
   mkdirSync(cornerInto, { recursive: true });
   cli(envB, "retry", transferRow);
   await until("the retried file landing in the directory the sender named", 30_000, async () =>
@@ -6981,7 +6987,7 @@ for line in sys.stdin:
   const inCorner = await page
     .locator("[data-status-item]")
     .evaluateAll((els) => els.map((e) => e.dataset.statusItem));
-  if (inCorner.some((k) => k !== "chat/beta")) {
+  if (inCorner.some((k) => k !== "wide/all")) {
     throw new Error(`the corner took something beyond the pressed row: ${JSON.stringify(inCorner)}`);
   }
   //      …and it goes to zero on its own once the break is answered.

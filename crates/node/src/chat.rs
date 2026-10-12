@@ -1,8 +1,9 @@
-//! The device-chat kind: a machine's window, ridden on the chat CRDT.
-//! Which machines exist — and therefore which channels — is the device
-//! table's business; this type takes resolved (channel, home) pairs.
-//! Read state lives in the seen CRDT the node owns; this type takes the
-//! watermark and answers with rows.
+//! A board's documents: the khor-wide conversations (`wide/<name>`, the
+//! broadcast first), ridden on the chat CRDT. Read state lives in the
+//! seen CRDT the node owns; this type takes the watermark and answers
+//! with a row. ⚠️ 墓碑 (STORE-BRIEF phase 5): this was the device-chat
+//! kind, a machine's `chat/<机器>` window with a row per machine; that
+//! session kind is gone, and the broadcast is the one conversation.
 
 use std::path::PathBuf;
 
@@ -64,10 +65,7 @@ impl ChatKind {
 
     /// A khor-wide board is its own session id (`wide/all`).
     fn session_id(channel: &str) -> SessionId {
-        if channel.starts_with(khor_sync::chat::WIDE) {
-            return SessionId(channel.to_owned());
-        }
-        SessionId(format!("chat/{channel}"))
+        SessionId(channel.to_owned())
     }
 
     /// A file message **this machine offered**. It is not unread here,
@@ -106,7 +104,7 @@ impl ChatKind {
         let at = msgs.last().map(|m| m.at.max(0) as u64).unwrap_or(0);
         Session {
             id: Self::session_id(channel),
-            kind: Kind(kind::CHAT.to_owned()),
+            kind: Kind(kind::BROADCAST.to_owned()),
             title: channel.to_owned(),
             home,
             // docs/SESSION.md device chat: unseen content = Done, seen =
@@ -157,75 +155,22 @@ impl ChatKind {
         }
     }
 
-    /// One channel's row. For the **event** paths — after a message is
-    /// told or a file offered — where one channel is read once and the
-    /// messages are not wanted afterwards.
-    pub fn row(&self, channel: &str, home: DeviceId, watermark: i64) -> Result<Session, String> {
-        Ok(self.row_from(
-            channel,
-            home,
-            &self.load(channel)?.doc.messages(),
-            watermark,
-        ))
-    }
-
-    /// The row **and** the messages behind it, from one read of the
-    /// document.
-    ///
-    /// ⚠️ **This is the list's path, and the list is why it exists.**
-    /// `ChatKind::rows` used to ask for the log and then for the row,
-    /// which is two calls to [`Self::load`] — and a load is not a
-    /// lookup: it opens an empty document, reads **every block file** in
-    /// the channel's directory, merges each one into it, and writes the
-    /// ledger back. Twice per machine, every 2 s, for as long as the app
-    /// is open. Measured 2026-09-11 on a real home: `ChatKind::rows` was
-    /// 37–53 ms of the session list's 95–131 ms.
-    ///
-    /// The same argument `log_faced` already makes for a different pair:
-    /// one read, one order. Here it is also one read, one cost.
-    pub fn row_and_log(
+    /// Writes one composed message (`ChatDoc::post`): words, the
+    /// machines it was pushed to, the files it carries.
+    pub fn post(
         &self,
         channel: &str,
         home: DeviceId,
-        watermark: i64,
-    ) -> Result<(Session, ChannelLog), String> {
-        let loaded = self.load(channel)?;
-        let messages = loaded.doc.messages();
-        let row = self.row_from(channel, home, &messages, watermark);
-        Ok((
-            row,
-            ChannelLog {
-                messages,
-                broken: loaded.broken.len(),
-            },
-        ))
-    }
-
-    pub fn tell(&self, channel: &str, home: DeviceId, text: &str) -> Result<Told, String> {
-        self.push(
-            channel,
-            home,
-            |doc| doc.tell(&self.me, text),
-            serde_json::json!({ "text": text, "from": self.me.name }),
-        )
-    }
-
-    /// Sends file summaries — names, sizes, digests, and the directory
-    /// on the receiver (`into`, empty for its receive location). The
-    /// bytes never enter the document; the receiver pulls them at once.
-    pub fn send_files(
-        &self,
-        channel: &str,
-        home: DeviceId,
+        text: &str,
+        to: &[khor_sync::chat::Target],
         files: &[khor_sync::chat::FileRef],
-        into: &str,
     ) -> Result<Told, String> {
         let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
         self.push(
             channel,
             home,
-            |doc| doc.send_files(&self.me, files, into),
-            serde_json::json!({ "files": names, "from": self.me.name }),
+            |doc| doc.post(&self.me, text, to, files),
+            serde_json::json!({ "text": text, "files": names, "from": self.me.name }),
         )
     }
 
@@ -264,27 +209,19 @@ impl ChatKind {
     }
 
     /// Writes how a file message's move stands on this machine (its
-    /// receiver): on the message in a machine's conversation, which has
-    /// one receiver; under this machine's own key in a khor-wide one,
-    /// which has many (`ChatDoc::set_fate_of`).
+    /// receiver), under this machine's own key: a khor-wide message has
+    /// many receivers (`ChatDoc::set_fate_of`).
     pub fn set_fate(&self, channel: &str, msg_id: &str, fate: &Fate) -> Result<(), String> {
         let loaded = self.load(channel)?;
         let mut store = loaded.store;
-        if channel.starts_with(khor_sync::chat::WIDE) {
-            loaded.doc.set_fate_of(msg_id, &self.me.id, fate)?;
-        } else {
-            loaded.doc.set_fate(msg_id, fate)?;
-        }
+        loaded.doc.set_fate_of(msg_id, &self.me.id, fate)?;
         store.flush(&loaded.doc).map(|_| ())
     }
 
     /// How a file message's move stands on this machine, read the way
     /// [`Self::set_fate`] writes it.
-    pub fn fate_here(&self, channel: &str, m: &Message) -> Option<Fate> {
-        if channel.starts_with(khor_sync::chat::WIDE) {
-            return m.fates.get(&self.me.id).cloned();
-        }
-        m.fate.clone()
+    pub fn fate_here(&self, _channel: &str, m: &Message) -> Option<Fate> {
+        m.fates.get(&self.me.id).cloned()
     }
 
     pub fn log(&self, channel: &str) -> Result<ChannelLog, String> {

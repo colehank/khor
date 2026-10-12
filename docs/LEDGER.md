@@ -8,7 +8,6 @@
 
 | 项 | 出处 | 车道 |
 |---|---|---|
-| Phase 5 只留广播，`@机器:路径` 直推，不在线就拒绝 | audit/STORE-BRIEF.md Phase 5 | p5-at（audit/P5-AT-BRIEF.md） |
 
 ## 问 — 等负责人定
 
@@ -24,6 +23,7 @@
 |---|---|
 | kb-caret 三件：键盘升起露光标、拼音候选条遮不遮、选区端点 | audit/kb-caret.md |
 | Mac 输入法（拼音/五笔）在 CM6 里的组合输入 | audit/cm-b.md §4 |
+| 手机发出的推送撑过锁屏宽限、超时写「发送中断：手机已挂起」，真机九条 | audit/p5-at.md「Phone checklist」 |
 | 手机编辑文件大小上限（现在和桌面共用 64 MB） | audit/cm-b.md §3 |
 
 ## 记 — 不急
@@ -38,6 +38,9 @@
 | 提交总量 2 MiB 上限在真实大提交上的节省没量过 | audit/cm-f.md |
 | 窥视标题栏在手机上 44 高，可能要更密 | audit/cm-e.md |
 | NET-ROADMAP：接入、拓扑、共享、容器 | audit/NET-ROADMAP.md |
+| 浏览器暂存的上传，草稿放弃后留在 `.khor/uploads`（拒绝时故意留着让人重发） | audit/p5-at.md |
+| 新旧 khor 混跑没实测：老端轮里点名 `chat/<机器>`，新端答 unknown-doc，老端那一轮停在那 | audit/p5-at.md「Old khor」 |
+| 推送的目标判定用一轮同步：目标多时发送前要等每台一轮 | audit/p5-at.md |
 | 终端 5.3 Windows ConPTY | audit/TERM-ROADMAP.md |
 | 官网可交互演示（录制回放） | memory khor-site-sandbox |
 | iroh-blobs 替换手写持有者+分片协议 | 10-12 讨论；持有者跑稳后评估 |

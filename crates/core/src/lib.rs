@@ -44,7 +44,6 @@ pub mod kind {
     /// A conversation khor is the protocol client of (ACP): khor paints
     /// the exchange itself, there is no terminal to attach.
     pub const GUI: &str = "gui";
-    pub const CHAT: &str = "chat";
     /// The group conversation of every machine in the khor (STORE-BRIEF
     /// phase 3): a session of the whole khor, not of one machine.
     pub const BROADCAST: &str = "broadcast";

@@ -1721,16 +1721,14 @@ pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
         .block_on(n.close_anywhere(&SessionId(id.to_owned())))
 }
 
-/// Leaves a line in a machine's window — the call `khor tell` makes.
-///
-/// Every line nudges a round with every machine at once (STORE-BRIEF
-/// phase 3: 发了就同步), a machine's window as much as the broadcast —
-/// otherwise it waits for the beat, up to 30 s on a machine without a
-/// face.
-pub fn tell(root: &Path, machine: &str, text: &str) -> Result<(), String> {
-    open(root)?.tell(machine, text)?;
-    sync_soon(root);
-    Ok(())
+/// **A message composed into the broadcast** (STORE-BRIEF phase 5,
+/// `Node::post`): the typed form (`@机器:路径`, files on machines, words)
+/// and this machine's files to go with it — the call `khor tell` and
+/// `khor send` make. Answers the message id, or the node's refusal (a
+/// target not reachable is named, and nothing was written).
+pub async fn post(root: &Path, typed: &str, files: &[String]) -> Result<String, String> {
+    let files: Vec<std::path::PathBuf> = files.iter().map(std::path::PathBuf::from).collect();
+    open(root)?.post(typed, &files).await
 }
 
 /// Whether claude on **this** machine is set up to tell khor what it is
@@ -2242,11 +2240,6 @@ pub struct ChatMsgRow {
     pub unknown: Option<String>,
     pub retracted: bool,
     pub edited: bool,
-    /// The file message's transfer face on this machine, as a state
-    /// key (`TransferKind::message_face`) — `None` is "not my seat",
-    /// never "done". The frontend looks the word up and never derives
-    /// one (docs/UX.md 状态呈现).
-    pub word: Option<String>,
     /// A file message's move as its receiver last wrote it
     /// (`khor_sync::chat::Fate`), the same on every device: `moving`,
     /// `landed`, `failed`, `stopped`; `None` until the receiver starts it.
@@ -2258,9 +2251,6 @@ pub struct ChatMsgRow {
     pub landed: Vec<String>,
     /// Why the move failed, in the receiver's sentence.
     pub why: Option<String>,
-    /// The directory the sender chose on the receiver; `None` for its
-    /// receive location.
-    pub into: Option<String>,
     /// In the broadcast (`khor_node::wide`), the machines that have this
     /// file, out of `of` it was offered to; `None` elsewhere. In the
     /// broadcast `step`, `moved`, `landed` and `why` are **this
@@ -2272,6 +2262,30 @@ pub struct ChatMsgRow {
     /// that was not the sender but a machine that had it (BCAST-BRIEF's
     /// holder), by its shown name; `None` otherwise.
     pub via: Option<String>,
+    /// The machines this message was pushed to (STORE-BRIEF phase 5), in
+    /// the order named, each by **today's** name and with its own move.
+    pub to: Vec<ChatTarget>,
+    /// The words said with a files message; `None` otherwise.
+    pub note: Option<String>,
+    /// Whether this machine is one of `to`: its file comes by itself,
+    /// nobody presses 接收.
+    pub pushed: bool,
+}
+
+/// One machine a message was pushed to, as the bubble shows it.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct ChatTarget {
+    /// Its device id — what the `@机器` filter keys on.
+    pub device: String,
+    /// Its name as shown today (a rename shows the new name).
+    pub name: String,
+    /// The directory named there; `None` for its receive location.
+    pub path: Option<String>,
+    /// Its move of the files: `moving`, `landed`, `failed`, `stopped`;
+    /// `None` before it has started (or for a line).
+    pub step: Option<String>,
+    pub why: Option<String>,
+    pub landed: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -2291,65 +2305,12 @@ pub struct MachineLog {
     pub broken: u64,
 }
 
-/// A machine conversation's readout — what `khor log <机器>` prints,
-/// shaped for the chat pane. Takes the row's id (`chat/<channel>`) and
-/// peels the prefix here: the caller holds a row, and which string is
-/// the channel is this layer's knowledge, not the screen's.
+/// The broadcast's readout — what `khor log` prints, shaped for the
+/// chat pane. Takes the row's id (`wide/all`). ⚠️ 墓碑 (STORE-BRIEF phase
+/// 5): a machine's `chat/<机器>` conversation read here too; that session
+/// kind is gone.
 pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
-    let n = open(root)?;
-    if id.starts_with(khor_node::wide::WIDE) {
-        return wide_log(&n, id);
-    }
-    let machine = id.strip_prefix("chat/").unwrap_or(id);
-    let (log, faces) = n.log_faced(machine)?;
-    let me = n.device_str().to_owned();
-    let messages = log
-        .messages
-        .into_iter()
-        .zip(faces)
-        .map(|(m, face)| {
-            let (text, files, unknown) = match m.body {
-                khor_node::MsgBody::Text(t) => (Some(t), None, None),
-                khor_node::MsgBody::Files(fs) => (
-                    None,
-                    Some(
-                        fs.into_iter()
-                            .map(|f| ChatFileRow {
-                                name: f.name,
-                                size: f.size,
-                            })
-                            .collect(),
-                    ),
-                    None,
-                ),
-                khor_node::MsgBody::Unknown(k) => (None, None, Some(k)),
-            };
-            ChatMsgRow {
-                at_ms: m.at,
-                from_me: m.from.id == me,
-                from: m.from.name,
-                id: m.id,
-                text,
-                files,
-                unknown,
-                retracted: m.retracted,
-                edited: m.edited,
-                word: face.map(|s| s.key().to_owned()),
-                step: m.fate.as_ref().map(|f| f.step.key().to_owned()),
-                moved: m.fate.as_ref().map_or(0, |f| f.moved),
-                landed: m.fate.as_ref().map(|f| f.landed.clone()).unwrap_or_default(),
-                why: m.fate.as_ref().map(|f| f.why.clone()).filter(|w| !w.is_empty()),
-                into: Some(m.into).filter(|d| !d.is_empty()),
-                got: None,
-                of: None,
-                via: None,
-            }
-        })
-        .collect();
-    Ok(MachineLog {
-        messages,
-        broken: log.broken as u64,
-    })
+    wide_log(&open(root)?, id)
 }
 
 /// The broadcast's readout (`khor_node::wide`), in the same shape: a
@@ -2375,6 +2336,23 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
                 khor_node::MsgBody::Unknown(k) => (None, None, Some(k)),
             };
             let here = face.as_ref().and_then(|f| f.here.clone());
+            let named = |id: &str| names.get(id).cloned().unwrap_or_else(|| id.chars().take(8).collect());
+            let to: Vec<ChatTarget> = m
+                .to
+                .iter()
+                .map(|t| {
+                    let fate = m.fates.get(&t.device);
+                    ChatTarget {
+                        device: t.device.clone(),
+                        name: named(&t.device),
+                        path: Some(t.path.clone()).filter(|p| !p.is_empty()),
+                        step: fate.map(|f| f.step.key().to_owned()),
+                        why: fate.map(|f| f.why.clone()).filter(|w| !w.is_empty()),
+                        landed: fate.map(|f| f.landed.clone()).unwrap_or_default(),
+                    }
+                })
+                .collect();
+            let pushed = m.to.iter().any(|t| t.device == me);
             let via = here
                 .as_ref()
                 .filter(|f| !f.via.is_empty() && f.via != m.from.id)
@@ -2389,15 +2367,16 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
                 unknown,
                 retracted: m.retracted,
                 edited: m.edited,
-                word: None,
                 step: here.as_ref().map(|f| f.step.key().to_owned()),
                 moved: here.as_ref().map_or(0, |f| f.moved),
                 landed: here.as_ref().map(|f| f.landed.clone()).unwrap_or_default(),
                 why: here.as_ref().map(|f| f.why.clone()).filter(|w| !w.is_empty()),
-                into: None,
                 got: face.as_ref().map(|f| f.got),
                 of: face.as_ref().map(|f| f.of),
                 via,
+                to,
+                note: Some(m.note).filter(|n| !n.is_empty()),
+                pushed,
             }
         })
         .collect();
@@ -2405,35 +2384,6 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
         messages,
         broken: log.broken as u64,
     })
-}
-
-/// Sends a file the sender names by path — `khor send <machine> <file>
-/// [--into <dir>]` through the same node call (docs/KHOR.md
-/// equivalence); `into` is the directory on that machine, empty for its
-/// receive location. The tauri skin reaches this after its native picker
-/// answered with a real local path; the browser faces reach it after
-/// [`save_upload`] turned bytes into one. Answers the transfer session
-/// id, the CLI's own deliverable.
-///
-/// The receiver starts the pull as soon as it reads the message, so a
-/// round goes now, on a thread of its own, not at the next beat.
-pub fn send_path(root: &Path, machine: &str, path: &Path, into: &str) -> Result<String, String> {
-    let id = open(root)?.send(machine, path, into)?.0;
-    sync_soon(root);
-    Ok(id)
-}
-
-/// A round with every machine now, on a thread of its own, not at the
-/// next beat: what a send or a broadcast just wrote should reach the
-/// others while the person is still looking.
-fn sync_soon(root: &Path) {
-    let root = root.to_path_buf();
-    std::thread::spawn(move || {
-        let (Ok(n), Ok(rt)) = (open(&root), tokio::runtime::Builder::new_current_thread().enable_all().build()) else {
-            return;
-        };
-        let _ = rt.block_on(n.sync_now());
-    });
 }
 
 /// The directory on the receiving machine a raw upload names
@@ -2563,21 +2513,10 @@ pub fn drop_stage_args(query: &str) -> Option<String> {
         .filter(|n| !n.is_empty())
 }
 
-pub fn upload_args(query: &str) -> Option<(String, String)> {
-    let mut machine = None;
-    let mut name = None;
-    for pair in query.split('&') {
-        let (k, v) = pair.split_once('=')?;
-        match k {
-            "machine" => machine = Some(percent_decode(v)?),
-            "name" => name = Some(percent_decode(v)?),
-            _ => {}
-        }
-    }
-    match (machine, name) {
-        (Some(m), Some(n)) if !m.is_empty() && !n.is_empty() => Some((m, n)),
-        _ => None,
-    }
+/// The upload route's one argument off its query string: the file's
+/// name, percent-decoded. `None` without one — a name is never invented.
+pub fn upload_args(query: &str) -> Option<String> {
+    drop_stage_args(query)
 }
 
 /// Minimal percent-decoding (RFC 3986): enough for what
@@ -2600,27 +2539,16 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// One browser upload, end to end: stage the bytes, then send the
-/// staged path — the shared body behind the web face's and the dev
-/// bridge's upload routes, so the two cannot come to enforce different
-/// rules. On a failed send the staged file goes too (the module's
-/// no-orphan rule); on success it stays, because it is what the far
-/// side's fetch reads.
-pub fn send_upload(
-    root: &Path,
-    machine: &str,
-    name: &str,
-    into: &str,
-    body: &mut dyn std::io::Read,
-) -> Result<String, String> {
-    let staged = save_upload(root, name, body)?;
-    match send_path(root, machine, &staged, into) {
-        Ok(id) => Ok(id),
-        Err(e) => {
-            let _ = std::fs::remove_file(&staged);
-            Err(e)
-        }
-    }
+/// One browser upload for the broadcast's composer, staged: the bytes
+/// streamed to this machine's staging area under the cap, the staged
+/// path answered — the shared body behind the web face's and the dev
+/// bridge's upload routes. The composer posts that path with its
+/// message ([`post`]); the staged file is the offer's source from then
+/// on. A refused post keeps it: the draft and its files stay for the
+/// next try (a draft abandoned leaves its staged copy under
+/// `.khor/uploads`).
+pub fn stage_upload(root: &Path, name: &str, body: &mut dyn std::io::Read) -> Result<String, String> {
+    save_upload(root, name, body).map(|p| p.display().to_string())
 }
 
 /// A conversation file sent again after it failed or was cancelled —

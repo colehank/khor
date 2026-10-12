@@ -192,10 +192,11 @@ const ONE_SIDED: &[(&str, &str)] = &[
          a browser face has no window buttons over the row and keeps nothing clear",
     ),
     (
-        "pick_and_send",
-        "app-only by nature: it opens the DESKTOP's native file picker (tauri-plugin-dialog) — \
-         a browser face has its own <input type=file> and uploads bytes instead (/api/upload), \
-         so an HTTP arm for this would be a dialog on a machine nobody is looking at",
+        "pick_paths",
+        "app-only by nature: it opens the native file picker (tauri-plugin-dialog) for the \
+         broadcast's ＋ — a browser face has its own <input type=file> and stages bytes instead \
+         (/api/upload), so an HTTP arm for this would be a dialog on a machine nobody is looking at. \
+         ⚠️ 墓碑 (STORE-BRIEF phase 5): `pick_and_send`, which also sent what it picked",
     ),
     // ── round CHAT, 2026-10-03 ────────────────────────────────────
     //

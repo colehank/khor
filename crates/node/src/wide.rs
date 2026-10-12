@@ -46,16 +46,14 @@
 //! home, and a move of home is a write to the head.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use khor_catalog::msg;
-use khor_core::{Kind, Millis, Session, SessionId, State, StateStamp, kind};
+use khor_core::{Millis, Session, SessionId, State, StateStamp};
 use khor_sync::chat::{Fate, Message, MsgBody, Step};
 use khor_sync::devices::DeviceInfo;
 
 use crate::chat::ChannelLog;
-use crate::transfer::TransferKind;
-use crate::{KindSurface, Node, NodeEvent};
+use crate::{KindSurface, Node};
 
 /// The broadcast's board, which is also its session id and the name its
 /// document syncs under.
@@ -174,30 +172,6 @@ impl Node {
             .collect())
     }
 
-    /// Tells a khor-wide conversation a line. Telling is looking, as in
-    /// a machine's window (`Node::tell`).
-    pub fn wide_tell(&self, name: &str, text: &str) -> Result<String, String> {
-        let board = board(name)?;
-        let told = self.chat.tell(board, self.device(), text)?;
-        self.mark_seen(&told.row.id, told.at)?;
-        self.emit(NodeEvent::Event(told.event));
-        let _ = self.emit_row_of(&told.row.id);
-        Ok(told.msg_id)
-    }
-
-    /// Offers a file to every machine: the summary travels the document,
-    /// the bytes wait here until a machine accepts and pulls them.
-    /// Offering is not looking (`Node::send`'s note), so no watermark
-    /// moves. Returns the transfer session id.
-    pub fn wide_send(&self, name: &str, path: &Path) -> Result<SessionId, String> {
-        let board = board(name)?;
-        let f = self.offer_file(path)?;
-        let told = self.chat.send_files(board, self.device(), &[f], "")?;
-        self.emit(NodeEvent::Event(told.event));
-        let _ = self.emit_row_of(&told.row.id);
-        Ok(TransferKind::session_id(&told.msg_id))
-    }
-
     /// The readout with each file's face, from one read of the document.
     pub fn wide_log(&self, name: &str) -> Result<WideLog, String> {
         let board = board(name)?;
@@ -229,7 +203,6 @@ impl KindSurface for WideKind {
         let watermark = seen.doc.watermark(BROADCAST);
         let msgs = node.chat.log(BROADCAST)?.messages;
         let mut row: Session = node.chat.row_from(BROADCAST, node.device(), &msgs, watermark);
-        row.kind = Kind(kind::BROADCAST.to_owned());
         row.title = msg::broadcast_title().to_owned();
         // The latest message still standing speaks, from this machine's
         // seat (the module head): a file to this machine still moving or
@@ -328,9 +301,9 @@ mod tests {
     }
 
     impl std::ops::Deref for Scratch {
-        type Target = Path;
+        type Target = std::path::Path;
 
-        fn deref(&self) -> &Path {
+        fn deref(&self) -> &std::path::Path {
             &self.0
         }
     }
@@ -357,14 +330,14 @@ mod tests {
     }
 
     /// The far machine's document, landed here as its block.
-    fn plant(r: &Path, far: &ChatDoc) {
+    fn plant(r: &std::path::Path, far: &ChatDoc) {
         let dir = wide_dir(r, BROADCAST).unwrap();
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("u-000000000000fafa-00000000.loro"), far.changes_since(&Default::default()).unwrap()).unwrap();
     }
 
     fn bytes_ref(name: &str) -> FileRef {
-        FileRef { name: name.into(), size: 6, digest: "ef".repeat(32) }
+        FileRef { name: name.into(), size: 6, digest: "ef".repeat(32), holder: String::new() }
     }
 
     fn fate(step: Step, landed: &str) -> Fate {
@@ -400,7 +373,7 @@ mod tests {
     fn a_later_landing_of_the_same_bytes_retires_the_old_break() {
         let (r, n, who) = node("retire");
         let far = ChatDoc::new(0xFAFA).unwrap();
-        far.send_files(&who, &[bytes_ref("a.bin")], "").unwrap();
+        far.post(&who, "", &[], &[bytes_ref("a.bin")]).unwrap();
         plant(&r, &far);
         let old = far.messages()[0].id.clone();
         n.chat.set_fate(BROADCAST, &old, &fate(Step::Failed, "")).unwrap();
@@ -408,7 +381,7 @@ mod tests {
         assert_eq!(here(&n, 0), Some(Step::Failed));
 
         tick();
-        far.send_files(&who, &[bytes_ref("a-again.bin")], "").unwrap();
+        far.post(&who, "", &[], &[bytes_ref("a-again.bin")]).unwrap();
         plant(&r, &far);
         let new = far.messages()[1].id.clone();
         n.chat.set_fate(BROADCAST, &new, &fate(Step::Landed, "/drop/a-again.bin")).unwrap();
@@ -425,7 +398,7 @@ mod tests {
     fn a_newer_line_after_a_moving_file_takes_the_row() {
         let (r, n, who) = node("latest");
         let far = ChatDoc::new(0xFAFA).unwrap();
-        far.send_files(&who, &[bytes_ref("big.bin")], "").unwrap();
+        far.post(&who, "", &[], &[bytes_ref("big.bin")]).unwrap();
         plant(&r, &far);
         let id = far.messages()[0].id.clone();
         n.chat.set_fate(BROADCAST, &id, &fate(Step::Moving, "")).unwrap();
@@ -444,7 +417,7 @@ mod tests {
     fn an_offer_nobody_took_is_not_blocked() {
         let (r, n, who) = node("offer");
         let far = ChatDoc::new(0xFAFA).unwrap();
-        far.send_files(&who, &[bytes_ref("maybe.bin")], "").unwrap();
+        far.post(&who, "", &[], &[bytes_ref("maybe.bin")]).unwrap();
         plant(&r, &far);
         assert_eq!(here(&n, 0), None, "never answered");
         assert_eq!(word(&n), State::Done, "a file one may take: 未看, never 待批");

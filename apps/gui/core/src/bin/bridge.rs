@@ -104,7 +104,7 @@ fn main() {
         if cmd == "upload" || cmd == "chat_put" || cmd == "term_drop_stage" {
             // `chat_put`: the bytes of a file for an agent conversation,
             // put on the machine it runs on (round CHAT); `upload`: a
-            // `khor send` to a machine; `term_drop_stage`: a picked file
+            // file staged for the broadcast's composer; `term_drop_stage`: a picked file
             // waiting here for a terminal's drop (item 60 part 3). One
             // body route for all three.
             let outcome = if cmd == "term_drop_stage" {
@@ -119,10 +119,8 @@ fn main() {
                     })
             } else {
                 khor_gui_core::upload_args(&query)
-                    .ok_or_else(|| "upload needs machine and name query args".to_owned())
-                    .and_then(|(machine, name)| {
-                        khor_gui_core::send_upload(&root, &machine, &name, &khor_gui_core::into_arg(&query), req.as_reader())
-                    })
+                    .ok_or_else(|| "upload needs a name query arg".to_owned())
+                    .and_then(|name| khor_gui_core::stage_upload(&root, &name, req.as_reader()))
             };
             let (code, payload) = match outcome {
                 Ok(id) => (200, serde_json::to_string(&id).unwrap_or_default()),

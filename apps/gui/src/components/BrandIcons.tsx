@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 
 import type { SystemKind } from "@/gen/bindings/SystemKind";
-import { IconChat, IconDevices, IconFile, IconFinder, IconLink, IconNetwork, IconTerminal } from "./icons";
+import { IconDevices, IconFile, IconFinder, IconLink, IconNetwork, IconTerminal } from "./icons";
 
 /**
  * **Identity marks**: what a session *is*, not how it is doing. Ported
@@ -137,15 +137,13 @@ export function machineMark(system: SystemKind | null | undefined): ComponentTyp
 /**
  * What a session row's corner mark draws — the one place that judges it
  * (three call sites each judging would grow three different answers).
- * Kind first: chat, transfer and borrow are khor's own shapes. The
+ * Kind first: the broadcast, transfer and borrow are khor's own shapes. The
  * agent-backed kinds (tui, gui) go by the vendor the backend named;
  * shell is a terminal, and so is an agent kind nobody could place that
  * the user started as a plain command.
  */
 export function sessionMark(kind: string, category: string | null): ComponentType<IconProps> {
   switch (kind) {
-    case "chat":
-      return IconChat;
     // The khor's own group conversation: the network's mark, on a blank
     // face — it is every machine's, so it wears none of theirs.
     case "broadcast":

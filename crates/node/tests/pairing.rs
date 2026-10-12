@@ -21,7 +21,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use khor_node::Node;
-use khor_sync::chat::{ChatDoc, Sender, channel_dir};
+use khor_node::wide::BROADCAST;
+use khor_sync::chat::{ChatDoc, Sender, wide_dir};
 use tokio::time::timeout;
 
 /// A scratch tree that **takes itself away however the test leaves**
@@ -114,8 +115,12 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         "alpha's table should hold both"
     );
 
-    // beta writes into alpha's window and pushes; alpha's serve merges.
-    b.tell("alpha", "from beta").unwrap();
+    // beta says a line in the broadcast, pushed to alpha; alpha's serve
+    // merges.
+    timeout(Duration::from_secs(60), b.post("@alpha from beta", &[]))
+        .await
+        .expect("a post must not hang")
+        .unwrap();
     let outcomes = timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
@@ -126,7 +131,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .expect("there should be an alpha entry");
     verdict.as_ref().expect("the sync to alpha should succeed");
 
-    let a_log = a.log("alpha").unwrap();
+    let a_log = a.log(BROADCAST).unwrap();
     let texts: Vec<String> = a_log
         .messages
         .iter()
@@ -137,13 +142,17 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         "alpha should receive beta's line: {texts:?}"
     );
 
-    // The other direction: alpha notes to self, beta pulls it.
-    a.tell("alpha", "back from alpha").unwrap();
+    // The other direction: alpha says a line to nobody in particular,
+    // beta pulls it.
+    timeout(Duration::from_secs(60), a.post("back from alpha", &[]))
+        .await
+        .expect("a post must not hang")
+        .unwrap();
     timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
-    let b_log = b.log("alpha").unwrap();
+    let b_log = b.log(BROADCAST).unwrap();
     let texts: Vec<String> = b_log
         .messages
         .iter()
@@ -160,15 +169,15 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
     let rows = b.sessions().unwrap();
     let alpha_row = rows
         .iter()
-        .find(|v| v.session.title == "alpha")
-        .expect("there should be an alpha row");
+        .find(|v| v.session.id.0 == BROADCAST)
+        .expect("there should be the broadcast row");
     assert_eq!(
         alpha_row.session.unread, 0,
         "own words never count as unread, on any device"
     );
 
     // A line nobody here typed (an agent's, say): lands as a raw block in
-    // beta's copy of alpha's window, with no seen state riding along.
+    // beta's copy of the broadcast, with no seen state riding along.
     {
         let far = ChatDoc::new(0xFA).unwrap();
         far.tell(
@@ -180,11 +189,12 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         )
         .unwrap();
         let block = far.changes_since(&Default::default()).unwrap();
-        let dir = channel_dir(&rb, "alpha").unwrap();
+        let dir = wide_dir(&rb, BROADCAST).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("u-00000000000000fa-00000000.loro"), &block).unwrap();
     }
     let rows = b.sessions().unwrap();
-    let row_b = rows.iter().find(|v| v.session.title == "alpha").unwrap();
+    let row_b = rows.iter().find(|v| v.session.id.0 == BROADCAST).unwrap();
     assert!(
         row_b.session.unread > 0,
         "the outside line should count as unread on beta"
@@ -196,7 +206,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .expect("sync must not hang")
         .unwrap();
     let rows = a.sessions().unwrap();
-    let row_a = rows.iter().find(|v| v.session.title == "alpha").unwrap();
+    let row_a = rows.iter().find(|v| v.session.id.0 == BROADCAST).unwrap();
     assert!(
         row_a.session.unread > 0,
         "the outside line should be unread on alpha too"
@@ -210,7 +220,7 @@ async fn pairing_joins_both_tables_and_chat_flows_both_ways() {
         .expect("sync must not hang")
         .unwrap();
     let rows = a.sessions().unwrap();
-    let row_a = rows.iter().find(|v| v.session.title == "alpha").unwrap();
+    let row_a = rows.iter().find(|v| v.session.id.0 == BROADCAST).unwrap();
     assert_eq!(row_a.session.unread, 0, "seen on beta must clear on alpha");
 
     // ── control groups ──────────────────────────────────────────────

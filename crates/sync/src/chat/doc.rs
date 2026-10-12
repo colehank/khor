@@ -6,21 +6,32 @@
 //! LWW and silently drops one side. Unknown keys are kept and forwarded —
 //! an old version relaying newer content must not strip it.
 //!
-//! **A file message carries its own road** (STORE-BRIEF phase 2): the
-//! sender writes where it should land (`into`, empty for the receiver's
-//! receive location), and the receiver — the one machine that pulls it —
-//! writes how the move stands (`step`, `moved`, `why`) and where each
-//! file landed (`landed` on each file's map). Every device reads the
-//! same record, so every device shows the same state.
+//! **A file message's move is written by each machine that pulls it**:
+//! how it stands (`step`, `moved`, `why`, `via`) and where its files
+//! landed. Every device reads the same record, so every device shows the
+//! same state. ⚠️ 墓碑 (STORE-BRIEF phase 5): a machine's conversation had
+//! one receiver, whose record sat on the message itself beside the
+//! sender's `into`; that conversation is gone, and with it those keys.
 //!
-//! **A khor-wide conversation has many receivers** (STORE-BRIEF phase 3,
-//! the broadcast): a file there is an offer every machine answers on its
-//! own, so its record is one fate per receiver — a key `fate:<device
+//! **The broadcast has many receivers** (STORE-BRIEF phase 3): a file
+//! there is answered by every machine on its own, so its record is one
+//! fate per receiver — a key `fate:<device
 //! id>` on the message map, holding the same four facts as one plain
 //! value. Each receiver writes only its own key, so two machines landing
 //! the same file at once never touch each other's record. Not a nested
 //! map: two machines creating one child container at once would race,
 //! and the loser's whole record would vanish.
+//!
+//! **A message names its targets** (STORE-BRIEF phase 5, one channel):
+//! `to` is a list of `{device, path}` — the machines the sender pushed it
+//! to, by device id, and the directory on each (empty for its receive
+//! location). Written once, when the message is composed, and never
+//! again: the names a person typed were resolved then, so a machine
+//! renamed later is shown by its new name and the message still means
+//! the same machine. A file names its `holder`, the device that serves
+//! its bytes — empty for the sender; another machine's file (`hinton:/x`)
+//! is pulled from hinton, not through the sender. A files message may
+//! carry words too (`text`, read as [`Message::note`]).
 //!
 //! **The document's head** (foundation B): a root map `head` that names
 //! the machine running a khor-wide session (`home`), empty for one every
@@ -59,6 +70,20 @@ pub struct FileRef {
     pub size: i64,
     /// Content digest for "do I already have this". Empty = not computed.
     pub digest: String,
+    /// The device that serves the bytes, by id: empty for the message's
+    /// sender, another machine's id for a file that machine offered when
+    /// the message was composed (`hinton:/data/x.bin`).
+    pub holder: String,
+}
+
+/// A machine a message was pushed to, and where on it (module head).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    /// The machine, by device id — never by name.
+    pub device: String,
+    /// The directory the files land in there, as the sender wrote it
+    /// (`~/data`, `/srv/in`); empty for that machine's receive location.
+    pub path: String,
 }
 
 /// How a file message's move stands, as its receiver last wrote it.
@@ -138,15 +163,16 @@ pub struct Message {
     pub retracted: bool,
     /// Body was edited; the UI draws "edited" from this.
     pub edited: bool,
-    /// A file message's directory on the receiver, as the sender chose
-    /// it; empty for the receiver's receive location.
-    pub into: String,
-    /// A file message's move, as its receiver wrote it.
-    pub fate: Option<Fate>,
     /// In a khor-wide conversation, each receiver's own account of its
     /// move, by device id; a machine that has not answered the offer is
     /// absent.
     pub fates: BTreeMap<String, Fate>,
+    /// The machines this message was pushed to, in the order they were
+    /// named; empty for a message to nobody in particular.
+    pub to: Vec<Target>,
+    /// The words said along with a files message; empty otherwise (a
+    /// text message's words are its body).
+    pub note: String,
 }
 
 /// One conversation.
@@ -222,25 +248,47 @@ impl ChatDoc {
         })
     }
 
-    /// Sends files — metadata only; bytes travel a transfer. `into` is
-    /// the directory on the receiver, empty for its receive location.
-    pub fn send_files(&self, from: &Sender, files: &[FileRef], into: &str) -> Result<String, String> {
-        self.push(from, "files", |m| {
-            if !into.is_empty() {
-                m.insert("into", into).map_err(|e| e.to_string())?;
+    /// Writes one composed message: words, the machines it is pushed to
+    /// and the files it carries, all known now (the module head). A text
+    /// message when there are no files, a files message (with the words
+    /// as its note) when there are. Returns the message id.
+    pub fn post(&self, from: &Sender, text: &str, to: &[Target], files: &[FileRef]) -> Result<String, String> {
+        let kind = if files.is_empty() { "text" } else { "files" };
+        self.push(from, kind, |m| {
+            let err = |e: loro::LoroError| e.to_string();
+            if !text.is_empty() || files.is_empty() {
+                m.insert("text", text).map_err(err)?;
+            }
+            if !to.is_empty() {
+                let list: Vec<LoroValue> = to
+                    .iter()
+                    .map(|t| {
+                        let map: std::collections::HashMap<String, LoroValue> = [
+                            ("device".to_owned(), LoroValue::from(t.device.as_str())),
+                            ("path".to_owned(), LoroValue::from(t.path.as_str())),
+                        ]
+                        .into_iter()
+                        .collect();
+                        LoroValue::from(map)
+                    })
+                    .collect();
+                m.insert("to", list).map_err(err)?;
+            }
+            if files.is_empty() {
+                return Ok(());
             }
             let list = LoroList::new();
             for f in files {
                 let fm = LoroMap::new();
-                fm.insert("name", f.name.as_str())
-                    .map_err(|e| e.to_string())?;
-                fm.insert("size", f.size).map_err(|e| e.to_string())?;
-                fm.insert("digest", f.digest.as_str())
-                    .map_err(|e| e.to_string())?;
-                list.push_container(fm).map_err(|e| e.to_string())?;
+                fm.insert("name", f.name.as_str()).map_err(err)?;
+                fm.insert("size", f.size).map_err(err)?;
+                fm.insert("digest", f.digest.as_str()).map_err(err)?;
+                if !f.holder.is_empty() {
+                    fm.insert("holder", f.holder.as_str()).map_err(err)?;
+                }
+                list.push_container(fm).map_err(err)?;
             }
-            m.insert_container("files", list)
-                .map_err(|e| e.to_string())?;
+            m.insert_container("files", list).map_err(err)?;
             Ok(())
         })
     }
@@ -272,42 +320,6 @@ impl ChatDoc {
         let m = self.find(id).ok_or_else(|| msg::no_such_message(id))?;
         m.insert("text", text).map_err(|e| e.to_string())?;
         m.insert("edited", true).map_err(|e| e.to_string())?;
-        self.inner.commit();
-        Ok(())
-    }
-
-    /// Writes how a file message's move stands. Only its receiver
-    /// writes this, so each key is whole-value without a race; only the
-    /// keys that changed are written, so a progress beat costs one op.
-    pub fn set_fate(&self, id: &str, fate: &Fate) -> Result<(), String> {
-        let m = self.find(id).ok_or_else(|| msg::no_such_message(id))?;
-        let was = read_fate(&m);
-        let err = |e: loro::LoroError| e.to_string();
-        if was.as_ref().map(|f| f.step) != Some(fate.step) {
-            m.insert("step", fate.step.key()).map_err(err)?;
-        }
-        if was.as_ref().map(|f| f.moved) != Some(fate.moved) {
-            m.insert("moved", fate.moved).map_err(err)?;
-        }
-        if was.as_ref().map(|f| f.why.as_str()) != Some(fate.why.as_str()) {
-            m.insert("why", fate.why.as_str()).map_err(err)?;
-        }
-        if was.as_ref().map(|f| f.via.as_str()) != Some(fate.via.as_str()) {
-            m.insert("via", fate.via.as_str()).map_err(err)?;
-        }
-        if was.as_ref().map(|f| &f.landed) != Some(&fate.landed)
-            && let Some(list) = m
-                .get("files")
-                .and_then(|v| v.into_container().ok())
-                .and_then(|c| c.into_list().ok())
-        {
-            for i in 0..list.len() {
-                if let Some(f) = list.get(i).and_then(as_map) {
-                    f.insert("landed", fate.landed.get(i).map(String::as_str).unwrap_or(""))
-                        .map_err(err)?;
-                }
-            }
-        }
         self.inner.commit();
         Ok(())
     }
@@ -505,10 +517,31 @@ fn read_msg(m: &LoroMap) -> Message {
         body,
         retracted: bool_of(m, "retracted"),
         edited: bool_of(m, "edited"),
-        into: str_of(m, "into").unwrap_or_default(),
-        fate: read_fate(m),
         fates: read_fates(m),
+        to: read_targets(m),
+        note: if kind == "files" { str_of(m, "text").unwrap_or_default() } else { String::new() },
     }
+}
+
+/// The machines a message was pushed to (`to`, the module head); an
+/// entry without a device is skipped rather than read as nobody.
+fn read_targets(m: &LoroMap) -> Vec<Target> {
+    let Some(LoroValue::List(list)) = m.get("to").and_then(|v| v.into_value().ok()) else {
+        return Vec::new();
+    };
+    list.iter()
+        .filter_map(|t| match t {
+            LoroValue::Map(t) => {
+                let text = |k: &str| match t.get(k) {
+                    Some(LoroValue::String(s)) => s.to_string(),
+                    _ => String::new(),
+                };
+                let device = text("device");
+                (!device.is_empty()).then(|| Target { device, path: text("path") })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Every receiver's `fate:<device>` key (the module head).
@@ -548,28 +581,6 @@ fn read_fates(m: &LoroMap) -> BTreeMap<String, Fate> {
     out
 }
 
-fn read_fate(m: &LoroMap) -> Option<Fate> {
-    let step = Step::from_key(&str_of(m, "step")?)?;
-    let landed = m
-        .get("files")
-        .and_then(|v| v.into_container().ok())
-        .and_then(|c| c.into_list().ok())
-        .map(|list| {
-            (0..list.len())
-                .filter_map(|i| list.get(i).and_then(as_map))
-                .filter_map(|f| str_of(&f, "landed").filter(|p| !p.is_empty()))
-                .collect()
-        })
-        .unwrap_or_default();
-    Some(Fate {
-        step,
-        moved: i64_of(m, "moved").unwrap_or(0),
-        landed,
-        why: str_of(m, "why").unwrap_or_default(),
-        via: str_of(m, "via").unwrap_or_default(),
-    })
-}
-
 fn read_files(m: &LoroMap) -> Vec<FileRef> {
     let Some(list) = m
         .get("files")
@@ -584,6 +595,7 @@ fn read_files(m: &LoroMap) -> Vec<FileRef> {
             name: str_of(&f, "name").unwrap_or_default(),
             size: i64_of(&f, "size").unwrap_or(0),
             digest: str_of(&f, "digest").unwrap_or_default(),
+            holder: str_of(&f, "holder").unwrap_or_default(),
         })
         .collect()
 }

@@ -159,7 +159,7 @@ const QUICK = new Set([
   "workspaces", "tabs_list", "tabs_open", "tabs_go", "tabs_focus",
   "tabs_close", "tabs_pin", "tabs_save", "ws_rm", "ws_pin", "pin_account", "rename_account",
   "update_account", "register_account", "remove_account", "seen", "rename_session",
-  "rename_machine", "relays", "set_relays", "tell", "pin_session", "pin_device", "forget_device",
+  "rename_machine", "relays", "set_relays", "pin_session", "pin_device", "forget_device",
   "set_watch", "set_receive_dir", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
   "history", "history_follow", "machine_log", "import_candidates", "import_sessions", "agents",
   "agents_known", "agents_known_taken", "register_known_agent", "agent_seen", "invite",

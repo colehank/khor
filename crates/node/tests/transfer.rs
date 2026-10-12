@@ -1,9 +1,9 @@
 //! Real-connection acceptance for the transfer kind (docs/NET.md): the
-//! summary travels the CRDT, the receiver pulls the payload with nobody
-//! asked (STORE-BRIEF phase 2: 直接传), into its receive location or a
-//! directory the sender chose; a partial resumes instead of restarting,
-//! a cancel keeps nothing, and the digest is the last word — with
-//! controls, every await under a timeout.
+//! summary travels the broadcast's CRDT, the receiver pulls the payload
+//! into its receive location; a partial resumes instead of restarting, a
+//! cancel keeps nothing, and the digest is the last word — with
+//! controls, every await under a timeout. Pushes to a named machine
+//! (STORE-BRIEF phase 5) are `one_channel.rs`'s.
 
 mod util;
 
@@ -11,7 +11,7 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use khor_core::State;
+use khor_node::wide::BROADCAST;
 use khor_node::{MsgBody, Node, SessionId};
 use khor_sync::chat::{ChatDoc, FileRef, Sender};
 use tokio::time::timeout;
@@ -80,11 +80,11 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         .expect("pairing must not hang")
         .unwrap();
 
-    // alpha offers a multi-slice file addressed to beta's window.
+    // alpha offers a multi-slice file in the broadcast.
     let payload: Vec<u8> = (0..1_600_000u32).map(|i| (i % 251) as u8).collect();
     let src = ra.join("big.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src, "").unwrap();
+    let tid = offer(&a, &src).await;
 
     // The summary reaches beta on a sync.
     timeout(Duration::from_secs(45), b.sync_now())
@@ -101,21 +101,8 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         b.transfer_is_here(&tid),
         "the summary must have reached beta"
     );
-    let rows = b.sessions().unwrap();
-    let row = &rows
-        .iter()
-        .find(|v| v.session.id.0 == "chat/beta")
-        .expect("the machine's chat row exists")
-        .session;
-    assert_ne!(row.state.state, State::Blocked, "a file on its way waits on nobody: never 待批");
-    assert_eq!(
-        b.log_faced("beta").unwrap().1.last().copied().flatten(),
-        Some(State::Busy),
-        "its chip says 忙碌 until it lands"
-    );
-    // The file's name is in the message now, not in a row title: the row
-    // belongs to the conversation and is titled after the machine.
-    let offered = b.log("beta").unwrap();
+    // The file's name is in the message.
+    let offered = b.log(BROADCAST).unwrap();
     assert!(
         offered
             .messages
@@ -134,9 +121,9 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         payload.len() as u64,
         "the first pull moves the whole payload"
     );
-    let dir = rb.join(".khor").join("chat").join("beta");
+    let dir = khor_sync::chat::wide_dir(&rb, BROADCAST).unwrap();
     let m = b
-        .log("beta")
+        .log(BROADCAST)
         .unwrap()
         .messages
         .into_iter()
@@ -161,56 +148,10 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         "the landing must be nameable — retry's answer prints it"
     );
     // The message carries the landing, for every device to read.
-    let fate = m.fate.clone().expect("the receiver wrote how the move stands");
+    let fate = m.fates.get(b.device_str()).cloned().expect("the receiver wrote how the move stands");
     assert_eq!(fate.step, khor_sync::chat::Step::Landed);
     assert_eq!(fate.landed, vec![landed(f).display().to_string()]);
     assert_eq!(fate.moved, payload.len() as i64);
-
-    // The landing lifts the pressure off the conversation's row
-    // (传输并入对话批 — the pressure was on this row, so this row is
-    // where it lifts).
-    let chat_row = |n: &Node| {
-        n.sessions()
-            .unwrap()
-            .into_iter()
-            .find(|v| v.session.id.0 == "chat/beta")
-            .expect("the machine's chat row exists")
-            .session
-    };
-    assert_ne!(chat_row(&b).state.state, State::Busy, "landed presses nothing");
-
-    // **The unread word is deliberately not asserted here, and that is a
-    // finding rather than a gap.** Measured on this very flow
-    // (2026-08-27): after the landing beta's row reads 空闲/0, where
-    // docs/SESSION.md says an arrived file message goes to 完成/未看 like
-    // any message. The cause sits upstream of transfers — `Node::send`
-    // marks `chat/<peer>` seen at the message's own stamp ("telling
-    // implies looking") and the seen document replicates, so the
-    // SENDER's watermark clears the RECIPIENT's badge. The unit test
-    // that does assert 完成/未看 for this case
-    // (`an_incoming_offer_blocks_the_chat_row_and_the_landing_clears_it`)
-    // plants the message with no sender behind it, which is exactly why
-    // it is green.
-    //
-    // Writing either word in here would freeze one side of an open
-    // question and make the answer harder to find later. The question is
-    // the deliverable; `b.seen` on this row is untestable until it is
-    // settled, because the row is already at zero.
-
-    // The sender's seat: its own row never says 待批 — nobody waits on
-    // anybody's approval for a conversation's file any more.
-    let a_row = a
-        .sessions()
-        .unwrap()
-        .into_iter()
-        .find(|v| v.session.id.0 == "chat/beta")
-        .expect("the sender has the same conversation")
-        .session;
-    assert_ne!(
-        a_row.state.state,
-        State::Blocked,
-        "nothing to approve on either seat"
-    );
 
     // Resume: plant a partial of the first 100k — the second pull moves
     // only the missing tail, and the result is still verbatim.
@@ -251,7 +192,7 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         !khor_node::road::partial_of(&rb, &f.digest).unwrap().exists(),
         "the poisoned partial must be discarded"
     );
-    let failed = b.log("beta").unwrap().messages.into_iter().find(|x| x.id == m.id).unwrap().fate.unwrap();
+    let failed = b.log(BROADCAST).unwrap().messages.into_iter().find(|x| x.id == m.id).unwrap().fates[b.device_str()].clone();
     assert_eq!(failed.step, khor_sync::chat::Step::Failed, "a failure is on the message");
     assert!(!failed.why.is_empty(), "with its sentence: {failed:?}");
     let (moved, _) = timeout(Duration::from_secs(60), b.take(&tid))
@@ -267,7 +208,7 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
     // A source tampered after the offer is refused before bytes move.
     let src2 = ra.join("small.bin");
     fs::write(&src2, b"0123456789").unwrap();
-    let tid2 = a.send("beta", &src2, "").unwrap();
+    let tid2 = offer(&a, &src2).await;
     fs::write(&src2, b"0123456789ABC").unwrap();
     timeout(Duration::from_secs(20), b.sync_now())
         .await
@@ -277,10 +218,9 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         .await
         .expect("a refused take must not hang either")
         .unwrap_err();
-    assert_eq!(
-        err,
-        khor_catalog::msg::offered_file_changed(),
-        "a tampered source is refused by name"
+    assert!(
+        err.contains(khor_catalog::msg::offered_file_changed()),
+        "a tampered source is refused by name, with the source it was asked of: {err}"
     );
 
     // A digest the offerer never recorded is refused by name: a ghost
@@ -291,17 +231,19 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
     let ghost = {
         let far = ChatDoc::new(0xEE).unwrap();
         let msg_id = far
-            .send_files(
+            .post(
                 &Sender {
                     id: a.device_str().to_owned(),
                     name: "alpha".into(),
                 },
+                "",
+                &[],
                 &[FileRef {
                     name: "ghost.bin".into(),
                     size: 10,
                     digest: "ee".repeat(32),
+                    holder: String::new(),
                 }],
-                "",
             )
             .unwrap();
         let block = far.changes_since(&Default::default()).unwrap();
@@ -319,70 +261,28 @@ async fn a_payload_lands_with_nobody_asked_resumes_and_verifies() {
         .await
         .expect("a refused take must not hang either")
         .unwrap_err();
-    assert_eq!(
-        err,
-        khor_catalog::msg::offer_lost(),
-        "an unrecorded digest is refused by name"
+    assert!(
+        err.contains(khor_catalog::msg::offer_lost()),
+        "an unrecorded digest is refused by name: {err}"
     );
 
     serve.abort();
 }
 
 /// The message with this transfer id, as `n` reads it.
-fn message(n: &Node, machine: &str, tid: &SessionId) -> khor_sync::chat::Message {
+fn message(n: &Node, tid: &SessionId) -> khor_sync::chat::Message {
     let id = tid.0.strip_prefix("transfer/").unwrap();
-    n.log(machine).unwrap().messages.into_iter().find(|m| m.id == id).expect("the message is here")
+    n.log(BROADCAST).unwrap().messages.into_iter().find(|m| m.id == id).expect("the message is here")
 }
 
-/// **A directory the sender chose on the receiver** is where the file
-/// lands, and the message says so; a chosen directory that is not there
-/// fails in a plain sentence on the message, and nothing lands elsewhere.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_chosen_directory_is_where_it_lands() {
-    let ra = root("into-a");
-    let rb = root("into-b");
-    let server = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
-    let serve = tokio::spawn(async move { server.serve().await });
-    wait_for_endpoint_file(&ra).await;
-    let a = Node::open_as(ra.to_path_buf(), "alpha").unwrap();
-    let ticket = a.invite().unwrap();
-    let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
-    timeout(Duration::from_secs(45), b.pair(&ticket)).await.expect("pairing must not hang").unwrap();
-
-    let chosen = rb.join("projects").join("in");
-    fs::create_dir_all(&chosen).unwrap();
-    let src = ra.join("notes.md");
-    fs::write(&src, b"# notes\n").unwrap();
-    let tid = a.send("beta", &src, &chosen.display().to_string()).unwrap();
-    timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
-    assert_eq!(message(&b, "beta", &tid).into, chosen.display().to_string(), "the target travels on the message");
-    let (_, landed) = timeout(Duration::from_secs(60), b.take(&tid)).await.expect("take must not hang").unwrap();
-    let want = chosen.join("notes.md");
-    assert_eq!(landed, vec![want.display().to_string()]);
-    assert_eq!(fs::read(&want).unwrap(), b"# notes\n");
-    assert!(!rb.join("khor-drop").join("notes.md").exists(), "not in the default as well");
-    assert_eq!(message(&b, "beta", &tid).fate.unwrap().landed, landed);
-
-    // The same bytes sent again to the default: copied from where they
-    // are, nothing pulled.
-    let tid = a.send("beta", &src, "").unwrap();
-    timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
-    let (moved, landed) = timeout(Duration::from_secs(60), b.take(&tid)).await.expect("take must not hang").unwrap();
-    assert_eq!((moved, landed), (0, vec![rb.join("khor-drop").join("notes.md").display().to_string()]));
-
-    // A directory that is not there: a plain failure on the message.
-    let gone = rb.join("nowhere");
-    let src2 = ra.join("b.txt");
-    fs::write(&src2, b"bee").unwrap();
-    let tid = a.send("beta", &src2, &gone.display().to_string()).unwrap();
-    timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
-    let err = timeout(Duration::from_secs(60), b.take(&tid)).await.expect("take must not hang").unwrap_err();
-    assert_eq!(err, khor_catalog::msg::no_such_dir(gone.display()));
-    let fate = message(&b, "beta", &tid).fate.unwrap();
-    assert_eq!((fate.step, fate.why), (khor_sync::chat::Step::Failed, err));
-    assert!(!gone.exists(), "nothing made where nobody asked");
-
-    serve.abort();
+/// A file offered in the broadcast to nobody in particular (STORE-BRIEF
+/// phase 5): its transfer id. Each machine takes it when it is asked to.
+async fn offer(n: &Node, src: &Path) -> SessionId {
+    let id = timeout(Duration::from_secs(45), n.post("", &[src.to_path_buf()]))
+        .await
+        .expect("a post must not hang")
+        .unwrap();
+    khor_node::transfer::TransferKind::session_id(&id)
 }
 
 /// **A cancel keeps nothing** (STORE-BRIEF phase 2): a pull stopped
@@ -403,7 +303,7 @@ async fn a_cancelled_pull_leaves_nothing_and_a_retry_lands_it() {
     let payload: Vec<u8> = (0..64_000_000u32).map(|i| (i % 253) as u8).collect();
     let src = ra.join("large.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src, "").unwrap();
+    let tid = offer(&a, &src).await;
     timeout(Duration::from_secs(45), b.sync_now()).await.expect("sync must not hang").unwrap();
     let digest = blake3::hash(&payload).to_hex().to_string();
     let key = khor_node::road::sent_key(tid.0.strip_prefix("transfer/").unwrap(), b.device_str());
@@ -428,7 +328,7 @@ async fn a_cancelled_pull_leaves_nothing_and_a_retry_lands_it() {
     assert_eq!(err, khor_node::road::cancelled());
     assert!(!khor_node::road::partial_of(&rb, &digest).unwrap().exists(), "no partial kept");
     assert!(!rb.join("khor-drop").join("large.bin").exists(), "nothing landed");
-    assert_eq!(message(&b, "beta", &tid).fate.unwrap().step, khor_sync::chat::Step::Stopped);
+    assert_eq!(message(&b, &tid).fates[b.device_str()].step, khor_sync::chat::Step::Stopped);
 
     let (moved, landed) = timeout(Duration::from_secs(120), b.take(&tid)).await.expect("a retry must not hang").unwrap();
     assert_eq!(moved, payload.len() as u64, "a retry after a cancel starts from nothing");
@@ -481,9 +381,9 @@ async fn a_receive_dir_set_elsewhere_is_resolved_on_sync() {
     serve.abort();
 }
 
-/// A line told with `tell_now` is on the other machine when the call
-/// returns — a round started by the line itself, not by the beat (30 s
-/// on a machine without a face), and not by a sync the test makes.
+/// A line pushed to a machine is on that machine when the call returns
+/// — the push itself is the round, not the beat (30 s on a machine
+/// without a face), and not a sync the test makes.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_line_told_now_reaches_the_other_machine_without_waiting_for_the_beat() {
     let ra = root("tell-a");
@@ -499,12 +399,12 @@ async fn a_line_told_now_reaches_the_other_machine_without_waiting_for_the_beat(
         .expect("pairing must not hang")
         .unwrap();
 
-    timeout(Duration::from_secs(45), b.tell_now("alpha", "are you there"))
+    timeout(Duration::from_secs(45), b.post("@alpha are you there", &[]))
         .await
-        .expect("tell_now must not hang")
+        .expect("a post must not hang")
         .unwrap();
-    // No sync here: the round the line started brought it across.
-    let said = a.log("alpha").unwrap().messages;
+    // No sync here: the push brought it across.
+    let said = a.log(BROADCAST).unwrap().messages;
     assert!(
         said.iter().any(|m| matches!(&m.body, MsgBody::Text(t) if t == "are you there")),
         "alpha reads beta's line at once"

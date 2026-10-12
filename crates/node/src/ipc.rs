@@ -408,6 +408,12 @@ pub enum Op {
     /// [`crate::proto::Request::Journal`] asked of `machine` (net-r):
     /// answered [`Reply::Journal`]. Tail-appended.
     JournalOn { machine: String, peer: Option<String>, since: u64 },
+    /// **A message composed into the broadcast** (`Node::post`): the
+    /// typed form and this machine's files, resolved, checked and written
+    /// by the serve, which then pushes to each target on its own time.
+    /// Answered [`Reply::Posted`] once the message is written, or
+    /// refused before anything is. Tail-appended.
+    Post { typed: String, files: Vec<String> },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -505,6 +511,8 @@ impl Op {
             Op::FaceHere { .. } => ("FaceHere", DEADLINE_LOCAL),
             Op::Visit { .. } => ("Visit", DEADLINE_LOCAL),
             Op::JournalOn { .. } => ("JournalOn", DEADLINE_FAR),
+            // Dials every target and may digest a far file.
+            Op::Post { .. } => ("Post", DEADLINE_SLOW),
             Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),
@@ -731,6 +739,8 @@ pub enum Reply {
     Adding { run: crate::join::Run },
     /// Tail-appended with [`Op::JournalOn`]: the far journal's lines.
     Journal { lines: Vec<String> },
+    /// Tail-appended with [`Op::Post`]: the written message's id.
+    Posted { id: String },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.
