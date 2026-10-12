@@ -10,6 +10,7 @@
 // that a claim about a different text — so a change to the document
 // clears them in the same transaction, and the view asks again after the
 // save lands (`FileView`'s `diffAt`).
+import { language } from "@codemirror/language";
 import { RangeSet, RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
@@ -22,10 +23,13 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
+import { highlightTree } from "@lezer/highlight";
+
 import type { GitHunk } from "@/gen/bindings/GitHunk";
 import { gui } from "@/gen/catalog";
 import { mountHead, unmountHead } from "@/lib/code/peek-head";
 import { revertChange } from "@/lib/code/revert";
+import { highlight } from "@/lib/code/theme";
 
 type Kind = "added" | "deleted" | "modified";
 
@@ -118,7 +122,17 @@ function barsOf(state: EditorState, hunks: GitHunk[], shown: number | null) {
  *
  * **A head bar over the old lines** (cm-e, 2026-10-12: 「显示的内容是否
  * 和 vscode 一致以符合用户习惯」): which change of how many, the two
- * steps, 「还原」 and × (`peek-head.tsx`). */
+ * steps, 「还原」 and × (`peek-head.tsx`).
+ *
+ * **In the file's own syntax ink** (cm-e, 2026-10-12, VS Code's peek is
+ * painted). Plain text was argued for once — painted, the removed copy
+ * would look exactly like the live one below it — but the wash and its
+ * hued edges already say which is which, and unpainted old code is
+ * harder to read against the new than painted. The old text is parsed
+ * on its own, with the language the editor holds (no second state: a
+ * parse and a tree walk, which is all the paint needs), so a hunk that
+ * begins mid-construct — inside a block comment, say — paints as its
+ * lines read alone. */
 class Peek extends WidgetType {
   constructor(
     readonly hunk: GitHunk,
@@ -147,12 +161,14 @@ class Peek extends WidgetType {
       close: () => view.dispatch({ effects: showHunk.of(null) }),
     });
     box.append(head);
-    const lines = this.hunk.was.length > 0 ? this.hunk.was : [gui.git_added];
-    for (const l of lines) {
+    if (this.hunk.was.length === 0) {
       const d = document.createElement("div");
       d.className = "cm-git-was";
-      d.textContent = l;
+      d.dataset.said = "";
+      d.textContent = gui.git_added;
       box.append(d);
+    } else {
+      box.append(...paintWas(view.state, this.hunk.was));
     }
     return box;
   }
@@ -169,6 +185,53 @@ class Peek extends WidgetType {
     arrive in it; the ones naming lines the text lacks are not drawn). */
 function drawn(state: EditorState, hunks: GitHunk[]): number[] {
   return hunks.flatMap((h, i) => (lineOf(state, h) === null ? [] : [i]));
+}
+
+/** HEAD's lines, one `div` each, in the highlighter's classes when the
+    editor has a language. */
+function paintWas(state: EditorState, was: string[]): HTMLElement[] {
+  const rows = was.map(() => {
+    const d = document.createElement("div");
+    d.className = "cm-git-was";
+    return d;
+  });
+  const lang = state.facet(language);
+  const text = was.join("\n");
+  // Each line's start in `text`, to cut the spans at the breaks.
+  const starts: number[] = [];
+  let at = 0;
+  for (const l of was) {
+    starts.push(at);
+    at += l.length + 1;
+  }
+  let row = 0;
+  let pos = 0;
+  /** `text[pos, to)` into the rows, in `cls` (none: a bare text node). */
+  const put = (to: number, cls: string) => {
+    while (pos < to) {
+      while (row + 1 < starts.length && starts[row + 1] <= pos) row += 1;
+      const end = Math.min(to, starts[row] + was[row].length);
+      if (end > pos) {
+        const piece = text.slice(pos, end);
+        if (cls) {
+          const s = document.createElement("span");
+          s.className = cls;
+          s.textContent = piece;
+          rows[row].append(s);
+        } else rows[row].append(piece);
+      }
+      // Past the line's end, over its break, to the next.
+      pos = end < to ? end + 1 : end;
+    }
+  };
+  if (lang !== null) {
+    highlightTree(lang.parser.parse(text), highlight, (from, to, cls) => {
+      put(from, "");
+      put(to, cls);
+    });
+  }
+  put(text.length, "");
+  return rows;
 }
 
 function peekOf(state: EditorState, hunks: GitHunk[], shown: number | null): DecorationSet {
