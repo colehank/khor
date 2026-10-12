@@ -2,7 +2,8 @@
 // every ten) in the editor, for the brief's 50 000-line timings.
 // `window.__big()` answers { openMs, foldAllMs, folded, foldAllParsedMs,
 // foldedParsed, selectMs[], marks, coldHas/coldHasMs (「…」 asking),
-// coldSymbols/coldSymbolsMs, symbols/symbolsMs (「符号」 cold and parsed) }
+// symbols/symbolsMs (「符号」 parsed) }; with `?symbols`, { openMs,
+// coldHas/coldHasMs, coldSymbols/coldSymbolsMs (「符号」 from cold) }
 // — the driver is `scripts/cm-measure.mjs big`.
 import { foldAll, unfoldAll, forceParsing, foldedRanges } from "@codemirror/language";
 import { EditorSelection } from "@codemirror/state";
@@ -14,7 +15,8 @@ import "@/styles/app.css";
 
 import { CodeEditor } from "@/components/CodeEditor";
 
-const n = Number(new URLSearchParams(location.search).get("lines") ?? 50_000);
+const q = new URLSearchParams(location.search);
+const n = Number(q.get("lines") ?? 50_000);
 const rows: string[] = [];
 for (let i = 0; rows.length < n; i += 1) {
   rows.push(
@@ -44,16 +46,19 @@ const t0 = performance.now();
   await frame();
   // 「符号」 before anything has parsed past the first screen: the walk
   // parses up to its budget (`lib/code/symbols` PARSE_MS) and lists what
-  // is parsed.
+  // is parsed. That parse leaves the whole tree in the view, so it is a
+  // page of its own (`?symbols`) — otherwise fold-all below is no longer
+  // cold.
   const host0 = document.querySelector("[data-code-view]") as HTMLElement & { __symbols?: () => unknown[]; __hasSymbols?: () => boolean };
   // What 「…」 asks as it opens: one definition in what is parsed.
   let s = performance.now();
   const coldHas = host0.__hasSymbols?.() ?? null;
   const coldHasMs = +(performance.now() - s).toFixed(2);
-  s = performance.now();
-  const coldSymbols = host0.__symbols?.().length ?? null;
-  const coldSymbolsMs = Math.round(performance.now() - s);
-  await frame();
+  if (q.has("symbols")) {
+    s = performance.now();
+    const coldSymbols = host0.__symbols?.().length ?? null;
+    return { openMs: Math.round(openMs), coldHas, coldHasMs, coldSymbols, coldSymbolsMs: Math.round(performance.now() - s) };
+  }
   s = performance.now();
   foldAll(v);
   await frame();
@@ -88,7 +93,7 @@ const t0 = performance.now();
   s = performance.now();
   const symbols = host.__symbols?.().length ?? null;
   const symbolsMs = Math.round(performance.now() - s);
-  return { openMs: Math.round(openMs), foldAllMs: Math.round(foldAllMs), folded, foldAllParsedMs: Math.round(foldAllParsedMs), foldedParsed, selectMs: selectMs.map((x) => +x.toFixed(2)), marks, coldHas, coldHasMs, coldSymbols, coldSymbolsMs, symbols, symbolsMs };
+  return { openMs: Math.round(openMs), foldAllMs: Math.round(foldAllMs), folded, foldAllParsedMs: Math.round(foldAllParsedMs), foldedParsed, selectMs: selectMs.map((x) => +x.toFixed(2)), marks, coldHas, coldHasMs, symbols, symbolsMs };
 };
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

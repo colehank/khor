@@ -17,7 +17,8 @@
 //   node scripts/cm-measure.mjs big [lines]
 //       a generated `.ts` of that many lines (a function every 10) in
 //       the editor (`lab/big.html`): ms to open, to fold all, and per
-//       selection change with a three-letter word selected.
+//       selection change with a three-letter word selected; 「…」's
+//       ask for symbols, and the list from cold (a second page load).
 //
 // Out: JSON on stdout, one line per measure. `CM_OUT` a directory for
 // the build (default the lane's target, never the system disk).
@@ -397,7 +398,11 @@ try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
     await page.goto(`${base}lab/big.html?light&lines=${lines}`);
     const r = await page.evaluate(() => window.__big());
-    console.log(JSON.stringify({ measure: "big", lines, ...r }));
+    // 「符号」 from cold on a page of its own: its parse would leave
+    // fold-all warm.
+    await page.goto(`${base}lab/big.html?light&lines=${lines}&symbols`);
+    const c = await page.evaluate(() => window.__big());
+    console.log(JSON.stringify({ measure: "big", lines, ...r, coldSymbols: c.coldSymbols, coldSymbolsMs: c.coldSymbolsMs }));
     await server.close();
   }
 } finally {
