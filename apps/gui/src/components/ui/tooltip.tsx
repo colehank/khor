@@ -38,8 +38,26 @@ function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
-function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
+function TooltipTrigger({ onFocus, ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      // **Focus opens a tooltip only when the keyboard put it there**
+      // (the owner, 2026-10-12: press ＋, press elsewhere to fold its menu,
+      // and ＋ shows its label). Radix opens on any focus that no pointer
+      // press on the trigger caused — and a menu closing hands focus back
+      // to its trigger programmatically, which is exactly that. The root
+      // already says which hand is on the app (`lib/modality`); under a
+      // pointer the focus is a side effect, not a request, so the open
+      // is declined (Radix skips its own handler once the event is
+      // `defaultPrevented`). Tab onto the control still opens it.
+      onFocus={(e) => {
+        onFocus?.(e);
+        if (document.documentElement.dataset.modality !== "keyboard") e.preventDefault();
+      }}
+      {...props}
+    />
+  );
 }
 
 function TooltipContent({
