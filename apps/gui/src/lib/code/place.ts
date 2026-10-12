@@ -14,8 +14,10 @@
 // type is erased before the bundle is drawn.
 import type { EditorView } from "@codemirror/view";
 
+import type { CodeSymbol } from "@/lib/code/symbols";
+
 /** The box `CodeEditor` mounts into, as it carries the view. */
-type Host = HTMLElement & { __view?: EditorView };
+type Host = HTMLElement & { __view?: EditorView; __symbols?: () => CodeSymbol[]; __hasSymbols?: () => boolean; __goLine?: (line: number) => void };
 
 /** The view inside a box (a file pane, a page), for a host that holds the
     box and not the editor. `CodeEditor` sets `__view` on its own box when
@@ -50,4 +52,31 @@ export function focusAtTop(view: EditorView): void {
   const at = view.state.doc.line(topLineOf(view)).from;
   view.dispatch({ selection: { anchor: at } });
   view.focus();
+}
+
+/** The editor showing `path` now, found by the box's `data-code-path`:
+    for a host that holds the file's name and not its pane (the 「…」
+    the wide strip and the phone's page share). The one on screen, where
+    a closed tab's box is still mounted hidden. */
+function hostOf(path: string): Host | null {
+  const all = [...document.querySelectorAll<Host>(`[data-code-view][data-code-path="${CSS.escape(path)}"]`)];
+  return all.find((b) => b.offsetParent !== null) ?? null;
+}
+
+/** The file's symbols (`lib/code/symbols`), or null when no editor
+    shows it — the rendered face of a document, a picture. */
+export function symbolsIn(path: string): CodeSymbol[] | null {
+  return hostOf(path)?.__symbols?.() ?? null;
+}
+
+/** Whether the editor showing `path` has a symbol in what it has
+    parsed — cheap, for 「…」 as it opens; the list itself parses the
+    rest. */
+export function hasSymbolsIn(path: string): boolean {
+  return hostOf(path)?.__hasSymbols?.() ?? false;
+}
+
+/** Go to `line` in the editor showing `path` (a press in 「符号」). */
+export function goLineIn(path: string, line: number): void {
+  hostOf(path)?.__goLine?.(line);
 }

@@ -43,6 +43,7 @@ import { gitChanges, setHunks } from "@/lib/code/git";
 import { indentOf } from "@/lib/code/indent";
 import { keyboardCaret, observeScroller } from "@/lib/code/keyboard";
 import { languageOfName, loadLanguage } from "@/lib/code/lang";
+import { hasSymbols, symbolsOfView } from "@/lib/code/symbols";
 import { codeHighlight, codeTheme } from "@/lib/code/theme";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +83,18 @@ function foldMarker(open: boolean): HTMLElement {
   const g = open ? glyphs?.open : glyphs?.folded;
   if (g) s.append(g.cloneNode(true));
   return s;
+}
+
+/** To `line`: the caret at its start, the line on the brand's wash, a
+    third of the way down, as the painted sheet put it (KB-CARET rule 6).
+    A link, the terminal's path and a press in 「符号」 all come here. */
+function go(v: EditorView, line: number) {
+  if (line < 1 || line > v.state.doc.lines) return;
+  const at = v.state.doc.line(line).from;
+  v.dispatch({
+    selection: EditorSelection.cursor(at),
+    effects: [setAnchor.of(line), EditorView.scrollIntoView(at, { y: "start", yMargin: v.scrollDOM.clientHeight / 3 })],
+  });
 }
 
 /** Everything every file gets, readable or not. */
@@ -272,10 +285,16 @@ export function CodeEditor({
     // `__find` spelled for a file.
     // The view itself as `__view`, for whoever holds the box and not the
     // module (`FilePage` once the editor is a lazy chunk, the gates).
-    const host = box.current as (HTMLElement & { __find?: () => boolean; __view?: EditorView }) | null;
+    // 「符号」 (`lib/code/place` `symbolsIn` / `goLineIn`): the file's
+    // definitions, and the line a press goes to, through the box — the
+    // walk is this chunk's, not the host's.
+    const host = box.current as (HTMLElement & { __find?: () => boolean; __view?: EditorView; __symbols?: () => ReturnType<typeof symbolsOfView>; __hasSymbols?: () => boolean; __goLine?: (line: number) => void }) | null;
     if (host) {
       host.__find = () => openFind(v);
       host.__view = v;
+      host.__symbols = () => symbolsOfView(v);
+      host.__hasSymbols = () => hasSymbols(v.state);
+      host.__goLine = (line) => go(v, line);
     }
     view.current = v;
     // Rule 2 and 4 (KB-CARET): watch the scroller for resize — reveal the
@@ -362,18 +381,14 @@ export function CodeEditor({
     if (!v || goLine === null || goLine.at === wentTo.current) return;
     if (goLine.line > v.state.doc.lines) return;
     wentTo.current = goLine.at;
-    const at = v.state.doc.line(goLine.line).from;
-    // A third of the way down, as the painted sheet put it.
-    v.dispatch({
-      selection: EditorSelection.cursor(at),
-      effects: [setAnchor.of(goLine.line), EditorView.scrollIntoView(at, { y: "start", yMargin: v.scrollDOM.clientHeight / 3 })],
-    });
+    go(v, goLine.line);
   }, [goLine, text]);
 
   return (
     <div
       ref={box}
       data-code-view
+      data-code-path={path}
       className={cn("relative min-h-0 flex-1 font-mono text-mono leading-mono", className)}
     >
       <span ref={icons} hidden>

@@ -32,7 +32,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 
 import { launchOn, pullTemp, renamePath, reveal } from "@/api";
 import type { CodeWindow } from "@/components/CodeWindow";
-import { editorIn, placeLine, topLineOf } from "@/lib/code/place";
+import { editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/lib/code/place";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { DeckBand, TabSheet, TabsGlyph } from "@/components/SessionBar";
@@ -65,6 +65,7 @@ import { useRoad } from "@/lib/save-road";
 import { cn } from "@/lib/utils";
 import { bytesOf, revealHere, shares } from "@/views/chat-files";
 import { HistorySheet, RevisionView, shortId } from "@/views/FileHistory";
+import { SymbolsSheet } from "@/views/FileSymbols";
 import { useRemoveFlow } from "@/views/fileRow";
 import { FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
 
@@ -167,6 +168,11 @@ function useFileVerbs({
   const blame = useBlameShown();
   const ground = usePreviewGround();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [symbolsOpen, setSymbolsOpen] = useState(false);
+  /** Whether the file's editor has symbols to list, asked as 「…」 opens:
+      a language with no tree, a rendered face or an empty file offers
+      no 「符号」 (progressive disclosure). */
+  const [hasSymbols, setHasSymbols] = useState(false);
   useEffect(() => {
     void revealHere().then(setFinder);
   }, []);
@@ -202,6 +208,7 @@ function useFileVerbs({
       run: () => void navigator.clipboard.writeText(path).then(() => setSaid(gui.copied), () => setSaid(gui.copy_failed)),
     },
     { key: "rename", label: gui.rename_ask, run: () => setRenaming(true) },
+    ...(hasSymbols ? [{ key: "symbols", label: gui.keys_group_symbol, run: () => setSymbolsOpen(true) }] : []),
     ...(history && onRevision ? [{ key: "history", label: gui.file_history, run: () => setHistoryOpen(true) }] : []),
     // Blame is said at the end of the caret's line (UX-23), which a phone
     // has room for as well.
@@ -233,7 +240,7 @@ function useFileVerbs({
     </GlassCircle>
   ) : null;
   const moreCircle: ReactNode = (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={(o) => o && setHasSymbols(hasSymbolsIn(path))}>
       <DropdownMenuTrigger asChild>
         <GlassCircle aria-label={gui.rail_more} data-file-more tip={!coarse && gui.rail_more}>
           <IconMore />
@@ -311,6 +318,7 @@ function useFileVerbs({
   const dialogs = (
     <>
       <RemoveDialog {...removal.dialog} />
+      <SymbolsSheet open={symbolsOpen} onOpenChange={setSymbolsOpen} path={path} />
       {history && onRevision && (
         <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} machine={machine} path={path} onPick={onRevision} />
       )}

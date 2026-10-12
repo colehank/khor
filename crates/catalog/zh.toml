@@ -3989,6 +3989,8 @@ key-alt = "Alt"
 key-more = "更多按键"
 keys-group-move = "移动"
 keys-group-mod = "修饰"
+# 也是文件页「…」里的「符号」（cm-d）：从语法树读出文件定义的函数、类、方法、类型和文档的标题，点一行跳到那一行。
+# 同一个词、两种语言同一个译法，所以不另起名字（build.rs：一段文字一个名字）。
 keys-group-symbol = "符号"
 keys-group-function = "功能键"
 keys-edit-row = "编辑这一行"
