@@ -71,5 +71,24 @@ export function cmProbe() {
       v.dispatch({ effects: v.constructor.scrollIntoView(v.state.doc.line(n).from, { y: "start", yMargin: 0 }) });
       return true;
     },
+    /** The caret head's bounding rect on screen, or null when the view
+        has no focus or the caret's line is outside the drawn viewport.
+        `distanceFromBottom` is negative when the caret is below the
+        scroller's visible bottom edge (hidden behind the keyboard). */
+    caretRect(scope) {
+      const v = view(scope);
+      if (!v) return null;
+      const pos = v.state.selection.main.head;
+      const coords = v.coordsAtPos(pos);
+      if (!coords) return null;
+      const scroller = v.scrollDOM;
+      const sb = scroller.getBoundingClientRect();
+      return {
+        top: coords.top,
+        bottom: coords.bottom,
+        scrollerBottom: sb.bottom,
+        distanceFromBottom: sb.bottom - coords.bottom,
+      };
+    },
   };
 }
