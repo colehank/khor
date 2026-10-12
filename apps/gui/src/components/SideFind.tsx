@@ -6,19 +6,24 @@
  * head says who and which seat, this row does the seat's work. Pinned,
  * never pulled down out of hiding: on the phone a pull down is the
  * sheet's own way away. ＋ only where there is something to make
- * (progressive disclosure): 最近 has none.
+ * (progressive disclosure): 最近 has none. 「符号」 wears it too (cm-f),
+ * at its dialog's own inset, its return key going to a lone match.
  */
 import type { ReactNode } from "react";
 
 import { IconSearch } from "@/components/icons";
 import { Input } from "@/components/ui/input";
 import { endsOnEnter } from "@/lib/field-swipe";
+import { imeKey } from "@/lib/ime";
+import { cn } from "@/lib/utils";
 
 export function SideFind({
   label,
   query,
   onQuery,
   plus,
+  onEnter,
+  className,
 }: {
   /** Names the box and stands in as its placeholder. */
   label: string;
@@ -26,9 +31,12 @@ export function SideFind({
   onQuery: (q: string) => void;
   /** The seat's ＋, when it has one. */
   plus?: ReactNode;
+  /** The return key, when it does more than end the box. */
+  onEnter?: () => void;
+  className?: string;
 }) {
   return (
-    <div data-side-find data-search-glass className="flex min-h-pane-head flex-none items-center gap-in px-(--page-inset)">
+    <div data-side-find data-search-glass className={cn("flex min-h-pane-head flex-none items-center gap-in px-(--page-inset)", className)}>
       <div data-search-wrap className="relative min-w-0 flex-1">
         <IconSearch className="pointer-events-none absolute top-1/2 left-2 z-10 -translate-y-1/2 text-tertiary" />
         <Input
@@ -47,6 +55,7 @@ export function SideFind({
               e.stopPropagation();
               onQuery("");
             }
+            if (e.key === "Enter" && onEnter && !imeKey(e)) onEnter();
             endsOnEnter(e);
           }}
           className="min-h-touch pl-7"

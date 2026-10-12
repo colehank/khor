@@ -31395,6 +31395,80 @@ try {
         console.log(`ws g · ${tag}: 「符号」 ${JSON.stringify(list.title)} lists ${names}; new inset ${inner?.inset}, Store inset ${outer?.inset}`);
         if (names !== want) fail(`ws g · ${tag}: 「符号」 lists ${names} — want ${want}`);
         if (!inner || !outer || inner.inset <= outer.inset) fail(`ws g · ${tag}: the method inside the impl stands at ${inner?.inset}px, the struct at ${outer?.inset}px — one step in`);
+        // **The find row at its top** (cm-f): focused as it opens on the
+        // wide face, waiting for a tap on the phone; it narrows by name,
+        // any case, in the file's order; nothing left says `no_matches`;
+        // Esc with text clears it and with none puts the dialog away.
+        const field = "[data-file-symbols] [data-side-find-field]";
+        const rowsG = () => page.evaluate(() => [...document.querySelectorAll("[data-file-symbols] [data-file-symbol]")].map((b) => `${b.querySelector(".font-mono")?.textContent}@${b.getAttribute("data-file-symbol")}`).join(" "));
+        const focused = await page.evaluate((sel) => document.activeElement === document.querySelector(sel), field);
+        if (focused !== w > 700) fail(`ws g · ${tag}: the find row ${focused ? "has" : "does not have"} the focus as 「符号」 opens — ${w > 700 ? "the wide face types at once" : "on a phone it waits for a tap, the keyboard would cover the list"}`);
+        if (!focused) await page.locator(field).click();
+        await page.keyboard.type("Step_1");
+        await wait(200);
+        const narrowed = await rowsG();
+        await shotG(`symbols-filter-light-${tag}`);
+        // The same in the dark (cm-d had light only): the theme follows
+        // the system here, so the system goes dark for one shot.
+        if (process.env.FACE_SHOTS) {
+          await page.emulateMedia({ colorScheme: "dark" });
+          await until(3_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "dark");
+          await wait(300);
+          await shotG(`symbols-filter-dark-${tag}`);
+          await page.emulateMedia({ colorScheme: "light" });
+          await until(3_000, async () => (await page.evaluate(() => document.documentElement.getAttribute("data-theme"))) === "light");
+        }
+        await page.locator(field).fill("zzz");
+        await wait(200);
+        const none = await page.evaluate(() => ({
+          rows: document.querySelectorAll("[data-file-symbols] [data-file-symbol]").length,
+          said: document.querySelector("[data-file-symbols] [data-file-symbols-none]")?.textContent?.trim() ?? null,
+        }));
+        await page.keyboard.press("Escape");
+        await wait(200);
+        const cleared = { open: await page.locator("[data-file-symbols]").count(), value: await page.locator(field).inputValue().catch(() => null), rows: await page.locator("[data-file-symbols] [data-file-symbol]").count() };
+        console.log(`ws g · ${tag}: focused ${focused}; 「Step_1」 leaves ${narrowed}; 「zzz」 ${JSON.stringify(none)}; Esc ${JSON.stringify(cleared)}`);
+        const wantN = ["step_1@14", ...Array.from({ length: 5 }, (_, i) => `step_${10 + i}@${59 + 5 * i}`)].join(" ");
+        if (narrowed !== wantN) fail(`ws g · ${tag}: 「Step_1」 leaves ${narrowed} — want ${wantN} (any case, the file's order)`);
+        if (none.rows !== 0 || !/^(没有匹配项|No matches)$/.test(none.said ?? "")) fail(`ws g · ${tag}: 「zzz」 leaves ${JSON.stringify(none)} — no rows and 「没有匹配项」`);
+        if (cleared.open !== 1 || cleared.value !== "" || cleared.rows !== 18) fail(`ws g · ${tag}: Esc over 「zzz」 left ${JSON.stringify(cleared)} — the dialog up, the box empty, all 18 back`);
+        // Return with one row left goes to it; Esc over an empty box
+        // puts the dialog away. Then open it again for the press below.
+        await page.locator(field).fill("Step_3");
+        await page.locator(field).press("Enter");
+        await wait(500);
+        const lone = await page.evaluate(() => {
+          const box = [...document.querySelectorAll("[data-code-view][data-code-path]")].find((b) => b.offsetParent !== null);
+          const v = box?.__view;
+          return { dialog: document.querySelectorAll("[data-file-symbols]").length, caret: v ? v.state.doc.lineAt(v.state.selection.main.head).number : null };
+        });
+        // On a phone the deck folded as the jump scrolled the file; a
+        // scroll up brings 「…」 back, as below.
+        const deckBack = async () => {
+          if (w >= 700) return;
+          await page.mouse.move(w / 2, h / 2);
+          for (let i = 0; i < 6; i++) await page.mouse.wheel(0, -600);
+          await until(3_000, async () => (await page.locator("[data-file-more]:visible").count()) > 0);
+        };
+        await deckBack();
+        await more();
+        await wait(300);
+        await page.locator('[data-file-more-menu] [data-file-more-item="symbols"]').click();
+        await until(3_000, async () => (await page.locator("[data-file-symbols] [data-file-symbol]").count()) > 0);
+        const fresh = await page.locator(field).inputValue().catch(() => null);
+        await page.keyboard.press("Escape");
+        await wait(300);
+        const shut = await page.locator("[data-file-symbols]").count();
+        console.log(`ws g · ${tag}: 「Step_3」 ⏎ ${JSON.stringify(lone)}; reopened with ${JSON.stringify(fresh)}; Esc on an empty box leaves ${shut} dialog(s)`);
+        if (lone.dialog !== 0 || lone.caret !== 24) fail(`ws g · ${tag}: Return with step_3 alone left ${JSON.stringify(lone)} — the dialog away, the caret on line 24`);
+        if (fresh !== "") fail(`ws g · ${tag}: 「符号」 reopened with ${JSON.stringify(fresh)} in its box — each opening starts empty`);
+        if (shut !== 0) fail(`ws g · ${tag}: Esc over an empty box left the dialog up`);
+        await deckBack();
+        await more();
+        await wait(300);
+        await page.locator('[data-file-more-menu] [data-file-more-item="symbols"]').click();
+        await until(3_000, async () => (await page.locator("[data-file-symbols] [data-file-symbol]").count()) > 0);
+        await wait(300);
         await page.locator('[data-file-symbols] [data-file-symbol="59"]').click();
         await wait(500);
         const went = await page.evaluate(() => {
