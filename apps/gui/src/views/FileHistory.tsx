@@ -24,6 +24,38 @@ export function shortId(c: GitCommit): string {
   return c.id.slice(0, 7);
 }
 
+/** `Co-Authored-By: name <mail>`, git's trailer for a second author. */
+const CO_AUTHOR = /^co-authored-by:\s*(.*?)\s*(?:<[^>]*>)?\s*$/gim;
+
+/** **Who wrote a commit** (COMMITS-BRIEF, GitHub's 「A 和 B 撰写」): its
+    author, then each `Co-Authored-By:` trailer's name, once each. */
+export function authorsOf(c: GitCommit): string[] {
+  const names = c.author ? [c.author] : [];
+  for (const m of c.body.matchAll(CO_AUTHOR)) {
+    const n = m[1].trim();
+    if (n && !names.includes(n)) names.push(n);
+  }
+  return names;
+}
+
+/** The author line: 「A 撰写」, 「A 和 B 撰写」 (a third and more ride
+    with B, comma-joined). */
+export function authorLine(c: GitCommit): string {
+  const [a = "", ...rest] = authorsOf(c);
+  return rest.length === 0 ? gui.commit_authored_one(a) : gui.commit_authored_two(a, rest.join(", "));
+}
+
+/** The body as a person wrote it: the co-author trailers are the author
+    line's, not the prose's. */
+export function bodyOf(c: GitCommit): string {
+  return c.body.replace(CO_AUTHOR, "").trim();
+}
+
+/** The list row's second line: the body's first line with words on it. */
+export function bodyLine(c: GitCommit): string {
+  return bodyOf(c).split("\n").find((l) => l.trim() !== "")?.trim() ?? "";
+}
+
 /** The sheet: newest first, a row per commit, a press opens it. */
 export function HistorySheet({
   open,
@@ -31,12 +63,17 @@ export function HistorySheet({
   machine,
   path,
   onPick,
+  repo = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   machine: string;
   path: string;
   onPick: (c: GitCommit) => void;
+  /** **The repository's commits, not one file's** (COMMITS-BRIEF): titled
+      提交历史, and each row says what GitHub's does — subject and age, the
+      body's first line, who wrote it. */
+  repo?: boolean;
 }) {
   const [log, setLog] = useState<GitLog | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
@@ -58,7 +95,7 @@ export function HistorySheet({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent form data-file-history className="max-h-[70dvh] !gap-0 overflow-y-auto">
-        <DialogTitle className="px-in pb-in">{gui.file_history}</DialogTitle>
+        <DialogTitle className="px-in pb-in">{repo ? gui.commit_history : gui.file_history}</DialogTitle>
         {refused !== null ? (
           <div data-file-history-refused className="px-in text-callout text-state-failed">
             {refused}
@@ -69,7 +106,17 @@ export function HistorySheet({
           <div className="px-in text-callout text-muted-foreground">{gui.file_history_none}</div>
         ) : (
           <div className="flex min-w-0 flex-col">
-            {log.commits.map((c) => (
+            {log.commits.map((c) =>
+              repo ? (
+                <CommitRow
+                  key={c.id}
+                  c={c}
+                  onPress={() => {
+                    onOpenChange(false);
+                    onPick(c);
+                  }}
+                />
+              ) : (
               <button
                 key={c.id}
                 type="button"
@@ -85,12 +132,46 @@ export function HistorySheet({
                   <span className="font-mono">{shortId(c)}</span> · {c.author} · {ago(c.when_ms)}
                 </span>
               </button>
-            ))}
+              ),
+            )}
             {log.more && <div className="px-in py-in text-callout text-muted-foreground">{gui.file_history_more}</div>}
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** One commit in the repository's list, GitHub's three lines: the subject
+    (truncated) with its age at the right; the body's first line, only when
+    there is one; the author line. No avatar: khor has none for a git
+    author. */
+function CommitRow({ c, onPress }: { c: GitCommit; onPress: () => void }) {
+  const line = bodyLine(c);
+  return (
+    <button
+      type="button"
+      data-commit-row={c.id}
+      onClick={onPress}
+      className="flex min-h-list-row min-w-0 flex-col justify-center gap-0.5 rounded-md px-in py-2 text-left hover:bg-fill"
+    >
+      <span className="flex min-w-0 items-baseline gap-in">
+        <span data-commit-subject className="min-w-0 flex-1 truncate text-headline text-foreground">
+          {c.subject}
+        </span>
+        <span data-commit-age className="flex-none text-callout text-tertiary tabular-nums">
+          {ago(c.when_ms)}
+        </span>
+      </span>
+      {line !== "" && (
+        <span data-commit-body className="truncate text-callout text-muted-foreground">
+          {line}
+        </span>
+      )}
+      <span data-commit-author className="truncate text-callout text-muted-foreground">
+        {authorLine(c)}
+      </span>
+    </button>
   );
 }
 

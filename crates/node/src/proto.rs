@@ -2714,6 +2714,7 @@ mod tests {
             author: "colehank".into(),
             when_ms: 1,
             subject: "One line".into(),
+            body: "More.\n\nCo-Authored-By: claude <noreply@anthropic.com>".into(),
         };
         let answer = crate::git::GitAnswer::Blame {
             commits: vec![commit.clone()],

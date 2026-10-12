@@ -134,6 +134,9 @@ pub struct GitCommit {
     #[ts(type = "number")]
     pub when_ms: i64,
     pub subject: String,
+    /// The message after its first paragraph, trailers included; empty
+    /// when there is none.
+    pub body: String,
 }
 
 /// The commits that changed one file, newest first. `more`: the list or
@@ -175,6 +178,7 @@ fn commit(c: khor_node::git::Commit) -> GitCommit {
         author: c.author,
         when_ms: c.when_ms,
         subject: c.subject,
+        body: c.body,
     }
 }
 

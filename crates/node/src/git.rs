@@ -684,6 +684,9 @@ pub struct Commit {
     pub when_ms: i64,
     /// The message's first paragraph, on one line.
     pub subject: String,
+    /// The message after the first blank line, or empty. The list row
+    /// shows its first non-empty line; the commit page shows all of it.
+    pub body: String,
 }
 
 /// A run of lines one commit wrote, in HEAD's lines: `start` 0-based,
@@ -727,15 +730,24 @@ fn open_rel(path: &Path) -> Result<(gix::Repository, String), String> {
 fn commit_of(c: &gix::Commit<'_>) -> Commit {
     let author = c.author().map(|a| a.name.to_str_lossy().into_owned()).unwrap_or_default();
     let when_ms = c.time().map(|t| t.seconds * 1000).unwrap_or(0);
-    let subject = c
-        .message()
+    let msg = c.message().ok();
+    let subject = msg
+        .as_ref()
         .map(|m| m.summary().to_str_lossy().into_owned())
+        .unwrap_or_default();
+    // Everything after the first blank line, trailers included: the
+    // face reads `Co-Authored-By:` off it for the author line.
+    let body = msg
+        .as_ref()
+        .and_then(|m| m.body())
+        .map(|b| b.to_str_lossy().trim().to_owned())
         .unwrap_or_default();
     Commit {
         id: c.id.to_string(),
         author,
         when_ms,
         subject,
+        body,
     }
 }
 
