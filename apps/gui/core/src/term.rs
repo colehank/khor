@@ -955,21 +955,18 @@ pub fn shell_quote(path: &str) -> String {
     out
 }
 
-/// Sends files to a machine and has it take them in, answering with
-/// where they landed **over there**.
+/// Puts files on another machine for an agent conversation that runs
+/// there, answering where they landed **over there**: the drop road
+/// (`Node::drop_file`) — that machine pulls each one itself, into its
+/// receive directory or the absolute directory `into` names. ⚠️ 墓碑
+/// (STORE-BRIEF phase 5): this sent a file message into the machine's
+/// `chat/<机器>` conversation and took it; that conversation is gone, and
+/// a file handed to an agent is not a message for the broadcast.
 ///
 /// Its own thread with its own runtime, for the reason
 /// [`reach_blocking`] spells out: this is called from a tauri command,
 /// which is already async, and a nested runtime panics instead of
 /// returning something a person can read.
-///
-/// **The sync in the middle is the push**: `send` writes the message
-/// into this machine's copy of the chat document, and the receiver
-/// starts the pull the moment a round brings it there (STORE-BRIEF phase
-/// 2: 直接传). `take` then joins that pull — or, when the round has not
-/// landed the message yet, drives one of its own — and answers where the
-/// files landed. `into` is the directory on that machine, empty for its
-/// receive location.
 pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String], into: &str) -> Result<Vec<String>, String> {
     let (root, machine, paths, into) = (root.to_path_buf(), machine.to_owned(), paths.to_vec(), into.to_owned());
     std::thread::spawn(move || -> Result<Vec<String>, String> {
@@ -978,26 +975,10 @@ pub(crate) fn deliver_blocking(root: &Path, machine: &str, paths: &[String], int
             .build()
             .map_err(khor_catalog::msg::runtime_wont_start)?;
         let n = Node::open(root)?;
-        let mut sent = Vec::with_capacity(paths.len());
+        let into = (!into.is_empty()).then_some(into.as_str());
+        let mut landed = Vec::with_capacity(paths.len());
         for p in &paths {
-            sent.push(n.send(&machine, Path::new(p), &into)?);
-        }
-        rt.block_on(n.sync_now())?;
-        let mut landed = Vec::with_capacity(sent.len());
-        for id in &sent {
-            let (_, where_it_is) = rt.block_on(n.take(id))?;
-            if where_it_is.is_empty() {
-                // The files did arrive — this is the far machine
-                // declining to say where, which is what a khor from
-                // before that field on the wire does
-                // (`khor_node::proto::Response::Acted`). Said out loud
-                // rather than pasting nothing: a drop that types
-                // nothing into the terminal is the 做了但没变化 failure,
-                // and a guessed path would be worse — it would be a
-                // path that does not exist over there.
-                return Err(khor_catalog::msg::landed_unsaid().to_owned());
-            }
-            landed.extend(where_it_is);
+            landed.push(rt.block_on(n.drop_file("", p, &machine, into, |_| {}))?);
         }
         Ok(landed)
     })

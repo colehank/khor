@@ -22,7 +22,6 @@ use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use khor_core::State;
 use khor_node::{MsgBody, Node, ipc};
 use tokio::time::timeout;
 
@@ -120,59 +119,34 @@ async fn one_shot_verbs_ride_the_resident_serve() {
         "beta's table should hold both"
     );
 
-    // A transfer end to end with BOTH serves alive: the sync rides
-    // beta's serve, which pulls the payload off alpha's serve as the
-    // message lands — nobody asks (STORE-BRIEF phase 2: 直接传).
+    // A push end to end with BOTH serves alive (STORE-BRIEF phase 5):
+    // the post rides alpha's serve, which dials beta, writes the message
+    // and pushes; beta's serve pulls the payload off alpha's and it lands
+    // in beta's receive location — nobody asks.
     let payload: Vec<u8> = (0..600_000u32).map(|i| (i % 253) as u8).collect();
     let src = ra.join("bundle.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src, "").unwrap();
-    timeout(Duration::from_secs(60), b.sync_now())
+    let id = timeout(Duration::from_secs(60), a.post("@beta", std::slice::from_ref(&src)))
         .await
-        .expect("routed sync must not hang")
+        .expect("a routed post must not hang")
         .unwrap();
-    // The offer presses on the machine's chat row, not on a row of its
-    // own (传输并入对话批, `419e5ad`) — see the note in `transfer.rs`.
-    assert!(
-        b.transfer_is_here(&tid),
-        "the summary must have reached beta"
-    );
-    let rows = b.sessions().unwrap();
-    let row = &rows
-        .iter()
-        .find(|v| v.session.id.0 == "chat/beta")
-        .expect("the machine's chat row exists")
-        .session;
-    assert_ne!(row.state.state, State::Blocked, "nothing waits on beta's approval");
+    let landed = rb.join("khor-drop").join("bundle.bin");
     timeout(Duration::from_secs(60), async {
-        loop {
-            let landed = b.log("beta").unwrap().messages.iter().any(|m| {
-                m.fate.as_ref().is_some_and(|f| f.step == khor_sync::chat::Step::Landed)
-            });
-            if landed {
-                break;
-            }
+        while fs::read(&landed).ok().as_deref() != Some(&payload[..]) {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await
-    .expect("beta's resident lands the file by itself");
-    let dir = rb.join(".khor").join("chat").join("beta");
+    .expect("beta's resident lands the file by itself, verbatim");
     let m = b
-        .log("beta")
+        .log(khor_node::wide::BROADCAST)
         .unwrap()
         .messages
         .into_iter()
-        .find(|m| matches!(m.body, MsgBody::Files(_)))
-        .unwrap();
-    let MsgBody::Files(files) = &m.body else {
-        unreachable!()
-    };
-    assert_eq!(
-        fs::read(khor_node::road::landed(&rb, &dir, &files[0]).expect("landed")).unwrap(),
-        payload,
-        "bytes verbatim"
-    );
+        .find(|m| m.id == id)
+        .expect("the message reached beta");
+    assert!(matches!(m.body, MsgBody::Files(_)));
+    assert_eq!(m.to.len(), 1, "pushed to beta, by id");
 
     // ── control groups ─────────────────────────────────────
     // A wrong cookie is refused by name: the port alone opens nothing.

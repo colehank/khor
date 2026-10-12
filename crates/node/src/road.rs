@@ -116,11 +116,30 @@ pub struct Job {
     pub stopped: Arc<AtomicBool>,
     /// The landed path, or why it did not land; `None` while it runs.
     end: Mutex<Option<(Instant, Result<String, String>)>>,
+    /// Why the pull was cut short by its sender rather than cancelled
+    /// ([`Job::cut`]); `None` for a cancel.
+    cut: Mutex<Option<String>>,
 }
 
 impl Job {
     pub fn is_stopped(&self) -> bool {
         self.stopped.load(Ordering::Relaxed)
+    }
+
+    /// **Ended by its sender, not cancelled** (`crate::post`, the phone's
+    /// grace): the pull stops before its next slice like a cancel, but
+    /// it is a failure with `why`, and the bytes so far are kept.
+    pub fn cut(&self, why: &str) {
+        if let Ok(mut c) = self.cut.lock() {
+            *c = Some(why.to_owned());
+        }
+        self.stopped.store(true, Ordering::Relaxed);
+    }
+
+    /// The sentence [`Job::cut`] left; `None` for a cancel or a pull
+    /// that was not stopped.
+    pub fn cut_why(&self) -> Option<String> {
+        self.cut.lock().ok().and_then(|c| c.clone())
     }
 
     pub fn finish(&self, outcome: Result<String, String>) {

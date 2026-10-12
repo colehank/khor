@@ -325,13 +325,16 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
 
     b.recent_visit(khor_node::PlaceKind::Page, "alpha", "https://after.example")
         .unwrap();
-    b.tell("alpha", "still talking").unwrap();
+    timeout(Duration::from_secs(60), b.post("still talking", &[]))
+        .await
+        .expect("a post must not hang")
+        .unwrap();
     timeout(Duration::from_secs(60), b.sync_now())
         .await
         .expect("sync must not hang")
         .unwrap();
     let said: Vec<String> = a
-        .log("alpha")
+        .log(khor_node::wide::BROADCAST)
         .unwrap()
         .messages
         .iter()
@@ -342,7 +345,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
         .collect();
     assert!(
         said.iter().any(|t| t == "still talking"),
-        "the chat round runs after recents and must survive its refusal: {said:?}"
+        "the broadcast's round runs after recents and must survive its refusal: {said:?}"
     );
     let _ = fs::remove_file(&recents_dir);
 

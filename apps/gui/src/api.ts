@@ -775,32 +775,35 @@ export const renameSession = (id: string, title: string) =>
     already exist renames the wrong row. */
 export const renameMachine = (id: string, name: string) =>
   call<string>("rename_machine", { id, name });
-export const tell = (machine: string, text: string) => call<null>("tell", { machine, text });
-/** A machine conversation's readout — what `khor log` prints, shaped
-    for the pane. Takes the row's id (`chat/<channel>`); the core layer
-    peels the prefix. */
+/** **A message composed into the broadcast** (STORE-BRIEF phase 5,
+    `Node::post`): the typed form (`@机器:路径` leading, then
+    `机器:路径` files, then the words) and this machine's files, by path.
+    Answers the message id; refused with the node's sentence — a target
+    that is not reachable is named, and nothing was written. */
+export const compose = (typed: string, files: string[] = []) => call<string>("post", { typed, files });
+/** The broadcast's readout — what `khor log` prints, shaped for the
+    pane. */
 export const machineLog = (id: string) => call<MachineLog>("machine_log", { id });
-/** A conversation file sent again after it failed or was cancelled —
-    `khor retry`, same node call (docs/KHOR.md equivalence). Answers
-    where the files landed. */
+/** A broadcast file taken, or taken again after it failed or was
+    cancelled — `khor retry`, same node call (docs/KHOR.md equivalence).
+    Answers where the files landed. */
 export const retryTransfer = (msg: string) => call<string[]>("retry_transfer", { msg });
-/** A conversation file's move cancelled on its receiver (the chip's ×):
-    nothing partial stays. */
+/** A file's move cancelled on this machine (the chip's ×): nothing
+    partial stays. */
 export const stopTransfer = (msg: string) => call<null>("stop_transfer", { msg });
-/** The composer's 发文件, desktop form: the native picker answers with
-    a real local path and the path goes straight to `khor send`'s call.
-    `null` = cancelled, which is not an error. App only (`inApp`) — the
-    browser forms upload bytes instead (`uploadFile`). */
-export const pickAndSendFile = (machine: string, into: string | null = null) =>
-  call<string | null>("pick_and_send", { machine, into });
-/** The composer's 发文件, browser form: the bytes stream to the sending
-    machine's staging area and the same send runs there
-    (`khor_gui_core::send_upload`). Raw-bytes POST, not a JSON command —
+/** The composer's ＋, app form: the native picker answers with real
+    local paths, which ride the message as they are. Empty = cancelled,
+    which is not an error. App only (`inApp`) — the browser forms stage
+    bytes instead (`stageFile`). */
+export const pickPaths = () => call<string[]>("pick_paths");
+/** The composer's ＋, browser form: the bytes stream to this machine's
+    staging area and the staged path comes back, to ride the message
+    (`khor_gui_core::stage_upload`). Raw-bytes POST, not a JSON command —
     a file does not belong inside a JSON envelope — so this is the one
     call in this file that does not go through `call`. The size cap and
     its refusal sentence are the backend's (`UPLOAD_CAP_BYTES`). */
-export const uploadFile = async (machine: string, file: File, into: string | null = null): Promise<string> => {
-  const q = `machine=${encodeURIComponent(machine)}&name=${encodeURIComponent(file.name)}${into ? `&into=${encodeURIComponent(into)}` : ""}`;
+export const stageFile = async (file: File): Promise<string> => {
+  const q = `name=${encodeURIComponent(file.name)}`;
   const url = bridge ? `http://127.0.0.1:${bridge}/upload?${q}` : `/api/upload?${q}`;
   const r = await reach(url, {
     method: "POST",

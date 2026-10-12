@@ -321,7 +321,7 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             // the file rides the body whole and the arguments ride the
             // query (a JSON envelope around a gigabyte would mean
             // base64ing it through memory). Streamed to disk with the
-            // cap enforced mid-stream (`khor_gui_core::send_upload`).
+            // cap enforced mid-stream (`khor_gui_core::stage_upload`).
             // A file for an agent conversation (round CHAT): the same
             // raw body, put on the machine the conversation runs on.
             if cmd == "chat_put" {
@@ -356,22 +356,18 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                     Err(sentence) => Reply::refused(400, sentence),
                 };
             }
+            // A file for the broadcast's composer, staged here and
+            // answered by its path; the post that carries it is a JSON
+            // command of its own (`post`).
             if cmd == "upload" {
-                let (machine, name) = match khor_gui_core::upload_args(query) {
-                    Some(pair) => pair,
-                    None => {
-                        return Reply::refused(
-                            400,
-                            msg::upload_needs_machine_and_name().to_owned(),
-                        );
-                    }
+                let Some(name) = khor_gui_core::upload_args(query) else {
+                    return Reply::refused(400, msg::upload_needs_machine_and_name().to_owned());
                 };
-                let into = khor_gui_core::into_arg(query);
-                return match khor_gui_core::send_upload(root, &machine, &name, &into, req.as_reader()) {
-                    Ok(id) => Reply {
+                return match khor_gui_core::stage_upload(root, &name, req.as_reader()) {
+                    Ok(path) => Reply {
                         code: 200,
                         kind: "application/json",
-                        body: serde_json::to_vec(&id).unwrap_or_default(),
+                        body: serde_json::to_vec(&path).unwrap_or_default(),
                         remember: None,
                     },
                     Err(sentence) => Reply::refused(400, sentence),

@@ -46,7 +46,6 @@
 //! home, and a move of home is a write to the head.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use khor_catalog::msg;
 use khor_core::{Kind, Millis, Session, SessionId, State, StateStamp, kind};
@@ -54,8 +53,7 @@ use khor_sync::chat::{Fate, Message, MsgBody, Step};
 use khor_sync::devices::DeviceInfo;
 
 use crate::chat::ChannelLog;
-use crate::transfer::TransferKind;
-use crate::{KindSurface, Node, NodeEvent};
+use crate::{KindSurface, Node};
 
 /// The broadcast's board, which is also its session id and the name its
 /// document syncs under.
@@ -172,30 +170,6 @@ impl Node {
             .into_iter()
             .filter(|d| d.sponsor.is_none())
             .collect())
-    }
-
-    /// Tells a khor-wide conversation a line. Telling is looking, as in
-    /// a machine's window (`Node::tell`).
-    pub fn wide_tell(&self, name: &str, text: &str) -> Result<String, String> {
-        let board = board(name)?;
-        let told = self.chat.tell(board, self.device(), text)?;
-        self.mark_seen(&told.row.id, told.at)?;
-        self.emit(NodeEvent::Event(told.event));
-        let _ = self.emit_row_of(&told.row.id);
-        Ok(told.msg_id)
-    }
-
-    /// Offers a file to every machine: the summary travels the document,
-    /// the bytes wait here until a machine accepts and pulls them.
-    /// Offering is not looking (`Node::send`'s note), so no watermark
-    /// moves. Returns the transfer session id.
-    pub fn wide_send(&self, name: &str, path: &Path) -> Result<SessionId, String> {
-        let board = board(name)?;
-        let f = self.offer_file(path)?;
-        let told = self.chat.send_files(board, self.device(), &[f], "")?;
-        self.emit(NodeEvent::Event(told.event));
-        let _ = self.emit_row_of(&told.row.id);
-        Ok(TransferKind::session_id(&told.msg_id))
     }
 
     /// The readout with each file's face, from one read of the document.
@@ -328,9 +302,9 @@ mod tests {
     }
 
     impl std::ops::Deref for Scratch {
-        type Target = Path;
+        type Target = std::path::Path;
 
-        fn deref(&self) -> &Path {
+        fn deref(&self) -> &std::path::Path {
             &self.0
         }
     }
@@ -357,14 +331,14 @@ mod tests {
     }
 
     /// The far machine's document, landed here as its block.
-    fn plant(r: &Path, far: &ChatDoc) {
+    fn plant(r: &std::path::Path, far: &ChatDoc) {
         let dir = wide_dir(r, BROADCAST).unwrap();
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("u-000000000000fafa-00000000.loro"), far.changes_since(&Default::default()).unwrap()).unwrap();
     }
 
     fn bytes_ref(name: &str) -> FileRef {
-        FileRef { name: name.into(), size: 6, digest: "ef".repeat(32) }
+        FileRef { name: name.into(), size: 6, digest: "ef".repeat(32), holder: String::new() }
     }
 
     fn fate(step: Step, landed: &str) -> Fate {

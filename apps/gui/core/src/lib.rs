@@ -1721,16 +1721,22 @@ pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
         .block_on(n.close_anywhere(&SessionId(id.to_owned())))
 }
 
-/// Leaves a line in a machine's window — the call `khor tell` makes.
-///
-/// Every line nudges a round with every machine at once (STORE-BRIEF
-/// phase 3: 发了就同步), a machine's window as much as the broadcast —
-/// otherwise it waits for the beat, up to 30 s on a machine without a
-/// face.
-pub fn tell(root: &Path, machine: &str, text: &str) -> Result<(), String> {
-    open(root)?.tell(machine, text)?;
-    sync_soon(root);
-    Ok(())
+/// **A message composed into the broadcast** (STORE-BRIEF phase 5,
+/// `Node::post`): the typed form (`@机器:路径`, files on machines, words)
+/// and this machine's files to go with it — the call `khor tell` and
+/// `khor send` make. Answers the message id, or the node's refusal (a
+/// target not reachable is named, and nothing was written).
+pub async fn post(root: &Path, typed: &str, files: &[String]) -> Result<String, String> {
+    let files: Vec<std::path::PathBuf> = files.iter().map(std::path::PathBuf::from).collect();
+    let out = open(root)?.post(typed, &files).await;
+    // A refused message leaves no staged upload behind (`stage_upload`).
+    if out.is_err() {
+        let staging = root.join(".khor").join("uploads");
+        for f in files.iter().filter(|f| f.starts_with(&staging)) {
+            let _ = std::fs::remove_file(f);
+        }
+    }
+    out
 }
 
 /// Whether claude on **this** machine is set up to tell khor what it is
@@ -2407,35 +2413,6 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
     })
 }
 
-/// Sends a file the sender names by path — `khor send <machine> <file>
-/// [--into <dir>]` through the same node call (docs/KHOR.md
-/// equivalence); `into` is the directory on that machine, empty for its
-/// receive location. The tauri skin reaches this after its native picker
-/// answered with a real local path; the browser faces reach it after
-/// [`save_upload`] turned bytes into one. Answers the transfer session
-/// id, the CLI's own deliverable.
-///
-/// The receiver starts the pull as soon as it reads the message, so a
-/// round goes now, on a thread of its own, not at the next beat.
-pub fn send_path(root: &Path, machine: &str, path: &Path, into: &str) -> Result<String, String> {
-    let id = open(root)?.send(machine, path, into)?.0;
-    sync_soon(root);
-    Ok(id)
-}
-
-/// A round with every machine now, on a thread of its own, not at the
-/// next beat: what a send or a broadcast just wrote should reach the
-/// others while the person is still looking.
-fn sync_soon(root: &Path) {
-    let root = root.to_path_buf();
-    std::thread::spawn(move || {
-        let (Ok(n), Ok(rt)) = (open(&root), tokio::runtime::Builder::new_current_thread().enable_all().build()) else {
-            return;
-        };
-        let _ = rt.block_on(n.sync_now());
-    });
-}
-
 /// The directory on the receiving machine a raw upload names
 /// (`into=`), empty for its receive location.
 pub fn into_arg(query: &str) -> String {
@@ -2563,21 +2540,10 @@ pub fn drop_stage_args(query: &str) -> Option<String> {
         .filter(|n| !n.is_empty())
 }
 
-pub fn upload_args(query: &str) -> Option<(String, String)> {
-    let mut machine = None;
-    let mut name = None;
-    for pair in query.split('&') {
-        let (k, v) = pair.split_once('=')?;
-        match k {
-            "machine" => machine = Some(percent_decode(v)?),
-            "name" => name = Some(percent_decode(v)?),
-            _ => {}
-        }
-    }
-    match (machine, name) {
-        (Some(m), Some(n)) if !m.is_empty() && !n.is_empty() => Some((m, n)),
-        _ => None,
-    }
+/// The upload route's one argument off its query string: the file's
+/// name, percent-decoded. `None` without one — a name is never invented.
+pub fn upload_args(query: &str) -> Option<String> {
+    drop_stage_args(query)
 }
 
 /// Minimal percent-decoding (RFC 3986): enough for what
@@ -2600,27 +2566,14 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// One browser upload, end to end: stage the bytes, then send the
-/// staged path — the shared body behind the web face's and the dev
-/// bridge's upload routes, so the two cannot come to enforce different
-/// rules. On a failed send the staged file goes too (the module's
-/// no-orphan rule); on success it stays, because it is what the far
-/// side's fetch reads.
-pub fn send_upload(
-    root: &Path,
-    machine: &str,
-    name: &str,
-    into: &str,
-    body: &mut dyn std::io::Read,
-) -> Result<String, String> {
-    let staged = save_upload(root, name, body)?;
-    match send_path(root, machine, &staged, into) {
-        Ok(id) => Ok(id),
-        Err(e) => {
-            let _ = std::fs::remove_file(&staged);
-            Err(e)
-        }
-    }
+/// One browser upload for the broadcast's composer, staged: the bytes
+/// streamed to this machine's staging area under the cap, the staged
+/// path answered — the shared body behind the web face's and the dev
+/// bridge's upload routes. The composer posts that path with its
+/// message ([`post`]); the staged file is the offer's source from then
+/// on, and a post that is refused takes it away (no orphan).
+pub fn stage_upload(root: &Path, name: &str, body: &mut dyn std::io::Read) -> Result<String, String> {
+    save_upload(root, name, body).map(|p| p.display().to_string())
 }
 
 /// A conversation file sent again after it failed or was cancelled —

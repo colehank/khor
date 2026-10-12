@@ -4,11 +4,11 @@ import {
   fetchDevices,
   inApp,
   machineLog,
-  pickAndSendFile,
+  compose,
+  pickPaths,
   retryTransfer,
+  stageFile,
   stopTransfer,
-  tell,
-  uploadFile,
   type ChatMsgRow,
   type MachineLog,
 } from "@/api";
@@ -118,7 +118,7 @@ export function MachineChat({ id }: { id: string }) {
     const text = draft.trim();
     if (!text || sending) return;
     setSending(true);
-    tell(machine, text).then(
+    compose(wide ? text : `@${machine} ${text}`).then(
       () => {
         setDraft("");
         setSending(false);
@@ -177,7 +177,7 @@ export function MachineChat({ id }: { id: string }) {
       // The native picker owns the visible in-between here; a cancel
       // resolves null and simply ends the flight.
       setSendingFile(true);
-      fileOutcome(pickAndSendFile(machine, into));
+      fileOutcome(pickPaths().then((ps) => (ps.length ? compose(wide ? "" : `@${machine}${into ? `:${into}` : ""}`, ps) : null)));
     } else {
       fileInput.current?.click();
     }
@@ -185,7 +185,7 @@ export function MachineChat({ id }: { id: string }) {
   const picked = (f: File | undefined) => {
     if (!f) return;
     setSendingFile(true);
-    fileOutcome(uploadFile(machine, f, into));
+    fileOutcome(stageFile(f).then((p) => compose(wide ? "" : `@${machine}${into ? `:${into}` : ""}`, [p])));
   };
 
   return (

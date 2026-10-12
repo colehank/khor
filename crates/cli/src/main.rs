@@ -3926,75 +3926,104 @@ fn sessions(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The targets a `tell` / `send` names: a bare machine (`khor tell
+/// turing …`, the habit from before the broadcast) is one target; any
+/// leading `@machine[:dir]` are more. Answers them in the typed form
+/// (`khor_node::post`) and the arguments after them.
+fn targets_of(args: &[String]) -> (Vec<String>, &[String]) {
+    let mut to = Vec::new();
+    let mut i = 0;
+    if let Some(first) = args.first()
+        && !first.starts_with('@')
+    {
+        to.push(khor_node::post::addressed(first, "").trim_end().to_owned());
+        i = 1;
+    }
+    while i < args.len() && args[i].starts_with('@') && args[i].len() > 1 {
+        to.push(args[i].clone());
+        i += 1;
+    }
+    (to, &args[i..])
+}
+
+/// Says a thing in the broadcast, pushed to the machines named — the
+/// words always literal (`send` is where a file name becomes a file).
+/// Refused, with nothing written, when a named machine is not reachable.
 fn tell(rest: &[String]) -> Result<(), String> {
-    let [machine, text @ ..] = rest else {
-        return Err(usage_text().into());
-    };
-    if text.is_empty() {
+    let (to, words) = targets_of(rest);
+    if words.is_empty() {
         return Err(usage_text().into());
     }
-    let id = told_now(machine, &text.join(" "))?;
+    let typed = format!("{} {}", to.join(" "), words.join(" "));
+    let n = node()?;
+    let id = rt()?.block_on(n.post(typed.trim(), &[]))?;
     println!("{id}");
     Ok(())
 }
 
-/// Sends a file, or says a thing — one word for "put this in that
-/// machine's conversation" (用户裁决, 传输并入对话批的后续).
+/// Sends files, or says a thing — one word for "push this to that
+/// machine" (用户裁决, 传输并入对话批的后续; STORE-BRIEF phase 5: it is a
+/// broadcast message with `@machine`, and the bytes land with nobody
+/// pressing anything).
 ///
-/// The rule, fixed here and in the usage text: a **single** argument
-/// naming an existing regular file makes this a transfer; anything
-/// else makes the whole tail one message, joined with spaces (`tell`'s
-/// shape). Single on purpose — with more words along, a transfer would
-/// have to drop them while a message swallows a file name whole, so
-/// only one reading loses nothing. The escape hatch for a lone word
+/// The rule, fixed here and in the usage text: when **every** argument
+/// after the targets names an existing regular file or a file on a
+/// machine (`hinton:/data/x.bin`), this sends those files; anything else
+/// makes the whole tail one message, joined with spaces (`tell`'s shape)
+/// — only one reading loses nothing. The escape hatch for a lone word
 /// that happens to name a file is `tell`, which stays and is always
-/// literal — the ambiguity has a one-word way out and never needs
-/// quoting tricks here.
+/// literal. `--into <dir>` at the end is the directory on every target
+/// that did not name its own.
 fn send(rest: &[String]) -> Result<(), String> {
-    let [machine, tail @ ..] = rest else {
-        return Err(usage_text().into());
+    let (mut to, tail) = targets_of(rest);
+    let (tail, into) = match tail {
+        [head @ .., flag, dir] if flag == "--into" => (head, Some(dir.as_str())),
+        _ => (tail, None),
     };
-    if tail.is_empty() {
+    if tail.is_empty() || to.is_empty() {
         return Err(usage_text().into());
     }
-    let candidate = std::path::Path::new(&tail[0]);
-    // `--into <dir>`: the directory on the receiving machine.
-    let into = match &tail[1..] {
-        [flag, dir] if flag == "--into" && candidate.is_file() => Some(dir.as_str()),
-        _ => None,
+    if let Some(dir) = into {
+        for t in to.iter_mut().filter(|t| !t.contains(':')) {
+            t.push(':');
+            t.push_str(dir);
+        }
+    }
+    let n = node()?;
+    let machines = n.devices()?;
+    let far = |t: &str| {
+        t.split_once(':')
+            .is_some_and(|(m, p)| !p.is_empty() && khor_node::post::machine_named(&machines, m).is_some())
     };
-    if (tail.len() == 1 || into.is_some()) && candidate.is_file() {
-        let n = node()?;
-        // A satellite has no khor to receive an offer: the file goes
-        // over the sponsor's own scp, whole, and the verb says what
-        // moved (附属机器批; from any other machine this refuses and
-        // names the sponsor to run it on).
-        if let Some(host) = n.satellite_host_here(machine)? {
-            let moved = n.send_to_satellite(&host, candidate)?;
-            println!("{}", msg::sat_sent(machine, moved));
-            return Ok(());
-        }
-        let id = n.send(machine, candidate, into.unwrap_or(""))?;
-        println!("{}", cli::summary_sent(&id.0));
-        // The receiver starts the pull as soon as it reads the message:
-        // a round now, not at the next beat. Best effort — the message is
-        // written either way and reaches it with the next round.
-        if let Ok(rt) = rt() {
-            let _ = rt.block_on(n.sync_now());
-        }
+    let files = tail.iter().all(|t| std::path::Path::new(t).is_file() || far(t));
+    if !files {
+        let typed = format!("{} {}", to.join(" "), tail.join(" "));
+        let id = rt()?.block_on(n.post(typed.trim(), &[]))?;
+        println!("{id}");
         return Ok(());
     }
-    let id = told_now(machine, &tail.join(" "))?;
-    println!("{id}");
+    // A satellite has no khor to receive a push: the file goes over the
+    // sponsor's own scp, whole, and the verb says what moved (附属机器批;
+    // from any other machine this refuses and names the sponsor to run
+    // it on).
+    if let ([one], [file]) = (rest.first().filter(|m| !m.starts_with('@')).map(std::slice::from_ref).unwrap_or(&[]), tail)
+        && std::path::Path::new(file).is_file()
+        && let Some(host) = n.satellite_host_here(one)?
+    {
+        let moved = n.send_to_satellite(&host, std::path::Path::new(file))?;
+        println!("{}", msg::sat_sent(one, moved));
+        return Ok(());
+    }
+    let (far_files, here): (Vec<&String>, Vec<&String>) = tail.iter().partition(|t| !std::path::Path::new(t).is_file());
+    let typed = format!(
+        "{} {}",
+        to.join(" "),
+        far_files.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(" ")
+    );
+    let here: Vec<std::path::PathBuf> = here.iter().map(std::path::PathBuf::from).collect();
+    let id = rt()?.block_on(n.post(typed.trim(), &here))?;
+    println!("{}", cli::summary_sent(&format!("transfer/{id}")));
     Ok(())
-}
-
-/// A line told and a round with every machine now, not at the next
-/// beat (`Node::tell_now`): the receiver reads it while the sender is
-/// still looking.
-fn told_now(machine: &str, text: &str) -> Result<String, String> {
-    let n = node()?;
-    rt()?.block_on(n.tell_now(machine, text))
 }
 
 /// A conversation file that failed or was cancelled, sent again: its
@@ -4058,12 +4087,23 @@ fn retry(rest: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// The broadcast's messages; with a machine, only those pushed to it
+/// (the `@机器` filter, STORE-BRIEF phase 5).
 fn log(rest: &[String]) -> Result<(), String> {
-    let [machine] = rest else {
-        return Err(usage_text().into());
-    };
     let n = node()?;
-    let log = n.log(machine)?;
+    let only = match rest {
+        [] => None,
+        [machine] => {
+            let all = n.devices()?;
+            let m = khor_node::post::machine_named(&all, machine.trim_start_matches('@')).ok_or_else(|| {
+                let names: Vec<&str> = all.iter().map(|d| d.shown()).collect();
+                msg::no_such_machine(machine, names.join(cli::name_separator()))
+            })?;
+            Some(m.id.clone())
+        }
+        _ => return Err(usage_text().into()),
+    };
+    let log = n.log(khor_node::wide::BROADCAST)?;
     if log.broken > 0 {
         eprintln!("{}", cli::broken_blocks(log.broken));
     }
@@ -4074,7 +4114,10 @@ fn log(rest: &[String]) -> Result<(), String> {
         .map(|d| (d.id.clone(), d.shown().to_owned()))
         .collect();
     for m in log.messages {
-        println!("{}: {}", m.from.name, render(&m));
+        if only.as_ref().is_some_and(|id| !m.to.iter().any(|t| &t.device == id)) {
+            continue;
+        }
+        println!("{}: {}", m.from.name, render(&m, &names));
         for line in fate_lines(&m, &names) {
             println!("{line}");
         }
@@ -5907,11 +5950,21 @@ fn human_age(ms: u64) -> String {
     }
 }
 
-fn render(m: &khor_node::Message) -> String {
+fn render(m: &khor_node::Message, names: &std::collections::HashMap<String, String>) -> String {
     if m.retracted {
         return cli::retracted().into();
     }
-    match &m.body {
+    // Its targets as they are called today, each with its directory.
+    let to: String = m
+        .to
+        .iter()
+        .map(|t| {
+            let who = names.get(&t.device).cloned().unwrap_or_else(|| t.device.chars().take(8).collect());
+            if t.path.is_empty() { format!("@{who} ") } else { format!("@{who}:{} ", t.path) }
+        })
+        .collect();
+    let note = if m.note.is_empty() { String::new() } else { format!("{}\t", m.note) };
+    to + &note + &match &m.body {
         MsgBody::Text(t) => t.clone(),
         // The transfer id rides the line: with no transfer row on the
         // list any more (传输并入对话批), this is where the handle

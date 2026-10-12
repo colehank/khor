@@ -60,162 +60,6 @@ fn scratch(tag: &str) -> Scratch {
     root(tag)
 }
 
-#[test]
-fn notes_to_self_are_seen_the_moment_they_are_told() {
-    let r = root("tell");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    n.tell(n.name().to_owned().as_str(), "a note to self")
-        .unwrap();
-
-    let rows = n.sessions().unwrap();
-    assert_eq!(rows.len(), 1);
-    let row = &rows[0].session;
-    assert_eq!(row.title, n.name());
-    assert_eq!(row.home, n.device());
-    assert_eq!(row.unread, 0, "own words never count as unread");
-    assert_eq!(row.state.state, State::Idle);
-    assert!(row.state.at.0 > 0, "the stamp should be the last message's");
-
-    let log = n.log(n.name().to_owned().as_str()).unwrap();
-    assert_eq!(log.broken, 0);
-    assert_eq!(log.messages.len(), 1);
-}
-
-/// The dumb path in miniature: a block from another device lands as a
-/// file, and the row must go Done/unread without any network.
-#[test]
-fn a_foreign_block_raises_unread_and_seen_clears_it() {
-    let r = root("foreign");
-    let n = Node::open(r.to_path_buf()).unwrap();
-
-    let far = ChatDoc::new(0xF0F0).unwrap();
-    far.tell(
-        &Sender {
-            id: "dev-far".into(),
-            name: "far".into(),
-        },
-        "from far away",
-    )
-    .unwrap();
-    let block = far.changes_since(&Default::default()).unwrap();
-    let dir = channel_dir(&r, n.name()).unwrap();
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("u-000000000000f0f0-00000000.loro"), &block).unwrap();
-
-    let row = &n.sessions().unwrap()[0].session;
-    assert_eq!(row.unread, 1, "the far line should count as unread");
-    assert_eq!(row.state.state, State::Done);
-
-    n.seen(&row.id).unwrap();
-    let row = &n.sessions().unwrap()[0].session;
-    assert_eq!(row.unread, 0);
-    assert_eq!(row.state.state, State::Idle);
-}
-
-#[test]
-fn watch_receives_what_tell_emits() {
-    let r = root("watch");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    let rx = n.watch();
-    n.tell(n.name().to_owned().as_str(), "push one").unwrap();
-
-    let first = rx.try_recv().expect("an event should arrive");
-    let second = rx.try_recv().expect("a row update should follow");
-    assert!(matches!(first, NodeEvent::Event(_)), "event first");
-    match second {
-        NodeEvent::Row(row) => assert_eq!(row.unread, 0),
-        other => panic!("then a row update, got {other:?}"),
-    }
-}
-
-/// Close is putting the row away, never deletion (chat 收起批, on top of
-/// 传输并入对话批's "close deletes nothing"): the row leaves the list,
-/// history AND received files stay exactly where they were, and the
-/// next message brings the row back owing only itself — the WeChat
-/// shape, with the whole ledger intact underneath.
-#[test]
-fn closing_a_chat_folds_the_row_and_a_message_brings_it_back() {
-    let r = root("close");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    n.tell(n.name().to_owned().as_str(), "the line that stays")
-        .unwrap();
-    let dir = channel_dir(&r, n.name()).unwrap();
-    let files = dir.join("files");
-    fs::create_dir_all(&files).unwrap();
-    fs::write(files.join("payload.bin"), b"received bytes").unwrap();
-
-    let id = n.sessions().unwrap()[0].session.id.clone();
-    n.close(&id).unwrap();
-    assert!(
-        files.join("payload.bin").exists(),
-        "a received file landed on this filesystem; close must not take it back"
-    );
-    let log = n.log(n.name().to_owned().as_str()).unwrap();
-    assert_eq!(log.messages.len(), 1, "the history must survive close");
-    assert!(
-        n.sessions().unwrap().is_empty(),
-        "the put-away row must leave the list"
-    );
-
-    // The way back is a message past the mark. The pause is real: the
-    // put-away watermark is the last message's clock, and a reply landing
-    // in the very same millisecond would still be under it.
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    n.tell(n.name().to_owned().as_str(), "the line that reopens")
-        .unwrap();
-    let rows = n.sessions().unwrap();
-    assert_eq!(rows.len(), 1, "a new message must bring the row back");
-    assert_eq!(
-        n.log(n.name().to_owned().as_str()).unwrap().messages.len(),
-        2,
-        "…and it comes back with the whole history, not a fresh page"
-    );
-    let row = &rows[0].session;
-    assert_eq!((row.unread, row.state.state), (0, State::Idle));
-}
-
-/// Closing marks seen to the same instant: a revived row owes only the
-/// messages that revived it, never the debt the person dismissed when
-/// they put the row away. Foreign words, because own words are auto-seen
-/// and would make this assertion pass with the mark broken.
-#[test]
-fn a_revived_chat_owes_only_what_revived_it() {
-    let r = root("close-unread");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    let dir = channel_dir(&r, n.name()).unwrap();
-    fs::create_dir_all(&dir).unwrap();
-    let far = ChatDoc::new(0xF0F0).unwrap();
-    let sender = Sender {
-        id: "dev-far".into(),
-        name: "far".into(),
-    };
-    far.tell(&sender, "unread when closed").unwrap();
-    fs::write(
-        dir.join("u-000000000000f0f0-00000000.loro"),
-        far.changes_since(&Default::default()).unwrap(),
-    )
-    .unwrap();
-    let before = &n.sessions().unwrap()[0].session;
-    assert_eq!(before.unread, 1, "control: the dismissed debt was real");
-    let id = before.id.clone();
-
-    n.close(&id).unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    far.tell(&sender, "the reviver").unwrap();
-    fs::write(
-        dir.join("u-000000000000f0f0-00000001.loro"),
-        far.changes_since(&Default::default()).unwrap(),
-    )
-    .unwrap();
-
-    let rows = n.sessions().unwrap();
-    assert_eq!(rows.len(), 1, "the second message must bring the row back");
-    assert_eq!(
-        rows[0].session.unread, 1,
-        "only the reviver counts: close marked the dismissed debt seen"
-    );
-}
-
 /// forget 批: a machine shown the door takes its rows with it — its chat
 /// row stops being derived (the table no longer holds it) and its cached
 /// report stops being painted, while the in-table sibling keeps every
@@ -282,262 +126,6 @@ fn a_forgotten_machines_rows_leave_the_list() {
     );
 }
 
-/// **A send makes a message, not a row** (传输并入对话批). The offer is
-/// in the machine's log as a file message; no `transfer/` row joins the
-/// list; and the sender's own chat row is not 待批 — the approval being
-/// waited on is the far machine's, and a badge this machine cannot
-/// clear by answering would break 角标可归零. (The receiving seat's
-/// half of that pair is the next test.)
-#[test]
-fn a_send_makes_a_file_message_and_no_transfer_row() {
-    let r = root("send-msg");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    let payload = r.join("hello.txt");
-    fs::write(&payload, b"five!").unwrap();
-
-    // To this machine's own window: sender seat, and a channel that
-    // exists without pairing anybody.
-    let tid = n.send(n.name().to_owned().as_str(), &payload, "").unwrap();
-    assert!(
-        tid.0.starts_with("transfer/"),
-        "the retry handle is still a transfer id"
-    );
-
-    let rows = n.sessions().unwrap();
-    assert!(
-        !rows.iter().any(|v| v.session.id.0.starts_with("transfer/")),
-        "no transfer row on the list any more"
-    );
-    let log = n.log(n.name().to_owned().as_str()).unwrap();
-    assert!(
-        log.messages
-            .iter()
-            .any(|m| matches!(&m.body, MsgBody::Files(f) if f[0].name == "hello.txt")),
-        "the offer must be a file message in the machine's log"
-    );
-    let chat = rows
-        .iter()
-        .find(|v| v.session.id.0.starts_with("chat/"))
-        .expect("the machine's chat row exists");
-    assert_ne!(
-        chat.session.state.state,
-        State::Blocked,
-        "the sender's seat has nothing to approve: its row must not say 待批"
-    );
-}
-
-/// **Offering is not looking.** `khor send` used to raise the offered-to
-/// channel's seen watermark to the offer's own stamp — "telling implies
-/// looking", borrowed from `tell` — and the seen document is replicated,
-/// so the machine that had something to hand over cleared the badge on
-/// the machine the file was actually for. The recipient's row read
-/// 空闲/0 where docs/SESSION.md says an arrived file goes to 完成/未看.
-///
-/// This watches the cause from the only seat that can be watched with
-/// one node: the offering machine's own `send` must leave the watermark
-/// where it found it. (The effect at the other end, over a real
-/// connection, is `tests/seen_watermark.rs`.)
-///
-/// **The positive control is the same probe on the same document one
-/// line later**: `tell` does raise it. Without that, "the watermark is
-/// 0" and "this probe reads 0 for every id there is" are the same
-/// sentence in a test report.
-#[test]
-fn an_offer_must_not_raise_the_seen_watermark() {
-    let r = root("offer-watermark");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    let me = n.name().to_owned();
-    let sid = format!("chat/{me}");
-    let watermark = |n: &Node| n.seen_loaded().unwrap().doc.watermark(&sid);
-
-    let payload = r.join("handover.bin");
-    fs::write(&payload, b"bytes").unwrap();
-    n.send(&me, &payload, "").unwrap();
-    assert_eq!(
-        watermark(&n),
-        0,
-        "offering is not looking: no mark may be written"
-    );
-
-    // And the offering seat still does not badge itself for what it just
-    // handed over. That answer is the seat's, derived locally
-    // (`ChatKind::i_offered`) — never a mark in a document that travels
-    // to every machine and speaks for all of them.
-    let row = n
-        .sessions()
-        .unwrap()
-        .into_iter()
-        .find(|v| v.session.id.0 == sid)
-        .expect("the machine's chat row exists")
-        .session;
-    assert_eq!(
-        row.unread, 0,
-        "the machine that offered it has nothing to look at"
-    );
-
-    // Same probe, same document, one line later.
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    n.tell(&me, "and a line about it").unwrap();
-    assert!(
-        watermark(&n) > 0,
-        "control: telling *is* looking, and this probe can read a mark when there is one"
-    );
-}
-
-/// The receiving seat's half of the pair: a file sent TO this machine
-/// presses 忙碌 onto its chat row while it is on its way — never 待批,
-/// nobody's approval is asked (STORE-BRIEF phase 2: 直接传) — and the
-/// landing lifts it, to 完成/未看 and not to 空闲.
-///
-/// **What this fixture can and cannot reach.** The far machine here is
-/// planted bytes, so whatever it "did" is whatever this function writes:
-/// the test can model one world, never compare two. It used to plant a
-/// message with **nobody behind it** — no sender's watermark at all —
-/// which is a world no `khor send` could produce, and so it stayed green
-/// through the entire life of the bug that `Node::send` marked
-/// `chat/<recipient>` seen as it offered and cleared this very badge.
-/// Planting *that* mark instead only swaps which single world is frozen:
-/// it would be red forever, including after the fix.
-///
-/// So the fixture below plants the mark a far machine really does leave
-/// — the one a **`tell`** raises, which still replicates and by
-/// construction stands *below* a later offer — and the property under
-/// test is that the offer counts above a legitimately standing
-/// watermark. **The send-side leak itself is not testable from one
-/// node**: it is a fact about what the other machine wrote, and it is
-/// owned by `tests/seen_watermark.rs` (two real nodes, a real send) and
-/// by `an_offer_must_not_raise_the_seen_watermark` below, which watches
-/// this machine's own `send` from the offering seat.
-#[test]
-fn an_incoming_file_is_busy_on_the_chat_row_until_it_lands() {
-    let r = root("recv-offer");
-    let n = Node::open(r.to_path_buf()).unwrap();
-
-    // A file offer from another device, landed as a chat block — the
-    // same shape `a_foreign_block_raises_unread_and_seen_clears_it`
-    // plants a text message with. A line comes first, so that the
-    // watermark planted below is one a real machine leaves behind.
-    let far = ChatDoc::new(0xFAFA).unwrap();
-    let who = Sender {
-        id: "dev-far".into(),
-        name: "far".into(),
-    };
-    far.tell(&who, "sending you something").unwrap();
-    let said_at = far.messages().last().expect("the line is in the doc").at;
-    // Distinct stamps: same-millisecond messages would put the offer at
-    // the watermark rather than above it, and the reading below would be
-    // about the clock instead of about the rule.
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    let f = khor_node_test_fileref();
-    far.send_files(&who, std::slice::from_ref(&f), "").unwrap();
-    let block = far.changes_since(&Default::default()).unwrap();
-    let dir = channel_dir(&r, n.name()).unwrap();
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("u-000000000000fafa-00000000.loro"), &block).unwrap();
-
-    // The far machine's watermark, arriving the way it really does: a
-    // foreign block in this node's own seen store, raised by its `tell`
-    // (telling implies looking) and therefore standing below the offer.
-    let far_seen = SeenDoc::new(0xFAFA).unwrap();
-    far_seen
-        .mark(&format!("chat/{}", n.name()), said_at)
-        .unwrap();
-    let sdir = seen_dir(&r);
-    fs::create_dir_all(&sdir).unwrap();
-    fs::write(
-        sdir.join("u-000000000000fafa-00000000.loro"),
-        far_seen.changes_since(&Default::default()).unwrap(),
-    )
-    .unwrap();
-
-    let chat_row = |n: &Node| {
-        n.sessions()
-            .unwrap()
-            .into_iter()
-            .find(|v| v.session.id.0.starts_with("chat/"))
-            .expect("the machine's chat row exists")
-            .session
-    };
-    assert_eq!(
-        chat_row(&n).state.state,
-        State::Done,
-        "a file on its way to THIS machine is new content (完成/未看), never 待批"
-    );
-    assert_eq!(
-        n.log_faced(n.name()).unwrap().1[1],
-        Some(State::Busy),
-        "its chip says 忙碌 while it is on its way"
-    );
-
-    // The file lands (what the receiver's pull writes on the message):
-    // the pressure lifts — to the row's own message-based word.
-    let msg_id = far.messages().last().expect("the file message").id.clone();
-    let landed = khor_sync::chat::Fate {
-        step: khor_sync::chat::Step::Landed,
-        moved: 6,
-        landed: vec![r.join("khor-drop").join("drop.bin").display().to_string()],
-        why: String::new(),
-        via: String::new(),
-    };
-    n.chat.set_fate(n.name(), &msg_id, &landed).unwrap();
-    let row = chat_row(&n);
-    assert_eq!(n.log_faced(n.name()).unwrap().1[1], Some(State::Done), "the landing lifts 忙碌");
-    assert_eq!(
-        row.state.state,
-        State::Done,
-        "…to the unseen file message's own 完成"
-    );
-    assert_eq!(
-        row.unread, 1,
-        "and 完成 here means one message nobody at this machine has looked at — \
-         the far machine's watermark is not this machine's answer"
-    );
-}
-
-/// **Closing a transfer is not deleting a file** (the lead, 2026-10-07):
-/// the landed file sits in the visible receive directory and is the
-/// person's, so `close` leaves it and its receipt and clears only what an
-/// unfinished pull left.
-#[test]
-fn closing_a_transfer_keeps_the_landed_file() {
-    let r = root("close-keeps");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    let far = ChatDoc::new(0xFAFB).unwrap();
-    let who = Sender {
-        id: "dev-far".into(),
-        name: "far".into(),
-    };
-    let f = khor_node_test_fileref();
-    far.send_files(&who, std::slice::from_ref(&f), "").unwrap();
-    let msg_id = far.messages().last().expect("the offer is in the doc").id.clone();
-    let dir = channel_dir(&r, n.name()).unwrap();
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("u-000000000000fafb-00000000.loro"), far.changes_since(&Default::default()).unwrap()).unwrap();
-
-    let landed = n.receive_dir().unwrap().join("drop.bin");
-    fs::write(&landed, b"bytes!").unwrap();
-    crate::road::record(
-        &r,
-        &crate::road::Receipt {
-            digest: f.digest.clone(),
-            name: f.name.clone(),
-            path: landed.clone(),
-            size: 6,
-            from: "dev-far".into(),
-            at_ms: 1,
-            mode: crate::road::Mode::Offer,
-        },
-    )
-    .unwrap();
-    let partial = crate::road::partial_of(&r, &f.digest).unwrap();
-    fs::write(&partial, b"by").unwrap();
-
-    n.close(&SessionId(format!("transfer/{msg_id}"))).unwrap();
-    assert!(landed.exists(), "the landed file is the person's: close must leave it");
-    assert!(crate::road::receipt(&r, &f.digest).is_some(), "and its receipt, so the chip still finds it");
-    assert!(!partial.exists(), "what an unfinished pull left goes");
-}
-
 /// Writes the landing of the last file message `far` planted, as this
 /// machine's pull would.
 fn land_planted(n: &Node, far: &ChatDoc, r: &std::path::Path) {
@@ -574,8 +162,8 @@ fn khor_node_test_fileref() -> khor_sync::chat::FileRef {
 fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
     let r = root("pin");
     let n = Node::open(r.to_path_buf()).unwrap();
-    n.tell(n.name().to_owned().as_str(), "a note").unwrap();
-    let live = n.open_ephemeral(khor_core::kind::TUI, "an agent").unwrap();
+    n.open_ephemeral(khor_core::kind::SHELL, "a build").unwrap();
+    n.open_ephemeral(khor_core::kind::TUI, "an agent").unwrap();
 
     let ids = |n: &Node| -> Vec<String> {
         n.sessions()
@@ -584,27 +172,24 @@ fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
             .map(|v| v.session.id.0)
             .collect()
     };
-    let chat_first = ids(&n);
-    assert_eq!(chat_first.len(), 2);
-    assert!(
-        chat_first[0].starts_with("chat/"),
-        "control: {chat_first:?}"
-    );
+    let before = ids(&n);
+    assert!(before.len() >= 2, "{before:?}");
+    let last = SessionId(before[before.len() - 1].clone());
 
-    n.pin_session(&live, true).unwrap();
-    assert_eq!(ids(&n)[0], live.0, "the pinned row must lead");
+    n.pin_session(&last, true).unwrap();
+    assert_eq!(ids(&n)[0], last.0, "the pinned row must lead");
     let pinned: Vec<bool> = n
         .sessions()
         .unwrap()
         .into_iter()
         .map(|v| v.pinned)
         .collect();
-    assert_eq!(pinned, vec![true, false], "and only it wears the flag");
+    assert!(pinned[0] && pinned[1..].iter().all(|p| !p), "and only it wears the flag: {pinned:?}");
 
-    n.pin_session(&live, false).unwrap();
+    n.pin_session(&last, false).unwrap();
     assert_eq!(
         ids(&n),
-        chat_first,
+        before,
         "unpinning restores the original order exactly"
     );
 }
@@ -617,19 +202,20 @@ fn a_pinned_row_leads_the_list_and_goes_back_when_unpinned() {
 fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
     let r = root("pin-ghost");
     let n = Node::open(r.to_path_buf()).unwrap();
-    n.tell(n.name().to_owned().as_str(), "a note").unwrap();
+    n.open_ephemeral(khor_core::kind::SHELL, "a build").unwrap();
+    let before = n.sessions().unwrap().len();
 
     n.pin_session(&SessionId("tui/long-gone".into()), true)
         .unwrap();
     let rows = n.sessions().unwrap();
     assert_eq!(
         rows.len(),
-        1,
+        before,
         "a pin must not conjure a row: {:?}",
         rows.len()
     );
     assert!(
-        !rows[0].pinned,
+        rows.iter().all(|r| !r.pinned),
         "and it must not land on somebody else's row"
     );
 }
@@ -640,13 +226,11 @@ fn an_id_with_no_row_can_be_pinned_and_shows_nothing() {
 /// and that is a real answer. **A tui khor cannot attribute carries no
 /// category at all**, and the point of enumerating both here is that
 /// filing the tui under `shell` would be the neighbour trap: it reads as
-/// a confident answer where an honest gap belongs. A chat row is khor's
-/// own doing, so it says so.
+/// a confident answer where an honest gap belongs.
 #[test]
 fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
     let r = root("category");
     let n = Node::open(r.to_path_buf()).unwrap();
-    n.tell(n.name().to_owned().as_str(), "a note").unwrap();
     let shell = n.open_ephemeral(khor_core::kind::SHELL, "build").unwrap();
     let tui = n
         .open_ephemeral(khor_core::kind::TUI, "some agent")
@@ -665,9 +249,6 @@ fn khor_names_what_it_can_place_and_leaves_the_rest_blank() {
         None,
         "khor must not guess a vendor from a command line"
     );
-
-    let chat = SessionId(format!("chat/{}", n.name()));
-    assert_eq!(of(&chat).as_deref(), Some(khor_core::category::KHOR));
 }
 
 /// **Every name khor already answers to is refused, one by one.**
@@ -1088,19 +669,6 @@ fn pinning_a_machine_that_is_not_in_the_table_is_refused_by_name() {
     let e = n.pin_device("no-such-box", true).unwrap_err();
     let probe = khor_catalog::msg::no_such_machine('\u{0}', '\u{0}');
     assert!(e.contains(probe.split('\u{0}').next().unwrap()), "{e}");
-}
-
-#[test]
-fn telling_an_unknown_machine_is_refused_by_name() {
-    let r = root("unknown");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    let e = n.tell("no-such-box", "hi").unwrap_err();
-    let probe = khor_catalog::msg::no_such_machine('\u{0}', '\u{0}');
-    assert!(e.contains(probe.split('\u{0}').next().unwrap()), "{e}");
-    assert!(
-        e.contains(n.name()),
-        "the error should name existing machines: {e}"
-    );
 }
 
 #[test]

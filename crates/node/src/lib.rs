@@ -44,6 +44,7 @@ pub mod merge;
 pub mod modes;
 pub(crate) mod once;
 pub mod pause;
+pub mod post;
 pub mod pictures;
 pub mod pipe;
 pub mod place;
@@ -4108,59 +4109,6 @@ impl Node {
         Some((report.usage, now_ms().saturating_sub(report.at_ms)))
     }
 
-    /// Sends a file to a machine's window: the summary (name, size,
-    /// digest, and `into`, the directory over there — empty for its
-    /// receive location) travels the CRDT to everyone, and the receiver
-    /// pulls the bytes from here as soon as it reads it, nobody asked
-    /// (STORE-BRIEF phase 2: 直接传). Returns the transfer session id.
-    ///
-    /// The broadcast (`wide/all`) takes a file the same way, as an offer
-    /// every machine answers on its own ([`Self::wide_send`]).
-    pub fn send(&self, machine: &str, path: &Path, into: &str) -> Result<SessionId, String> {
-        if machine.starts_with(khor_sync::chat::WIDE) {
-            return self.wide_send(machine, path);
-        }
-        let into = road::tidy_setting(into)?;
-        let (channel, home) = self.resolve(machine)?;
-        let f = self.offer_file(path)?;
-        let told = self.chat.send_files(&channel, home, &[f], &into)?;
-        // **Offering is not looking, so no watermark moves here** — and
-        // this is the one place the person and the machine come apart.
-        //
-        // The watermark is the *person's* decision, replicated on
-        // purpose: a look on the phone clears the desk (docs/NET.md 已读).
-        // That is exactly why `tell` raises it and must keep raising it —
-        // a line's content *is* the line, so the person who typed it has
-        // seen it wherever they read it, and `tests/pairing.rs` pins that
-        // ("own words never count as unread, on any device").
-        //
-        // A file message is not that. What it carries is not content but
-        // a summary of bytes that have not arrived anywhere yet, and
-        // **"it arrived here" is a fact about a machine, not about a
-        // person**. So there is no seat — not even this one — that has
-        // looked at it. Raising the watermark from here wrote a machine's
-        // fact into the person's document, and the offering machine
-        // cleared the badge on the machine the file was actually for:
-        // the recipient's row read 空闲/0 where docs/SESSION.md says an
-        // arrived file goes to 完成/未看 like any message, and a third
-        // machine never saw it at all.
-        //
-        // This machine still does not badge itself for what it offered.
-        // That is a seat's answer and it is derived locally, in
-        // `ChatKind::i_offered` — never written into a document that
-        // travels.
-        //
-        // The row is therefore re-read against the watermark that
-        // actually stands, not against the offer's own stamp: an offer
-        // clears nothing, so a debt already sitting on this row must
-        // survive it.
-        let wm = self.seen_loaded()?.doc.watermark(&told.row.id.0);
-        let row = self.chat.row(&channel, home, wm)?;
-        self.emit(NodeEvent::Event(told.event));
-        self.emit(NodeEvent::Row(row));
-        Ok(TransferKind::session_id(&told.msg_id))
-    }
-
     /// A file made ready to be fetched from here: its digest, and the
     /// offer record that serves its bytes (`transfer::Offer`) — the part
     /// of a send that is the same whoever receives it.
@@ -4248,34 +4196,6 @@ impl Node {
         let (tx, rx) = mpsc::channel();
         self.subscribers.lock().unwrap().push(tx);
         rx
-    }
-
-    /// Tells a machine's window a line. Returns the message id.
-    /// The broadcast (`wide/all`) is told the same way
-    /// ([`Self::wide_tell`]).
-    pub fn tell(&self, machine: &str, text: &str) -> Result<String, String> {
-        if machine.starts_with(khor_sync::chat::WIDE) {
-            return self.wide_tell(machine, text);
-        }
-        let (channel, home) = self.resolve(machine)?;
-        let told = self.chat.tell(&channel, home, text)?;
-        // Telling implies looking: own words never count as unread — on
-        // any device, once the watermark syncs.
-        self.mark_seen(&told.row.id, told.at)?;
-        self.emit(NodeEvent::Event(told.event));
-        self.emit(NodeEvent::Row(told.row));
-        Ok(told.msg_id)
-    }
-
-    /// [`Self::tell`], then a round with every machine now, not at the
-    /// next beat (5 s with a face on screen, 30 s on a machine without
-    /// one): a line should reach the others while the person is still
-    /// looking. The round is best effort — the line is written either
-    /// way and reaches the others with the next one.
-    pub async fn tell_now(&self, machine: &str, text: &str) -> Result<String, String> {
-        let id = self.tell(machine, text)?;
-        let _ = self.sync_now().await;
-        Ok(id)
     }
 
     /// A channel's readout, oldest first.

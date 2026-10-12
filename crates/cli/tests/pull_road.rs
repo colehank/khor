@@ -1,5 +1,5 @@
 //! **A whole file over a slow road** (round NET-2, piece 6): alpha
-//! sends a file and beta pulls it at once (直接传), then beta previews another of
+//! offers a file and beta takes it, then beta previews another of
 //! alpha's files whole — both relay-only behind a road that adds
 //! `PULL_RTT_MS` (default 300) of round trip (`scratch::slow_road`).
 //! Timed, so a pull that asks one slice per round trip shows as one.
@@ -26,14 +26,17 @@ async fn a_file_pulls_at_the_roads_pace_not_a_slice_per_round_trip() {
     )
     .await;
 
-    // Eight MiB sent and landed. beta's resident starts the pull as the
-    // sync lands the message; the take joins it and answers when it has
-    // landed, so the clock covers the sync and the pull together.
+    // Eight MiB offered in the broadcast and taken: the clock covers the
+    // post, the sync and the pull together.
     let payload: Vec<u8> = (0..8u32 << 20).map(|i| (i % 251) as u8).collect();
     let src = p.ra.0.join("big.bin");
     std::fs::write(&src, &payload).unwrap();
-    let tid = p.alpha.send("beta", &src, "").unwrap();
     let began = Instant::now();
+    let id = tokio::time::timeout(Duration::from_secs(120), p.alpha.post("", std::slice::from_ref(&src)))
+        .await
+        .expect("a post must not hang")
+        .unwrap();
+    let tid = khor_node::transfer::TransferKind::session_id(&id);
     tokio::time::timeout(Duration::from_secs(120), p.beta.sync_now())
         .await
         .expect("sync must not hang")

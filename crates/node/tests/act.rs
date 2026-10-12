@@ -1,19 +1,17 @@
-//! Third-device acceptance (docs/SESSION.md 动作: 从哪台设备发都行):
-//! gamma — a phone-shaped one-shot device — sees a transfer it is not
-//! part of, approves it, and the recipient machine executes the pull.
+//! A push and a third device (STORE-BRIEF phase 5): alpha posts a file
+//! `@beta`, beta's resident lands it with nobody pressing anything, and
+//! gamma — a one-shot device the message was not pushed to — sees the
+//! words and the file as an offer, takes it, and pulls its own copy.
 //! Real UDP between two serves plus a third dialer; wire-level
 //! controls; every await under a timeout.
 //!
-//! It sees it because the offer is a replicated file message, not
-//! because anybody reported it — that changed on 2026-08-23 along with
-//! which seat may say 待批, and the block below is where both are
-//! pinned.
+//! gamma sees it because the message is replicated, not because anybody
+//! reported it.
 
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
 
-use khor_core::State;
 use khor_node::Node;
 use khor_node::proto::{Request, Response};
 use tokio::time::timeout;
@@ -115,11 +113,15 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
         .expect("sync must not hang")
         .unwrap();
 
-    // alpha offers a file to beta's window; both sync the summary in.
+    // alpha pushes a file to beta, with words; gamma syncs it in.
     let payload: Vec<u8> = (0..400_000u32).map(|i| (i % 249) as u8).collect();
     let src = ra.join("plan.pdf");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send("beta", &src, "").unwrap();
+    let id = timeout(Duration::from_secs(PATIENCE), a.post("@beta the plan", std::slice::from_ref(&src)))
+        .await
+        .expect("a post must not hang")
+        .unwrap();
+    let tid = khor_node::transfer::TransferKind::session_id(&id);
     timeout(Duration::from_secs(PATIENCE), b.sync_now())
         .await
         .expect("sync must not hang")
@@ -129,21 +131,8 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
         .expect("sync must not hang")
         .unwrap();
 
-    // gamma is neither sender nor recipient. Two things changed here on
-    // 2026-08-23 (`419e5ad`, 传输并入对话批) and this block had asserted
-    // the pre-08-23 shape ever since, red the whole time:
-    //
-    // - **The offer reaches gamma by replication, not by report.** It is
-    //   a file message in a CRDT everybody carries, so gamma derives its
-    //   own row (`ChatKind::reportable` is false) and `source` is None.
-    // - **And gamma must NOT say 待批.** 待批 comes from the seat whose
-    //   approval is being waited on and no other (docs/SESSION.md 六词;
-    //   `TransferKind::urgency`'s `i_receive`). gamma cannot clear that
-    //   badge by answering — it is beta's approval that is wanted — and
-    //   a badge its holder cannot clear breaks 角标可归零.
-    //
-    // So the assertion is the rule itself: gamma sees the offer, and
-    // wears the ordinary unseen-content word for it.
+    // gamma is neither sender nor target: it reads the words and the
+    // offer from its own copy, derived here, not reported.
     assert!(
         g.transfer_is_here(&tid),
         "the offer must replicate to a third device"
@@ -151,25 +140,18 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
     let views = g.sessions().unwrap();
     let view = views
         .iter()
-        .find(|v| v.session.id.0 == "chat/beta")
-        .expect("the third device derives beta's chat row like any other");
-    assert_ne!(
-        view.session.state.state,
-        State::Blocked,
-        "待批 belongs to the machine whose approval is wanted, and that is not gamma"
-    );
-    // Which word it does wear is left unasserted on purpose — measured
-    // here as 空闲 where docs/SESSION.md says 完成/未看, for a reason that
-    // has nothing to do with transfers or with third devices. The note in
-    // `transfer.rs` beside the same measurement has it.
+        .find(|v| v.session.id.0 == khor_node::wide::BROADCAST)
+        .expect("the third device derives the broadcast's row");
     assert!(
         view.source.is_none(),
         "a replicated document is derived here, not reported: {:?}",
         view.source
     );
+    let m = g.log(khor_node::wide::BROADCAST).unwrap().messages.into_iter().find(|m| m.id == id).unwrap();
+    assert_eq!((m.note.as_str(), m.to.len()), ("the plan", 1), "the words and the one target travel with it");
 
-    // Nobody approves anything: beta's resident pulls the payload off
-    // alpha as the sync lands the message (STORE-BRIEF phase 2: 直接传).
+    // Nobody presses anything: beta's resident pulls the payload off
+    // alpha as the push lands the message (STORE-BRIEF phase 5).
     let landed = timeout(Duration::from_secs(60), async {
         loop {
             let found = fs::read_dir(rb.join("khor-drop"))
@@ -191,9 +173,14 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
     // **Every device reads the same state**: beta wrote the landing on
     // the message, and a sync carries it to gamma, which has no such
     // file and no such directory.
+    let beta_id = b.device_str().to_owned();
     let read_fate = |n: &Node| {
-        let id = tid.0.strip_prefix("transfer/").unwrap();
-        n.log("beta").unwrap().messages.into_iter().find(|m| m.id == id).and_then(|m| m.fate)
+        n.log(khor_node::wide::BROADCAST)
+            .unwrap()
+            .messages
+            .into_iter()
+            .find(|m| m.id == id)
+            .and_then(|m| m.fates.get(&beta_id).cloned())
     };
     timeout(Duration::from_secs(60), async {
         while read_fate(&b).is_none_or(|f| f.step != khor_sync::chat::Step::Landed) {
@@ -210,14 +197,15 @@ async fn a_third_device_sees_the_file_land_on_the_recipient_with_nobody_asked() 
     assert_eq!(seen.step, khor_sync::chat::Step::Landed);
     assert_eq!(seen.landed, vec![landed.display().to_string()], "beta's own path, read on gamma");
 
-    // A take from gamma routes to beta and answers where it is — the
-    // recipient's own path, across two hops — moving nothing again.
-    let (again, said) = timeout(Duration::from_secs(60), g.take(&tid))
+    // gamma takes the offer for itself: its own copy, pulled from alpha
+    // or from beta, which holds it now, into gamma's receive location.
+    let (moved, said) = timeout(Duration::from_secs(60), g.take(&tid))
         .await
-        .expect("a routed take must not hang")
+        .expect("a take must not hang")
         .unwrap();
-    assert_eq!(again, 0, "a payload already landed moves nothing");
-    assert_eq!(said, vec![landed.display().to_string()]);
+    let mine = rg.join("khor-drop").join("plan.pdf");
+    assert_eq!((moved, said), (payload.len() as u64, vec![mine.display().to_string()]));
+    assert_eq!(fs::read(&mine).unwrap(), payload, "gamma's own copy, verbatim");
     assert!(
         g.sessions()
             .unwrap()

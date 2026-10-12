@@ -110,7 +110,10 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
 
     // A line from beta spreads through alpha: gamma reads it although
     // beta serves nothing (the sender gone is no matter).
-    b.tell(BROADCAST, "hello everyone").unwrap();
+    timeout(Duration::from_secs(45), b.post("hello everyone", &[]))
+        .await
+        .expect("a post must not hang")
+        .unwrap();
     sync(&b).await;
     sync(&c).await;
     let said = c.log(BROADCAST).unwrap().messages;
@@ -130,7 +133,12 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     let payload: Vec<u8> = (0..300_000u32).map(|i| (i % 241) as u8).collect();
     let src = ra.join("all.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send(BROADCAST, &src, "").unwrap();
+    let tid = khor_node::transfer::TransferKind::session_id(
+        &timeout(Duration::from_secs(45), a.post("", std::slice::from_ref(&src)))
+            .await
+            .expect("a post must not hang")
+            .unwrap(),
+    );
     let msg = tid.0.strip_prefix("transfer/").unwrap().to_owned();
     sync(&b).await;
     sync(&c).await;
@@ -245,7 +253,12 @@ async fn a_broadcast_file_is_pulled_from_a_holder_while_its_sender_is_away() {
     let payload: Vec<u8> = (0..300_000u32).map(|i| (i % 239) as u8).collect();
     let src = ra.join("held.bin");
     fs::write(&src, &payload).unwrap();
-    let tid = a.send(BROADCAST, &src, "").unwrap();
+    let tid = khor_node::transfer::TransferKind::session_id(
+        &timeout(Duration::from_secs(45), a.post("", std::slice::from_ref(&src)))
+            .await
+            .expect("a post must not hang")
+            .unwrap(),
+    );
     let msg_id = tid.0.strip_prefix("transfer/").unwrap().to_owned();
     sync(&b).await;
     sync(&c).await;

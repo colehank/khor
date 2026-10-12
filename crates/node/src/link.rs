@@ -524,6 +524,11 @@ enum Wake {
     /// The home relay moved ([`Node::set_ears`]): the row and
     /// `endpoint.json` are written again with it first (net-f).
     Home,
+    /// The phone's grace is over with pushes still running
+    /// ([`cut_pushes`]): each target is told, then `done`.
+    Cut {
+        done: tokio::sync::oneshot::Sender<()>,
+    },
 }
 
 /// **One round for a network change at a time** (NET-STABLE 第二步).
@@ -744,6 +749,21 @@ pub async fn suspending(root: &std::path::Path) -> bool {
     let (done, done_rx) = tokio::sync::oneshot::channel();
     let Some(door) = door(root) else { return false };
     if door.send(Wake::Suspend { done }).is_err() {
+        return false;
+    }
+    done_rx.await.is_ok()
+}
+
+/// **The phone's background grace ran out with pushes still running**
+/// (`crate::post`): the resident on `root` tells each target its push was
+/// cut, so the target writes 「发送中断：手机已挂起」 as its fate rather
+/// than a dial failure. Called before [`suspending`], while the wires
+/// still stand; answers once every target was told or three seconds
+/// passed for it. `false` when no resumable serve holds that home here.
+pub async fn cut_pushes(root: &std::path::Path) -> bool {
+    let (done, done_rx) = tokio::sync::oneshot::channel();
+    let Some(door) = door(root) else { return false };
+    if door.send(Wake::Cut { done }).is_err() {
         return false;
     }
     done_rx.await.is_ok()
@@ -1512,6 +1532,13 @@ impl Node {
                     Wake::Resting { answer } => {
                         let _ = answer.send(resting.load(std::sync::atomic::Ordering::Relaxed));
                     }
+                    Wake::Cut { done } => {
+                        let (n, e) = (node.clone(), ep.clone());
+                        tokio::spawn(async move {
+                            n.cut_pushes_on(&e).await;
+                            let _ = done.send(());
+                        });
+                    }
                     Wake::Home => match node.publish_roads(&ep) {
                         Ok(()) => {
                             let _ = node.write_endpoint_file(&ep, &handoffs, &cookie);
@@ -2010,6 +2037,13 @@ impl Node {
             ipc::Op::SyncNow => ipc::Reply::Synced {
                 outcomes: self.sync_peers(ep, true).await,
             },
+            ipc::Op::Post { typed, files } => {
+                let files: Vec<std::path::PathBuf> = files.into_iter().map(std::path::PathBuf::from).collect();
+                match self.post_with(ep, &typed, &files, false).await {
+                    Ok(id) => ipc::Reply::Posted { id },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::Take { session, action } => {
                 match self.take_with(ep, &crate::SessionId(session), &action).await {
                     Ok((moved, landed)) => ipc::Reply::Accepted { moved, landed },
@@ -3336,7 +3370,7 @@ impl Node {
                 if doc == "devices" && !changes.is_empty() {
                     self.follow_after_sync();
                 }
-                if !changes.is_empty() && self.is_own_chat(&doc) {
+                if !changes.is_empty() && (self.is_own_chat(&doc) || doc == crate::wide::BROADCAST) {
                     self.take_arrived();
                 }
                 Ok(Response::Synced {
@@ -3688,7 +3722,7 @@ impl Node {
             }
             Request::Act { session, action } => {
                 match action.as_str() {
-                    "take" | "stop" => {
+                    "take" | "stop" | "cut" => {
                         let (moved, landed) =
                             self.take_local(ep, &crate::SessionId(session), &action).await?;
                         Ok(Response::Acted { moved, landed })
@@ -4091,6 +4125,13 @@ impl Node {
                     bytes: serde_bytes::ByteBuf::from(bytes),
                 })
             }
+            Request::Offer { path } => match self.me() {
+                // A digest reads the whole file: off the serve's threads.
+                Some(n) => tokio::task::spawn_blocking(move || n.offer_here(&path))
+                    .await
+                    .map_err(|e| e.to_string())?,
+                None => self.offer_here(&path),
+            },
             Request::Journal { peer, since } => {
                 let root = self.root().to_path_buf();
                 let lines = tokio::task::spawn_blocking(move || crate::journal::lines_since(&root, peer.as_deref(), since))
@@ -8179,6 +8220,22 @@ impl Node {
             self.stop_sent(&channel, &m)?;
             return Ok((0, Vec::new()));
         }
+        // **A push its sender could not finish** (the phone's grace ran
+        // out, `post`'s module head): the pull ends before its next
+        // slice and says so as its fate; what came so far is kept, so the
+        // person's next send of the same bytes carries on from it.
+        if action == "cut" {
+            let key = crate::road::sent_key(&m.id, self.device_str());
+            let (job, fresh) = crate::road::job(&key);
+            if fresh {
+                // Nothing was running: nothing to cut, and no job left
+                // behind to make the next take think one is.
+                crate::road::forget_job(&key);
+            } else {
+                job.cut(msg::push_cut_suspended());
+            }
+            return Ok((0, Vec::new()));
+        }
         self.run_take(ep, &channel, &m, true).await
     }
 
@@ -8199,21 +8256,35 @@ impl Node {
         let (Some(n), Some(ep)) = (self.me(), self.current_ears()) else {
             return;
         };
-        let Ok((channel, _)) = self.resolve(self.name()) else {
-            return;
-        };
-        let Ok(log) = self.chat.log(&channel) else {
-            return;
-        };
-        for m in log.messages {
-            let new = matches!(&m.body, crate::MsgBody::Files(fs) if !fs.is_empty())
-                && !m.retracted
-                && m.fate.is_none()
-                && m.from.id != self.device_str();
-            if !new {
+        let me = self.device_str().to_owned();
+        let mut due: Vec<(String, chat::Message)> = Vec::new();
+        if let Ok((channel, _)) = self.resolve(self.name())
+            && let Ok(log) = self.chat.log(&channel)
+        {
+            due.extend(
+                log.messages
+                    .into_iter()
+                    .filter(|m| m.fate.is_none() && m.from.id != me)
+                    .map(|m| (channel.clone(), m)),
+            );
+        }
+        // **Pushed to this machine** (STORE-BRIEF phase 5): a broadcast
+        // message that names it is taken as soon as it is here, whether
+        // or not its sender's ask arrives — the sender's ask joins this
+        // move (`run_take`'s job) rather than starting a second.
+        if let Ok(log) = self.chat.log(crate::wide::BROADCAST) {
+            due.extend(
+                log.messages
+                    .into_iter()
+                    .filter(|m| m.to.iter().any(|t| t.device == me) && !m.fates.contains_key(&me) && m.from.id != me)
+                    .map(|m| (crate::wide::BROADCAST.to_owned(), m)),
+            );
+        }
+        for (channel, m) in due {
+            if !matches!(&m.body, crate::MsgBody::Files(fs) if !fs.is_empty()) || m.retracted {
                 continue;
             }
-            let (n, ep, channel) = (n.clone(), ep.clone(), channel.clone());
+            let (n, ep) = (n.clone(), ep.clone());
             tokio::spawn(async move {
                 if let Err(why) = n.run_take(&ep, &channel, &m, false).await {
                     eprintln!("{why}");
@@ -8293,18 +8364,30 @@ impl Node {
         };
         tell(Step::Moving, 0, Vec::new(), String::new(), String::new());
         let wide = channel.starts_with(chat::WIDE);
+        // **Pushed here, or offered** (STORE-BRIEF phase 5): a message that
+        // names this machine lands where it says, made if it is not there
+        // yet, with nobody asked; any other broadcast file waited for this
+        // machine's yes and lands in its receive location.
+        let target = m.to.iter().find(|t| t.device == self.device_str());
         let pull = async {
-            let into = if m.into.is_empty() {
+            let named = match target {
+                Some(t) => t.path.as_str(),
+                None if wide => "",
+                None => m.into.as_str(),
+            };
+            let into = if named.is_empty() {
                 crate::road::Dest::Receive
             } else {
-                let dir = crate::road::expand(self.root(), &m.into);
+                let dir = crate::road::expand(self.root(), named);
+                if target.is_some() {
+                    let _ = fs::create_dir_all(&dir);
+                }
                 if !dir.is_dir() {
                     return Err(msg::no_such_dir(dir.display()));
                 }
                 crate::road::Dest::Dir(dir)
             };
-            // A broadcast file waited for this machine's yes.
-            let mode = if wide { crate::road::Mode::Offer } else { crate::road::Mode::Direct };
+            let mode = if wide && target.is_none() { crate::road::Mode::Offer } else { crate::road::Mode::Direct };
             let table = self.devices_loaded()?.doc;
             let sender = table.get(&m.from.id);
             if !wide {
@@ -8313,52 +8396,75 @@ impl Node {
                 return Ok((moved, landed, home.id));
             }
             // **A broadcast file comes from whoever has it** (BCAST-BRIEF):
-            // the sender, or any machine that landed it before
+            // its holder — the sender, or the machine it was on when the
+            // message was composed (`FileRef::holder`), never through the
+            // sender — then any machine that landed it before
             // (`holders_of`). The partial is kept by digest and pulled by
             // offset, and every source serves the same bytes, so a pull
             // broken on one carries on from the next; the digest checks
             // the whole at the end. Each source is dialled before it is
             // asked, so the failure says which were unreachable and which
-            // answered with a refusal — unless every file is here already
-            // and nothing needs a wire.
+            // answered with a refusal — unless the file is here already
+            // and nothing needs a wire. File by file: one message may
+            // carry files from different machines.
             let holders = self.holders_of(m, &table);
-            let here = files.iter().all(|f| crate::road::receipt(self.root(), &f.digest).is_some());
-            let mut tried = Vec::new();
-            if sender.is_none() {
-                tried.push(msg::take_sender_failed(&m.from.name, msg::offerer_left_table()));
-            }
-            // In the order the wires know them (`wire_rank`), the sender
-            // ahead of every holder unless its dials are failing: a phone
-            // in the background is a dial's whole timeout per 收下, and a
-            // holder with a live wire answers at once.
-            let mut sources: Vec<(bool, DeviceInfo)> =
-                sender.into_iter().map(|d| (true, d)).chain(holders.iter().cloned().map(|d| (false, d))).collect();
-            sources.sort_by_cached_key(|(is_sender, d)| {
-                let (rank, rtt) = self.wire_rank(&d.id);
-                let rank = if *is_sender && rank < 2 { 0 } else { rank + 1 };
-                (rank, rtt, !*is_sender, d.name.clone())
-            });
-            for (is_sender, d) in sources {
-                if !here && let Err(e) = self.line_to(ep, &d, wires::Proto::Main).await {
-                    tried.push(match (is_sender, e) {
-                        (true, DialFailure::TimedOut) => msg::take_sender_down(&d.name),
-                        (false, DialFailure::TimedOut) => msg::take_holder_down(&d.name),
-                        (true, DialFailure::Refused(why)) => msg::take_sender_failed(&d.name, why),
-                        (false, DialFailure::Refused(why)) => msg::take_holder_failed(&d.name, why),
-                    });
-                    continue;
+            let mut moved = 0u64;
+            let mut landed = Vec::with_capacity(files.len());
+            let mut via = String::new();
+            for f in files {
+                let here = crate::road::receipt(self.root(), &f.digest).is_some();
+                let origin_id = if f.holder.is_empty() { m.from.id.as_str() } else { f.holder.as_str() };
+                let origin = table.get(origin_id);
+                let mut tried = Vec::new();
+                if origin.is_none() {
+                    tried.push(msg::take_sender_failed(&m.from.name, msg::offerer_left_table()));
                 }
-                match self.take_from(ep, &d, files, &into, mode, &job).await {
-                    Ok((moved, landed)) => return Ok((moved, landed, d.id)),
-                    Err(why) if job.is_stopped() => return Err(why),
-                    Err(why) if is_sender => tried.push(msg::take_sender_failed(&d.name, why)),
-                    Err(why) => tried.push(msg::take_holder_failed(&d.name, why)),
+                // In the order the wires know them (`wire_rank`), the origin
+                // ahead of every holder unless its dials are failing: a
+                // phone in the background is a dial's whole timeout per
+                // 收下, and a holder with a live wire answers at once.
+                let mut sources: Vec<(bool, DeviceInfo)> = origin
+                    .into_iter()
+                    .map(|d| (true, d))
+                    .chain(holders.iter().filter(|d| d.id != origin_id).cloned().map(|d| (false, d)))
+                    .collect();
+                sources.sort_by_cached_key(|(is_origin, d)| {
+                    let (rank, rtt) = self.wire_rank(&d.id);
+                    let rank = if *is_origin && rank < 2 { 0 } else { rank + 1 };
+                    (rank, rtt, !*is_origin, d.name.clone())
+                });
+                let mut got = None;
+                for (is_origin, d) in sources {
+                    if !here && let Err(e) = self.line_to(ep, &d, wires::Proto::Main).await {
+                        tried.push(match (is_origin, e) {
+                            (true, DialFailure::TimedOut) => msg::take_sender_down(&d.name),
+                            (false, DialFailure::TimedOut) => msg::take_holder_down(&d.name),
+                            (true, DialFailure::Refused(why)) => msg::take_sender_failed(&d.name, why),
+                            (false, DialFailure::Refused(why)) => msg::take_holder_failed(&d.name, why),
+                        });
+                        continue;
+                    }
+                    match self.take_from(ep, &d, std::slice::from_ref(f), &into, mode, &job).await {
+                        Ok((n, paths)) => {
+                            got = Some((n, paths, d.id));
+                            break;
+                        }
+                        Err(why) if job.is_stopped() => return Err(why),
+                        Err(why) if is_origin => tried.push(msg::take_sender_failed(&d.name, why)),
+                        Err(why) => tried.push(msg::take_holder_failed(&d.name, why)),
+                    }
                 }
+                let Some((n, paths, from)) = got else {
+                    if holders.is_empty() {
+                        tried.push(msg::take_no_holder().to_owned());
+                    }
+                    return Err(tried.join(msg::take_tried_separator()));
+                };
+                moved += n;
+                landed.extend(paths);
+                via = from;
             }
-            if holders.is_empty() {
-                tried.push(msg::take_no_holder().to_owned());
-            }
-            Err(tried.join(msg::take_tried_separator()))
+            Ok((moved, landed, via))
         };
         // The progress beat: the bytes on this machine, written to the
         // message at most once a second and only when the percent moved,
@@ -8383,6 +8489,11 @@ impl Node {
                 hold(landed);
                 tell(Step::Landed, size, landed.clone(), String::new(), via.clone());
                 job.finish(Ok(landed.join("\n")));
+            }
+            Err(_) if job.is_stopped() && let Some(why) = job.cut_why() => {
+                let moved = job.moved.load(std::sync::atomic::Ordering::Relaxed) as i64;
+                tell(Step::Failed, moved, Vec::new(), why.clone(), String::new());
+                job.finish(Err(why));
             }
             Err(_) if job.is_stopped() => {
                 // A cancel keeps nothing: the bytes so far go with it.
@@ -8410,7 +8521,7 @@ impl Node {
         // Everyone else reads the new state at once, not at the next beat.
         self.nudge(ep, false);
         if job.is_stopped() && outcome.is_err() {
-            return Err(crate::road::cancelled());
+            return Err(job.cut_why().unwrap_or_else(crate::road::cancelled));
         }
         outcome.map(|(moved, landed, _)| (moved, landed))
     }
@@ -9357,7 +9468,7 @@ impl Node {
     }
 
     /// One machine's round: skipped with a reason, joined, or run.
-    async fn round_with(
+    pub(crate) async fn round_with(
         &self,
         ep: &iroh::Endpoint,
         d: &DeviceInfo,
@@ -9570,7 +9681,7 @@ impl Node {
                     if name == "devices" && n > 0 {
                         self.follow_after_sync();
                     }
-                    if n > 0 && self.is_own_chat(&name) {
+                    if n > 0 && (self.is_own_chat(&name) || name == crate::wide::BROADCAST) {
                         self.take_arrived();
                     }
                 }

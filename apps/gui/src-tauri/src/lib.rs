@@ -596,9 +596,12 @@ async fn set_preferred_relay(url: Option<String>) -> Result<(), String> {
     off_main(move || khor_gui_core::set_preferred_relay(&Node::root_from_env(), url)).await
 }
 
+/// **A message composed into the broadcast** (STORE-BRIEF phase 5,
+/// `khor_gui_core::post`): the typed form and this machine's files.
+/// Async: it dials every target before anything is written.
 #[tauri::command]
-fn tell(machine: String, text: String) -> Result<(), String> {
-    khor_gui_core::tell(&Node::root_from_env(), &machine, &text)
+async fn post(typed: String, files: Vec<String>) -> Result<String, String> {
+    khor_gui_core::post(&Node::root_from_env(), &typed, &files).await
 }
 
 #[tauri::command]
@@ -3233,28 +3236,11 @@ async fn stop_transfer(msg: String) -> Result<(), String> {
     khor_gui_core::stop_transfer(&Node::root_from_env(), &msg).await
 }
 
-/// A path this machine already has, straight to `khor send`'s call —
-/// what a tauri file drop hands over, and what the bridge answers for
-/// browser verification. The picker flow is `pick_and_send` below.
-#[tauri::command]
-async fn send_path(machine: String, path: String, into: Option<String>) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        khor_gui_core::send_path(
-            &Node::root_from_env(),
-            &machine,
-            std::path::Path::new(&path),
-            into.as_deref().unwrap_or(""),
-        )
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-/// The composer's 发文件, desktop form: a native picker answers with a
-/// real local path and the path goes straight to `khor send`'s own call
-/// — no upload exists here, which is the whole advantage of this form
-/// (the browser faces stage bytes first; `khor_gui_core::send_upload`).
-/// `None` = the person cancelled the picker, which is not an error and
+/// The composer's ＋, desktop and phone form: a native picker answers
+/// with real local paths, which ride the message as they are (`post`) —
+/// no upload exists here, which is the whole advantage of this form (the
+/// browser faces stage bytes first; `khor_gui_core::stage_upload`).
+/// Empty = the person cancelled the picker, which is not an error and
 /// must not wear one.
 ///
 /// Rust-side dialog on purpose (`DialogExt`, the official v2 plugin):
@@ -3262,19 +3248,15 @@ async fn send_path(machine: String, path: String, into: Option<String>) -> Resul
 /// path, and driving the plugin from here keeps the frontend free of
 /// the plugin's JS package and its capability grant.
 #[tauri::command]
-async fn pick_and_send(app: tauri::AppHandle, machine: String, into: Option<String>) -> Result<Option<String>, String> {
+async fn pick_paths(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     use tauri_plugin_dialog::DialogExt;
-    let Some(picked) = app.dialog().file().blocking_pick_file() else {
-        return Ok(None);
+    let Some(picked) = app.dialog().file().blocking_pick_files() else {
+        return Ok(Vec::new());
     };
-    let path = picked.into_path().map_err(|e| e.to_string())?;
-    // Digesting a large file is real work; off the async runtime.
-    tokio::task::spawn_blocking(move || {
-        khor_gui_core::send_path(&Node::root_from_env(), &machine, &path, into.as_deref().unwrap_or(""))
-    })
-    .await
-    .map_err(|e| e.to_string())?
-    .map(Some)
+    picked
+        .into_iter()
+        .map(|p| p.into_path().map(|p| p.display().to_string()).map_err(|e| e.to_string()))
+        .collect()
 }
 
 /// The wizard's 智能体 list (批⑥): every ACP agent this person named.
@@ -4714,7 +4696,7 @@ pub fn run() {
             visit,
             rejoin_now,
             set_preferred_relay,
-            tell,
+            post,
             pin_session,
             pin_device,
             forget_device,
@@ -4791,8 +4773,7 @@ pub fn run() {
             machine_log,
             retry_transfer,
             stop_transfer,
-            send_path,
-            pick_and_send,
+            pick_paths,
             chat_put,
             chat_put_paths,
             term_drop_stage,

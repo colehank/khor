@@ -201,31 +201,22 @@ impl ChatKind {
         ))
     }
 
-    pub fn tell(&self, channel: &str, home: DeviceId, text: &str) -> Result<Told, String> {
-        self.push(
-            channel,
-            home,
-            |doc| doc.tell(&self.me, text),
-            serde_json::json!({ "text": text, "from": self.me.name }),
-        )
-    }
-
-    /// Sends file summaries — names, sizes, digests, and the directory
-    /// on the receiver (`into`, empty for its receive location). The
-    /// bytes never enter the document; the receiver pulls them at once.
-    pub fn send_files(
+    /// Writes one composed message (`ChatDoc::post`): words, the
+    /// machines it was pushed to, the files it carries.
+    pub fn post(
         &self,
         channel: &str,
         home: DeviceId,
+        text: &str,
+        to: &[khor_sync::chat::Target],
         files: &[khor_sync::chat::FileRef],
-        into: &str,
     ) -> Result<Told, String> {
         let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
         self.push(
             channel,
             home,
-            |doc| doc.send_files(&self.me, files, into),
-            serde_json::json!({ "files": names, "from": self.me.name }),
+            |doc| doc.post(&self.me, text, to, files),
+            serde_json::json!({ "text": text, "files": names, "from": self.me.name }),
         )
     }
 
