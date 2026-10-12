@@ -157,6 +157,29 @@ pub struct SessionRow {
     /// that the person has also resumed in their own tmux is one `gui`
     /// row, and the terminal is where they are.
     pub mux: bool,
+    /// **How a dead row ended** (`khor_node::live::Ending`, P5-SHELL item
+    /// 3): the second line of a 失败 row names it — 「退出码 1」 or
+    /// 「宿主被结束」. Read where the session lives, so only this
+    /// machine's rows carry it; a reported row's is `None` and its line
+    /// stays as it was.
+    pub ended: Option<RowEnding>,
+}
+
+/// [`SessionRow::ended`].
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct RowEnding {
+    /// The exit its host recorded. `None`: the host was killed before
+    /// its child ended, so nothing was recorded (宿主被结束).
+    pub exit: Option<i32>,
+}
+
+impl From<khor_node::live::Ending> for RowEnding {
+    fn from(e: khor_node::live::Ending) -> Self {
+        match e {
+            khor_node::live::Ending::Exit(code) => RowEnding { exit: Some(code) },
+            khor_node::live::Ending::HostGone => RowEnding { exit: None },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -1054,7 +1077,14 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             // it produced was a row that opened onto the bare facts pane
             // — which reads, correctly, as "clicking this does nothing".
             let attachable = hosted || v.session.term;
+            // Only a dead row of this machine's is asked: its registry
+            // dir is here.
+            let ended = (v.session.dead && v.source.is_none())
+                .then(|| n.ending(&v.session.id))
+                .flatten()
+                .map(RowEnding::from);
             SessionRow {
+                ended,
                 attachable,
                 home: machines
                     .get(&v.session.home.hex())

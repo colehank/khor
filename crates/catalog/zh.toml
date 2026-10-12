@@ -2870,6 +2870,12 @@ row-unreachable = "不通 · {0}"
 # the command, then how it ended; no exit code.
 row-ran-ok = "{0} 执行成功"
 row-ran-failed = "{0} 执行失败"
+# How a dead terminal row ended (P5-SHELL item 3, the owner 2026-10-12): the
+# second line of a 失败 row that will never move again, and after 「这个
+# session 已结束：」 on its page. The exit its host recorded, or the host gone
+# with nothing recorded — killed before its shell ended.
+row-ended-exit = "退出码 {0}"
+row-ended-host = "宿主被结束"
 day-unreachable = "无法获取"
 reading-unreachable = "不通 · 上次 {0}"
 machine-cant-reach = "无法连接 {0}"

@@ -5048,6 +5048,13 @@ impl Node {
         self.live.attach_multiplexed(id)
     }
 
+    /// How this machine's dead session ended (`live::Ending`, P5-SHELL
+    /// item 3): the row's second line names it. `None` for a session that
+    /// is not dead or not this machine's — a reported row's home says it.
+    pub fn ending(&self, id: &SessionId) -> Option<live::Ending> {
+        self.live.ending(id)
+    }
+
     /// The registry dir behind a live session id, for attach clients.
     /// **None on a machine that hosts nothing**: no session's host lives
     /// on it, so nothing there is an address to attach to.

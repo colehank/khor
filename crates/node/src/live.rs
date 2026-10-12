@@ -2244,6 +2244,14 @@ impl LiveKind {
         out
     }
 
+    /// How this machine's session ended — `None` for a session that is
+    /// not dead, or not this machine's ([`Ending`]).
+    pub fn ending(&self, id: &SessionId) -> Option<Ending> {
+        let dir = self.existing_dir(id).ok()?;
+        let (meta, state) = read_pair(&dir).ok()?;
+        ending_of(&dir, &meta, &state)
+    }
+
     fn existing_dir(&self, id: &SessionId) -> Result<PathBuf, String> {
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         if !dir.join("meta.json").exists() {
@@ -2556,6 +2564,29 @@ fn face(dir: &Path, meta: &Meta, state: &LiveState) -> (State, i64, bool, bool) 
         Backing::Running => (state.word, state.at_ms, false, false),
         Backing::Unpronounceable => (state.word, state.at_ms, false, true),
     }
+}
+
+/// **How a dead row ended, as far as this machine knows** (P5-SHELL
+/// item 3, the owner 2026-10-12): 「your command failed」 and 「khor lost
+/// it」 both read 失败 by the rule above, and the row's second line says
+/// which. Derived from the same two facts [`face`] reads — the recorded
+/// exit first, then the backing — so the two cannot disagree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ending {
+    /// The host recorded how its child ended.
+    Exit(i32),
+    /// The host is gone and nothing was recorded: it was killed (a
+    /// `pkill`, a crash, the machine going down) before its child ended.
+    HostGone,
+}
+
+/// [`Ending`] for one registry entry: `None` while anything still backs
+/// it (a running host, a living child under a lost host, no pid at all).
+fn ending_of(dir: &Path, meta: &Meta, state: &LiveState) -> Option<Ending> {
+    if let Some(code) = state.exit {
+        return Some(Ending::Exit(code));
+    }
+    (backing(dir, meta) == Backing::Gone).then_some(Ending::HostGone)
 }
 
 /// Exit codes that are not a failure: the person's ^C (130) and a
@@ -5005,5 +5036,29 @@ mod tests {
         )])));
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(alive);
         assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy);
+    }
+
+    /// **失败 says which** (P5-SHELL item 3): a recorded exit is the exit;
+    /// a host gone with nothing recorded is the host, killed; a session
+    /// still backed has no ending — and the word is 失败 in both dead
+    /// cases, as before.
+    #[test]
+    fn a_dead_row_says_how_it_ended() {
+        let root = tmp("ending");
+        let k = kind_at(&root);
+        let exited = sid("shell/exit1");
+        k.register(&exited, "shell", "x", Some(std::process::id()), None).unwrap();
+        k.record_exit(&exited, 1).unwrap();
+        let killed = sid("shell/killed1");
+        k.register(&killed, "shell", "y", Some(dead_pid()), None).unwrap();
+        let alive = sid("shell/alive1");
+        k.register(&alive, "shell", "z", Some(std::process::id()), None).unwrap();
+        assert_eq!(k.ending(&exited), Some(Ending::Exit(1)));
+        assert_eq!(k.ending(&killed), Some(Ending::HostGone));
+        assert_eq!(k.ending(&alive), None, "a running session has not ended");
+        assert_eq!(k.ending(&sid("shell/nobody")), None);
+        let rows = k.rows(|_| 0);
+        let word = |id: &SessionId| rows.iter().find(|r| &r.id == id).unwrap().state.state;
+        assert_eq!((word(&exited), word(&killed)), (State::Failed, State::Failed), "the word stays 失败");
     }
 }
