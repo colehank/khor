@@ -7776,6 +7776,12 @@ try {
       const byHover = await tips();
       await page.mouse.move(2, 2, { steps: 8 });
       await wait(250);
+      // **The keyboard's focus, not a script's** (tooltip.tsx, 2026-10-12):
+      // a tooltip opens on focus only while the last hand on the app was
+      // the keyboard (`data-modality`); a bare `focus()` after a pointer
+      // move is the focus a closing menu hands back, which is the case
+      // the owner reported as a bug. One Tab first is what a person does.
+      await page.keyboard.press("Tab");
       await page.locator(where).focus();
       await until(2_000, async () => (await tips()).length > 0);
       const byFocus = await tips();
@@ -15142,14 +15148,16 @@ try {
     fail(`\u989d\u5ea6 draws ${quotaRows} rows for ${board.length} routed accounts and one subscription`);
   }
   // The share at the row's right-top, alone (UX-53, 「右上干脆只写百分
-  // 比」), with the account page's gauge left of it (`[data-quota-gauge]`).
-  // ⚠️ 墓碑 (UX-32 → UX-53): a 16 glyph beside the share at the right-top
-  // (`data-quota-ring`, `data-quota-ring-word`); before that (2026-10-03)
-  // inside the row's dial without the sign.
-  const fillRing = (await page.locator('[data-quota-row="acc-fill"] [data-quota-gauge] [data-dial-face]').count()) === 1;
+  // 比」), **and no gauge on the row** (the owner, 2026-10-12: 「额度页
+  // list 不带环」— a list row is not a card; the dial is the account
+  // page's, `e17a98e1`). ⚠️ 墓碑 (UX-53 → 2026-10-12): the account page's
+  // dial left of the corner (`data-quota-gauge`); before that (UX-32) a
+  // 16 glyph beside the share; before that (2026-10-03) inside the row's
+  // dial without the sign.
+  const fillGauge = await page.locator('[data-quota-row="acc-fill"] [data-quota-gauge]').count();
   const fillDial = (await page.locator('[data-quota-row="acc-fill"] [data-quota-pct]').textContent().catch(() => null))?.trim() ?? null;
-  if (!fillRing || fillDial !== "45%") {
-    fail(`the fraction row does not draw its gauge with its share at the right-top — gauge ${fillRing}, got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
+  if (fillGauge !== 0 || fillDial !== "45%") {
+    fail(`the fraction row does not say its share alone at the right-top — gauges ${fillGauge}, got ${JSON.stringify(fillDial)} (src/views/QuotaLanding.tsx)`);
   }
   // The refused account: the trouble on the glass is a sentence, not
   // the wire key. Clicking the row is also the finder proving itself —
@@ -15445,66 +15453,35 @@ try {
       fail(`the subscription row's summary names the credits (${JSON.stringify(summary)}) — money is not a window`);
     }
 
-    //   **A ring with no ceiling is a full ring** (2026-09-06 user
-    //   ruling). Still read off the arc itself rather than a class that
-    //   might mean it — but the arc is a 210° `path` now, not a dashed
-    //   circle, so the reading is **the angle its last point sits at**:
-    //   the dial opens at −195° and sweeps 210°, so where the arc stops
-    //   *is* the fraction. `stroke-dasharray` reads `null` on a path
-    //   and this gate would have gone quietly green-on-null for every
-    //   row — **the assertion did not change, the geometry under it
-    //   did** (2026-09-07:「环全部和机器卡对齐」).
-    //
-    //   Three rows, three answers, and **all three are needed**: an
-    //   implementation that draws a gauge on every row passes on
-    //   `acc-fill` alone, and one that draws none passes on the other two.
-    //   ⚠️ **Rewritten for UX-53, and the product changed**: a reading with
-    //   no ceiling drew a whole ring (2026-09-06); the lead ruled on
-    //   2026-10-08 that a wallet draws no ring and says its money at the
-    //   right-top instead (`[data-quota-balance]`), so `acc-number` (a spend,
-    //   no limit) now answers 「no gauge, a word」 like the refusal does, and
-    //   the two are told apart by which word. The row's gauge is the account
-    //   page's `Face` (`[data-quota-gauge] [data-dial-face]`): its track is
-    //   the first path, its arc `data-ring-fill`, the same 210° geometry.
-    //   ⚠️ 墓碑 (UX-32 → UX-53): the heading glyph at the right-top
-    //   (`[data-ring-glyph]`, `data-glyph-track`, `data-glyph-fill`).
+    //   **The rows' right-top, three rows, three answers** — and **all
+    //   three are needed**: a fraction says its share (`data-quota-pct`),
+    //   a reading with no ceiling says its money (`data-quota-balance`,
+    //   the lead 2026-10-08), 问不出来 says its state (`data-quota-state`).
+    //   **No row draws a gauge** (the owner, 2026-10-12: 「额度页 list 不带
+    //   环」, `e17a98e1`). ⚠️ 墓碑 (2026-09-06 → 09-07 → UX-53 → 10-12): the
+    //   angle the dial's arc stopped at, read off the 210° path; before
+    //   that a dashed circle's `stroke-dasharray`; a whole ring for a
+    //   reading with no ceiling.
     const arcs = await page.locator("[data-quota-row]").evaluateAll((rows) =>
-      rows.map((row) => {
-        const id = row.getAttribute("data-quota-row");
-        const svg = row.querySelector("[data-quota-gauge] [data-dial-face]");
-        const word = row.querySelector("[data-quota-balance]") ? "balance" : row.querySelector("[data-quota-state]") ? "state" : null;
-        if (!svg) return { id, drawn: word ?? "no gauge, no word" };
-        const arc = svg.querySelector("[data-ring-fill]");
-        // The track is always drawn, so its absence means the dial
-        // itself never rendered — a different failure from「no arc」.
-        const track = svg.querySelector("path:not([data-ring-fill]):not([data-dial-span])");
-        if (!track) return { id, drawn: "no dial" };
-        if (!arc) return { id, drawn: "bare track" };
-        // **The centre is read off the track that was drawn, not off
-        // the box** (2026-09-07: a cropped box broke `cy = 0.6 × h`).
-        // The track is one arc of known radius starting at `ARC0`
-        // (−195°), so its own `d` gives the centre: `M x0 y0 A r r …`,
-        // and `centre = start − r·(cos ARC0, sin ARC0)`.
-        const td = /M([-\d.]+)\s+([-\d.]+)\s*A([-\d.]+)/.exec(track.getAttribute("d") ?? "");
-        if (!td) return { id, drawn: "no track" };
-        const [x0, y0, r] = [Number(td[1]), Number(td[2]), Number(td[3])];
-        const A0 = (-195 * Math.PI) / 180;
-        const [cx, cy] = [x0 - r * Math.cos(A0), y0 - r * Math.sin(A0)];
-        const n = (arc.getAttribute("d") ?? "").replace(/,/g, " ").trim().split(/\s+/).map(Number);
-        const [x, y] = [n[n.length - 2], n[n.length - 1]];
-        let deg = (Math.atan2(y - cy, x - cx) * 180) / Math.PI;
-        while (deg < -195) deg += 360;
-        while (deg > 165) deg -= 360;
-        return { id, drawn: Number(((deg + 195) / 210).toFixed(2)), word };
-      }),
+      rows.map((row) => ({
+        id: row.getAttribute("data-quota-row"),
+        gauge: !!row.querySelector("[data-quota-gauge]"),
+        drawn: row.querySelector("[data-quota-pct]")
+          ? (row.querySelector("[data-quota-pct]")?.textContent ?? "").trim()
+          : row.querySelector("[data-quota-balance]")
+            ? "balance"
+            : row.querySelector("[data-quota-state]")
+              ? "state"
+              : "nothing",
+      })),
     );
     const arcOf = (id) => arcs.find((a) => a.id === id)?.drawn ?? null;
-    if (arcOf("acc-fill") !== 0.45 || arcOf("acc-number") !== "balance" || arcOf("acc-trouble") !== "state") {
+    if (arcOf("acc-fill") !== "45%" || arcOf("acc-number") !== "balance" || arcOf("acc-trouble") !== "state") {
       fail(
-        `the rows read ${JSON.stringify(arcs)} — a fraction draws its gauge (0.45), a reading with no ceiling draws none and says its money (balance), and 问不出来 draws none and says so (state) (UX-53, src/views/QuotaLanding.tsx)`,
+        `the rows read ${JSON.stringify(arcs)} — a fraction says its share (45%), a reading with no ceiling says its money (balance), and 问不出来 says its state (src/views/QuotaLanding.tsx)`,
       );
-    } else if (arcs.some((a) => typeof a.drawn === "number" && a.word !== null)) {
-      fail(`a row draws a gauge and a money or state word at once: ${JSON.stringify(arcs)} — the right-top is the share beside a gauge (UX-53)`);
+    } else if (arcs.some((a) => a.gauge)) {
+      fail(`a row draws a gauge: ${JSON.stringify(arcs.filter((a) => a.gauge))} — the list carries no dial since 2026-10-12 (src/views/QuotaLanding.tsx)`);
     }
 
     //   ── 8·a truncated log says so, beside the chart it truncates ──
@@ -24281,27 +24258,26 @@ try {
     // (8) the 额度 rows' numbers.
     await open("quota");
     // The share stands alone at the row's right-top since UX-53
-    // (`data-quota-pct`), the gauge left of the corner (`data-quota-gauge`,
-    // the account page's dial at the two lines' height): the share whole,
-    // inside the row, right of its gauge; the gauge right of the title,
-    // never under the face's mark. ⚠️ 墓碑 (W-V11 → UX-32 → UX-53): a word
-    // laid over the row's fluid dial (`data-dial-reading`); then a word
-    // beside a 16 glyph at the right-top (`data-quota-ring-word`).
+    // (`data-quota-pct`): whole, inside the row, right of the title,
+    // never under the face's mark. **No gauge beside it** (the owner,
+    // 2026-10-12: 「额度页 list 不带环」). ⚠️ 墓碑 (W-V11 → UX-32 → UX-53 →
+    // 10-12): a word laid over the row's fluid dial (`data-dial-reading`);
+    // a word beside a 16 glyph (`data-quota-ring-word`); the account
+    // page's dial left of the corner (`data-quota-gauge`).
     await until(5_000, async () => (await page.locator("[data-quota-row] [data-quota-pct]").count()) > 1);
     const dials = await page.evaluate(() =>
       [...document.querySelectorAll("[data-quota-row]")].flatMap((row) => {
-        const ring = row.querySelector("[data-quota-gauge]");
         const text = row.querySelector("[data-quota-pct]");
         const title = row.querySelector("[data-side-title]") ?? row.querySelector("[data-quota-name]");
         const face = row.querySelector("[data-side-face]");
-        if (!ring || !text || (text.textContent ?? "").trim() === "") return [];
+        if (!text || (text.textContent ?? "").trim() === "") return [];
         const n = (r) => [+r.left.toFixed(1), +r.top.toFixed(1), +r.right.toFixed(1), +r.bottom.toFixed(1)];
         return [
           {
             id: row.getAttribute("data-quota-row"),
             says: text.textContent,
+            gauge: !!row.querySelector("[data-quota-gauge]"),
             text: n(text.getBoundingClientRect()),
-            ring: n(ring.getBoundingClientRect()),
             row: n(row.getBoundingClientRect()),
             title: title ? n(title.getBoundingClientRect()) : null,
             face: face ? n(face.getBoundingClientRect()) : null,
@@ -24310,20 +24286,22 @@ try {
       }),
     );
     console.log(`lists (8) · row shares [l,t,r,b]: ${JSON.stringify(dials)}`);
-    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a gauge and a share — (8) measured nothing`);
+    if (dials.length < 2) fail(`probe dead: ${dials.length} 额度 row(s) with a share — (8) measured nothing`);
     for (const d of dials) {
       const [l, t, r, b] = d.text;
       const clipped = l < d.row[0] - 0.5 || r > d.row[2] + 0.5 || t < d.row[1] - 0.5 || b > d.row[3] + 0.5;
-      const leftOfRing = l < d.ring[2] - 0.5;
-      const ringUnderTitle = d.title !== null && d.ring[0] < d.title[2] - 0.5;
-      const onFace = d.face !== null && d.ring[0] < d.face[2] - 0.5;
+      const underTitle = d.title !== null && l < d.title[2] - 0.5;
+      const onFace = d.face !== null && l < d.face[2] - 0.5;
       if (clipped) {
         fail(`the ${d.id} row's share 「${d.says}」 runs to ${JSON.stringify(d.text)} past its row ${JSON.stringify(d.row)} — the reading is clipped (src/views/QuotaLanding.tsx)`);
       }
-      if (leftOfRing || ringUnderTitle || onFace) {
+      if (d.gauge) {
+        fail(`the ${d.id} row draws a gauge beside its share — the list carries no dial since 2026-10-12 (src/views/QuotaLanding.tsx)`);
+      }
+      if (underTitle || onFace) {
         fail(
-          `the ${d.id} row's share 「${d.says}」 at ${JSON.stringify(d.text)} and gauge ${JSON.stringify(d.ring)} are out of place (title to ${d.title?.[2]}, face to ${d.face?.[2]}) — ` +
-            "the share at the right-top, its gauge left of it and right of the title (UX-53; src/views/QuotaLanding.tsx)",
+          `the ${d.id} row's share 「${d.says}」 at ${JSON.stringify(d.text)} is out of place (title to ${d.title?.[2]}, face to ${d.face?.[2]}) — ` +
+            "the share at the right-top, right of the title (UX-53; src/views/QuotaLanding.tsx)",
         );
       }
     }
@@ -40092,18 +40070,18 @@ try {
           fail(`probe dead: ${where} · the list drew ${rows.length} of ${qBoard.length} rows`);
           continue;
         }
+        // **No row draws a gauge** (the owner, 2026-10-12: 「额度页 list 不带
+        // 环」, `e17a98e1`): the share alone at the right-top on the rows
+        // that have one. ⚠️ 墓碑 (UX-53 → 10-12): one gauge per shared row
+        // at one x, as tall as its two lines (`ROW_GAUGE_H`).
         const gauged = rows.filter((r) => r.gauge);
+        const shared = rows.filter((r) => r.pct).map((r) => r.id).sort();
         const want = ["q-max", "q-router", "q-gw", "q-relay"];
-        if (JSON.stringify(gauged.map((r) => r.id).sort()) !== JSON.stringify([...want].sort())) {
-          fail(`${where} · gauges on ${JSON.stringify(gauged.map((r) => r.id))} — one on each row with a share (${want.join(", ")}), none on the wallet or the unreadable (UX-53, src/views/QuotaLanding.tsx RowGauge)`);
+        if (gauged.length) {
+          fail(`${where} · gauges on ${JSON.stringify(gauged.map((r) => r.id))} — the list carries no dial since 2026-10-12 (src/views/QuotaLanding.tsx)`);
         }
-        const xs = gauged.map((r) => r.gauge.left);
-        if (gauged.length > 1 && Math.max(...xs) - Math.min(...xs) > 0.5) {
-          fail(`${where} · the gauges start at ${JSON.stringify(gauged.map((r) => [r.id, r.gauge.left, r.age]))} — one x on every row, an age under the share or none (UX-53, the right corner's width)`);
-        }
-        const tall = gauged.filter((r) => r.lines === null || Math.abs(r.gauge.h - r.lines) > 1);
-        if (tall.length) {
-          fail(`${where} · gauge against its two lines: ${JSON.stringify(tall.map((r) => [r.id, r.gauge.h, r.lines]))} — as tall as the lines beside it, ±1 (UX-53, ROW_GAUGE_H)`);
+        if (JSON.stringify(shared) !== JSON.stringify([...want].sort())) {
+          fail(`${where} · shares on ${JSON.stringify(shared)} — one on each row with a ceiling (${want.join(", ")}), none on the wallet or the unreadable (UX-53, src/views/QuotaLanding.tsx)`);
         }
         const cut = rows.filter((r) => (r.pct && r.pct.over > 0) || (r.timeOver ?? 0) > 0);
         if (cut.length) {
