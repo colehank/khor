@@ -25,7 +25,7 @@ use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -212,6 +212,59 @@ pub fn connect_view_versioned(dir: &Path, cols: u16, rows: u16) -> Result<Attach
 /// spawn so a stale one can never answer for a live host.
 pub fn host_error_path(dir: &Path) -> PathBuf {
     dir.join("host-error.txt")
+}
+
+/// **The last screen, on disk** (P5-SHELL item 1, the owner 2026-10-12):
+/// the ring lives in the host's memory, so a host that died took its
+/// session's screen with it and the dead row opened to nothing. The host
+/// writes what a reconnecting face would be handed here, beside
+/// `commands.json`, every [`RING_SAVE_EVERY`] while something was written
+/// and on its way out (its child's end, or SIGTERM). Overwritten whole,
+/// through a temporary name and a rename, so a reader never sees half a
+/// file. A live session never reads it: its host serves the ring.
+pub fn ring_file_path(dir: &Path) -> PathBuf {
+    dir.join("ring.bin")
+}
+
+/// How often a host with fresh output writes [`ring_file_path`].
+pub const RING_SAVE_EVERY: Duration = Duration::from_secs(30);
+
+/// **`ring.bin`**: the first frame a reconnecting face would be handed,
+/// and the terminal size it was laid out for. msgpack, positional; fields
+/// only ever appended with a serde default.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RingFile {
+    /// What `bytes` is: [`RING_FORM_SNAPSHOT`], the model's snapshot (a
+    /// version-3 attacher's first frame: history as styled lines, the
+    /// screen, the modes), or [`RING_FORM_REPLAY`], the ring's replay
+    /// (the trimmed head's modes, then the bytes, pictures in place) when
+    /// the snapshot would pass [`RING`].
+    pub form: u32,
+    pub cols: u16,
+    pub rows: u16,
+    /// When it was written, ms since the epoch.
+    pub at_ms: u64,
+    #[serde(with = "serde_bytes")]
+    pub bytes: Vec<u8>,
+}
+
+/// [`RingFile::form`]: the model's snapshot.
+pub const RING_FORM_SNAPSHOT: u32 = 3;
+/// [`RingFile::form`]: the ring's replay.
+pub const RING_FORM_REPLAY: u32 = 1;
+
+/// Writes `ring.bin` whole: a temporary name, then a rename.
+pub fn write_ring_file(dir: &Path, ring: &RingFile) -> Result<(), String> {
+    let bytes = rmp_serde::to_vec(ring).map_err(|e| e.to_string())?;
+    let tmp = dir.join("ring.bin.tmp");
+    std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, ring_file_path(dir)).map_err(|e| e.to_string())
+}
+
+/// A dead session's last screen, when its host left one.
+pub fn read_ring_file(dir: &Path) -> Option<RingFile> {
+    let bytes = std::fs::read(ring_file_path(dir)).ok()?;
+    rmp_serde::from_slice(&bytes).ok()
 }
 
 /// The terminal's last non-empty line, as the host keeps it beside its
@@ -878,6 +931,60 @@ struct Shared {
     /// The screen the host keeps (item 46), fed under the ring's lock;
     /// `None` for a tmux client, whose screen is tmux's (item 41).
     model: Mutex<Option<Model>>,
+    /// Counts every change to the ring (output, ⌘K), so the saver writes
+    /// `ring.bin` only when something was written since its last write.
+    changes: AtomicU64,
+}
+
+impl Shared {
+    /// **What a reconnecting face would be handed now**, for `ring.bin`
+    /// (P5-SHELL item 1): the model's snapshot under the ring's modes —
+    /// the same first frame a version-3 attacher gets, at the size the
+    /// model stands at — or the ring's replay when the snapshot would
+    /// pass [`RING`]. `None` with no model (a tmux client: tmux holds
+    /// its screen). Locks ring, then model, the attachers' order.
+    fn ring_now(&self) -> Option<RingFile> {
+        let ring = self.ring.lock().unwrap();
+        let mut model = self.model.lock().unwrap();
+        let m = model.as_mut()?;
+        let (rows, cols) = m.parser.screen().size();
+        let snapshot = m.snapshot(&ring.modes_now());
+        let (form, bytes) = if snapshot.len() <= RING {
+            (RING_FORM_SNAPSHOT, snapshot)
+        } else {
+            (RING_FORM_REPLAY, ring.replay())
+        };
+        Some(RingFile {
+            form,
+            cols,
+            rows,
+            at_ms: crate::live::now_ms().max(0) as u64,
+            bytes,
+        })
+    }
+
+    /// Writes `ring.bin` when the ring changed since `*saved` (the change
+    /// count at the last write), and moves `*saved` on.
+    fn save_ring(&self, dir: &Path, saved: &mut u64) {
+        let now = self.changes.load(Ordering::SeqCst);
+        if now == *saved {
+            return;
+        }
+        if let Some(file) = self.ring_now()
+            && write_ring_file(dir, &file).is_ok()
+        {
+            *saved = now;
+        }
+    }
+}
+
+/// Set by the host's SIGTERM handler: the saver writes `ring.bin`, then
+/// the host dies of the signal as it always did.
+static TERMED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(unix)]
+extern "C" fn on_term(_: libc::c_int) {
+    TERMED.store(true, Ordering::SeqCst);
 }
 
 /// Rows of history the model keeps above the screen until a face says
@@ -1634,6 +1741,7 @@ fn host_serving(
         clients: Mutex::new(Vec::new()),
         // A tmux client's screen is tmux's (item 41): no model.
         model: Mutex::new((!mux_client).then(|| Model::new(size.1, size.0))),
+        changes: AtomicU64::new(0),
     });
     let output_done = Arc::new(AtomicBool::new(false));
     // The questions the program asked its terminal, and which answers
@@ -1772,6 +1880,7 @@ fn host_serving(
                 }
                 let mut ring = shared.ring.lock().unwrap();
                 ring.push(&buf[..n]);
+                shared.changes.fetch_add(1, Ordering::SeqCst);
                 let lost = shared.model.lock().unwrap().as_mut().is_some_and(|m| m.feed(&buf[..n]));
                 let chunk: Arc<[u8]> = Arc::from(&buf[..n]);
                 let mut clients = shared.clients.lock().unwrap();
@@ -1911,6 +2020,50 @@ fn host_serving(
                 }
             });
         }
+    }
+
+    // **The last screen, on disk** (P5-SHELL item 1, `ring_file_path`):
+    // every `RING_SAVE_EVERY` while something was written, and at once on
+    // SIGTERM — then the host dies of the signal, as it always did. Never
+    // a viewer's (the row is the vendor's) nor a tmux client's (tmux holds
+    // that screen); its child's end is saved below, after the last read.
+    let keeps_ring = viewer.is_none() && !mux_client;
+    let saved = Arc::new(Mutex::new(0u64));
+    if keeps_ring {
+        #[cfg(unix)]
+        // SAFETY: the handler only stores to an atomic. A caught signal
+        // goes back to its default across exec, so the child is unchanged.
+        unsafe {
+            libc::signal(libc::SIGTERM, on_term as *const () as libc::sighandler_t);
+        }
+        let shared = shared.clone();
+        let output_done = output_done.clone();
+        let dir = dir.clone();
+        let saved = saved.clone();
+        std::thread::spawn(move || {
+            let tick = Duration::from_millis(100);
+            let mut since = Duration::ZERO;
+            while !output_done.load(Ordering::SeqCst) {
+                std::thread::sleep(tick);
+                since += tick;
+                if TERMED.load(Ordering::SeqCst) {
+                    shared.save_ring(&dir, &mut saved.lock().unwrap());
+                    #[cfg(unix)]
+                    // SAFETY: back to the default action, then the signal
+                    // again: the host ends exactly as an unhandled TERM
+                    // ended it before.
+                    unsafe {
+                        libc::signal(libc::SIGTERM, libc::SIG_DFL);
+                        libc::kill(libc::getpid(), libc::SIGTERM);
+                    }
+                    return;
+                }
+                if since >= RING_SAVE_EVERY {
+                    since = Duration::ZERO;
+                    shared.save_ring(&dir, &mut saved.lock().unwrap());
+                }
+            }
+        });
     }
 
     // Attachers.
@@ -2071,6 +2224,7 @@ fn host_serving(
                                     if let Some(m) = shared.model.lock().unwrap().as_mut() {
                                         m.forget();
                                     }
+                                    shared.changes.fetch_add(1, Ordering::SeqCst);
                                     drop(ring);
                                 }
                                 ClientOp::Forget => {}
@@ -2112,6 +2266,11 @@ fn host_serving(
             break;
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+    // The child ended: its last screen, after the last read. `close`
+    // may have removed the dir already, and then this writes nothing.
+    if keeps_ring && dir.exists() {
+        shared.save_ring(&dir, &mut saved.lock().unwrap());
     }
     Ok(())
 }
@@ -2970,3 +3129,113 @@ mod handshake_tests {
     }
 }
 
+
+#[cfg(test)]
+mod ring_file_tests {
+    use super::*;
+
+    fn dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("khor-ringfile-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn shared(rows: u16, cols: u16) -> Shared {
+        Shared {
+            ring: Mutex::new(Ring::default()),
+            clients: Mutex::new(Vec::new()),
+            model: Mutex::new(Some(Model::new(rows, cols))),
+            changes: AtomicU64::new(0),
+        }
+    }
+
+    /// What the PTY reader does with a read: the ring, the model, the count.
+    fn feed(s: &Shared, bytes: &[u8]) {
+        let mut ring = s.ring.lock().unwrap();
+        ring.push(bytes);
+        s.model.lock().unwrap().as_mut().unwrap().feed(bytes);
+        s.changes.fetch_add(1, Ordering::SeqCst);
+    }
+
+    /// The file reads back as it was written, a second write replaces the
+    /// first whole, and no temporary is left beside it.
+    #[test]
+    fn a_ring_file_reads_back_whole_and_is_overwritten_whole() {
+        let d = dir("whole");
+        assert_eq!(read_ring_file(&d), None, "no file, no screen");
+        let first = RingFile { form: RING_FORM_SNAPSHOT, cols: 80, rows: 24, at_ms: 1, bytes: b"one".repeat(1000) };
+        write_ring_file(&d, &first).unwrap();
+        assert_eq!(read_ring_file(&d).as_ref(), Some(&first));
+        let second = RingFile { form: RING_FORM_REPLAY, cols: 100, rows: 30, at_ms: 2, bytes: b"two".to_vec() };
+        write_ring_file(&d, &second).unwrap();
+        assert_eq!(read_ring_file(&d), Some(second));
+        assert!(!d.join("ring.bin.tmp").exists(), "the temporary is renamed, never left");
+        std::fs::write(ring_file_path(&d), b"\x93garbled").unwrap();
+        assert_eq!(read_ring_file(&d), None, "a garbled file is no screen, not a panic");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// **The dead screen opens the way a reconnect would**: the saved
+    /// bytes, fed to a fresh terminal of the saved size, give the model's
+    /// screen cell for cell and its modes — for a shell transcript, a
+    /// full-screen program on the alternate screen, and wide characters.
+    #[test]
+    fn the_saved_screen_is_the_screen_a_reconnect_gets() {
+        for (name, stream) in [
+            ("shell", (0..300).flat_map(|i| format!("\x1b[32m$\x1b[0m echo {i}\r\n{i}\r\n").into_bytes()).collect::<Vec<u8>>()),
+            ("tui", b"\x1b[?1049h\x1b[?1000h\x1b[H\x1b[2J\x1b[3;5H\x1b[7m menu \x1b[0m\x1b[10;1Hstatus".to_vec()),
+            ("wide", "\u{4f60}\u{597d} \x1b[1mbold\x1b[0m\r\n$ ".as_bytes().to_vec()),
+        ] {
+            let s = shared(24, 80);
+            feed(&s, &stream);
+            let file = s.ring_now().expect("a model, a file");
+            assert_eq!((file.rows, file.cols), (24, 80), "{name}: the size it was laid out for");
+            assert_eq!(file.form, RING_FORM_SNAPSHOT, "{name}");
+            let mut again = vt100::Parser::new(file.rows, file.cols, 0);
+            again.process(&file.bytes);
+            let m = s.model.lock().unwrap();
+            let a = m.as_ref().unwrap().parser.screen();
+            let b = again.screen();
+            assert_eq!(a.contents(), b.contents(), "{name}: the screen's text");
+            assert_eq!(a.alternate_screen(), b.alternate_screen(), "{name}: the buffer");
+            assert_eq!(a.cursor_position(), b.cursor_position(), "{name}: the cursor");
+            assert_eq!(a.mouse_protocol_mode(), b.mouse_protocol_mode(), "{name}: the mouse");
+        }
+    }
+
+    /// Written only when something was written since the last write: the
+    /// 30-second beat costs a quiet shell nothing.
+    #[test]
+    fn the_ring_is_saved_only_when_it_changed() {
+        let d = dir("changed");
+        let s = shared(24, 80);
+        let mut saved = 0u64;
+        s.save_ring(&d, &mut saved);
+        assert!(!ring_file_path(&d).exists(), "nothing written yet, nothing saved");
+        feed(&s, b"hello\r\n");
+        s.save_ring(&d, &mut saved);
+        let first = read_ring_file(&d).expect("written once");
+        assert!(String::from_utf8_lossy(&first.bytes).contains("hello"));
+        std::fs::remove_file(ring_file_path(&d)).unwrap();
+        s.save_ring(&d, &mut saved);
+        assert!(!ring_file_path(&d).exists(), "no change since, no write");
+        feed(&s, b"again\r\n");
+        s.save_ring(&d, &mut saved);
+        assert!(String::from_utf8_lossy(&read_ring_file(&d).unwrap().bytes).contains("again"));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// A tmux client keeps no model, so no file: tmux holds that screen.
+    #[test]
+    fn a_tmux_client_saves_no_screen() {
+        let s = Shared {
+            ring: Mutex::new(Ring::default()),
+            clients: Mutex::new(Vec::new()),
+            model: Mutex::new(None),
+            changes: AtomicU64::new(0),
+        };
+        s.ring.lock().unwrap().push(b"x");
+        assert!(s.ring_now().is_none());
+    }
+}

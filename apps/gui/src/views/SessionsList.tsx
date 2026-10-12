@@ -7,7 +7,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { sessionKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
 import { SideList, type SideRow } from "@/components/SideList";
-import { DoingLine, hereActs } from "@/components/DoingLine";
+import { DoingLine, endedWord, hereActs } from "@/components/DoingLine";
 import { EditableName } from "@/components/EditableName";
 import { IconDevices } from "@/components/icons";
 import { gui } from "@/gen/catalog";
@@ -330,6 +330,13 @@ export function SessionsList({
     sub: away ? (
       <span data-row-far className="block min-w-0 truncate">
         {gui.row_unreachable(agoOf(away.age))}
+      </span>
+    ) : r.ended && r.word === "failed" ? (
+      // **失败 says which** (P5-SHELL item 3): a row that will never move
+      // again names how it ended — the exit its host recorded, or the
+      // host killed with nothing recorded. The word stays 失败.
+      <span data-row-ended={r.ended.exit === null ? "host" : "exit"} className="block min-w-0 truncate">
+        {endedWord(r.ended)}
       </span>
     ) : r.doing?.command ? (
       // A terminal whose shell marks its commands says what it runs

@@ -70,6 +70,7 @@ import type { SearchHit } from "./gen/bindings/SearchHit";
 import type { RecentRow } from "./gen/bindings/RecentRow";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
 import type { TermStart } from "./gen/bindings/TermStart";
+import type { EndedPage } from "./gen/bindings/EndedPage";
 import type { TermChunk } from "./gen/bindings/TermChunk";
 import type { PaneAnchor } from "./gen/bindings/PaneAnchor";
 import type { PaneHistory } from "./gen/bindings/PaneHistory";
@@ -1904,6 +1905,10 @@ export const termOpen = (id: string, cols: number, rows: number, history: number
     its own mouse and paste. 「不必考虑旧版兼容」 is why there is no
     bridge.) */
 export const termAttach = (id: string) => call<TermStart>("term_attach", { id });
+/** **A dead terminal row's page** (P5-SHELL): how it ended, its last
+    screen when its host left one (`ring.bin`), else the commands it ran,
+    newest first. `null` while the session is not dead on this machine. */
+export const termEnded = (id: string) => call<EndedPage | null>("term_ended", { id });
 export const termStream = (id: string, since: number) =>
   call<TermChunk>("term_stream", { id, since });
 /** `termStream`, held open until the feed grows past `since` (or `ms`

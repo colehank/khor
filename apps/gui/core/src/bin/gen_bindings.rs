@@ -28,6 +28,7 @@ fn main() {
         .join("../src/gen/bindings"),
     };
     khor_gui_core::SessionRow::export_all_to(&dir).expect("export SessionRow");
+    khor_gui_core::term::EndedPage::export_all_to(&dir).expect("export EndedPage");
     khor_gui_core::DeviceRow::export_all_to(&dir).expect("export DeviceRow");
     khor_gui_core::import::CandidateRow::export_all_to(&dir).expect("export CandidateRow");
     khor_gui_core::FindHit::export_all_to(&dir).expect("export FindHit");

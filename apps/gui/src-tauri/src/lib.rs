@@ -945,6 +945,13 @@ async fn term_open(id: String, cols: u16, rows: u16, history: Option<u32>) -> Re
     off_main(move || khor_gui_core::term::term_open(&Node::root_from_env(), &id, cols, rows, history.unwrap_or(0))).await
 }
 
+/// A dead terminal row's page (`term::ended`, P5-SHELL): its last screen
+/// when its host left one, else the commands it ran.
+#[tauri::command]
+async fn term_ended(id: String) -> Result<Option<khor_gui_core::term::EndedPage>, String> {
+    off_main(move || khor_gui_core::term::ended(&Node::root_from_env(), &id)).await
+}
+
 #[tauri::command]
 fn term_attach(id: String) -> Result<khor_gui_core::term::TermStart, String> {
     khor_gui_core::term::term_attach(&id)
@@ -4738,6 +4745,7 @@ pub fn run() {
             pull_temp,
             term_open,
             term_attach,
+            term_ended,
             term_stream,
             term_history,
             term_prompt,

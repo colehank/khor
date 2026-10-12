@@ -27,6 +27,7 @@ import { MachineChat } from "@/views/MachineChat";
     mounts, so the first terminal opened does not wait for it. */
 const loadTerminal = () => import("@/views/TerminalPane");
 const TerminalPane = lazy(() => loadTerminal().then((m) => ({ default: m.TerminalPane })));
+const EndedPane = lazy(() => loadTerminal().then((m) => ({ default: m.EndedPane })));
 
 /**
  * **One session, one face.** A session is held in exactly one form —
@@ -537,6 +538,13 @@ export function DetailPane({
           // to, and the conversation opens as ended (UX-4).
           ended={row.word === "failed"}
         />
+      ) : row && row.kind === "shell" && row.ended && !row.attachable ? (
+        // **A shell that died keeps its last screen** (P5-SHELL): read
+        // only, under how it ended; with no screen left, the commands it
+        // ran. Only a dead row of this machine's carries `ended`.
+        <Suspense fallback={null}>
+          <EndedPane key={row.id} id={row.id} at={row.at_ms} />
+        </Suspense>
       ) : row && row.attachable ? (
         // A session with a terminal to be had: hosted here already, or a
         // discovered tmux session the bridge stands a host up for on

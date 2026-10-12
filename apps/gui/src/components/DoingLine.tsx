@@ -6,6 +6,7 @@
 // and 「make · 退出 0 · 12 秒」. Whether it runs is the row's state word,
 // how long is the time under it; an exit code is the terminal's to show.
 import type { Doing } from "@/gen/bindings/Doing";
+import type { RowEnding } from "@/gen/bindings/RowEnding";
 import type { RowAction } from "@/components/RowMenu";
 import { gui } from "@/gen/catalog";
 import { askNewSession, askOpenDir } from "@/lib/composer-handoff";
@@ -40,6 +41,13 @@ export function DoingLine({ doing }: { doing: Doing }) {
       {doing.running && doing.progress !== null && <ProgressLine doing={doing} />}
     </span>
   );
+}
+
+/** **How a dead row ended, in words** (P5-SHELL item 3): the exit its
+    host recorded, or the host killed before its shell ended. The node
+    reads which (`SessionRow.ended`); this only words it. */
+export function endedWord(e: RowEnding): string {
+  return e.exit === null ? gui.row_ended_host : gui.row_ended_exit(String(e.exit));
 }
 
 /** Exit codes that are not a failure: ^C (130) and a closed pipe (141). */
