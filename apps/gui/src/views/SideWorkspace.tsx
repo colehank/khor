@@ -30,18 +30,21 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { fetchGitStatus, searchIn, type Found } from "@/api";
+import { fetchGitLog, fetchGitStatus, searchIn, type Found, type GitLog } from "@/api";
 import { GlassCircle } from "@/components/Glass";
 import { IconPlus } from "@/components/icons";
 import { SideFind } from "@/components/SideFind";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SeatHead } from "@/components/SeatHead";
 import { gui } from "@/gen/catalog";
+import type { GitCommit } from "@/gen/bindings/GitCommit";
 import type { GitStatus } from "@/gen/bindings/GitStatus";
 import type { WsSpot } from "@/hooks/use-session-side";
 import { holds, onTreeChanged, sameMachine } from "@/lib/tree-changed";
 import { heavier, IGNORED } from "@/views/fileRow";
 import { FilePage } from "@/views/FilePage";
+import { CommitPage } from "@/views/CommitPage";
+import { HistorySheet } from "@/views/FileHistory";
 import { FileTree } from "@/views/FileTree";
 import { Hits } from "@/views/WorkspacePane";
 import type { Draft } from "@/views/FileView";
@@ -125,6 +128,25 @@ export function SideWorkspace({
       live = false;
     };
   }, [machine, root, gitAt]);
+  // **HEAD, for the tree's commit line** (WS-LAB item 1; the owner
+  // 2026-10-13: 「mac 的 commit 有 ios 没有」— the lane wired
+  // `WorkspacePane` and not this seat, which is the phone's whole
+  // workspace). The same `gitAt` beat as the marks: a commit moves both.
+  const [headCommit, setHeadCommit] = useState<GitLog["commits"][0] | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchGitLog(machine, root)
+      .then((l) => live && setHeadCommit(l.commits[0] ?? null))
+      .catch(() => live && setHeadCommit(null));
+    return () => {
+      live = false;
+    };
+  }, [machine, root, gitAt]);
+  /** The repository's 提交历史 sheet, and the commit a row of it opened —
+      a screen in the file's place, ‹ back to the tree (`CommitPage`). */
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [commit, setCommit] = useState<GitCommit | null>(null);
+  useEffect(() => setCommit(null), [machine, root]);
   // git's letters move with khor's acts anywhere in this checkout — the
   // main area's tree, a save there (UX-43 §1, `lib/tree-changed`).
   useEffect(
@@ -217,7 +239,7 @@ export function SideWorkspace({
     <div data-side-workspace data-root={root} className="relative flex min-h-0 flex-1 flex-col">
       {/* The tree stays mounted under an open file, so ‹ finds it where
           it was scrolled. */}
-      <div className={file !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
+      <div className={file !== null || commit !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={backLabel} />}
         <SideFind label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />
         {hunt.trim() !== "" ? (
@@ -251,9 +273,27 @@ export function SideWorkspace({
             onMade={() => setGitAt((n) => n + 1)}
             make={make}
             onMakeSeen={() => setMake(null)}
+            headCommit={headCommit}
+            onCommitLine={() => setHistoryOpen(true)}
           />
         )}
       </div>
+      {commit !== null && (
+        <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
+          <CommitPage key={commit.id} machine={machine} root={root} commit={commit} onBack={() => setCommit(null)} />
+        </div>
+      )}
+      <HistorySheet
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        machine={machine}
+        path={root}
+        repo
+        onPick={(c) => {
+          setFile(null);
+          setCommit(c);
+        }}
+      />
       {file !== null && (
         <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
           <FilePage
