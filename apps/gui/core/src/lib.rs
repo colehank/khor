@@ -2297,65 +2297,12 @@ pub struct MachineLog {
     pub broken: u64,
 }
 
-/// A machine conversation's readout — what `khor log <机器>` prints,
-/// shaped for the chat pane. Takes the row's id (`chat/<channel>`) and
-/// peels the prefix here: the caller holds a row, and which string is
-/// the channel is this layer's knowledge, not the screen's.
+/// The broadcast's readout — what `khor log` prints, shaped for the
+/// chat pane. Takes the row's id (`wide/all`). ⚠️ 墓碑 (STORE-BRIEF phase
+/// 5): a machine's `chat/<机器>` conversation read here too; that session
+/// kind is gone.
 pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
-    let n = open(root)?;
-    if id.starts_with(khor_node::wide::WIDE) {
-        return wide_log(&n, id);
-    }
-    let machine = id.strip_prefix("chat/").unwrap_or(id);
-    let (log, faces) = n.log_faced(machine)?;
-    let me = n.device_str().to_owned();
-    let messages = log
-        .messages
-        .into_iter()
-        .zip(faces)
-        .map(|(m, face)| {
-            let (text, files, unknown) = match m.body {
-                khor_node::MsgBody::Text(t) => (Some(t), None, None),
-                khor_node::MsgBody::Files(fs) => (
-                    None,
-                    Some(
-                        fs.into_iter()
-                            .map(|f| ChatFileRow {
-                                name: f.name,
-                                size: f.size,
-                            })
-                            .collect(),
-                    ),
-                    None,
-                ),
-                khor_node::MsgBody::Unknown(k) => (None, None, Some(k)),
-            };
-            ChatMsgRow {
-                at_ms: m.at,
-                from_me: m.from.id == me,
-                from: m.from.name,
-                id: m.id,
-                text,
-                files,
-                unknown,
-                retracted: m.retracted,
-                edited: m.edited,
-                word: face.map(|s| s.key().to_owned()),
-                step: m.fate.as_ref().map(|f| f.step.key().to_owned()),
-                moved: m.fate.as_ref().map_or(0, |f| f.moved),
-                landed: m.fate.as_ref().map(|f| f.landed.clone()).unwrap_or_default(),
-                why: m.fate.as_ref().map(|f| f.why.clone()).filter(|w| !w.is_empty()),
-                into: Some(m.into).filter(|d| !d.is_empty()),
-                got: None,
-                of: None,
-                via: None,
-            }
-        })
-        .collect();
-    Ok(MachineLog {
-        messages,
-        broken: log.broken as u64,
-    })
+    wide_log(&open(root)?, id)
 }
 
 /// The broadcast's readout (`khor_node::wide`), in the same shape: a

@@ -197,8 +197,11 @@ type Landing = "sessions" | "devices" | "workspaces" | "browser" | "quota";
  * card it opened over the map went with that.
  */
 
-/** A tab on a machine's conversation (`chat/<name>`). */
-const isChatTab = (id: string | null): boolean => !!id && id.startsWith("chat/");
+/** A tab on the broadcast (`wide/all`), which may stand before its row
+    does: put away with nothing newer, or before the khor has two
+    machines. ⚠️ 墓碑 (STORE-BRIEF phase 5): a machine's `chat/<name>`
+    conversation; that session kind is gone. */
+const isChatTab = (id: string | null): boolean => id === "wide/all";
 
 /** What a road into 新建会话 knew (UX-45): the machine, the directory,
     and whether it was a workspace column's own ＋. */
@@ -1843,18 +1846,16 @@ export default function App() {
             menu: [{ key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) }],
           };
         const r = rows.find((row) => row.id === id);
-        // **A machine's conversation the list does not show** (UX-45): one
-        // put away with nothing newer (docs/SESSION.md 动作) is still the
-        // machine's, and 留言 opens it; its first message brings the row
-        // back. Drawn from the machine until then.
+        // **The broadcast the list does not show** (UX-45): put away with
+        // nothing newer (docs/SESSION.md 动作) it is still there, and 留言
+        // opens it; its first message brings the row back.
         if (!r && isChatTab(id)) {
-          const name = id.slice("chat/".length);
           return {
             id,
-            label: name,
-            face: devices.find((d) => d.name === name)?.face ?? null,
+            label: msg.broadcast_title,
+            face: null,
             path: "",
-            session: { word: "idle", kind: "chat", category: null },
+            session: { word: "idle", kind: "broadcast", category: null },
             menu: [{ key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) }],
           };
         }

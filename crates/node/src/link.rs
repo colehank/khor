@@ -37,36 +37,27 @@ macro_rules! with_doc {
             "agents" => { let mut l = $node.agents_loaded()?; let $loaded = &mut l; $body }
             "accounts" => { let mut l = $node.accounts_loaded()?; let $loaded = &mut l; $body }
             "titles" => { let mut l = $node.titles_loaded()?; let $loaded = &mut l; $body }
-            _ => match name.strip_prefix("chat/") {
-                Some(ch) => {
-                    let dir = chat::channel_dir($node.root(), ch)
-                        .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
+            // A khor-wide conversation (`wide/<name>`, foundation B). ⚠️
+            // 墓碑 (STORE-BRIEF phase 5): a machine's `chat/<机器>` was a
+            // document here too; that session kind is gone, so an older
+            // khor asking for one is refused by name (`unknown_doc`).
+            _ => match chat::wide_dir($node.root(), name) {
+                Some(dir) => {
                     let mut l = chat::open_channel(&dir, $node.writer_peer())?;
                     let $loaded = &mut l;
                     $body
                 }
-                // A khor-wide conversation (`wide/<name>`, foundation B):
-                // the same document shape, kept beside the channels.
-                None => match chat::wide_dir($node.root(), name) {
-                    Some(dir) => {
-                        let mut l = chat::open_channel(&dir, $node.writer_peer())?;
-                        let $loaded = &mut l;
-                        $body
-                    }
-                    None => Err(msg::unknown_doc(name)),
-                },
+                None => Err(msg::unknown_doc(name)),
             },
         }
     }};
 }
 
-/// The documents a round syncs, in the order it syncs them; chat
-/// channels follow (`Node::known_channels`), then the khor-wide
-/// conversations (`Node::known_wide`, best effort like the tables after
-/// the first three: a peer that predates them refuses them by name). The first three and every
-/// channel must sync for the round to count; the rest are best effort —
-/// a peer that predates a table refuses it by name, and that must not
-/// cost the rounds behind it.
+/// The documents a round syncs, in the order it syncs them; the
+/// khor-wide conversations follow (`Node::known_wide`). The first three
+/// and the broadcast must sync for the round to count; the rest are best
+/// effort — a peer that predates a table refuses it by name, and that
+/// must not cost the rounds behind it.
 const ROUND_DOCS: [&str; 11] = [
     "devices", "seen", "pins", "roster", "dirpins", "workspaces", "webpins", "recents",
     "agents", "accounts", "titles",
@@ -75,7 +66,7 @@ const ROUND_DOCS: [&str; 11] = [
 /// Whether a failed sync of this document fails the round
 /// (`ROUND_DOCS`).
 fn doc_must_sync(name: &str) -> bool {
-    matches!(name, "devices" | "seen" | "pins") || name.starts_with("chat/")
+    matches!(name, "devices" | "seen" | "pins") || name == crate::wide::BROADCAST
 }
 
 /// A document's version, as a [`Request::Versions`] digest: blake3 of
@@ -3370,7 +3361,7 @@ impl Node {
                 if doc == "devices" && !changes.is_empty() {
                     self.follow_after_sync();
                 }
-                if !changes.is_empty() && (self.is_own_chat(&doc) || doc == crate::wide::BROADCAST) {
+                if !changes.is_empty() && doc == crate::wide::BROADCAST {
                     self.take_arrived();
                 }
                 Ok(Response::Synced {
@@ -8162,34 +8153,12 @@ impl Node {
         let Some(msg_id) = id.0.strip_prefix("transfer/") else {
             return Err(msg::no_such_transfer(&id.0));
         };
-        // Which machine to route to is read off the message, so the wait
-        // has to happen before the fork, not inside one arm of it.
-        let (channel, _) = self.transfer_after_sync(ep, id, msg_id).await?;
         // A broadcast file is taken by whichever machine asks for it: each
-        // one answers the offer for itself (STORE-BRIEF phase 3).
-        if channel == self.name() || channel.starts_with(chat::WIDE) {
-            return self.take_local(ep, id, action).await;
-        }
-        let target = self
-            .devices_loaded()?
-            .doc
-            .by_name(&channel)
-            .ok_or_else(|| msg::recipient_not_in_table(&channel))?;
-        let resp = self
-            .ask_on(
-                ep,
-                &target,
-                &Request::Act {
-                    session: id.0.clone(),
-                    action: action.to_owned(),
-                },
-            )
-            .await?;
-        match resp {
-            Response::Acted { moved, landed } => Ok((moved, landed)),
-            Response::Refused { why } => Err(why),
-            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
-        }
+        // one answers the offer for itself (STORE-BRIEF phase 3). ⚠️ 墓碑
+        // (phase 5): a machine's conversation file was routed to that
+        // machine from here; that conversation is gone.
+        self.transfer_after_sync(ep, id, msg_id).await?;
+        self.take_local(ep, id, action).await
     }
 
     /// The take or the stop itself, only ever on the receiver. Never
@@ -8208,12 +8177,8 @@ impl Node {
         // straight on this one (`handle`), and the receiver can be behind
         // on the very message it is asked about.
         let (channel, m) = self.transfer_after_sync(ep, id, msg_id).await?;
-        let wide = channel.starts_with(chat::WIDE);
-        if channel != self.name() && !wide {
-            return Err(msg::wrong_recipient(&channel));
-        }
         // The machine that offered it has the bytes already.
-        if wide && m.from.id == self.device_str() {
+        if m.from.id == self.device_str() {
             return Err(msg::own_broadcast_file().to_owned());
         }
         if action == "stop" {
@@ -8239,35 +8204,18 @@ impl Node {
         self.run_take(ep, &channel, &m, true).await
     }
 
-    /// Whether a synced document is this machine's own conversation.
-    fn is_own_chat(&self, doc: &str) -> bool {
-        doc.strip_prefix("chat/")
-            .is_some_and(|ch| self.resolve(self.name()).is_ok_and(|(own, _)| own == ch))
-    }
-
-    /// **The conversation files that arrived for this machine, pulled
-    /// now** (STORE-BRIEF phase 2: 直接传，不用等接收): every file
-    /// message in this machine's own conversation that another machine
-    /// sent and whose move has not started is landed, each on a task of
-    /// its own. Called by the resident when it starts and whenever a sync
-    /// moves its conversation. A move that failed or was cancelled is
-    /// not started again here — that is a person's retry.
+    /// **The files pushed to this machine, pulled now** (STORE-BRIEF
+    /// phase 5): every broadcast message that names this machine and that
+    /// it has not answered is landed, each on a task of its own. Called by
+    /// the resident when it starts and whenever a sync moves the
+    /// broadcast. A move that failed or was cancelled is not started
+    /// again here — that is a person's retry.
     pub(crate) fn take_arrived(&self) {
         let (Some(n), Some(ep)) = (self.me(), self.current_ears()) else {
             return;
         };
         let me = self.device_str().to_owned();
         let mut due: Vec<(String, chat::Message)> = Vec::new();
-        if let Ok((channel, _)) = self.resolve(self.name())
-            && let Ok(log) = self.chat.log(&channel)
-        {
-            due.extend(
-                log.messages
-                    .into_iter()
-                    .filter(|m| m.fate.is_none() && m.from.id != me)
-                    .map(|m| (channel.clone(), m)),
-            );
-        }
         // **Pushed to this machine** (STORE-BRIEF phase 5): a broadcast
         // message that names it is taken as soon as it is here, whether
         // or not its sender's ask arrives — the sender's ask joins this
@@ -8363,18 +8311,13 @@ impl Node {
             }
         };
         tell(Step::Moving, 0, Vec::new(), String::new(), String::new());
-        let wide = channel.starts_with(chat::WIDE);
         // **Pushed here, or offered** (STORE-BRIEF phase 5): a message that
         // names this machine lands where it says, made if it is not there
         // yet, with nobody asked; any other broadcast file waited for this
         // machine's yes and lands in its receive location.
         let target = m.to.iter().find(|t| t.device == self.device_str());
         let pull = async {
-            let named = match target {
-                Some(t) => t.path.as_str(),
-                None if wide => "",
-                None => m.into.as_str(),
-            };
+            let named = target.map_or("", |t| t.path.as_str());
             let into = if named.is_empty() {
                 crate::road::Dest::Receive
             } else {
@@ -8387,14 +8330,8 @@ impl Node {
                 }
                 crate::road::Dest::Dir(dir)
             };
-            let mode = if wide && target.is_none() { crate::road::Mode::Offer } else { crate::road::Mode::Direct };
+            let mode = if target.is_none() { crate::road::Mode::Offer } else { crate::road::Mode::Direct };
             let table = self.devices_loaded()?.doc;
-            let sender = table.get(&m.from.id);
-            if !wide {
-                let home = sender.ok_or(msg::offerer_left_table())?;
-                let (moved, landed) = self.take_from(ep, &home, files, &into, mode, &job).await?;
-                return Ok((moved, landed, home.id));
-            }
             // **A broadcast file comes from whoever has it** (BCAST-BRIEF):
             // its holder — the sender, or the machine it was on when the
             // message was composed (`FileRef::holder`), never through the
@@ -9681,7 +9618,7 @@ impl Node {
                     if name == "devices" && n > 0 {
                         self.follow_after_sync();
                     }
-                    if n > 0 && (self.is_own_chat(&name) || name == crate::wide::BROADCAST) {
+                    if n > 0 && name == crate::wide::BROADCAST {
                         self.take_arrived();
                     }
                 }
@@ -9709,7 +9646,6 @@ impl Node {
     /// digest and every reading held, and the readings' kinds.
     fn opening(&self, d: &DeviceInfo) -> Result<(Vec<String>, Request), String> {
         let mut names: Vec<String> = ROUND_DOCS.iter().map(|n| (*n).to_owned()).collect();
-        names.extend(self.known_channels()?.into_iter().map(|ch| format!("chat/{ch}")));
         names.extend(self.known_wide());
         let mut docs = Vec::with_capacity(names.len());
         for name in &names {
@@ -10112,19 +10048,15 @@ impl Node {
                 moved += n;
             }
         }
-        for ch in self.known_channels()? {
-            let dir = chat::channel_dir(self.root(), &ch)
-                .ok_or_else(|| msg::bad_channel_name(format_args!("{ch:?}")))?;
-            let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
-            moved += self
-                .rounds(line, &format!("chat/{ch}"), &mut loaded)
-                .await?;
-        }
         for board in self.known_wide() {
             if let Some(dir) = chat::wide_dir(self.root(), &board) {
                 let mut loaded = chat::open_channel(&dir, self.writer_peer())?;
-                if let Ok(n) = self.rounds(line, &board, &mut loaded).await {
-                    moved += n;
+                // The broadcast must sync for the round to count
+                // (`doc_must_sync`); any other board is best effort.
+                match self.rounds(line, &board, &mut loaded).await {
+                    Ok(n) => moved += n,
+                    Err(why) if doc_must_sync(&board) => return Err(why),
+                    Err(_) => {}
                 }
             }
         }
@@ -10269,28 +10201,6 @@ impl Node {
             moved += round.pushed + round.pulled;
         }
         Ok(moved)
-    }
-
-    /// Channels worth syncing: every machine's window, plus any channel
-    /// directory already on disk.
-    fn known_channels(&self) -> Result<BTreeSet<String>, String> {
-        let mut set: BTreeSet<String> = self
-            .devices_loaded()?
-            .doc
-            .all()
-            .into_iter()
-            .map(|d| d.name)
-            .collect();
-        let chat_root = self.root().join(chat::REL_DIR);
-        if let Ok(rd) = fs::read_dir(chat_root) {
-            for e in rd.flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                if chat::valid_channel(&name) {
-                    set.insert(name);
-                }
-            }
-        }
-        Ok(set)
     }
 
     /// The khor-wide conversations worth syncing, by board name

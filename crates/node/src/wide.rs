@@ -48,7 +48,7 @@
 use std::collections::HashMap;
 
 use khor_catalog::msg;
-use khor_core::{Kind, Millis, Session, SessionId, State, StateStamp, kind};
+use khor_core::{Millis, Session, SessionId, State, StateStamp};
 use khor_sync::chat::{Fate, Message, MsgBody, Step};
 use khor_sync::devices::DeviceInfo;
 
@@ -203,7 +203,6 @@ impl KindSurface for WideKind {
         let watermark = seen.doc.watermark(BROADCAST);
         let msgs = node.chat.log(BROADCAST)?.messages;
         let mut row: Session = node.chat.row_from(BROADCAST, node.device(), &msgs, watermark);
-        row.kind = Kind(kind::BROADCAST.to_owned());
         row.title = msg::broadcast_title().to_owned();
         // The latest message still standing speaks, from this machine's
         // seat (the module head): a file to this machine still moving or

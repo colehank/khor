@@ -2,10 +2,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use khor_core::State;
-use khor_sync::chat::{ChatDoc, Sender, channel_dir};
-/// For `SeenDoc::changes_since` — the seen document's export lives on the
-/// trait, unlike `ChatDoc`'s, which also has it inherently.
-use khor_sync::store::Doc;
 
 use super::*;
 
@@ -60,8 +56,7 @@ fn scratch(tag: &str) -> Scratch {
     root(tag)
 }
 
-/// forget 批: a machine shown the door takes its rows with it — its chat
-/// row stops being derived (the table no longer holds it) and its cached
+/// forget 批: a machine shown the door takes its rows with it — its cached
 /// report stops being painted, while the in-table sibling keeps every
 /// row untouched (the control). Nothing is deleted: the report cache
 /// stays on disk, so a machine invited back resurfaces its last rows at
@@ -81,7 +76,10 @@ fn a_forgotten_machines_rows_leave_the_list() {
     }
     // One reported row each — a clone of a real row rather than a
     // literal, so this test does not have to know every Session field.
-    let mut template = n.sessions().unwrap()[0].session.clone();
+    let local = n.open_ephemeral(khor_core::kind::SHELL, "a build").unwrap();
+    let mut template = n.sessions().unwrap().into_iter().find(|v| v.session.id == local).unwrap().session;
+    // A kind that lists without an import (`listed`): a reported agent's.
+    template.kind = khor_core::Kind(khor_core::kind::GUI.to_owned());
     template.id = SessionId("shell/on-keeper".into());
     n.cache_peer_rows(&keep_id, "keeper", &[template.clone()])
         .unwrap();
@@ -93,12 +91,7 @@ fn a_forgotten_machines_rows_leave_the_list() {
         views.iter().map(|v| v.session.id.0.clone()).collect()
     };
     let before = ids(&n.sessions().unwrap());
-    for id in [
-        "chat/keeper",
-        "chat/beta-probe",
-        "shell/on-keeper",
-        "shell/on-beta",
-    ] {
+    for id in ["shell/on-keeper", "shell/on-beta"] {
         assert!(
             before.iter().any(|i| i == id),
             "control: {id} is on the list before the forget"
@@ -108,13 +101,13 @@ fn a_forgotten_machines_rows_leave_the_list() {
     n.forget_device("beta-probe").unwrap();
 
     let after = ids(&n.sessions().unwrap());
-    for id in ["chat/beta-probe", "shell/on-beta"] {
+    for id in ["shell/on-beta"] {
         assert!(
             !after.iter().any(|i| i == id),
             "{id} must leave with its machine"
         );
     }
-    for id in ["chat/keeper", "shell/on-keeper"] {
+    for id in ["shell/on-keeper"] {
         assert!(
             after.iter().any(|i| i == id),
             "{id} belongs to a machine still in the table"
@@ -124,35 +117,6 @@ fn a_forgotten_machines_rows_leave_the_list() {
         r.join(".khor").join("peers").join(&gone_id).exists(),
         "the report cache stays on disk — only the painting stops"
     );
-}
-
-/// Writes the landing of the last file message `far` planted, as this
-/// machine's pull would.
-fn land_planted(n: &Node, far: &ChatDoc, r: &std::path::Path) {
-    let msg_id = far
-        .messages()
-        .into_iter()
-        .rfind(|m| matches!(m.body, MsgBody::Files(_)))
-        .expect("the file message")
-        .id;
-    let fate = khor_sync::chat::Fate {
-        step: khor_sync::chat::Step::Landed,
-        moved: 6,
-        landed: vec![r.join("khor-drop").join("drop.bin").display().to_string()],
-        why: String::new(),
-        via: String::new(),
-    };
-    n.chat.set_fate(n.name(), &msg_id, &fate).unwrap();
-}
-
-/// The file ref the incoming-offer test plants.
-fn khor_node_test_fileref() -> khor_sync::chat::FileRef {
-    khor_sync::chat::FileRef {
-        name: "drop.bin".into(),
-        size: 6,
-        digest: "ef".repeat(32),
-        holder: String::new(),
-    }
 }
 
 /// Pinning lifts a row to the top of the list the library hands out, and
@@ -1416,193 +1380,6 @@ mod recents_tests {
     }
 }
 
-/// **The file chip's 空闲, measured.** A chip is the per-message twin of
-/// the row's word (`TransferKind::message_face`), and its vocabulary
-/// includes 看过了 — `receiver_face` computes 完成 vs 空闲 for a landed
-/// payload. This walks the same disk states the row is walked over, and
-/// then does the one thing the row-level walk never does: **looks at
-/// the row**. Every assertion before the last is a control establishing
-/// that the probe reads real, changing values off this seat.
-#[test]
-fn a_landed_file_chip_stops_saying_done_once_the_row_is_looked_at() {
-    let r = root("chip-seen");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    let dir = channel_dir(&r, n.name()).unwrap();
-    fs::create_dir_all(&dir).unwrap();
-
-    let far = ChatDoc::new(0xFAFA).unwrap();
-    let who = Sender {
-        id: "dev-far".into(),
-        name: "far".into(),
-    };
-    let f = khor_node_test_fileref();
-    far.send_files(&who, std::slice::from_ref(&f), "").unwrap();
-    fs::write(
-        dir.join("u-000000000000fafa-00000000.loro"),
-        far.changes_since(&Default::default()).unwrap(),
-    )
-    .unwrap();
-
-    let chip = |n: &Node| n.log_faced(n.name()).unwrap().1[0];
-    assert_eq!(
-        chip(&n),
-        Some(State::Busy),
-        "control: nothing has landed, and it is on its way to this seat"
-    );
-
-    land_planted(&n, &far, &r);
-    assert_eq!(
-        chip(&n),
-        Some(State::Done),
-        "control: it landed and nobody has looked — the probe moves with the record"
-    );
-
-    let id = SessionId(format!("chat/{}", n.name()));
-    n.seen(&id).unwrap();
-    assert_eq!(
-        n.sessions().unwrap()[0].session.unread,
-        0,
-        "control: the row itself counts as looked at, so the chip is the only thing left to ask"
-    );
-    assert_eq!(
-        chip(&n),
-        Some(State::Idle),
-        "看过了 — a chip may not keep shouting 完成 forever"
-    );
-}
-
-/// **A line in the conversation covers the file that came before it,
-/// and that is a decision, not a leak.**
-///
-/// `tell` raises the watermark to its own stamp and the mark replicates,
-/// so a line the far machine sends after a file sweeps that file's
-/// unread with it. A watermark is a point in time; it structurally
-/// cannot say "everything before T except that one file". The question
-/// this test freezes is whether it should have to.
-///
-/// **It should not.** 角标数的是「有几件事想要你」(docs/UX.md). A file
-/// that has landed, in a conversation the person has since spoken in,
-/// **wants nothing**: it sits on that machine, they can fetch it
-/// whenever, nothing is stuck and nobody is waiting on an answer. That
-/// is a *fact*, and this codebase already sorted facts from demands —
-/// 看了也不清的事实（失败沉底）占列表，不占角标.
-///
-/// And the alternative breaks something harder. To make the file stay
-/// owed, its "looked at" would have to be a per-machine fact that does
-/// **not** replicate — and then the badge on the desk could only be
-/// cleared by walking to the desk. 角标可归零 does not mean "some way
-/// exists to clear it"; it means **答了清、看了清**. A badge whose only
-/// answer is "be somewhere else" is a badge that stays non-zero for as
-/// long as the person is away, and a badge that is never zero is worth
-/// nothing. It would also mean rewriting what 已读 *is*: docs/NET.md
-/// says 看过是决定：手机看了，桌面角标同步清 — network-wide, one copy.
-///
-/// **Where the earlier reasoning stops.** A file message's *arrival* is
-/// a fact about a machine — that is why `Node::send` marks nothing and
-/// why the offering seat does not badge itself. But that reasoning
-/// governs **before the landing**, and before the landing there is
-/// already a signal that owes nothing to the watermark: 待批, from the
-/// seat whose approval is wanted. The assertions below hold that line:
-/// the person speaking clears the *unread*, and does not touch 待批.
-///
-/// **The counter-argument, kept on the record**: the file is on the
-/// desk, the person only ever looked on the phone, and so they may
-/// never notice it arrived. **Trigger**: someone actually reports "I
-/// didn't notice the file had landed on that machine." That day the
-/// thing to change is not this test — it is docs/NET.md's 已读 line,
-/// and that is a 改口 and wants a 墓碑.
-#[test]
-fn a_later_line_covers_the_file_before_it_and_that_is_deliberate() {
-    let r = root("line-covers-file");
-    let n = Node::open(r.to_path_buf()).unwrap();
-    let dir = channel_dir(&r, n.name()).unwrap();
-    fs::create_dir_all(&dir).unwrap();
-
-    let far = ChatDoc::new(0xFAFA).unwrap();
-    let who = Sender {
-        id: "dev-far".into(),
-        name: "far".into(),
-    };
-    let f = khor_node_test_fileref();
-    far.send_files(&who, std::slice::from_ref(&f), "").unwrap();
-    fs::write(
-        dir.join("u-000000000000fafa-00000000.loro"),
-        far.changes_since(&Default::default()).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        n.sessions().unwrap()[0].session.unread,
-        1,
-        "control: the offer is owed before anyone speaks — so the 0 below is a change, not a blind probe"
-    );
-
-    // The far machine says something afterwards. Its `tell` marks seen
-    // at its own stamp and that mark replicates: the half of 说话即看过
-    // that is right and stays (the person typed the line).
-    std::thread::sleep(std::time::Duration::from_millis(5));
-    far.tell(&who, "did you get it?").unwrap();
-    let said_at = far.messages().last().unwrap().at;
-    fs::write(
-        dir.join("u-000000000000fafa-00000001.loro"),
-        far.changes_since(&Default::default()).unwrap(),
-    )
-    .unwrap();
-    let far_seen = SeenDoc::new(0xFAFA).unwrap();
-    far_seen
-        .mark(&format!("chat/{}", n.name()), said_at)
-        .unwrap();
-    let sdir = seen_dir(&r);
-    fs::create_dir_all(&sdir).unwrap();
-    fs::write(
-        sdir.join("u-000000000000fafa-00000000.loro"),
-        far_seen.changes_since(&Default::default()).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(
-        n.log(n.name()).unwrap().messages.len(),
-        2,
-        "control: both the offer and the line really are here"
-    );
-
-    let row = n.sessions().unwrap()[0].session.clone();
-    assert_eq!(
-        row.unread, 0,
-        "the person has spoken in this conversation: nothing here is waiting to be read"
-    );
-
-    // **And the boundary**: speaking is not landing — but the row wears
-    // its latest message's word (STORE-BRIEF phase 5, the row's word),
-    // and the latest is the line. The file still on its way keeps 忙碌
-    // on its own chip; only the landing lifts that. ⚠️ 墓碑: 忙碌 stayed
-    // on the row under a later line, the fold of every file's word that
-    // phase 5 retired.
-    assert_eq!(
-        row.state.state,
-        State::Idle,
-        "the newest message is a line the person has seen: the row is 空闲"
-    );
-    assert_eq!(
-        n.log_faced(n.name()).unwrap().1[0],
-        Some(State::Busy),
-        "the file is still on its way here, and its chip says so"
-    );
-
-    // Once it does land, the chip agrees with the row rather than
-    // arguing with it — one rule for 看过没看过, not two.
-    land_planted(&n, &far, &r);
-    let chip = n.log_faced(n.name()).unwrap().1[0];
-    assert_eq!(
-        chip,
-        Some(State::Idle),
-        "the chip reads the same watermark the row does"
-    );
-    assert_eq!(
-        n.sessions().unwrap()[0].session.state.state,
-        State::Idle,
-        "…and the row, with nothing pressing and nothing owed, is 空闲"
-    );
-}
-
 /// **The `PATH` a GUI process gets is not the one a person has**, and
 /// khor now says so by name instead of letting the child die with
 /// nothing to report.
@@ -2682,7 +2459,10 @@ fn a_network_of_three(root: &Path) -> (Node, String, String) {
         let mut store = loaded.store;
         store.flush(&loaded.doc).unwrap();
     }
-    let mut template = n.sessions().unwrap()[0].session.clone();
+    let local = n.open_ephemeral(khor_core::kind::SHELL, "a build").unwrap();
+    let mut template = n.sessions().unwrap().into_iter().find(|v| v.session.id == local).unwrap().session;
+    // A kind that lists without an import (`listed`): a reported agent's.
+    template.kind = khor_core::Kind(khor_core::kind::GUI.to_owned());
     template.id = SessionId("shell/on-alpha".into());
     n.cache_peer_rows(&alpha, "alpha", &[template.clone()])
         .unwrap();
@@ -2756,7 +2536,7 @@ fn leaving_empties_the_table_down_to_this_machine() {
     assert!(
         !after
             .iter()
-            .any(|i| i.ends_with("-alpha") || i == "chat/alpha"),
+            .any(|i| i.ends_with("-alpha")),
         "a row derived through the table leaves with the table: {after:?}"
     );
     assert!(
@@ -3255,8 +3035,6 @@ fn what_is_on_the_list_is_the_users_choice() {
         "found is not listed: {:?}",
         ids(&n)
     );
-    // This machine's own conversation needs no import.
-    assert!(ids(&n).contains(&format!("chat/{}", n.name())));
     let candidates = n.import_candidates().unwrap();
     assert!(
         candidates.iter().any(|c| c.id == found && c.form == "tui"),
@@ -3525,4 +3303,24 @@ fn a_sandboxed_store_takes_a_new_vendor_id() {
     assert_eq!(now.machine.as_deref(), Some("testflight-id"), "the stamp follows the new id");
     stamp_store(&r, "localhost", Some("testflight-id".into()), false)
         .expect("and once rewritten it is mine by the ordinary rule");
+}
+
+/// **A `chat/<机器>` document from before is not shown** (STORE-BRIEF
+/// phase 5, one channel): the machine's 留言 session is gone, and an old
+/// conversation on disk is neither listed nor read — no compatibility
+/// before v1. The control: the same home lists its other rows.
+#[test]
+fn an_old_machine_conversation_on_disk_is_not_on_the_list() {
+    let r = root("old-chat");
+    let n = Node::open(r.to_path_buf()).unwrap();
+    let dir = khor_sync::chat::channel_dir(&r, n.name()).unwrap();
+    fs::create_dir_all(&dir).unwrap();
+    let old = khor_sync::chat::ChatDoc::new(0xA1).unwrap();
+    old.tell(&khor_sync::chat::Sender { id: "dev-old".into(), name: "old".into() }, "a line from before").unwrap();
+    fs::write(dir.join("u-00000000000000a1-00000000.loro"), old.snapshot().unwrap()).unwrap();
+    let shell = n.open_ephemeral(khor_core::kind::SHELL, "a build").unwrap();
+    let ids: Vec<String> = n.sessions().unwrap().into_iter().map(|v| v.session.id.0).collect();
+    assert!(ids.contains(&shell.0), "control: this home lists its rows: {ids:?}");
+    assert!(!ids.iter().any(|i| i.starts_with("chat/")), "no machine conversation is listed: {ids:?}");
+    assert!(n.log(n.name()).is_err(), "and a machine's name is not a board to read");
 }
