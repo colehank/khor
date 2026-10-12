@@ -24,6 +24,8 @@ import {
 
 import type { GitHunk } from "@/gen/bindings/GitHunk";
 import { gui } from "@/gen/catalog";
+import { mountHead, unmountHead } from "@/lib/code/peek-head";
+import { revertChange } from "@/lib/code/revert";
 
 type Kind = "added" | "deleted" | "modified";
 
@@ -114,32 +116,59 @@ function barsOf(state: EditorState, hunks: GitHunk[], shown: number | null) {
  * block between two of them, which is what VS Code's peek is: the lines
  * below move down, nothing is covered, and typing still works.
  *
- * **Plain, unpainted text.** Highlighted, the removed copy would look
- * exactly like the live one below it; the tint and the ink say which is
- * which. */
+ * **A head bar over the old lines** (cm-e, 2026-10-12: 「显示的内容是否
+ * 和 vscode 一致以符合用户习惯」): which change of how many, the two
+ * steps, 「还原」 and × (`peek-head.tsx`). */
 class Peek extends WidgetType {
-  constructor(readonly hunk: GitHunk) {
+  constructor(
+    readonly hunk: GitHunk,
+    /** Its place among the drawn hunks, from 1, and how many. */
+    readonly at: number,
+    readonly of: number,
+  ) {
     super();
   }
   eq(o: Peek) {
-    return o.hunk === this.hunk;
+    return o.hunk === this.hunk && o.at === this.at && o.of === this.of;
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     const box = document.createElement("div");
     box.className = "cm-git-peek";
     box.dataset.peek = String(this.hunk.at);
     box.dataset.kind = hunkKind(this.hunk);
+    const head = document.createElement("div");
+    head.className = "cm-git-peek-head";
+    head.dataset.peekHead = "";
+    mountHead(head, {
+      at: this.at,
+      of: this.of,
+      step: (by) => stepHunk(view, by),
+      revert: view.state.readOnly ? null : () => revertHunk(view),
+      close: () => view.dispatch({ effects: showHunk.of(null) }),
+    });
+    box.append(head);
     const lines = this.hunk.was.length > 0 ? this.hunk.was : [gui.git_added];
     for (const l of lines) {
       const d = document.createElement("div");
+      d.className = "cm-git-was";
       d.textContent = l;
       box.append(d);
     }
     return box;
   }
-  ignoreEvent() {
-    return false;
+  destroy(dom: HTMLElement) {
+    const head = dom.querySelector<HTMLElement>("[data-peek-head]");
+    if (head) unmountHead(head);
   }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+/** The hunks this text has, by index, in document order (`hunks`
+    arrive in it; the ones naming lines the text lacks are not drawn). */
+function drawn(state: EditorState, hunks: GitHunk[]): number[] {
+  return hunks.flatMap((h, i) => (lineOf(state, h) === null ? [] : [i]));
 }
 
 function peekOf(state: EditorState, hunks: GitHunk[], shown: number | null): DecorationSet {
@@ -147,11 +176,16 @@ function peekOf(state: EditorState, hunks: GitHunk[], shown: number | null): Dec
   if (h === undefined) return Decoration.none;
   const at = lineOf(state, h);
   if (at === null) return Decoration.none;
+  const order = drawn(state, hunks);
   const line = state.doc.line(at);
   // A deletion's old lines go after the line it sits after; everything
   // else over its first line.
   const below = h.lines === 0 && h.at !== 0;
-  const d: Range<Decoration> = Decoration.widget({ widget: new Peek(h), block: true, side: below ? 1 : -1 }).range(
+  const d: Range<Decoration> = Decoration.widget({
+    widget: new Peek(h, order.indexOf(shown!) + 1, order.length),
+    block: true,
+    side: below ? 1 : -1,
+  }).range(
     below ? line.to : line.from,
   );
   return Decoration.set([d]);
@@ -340,10 +374,40 @@ const ruler = ViewPlugin.fromClass(
   },
 );
 
+/** Walk to the next (1) or previous (-1) hunk with the peek open,
+    wrapping at either end as VS Code's does; the scroll is `bringPeek`'s. */
+function stepHunk(view: EditorView, by: 1 | -1): boolean {
+  const g = view.state.field(field);
+  if (g.shown === null) return false;
+  const order = drawn(view.state, g.hunks);
+  if (order.length === 0) return false;
+  const here = order.indexOf(g.shown);
+  const next = order[(here + by + order.length) % order.length];
+  if (next !== g.shown) view.dispatch({ effects: showHunk.of(next) });
+  return true;
+}
+
+/** 「还原」: the open hunk's lines become HEAD's, one transaction, so one
+    ⌘Z takes it back; the host's save road sees an edit like any other,
+    and the hunks clear with it until the next diff (the header's rule). */
+function revertHunk(view: EditorView): boolean {
+  const g = view.state.field(field);
+  const h = g.shown === null ? undefined : g.hunks[g.shown];
+  if (h === undefined || view.state.readOnly) return false;
+  const change = revertChange(view.state.doc, h);
+  if (change === null) return false;
+  view.dispatch({ changes: change, userEvent: "input.revert", scrollIntoView: false });
+  view.focus();
+  return true;
+}
+
 /** **Esc shuts the open peek, wherever the focus is** (2026-09-16, carried
     over from `FileView`'s window listener): the bar is a strip nobody
     focuses and a reader's file takes no caret, so a key handler on the
-    editor would hear nothing. Listening only while a peek is open. */
+    editor would hear nothing. Listening only while a peek is open — and
+    for the same reason VS Code's ⌥F5 / ⇧⌥F5 (next / previous change) are
+    heard here and not in the editor's keymap: with no peek open the keys
+    are nobody's. */
 const closeKey = ViewPlugin.fromClass(
   class {
     off: (() => void) | null = null;
@@ -357,7 +421,9 @@ const closeKey = ViewPlugin.fromClass(
       const open = this.view.state.field(field).shown !== null;
       if (open && this.off === null) {
         const onKey = (e: KeyboardEvent) => {
+          if (e.defaultPrevented) return;
           if (e.key === "Escape") this.view.dispatch({ effects: showHunk.of(null) });
+          else if (e.key === "F5" && e.altKey && !e.metaKey && !e.ctrlKey && stepHunk(this.view, e.shiftKey ? -1 : 1)) e.preventDefault();
         };
         window.addEventListener("keydown", onKey);
         this.off = () => window.removeEventListener("keydown", onKey);

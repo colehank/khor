@@ -152,7 +152,23 @@ export const codeTheme = EditorView.theme({
     borderColor: "color-mix(in srgb, var(--git-added) 40%, transparent)",
     backgroundColor: "color-mix(in srgb, var(--git-added) 10%, transparent)",
   },
-  ".cm-git-peek > div": { minHeight: "var(--text-mono--line-height)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
+  ".cm-git-was": { minHeight: "var(--text-mono--line-height)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
+  // The head bar over the old lines (`peek-head.tsx`): the interface's
+  // own type and ink, not the file's — it is khor talking, not HEAD. A
+  // hairline in the change's hue under it, as the peek's edges are.
+  ".cm-git-peek-head": {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--gap-xxs)",
+    margin: "0 calc(var(--gap-row) * -1)",
+    padding: "0 var(--gap-xxs) 0 var(--gap-row)",
+    borderBottom: "var(--hair) solid",
+    borderColor: "inherit",
+    fontFamily: "var(--font-sans)",
+    fontSize: "var(--text-callout)",
+    lineHeight: "var(--text-callout--line-height)",
+    color: "var(--foreground)",
+  },
   // The overview ruler over the scrollbar's strip (`git.ts`).
   ".cm-git-ruler": {
     position: "absolute",
