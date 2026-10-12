@@ -26,29 +26,6 @@ async fn off_main<T: Send + 'static>(
         .map_err(|e| e.to_string())?
 }
 
-/// **How long a command held the thread it was asked on** (the term-lag
-/// lane, 2026-10-10), said on stderr when `KHOR_SLOW_CALLS=<ms>` is set
-/// and the call took at least that. A command without `async` runs
-/// inside this call, on the main thread; an `async` one only starts
-/// here, so what this times is exactly what a key behind it waits for.
-fn timed<R: tauri::Runtime>(
-    handler: impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static,
-) -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync + 'static {
-    let most = std::env::var("KHOR_SLOW_CALLS").ok().and_then(|v| v.parse::<u128>().ok());
-    move |invoke| {
-        let Some(most) = most else { return handler(invoke) };
-        let command = invoke.message.command().to_owned();
-        let began = std::time::Instant::now();
-        let answered = handler(invoke);
-        let ms = began.elapsed().as_millis();
-        if ms >= most {
-            let thread = std::thread::current();
-            eprintln!("slow call: {command} held {} for {ms} ms", thread.name().unwrap_or("?"));
-        }
-        answered
-    }
-}
-
 /// `by` is the arrangement key (`khor_node::list::Arrange`). The window
 /// passes the one the user last chose; it is that screen's own state,
 /// not something the network holds an opinion about.
@@ -66,17 +43,17 @@ async fn sessions(by: String) -> Result<Vec<SessionRow>, String> {
 /// (`khor_gui_core::day_strips`). `cells` is how many the strip has room
 /// for, measured by the screen.
 ///
-/// **Off the main thread** (2026-10-11, the term-lag lane): a strip asks
+/// **Off the main thread** (2026-10-11): a strip asks
 /// `Node::sessions` again for its own snapshot — that is `day_strips`'s
 /// own judgment, said in its doc — so it carries the whole weight the
 /// row list carried before 2026-10-05, and it was carrying it *on* the
 /// main thread, from its 10 s beat, holding every key behind it while it
 /// read the documents and swept the process table.
 ///
-/// Measured, not reasoned (the term-lag probe, scratch app, one `cat`
-/// row, 600 keys at 50 ms): `slow call: day_strips held main for 31 ms`,
-/// twice in the run, with key→echo max **35 ms** in the same window
-/// against a p95 of 12 ms — the stalls and the call are the same event.
+/// Measured, not reasoned (a scratch app, one `cat` row, 600 keys at
+/// 50 ms): `day_strips` held main for 31 ms, twice in the run, with
+/// key→echo max **35 ms** in the same window against a p95 of 12 ms —
+/// the stalls and the call are the same event.
 /// Same road as `sessions`: `off_main`.
 #[tauri::command]
 async fn day_strips(
@@ -4656,7 +4633,7 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(timed(tauri::generate_handler![
+        .invoke_handler(tauri::generate_handler![
             tabs_list,
             tabs_open,
             tabs_go,
@@ -4855,7 +4832,7 @@ pub fn run() {
             leave,
             set_paused,
             set_machine_paused
-        ]))
+        ])
         .build(tauri::generate_context!())
         .expect("tauri build")
         // **Every way out is said in the log** (round NET-FIX): a window

@@ -11,7 +11,6 @@
 | Phase 5 只留广播，`@机器:路径` 直推，不在线就拒绝 | audit/STORE-BRIEF.md Phase 5 | 取消机器留言会话；机器页不留「发给这台的」；手机也支持打字写法 |
 | Phase 5 行只戴最新一条的词 | 同上「the row's word」 | fate 按 (机器, digest)；非目标 offer 不待批；行上无角标、导航计数留 |
 | Phase 5 死掉的 shell | 同上「a shell that died」 | 回滚环落盘；没环画命令账本；失败写明「退出码 N」/「宿主被结束」 |
-| 删 term-lag 探针脚本和 `KHOR_SLOW_CALLS` | memory khor-remove-dev-probes-before-release | 正式发版前；脚本不进包，仓库要干净 |
 
 ## 问 — 等负责人定
 
