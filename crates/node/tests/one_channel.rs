@@ -8,7 +8,9 @@
 //!   through alpha, and its record says so;
 //! - alpha posts `@beta` with beta stopped → refused at once, naming
 //!   beta, and nothing is written to the broadcast;
-//! - a phone-shaped alpha (`hosts = false`) pushes the same way.
+//! - a phone-shaped alpha (`hosts = false`) pushes the same way, and a
+//!   push it cuts (its grace over, `link::cut_pushes`) fails on the
+//!   target with 「发送中断：手机已挂起」.
 //!
 //! (A third machine taking the file as an offer is `act.rs`'s gate.)
 //! Every await under a timeout.
@@ -217,6 +219,8 @@ async fn a_push_lands_where_it_names_and_an_absent_target_is_refused() {
 async fn a_phone_shaped_machine_pushes_the_same_way() {
     let (ra, rb, rc) = (root("pa"), root("pb"), root("pc"));
     let (a, _b, _c, serves) = three(&ra, &rb, &rc, false).await;
+    // `cut_pushes` reaches the serve on alpha's home through its door,
+    // which only a resumable serve opens (`three` starts them so).
     // The node itself is phone-shaped. (Its row in the table is not
     // asserted: a round's quota reading reopens a node on this home with
     // the build's own answer, which in a test build is a computer's.)
@@ -237,6 +241,45 @@ async fn a_phone_shaped_machine_pushes_the_same_way() {
     })
     .await
     .expect("every push ends");
+
+    // **The grace runs out mid-push**: a file big enough to be moving
+    // when the phone is told so; beta ends its pull and says why.
+    let big: Vec<u8> = (0..96_000_000u32).map(|i| (i % 229) as u8).collect();
+    let src = ra.join("video.mov");
+    fs::write(&src, &big).unwrap();
+    let id = timeout(Duration::from_secs(60), a.post("@beta", std::slice::from_ref(&src)))
+        .await
+        .expect("a post must not hang")
+        .unwrap();
+    timeout(Duration::from_secs(60), async {
+        loop {
+            let moving = message(&_b, &id)
+                .and_then(|m| m.fates.get(_b.device_str()).cloned())
+                .is_some_and(|f| f.step == Step::Moving && f.moved > 0);
+            if moving {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("beta's pull is moving");
+    assert!(khor_node::post::pushes_in_flight() > 0, "control: the push is still running on alpha");
+    assert!(timeout(Duration::from_secs(10), khor_node::link::cut_pushes(&ra)).await.unwrap(), "alpha's serve took the cut");
+    let fate = timeout(Duration::from_secs(30), async {
+        loop {
+            if let Some(f) = message(&_b, &id).and_then(|m| m.fates.get(_b.device_str()).cloned())
+                && f.step == Step::Failed
+            {
+                break f;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("beta records the cut");
+    assert_eq!(fate.why, khor_catalog::msg::push_cut_suspended(), "the cut says why, in the catalog's words");
+    assert!(!rb.join("khor-drop").join("video.mov").exists(), "nothing landed half");
     for s in serves {
         s.abort();
     }
