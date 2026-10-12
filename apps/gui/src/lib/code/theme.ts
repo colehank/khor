@@ -14,8 +14,9 @@ import { EditorView } from "@codemirror/view";
 import { tags as t } from "@lezer/highlight";
 
 /** Lezer's tags to the classes app.css colours, grouped the way GitHub's
-    theme groups the TextMate scopes they stand for. */
-const highlight = HighlightStyle.define([
+    theme groups the TextMate scopes they stand for. Exported for the
+    peek's old lines (`git.ts`), painted with the same classes. */
+export const highlight = HighlightStyle.define([
   { tag: [t.keyword, t.modifier, t.controlKeyword, t.operatorKeyword, t.definitionKeyword, t.moduleKeyword, t.self], class: "tok-keyword" },
   { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], class: "tok-comment" },
   { tag: [t.string, t.docString, t.character, t.attributeValue, t.special(t.string), t.regexp, t.escape], class: "tok-string" },
@@ -152,7 +153,27 @@ export const codeTheme = EditorView.theme({
     borderColor: "color-mix(in srgb, var(--git-added) 40%, transparent)",
     backgroundColor: "color-mix(in srgb, var(--git-added) 10%, transparent)",
   },
-  ".cm-git-peek > div": { minHeight: "var(--text-mono--line-height)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
+  // The old lines in the file's own ink (cm-e item 3); the wash and the
+  // edges are what say 「old」. The insertion's one sentence is khor's, not
+  // code: it keeps the change's ink.
+  ".cm-git-was": { minHeight: "var(--text-mono--line-height)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "var(--foreground)" },
+  ".cm-git-was[data-said]": { color: "inherit" },
+  // The head bar over the old lines (`peek-head.tsx`): the interface's
+  // own type and ink, not the file's — it is khor talking, not HEAD. A
+  // hairline in the change's hue under it, as the peek's edges are.
+  ".cm-git-peek-head": {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--gap-xxs)",
+    margin: "0 calc(var(--gap-row) * -1)",
+    padding: "0 var(--gap-xxs) 0 var(--gap-row)",
+    borderBottom: "var(--hair) solid",
+    borderColor: "inherit",
+    fontFamily: "var(--font-sans)",
+    fontSize: "var(--text-callout)",
+    lineHeight: "var(--text-callout--line-height)",
+    color: "var(--foreground)",
+  },
   // The overview ruler over the scrollbar's strip (`git.ts`).
   ".cm-git-ruler": {
     position: "absolute",
@@ -169,6 +190,12 @@ export const codeTheme = EditorView.theme({
     minHeight: "var(--overview-mark)",
     borderRadius: "var(--radius-xs)",
     opacity: "0.5",
+  },
+  // The open peek's mark: full ink and the bar's own ring, so the walk
+  // reads in the margin.
+  ".cm-git-ruler > span[data-on]": {
+    opacity: "1",
+    boxShadow: "0 0 0 var(--hair) color-mix(in srgb, var(--foreground) 40%, transparent)",
   },
   ".cm-git-ruler > span[data-kind='modified']": { backgroundColor: "var(--git-modified)" },
   ".cm-git-ruler > span[data-kind='added']": { backgroundColor: "var(--git-added)" },

@@ -8157,49 +8157,40 @@ try {
           );
         }
       }
-      // **…and a press lands the old text at the top of the column**
-      // (2026-09-16 ruling 27:「点击git状态bar的时候, 如果从文件第一行
-      // 开始就有此bar, 跳转到的是文件的第一行,但仍看不清提示. 还得鼠标
-      // 拖动. 应该直接跳转到提示框的最上方」— the user).
+      // **…and a press on a peek already on screen moves nothing**
+      // (cm-e, 2026-10-12, the owner: 「点击后总是移动了我的视窗位置，这
+      // 对吗」— VS Code reveals by `nearest`). Measured on the hunk in the
+      // middle of the file: line 80 put mid-screen, the bar pressed,
+      // `scrollTop` read before and after. The foot's case is ws h.
       //
-      // It used to scroll only when the block was **out of view**, and
-      // to a third of the way down. Both halves are what the user hit:
-      // a hunk at line 1 lays its old text above line 1, so scrolling
-      // to the line leaves the block off the top, and a block taller
-      // than the viewport is 「already visible」 by any test about its
-      // top edge.
-      //
-      // Measured on the hunk in the middle of the file, for the reason
-      // written into the fixture above.
+      // ⚠️ 墓碑 (2026-09-16 ruling 27 → 2026-10-12): 「a press lands the
+      // old text at the top of the column」. Ruling 27 was a hunk at line
+      // 1 whose old text opened off the top; a scroll by `nearest` with a
+      // line of air answers that too, and pinning every peek to the top
+      // was what the owner found moving the view on every press.
       await pressBar(150);
       await wait(200);
-      await pressBar(80);
+      await page.evaluate(() => {
+        const v = window.__cm.view();
+        const s = v.scrollDOM;
+        s.scrollTop = v.lineBlockAt(v.state.doc.line(80).from).top - s.clientHeight / 2;
+      });
+      await wait(300);
+      const before80 = await page.evaluate(() => Math.round(window.__cm.view().scrollDOM.scrollTop));
+      await page.evaluate(() => window.__cm.press(document.querySelector('.cm-git-gutter [data-hunk="80"]')));
       await wait(300);
       const landed = await page.evaluate(() => {
-        const box = document.querySelector("[data-file-scroll]");
         const peek = document.querySelector("[data-peek]");
-        if (!box || !peek) return null;
-        const air = Number.parseFloat(getComputedStyle(box).getPropertyValue("--gap-row")) || 0;
-        return {
-          fromTop: Math.round((peek.getBoundingClientRect().top - box.getBoundingClientRect().top - air) * 10) / 10,
-          said: peek.textContent?.trim() ?? "",
-          // The scroller is nowhere near its end, so 「at the top」 is
-          // something this file can actually do.
-          room: Math.round(box.scrollHeight - box.scrollTop - box.clientHeight),
-        };
+        if (!peek) return null;
+        return { said: peek.textContent?.trim() ?? "", top: Math.round(window.__cm.view().scrollDOM.scrollTop) };
       });
-      console.log(`peek at 80: ${JSON.stringify(landed)}`);
+      console.log(`peek at 80: from ${before80} ${JSON.stringify(landed)}`);
       if (landed === null || !landed.said.includes("old eighty")) {
-        fail("probe void: pressing the bar at line 80 opened no old text to measure (src/views/FileView.tsx)");
-      } else if (landed.room < 50) {
+        fail("probe void: pressing the bar at line 80 opened no old text to measure (src/lib/code/git.ts)");
+      } else if (landed.top !== before80) {
         fail(
-          `probe void: the file has ${landed.room}px left under the viewport, so 「scrolled to the top」 ` +
-            "cannot be told from 「scrolled to the end」 (lengthen the fixture)",
-        );
-      } else if (Math.abs(landed.fromTop) > 4) {
-        fail(
-          `the old text opened ${landed.fromTop}px below the top of the column — 「应该直接跳转到提示框的` +
-            "最上方」 (src/views/FileView.tsx, the peek's layout effect)",
+          `a peek opened mid-screen moved the file ${before80} → ${landed.top}px — 「点击后总是移动了我的视窗` +
+            "位置」: a peek already on screen moves nothing (src/lib/code/git.ts bringPeek)",
         );
       }
       await pressBar(80);
@@ -8325,6 +8316,7 @@ try {
               h: round(r.height),
               ink: getComputedStyle(el).backgroundColor,
               opacity: parseFloat(getComputedStyle(el).opacity),
+              on: el.hasAttribute("data-on"),
             };
           }),
           width: round(c.width),
@@ -8354,7 +8346,12 @@ try {
       } else {
         // **Translucent** (2026-09-16:「悬浮的滚动条在 git 状态条上完全看不
         // 见了」): the thumb has to read through a mark.
-        if (ruler.marks.some((m) => m.opacity > 0.75 || m.opacity < 0.3)) {
+        // The open peek's mark is the exception, at full ink (cm-e item
+        // 4): one mark, the place the walk is at.
+        if (ruler.marks.some((m) => m.on && m.opacity < 0.95)) {
+          fail(`the open hunk's ruler mark is painted at ${ruler.marks.find((m) => m.on).opacity} — it wears full ink (src/lib/code/theme.ts .cm-git-ruler > span[data-on])`);
+        }
+        if (ruler.marks.some((m) => !m.on && (m.opacity > 0.75 || m.opacity < 0.3))) {
           fail(
             `a ruler mark is painted at opacity ${ruler.marks.map((m) => m.opacity).join("/")} — the scrollbar's ` +
               "thumb has to read through it (src/views/FileView.tsx Ruler)",
@@ -8420,6 +8417,11 @@ try {
         // its target into the viewport), so the first spelling of this
         // measured a line that was already where it wanted it — and a
         // ruler mark wired to nothing at all went green on it.
+        // No peek open going in, so a peek after the press is the press's.
+        if ((await page.locator("[data-peek]").count()) > 0) {
+          await page.keyboard.press("Escape");
+          await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
+        }
         const where = await page.evaluate(() => {
           const box = document.querySelector("[data-file-scroll]");
           box.scrollTop = 0;
@@ -31527,6 +31529,161 @@ try {
         if (rendered > 0 && mdOffered.includes("symbols")) fail(`ws g · ${tag}: a rendered notes.md offers 「符号」 — no editor shows it, nothing to list`);
       }
       await page.unroute("**/read_text", readG);
+      await page.setViewportSize({ width: 1400, height: 900 });
+      await page.reload({ waitUntil: "load" });
+      await wait(900);
+    }
+
+    // h. **The change peek, as VS Code's** (cm-e, 2026-10-12, the owner:
+    //    「点击后，显示的内容是否和 vscode 一致以符合用户习惯，以及点击后
+    //    总是移动了我的视窗位置，这对吗」). In a 120-line Rust file with
+    //    four hunks:
+    //    1. a peek opened on a hunk in the middle of the screen moves
+    //       nothing (`scrollTop` unchanged) — `nearest`, never the top;
+    //    2. one opened at the foot brings the peek's bottom on screen,
+    //       and the hunk's first line does not pass the top;
+    //    3. its head says 「第 i 处，共 n 处」, and ↓ walks to the next hunk
+    //       with the peek open: the head says 2 of 4;
+    //    4. its old lines wear the file's syntax ink;
+    //    5. 还原 makes those lines HEAD's, and ⌘Z brings them back;
+    //    6. Esc closes it.
+    //    Both widths; the shots (FACE_SHOTS) are the report's.
+    {
+      const RS_H = Array.from({ length: 24 }, (_, i) => [`fn step_${i}() {`, `    let x = ${i};`, "    let y = x + 1;", "}", ""]).flat().join("\n");
+      // 1-based: step_4's `let x` (17), an insertion (step_8, 41–42), a
+      // deletion after 61, and step_23's `let y` at the foot (118).
+      const HUNKS_H = [
+        { at: 17, lines: 1, was: ["    let x = 4 * 1; // HEAD's four"] },
+        { at: 41, lines: 2, was: [] },
+        { at: 61, lines: 0, was: ["    // HEAD had a note here"] },
+        { at: 118, lines: 1, was: ['    let y = x + 2; // "HEAD" at the foot'] },
+      ];
+      const readH = (r) => {
+        if (!(r.request().postData() ?? "").includes("one.rs")) return r.fallback();
+        return r.fulfill({ contentType: "application/json", body: JSON.stringify({ total: RS_H.length, at_ms: Date.now(), text: RS_H, cut: false, binary: false, digest: "8".repeat(64) }) });
+      };
+      const diffH = (r) => {
+        if (!(r.request().postData() ?? "").includes("one.rs")) return r.fallback();
+        return r.fulfill({ contentType: "application/json", body: JSON.stringify({ hunks: HUNKS_H, more: false }) });
+      };
+      const wroteH = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ at_ms: Date.now(), digest: "9".repeat(64) }) });
+      await page.route("**/read_text", readH);
+      await page.route("**/git_diff", diffH);
+      await page.route("**/write_text", wroteH);
+      // The catalog's git-hunk-count, as the face speaks it (zh).
+      const countH = (i, n) => `第 ${i} 处，共 ${n} 处`;
+      const shotH = async (name) => process.env.FACE_SHOTS && (await page.screenshot({ path: join(process.env.FACE_SHOTS, `${name}.png`) }));
+      /** The scroller, the open peek and the line a hunk starts at. */
+      const seenH = (at) =>
+        page.evaluate((at) => {
+          const box = [...document.querySelectorAll("[data-code-view][data-code-path]")].find((b) => b.offsetParent !== null);
+          const v = box?.__view;
+          if (!v) return null;
+          const s = v.scrollDOM.getBoundingClientRect();
+          const floor = s.top + v.scrollDOM.clientHeight;
+          const pk = box.querySelector("[data-peek]");
+          const p = pk?.getBoundingClientRect();
+          const line = at === null ? null : v.coordsAtPos(v.state.doc.line(at).from, 1);
+          return {
+            top: Math.round(v.scrollDOM.scrollTop),
+            peek: pk ? Number(pk.getAttribute("data-peek")) : null,
+            head: pk?.querySelector("[data-peek-count]")?.textContent ?? null,
+            peekTop: p ? Math.round(p.top - s.top) : null,
+            peekBottom: p ? Math.round(floor - p.bottom) : null,
+            lineTop: line ? Math.round(line.top - s.top) : null,
+            inked: pk ? pk.querySelectorAll('.cm-git-was [class*="tok-"]').length : 0,
+            onRuler: [...box.querySelectorAll(".cm-git-ruler > span[data-on]")].map((m) => m.getAttribute("data-overview-mark")),
+          };
+        }, at);
+      /** Open the peek on the hunk at `at` by its bar, scrolling first so
+          the bar is drawn (and nowhere near an edge, where `place` puts it). */
+      const barH = (at) => page.evaluate((at) => window.__cm.press(document.querySelector(`.cm-git-gutter [data-hunk="${at}"]`)), at);
+      for (const [w, h, tag] of [
+        [1400, 900, "1400"],
+        [390, 844, "390"],
+      ]) {
+        await page.setViewportSize({ width: w, height: h });
+        await page.reload({ waitUntil: "load" });
+        await wait(900);
+        await open("workspaces");
+        await press("[data-ws-row]");
+        await wait(500);
+        await press('[data-ws-tree] [data-file-tree] [data-depth="0"][data-file="one.rs"] > button');
+        const drawn = await until(8_000, async () => (await page.locator('[data-code-view] .cm-git-gutter [data-hunk="17"]:visible').count()) > 0);
+        if (!drawn) {
+          fail(`probe dead: ws h · at ${tag} one.rs never drew its change bars`);
+          continue;
+        }
+        // 1. Mid-screen: line 17 is drawn from the top; a few lines down
+        //    so it sits clear of the top edge.
+        await page.evaluate(() => {
+          const box = [...document.querySelectorAll("[data-code-view][data-code-path]")].find((b) => b.offsetParent !== null);
+          const v = box.__view;
+          v.scrollDOM.scrollTop = v.lineBlockAt(v.state.doc.line(10).from).top;
+        });
+        await wait(300);
+        const before = await seenH(17);
+        await barH(17);
+        await until(3_000, async () => (await page.locator("[data-peek]").count()) === 1);
+        await wait(300);
+        const mid = await seenH(17);
+        console.log(`ws h · ${tag}: mid-screen ${JSON.stringify(before)} → ${JSON.stringify(mid)}`);
+        if (mid.peek !== 17 || mid.top !== before.top) {
+          fail(`ws h · ${tag}: a peek opened on line 17 in the middle of the screen moved the file ${before.top} → ${mid.top}px (peek ${mid.peek}) — 「点击后总是移动了我的视窗位置」: nothing on screen moves`);
+        }
+        // 3. The head, and ↓.
+        if (mid.head !== countH(1, 4)) fail(`ws h · ${tag}: the head says ${JSON.stringify(mid.head)} — want ${JSON.stringify(countH(1, 4))}`);
+        // 4. Syntax ink on the old lines.
+        if (mid.inked === 0) fail(`ws h · ${tag}: HEAD's line in the peek wears no syntax ink — the file's language paints it, as VS Code's peek does`);
+        if (JSON.stringify(mid.onRuler) !== '["17"]') fail(`ws h · ${tag}: the ruler marks ${JSON.stringify(mid.onRuler)} as the open hunk — want ["17"]`);
+        await shotH(`peek-${tag}`);
+        await page.locator("[data-peek] [data-peek-next]").click();
+        await wait(400);
+        const next = await seenH(41);
+        console.log(`ws h · ${tag}: ↓ ${JSON.stringify(next)}`);
+        if (next.peek !== 41 || next.head !== countH(2, 4)) {
+          fail(`ws h · ${tag}: ↓ left the peek on ${next.peek} saying ${JSON.stringify(next.head)} — want 41, ${JSON.stringify(countH(2, 4))}`);
+        }
+        if (next.peekTop === null || next.peekTop < 0 || next.peekBottom < 0) fail(`ws h · ${tag}: after ↓ the peek is off screen ${JSON.stringify(next)}`);
+        // 6. Esc.
+        await page.keyboard.press("Escape");
+        const shut = await until(3_000, async () => (await page.locator("[data-peek]").count()) === 0);
+        if (!shut) fail(`ws h · ${tag}: Esc left the peek open`);
+        // 2. At the foot: line 118 drawn on the screen's last row.
+        await page.evaluate(() => {
+          const box = [...document.querySelectorAll("[data-code-view][data-code-path]")].find((b) => b.offsetParent !== null);
+          const v = box.__view;
+          const b = v.lineBlockAt(v.state.doc.line(118).from);
+          v.scrollDOM.scrollTop = b.bottom - v.scrollDOM.clientHeight + 2;
+        });
+        await wait(300);
+        const low = await seenH(118);
+        await barH(118);
+        await until(3_000, async () => (await page.locator("[data-peek]").count()) === 1);
+        await wait(400);
+        const foot = await seenH(118);
+        console.log(`ws h · ${tag}: at the foot ${JSON.stringify(low)} → ${JSON.stringify(foot)}`);
+        if (foot.peek !== 118 || foot.peekBottom === null || foot.peekBottom < 0 || foot.peekTop < 0) {
+          fail(`ws h · ${tag}: a peek opened on the screen's last line is not wholly on screen ${JSON.stringify(foot)}`);
+        }
+        if (foot.top - low.top > low.lineTop) {
+          fail(`ws h · ${tag}: opening it scrolled ${foot.top - low.top}px, past line 118's ${low.lineTop}px from the top — only as far as the peek needs`);
+        }
+        // 5. 还原, then ⌘Z.
+        const textBefore = await page.evaluate(() => window.__cm.text());
+        await page.locator("[data-peek] [data-peek-revert]").click();
+        await wait(400);
+        const reverted = await page.evaluate(() => window.__cm.view().state.doc.line(118).text);
+        console.log(`ws h · ${tag}: 还原 → line 118 ${JSON.stringify(reverted)}`);
+        if (reverted !== HUNKS_H[3].was[0]) fail(`ws h · ${tag}: 还原 left line 118 ${JSON.stringify(reverted)} — want HEAD's ${JSON.stringify(HUNKS_H[3].was[0])}`);
+        await page.keyboard.press("Meta+z");
+        await wait(400);
+        const back = await page.evaluate(() => window.__cm.text());
+        if (back !== textBefore) fail(`ws h · ${tag}: ⌘Z after 还原 did not bring the text back`);
+      }
+      await page.unroute("**/read_text", readH);
+      await page.unroute("**/git_diff", diffH);
+      await page.unroute("**/write_text", wroteH);
       await page.setViewportSize({ width: 1400, height: 900 });
       await page.reload({ waitUntil: "load" });
       await wait(900);

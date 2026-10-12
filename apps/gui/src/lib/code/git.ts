@@ -10,6 +10,7 @@
 // that a claim about a different text — so a change to the document
 // clears them in the same transaction, and the view asks again after the
 // save lands (`FileView`'s `diffAt`).
+import { language } from "@codemirror/language";
 import { RangeSet, RangeSetBuilder, StateEffect, StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import {
   Decoration,
@@ -22,8 +23,13 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
+import { highlightTree } from "@lezer/highlight";
+
 import type { GitHunk } from "@/gen/bindings/GitHunk";
 import { gui } from "@/gen/catalog";
+import { mountHead, unmountHead } from "@/lib/code/peek-head";
+import { revertChange } from "@/lib/code/revert";
+import { highlight } from "@/lib/code/theme";
 
 type Kind = "added" | "deleted" | "modified";
 
@@ -114,32 +120,118 @@ function barsOf(state: EditorState, hunks: GitHunk[], shown: number | null) {
  * block between two of them, which is what VS Code's peek is: the lines
  * below move down, nothing is covered, and typing still works.
  *
- * **Plain, unpainted text.** Highlighted, the removed copy would look
- * exactly like the live one below it; the tint and the ink say which is
- * which. */
+ * **A head bar over the old lines** (cm-e, 2026-10-12: 「显示的内容是否
+ * 和 vscode 一致以符合用户习惯」): which change of how many, the two
+ * steps, 「还原」 and × (`peek-head.tsx`).
+ *
+ * **In the file's own syntax ink** (cm-e, 2026-10-12, VS Code's peek is
+ * painted). Plain text was argued for once — painted, the removed copy
+ * would look exactly like the live one below it — but the wash and its
+ * hued edges already say which is which, and unpainted old code is
+ * harder to read against the new than painted. The old text is parsed
+ * on its own, with the language the editor holds (no second state: a
+ * parse and a tree walk, which is all the paint needs), so a hunk that
+ * begins mid-construct — inside a block comment, say — paints as its
+ * lines read alone. */
 class Peek extends WidgetType {
-  constructor(readonly hunk: GitHunk) {
+  constructor(
+    readonly hunk: GitHunk,
+    /** Its place among the drawn hunks, from 1, and how many. */
+    readonly at: number,
+    readonly of: number,
+  ) {
     super();
   }
   eq(o: Peek) {
-    return o.hunk === this.hunk;
+    return o.hunk === this.hunk && o.at === this.at && o.of === this.of;
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     const box = document.createElement("div");
     box.className = "cm-git-peek";
     box.dataset.peek = String(this.hunk.at);
     box.dataset.kind = hunkKind(this.hunk);
-    const lines = this.hunk.was.length > 0 ? this.hunk.was : [gui.git_added];
-    for (const l of lines) {
+    const head = document.createElement("div");
+    head.className = "cm-git-peek-head";
+    head.dataset.peekHead = "";
+    mountHead(head, {
+      at: this.at,
+      of: this.of,
+      step: (by) => stepHunk(view, by),
+      revert: view.state.readOnly ? null : () => revertHunk(view),
+      close: () => view.dispatch({ effects: showHunk.of(null) }),
+    });
+    box.append(head);
+    if (this.hunk.was.length === 0) {
       const d = document.createElement("div");
-      d.textContent = l;
+      d.className = "cm-git-was";
+      d.dataset.said = "";
+      d.textContent = gui.git_added;
       box.append(d);
+    } else {
+      box.append(...paintWas(view.state, this.hunk.was));
     }
     return box;
   }
-  ignoreEvent() {
-    return false;
+  destroy(dom: HTMLElement) {
+    const head = dom.querySelector<HTMLElement>("[data-peek-head]");
+    if (head) unmountHead(head);
   }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+/** The hunks this text has, by index, in document order (`hunks`
+    arrive in it; the ones naming lines the text lacks are not drawn). */
+function drawn(state: EditorState, hunks: GitHunk[]): number[] {
+  return hunks.flatMap((h, i) => (lineOf(state, h) === null ? [] : [i]));
+}
+
+/** HEAD's lines, one `div` each, in the highlighter's classes when the
+    editor has a language. */
+function paintWas(state: EditorState, was: string[]): HTMLElement[] {
+  const rows = was.map(() => {
+    const d = document.createElement("div");
+    d.className = "cm-git-was";
+    return d;
+  });
+  const lang = state.facet(language);
+  const text = was.join("\n");
+  // Each line's start in `text`, to cut the spans at the breaks.
+  const starts: number[] = [];
+  let at = 0;
+  for (const l of was) {
+    starts.push(at);
+    at += l.length + 1;
+  }
+  let row = 0;
+  let pos = 0;
+  /** `text[pos, to)` into the rows, in `cls` (none: a bare text node). */
+  const put = (to: number, cls: string) => {
+    while (pos < to) {
+      while (row + 1 < starts.length && starts[row + 1] <= pos) row += 1;
+      const end = Math.min(to, starts[row] + was[row].length);
+      if (end > pos) {
+        const piece = text.slice(pos, end);
+        if (cls) {
+          const s = document.createElement("span");
+          s.className = cls;
+          s.textContent = piece;
+          rows[row].append(s);
+        } else rows[row].append(piece);
+      }
+      // Past the line's end, over its break, to the next.
+      pos = end < to ? end + 1 : end;
+    }
+  };
+  if (lang !== null) {
+    highlightTree(lang.parser.parse(text), highlight, (from, to, cls) => {
+      put(from, "");
+      put(to, cls);
+    });
+  }
+  put(text.length, "");
+  return rows;
 }
 
 function peekOf(state: EditorState, hunks: GitHunk[], shown: number | null): DecorationSet {
@@ -147,11 +239,16 @@ function peekOf(state: EditorState, hunks: GitHunk[], shown: number | null): Dec
   if (h === undefined) return Decoration.none;
   const at = lineOf(state, h);
   if (at === null) return Decoration.none;
+  const order = drawn(state, hunks);
   const line = state.doc.line(at);
   // A deletion's old lines go after the line it sits after; everything
   // else over its first line.
   const below = h.lines === 0 && h.at !== 0;
-  const d: Range<Decoration> = Decoration.widget({ widget: new Peek(h), block: true, side: below ? 1 : -1 }).range(
+  const d: Range<Decoration> = Decoration.widget({
+    widget: new Peek(h, order.indexOf(shown!) + 1, order.length),
+    block: true,
+    side: below ? 1 : -1,
+  }).range(
     below ? line.to : line.from,
   );
   return Decoration.set([d]);
@@ -203,25 +300,50 @@ const gitGutter = gutter({
   },
 });
 
-/** An opened peek is brought into view, its top a row's gap under the
-    scroller's top edge — the place the old one was put, by the same
-    arithmetic, without `scrollIntoView` walking every scrolling
-    ancestor up to the window (2026-09-12). */
+/** **An opened peek moves the view only as far as it has to** (2026-10-12:
+    「点击后总是移动了我的视窗位置，这对吗」— the user; VS Code's
+    `revealRange`, not a centre). The block that has to be seen is the
+    peek with the line it is drawn against; if it is wholly on screen,
+    with a line's air at either edge, nothing moves. Otherwise the least
+    scroll that brings it on, and when it is taller than the screen its
+    top wins — `scrollIntoView`'s `nearest` with one line of margin
+    (KB-CARET rule 2), done here on the block's box because that effect
+    takes text positions, which a block widget is not, and because it
+    walks every scrolling ancestor up to the window (2026-09-12). The
+    read is in the measure, the write after it. */
 const bringPeek = ViewPlugin.fromClass(
   class {
     update(u: ViewUpdate) {
       const was = u.startState.field(field).shown;
       const now = u.state.field(field).shown;
       if (now === null || now === was) return;
-      u.view.requestMeasure({
+      this.reveal(u.view, now, true);
+    }
+    reveal(view: EditorView, i: number, again: boolean) {
+      view.requestMeasure({
         read: (view) => {
-          const pk = view.dom.querySelector<HTMLElement>(".cm-git-peek");
-          if (!pk) return null;
-          const air = Number.parseFloat(getComputedStyle(view.dom).getPropertyValue("--gap-row")) || 0;
-          return pk.getBoundingClientRect().top - view.scrollDOM.getBoundingClientRect().top - air;
+          const h = view.state.field(field).hunks[i];
+          const at = h === undefined ? null : lineOf(view.state, h);
+          if (at === null) return null;
+          // The line's block in the height map holds the peek with it, so
+          // a peek CodeMirror has not drawn yet (off screen) still has a
+          // place — its estimate until it is drawn.
+          const block = view.lineBlockAt(view.state.doc.line(at).from);
+          const top = view.documentTop + block.top;
+          const bottom = view.documentTop + block.bottom;
+          const s = view.scrollDOM.getBoundingClientRect();
+          const air = view.defaultLineHeight;
+          const floor = s.top + view.scrollDOM.clientHeight;
+          const drawn = view.dom.querySelector(".cm-git-peek") !== null;
+          if (top < s.top + air) return { by: top - (s.top + air), drawn };
+          if (bottom > floor - air) return { by: Math.min(bottom - floor + air, top - (s.top + air)), drawn };
+          return { by: 0, drawn };
         },
-        write: (by, view) => {
-          if (by !== null) view.scrollDOM.scrollTop += by;
+        write: (m, view) => {
+          if (m === null || m.by === 0) return;
+          view.scrollDOM.scrollTop += m.by;
+          // Brought on by its estimate: once more on its drawn height.
+          if (!m.drawn && again) this.reveal(view, i, false);
         },
       });
     }
@@ -232,7 +354,8 @@ const bringPeek = ViewPlugin.fromClass(
     the scrollbar's strip, a mark where every hunk is (2026-09-16: 「右侧
     滑动条后方…跟 vscode 一样」; 「可以透过滑动条颜色浮上来」). Marks are
     fractions of the scroll; `--overview-mark` keeps a one-line hunk in a
-    long file from rounding away. A press on a mark puts its hunk a third
+    long file from rounding away. The open peek's hunk is marked `data-on`
+    (cm-e item 4). A press on a mark puts its hunk a third
     of the way down; a press on the bare strip centres that place. */
 const ruler = ViewPlugin.fromClass(
   class {
@@ -255,14 +378,14 @@ const ruler = ViewPlugin.fromClass(
           const s = view.scrollDOM;
           const total = s.scrollHeight;
           const pad = view.documentTop - s.getBoundingClientRect().top + s.scrollTop;
-          const marks = g.hunks.flatMap((h) => {
+          const marks = g.hunks.flatMap((h, i) => {
             const at = lineOf(view.state, h);
             if (at === null) return [];
             const first = view.lineBlockAt(view.state.doc.line(at).from);
             const last = h.lines === 0 ? first : view.lineBlockAt(view.state.doc.line(at + h.lines - 1).from);
             const from = h.lines === 0 ? (h.at === 0 ? first.top : first.bottom) : first.top;
             const to = h.lines === 0 ? from : last.bottom;
-            return [{ h, from, to }];
+            return [{ h, from, to, on: g.shown === i }];
           });
           return { total, pad, marks, top: s.offsetTop, height: s.offsetHeight };
         },
@@ -274,9 +397,12 @@ const ruler = ViewPlugin.fromClass(
           this.dom.replaceChildren(
             ...(m.total <= 0
               ? []
-              : m.marks.map(({ h, from, to }) => {
+              : m.marks.map(({ h, from, to, on }) => {
                   const s = document.createElement("span");
                   s.dataset.kind = hunkKind(h);
+                  // The open peek's mark, as its bars wear it: the walk
+                  // shows in the margin too.
+                  if (on) s.dataset.on = "";
                   s.dataset.overviewMark = String(h.at);
                   s.setAttribute("role", "button");
                   s.setAttribute("aria-label", gui.git_hunk);
@@ -315,10 +441,40 @@ const ruler = ViewPlugin.fromClass(
   },
 );
 
+/** Walk to the next (1) or previous (-1) hunk with the peek open,
+    wrapping at either end as VS Code's does; the scroll is `bringPeek`'s. */
+function stepHunk(view: EditorView, by: 1 | -1): boolean {
+  const g = view.state.field(field);
+  if (g.shown === null) return false;
+  const order = drawn(view.state, g.hunks);
+  if (order.length === 0) return false;
+  const here = order.indexOf(g.shown);
+  const next = order[(here + by + order.length) % order.length];
+  if (next !== g.shown) view.dispatch({ effects: showHunk.of(next) });
+  return true;
+}
+
+/** 「还原」: the open hunk's lines become HEAD's, one transaction, so one
+    ⌘Z takes it back; the host's save road sees an edit like any other,
+    and the hunks clear with it until the next diff (the header's rule). */
+function revertHunk(view: EditorView): boolean {
+  const g = view.state.field(field);
+  const h = g.shown === null ? undefined : g.hunks[g.shown];
+  if (h === undefined || view.state.readOnly) return false;
+  const change = revertChange(view.state.doc, h);
+  if (change === null) return false;
+  view.dispatch({ changes: change, userEvent: "input.revert", scrollIntoView: false });
+  view.focus();
+  return true;
+}
+
 /** **Esc shuts the open peek, wherever the focus is** (2026-09-16, carried
     over from `FileView`'s window listener): the bar is a strip nobody
     focuses and a reader's file takes no caret, so a key handler on the
-    editor would hear nothing. Listening only while a peek is open. */
+    editor would hear nothing. Listening only while a peek is open — and
+    for the same reason VS Code's ⌥F5 / ⇧⌥F5 (next / previous change) are
+    heard here and not in the editor's keymap: with no peek open the keys
+    are nobody's. */
 const closeKey = ViewPlugin.fromClass(
   class {
     off: (() => void) | null = null;
@@ -331,11 +487,18 @@ const closeKey = ViewPlugin.fromClass(
     sync() {
       const open = this.view.state.field(field).shown !== null;
       if (open && this.off === null) {
+        // In the capture phase, and the key is spent: the page's own Esc
+        // (a narrow screen's way back, `App`) listens on the window too,
+        // was there first, and would leave the file as the peek shut.
         const onKey = (e: KeyboardEvent) => {
-          if (e.key === "Escape") this.view.dispatch({ effects: showHunk.of(null) });
+          if (e.defaultPrevented || e.isComposing) return;
+          if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+            e.preventDefault();
+            this.view.dispatch({ effects: showHunk.of(null) });
+          } else if (e.key === "F5" && e.altKey && !e.metaKey && !e.ctrlKey && stepHunk(this.view, e.shiftKey ? -1 : 1)) e.preventDefault();
         };
-        window.addEventListener("keydown", onKey);
-        this.off = () => window.removeEventListener("keydown", onKey);
+        window.addEventListener("keydown", onKey, true);
+        this.off = () => window.removeEventListener("keydown", onKey, true);
       } else if (!open && this.off !== null) {
         this.off();
         this.off = null;

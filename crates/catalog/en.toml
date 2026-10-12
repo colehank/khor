@@ -2046,6 +2046,15 @@ file-unsaved-why = "Not saved; trying again shortly: {0}"
 file-saved = "Saved"
 file-read-only = "Read-only"
 git-added = "These lines aren't in HEAD"
+# The open peek's head bar (cm-e, 2026-10-12): which change of how many,
+# the two steps, the revert and the way out. The strip that used to count
+# them above the file is still gone (2026-09-16) — the open change says it
+# on its own head, as VS Code's inline diff does.
+git-hunk-count = "Change {0} of {1}"
+git-hunk-prev = "Previous Change"
+git-hunk-next = "Next Change"
+git-revert = "Revert Change"
+
 settings = "General"
 network = "Network"
 security = "Security"
