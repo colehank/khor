@@ -31030,6 +31030,9 @@ try {
         },
         { id: "b".repeat(40), author: "colehank", when_ms: Date.now() - 5 * 86_400_000, subject: "额度 list：去掉 RowGauge 圆环", body: "" },
       ];
+      // Sixty more unchanged lines under the first file's hunk, so the
+      // page is taller than the window and 「跳转到文件」 has to scroll.
+      const LONG_F = Array.from({ length: 60 }, (_, i) => ` // the rest of the file, line ${i + 1}`);
       const logF = (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ commits: commitsF, more: false }) });
       const asked = [];
       const showF = (r) => {
@@ -31049,7 +31052,7 @@ try {
                 removed: 1,
                 binary: false,
                 hunks: [
-                  { old_at: 40, new_at: 40, lines: ["   const corners = rowCorners(row);", "   return (", "     <Row", "-      top={row.sub}", "+      top={corners.top}", "+      bottom={corners.bottom}", "     />", "   );", " }"] },
+                  { old_at: 40, new_at: 40, lines: ["   const corners = rowCorners(row);", "   return (", "     <Row", "-      top={row.sub}", "+      top={corners.top}", "+      bottom={corners.bottom}", "     />", "   );", " }", ...LONG_F] },
                 ],
               },
               { path: "docs/design-system/rows.png", from: "", status: "A", added: 0, removed: 0, binary: true, hunks: [] },
@@ -31141,9 +31144,44 @@ try {
           fail(`ws f · ${tag}: the stat line reads ${JSON.stringify(pg.stat)} — 「已更改 3 个文件 · +3 −2」`);
         }
         if (pg.files !== 3 || !pg.firstBar?.includes("WorkspacesList.tsx")) fail(`ws f · ${tag}: ${pg.files} file(s), the first bar ${JSON.stringify(pg.firstBar)} — three, in the answer's order`);
-        if (pg.firstLines !== 9 || pg.added !== 2 || pg.removed !== 1) fail(`ws f · ${tag}: under the first bar ${pg.firstLines} line(s), ${pg.added} added, ${pg.removed} removed — its hunk's 9, 2 and 1`);
+        if (pg.firstLines !== 69 || pg.added !== 2 || pg.removed !== 1) fail(`ws f · ${tag}: under the first bar ${pg.firstLines} line(s), ${pg.added} added, ${pg.removed} removed — its hunk's 69, 2 and 1`);
         if (pg.wider !== null && pg.wider > 0) fail(`ws f · ${tag}: the page is ${pg.wider}px wider than its box — a long line scrolls inside its file, not the page`);
         if (asked.at(-1)?.rev !== ID) fail(`ws f · ${tag}: git_commit was asked ${JSON.stringify(asked.at(-1))} — the pressed row's id`);
+        // 「跳转到文件」: the pill lists the three files; the last picked
+        // scrolls the page (it is taller than the window, `LONG_F`) until
+        // that file's bar is at the top — or, the last file having nothing
+        // under it to stand on, the page at its end with the bar in view.
+        await page.locator("[data-commit-jump]").first().click();
+        await wait(300);
+        const items = await page.locator("[data-commit-jump-item]").count();
+        await page.locator("[data-commit-jump-item]").nth(2).click();
+        await wait(300);
+        const jumped = await page.evaluate(() => {
+          const box = document.querySelector("[data-commit-scroll]");
+          const bar = document.querySelectorAll("[data-commit-file]")[2];
+          if (!box || !bar) return null;
+          return {
+            off: Math.round(bar.getBoundingClientRect().top - box.getBoundingClientRect().top),
+            atEnd: Math.abs(box.scrollHeight - box.clientHeight - box.scrollTop) < 2,
+            moved: Math.round(box.scrollTop),
+            room: box.clientHeight,
+          };
+        });
+        console.log(`ws f · ${tag}: 跳转到文件 lists ${items}, the third picked ${JSON.stringify(jumped)}`);
+        if (items !== 3 || jumped === null || jumped.moved === 0 || jumped.off < -2 || jumped.off >= jumped.room || (Math.abs(jumped.off) > 2 && !jumped.atEnd)) {
+          fail(`ws f · ${tag}: 跳转到文件 listed ${items} and left the third file's bar ${JSON.stringify(jumped)} — three, the page scrolled, the bar at the top or the page at its end with the bar in view`);
+        }
+        if (process.env.FACE_SHOTS) {
+          await page.evaluate(() => {
+            const box = document.querySelector("[data-commit-scroll]");
+            if (box) box.scrollTop = 0;
+          });
+          await page.locator("[data-commit-jump]").first().click();
+          await wait(300);
+          await shotF(`commits-jump-${tag}`);
+          await page.keyboard.press("Escape");
+          await wait(200);
+        }
         await page.locator("[data-commit-back]").first().click();
         await wait(400);
         const gone = await page.locator("[data-commit-page]").count();
