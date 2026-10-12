@@ -203,25 +203,50 @@ const gitGutter = gutter({
   },
 });
 
-/** An opened peek is brought into view, its top a row's gap under the
-    scroller's top edge — the place the old one was put, by the same
-    arithmetic, without `scrollIntoView` walking every scrolling
-    ancestor up to the window (2026-09-12). */
+/** **An opened peek moves the view only as far as it has to** (2026-10-12:
+    「点击后总是移动了我的视窗位置，这对吗」— the user; VS Code's
+    `revealRange`, not a centre). The block that has to be seen is the
+    peek with the line it is drawn against; if it is wholly on screen,
+    with a line's air at either edge, nothing moves. Otherwise the least
+    scroll that brings it on, and when it is taller than the screen its
+    top wins — `scrollIntoView`'s `nearest` with one line of margin
+    (KB-CARET rule 2), done here on the block's box because that effect
+    takes text positions, which a block widget is not, and because it
+    walks every scrolling ancestor up to the window (2026-09-12). The
+    read is in the measure, the write after it. */
 const bringPeek = ViewPlugin.fromClass(
   class {
     update(u: ViewUpdate) {
       const was = u.startState.field(field).shown;
       const now = u.state.field(field).shown;
       if (now === null || now === was) return;
-      u.view.requestMeasure({
+      this.reveal(u.view, now, true);
+    }
+    reveal(view: EditorView, i: number, again: boolean) {
+      view.requestMeasure({
         read: (view) => {
-          const pk = view.dom.querySelector<HTMLElement>(".cm-git-peek");
-          if (!pk) return null;
-          const air = Number.parseFloat(getComputedStyle(view.dom).getPropertyValue("--gap-row")) || 0;
-          return pk.getBoundingClientRect().top - view.scrollDOM.getBoundingClientRect().top - air;
+          const h = view.state.field(field).hunks[i];
+          const at = h === undefined ? null : lineOf(view.state, h);
+          if (at === null) return null;
+          // The line's block in the height map holds the peek with it, so
+          // a peek CodeMirror has not drawn yet (off screen) still has a
+          // place — its estimate until it is drawn.
+          const block = view.lineBlockAt(view.state.doc.line(at).from);
+          const top = view.documentTop + block.top;
+          const bottom = view.documentTop + block.bottom;
+          const s = view.scrollDOM.getBoundingClientRect();
+          const air = view.defaultLineHeight;
+          const floor = s.top + view.scrollDOM.clientHeight;
+          const drawn = view.dom.querySelector(".cm-git-peek") !== null;
+          if (top < s.top + air) return { by: top - (s.top + air), drawn };
+          if (bottom > floor - air) return { by: Math.min(bottom - floor + air, top - (s.top + air)), drawn };
+          return { by: 0, drawn };
         },
-        write: (by, view) => {
-          if (by !== null) view.scrollDOM.scrollTop += by;
+        write: (m, view) => {
+          if (m === null || m.by === 0) return;
+          view.scrollDOM.scrollTop += m.by;
+          // Brought on by its estimate: once more on its drawn height.
+          if (!m.drawn && again) this.reveal(view, i, false);
         },
       });
     }
