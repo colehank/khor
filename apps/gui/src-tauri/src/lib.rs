@@ -3976,8 +3976,15 @@ fn front_worker(app: tauri::AppHandle) -> std::sync::mpsc::Sender<Front> {
         };
         let root = Node::root_from_env();
         let bounded = std::time::Duration::from_secs(2);
-        while let Ok(first) = rx.recv() {
-            let mut moves = vec![first];
+        // Moves that arrived while a suspension waited on a push.
+        let mut carried: Vec<Front> = Vec::new();
+        loop {
+            let mut moves = if carried.is_empty() {
+                let Ok(first) = rx.recv() else { break };
+                vec![first]
+            } else {
+                std::mem::take(&mut carried)
+            };
             moves.extend(rx.try_iter());
             // Asked again while moves keep arriving behind the question:
             // a freeze in the middle of it ends with the return queued.
@@ -4000,9 +4007,20 @@ fn front_worker(app: tauri::AppHandle) -> std::sync::mpsc::Sender<Front> {
             eprintln!("khor front: {on:?}, resting {resting:?}: {act:?}");
             match act {
                 Some(Act::Suspend) => {
+                    // A push still running holds the wires up, under the
+                    // background task (`push_grace`); back in front before
+                    // it ends, nothing is let go.
+                    #[cfg(target_os = "ios")]
+                    if let Some(back) = push_grace::hold(&rx) {
+                        let _ = app.run_on_main_thread(push_grace::end);
+                        carried = back;
+                        continue;
+                    }
                     let _ = rt.block_on(async {
                         tokio::time::timeout(bounded, khor_node::link::suspending(&root)).await
                     });
+                    #[cfg(target_os = "ios")]
+                    let _ = app.run_on_main_thread(push_grace::end);
                 }
                 Some(Act::Resume) => resume_the_node(&app, &root),
                 None => {}
@@ -4056,6 +4074,116 @@ fn resume_the_node(app: &tauri::AppHandle, root: &std::path::Path) {
     });
 }
 
+/// **A push the phone started outlives a lock, within the grace**
+/// (STORE-BRIEF phase 5; docs/IOS.md 第三步之二 is the frame). A message
+/// posted here pushes its files to its targets from this phone's node —
+/// the targets pull from it — and going to the background let every wire
+/// go at once (`link::suspending`), cutting them. Now, when the app goes
+/// to the background with pushes running (`khor_node::post::
+/// pushes_in_flight`), it asks UIKit for a background task, and the
+/// worker's suspension waits until the pushes end, the app comes back to
+/// the front, or the task's grace (about 30 s) runs out. When it runs out
+/// first, each target is told its push was cut (`link::cut_pushes`) and
+/// writes 「发送中断：手机已挂起」 as its fate — honest, and the person
+/// sends again from the phone or another machine. Then the node lets go
+/// and the task ends.
+///
+/// ⚠️ **Not run anywhere but a real iPhone**: the simulator does not
+/// enforce the grace, and nothing here is reachable on a desktop build.
+#[cfg(target_os = "ios")]
+mod push_grace {
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::{Duration, Instant};
+
+    use objc2::MainThreadMarker;
+    use objc2_ui_kit::{UIApplication, UIBackgroundTaskIdentifier, UIBackgroundTaskInvalid};
+
+    use super::{Front, Node};
+
+    /// The task held, if any. Ended once, by whichever end comes first.
+    static TASK: Mutex<Option<UIBackgroundTaskIdentifier>> = Mutex::new(None);
+    /// UIKit called the expiration handler: the grace is over.
+    static EXPIRED: AtomicBool = AtomicBool::new(false);
+    /// The longest a suspension waits, whatever UIKit says: past this the
+    /// grace is over on any iOS this app runs on.
+    const AT_MOST: Duration = Duration::from_secs(40);
+
+    /// On the main thread, in the background notification: a task, when
+    /// a push is running.
+    pub(super) fn begin() {
+        if khor_node::post::pushes_in_flight() == 0 {
+            return;
+        }
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let mut held = TASK.lock().unwrap_or_else(|p| p.into_inner());
+        if held.is_some() {
+            return;
+        }
+        EXPIRED.store(false, Ordering::SeqCst);
+        // **The grace is over**: tell the targets, bounded — UIKit gives
+        // the handler a few seconds — then end the task here, as UIKit
+        // asks (an unended task gets the app killed).
+        let expired = block2::RcBlock::new(|| {
+            EXPIRED.store(true, Ordering::SeqCst);
+            let (told, heard) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
+                    let _ = rt.block_on(tokio::time::timeout(
+                        Duration::from_secs(3),
+                        khor_node::link::cut_pushes(&Node::root_from_env()),
+                    ));
+                }
+                let _ = told.send(());
+            });
+            let _ = heard.recv_timeout(Duration::from_millis(3500));
+            end();
+        });
+        let app = UIApplication::sharedApplication(mtm);
+        let id = app.beginBackgroundTaskWithExpirationHandler(Some(&expired));
+        // SAFETY: UIKit's constant, a linked static for the process.
+        if id != unsafe { UIBackgroundTaskInvalid } {
+            *held = Some(id);
+            eprintln!("khor push grace: began with {} push(es) running", khor_node::post::pushes_in_flight());
+        }
+    }
+
+    /// Ends the task, once. On the main thread (`run_on_main_thread`, or
+    /// the expiration handler, which UIKit calls there).
+    pub(super) fn end() {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(id) = TASK.lock().unwrap_or_else(|p| p.into_inner()).take() else { return };
+        UIApplication::sharedApplication(mtm).endBackgroundTask(id);
+        eprintln!("khor push grace: ended");
+    }
+
+    /// **The suspension waits on the pushes** (module head): until none
+    /// runs, the grace is over, or the app moves again — then the moves
+    /// that came are answered (`Some`), and nothing is let go. `None`:
+    /// go on and suspend.
+    pub(super) fn hold(rx: &std::sync::mpsc::Receiver<Front>) -> Option<Vec<Front>> {
+        let held = TASK.lock().unwrap_or_else(|p| p.into_inner()).is_some();
+        if !held {
+            return None;
+        }
+        let began = Instant::now();
+        while khor_node::post::pushes_in_flight() > 0 && !EXPIRED.load(Ordering::SeqCst) && began.elapsed() < AT_MOST {
+            let came: Vec<Front> = rx.try_iter().collect();
+            if !came.is_empty() {
+                return Some(came);
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        eprintln!(
+            "khor push grace: waited {:?}, {} push(es) left, expired {}",
+            began.elapsed(),
+            khor_node::post::pushes_in_flight(),
+            EXPIRED.load(Ordering::SeqCst)
+        );
+        None
+    }
+}
+
 /// An Android phone's `front_worker`, for its window events to reach.
 #[cfg(target_os = "android")]
 static ANDROID_FRONT: std::sync::OnceLock<std::sync::mpsc::Sender<Front>> = std::sync::OnceLock::new();
@@ -4087,6 +4215,17 @@ fn watch_the_front(app: tauri::AppHandle) {
         ]
     };
     let centre = NSNotificationCenter::defaultCenter();
+    // **First, while the notification is still being posted**: a push
+    // running now gets the background task before the app can be stopped
+    // (`push_grace`); the worker's suspension then waits on it.
+    let pushing = block2::RcBlock::new(|_note: std::ptr::NonNull<NSNotification>| push_grace::begin());
+    // SAFETY: the default centre, for the life of the process; posted on
+    // the main thread, which `push_grace::begin` needs.
+    unsafe {
+        let token =
+            centre.addObserverForName_object_queue_usingBlock(Some(UIApplicationDidEnterBackgroundNotification), None, None, &pushing);
+        std::mem::forget(token);
+    }
     for (name, on) in names {
         let worker = worker.clone();
         let told = block2::RcBlock::new(move |_note: std::ptr::NonNull<NSNotification>| {
