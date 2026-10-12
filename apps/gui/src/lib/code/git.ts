@@ -354,7 +354,8 @@ const bringPeek = ViewPlugin.fromClass(
     the scrollbar's strip, a mark where every hunk is (2026-09-16: 「右侧
     滑动条后方…跟 vscode 一样」; 「可以透过滑动条颜色浮上来」). Marks are
     fractions of the scroll; `--overview-mark` keeps a one-line hunk in a
-    long file from rounding away. A press on a mark puts its hunk a third
+    long file from rounding away. The open peek's hunk is marked `data-on`
+    (cm-e item 4). A press on a mark puts its hunk a third
     of the way down; a press on the bare strip centres that place. */
 const ruler = ViewPlugin.fromClass(
   class {
@@ -377,14 +378,14 @@ const ruler = ViewPlugin.fromClass(
           const s = view.scrollDOM;
           const total = s.scrollHeight;
           const pad = view.documentTop - s.getBoundingClientRect().top + s.scrollTop;
-          const marks = g.hunks.flatMap((h) => {
+          const marks = g.hunks.flatMap((h, i) => {
             const at = lineOf(view.state, h);
             if (at === null) return [];
             const first = view.lineBlockAt(view.state.doc.line(at).from);
             const last = h.lines === 0 ? first : view.lineBlockAt(view.state.doc.line(at + h.lines - 1).from);
             const from = h.lines === 0 ? (h.at === 0 ? first.top : first.bottom) : first.top;
             const to = h.lines === 0 ? from : last.bottom;
-            return [{ h, from, to }];
+            return [{ h, from, to, on: g.shown === i }];
           });
           return { total, pad, marks, top: s.offsetTop, height: s.offsetHeight };
         },
@@ -396,9 +397,12 @@ const ruler = ViewPlugin.fromClass(
           this.dom.replaceChildren(
             ...(m.total <= 0
               ? []
-              : m.marks.map(({ h, from, to }) => {
+              : m.marks.map(({ h, from, to, on }) => {
                   const s = document.createElement("span");
                   s.dataset.kind = hunkKind(h);
+                  // The open peek's mark, as its bars wear it: the walk
+                  // shows in the margin too.
+                  if (on) s.dataset.on = "";
                   s.dataset.overviewMark = String(h.at);
                   s.setAttribute("role", "button");
                   s.setAttribute("aria-label", gui.git_hunk);

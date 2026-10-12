@@ -191,6 +191,12 @@ export const codeTheme = EditorView.theme({
     borderRadius: "var(--radius-xs)",
     opacity: "0.5",
   },
+  // The open peek's mark: full ink and the bar's own ring, so the walk
+  // reads in the margin.
+  ".cm-git-ruler > span[data-on]": {
+    opacity: "1",
+    boxShadow: "0 0 0 var(--hair) color-mix(in srgb, var(--foreground) 40%, transparent)",
+  },
   ".cm-git-ruler > span[data-kind='modified']": { backgroundColor: "var(--git-modified)" },
   ".cm-git-ruler > span[data-kind='added']": { backgroundColor: "var(--git-added)" },
   ".cm-git-ruler > span[data-kind='deleted']": { backgroundColor: "var(--git-deleted)" },
