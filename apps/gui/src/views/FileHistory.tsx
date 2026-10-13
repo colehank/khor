@@ -16,7 +16,7 @@ import type { GitCommit } from "@/gen/bindings/GitCommit";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { DiffView } from "@/views/DiffView";
 import { CodeEditor } from "@/components/CodeEditor.lazy";
-import { rendererOf } from "@/views/FileView";
+import { DEFAULT_FILE_FACE, rendererOf } from "@/views/FileView";
 import { ago } from "@/words";
 
 /** A commit as a person names it. */
@@ -184,12 +184,15 @@ export function RevisionView({
   rev,
   compare,
   narrow,
+  face = DEFAULT_FILE_FACE,
 }: {
   machine: string;
   path: string;
   rev: GitCommit;
   compare: boolean;
   narrow: boolean;
+  /** The same explicit preview choice as the current file. */
+  face?: "source" | "preview";
 }) {
   const [shown, setShown] = useState<GitShow | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
@@ -220,7 +223,7 @@ export function RevisionView({
   const md = rendererOf(path) === "md";
   return (
     <div data-file-rev={rev.id} className="flex min-h-0 flex-1 flex-col">
-      {md ? (
+      {md && face === "preview" ? (
         <div data-file-preview="md" {...groundAttr(ground)} className="min-h-0 flex-1 overflow-auto">
           <Markdown text={shown.text} className="prose-khor px-6 py-4" />
         </div>

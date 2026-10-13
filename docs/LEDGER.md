@@ -22,6 +22,7 @@
 
 | 项 | 出处 |
 |---|---|
+| 连通新界面和文件默认源码：iOS 实机验收地图点选/relay 头像、矩阵反向、机器页连接详情滚动与文件预览切换 | 10-13 connectivity-ui；浏览器 1200/390/375 已验 |
 | kb-caret 三件：键盘升起露光标、拼音候选条遮不遮、选区端点 | audit/kb-caret.md |
 | Mac 输入法（拼音/五笔）在 CM6 里的组合输入 | audit/cm-b.md §4 |
 | 手机发出的推送撑过锁屏宽限、超时写「发送中断：手机已挂起」，真机九条 | audit/p5-at.md「Phone checklist」 |
@@ -38,6 +39,7 @@
 | `check-face` 大文件遍历测试（>256 KiB 可编辑、截断句只在超上限） | audit/cm-c.md |
 | 提交总量 2 MiB 上限在真实大提交上的节省没量过 | audit/cm-f.md |
 | 窥视标题栏在手机上 44 高，可能要更密 | audit/cm-e.md |
+| 远端 roads 仍是低频持久化快照，不等同即时双向探测；本轮已屏蔽失联上报者旧线路，独立保留反向观测。后续需要明确每条线路采样时间/刷新策略 | 10-13 连通讨论；dial.ts |
 | NET-ROADMAP：接入、拓扑、共享、容器 | audit/NET-ROADMAP.md |
 | 浏览器暂存的上传，草稿放弃后留在 `.khor/uploads`（拒绝时故意留着让人重发） | audit/p5-at.md |
 | 新旧 khor 混跑没实测：老端轮里点名 `chat/<机器>`，新端答 unknown-doc，老端那一轮停在那 | audit/p5-at.md「Old khor」 |

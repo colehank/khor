@@ -2732,6 +2732,9 @@ map-latency = "延迟"
 map-heard = "上次联系"
 # The chevron that opens a link's facts in the narrow column (aria).
 map-facts = "连接详情"
+reading-last = "上次 {0}"
+dial-last-route = "上次线路读数 · {0}"
+dial-reverse = "反向 {0}"
 # **我的 khor 的表盘**（UX-26，负责人 2026-10-06，定稿在 audit/my-khor-dial.html）：
 # 本机在中间，每台机器按到本机的延迟落在对应的半径上；三个圈的字、脚注的四档、
 # 地图/矩阵两档、长按或右键出的卡片和空白处的菜单。延迟的数字沿用 row-rtt。

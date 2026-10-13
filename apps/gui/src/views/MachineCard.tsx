@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
 import type { Road } from "@/gen/bindings/Road";
 import type { JournalLine } from "@/gen/bindings/JournalLine";
-import { fetchAbout, fetchLoad, fetchRevealHere, inApp, journal, journalReport, reveal, setWatch, visitMachine } from "@/api";
+import { fetchAbout, fetchLoad, inApp, journal, setWatch, visitMachine } from "@/api";
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
 import { DetailFrame } from "@/components/DetailFrame";
 import { MachineFace } from "@/components/SessionFace";
@@ -36,6 +36,8 @@ import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
 import { SeatPick } from "@/components/SeatTitle";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -53,7 +55,7 @@ import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { pagesHere } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
-import { agoOf, connectionKey, connectionKeyWord, hopRoad, hopWord, lasting, legWord, linkWord, systemWord, count } from "@/words";
+import { agoOf, hopRoad, hopWord, lasting, legWord, reachWord, systemWord, count } from "@/words";
 
 /**
  * One machine, opened from the devices pane.
@@ -334,8 +336,11 @@ function Body({
           {/* The pane's width, capped and centred (`DetailFrame`, UX-22). */}
           <DetailFrame className="flex flex-col gap-row">
             <Strip row={row} rows={rows} sayModel={sayModel} />
-            <RoadLine row={row} rows={rows} onPromote={onPromote} />
-            <JournalRow row={row} />
+            {!!row.sponsor && row.sponsor === rows.find((r) => r.me)?.name && onPromote && (
+              <div className="flex justify-end">
+                <Button data-promote onClick={() => onPromote(row)}>{gui.promote_ask}</Button>
+              </div>
+            )}
             {never ? (
               <RegionState state="loading-never" />
             ) : (
@@ -493,11 +498,10 @@ function nameOf(id: string, rows: DeviceRow[]): string {
  * machine's road to `row` passes — 本机, the machine or jump host in the
  * middle, the relay — with the broken leg, when the road names one
  * (`Road.broken`), dashed in the failed ink and said in a calm sentence
- * under it. Drawn only where there is a middle or a break: a plain
- * direct road is the strip's 连接 cell and nothing more. An SSH 主机 this
- * machine sponsors carries 安装 khor… at the line's end.
+ * under it. Every remote connection has its route here, including a
+ * direct wire. The install action stays outside this disclosure.
  */
-function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[]; onPromote?: (row: DeviceRow) => void }) {
+function RoadLine({ row, rows }: { row: DeviceRow; rows: DeviceRow[] }) {
   const me = rows.find((r) => r.me) ?? null;
   if (row.me || !me) return null;
   const road = roadTo(me, row);
@@ -526,11 +530,9 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
           : b.leg === "auth"
             ? { at: last, why: gui.leg_auth(row.shown, sponsor ?? gui.machine_here) }
             : { at: last, why: gui.leg_ssh(sponsor ?? gui.machine_here, row.shown) };
-  const mine = !!row.sponsor && row.sponsor === me.name && !!onPromote;
   // A live peer hop says each leg under the stops (NET-DIRECT, the owner
   // 2026-10-09): 「iPhone → turing 直连 26 ms」「turing → MacLab 直连 3 ms」.
   const legs = live?.legs ?? null;
-  if (hops.length < 3 && !leg && !mine) return null;
   return (
     <div data-road-line className="flex flex-col gap-xxs border-b pb-base">
       <div className="flex min-h-ctl-md items-center gap-row">
@@ -549,11 +551,6 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
             </span>
           ))}
         </span>
-        {mine && (
-          <Button data-promote className="flex-none" onClick={() => onPromote!(row)}>
-            {gui.promote_ask}
-          </Button>
-        )}
       </div>
       {legs?.map((l, i) => (
         <div key={i} data-hop-leg={i} className="text-callout text-muted-foreground tabular-nums">
@@ -578,82 +575,115 @@ function RoadLine({ row, rows, onPromote }: { row: DeviceRow; rows: DeviceRow[];
 
 /** How far back the 连接记录 row reads, in minutes. */
 const JOURNAL_MINUTES = 60;
-/** How many of its newest lines the row shows under its summary. */
-const JOURNAL_SHOWN = 3;
-
-/**
- * **连接记录** (NET-STABLE 第一步): what this machine's resident saw on
- * its way to `row` — dials and the roads they tried, wires retired, its
- * own network and home relay — read off the journal files
- * (`khor_node::journal`). Built from `RoadLine`'s parts and nothing else:
- * the caption label, one line of body, a plain button at the end, and
- * under it the newest few lines in `callout` with their times in
- * `caption` `tertiary`. 报告 freezes every machine's last hour into one
- * file under this home and says where (Finder shows it where it can).
- * Not on this machine's own page: the journal is of the others.
- */
+/** The last hour is read only while the connection disclosure is open.
+    Keep the last successful answer across closes, and poll without overlapping
+    requests. A rejected read stays visible and can be retried. */
+const connectionJournals = new Map<string, JournalLine[]>();
 function JournalRow({ row }: { row: DeviceRow }) {
-  const [lines, setLines] = useState<JournalLine[] | null>(null);
-  const [saved, setSaved] = useState<string | null>(null);
+  const [lines, setLines] = useState<JournalLine[] | null>(() => connectionJournals.get(row.id) ?? null);
   const [why, setWhy] = useState<string | null>(null);
-  // Read again when the road word moves: that is when there is news.
+  const [retry, setRetry] = useState(0);
+  const hidden = useHidden();
   useEffect(() => {
     if (row.me) return;
     let live = true;
-    journal(row.id, JOURNAL_MINUTES)
-      .then((l) => live && setLines(l))
-      .catch(() => live && setLines(null));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const read = async () => {
+      try {
+        const answer = await journal(row.id, JOURNAL_MINUTES);
+        if (!live) return;
+        connectionJournals.set(row.id, answer);
+        setLines(answer);
+        setWhy(null);
+      } catch (e) {
+        if (live) setWhy(String(e));
+      } finally {
+        if (live) timer = setTimeout(read, hidden ? HIDDEN_MS : LOAD_MS);
+      }
+    };
+    void read();
     return () => {
       live = false;
+      clearTimeout(timer);
     };
-  }, [row.id, row.me, row.hop, row.down_ms === null]);
-  if (row.me || lines === null) return null;
-  const trouble = lines.filter((l) => l.trouble).length;
-  const summary =
-    lines.length === 0
-      ? msg.journal_empty
-      : trouble > 0
-        ? gui.journal_summary_trouble(JOURNAL_MINUTES, lines.length, trouble)
-        : gui.journal_summary(JOURNAL_MINUTES, lines.length);
-  const report = () => {
-    setWhy(null);
-    journalReport(JOURNAL_MINUTES)
-      .then(async (path) => {
-        setSaved(path);
-        if (await fetchRevealHere()) await reveal(path);
-      })
-      .catch((e) => setWhy(String(e)));
-  };
+  }, [row.id, row.me, row.hop, row.down_ms === null, retry, hidden]);
+  if (row.me) return null;
+  const trouble = lines?.filter((l) => l.trouble).length ?? 0;
+  const summary = !lines?.length
+    ? msg.journal_empty
+    : trouble > 0
+      ? gui.journal_summary_trouble(JOURNAL_MINUTES, lines.length, trouble)
+      : gui.journal_summary(JOURNAL_MINUTES, lines.length);
   return (
-    <div data-journal className="flex flex-col gap-xxs border-b pb-base">
-      <div className="flex min-h-ctl-md items-center gap-row">
-        <span className="flex-none text-caption text-muted-foreground">{gui.journal_row}</span>
-        <span data-journal-summary className="min-w-0 flex-1 truncate text-body tabular-nums">
-          {summary}
-        </span>
-        <Button data-journal-report className="flex-none" onClick={report}>
-          {gui.journal_report_ask}
-        </Button>
-      </div>
-      {lines.slice(-JOURNAL_SHOWN).map((l) => (
-        <div key={`${l.at}-${l.text}`} data-journal-line={l.trouble ? "trouble" : "ok"} className="flex gap-row text-callout">
-          <span className="flex-none text-caption text-tertiary tabular-nums">{l.when}</span>
-          <span className="min-w-0 flex-1 text-muted-foreground">
-            {l.machine === row.shown || l.machine === row.name ? l.text : gui.journal_line_of(l.machine, l.text)}
-          </span>
-        </div>
-      ))}
-      {(saved || why) && (
-        <div data-journal-saved className="text-callout text-muted-foreground">
-          {why ?? gui.journal_report_at(saved!)}
-        </div>
+    <section data-journal className="flex min-h-0 flex-col gap-in">
+      <div className="text-caption text-muted-foreground">{gui.journal_row}</div>
+      {why && <RegionState state="error" message={why} onRetry={() => setRetry((n) => n + 1)} />}
+      {lines === null ? !why && <RegionState state="loading-never" /> : (
+        <>
+          <div data-journal-summary className="text-callout text-muted-foreground tabular-nums">{summary}</div>
+          {lines.map((l, i) => (
+            <div key={`${l.at}-${i}`} data-journal-line={l.trouble ? "trouble" : "ok"} className="flex gap-row text-callout">
+              <span className="flex-none text-caption text-tertiary tabular-nums">{l.when}</span>
+              <span className="min-w-0 flex-1 break-words text-muted-foreground">
+                {l.machine === row.shown || l.machine === row.name ? l.text : gui.journal_line_of(l.machine, l.text)}
+              </span>
+            </div>
+          ))}
+        </>
       )}
+    </section>
+  );
+}
+
+/** The machine page's connection fact owns the only disclosure entry.
+    It stays in the facts strip; routes and diagnostic history live inside. */
+function ConnectionFact({ row, rows }: { row: DeviceRow; rows: DeviceRow[] }) {
+  const [open, setOpen] = useState(false);
+  const narrow = useNarrow();
+  if (row.me) return <span data-machine-here>{gui.machine_here}</span>;
+  const said = isFar(row) ? hopWord("down") : reachWord(row, rows);
+  const info = (
+    <button
+      type="button"
+      data-connection-info
+      aria-label={gui.map_facts}
+      className="inline-flex size-touch -my-in -me-in flex-none items-center justify-center rounded-full text-muted-foreground hover:bg-fill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span aria-hidden="true" className="inline-flex size-4 items-center justify-center rounded-full border border-current text-caption">i</span>
+    </button>
+  );
+  const details = (
+    <div data-connection-details className="flex min-h-0 flex-col gap-base overflow-y-auto">
+      <RoadLine row={row} rows={rows} />
+      <JournalRow key={row.id} row={row} />
     </div>
+  );
+  return (
+    <span className="flex min-w-0 items-center gap-xxs">
+      <span data-hop={row.hop ?? undefined} data-road-via={row.via ?? undefined} className="min-w-0 truncate tabular-nums">{said}</span>
+      {narrow ? (
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>{info}</DialogTrigger>
+          <DialogContent form className="max-h-[80dvh] grid-rows-[auto_minmax(0,1fr)]">
+            <DialogHeader><DialogTitle>{gui.map_facts}</DialogTitle></DialogHeader>
+            {details}
+            <DialogFooter><Button data-footer-trailing onClick={() => setOpen(false)}>{gui.close}</Button></DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>{info}</PopoverTrigger>
+          <PopoverContent align="start" className="flex max-h-[70dvh] w-dialog max-w-[calc(100vw-var(--gap-pane)*2)] flex-col gap-base p-base" aria-label={gui.map_facts}>
+            <div className="text-headline">{gui.map_facts}</div>
+            {details}
+          </PopoverContent>
+        </Popover>
+      )}
+    </span>
   );
 }
 
 function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; sayModel: boolean }) {
-  const me = rows.find((r) => r.me) ?? null;
   const far = isFar(row);
   const v = row.vitals?.vitals ?? null;
   const age = row.vitals?.age_ms ?? 0;
@@ -692,33 +722,7 @@ function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; say
       </span>,
     ]);
   }
-  // Three shapes for one slot (`connectionWord`'s three). This machine
-  // reaches itself over nothing — 本机, deliberately **not** `data-hop`:
-  // the smoke asserts this machine's strip carries no road.
-  const road = row.me ? (
-    <span data-machine-here>{gui.machine_here}</span>
-  ) : row.sponsor ? (
-    // An SSH 主机: the kind, then what stands between (round join-d): its
-    // jump, else the sponsor when that is not this machine.
-    <span data-via-sponsor={row.sponsor}>
-      {[
-        gui.add_ssh_host,
-        row.ssh_jump ? gui.add_step_via(row.ssh_jump) : row.sponsor !== me?.name ? gui.add_step_via(row.sponsor) : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")}
-    </span>
-  ) : hopRoad(row, rows) ? (
-    // A live peer hop: the row's own word (`connectionKey`), 「通过 turing」.
-    <span data-hop="forwarded" data-road-via={row.via!}>
-      {connectionKeyWord(connectionKey(row))}
-    </span>
-  ) : roadTo(me, row)?.via ? (
-    <span data-road-via={roadTo(me, row)!.via!}>{gui.add_step_via(nameOf(roadTo(me, row)!.via!, rows))}</span>
-  ) : row.hop ? (
-    <span data-hop={row.hop}>{linkWord(row.hop, row.heard_ms, row.down_ms)}</span>
-  ) : null;
-  if (road) facts.push(["connection", gui.card_connection, road]);
+  facts.push(["connection", gui.card_connection, <ConnectionFact key={row.id} row={row} rows={rows} />]);
   if (v && v.uptime_s > 0) {
     facts.push([
       "uptime",
@@ -733,10 +737,9 @@ function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; say
       "reading",
       gui.card_reading,
       far ? (
-        // 「不通 · 上次 HH:MM」 (P5; WORDS-1008): what the row says, with the clock
-        // of the last reading rather than an age that keeps growing.
-        <span data-vitals-age data-far className="tabular-nums">
-          {gui.reading_unreachable(clock(Date.now() - age))}
+        // The connection cell already says 不通; this fact only dates its reading.
+        <span data-vitals-age data-far className="text-muted-foreground tabular-nums">
+          {gui.reading_last(clock(Date.now() - age))}
         </span>
       ) : !row.me && age > 0 ? (
         <span data-vitals-age className="tabular-nums">
@@ -814,7 +817,7 @@ function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; say
             <dt data-strip-label className="truncate text-caption text-muted-foreground">
               {label}
             </dt>
-            <dd data-strip-value data-selectable className="min-w-0 truncate text-body text-foreground">
+            <dd data-strip-value data-selectable className={cn("min-w-0 text-body text-foreground", k !== "connection" && "truncate")}>
               {value}
             </dd>
           </div>

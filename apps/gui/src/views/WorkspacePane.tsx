@@ -80,7 +80,7 @@ import { SessionsList } from "@/views/SessionsList";
 import { FilesPane } from "@/views/FilesPane";
 import { FileTree } from "@/views/FileTree";
 import { heavier, IGNORED } from "@/views/fileRow";
-import { beginEditing, FileView, rendererOf, type Draft } from "@/views/FileView";
+import { beginEditing, DEFAULT_FILE_FACE, FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { RevisionView, shortId, HistorySheet } from "@/views/FileHistory";
 import { CommitPage } from "@/views/CommitPage";
@@ -298,19 +298,15 @@ export function WorkspacePane({
    * 可预览,就是一个预览的 icon,再次点击回到源码」(the user). `FileView`
    * is handed the answer.
    *
-   * **The face rides with the tab, and a file that has a second face
-   * opens on it** (round UX-3, the owner's ruling 2026-10-04: preview is
-   * the default, the old toggle is gone; ⚠️ 墓碑: 批⑤'s 「打开先是源码」).
-   * 编辑 at the strip's right end opens the source at the same place and
-   * ✓ comes back (`editHere`). Never remembered: every file opens to be
-   * read. */
-  const [face, setFace] = useState<"source" | "preview">("source");
+   * Every newly opened or selected file starts as source (2026-10-13).
+   * Preview is an explicit choice through the existing eye control. */
+  const [face, setFace] = useState<"source" | "preview">(DEFAULT_FILE_FACE);
   /** A revision from the file's git 历史, shown where the file is
       (round UX-4); cleared when another file comes to the front. */
   const [rev, setRev] = useState<GitCommit | null>(null);
   const [revCompare, setRevCompare] = useState(false);
   useEffect(() => setRev(null), [file]);
-  useEffect(() => setFace(file !== null && rendererOf(file) !== null ? "preview" : "source"), [file]);
+  useEffect(() => setFace(DEFAULT_FILE_FACE), [machine, file]);
   /** The middle column, where the reader's place is read and put back. */
   const mid = useRef<HTMLDivElement>(null);
   /** Where to put the reader once the face has changed (a source line). */
@@ -1415,9 +1411,21 @@ export function WorkspacePane({
         <span data-file-rev-chip title={`${rev.author} · ${rev.subject}`} className="glass rounded-full px-row py-1 font-mono text-callout text-foreground">
           {shortId(rev)}
         </span>
-        <GlassCircle aria-label={gui.file_rev_back} tip={gui.file_rev_back} data-file-rev-back onClick={() => setRev(null)}>
+        <GlassCircle aria-label={gui.file_rev_back} tip={gui.file_rev_back} data-file-rev-back onClick={() => { setRev(null); setFace(DEFAULT_FILE_FACE); }}>
           <IconBack />
         </GlassCircle>
+        {!revCompare && rendererOf(file) === "md" && (
+          <GlassCircle
+            aria-label={gui.file_face_preview}
+            aria-pressed={face === "preview"}
+            tip={gui.file_face_preview}
+            data-file-face-toggle={face}
+            onClick={() => setFace((f) => f === "preview" ? "source" : "preview")}
+            className={cn(face === "preview" && "glass-sel text-[var(--rail-on-ink)]")}
+          >
+            <IconEye />
+          </GlassCircle>
+        )}
         <GlassCircle
           aria-label={revCompare ? gui.file_rev_alone : gui.file_rev_compare}
           aria-pressed={revCompare}
@@ -1445,6 +1453,7 @@ export function WorkspacePane({
           onRevision={(c) => {
             setRev(c);
             setRevCompare(false);
+            setFace(DEFAULT_FILE_FACE);
           }}
         />
         {/* **预览 at the first row's right end** (UX-33 §4, the owner): the
@@ -2104,7 +2113,7 @@ export function WorkspacePane({
               narrow={narrow}
             />
           ) : rev !== null ? (
-            <RevisionView machine={machine} path={file} rev={rev} compare={revCompare} narrow={narrow} />
+            <RevisionView machine={machine} path={file} rev={rev} compare={revCompare} face={face} narrow={narrow} />
           ) : (
             <FileView
               key={`${machine} ${file}`}

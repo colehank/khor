@@ -67,7 +67,7 @@ import { bytesOf, revealHere, shares } from "@/views/chat-files";
 import { HistorySheet, RevisionView, shortId } from "@/views/FileHistory";
 import { SymbolsSheet } from "@/views/FileSymbols";
 import { useRemoveFlow } from "@/views/fileRow";
-import { FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
+import { DEFAULT_FILE_FACE, FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
 
 // ── where the reader is ───────────────────────────────────────────
 
@@ -498,10 +498,9 @@ export function FilePage({
   const previewable = rendererOf(path) !== null;
   /** **No edit mode** (UX-14, the owner 2026-10-05: 「像备忘录」): a text
       file is editable as soon as it is open — a tap puts the caret where
-      the finger is, a drag scrolls. A file that renders opens rendered;
-      the pill's eye is the one switch between the two faces, and it keeps
-      the place. */
-  const [face, setFace] = useState<"source" | "preview">(previewable ? "preview" : "source");
+      the finger is, a drag scrolls. Every file opens as source (2026-10-13);
+      the pill's eye explicitly opts into preview and keeps the place. */
+  const [face, setFace] = useState<"source" | "preview">(DEFAULT_FILE_FACE);
   const verbs = useFileVerbs({
     machine,
     path,
@@ -513,6 +512,7 @@ export function FilePage({
     onRevision: (c) => {
       setRev(c);
       setCompare(false);
+      setFace(DEFAULT_FILE_FACE);
     },
     // 字号 and 预览背景 only while the file is read rendered (UX-14).
     previewing: previewable ? face === "preview" : false,
@@ -525,9 +525,10 @@ export function FilePage({
   const [reads, setReads] = useState(0);
 
   useEffect(() => {
-    setFace(rendererOf(path) !== null ? "preview" : "source");
+    setFace(DEFAULT_FILE_FACE);
     setRev(null);
-  }, [path]);
+    restore.current = null;
+  }, [machine, path]);
   const dirty = draft !== undefined;
 
   // The face changed: put the reader where they were, before paint.
@@ -626,7 +627,7 @@ export function FilePage({
       // deck floats over the document, so it wears the ground it is read
       // on, or it would be the app's ink on a ground that is not the
       // app's.
-      {...(rev === null ? face === "preview" : !compare && rendererOf(path) === "md") ? groundAttr(verbs.ground) : {}}
+      {...(face === "preview" && (rev === null || (!compare && rendererOf(path) === "md"))) ? groundAttr(verbs.ground) : {}}
       className="relative flex min-h-0 flex-1 flex-col bg-card"
       style={fileSizeStyle(verbs.size.step)}
     >
@@ -637,7 +638,7 @@ export function FilePage({
         onFocusCapture={hold}
       >
         {rev !== null ? (
-          <RevisionView machine={machine} path={path} rev={rev} compare={compare} narrow />
+          <RevisionView machine={machine} path={path} rev={rev} compare={compare} face={face} narrow />
         ) : (
         <FileView
           key={`${machine} ${path}`}
@@ -689,7 +690,7 @@ export function FilePage({
               aria-label={rev === null ? gui.back : gui.file_rev_back}
               data-file-back
               tip={!coarse && (rev === null ? gui.back : gui.file_rev_back)}
-              onClick={rev === null ? onBack : () => setRev(null)}
+              onClick={rev === null ? onBack : () => { setRev(null); setFace(DEFAULT_FILE_FACE); }}
             >
               <IconBack />
             </GlassCircle>
@@ -741,7 +742,7 @@ export function FilePage({
                 </GlassItem>
               )}
             </div>
-            {rev === null && previewable && (
+            {(rev === null ? previewable : !compare && rendererOf(path) === "md") && (
               <GlassCircle
                 aria-label={gui.file_face_preview}
                 aria-pressed={face === "preview"}

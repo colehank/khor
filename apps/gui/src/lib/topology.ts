@@ -104,10 +104,10 @@ export function hopRoad(
     last attempt failing (`down_ms`). A satellite speaks through its
     sponsor and is as reachable as that machine is. */
 export function unreachable(row: DeviceRow, rows: readonly DeviceRow[]): boolean {
-  if (row.me) return false;
+  if (row.me || ["direct", "relay", "forwarded", "ssh"].includes(row.hop ?? "")) return false;
   if (row.sponsor) {
     const sponsor = rows.find((r) => r.name === row.sponsor);
-    return !sponsor || (!sponsor.me && roadOf(sponsor) === "none" && isDown(sponsor.down_ms));
+    return !sponsor || (!sponsor.me && !["direct", "relay", "forwarded", "ssh"].includes(sponsor.hop ?? "") && isDown(sponsor.down_ms));
   }
   return roadOf(row) === "none" && isDown(row.down_ms);
 }

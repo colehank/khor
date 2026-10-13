@@ -196,10 +196,14 @@ function Away({
   );
 }
 
+/** Opening a file never opts into its optional rendered face. Shared by
+    full pages, workspace tabs and the read-only attachment viewer. */
+export const DEFAULT_FILE_FACE = "source" as const;
+
 export function FileView({
   machine,
   path,
-  face = "source",
+  face = DEFAULT_FILE_FACE,
   onSaved,
   draft,
   onDraft,

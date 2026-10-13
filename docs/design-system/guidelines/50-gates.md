@@ -42,6 +42,8 @@
 
 | 怎么跑 | 是什么 | 拿 cargo 锁吗 |
 |---|---|---|
+| `npm run connectivity` | `check-connectivity.mjs`：真实地图/矩阵/机器详情，5 机夹具，宽屏与 390/375 窄屏；方向切换、失联来源旧路、不通字样、relay 单线头像、矩阵选择与反向、详情浮层与完整日志（不碰真实 store） | 不拿 |
+| `npm run file-face` | 文件各入口默认源码、手动预览、路径/历史版本切换重置、附件只读源码，1200/390 宽度 | 不拿 |
 | `npm run console` | `check-console.mjs`，真实 Composer 的斜杠、机器与路径补全、命令幂等重试、结构化记录更新与会话跳转；已读仅覆盖前台且在底部实际渲染的消息 id 与版本快照，同毫秒后来消息不被误清，历史、后台和隐藏页保留未读（系统 Chrome，API fixture，不拿 cargo 锁） | 不拿 |
 | `npm run test` | `pretest` → `gen` + `check-shim` + `check-px` + `check-icons` + `tsc --noEmit` | **拿**(`pretest` 是两条 `cargo run`) |
 | `npm run type` | `check-type.mjs`,静态 | 不拿 |

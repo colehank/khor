@@ -45,7 +45,9 @@
     "softdel": "node scripts/check-soft-delete.mjs",
     "mobile": "node scripts/check-mobile.mjs",
     "tauri": "tauri",
-    "console": "node scripts/check-console.mjs"
+    "console": "node scripts/check-console.mjs",
+    "connectivity": "node scripts/check-connectivity.mjs",
+    "file-face": "node scripts/check-file-face.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

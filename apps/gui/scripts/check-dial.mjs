@@ -240,6 +240,29 @@ const check = (ok, m) => {
   console.log("dial · links: the wire from both ends, the book for the rest, 未知 for an older peer");
 }
 
+// Offline reporters cannot leave old live edges behind; the other
+// endpoint's independently reported direction remains separate.
+{
+  const row = (id, extra = {}) => ({ id, name: id, shown: id, me: false, sponsor: null, hop: "direct", down_ms: null, rtt_ms: 4, roads: [], ...extra });
+  const me = row("me", { me: true });
+  const phone = row("phone", { hop: "quiet", down_ms: 240000, roads: [{to:"peer",road:"direct",ms:73,relay:null,via:null}] });
+  const peer = row("peer", {roads:[{to:"phone",road:"direct",ms:82,relay:null,via:null}]});
+  const rows = [me, phone, peer];
+  const idleReporter = row("idle", {hop:"quiet",roads:phone.roads});
+  check(dial.cellOf(idleReporter, peer, [...rows,idleReporter])?.ms === 73, "idle reporter confused with offline");
+  for (const hop of ["forwarded","ssh"]) {
+    const active = row("active", {hop,down_ms:4,roads:phone.roads});
+    check(dial.cellOf(active,peer,[...rows,active])?.ms === 73, "live forwarded/ssh reporter invalidated by residual down_ms");
+  }
+  const old = dial.cellOf(phone, peer, rows);
+  check(old?.road === "none" && old?.ms === null, "offline reporter's old 73 ms still paints a live cell");
+  check(dial.cellOf(peer, phone, rows)?.ms === 82, "another reporter's independent observation was erased");
+  const via = row("via", { rtt_ms:26, roads:[{to:"dest",road:"direct",ms:3,relay:null,via:null}] });
+  const dest = row("dest", {hop:"forwarded",via:"via",rtt_ms:29});
+  const routed = dial.firstHand(dest, [me,via,dest]);
+  check(routed.road === "relay" && routed.viaId === "via" && routed.ms === 29, "peer relay lacks its dashed road or relay identity");
+}
+
 if (read < 40) fail(`probe dead: only ${read} checks ran`);
 if (bad) {
   console.error(`dial gate: ${bad} failure(s)`);

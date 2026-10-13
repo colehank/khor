@@ -18,8 +18,8 @@
 //
 // **Roads at rest are this machine's only**, face edge to face edge,
 // the band's colour, dashed by a relay, dotted with a × when none; no
-// numbers at rest, no relay nodes (the relay's name is in the card and
-// the matrix). **Look vs edit**: a mouse hovers a seat to look (that
+// numbers at rest except a peer-relay edge: its single dashed line
+// carries the middle machine's small avatar and RTT, with no extra legs. **Look vs edit**: a mouse hovers a seat to look (that
 // machine's roads to every machine draw, each with its ms) and
 // right-clicks it for its card; a finger taps to look and long-presses
 // for the card; the ground's right-click / long-press (and the phone's
@@ -29,8 +29,8 @@
 // confirmations, the invite / join / relay windows).
 //
 // **The matrix** (the 矩阵 segment): rows = the reporting machine,
-// columns = to whom, each cell the ms on the band's wash with the road
-// under it; the other machines' roads are what they wrote into the
+// columns = to whom. Neutral cells hold only a marker and a number;
+// a selected cell reveals its direction, route and last contact below; the other machines' roads are what they wrote into the
 // table (NET-12 `DeviceRow.roads`); an older peer that wrote none reads
 // 未知, never 不通.
 //
@@ -73,6 +73,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator,
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cli, config, gui, hop, msg } from "@/gen/catalog";
 import { useCoarse } from "@/hooks/use-coarse";
@@ -430,31 +431,6 @@ export function MyKhorPage({
         ) : (
           <Matrix me={me} others={others} rows={devices} narrow={narrow} onOpen={(id, at) => setOpened({ id, at })} />
         )}
-        {/* The key: the four bands, each a light beside its word, and the
-            count — tertiary, at the foot, out of the dial's way. */}
-        <div
-          data-dial-foot
-          className={cn(
-            "pointer-events-none absolute start-pane flex flex-wrap items-center gap-x-base gap-y-in text-caption text-tertiary tabular-nums",
-            narrow ? "end-pane bottom-[calc(var(--glass-btn)+3*var(--gap-in)+var(--safe-bottom))]" : "bottom-pane",
-          )}
-        >
-          <span data-dial-count>
-            {gui.dial_count(
-              devices.length,
-              devices.filter((d) => {
-                const l = firstHand(d, devices);
-                return d.me || (l.road !== "idle" && band(l.ms) !== "none");
-              }).length,
-            )}
-          </span>
-          {(["fast", "mid", "slow", "none"] as const).map((b) => (
-            <span key={b} className="inline-flex items-center gap-xxs">
-              <Light band={b} />
-              {b === "fast" ? gui.dial_key_fast : b === "mid" ? gui.dial_key_mid : b === "slow" ? gui.dial_key_slow : gui.dial_key_none}
-            </span>
-          ))}
-        </div>
         {said?.map((line) => (
           <p key={line} data-net-left className="absolute inset-x-pane top-in text-callout text-muted-foreground">
             {line}
@@ -697,6 +673,8 @@ function Dial({
     return p ? { x: p.x, y: p.y, half: seat.seat / 2 } : null;
   };
 
+  const lit = opened ?? looked;
+
   // Every pair once: this machine's roads show at rest, the rest when
   // looked at. What is not known between two other machines is not drawn.
   const edges = useMemo(() => {
@@ -706,12 +684,14 @@ function Dial({
       for (let j = i + 1; j < all.length; j += 1) {
         const a = all[i]!;
         const b = all[j]!;
-        const link = linkOf(a, b, rows);
+        const source = lit ? rows.find((r) => r.id === lit) : me;
+        if (!source || (a.id !== source.id && b.id !== source.id)) continue;
+        const link = cellOf(source, a.id === source.id ? b : a, rows);
         if (!link) continue;
-        out.push({ a, b, link, far: !(a.me || b.me) });
+        out.push({ a: source, b: a.id === source.id ? b : a, link, far: !(a.me || b.me) });
       }
     return out;
-  }, [me, others, rows]);
+  }, [me, others, rows, lit]);
 
   // ── press, drag, look ──
   const drag = useRef<{ id: string; sx: number; sy: number; went: boolean; el: HTMLElement } | null>(null);
@@ -780,7 +760,6 @@ function Dial({
   };
 
   // The open card's seat is the lit one; a hover elsewhere waits.
-  const lit = opened ?? looked;
   const seatOf = (row: DeviceRow, p: Placed | null) => {
     const isMe = row.me;
     const half = isMe ? seat.me / 2 : seat.seat / 2;
@@ -944,7 +923,7 @@ function Dial({
                       ×
                     </text>
                   ) : (
-                    link.ms !== null && (
+                    !link.viaId && link.ms !== null && (
                       <text
                         data-dial-ms={key}
                         data-dial-word
@@ -966,6 +945,33 @@ function Dial({
           </>
         )}
       </svg>
+      {size.w > 0 && edges.map(({ a, b, link }) => {
+        const via = link.viaId ? rows.find((r) => r.id === link.viaId) : null;
+        const pa = at(a.id), pb = at(b.id);
+        if (!via || !pa || !pb || link.road === "none") return null;
+        const c = clip(pa, pb, pa.half, pb.half);
+        return (
+          <Popover key={`${a.id}|${b.id}`}>
+            <PopoverTrigger asChild>
+              <button
+                data-dial-relay={`${a.id}|${b.id}`}
+                aria-label={`${gui.add_step_via(via.shown)} · ${link.ms === null ? gui.filter_unknown : latency(link.ms)}`}
+                className="absolute z-10 flex min-h-touch min-w-touch -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-sm px-xxs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                style={{ left: (c.x1 + c.x2) / 2, top: (c.y1 + c.y2) / 2 }}
+                onPointerEnter={() => onLook(lit ?? me?.id ?? null)}
+              >
+                <span className="flex items-center gap-xxs bg-background px-xxs text-caption tabular-nums" style={{ color: BAND_INK[band(link.ms)] }}>
+                  <MachineAvatar face={via.face} className="size-4 flex-none" />
+                  {link.ms === null ? null : latency(link.ms)}
+                </span>
+              </button>
+            </PopoverTrigger>
+            <PopoverContent data-dial-relay-detail className="text-callout">
+              {gui.add_step_via(via.shown)}{link.ms === null ? "" : ` · ${latency(link.ms)}`}
+            </PopoverContent>
+          </Popover>
+        );
+      })}
       {size.w > 0 && me && seatOf(me, null)}
       {size.w > 0 && me && placed.map((p) => seatOf(p.row, p))}
     </div>
@@ -1260,13 +1266,7 @@ function MeCard({
 
 /* ── the matrix ───────────────────────────────────────────────── */
 
-function Matrix({
-  me,
-  others,
-  rows,
-  narrow,
-  onOpen,
-}: {
+function Matrix({ me, others, rows, narrow, onOpen }: {
   me: DeviceRow | null;
   others: DeviceRow[];
   rows: DeviceRow[];
@@ -1274,71 +1274,64 @@ function Matrix({
   onOpen: (id: string, at: DOMRect) => void;
 }) {
   const all = me ? [me, ...others] : others;
-  // A cell is at least two touch widths wide, so a number and a relay's
-  // name fit; the grid takes the width it can up to the detail cap.
-  const grid: CSSProperties = { gridTemplateColumns: `auto repeat(${all.length}, minmax(calc(2 * var(--touch)), 1fr))` };
+  const [picked, setPicked] = useState<[string, string] | null>(null);
+  const a = all.find((r) => r.id === picked?.[0]);
+  const b = all.find((r) => r.id === picked?.[1]);
+  const selected = a && b ? cellOf(a, b, rows) : null;
+  const reverse = a && b ? cellOf(b, a, rows) : null;
+  const via = selected?.viaId ? all.find((r) => r.id === selected.viaId) : null;
+  const grid: CSSProperties = { gridTemplateColumns: `${narrow ? "calc(1.5 * var(--touch))" : "calc(3 * var(--touch))"} repeat(${all.length}, minmax(var(--touch), 1fr))` };
   return (
-    <div
-      data-dial-matrix
-      className={cn(
-        "absolute inset-0 flex justify-center overflow-auto px-pane pt-pane pb-[calc(var(--glass-btn)+4*var(--gap-in)+var(--safe-bottom))]",
-        narrow ? "items-start" : "items-center",
-      )}
-    >
-      <div className="flex w-full min-w-0 max-w-detail flex-col gap-in">
-        <div data-dial-matrix-title className="text-callout text-muted-foreground">
-          {gui.dial_matrix}
-        </div>
-        <div className="grid items-center gap-xxs" style={grid}>
-          <div />
-          {all.map((n) => (
-            <div key={n.id} data-matrix-head={n.id} className="flex min-w-0 flex-col items-center gap-xxs pb-xxs text-caption text-muted-foreground">
-              <MachineAvatar face={n.face} className="size-kind-mark flex-none" />
-              <span className="max-w-full truncate">{n.shown}</span>
-            </div>
-          ))}
-          {all.map((a) => (
-            <div key={a.id} className="contents">
-              <div data-matrix-row={a.id} className="flex min-w-0 items-center gap-in pe-in text-callout text-muted-foreground">
-                <MachineAvatar face={a.face} className="size-kind-mark flex-none" />
-                <span className="min-w-0 truncate">{a.shown}</span>
+    <div data-dial-matrix className="absolute inset-0 overflow-auto px-row pt-pane pb-[calc(var(--glass-btn)+4*var(--gap-in)+var(--safe-bottom))]">
+      <div className="mx-auto flex w-full min-w-0 max-w-detail flex-col gap-base">
+        <div className="overflow-x-auto">
+          <div className="grid items-stretch" style={grid}>
+            <div />
+            {all.map((n) => (
+              <div key={n.id} data-matrix-head={n.id} data-on={b?.id === n.id || undefined} title={n.shown} className="flex min-w-0 flex-col items-center justify-end gap-xxs pb-row text-caption text-muted-foreground">
+                <MachineAvatar face={n.face} className="size-kind-mark flex-none" />
+                <span className="w-full truncate text-center">{narrow ? [...n.shown].slice(0, 4).join("") : n.shown}</span>
               </div>
-              {all.map((b) => {
-                if (a.id === b.id) return <div key={b.id} data-matrix-cell data-self="" className="h-touch rounded-sm" />;
-                const l = cellOf(a, b, rows);
-                const bd = l === null ? null : band(l.road === "none" ? null : l.ms);
-                return (
-                  <div
-                    key={b.id}
-                    data-matrix-cell={`${a.id}>${b.id}`}
-                    data-lat={bd ?? undefined}
-                    data-idle={l?.road === "idle" || undefined}
-                    data-unknown={l === null || undefined}
-                    title={`${a.shown} → ${b.shown} · ${roadWord(l)}（${gui.dial_reported_by(a.shown)}）`}
-                    className="flex h-touch min-w-0 flex-col items-center justify-center rounded-sm bg-fill text-callout leading-tight tabular-nums"
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      onOpen(b.id, e.currentTarget.getBoundingClientRect());
-                    }}
-                  >
-                    {l === null ? (
-                      <span className="text-tertiary">{gui.filter_unknown}</span>
-                    ) : l.road === "none" ? (
-                      <span>{gui.dial_key_none}</span>
-                    ) : (
-                      <>
-                        <span>{l.ms === null ? "" : latency(l.ms)}</span>
-                        <small className="max-w-full truncate text-caption opacity-75">
-                          {l.road === "idle" ? hop.quiet : l.road === "direct" ? hop.direct : (l.relay ?? hop.relay)}
-                        </small>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
+            ))}
+            {all.map((from) => (
+              <div key={from.id} className="contents">
+                <div data-matrix-row={from.id} data-on={a?.id === from.id || undefined} className="sticky left-0 z-10 flex min-w-0 items-center gap-in border-t bg-background pe-in text-callout text-muted-foreground" title={from.shown}>
+                  {!narrow && <MachineAvatar face={from.face} className="size-kind-mark flex-none" />}
+                  <span className="min-w-0 truncate">{from.shown}</span>
+                </div>
+                {all.map((to) => {
+                  if (from.id === to.id) return <div key={to.id} data-matrix-cell data-self className="flex min-h-touch items-center justify-center border-t text-caption text-tertiary">·</div>;
+                  const l = cellOf(from, to, rows);
+                  const connected = l !== null && l.road !== "none";
+                  const chosen = from.id === a?.id && to.id === b?.id;
+                  return (
+                    <button key={to.id} data-matrix-cell={`${from.id}>${to.id}`} data-chosen={chosen || undefined} data-axis={from.id === a?.id || to.id === b?.id || undefined} data-unknown={l === null || undefined} data-idle={l?.road === "idle" || undefined}
+                      aria-pressed={chosen} aria-label={`${from.shown} → ${to.shown} · ${roadWord(l)}`} title={`${from.shown} → ${to.shown} · ${roadWord(l)}`}
+                      className="flex min-h-touch min-w-touch items-center justify-center gap-xxs border-t text-callout tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => setPicked([from.id, to.id])}
+                      onContextMenu={(e) => { e.preventDefault(); onOpen(to.id, e.currentTarget.getBoundingClientRect()); }}>
+                      {connected ? <><i aria-hidden className="size-1 flex-none rounded-full" style={{ background: l.via ? "var(--state-busy)" : l.road === "relay" ? "var(--state-errored)" : BAND_INK[band(l.ms)] }} /><span>{l.ms === null ? wayWord(l) : l.ms}</span></> : <span className="text-tertiary">{l === null ? gui.filter_unknown : gui.dial_key_none}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         </div>
+        {a && b && (
+          <section data-matrix-detail className="flex flex-col gap-in border-t pt-base">
+            <div className="flex items-start justify-between gap-in">
+              <div className="min-w-0"><div className="break-words text-body font-title">{a.shown} → {b.shown}</div><div className="text-caption text-muted-foreground">{selected ? selected.road === "none" ? gui.dial_key_none : wayWord(selected) : gui.filter_unknown}</div></div>
+              {selected?.ms != null && <span className="flex-none text-title-md tabular-nums">{latency(selected.ms)}</span>}
+            </div>
+            {via && <div className="flex flex-wrap items-center gap-in text-callout text-muted-foreground"><span>{a.shown}</span><span>→</span><MachineAvatar face={via.face} className="size-4" /><span>{via.shown}</span><span>→</span><span>{b.shown}</span></div>}
+            {selected?.lastMs != null && <div className="text-callout text-muted-foreground">{gui.dial_last_route(latency(selected.lastMs))}</div>}
+            <div className="flex items-center justify-between gap-in text-caption text-muted-foreground">
+              <span>{gui.dial_reported_by(a.shown)}{!a.me && a.heard_ms != null ? ` · ${gui.dial_last_answer(agoOf(a.heard_ms))}` : ""}</span>
+              <button data-matrix-reverse className="min-h-touch flex-none rounded-sm px-in text-callout hover:bg-fill" onClick={() => setPicked([b.id, a.id])}>{gui.dial_reverse(reverse?.ms != null ? latency(reverse.ms) : reverse?.road === "none" ? gui.dial_key_none : gui.filter_unknown)}</button>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );

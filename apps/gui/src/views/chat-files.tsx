@@ -43,7 +43,7 @@ import { useNarrow } from "@/hooks/use-narrow";
 import { baseName, shownName } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
-import { FileView, kindOf, rendererOf } from "@/views/FileView";
+import { FileView, kindOf } from "@/views/FileView";
 import { useShowFile } from "@/views/linkHome";
 
 /** One file going along with the line being written. */
@@ -483,7 +483,6 @@ export function FilePreview({
                 machine={machine}
                 path={path}
                 git={false}
-                face={rendererOf(path) ? "preview" : "source"}
                 reading
               />
             </div>

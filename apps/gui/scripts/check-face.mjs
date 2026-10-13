@@ -6480,16 +6480,16 @@ try {
     }
   });
 
-  // ── 4j) read first, 编辑 beside it, PDF drawn ─────────────────────
+  // ── 4j) source first, explicit preview, PDF drawn ─────────────────
   //
   // 「所有代码、md 文件,打开先是源码,要有语法高亮」and「pdf 你咋转成字符了,
-  // 应该直接预览」— the user, 2026-09-14 (工作区批⑤). **Turned over on
-  // 2026-10-04** (round UX-3 item 2): a file with a second face opens on
-  // it, and 编辑 is the way into its source.
+  // 应该直接预览」— the user, 2026-09-14 (工作区批⑤). After UX-3
+  // briefly made text preview the default, the 2026-10-13 ruling restores
+  // source first across entrances. PDF keeps its native viewer.
   //
+  // 2026-10-13: optional preview defaults off at every file entrance.
   // Claims:
-  //   i. a markdown file opens **rendered**, with one 编辑 at the
-  //      strip's end and no 预览 eye on its tab;
+  //   i. Markdown opens as source, with its existing preview switch off;
   //  ii. 编辑 opens the painted source and becomes 保存, and the sheet
   //      under the editor carries colour only;
   // iii. 保存 returns to reading and renders what was typed;
@@ -6541,11 +6541,9 @@ try {
   if (!(await openFile("notes.md"))) {
     fail("probe dead: the tree never drew (src/views/FilesPane.tsx)");
   } else {
-    // i) **Read first** (the owner, 2026-10-04, round UX-3 item 2): a
-    // file with a second face opens on it — Markdown rendered — and
-    // 「编辑」 at the strip's end is the way into its source. The tab's
-    // 预览 eye went with it.
-    const opened = await until(5_000, async () => (await page.locator("[data-file-preview] [data-md]").count()) === 1);
+    // i) Source first (2026-10-13): one preview switch at the strip's
+    // end, off until explicitly pressed.
+    const opened = await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1);
     const asOpened = await page.evaluate(() => ({
       editor: document.querySelectorAll("[data-edit]").length,
       h1: document.querySelector("[data-file-preview] h1")?.textContent?.trim() ?? null,
@@ -6566,15 +6564,15 @@ try {
       onStripSwitches: document.querySelectorAll("[data-ws-tab-strip] [data-ws-switches]").length,
     }));
     console.log(`md opens: ${JSON.stringify(asOpened)}`);
-    if (!opened || asOpened.editor !== 0 || asOpened.h1 !== "notes") {
+    if (!opened || asOpened.editor !== 1 || asOpened.h1 !== null) {
       fail(
-        `a markdown file opened as ${JSON.stringify(asOpened)} — it opens to be read, rendered, and 编辑 is ` +
-          "one press away (round UX-3 item 2; src/views/FileView.tsx)",
+        `a markdown file opened as ${JSON.stringify(asOpened)} — it opens as source; preview is ` +
+          "one explicit press away (2026-10-13; src/views/FileView.tsx)",
       );
     }
-    if (asOpened.edits.length !== 1 || asOpened.edits[0].what !== "preview" || !asOpened.edits[0].onStrip) {
+    if (asOpened.edits.length !== 1 || asOpened.edits[0].what !== "source" || !asOpened.edits[0].onStrip) {
       fail(
-        `the file's 预览 reads ${JSON.stringify(asOpened.edits)} — one circle at the first row's end, on (UX-33 §4; ` +
+        `the file's 预览 reads ${JSON.stringify(asOpened.edits)} — one circle at the first row's end, off (2026-10-13; ` +
           "src/views/WorkspacePane.tsx fileTail)",
       );
     }
@@ -6713,8 +6711,10 @@ try {
     await page.unroute("**/write_text");
   }
 
-  // v) the csv table, parsed rather than split — the face it opens on.
+  // v) CSV starts as source too, then its explicit preview parses quotes.
   if (await openFile("data.csv")) {
+    if (!(await until(5_000, async () => (await page.locator("[data-edit]").count()) === 1))) fail("CSV did not open as source");
+    await press('[data-file-face-toggle="source"]');
     const cells = await until(5_000, async () =>
       (await page.locator("[data-file-preview] [data-cell]").count()) > 0,
     );
@@ -38922,6 +38922,7 @@ try {
 
     // f.
     if ((await toDevices()) && (await tap('[data-device="gpu-box"]'))) {
+      await tap("[data-connection-info]");
       await until(3_000, async () => (await count("[data-road-line]")) === 1);
       const road = await page.evaluate(() => {
         const line = document.querySelector("[data-road-line]");
@@ -38934,7 +38935,7 @@ try {
           under:
             (line?.querySelector("[data-road-said]")?.getBoundingClientRect().top ?? 0) >
             (line?.querySelector("[data-road-broken]")?.getBoundingClientRect().top ?? Infinity),
-          promote: line?.querySelectorAll("[data-promote]").length ?? 0,
+          promote: document.querySelectorAll("[data-machine-card] [data-promote]").length,
         };
       });
       console.log(`join f · ${JSON.stringify(road)}`);

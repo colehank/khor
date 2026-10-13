@@ -10,7 +10,7 @@
 // faces' edges, and which road the table knows between any two machines.
 import type { DeviceRow } from "@/api";
 import type { RoadKind } from "@/gen/bindings/RoadKind";
-import { hopRoad, isDown, roadOf } from "@/lib/topology";
+import { hopRoad, isDown, roadOf, unreachable } from "@/lib/topology";
 
 /** One road between two machines as the dial draws it. `idle` is this
     machine's own edge with no live wire and nothing known to be wrong
@@ -23,6 +23,10 @@ export type Link = {
   /** The middle of a peer hop, by the name a person reads (NET-DIRECT):
       the link says 「通过 turing」 and `ms` is its two legs added. */
   via?: string | null;
+  viaId?: string | null;
+  /** Saved reading from an unavailable reporter, only for the details. */
+  lastMs?: number | null;
+  unavailable?: boolean;
 };
 
 /** The rim: a road this slow (or none) sits on the 不通 ring. The log
@@ -138,7 +142,7 @@ export function clip(a: Pt, b: Pt, ra: number, rb: number, air = 3): { x1: numbe
     its sponsor's. */
 export function firstHand(row: DeviceRow, rows: readonly DeviceRow[]): Link {
   const hop = hopRoad(row, rows);
-  if (hop) return { road: hop.legs.some((l) => l.road === "relay") ? "relay" : "direct", ms: hop.ms, relay: null, via: hop.via.shown };
+  if (hop) return { road: "relay", ms: hop.ms, relay: null, via: hop.via.shown, viaId: hop.via.id };
   const via = row.sponsor ? (rows.find((r) => r.name === row.sponsor) ?? row) : row;
   if (via.me) return { road: "direct", ms: via.rtt_ms ?? null, relay: via.relay ?? null };
   const road = roadOf(via);
@@ -152,9 +156,13 @@ export function firstHand(row: DeviceRow, rows: readonly DeviceRow[]): Link {
     which the face says as 未知, never as 不通. */
 export function reported(from: DeviceRow, to: string, rows: readonly DeviceRow[] = []): Link | null {
   const r = (from.roads ?? []).find((x) => x.to === to);
+  // A stopped reporter cannot refresh its persistent roadbook. Keep
+  // its last reading only in the details, not as current connectivity.
+  // This says nothing about another reporter's independent direction.
+  if (unreachable(from, rows)) return { road: "none", ms: null, relay: null, lastMs: r?.ms ?? null, unavailable: true };
   // A written road through a middle names it by id (`Road.via`).
   const via = r?.via ? (rows.find((x) => x.id === r.via)?.shown ?? r.via.slice(0, 8)) : null;
-  return r ? { road: r.road, ms: r.ms, relay: r.relay, via } : null;
+  return r ? { road: r.via && r.road !== "none" ? "relay" : r.road, ms: r.ms, relay: r.relay, via, viaId: r.via } : null;
 }
 
 /** The road between any two machines, as well as this machine knows it:
