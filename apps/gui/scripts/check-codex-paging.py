@@ -11,6 +11,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 from pathlib import Path
 import shlex
 import shutil
@@ -24,6 +25,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--codex", default=shutil.which("codex"))
     parser.add_argument("--tmux", default=shutil.which("tmux"))
+    parser.add_argument("--mouse", action="store_true", help="require native mouse capture and verify fine-grained scrolling")
     args = parser.parse_args()
     if not args.codex or not args.tmux:
         parser.error("this optional check needs installed codex and tmux")
@@ -102,9 +104,31 @@ trust_level="trusted"
             command = shlex.join([args.codex, "--no-daemon", "resume", session])
             tmux("-f", "/dev/null", "new-session", "-d", "-s", "probe", "-x", "100", "-y", "30", "-c", str(root), command)
             wait_screen(lambda s: "ANSWER_060" in s, "fixture did not resume")
+            if args.mouse:
+                mode = tmux("display-message", "-p", "-t", "probe", "#{mouse} #{mouse_any_flag}").strip()
+                assert mode == "1 1", f"native mouse scrolling unavailable: {mode}"
             # There is deliberately no Enter anywhere in this test.
             keys("-l", draft)
-            wait_screen(lambda s: draft in s, "draft missing")
+            bottom = wait_screen(lambda s: draft in s, "draft missing")
+            if args.mouse:
+                def markers(screen):
+                    return {line.strip(): i for i, line in enumerate(screen.splitlines())
+                            if re.search(r"(?:QUESTION|ANSWER)_\d{3}", line)}
+                previous = markers(capture())
+                # One native wheel notch at a time, as in the touch scroller.
+                # Ignore the pinned question header when measuring motion.
+                # Entry also adds a one-row follow control; later notches
+                # must move exactly one row and never touch the draft.
+                for _ in range(4):
+                    keys("-l", "\x1b[<64;5;5M")
+                    current = wait_screen(lambda s: markers(s) != previous, "wheel notch did not move transcript")
+                    positions = markers(current)
+                    shifts = {positions[k] - previous[k] for k in positions.keys() & previous.keys() if positions[k] > 0 and previous[k] > 0}
+                    assert shifts == {1} or (_ == 0 and shifts == {2}), f"wheel must move one row (plus first follow-control row), got {shifts}:\n{current}"
+                    assert draft in current
+                    previous = positions
+                keys("-l", "\x1b[<65;5;5M" * 4)
+                wait_screen(lambda s: markers(s) == markers(bottom), "mouse reversal did not return to bottom")
             keys("PageUp")
             older = wait_screen(lambda s: "ANSWER_057" in s and "ANSWER_060" not in s, "PageUp did not scroll")
             assert draft in older
@@ -120,7 +144,7 @@ trust_level="trusted"
             keys("-N", "5", "PageDown")
             time.sleep(0.15)
             assert draft in capture()
-            print(f"PASS {version}: paging, reverse, top/bottom boundaries; unsent draft retained; no prompt submitted")
+            print(f"PASS {version}: native mouse={args.mouse}, paging, reverse, top/bottom boundaries; unsent draft retained; no prompt submitted")
         finally:
             subprocess.run([args.tmux, "-S", socket, "kill-server"], env=env, capture_output=True)
 

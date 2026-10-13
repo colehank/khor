@@ -190,9 +190,6 @@ fn real_program(path: &OsStr, shim_dir: &Path) -> Option<PathBuf> {
 /// Every executable that can host a terminal calls this before ordinary
 /// dispatch. A normal khor invocation, or an external terminal, is untouched.
 pub fn main_if_shim(root: &Path) {
-    let Some(dir) = std::env::var_os(SHIM_ENV).map(PathBuf::from) else {
-        return;
-    };
     let Some(arg0) = std::env::args_os().next() else {
         return;
     };
@@ -203,7 +200,17 @@ pub fn main_if_shim(root: &Path) {
     {
         return;
     }
-    let outcome = launch(root, &dir, std::env::args_os().skip(1).collect());
+    // tmux can retain PATH while dropping KHOR_CODEX_SHIM_DIR. The invoked
+    // executable is the identity; an inherited environment hint is not.
+    // Never fall through to the GUI/CLI when invoked as `codex`.
+    let outcome = invoked_shim(&arg0).and_then(|dir| {
+        let scoped_root = dir
+            .parent()
+            .filter(|p| p.file_name() == Some(OsStr::new(".khor")))
+            .and_then(Path::parent)
+            .unwrap_or(root);
+        launch(scoped_root, &dir, std::env::args_os().skip(1).collect())
+    });
     match outcome {
         Ok(code) => std::process::exit(code),
         Err(error) => {
@@ -211,6 +218,57 @@ pub fn main_if_shim(root: &Path) {
             std::process::exit(127);
         }
     }
+}
+
+fn invoked_shim(arg0: &OsStr) -> Result<PathBuf, String> {
+    let own = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
+        .map_err(|e| format!("Cannot identify khor's Codex launcher: {e}"))?;
+    let path = Path::new(arg0);
+    let mut candidates = vec![path.to_owned()];
+    if path.parent().is_none_or(|p| p.as_os_str().is_empty()) {
+        candidates = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+            .map(|dir| dir.join(path))
+            .collect();
+    }
+    if let Some(dir) = std::env::var_os(SHIM_ENV) {
+        candidates.push(PathBuf::from(dir).join(SHIM_NAME));
+    }
+    for candidate in candidates {
+        if std::fs::canonicalize(&candidate).ok().as_ref() == Some(&own) {
+            // Resolve the directory, not the file symlink into khor-gui.
+            return std::fs::canonicalize(candidate.parent().unwrap_or(Path::new(".")))
+                .map_err(|e| format!("Cannot locate khor's Codex launcher: {e}"));
+        }
+    }
+    Err("Cannot locate khor's Codex launcher in PATH".into())
+}
+
+/// Codex checks tmux's mouse option once, on TUI entry. Give the owning
+/// session the same mouse policy as khor's grouped attach *before* exec.
+/// No global option or user's tmux configuration file is changed.
+fn prepare_tmux_mouse() {
+    if std::env::var_os("TMUX").is_none() {
+        return;
+    }
+    let Some(pane) = std::env::var_os("TMUX_PANE") else {
+        return;
+    };
+    let tmux = std::env::var_os("KHOR_TMUX").unwrap_or_else(|| "tmux".into());
+    let mut command = std::process::Command::new(tmux);
+    command.args([
+        OsStr::new("set-option"),
+        OsStr::new("-q"),
+        OsStr::new("-t"),
+        &pane,
+        OsStr::new("mouse"),
+        OsStr::new("on"),
+    ]);
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    let _ = command.status();
 }
 
 fn takes_value(s: &str) -> bool {
@@ -319,6 +377,7 @@ fn launch(root: &Path, dir: &Path, args: Vec<OsString>) -> Result<i32, String> {
     let scoped = interactive(&args) && supports_no_daemon(&real);
     let mut command = std::process::Command::new(real);
     if scoped {
+        prepare_tmux_mouse();
         // The flag is deliberately before the user's `--` prompt separator.
         // Ignore occurrences used as option values or prompt text.
         if !no_daemon(&args) {

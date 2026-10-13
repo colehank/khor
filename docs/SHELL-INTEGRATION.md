@@ -47,6 +47,16 @@ launcher, not the new interactive terminal. A person's shell startup files or
 an explicit `env NO_COLOR=1 command` still control that command. Existing
 processes and existing tmux servers keep their original environment.
 
+The scoped Codex launcher identifies its own executable even when an existing
+tmux server drops `KHOR_CODEX_SHIM_DIR` but retains its PATH entry. Its private
+`.khor/codex-bin` location also recovers the owning khor home. It never falls
+through to starting a khor GUI/server when that environment hint is absent.
+Before an interactive Codex launch, it enables `mouse` on the containing tmux
+session (the same policy as khor's grouped attach), without changing the global
+option or tmux configuration file. Codex 0.162.1 checks that option on entry;
+turning it on after Codex starts does not reactivate its native mouse capture.
+Already-running Codex processes need a restart/resume to adopt it.
+
 The workspace uses the current shell or current window's active pane directory.
 `Meta.place` remains the birthplace. Default workspace views follow `cd` and
 pane changes; opening a particular file or directory pins that view until the
@@ -56,7 +66,11 @@ Full-screen scrolling follows the inner program's capabilities: an application
 that requests mouse events keeps receiving them; one on the alternate screen
 without mouse support receives PageUp/PageDown. Ordinary shell history retains
 its existing scrolling path. The paging gesture accumulates travel by viewport
-and never sends Up/Down into a draft's input history.
+and never sends Up/Down into a draft's input history. Native mouse capture is
+the normal path for Claude and current Codex; paging is only the fallback for
+programs that do not take the mouse. A continuous wheel/touch gesture refreshes
+tmux capabilities once at entry, rather than rereading history after every
+output frame and wheel notch.
 
 ## tmux
 

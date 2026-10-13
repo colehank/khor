@@ -34,11 +34,16 @@
 | 入口 | 验证 |
 |---|---|
 | `npm run session-cwd` | cd、活动 pane、旧附栏恢复、默认跟随与主动固定目录 |
-| `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入 |
+| `npm run scroll-target` | 真 xterm 的内层 mouse 能力、分页累计/反向/停歇、触摸与滚轮不重复输入；连续输出期间每次手势只刷新一次 tmux |
 
 可选实际 Codex 验收：`python3 apps/gui/scripts/check-codex-paging.py`。
 依赖本机 Codex 与 tmux，用临时 home、虚构历史和不可达模型端点；不发送输入，
 验证分页到顶到底及草稿保留。它不属于默认门。
+加 `--codex <本轮构建的启动器路径> --mouse` 验证 tmux 鼠标开启、真实 Codex
+逐行滚动及反向回到底部（草稿保留），而不只验证 PageUp/PageDown。
+真实手机还要验：慢拖、快甩惯性、方向反转、输出中拖动，以及从 khor 新建
+shell → 连接已存在的 tmux server → 启动 Codex 的完整流程。
+`cargo test -p khor-cli --test codex_launch` 覆盖 tmux 丢环境标记的真实 PTY 启动。
 
 `python3 apps/gui/scripts/check-codex-selection.py` 则通过真实 CLI 导入隔离 tmux
 中的 Codex，验证同一行在 resume → `/new` → resume 后保持 Codex 类别，原生

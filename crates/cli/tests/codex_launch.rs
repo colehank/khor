@@ -37,7 +37,9 @@ impl Fixture {
                 "PATH",
                 std::env::join_paths([&self.shim, &self.real]).unwrap(),
             )
-            .env("KHOR_HOME", &self.dir);
+            .env("KHOR_HOME", &self.dir)
+            .env_remove("TMUX")
+            .env_remove("TMUX_PANE");
         if scoped {
             command.env("KHOR_CODEX_SHIM_DIR", &self.shim);
         } else {
@@ -170,5 +172,165 @@ fn shell_integration_restores_scoped_path_after_user_startup() {
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
         f.shim.join("codex").to_str().unwrap()
+    );
+}
+
+#[test]
+fn launcher_survives_missing_tmux_environment_marker() {
+    let f = Fixture::new("missing-marker");
+    let result = Command::new(f.shim.join("codex"))
+        .args(["resume", "--last"])
+        .env("PATH", std::env::join_paths([&f.shim, &f.real]).unwrap())
+        .env("KHOR_HOME", &f.dir)
+        .env_remove("TMUX")
+        .env_remove("TMUX_PANE")
+        .env_remove("KHOR_CODEX_SHIM_DIR")
+        .output()
+        .unwrap();
+    assert_eq!(
+        words(&result),
+        [
+            "--no-daemon",
+            "-c",
+            "tui.terminal_title=[\"thread-id\"]",
+            "resume",
+            "--last"
+        ]
+    );
+}
+
+#[test]
+fn existing_tmux_server_without_marker_launches_codex_on_a_pty() {
+    if Command::new("tmux").arg("-V").output().is_err() {
+        return;
+    }
+    let f = Fixture::new("tmux-pty");
+    let socket = format!("/tmp/khor-launch-{}.sock", std::process::id());
+    struct Server(String);
+    impl Drop for Server {
+        fn drop(&mut self) {
+            let _ = Command::new("tmux")
+                .args(["-S", &self.0, "kill-server"])
+                .output();
+        }
+    }
+    let _server = Server(socket.clone());
+    let tmux = |args: &[&str]| {
+        let out = Command::new("tmux")
+            .args(["-S", &socket])
+            .args(args)
+            .env_remove("TMUX")
+            .env_remove("TMUX_PANE")
+            .env_remove("KHOR_CODEX_SHIM_DIR")
+            .env("SHELL", "/bin/sh")
+            .env("HOME", &f.dir)
+            .env("CODEX_HOME", f.dir.join("codex-home"))
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    // The server predates the launcher; it cannot pass the marker to panes.
+    tmux(&[
+        "-f",
+        "/dev/null",
+        "new-session",
+        "-d",
+        "-s",
+        "seed",
+        "sleep 60",
+    ]);
+    tmux(&["set-option", "-g", "mouse", "off"]);
+    tmux(&["set-option", "-g", "default-shell", "/bin/sh"]);
+    tmux(&["set-option", "-gw", "remain-on-exit", "on"]);
+    let result = f.dir.join("result");
+    std::fs::write(f.real.join("codex"), format!(
+        "#!/bin/sh\nif [ \"$1\" = --help ]; then echo '  --no-daemon'; exit 0; fi\ntest -t 0 || exit 24\ntest -z \"$KHOR_CODEX_SHIM_DIR\" || exit 25\nprintf '%s\\0' \"$@\" > '{}'\nexit 23\n", result.display()
+    )).unwrap();
+    let mut paths = vec![f.shim.clone(), f.real.clone()];
+    paths.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap()));
+    let path = format!(
+        "PATH={}",
+        std::env::join_paths(paths).unwrap().to_string_lossy()
+    );
+    let home = format!("KHOR_HOME={}", f.dir.display());
+    tmux(&[
+        "new-session",
+        "-d",
+        "-s",
+        "probe",
+        "-e",
+        &path,
+        "-e",
+        &home,
+        &format!(
+            "/usr/bin/env '{}' '{}' '{}'",
+            path,
+            home,
+            f.shim.join("codex").display()
+        ),
+    ]);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let status = tmux(&[
+            "display-message",
+            "-p",
+            "-t",
+            "probe",
+            "#{pane_dead_status}",
+        ]);
+        if !status.is_empty() {
+            assert_eq!(status, "23");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "launcher hung: {}",
+            tmux(&["capture-pane", "-p", "-t", "probe"])
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let bytes = std::fs::read(result).unwrap();
+    assert_eq!(
+        bytes,
+        b"--no-daemon\0-c\0tui.terminal_title=[\"thread-id\"]\0"
+    );
+    assert_eq!(tmux(&["show-option", "-v", "-t", "probe", "mouse"]), "on");
+    assert_eq!(tmux(&["show-option", "-gv", "mouse"]), "off");
+    assert_eq!(
+        tmux(&["display-message", "-p", "-t", "seed", "#{mouse}"]),
+        "0"
+    );
+}
+
+#[test]
+fn bare_argv0_recovers_scoped_home_without_environment_hints() {
+    use std::os::unix::process::CommandExt;
+    let mut f = Fixture::new("bare-argv0");
+    f.shim = f.dir.join(".khor/codex-bin");
+    std::fs::create_dir_all(&f.shim).unwrap();
+    symlink(env!("CARGO_BIN_EXE_khor"), f.shim.join("codex")).unwrap();
+    std::fs::write(
+        f.real.join("codex"),
+        "#!/bin/sh\nprintf '%s\\0' \"$KHOR_HOME\"\nexit 23\n",
+    )
+    .unwrap();
+    let result = Command::new(f.shim.join("codex"))
+        .arg0("codex")
+        .arg("--version")
+        .env("PATH", std::env::join_paths([&f.shim, &f.real]).unwrap())
+        .env_remove("KHOR_CODEX_SHIM_DIR")
+        .env_remove("KHOR_HOME")
+        .env_remove("TMUX")
+        .env_remove("TMUX_PANE")
+        .output()
+        .unwrap();
+    assert_eq!(
+        words(&result),
+        [std::fs::canonicalize(&f.dir).unwrap().to_str().unwrap()]
     );
 }

@@ -16,7 +16,7 @@ import { Terminal } from "@xterm/xterm";
 import type { PaneAnchor } from "@/gen/bindings/PaneAnchor";
 import type { PaneHistory } from "@/gen/bindings/PaneHistory";
 import { countsGain } from "@/lib/term-gain";
-import { scrollsNatively } from "@/lib/term-scroller";
+import { scrollsNatively, SETTLE_MS } from "@/lib/term-scroller";
 
 /** Output quiet this long, tmux has pushed what it will into the history. */
 const QUIET_MS = 300;
@@ -373,13 +373,24 @@ export function holdsTmuxHistory(o: {
   // A finger landing: a history that is behind is brought up to date
   // before the drag reaches it (the scroller holds its place meanwhile,
   // `lib/term-scroller`'s gesture rule).
+  let approachedAt = -Infinity;
   const landed = () => {
+    approachedAt = performance.now();
     const already = failed;
     if (already) o.outOfReach();
     if (already || behind) void read().then((ok) => ok || already || o.outOfReach());
   };
+  // A native fling emits many wheels, including synthetic notches on a
+  // phone. Output marks us behind between them, but capabilities need one
+  // refresh at gesture entry, not capture-pane after every rendered frame.
+  const approached = () => {
+    const now = performance.now();
+    const fresh = now - approachedAt > SETTLE_MS;
+    approachedAt = now;
+    if (fresh) landed();
+  };
   o.scroller.addEventListener("touchstart", landed, { passive: true, capture: true });
-  o.scroller.addEventListener("wheel", landed, { passive: true, capture: true });
+  o.scroller.addEventListener("wheel", approached, { passive: true, capture: true });
   return {
     active: () => on,
     over: () => (up() ? history : null),
@@ -399,7 +410,7 @@ export function holdsTmuxHistory(o: {
     decided: () => firstAnswer,
     pane: () => held,
     reread: () => read().then(() => {}),
-    approached: landed,
+    approached,
     stop: () => {
       stopped = true;
       drop();
@@ -408,7 +419,7 @@ export function holdsTmuxHistory(o: {
       titled.dispose();
       resized.dispose();
       o.scroller.removeEventListener("touchstart", landed, true);
-      o.scroller.removeEventListener("wheel", landed, true);
+      o.scroller.removeEventListener("wheel", approached, true);
     },
   };
 }

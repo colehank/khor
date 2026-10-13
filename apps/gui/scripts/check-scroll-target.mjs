@@ -8,10 +8,11 @@ import { chromium } from "playwright-core";
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const bundle = await build({ stdin: { contents: `
   import { Terminal } from '@xterm/xterm';
+  import { holdsTmuxHistory } from './src/lib/term-tmux-history';
   import { scrollTarget, pageScroll, wheelsToPages } from './src/lib/term-scroll-target';
   import { scrollsNatively, SETTLE_MS } from './src/lib/term-scroller';
   import { wheelsToShellTmux } from './src/lib/term-shell-tmux';
-  window.lab = { Terminal, scrollTarget, pageScroll, wheelsToPages, scrollsNatively, SETTLE_MS, wheelsToShellTmux };
+  window.lab = { holdsTmuxHistory, Terminal, scrollTarget, pageScroll, wheelsToPages, scrollsNatively, SETTLE_MS, wheelsToShellTmux };
 `, resolveDir: gui, loader: "ts" }, bundle: true, format: "iife", write: false });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 try {
@@ -100,6 +101,33 @@ try {
   assert.equal(result.newGesture, result.reversed + '\x1b[6~');
   assert.equal(result.large, result.newGesture + '\x1b[6~\x1b[6~');
   assert.equal(result.final, result.large);
+  const reads = await page.evaluate(async () => {
+    const { Terminal, holdsTmuxHistory, SETTLE_MS } = window.lab;
+    const box = document.querySelector('#box'), scroller = document.querySelector('#scroller');
+    const screen = document.querySelector('#screen');
+    const live = new Terminal({ cols: 60, rows: 24 }); live.open(screen);
+    const seat = document.createElement('div'); box.append(seat);
+    let count = 0;
+    const history = holdsTmuxHistory({ known: true, observeOnly: true, live, seat, scroller,
+      room: document.querySelector('#room'), read: async () => {
+        count++;
+        return { pane: '%1', mouse: true, alternate: true, window: '60x24', anchor: { tail: [] } };
+      }, changed() {}, outOfReach() {}, moved() {}, gained() {} });
+    history.joined(); history.shown(true); await history.decided();
+    const initial = count;
+    const write = () => new Promise(resolve => live.write('output\r\n', resolve));
+    const wheel = () => scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 1 }));
+    // Continuous output makes capabilities stale after each read. A drag
+    // still gets one refresh, not a capture-pane request per wheel event.
+    for (let i = 0; i < 20; i++) { await write(); wheel(); await Promise.resolve(); }
+    const during = count - initial;
+    await new Promise(resolve => setTimeout(resolve, SETTLE_MS + 20));
+    await write(); wheel(); await Promise.resolve();
+    const next = count - initial;
+    history.stop(); live.dispose(); seat.remove();
+    return { during, next };
+  });
+  assert.deepEqual(reads, { during: 1, next: 2 }, 'one tmux refresh per gesture, even during output');
   console.log('scroll target gate: inner mouse capability, page accumulation/reversal/rest, native touch travel and no duplicate input passed');
 } finally {
   await browser.close();
