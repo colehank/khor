@@ -1,3 +1,4 @@
+import { usePillSignal } from "@/lib/pill-signal";
 // A browsing landing's tabs, in the two shapes a browser has.
 //
 // **The shell's, not one landing's** (docs/DESIGN.md 浏览型外壳): every
@@ -603,6 +604,7 @@ export function TabStrip({
       it, across the capsule's width; the tab is its own self again while
       the panel says the notice. */
   const stops = faces.find((f) => f.id === active)?.notices ?? [];
+  const signal = usePillSignal(active, faces.find((f) => f.id === active));
   const grown = useGrownPill(stops.length);
   const capsule = useRef<HTMLDivElement>(null);
   const [front, setFront] = useState<HTMLElement | null>(null);
@@ -756,6 +758,7 @@ export function TabStrip({
               data-tab={f.id}
               data-on={on}
               data-tab-notice={notices?.[0].kind}
+              data-pill-signal={on ? signal : undefined}
               style={{
                 ...(held !== null ? { width: held, flexShrink: 0 } : undefined),
                 // Grown, its lower corners give way to the panel below.

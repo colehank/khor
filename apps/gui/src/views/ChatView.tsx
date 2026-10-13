@@ -2062,9 +2062,9 @@ export function ChatView({
       {/* **On the narrow face the footer is the session bar's second
           row** (`components/SessionBar`, 2026-10-02: 「where a terminal
           has its row of accessory keys, a chat has its input box」) —
-          under the tabs, on the keyboard when it is up. Everywhere else
-          it stands here, as it always did. */}
-      <BarSeat at="under">
+          above the deck (2026-10-13); the deck sits on the keyboard.
+          On the wide face it stands here, as it always did. */}
+      <BarSeat at="above">
       {/* A recorded past has no channel to speak into: no input, and
           the only thing its footer can say is that the record is
           missing. */}

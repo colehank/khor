@@ -29350,6 +29350,14 @@ try {
         await until(3_000, async () => drops.length > 0);
         await until(3_000, async () => (await band()).dropping);
         const going = await band();
+        const arrow = page.locator('[data-band-seg="cur"] [data-upload-arrow]');
+        const moving = await arrow.evaluate((el) => getComputedStyle(el).animationName);
+        if (moving !== "pill-upload-arrow") fail(`term signal · upload arrow is not animated: ${moving}`);
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        const still = await arrow.evaluate((el) => getComputedStyle(el).animationName);
+        if (still !== "none") fail(`term signal · reduced motion still moves upload arrow: ${still}`);
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+
         // The report's shots (FACE_SHOTS): the phone, and its pill close.
         if (process.env.FACE_SHOTS) {
           await page.screenshot({ path: join(process.env.FACE_SHOTS, "term71-phone.png") }).catch(() => {});
@@ -32251,13 +32259,14 @@ try {
         fail(`probe dead: bar d · ${what} never drew its box`);
         continue;
       }
-      const inBar = await count(`[data-session-bar-under] ${box}`);
+      const inBar = await count(`[data-session-bar-above] ${box}`);
       const deck = await rect("[data-session-deck]");
       const boxAt = await rect(box);
-      if (inBar !== 1) fail(`bar d · ${what}'s box is not in the session bar (${inBar}) — 「where a terminal has its keys, a chat has its input box」`);
-      else if (deck && boxAt && boxAt.top < deck.bottom - 1) fail(`bar d · ${what}'s box starts at ${boxAt.top}, above the deck's foot ${deck.bottom}`);
+      if (inBar !== 1) fail(`bar d · ${what}'s box is not in the session bar (${inBar}) — 「a conversation composer sits above its deck」`);
+      else if (deck && boxAt && boxAt.bottom > deck.top + 1) fail(`bar d · ${what}'s box ends at ${boxAt.bottom}, below the deck's top ${deck.top}`);
       if (await count("[data-term-keys]")) fail(`bar d · ${what} drew the terminal's keys`);
       console.log(`bar d · mouse: ${what}'s box at ${boxAt?.top.toFixed(1)}, deck ${deck?.top.toFixed(1)}..${deck?.bottom.toFixed(1)}`);
+      if (process.env.FACE_SHOTS) await page.screenshot({ path: join(process.env.FACE_SHOTS, `deck-${id === chatRow.id ? "broadcast" : "gui"}.png`) });
     }
 
     // ── e–h. a finger ──
@@ -32643,9 +32652,20 @@ try {
           fail(`probe dead: bar e · ${what} never drew its box under a finger`);
           continue;
         }
-        const inBar = await count(`[data-session-bar-under] ${box}`);
+        const inBar = await count(`[data-session-bar-above] ${box}`);
         const keys = await count("[data-term-keys]");
         const sws = await count("[data-keyboard-switch], [data-key-row-switch]");
+        // Both keyboard states, at a phone's shorter visible height.
+        for (const raised of [false, true]) {
+          await page.evaluate((up) => window.__khorKeyboard?.(up), raised);
+          await page.setViewportSize({ width: 390, height: raised ? 540 : 844 });
+          await wait(200);
+          const inputAt = await rect(box);
+          const deckAt = await rect("[data-session-deck]");
+          if (!inputAt || !deckAt || inputAt.bottom > deckAt.top + 1) fail(`bar e · ${what}, keyboard ${raised}: composer is not above deck`);
+        }
+        await page.evaluate(() => window.__khorKeyboard?.(null));
+        await page.setViewportSize({ width: 390, height: 844 });
         if (inBar !== 1 || keys !== 0 || sws !== 0) fail(`bar e · ${what} under a finger: box in the bar ${inBar}, key rows ${keys}, keyboard or key-row switches ${sws} — want 1, 0, 0`);
       }
 
@@ -33507,7 +33527,7 @@ try {
           page.evaluate(() => ({
             strip: document.querySelectorAll("[data-session-bar] [data-deck-strip]").length,
             deck: !!document.querySelector("[data-session-deck]")?.getClientRects().length,
-            box: document.querySelectorAll("[data-session-bar-under] [data-composer-text]").length,
+            box: document.querySelectorAll("[data-session-bar-above] [data-composer-text]").length,
           }));
         const scrollTo = (fromBottom) =>
           page.evaluate((d) => {
@@ -40451,6 +40471,10 @@ try {
     if (!came || !a.short?.includes("peer") || !a.seconds || a.bubble !== 0 || a.text.includes("aborted")) {
       fail(`notice a · reconnecting read ${JSON.stringify({ notice: a.notice, short: a.short, seconds: a.seconds, bubble: a.bubble })} — 「重新连接 peer」 and its seconds on the pill, no bubble over the terminal, no raw English on the page`);
     }
+    const signal = await page.locator("[data-deck-pill]").evaluate((el) => ({
+      kind: el.getAttribute("data-pill-signal"), animation: getComputedStyle(el).animationName,
+    }));
+    if (signal.kind !== "rejoin" || !signal.animation.includes("pill-signal-breathe")) fail(`notice signal · reconnecting has no breathing perimeter: ${JSON.stringify(signal)}`);
     const pillH = a.pill?.height ?? 0;
 
     // b. the growth from the pill's own box: every clip the island is
@@ -40541,6 +40565,11 @@ try {
 
     // e. reduced motion.
     await page.emulateMedia({ reducedMotion: "reduce" });
+    const reducedSignal = await page.locator("[data-deck-pill]").evaluate((el) => ({
+      animation: getComputedStyle(el).animationName, shadow: getComputedStyle(el).boxShadow,
+    }));
+    if (reducedSignal.animation !== "none" || reducedSignal.shadow === "none") fail(`notice signal · reduced motion lost its static edge: ${JSON.stringify(reducedSignal)}`);
+
     await watchClips();
     await page.locator("[data-deck-pill] [data-deck-title]").click();
     await until(2_000, async () => (await read()).island !== null);

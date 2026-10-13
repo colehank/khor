@@ -1917,6 +1917,12 @@
   --dur-180: 180ms;
   --dur-240: 240ms;
   --dur-420: 420ms;
+  /* Session pill activity: docs/design-system/components/Tab. */
+  --pill-breathe: 2400ms;
+  --pill-upload: 1400ms;
+  --pill-glow-blur: 12px;
+  --pill-glow-spread: 2px;
+  --pill-arrow-lift: -2px;
 }
 
 /* **The one face that keeps a corner for the window's buttons.**

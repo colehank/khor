@@ -1144,6 +1144,7 @@ export function IconUpload({ className }: IconProps) {
       icon="upload"
       cut={
         <path
+          data-upload-arrow
           stroke="black"
           strokeWidth={lineOf(LIVE.upload, STROKE.bold)}
           strokeLinecap="round"

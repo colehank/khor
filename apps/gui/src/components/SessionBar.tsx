@@ -82,11 +82,13 @@ import { seatFold } from "@/lib/fold-seat";
 import { onKeyboardChange } from "@/lib/soft-keyboard";
 import { feel } from "@/lib/haptics";
 import { stillMotion } from "@/lib/travel";
+import { usePillSignal } from "@/lib/pill-signal";
 import { footCovered } from "@/lib/viewport";
 
 type Seats = {
   lead: HTMLElement | null;
   trail: HTMLElement | null;
+  above: HTMLElement | null;
   under: HTMLElement | null;
   pill: HTMLElement | null;
   progress: HTMLElement | null;
@@ -105,18 +107,18 @@ export const VerbSeat = createContext<HTMLElement | null>(null);
  * its left end (the page's ← →), `trail` the circles between the pill and
  * the tabs circle (the terminal's key row, and its keyboard in 点击按钮
  * mode only), and
- * `under` the row below the deck (the keys, the input box, the address
- * while it is edited), and `progress` the slot under the pill (UX-31):
+ * `above` the conversation composer above the deck, `under` the
+ * terminal key row below the deck, and `progress` the slot under the pill (UX-31):
  * anything put there is the tab reloading, and the pill runs its line
- * (`PillSlot`). Without a deck around it, `under` stands where it was
+ * (`PillSlot`). Without a deck around it, `above` and `under` stand where they were
  * written, `lead` goes to the wide face's verbs (`VerbSeat`) where there
  * is one, and `trail`, `pill` and `progress` are not drawn.
  */
-export function BarSeat({ at, children }: { at: "lead" | "trail" | "under" | "pill" | "progress"; children: ReactNode }) {
+export function BarSeat({ at, children }: { at: keyof Seats; children: ReactNode }) {
   const seats = useContext(SeatsContext);
   const verbs = useContext(VerbSeat);
   if (!seats) {
-    if (at === "under") return <>{children}</>;
+    if (at === "above" || at === "under") return <>{children}</>;
     return at === "lead" && verbs ? createPortal(children, verbs) : null;
   }
   const el = seats[at];
@@ -220,17 +222,19 @@ export function SessionScreen({
 }) {
   const [lead, setLead] = useState<HTMLElement | null>(null);
   const [trail, setTrail] = useState<HTMLElement | null>(null);
+  const [above, setAbove] = useState<HTMLElement | null>(null);
   const [under, setUnder] = useState<HTMLElement | null>(null);
   const [pill, setPill] = useState<HTMLElement | null>(null);
   const [progress, setProgress] = useState<HTMLElement | null>(null);
   const [sheet, setSheet] = useState(false);
-  const seats = useMemo(() => ({ lead, trail, under, pill, progress }), [lead, trail, under, pill, progress]);
+  const seats = useMemo(() => ({ lead, trail, above, under, pill, progress }), [lead, trail, above, under, pill, progress]);
   const at = faces.findIndex((f) => f.id === active);
   const face = at < 0 ? null : faces[at];
   /** **The pill grows while something stops this session** (NOTICE-BRIEF):
       a press on it opens the grown view instead of the 底栏; a transfer
       under way and a plain pill open the 底栏 as before. */
   const stops = face?.notices ?? [];
+  const signal = usePillSignal(active, face);
   const grown = useGrownPill(stops.length);
   /** Grown and something to grow into: the island stands, the pill hides. */
   const island = grown.growth.mounted && stops.length > 0;
@@ -398,6 +402,7 @@ export function SessionScreen({
         // the scrim while the pill is grown.
         className={cn("flex flex-none flex-col pb-safe-bottom", away && "invisible", island && "relative z-50")}
       >
+        <div ref={setAbove} data-session-bar-above className="flex flex-none flex-col empty:hidden" />
         {folded && (
           // **Safari's capsule** (UX-29, the owner 2026-10-06): one small
           // glass capsule centred at the foot with the title alone, its
@@ -420,6 +425,7 @@ export function SessionScreen({
             <button
               type="button"
               data-deck-strip
+              data-pill-signal={signal}
               data-deck-ink={ink ?? sampled}
               onClick={unfold}
               className="glass absolute bottom-[var(--gap-in)] flex h-deck-strip max-w-[calc(100%-2*var(--page-inset))] animate-in items-center justify-center overflow-hidden rounded-full px-row text-callout fade-in"
@@ -477,6 +483,7 @@ export function SessionScreen({
             <div
               ref={setDeckPill}
               data-deck-pill
+              data-pill-signal={signal}
               data-tap={stops.length ? "grow" : "sheet"}
               aria-label={gui.session_tabs}
               className="glass relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-glass-btn"

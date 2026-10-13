@@ -2747,3 +2747,63 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
     width: 100%;
   }
 }
+
+/* GUI composers sit above the deck; terminal grid compensation only
+   applies when the content actually meets the folded capsule. */
+[data-session-bar]:has(> [data-session-bar-above]:not(:empty)) > [data-deck-fold] > [data-deck-strip] {
+  bottom: 0;
+}
+
+/* One perimeter for the state already on the pill. The wide strip clips
+   its scroll lane, so its light is inset. Never a state-coloured fill. */
+[data-pill-signal] {
+  --pill-signal-ink: var(--state-busy);
+  --pill-signal-halo: 0 0 var(--pill-glow-blur) var(--pill-glow-spread);
+}
+[data-tab][data-pill-signal] {
+  --pill-signal-halo: inset 0 0 var(--pill-glow-blur) var(--pill-glow-spread);
+}
+[data-pill-signal="rejoin"], [data-pill-signal="upload"] {
+  animation: pill-signal-breathe var(--pill-breathe) ease-in-out infinite;
+}
+[data-pill-signal="failed"] {
+  --pill-signal-ink: var(--state-failed);
+  animation: pill-signal-arrive var(--dur-420) var(--ease-out) both;
+}
+[data-pill-signal="settling"] {
+  animation: pill-signal-settle var(--time-yield) var(--ease-out) both;
+}
+@keyframes pill-signal-breathe {
+  0%, 100% { box-shadow: var(--pill-signal-halo) color-mix(in srgb, var(--pill-signal-ink) 20%, transparent); }
+  45% { box-shadow: var(--pill-signal-halo) color-mix(in srgb, var(--pill-signal-ink) 65%, transparent); }
+}
+@keyframes pill-signal-arrive {
+  from { box-shadow: var(--pill-signal-halo) var(--pill-signal-ink); }
+  to { box-shadow: 0 0 0 var(--ring-w) color-mix(in srgb, var(--pill-signal-ink) 65%, transparent); }
+}
+@keyframes pill-signal-settle {
+  from { box-shadow: var(--pill-signal-halo) color-mix(in srgb, var(--pill-signal-ink) 65%, transparent); }
+  to { box-shadow: var(--pill-signal-halo) transparent; }
+}
+[data-tab-dropping] [data-upload-arrow] {
+  animation: pill-upload-arrow var(--pill-upload) ease-in-out infinite;
+}
+@keyframes pill-upload-arrow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(var(--pill-arrow-lift)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-pill-signal], [data-tab-dropping] [data-upload-arrow] { animation: none; }
+  [data-pill-signal]:not([data-pill-signal="settling"]) {
+    box-shadow: 0 0 0 var(--ring-w) color-mix(in srgb, var(--pill-signal-ink) 65%, transparent);
+  }
+}
+
+/* When the notice grows over a GUI composer, the composer stays under
+   the scrim. Only the deck carries the growing pill above it. */
+[data-session-bar]:has(> [data-session-bar-above]:not(:empty)):has([data-notice-island]) {
+  z-index: auto;
+}
+[data-session-bar]:has(> [data-session-bar-above]:not(:empty)) [data-session-deck]:has([data-notice-island]) {
+  z-index: 50;
+}

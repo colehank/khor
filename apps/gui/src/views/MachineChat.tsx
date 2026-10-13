@@ -286,10 +286,9 @@ export function MachineChat({ id }: { id: string }) {
       {/* The rule spans the pane, the controls stand in the column — the
           same split as the agent conversation's composer, and for the
           same reason: the line divides two regions, the column is where
-          the writing is. **On the narrow face it is the session bar's
-          second row** (`components/SessionBar`, 2026-10-02), the agent
-          conversation's arrangement. */}
-      <BarSeat at="under">
+          the writing is. On the narrow face it sits above the deck
+          (`components/SessionBar`, 2026-10-13), like the agent composer. */}
+      <BarSeat at="above">
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
         {/* **The machine picker** (phase 5): over the box, not pushing
