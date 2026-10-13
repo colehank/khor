@@ -72,6 +72,12 @@ harness = false
 name = "tmux_extkeys"
 harness = false
 
+# A shell opened from a phone on a computer: the desk's open re-execs
+# this binary as the session's host, so the same plain `main`.
+[[test]]
+name = "open_from_phone"
+harness = false
+
 # The one road to a recycle bin, on the three platforms that have one
 # (`crates/node/src/files.rs` — the three candidates and what each cost).
 # Not on iOS/Android, which have no such place: there `files::remove`

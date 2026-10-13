@@ -242,6 +242,10 @@ const VOUCH_EVERY: Duration = Duration::from_secs(5 * 60);
 /// rows thirty seconds old.
 pub const QUIET_PACE: Duration = Duration::from_secs(30);
 
+/// How long a far open waits for its row on the asker's list
+/// (`Node::list_what_opened`): no longer than the beat it stands in for.
+const LISTED_WITHIN: Duration = SYNC_EVERY;
+
 /// How long every road-having device must have kept failing before the
 /// serve concludes its own ears are broken. Wall clock, not rounds: a
 /// round is not a fixed [`SYNC_EVERY`] — when everyone is unreachable
@@ -2503,6 +2507,7 @@ impl Node {
         plain: Request,
         once: Option<(&str, Request)>,
     ) -> Result<crate::SessionId, String> {
+        let asked = std::time::Instant::now();
         let answer = match once {
             Some((variant, req)) => {
                 match self.ask(ep, channel, &req).await? {
@@ -2513,9 +2518,64 @@ impl Node {
             None => self.ask(ep, channel, &plain).await?,
         };
         match answer {
-            Response::Opened { session } => Ok(crate::SessionId(session)),
+            Response::Opened { session } => {
+                // Inside the face's own wait (`ipc::DEADLINE_FAR`, as
+                // `ask_on`'s redial): an open that was slow to answer is
+                // not turned into one that timed out.
+                let left = (ipc::DEADLINE_FAR - Duration::from_secs(3)).saturating_sub(asked.elapsed());
+                let id = crate::SessionId(session);
+                self.list_what_opened(ep, channel, &id, LISTED_WITHIN.min(left)).await;
+                Ok(id)
+            }
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// **The row a far open made, on this machine's list before the open
+    /// answers** (2026-10-14, the owner's iPhone): the two things this
+    /// machine's list needs for it, got here and now, waited for up to
+    /// `within` ([`LISTED_WITHIN`] when the open was quick).
+    ///
+    /// The face that asked draws the new tab from its own list
+    /// (`App.tsx` `waitingFor`), and the row is the far machine's. Until
+    /// now both halves came over the pump's next round with that machine:
+    /// 5 s on a clean loopback (`tests/open_from_phone.rs`, red before
+    /// this), and on a phone whose wires come and go every few minutes,
+    /// whatever round next got through — 新建 on MacLab spun while MacLab
+    /// had opened every shell it was asked for.
+    ///
+    /// - **The roster entry** (`khor_sync::roster`): a shell is listed only
+    ///   once it is on the roster, and khor started this one. The far
+    ///   machine writes the same `new` for the same id; written here too,
+    ///   the way an import is written by the machine that imports.
+    /// - **Its row**: that machine's report (`Request::Sessions`), asked
+    ///   on the wire that just answered and kept as a round keeps it. One
+    ///   reading, not a round: a round already running with that machine
+    ///   is joined, not hurried, and a document that will not sync this
+    ///   time fails a round before the readings matter.
+    ///
+    /// Neither is the answer: the session exists either way, and the id is
+    /// answered whatever happened here; the next round brings both.
+    async fn list_what_opened(
+        &self,
+        ep: &iroh::Endpoint,
+        channel: &str,
+        id: &crate::SessionId,
+        within: Duration,
+    ) {
+        let Some(d) = self
+            .devices_loaded()
+            .ok()
+            .and_then(|l| l.doc.by_name(channel))
+        else {
+            return;
+        };
+        let _ = self.roster_new(id);
+        if let Ok(Ok(Response::SessionRows { rows })) =
+            tokio::time::timeout(within, self.ask_on(ep, &d, &Request::Sessions)).await
+        {
+            let _ = self.cache_peer_rows(&d.id, &d.name, &rows);
         }
     }
 
