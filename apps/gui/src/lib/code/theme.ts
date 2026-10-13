@@ -53,10 +53,19 @@ export const codeTheme = EditorView.theme({
     lineHeight: "inherit",
     overflowAnchor: "none",
   },
-  ".cm-content": {
-    padding: "var(--gap-in) 0",
-    caretColor: "var(--foreground)",
-  },
+  ".cm-content": { padding: "var(--gap-in) 0" },
+  // **The caret and the selection, drawn** (`drawSelection`, CodeEditor's
+  // head comment): the caret in the text's own ink, as tall as the glyph;
+  // the selection the app's grey, as a selected row is (README 颜色) —
+  // `fill-strong` while the editor has the keys, the lighter `fill` once
+  // it lost them, as macOS greys a selection then. The package's rules
+  // are a chain of five classes under `.cm-focused`; the same chain here
+  // is what outranks them. On iOS the main selection stays the platform's
+  // and only the handles are drawn, in the caret's ink.
+  ".cm-cursor": { borderLeftColor: "var(--foreground)" },
+  ".cm-selectionBackground": { backgroundColor: "var(--fill)" },
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "var(--fill-strong)" },
+  ".cm-selectionHandle": { backgroundColor: "var(--foreground)" },
   ".cm-line": { padding: "0 var(--gap-row)" },
   ".cm-gutters": {
     backgroundColor: "var(--card)",
@@ -105,12 +114,11 @@ export const codeTheme = EditorView.theme({
     margin: "0 var(--gap-xxs)",
   },
   // **The selected word's other places**: the search hit's own grey,
-  // since they are what ⌘F would find — the selection itself is the
-  // system's, native.
+  // since they are what ⌘F would find.
   ".cm-selectionMatch": { backgroundColor: "var(--fill-strong)", borderRadius: "var(--radius-xs)" },
   ".cm-searchMatch .cm-selectionMatch": { backgroundColor: "transparent" },
-  // Search matches: the neutral fills a selection is not (the selection
-  // is the system's, native).
+  // Search matches: the same neutral grey, rounded and over the text
+  // where the selection is square and under it.
   ".cm-searchMatch": { backgroundColor: "var(--fill-strong)", borderRadius: "var(--radius-xs)" },
   ".cm-searchMatch-selected": { backgroundColor: "color-mix(in srgb, var(--git-modified) 28%, transparent)" },
   ".cm-panels": { backgroundColor: "var(--card)", color: "var(--foreground)" },

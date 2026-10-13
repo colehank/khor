@@ -27,6 +27,7 @@
 | Mac 输入法（拼音/五笔）在 CM6 里的组合输入 | audit/cm-b.md §4 |
 | 手机发出的推送撑过锁屏宽限、超时写「发送中断：手机已挂起」，真机九条 | audit/p5-at.md「Phone checklist」 |
 | 手机编辑文件大小上限（现在和桌面共用 64 MB） | audit/cm-b.md §3 |
+| 文件编辑器的光标改由 CM6 画（`drawSelection`）：Mac app 里光标是否和字一样高（headless WebKit/Chrome 改前就是字高 15，量不出 app 的 20）、拼音组合时光标与候选条、选区的灰；iPhone 上 CM 画的两个手柄能不能拖、放大镜、候选条、主选区仍是系统的 | 10-13 cm-caret |
 
 ## 记 — 不急
 

@@ -10,10 +10,18 @@
 // that guesses what you meant to type: no completion, no auto-closed
 // brackets or tags, no bracket-matching highlight, no second caret.
 //
-// **The caret and the selection are the system's** (no `drawSelection`):
-// the IME's marked text, the iOS handles and loupe and the selection
-// colour are the platform's own, which is what a person typing Chinese on
-// a phone needs most (memory khor-native-walk-gotchas).
+// **The caret is CodeMirror's** (`drawSelection`, the owner 2026-10-13:
+// on the Mac app and the iPhone the caret stood the line's 20 over 13 of
+// letters, CJK the worst). The engine's own caret is whatever height the
+// platform paints, and no stylesheet sets it — headless WebKit and
+// Chrome happen to paint it at the glyph's 15, which is why no gate saw
+// the app's. CodeMirror's is laid at the glyph's own box (`coordsAtPos`),
+// so it is as tall as the letters it sits between on every engine. The
+// IME's marked text and the loupe stay the platform's. On iOS the main
+// selection's ground stays native too (the platform's cannot be hidden,
+// so CodeMirror leaves it) and CodeMirror draws the two handles;
+// elsewhere the selection is drawn as well, in the theme's grey
+// (`lib/code/theme`).
 import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { getChunks, unifiedMergeView } from "@codemirror/merge";
 import { codeFolding, foldGutter, foldKeymap, indentUnit } from "@codemirror/language";
@@ -21,6 +29,7 @@ import { Annotation, Compartment, EditorSelection, EditorState, StateEffect, Sta
 import { highlightSelectionMatches } from "@codemirror/search";
 import {
   Decoration,
+  drawSelection,
   EditorView,
   highlightActiveLine,
   highlightActiveLineGutter,
@@ -107,6 +116,8 @@ function base(): Extension {
     codeFolding({ placeholderText: "…" }),
     foldGutter({ markerDOM: foldMarker }),
     history(),
+    // The caret and the selection, drawn (the file's head comment).
+    drawSelection(),
     // The line the caret is on, reading or writing (cm-d item 3).
     highlightActiveLine(),
     highlightActiveLineGutter(),
