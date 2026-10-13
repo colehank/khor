@@ -1067,6 +1067,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .into_iter()
         .map(|a| {
             let (v, group) = (a.view, a.group);
+            let state_known = v.session.state_known();
             let hosted = n.is_hosted(&v.session.id);
             // The row itself says whether its home can stand a terminal
             // up (`Session::term` — hosted, a discovered tmux session,
@@ -1110,8 +1111,8 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 id: v.session.id.0,
                 kind: v.session.kind.0,
                 title: v.session.title,
-                word: v.session.state.state.key().to_owned(),
-                at_ms: v.session.state.at.0,
+                word: if state_known { v.session.state.state.key().to_owned() } else { String::new() },
+                at_ms: if state_known { v.session.state.at.0 } else { 0 },
                 unread: v.session.unread,
                 source: v
                     .source

@@ -18,6 +18,13 @@
 | ship 走 CI：要推远端（本地 main 比 origin 多近 1900 个提交，推前扫敏感内容）、Mac 公证要 Developer ID + App 专用密码、iOS 要 App Store Connect API key；没有就按 docs/SHIP.md 手工 | 10-13 讨论 |
 | 导入：ACP `session/list` 只问本机；没进程的 claude/codex 记录不给导入 | 10-12 讨论；ACP 可能取消，暂定 |
 
+## 定 — Codex 终端适配边界
+
+| 项 | 出处 |
+|---|---|
+| 默认 shared daemon 的 TUI PID → 当前线程仍无可靠协议映射；继续跟进上游，先保留 Codex 类别并显示识别受限，不以 cwd/启动时间猜消息 | 10-14；本地 Codex 0.162.1 协议 schema；docs/HOOKS.md |
+| tmux 原 session 的 mouse=off 时，Codex 启动会禁用鼠标捕获；khor grouped attach 的 mouse=on 必须在 Codex 进入 TUI 前生效。已运行客户端需用户退出/resume，不能靠查询节流补回 native mouse | 10-14；真实 Codex/tmux 隔离验证 |
+
 ## 机 — 等真机或人工
 
 | 项 | 出处 |

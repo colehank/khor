@@ -47,15 +47,19 @@ launcher, not the new interactive terminal. A person's shell startup files or
 an explicit `env NO_COLOR=1 command` still control that command. Existing
 processes and existing tmux servers keep their original environment.
 
-The scoped Codex launcher identifies its own executable even when an existing
-tmux server drops `KHOR_CODEX_SHIM_DIR` but retains its PATH entry. Its private
-`.khor/codex-bin` location also recovers the owning khor home. It never falls
-through to starting a khor GUI/server when that environment hint is absent.
-Before an interactive Codex launch, it enables `mouse` on the containing tmux
-session (the same policy as khor's grouped attach), without changing the global
-option or tmux configuration file. Codex 0.162.1 checks that option on entry;
-turning it on after Codex starts does not reactivate its native mouse capture.
-Already-running Codex processes need a restart/resume to adopt it.
+Codex commands in ordinary terminals keep their original PATH resolution and
+arguments. New PTYs remove this store's retired `.khor/codex-bin` PATH entry;
+no launcher is installed and no daemon, title or hook flags are injected.
+The `legacy_codex` entry exists only for already-open shells carrying the old
+alias: it forwards the original command to real Codex, without changing its
+arguments, cwd, stdio or tmux settings. Losing `KHOR_CODEX_SHIM_DIR` cannot make
+that compatibility entry fall through to khor GUI/server startup.
+
+Mouse policy belongs to the terminal connection: grouped tmux attach enables
+`mouse` for its khor session. Codex 0.162.1 checks that option on TUI entry;
+turning it on after Codex starts does not reactivate native mouse capture.
+An existing client started with mouse off needs a user-driven exit/resume.
+The Codex command is never wrapped to change tmux options.
 
 The workspace uses the current shell or current window's active pane directory.
 `Meta.place` remains the birthplace. Default workspace views follow `cd` and

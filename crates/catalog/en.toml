@@ -1674,6 +1674,7 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+thread-unbound = "Thread unavailable"
 console-input = "Additional input"
 console-input-hint = "Input goes only to the executor"
 console-owner = "Run on {0}"

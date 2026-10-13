@@ -614,7 +614,7 @@ impl Procs {
     }
 }
 
-fn process_name_matches(actual: &str, wanted: &str) -> bool {
+pub(crate) fn process_name_matches(actual: &str, wanted: &str) -> bool {
     actual == wanted
         || actual.rsplit_once('.').is_some_and(|(base, extension)| {
             extension.eq_ignore_ascii_case("exe") && base.eq_ignore_ascii_case(wanted)

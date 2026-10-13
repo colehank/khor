@@ -310,6 +310,16 @@ impl Day {
         }
     }
 
+    /// The row exists, but no source could identify its current state.
+    pub fn unavailable(&mut self, now_ms: i64, ids: impl IntoIterator<Item = String>) {
+        self.roll(minute(now_ms));
+        let Some(i) = self.slot(minute(now_ms)) else { return; };
+        for id in ids {
+            if !self.rows.contains_key(&id) { self.make_room(); }
+            self.rows.entry(id).or_insert_with(|| blank(ABSENT))[i] = UNWATCHED;
+        }
+    }
+
     /// Drops the least recently seen row when the record is full.
     ///
     /// Least recently *seen*, not oldest: a session that has been on the
@@ -367,6 +377,7 @@ impl Day {
         if self.watched[i] != WATCHED {
             return DayCell::Unwatched;
         }
+        if row.is_some_and(|cells| cells[i] == UNWATCHED) { return DayCell::Unwatched; }
         match row.and_then(|cells| word_of(cells[i])) {
             Some(word) => DayCell::Word(word),
             None => DayCell::Absent,
@@ -525,6 +536,18 @@ fn minute(now_ms: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unbound_thread_records_no_invented_idle_state() {
+        let now = 60_000_000;
+        let mut day = Day::empty(now);
+        day.observe(now, [("known".into(), State::Busy)]);
+        day.unavailable(now, ["unknown".into()]);
+        let restored = Day::from_stored(day.to_stored()).unwrap();
+        let i = restored.slot(minute(now)).unwrap();
+        assert_eq!(restored.cell_at(restored.rows.get("known"), i), DayCell::Word(State::Busy));
+        assert_eq!(restored.cell_at(restored.rows.get("unknown"), i), DayCell::Unwatched);
+    }
 
     /// **The minutes since an asker's copy rebuild the record exactly**
     /// (round NET-3): a copy taken at 10:00, the record sampled on to

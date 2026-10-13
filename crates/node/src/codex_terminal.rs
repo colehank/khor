@@ -45,11 +45,12 @@ fn selected<'a>(title: &str, threads: &'a [String]) -> Option<&'a str> {
 }
 
 pub(crate) fn scoped(procs: &Procs, pid: u32) -> bool {
+    if procs.get(pid).is_none_or(|p| !crate::adaptor::process_name_matches(&p.name, "codex")) { return false; }
     let Some(argv) = procs.command(pid) else {
         return false;
     };
     let args: Vec<std::ffi::OsString> = argv.iter().skip(1).map(std::ffi::OsString::from).collect();
-    crate::codex_launch::interactive(&args) && crate::codex_launch::selection_title(&args)
+    crate::codex_process::interactive(&args)
 }
 
 /// Assign live scoped TUI clients before LiveKind seats vendor rows in hosts.
@@ -65,7 +66,7 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
     // A missing, malformed, changed or ambiguous native title must clear any
     // former birth/cwd guess for this scoped client before it can wear a row.
     for row in &mut found.rows {
-        if row.category == "codex" {
+        if row.category == "codex" && (!found.codex_threads.is_empty() || !found.codex_pending.is_empty()) {
             row.sighting.pids.retain(|p| !clients.contains(p));
         }
     }
@@ -82,7 +83,9 @@ pub(crate) fn select(found: &mut Findings, hosts: &[(u32, Option<String>)]) {
         let held = found.procs.held_by(&[root]);
         let mut here = clients.iter().filter(|pid| held.contains(pid));
         let pid = *here.next()?;
-        here.next().is_none().then_some(pid)
+        if here.next().is_some() { return None; }
+        let args: Vec<_> = found.procs.command(pid)?.iter().skip(1).map(std::ffi::OsString::from).collect();
+        crate::codex_process::selection_title(&args).then_some(pid)
     };
     for pane in found.multiplexed.iter().flat_map(|m| &m.panes) {
         if let Some(pid) = client_in(pane.pid) {

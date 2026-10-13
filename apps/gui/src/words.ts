@@ -22,6 +22,7 @@ export const count = {
 };
 
 export function word(key: string): string {
+  if (!key) return gui.thread_unbound;
   return (state as Record<string, string>)[key] ?? key;
 }
 

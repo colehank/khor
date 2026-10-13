@@ -3071,6 +3071,18 @@ pub struct Doing {
     /// through a tmux client. Tail field.
     #[serde(default)]
     pub last_line: Option<String>,
+    /// The agent process is known, but its currently selected conversation is
+    /// not. Suppress agent state, unread and preview instead of borrowing a
+    /// nearby thread. Tail field for older peers.
+    #[serde(default)]
+    pub thread_unbound: bool,
+}
+
+impl Session {
+    /// Whether the stored state has evidence for this terminal’s current thread.
+    pub fn state_known(&self) -> bool {
+        !self.doing.as_ref().is_some_and(|d| d.thread_unbound)
+    }
 }
 
 #[cfg(test)]

@@ -225,7 +225,7 @@ export function FaceMark({
           {"machine" in face ? <MachineAvatar face={face.machine} className={s.face} /> : face.art}
         </UnderMark.Provider>
       )}
-      {halo !== undefined && (
+      {halo && (
         // Behind nothing and in front of nothing — it paints outside the
         // face's box entirely (`app.css`), so it can neither cover the
         // artwork nor be covered by it.

@@ -1,4 +1,4 @@
-//! Run the scoped launcher through the actual CLI binary, with a fake
+//! Retire old installed launchers through the actual CLI binary, with a fake
 //! Codex executable. No model, network, user store or Codex config.
 #![cfg(unix)]
 use std::os::unix::fs::{PermissionsExt, symlink};
@@ -70,34 +70,17 @@ fn words(output: &Output) -> Vec<String> {
         .collect()
 }
 #[test]
-fn interactive_launch_adds_native_thread_title_and_clears_the_previous_title() {
+fn retired_launcher_preserves_interactive_arguments_and_stdout() {
     let f = Fixture::new("interactive");
     for args in [
-        vec!["hello"],
-        vec!["resume", "--last"],
-        vec!["fork", "previous"],
+        vec!["hello"], vec!["resume", "--last"], vec!["fork", "previous"],
         vec!["--no-daemon", "resume", "previous"],
+        vec!["-c", "tui.terminal_title=[\"project\"]", "resume", "--last"],
+        vec!["--", "--no-daemon"],
     ] {
         let result = f.run(&args, true);
-        assert!(
-            result.stdout.starts_with(b"\x1b]2;\x07"),
-            "old pane title must clear before Codex starts"
-        );
-        let output = words(&result);
-        assert_eq!(output.iter().filter(|s| *s == "--no-daemon").count(), 1);
-        assert_eq!(
-            output
-                .iter()
-                .filter(|s| *s == "tui.terminal_title=[\"thread-id\"]")
-                .count(),
-            1
-        );
-        assert!(
-            output
-                .iter()
-                .all(|s| !s.contains("hooks.") && !s.contains("bypass"))
-        );
-        assert_eq!(words(&f.run(&args, false)), args);
+        assert!(!result.stdout.starts_with(b"\x1b]2;\x07"));
+        assert_eq!(words(&result), args);
     }
 }
 #[test]
@@ -118,7 +101,7 @@ fn administrative_remote_and_noninteractive_commands_are_verbatim() {
 }
 
 #[test]
-fn unsupported_or_failed_capability_probe_leaves_legacy_codex_untouched() {
+fn retirement_does_not_depend_on_codex_version_support() {
     let f = Fixture::new("legacy");
     for (help, status) in [("Usage: codex [OPTIONS]", 0), ("  --no-daemon", 1)] {
         std::fs::write(f.real.join("codex"), format!(
@@ -132,18 +115,7 @@ fn unsupported_or_failed_capability_probe_leaves_legacy_codex_untouched() {
 }
 
 #[test]
-fn caller_cli_title_remains_exact_and_prompt_text_is_not_a_flag() {
-    let f = Fixture::new("overrides");
-    let args = ["-c", "tui.terminal_title=[\"project\"]", "resume", "--last"];
-    let output = words(&f.run(&args, true));
-    assert_eq!(output, [&["--no-daemon"][..], &args].concat());
-    let output = words(&f.run(&["--", "--no-daemon"], true));
-    assert_eq!(output.first().unwrap(), "--no-daemon");
-    assert_eq!(&output[output.len() - 2..], ["--", "--no-daemon"]);
-}
-
-#[test]
-fn shell_integration_restores_scoped_path_after_user_startup() {
+fn shell_integration_preserves_user_path() {
     let f = Fixture::new("shell");
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../node/shell/khor.bash");
     std::fs::write(
@@ -171,7 +143,7 @@ fn shell_integration_restores_scoped_path_after_user_startup() {
     );
     assert_eq!(
         String::from_utf8_lossy(&out.stdout).trim(),
-        f.shim.join("codex").to_str().unwrap()
+        f.real.join("codex").to_str().unwrap()
     );
 }
 
@@ -189,13 +161,7 @@ fn launcher_survives_missing_tmux_environment_marker() {
         .unwrap();
     assert_eq!(
         words(&result),
-        [
-            "--no-daemon",
-            "-c",
-            "tui.terminal_title=[\"thread-id\"]",
-            "resume",
-            "--last"
-        ]
+        ["resume", "--last"]
     );
 }
 
@@ -297,9 +263,9 @@ fn existing_tmux_server_without_marker_launches_codex_on_a_pty() {
     let bytes = std::fs::read(result).unwrap();
     assert_eq!(
         bytes,
-        b"--no-daemon\0-c\0tui.terminal_title=[\"thread-id\"]\0"
+        b"\0"
     );
-    assert_eq!(tmux(&["show-option", "-v", "-t", "probe", "mouse"]), "on");
+    assert_eq!(tmux(&["display-message", "-p", "-t", "probe", "#{mouse}"]), "0");
     assert_eq!(tmux(&["show-option", "-gv", "mouse"]), "off");
     assert_eq!(
         tmux(&["display-message", "-p", "-t", "seed", "#{mouse}"]),
@@ -308,7 +274,7 @@ fn existing_tmux_server_without_marker_launches_codex_on_a_pty() {
 }
 
 #[test]
-fn bare_argv0_recovers_scoped_home_without_environment_hints() {
+fn bare_argv0_does_not_invent_environment_hints() {
     use std::os::unix::process::CommandExt;
     let mut f = Fixture::new("bare-argv0");
     f.shim = f.dir.join(".khor/codex-bin");
@@ -331,6 +297,6 @@ fn bare_argv0_recovers_scoped_home_without_environment_hints() {
         .unwrap();
     assert_eq!(
         words(&result),
-        [std::fs::canonicalize(&f.dir).unwrap().to_str().unwrap()]
+        Vec::<String>::new()
     );
 }

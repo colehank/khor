@@ -19,7 +19,8 @@ pub mod carry;
 pub mod chat;
 pub mod code;
 pub mod codexagent;
-pub mod codex_launch;
+mod codex_process;
+pub mod legacy_codex;
 pub mod codex_terminal;
 pub mod config;
 pub mod cwd;
@@ -3068,10 +3069,12 @@ impl Node {
         record.observe(
             now,
             views
-                .into_iter()
-                .filter(|v| v.source.is_none())
-                .map(|v| (v.session.id.0, v.session.state.state)),
+                .iter()
+                .filter(|v| v.source.is_none() && v.session.state_known())
+                .map(|v| (v.session.id.0.clone(), v.session.state.state)),
         );
+        record.unavailable(now, views.into_iter()
+            .filter(|v| v.source.is_none() && !v.session.state_known()).map(|v| v.session.id.0));
         record.save(&self.root)
     }
 

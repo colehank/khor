@@ -46,23 +46,24 @@ codex 的转写给得出完成,**给不出待批**(它落盘里根本没有审�
 
 ### Codex 的发现与转写
 
-- khor 新终端的专用 PATH launcher 为交互 Codex 增加 `--no-daemon` 和
-  `-c 'tui.terminal_title=["thread-id"]'`，不改用户 Codex 配置文件。原生 OSC
-  标题表示**当前显示线程**，恢复、`/new`、切换会话无需等待用户下一轮输入。
-  普通宿主读已有 command ledger 的 title，tmux 读每个 pane 的 `pane_title`。
-  当前 Codex 会截断标题；只在完整 UUID／合法 UUID 前缀能唯一匹配活写入线程，
-  且 pane 里有对应的交互 Codex 进程时绑定。子智能体与歧义不参与归属。
-  新线程还没有历史文件时，活锁和当前原生标题一起证明其存在，显示 Codex／
-  空闲且没有旧预览；已有但损坏的历史文件不按空白新会话处理。
-- 不使用 SessionStart/SessionEnd 来判断当前显示线程：0.162.1 的 SessionStart
-  延迟到第一轮输入，`/new` 后旧线程仍持有锁；生命周期 hook 不能证明当前选择。
-  这个结论经过临时 home、零模型调用的真实 Codex/tmux 验证。
-- launcher 只影响 khor 内新开的集成 shell。已有 pane、绝对路径调用、shell
-  alias/function 与显式 CLI 标题覆盖保留原行为；外部 Codex 配置不变。
-  exec、app-server、远端模式、帮助等命令直接透传。旧会话需在新的集成 shell
-  中重开，才能启用这条原生标题关联。
-  启动前通过真实程序的 `--help` 探测 `--no-daemon`；旧版或探测失败时保持
-  原参数，不清标题、不注入新配置。
+- 普通 shell 和 tmux 中的 `codex` 保留用户原命令：不安装 PATH launcher，
+  不添加 `--no-daemon`、标题配置或 hook。Codex 默认共享 daemon 的能力照常保留。
+  khor 显式创建的 GUI Codex 会话仍通过 app-server 管理，和普通终端分开。
+- **进程类别、当前线程、线程内容是三个证据层**。跨平台进程表确认交互 Codex；
+  writer lock 确认线程仍加载；转写给出该线程的消息与回合状态。后两者均不能
+  单独证明一个终端当前显示哪个线程。默认 daemon 未提供此映射时，终端仍显示
+  Codex 类别，但 `Doing.thread_unbound` 标明识别受限，状态光环、预览和未读不显示。
+- 用户自己显式传入 `-c 'tui.terminal_title=["thread-id"]'` 时，已有的只读关联仍可用，
+  不要求 `--no-daemon`。普通宿主读 command ledger 的 title，tmux 读 `pane_title`。
+  只接受能唯一匹配活写入根线程的完整 UUID／合法截断前缀；子智能体、歧义与自定义
+  标题不参与归属。新线程尚无转写时，活锁和原生标题共同证明其存在。
+- 不使用 SessionStart/SessionEnd 判断当前选择：0.162.1 的 SessionStart 延迟到
+  第一轮输入，`/new` 后旧线程仍持有锁。`thread/loaded/list` 返回加载线程 ID，
+  `thread/read` 读取线程；当前协议未提供本地 TUI PID → 当前选中线程的映射。
+- 升级兼容：新 PTY 和新 grouped tmux shell 去除本 store 的旧 `codex-bin` PATH。
+  已打开 shell 缓存的旧 symlink 仍可能进入新版 khor；`legacy_codex` 只原样转发
+  argv、stdio、cwd，不加参数、不改 tmux，也不会落入 GUI 启动。它不再安装新入口。
+  已经以 `--no-daemon` 运行的 Codex 不会被热改，用户退出并正常 resume 后才恢复默认。
 
 - macOS、Linux、Windows 共用 `std::fs::File` 的非阻塞锁探测,不依赖 `lsof`、
   `/proc` 或平台专用命令。读取 `thread-writer-locks/<thread-id>.lock` 时先遵守
@@ -70,13 +71,8 @@ codex 的转写给得出完成,**给不出待批**(它落盘里根本没有审�
 - 锁证明的是**线程仍被加载**,包含共享 daemon 托管的多个线程、恢复的旧线程。
   daemon 可能在前端退出后继续保留空闲线程,所以锁不能证明某个终端仍然打开。
   锁里没有前端 PID,不能把 daemon 的 PID 当成终端里的客户端。
-- 未启用原生标题关联而直接运行 `codex` 新建会话时,另外读取跨平台进程表:仅当记录的 originator 为
-  `codex-tui`、cwd 已知且一致、同目录恰有一个无参数客户端和一个已加载 TUI
-  线程、线程在客户端启动前 5 秒至后 120 秒内创建,才补上客户端 PID。这样现有
-  shell 会话可以沿原来的进程树归并,显示 Codex 类型、状态和最新消息。
-  这是有范围的启动关联,不是 Codex 提供的前端身份。恢复会话、带参数启动、
-  同目录多个客户端或多个已加载线程仍不自动归并,独立的线程发现和转写不受影响。
-  没有写入锁目录的旧版 home 保留旧的进程启动时间与目录匹配。
+- 共享 daemon 不再使用 cwd／启动时间／originator 猜测终端归属；`/new` 和 `/resume`
+  都会使这些出生信息失效。没有写入锁目录的旧版 home 暂保留旧版适配器。
 - 支持旧版 `user_message` / `agent_message` 和新版分页历史的
   `item_completed` 消息。线程用 `session_meta.id` 识别,不拿可能共享的
   `session_id` 当线程 ID。`thread/revert` 的文件后缀也不改变线程身份。

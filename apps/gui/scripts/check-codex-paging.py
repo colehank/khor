@@ -75,7 +75,10 @@ trust_level="trusted"
         # path is short enough on both macOS and Linux.
         socket = str(root / "tmux.sock")
         env = os.environ.copy()
-        env.update(CODEX_HOME=str(home), KHOR_PAGING_FIXTURE_KEY="fixture",
+        for key in tuple(env):
+            if key.startswith(("CODEX_", "KHOR_")) or key in ("ZDOTDIR", "FORCE_COLOR", "CLICOLOR_FORCE"):
+                env.pop(key, None)
+        env.update(HOME=str(root), USERPROFILE=str(root), CODEX_HOME=str(home), KHOR_PAGING_FIXTURE_KEY="fixture",
                    TERM="xterm-256color", COLORTERM="truecolor")
         for key in ("TMUX", "TMUX_PANE", "NO_COLOR", "OPENAI_API_KEY", "OPENAI_BASE_URL"):
             env.pop(key, None)
@@ -101,8 +104,12 @@ trust_level="trusted"
 
         draft = "UNSENT_DRAFT_719"
         try:
-            command = shlex.join([args.codex, "--no-daemon", "resume", session])
-            tmux("-f", "/dev/null", "new-session", "-d", "-s", "probe", "-x", "100", "-y", "30", "-c", str(root), command)
+            # Configure this isolated tmux connection before starting Codex, as
+            # khor grouped attach does. Never wrap or rewrite the Codex command.
+            config = root / "tmux.conf"
+            config.write_text("set -g default-shell /bin/sh\n" + ("set -g mouse on\n" if args.mouse else ""))
+            command = shlex.join([args.codex, "resume", session])
+            tmux("-f", str(config), "new-session", "-d", "-s", "probe", "-x", "100", "-y", "30", "-c", str(root), command)
             wait_screen(lambda s: "ANSWER_060" in s, "fixture did not resume")
             if args.mouse:
                 mode = tmux("display-message", "-p", "-t", "probe", "#{mouse} #{mouse_any_flag}").strip()
@@ -146,6 +153,7 @@ trust_level="trusted"
             assert draft in capture()
             print(f"PASS {version}: native mouse={args.mouse}, paging, reverse, top/bottom boundaries; unsent draft retained; no prompt submitted")
         finally:
+            subprocess.run([args.codex, "app-server", "daemon", "stop"], env=env, capture_output=True, timeout=20)
             subprocess.run([args.tmux, "-S", socket, "kill-server"], env=env, capture_output=True)
 
 

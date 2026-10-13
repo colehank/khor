@@ -179,6 +179,7 @@ fn place_of(
                 (format!("{GROUP_DEVICE}{hex}"), (2, hex))
             }
         },
+        Arrange::State if !view.session.state_known() => (GROUP_STATE.to_owned(), (8, String::new())),
         Arrange::State => {
             let word = view.session.state.state;
             (
@@ -334,6 +335,14 @@ mod tests {
             rows.iter().map(|r| r.group.as_str()).collect::<Vec<_>>(),
             vec!["state:blocked", "state:busy", "state:idle", "state:failed"],
         );
+    }
+
+    #[test]
+    fn unbound_threads_are_not_grouped_as_idle() {
+        let mut rows = sample();
+        rows[0].session.doing = Some(khor_core::Doing { thread_unbound: true, ..Default::default() });
+        let out = arrange(rows, Arrange::State, &names);
+        assert_eq!(out.last().unwrap().group, GROUP_STATE);
     }
 
     /// By category, alphabetically — with the row nobody could place in

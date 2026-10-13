@@ -673,22 +673,15 @@ impl Tmux {
                 server_env(k)
             }
         })?;
-        // An existing tmux server does not inherit a new client's PATH.
-        // Pass the launcher only to this grouped session's future shells;
-        // never mutate the server's global environment or existing panes.
-        let codex = crate::codex_launch::install(
-            scripts.parent()?,
-            std::ffi::OsStr::new(&server_env("PATH").unwrap_or_else(|| crate::Node::user_path().to_owned())),
-        ).ok();
         let quote = |s: &str| (!s.contains(['\'', '\\'])).then(|| format!("'{s}'"));
         let mut out = String::from("exec env");
         for (k, v) in &plan.env {
             out.push_str(&format!(" {k}={}", quote(v)?));
         }
-        if let Some(scope) = codex {
-            out.push_str(&format!(" PATH={} {}={} KHOR_HOME={}",
-                quote(&scope.path.to_string_lossy())?, crate::codex_launch::SHIM_ENV,
-                quote(&scope.dir.to_string_lossy())?, quote(&scope.root.to_string_lossy())?));
+        // Strip only this store's retired launcher from an old server's PATH.
+        if let Some(path) = server_env("PATH") {
+            let clean = crate::legacy_codex::clean_path(scripts.parent()?, &path);
+            if clean != path { out.push_str(&format!(" PATH={}", quote(&clean)?)); }
         }
         out.push_str(&format!(" {}", quote(&shell)?));
         for a in &plan.args {

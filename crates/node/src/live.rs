@@ -1239,6 +1239,11 @@ impl LiveKind {
         let selection_hosts: std::collections::BTreeSet<_> = registered.iter().filter(|r| {
             r.host_child.is_some_and(|pid| sweep.procs.held_by(&[pid]).iter().any(|p| crate::codex_terminal::scoped(&sweep.procs, *p)))
         }).map(|r| r.row.id.0.clone()).collect();
+        let bound: std::collections::BTreeSet<_> = sweep.rows.iter()
+            .filter(|r| r.category == "codex").flat_map(|r| r.sighting.pids.iter().copied()).collect();
+        let unbound: std::collections::BTreeSet<_> = sweep.procs.named("codex").into_iter()
+            .filter(|(pid, _)| crate::codex_terminal::scoped(&sweep.procs, *pid) && !bound.contains(pid))
+            .map(|(pid, _)| pid).collect();
         self.unmapped.store(sweep.unmapped, Ordering::Relaxed);
         // Vendor leaves learned this poll, for the preview post-pass:
         // `registered` was read before they were written.
@@ -1533,6 +1538,7 @@ impl LiveKind {
             {
                 let held = hosts[m].holds.clone();
                 hosts[k].holds.extend(held);
+                hosts[k].panes = hosts[m].panes.clone();
                 // With no agent in the session, the shell says what the
                 // client shows in front, not 「正在运行 tmux」 (2c).
                 let found = hosts[m].tmux.as_ref().map(|f| &f.sighting);
@@ -1651,7 +1657,17 @@ impl LiveKind {
         let mut folded_bridges: Vec<SessionId> = Vec::new();
         let mut worn: Vec<(SessionId, SessionId)> = Vec::new();
         let mut forms: Vec<(usize, Form)> = Vec::new();
+        let mut unbound_rows: Vec<usize> = hosted_holds.iter()
+            .filter(|(_, holds)| holds.iter().any(|p| unbound.contains(p)))
+            .map(|(i, _)| *i).collect();
         for (h, host) in hosts.into_iter().enumerate() {
+            // Prefer the pane actually in front. A background pane must not
+            // change the current terminal's category or erase its preview.
+            let front = host.client.as_ref().and_then(|c| c.pane.as_ref())
+                .and_then(|id| host.panes.iter().find(|p| &p.id == id))
+                .or_else(|| host.panes.iter().find(|p| p.active));
+            let front_holds = front.map(|p| procs.held_by(&[p.pid]));
+            let thread_unbound = front_holds.as_ref().unwrap_or(&host.holds).iter().any(|p| unbound.contains(p));
             let inside: Vec<usize> = (0..sits_in.len())
                 .filter(|&i| sits_in[i] == Some(h))
                 .collect();
@@ -1809,6 +1825,7 @@ impl LiveKind {
                 }
                 None => None,
             };
+            if let Some(k) = holder_row.filter(|_| thread_unbound) { unbound_rows.push(k); }
             if let (Some(k), Some(cwd)) = (holder_row, runtime_cwd) {
                 out[k].doing.get_or_insert_with(Default::default).cwd = Some(cwd);
             }
@@ -2124,6 +2141,24 @@ impl LiveKind {
                 r.unread = 0;
                 r.dead = false;
             }
+        }
+        // Category is process evidence; conversation state needs a separate
+        // binding. Never leave an old vendor preview on this terminal.
+        for k in unbound_rows {
+            let row = &mut out[k];
+            row.kind = Kind(khor_core::kind::TUI.into());
+            row.category = Some("codex".into());
+            row.last = None;
+            row.unread = 0;
+            row.unbacked = true;
+            row.dead = false;
+            row.term = true;
+            // The wire keeps the six state enum values for compatibility;
+            // thread_unbound makes this placeholder unavailable to readers.
+            row.state.state = State::Idle;
+            let doing = row.doing.get_or_insert_with(Default::default);
+            *doing = khor_core::Doing { cwd: doing.cwd.take(), title: doing.title.take(),
+                thread_unbound: true, ..Default::default() };
         }
         // Native selection metadata is transport state, never a display name.
         // Keep the raw ledger untouched so the next discovery can read it.
@@ -4106,7 +4141,7 @@ mod tests {
         };
         let vendors = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/vendors/codex");
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9; 32])).discovering(Arc::new(
-            Discovery::at(&vendors).with_procs(Procs::of([(700, codex)])),
+            Discovery::at(&vendors).with_procs(Procs::of([(700, codex)]).with_commands([(700, vec!["codex".into()])])),
         ));
         let id = sid("tui/khormint02");
         k.register(&id, "tui", "codex", Some(host.pid()), Some("codex")).unwrap();
@@ -4125,7 +4160,7 @@ mod tests {
 
     #[test]
     #[cfg(unix)]
-    fn a_shell_running_a_daemon_backed_codex_tui_wears_its_messages_and_state() {
+    fn default_daemon_client_keeps_category_without_borrowing_thread_state() {
         use crate::adaptor::{Discovery, Proc, Procs};
         use std::io::Write;
 
@@ -4159,12 +4194,13 @@ mod tests {
         k.register(&id, "shell", "khor-codex", Some(host.pid()), Some("shell")).unwrap();
         host.serve(&k.dir_of(&id).unwrap(), 5001);
         let rows = k.rows(|_| 0);
-        assert_eq!(rows.len(), 1, "the discovered agent folds into the existing shell");
-        assert_eq!(rows[0].id, id);
-        assert_eq!(rows[0].kind.0, khor_core::kind::TUI);
-        assert_eq!(rows[0].category.as_deref(), Some("codex"));
-        assert_eq!(rows[0].state.state, State::Busy);
-        assert_eq!(rows[0].last.as_deref(), Some("latest question"));
+        assert_eq!(rows.len(), 2, "unbound terminal and loaded thread have separate identities");
+        let terminal = rows.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(terminal.kind.0, khor_core::kind::TUI);
+        assert_eq!(terminal.category.as_deref(), Some("codex"));
+        assert!(!terminal.state_known());
+        assert!(terminal.last.is_none());
+        assert_eq!(terminal.unread, 0);
         let mut file = fs::OpenOptions::new().append(true).open(&path).unwrap();
         writeln!(file, "{}\n{}",
             serde_json::json!({"type":"event_msg","payload":{"type":"agent_message","message":"latest answer"}}),
@@ -4173,12 +4209,14 @@ mod tests {
         drop(file);
         for _ in 0..2 {
             let rows = k.rows(|_| 0);
-            assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0].id, id);
-            assert_eq!(rows[0].last.as_deref(), Some("latest answer"));
-            assert_eq!((rows[0].state.state, rows[0].unread), (State::Done, 1));
+            let terminal = rows.iter().find(|r| r.id == id).unwrap();
+            assert!(!terminal.state_known());
+            assert!(terminal.last.is_none());
+            assert_eq!(terminal.unread, 0);
+            let thread = rows.iter().find(|r| r.id != id).unwrap();
+            assert_eq!(thread.last.as_deref(), Some("latest answer"));
+            assert_eq!((thread.state.state, thread.unread), (State::Done, 1));
         }
-        assert_eq!(k.rows(|_| i64::MAX)[0].state.state, State::Idle);
         drop(writer);
         // Parallel process spawns can briefly inherit the writer descriptor
         // until exec closes it. Wait for observed lock release, not a sleep.
@@ -4193,8 +4231,9 @@ mod tests {
         }
         let rows = k.rows(|_| 0);
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].kind.0, khor_core::kind::SHELL);
-        assert!(!rows[0].dead, "losing the writer does not end the shell");
+        assert_eq!(rows[0].category.as_deref(), Some("codex"));
+        assert!(!rows[0].state_known());
+        assert!(!rows[0].dead, "losing the writer does not end the client");
     }
 
     /// The same rule against the **registry**: `khor run` started inside
@@ -4455,7 +4494,7 @@ mod tests {
         let tmux = crate::adaptor::tmux::fake_tmux("codex-title-switch", "");
         let proc = |name: &str, parent| Proc { name:name.into(), started_ms:100, cwd:Some("/same".into()), ppid:parent };
         let procs = Procs::of([(3001, proc("zsh", None)), (501, proc("codex", Some(3001)))])
-            .with_commands([(501, ["codex", "--no-daemon", "-c", "tui.terminal_title=[\"thread-id\"]", "resume", a].into_iter().map(str::to_owned).collect())]);
+            .with_commands([(501, ["codex", "-c", "tui.terminal_title=[\"thread-id\"]", "resume", a].into_iter().map(str::to_owned).collect())]);
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(Discovery::at(&root).with_procs(procs).with_tmux(Tmux::at_binary(&tmux))));
         let aid = crate::adaptor::id_for(a); let bid = crate::adaptor::id_for(b);
         k.register(&aid, "tui", "old", Some(501), Some("codex")).unwrap();
@@ -4487,6 +4526,20 @@ mod tests {
         select(a);
         assert_eq!(k.sighting_of(&aid).unwrap().1, vec![501]); assert!(k.held_in_mux(&aid));
         assert_eq!(k.rows(|_|0).iter().find(|r|r.id==aid).unwrap().last.as_deref(), Some("LATEST_A"));
+        // Default shared-daemon clients expose no selected-thread contract.
+        // Even a stale UUID title and registered PID must not bind old A.
+        let defaults = Procs::of([(3001, proc("zsh", None)), (501, proc("codex", Some(3001)))])
+            .with_commands([(501, vec!["codex".into()])]);
+        let limited = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(
+            Discovery::at(&root).with_procs(defaults).with_tmux(Tmux::at_binary(&tmux))));
+        let rows = limited.rows(|_|0);
+        let terminal = rows.iter().find(|r| r.term && r.doing.as_ref().is_some_and(|d| d.thread_unbound))
+            .expect("unbound default client must retain an attachable terminal row");
+        assert_eq!(terminal.category.as_deref(), Some("codex"));
+        assert!(!terminal.state_known());
+        assert!(terminal.last.is_none());
+        assert_eq!(terminal.unread, 0);
+        assert!(limited.sighting_of(&aid).unwrap().1.is_empty());
         drop(pending);
         drop(writers);
     }

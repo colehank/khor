@@ -10,8 +10,7 @@
 //!
 //! A writer lock establishes a loaded thread, NOT an attached terminal.
 //! Codex can retain idle threads after a frontend disconnects. The lock
-//! contains no frontend PID. A fresh, bare TUI can separately be joined
-//! by its start, cwd and originator, only when both sides are unique.
+//! contains no frontend PID. Birth time and cwd cannot prove selection.
 //! Subagent sources can inherit the same TUI originator and cwd; they
 //! remain discoverable but never participate in terminal ownership.
 //! Native terminal thread-id metadata identifies the selected thread, including
@@ -45,11 +44,6 @@ pub(super) const PROCESS_NAME: &str = "codex";
 /// put the file first).
 const JOIN_EARLIEST_MS: i64 = -5_000;
 const JOIN_LATEST_MS: i64 = 60_000;
-
-/// TUI bootstrap can include login and daemon connection before thread
-/// creation (66 seconds on the affected CLI). This bounded fallback is
-/// used only for an unambiguous bare TUI in the recorded directory.
-const TUI_BOOTSTRAP_MS: i64 = 120_000;
 
 /// How many rollouts back [`Codex::places`] reads. One head read each
 /// (93 on the machine this was written on); the bound is what keeps
@@ -511,9 +505,8 @@ impl Adaptor for Codex {
 }
 
 impl Codex {
-    fn sweep_writers(&self, locks: &Path, procs: &Procs) -> Sweep {
+    fn sweep_writers(&self, locks: &Path, _procs: &Procs) -> Sweep {
         let mut sweep = Sweep::default();
-        let mut tui_cwds = std::collections::BTreeMap::new();
         // Surface access failures instead of silently showing an idle machine.
         if std::fs::read_dir(locks).is_err() {
             sweep.unmapped += 1;
@@ -545,9 +538,6 @@ impl Codex {
             let (word, at_ms) =
                 last_word(&rollout.path).unwrap_or((State::Idle, rollout.started_ms));
             if !meta.is_subagent { sweep.terminal_threads.push(meta.session_id.clone()); }
-            if meta.originator.as_deref() == Some("codex-tui") && !meta.is_subagent {
-                tui_cwds.insert(meta.session_id.clone(), meta.cwd.clone());
-            }
             sweep.rows.push(Sighting {
                 vendor_session_id: meta.session_id.clone(),
                 title: title_of(meta.cwd.as_deref()),
@@ -571,48 +561,8 @@ impl Codex {
                 }
             }
         }
-        // Writer ownership and terminal ownership are separate questions.
-        // A shared daemon is not a descendant of the terminal's shell.
-        // For a fresh bare TUI, retain the old start/cwd join, with room
-        // for bootstrap (66 s measured on the affected CLI). Require a
-        // known matching cwd and a one-to-one client/thread pair there;
-        // never choose the nearest of several threads or assign daemon PIDs.
-        // A resume/switch cannot be proved by birth time, so it is excluded.
-        let clients: Vec<_> = procs
-            .named(PROCESS_NAME)
-            .into_iter()
-            .filter(|(pid, _)| procs.command(*pid).is_some_and(|argv| argv.len() == 1))
-            .collect();
-        for row in &mut sweep.rows {
-            if !tui_cwds.contains_key(&row.vendor_session_id) {
-                continue;
-            }
-            let Some(cwd) = row.cwd.as_deref() else {
-                continue;
-            };
-            // An older resumed thread in this cwd makes the join ambiguous too.
-            if tui_cwds
-                .values()
-                .filter(|p| p.as_deref() == Some(cwd))
-                .count()
-                != 1
-            {
-                continue;
-            }
-            let here: Vec<_> = clients
-                .iter()
-                .filter(|(_, p)| p.cwd.as_deref() == Some(Path::new(cwd)))
-                .collect();
-            let [(pid, proc)] = here.as_slice() else {
-                continue;
-            };
-            let Some(started) = uuid_v7_ms(&row.vendor_session_id) else {
-                continue;
-            };
-            if (JOIN_EARLIEST_MS..=TUI_BOOTSTRAP_MS).contains(&(started - proc.started_ms)) {
-                row.pids.push(*pid);
-            }
-        }
+        // A writer proves thread liveness, never which terminal selected it.
+        // A native title may bind it later in codex_terminal::select.
         sweep
     }
 }
@@ -648,7 +598,6 @@ fn writer_owned(path: &Path) -> std::io::Result<bool> {
 struct Meta {
     session_id: String,
     cwd: Option<String>,
-    originator: Option<String>,
     is_subagent: bool,
 }
 
@@ -670,7 +619,6 @@ fn read_meta(path: &Path) -> Option<Meta> {
             .or_else(|| p["session_id"].as_str())?
             .to_owned(),
         cwd: p["cwd"].as_str().map(str::to_owned),
-        originator: p["originator"].as_str().map(str::to_owned),
         // originator is inherited by spawned threads. The source records
         // that role explicitly, independently of the shared session_id.
         is_subagent: p["source"].get("subagent").is_some(),
@@ -1051,7 +999,7 @@ mod current {
     }
 
     #[test]
-    fn a_fresh_tui_writer_keeps_its_terminal_client_pid() {
+    fn a_fresh_tui_writer_cannot_prove_its_terminal_client_pid() {
         let home = Home::new("tui-client");
         home.rollout(THREAD, "", &(item("AgentMessage", "latest answer") + "\n"));
         let _writer = home.writer(THREAD);
@@ -1064,7 +1012,7 @@ mod current {
             })]).with_commands([(700, vec![name.into()])]);
             let found = Codex::at(home.0.clone()).sweep(&procs);
             assert_eq!(found.rows.len(), 1);
-            assert_eq!(found.rows[0].pids, vec![700], "the shell needs the client PID to wear Codex: {name}");
+            assert!(found.rows[0].pids.is_empty(), "birth time and cwd cannot identify a selected thread: {name}");
         }
     }
 
@@ -1097,7 +1045,7 @@ mod current {
             })]).with_commands([(700, vec![name.into()])]);
             let rows = codex.sweep(&procs).rows;
             assert_eq!(rows.len(), 2, "subagents remain discoverable");
-            assert_eq!(rows.iter().find(|r| r.vendor_session_id == THREAD).unwrap().pids, vec![700]);
+            assert!(rows.iter().find(|r| r.vendor_session_id == THREAD).unwrap().pids.is_empty());
             assert!(rows.iter().find(|r| r.vendor_session_id == OTHER).unwrap().pids.is_empty());
             assert_eq!(codex.last_said(&crate::live::clean_leaf(THREAD)).as_deref(), Some("parent answer"));
         }

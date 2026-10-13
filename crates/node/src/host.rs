@@ -455,7 +455,7 @@ pub fn read_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> R
 /// found live: a host spawned from it was another bridge, and the
 /// terminal waited on a host.json nobody would ever write.
 pub fn main_if_host(root: std::path::PathBuf) {
-    crate::codex_launch::main_if_shim(&root);
+    crate::legacy_codex::main_if_shim();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
         Some("_host") => host_args(&root, &args[1..]),
@@ -1641,8 +1641,7 @@ fn host_serving(
     // a shell opened here with launchd's four directories is not the
     // shell the person would have got from their own terminal.
     let path = crate::spawn_path(&cmd[0]);
-    let codex_scope = crate::codex_launch::install(khor, std::ffi::OsStr::new(&path)).ok();
-    let path = codex_scope.as_ref().map(|scope| scope.path.to_string_lossy().into_owned()).unwrap_or(path);
+    let path = crate::legacy_codex::clean_path(khor, &path);
     let found = crate::find_program(&cmd[0], &path)
         .ok_or_else(|| msg::command_not_found(&cmd[0], &path))?;
     let mut builder = CommandBuilder::new(&found);
@@ -1667,10 +1666,7 @@ fn host_serving(
         None => builder.args(&cmd[1..]),
     }
     builder.env("PATH", &path);
-    if let Some(scope) = codex_scope {
-        builder.env(crate::codex_launch::SHIM_ENV, scope.dir);
-        builder.env("KHOR_HOME", scope.root);
-    }
+    builder.env_remove(crate::legacy_codex::SHIM_ENV);
     // **The person's own locale, when this process has none.**
     // launchd's environment has no `LANG`, and a tmux client without a
     // UTF-8 locale falls back to the DEC line-drawing set and writes

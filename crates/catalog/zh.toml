@@ -2632,6 +2632,7 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+thread-unbound = "识别受限"
 console-input = "附加输入"
 console-input-hint = "输入仅发给执行设备"
 console-owner = "执行于 {0}"

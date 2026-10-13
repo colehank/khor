@@ -791,7 +791,7 @@ try {
       mux: false,
     });
     await page.route("**/sessions", (r) =>
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(WORDS.map((w, n) => sRow(n, w))) }),
+      r.fulfill({ contentType: "application/json", body: JSON.stringify([...WORDS.map((w, n) => sRow(n, w)), { ...sRow(6, ""), category: "codex", unread: 0, last: null, doing: { thread_unbound: true }, at_ms: 0 }]) }),
     );
     // **Motion off**: 忙碌 breathes (its opacity walks while the machine
     // works), and a breath is motion, not a fade that ranks one line
@@ -890,6 +890,12 @@ try {
       await flipTheme(page, scheme);
       await wait(400);
       const base = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim());
+      const limited = page.locator('[data-side-row="tui/palette-gate-6"]');
+      if (!(await limited.locator('[data-status-unavailable]').count())) fail(`${scheme}: unbound Codex has no explicit unavailable state`);
+      if (await limited.locator('[data-halo], [data-status-word], [data-unread]').count()) fail(`${scheme}: unbound Codex paints an invented state or unread`);
+      const limitedInk = await limited.locator('[data-status-unavailable]').evaluate(el => getComputedStyle(el).color);
+      const limitedContrast = contrast(flatten(parse(limitedInk), rgb(base)), rgb(base));
+      if (limitedContrast < TEXT_FLOOR) fail(`${scheme}: unavailable state contrast ${say(limitedContrast)} is under ${TEXT_FLOOR}`);
       let dotSize;
       for (let n = 0; n < WORDS.length; n++) {
         const row = page.locator(`[data-side-row="tui/palette-gate-${n}"]`);

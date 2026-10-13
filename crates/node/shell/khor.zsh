@@ -101,11 +101,6 @@ _khor_other() {
 }
 
 _khor_install() {
-  # Login startup files may reorder PATH (macOS path_helper does).
-  # This marker exists only in khor's hosted terminal subtree.
-  if [[ -n "$KHOR_CODEX_SHIM_DIR" && ${path[1]} != "$KHOR_CODEX_SHIM_DIR" ]]; then
-    path=("$KHOR_CODEX_SHIM_DIR" "${path[@]}")
-  fi
   precmd_functions=(${precmd_functions:#_khor_install})
   _khor_other && return
   builtin autoload -Uz add-zsh-hook

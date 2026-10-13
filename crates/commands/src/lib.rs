@@ -66,7 +66,7 @@ mod relay;
 pub fn console_main_if_requested(start_web: fn(&std::path::Path)) -> Option<i32> {
     // All native faces enter here before GUI cwd pinning or console dispatch.
     // A relative `codex` symlink must resolve from the caller's directory.
-    khor_node::codex_launch::main_if_shim(&command_root());
+    khor_node::legacy_codex::main_if_shim();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) != Some("_console") { return None; }
     let result = console_args(&args[1..], start_web);
@@ -92,7 +92,7 @@ fn console_args(args: &[String], start_web: fn(&std::path::Path)) -> Result<i32,
 }
 
 pub fn run_cli(start_web: fn(&std::path::Path), write: fn(bool, &str)) -> i32 {
-    khor_node::codex_launch::main_if_shim(&command_root());
+    khor_node::legacy_codex::main_if_shim();
     START_WEB.with(|slot| slot.set(Some(start_web)));
     execution::NATIVE_OUTPUT.with(|slot| slot.set(Some(write)));
     // ssh asking for a kept password (`khor_node::secret`): answered
@@ -3953,7 +3953,7 @@ fn sessions(rest: &[String]) -> Result<(), String> {
         println!(
             "{}\t{}\t{}\t{}{pin}{quiet}{}",
             s.id.0,
-            state::word(s.state.state.key()),
+            if s.state_known() { state::word(s.state.state.key()) } else { khor_catalog::gui::thread_unbound() },
             cli::unread(s.unread),
             s.title,
             src
@@ -5984,7 +5984,7 @@ fn group_word(group: &str) -> String {
         return cli::group_pinned().to_owned();
     }
     if let Some(key) = group.strip_prefix(list::GROUP_STATE) {
-        return state::word(key).to_owned();
+        return if key.is_empty() { khor_catalog::gui::thread_unbound().to_owned() } else { state::word(key).to_owned() };
     }
     if let Some(name) = group.strip_prefix(list::GROUP_CATEGORY) {
         // The empty category is the row nobody could place; every other

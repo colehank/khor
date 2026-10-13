@@ -39,15 +39,16 @@
 可选实际 Codex 验收：`python3 apps/gui/scripts/check-codex-paging.py`。
 依赖本机 Codex 与 tmux，用临时 home、虚构历史和不可达模型端点；不发送输入，
 验证分页到顶到底及草稿保留。它不属于默认门。
-加 `--codex <本轮构建的启动器路径> --mouse` 验证 tmux 鼠标开启、真实 Codex
-逐行滚动及反向回到底部（草稿保留），而不只验证 PageUp/PageDown。
+加 `--codex <真实 Codex 路径> --mouse`，fixture 在启动 Codex 前开启独立
+tmux 的鼠标，验证真实 Codex 逐行滚动及反向回到底部（草稿保留），而不只验证 PageUp/PageDown。
 真实手机还要验：慢拖、快甩惯性、方向反转、输出中拖动，以及从 khor 新建
 shell → 连接已存在的 tmux server → 启动 Codex 的完整流程。
 `cargo test -p khor-cli --test codex_launch` 覆盖 tmux 丢环境标记的真实 PTY 启动。
 
 `python3 apps/gui/scripts/check-codex-selection.py` 则通过真实 CLI 导入隔离 tmux
-中的 Codex，验证同一行在 resume → `/new` → resume 后保持 Codex 类别，原生
-标题随当前线程改变。只发送本地 slash 命令，不提交模型输入；预览归属由 Rust
+中的默认 shared-daemon Codex，验证同一行在 resume → `/new` → resume 后保持
+Codex 类别并显示识别受限。加 `--native-title` 显式设置 fixture 的标题配置，
+另验原生标题随当前线程改变。只发送本地 slash 命令，不提交模型输入；预览归属由 Rust
 回归验证。两项实机验收已在 macOS、Codex 0.162.1 通过；Linux/Windows 未实机复验。
 
 **这一节的标题从 2026-08-27 傍晚起改了口,而改口的理由本身值一条判据。**

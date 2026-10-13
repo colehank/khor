@@ -41,6 +41,7 @@ def uuid7():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--khor", default=str(Path(__file__).resolve().parents[3] / "target/debug/khor"))
+    parser.add_argument("--native-title", action="store_true", help="explicitly opt the fixture into native title metadata")
     parser.add_argument("--codex", default=shutil.which("codex"))
     args = parser.parse_args()
     tmux_bin = shutil.which("tmux")
@@ -62,12 +63,6 @@ def main():
         rollout = folder / f"rollout-{now.strftime('%Y-%m-%dT%H-%M-%S')}-{session}.jsonl"
         socket = "khor-selection-" + uuid.uuid4().hex
         name = "selection-fixture"
-        shim = root / ".khor/codex-bin"
-        real_bin = root / "real-bin"
-        shim.mkdir(parents=True)
-        real_bin.mkdir()
-        (shim / "codex").symlink_to(khor)
-        (real_bin / "codex").symlink_to(codex)
         env = os.environ.copy()
         for key in tuple(env):
             if key.startswith(("CODEX_", "KHOR_")) or key in (
@@ -80,9 +75,9 @@ def main():
             XDG_CONFIG_HOME=str(root / "config"), XDG_DATA_HOME=str(root / "data"),
             XDG_CACHE_HOME=str(root / "cache"), XDG_STATE_HOME=str(root / "state"),
             CODEX_HOME=str(home), KHOR_HOME=str(root), KHOR_VENDOR_HOME=str(root),
-            KHOR_TMUX_SOCKET=socket, KHOR_CODEX_SHIM_DIR=str(shim),
+            KHOR_TMUX_SOCKET=socket,
             KHOR_SELECTION_FIXTURE_KEY="fixture", TERM="xterm-256color", COLORTERM="truecolor",
-            PATH=os.pathsep.join([str(shim), str(real_bin), env.get("PATH", "")]),
+            PATH=env.get("PATH", ""),
         )
         version = subprocess.check_output([str(codex), "--version"], env=env, text=True, timeout=15).strip()
         rows = [{"timestamp": stamp, "type": "session_meta", "payload": {
@@ -178,13 +173,14 @@ trust_level="trusted"
                      f"{phase}: imported row {imported} lost its Codex category")
 
         try:
-            command = shlex.join([str(shim / "codex"), "resume", session])
+            command = shlex.join([str(codex), *(["-c", 'tui.terminal_title=["thread-id"]'] if args.native_title else []), "resume", session])
             tmux("-f", "/dev/null", "new-session", "-d", "-s", name, "-x", "100", "-y", "30", "-c", str(root), command)
             wait_for(screen, lambda value: "ANSWER_060" in value, "fixture did not resume")
-            wait_for(native_id, lambda value: value == session, "first resume did not publish its native UUID")
+            if args.native_title:
+                wait_for(native_id, lambda value: value == session, "first resume did not publish its native UUID")
 
             def candidates():
-                return [line.split("\t") for line in cli("import").splitlines() if len(line.split("\t")) == 7]
+                return [line.split("\t") for line in cli("import").splitlines() if len(line.split("\t")) == 7 and (args.native_title or line.split("\t")[-1].startswith("shell/"))]
 
             # Agent discovery can merge the tmux seat into a tui/UUID
             # candidate whose title is the fixture cwd rather than the tmux
@@ -193,20 +189,28 @@ trust_level="trusted"
             imported = cli("import", choices[0][-1]).strip()
             assert imported and "\n" not in imported and "\t" not in imported, f"unexpected import ID: {imported!r}"
             expect_category(imported, "initial resume")
+            if not args.native_title:
+                listing = cli("sessions", "--all")
+                line = next(line for line in listing.splitlines() if line.startswith(imported + "\t"))
+                assert "识别受限" in line or "Thread unavailable" in line, line
 
             send_slash("/new")
-            new_id = wait_for(native_id, lambda value: value is not None and value != session, "/new retained the old native UUID")
-            assert uuid.UUID(new_id).version == 7, f"/new supplied a non-v7 UUID: {new_id}"
+            new_id = None
+            if args.native_title:
+                new_id = wait_for(native_id, lambda value: value is not None and value != session, "/new retained the old native UUID")
+                assert uuid.UUID(new_id).version == 7, f"/new supplied a non-v7 UUID: {new_id}"
             wait_for(screen, lambda value: "ANSWER_060" not in value, "/new retained the old transcript on screen")
             expect_category(imported, "/new")
 
             send_slash(f"/resume {session}")
-            wait_for(native_id, lambda value: value == session, "/resume did not restore the old native UUID")
+            if args.native_title:
+                wait_for(native_id, lambda value: value == session, "/resume did not restore the old native UUID")
             wait_for(screen, lambda value: "ANSWER_060" in value, "/resume did not restore the fixture transcript")
             expect_category(imported, "second resume")
-            print(f"PASS {version}: same row {imported} stays Codex; native UUID {session} -> {new_id} -> {session}; no model prompt submitted")
+            print(f"PASS {version}: default shared daemon, same row {imported} stays Codex; native title opt-in={args.native_title}; no model prompt submitted")
             print("CLI exposes category/title, not preview; message-preview mapping is covered by the Rust selection tests.")
         finally:
+            subprocess.run([str(codex), "app-server", "daemon", "stop"], env=env, capture_output=True, timeout=20)
             subprocess.run([tmux_bin, "-L", socket, "kill-server"], env=env, capture_output=True, timeout=15)
 
 

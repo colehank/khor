@@ -21,6 +21,7 @@ export function StatusWord({
   /** The caller's own anchors (`data-*`). */
   [mark: `data-${string}`]: unknown;
 }) {
+  if (!w) return <span {...(marks as Record<string, unknown>)} data-status-unavailable className={cn("text-caption text-secondary-foreground", className)}>{word(w)}</span>;
   return (
     <span
       {...(marks as Record<string, unknown>)}

@@ -64,10 +64,6 @@ function _khor_postexec --on-event fish_postexec
 end
 
 function _khor_prompt --on-event fish_prompt
-    # config.fish runs after vendor_conf.d and may replace PATH.
-    if set -q KHOR_CODEX_SHIM_DIR; and test -n "$KHOR_CODEX_SHIM_DIR"; and test "$PATH[1]" != "$KHOR_CODEX_SHIM_DIR"
-        set -gx PATH "$KHOR_CODEX_SHIM_DIR" $PATH
-    end
     test $_khor_native = 1; and return
     _khor_cwd
     _khor_osc "133;A"
