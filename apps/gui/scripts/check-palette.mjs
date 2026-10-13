@@ -849,8 +849,7 @@ try {
       let ground = rgb(base);
       for (const c of [...got.grounds].reverse()) ground = flatten(parse(c), ground);
       const worst = got.texts.map((t) => {
-        // A numeric unread mark has its own badge background. Measure
-        // each text against its painted ground, not just the row's.
+        // Measure each text against its own painted ground.
         let under = rgb(base);
         for (const c of [...t.grounds].reverse()) under = flatten(parse(c), under);
         return { ...t, ratio: contrast(flatten(parse(t.color), under), under) };
@@ -891,6 +890,7 @@ try {
       await flipTheme(page, scheme);
       await wait(400);
       const base = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim());
+      let dotSize;
       for (let n = 0; n < WORDS.length; n++) {
         const row = page.locator(`[data-side-row="tui/palette-gate-${n}"]`);
         await row.locator('[data-row-open]').click();
@@ -908,6 +908,20 @@ try {
           const title = await row.locator('[data-side-title]').boundingBox();
           if (!mark || !title || mark.x < title.x || mark.x + mark.width > title.x + title.width + 1)
             fail(`${scheme}: unread mark clipped by its title (${JSON.stringify({ mark, title })})`);
+          const dot = badge.locator('[data-unread-dot]');
+          if (!(await dot.count())) fail(`${scheme}: unread mark has no separate dot`);
+          else {
+            const box = await dot.boundingBox();
+            if (!box || (dotSize && (box.width !== dotSize.width || box.height !== dotSize.height)))
+              fail(`${scheme}: unread dot changes size with the count`);
+            dotSize ??= box;
+          }
+          const number = badge.locator('[data-unread-count]');
+          if (n === 2 && await number.count()) {
+            const paint = await number.evaluate((el) => ({ color: getComputedStyle(el).color, bg: getComputedStyle(el).backgroundColor }));
+            if (oklch(rgb(paint.color)).c > 0.02 || parse(paint.bg)[3] !== 0)
+              fail(`${scheme}: unread count needs neutral text with no background`);
+          } else if (n === 2 || await number.count()) fail(`${scheme}: unread numeric label does not match its count`);
         }
       }
       await opener.click();
@@ -948,6 +962,8 @@ try {
   }
 
 
+  // Focused row checks keep terminal and avatar pixel sweeps for a full run.
+  if (process.env.PALETTE_ONLY !== "rows") {
   // ── the terminal is the paper, and so is its tab (2026-09-30) ──────
   //
   // 「用灰色背景，黑色内容怎么样」: the owner opened a terminal session
@@ -1376,8 +1392,11 @@ try {
     await page.unroute("**/devices");
   }
 
+  } // full palette sweep
+
   if (thrown.length) fail(`the page threw while being measured:\n${thrown.join("\n")}`);
-  if (!process.exitCode) console.log("palette gate: the main action and the focus ring can both be seen, one ground under the list, the content and the terminal, the hairline, the glass and the selected row's grey stand off it, every ink reads on the ground, a float, the glass and the chosen glass, a selected row reads in front and behind, a picked hit reads in one ink, and the terminal is the paper");
+  if (!process.exitCode && process.env.PALETTE_ONLY === "rows") console.log("palette rows: both themes, selected state hues and contrast, fixed unread dot with neutral count");
+  if (!process.exitCode && process.env.PALETTE_ONLY !== "rows") console.log("palette gate: the main action and the focus ring can both be seen, one ground under the list, the content and the terminal, the hairline, the glass and the selected row's grey stand off it, every ink reads on the ground, a float, the glass and the chosen glass, a selected row reads in front and behind, a picked hit reads in one ink, and the terminal is the paper");
 } catch (e) {
   fail(String(e));
 } finally {
