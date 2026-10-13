@@ -56,6 +56,7 @@ fn main() {
     khor_gui_core::add::AddAsk::export_all_to(&dir).expect("export AddAsk");
     khor_gui_core::add::AddRun::export_all_to(&dir).expect("export AddRun");
     khor_gui_core::add::LoginAsk::export_all_to(&dir).expect("export LoginAsk");
+    khor_gui_core::RecognitionEntry::export_all_to(&dir).expect("export RecognitionEntry");
     khor_gui_core::HooksState::export_all_to(&dir).expect("export HooksState");
     khor_gui_core::Ticket::export_all_to(&dir).expect("export Ticket");
     // The identity card's foot: asked for on its own, embedded in no row.

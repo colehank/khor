@@ -36,7 +36,7 @@ import '../src/styles/tokens.css'; import '../src/styles/app.css';
 const rows=${JSON.stringify(devices)}; const no=()=>{}; const root=createRoot(document.getElementById('root'));
 const posture=()=>{document.documentElement.toggleAttribute('data-narrow',matchMedia(NARROW_QUERY).matches); document.documentElement.toggleAttribute('data-coarse',matchMedia('(pointer:coarse)').matches);}; posture(); addEventListener('resize',posture);
 window.showMap=()=>flushSync(()=>root.render(<TooltipProvider><MyKhorPage key='map' devices={rows} rows={[]} onClose={no} onOpenMachine={no} onNewSession={no} onOpenWorkspaces={no} onOpenBlocked={no} onPin={async()=>{}} onForget={async()=>{}} onAdd={no} onOpenRelays={no} onChanged={no} onReset={no}/></TooltipProvider>));
-window.showMachine=(index)=>flushSync(()=>root.render(<TooltipProvider><MachineCard key={index} row={rows[index]} rows={rows} narrow={matchMedia(NARROW_QUERY).matches} onBack={no} hooks={null} hooksFailed={false} onInstallHooks={no} onUninstallHooks={no}/></TooltipProvider>));
+window.showMachine=(index)=>flushSync(()=>root.render(<TooltipProvider><MachineCard key={index} row={rows[index]} rows={rows} narrow={matchMedia(NARROW_QUERY).matches} onBack={no} onRecognition={no}/></TooltipProvider>));
 window.showMap();`);
   vite = spawn("node_modules/.bin/vite", ["--port", String(port), "--strictPort"], { cwd: gui, stdio: ["ignore", "pipe", "pipe"] });
   let ready = false, exited = false;

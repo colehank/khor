@@ -770,6 +770,8 @@ pub enum Request {
     /// Tail-appended: an older khor cannot decode it and refuses the
     /// frame, which the composer says as that machine refusing.
     Offer { path: String },
+    /// Per-machine agent configuration; mutations never ride early data.
+    Recognition { action: crate::recognition::Action },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1128,6 +1130,7 @@ pub enum Response {
     /// [`Request::Offer`]'s answer: the file's name, size and digest; its
     /// bytes are served by digest (`Request::Fetch`) from now on.
     Offered { name: String, size: u64, digest: String },
+    Recognition { report: crate::recognition::Report },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1250,6 +1253,7 @@ impl Request {
                 | Request::Probe { .. }
                 // Asked twice, it answers the one run (by token).
                 | Request::AddOverSsh { .. }
+                | Request::Recognition { action: crate::recognition::Action::Read }
                 | Request::Journal { .. }
                 // The same file offered twice is one record.
                 | Request::Offer { .. }
@@ -1295,6 +1299,7 @@ impl Request {
                 | Request::Versions { .. }
                 | Request::LoadSince { .. }
                 | Request::Stat { .. }
+                | Request::Recognition { action: crate::recognition::Action::Read }
                 | Request::Journal { .. }
         )
     }

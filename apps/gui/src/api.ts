@@ -47,6 +47,7 @@ import type { FaceChoices } from "./gen/bindings/FaceChoices";
 import type { RelayChoices } from "./gen/bindings/RelayChoices";
 import type { RelayWant } from "./gen/bindings/RelayWant";
 import type { RoadShare } from "./gen/bindings/RoadShare";
+import type { RecognitionEntry } from "./gen/bindings/RecognitionEntry";
 import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { LeaveOutcome } from "./gen/bindings/LeaveOutcome";
@@ -129,6 +130,7 @@ export type {
   RoadShare,
   Connections,
   HooksState,
+  RecognitionEntry,
   Ticket,
   LeaveOutcome,
   Waiting,
@@ -317,6 +319,7 @@ export const isMenuFace = params.get("face") === "menu";
     with the pane to open first. */
 export const settingsFace = params.get("face") === "settings";
 export const settingsPane = params.get("pane");
+export const settingsMachine = params.get("machine");
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (bridge) return post<T>(`http://127.0.0.1:${bridge}/${cmd}`, {}, args);
@@ -1970,7 +1973,7 @@ export const joyHaptic = (kind: "prepare" | "tick" | "turn" | "end") => call<nul
     (`lib/haptics`). */
 export const haptic = (kind: "selection" | "success" | "warning" | "threshold") => call<null>("haptic", { kind });
 /** Opens the settings window, or brings it forward on `pane` (UX-10). */
-export const openSettings = (pane?: string) => call<null>("open_settings", { pane: pane ?? null });
+export const openSettings = (pane?: string, machine?: string) => call<null>("open_settings", { pane: pane ?? null, machine: machine ?? null });
 /** The settings window's title, its pane's name (HIG Settings). */
 export const nameSettings = (title: string) => call<null>("name_settings", { title });
 /** A finished command, said by the system (roadmap 2.4, `lib/finished`). */
@@ -2034,3 +2037,6 @@ export type MenuState = {
 };
 export const menuState = (state: MenuState) =>
   inApp ? call<null>("menu_state", { state }) : Promise.resolve(null);
+
+export const agentRecognition = (machine: string, action: "read" | "enable" | "disable" = "read", agent?: string) =>
+  call<RecognitionEntry[]>("agent_recognition", { machine, action, agent });

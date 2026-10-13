@@ -518,6 +518,7 @@ pub fn answer(
             )?;
             Ok("null".to_owned())
         }
+        "agent_recognition" => to_json(&rt.block_on(crate::agent_recognition(root, &arg("machine")?, &arg("action")?, opt_str("agent")?.as_deref()))?),
         "hooks_state" => to_json(&crate::hooks_state(root)?),
         "install_hooks" => to_json(&crate::install_hooks(root)?),
         "uninstall_hooks" => to_json(&crate::uninstall_hooks(root)?),

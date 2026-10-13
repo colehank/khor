@@ -22,7 +22,7 @@
 
 | 项 | 出处 |
 |---|---|
-| 默认 shared daemon 的 TUI PID → 当前线程仍无可靠协议映射；继续跟进上游，先保留 Codex 类别并显示识别受限，不以 cwd/启动时间猜消息 | 10-14；本地 Codex 0.162.1 协议 schema；docs/HOOKS.md |
+| 默认 shared daemon 的 TUI PID → 当前线程仍无协议映射；设置 → 终端可显式配置原生 thread-id 标题，下一次启动后用标题和活写入锁关联；未配置或证据不足仍显示识别受限，不以 cwd/启动时间猜消息 | 10-14；本地 Codex 0.162.1 协议 schema；docs/HOOKS.md |
 | tmux 原 session 的 mouse=off 时，Codex 启动会禁用鼠标捕获；khor grouped attach 的 mouse=on 必须在 Codex 进入 TUI 前生效。已运行客户端需用户退出/resume，不能靠查询节流补回 native mouse | 10-14；真实 Codex/tmux 隔离验证 |
 
 ## 机 — 等真机或人工

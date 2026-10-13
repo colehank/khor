@@ -2337,6 +2337,12 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::RecognitionOn { machine, action } => {
+                match self.recognition_with(ep, &machine, action).await {
+                    Ok(report) => ipc::Reply::Recognition { report },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::LaunchOn { machine, target } => {
                 match self.launch_with(ep, &machine, &target).await {
                     Ok(()) => ipc::Reply::Launched,
@@ -3458,6 +3464,9 @@ impl Node {
                     .await
                     .map_err(|e| e.to_string())??;
                 Ok(Response::Renamed)
+            }
+            Request::Recognition { action } => {
+                Ok(Response::Recognition { report: self.recognition_here(action)? })
             }
             Request::Launch { target } => {
                 // Nothing is opened on a phone (docs/IOS.md): its opener
@@ -5416,6 +5425,77 @@ impl Node {
         };
         match self.ask(ep, &channel, &req).await? {
             Response::Renamed => Ok(()),
+            Response::Refused { why } => Err(why),
+            other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    fn recognition_target(&self, machine: &str) -> Result<(String, khor_core::DeviceId), String> {
+        if let Some(d) = self.devices()?.into_iter().find(|d| d.id == machine) {
+            return Ok((d.name, crate::device_id_from_hex(&d.id)?));
+        }
+        self.resolve_or_here(machine)
+    }
+
+    /// Configure only the named khor computer. No empty-target fallback and no
+    /// SSH installation: an old peer must refuse rather than modifying here.
+    pub async fn recognition_on(
+        &self,
+        machine: &str,
+        action: crate::recognition::Action,
+    ) -> Result<crate::recognition::Report, String> {
+        if machine.trim().is_empty() {
+            return Err(msg::recognition_computer().to_owned());
+        }
+        if let Some(reply) = self
+            .via_serve(ipc::Op::RecognitionOn {
+                machine: machine.into(),
+                action: action.clone(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::Recognition { report } => Ok(report),
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        let (_, home) = self.recognition_target(machine)?;
+        if home == self.device() {
+            return self.recognition_here(action);
+        }
+        let ep = endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+        let result = self.recognition_with(&ep, machine, action).await;
+        ep.close().await;
+        result
+    }
+    async fn recognition_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        action: crate::recognition::Action,
+    ) -> Result<crate::recognition::Report, String> {
+        if machine.trim().is_empty() {
+            return Err(msg::recognition_computer().to_owned());
+        }
+        let (channel, home) = self.recognition_target(machine)?;
+        if home == self.device() {
+            return self.recognition_here(action);
+        }
+        if self.sat_and_sponsor(&channel)?.is_some() {
+            return Err(msg::recognition_computer().to_owned());
+        }
+        match self
+            .ask(ep, &channel, &Request::Recognition { action })
+            .await?
+        {
+            Response::Recognition { report } => Ok(report),
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }

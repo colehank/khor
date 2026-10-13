@@ -10,7 +10,6 @@ import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STE
 import {
   faceHere,
   fetchDevices,
-  fetchHooks,
   fetchLs,
   fetchSessions,
   fetchTabs,
@@ -22,7 +21,6 @@ import {
   widenWindow,
   giveBackWindow,
   inApp,
-  installHooks,
   launchOn,
   closeSession,
   forgetDevice,
@@ -37,13 +35,12 @@ import {
   setMachinePaused,
   settingsFace,
   settingsPane,
+  settingsMachine,
   systemUnlock,
   trafficLights,
   trafficRoom,
-  uninstallHooks,
   wsAdd,
   type DeviceRow,
-  type HooksState,
   type SessionRow,
   type WorkspaceRow,
 } from "@/api";
@@ -245,15 +242,6 @@ const POLL_MS = 2000;
  * of a fast-moving field belongs on the fast beat or on its own.
  */
 const UNWATCHED_MS = 10_000;
-/**
- * The hooks answer's own beat, and the slowest here on purpose: it
- * changes when somebody runs `khor hooks install` in a terminal, which
- * is a thing that happens approximately never and never twice. It was on
- * the 2 s beat until 2026-09-11 for the reason above its state — a button
- * that only learns on mount would offer to do something already done —
- * and that reason survives a minute of lateness intact.
- */
-const HOOKS_MS = 60_000;
 /** How long a pull waits for its sync round before it reads the rows
     anyway (`refresh`). */
 const SYNC_WAIT_MS = 6_000;
@@ -822,12 +810,17 @@ export default function App() {
   // here is a registration (`Node::adopt_subscriptions`, docs/SHELL.md
   // 第七轮 第 3 条) and comes in with the board like every other row.
 
-  // This machine's hooks, polled with everything else rather than read
-  // once when the card opens: `khor hooks install` in a terminal is the
-  // other way this changes, and a button that only learns on mount would
-  // sit there offering to do something already done.
-  const [hooks, setHooks] = useState<HooksState | null>(null);
-  const [hooksFailed, setHooksFailed] = useState(false);
+  const [recognitionMachine, setRecognitionMachine] = useState<string | null>(settingsFace ? settingsMachine : null);
+  useEffect(() => {
+    if (!settingsFace || !inApp) return;
+    let stop: (() => void) | undefined;
+    let gone = false;
+    void import("@tauri-apps/api/event").then(({ listen }) =>
+      listen<string>("settings:machine", (e) => setRecognitionMachine(e.payload))
+        .then((un) => (gone ? un() : (stop = un))),
+    );
+    return () => { gone = true; stop?.(); };
+  }, []);
 
   const hidden = useHidden();
   // Back from the background with the node caught up (docs/IOS.md 第三步):
@@ -952,40 +945,6 @@ export default function App() {
     // the machines landing and therefore fast again.
   }, [hidden, woken, landing]);
 
-  // **Whether this machine's hooks are installed** — polled rather than
-  // read once on mount, because `khor hooks install` in a terminal is the
-  // other way this changes and a button that only learns on mount would
-  // sit there offering to do something already done. A minute late is
-  // still early enough for that (`HOOKS_MS`).
-  useEffect(() => {
-    // **Not on a phone** (docs/IOS.md 第二步): there is no claude there to
-    // hook, so there is no answer worth a minute's beat — and the card
-    // that would show it is not drawn (`MachineCard`'s `Hooks`). **Asked
-    // once the table has said which this is**, or a phone's first beat
-    // would go out on the default before its own row arrived; the card
-    // that shows the answer needs that table anyway.
-    if (!devicesRead || !hosts) return;
-    let live = true;
-    const tick = () => {
-      fetchHooks()
-        .then((state) => live && setHooks(state))
-        .catch(() => {});
-    };
-    tick();
-    // ⚠️ **Not `hidden ? HIDDEN_MS : HOOKS_MS`**, which is what the two
-    // effects above say and what this one said first: `HIDDEN_MS` is
-    // 10 s and this beat is 60 s, so that spelling asks *more* often
-    // while nobody is looking. `hidden` stays a dependency, which is the
-    // half that was wanted — coming back to the window rebuilds the
-    // effect and re-asks at once, the one moment a stale hooks answer
-    // could be on the glass — while the beat itself stays one number.
-    const t = setInterval(tick, HOOKS_MS);
-    return () => {
-      live = false;
-      clearInterval(t);
-    };
-  }, [hidden, hosts, devicesRead]);
-
   const onSelect = useCallback((row: SessionRow) => {
     sessionTabs.open(row.id);
     if (row.unread > 0 && row.id !== "wide/all") {
@@ -1036,22 +995,17 @@ export default function App() {
     setDevicesRead(true);
   }, [arrangeBy]);
 
-  // Two-argument `then` for the same reason the pins use it: the
-  // rejection handler must see *this* call failing and nothing else. And
-  // the answer carries the state afterwards, so the button never spends
-  // a poll interval showing the job it just finished.
-  const onHooks = useCallback((run: () => Promise<HooksState>) => {
-    run().then(
-      (state) => {
-        setHooks(state);
-        setHooksFailed(false);
-      },
-      () => setHooksFailed(true),
-    );
-  }, []);
-
-  const onInstallHooks = useCallback(() => onHooks(installHooks), [onHooks]);
-  const onUninstallHooks = useCallback(() => onHooks(uninstallHooks), [onHooks]);
+  const openRecognition = (machine: string) => {
+    if (trafficLights && !settingsFace) {
+      openSettings("terminal", machine).catch(() => {});
+      return;
+    }
+    setRecognitionMachine(machine);
+    setSwitchingTabs(false);
+    listPane.expand();
+    setMorePage("terminal");
+    setScreen("detail");
+  };
 
   /**
    * Rows whose last pin attempt did not take, by row id.
@@ -2748,10 +2702,7 @@ export default function App() {
             row={row}
             narrow
             onBack={() => {}}
-            hooks={hooks}
-            hooksFailed={hooksFailed}
-            onInstallHooks={onInstallHooks}
-            onUninstallHooks={onUninstallHooks}
+            onRecognition={openRecognition}
           />
         );
       }
@@ -3143,10 +3094,7 @@ export default function App() {
       onPromote={(r) => setPromoting(r.name)}
       // An open file is left first (`MachineFiles`, one back button).
       onBack={() => (fileBack ? fileBack.go() : setScreen("list"))}
-      hooks={hooks}
-      hooksFailed={hooksFailed}
-      onInstallHooks={onInstallHooks}
-      onUninstallHooks={onUninstallHooks}
+      onRecognition={openRecognition}
       actions={narrow ? machineVerbs : undefined}
       body={
         !openDevice ? undefined : machineBody === "web" ? (
@@ -3441,7 +3389,7 @@ export default function App() {
     ) : morePage === "appearance" ? (
       <AppearancePage onClose={leaveMorePage} onSettingChanged={settings.reread} me={me} />
     ) : morePage === "terminal" ? (
-      <TerminalPage onClose={leaveMorePage} />
+      <TerminalPage onClose={leaveMorePage} devices={devices} machine={recognitionMachine} onMachine={setRecognitionMachine} />
     ) : morePage === "session" ? (
       <SessionPage onClose={leaveMorePage} onSettingChanged={settings.reread} />
     ) : morePage === "workspace" ? (

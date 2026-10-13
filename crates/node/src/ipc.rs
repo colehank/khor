@@ -416,6 +416,7 @@ pub enum Op {
     Post { typed: String, files: Vec<String> },
     /// Literal console prose; only explicit slash submissions execute.
     Note { text: String, files: Vec<String> },
+    RecognitionOn { machine: String, action: crate::recognition::Action },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -477,6 +478,7 @@ impl Op {
     /// the bug this table exists to end.
     fn table(&self) -> (&'static str, std::time::Duration) {
         match self {
+            Op::RecognitionOn { .. } => ("RecognitionOn", DEADLINE_FAR),
             Op::Hops => ("Hops", DEADLINE_LOCAL),
             Op::Roads => ("Roads", DEADLINE_LOCAL),
             Op::Wires => ("Wires", DEADLINE_LOCAL),
@@ -744,6 +746,7 @@ pub enum Reply {
     Journal { lines: Vec<String> },
     /// Tail-appended with [`Op::Post`]: the written message's id.
     Posted { id: String },
+    Recognition { report: crate::recognition::Report },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

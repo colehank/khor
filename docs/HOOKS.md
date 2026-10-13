@@ -47,16 +47,30 @@ codex 的转写给得出完成,**给不出待批**(它落盘里根本没有审�
 ### Codex 的发现与转写
 
 - 普通 shell 和 tmux 中的 `codex` 保留用户原命令：不安装 PATH launcher，
-  不添加 `--no-daemon`、标题配置或 hook。Codex 默认共享 daemon 的能力照常保留。
+  不添加 `--no-daemon` 或启动参数，不自动安装配置。Codex 默认共享 daemon 的能力照常保留。
   khor 显式创建的 GUI Codex 会话仍通过 app-server 管理，和普通终端分开。
 - **进程类别、当前线程、线程内容是三个证据层**。跨平台进程表确认交互 Codex；
   writer lock 确认线程仍加载；转写给出该线程的消息与回合状态。后两者均不能
   单独证明一个终端当前显示哪个线程。默认 daemon 未提供此映射时，终端仍显示
   Codex 类别，但 `Doing.thread_unbound` 标明识别受限，状态光环、预览和未读不显示。
-- 用户自己显式传入 `-c 'tui.terminal_title=["thread-id"]'` 时，已有的只读关联仍可用，
-  不要求 `--no-daemon`。普通宿主读 command ledger 的 title，tmux 读 `pane_title`。
+- 用户在「设置 → 终端 → 智能体识别」选定运行 Codex 的机器并启用后，khor 只修改
+  该机 `.codex/config.toml` 的 `[tui].terminal_title=["thread-id"]`。原生配置在下一次
+  启动 Codex 时生效，保留 shared daemon；不会重启现有会话。普通宿主读 command ledger
+  的 title，tmux 读 `pane_title`。用户自行配置相同标题也能被发现。
+  显式 `-c` 标题仍可读取，但 **0.162.1 的 CLI override 会退出隐式 shared daemon 路径**，
+  因此不是设置页采用的方案。
   只接受能唯一匹配活写入根线程的完整 UUID／合法截断前缀；子智能体、歧义与自定义
   标题不参与归属。新线程尚无转写时，活锁和原生标题共同证明其存在。
+- 全局配置必须早于客户端启动；修改配置后的旧客户端仍保持识别受限，退出并 resume 后再读。
+  CLI 的标题覆盖优先；profile、项目层禁用标题或无法读取的配置保守不绑定。
+- 设置显示的是盘上的「已配置」，不承诺所有运行中的会话已绑定。Claude 和 Codex
+  共用按机器的读取／启用／撤销接口，分别使用自己的适配器；Claude 启用的是现有 hooks。
+  iPhone 可选择已配对的 khor 电脑；SSH 卫星和手机本身不提供配置入口。
+  机器页只展示识别摘要并跳转设置。远端不通、旧版本不支持或目标不存在时，报错，
+  绝不回退修改本机。更改请求走已认证的 peer/IPC，不使用 0-RTT 或自动重放。
+- Codex 撤销记录只保存原来的标题字段、目标路径和是否已有 tui 表，不复制其他设置。
+  撤销只恢复 khor 设置的那一项，保留模型等后续修改；标题被用户手动改变后，以用户
+  新值为准。保留符号链接与文件权限；目标改指向时拒绝恢复，避免写错文件。
 - 不使用 SessionStart/SessionEnd 判断当前选择：0.162.1 的 SessionStart 延迟到
   第一轮输入，`/new` 后旧线程仍持有锁。`thread/loaded/list` 返回加载线程 ID，
   `thread/read` 读取线程；当前协议未提供本地 TUI PID → 当前选中线程的映射。

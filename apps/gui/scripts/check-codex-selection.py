@@ -173,7 +173,10 @@ trust_level="trusted"
                      f"{phase}: imported row {imported} lost its Codex category")
 
         try:
-            command = shlex.join([str(codex), *(["-c", 'tui.terminal_title=["thread-id"]'] if args.native_title else []), "resume", session])
+            if args.native_title:
+                config = home / "config.toml"
+                config.write_text(config.read_text().replace("[tui]", '[tui]\nterminal_title=["thread-id"]'))
+            command = shlex.join([str(codex), "resume", session])
             tmux("-f", "/dev/null", "new-session", "-d", "-s", name, "-x", "100", "-y", "30", "-c", str(root), command)
             wait_for(screen, lambda value: "ANSWER_060" in value, "fixture did not resume")
             if args.native_title:

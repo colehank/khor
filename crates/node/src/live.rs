@@ -4492,9 +4492,10 @@ mod tests {
         }).collect();
         let pending = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true).open(locks.join(format!("{c}.lock"))).unwrap(); pending.try_lock().unwrap();
         let tmux = crate::adaptor::tmux::fake_tmux("codex-title-switch", "");
-        let proc = |name: &str, parent| Proc { name:name.into(), started_ms:100, cwd:Some("/same".into()), ppid:parent };
+        fs::write(root.join(".codex/config.toml"), "[tui]\nterminal_title=[\"thread-id\"]\n").unwrap();
+        let proc = |name: &str, parent| Proc { name:name.into(), started_ms:std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64, cwd:Some("/same".into()), ppid:parent };
         let procs = Procs::of([(3001, proc("zsh", None)), (501, proc("codex", Some(3001)))])
-            .with_commands([(501, ["codex", "-c", "tui.terminal_title=[\"thread-id\"]", "resume", a].into_iter().map(str::to_owned).collect())]);
+            .with_commands([(501, ["codex", "resume", a].into_iter().map(str::to_owned).collect())]);
         let k = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(Discovery::at(&root).with_procs(procs).with_tmux(Tmux::at_binary(&tmux))));
         let aid = crate::adaptor::id_for(a); let bid = crate::adaptor::id_for(b);
         k.register(&aid, "tui", "old", Some(501), Some("codex")).unwrap();
@@ -4528,6 +4529,7 @@ mod tests {
         assert_eq!(k.rows(|_|0).iter().find(|r|r.id==aid).unwrap().last.as_deref(), Some("LATEST_A"));
         // Default shared-daemon clients expose no selected-thread contract.
         // Even a stale UUID title and registered PID must not bind old A.
+        fs::remove_file(root.join(".codex/config.toml")).unwrap();
         let defaults = Procs::of([(3001, proc("zsh", None)), (501, proc("codex", Some(3001)))])
             .with_commands([(501, vec!["codex".into()])]);
         let limited = LiveKind::new(root.to_path_buf(), DeviceId([9;32])).discovering(Arc::new(

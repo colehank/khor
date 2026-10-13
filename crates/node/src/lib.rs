@@ -22,6 +22,7 @@ pub mod codexagent;
 mod codex_process;
 pub mod legacy_codex;
 pub mod codex_terminal;
+pub mod recognition;
 pub mod config;
 pub mod cwd;
 pub mod day;

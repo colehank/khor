@@ -2976,3 +2976,48 @@ mod wizard_agent_tests {
         );
     }
 }
+
+/// Actual vendor configuration on one explicitly selected computer.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct RecognitionEntry {
+    pub agent: String,
+    pub state: String,
+    pub managed: bool,
+    pub path: String,
+    pub error: Option<String>,
+}
+pub async fn agent_recognition(
+    root: &Path,
+    machine: &str,
+    action: &str,
+    agent: Option<&str>,
+) -> Result<Vec<RecognitionEntry>, String> {
+    use khor_node::recognition::{Action, Agent};
+    let selected = || match agent {
+        Some("claude") => Ok(Agent::Claude),
+        Some("codex") => Ok(Agent::Codex),
+        _ => Err("unknown recognition agent".to_owned()),
+    };
+    let action = match action {
+        "read" => Action::Read,
+        "enable" => Action::Enable(selected()?),
+        "disable" => Action::Disable(selected()?),
+        _ => return Err("unknown recognition action".into()),
+    };
+    let report = open(root)?.recognition_on(machine, action).await?;
+    Ok(report
+        .entries
+        .into_iter()
+        .map(|e| RecognitionEntry {
+            agent: match e.agent {
+                Agent::Claude => "claude",
+                Agent::Codex => "codex",
+            }
+            .into(),
+            state: e.state,
+            managed: e.managed,
+            path: e.path,
+            error: e.error,
+        })
+        .collect())
+}

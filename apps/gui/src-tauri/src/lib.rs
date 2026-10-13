@@ -669,6 +669,11 @@ fn restyle(
     khor_gui_core::restyle(&Node::root_from_env(), &machine, colors, variant, shape)
 }
 
+#[tauri::command]
+async fn agent_recognition(machine: String, action: String, agent: Option<String>) -> Result<Vec<khor_gui_core::RecognitionEntry>, String> {
+    khor_gui_core::agent_recognition(&Node::root_from_env(), &machine, &action, agent.as_deref()).await
+}
+
 /// The three hook commands are about **this machine's** claude: the
 /// settings file they read and write is rooted at this node's vendor
 /// home, so there is no argument naming a machine and no way to point
@@ -2359,8 +2364,16 @@ const SETTINGS: &str = "settings";
 /// (`on_the_page_store`), so the theme mirror and the type sizes agree.
 #[cfg(desktop)]
 pub(crate) fn show_settings(app: &tauri::AppHandle, pane: Option<String>) -> tauri::Result<()> {
+    show_settings_for(app, pane, None)
+}
+
+#[cfg(desktop)]
+fn show_settings_for(app: &tauri::AppHandle, pane: Option<String>, machine: Option<String>) -> tauri::Result<()> {
     use tauri::{Emitter, Manager};
     if let Some(w) = app.get_webview_window(SETTINGS) {
+        if let Some(m) = machine {
+            let _ = w.emit_to(SETTINGS, "settings:machine", m);
+        }
         if let Some(p) = pane {
             let _ = w.emit_to(SETTINGS, "settings:pane", p);
         }
@@ -2368,7 +2381,8 @@ pub(crate) fn show_settings(app: &tauri::AppHandle, pane: Option<String>) -> tau
         return w.set_focus();
     }
     let at = pane.map(|p| format!("&pane={p}")).unwrap_or_default();
-    let win = tauri::WebviewWindowBuilder::new(app, SETTINGS, tauri::WebviewUrl::App(format!("index.html?face=settings{at}").into()))
+    let target = machine.map(|m| format!("&machine={m}")).unwrap_or_default();
+    let win = tauri::WebviewWindowBuilder::new(app, SETTINGS, tauri::WebviewUrl::App(format!("index.html?face=settings{at}{target}").into()))
         .title(khor_catalog::gui::nav_settings())
         .inner_size(780.0, 560.0)
         // Never the narrow face (`use-narrow`'s 760): a settings window
@@ -2383,8 +2397,11 @@ pub(crate) fn show_settings(app: &tauri::AppHandle, pane: Option<String>) -> tau
 /// ⌘, and 设置… — the page's road to `show_settings`.
 #[cfg(desktop)]
 #[tauri::command]
-async fn open_settings(app: tauri::AppHandle, pane: Option<String>) -> Result<(), String> {
-    show_settings(&app, pane).map_err(|e| e.to_string())
+async fn open_settings(app: tauri::AppHandle, pane: Option<String>, machine: Option<String>) -> Result<(), String> {
+    if machine.as_ref().is_some_and(|m| m.len() != 64 || !m.bytes().all(|c| c.is_ascii_hexdigit())) {
+        return Err("invalid settings machine id".into());
+    }
+    show_settings_for(&app, pane, machine).map_err(|e| e.to_string())
 }
 
 /// The settings window's title follows its pane (HIG Settings: the
@@ -2402,8 +2419,8 @@ fn name_settings(app: tauri::AppHandle, title: String) {
 /// window to open: refused by name, the `show_menu` kind of mobile half.
 #[cfg(not(desktop))]
 #[tauri::command]
-async fn open_settings(pane: Option<String>) -> Result<(), String> {
-    let _ = pane;
+async fn open_settings(pane: Option<String>, machine: Option<String>) -> Result<(), String> {
+    let _ = (pane, machine);
     Err("no settings window on a phone".into())
 }
 
@@ -4873,6 +4890,7 @@ pub fn run() {
             set_receive_dir,
             face_choices,
             restyle,
+            agent_recognition,
             hooks_state,
             install_hooks,
             uninstall_hooks,

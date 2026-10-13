@@ -1,0 +1,477 @@
+//! Per-machine agent integration. The report is read from vendor configuration,
+//! never a saved UI boolean. Codex uses native title settings, not a launcher.
+use crate::{
+    Node,
+    adaptor::{self, claude},
+};
+use khor_catalog::msg;
+use serde::{Deserialize, Serialize};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+use toml_edit::{DocumentMut, Item};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Agent {
+    Claude,
+    Codex,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Action {
+    Read,
+    Enable(Agent),
+    Disable(Agent),
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Entry {
+    pub agent: Agent,
+    /// absent / automatic / configured / changed / error
+    pub state: String,
+    pub managed: bool,
+    pub path: String,
+    pub error: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Report {
+    pub entries: Vec<Entry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TitleBackup {
+    /// Only this value is ours to restore; never back up credentials or the file.
+    original: Option<String>,
+    had_tui: bool,
+    target: PathBuf,
+}
+fn backup_path(root: &Path) -> PathBuf {
+    root.join(".khor/codex-title.json")
+}
+fn config_path(home: &Path) -> PathBuf {
+    home.join(".codex/config.toml")
+}
+// Follow an existing symlink and retain it, including when the containing
+// directory itself is linked. Refuse dangling links instead of replacing them.
+fn write_target(path: &Path) -> Result<PathBuf, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => fs::canonicalize(path).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let parent = path.parent().ok_or_else(msg::recognition_changed)?;
+            fs::canonicalize(parent)
+                .map(|p| p.join(path.file_name().unwrap()))
+                .map_err(|e| e.to_string())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+fn read(path: &Path) -> Result<Option<String>, String> {
+    match fs::read_to_string(path) {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("{}: {e}", path.display())),
+    }
+}
+fn parse(text: &str) -> Result<DocumentMut, String> {
+    text.parse::<DocumentMut>().map_err(|e| e.to_string())
+}
+fn title(doc: &DocumentMut) -> Option<&Item> {
+    doc.get("tui")?.get("terminal_title")
+}
+fn id_title(doc: &DocumentMut) -> bool {
+    title(doc)
+        .and_then(Item::as_array)
+        .is_some_and(|a| a.len() == 1 && a.get(0).and_then(|v| v.as_str()) == Some("thread-id"))
+}
+/// Read every sweep: changing native settings must invalidate an earlier binding.
+#[cfg(test)]
+fn native_title(home: &Path) -> bool {
+    read(&config_path(home))
+        .ok()
+        .flatten()
+        .and_then(|s| parse(&s).ok())
+        .is_some_and(|d| id_title(&d))
+}
+
+/// A project/profile override may disable native title updates. Fail closed even
+/// for a project configuration that Codex might consider untrusted.
+pub(crate) fn native_title_for(
+    home: &Path,
+    cwd: Option<&Path>,
+    started_ms: i64,
+    args: &[std::ffi::OsString],
+) -> bool {
+    if args.iter().any(|a| {
+        let s = a.to_string_lossy();
+        s.starts_with("-p") || s == "--profile" || s.starts_with("--profile=")
+    }) {
+        return false;
+    }
+    if crate::codex_process::config_values(args).iter().any(|v| {
+        v.split_once('=')
+            .is_some_and(|(k, _)| k.trim().trim_matches(['\'', '"']) == "profile")
+    }) {
+        return false;
+    }
+    let path = config_path(home);
+    let Some(doc) = read(&path).ok().flatten().and_then(|s| parse(&s).ok()) else {
+        return false;
+    };
+    if !id_title(&doc) || doc.get("profile").is_some() {
+        return false;
+    }
+    // Configured is not yet active in an older TUI. Do not accept its stale
+    // pane title just because the operator enabled integration mid-session.
+    let modified = fs::metadata(&path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok());
+    if modified.is_none_or(|t| t.as_secs() as i64 > started_ms / 1000) {
+        return false;
+    }
+
+    if let Some(cwd) = cwd {
+        for dir in cwd.ancestors() {
+            if dir == home {
+                continue;
+            }
+            match read(&dir.join(".codex/config.toml")) {
+                Ok(Some(s)) => match parse(&s) {
+                    Ok(d) => {
+                        if d.get("profile").is_some() || (title(&d).is_some() && !id_title(&d)) {
+                            return false;
+                        }
+                    }
+                    Err(_) => return false,
+                },
+                Err(_) => return false,
+                _ => {}
+            }
+        }
+    }
+    true
+}
+
+/// Preserve mode and unrelated TOML formatting. Check the read version immediately
+/// before replacing it; the operation lock serializes khor's own writers.
+fn replace(path: &Path, expected: Option<&str>, text: &str) -> Result<(), String> {
+    if read(path)?.as_deref() != expected {
+        return Err(msg::recognition_changed().to_owned());
+    }
+    let parent = path.parent().ok_or_else(msg::recognition_changed)?;
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let tmp = path.with_extension(format!("khor-{}.tmp", std::process::id()));
+    let mut opts = fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    let mut f = opts.open(&tmp).map_err(|e| e.to_string())?;
+    let result = (|| {
+        use std::io::Write;
+        f.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+        if let Ok(m) = fs::metadata(path) {
+            f.set_permissions(m.permissions())
+                .map_err(|e| e.to_string())?;
+        }
+        f.sync_all().map_err(|e| e.to_string())?;
+        if read(path)?.as_deref() != expected {
+            return Err(msg::recognition_changed().to_owned());
+        }
+        drop(f);
+        fs::rename(&tmp, path).map_err(|e| e.to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+fn codex_change(root: &Path, home: &Path, enable: bool) -> Result<(), String> {
+    let path = write_target(&config_path(home))?;
+    let saved = backup_path(root);
+    let text = read(&path)?;
+    let mut doc = parse(text.as_deref().unwrap_or(""))?;
+    let backup = read(&saved)?;
+    if enable {
+        if id_title(&doc) {
+            return Ok(());
+        }
+        // A changed setting belongs to the user. First explicitly detach the old
+        // integration; never silently replace its restoration record.
+        if backup.is_some() {
+            return Err(msg::recognition_changed().to_owned());
+        }
+        if !home.join(".codex").is_dir() {
+            return Err(msg::recognition_missing().to_owned());
+        }
+        if doc.get("tui").is_some_and(|v| !v.is_table_like()) {
+            return Err(msg::recognition_changed().to_owned());
+        }
+        let previous = TitleBackup {
+            original: title(&doc).map(ToString::to_string),
+            had_tui: doc.get("tui").is_some(),
+            target: path.clone(),
+        };
+        let record = serde_json::to_string(&previous).map_err(|e| e.to_string())?;
+        // Save restoration before writing. A crash between writes is recoverable:
+        // disable leaves the untouched original in place and clears this record.
+        replace(&saved, None, &record)?;
+        doc["tui"]["terminal_title"] = toml_edit::value(toml_edit::Array::from_iter(["thread-id"]));
+        replace(&path, text.as_deref(), &doc.to_string())?;
+    } else if let Some(backup) = backup {
+        let previous: TitleBackup = serde_json::from_str(&backup).map_err(|e| e.to_string())?;
+        if previous.target != path {
+            return Err(msg::recognition_changed().to_owned());
+        }
+        if id_title(&doc) {
+            if let Some(original) = previous.original {
+                let mut prior = parse(&format!("value ={original}"))?;
+                doc["tui"]["terminal_title"] =
+                    prior.remove("value").ok_or_else(msg::recognition_changed)?;
+            } else if let Some(tui) = doc.get_mut("tui").and_then(Item::as_table_like_mut) {
+                tui.remove("terminal_title");
+            }
+            if !previous.had_tui
+                && doc
+                    .get("tui")
+                    .and_then(Item::as_table_like)
+                    .is_some_and(|t| t.is_empty())
+            {
+                doc.remove("tui");
+            }
+            replace(&path, text.as_deref(), &doc.to_string())?;
+        }
+        // If the user changed it meanwhile, their new value is left alone.
+        fs::remove_file(saved).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+fn entry(root: &Path, home: &Path, agent: Agent) -> Entry {
+    let path = match agent {
+        Agent::Claude => home.join(".claude/settings.json"),
+        Agent::Codex => config_path(home),
+    };
+    let mut e = Entry {
+        agent: agent.clone(),
+        state: "absent".into(),
+        managed: false,
+        path: path.display().to_string(),
+        error: None,
+    };
+    if !path.parent().is_some_and(Path::is_dir) {
+        return e;
+    }
+    let result = (|| -> Result<(), String> {
+        match agent {
+            Agent::Claude => {
+                let report = claude::hooks_report(home)?;
+                e.managed = report
+                    .events
+                    .iter()
+                    .any(|(_, s)| !matches!(s, claude::Installed::Missing));
+                e.state = if report
+                    .events
+                    .iter()
+                    .all(|(_, s)| matches!(s, claude::Installed::Here))
+                {
+                    "configured"
+                } else if e.managed {
+                    "changed"
+                } else {
+                    "automatic"
+                }
+                .into();
+            }
+            Agent::Codex => {
+                let doc = parse(read(&path)?.as_deref().unwrap_or(""))?;
+                e.managed = read(&backup_path(root))?.is_some();
+                e.state = if id_title(&doc) {
+                    "configured"
+                } else if e.managed {
+                    "changed"
+                } else {
+                    "automatic"
+                }
+                .into();
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        e.state = "error".into();
+        e.error = Some(error);
+    }
+    e
+}
+impl Node {
+    pub(crate) fn recognition_here(&self, action: Action) -> Result<Report, String> {
+        if !self.hosts() {
+            return Err(msg::recognition_computer().to_owned());
+        }
+        let home = adaptor::vendor_home(&self.root);
+        if action != Action::Read {
+            fs::create_dir_all(self.root.join(".khor")).map_err(|e| e.to_string())?;
+            let lock = fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .read(true)
+                .write(true)
+                .open(self.root.join(".khor/recognition.lock"))
+                .map_err(|e| e.to_string())?;
+            lock.try_lock()
+                .map_err(|_| msg::recognition_busy().to_owned())?;
+            match action {
+                Action::Enable(Agent::Claude) => {
+                    if !home.join(".claude").is_dir() {
+                        return Err(msg::recognition_missing().to_owned());
+                    }
+                    self.install_hooks()?;
+                }
+                Action::Disable(Agent::Claude) => {
+                    self.uninstall_hooks()?;
+                }
+                Action::Enable(Agent::Codex) => codex_change(&self.root, &home, true)?,
+                Action::Disable(Agent::Codex) => codex_change(&self.root, &home, false)?,
+                Action::Read => {}
+            }
+        }
+        Ok(Report {
+            entries: vec![
+                entry(&self.root, &home, Agent::Claude),
+                entry(&self.root, &home, Agent::Codex),
+            ],
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn scratch(tag: &str) -> Scratch {
+        let p = std::env::temp_dir().join(format!("khor-recognition-{tag}-{}", std::process::id()));
+        fs::create_dir_all(p.join(".codex")).unwrap();
+        Scratch(p)
+    }
+    #[test]
+    fn title_roundtrip_preserves_other_edits_and_original_preference() {
+        let s = scratch("roundtrip");
+        let p = config_path(&s.0);
+        fs::write(&p,"# mine\nmodel = 'my-model'\n[tui]\nterminal_title = ['project', 'spinner'] # my title\n").unwrap();
+        codex_change(&s.0, &s.0, true).unwrap();
+        assert!(native_title(&s.0));
+        codex_change(&s.0, &s.0, true).unwrap();
+        let installed = fs::read_to_string(&p).unwrap();
+        fs::write(&p, installed.replace("my-model", "new-model")).unwrap();
+        codex_change(&s.0, &s.0, false).unwrap();
+        let restored = fs::read_to_string(&p).unwrap();
+        assert!(restored.contains("new-model"));
+        assert!(restored.contains("['project', 'spinner'] # my title"));
+        assert!(restored.starts_with("# mine"));
+        codex_change(&s.0, &s.0, false).unwrap();
+        assert_eq!(read(&p).unwrap().unwrap(), restored);
+    }
+    #[test]
+    fn user_title_changes_win_and_existing_configuration_is_not_owned() {
+        let s = scratch("changed");
+        let p = config_path(&s.0);
+        fs::write(&p, "[tui]\nterminal_title=['thread-id']\n").unwrap();
+        codex_change(&s.0, &s.0, true).unwrap();
+        assert!(!backup_path(&s.0).exists());
+        codex_change(&s.0, &s.0, false).unwrap();
+        assert!(native_title(&s.0));
+        fs::write(&p, "[tui]\nterminal_title=['project']\n").unwrap();
+        codex_change(&s.0, &s.0, true).unwrap();
+        fs::write(&p, "[tui]\nterminal_title=[]\n").unwrap();
+        assert!(codex_change(&s.0, &s.0, true).is_err());
+        codex_change(&s.0, &s.0, false).unwrap();
+        assert_eq!(read(&p).unwrap().unwrap(), "[tui]\nterminal_title=[]\n");
+    }
+    #[test]
+    fn malformed_settings_are_never_overwritten_and_no_title_is_restored_as_absence() {
+        let s = scratch("invalid");
+        let p = config_path(&s.0);
+        fs::write(&p, "[tui\n").unwrap();
+        assert!(codex_change(&s.0, &s.0, true).is_err());
+        assert!(!backup_path(&s.0).exists());
+        fs::write(&p, "model='x'\n").unwrap();
+        codex_change(&s.0, &s.0, true).unwrap();
+        codex_change(&s.0, &s.0, false).unwrap();
+        assert_eq!(read(&p).unwrap().unwrap(), "model='x'\n");
+    }
+    #[test]
+    fn native_selection_requires_active_unoverridden_configuration() {
+        use std::ffi::OsString;
+        let s = scratch("overrides");
+        let p = config_path(&s.0);
+        let project = s.0.join("project");
+        fs::create_dir_all(project.join(".codex")).unwrap();
+        fs::write(&p, "[tui]\nterminal_title=['thread-id']\n").unwrap();
+        let active = |args: Vec<OsString>| native_title_for(&s.0, Some(&project), i64::MAX, &args);
+        assert!(active(vec![]));
+        assert!(
+            !native_title_for(&s.0, Some(&project), 1, &[]),
+            "existing TUI has not loaded new config"
+        );
+        for args in [
+            vec!["-p", "work"],
+            vec!["-pwork"],
+            vec!["--profile=work"],
+            vec!["-c", "profile='work'"],
+        ] {
+            assert!(!active(args.into_iter().map(OsString::from).collect()));
+        }
+        fs::write(
+            project.join(".codex/config.toml"),
+            "[tui]\nterminal_title=[]\n",
+        )
+        .unwrap();
+        assert!(!active(vec![]));
+        fs::write(
+            project.join(".codex/config.toml"),
+            "[tui]\nterminal_title=['thread-id']\n",
+        )
+        .unwrap();
+        assert!(active(vec![]));
+        fs::write(&p, "profile='work'\n[tui]\nterminal_title=['thread-id']\n").unwrap();
+        assert!(!active(vec![]));
+        assert!(!crate::codex_process::selection_title_or(
+            &["-c".into(), "tui.terminal_title=[]".into()],
+            true
+        ));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn symlink_and_permissions_survive_but_retargeted_links_are_not_restored() {
+        use std::os::unix::{fs::PermissionsExt, fs::symlink};
+        let s = scratch("symlink");
+        let target = s.0.join("dotfiles.toml");
+        let link = config_path(&s.0);
+        fs::write(&target, "model='mine'\n").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+        symlink(&target, &link).unwrap();
+        codex_change(&s.0, &s.0, true).unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        let other = s.0.join("other.toml");
+        fs::write(&other, "[tui]\nterminal_title=['thread-id']\n").unwrap();
+        fs::remove_file(&link).unwrap();
+        symlink(&other, &link).unwrap();
+        assert!(codex_change(&s.0, &s.0, false).is_err());
+        fs::remove_file(&link).unwrap();
+        symlink(&target, &link).unwrap();
+        codex_change(&s.0, &s.0, false).unwrap();
+        assert_eq!(read(&target).unwrap().unwrap(), "model='mine'\n");
+    }
+}

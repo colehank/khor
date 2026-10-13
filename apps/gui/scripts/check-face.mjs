@@ -715,11 +715,11 @@ try {
     watchKept[body.machine] = kept;
     return r.fulfill({ contentType: "application/json", body: JSON.stringify(kept) });
   });
-  // The shell polls sessions, devices and hooks in one Promise.all —
-  // one rejection drops the whole batch, so the third leg answers too.
-  await page.route("**/hooks_state", (r) =>
-    r.fulfill({ contentType: "application/json", body: JSON.stringify({ installed: false }) }),
-  );
+  // Recognition is read on the selected computer when its surface is open.
+  await page.route("**/agent_recognition", (r) => r.fulfill({ json: [
+    { agent: "claude", state: "automatic", managed: false, path: "/fixture/.claude/settings.json", error: null },
+    { agent: "codex", state: "automatic", managed: false, path: "/fixture/.codex/config.toml", error: null },
+  ] }));
   // 额度: the registered accounts' rings (`QuotaLanding`), three rows
   // that are the three shapes a reading takes — a fraction (an arc and
   // a percent), numbers with no denominator (a spend, a track, no
@@ -2956,10 +2956,9 @@ try {
     // one as a dead probe forever.
     { name: "devices", anchor: "[data-device]", go: () => open("devices") },
     {
-      // This machine's card: the only one carrying the hooks control,
-      // and the only one with no readings (it never asks itself).
+      // This machine's card includes a link to per-machine recognition.
       name: "machine card · this machine",
-      anchor: "[data-hooks]",
+      anchor: "[data-setting-row-name='recognition-link']",
       go: async () => (await open("devices")) && press("[data-list] [data-row-open]"),
     },
     {
@@ -14828,7 +14827,7 @@ try {
   await press("[data-list] [data-row-open]");
   const mineCard = await arcsOn("[data-machine-card]");
   if (!mineCard) fail("probe dead: this machine's card never drew, so nothing below measured it");
-  else if ((await page.locator("[data-machine-card] [data-hooks]").count()) !== 1) {
+  else if ((await page.locator("[data-machine-card] [data-machine-here]").count()) !== 1) {
     fail("probe void: the card measured is not this machine's — the row order moved");
   } else if (mineCard.windows !== 0 || mineCard.via !== 0) {
     fail(`this machine's card draws ${mineCard.windows} quota windows — they left this surface on 2026-09-02`);
@@ -30156,7 +30155,7 @@ try {
         borrow: await count('[data-verb="borrow-web"]'),
         code: await count('[data-verb="code"]'),
         top: await count('[data-machine-card] [data-machine-section="top"]'),
-        hooks: await count("[data-machine-card] [data-hooks]"),
+        hooks: await count("[data-machine-card] [data-setting-row-name='recognition-link']"),
       };
       const sessions = page.locator('[data-main] [data-region-head] [data-verb="sessions"]');
       const wasOn = (await sessions.getAttribute("data-on").catch(() => null)) === "true";
@@ -30213,12 +30212,13 @@ try {
     elderDev.hosts = false;
     asked = [];
     await reload();
-    const hooksPolledA = sent("hooks_state");
+
     if (!(await card(elderDev))) fail("probe dead: phone a · elder's card never opened");
     const elderSeen = await readCard();
     if (!(await card(peerDev))) fail("probe dead: phone a · peer's card never opened");
     await until(3_000, async () => (await count('[data-verb="code"]')) > 0);
     const peerSeenA = await readCard();
+    const hooksPolledA = sent("agent_recognition", (b) => b.machine === peerDev.id);
     console.log(`phone a · elder (cannot host) ${JSON.stringify(elderSeen)} · peer ${JSON.stringify(peerSeenA)}`);
     if (peerSeenA.newSession !== 1 || peerSeenA.code !== 1 || peerSeenA.top !== 1) {
       fail(`probe dead: phone a · peer's card drew ${JSON.stringify(peerSeenA)} — the control needs its 开会话, VS Code and process table`);
@@ -30310,7 +30310,7 @@ try {
     if (peerSeenB.newSession !== 1) fail(`phone b · peer can host and its card lost 开会话 (${JSON.stringify(peerSeenB)})`);
     if (peerSeenB.code) fail(`phone b · peer's card offers ${JSON.stringify(peerSeenB)} — a phone has no second window for VS Code`);
     if (sent("code_here")) fail(`phone b · code_here was asked ${sent("code_here")} time(s) — a phone opens no editor window, so nobody is asked`);
-    if (sent("hooks_state")) fail(`phone b · the hooks were polled ${sent("hooks_state")} time(s) on a phone (src/App.tsx)`);
+    if (sent("agent_recognition", (b) => b.machine === gateDev.id)) fail("phone b · recognition was read on a machine that cannot host");
     if (!(await morePage("security"))) fail("probe dead: phone b · 安全 did not open");
     if (await count("[data-web-key-rotate], [data-web-key]")) fail("phone b · 安全 shows the web face's key on a phone, which serves no web face (src/views/more/SecurityPage.tsx)");
     if (sent("web_key")) fail("phone b · web_key was asked on a phone");

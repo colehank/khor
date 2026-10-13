@@ -1,7 +1,7 @@
 import { useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import type { About, DeviceRow, HooksState, Load, Strain, WatchedDir } from "@/api";
+import type { About, DeviceRow, Load, Strain, WatchedDir } from "@/api";
 import type { Road } from "@/gen/bindings/Road";
 import type { JournalLine } from "@/gen/bindings/JournalLine";
 import { fetchAbout, fetchLoad, inApp, journal, setWatch, visitMachine } from "@/api";
@@ -52,6 +52,7 @@ import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
+import { RecognitionSummary } from "@/views/more/AgentRecognition";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { pagesHere } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
@@ -77,10 +78,7 @@ export function MachineCard({
   row,
   narrow,
   onBack,
-  hooks,
-  hooksFailed,
-  onInstallHooks,
-  onUninstallHooks,
+  onRecognition,
   actions,
   body,
   rows = [],
@@ -100,11 +98,7 @@ export function MachineCard({
       dashboard. */
   body?: ReactNode;
   onBack: () => void;
-  /** This machine's hooks, or `null` until the first answer is in. */
-  hooks: HooksState | null;
-  hooksFailed: boolean;
-  onInstallHooks: () => void;
-  onUninstallHooks: () => void;
+  onRecognition: (machine: string) => void;
   /** The page's own buttons on the narrow face, which has no R0 over a
       detail screen: they sit at the right end of the back bar, the same
       place R0 puts them wide (第十七轮 §3). */
@@ -204,10 +198,7 @@ export function MachineCard({
           // The head says the model at both widths now (the redesign's
           // narrow head has a second line), so the band does not.
           sayModel={false}
-          hooks={hooks}
-          hooksFailed={hooksFailed}
-          onInstallHooks={onInstallHooks}
-          onUninstallHooks={onUninstallHooks}
+          onRecognition={onRecognition}
           rows={rows}
           onPromote={onPromote}
         />
@@ -286,10 +277,7 @@ function HeadAvatar({ row }: { row: DeviceRow }) {
 function Body({
   row,
   sayModel,
-  hooks,
-  hooksFailed,
-  onInstallHooks,
-  onUninstallHooks,
+  onRecognition,
   rows,
   onPromote,
 }: {
@@ -299,10 +287,7 @@ function Body({
   /** The narrow face has no R0, so the model R0 says is the strip's to
       say there (`Strip`). A fact about the screen, like the way back. */
   sayModel: boolean;
-  hooks: HooksState | null;
-  hooksFailed: boolean;
-  onInstallHooks: () => void;
-  onUninstallHooks: () => void;
+  onRecognition: (machine: string) => void;
 }) {
   const [sort, setSort] = useState<Sort>(SORT_FIRST);
   const { load, why, shown, asking, seen } = useLoad(row, sort);
@@ -372,22 +357,8 @@ function Body({
               `QuotaLanding`'s tombstone carries the whole road —
               `QuotaRings` itself went on 2026-09-06 when the band became
               a row. */}
-          {/* **Only on this machine's card**, because the file it edits
-              is on this machine. Putting it on every card would be a
-              control that silently applies to one machine out of a list.
-              Installing on a machine you are looking at from here
-              belongs to the batch that adds remote verbs, and when it
-              lands, this is where it goes. */}
-          {/* …and only on a machine with a claude to hook: a phone has
-              none, and its 「装好了」 was about a file nobody reads
-              (docs/IOS.md 第二步; `install_hooks` refuses there too). */}
-          {row.me && row.hosts && (
-            <Hooks
-              state={hooks}
-              failed={hooksFailed}
-              onInstall={onInstallHooks}
-              onUninstall={onUninstallHooks}
-            />
+          {row.hosts && !row.sponsor && (
+            <RecognitionSummary key={row.id} machine={row.id} onOpen={() => onRecognition(row.id)} />
           )}
           </DetailFrame>
         </div>
@@ -1096,68 +1067,6 @@ export function MachineVerbs({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * The hook, and the one button that turns it on or off.
- *
- * **The button is the report.** It shows the job it will do next, so
- * "install" on screen means the hooks are not in place — one control
- * saying one thing, rather than a status line and a button that can
- * disagree with each other. Failure lands on the same button, in the
- * failure colour and under the word for what failed, exactly as a pin
- * does and for the same reason: this app has nowhere that collects
- * messages, and 做了但没变化 may not look like 失败 (docs/UX.md).
- *
- * Nothing is drawn until the state has been read once. A button guessing
- * "not installed" while the answer is still coming would offer to do
- * something already done, and the press would look like it did nothing.
- */
-function Hooks({
-  state,
-  failed,
-  onInstall,
-  onUninstall,
-}: {
-  state: HooksState | null;
-  failed: boolean;
-  onInstall: () => void;
-  onUninstall: () => void;
-}) {
-  if (!state) return null;
-  const on = state.installed;
-  return (
-    <div data-hooks data-installed={on} className="flex flex-col gap-2 pt-pane">
-      <Button
-        size="sm"
-        data-hooks-toggle
-        data-failed={failed}
-        onClick={on ? onUninstall : onInstall}
-        className="min-h-touch self-start data-[failed=true]:text-state-failed"
-      >
-        {failed
-          ? on
-            ? gui.uninstall_hooks_failed
-            : gui.install_hooks_failed
-          : on
-            ? gui.uninstall_hooks
-            : gui.install_hooks}
-      </Button>
-      {/* What pressing it buys — **and only while it has not been
-          pressed**. Before, this is the reason to press; after, it is a
-          remark about something already true, and this app zeroes those
-          rather than shortening them (docs/UX.md 文案: 装饰性说明归零).
-          The word it promises is one of the six the list already shows,
-          which is the only vocabulary this line is allowed (不解释实现);
-          the catalog entry carries the rest of that judgment, including
-          the tombstone for the second line that used to sit here. */}
-      {!on && (
-        <div data-hooks-buy className="text-callout text-muted-foreground">
-          {gui.hooks_buy_you}
         </div>
       )}
     </div>

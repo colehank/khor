@@ -214,6 +214,7 @@ pub struct PaneReading {
 /// What one sweep of every vendor found, each row already attributed.
 #[derive(Debug, Default, Clone)]
 pub struct Findings {
+    pub codex_title_home: Option<PathBuf>,
     /// Codex writer-owned root thread ids; subagents are excluded.
     pub codex_threads: Vec<String>,
     pub codex_pending: Vec<String>,
@@ -625,6 +626,7 @@ pub(crate) fn process_name_matches(actual: &str, wanted: &str) -> bool {
 
 /// Every vendor khor can read, rooted at one pretend-home.
 pub struct Discovery {
+    vendor_home: Option<PathBuf>,
     adaptors: Vec<Box<dyn Adaptor>>,
     /// The terminal multiplexer, when this node is allowed to ask one.
     /// `None` everywhere a root path is the whole world — see
@@ -644,6 +646,7 @@ impl Discovery {
     /// vendor directories is an explicit decision made in one place.
     pub fn empty() -> Discovery {
         Discovery {
+            vendor_home: None,
             adaptors: Vec::new(),
             tmux: None,
             procs: None,
@@ -724,6 +727,7 @@ impl Discovery {
     /// [`with_tmux`]: Discovery::with_tmux
     pub fn at(home: &Path) -> Discovery {
         Discovery {
+            vendor_home: Some(home.to_path_buf()),
             adaptors: vec![
                 Box::new(claude::Claude::at(home.join(".claude"))),
                 Box::new(codex::Codex::at(home.join(".codex"))),
@@ -798,7 +802,7 @@ impl Discovery {
     /// This is the one place a row's category is decided, and it is
     /// decided by which adaptor produced the row — see [`Found`].
     pub fn sweep_with(&self, procs: &Procs) -> Findings {
-        let mut all = Findings::default();
+        let mut all = Findings { codex_title_home: self.vendor_home.clone(), ..Findings::default() };
         for a in &self.adaptors {
             all.absorb(a.vendor(), a.sweep(procs));
         }

@@ -99,7 +99,7 @@ fn takes_value(s: &str) -> bool {
 
 /// Extract CLI config overrides without mistaking option values or prompt
 /// text for configuration. Every reader of native title selection uses this.
-fn config_values(args: &[OsString]) -> Vec<&str> {
+pub(crate) fn config_values(args: &[OsString]) -> Vec<&str> {
     let mut out = Vec::new();
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -143,8 +143,14 @@ fn caller_terminal_title(args: &[OsString]) -> bool {
 
 /// Only the effective, unambiguous native ID title opts a process into
 /// title-based selection. Later whole-table/custom overrides invalidate it.
+#[cfg(test)]
 pub(crate) fn selection_title(args: &[OsString]) -> bool {
-    let mut selected = false;
+    selection_title_or(args, false)
+}
+
+/// Explicit overrides always win over the native configuration file.
+pub(crate) fn selection_title_or(args: &[OsString], configured: bool) -> bool {
+    let mut selected = configured;
     for value in config_values(args) {
         if let Some((exact, value)) = title_key(value) {
             selected = exact

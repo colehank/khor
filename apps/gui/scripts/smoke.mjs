@@ -4463,38 +4463,26 @@ for line in sys.stdin:
       .split("\n")
       .filter((l) => l.includes("\t"))
       .map((l) => l.split("\t")[1]);
-  const hookToggle = page.locator("[data-hooks-toggle]");
+  const hookToggle = page.locator('[data-recognition-agent="claude"] button');
 
-  //     The control: this control belongs to this machine, so alpha's
-  //     card must not carry it. Read first, because "absent on alpha"
-  //     would also pass if the selector named nothing anywhere.
+  // The machine card links to settings with that machine explicitly selected.
   await openLanding("devices");
   await page.locator('[data-device="beta"] [data-row-open]').click();
-  await until("the hook button on this machine's card", 10_000, async () =>
-    (await hookToggle.count()) === 1,
-  );
-  await page.locator('[data-device="alpha"] [data-row-open]').click();
-  await until("alpha's card", 10_000, async () =>
-    (await page.locator("[data-machine-card] [data-copy-id]").count()) === 1,
-  );
-  if ((await hookToggle.count()) !== 0) {
-    throw new Error("another machine's card offers to edit this machine's hooks");
-  }
-  await page.locator('[data-device="beta"] [data-row-open]').click();
-  await until("back on this machine's card", 10_000, async () => (await hookToggle.count()) === 1);
+  await page.locator('[data-setting-row-name="recognition-link"] button').click();
+  await until("Claude recognition on the selected computer", 10_000, async () => (await hookToggle.count()) === 1);
 
   //     Not installed to begin with, said by both faces.
   const offWord = await hookToggle.innerText();
   const offCli = hookWords();
   if (offCli.length === 0) throw new Error("probe dead: `khor hooks` listed no events");
-  if (await page.locator('[data-hooks][data-installed="true"]').count()) {
+  if (await page.locator('[data-recognition-agent="claude"][data-recognition-state="configured"]').count()) {
     throw new Error("hooks report themselves installed in a home that has never had any");
   }
 
   //     Pressed the way a person presses it.
   await hookToggle.click();
   await until("the hooks to go on", 10_000, async () =>
-    (await page.locator('[data-hooks][data-installed="true"]').count()) === 1,
+    (await page.locator('[data-recognition-agent="claude"][data-recognition-state="configured"]').count()) === 1,
   );
   const onWord = await hookToggle.innerText();
   if (!onWord || onWord === offWord) {
@@ -4512,7 +4500,7 @@ for line in sys.stdin:
   //     A one-way button would pass everything above.
   await hookToggle.click();
   await until("the hooks to come back off", 10_000, async () =>
-    (await page.locator('[data-hooks][data-installed="false"]').count()) === 1,
+    (await page.locator('[data-recognition-agent="claude"][data-recognition-state="automatic"]').count()) === 1,
   );
   if ((await hookToggle.innerText()) !== offWord) {
     throw new Error("the button did not go back to offering the install");
