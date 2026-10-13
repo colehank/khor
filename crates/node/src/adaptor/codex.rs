@@ -12,6 +12,8 @@
 //! Codex can retain idle threads after a frontend disconnects. The lock
 //! contains no frontend PID. A fresh, bare TUI can separately be joined
 //! by its start, cwd and originator, only when both sides are unique.
+//! Subagent sources can inherit the same TUI originator and cwd; they
+//! remain discoverable but never participate in terminal ownership.
 //! Ambiguous, resumed and daemon-only threads remain PID-less. Homes
 //! without the lock directory retain the older process/start-time join, whose
 //! limitations include daemon threads and resumes.
@@ -155,6 +157,9 @@ impl Codex {
                 unreadable = true;
                 continue;
             };
+            if meta.is_subagent {
+                continue;
+            }
             // The clock put them together; the directory confirms it.
             // Only when both sides know their cwd — sysinfo cannot
             // always read another process's, and an unknown must not
@@ -536,7 +541,7 @@ impl Codex {
             };
             let (word, at_ms) =
                 last_word(&rollout.path).unwrap_or((State::Idle, rollout.started_ms));
-            if meta.originator.as_deref() == Some("codex-tui") {
+            if meta.originator.as_deref() == Some("codex-tui") && !meta.is_subagent {
                 tui_cwds.insert(meta.session_id.clone(), meta.cwd.clone());
             }
             sweep.rows.push(Sighting {
@@ -626,6 +631,7 @@ struct Meta {
     session_id: String,
     cwd: Option<String>,
     originator: Option<String>,
+    is_subagent: bool,
 }
 
 fn read_meta(path: &Path) -> Option<Meta> {
@@ -647,6 +653,9 @@ fn read_meta(path: &Path) -> Option<Meta> {
             .to_owned(),
         cwd: p["cwd"].as_str().map(str::to_owned),
         originator: p["originator"].as_str().map(str::to_owned),
+        // originator is inherited by spawned threads. The source records
+        // that role explicitly, independently of the shared session_id.
+        is_subagent: p["source"].get("subagent").is_some(),
     })
 }
 
@@ -1023,6 +1032,66 @@ mod current {
             assert_eq!(found.rows.len(), 1);
             assert_eq!(found.rows[0].pids, vec![700], "the shell needs the client PID to wear Codex: {name}");
         }
+    }
+
+    #[test]
+    fn subagents_do_not_take_away_the_parent_terminal_identity() {
+        let home = Home::new("tui-subagents");
+        let parent = home.rollout(THREAD, "", &(item("AgentMessage", "parent answer") + "\n"));
+        let child = home.rollout(OTHER, "", &(item("AgentMessage", "child answer") + "\n"));
+        // Real daemon-backed sessions can say vscode while retaining their
+        // TUI originator. Children inherit that originator and cwd too.
+        for (path, source) in [
+            (parent, serde_json::json!("vscode")),
+            (child, serde_json::json!({"subagent":{"thread_spawn":{
+                "parent_thread_id": THREAD, "depth": 1, "agent_path": "/root/review"
+            }}})),
+        ] {
+            let body = std::fs::read_to_string(&path).unwrap();
+            let (first, rest) = body.split_once('\n').unwrap();
+            let mut meta: serde_json::Value = serde_json::from_str(first).unwrap();
+            meta["payload"]["source"] = source;
+            std::fs::write(path, format!("{meta}\n{rest}")).unwrap();
+        }
+        let parent_writer = home.writer(THREAD);
+        let _child_writer = home.writer(OTHER);
+        let codex = Codex::at(home.0.clone());
+        for name in ["codex", "codex.exe", "CODEX.EXE"] {
+            let procs = Procs::of([(700, Proc {
+                name: name.into(), started_ms: uuid_v7_ms(THREAD).unwrap() - 66_000,
+                cwd: Some("/project".into()), ppid: Some(500),
+            })]).with_commands([(700, vec![name.into()])]);
+            let rows = codex.sweep(&procs).rows;
+            assert_eq!(rows.len(), 2, "subagents remain discoverable");
+            assert_eq!(rows.iter().find(|r| r.vendor_session_id == THREAD).unwrap().pids, vec![700]);
+            assert!(rows.iter().find(|r| r.vendor_session_id == OTHER).unwrap().pids.is_empty());
+            assert_eq!(codex.last_said(&crate::live::clean_leaf(THREAD)).as_deref(), Some("parent answer"));
+        }
+        drop(parent_writer);
+        let procs = Procs::of([(700, Proc {
+            name: "codex".into(), started_ms: uuid_v7_ms(OTHER).unwrap() - 66_000,
+            cwd: Some("/project".into()), ppid: Some(500),
+        })]).with_commands([(700, vec!["codex".into()])]);
+        let rows = codex.sweep(&procs).rows;
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].pids.is_empty(), "a lone child is still not a terminal frontend");
+    }
+
+    #[test]
+    fn legacy_process_join_does_not_claim_a_subagent_rollout() {
+        let home = Home::new("legacy-subagent");
+        let path = home.rollout(THREAD, "", "");
+        let body = std::fs::read_to_string(&path).unwrap();
+        let mut meta: serde_json::Value = serde_json::from_str(body.trim()).unwrap();
+        meta["payload"]["source"] = serde_json::json!({"subagent":"review"});
+        std::fs::write(path, format!("{meta}\n")).unwrap();
+        let procs = Procs::of([(700, Proc {
+            name: "codex".into(), started_ms: uuid_v7_ms(THREAD).unwrap(),
+            cwd: Some("/project".into()), ppid: None,
+        })]);
+        let found = Codex::at(home.0.clone()).sweep(&procs);
+        assert!(found.rows.is_empty());
+        assert_eq!(found.unmapped, 0, "a known child is not an unreadable terminal");
     }
 
     #[test]
