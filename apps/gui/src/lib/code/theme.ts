@@ -55,14 +55,33 @@ export const codeTheme = EditorView.theme({
   },
   ".cm-content": { padding: "var(--gap-in) 0" },
   // **The caret and the selection, drawn** (`drawSelection`, CodeEditor's
-  // head comment): the caret in the text's own ink, as tall as the glyph;
+  // head comment): the caret in the text's own ink (below);
   // the selection the app's grey, as a selected row is (README 颜色) —
   // `fill-strong` while the editor has the keys, the lighter `fill` once
   // it lost them, as macOS greys a selection then. The package's rules
   // are a chain of five classes under `.cm-focused`; the same chain here
   // is what outranks them. On iOS the main selection stays the platform's
   // and only the handles are drawn, in the caret's ink.
-  ".cm-cursor": { borderLeftColor: "var(--foreground)" },
+  // **The caret as tall as a Chinese character's ink** (the owner
+  // 2026-10-13). CodeMirror sizes `.cm-cursor` to the glyph's box with an
+  // inline top and height (16 on 13 in the app's WebKit), which overhangs
+  // a CJK character's ink (11–12) by two or three above and below. The
+  // element keeps that box and draws nothing; its `::before` is the
+  // caret: 0.88 of the type size — the ideograph's ink, a little over a
+  // capital's or a digit's — centred in the box, where both inks centre,
+  // in the element's own border width so the stroke is unchanged.
+  ".cm-cursor": { borderLeftColor: "transparent" },
+  ".cm-cursor::before": {
+    content: '""',
+    position: "absolute",
+    right: "100%",
+    top: "50%",
+    height: "calc(var(--text-mono) * 0.88)",
+    transform: "translateY(-50%)",
+    borderLeftStyle: "inherit",
+    borderLeftWidth: "inherit",
+    borderLeftColor: "var(--foreground)",
+  },
   ".cm-selectionBackground": { backgroundColor: "var(--fill)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "var(--fill-strong)" },
   ".cm-selectionHandle": { backgroundColor: "var(--foreground)" },
