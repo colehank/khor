@@ -87,8 +87,8 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     let b = Node::open_as(rb.to_path_buf(), "beta").unwrap();
     let c = Node::open_as(rc.to_path_buf(), "gamma").unwrap();
 
-    // A machine alone has no group: no row, nothing to create.
-    assert!(row(&b).is_none(), "one machine, no broadcast");
+    // The console is useful on a single machine too.
+    assert!(row(&b).is_some(), "one machine still has the khor console");
 
     for n in [&b, &c] {
         let ticket = a.invite().unwrap();

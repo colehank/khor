@@ -44,7 +44,8 @@
     "scroller": "node scripts/check-scroller.mjs",
     "softdel": "node scripts/check-soft-delete.mjs",
     "mobile": "node scripts/check-mobile.mjs",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "console": "node scripts/check-console.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

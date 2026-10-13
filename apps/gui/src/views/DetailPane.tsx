@@ -229,6 +229,9 @@ export function DetailPane({
   empty,
   tabs,
   openIds,
+  active = true,
+  onSession,
+  sessions,
 }: {
   row: SessionRow | null;
   narrow: boolean;
@@ -261,6 +264,9 @@ export function DetailPane({
       while its tab is (`kept` below). Absent where there are no tabs — a
       workspace's session column — and then only the shown one lives. */
   openIds?: string[];
+  active?: boolean;
+  onSession?: (id: string) => void;
+  sessions?: SessionRow[];
 }) {
   const shown = useDayShown();
   // Warm the terminal's chunk once the pane has drawn (`loadTerminal`).
@@ -513,7 +519,7 @@ export function DetailPane({
         // own (STORE-BRIEF phase 3). Keyed so switching machines drops
         // the draft and the scroll with the conversation they belonged
         // to.
-        <MachineChat key={row.id} id={row.id} />
+        <MachineChat key={row.id} id={row.id} active={active} onSession={onSession} sessions={sessions} />
       ) : row && row.mux ? (
         // **The face follows the host** (2026-09-01: 「什么宿主跑的就用
         // 什么显示」). The process sits in the person's own tmux, so

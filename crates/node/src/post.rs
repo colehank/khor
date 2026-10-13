@@ -195,6 +195,31 @@ pub fn pushes_in_flight() -> usize {
 }
 
 impl Node {
+    /// Console prose does not parse addressing or command syntax. CLI
+    /// tell/send retain their explicit argument grammar through post.
+    pub async fn note(&self, text: &str, files: &[PathBuf]) -> Result<String, String> {
+        if let Some(reply) = self.via_serve(crate::ipc::Op::Note {
+            text: text.to_owned(), files: files.iter().map(|p| p.display().to_string()).collect(),
+        }).await {
+            return match reply? {
+                crate::ipc::Reply::Posted { id } => Ok(id),
+                crate::ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
+        }
+        self.note_here(text, files)
+    }
+
+    pub(crate) fn note_here(&self, text: &str, files: &[PathBuf]) -> Result<String, String> {
+        if text.trim().is_empty() && files.is_empty() { return Err(msg::post_nothing().to_owned()); }
+        let refs = files.iter().map(|p| self.offer_file(p)).collect::<Result<Vec<_>, _>>()?;
+        let told = self.chat.post(BROADCAST, self.device(), text, &[], &refs)?;
+        if !text.is_empty() { let _ = self.seen_snapshot(&told.row.id, &[crate::SeenMessage { id: told.msg_id.clone(), at_ms: told.at }]); }
+        self.emit(NodeEvent::Event(told.event));
+        let _ = self.emit_row_of(&told.row.id);
+        Ok(told.msg_id)
+    }
+
     /// **Composes a message into the broadcast** (module head): `typed`
     /// is the typed form, `files` this machine's files to go with it.
     /// Through the resident serve when one holds the key — it holds the

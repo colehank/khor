@@ -543,6 +543,11 @@ pub fn spawn_viewer_host(
 /// contract (`host_args`) stays what every existing binary parses.
 const VIEWER_ENV: &str = "KHOR_HOST_VIEWER";
 
+fn host_store_root(dir: &Path) -> Result<PathBuf, String> {
+    let root = dir.ancestors().nth(3).ok_or_else(|| msg::no_such_dir(dir.display()))?;
+    std::fs::canonicalize(root).map_err(|e| msg::cant_read(root.display(), e))
+}
+
 fn spawn_host_with(
     dir: &Path,
     id: &SessionId,
@@ -553,6 +558,10 @@ fn spawn_host_with(
 ) -> Result<(), String> {
     let exe = crate::self_exe()?;
     let mut c = std::process::Command::new(exe);
+    // A host belongs to the store containing this session. A GUI request may
+    // name a different root from its process environment; only the child gets
+    // that root, before it changes directory to the session's working path.
+    c.env("KHOR_HOME", host_store_root(dir)?);
     if let Some(cwd) = cwd {
         c.current_dir(cwd);
     }
@@ -3237,5 +3246,18 @@ mod ring_file_tests {
         };
         s.ring.lock().unwrap().push(b"x");
         assert!(s.ring_now().is_none());
+    }
+}
+
+#[cfg(test)]
+mod command_root_tests {
+    use super::*;
+    #[test]
+    fn host_store_comes_from_the_session_directory() {
+        let root = std::env::temp_dir().join(format!("khor-host-root-{}", crate::link::fresh_hex().unwrap()));
+        let dir = crate::live::sessions_dir(&root).join("example-session");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(host_store_root(&dir).unwrap(), std::fs::canonicalize(&root).unwrap());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -8,80 +8,29 @@ name = "khor"
 path = "src/main.rs"
 
 [dependencies]
-khor-node.workspace = true
+khor-commands = { path = "../commands" }
 khor-catalog.workspace = true
-# The browser face. The resident starts it and `khor web` hands out its
-# key — CLI and GUI are the same door (docs/KHOR.md CLI 与 GUI 等价), so
-# the face cannot be a thing only the app can raise.
+# Native hosts supply the web listener to the shared command engine.
 khor-web = { path = "../web" }
-# `signal`: `khor relay` stops on Ctrl-C and on a service manager's TERM.
-tokio = { workspace = true, features = ["signal"] }
-# `khor doctor --json` prints the node's rows verbatim, so the GUI page
-# and this verb cannot come to disagree about what was checked. Hand-built
-# JSON is what `_verbs` does (its rows are two known words); a check's
-# sentence is a person's language and needs real escaping.
-#
-# **Not a new package**: it was already a dev-dependency of this crate and
-# a dependency of khor-node, so the lock file does not move.
-serde_json.workspace = true
-# The link as a picture, because the alternative is a person typing 32
-# hex digits into a phone. That is not a nicety: a key nobody can enter
-# is a face nobody opens, so the code is part of the door working.
-#
-# `default-features = false` drops its `image` feature, and the measured
-# cost of that is **exactly one package** (Cargo.lock 773 -> 774,
-# counted off the diff, not estimated). Only the module matrix is used;
-# the drawing is ours, because a scannable code in a terminal needs
-# explicit colors rather than characters whose meaning depends on the
-# reader's background (`web_qr`).
-# License: MIT OR Apache-2.0 (checked before use, not after).
-qrcode = { version = "0.14.1", default-features = false }
-# The process table lines its columns up, and lining up needs display
-# width rather than length — see the workspace entry.
-unicode-width.workspace = true
-
-# `khor relay` (docs/NET.md 中继): iroh-relay's own server, the one the
-# `iroh-relay` binary runs, version-locked to the workspace iroh. Its
-# `server` feature was already in the lock (khor-net's dev-dependency);
-# it is a normal dependency here because this binary ships it.
-# License: MIT OR Apache-2.0 (and every package it adds, checked with
-# `cargo metadata` before use).
-iroh-relay = { version = "1.2.0", features = ["server"] }
-# The relay's access hook names endpoints by iroh's own id type.
-iroh.workspace = true
-# The TLS config the relay's HTTPS side takes (`CertConfig`) is a rustls
-# one, and so is reading a certificate and key out of PEM files. The
-# version iroh-relay already pulls; `ring` because that is the provider
-# the rest of the tree uses.
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
-# The meter's file and its timestamps.
-serde.workspace = true
-jiff.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
 [dev-dependencies]
-# The real-agent gate reaches into the session store to find the host
-# socket, the way a face does (`tests/agents.rs`).
+khor-node.workspace = true
 khor-core.workspace = true
 khor-acp = { path = "../acp" }
-agent-client-protocol = "2"
-# `tests/relay.rs` stands endpoints up against a `khor relay` it spawned:
-# khor's own bind for the clients, and the device table written the way
-# the node's own tests write it (`crates/node/tests/avatar.rs`).
 khor-net.workspace = true
 khor-sync.workspace = true
-# `tests/relay_https.rs` signs its own certificates (round NET-7): the
-# rcgen iroh-relay's server feature already pulls, same version and
-# features (MIT OR Apache-2.0), no new crate.
+tokio.workspace = true
+serde_json.workspace = true
+iroh.workspace = true
+# Relay HTTPS tests generate certificates for their own local servers.
 rcgen = "0.14"
 
-# `tests/netlab.rs`: real khor nodes in Linux network namespaces, behind
-# NATs and impaired links (docs/NETLAB.md). patchbay 0.7 is n0's lab,
-# MIT OR Apache-2.0, vendored for Linux 5.4 (vendor/patchbay/KHOR.md);
-# ctor (MIT OR Apache-2.0) enters the user namespace before the test
-# harness starts a thread, as iroh's own patchbay tests do.
+# The Linux network lab starts relay servers inside patchbay namespaces.
 [target.'cfg(target_os = "linux")'.dev-dependencies]
+iroh-relay = { version = "1.2.0", features = ["server"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 patchbay = "0.7"
 ctor = "1.0"

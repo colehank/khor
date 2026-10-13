@@ -151,6 +151,26 @@ pub enum MsgBody {
     Unknown(String),
 }
 
+/// A command's durable receipt. Only its submitting executor updates
+/// this value; importing it is never an instruction to execute it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct CommandRecord {
+    pub id: String,
+    pub line: String,
+    pub owner: String,
+    pub owner_name: String,
+    pub status: String,
+    #[ts(type = "number")]
+    pub started_at_ms: i64,
+    #[ts(type = "number | null")]
+    pub ended_at_ms: Option<i64>,
+    pub stdout: String,
+    pub stderr: String,
+    pub data_json: Option<String>,
+    pub session: Option<String>,
+    pub error: Option<String>,
+}
+
 /// One message as read out of the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
@@ -173,6 +193,7 @@ pub struct Message {
     /// The words said along with a files message; empty otherwise (a
     /// text message's words are its body).
     pub note: String,
+    pub command: Option<CommandRecord>,
 }
 
 /// One conversation.
@@ -246,6 +267,34 @@ impl ChatDoc {
         self.push(from, "text", |m| {
             m.insert("text", text).map_err(|e| e.to_string())
         })
+    }
+
+    /// Records one command submission with a stable id chosen before
+    /// execution. Re-delivery updates its receipt rather than appending.
+    pub fn command(&self, from: &Sender, record: &CommandRecord) -> Result<String, String> {
+        let encoded = serde_json::to_string(record).map_err(|e| e.to_string())?;
+        let at = record.ended_at_ms.unwrap_or(record.started_at_ms);
+        if let Some(m) = self.find(&record.id) {
+            if str_of(&m, "from_id").as_deref() != Some(from.id.as_str()) {
+                return Err("command receipt belongs to another executor".to_owned());
+            }
+            if let Some(prior) = str_of(&m, "command").and_then(|s| serde_json::from_str::<CommandRecord>(&s).ok()) {
+                if prior == *record || prior.ended_at_ms.is_some() {
+                    return Ok(record.id.clone());
+                }
+            }
+            m.insert("command", encoded).map_err(|e| e.to_string())?;
+            m.insert("at", at).map_err(|e| e.to_string())?;
+            self.inner.commit();
+            return Ok(record.id.clone());
+        }
+        self.push(from, "text", |m| {
+            m.insert("id", record.id.as_str()).map_err(|e| e.to_string())?;
+            m.insert("at", at).map_err(|e| e.to_string())?;
+            m.insert("text", record.line.as_str()).map_err(|e| e.to_string())?;
+            m.insert("command", encoded).map_err(|e| e.to_string())
+        })?;
+        Ok(record.id.clone())
     }
 
     /// Writes one composed message: words, the machines it is pushed to
@@ -520,6 +569,7 @@ fn read_msg(m: &LoroMap) -> Message {
         fates: read_fates(m),
         to: read_targets(m),
         note: if kind == "files" { str_of(m, "text").unwrap_or_default() } else { String::new() },
+        command: str_of(m, "command").and_then(|s| serde_json::from_str(&s).ok()),
     }
 }
 

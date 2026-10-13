@@ -69,11 +69,15 @@ export function askStepTab(by: 1 | -1) {
   window.dispatchEvent(new CustomEvent(STEP_TAB_EVENT, { detail: { by } }));
 }
 
-/** **A line started for the broadcast** (STORE-BRIEF phase 5): 新建会话's
-    留言 on a machine opens the broadcast with `@<that machine> ` already
-    in its box, the cursor after it. Taken once by the broadcast's
-    composer. ⚠️ 墓碑: 留言 opened the machine's own `chat/<机器>`
-    conversation; that session kind is gone. */
+/** Start the shared CLI's targeted message form. A machine is one shell
+    argument even when its name contains spaces or quotes. Plain notes
+    leave @ literal until the agent conversation phase. */
+export function tellDraft(machine: string): string {
+  const argument = /^[A-Za-z0-9_.-]+$/.test(machine) ? machine : `'${machine.replaceAll("'", "'\\''")}'`;
+  return `/tell ${argument} `;
+}
+
+/** A line handed once to the khor composer's box. */
 let drafted: string | null = null;
 
 export function draftFor(text: string) {

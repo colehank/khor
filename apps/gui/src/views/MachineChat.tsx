@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   compose,
+  consoleRun,
   fetchDevices,
   inApp,
   machineLog,
+  markSeenSnapshot,
   pickPaths,
   retryTransfer,
   said,
@@ -13,6 +15,7 @@ import {
   type ChatMsgRow,
   type DeviceRow,
   type MachineLog,
+  type SessionRow,
 } from "@/api";
 import { PathCut } from "@/components/PathCut";
 import { FilePreview, PendingChips, type Pending } from "@/views/chat-files";
@@ -20,12 +23,16 @@ import { takeDraft } from "@/lib/composer-handoff";
 import { baseName } from "@/lib/paths";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
 import { BarSeat } from "@/components/SessionBar";
 import { Composer, COMPOSER_TEXT, PlusSeat, SendSeat, Tip, useGrowingText } from "@/views/Composer";
 import { imeKey } from "@/lib/ime";
+import { ConsoleMenu, ConsoleResult, useConsoleCompletion } from "@/views/Console";
+import { useHidden } from "@/hooks/use-hidden";
 
 /** The rows' beat, borrowed: this pane is a face on the same CRDT the
     list reads, and two different clocks would show two conversations. */
@@ -40,35 +47,27 @@ function fmtSize(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)}GB`;
 }
 
-/**
- * **The broadcast** (`wide/all`, STORE-BRIEF phase 3 and 5): the khor's
- * one conversation for people — the same stream `khor log` prints,
- * painted as a chat. Text lands as bubbles, own words on the right in
- * `ChatView`'s clothes so one product speaks one bubble language.
- *
- * **A message names its targets** (phase 5, one channel): `@turing`
- * pushes it to turing, `@turing:~/data` names where there, and the files
- * land with nobody pressing anything; every other machine reads the file
- * as an offer (待接收 with 接收). `@` in the box opens the machine picker
- * above it — on every face, the phone too — and the typed form works as
- * typed. A file on another machine is typed as `hinton:/data/x.bin`;
- * ＋ adds this machine's files (in the app a native picker answers with
- * real paths, in a browser the bytes are staged here first). A target
- * that is not reachable refuses the whole message: the node's sentence
- * stands above the box, naming the machine, and the draft stays.
- *
- * Each bubble names its targets by today's names, each with its own
- * move. ⚠️ 墓碑 (phase 5): a machine's own `chat/<机器>` conversation was
- * painted here too, with 「存到」 above its box; the directory is typed
- * as `@机器:路径` now.
- */
-export function MachineChat({ id }: { id: string }) {
-  const [log, setLog] = useState<MachineLog | null>(null);
+/** The network's khor conversation: notes and files share the stream
+ * with persisted public CLI command records. Slash commands are parsed
+ * by the same engine as the CLI; ordinary text remains a note.
+ * The shared Composer and BarSeat keep the deck and keyboard geometry. */
+export function MachineChat({ id, active = true, onSession, sessions = [] }: { id: string; active?: boolean; onSession?: (id: string) => void; sessions?: SessionRow[] }) {
+  const hidden = useHidden();
+  const [readout, setReadout] = useState<{ id: string; log: MachineLog } | null>(null);
+  const log = readout?.id === id ? readout.log : null;
+  const currentId = useRef(id);
+  currentId.current = id;
   const [draft, setDraft] = useState("");
+  const [inputOpen, setInputOpen] = useState(false);
+  const [commandInput, setCommandInput] = useState("");
+  const isCommand = draft.trimStart().startsWith("/");
+  const jsonInput = /^\/state\b/.test(draft.trimStart()) && /(?:^|\s)--hook(?:\s|$)/.test(draft);
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
   const stickToEnd = useRef(true);
+  const [atEnd, setAtEnd] = useState(true);
+  const seenMessages = useRef(new Set<string>());
   /** The box, for the keyboard's switch (`TermKeys`). */
   const box = useRef<HTMLTextAreaElement | null>(null);
   // As tall as its lines, up to the capsule's ceiling (V05).
@@ -76,7 +75,7 @@ export function MachineChat({ id }: { id: string }) {
 
   const refresh = useCallback(() => {
     machineLog(id).then(
-      (l) => setLog(l),
+      (l) => { if (currentId.current === id) setReadout({ id, log: l }); },
       // A poll that threw on a blip must not take the screen down;
       // the last read stays up (the sessions poll's rule).
       () => {},
@@ -84,7 +83,8 @@ export function MachineChat({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
-    setLog(null);
+    setReadout(null);
+    seenMessages.current = new Set();
     refresh();
     const t = setInterval(refresh, POLL_MS);
     return () => clearInterval(t);
@@ -98,7 +98,7 @@ export function MachineChat({ id }: { id: string }) {
     if (el && stickToEnd.current) el.scrollTop = el.scrollHeight;
   }, [log]);
 
-  /** The machines, for the picker and for the landed paths' machine. */
+  /** The machines name the local landing of a file. */
   const [machines, setMachines] = useState<DeviceRow[]>([]);
   useEffect(() => {
     let live = true;
@@ -118,7 +118,24 @@ export function MachineChat({ id }: { id: string }) {
   const [only, setOnly] = useState<{ device: string; name: string } | null>(null);
   const shownMsgs = log ? (only ? log.messages.filter((m) => m.to.some((t) => t.device === only.device)) : log.messages) : [];
 
-  // 新建会话's 留言 on a machine: the box opens with `@<machine> ` in it.
+  // A read receipt covers only the snapshot actually painted at the tail.
+  // The node may already hold later messages when this request arrives.
+  useEffect(() => {
+    if (!active || hidden || !atEnd || only || !log) return;
+    const messages = log.messages.map(({ id, at_ms }) => ({ id, at_ms }));
+    const keys = messages.map((m) => JSON.stringify([m.id, m.at_ms]));
+    if (keys.every((key) => seenMessages.current.has(key))) return;
+    const frame = requestAnimationFrame(() => {
+      const el = scroller.current;
+      if (!el || document.hidden || !document.hasFocus() || !stickToEnd.current || el.scrollHeight - el.scrollTop - el.clientHeight >= 40) return;
+      void markSeenSnapshot(id, messages).then(() => {
+        if (currentId.current === id) keys.forEach((key) => seenMessages.current.add(key));
+      }, () => {});
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [id, log, active, hidden, atEnd, only]);
+
+  // Restore a note handed in from another part of the app.
   useEffect(() => {
     const d = takeDraft();
     if (d === null) return;
@@ -162,43 +179,20 @@ export function MachineChat({ id }: { id: string }) {
     }
   };
 
-  // ── the @ picker ──
-  /** Where the caret is, so the picker reads the word being typed. */
   const [caret, setCaret] = useState(0);
-  const [pick, setPick] = useState(0);
-  const [pickerShut, setPickerShut] = useState(false);
-  /** The word a choice just wrote: the picker stays shut on it. */
-  const shut = useRef<string | null>(null);
-  const typing = /(^|\s)@([^\s:"]*)$/.exec(draft.slice(0, caret));
-  const asked = typing ? typing[2].toLowerCase() : null;
-  const choices =
-    asked === null || pickerShut
-      ? []
-      : machines.filter(
-          (d) =>
-            !d.me &&
-            d.sponsor === null &&
-            (d.shown.toLowerCase().startsWith(asked) || d.name.toLowerCase().startsWith(asked)),
-        );
-  useEffect(() => {
-    setPick(0);
-    setPickerShut(asked !== null && asked === shut.current);
-    if (asked !== shut.current) shut.current = null;
-  }, [asked]);
-  const pickerOpen = asked !== null && !pickerShut && asked !== shut.current;
-  /** A choice writes `@<machine>` and shuts the picker; what comes next
-      is the person's — `:路径` for a directory there, a space for the
-      next target or the words. */
-  const choose = (d: DeviceRow) => {
-    if (!typing) return;
-    const start = caret - typing[2].length;
-    const word = typedName(d);
-    setDraft(`${draft.slice(0, start)}${word}${draft.slice(caret)}`);
-    const at = start + word.length;
-    setCaret(at);
-    shut.current = word.toLowerCase();
-    requestAnimationFrame(() => box.current?.setSelectionRange(at, at));
+  const completion = useConsoleCompletion(draft, caret);
+  const { choices, pick, setPick, open: pickerOpen, close: closePicker } = completion;
+  const choose = (choice: (typeof choices)[number]) => {
+    const taken = completion.take(choice);
+    if (!taken) return;
+    setDraft(taken.line);
+    setCaret(taken.caret);
+    requestAnimationFrame(() => {
+      box.current?.focus();
+      box.current?.setSelectionRange(taken.caret, taken.caret);
+    });
   };
+  const runToken = useRef<{ line: string; input: string | undefined; token: string } | null>(null);
 
   const send = () => {
     const text = draft.trim();
@@ -209,16 +203,31 @@ export function MachineChat({ id }: { id: string }) {
     const went = new Set(pending.map((p) => p.key));
     setSending(true);
     setRefused(null);
-    compose(text, files).then(
+    if (text.startsWith("/") && files.length > 0) {
+      setSending(false);
+      setRefused(gui.console_attached);
+      return;
+    }
+    const input = inputOpen ? commandInput : undefined;
+    if (text.startsWith("/") && (runToken.current?.line !== text || runToken.current?.input !== input)) {
+      runToken.current = { line: text, input, token: crypto.randomUUID() };
+    }
+    const posted = text.startsWith("/") ? consoleRun(text, runToken.current!.token, input) : compose(text, files);
+    posted.then(
       () => {
         setDraft((now) => (now.trim() === text ? "" : now));
         setPending((now) => now.filter((p) => !went.has(p.key)));
         setSending(false);
+        runToken.current = null;
+        setCommandInput("");
+        setInputOpen(false);
+        closePicker();
         stickToEnd.current = true;
+        setAtEnd(true);
         refresh();
       },
-      // **Refused, nothing written** (phase 5): the node's sentence names
-      // the machine; the draft and its files stay for the next try.
+      // A lost command response may follow a successful submission.
+      // Keep the draft and token so retry asks for the same receipt.
       (e: unknown) => {
         setSending(false);
         setRefused(said(e));
@@ -236,6 +245,7 @@ export function MachineChat({ id }: { id: string }) {
         onScroll={(e) => {
           const el = e.currentTarget;
           stickToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          setAtEnd(stickToEnd.current);
         }}
         // The messages are read and copied (app.css 选字与手).
         data-selectable
@@ -272,6 +282,8 @@ export function MachineChat({ id }: { id: string }) {
             me={machines.find((r) => r.me)?.id ?? ""}
             onOnly={(device, name) => setOnly((now) => (now?.device === device ? null : { device, name }))}
             onChanged={refresh}
+            onSession={onSession}
+            linked={m.command?.session ? sessions.find((row) => row.id === m.command?.session) : undefined}
           />
         ))}
         </div>
@@ -291,47 +303,15 @@ export function MachineChat({ id }: { id: string }) {
       <BarSeat at="above">
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
-        {/* **The machine picker** (phase 5): over the box, not pushing
-            the conversation up — a list that moves the text being read
-            is worse than none (the slash menu's rule). Keys ↑↓ walk it,
-            Enter or Tab choose, Esc leaves the text as typed; a press
-            chooses without taking the focus from the box, so the phone's
-            keyboard stays up. */}
-        {pickerOpen && (
-          <div
-            data-at-picker
-            role="listbox"
-            aria-label={gui.at_pick_title}
-            className="absolute bottom-full left-0 mb-1 max-h-56 w-full overflow-y-auto rounded-lg border bg-popover p-1 shadow-(--shadow-float)"
-          >
-            <div className="px-2 py-1 text-caption text-muted-foreground">{gui.at_pick_title}</div>
-            {choices.length === 0 ? (
-              <div data-at-none className="px-2 py-1 text-callout text-muted-foreground">
-                {gui.at_pick_none}
-              </div>
+        {pickerOpen && <ConsoleMenu choices={choices} pick={pick} onPick={choose} />}
+        {isCommand && inputOpen && (
+          <div data-console-input-panel className="mb-in flex flex-col gap-in text-callout">
+            {jsonInput ? (
+              <Textarea data-console-input aria-label={gui.console_input} placeholder={gui.console_input} value={commandInput} onChange={(e) => setCommandInput(e.target.value)} rows={3} spellCheck={false} />
             ) : (
-              choices.map((d, n) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  role="option"
-                  aria-selected={n === pick}
-                  data-at-item={d.name}
-                  data-on={n === pick}
-                  className={cn(
-                    "flex min-h-touch w-full items-center gap-2 rounded-sm px-2 text-left text-callout pointer-fine:min-h-ctl-md",
-                    n === pick && "bg-fill-strong",
-                  )}
-                  onPointerDown={(e) => e.preventDefault()}
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => choose(d)}
-                >
-                  <span className="min-w-0 truncate">@{typedName(d)}</span>
-                  {typedName(d) !== d.shown && <span className="truncate text-caption text-muted-foreground">{d.shown}</span>}
-                </button>
-              ))
+              <Input data-console-input type="password" aria-label={gui.console_input} placeholder={gui.console_input} autoComplete="off" value={commandInput} onChange={(e) => setCommandInput(e.target.value)} />
             )}
-            <div className="px-2 py-1 text-caption text-muted-foreground">{gui.at_pick_hint}</div>
+            <span className="text-secondary-foreground">{gui.console_input_hint}</span>
           </div>
         )}
         <PendingChips items={pending} onRemove={(key) => setPending((now) => now.filter((p) => p.key !== key))} />
@@ -341,8 +321,8 @@ export function MachineChat({ id }: { id: string }) {
             agent on the other end. */}
         <Composer
           lead={
-            <Tip label={gui.send_file}>
-              <PlusSeat data-attach-file aria-label={gui.send_file} onClick={attach} />
+            <Tip label={isCommand ? gui.console_input : gui.send_file}>
+              {isCommand ? <PlusSeat data-console-input-toggle aria-label={gui.console_input} aria-expanded={inputOpen} onClick={() => setInputOpen((value) => !value)} /> : <PlusSeat data-attach-file aria-label={gui.send_file} onClick={attach} />}
             </Tip>
           }
           trail={
@@ -377,11 +357,11 @@ export function MachineChat({ id }: { id: string }) {
           aria-expanded={pickerOpen}
           // The same word the agent conversation's capsule wears: one
           // capsule, one invitation (the closing pass, 2026-10-03).
-          placeholder={gui.chat_input}
+          placeholder={gui.console_placeholder}
           // Return sends, and the soft keyboard's key says so (Shift+Enter
           // on a hardware keyboard breaks the line).
           enterKeyHint="send"
-          // `@machine:path` is not prose: no capital, no correction.
+          // Command names and paths keep their spelling.
           autoCapitalize="off"
           autoCorrect="off"
           spellCheck={false}
@@ -411,7 +391,7 @@ export function MachineChat({ id }: { id: string }) {
             }
             if (pickerOpen && e.key === "Escape") {
               e.preventDefault();
-              setPickerShut(true);
+              closePicker();
               return;
             }
             if (e.key === "Enter" && !e.shiftKey) {
@@ -434,12 +414,6 @@ export function MachineChat({ id }: { id: string }) {
           (`SessionScreen`); a third way was a second door. */}
     </div>
   );
-}
-
-/** How a machine is written in the typed form: its shown name when that
-    is one token, its name otherwise — `khor_node::post::typed_name`. */
-function typedName(d: DeviceRow): string {
-  return d.shown && !/[\s:"]/.test(d.shown) ? d.shown : d.name;
 }
 
 /** WeChat's clustering distance: two messages further apart than this
@@ -485,6 +459,8 @@ function MsgLine({
   me,
   onOnly,
   onChanged,
+  onSession,
+  linked,
 }: {
   m: ChatMsgRow;
   stamp: string | null;
@@ -494,6 +470,8 @@ function MsgLine({
   /** A target pressed: the conversation narrows to that machine. */
   onOnly: (device: string, name: string) => void;
   onChanged: () => void;
+  onSession?: (id: string) => void;
+  linked?: SessionRow;
 }) {
   return (
     <>
@@ -515,6 +493,8 @@ function MsgLine({
         {!m.retracted && m.to.length > 0 && <Targets m={m} me={me} onOnly={onOnly} />}
         {m.retracted ? (
           <div className="text-caption text-muted-foreground">{cli.retracted}</div>
+        ) : m.command ? (
+          <ConsoleResult command={m.command} onSession={onSession} linked={linked} />
         ) : m.text !== null ? (
           // **A word longer than the bubble breaks inside the bubble**
           // (afix-a; the audit's S2: a long URL ran past the bubble and

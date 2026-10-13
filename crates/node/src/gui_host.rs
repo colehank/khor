@@ -397,6 +397,7 @@ enum Setting {
 /// which cannot know it in advance: the id exists only once the agent
 /// has answered `session/new`.
 pub fn spawn_gui_host(
+    root: &std::path::Path,
     cwd: Option<&std::path::Path>,
     title: &str,
     cmd: &[String],
@@ -407,7 +408,7 @@ pub fn spawn_gui_host(
     // a GUI answering two openings at once would be exactly that race.
     agent: bool,
 ) -> Result<SessionId, String> {
-    spawn_ghost(cwd, title, cmd, None, vendor, agent)
+    spawn_ghost(root, cwd, title, cmd, None, vendor, agent)
 }
 
 /// [`spawn_gui_host`], but resuming an existing vendor session — the
@@ -415,6 +416,7 @@ pub fn spawn_gui_host(
 /// opening a fresh one, and re-seats the existing row (`LiveKind::reopen`)
 /// instead of registering a new one.
 pub fn spawn_gui_host_resume(
+    root: &std::path::Path,
     cwd: Option<&std::path::Path>,
     title: &str,
     cmd: &[String],
@@ -422,7 +424,7 @@ pub fn spawn_gui_host_resume(
 ) -> Result<SessionId, String> {
     // No vendor: a resume re-seats a row that already has one, and
     // `LiveKind::reopen` does not touch a category anyway.
-    spawn_ghost(cwd, title, cmd, Some(session), None, false)
+    spawn_ghost(root, cwd, title, cmd, Some(session), None, false)
 }
 
 /// [`spawn_gui_host`], but the conversation already exists on the agent
@@ -435,13 +437,14 @@ pub fn spawn_gui_host_resume(
 /// a record on the agent's side — so it registers one like any new
 /// session, vendor and all.
 pub fn spawn_gui_host_reopen(
+    root: &std::path::Path,
     cwd: Option<&std::path::Path>,
     title: &str,
     cmd: &[String],
     vendor: Option<&str>,
     session: &str,
 ) -> Result<SessionId, String> {
-    spawn_ghost(cwd, title, cmd, Some(session), vendor, false)
+    spawn_ghost(root, cwd, title, cmd, Some(session), vendor, false)
 }
 
 /// How `_ghost` learns it resumes: env, not argv — the argv convention
@@ -456,7 +459,17 @@ const RESUME_ENV: &str = "KHOR_GHOST_RESUME";
 /// `LiveKind::learn_category` never overwrites what is already there.
 const VENDOR_ENV: &str = "KHOR_GHOST_VENDOR";
 
+fn ghost_command(root: &std::path::Path, executable: &std::path::Path) -> Result<std::process::Command, String> {
+    let root = std::fs::canonicalize(root).map_err(|error| msg::cant_read(root.display(), error))?;
+    let mut command = std::process::Command::new(executable);
+    // Only this child receives its session store; concurrent GUI requests keep
+    // independent roots without changing the parent process environment.
+    command.env("KHOR_HOME", root);
+    Ok(command)
+}
+
 fn spawn_ghost(
+    root: &std::path::Path,
     cwd: Option<&std::path::Path>,
     title: &str,
     cmd: &[String],
@@ -470,7 +483,7 @@ fn spawn_ghost(
         std::process::id(),
         crate::link::fresh_hex()?
     ));
-    let mut c = std::process::Command::new(exe);
+    let mut c = ghost_command(root, &exe)?;
     if let Some(cwd) = cwd {
         c.current_dir(cwd);
     }
@@ -1201,5 +1214,20 @@ mod parts_tests {
         }
         assert!(parts.take(GuiOp::Parts).is_none(), "past the cap, dropped whole");
         assert!(matches!(parts.take(GuiOp::Stop), Some(GuiOp::Stop)), "and the next op runs");
+    }
+}
+
+#[cfg(test)]
+mod command_store_root_tests {
+    use super::*;
+    #[test]
+    fn ghost_child_receives_the_requested_store_before_changing_directory() {
+        let root = std::env::temp_dir().join(format!("khor-ghost-root-{}", crate::link::fresh_hex().unwrap()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut command = ghost_command(&root, std::path::Path::new("unused-executable")).unwrap();
+        command.current_dir(std::env::temp_dir());
+        let configured = command.get_envs().find(|(key, _)| *key == "KHOR_HOME").and_then(|(_, value)| value).unwrap();
+        assert_eq!(std::path::PathBuf::from(configured), std::fs::canonicalize(&root).unwrap());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

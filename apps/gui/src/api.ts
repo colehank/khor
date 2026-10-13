@@ -85,6 +85,10 @@ import type { QuotaCredits } from "./gen/bindings/QuotaCredits";
 import type { QuotaWindow } from "./gen/bindings/QuotaWindow";
 import type { QuotaTrouble } from "./gen/bindings/QuotaTrouble";
 import type { MachineLog } from "./gen/bindings/MachineLog";
+import type { ConsoleCommand } from "./gen/bindings/ConsoleCommand";
+import type { Completion as ConsoleCompletion } from "./gen/bindings/Completion";
+import type { Choice as ConsoleChoice } from "./gen/bindings/Choice";
+import type { SeenMessage } from "./gen/bindings/SeenMessage";
 import type { AccountRing } from "./gen/bindings/AccountRing";
 import type { ChatMsgRow } from "./gen/bindings/ChatMsgRow";
 import type { ChatFileRow } from "./gen/bindings/ChatFileRow";
@@ -758,6 +762,8 @@ export const fetchUsage = () => call<Usage>("usage");
     reason rides in the answer. */
 export const fetchQuota = () => call<QuotaAnswer>("quota");
 export const markSeen = (id: string) => call<null>("seen", { id });
+export const markSeenSnapshot = (id: string, messages: SeenMessage[]) =>
+  call<null>("seen_snapshot", { id, messages });
 export const closeSession = (id: string) => call<null>("close_session", { id });
 /** Names a session for the whole network; an empty title takes the name
     back so the row falls back to its derived title. The empty string is
@@ -784,6 +790,11 @@ export const compose = (typed: string, files: string[] = []) => call<string>("po
 /** The broadcast's readout — what `khor log` prints, shaped for the
     pane. */
 export const machineLog = (id: string) => call<MachineLog>("machine_log", { id });
+export type { ConsoleCommand, ConsoleChoice, ConsoleCompletion };
+export const consoleCatalog = () => call<ConsoleCommand[]>("console_catalog");
+export const consoleComplete = (line: string, caret: number) => call<ConsoleCompletion>("console_complete", { line, caret });
+export const consoleRun = (line: string, token: string, input?: string) =>
+  call<string>("console_run", { line, token, ...(input === undefined ? {} : { input }) });
 /** A broadcast file taken, or taken again after it failed or was
     cancelled — `khor retry`, same node call (docs/KHOR.md equivalence).
     Answers where the files landed. */

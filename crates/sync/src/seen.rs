@@ -2,15 +2,12 @@
 //! (docs/NET.md: seen is a decision — clear on the phone, the
 //! desktop badge clears too).
 //!
-//! Shape: `seen : Map<session_id, watermark_ms>` (per-key LWW). A
-//! watermark, not a count and not a set of message ids: a count miscounts
-//! under concurrent inserts and an LWW collision bounces read back to
-//! unread; an id set grows without bound, and the CRDT rule is small
-//! decision-class data only (docs/NET.md). "Seen" means: everything
-//! up to that instant on the *senders'* clocks — so callers mark with the
-//! newest message's `at`, never the local clock: a sender running ahead
-//! would otherwise stay unread after being looked at, and a badge that
-//! cannot reach zero is the one thing the badge rules forbid.
+//! Shape: `seen : Map<session_id, watermark_ms>` retains broad CLI marks.
+//! `snapshots : Map<[session_id, message_id, at_ms], true>` acknowledges only
+//! versions actually rendered by the GUI. Immutable version keys merge as a
+//! union: a stale receipt cannot erase a newer one, and equal timestamps on
+//! different messages stay independent. A new version of the same message
+//! requires a new receipt. GUI snapshots never advance the broad watermark.
 //!
 //! **Whose decision is it — the person's or the machine's?** The
 //! person's. One watermark per session, replicated, so a look on the
@@ -72,6 +69,20 @@ pub fn seen_dir(home: &Path) -> PathBuf {
 
 const SEEN: &str = "seen";
 const CLOSED: &str = "closed";
+const SNAPSHOTS: &str = "snapshots";
+
+/// One rendered message version; `at_ms` is the message's sender timestamp.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
+pub struct SeenMessage {
+    pub id: String,
+    #[ts(type = "number")]
+    pub at_ms: i64,
+}
+
+fn version_key(session: &str, message: &str, at_ms: i64) -> String {
+    // JSON tuple encoding makes embedded slashes and separators unambiguous.
+    serde_json::to_string(&(session, message, at_ms)).expect("string tuple serializes")
+}
 
 pub struct SeenDoc {
     inner: LoroDoc,
@@ -107,6 +118,27 @@ impl SeenDoc {
         self.inner
             .get_map(SEEN)
             .insert(session, at_ms)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// A GUI receipt covers exactly this version, not other messages with
+    /// the same timestamp and not later updates to this message.
+    pub fn message_seen(&self, session: &str, message: &str, at_ms: i64) -> bool {
+        self.inner
+            .get_map(SNAPSHOTS)
+            .get(&version_key(session, message, at_ms))
+            .is_some()
+    }
+
+    pub fn mark_message(&self, session: &str, message: &str, at_ms: i64) -> Result<(), String> {
+        if self.message_seen(session, message, at_ms) {
+            return Ok(());
+        }
+        self.inner
+            .get_map(SNAPSHOTS)
+            .insert(&version_key(session, message, at_ms), true)
             .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())
@@ -174,7 +206,7 @@ impl Doc for SeenDoc {
     }
 
     fn items(&self) -> usize {
-        self.inner.get_map(SEEN).keys().count()
+        self.inner.get_map(SEEN).keys().count() + self.inner.get_map(SNAPSHOTS).keys().count()
     }
 }
 
@@ -268,5 +300,47 @@ mod tests {
             wa == 300 || wa == 700,
             "the settled value must be one of the marks: {wa}"
         );
+    }
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::*;
+
+    #[test]
+    fn exact_receipts_do_not_cover_equal_clock_neighbors_or_new_versions() {
+        let seen = SeenDoc::new(31).unwrap();
+        seen.mark_message("wide/all", "first", 100).unwrap();
+        assert!(seen.message_seen("wide/all", "first", 100));
+        assert!(!seen.message_seen("wide/all", "later", 100));
+        assert!(!seen.message_seen("wide/all", "first", 101));
+        assert_eq!(seen.watermark("wide/all"), 0);
+        let version = seen.version();
+        seen.mark_message("wide/all", "first", 100).unwrap();
+        assert_eq!(
+            seen.version(),
+            version,
+            "repeated rendering creates no CRDT operations"
+        );
+    }
+
+    #[test]
+    fn concurrent_old_and_new_version_receipts_merge_without_regression() {
+        let phone = SeenDoc::new(32).unwrap();
+        let desk = SeenDoc::new(33).unwrap();
+        phone.mark_message("wide/all", "same", 200).unwrap();
+        desk.mark_message("wide/all", "same", 100).unwrap();
+        desk.mark_message("wide/all", "another", 200).unwrap();
+        phone
+            .merge(&desk.changes_since(&phone.version()).unwrap())
+            .unwrap();
+        desk.merge(&phone.changes_since(&desk.version()).unwrap())
+            .unwrap();
+        for seen in [&phone, &desk] {
+            assert!(seen.message_seen("wide/all", "same", 100));
+            assert!(seen.message_seen("wide/all", "same", 200));
+            assert!(seen.message_seen("wide/all", "another", 200));
+            assert!(!seen.message_seen("wide/all", "same", 201));
+        }
     }
 }

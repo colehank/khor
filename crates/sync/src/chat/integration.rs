@@ -12,6 +12,39 @@ use crate::testutil::{me, render, tmpdir};
 
 /// A dumb node: a directory holding blocks. It merges nothing.
 struct Dumb(PathBuf);
+
+#[test]
+fn command_receipts_replicate_updates_without_duplicate_messages() {
+    use crate::chat::CommandRecord;
+    let a = ChatDoc::new(0xa).unwrap();
+    let b = ChatDoc::new(0xb).unwrap();
+    let sender = me("executor");
+    let mut record = CommandRecord {
+        id: "command-unique-token".into(), line: "/devices".into(),
+        owner: sender.id.clone(), owner_name: sender.name.clone(),
+        status: "running".into(), started_at_ms: 100, ended_at_ms: None,
+        stdout: String::new(), stderr: String::new(), data_json: None,
+        session: None, error: None,
+    };
+    a.command(&sender, &record).unwrap();
+    b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
+    assert_eq!(b.messages()[0].command.as_ref(), Some(&record));
+    // An unrelated reader edit survives the executor's final receipt.
+    b.retract(&record.id).unwrap();
+    record.status = "done".into();
+    record.ended_at_ms = Some(200);
+    record.stdout = "one machine".into();
+    a.command(&sender, &record).unwrap();
+    a.merge(&b.changes_since(&a.version()).unwrap()).unwrap();
+    b.merge(&a.changes_since(&b.version()).unwrap()).unwrap();
+    b.merge(&a.changes_since(&Default::default()).unwrap()).unwrap();
+    let messages = b.messages();
+    assert_eq!(messages.len(), 1);
+    assert!(messages[0].retracted);
+    assert_eq!(messages[0].at, 200);
+    assert_eq!(messages[0].command.as_ref(), Some(&record));
+    assert!(b.command(&me("other-executor"), &record).is_err());
+}
 impl Dumb {
     fn new(tag: &str) -> Self {
         let d = tmpdir(tag);

@@ -1372,6 +1372,13 @@ roads-jump = "跳板"
 roads-broken-auth = "{0} 只接受密码登录"
 
 [msg]
+command-input-required = "这条命令需要输入内容"
+console-token-invalid = "命令提交标识无效"
+console-token-conflict = "这个提交标识已用于另一条命令"
+console-interrupted = "执行进程已退出；此命令未自动重试"
+console-private = "此命令的参数和结果仅在执行设备查看"
+console-unknown = "未知命令：{0}"
+console-output-cut = "输出过长，已截取显示"
 # ── the watch list (关注目录) ──
 # Refused at the one write entry (`Node::set_watch`), so the CLI and the
 # face say the same sentence. Absolute, because the list is read by the
@@ -1713,7 +1720,7 @@ transfer-not-synced-yet = "这笔传输尚未同步到本机：{0}；有 {1} 台
 wrong-recipient = "这个文件是发给 {0} 的，不应由这台机器接收"
 # 广播（STORE-BRIEF 第三阶段）：全网机器的群聊，行名就是这个词。广播里的文件
 # 是邀约，每台机器自己接收；发出它的那台本来就有，没有什么要收。
-broadcast-title = "广播"
+broadcast-title = "khor"
 own-broadcast-file = "这个文件是本机发出的，本机不用接收"
 # 一个频道（STORE-BRIEF 第五阶段）：@机器 是推送的目标。目标不通就不发，
 # 话里点名是哪台，文字也不写进去——由人决定等它上线还是发给别的机器。
@@ -2625,6 +2632,20 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+console-input = "附加输入"
+console-input-hint = "输入仅发给执行设备"
+console-owner = "执行于 {0}"
+console-title = "选择命令"
+console-hint = "↑↓ 选择 · Tab 补全 · Esc 收起"
+console-running = "命令运行中"
+console-done = "命令已完成"
+console-failed = "命令失败"
+console-interrupted = "命令已中断"
+console-cancelled = "命令已取消"
+console-open-session = "进入命令会话"
+console-placeholder = "留言，或输入 / 运行命令"
+console-attached = "请用命令参数选择文件"
+console-no-choices = "没有匹配的补全"
 # 网络页的「连接」组（round NET-2）：本机住在哪台中继、到每台中继的往返、每台机器走哪条路、
 # 往返多久、多久前听到、上次出了什么错——doctor 的连接诊断，做成可以截图的一页。
 conn-home = "家中继"

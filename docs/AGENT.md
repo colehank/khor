@@ -1,5 +1,17 @@
 # Khor 智能体
 
+**规划，尚未接入。** 2026-10-13：先完成 [共享命令入口](CONSOLE.md)，
+再基于 pi 开发 khor agent；接口核对见 [PI-TOOLS.md](PI-TOOLS.md)。
+
+## 入口与上下文
+
+- `@khor` 调用当前操作节点的默认智能体；`@machine/agentName` 指定远端智能体。
+- 每次新任务单开 session，属于 khor，并进入 session list。控制频道只保留引用
+  同一 session 的任务卡；其状态和最新消息直接来自 session。
+- 初始上下文包含本次请求、附件和显式引用；不默认塞入整个频道历史。
+  后续对话在该 session 内继续，长期记忆归智能体身份。
+- slash 和 pi 工具共享 khor 能力层；pi 工具使用结构化参数。
+
 网的调度员：用户指派任务，它动用网内的设备与 session 完成。
 不是新形态——就是一个对话 kind 的 session：消息 CRDT 全网复制，
 哪台设备都能留言；执行进程在 home（发起那台）。

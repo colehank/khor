@@ -26,6 +26,10 @@ use std::io::Read;
 use khor_node::Node;
 
 fn main() {
+    if let Some(code) = khor_commands::console_main_if_requested(|_| {
+        // The development bridge serves its own frontend, with no LAN listener.
+        eprintln!("{}", khor_catalog::msg::web_face_not_serving());
+    }) { std::process::exit(code); }
     // First thing, before any bridge behaviour: if this process was
     // re-exec'd as a session host (`spawn_host` uses current_exe), be
     // one. Without this a host spawned from the bridge was another

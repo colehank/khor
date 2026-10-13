@@ -987,7 +987,7 @@ export default function App() {
 
   const onSelect = useCallback((row: SessionRow) => {
     sessionTabs.open(row.id);
-    if (row.unread > 0) {
+    if (row.unread > 0 && row.id !== "wide/all") {
       // Looking at it is the seen semantics; the watermark replicates,
       // so this clears the badge on every device.
       markSeen(row.id).catch(() => {});
@@ -2970,7 +2970,7 @@ export default function App() {
     />
   ) : sessions && selectedRow === null && isChatTab(selected) ? (
     // That conversation's page, before its row is back (UX-45).
-    <MachineChat key={selected} id={selected ?? ""} />
+    <MachineChat key={selected} id={selected ?? ""} sessions={rows} active={!hidden && morePage === null && !switchingTabs && (!narrow || screen === "detail")} onSession={(id) => { setMorePage(null); sessionTabs.open(id); setScreen("detail"); }} />
   ) : sessions ? (
     // The conversation in this pane is painted inside the workspace it
     // is running in, as far as its paths are concerned (2026-09-18
@@ -2981,6 +2981,9 @@ export default function App() {
     <ShowFileProvider value={showFile}>
     <DetailPane
       row={selectedRow}
+      sessions={rows}
+      active={!hidden && morePage === null && !switchingTabs && (!narrow || screen === "detail")}
+      onSession={(id) => { setMorePage(null); sessionTabs.open(id); setScreen("detail"); }}
       narrow={narrow}
       openIds={openTabs}
       day={selectedRow ? dayOf(selectedRow.id) : undefined}

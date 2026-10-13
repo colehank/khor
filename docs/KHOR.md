@@ -23,13 +23,13 @@ p2p 组成用户自己的设备网络：在任意设备同步信息、发起任�
 - 监控：机器状态（CPU/GPU/内存/磁盘）、session 状态
   （六词：忙碌/待批/完成/中断/失败/空闲，全网全端一词）
 - 发起：在任意设备开 session、传文件、借网访问
-- 说话与传文件：一个频道，广播。`@机器:路径` 推给点名的机器，谁都不用按；
-  目标不通就不发（`khor tell` / `khor send` 是这种写法，SESSION.md「一个频道」）
+- 会话式操控：khor 频道里写留言、发文件，或用 `/命令` 调用公开 CLI 能力；
+  命令、设备、session 和路径都有补全，执行结果同步为记录（见 [CONSOLE.md](CONSOLE.md)）
 - 入网：配对一台 = 同步全网
 - 网页脸：任一台机器出一张网页，手机或别人的电脑打开即达整个网
   （`khor web` 发链接；**无中心版的 remote control**——没有枢纽，
   你连的就是你自己那台机器）
-- Khor 智能体：调度网内设备与 session，完成指派任务
+- Khor 智能体（下一阶段）：基于 pi 调度网内设备与 session，完成指派任务
 
 ## 实现
 
@@ -57,6 +57,8 @@ UI 用 shadcn/ui，参考 Apple。没有技术壁垒，体验就是壁垒。
 | [UX.md](UX.md) | 界面判据：姿势、状态呈现、语料库、设置纪律 |
 | [WORKSPACE.md](WORKSPACE.md) | 工作区：人立的 (机器,目录)、行的四个角、同步表、`khor ws` |
 | [HOOKS.md](HOOKS.md) | 进程接入：钩子怎么交状态词、Claude Code 怎么挂 |
+| [CONSOLE.md](CONSOLE.md) | khor 频道、共享命令执行器、回执与后续智能体入口 |
+| [PI-TOOLS.md](PI-TOOLS.md) | pi 官方接口核对与工具适配约束 |
 | [AGENT.md](AGENT.md) | Khor 智能体：权限两档、执行位置、账户 |
 | [IOS.md](IOS.md) | iOS：怎么构建、在模拟器里跑；手机上哪些事只有桌面能做、今天怎样；下一步 |
 | [NEWAPI.md](NEWAPI.md) | new-api 两个端点的形状：字段、哨兵、上限——**一份会过期的快照** |

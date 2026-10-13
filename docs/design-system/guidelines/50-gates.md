@@ -42,6 +42,7 @@
 
 | 怎么跑 | 是什么 | 拿 cargo 锁吗 |
 |---|---|---|
+| `npm run console` | `check-console.mjs`，真实 Composer 的斜杠、机器与路径补全、命令幂等重试、结构化记录更新与会话跳转；已读仅覆盖前台且在底部实际渲染的消息 id 与版本快照，同毫秒后来消息不被误清，历史、后台和隐藏页保留未读（系统 Chrome，API fixture，不拿 cargo 锁） | 不拿 |
 | `npm run test` | `pretest` → `gen` + `check-shim` + `check-px` + `check-icons` + `tsc --noEmit` | **拿**(`pretest` 是两条 `cargo run`) |
 | `npm run type` | `check-type.mjs`,静态 | 不拿 |
 | `npm run words` | `check-words.mjs`,静态(WORDS-1008:时间的方向只在 `time-ago` / `time-in`、`span` 不出 `words.ts`、延迟一律 `ms`、连不上叫不通、机器列表的筛选和行同一个推导、钱只有一个格式化;也在 `npm test` 里) | 不拿 |

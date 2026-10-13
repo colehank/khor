@@ -160,6 +160,12 @@ fn face_of(m: &Message, me: &str, members: &[DeviceInfo], kept: &Kept<'_>) -> Op
 }
 
 impl Node {
+    pub fn record_command(&self, record: &khor_sync::chat::CommandRecord) -> Result<String, String> {
+        let id = self.chat.command(BROADCAST, record)?;
+        let _ = self.emit_row_of(&khor_core::SessionId(BROADCAST.to_owned()));
+        Ok(id)
+    }
+
     /// The machines a broadcast reaches: every machine that runs khor.
     /// A satellite is left out — it has no khor of its own to answer an
     /// offer with, and counting it would leave every count one short
@@ -196,13 +202,10 @@ impl KindSurface for WideKind {
     }
 
     fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
-        if node.wide_members()?.len() < 2 {
-            return Ok(Vec::new());
-        }
         let seen = node.seen_loaded()?;
         let watermark = seen.doc.watermark(BROADCAST);
         let msgs = node.chat.log(BROADCAST)?.messages;
-        let mut row: Session = node.chat.row_from(BROADCAST, node.device(), &msgs, watermark);
+        let mut row: Session = node.chat.row_from(BROADCAST, node.device(), &msgs, watermark, Some(&seen.doc));
         row.title = msg::broadcast_title().to_owned();
         // The latest message still standing speaks, from this machine's
         // seat (the module head): a file to this machine still moving or
@@ -215,8 +218,17 @@ impl KindSurface for WideKind {
             .iter()
             .rev()
             .find(|m| !m.retracted)
-            .filter(|m| m.from.id != me && bytes(m).is_some())
             .and_then(|m| {
+                if let Some(c) = &m.command {
+                    let word = match c.status.as_str() {
+                        "running" => State::Busy,
+                        "failed" => State::Failed,
+                        "interrupted" => State::Errored,
+                        _ => return None,
+                    };
+                    return Some((word, m.at));
+                }
+                if m.from.id == me || bytes(m).is_none() { return None; }
                 let word = match kept.fate(m, me)?.step {
                     Step::Moving => State::Busy,
                     Step::Failed => State::Errored,
@@ -354,6 +366,33 @@ mod tests {
     /// matter of the clock rather than of the rule.
     fn tick() {
         std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    #[test]
+    fn reading_a_snapshot_leaves_later_messages_unread() {
+        let (r, n, far) = node("snapshot-seen");
+        let doc = ChatDoc::new(0xfafa).unwrap();
+        doc.tell(&far, "first visible message").unwrap();
+        let visible = crate::SeenMessage { id: doc.messages()[0].id.clone(), at_ms: doc.messages()[0].at };
+        tick();
+        doc.tell(&far, "not rendered yet").unwrap();
+        plant(&r, &doc);
+        n.seen_snapshot(&SessionId(BROADCAST.into()), &[visible.clone()]).unwrap();
+        let rows = WideKind.rows(&n).unwrap();
+        assert_eq!(rows[0].unread, 1);
+        n.seen_snapshot(&SessionId(BROADCAST.into()), &[visible]).unwrap();
+        assert_eq!(WideKind.rows(&n).unwrap()[0].unread, 1, "old receipts never move backwards");
+        n.seen(&SessionId(BROADCAST.into())).unwrap();
+        assert_eq!(WideKind.rows(&n).unwrap()[0].unread, 0);
+    }
+
+    #[test]
+    fn console_prose_does_not_resolve_mentions_or_paths() {
+        let (_r, n, _far) = node("literal-note");
+        n.note_here("@unknown:/missing ordinary text", &[]).unwrap();
+        let log = n.log(BROADCAST).unwrap();
+        assert!(log.messages[0].to.is_empty());
+        assert_eq!(log.messages[0].body, MsgBody::Text("@unknown:/missing ordinary text".into()));
     }
 
     fn word(n: &Node) -> State {

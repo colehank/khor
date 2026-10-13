@@ -448,6 +448,26 @@ fn seen(id: String) -> Result<(), String> {
     khor_gui_core::seen(&Node::root_from_env(), &id)
 }
 
+#[tauri::command]
+fn seen_snapshot(id: String, messages: Vec<khor_gui_core::SeenMessage>) -> Result<(), String> {
+    khor_gui_core::seen_snapshot(&Node::root_from_env(), &id, &messages)
+}
+
+#[tauri::command]
+fn console_catalog() -> Vec<khor_gui_core::console::ConsoleCommand> {
+    khor_gui_core::console::catalog()
+}
+
+#[tauri::command]
+async fn console_complete(line: String, caret: usize) -> Result<khor_gui_core::console_complete::Completion, String> {
+    khor_gui_core::console_complete::complete(&Node::root_from_env(), &line, caret).await
+}
+
+#[tauri::command]
+async fn console_run(line: String, token: String, input: Option<String>) -> Result<String, String> {
+    off_main(move || khor_gui_core::console::run(&Node::root_from_env(), &line, &token, input.as_deref())).await
+}
+
 /// A row on another machine closes there, over the network
 /// ([`off_main`]).
 #[tauri::command]
@@ -4449,6 +4469,12 @@ fn system_language_into_env() {
 /// ever runs it.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if let Some(code) = khor_gui_core::console::main_if_requested(|root| {
+        match khor_web::listen(root.to_path_buf(), khor_web::port()) {
+            Ok(face) => eprintln!("{}", khor_catalog::cli::web_banner(face.addr)),
+            Err(error) => eprintln!("{error}"),
+        }
+    }) { std::process::exit(code); }
     // **Stand somewhere that cannot be deleted, before anything else**
     // (docs/SHELL.md 第十四轮 第 4 条). The install script starts this
     // binary with `nohup` from inside the export directory and then
@@ -4816,6 +4842,10 @@ pub fn run() {
             usage,
             quota,
             seen,
+            seen_snapshot,
+            console_catalog,
+            console_complete,
+            console_run,
             close_session,
             rename_session,
             rename_machine,

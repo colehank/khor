@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 khor-core.workspace = true
 khor-node.workspace = true
+khor-commands = { path = "../../../crates/commands" }
 khor-catalog.workspace = true
 serde.workspace = true
 serde_json.workspace = true

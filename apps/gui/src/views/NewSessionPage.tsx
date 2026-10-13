@@ -97,7 +97,7 @@ import { PopupButton } from "@/components/ui/popup-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
-import { draftFor, dropHandOff, peekHandOff } from "@/lib/composer-handoff";
+import { draftFor, dropHandOff, peekHandOff, tellDraft } from "@/lib/composer-handoff";
 import { useHereHosts } from "@/lib/here";
 import { useSetting } from "@/settings";
 import { cn } from "@/lib/utils";
@@ -452,8 +452,7 @@ export function NewSessionPage({
   );
   /** The page's one act is 创建 whatever the kind (UX-45): 留言 makes
       nothing on the node — the broadcast is already there — so 创建 turns
-      the tab into it, with `@<机器> ` written in its box (STORE-BRIEF
-      phase 5: one channel).
+      the tab into it, with `/tell <机器> ` written in its box.
       **The brand's primary, the one page that may wear it** (the owner
       2026-10-07, after UX-45 made it a plain button): `primary` is a
       dialog's one act, and this page is the dialog it replaced — the one
@@ -468,7 +467,7 @@ export function NewSessionPage({
       onClick={() => {
         if (kind !== "tell") return create();
         const m = machines.find((d) => d.name === target);
-        if (m && !m.me) draftFor(`@${m.label && !/[\s:"]/.test(m.label) ? m.label : m.name} `);
+        if (m && !m.me) draftFor(tellDraft(m.name));
         onOpened("wide/all");
       }}
     >

@@ -28,6 +28,8 @@ fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
     let home = std::env::temp_dir().join(format!("khor-cli-run-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).unwrap();
+    // Compare the same localized words the child selects at startup.
+    khor_node::config::apply_lang(&home);
 
     // A failing command: the child's code passes through the wrapper,
     // and the row sinks to 失败.

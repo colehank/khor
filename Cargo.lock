@@ -4796,13 +4796,12 @@ dependencies = [
 name = "khor-cli"
 version = "0.1.14"
 dependencies = [
- "agent-client-protocol",
  "ctor 1.0.13",
  "iroh",
  "iroh-relay",
- "jiff",
  "khor-acp",
  "khor-catalog",
+ "khor-commands",
  "khor-core",
  "khor-net",
  "khor-node",
@@ -4810,8 +4809,25 @@ dependencies = [
  "khor-web",
  "libc",
  "patchbay",
- "qrcode",
  "rcgen",
+ "rustls",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "khor-commands"
+version = "0.1.14"
+dependencies = [
+ "iroh",
+ "iroh-relay",
+ "jiff",
+ "khor-catalog",
+ "khor-core",
+ "khor-node",
+ "khor-sync",
+ "libc",
+ "qrcode",
  "rustls",
  "serde",
  "serde_json",
@@ -4872,6 +4888,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "khor-catalog",
+ "khor-commands",
  "khor-core",
  "khor-node",
  "qrcode",
@@ -4968,6 +4985,7 @@ dependencies = [
  "loro",
  "serde",
  "serde_json",
+ "ts-rs",
 ]
 
 [[package]]

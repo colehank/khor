@@ -414,6 +414,8 @@ pub enum Op {
     /// Answered [`Reply::Posted`] once the message is written, or
     /// refused before anything is. Tail-appended.
     Post { typed: String, files: Vec<String> },
+    /// Literal console prose; only explicit slash submissions execute.
+    Note { text: String, files: Vec<String> },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -513,6 +515,7 @@ impl Op {
             Op::JournalOn { .. } => ("JournalOn", DEADLINE_FAR),
             // Dials every target and may digest a far file.
             Op::Post { .. } => ("Post", DEADLINE_SLOW),
+            Op::Note { .. } => ("Note", DEADLINE_SLOW),
             Op::ActOn { .. } => ("ActOn", DEADLINE_FAR),
             Op::PaneHistoryOn { .. } => ("PaneHistoryOn", DEADLINE_FAR),
             Op::DropOn { .. } => ("DropOn", DEADLINE_FAR),

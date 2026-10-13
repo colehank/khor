@@ -6,7 +6,7 @@ pub mod doc;
 
 use std::path::{Path, PathBuf};
 
-pub use doc::{ChatDoc, Fate, FileRef, Message, MsgBody, Sender, Step, Target};
+pub use doc::{ChatDoc, CommandRecord, Fate, FileRef, Message, MsgBody, Sender, Step, Target};
 
 use crate::store::{Loaded, load};
 

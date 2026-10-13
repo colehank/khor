@@ -74,6 +74,9 @@ pub fn answer(
             .ok_or_else(|| format!("missing number arg: {name}"))
     };
     match cmd {
+        "console_catalog" => to_json(&crate::console::catalog()),
+        "console_complete" => to_json(&rt.block_on(crate::console_complete::complete(root, &arg("line")?, num("caret")? as usize))?),
+        "console_run" => to_json(&crate::console::run(root, &arg("line")?, &arg("token")?, opt_str("input")?.as_deref())?),
         "sessions" => to_json(&crate::list_sessions(root, &arg("by")?)?),
         // `cells` is required rather than defaulted: it is a measured
         // pixel width, and a default would be this layer inventing a
@@ -387,6 +390,11 @@ pub fn answer(
         // installation's. And no `?` — every failure here is a reason
         // the person can act on, so it rides back as data.
         "quota" => to_json(&rt.block_on(crate::quota())),
+        "seen_snapshot" => {
+            let messages: Vec<crate::SeenMessage> = serde_json::from_value(args.get("messages").cloned().ok_or_else(|| "missing arg: messages".to_owned())?).map_err(|e| e.to_string())?;
+            crate::seen_snapshot(root, &arg("id")?, &messages)?;
+            Ok("null".to_owned())
+        }
         "seen" => {
             crate::seen(root, &arg("id")?)?;
             Ok("null".to_owned())

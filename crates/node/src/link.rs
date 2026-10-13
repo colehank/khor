@@ -2035,6 +2035,13 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
+            ipc::Op::Note { text, files } => {
+                let files: Vec<std::path::PathBuf> = files.into_iter().map(std::path::PathBuf::from).collect();
+                match self.note_here(&text, &files) {
+                    Ok(id) => { self.nudge(ep, true); ipc::Reply::Posted { id } },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::Take { session, action } => {
                 match self.take_with(ep, &crate::SessionId(session), &action).await {
                     Ok((moved, landed)) => ipc::Reply::Accepted { moved, landed },

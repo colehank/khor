@@ -84,7 +84,7 @@ pub use khor_core::{
     WireCounts,
     UsageDay, Vitals, kind,
 };
-pub use khor_sync::chat::{Fate, FileRef, Message, MsgBody, Step as FateStep};
+pub use khor_sync::chat::{CommandRecord, Fate, FileRef, Message, MsgBody, Step as FateStep};
 pub use khor_sync::devices::DeviceInfo;
 pub use trust::{PendingRow, RootState, Standing};
 /// A relay and the key it admits by — what [`Node::set_relays`] takes.
@@ -147,6 +147,7 @@ pub use khor_sync::recents::Kind as PlaceKind;
 use khor_sync::recents::{RecentDoc, recents_dir};
 use khor_sync::roster::{RosterDoc, roster_dir};
 use khor_sync::seen::{SeenDoc, seen_dir};
+pub use khor_sync::seen::SeenMessage;
 use khor_sync::store::{Loaded, load_pile};
 use khor_sync::titles::{TitleDoc, titles_dir};
 use khor_sync::webpins::{WebPinDoc, webpins_dir};
@@ -4207,6 +4208,28 @@ impl Node {
         Err(msg::no_such_session(&id.0))
     }
 
+    /// Acknowledge only message versions in a rendered GUI snapshot. Validate
+    /// against the current board, so forged future versions cannot clear an
+    /// update that has not arrived. A stale snapshot only marks its old version.
+    pub fn seen_snapshot(&self, id: &SessionId, messages: &[SeenMessage]) -> Result<(), String> {
+        wide::board(&id.0)?;
+        let log = self.chat.log(&id.0)?;
+        let current: std::collections::HashMap<_, _> = log.messages.iter().map(|m| (m.id.as_str(), m.at)).collect();
+        for message in messages {
+            if message.at_ms < 0 || !current.get(message.id.as_str()).is_some_and(|at| message.at_ms <= *at) {
+                return Err("invalid rendered message version".to_owned());
+            }
+        }
+        let loaded = self.seen_loaded()?;
+        for message in messages {
+            loaded.doc.mark_message(&id.0, &message.id, message.at_ms)?;
+        }
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        let _ = self.emit_row_of(id);
+        Ok(())
+    }
+
     /// Closes a session — the wind-down is the kind's (docs/SESSION.md
     /// 动作): a device chat deletes payloads it received, a transfer
     /// deletes just its own payload, a live session is terminated and
@@ -4432,7 +4455,7 @@ impl Node {
     /// only once the agent has answered (`gui_host` module head).
     pub fn open_gui(&self, title: &str, cmd: &[String]) -> Result<SessionId, String> {
         self.refuse_unless_hosting()?;
-        gui_host::spawn_gui_host(None, title, cmd, None, false)
+        gui_host::spawn_gui_host(self.root(), None, title, cmd, None, false)
     }
 
     /// [`Self::open_gui`], for an agent the user registered by name
@@ -4452,7 +4475,7 @@ impl Node {
         agent: &str,
     ) -> Result<SessionId, String> {
         self.refuse_unless_hosting()?;
-        gui_host::spawn_gui_host(None, title, cmd, Some(agent), false)
+        gui_host::spawn_gui_host(self.root(), None, title, cmd, Some(agent), false)
     }
 
     /// Reopens a conversation the agent itself says it has
@@ -4510,7 +4533,7 @@ impl Node {
         {
             return Err(msg::resume_running_elsewhere(pid));
         }
-        gui_host::spawn_gui_host_reopen(Some(cwd), title, cmd, Some(agent), session)
+        gui_host::spawn_gui_host_reopen(self.root(), Some(cwd), title, cmd, Some(agent), session)
     }
 
     /// `open_gui`, born in a chosen directory (the wizard's 目录 field);
@@ -4532,7 +4555,7 @@ impl Node {
         agent: bool,
     ) -> Result<SessionId, String> {
         self.refuse_unless_hosting()?;
-        gui_host::spawn_gui_host(Some(cwd), title, cmd, vendor, agent)
+        gui_host::spawn_gui_host(self.root(), Some(cwd), title, cmd, vendor, agent)
     }
 
     /// **常去的地方**: the directories this machine's own records say
@@ -4793,6 +4816,7 @@ impl Node {
         }
         let exe = crate::self_exe()?;
         gui_host::spawn_gui_host_resume(
+            self.root(),
             Some(&cwd),
             &title,
             &[exe.display().to_string(), shim.into()],

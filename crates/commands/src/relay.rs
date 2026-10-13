@@ -39,7 +39,7 @@ use khor_catalog::cli;
 use khor_node::Node;
 use serde::{Deserialize, Serialize};
 
-use crate::out;
+use crate::{out, err};
 
 /// Where a plain-HTTP relay listens when nobody says: the port the
 /// Khor tier has always used, and `iroh-relay --dev`'s own default.
@@ -104,7 +104,7 @@ fn parse(rest: &[String]) -> Result<Options, String> {
         rate: None,
         only_mine: false,
         metrics: None,
-        state: Node::root_from_env().join(".khor").join("relay"),
+        state: crate::command_root().join(".khor").join("relay"),
         stats: false,
         tls_check: false,
     };
@@ -823,4 +823,11 @@ mod tests {
         let _ = server.shutdown().await;
         let _ = std::fs::remove_dir_all(&dir);
     }
+}
+
+/// Validate a terminal-owned relay before creating its session.
+pub(crate) fn validate(rest: &[String]) -> Result<(), String> {
+    let options = parse(rest)?;
+    if !options.stats && !options.tls_check && options.mode.is_none() { return Err(cli::relay_pick_mode().to_owned()); }
+    Ok(())
 }

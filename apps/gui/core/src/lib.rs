@@ -14,6 +14,8 @@ pub mod agents;
 pub mod api;
 pub mod chat;
 pub mod code;
+pub mod console;
+pub mod console_complete;
 pub mod files;
 pub mod git;
 pub mod import;
@@ -1616,6 +1618,12 @@ pub fn seen(root: &Path, id: &str) -> Result<(), String> {
     open(root)?.seen(&SessionId(id.to_owned()))
 }
 
+pub use khor_node::SeenMessage;
+
+pub fn seen_snapshot(root: &Path, id: &str, messages: &[SeenMessage]) -> Result<(), String> {
+    open(root)?.seen_snapshot(&SessionId(id.to_owned()), messages)
+}
+
 /// Names a session, for everyone; an empty title takes the name back so
 /// the row falls back to its derived title (`Node::rename_session`).
 /// One function behind the double-click and any future verb, so the two
@@ -1721,14 +1729,11 @@ pub fn close_session(root: &Path, id: &str) -> Result<(), String> {
         .block_on(n.close_anywhere(&SessionId(id.to_owned())))
 }
 
-/// **A message composed into the broadcast** (STORE-BRIEF phase 5,
-/// `Node::post`): the typed form (`@机器:路径`, files on machines, words)
-/// and this machine's files to go with it — the call `khor tell` and
-/// `khor send` make. Answers the message id, or the node's refusal (a
-/// target not reachable is named, and nothing was written).
+/// Post literal GUI text and explicitly selected file offers. Slash
+/// submissions use the command executor; @ is reserved for agents.
 pub async fn post(root: &Path, typed: &str, files: &[String]) -> Result<String, String> {
     let files: Vec<std::path::PathBuf> = files.iter().map(std::path::PathBuf::from).collect();
-    open(root)?.post(typed, &files).await
+    open(root)?.note(typed, &files).await
 }
 
 /// Whether claude on **this** machine is set up to tell khor what it is
@@ -2270,6 +2275,7 @@ pub struct ChatMsgRow {
     /// Whether this machine is one of `to`: its file comes by itself,
     /// nobody presses 接收.
     pub pushed: bool,
+    pub command: Option<khor_node::CommandRecord>,
 }
 
 /// One machine a message was pushed to, as the bubble shows it.
@@ -2310,14 +2316,15 @@ pub struct MachineLog {
 /// 5): a machine's `chat/<机器>` conversation read here too; that session
 /// kind is gone.
 pub fn machine_log(root: &Path, id: &str) -> Result<MachineLog, String> {
-    wide_log(&open(root)?, id)
+    wide_log(root, &open(root)?, id)
 }
 
 /// The broadcast's readout (`khor_node::wide`), in the same shape: a
 /// file's move is this machine's own answer to the offer, and the count
 /// of the machines that have it rides beside.
-fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
-    let (log, faces) = n.wide_log(id)?;
+fn wide_log(root: &Path, n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
+    let (mut log, faces) = n.wide_log(id)?;
+    console::reconcile(root, n, &mut log.messages);
     let me = n.device_str().to_owned();
     let names: std::collections::HashMap<String, String> =
         n.devices()?.into_iter().map(|d| (d.id.clone(), d.shown().to_owned())).collect();
@@ -2377,6 +2384,7 @@ fn wide_log(n: &khor_node::Node, id: &str) -> Result<MachineLog, String> {
                 to,
                 note: Some(m.note).filter(|n| !n.is_empty()),
                 pushed,
+                command: m.command,
             }
         })
         .collect();
